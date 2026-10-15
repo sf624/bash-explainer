@@ -38,7 +38,10 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     if (!forced && !this.service.showsHover()) return undefined;
     const ex = this.service.explain(doc, pos.line);
     if (!ex.items.length && !forced) return undefined;
-    const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos));
+    const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
+    const link = `command:bashExplain.openPanel?${args}`;
+    const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos, link), true);
+    md.isTrusted = { enabledCommands: ['bashExplain.openPanel'] };
     return new vscode.Hover(md, doc.lineAt(pos.line).range);
   }
 

@@ -15,6 +15,8 @@ export class PanelController implements vscode.Disposable {
   /** The user closed the panel; do not reopen it automatically until asked. */
   private dismissed = false;
   private editor: vscode.TextEditor | undefined;
+  /** Line requested from the hover link; shown until the cursor moves. */
+  private pinnedLine: number | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private highlight = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
@@ -46,8 +48,9 @@ export class PanelController implements vscode.Disposable {
     else if (this.panel) this.post();
   }
 
-  open(editor = vscode.window.activeTextEditor): void {
+  open(editor = vscode.window.activeTextEditor, line?: number): void {
     this.dismissed = false;
+    this.pinnedLine = line;
     if (editor && this.service.isTarget(editor.document)) this.editor = editor;
     if (this.panel) {
       this.panel.reveal(undefined, true);
@@ -74,6 +77,7 @@ export class PanelController implements vscode.Disposable {
   private schedule(editor: vscode.TextEditor, delay: number): void {
     if (!this.service.isTarget(editor.document)) return;
     this.editor = editor;
+    this.pinnedLine = undefined;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       if (!this.panel && this.service.showsPanel() && !this.dismissed) this.open(editor);
@@ -90,7 +94,7 @@ export class PanelController implements vscode.Disposable {
       void this.panel.webview.postMessage({ type: 'empty', message: t.noEditor });
       return;
     }
-    const line = ed.selection.active.line;
+    const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
     const ex = this.service.explain(ed.document, line);
     this.panel.title = `${t.title}: ${path.basename(ed.document.fileName)}:${line + 1}`;
     void this.panel.webview.postMessage({

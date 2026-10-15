@@ -16,6 +16,7 @@ export const ui = {
     },
     pickMode: '解説の表示方法を選択',
     statusTooltip: 'Bash Explain: クリックで表示方法を切り替え',
+    openInPanel: 'パネルで詳しく見る',
   },
   en: {
     title: 'Bash Explain',
@@ -31,6 +32,7 @@ export const ui = {
     },
     pickMode: 'Choose how explanations are shown',
     statusTooltip: 'Bash Explain: click to change the display mode',
+    openInPanel: 'Open in panel',
   },
 } satisfies Record<Lang, unknown>;
 
@@ -50,8 +52,11 @@ function contains(t: Token, p: Pos): boolean {
   return afterStart && beforeEnd;
 }
 
-/** Markdown for the hover. Tokens under `at` (the mouse position) are emphasised. */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos): string {
+/**
+ * Markdown for the hover. Tokens under `at` (the mouse position) are emphasised.
+ * `panelLink` is a command URI that opens this line in the panel.
+ */
+export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string): string {
   const t = ui[lang];
   const out: string[] = [];
   let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
@@ -71,5 +76,6 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos): string {
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
+  if (panelLink) out.push('', '---', `[$(comment-discussion) ${t.openInPanel}](${panelLink})`);
   return out.join('\n');
 }

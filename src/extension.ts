@@ -29,7 +29,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(
     service, hover, panel, inline, status,
     vscode.commands.registerCommand('bashExplain.showAtCursor', () => hover.showAtCursor()),
-    vscode.commands.registerCommand('bashExplain.openPanel', () => panel.open()),
+    vscode.commands.registerCommand('bashExplain.openPanel', (target?: { uri: string; line: number }) => {
+      // From the hover link: show the hovered line, which may differ from the cursor line.
+      const editor = target && vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === target.uri);
+      panel.open(editor ?? vscode.window.activeTextEditor, editor ? target.line : undefined);
+    }),
     vscode.commands.registerCommand('bashExplain.selectDisplayMode', async () => {
       const t = ui[service.lang];
       const modes = Object.keys(t.modes) as DisplayMode[];
