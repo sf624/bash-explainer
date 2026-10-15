@@ -55,6 +55,16 @@ describe('sed explainer', () => {
     assert.deepStrictEqual(explainSed('s|/usr|/opt|', 'bre', 'en')[0].children[4].children, [], 'a plain replacement is not broken down');
   });
 
+  it('handles escaped delimiters, empty replacements and GNU escapes', () => {
+    const src = 's/a/\\1\\/x/';
+    const repl = explainSed(src, 'bre', 'en')[0].children.find((t) => t.explanation.startsWith('Replacement'))!;
+    assert.match(repl.children.find((t) => text(src, t) === '\\/')!.explanation, /a literal "\/" \(the delimiter, escaped\)/);
+    const empty = explainSed('s/^[ \\t]*//', 'bre', 'en')[0];
+    assert.ok(empty.children.every((t) => t.end > t.start), 'no zero-width tokens');
+    assert.match(empty.children[empty.children.length - 1].explanation, /replacement is empty, so matches are deleted/);
+    assert.match(all(empty.children).find((t) => t.kind === 'pattern' && t.explanation.startsWith('Character class'))!.explanation, /one of " ", a tab/);
+  });
+
   it('reports malformed scripts instead of throwing', () => {
     for (const bad of ['s/a/b', 's', '/foo', 'k', 'y/ab/']) {
       const ts = explainSed(bad, 'bre', 'en');
