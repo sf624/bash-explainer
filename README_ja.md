@@ -1,0 +1,109 @@
+# Bash Explain
+
+**bash スクリプトを1行ずつ解説** — シェルスクリプト版の [regex101](https://regex101.com/) です。
+
+カーソルを置いた行を、コマンド・オプション・リダイレクト・変数展開などに分解して、それぞれが何をしているかを解説します。
+
+[English README](README.md)
+
+![Bash Explain デモ](images/demo.gif)
+
+## 例
+
+```bash
+grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt
+```
+
+```text
+grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダイレクト: … 全体の入出力を切り替える
+├─ grep -rn "ERROR $USER" ./src 2>&1 | sort -u — パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につなぐ
+│  ├─ grep -rn "ERROR $USER" ./src 2>&1 — パターン（正規表現）に一致する行を検索して表示する
+│  │  ├─ -rn — 短いオプション -r -n をまとめて指定
+│  │  │  ├─ -r — ディレクトリ内を再帰的に検索
+│  │  │  └─ -n — 行番号を表示
+│  │  ├─ "ERROR $USER" — 検索パターン（正規表現）
+│  │  │  └─ $USER — ログインユーザー名
+│  │  ├─ ./src — 検索対象のファイル（省略時は標準入力）
+│  │  └─ 2>&1 — 標準エラー出力(fd 2)を標準出力(fd 1)と同じ出力先に向ける
+│  ├─ | — パイプ: 左のコマンドの標準出力を右のコマンドの標準入力に渡す
+│  └─ sort -u — 行を並べ替える
+│     └─ -u — 重複行を1つにまとめる
+└─ > errors.txt — 標準出力(fd 1)をファイル errors.txt に書き込む（既存の内容は上書き）
+```
+
+## 特長
+
+- **コマンドとオプション** — 結合オプション（`-rn`）、値付きオプション（`-o pipefail`, `--include=*.sh`）、各引数の役割。約120のコマンド・ビルトインに対応（`grep`, `sed`, `awk`, `find`, `xargs`, `curl`, `tar`, `git`, `docker` …）
+- **入れ子のコマンド** — サブコマンド（`git commit`）や、他のコマンドから実行されるコマンド（`sudo`, `xargs`, `env`, `find -exec`）
+- **演算子とリダイレクト** — `|`, `&&`, `||`, `;`, `&`, `>`, `>>`, `2>&1`, `&>`, `>/dev/null`、ヒアドキュメント、ヒアストリング
+- **展開** — `${var:-default}`, `${file%.sh}`, `${#array[@]}`, `$?`, `$@`, `$(…)`, `<(…)`, `$((…))`
+- **条件式** — `[ ]`, `[[ ]]`, `(( ))` と `-f`, `-z`, `-eq`, `=~` などの演算子
+- **制御構文** — `if`, `for`, `while`, `until`, `case`、関数。ブロック内の行では「for ループ › if 文」のように位置も表示
+- **複数行の文** — `\` による行継続、ヒアドキュメントの本文、同じスクリプト内で定義した関数の呼び出し
+- **オフラインで即座に表示** — [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説。通信も AI も使いません
+- **日本語と英語に対応**
+
+## 表示方法
+
+`bashExplain.displayMode` で選べます。ステータスバーの **Bash Explain** をクリックしても切り替えられます。
+
+### ホバー（既定）
+
+行にマウスを乗せると解説が表示されます。`Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）でキーボードカーソルの行を解説します。下部の **パネルで詳しく見る** で、同じ行をパネルに表示します。
+
+![ホバー](images/hover.gif)
+
+### パネル
+
+カーソルに追従するサイドペインです。regex101 のように行を色分けして表示します。部分にマウスを乗せるとエディタ側の該当箇所がハイライトされ、クリックすると選択されます。
+
+![パネル](images/panel.gif)
+
+### インライン
+
+カーソル行の行末に1行の要約を薄く表示します。
+
+![インライン](images/inline.png)
+
+`both` ではホバーとパネルを両方使います。
+
+## コマンド
+
+| コマンド | キー | 説明 |
+| --- | --- | --- |
+| Bash Explain: カーソル行を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` | カーソル行の解説を表示 |
+| Bash Explain: 解説パネルを開く | | サイドパネルを開く（エディタのタイトルバーからも可） |
+| Bash Explain: 表示方法を選択 | | ホバー・パネル・インライン・両方を切り替え |
+
+## 設定
+
+| 設定 | 既定値 | 説明 |
+| --- | --- | --- |
+| `bashExplain.displayMode` | `hover` | `hover` / `panel` / `inline` / `both` |
+| `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
+| `bashExplain.hover.followCursor` | `false` | ホバーモードで、カーソル移動に追従して自動表示 |
+| `bashExplain.hover.followDelay` | `400` | 追従表示までの遅延（ミリ秒） |
+| `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
+| `bashExplain.languages` | `["shellscript"]` | 解説の対象とする言語 ID |
+
+## 制限事項
+
+- 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
+- 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `[[ -f a && $x =~ re ]]` のように `&&` と `=~` を混ぜたもの）。
+
+## 開発
+
+不具合報告やプルリクエストは [github.com/sf624/bash-explain](https://github.com/sf624/bash-explain) へどうぞ。
+
+```sh
+npm install
+npm run build      # dist/ にバンドル（wasm もコピー）
+npm test           # 型チェック + 単体テスト
+npm run package    # .vsix を作成
+```
+
+VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
+`npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
+
+コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に
+`cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。

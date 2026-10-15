@@ -5,4 +5,5 @@
 !package.json
 !package.nls*.json
 !README.md
+!CHANGELOG.md
 !LICENSE
