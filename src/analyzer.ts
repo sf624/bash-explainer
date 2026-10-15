@@ -686,6 +686,14 @@ export class Analyzer {
     if (!nameNode) {
       return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
     }
+    // tree-sitter-bash parses a standalone `(( expr ))` as a command named by an arithmetic expansion.
+    const arith = nameNode.namedChildren.length === 1 && nameNode.namedChildren[0].type === 'arithmetic_expansion' && nameNode.text.startsWith('((') ? nameNode.namedChildren[0] : undefined;
+    if (arith && !args.length && !prefix.length) {
+      if ((this.line === null || n.startPosition.row === this.line) && arith.namedChildren.length === 1) this.testExampleFor('((', arith.namedChildren[0]);
+      const t = this.tok(n, 'test', this.arithTestExplanation(), [...this.subs(arith.namedChildren), ...this.subs(redirs)]);
+      t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
+      return t;
+    }
     const head = this.commandHead(nameNode);
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
@@ -1315,9 +1323,11 @@ export class Analyzer {
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
   private testExample(n: SyntaxNode): void {
-    const kind = n.child(0)?.type as '[' | '[[' | '((';
-    const expr = n.namedChildren[0];
-    if (!expr || n.namedChildren.length !== 1) return;
+    if (n.namedChildren.length !== 1) return;
+    this.testExampleFor(n.child(0)?.type as '[' | '[[' | '((', n.namedChildren[0]);
+  }
+
+  private testExampleFor(kind: '[' | '[[' | '((', expr: SyntaxNode): void {
     const operand = (x: SyntaxNode | null | undefined): Operand | undefined => {
       if (!x) return undefined;
       if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
@@ -1558,6 +1568,10 @@ export class Analyzer {
 
   // ---------------------------------------------------------------- tests
 
+  private arithTestExplanation(): string {
+    return this.s('算術評価 `(( ))`: 式を計算し、結果が 0 以外なら成功(0)を返す', 'Arithmetic evaluation `(( ))`: succeeds if the result is non-zero');
+  }
+
   private test(n: SyntaxNode): Token {
     if (this.line === null || n.startPosition.row === this.line) this.testExample(n);
     const open = n.child(0)?.type;
@@ -1565,7 +1579,7 @@ export class Analyzer {
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
         'Extended test `[[ ]]`: evaluates a condition (bash-only; safe without quoting, supports `&&`, `||`, `=~`)')
       : open === '(('
-        ? this.s('算術評価 `(( ))`: 式を計算し、結果が 0 以外なら成功(0)を返す', 'Arithmetic evaluation `(( ))`: succeeds if the result is non-zero')
+        ? this.arithTestExplanation()
         : this.s('条件式 `[ ]`: 条件を評価し、真なら成功(0)を返す（`test` コマンドと同じ。`[` の後と `]` の前には空白が必要）',
           'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
     const t = this.tok(n, 'test', expl, this.subs(n.namedChildren));
