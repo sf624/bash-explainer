@@ -3,7 +3,6 @@
 !dist/*.wasm
 !media/**
 !package.json
-!icon.png
 !package.nls*.json
 !README.md
 !CHANGELOG.md

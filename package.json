@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "shun-fujioka",
   "license": "MIT",
-  "icon": "icon.png",
+  "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/sf624/bash-explain.git"
