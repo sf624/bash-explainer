@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import type Parser = require('web-tree-sitter');
 import { Analyzer, Token } from '../src/analyzer';
+import { explainGetopts } from '../src/embedded/getopts';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from '../src/embedded/textutils';
 import { createBashParser } from '../src/parser';
 
@@ -43,6 +44,17 @@ describe('tr sets', () => {
     assert.strictEqual(trSummary('[:upper:]', '[:lower:]', 'en'), 'converts uppercase to lowercase');
     assert.strictEqual(trSummary('a-z', 'A-Z', 'en'), 'converts lowercase to uppercase');
     assert.strictEqual(trSummary('abc', 'xyz', 'en'), undefined);
+  });
+});
+
+describe('getopts option strings', () => {
+  it('reads letters, values and silent mode', () => {
+    const r = explainGetopts(':ab:c', 'en')!;
+    assert.strictEqual(r.note, 'accepts -a, -b VALUE, -c');
+    assert.deepStrictEqual(r.tokens.map((t) => [t.start, t.end]), [[0, 1], [1, 2], [2, 4], [4, 5]]);
+    assert.match(r.tokens[0].explanation, /silent error mode/);
+    assert.match(r.tokens[2].explanation, /takes a value .*\$OPTARG/);
+    assert.strictEqual(explainGetopts('a-b', 'en'), undefined);
   });
 });
 
