@@ -3,6 +3,7 @@ import type { SyntaxNode, Tree } from './parser';
 import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
+import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
@@ -46,6 +47,11 @@ const BLOCKS = new Set([
 ]);
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
 const WRAPPERS = new Set(['list', 'pipeline', 'redirected_statement', 'negated_command', 'program']);
+
+/** Nodes inside an expansion's argument that get their own explanation. */
+const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
+
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 const TERMINATORS = new Set(['\\;', ';', "';'", '"\\;"', '"; "', '+']);
 
@@ -927,7 +933,144 @@ export class Analyzer {
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``));
   }
 
+  /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
   private expansion(n: SyntaxNode): Token {
+    const summary = this.expansionSummary(n);
+    const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(n.text) : undefined;
+    if (!parsed) return summary;
+    const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
+    if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
+    if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
+    const example = exampleFor(parsed, this.lang);
+    if (example) summary.explanation += this.s(`。例: ${example}`, `. e.g. ${example}`);
+    const row = n.startPosition.row;
+    const col = n.startPosition.column;
+    const mainOp = parsed.parts.find((p) => p.role === 'op');
+    summary.children = parsed.parts.flatMap((part) => {
+      const expl = this.expansionPart(parsed, part, part === mainOp);
+      if (!expl || !part.text) return [];
+      const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
+      const nested = this.nestedIn(n, col + part.start, col + part.end);
+      return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: nested }];
+    });
+    return summary;
+  }
+
+  private substringSummary(p: ParsedExpansion): string {
+    const off = p.parts.find((x) => x.role === 'offset')?.text ?? '';
+    const len = p.parts.find((x) => x.role === 'length')?.text;
+    const name = p.name;
+    if (!/^-?\d+$/.test(off) || (len !== undefined && !/^-?\d+$/.test(len))) {
+      return this.s(`\`${name}\` の部分文字列を取り出す（開始位置 \`${off}\`${len !== undefined ? `、長さ \`${len}\`` : ''}）`,
+        `take a substring of \`${name}\` (offset \`${off}\`${len !== undefined ? `, length \`${len}\`` : ''})`);
+    }
+    const o = Number(off);
+    const fromJa = o < 0 ? `末尾から ${-o} 文字目` : ` ${o + 1} 文字目`;
+    const fromEn = o < 0 ? `${-o} characters from the end` : `the ${ordinal(o + 1)} character`;
+    if (len === undefined && o < 0) return this.s(`\`${name}\` の末尾 ${-o} 文字を取り出す`, `take the last ${-o} characters of \`${name}\``);
+    if (len === undefined) return this.s(`\`${name}\` の${fromJa}から最後までを取り出す`, `take \`${name}\` from ${fromEn} to the end`);
+    const l = Number(len);
+    if (l < 0) return this.s(`\`${name}\` の${fromJa}から、末尾の ${-l} 文字を除いた位置までを取り出す`, `take \`${name}\` from ${fromEn} up to ${-l} characters before the end`);
+    return this.s(`\`${name}\` の${fromJa}から ${l} 文字を取り出す`, `take ${l} characters of \`${name}\` starting at ${fromEn}`);
+  }
+
+  /** Expansions, substitutions and strings inside a column range of a single-line node. */
+  private nestedIn(n: SyntaxNode, from: number, to: number): Token[] {
+    const found: SyntaxNode[] = [];
+    const visit = (x: SyntaxNode) => {
+      for (const c of x.namedChildren) {
+        const inside = c.startPosition.column >= from && c.endPosition.column <= to;
+        if (inside && NESTED.has(c.type)) found.push(c);
+        else visit(c);
+      }
+    };
+    visit(n);
+    return found.map((c) => this.full(c));
+  }
+
+  private expansionPart(p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean): [Kind, string] | undefined {
+    const t = part.text;
+    const s = this.s.bind(this);
+    switch (part.role) {
+      case 'prefix':
+        if (t === '#') return ['operator', s('`#`: 値の長さ（文字数、配列なら要素数）を返す', '`#`: gives the length (characters, or elements for an array)')];
+        if (p.op === '*' || p.op === '@') return ['operator', s('`!`: この名前で始まる変数名の一覧を返す', '`!`: lists variable names starting with this prefix')];
+        if (p.subscript === '@' || p.subscript === '*') return ['operator', s('`!`: 配列の値ではなくインデックス（キー）を返す', '`!`: gives the indices (keys) instead of the values')];
+        return ['operator', s('`!`: 間接参照。変数の値を別の変数名として使う', '`!`: indirection; use the value as another variable\'s name')];
+      case 'name': {
+        const d = this.varDesc(t);
+        if (p.prefix === '!' && (p.op === '*' || p.op === '@')) return ['variable', s(`変数名の接頭辞 \`${t}\``, `Variable name prefix \`${t}\``)];
+        if (p.subscript !== undefined) return ['variable', s(`配列 \`${t}\``, `Array \`${t}\``)];
+        return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
+      }
+      case 'subscript': {
+        const idx = p.subscript ?? '';
+        if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
+        if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
+        if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string)')];
+        if (/^-?\d+$/.test(idx)) {
+          const i = Number(idx);
+          return ['variable', i < 0
+            ? s(`インデックス ${i}: 末尾から ${-i} 番目の要素`, `Index ${i}: the ${ordinal(-i)} element from the end`)
+            : s(`インデックス ${i}: ${i + 1} 番目の要素（0 始まり）`, `Index ${i}: the ${ordinal(i + 1)} element (0-based)`)];
+        }
+        return ['variable', s(`インデックス（連想配列ならキー） \`${idx}\``, `Index (or key, for associative arrays) \`${idx}\``)];
+      }
+      case 'op':
+        if (!isMainOp) {
+          return ['operator', t === ':'
+            ? s('`:` 開始位置と長さの区切り', '`:` separates the offset from the length')
+            : p.parts.find((x) => x.role === 'replacement')?.text
+              ? s('`/` パターンと置換後の文字列の区切り', '`/` separates the pattern from the replacement')
+              : s('`/` の後ろ（置換後の文字列）が空なので、一致した部分は削除される', 'Nothing follows this `/`, so the replacement is empty and matches are deleted')];
+        }
+        return ['operator', `\`${t}\`: ` + (opMeaning[t] ? opMeaning[t][this.lang === 'ja' ? 0 : 1] : t)];
+      case 'word': {
+        const op = p.op ?? '';
+        if (op === ':-' || op === '-') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` の代わりに使う値`, `Default \`${t}\`: used instead of \`${p.name}\``)];
+        if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
+        if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
+        return ['string', s(`エラーメッセージ「${t}」`, `Error message "${t}"`)];
+      }
+      case 'pattern': {
+        const glob = globParts(t);
+        const casePat = /^[\^,]/.test(p.op ?? '');
+        const what = casePat ? s('変換する文字のパターン', 'Pattern of characters to convert') : s('パターン', 'Pattern');
+        if (!glob) return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
+        return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}`];
+      }
+      case 'replacement':
+        return ['string', t
+          ? s(`置換後の文字列 \`${t}\``, `Replacement \`${t}\``)
+          : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (the match is deleted)')];
+      case 'offset': {
+        const v = t.trim();
+        if (!/^-?\d+$/.test(v)) return ['number', s(`開始位置 \`${v}\`（算術式として評価される）`, `Offset \`${v}\` (evaluated as arithmetic)`)];
+        const o = Number(v);
+        if (o < 0) {
+          return ['number', s(
+            `開始位置 ${o}: 末尾から ${-o} 文字目から（負の値は \`:-\` と区別するため、前に空白か括弧が必要）`,
+            `Offset ${o}: start ${-o} characters from the end (a space or parentheses is needed before a negative value, to tell it from \`:-\`)`)];
+        }
+        return ['number', s(`開始位置 ${o}: ${o + 1} 文字目から（0 始まり）`, `Offset ${o}: start at the ${ordinal(o + 1)} character (0-based)`)];
+      }
+      case 'length': {
+        const v = t.trim();
+        if (!/^-?\d+$/.test(v)) return ['number', s(`長さ \`${v}\`（算術式として評価される）`, `Length \`${v}\` (evaluated as arithmetic)`)];
+        const l = Number(v);
+        return ['number', l < 0
+          ? s(`長さ ${l}: 末尾の ${-l} 文字を除いた位置まで`, `Length ${l}: up to ${-l} characters before the end`)
+          : s(`長さ ${l}: ${l} 文字分`, `Length ${l}: ${l} characters`)];
+      }
+      case 'transform': {
+        const m = transformMeaning[t];
+        return ['operator', m ? `\`${t}\`: ${m[this.lang === 'ja' ? 0 : 1]}` : s(`変換 \`${t}\``, `Transformation \`${t}\``)];
+      }
+    }
+    return undefined;
+  }
+
+  private expansionSummary(n: SyntaxNode): Token {
     const kids = n.children;
     const inner = n.text.slice(2, -1);
     const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
