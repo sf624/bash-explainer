@@ -7,6 +7,7 @@ import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
+import { perlExample, perlOptions } from './examples/perlrun';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
@@ -1143,6 +1144,16 @@ export class Analyzer {
     const cmd = name.split('/').pop() ?? name;
     if (cmd === 'printf') { this.printfExample(args); return; }
     if (cmd === 'xargs') { this.xargsExample(args); return; }
+    if (cmd === 'perl') {
+      const words = args.map((a) => literalContent(a)?.text);
+      const parsed = perlOptions(words);
+      const ex = parsed && perlExample(parsed.code, parsed.opts);
+      if (!ex) return;
+      const inPlace = words.some((w) => /^-[a-zA-Z]*i/.test(w ?? ''));
+      if (ex.input.length) this.ioExample(ex.input, ex.output, inPlace);
+      else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible), empty: this.s('（出力なし）', '(no output)') }] });
+      return;
+    }
     if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
     const ex = commandExample(cmd, args.map((a) => literalContent(a)?.text));
     if (!ex) return;
