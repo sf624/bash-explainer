@@ -28,5 +28,12 @@ const root = path.join(__dirname, '..');
     e.notes.forEach((n) => console.log('  note: ' + n));
     console.log('  summary: ' + e.summary);
     e.items.forEach((t) => print(t, 1));
+    for (const x of e.examples) {
+      console.log(`  ## ${x.title}`);
+      for (const sec of x.sections) {
+        console.log(`  ### ${sec.label}`);
+        (sec.lines.length ? sec.lines : [sec.empty ?? '']).forEach((l) => console.log(`    ${l}`));
+      }
+    }
   });
 })();

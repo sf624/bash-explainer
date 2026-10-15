@@ -35,6 +35,7 @@
     $('line').replaceChildren();
     $('notes').replaceChildren();
     $('tree').replaceChildren();
+    $('examples').replaceChildren();
     $('empty').textContent = message;
     $('empty').hidden = false;
   }
@@ -56,8 +57,31 @@
       p.append(...inline(n));
       return p;
     }));
+    $('examples').replaceChildren(...(ex.examples ?? []).map(example));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
+  }
+
+  /** One worked example: a heading, then a labelled block per section with one line per row. */
+  function example(ex) {
+    const box = document.createElement('section');
+    box.className = 'example';
+    const h = document.createElement('h3');
+    h.append(...inline(ex.title));
+    box.append(h);
+    for (const sec of ex.sections) {
+      const label = document.createElement('div');
+      label.className = 'example-label';
+      label.textContent = sec.label;
+      const pre = document.createElement('pre');
+      if (sec.lines.length) pre.textContent = sec.lines.join('\n');
+      else {
+        pre.textContent = sec.empty ?? '';
+        pre.classList.add('example-empty');
+      }
+      box.append(label, pre);
+    }
+    return box;
   }
 
   /** Tree item for a token and its children. */

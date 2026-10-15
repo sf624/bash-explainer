@@ -1,4 +1,4 @@
-import { Kind, LineExplanation, Pos, Token } from '../analyzer';
+import { Example, Kind, LineExplanation, Pos, Token } from '../analyzer';
 import { Lang } from '../i18n';
 
 export const ui = {
@@ -129,6 +129,23 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
+  out.push(...examplesMarkdown(ex.examples));
   if (panelLink) out.push('', '---', `[$(comment-discussion) ${t.openInPanel}](${panelLink})`);
   return out.join('\n');
+}
+
+/** Examples as headings with one code block per section, so every line keeps its own row. */
+export function examplesMarkdown(examples: Example[]): string[] {
+  const out: string[] = [];
+  for (const e of examples) {
+    out.push('', '---', '', `#### ${e.title}`);
+    for (const sec of e.sections) {
+      const lines = sec.lines.length ? sec.lines : [sec.empty ?? ''];
+      // The fence must be longer than any run of backticks inside.
+      const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) ?? []).map((m) => m.length))));
+      const fence = '`'.repeat(longest + 1);
+      out.push('', `**${sec.label}**`, '', `${fence}text`, ...lines, fence);
+    }
+  }
+  return out;
 }

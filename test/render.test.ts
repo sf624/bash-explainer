@@ -3,7 +3,7 @@ import * as path from 'path';
 import type Parser = require('web-tree-sitter');
 import { Analyzer } from '../src/analyzer';
 import { createBashParser } from '../src/parser';
-import { lineSegments, toMarkdown } from '../src/ui/render';
+import { examplesMarkdown, lineSegments, toMarkdown } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -57,4 +57,19 @@ describe('hover markdown', () => {
   it('keeps the panel link', () => {
     assert.match(hover('ls').md, /\[\$\(comment-discussion\) Open in panel\]\(command:x\)$/);
   });
+
+  it('shows examples as headings with one code block per section', () => {
+    const md = examplesMarkdown([{ title: 'Example', sections: [{ label: 'Input', lines: ['a b', 'c'] }, { label: 'Output', lines: [], empty: '(no output)' }] }]);
+    assert.deepStrictEqual(md.slice(3), ['#### Example', '', '**Input**', '', '```text', 'a b', 'c', '```', '', '**Output**', '', '```text', '(no output)', '```']);
+    const fenced = examplesMarkdown([{ title: 'E', sections: [{ label: 'L', lines: ['a ```b'] }] }]);
+    assert.ok(fenced.includes('````text'), 'the fence is longer than backticks inside');
+  });
+
+  it('puts worked examples in the hover after the tree', () => {
+    const { ex, md } = hover("awk '{ print $1 }'");
+    assert.strictEqual(ex.examples.length, 1);
+    assert.ok(!ex.notes.some((n) => /^Example/.test(n)), 'examples are not notes');
+    assert.match(md, /#### Example\n\n\*\*Input\*\*\n\n```text\napple red tokyo\nbanana yellow osaka/);
+  });
 });
+
