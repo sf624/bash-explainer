@@ -1,4 +1,5 @@
 import type { Lang } from '../i18n';
+import { explainPrintf } from './format';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
 
@@ -323,7 +324,11 @@ class AwkExplainer {
             : op === '>>' ? s(`。出力先はファイル ${target}（追記）`, `, appended to the file ${target}`)
               : s(`。出力をコマンド ${target} にパイプで渡す`, `, piped to the command ${target}`);
         }
-        return tok(expl);
+        // printf's format string is broken down like the shell's printf.
+        const fmt = head === 'printf' && args[0]?.type === 'str' ? args[0] : undefined;
+        const kids = this.atoms(toks);
+        if (fmt) kids.unshift(this.tok(fmt.start, fmt.end, 'string', s('書式文字列', 'Format string'), shift(explainPrintf(fmt.text.slice(1, -1), this.lang), fmt.start + 1)));
+        return tok(expl, kids);
       }
       case 'next': return tok(s('この行の処理をここで終えて、次の行に進む', 'stop processing this line and move to the next'), []);
       case 'nextfile': return tok(s('このファイルの処理を終えて、次のファイルに進む', 'skip to the next file'), []);
