@@ -3,7 +3,7 @@ import { EmbeddedToken, pick } from './types';
 
 type S = (ja: string, en: string) => string;
 
-interface Lex {
+export interface Lex {
   type: 'str' | 'num' | 'var' | 'fmt' | 'ident' | 'field' | 'op' | 'kw';
   text: string;
   start: number;
@@ -130,13 +130,13 @@ const FORMATS: Record<string, [string, string]> = {
   '@base64d': ['Base64 デコードする', 'decode Base64'],
 };
 
-class ParseError extends Error {
+export class ParseError extends Error {
   constructor(public at: number, message: string) {
     super(message);
   }
 }
 
-function lex(src: string): Lex[] {
+export function lex(src: string): Lex[] {
   const out: Lex[] = [];
   let i = 0;
   while (i < src.length) {

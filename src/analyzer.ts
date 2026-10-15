@@ -7,6 +7,7 @@ import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
+import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
@@ -804,9 +805,17 @@ export class Analyzer {
         if (ex) this.extraNotes.push(this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place')));
         break;
       }
-      case 'jq':
+      case 'jq': {
         tokens = explainJq(lit.text, this.lang);
+        const flags = this.cmdFlags();
+        const runs = jqExample(lit.text, {
+          raw: flags.has('-r') || flags.has('--raw-output') || flags.has('-j') || flags.has('--join-output'),
+          nullInput: flags.has('-n') || flags.has('--null-input'),
+          vars: this.jqVars(),
+        });
+        if (runs) this.extraNotes.push(this.jqExampleNote(runs));
         break;
+      }
       case 'awk': {
         tokens = explainAwk(lit.text, this.lang);
         const ex = awkExample(lit.text, this.awkOptions());
@@ -1028,6 +1037,38 @@ export class Analyzer {
       }
     }
     return out.length ? out : undefined;
+  }
+
+  /** --arg / --argjson values of the current jq command. */
+  private jqVars(): Record<string, Json> {
+    const args = this.argCtx?.args ?? [];
+    const vars: Record<string, Json> = {};
+    for (let i = 0; i + 2 < args.length; i++) {
+      const t = args[i].text;
+      if (t !== '--arg' && t !== '--argjson') continue;
+      const name = literalContent(args[i + 1])?.text;
+      const value = literalContent(args[i + 2])?.text;
+      if (name !== undefined && value !== undefined) {
+        try {
+          vars[name] = t === '--arg' ? value : JSON.parse(value);
+        } catch {
+          // Not valid JSON: leave it out, and the example will not be made.
+        }
+      }
+      i += 2;
+    }
+    return vars;
+  }
+
+  private jqExampleNote(runs: JqRun[]): string {
+    const show = (r: JqRun) => {
+      const out = r.error
+        ? this.s(`エラー「${r.error}」`, `error "${r.error}"`)
+        : r.outputs.length ? r.outputs.map((o) => `\`${o}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)');
+      return this.s(`入力 \`${toJson(r.input)}\` → 出力 ${out}`, `input \`${toJson(r.input)}\` → output ${out}`);
+    };
+    if (runs.length === 1) return `${this.s('例', 'Example')}: ${show(runs[0])}`;
+    return this.s(`例: ${show(runs[0])} ／ 値が無いとき: ${show(runs[1])}`, `Example: ${show(runs[0])} / when the value is missing: ${show(runs[1])}`);
   }
 
   /** -F and -v of the current awk command (literal values only). */
