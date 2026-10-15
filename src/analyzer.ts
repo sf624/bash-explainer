@@ -9,6 +9,7 @@ import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './exa
 import { awkExample } from './examples/awk';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
+import { commandExample, FILTERS } from './examples/textfilters';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -675,6 +676,7 @@ export class Analyzer {
     }
     const head = this.commandHead(nameNode);
     const argToks = this.args(head.doc, args, head.name);
+    this.commandExampleFor(head.name, args);
     const t = this.tok(n, head.kind, head.explanation, sortTokens([
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]));
@@ -1124,9 +1126,19 @@ export class Analyzer {
     return opts;
   }
 
-  /** An input → output example (sed, awk); tabs are shown as ⇥. */
+  /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
+  private commandExampleFor(name: string, args: SyntaxNode[]): void {
+    const cmd = name.split('/').pop() ?? name;
+    if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
+    const ex = commandExample(cmd, args.map((a) => literalContent(a)?.text));
+    if (!ex) return;
+    if (ex.input) this.ioExample(ex.input, ex.output);
+    else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
+  }
+
+  /** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
   private ioExample(input: string[], output: string[], inPlace = false): void {
-    const tabs = (lines: string[]) => lines.map((l) => l.replace(/\t/g, '⇥'));
+    const tabs = (lines: string[]) => lines.map(visible);
     this.examples.push({
       title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example'),
       sections: [
@@ -1681,6 +1693,11 @@ function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
   if (!lit.offsets) return (lit.base ?? 0) + offset;
   if (isEnd) return offset === 0 ? lit.offsets[0] ?? 0 : lit.offsets[offset - 1] + 1;
   return lit.offsets[offset] ?? (lit.offsets[lit.offsets.length - 1] ?? 0) + 1;
+}
+
+/** Tabs as ⇥ and other control characters as their Unicode pictures (CR → ␍), so examples show them. */
+function visible(line: string): string {
+  return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
 
 /** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
