@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { Json, jqExample, runJq } from '../src/examples/jq';
 
-/** Expected outputs follow the jq 1.7 manual; jq itself is not available to compare against. */
+/** Expected outputs follow the jq 1.7 manual (examples-jq-real.test.ts also compares with jq when it is installed). */
 function run(filter: string, input: Json, vars?: Record<string, Json>): Json[] | string {
   const r = runJq(filter, input, vars);
   assert.ok(r, `supported: ${filter}`);
