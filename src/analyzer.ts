@@ -10,6 +10,7 @@ import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/f
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
 import { explainJq } from './embedded/jq';
+import { explainPerl, perlLoopNote } from './embedded/perl';
 import { explainMode, explainUmask } from './embedded/mode';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embedded/textutils';
 import { explainSed } from './embedded/sed';
@@ -825,6 +826,17 @@ export class Analyzer {
         note = r.note;
         break;
       }
+      case 'perl': {
+        tokens = explainPerl(lit.text, this.lang);
+        const flags = new Set<string>();
+        for (const w of this.argCtx?.args ?? []) {
+          const m = /^-([a-zA-Z0-9]+)/.exec(w.text);
+          // Letters up to the first value-taking one (`-lane`, `-pi.bak`).
+          if (m && !w.text.startsWith('--')) for (const ch of m[1]) { flags.add(ch); if ('eEiFM0'.includes(ch)) break; }
+        }
+        note = perlLoopNote(flags, this.lang);
+        break;
+      }
       case 'glob':
         tokens = [];
         note = describeFindPattern(lit.text, this.lang);
@@ -1043,6 +1055,15 @@ export class Analyzer {
       const at = k + 1;
       if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
       parts.push(sub(at, at + 1, 'option', pre + this.t(opt.text), flag));
+      if (opt.attachedOnly) {
+        // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
+        if (k + 1 < letters.length) {
+          const val = letters.slice(k + 1);
+          const trap = /^[a-zA-Z]/.test(val) && opts['-' + val[0]] && this.s(`。注意: \`${val}\` は別のオプションではなく \`${flag}\` の値として扱われる`, `. Note: \`${val}\` is taken as the value of \`${flag}\`, not as more options`);
+          parts.push(sub(at + 1, text.length, 'argument', this.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || ''), val));
+        }
+        break;
+      }
       if (opt.arg) {
         if (k + 1 < letters.length) {
           const val = letters.slice(k + 1);
@@ -1448,7 +1469,8 @@ function fillsPositional(doc: CommandDoc | undefined, args: SyntaxNode[]): boole
       for (const ch of t.slice(1)) {
         const o = opts['-' + ch];
         if (o?.fillsPositional) return true;
-        if (o?.arg) break;
+        // In `-pie`, `e` is the value of `-i`, not the `-e` option.
+        if (o?.arg || o?.attachedOnly) break;
       }
     }
   }
