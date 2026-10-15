@@ -107,3 +107,7 @@ Press `F5` in VS Code to launch an Extension Development Host with `test/fixture
 
 To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts):
 `cmd(japanese, english, [options…], { positional: […] })`.
+
+## License
+
+[MIT](LICENSE). Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

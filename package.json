@@ -4,6 +4,7 @@
   "description": "%description%",
   "version": "0.1.0",
   "publisher": "shun-fujioka",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/sf624/bash-explain.git"
@@ -143,7 +144,7 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit && mocha",
-    "package": "node esbuild.mjs --production && vsce package --skip-license"
+    "package": "node esbuild.mjs --production && vsce package"
   },
   "dependencies": {
     "tree-sitter-bash": "0.23.3",
