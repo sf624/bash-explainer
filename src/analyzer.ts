@@ -6,6 +6,7 @@ import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
+import { sedExample } from './examples/sed';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -792,6 +793,14 @@ export class Analyzer {
       case 'sed': {
         const flavor = this.regexFlavor();
         tokens = explainSed(lit.text, flavor === 'ere' ? 'ere' : 'bre', this.lang);
+        const flags = this.cmdFlags();
+        // With several -e options sed runs them as one script, so the example does too.
+        const scripts = this.sedScripts() ?? [lit.text];
+        const ex = sedExample(scripts.join('\n'), {
+          quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'),
+          extended: flavor === 'ere',
+        });
+        if (ex) this.extraNotes.push(this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place')));
         break;
       }
       case 'jq':
@@ -997,6 +1006,32 @@ export class Analyzer {
       note = this.s(`例: 一致する行 ${yes}${no ? ` ／ 一致しない行 ${no}` : ''}`, `Example: matching lines ${yes}${no ? ` / non-matching lines ${no}` : ''}`);
     }
     this.extraNotes.push(note);
+  }
+
+  /** The scripts given to sed with -e/--expression, in order; undefined when there are none. */
+  private sedScripts(): string[] | undefined {
+    const args = this.argCtx?.args ?? [];
+    const out: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const t = args[i].text;
+      if (t.startsWith('--expression=')) out.push(literalContent(args[i])?.text.slice('--expression='.length) ?? '');
+      else if (t === '--expression' || /^-[a-zA-Z]*e$/.test(t)) {
+        const v = args[++i];
+        if (!v) break;
+        const lit = literalContent(v);
+        if (!lit) return undefined;
+        out.push(lit.text);
+      }
+    }
+    return out.length ? out : undefined;
+  }
+
+  /** "Example: `in` → `out`", or several lines separated by ⏎. */
+  private ioExample(input: string[], output: string[], inPlace = false): string {
+    const show = (lines: string[]) => (lines.length ? lines.map((l) => `\`${l}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)'));
+    const head = inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example');
+    if (input.length === 1 && output.length <= 1) return `${head}: ${show(input)} → ${show(output)}`;
+    return this.s(`${head}: 入力 ${show(input)} → 出力 ${show(output)}`, `${head}: input ${show(input)} → output ${show(output)}`);
   }
 
   /** Regex dialect implied by the current command and its options. */
