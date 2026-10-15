@@ -5,7 +5,7 @@ import { EmbeddedToken, pick, shift } from './types';
 
 type S = (ja: string, en: string) => string;
 
-interface Lex {
+export interface Lex {
   type: 'num' | 'str' | 'regex' | 'ident' | 'kw' | 'op' | 'nl';
   text: string;
   start: number;
@@ -60,7 +60,7 @@ const FUNCS: Record<string, [string, string]> = {
   asorti: ['配列のキーを並べ替える（GNU awk）', 'sort array indices (GNU awk)'],
 };
 
-function lex(src: string): Lex[] {
+export function lex(src: string): Lex[] {
   const out: Lex[] = [];
   let i = 0;
   /** Whether a `/` here starts a regex (an operand is expected) rather than meaning division. */
