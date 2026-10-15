@@ -39,11 +39,20 @@ interface State {
   s: (ja: string, en: string) => string;
   /** Plain single-character literals, which may be merged into runs. */
   literals: Set<EmbeddedToken>;
+  /** GNU sed turns `\t`, `\n`… into characters before compiling the regex, even inside `[…]`. */
+  sedEscapes: boolean;
+}
+
+const SED_ESCAPES: Record<string, [string, string]> = { t: ['タブ', 'a tab'], n: ['改行', 'a newline'], r: ['復帰文字(CR)', 'a carriage return'], f: ['改ページ', 'a form feed'], v: ['垂直タブ', 'a vertical tab'] };
+
+export interface RegexOptions {
+  /** Interpret `\t`, `\n`… as GNU sed does. */
+  sedEscapes?: boolean;
 }
 
 /** Explain a regular expression as a flat sequence of tokens (groups nest their contents). */
-export function explainRegex(src: string, flavor: Flavor, lang: Lang): EmbeddedToken[] {
-  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set() };
+export function explainRegex(src: string, flavor: Flavor, lang: Lang, opts: RegexOptions = {}): EmbeddedToken[] {
+  const st: State = { src, i: 0, flavor, groups: 0, s: pick(lang), literals: new Set(), sedEscapes: !!opts.sedEscapes };
   return mergeLiterals(sequence(st, 0), st);
 }
 
@@ -237,6 +246,11 @@ function bracket(st: State): EmbeddedToken {
       i += cls[0].length;
       continue;
     }
+    if (st.sedEscapes && src[i] === '\\' && SED_ESCAPES[src[i + 1]]) {
+      items.push(s(SED_ESCAPES[src[i + 1]][0], SED_ESCAPES[src[i + 1]][1]));
+      i += 2;
+      continue;
+    }
     if (st.flavor === 'pcre' && src[i] === '\\' && i + 1 < src.length) {
       const d = SHORTHANDS[src[i + 1]];
       items.push(d ? s(d.ja, d.en) : `「${src[i + 1]}」`);
@@ -278,6 +292,9 @@ function escape(st: State): EmbeddedToken {
       explanation: s(`後方参照 \`\\${c}\`: グループ ${c} に一致したのと同じ文字列${missing ? '（ここまでにグループ ' + c + ' がない）' : ''}`,
         `Backreference \`\\${c}\`: the same text group ${c} matched${missing ? ` (no group ${c} before this point)` : ''}`),
     };
+  }
+  if (st.sedEscapes && SED_ESCAPES[c]) {
+    return { start, end: st.i, kind: 'pattern', explanation: `\`\\${c}\`: ${s(SED_ESCAPES[c][0], SED_ESCAPES[c][1])}`, children: [] };
   }
   const sh = SHORTHANDS[c];
   if (sh && (st.flavor === 'pcre' || sh.gnu)) {

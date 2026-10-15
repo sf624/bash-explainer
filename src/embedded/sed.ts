@@ -83,7 +83,7 @@ class SedParser {
   }
 
   private regex(start: number, end: number): EmbeddedToken[] {
-    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang), start);
+    return shift(explainRegex(this.src.slice(start, end), this.flavor, this.lang, { sedEscapes: true }), start);
   }
 
   // ---------------------------------------------------------------- addresses
@@ -264,10 +264,12 @@ class SedParser {
       return this.tok(start, this.i, 'error', s('`s` コマンドが閉じられていない（置換後の文字列の後の区切りがない）', 'Unterminated `s` command'), [...children, ...parts]);
     }
     const repText = src.slice(rep[0], rep[1]);
-    parts.push(this.tok(rep[0], rep[1], 'string', repText
-      ? s(`置換後の文字列 \`${repText}\``, `Replacement \`${repText}\``)
-      : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (deletes the match)'), this.replacement(rep[0], rep[1])));
-    parts.push(sep(rep[1]));
+    if (repText) {
+      parts.push(this.tok(rep[0], rep[1], 'string', s(`置換後の文字列 \`${repText}\``, `Replacement \`${repText}\``), this.replacement(rep[0], rep[1], delim)));
+      parts.push(sep(rep[1]));
+    } else {
+      parts.push(this.tok(rep[1], rep[1] + 1, 'operator', s(`\`${delim}\`: 区切り文字。置換後の文字列が空なので、一致した部分は削除される`, `\`${delim}\`: delimiter; the replacement is empty, so matches are deleted`)));
+    }
 
     let global = false;
     let nth: string | undefined;
@@ -313,7 +315,7 @@ class SedParser {
   }
 
   /** `&`, `\1`… and case conversions in the replacement of `s`. */
-  private replacement(start: number, end: number): EmbeddedToken[] {
+  private replacement(start: number, end: number, delim: string): EmbeddedToken[] {
     const { src, s } = this;
     const out: EmbeddedToken[] = [];
     let lit = -1;
@@ -334,7 +336,13 @@ class SedParser {
           l: ['次の1文字を小文字にする', 'lowercase the next character'], u: ['次の1文字を大文字にする', 'uppercase the next character'],
           E: ['`\\L` / `\\U` を終える', 'end `\\L` / `\\U`'],
         };
-        if (/[0-9]/.test(n)) {
+        if (n === delim || n === '\\') {
+          flush(i);
+          out.push(this.tok(i, i + 2, 'string', n === delim
+            ? s(`\`\\${n}\`: 文字「${n}」そのもの（区切り文字をエスケープしている）`, `\`\\${n}\`: a literal "${n}" (the delimiter, escaped)`)
+            : s('`\\\\`: 文字「\\」そのもの', '`\\\\`: a literal backslash')));
+          i++;
+        } else if (/[0-9]/.test(n)) {
           flush(i);
           out.push(this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)));
           i++;
