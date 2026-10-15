@@ -1,63 +1,109 @@
 # Bash Explain
 
-bash スクリプトを **1行ずつ** 解説する VS Code 拡張機能です。[regex101](https://regex101.com/) が正規表現を分解して説明するように、カーソル行のコマンド・オプション・リダイレクト・変数展開などをトークン単位で解説します。
+**Understand any bash script, one line at a time** — like [regex101](https://regex101.com/), but for shell scripts.
 
-解説はすべてルールベース（[tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) による構文解析 + 組み込み辞書）で、オフラインかつ即座に表示されます。日本語と英語に対応しています。
+Put your cursor on a line and Bash Explain breaks it down into commands, options, redirections and expansions, and explains what each part does.
 
-## 表示方法
+[日本語版 README はこちら](README_ja.md)
 
-`bashExplain.displayMode` で選べます。ステータスバーの項目をクリックするか、コマンド **Bash Explain: 表示方法を選択** でも切り替えられます。
+![Bash Explain demo](images/demo.gif)
 
-| モード | 説明 |
-| --- | --- |
-| `hover`（既定） | マウスを乗せた行の解説をフローティング表示。`Ctrl+Alt+E`（mac: `Cmd+Alt+E`）でカーソル行の解説を表示。`bashExplain.hover.followCursor` を有効にすると、カーソル移動に追従して自動表示。ホバー下部の「パネルで詳しく見る」で、その行の解説をパネルに表示 |
-| `panel` | 右側のペインにカーソル行の解説を常時表示。行は種類ごとに色分けされ、トークンにマウスを乗せるとエディタ側の該当箇所もハイライト、クリックで選択 |
-| `inline` | カーソル行の行末に1行の要約を薄く表示 |
-| `both` | `hover` と `panel` の両方 |
+## Example
 
-## 解説できるもの
+```bash
+grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt
+```
 
-- コマンドと **オプション**（`-rn` のような結合、`-o pipefail` のような値付き、`--include=*.sh` 形式）、位置引数の役割
-- 約120のコマンド・ビルトイン（grep, sed, awk, find, xargs, curl, tar, git, docker …）。サブコマンド（`git commit` など）や、他のコマンドを実行するコマンド（`sudo`, `xargs`, `env`, `find -exec` …）の中身も解説
-- パイプ `|`、`&&` / `||`、`;`、`&`
-- リダイレクト（`>`, `>>`, `<`, `2>&1`, `&>`, `>/dev/null` …）、ヒアドキュメント、ヒアストリング
-- パラメータ展開（`${var:-default}`, `${f%.sh}`, `${#arr[@]}`, `${x//a/b}` …）、特殊変数（`$?`, `$@`, `$#` …）
-- コマンド置換 `$(…)`、プロセス置換 `<(…)`、算術展開 `$((…))`
-- `[ ]` / `[[ ]]` / `(( ))` の条件式と各演算子（`-f`, `-z`, `-eq`, `=~` …）
-- `if` / `for` / `while` / `until` / `case` / 関数定義。ブロック内の行では「どの構文の中にいるか」も表示
-- `\` による行継続、ヒアドキュメント本文の行、スクリプト内で定義した関数の呼び出し
+```text
+grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — Redirection applied to … as a whole
+├─ grep -rn "ERROR $USER" ./src 2>&1 | sort -u — Pipeline: each command's stdout feeds the next command's stdin
+│  ├─ grep -rn "ERROR $USER" ./src 2>&1 — Print lines matching a pattern (regex)
+│  │  ├─ -rn — Combined short options -r -n
+│  │  │  ├─ -r — search directories recursively
+│  │  │  └─ -n — show line numbers
+│  │  ├─ "ERROR $USER" — search pattern (regex)
+│  │  │  └─ $USER — Current user name
+│  │  ├─ ./src — file to search (default: stdin)
+│  │  └─ 2>&1 — Send stderr (fd 2) to wherever stdout (fd 1) goes
+│  ├─ | — Pipe: send stdout of the left command to stdin of the right
+│  └─ sort -u — Sort lines
+│     └─ -u — output only unique lines
+└─ > errors.txt — Write stdout (fd 1) to file errors.txt (overwrite)
+```
 
-辞書に無いコマンドは「外部コマンド」として表示されます。
+## Features
 
-## 設定
+- **Commands and options** — combined flags (`-rn`), options with values (`-o pipefail`, `--include=*.sh`) and the role of each argument, for about 120 commands and builtins (`grep`, `sed`, `awk`, `find`, `xargs`, `curl`, `tar`, `git`, `docker`, …)
+- **Nested commands** — subcommands (`git commit`) and commands run by other commands (`sudo`, `xargs`, `env`, `find -exec`)
+- **Operators and redirections** — `|`, `&&`, `||`, `;`, `&`, `>`, `>>`, `2>&1`, `&>`, `>/dev/null`, here-documents, here-strings
+- **Expansions** — `${var:-default}`, `${file%.sh}`, `${#array[@]}`, `$?`, `$@`, `$(…)`, `<(…)`, `$((…))`
+- **Tests** — `[ ]`, `[[ ]]` and `(( ))` with `-f`, `-z`, `-eq`, `=~`, …
+- **Control flow** — `if`, `for`, `while`, `until`, `case` and functions; lines inside a block show where they are (e.g. *for loop › if statement*)
+- **Multi-line statements** — lines continued with `\`, here-document bodies, and calls to functions defined in the same script
+- **Offline and instant** — parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries; no network, no AI
+- **English and Japanese**
 
-| 設定 | 既定値 | 説明 |
+## Display modes
+
+Choose with `bashExplain.displayMode`, or click **Bash Explain** in the status bar.
+
+### Hover (default)
+
+Hover over a line to see its explanation. Press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS) to explain the line under the keyboard cursor. **Open in panel** at the bottom shows the same line in the panel.
+
+![Hover mode](images/hover.gif)
+
+### Panel
+
+A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor; click it to select it.
+
+![Panel mode](images/panel.gif)
+
+### Inline
+
+A faint one-line summary at the end of the cursor line.
+
+![Inline mode](images/inline.png)
+
+`both` shows the hover and the panel together.
+
+## Commands
+
+| Command | Key | Description |
 | --- | --- | --- |
-| `bashExplain.displayMode` | `hover` | 表示方法（`hover` / `panel` / `inline` / `both`） |
-| `bashExplain.language` | `auto` | 解説の言語（`auto` は VS Code の表示言語に合わせる / `ja` / `en`） |
-| `bashExplain.hover.followCursor` | `false` | ホバーモードでカーソル移動に追従して自動表示 |
-| `bashExplain.hover.followDelay` | `400` | 追従表示までの遅延（ミリ秒） |
-| `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
-| `bashExplain.languages` | `["shellscript"]` | 対象とする言語 ID |
+| Bash Explain: Explain Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` | Explain the line under the cursor |
+| Bash Explain: Open Explanation Panel | | Open the side panel (also in the editor title bar) |
+| Bash Explain: Select Display Mode | | Switch between hover, panel, inline and both |
 
-## 開発
+## Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `bashExplain.displayMode` | `hover` | `hover`, `panel`, `inline` or `both` |
+| `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
+| `bashExplain.hover.followCursor` | `false` | In hover mode, show the hover automatically when the cursor moves |
+| `bashExplain.hover.followDelay` | `400` | Delay (ms) before the hover follows the cursor |
+| `bashExplain.inline.maxLength` | `120` | Maximum length of the inline summary |
+| `bashExplain.languages` | `["shellscript"]` | Language IDs to explain |
+
+## Limitations
+
+- Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
+- A few constructs are mis-parsed by the underlying grammar, e.g. `[[ -f a && $x =~ re ]]` (mixing `&&` with `=~`).
+
+## Contributing
+
+Issues and pull requests are welcome at [github.com/sf624/bash-explain](https://github.com/sf624/bash-explain).
 
 ```sh
 npm install
-npm run build      # dist/ にバンドル（wasm もコピー）
-npm test           # 型チェック + analyzer の単体テスト
-npm run package    # .vsix を作成
+npm run build      # bundle into dist/ (also copies the wasm files)
+npm test           # type check + unit tests
+npm run package    # build a .vsix
 ```
 
-VS Code でこのフォルダを開き `F5` で拡張機能開発ホストが起動し、`test/fixtures/sample.sh` が開けます。
+Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
+`npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 
-`npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
-
-### 構成
-
-- `src/analyzer.ts` — 構文木から行ごとの解説（トークンの木）を作る。VS Code に依存しない
-- `src/dict/` — 構文・ビルトイン・外部コマンドの解説辞書（日英）
-- `src/ui/` — ホバー・パネル（Webview）・インライン表示
-- `media/` — パネルの Webview 用スクリプトとスタイル
-
-コマンドを追加するには `src/dict/commands.ts` に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
+To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts):
+`cmd(japanese, english, [options…], { positional: […] })`.
