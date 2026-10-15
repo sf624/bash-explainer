@@ -581,10 +581,28 @@ function expFix(s: string): string {
   return s.replace(/e([+-])(\d)$/, 'e$10$2');
 }
 
+/**
+ * toFixed with C's rounding: an exact tie (2.25 → 1 digit) goes to the even digit (2.2), where
+ * JavaScript rounds up (2.3). Only ties differ, since both otherwise round the exact binary value.
+ */
+function toFixedC(n: number, prec: number): string {
+  const s = n.toFixed(prec);
+  if (prec > 60) return s;
+  const exact = n.toFixed(Math.min(100, prec + 40));
+  const dot = exact.indexOf('.');
+  const tail = exact.slice(dot + 1 + prec);
+  if (!/^50*$/.test(tail)) return s;
+  const digits = s.replace(/^-/, '').replace('.', '');
+  if (Number(digits[digits.length - 1]) % 2 === 0) return s;
+  // toFixed went up to an odd digit; the even neighbour is the truncated value.
+  const truncated = exact.slice(0, prec ? dot + 1 + prec : dot);
+  return truncated;
+}
+
 function formatFloat(n: number, conv: string, prec: number, alt: boolean): string {
   const upper = conv === conv.toUpperCase();
   let s: string;
-  if (conv === 'f' || conv === 'F') s = n.toFixed(prec);
+  if (conv === 'f' || conv === 'F') s = toFixedC(n, prec);
   else if (conv === 'e' || conv === 'E') s = expFix(n.toExponential(prec));
   else {
     const p = prec === 0 ? 1 : prec;
@@ -593,7 +611,7 @@ function formatFloat(n: number, conv: string, prec: number, alt: boolean): strin
       s = expFix(n.toExponential(p - 1));
       if (!alt) s = s.replace(/\.?0+e/, 'e');
     } else {
-      s = n.toFixed(Math.max(0, p - 1 - e));
+      s = toFixedC(n, Math.max(0, p - 1 - e));
       if (!alt && s.includes('.')) s = s.replace(/\.?0+$/, '');
     }
   }
