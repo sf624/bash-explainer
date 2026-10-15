@@ -78,3 +78,66 @@ awk '
   NR > 1 { total += $2; count++ }
   END { printf "avg: %.2f\n", total / count }
 ' scores.txt
+
+# --- Format strings ---
+printf '%-10s|%05.2f|%x\n' "$name" 3.14159 255
+printf '\033[1;32m%s\033[0m\n' "OK"
+stamp=$(date +%Y-%m-%dT%H:%M:%S)
+date '+%-d %B %Y (%a)'
+
+# --- find expressions ---
+find . \( -name '*.log' -o -name '*.tmp' \) -mtime +7 -print
+find . -path ./node_modules -prune -o -type f -name '*.js' -print
+find /var/backups -type f -name '*.gz' ! -newer reference -exec rm -f {} +
+
+# --- Permissions ---
+chmod 755 deploy.sh
+chmod 4755 /usr/local/bin/helper
+chmod -R u+rwX,go-w shared/
+umask 077
+mkdir -m 700 secrets
+
+# --- Idioms and redirection order ---
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+: "${API_TOKEN:?API_TOKEN must be set}"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required" >&2
+fi
+make build 2>&1 >build.log
+exec 3>&1 1>&2 2>&3
+trap 'rm -rf "$workdir"' EXIT
+workdir=$(mktemp -d)
+rm -f /tmp/old.lock || true
+while IFS= read -r entry; do echo "$entry"; done < list.txt
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  echo "run directly"
+fi
+
+# --- sort / cut / tr ---
+sort -t: -k3,3nr /etc/passwd | head -n 5
+sort -k2 scores.txt
+cut -d, -f2-4,7 data.csv
+tr '[:upper:]' '[:lower:]' < names.txt
+tr -d '\r' < windows.txt > unix.txt
+
+# --- getopts ---
+while getopts ":hv:o:" opt; do
+  case "$opt" in
+    h) usage ;;
+    v) verbose=$OPTARG ;;
+    o) output=$OPTARG ;;
+    \?) echo "unknown option: -$OPTARG" >&2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+# --- perl one-liners ---
+perl -pi -e 's/foo(\d+)/bar$1/g' *.txt
+perl -lane 'print $F[1] if $F[2] > 100' data.txt
+perl -ne 'print if /^ERROR/' app.log
+perl -pie 's/a/b/' oops.txt
+
+# --- git log formats ---
+git log --pretty=format:'%h %an %ar %s' --date=short
+git log --format='%C(yellow)%h%Creset %<(20)%an %s%d' -n 5
+git log --date=format:'%Y-%m-%d %H:%M' --pretty=oneline
