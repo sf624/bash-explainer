@@ -1,0 +1,18 @@
+{
+  "displayName": "Bash Explain",
+  "description": "Explain bash scripts line by line, like regex101 for shell scripts.",
+  "cmd.showAtCursor": "Explain Current Line",
+  "cmd.openPanel": "Open Explanation Panel",
+  "cmd.selectDisplayMode": "Select Display Mode",
+  "config.displayMode": "How explanations are shown. Use **Bash Explain: Select Display Mode** or click the status bar item to switch quickly.",
+  "config.displayMode.hover": "Floating hover on the line under the mouse (or at the cursor with Ctrl+Alt+E).",
+  "config.displayMode.panel": "A side pane that follows the cursor line.",
+  "config.displayMode.inline": "A faint one-line summary after the cursor line.",
+  "config.displayMode.both": "Hover and panel together.",
+  "config.language": "Language of the explanations.",
+  "config.language.auto": "Follow the VS Code display language.",
+  "config.hover.followCursor": "In hover mode, automatically show the hover whenever the cursor moves to another position.",
+  "config.hover.followDelay": "Delay in milliseconds before the hover follows the cursor.",
+  "config.inline.maxLength": "Maximum length of the inline summary.",
+  "config.languages": "Language IDs to explain."
+}

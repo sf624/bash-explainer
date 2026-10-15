@@ -1,0 +1,18 @@
+{
+  "displayName": "Bash Explain",
+  "description": "bash スクリプトを1行ずつ解説します。シェル版 regex101。",
+  "cmd.showAtCursor": "カーソル行を解説",
+  "cmd.openPanel": "解説パネルを開く",
+  "cmd.selectDisplayMode": "表示方法を選択",
+  "config.displayMode": "解説の表示方法。**Bash Explain: 表示方法を選択** コマンドかステータスバーのクリックで素早く切り替えられます。",
+  "config.displayMode.hover": "マウスを乗せた行（または Ctrl+Alt+E でカーソル行）をフローティング表示。",
+  "config.displayMode.panel": "カーソル行に追従するサイドペインに表示。",
+  "config.displayMode.inline": "カーソル行の行末に1行の要約を薄く表示。",
+  "config.displayMode.both": "ホバーとパネルの両方。",
+  "config.language": "解説の言語。",
+  "config.language.auto": "VS Code の表示言語に合わせる。",
+  "config.hover.followCursor": "ホバーモードで、カーソルが移動するたびに自動でホバーを表示する。",
+  "config.hover.followDelay": "カーソル移動からホバー表示までの遅延（ミリ秒）。",
+  "config.inline.maxLength": "インライン要約の最大文字数。",
+  "config.languages": "解説の対象とする言語 ID。"
+}

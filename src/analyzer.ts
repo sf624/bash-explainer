@@ -1,0 +1,1012 @@
+import { Lang, Text } from './i18n';
+import type { SyntaxNode, Tree } from './parser';
+import { builtins } from './dict/builtins';
+import { commands } from './dict/commands';
+import { CommandDoc, OptDoc } from './dict/types';
+import {
+  binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
+  redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
+} from './dict/syntax';
+
+export type Kind =
+  | 'command' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
+  | 'redirect' | 'variable' | 'expansion' | 'substitution' | 'string' | 'number'
+  | 'comment' | 'assignment' | 'test' | 'pattern' | 'block' | 'error';
+
+export interface Pos { line: number; character: number }
+export interface Span { start: Pos; end: Pos }
+
+export interface Token {
+  kind: Kind;
+  /** Short label shown in lists (usually the source text, truncated). */
+  label: string;
+  explanation: string;
+  span: Span;
+  children: Token[];
+  /** One-line summary used for the inline display; falls back to `explanation`. */
+  summary?: string;
+}
+
+export interface ContextEntry { label: string; line: number }
+
+export interface LineExplanation {
+  line: number;
+  summary: string;
+  items: Token[];
+  /** Enclosing constructs, outermost first (e.g. "for loop (line 3)"). */
+  context: ContextEntry[];
+  notes: string[];
+}
+
+/** Constructs that own a body; when they span lines, each line explains only its own part. */
+const BLOCKS = new Set([
+  'for_statement', 'c_style_for_statement', 'while_statement', 'if_statement', 'elif_clause',
+  'else_clause', 'case_statement', 'case_item', 'function_definition', 'compound_statement',
+  'subshell', 'do_group', 'ERROR',
+]);
+/** Nodes that just combine statements; they count as blocks only when they contain one. */
+const WRAPPERS = new Set(['list', 'pipeline', 'redirected_statement', 'negated_command', 'program']);
+
+const TERMINATORS = new Set(['\\;', ';', "';'", '"\\;"', '"; "', '+']);
+
+const effEndRow = (n: SyntaxNode) =>
+  n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row ? n.endPosition.row - 1 : n.endPosition.row;
+const isMultiline = (n: SyntaxNode) => effEndRow(n) > n.startPosition.row;
+const intersects = (n: SyntaxNode, line: number) => n.startPosition.row <= line && effEndRow(n) >= line;
+
+function spanOf(n: SyntaxNode): Span {
+  return {
+    start: { line: n.startPosition.row, character: n.startPosition.column },
+    end: { line: n.endPosition.row, character: n.endPosition.column },
+  };
+}
+
+function shorten(text: string, max = 60): string {
+  const first = text.split('\n')[0];
+  const s = first.length > max ? first.slice(0, max - 1) + '…' : first;
+  return first.length < text.length && s === first ? s + ' …' : s;
+}
+
+function isBlockLike(n: SyntaxNode): boolean {
+  if (BLOCKS.has(n.type)) return isMultiline(n);
+  if (WRAPPERS.has(n.type)) return n.namedChildren.some(isBlockLike);
+  return false;
+}
+
+/** web-tree-sitter returns a fresh object on every access, so nodes must be compared by id. */
+const same = (a: SyntaxNode | null | undefined, b: SyntaxNode | null | undefined) => !!a && !!b && a.id === b.id;
+const has = (list: SyntaxNode[], n: SyntaxNode) => list.some((x) => x.id === n.id);
+function fieldChildren(n: SyntaxNode, field: string): SyntaxNode[] {
+  const out: SyntaxNode[] = [];
+  for (let i = 0; i < n.childCount; i++) if (n.fieldNameForChild(i) === field) out.push(n.child(i)!);
+  return out;
+}
+
+const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
+const hasGlob = (s: string) => /(^|[^\\])[*?]|\[[^\]]+\]/.test(s);
+
+export class Analyzer {
+  private line: number | null = null;
+  private context: ContextEntry[] = [];
+  private functions = new Map<string, number>();
+
+  constructor(private lang: Lang) {}
+
+  explainLine(tree: Tree, line: number): LineExplanation {
+    const root = tree.rootNode;
+    this.functions.clear();
+    for (const f of root.descendantsOfType('function_definition')) {
+      const name = f.childForFieldName('name')?.text;
+      if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
+    }
+    this.line = line;
+    this.context = [];
+    const items = this.flatten(root);
+    const result: LineExplanation = {
+      line,
+      items,
+      context: this.context,
+      notes: this.notes(root, line, items),
+      summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
+    };
+    this.line = null;
+    return result;
+  }
+
+  // ---------------------------------------------------------------- helpers
+
+  private s(ja: string, en: string): string {
+    return this.lang === 'ja' ? ja : en;
+  }
+
+  private t(text: Text): string {
+    return text[this.lang];
+  }
+
+  private lineRef(n: SyntaxNode): string {
+    const a = n.startPosition.row + 1;
+    const b = effEndRow(n) + 1;
+    if (a === b) return '';
+    return this.s(`（行 ${a}〜${b}）`, ` (lines ${a}–${b})`);
+  }
+
+  private tok(n: SyntaxNode, kind: Kind, explanation: string, children: Token[] = [], label = shorten(n.text)): Token {
+    return { kind, label, explanation, span: spanOf(n), children };
+  }
+
+  /** Explain a child node, respecting the current line filter. */
+  private sub(n: SyntaxNode | null | undefined): Token[] {
+    if (!n) return [];
+    if (this.line === null) return [this.explain(n)];
+    if (!intersects(n, this.line)) return [];
+    if (isBlockLike(n)) {
+      return n.startPosition.row === this.line ? [this.explain(n)] : this.flatten(n);
+    }
+    // A multi-line statement that is not a block (`\` continuation, heredoc…) is explained whole.
+    return [this.full(n)];
+  }
+
+  private subs(nodes: (SyntaxNode | null | undefined)[]): Token[] {
+    return nodes.flatMap((n) => this.sub(n));
+  }
+
+  /** Explain a node ignoring the line filter. */
+  private full(n: SyntaxNode): Token {
+    const saved = this.line;
+    this.line = null;
+    try {
+      return this.explain(n);
+    } finally {
+      this.line = saved;
+    }
+  }
+
+  /** Expose the parts of a block that are on the current line, recording the block as context. */
+  private flatten(n: SyntaxNode): Token[] {
+    const label = this.contextLabel(n);
+    if (label) this.context.push({ label, line: n.startPosition.row });
+    const out: Token[] = [];
+    for (const c of n.children) {
+      if (this.line !== null && !intersects(c, this.line)) continue;
+      if (c.isNamed) out.push(...this.sub(c));
+      else {
+        const k = this.anon(c);
+        if (k) out.push(k);
+      }
+    }
+    return out;
+  }
+
+  private contextLabel(n: SyntaxNode): string | undefined {
+    switch (n.type) {
+      case 'for_statement':
+      case 'c_style_for_statement':
+        return this.s('for ループ', 'for loop');
+      case 'while_statement':
+        return n.child(0)?.type === 'until' ? this.s('until ループ', 'until loop') : this.s('while ループ', 'while loop');
+      case 'if_statement':
+        return this.s('if 文', 'if statement');
+      case 'elif_clause':
+        return 'elif';
+      case 'else_clause':
+        return 'else';
+      case 'case_statement':
+        return this.s('case 文', 'case statement');
+      case 'case_item': {
+        const pats = fieldChildren(n, 'value').map((c) => c.text);
+        return this.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
+      }
+      case 'function_definition':
+        return this.s(`関数 \`${n.childForFieldName('name')?.text}\``, `function \`${n.childForFieldName('name')?.text}\``);
+      case 'compound_statement':
+        return this.s('{ } グループ', '{ } group');
+      case 'subshell':
+        return this.s('( ) サブシェル', '( ) subshell');
+      case 'ERROR':
+        return this.s('構文エラーの範囲', 'syntax error region');
+      default:
+        return undefined;
+    }
+  }
+
+  /** Token for an anonymous node (keyword or operator), or undefined for plain punctuation. */
+  private anon(n: SyntaxNode): Token | undefined {
+    const k = keywords[n.type];
+    if (k) return this.tok(n, 'keyword', this.t(k));
+    const op = listOps[n.type];
+    if (op) return this.tok(n, 'operator', this.t(op));
+    return undefined;
+  }
+
+  private kws(n: SyntaxNode): Token[] {
+    return this.anonOnLine(n.children.filter((c) => !c.isNamed));
+  }
+
+  private anonOnLine(nodes: SyntaxNode[]): Token[] {
+    return nodes
+      .filter((c) => this.line === null || intersects(c, this.line))
+      .map((c) => (c.type === ';' ? undefined : this.anon(c)))
+      .filter((t): t is Token => !!t);
+  }
+
+  /** Children (keywords and named nodes) in source order, filtered to the current line. */
+  private ordered(n: SyntaxNode, skip: (c: SyntaxNode) => boolean = () => false): Token[] {
+    const out: Token[] = [];
+    for (const c of n.children) {
+      if (skip(c)) continue;
+      if (c.isNamed) out.push(...this.sub(c));
+      else out.push(...this.anonOnLine([c]));
+    }
+    return out;
+  }
+
+  private notes(root: SyntaxNode, line: number, items: Token[]): string[] {
+    const notes: string[] = [];
+    const lineStart = { row: line, column: 0 };
+    const lineEnd = { row: line + 1, column: 0 };
+    for (const h of root.descendantsOfType('heredoc_redirect', lineStart, lineEnd)) {
+      const body = h.namedChildren.find((c) => c.type === 'heredoc_body');
+      const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
+      const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text ?? '';
+      if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
+        notes.push(this.s(
+          `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`<<${delim}\`）の本文です。`,
+          `This line is part of the here-document started by \`<<${delim}\` on line ${h.startPosition.row + 1}.`,
+        ));
+      } else if (end && end.startPosition.row === line) {
+        notes.push(this.s(`\`${end.text}\` はヒアドキュメントの終わりを示す行です。`, `\`${end.text}\` marks the end of the here-document.`));
+      }
+    }
+    for (const it of items) {
+      if (it.span.start.line < line && !notes.length && it.kind !== 'block') {
+        notes.push(this.s(
+          `この文は行 ${it.span.start.line + 1} から続いています（行末の \`\\\` による行継続など）。`,
+          `This statement starts on line ${it.span.start.line + 1} (e.g. continued with a trailing \`\\\`).`,
+        ));
+      }
+    }
+    return notes;
+  }
+
+  // ---------------------------------------------------------------- dispatch
+
+  private explain(n: SyntaxNode): Token {
+    switch (n.type) {
+      case 'comment': return this.comment(n);
+      case 'command': return this.command(n);
+      case 'declaration_command': return this.declaration(n);
+      case 'unset_command': return this.unset(n);
+      case 'variable_assignment': return this.assignment(n);
+      case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
+      case 'pipeline': return this.pipeline(n);
+      case 'list': return this.list(n);
+      case 'redirected_statement': return this.redirected(n);
+      case 'file_redirect': return this.fileRedirect(n);
+      case 'heredoc_redirect': return this.heredoc(n);
+      case 'herestring_redirect': return this.herestring(n);
+      case 'negated_command': return this.tok(n, 'operator', this.t(keywords['!']), this.subs(n.namedChildren));
+      case 'test_command': return this.test(n);
+      case 'unary_expression': return this.unary(n);
+      case 'binary_expression': return this.binary(n);
+      case 'ternary_expression': return this.tok(n, 'expansion', this.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), this.subs(n.namedChildren));
+      case 'postfix_expression': return this.tok(n, 'operator', this.s(`算術: \`${n.text}\`（${n.text.endsWith('++') ? '1 増やす' : '1 減らす'}）`, `Arithmetic: \`${n.text}\` (${n.text.endsWith('++') ? 'increment' : 'decrement'})`));
+      case 'parenthesized_expression': return this.tok(n, 'operator', this.s('括弧でまとめた式', 'Parenthesized expression'), this.subs(n.namedChildren));
+      case 'expansion': return this.expansion(n);
+      case 'simple_expansion': return this.simpleExpansion(n);
+      case 'command_substitution': return this.commandSubstitution(n);
+      case 'process_substitution': return this.processSubstitution(n);
+      case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression'), this.subs(n.namedChildren));
+      case 'string': return this.string(n);
+      case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
+      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted'));
+      case 'translated_string': return this.tok(n, 'string', this.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列', '`$"…"` string: translated according to the locale'), this.subs(n.namedChildren));
+      case 'concatenation': return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
+      case 'word': return this.word(n);
+      case 'number': return this.tok(n, 'number', this.s('数値', 'Number'));
+      case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
+      case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
+      case 'subscript': return this.subscript(n);
+      case 'regex': return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
+      case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern'));
+      case 'variable_name': return this.variable(n.text, n);
+      case 'special_variable_name': return this.variable(n.text, n);
+      case 'test_operator': return this.tok(n, 'operator', this.t(unaryTestOps[n.text] ?? binaryTestOps[n.text] ?? { ja: '演算子', en: 'Operator' }));
+      case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
+      case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+      case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
+      case 'function_definition': return this.functionDef(n);
+      case 'for_statement': return this.forStatement(n);
+      case 'c_style_for_statement': return this.block(n, 'keyword', this.s('C 言語風 for ループ: `((初期化; 条件; 更新))` で回数を制御して繰り返す', 'C-style for loop: `((init; condition; update))`') + this.lineRef(n));
+      case 'while_statement': return this.whileStatement(n);
+      case 'if_statement': return this.block(n, 'keyword', this.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + this.lineRef(n));
+      case 'elif_clause': return this.block(n, 'keyword', this.t(keywords.elif));
+      case 'else_clause': return this.block(n, 'keyword', this.t(keywords.else));
+      case 'case_statement': return this.caseStatement(n);
+      case 'case_item': return this.caseItem(n);
+      case 'ERROR': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
+      default:
+        if (!n.isNamed) return this.anon(n) ?? this.tok(n, 'operator', n.type);
+        return this.tok(n, 'argument', n.type, this.subs(n.namedChildren));
+    }
+  }
+
+  // ---------------------------------------------------------------- statements
+
+  private comment(n: SyntaxNode): Token {
+    if (n.startPosition.row === 0 && n.text.startsWith('#!')) {
+      const interp = n.text.slice(2).trim();
+      return this.tok(n, 'comment', this.s(
+        `シバン（shebang）: このスクリプトを \`${interp}\` で実行することを指定する`,
+        `Shebang: run this script with \`${interp}\``,
+      ));
+    }
+    if (/^#\s*shellcheck\s/.test(n.text)) {
+      return this.tok(n, 'comment', this.s('ShellCheck への指示コメント（警告の抑制など）', 'ShellCheck directive (e.g. disable a warning)'));
+    }
+    return this.tok(n, 'comment', this.s('コメント: `#` から行末までは実行されない', 'Comment: everything after `#` is ignored'));
+  }
+
+  private block(n: SyntaxNode, kind: Kind, explanation: string): Token {
+    return this.tok(n, kind, explanation, this.ordered(n));
+  }
+
+  private functionDef(n: SyntaxNode): Token {
+    const nameNode = n.childForFieldName('name');
+    const name = nameNode?.text ?? '?';
+    const nameTok = nameNode && (this.line === null || intersects(nameNode, this.line))
+      ? [this.tok(nameNode, 'function', this.s('関数名', 'Function name'))]
+      : [];
+    return this.tok(n, 'function', this.s(
+      `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${this.lineRef(n)}`,
+      `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${this.lineRef(n)}`,
+    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')]));
+  }
+
+  private forStatement(n: SyntaxNode): Token {
+    const v = n.childForFieldName('variable');
+    const values = fieldChildren(n, 'value');
+    const list = values.map((c) => c.text).join(' ');
+    const expl = values.length
+      ? this.s(`for ループ: \`${list}\` の各値を順に変数 \`${v?.text}\` に入れて本体を繰り返す`, `for loop: assign each of \`${list}\` to \`${v?.text}\` and run the body`)
+      : this.s(`for ループ: 位置パラメータ（"$@"）の各値を順に \`${v?.text}\` に入れて繰り返す`, `for loop over the positional parameters ("$@") as \`${v?.text}\``);
+    const children = this.ordered(n, (c) => same(c, v) || has(values, c));
+    const extra: Token[] = [];
+    if (v && (this.line === null || intersects(v, this.line))) extra.push(this.tok(v, 'variable', this.s('ループ変数: 繰り返しごとに次の値が入る', 'Loop variable: receives the next value on each iteration')));
+    for (const val of values) {
+      for (const t of this.sub(val)) {
+        t.explanation = this.s('繰り返す値: ', 'Value to iterate: ') + t.explanation;
+        extra.push(t);
+      }
+    }
+    return this.tok(n, 'keyword', expl + this.lineRef(n), sortTokens([...children, ...extra]));
+  }
+
+  private whileStatement(n: SyntaxNode): Token {
+    const until = n.child(0)?.type === 'until';
+    const expl = until
+      ? this.s('until ループ: 条件コマンドが成功（終了ステータス 0）するまで本体を繰り返す', 'until loop: repeat the body until the condition succeeds')
+      : this.s('while ループ: 条件コマンドが成功（終了ステータス 0）する間、本体を繰り返す', 'while loop: repeat the body while the condition succeeds');
+    return this.tok(n, 'keyword', expl + this.lineRef(n), this.ordered(n));
+  }
+
+  private caseStatement(n: SyntaxNode): Token {
+    const v = n.childForFieldName('value');
+    const children = this.ordered(n, (c) => same(c, v));
+    const vt = v ? this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation })) : [];
+    for (const c of children) {
+      if (c.kind === 'keyword' && c.label === 'in') c.explanation = this.s('値の後に、パターンごとの分岐を並べる', 'Introduces the list of pattern branches');
+    }
+    return this.tok(n, 'keyword', this.s(
+      `case 文: \`${v?.text}\` を各パターンと上から順に照合し、最初に一致した分岐を実行`,
+      `case statement: match \`${v?.text}\` against each pattern in order and run the first match`,
+    ) + this.lineRef(n), sortTokens([...children, ...vt]));
+  }
+
+  private caseItem(n: SyntaxNode): Token {
+    const pats = fieldChildren(n, 'value');
+    const ptext = pats.map((p) => p.text).join(' | ');
+    const isDefault = pats.length === 1 && pats[0].text === '*';
+    const expl = isDefault
+      ? this.s('既定の分岐: どのパターンにも一致しなかった場合に実行（`*` は何にでも一致）', 'Default branch: runs when nothing else matched (`*` matches anything)')
+      : this.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
+    const patToks = pats
+      .filter((p) => this.line === null || intersects(p, this.line))
+      .map((p) => this.tok(p, 'pattern', hasGlob(p.text)
+        ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`)
+        : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``)));
+    const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
+    return this.tok(n, 'pattern', expl + this.lineRef(n), sortTokens([...patToks, ...rest]));
+  }
+
+  private pipeline(n: SyntaxNode): Token {
+    const children = this.ordered(n);
+    const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
+    const t = this.tok(n, 'operator', this.s(
+      `パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につないで、同時に実行する`,
+      `Pipeline: each command's stdout feeds the next command's stdin; they run concurrently`,
+    ), children);
+    t.summary = cmds.map(summaryOf).join(' | ');
+    return t;
+  }
+
+  private list(n: SyntaxNode): Token {
+    // Flatten left-nested lists (`a && b || c`) into one sequence.
+    const parts: SyntaxNode[] = [];
+    const walk = (x: SyntaxNode) => {
+      for (const c of x.children) {
+        if (c.type === 'list' && !isBlockLike(c)) walk(c);
+        else parts.push(c);
+      }
+    };
+    walk(n);
+    const children: Token[] = [];
+    for (const c of parts) {
+      if (c.isNamed) children.push(...this.sub(c));
+      else children.push(...this.anonOnLine([c]));
+    }
+    const t = this.tok(n, 'operator', this.s(
+      'コマンドリスト: `&&`（成功したら次へ）や `||`（失敗したら次へ）で条件付きにつないだコマンド列',
+      'Command list joined by `&&` (run next on success) or `||` (run next on failure)',
+    ), children);
+    t.summary = children.map((c) => (c.kind === 'operator' && !c.children.length ? c.label : summaryOf(c))).join(' ');
+    return t;
+  }
+
+  private redirected(n: SyntaxNode): Token {
+    const body = n.childForFieldName('body');
+    const redirs = n.namedChildren.filter((c) => !same(c, body));
+    const bodyToks = this.sub(body);
+    const redirToks = this.subs(redirs);
+    // Simple commands carry their redirections as children so they read as one unit.
+    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command'].includes(body.type)) {
+      const t = bodyToks[0];
+      return { ...t, span: spanOf(n), label: shorten(n.text), children: sortTokens([...t.children, ...redirToks]) };
+    }
+    // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
+    if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) return bodyToks[0];
+    const w = this.tok(n, 'redirect', this.s(
+      `入出力のリダイレクト: ${body ? `\`${shorten(body.text, 30)}\` 全体` : 'コマンド'}の入出力を切り替える`,
+      `Redirection applied to ${body ? `\`${shorten(body.text, 30)}\` as a whole` : 'the command'}`,
+    ), sortTokens([...bodyToks, ...redirToks]));
+    w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
+    return w;
+  }
+
+  private fileRedirect(n: SyntaxNode): Token {
+    const fd = n.childForFieldName('descriptor')?.text ?? '';
+    const op = n.children.find((c) => !c.isNamed)?.type ?? '>';
+    const dests = fieldChildren(n, 'destination');
+    const dest = dests.map((d) => d.text).join(' ');
+    const make = redirects[op];
+    let expl = make ? this.t(make(fd, dest)) : this.s(`リダイレクト \`${op}\``, `Redirection \`${op}\``);
+    const special = specialDestinations[dest];
+    if (special) expl += this.s('。', '. ') + this.t(special);
+    if (fd === '2' && op === '>&' && dest === '1') {
+      expl = this.s('標準エラー出力(fd 2)を標準出力(fd 1)と同じ出力先に向ける（エラーも一緒に出力・パイプする定番の書き方）',
+        'Send stderr (fd 2) to wherever stdout (fd 1) goes (the classic way to capture errors too)');
+    }
+    if ((fd === '' || fd === '1') && op === '>&' && dest === '2') {
+      expl = this.s('標準出力を標準エラー出力(fd 2)に向ける（メッセージをエラー出力に出す定番の書き方）',
+        'Send stdout to stderr (the usual way to print an error message)');
+    }
+    const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => this.sub(d));
+    return this.tok(n, 'redirect', expl, children);
+  }
+
+  private heredoc(n: SyntaxNode): Token {
+    const op = n.children.find((c) => !c.isNamed)?.type ?? '<<';
+    const start = n.namedChildren.find((c) => c.type === 'heredoc_start')?.text ?? '';
+    const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
+    const delim = start.replace(/^['"\\]|['"]$/g, '');
+    const quoted = start !== delim;
+    let expl = this.s(
+      `ヒアドキュメント: 次の行から \`${delim}\` だけの行までを標準入力として渡す`,
+      `Here-document: the following lines up to a line containing only \`${delim}\` become stdin`,
+    );
+    if (op === '<<-') expl += this.s('。`<<-` なので各行先頭のタブは取り除かれる', '. With `<<-`, leading tabs are stripped');
+    expl += quoted
+      ? this.s('。区切り語がクォートされているので本文中の変数やコマンド置換は展開されない', '. The delimiter is quoted, so nothing in the body is expanded')
+      : this.s('。本文中の `$変数` や `$(…)` は展開される', '. `$vars` and `$(…)` in the body are expanded');
+    expl += this.lineRef(n);
+    const label = `${op}${start}`;
+    const children = [
+      ...(body ? this.subs(body.namedChildren.filter((c) => c.type !== 'heredoc_content')) : []),
+      // The grammar nests redirections that follow `<<EOF` on the same line inside the heredoc node.
+      ...this.subs(n.namedChildren.filter((c) => c.type.endsWith('redirect'))),
+    ];
+    // Keep the token span on the operator so highlighting does not swallow the whole body.
+    const opEnd = n.namedChildren.find((c) => c.type === 'heredoc_start') ?? n;
+    return {
+      kind: 'redirect', label, explanation: expl, children,
+      span: { start: spanOf(n).start, end: spanOf(opEnd).end },
+    };
+  }
+
+  private herestring(n: SyntaxNode): Token {
+    return this.tok(n, 'redirect', this.s(
+      'ヒアストリング `<<<`: 続く文字列（末尾に改行が付く）を標準入力として渡す',
+      'Here-string `<<<`: the following word (plus a newline) becomes stdin',
+    ), this.subs(n.namedChildren.filter((c) => !isPlainWord(c))));
+  }
+
+  private assignment(n: SyntaxNode): Token {
+    const name = n.childForFieldName('name');
+    const value = n.childForFieldName('value');
+    const op = n.children.find((c) => !c.isNamed && (c.type === '=' || c.type === '+='))?.type ?? '=';
+    const nm = name?.text ?? '?';
+    let expl = op === '+='
+      ? this.s(`変数 \`${nm}\` に値を追記する（配列なら要素を追加）`, `Append to variable \`${nm}\` (adds elements for arrays)`)
+      : value
+        ? this.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`)
+        : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
+    if (name?.type === 'subscript') expl = this.s(`配列 \`${name.childForFieldName('name')?.text}\` の要素 \`[${name.childForFieldName('index')?.text}]\` に代入する`, `Assign to element \`[${name.childForFieldName('index')?.text}]\` of array \`${name.childForFieldName('name')?.text}\``);
+    const children: Token[] = [];
+    if (value) {
+      for (const t of this.sub(value)) {
+        if (isPlainWord(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
+        children.push(t);
+      }
+    }
+    return this.tok(n, 'assignment', expl, children);
+  }
+
+  private declaration(n: SyntaxNode): Token {
+    const kw = n.child(0)?.type ?? 'declare';
+    const base = declarationCommands[kw];
+    const children: Token[] = [];
+    for (const c of n.namedChildren) {
+      if (this.line !== null && !intersects(c, this.line)) continue;
+      if (c.type === 'word' && c.text.startsWith('-')) {
+        const flags = c.text.slice(1).split('').map((ch) => declarationFlags['-' + ch]).filter(Boolean);
+        children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
+      } else if (c.type === 'variable_name' || c.type === 'word') {
+        children.push(this.tok(c, 'variable', this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
+      } else {
+        children.push(...this.sub(c));
+      }
+    }
+    const t = this.tok(n, 'builtin', base ? this.t(base) : kw, children);
+    t.summary = `${kw}: ${t.explanation}`;
+    return t;
+  }
+
+  private unset(n: SyntaxNode): Token {
+    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), this.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'variable_name')));
+    t.summary = `unset: ${t.explanation}`;
+    return t;
+  }
+
+  // ---------------------------------------------------------------- commands
+
+  private command(n: SyntaxNode): Token {
+    const nameNode = n.childForFieldName('name');
+    const prefix: Token[] = [];
+    const args: SyntaxNode[] = [];
+    const redirs: SyntaxNode[] = [];
+    let seenName = false;
+    for (let i = 0; i < n.childCount; i++) {
+      const c = n.child(i)!;
+      if (same(c, nameNode)) { seenName = true; continue; }
+      if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
+      if (!seenName && c.type === 'variable_assignment') {
+        for (const t of this.sub(c)) {
+          t.explanation = this.s(
+            `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
+            `Environment variable set only for this command: ${t.explanation}`,
+          );
+          prefix.push(t);
+        }
+        continue;
+      }
+      if (c.isNamed) args.push(c);
+    }
+    if (!nameNode) {
+      return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
+    }
+    const head = this.commandHead(nameNode);
+    const argToks = this.args(head.doc, args, head.name);
+    const t = this.tok(n, head.kind, head.explanation, sortTokens([
+      ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
+    ]));
+    t.summary = `${head.name}: ${head.explanation}`;
+    const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'command' && !a.children.length);
+    if (subTok) t.summary = `${head.name} ${subTok.label}: ${this.t(head.doc!.subcommands![subTok.label]?.summary ?? head.doc!.summary)}`;
+    return t;
+  }
+
+  private commandHead(nameNode: SyntaxNode): { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] } {
+    const word = nameNode.namedChildren[0] ?? nameNode;
+    const name = isPlainWord(word) ? word.text : nameNode.text;
+    if (!isPlainWord(word) && word.type !== 'raw_string') {
+      return {
+        name, kind: 'command', nameTokens: this.sub(word),
+        explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
+      };
+    }
+    const fnLine = this.functions.get(name);
+    if (fnLine !== undefined) {
+      return {
+        name, kind: 'function', nameTokens: [],
+        explanation: this.s(`このスクリプトの行 ${fnLine + 1} で定義された関数 \`${name}\` を呼び出す`, `Call the function \`${name}\` defined on line ${fnLine + 1}`),
+        doc: { summary: { ja: '', en: '' }, positional: [] },
+      };
+    }
+    const doc = lookupCommand(name);
+    if (doc) {
+      return { name, doc, kind: doc.builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(doc.summary) + (doc.builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
+    }
+    const explanation = name.includes('/')
+      ? this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``)
+      : this.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`);
+    return { name, kind: 'command', nameTokens: [], explanation };
+  }
+
+  /** Explain the argument words of a command according to its dictionary entry. */
+  private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string): Token[] {
+    const out: Token[] = [];
+    let posIndex = 0;
+    let endOfOpts = false;
+    const isFn = this.functions.has(cmdName);
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      const text = a.text;
+      if (!endOfOpts && isPlainWord(a) && text === '--') {
+        out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
+        endOfOpts = true;
+        continue;
+      }
+      const optLike = !endOfOpts && isPlainWord(a) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
+      if (optLike) {
+        i = this.option(doc, args, i, cmdName, out);
+        continue;
+      }
+      if (posIndex === 0 && doc?.wraps) {
+        out.push(this.wrapped(args.slice(i)));
+        break;
+      }
+      if (posIndex === 0 && isPlainWord(a) && doc?.subcommands?.[text]) {
+        const sd = doc.subcommands[text];
+        const rest = this.args(sd, args.slice(i + 1), `${cmdName} ${text}`);
+        out.push({ ...this.tok(a, 'command', this.s(`サブコマンド \`${cmdName} ${text}\`: `, `Subcommand \`${cmdName} ${text}\`: `) + this.t(sd.summary)), children: [] }, ...rest);
+        break;
+      }
+      // Positional argument.
+      let desc: string | undefined;
+      if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
+      else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
+      posIndex++;
+      if (this.line !== null && !intersects(a, this.line)) continue;
+      out.push(this.positional(a, desc));
+    }
+    return out;
+  }
+
+  private positional(a: SyntaxNode, desc: string | undefined): Token {
+    if (isPlainWord(a)) {
+      const base = this.word(a);
+      if (!desc) return base;
+      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') : '';
+      return this.tok(a, 'argument', desc + glob);
+    }
+    const inner = this.sub(a);
+    if (!desc) return inner[0] ?? this.tok(a, 'argument', this.s('引数', 'Argument'));
+    // Describe the role, then what the quoting/expansion does.
+    return this.tok(a, 'argument', desc, inner);
+  }
+
+  /** Explain an option at args[i]; returns the index of the last consumed word. */
+  private option(doc: CommandDoc | undefined, args: SyntaxNode[], i: number, cmdName: string, out: Token[]): number {
+    const a = args[i];
+    let text = a.text;
+    const opts = doc?.options ?? {};
+    const visible = (n: SyntaxNode) => this.line === null || intersects(n, this.line);
+    const unknown = this.s(`オプション（辞書に未登録。\`man ${cmdName.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${cmdName.split(' ')[0]}\`)`);
+    let disable = false;
+    if (cmdName === 'set' && text.startsWith('+')) { disable = true; text = '-' + text.slice(1); }
+    const pre = disable ? this.s('無効化: ', 'Disable: ') : '';
+
+    const valueTok = (opt: OptDoc, flag: string, v: SyntaxNode): Token => {
+      const known = opt.values?.[v.text];
+      return this.tok(v, 'argument', known
+        ? `${v.text}: ${this.t(known)}`
+        : this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``), isPlainWord(v) ? [] : this.sub(v));
+    };
+
+    // `--name=value`
+    const eq = text.indexOf('=');
+    if (text.startsWith('--') && eq > 0) {
+      const flag = text.slice(0, eq);
+      const opt = opts[flag];
+      if (visible(a)) {
+        const val = text.slice(eq + 1);
+        const known = opt?.values?.[val];
+        out.push(this.tok(a, 'option', (opt ? this.t(opt.text) : unknown) + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`)));
+      }
+      return i;
+    }
+
+    const exact = opts[text];
+    if (exact || text.startsWith('--') || doc?.longSingleDash) {
+      const opt = exact;
+      let last = i;
+      const children: Token[] = [];
+      if (opt?.untilTerminator) {
+        let j = i + 1;
+        while (j < args.length && !TERMINATORS.has(args[j].text)) j++;
+        const inner = args.slice(i + 1, j);
+        if (inner.length) children.push(this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: ')));
+        if (j < args.length) {
+          const term = args[j];
+          if (visible(term)) {
+            children.push(this.tok(term, 'operator', term.text === '+'
+              ? this.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
+              : this.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
+          }
+        }
+        last = Math.min(j, args.length - 1);
+      } else if (opt?.arg && i + 1 < args.length) {
+        last = i + 1;
+        if (visible(args[last])) children.push(valueTok(opt, text, args[last]));
+      }
+      if (visible(a)) out.push(this.tok(a, 'option', pre + (opt ? this.t(opt.text) : unknown), []));
+      out.push(...children);
+      return last;
+    }
+
+    // Combined short options: `-rn`, `-euo pipefail`, `-n5`.
+    const letters = text.slice(1);
+    const parts: Token[] = [];
+    let last = i;
+    const col = a.startPosition.column;
+    const row = a.startPosition.row;
+    const sub = (from: number, to: number, kind: Kind, expl: string, label: string): Token => ({
+      kind, label, explanation: expl, children: [],
+      span: { start: { line: row, character: col + from }, end: { line: row, character: col + to } },
+    });
+    for (let k = 0; k < letters.length; k++) {
+      const flag = '-' + letters[k];
+      const opt = opts[flag];
+      const at = k + 1;
+      if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
+      parts.push(sub(at, at + 1, 'option', pre + this.t(opt.text), flag));
+      if (opt.arg) {
+        if (k + 1 < letters.length) {
+          const val = letters.slice(k + 1);
+          parts.push(sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``), val));
+        } else if (i + 1 < args.length) {
+          last = i + 1;
+          if (visible(args[last])) parts.push(valueTok(opt, flag, args[last]));
+        }
+        break;
+      }
+    }
+    const own = parts.filter((p) => p.span.start.line === row && p.span.end.character <= col + text.length);
+    const tail = parts.filter((p) => !own.includes(p));
+    if (visible(a)) {
+      out.push(this.tok(a, 'option', letters.length > 1
+        ? this.s(`短いオプション ${own.filter((p) => p.kind === 'option').map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${own.filter((p) => p.kind === 'option').map((p) => `\`${p.label}\``).join(' ')}`)
+        : own[0]?.explanation ?? unknown, letters.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
+    }
+    out.push(...tail);
+    return last;
+  }
+
+  /** Words forming a command run by another command (sudo, xargs, find -exec…). */
+  private wrapped(words: SyntaxNode[], prefix = ''): Token {
+    const first = words[0];
+    const name = first.text;
+    const doc = lookupCommand(name);
+    const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
+    const children = this.args(doc, words.slice(1), name);
+    const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
+    const text = words.map((w) => w.text).join(' ');
+    return {
+      kind: doc?.builtin ? 'builtin' : 'command',
+      label: shorten(text),
+      explanation: prefix + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
+      span, children, summary: `${name}: ${explanation}`,
+    };
+  }
+
+  // ---------------------------------------------------------------- tests
+
+  private test(n: SyntaxNode): Token {
+    const open = n.child(0)?.type;
+    const expl = open === '[['
+      ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
+        'Extended test `[[ ]]`: evaluates a condition (bash-only; safe without quoting, supports `&&`, `||`, `=~`)')
+      : open === '(('
+        ? this.s('算術評価 `(( ))`: 式を計算し、結果が 0 以外なら成功(0)を返す', 'Arithmetic evaluation `(( ))`: succeeds if the result is non-zero')
+        : this.s('条件式 `[ ]`: 条件を評価し、真なら成功(0)を返す（`test` コマンドと同じ。`[` の後と `]` の前には空白が必要）',
+          'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
+    const t = this.tok(n, 'test', expl, this.subs(n.namedChildren));
+    t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
+    return t;
+  }
+
+  private inArithmetic(n: SyntaxNode): boolean {
+    for (let p = n.parent; p; p = p.parent) {
+      if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
+      if (p.type === 'test_command') return p.child(0)?.type === '((';
+    }
+    return false;
+  }
+
+  private unary(n: SyntaxNode): Token {
+    const opNode = n.childForFieldName('operator') ?? n.child(0);
+    const op = opNode?.text ?? '';
+    const operand = n.namedChildren.find((c) => !same(c, opNode));
+    if (op === '!' && !this.inArithmetic(n)) {
+      return this.tok(n, 'test', this.s(`否定: \`${operand?.text ?? ''}\` が偽なら真`, `Negation: true if \`${operand?.text ?? ''}\` is false`), this.sub(operand));
+    }
+    const d = unaryTestOps[op];
+    if (d && !this.inArithmetic(n)) {
+      return this.tok(n, 'test', this.s(`条件: \`${operand?.text ?? ''}\` が${this.t(d)}`, `Condition: \`${operand?.text ?? ''}\` ${this.t(d)}`), this.subs([operand].filter((x) => x && !isPlainWord(x))));
+    }
+    return this.tok(n, 'operator', this.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), this.subs(n.namedChildren));
+  }
+
+  private binary(n: SyntaxNode): Token {
+    const left = n.childForFieldName('left');
+    const right = n.childForFieldName('right') ?? n.namedChildren[n.namedChildren.length - 1];
+    const opNode = n.childForFieldName('operator') ?? n.children.find((c) => !same(c, left) && !same(c, right));
+    const op = opNode?.text ?? '';
+    const operands = this.subs([left, right].filter((x) => x && !isPlainWord(x)));
+    if (!this.inArithmetic(n) && binaryTestOps[op]) {
+      if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
+        return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, right]));
+      }
+      return this.tok(n, 'test', this.s(
+        `条件: \`${left?.text}\` と \`${right?.text}\` を比較 — ${this.t(binaryTestOps[op])}`,
+        `Condition: \`${left?.text}\` vs \`${right?.text}\` — ${this.t(binaryTestOps[op])}`,
+      ), operands);
+    }
+    const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
+    return this.tok(n, 'operator', assignOps.includes(op)
+      ? this.s(`算術代入: \`${left?.text}\` ${op} \`${right?.text}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${right?.text}\``)
+      : this.s(`算術演算: \`${left?.text}\` ${op} \`${right?.text}\``, `Arithmetic: \`${left?.text}\` ${op} \`${right?.text}\``), operands);
+  }
+
+  // ---------------------------------------------------------------- words & expansions
+
+  private word(n: SyntaxNode): Token {
+    const text = n.text;
+    if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
+    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`));
+    return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``));
+  }
+
+  private string(n: SyntaxNode): Token {
+    return this.tok(n, 'string', this.s(
+      'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
+      'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
+    ), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
+  }
+
+  private varDesc(name: string): string | undefined {
+    if (specialVariables[name]) return this.t(specialVariables[name]);
+    if (/^\d+$/.test(name)) return this.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
+    if (wellKnownVariables[name]) return this.t(wellKnownVariables[name]);
+    return undefined;
+  }
+
+  private variable(name: string, n: SyntaxNode): Token {
+    const d = this.varDesc(name);
+    return this.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : this.s(`変数 \`${name}\``, `Variable \`${name}\``));
+  }
+
+  private simpleExpansion(n: SyntaxNode): Token {
+    const name = n.text.slice(1);
+    const d = this.varDesc(name);
+    const t = this.tok(n, 'variable', d
+      ? `${d}`
+      : this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと空白で分割され、グロブ展開もされる）`, `Expands to the value of \`${name}\` (unquoted, it is word-split and globbed)`));
+    if (this.noSplit(n)) {
+      t.explanation = d ?? this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``);
+    }
+    return t;
+  }
+
+  /** Contexts where an unquoted expansion is not word-split (quotes, `[[ ]]`, assignments, heredocs, case). */
+  private noSplit(n: SyntaxNode): boolean {
+    const p = n.parent;
+    if (!p) return false;
+    if (['string', 'heredoc_body', 'variable_assignment', 'case_statement'].includes(p.type)) return true;
+    for (let a: SyntaxNode | null = p; a; a = a.parent) {
+      if (a.type === 'test_command') return a.child(0)?.type === '[[' || a.child(0)?.type === '((';
+      if (a.type === 'arithmetic_expansion') return true;
+      if (a.type === 'command' || a.type === 'string') return false;
+    }
+    return false;
+  }
+
+  private subscript(n: SyntaxNode): Token {
+    const name = n.childForFieldName('name')?.text ?? '';
+    const idx = n.childForFieldName('index')?.text ?? '';
+    if (idx === '@' || idx === '*') return this.tok(n, 'variable', this.s(`配列 \`${name}\` の全要素`, `All elements of array \`${name}\``));
+    return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``));
+  }
+
+  private expansion(n: SyntaxNode): Token {
+    const kids = n.children;
+    const inner = n.text.slice(2, -1);
+    const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
+    const targetText = target?.text ?? inner;
+    const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);
+    const prefixOp = kids[1] && !kids[1].isNamed ? kids[1].type : '';
+
+    if (prefixOp === '#' && target) {
+      return this.tok(n, 'expansion', isArrayAll
+        ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` の要素数`, `Number of elements in array \`${targetText.replace(/\[.*/, '')}\``)
+        : this.s(`変数 \`${targetText}\` の文字数（長さ）`, `Length of \`${targetText}\` in characters`));
+    }
+    if (prefixOp === '!' && target) {
+      return this.tok(n, 'expansion', isArrayAll
+        ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` のインデックス（キー）一覧`, `Indices (keys) of array \`${targetText.replace(/\[.*/, '')}\``)
+        : this.s(`間接参照: 変数 \`${targetText}\` の値を変数名とみなし、その変数の値を取り出す`, `Indirection: use the value of \`${targetText}\` as a variable name`));
+    }
+
+    const opIdx = kids.findIndex((c, i) => i > 0 && n.fieldNameForChild(i) === 'operator');
+    const base = target?.type === 'subscript' ? this.t(isArrayAll
+      ? { ja: `配列 \`${targetText.replace(/\[.*/, '')}\` の全要素`, en: `all elements of array \`${targetText.replace(/\[.*/, '')}\`` }
+      : { ja: `配列要素 \`${targetText}\``, en: `array element \`${targetText}\`` }) : undefined;
+    if (opIdx > 0) {
+      const op = kids[opIdx].type;
+      const close = kids[kids.length - 1];
+      const arg = n.text.slice(kids[opIdx].endIndex - n.startIndex, close.type === '}' ? close.startIndex - n.startIndex : undefined);
+      const make = expansionOps[op];
+      if (arg === '' && (op === ':-' || op === '-')) {
+        return this.tok(n, 'expansion', this.s(
+          `パラメータ展開: \`${targetText}\` が未設定なら空文字として扱う（\`set -u\` でもエラーにしないための定番）`,
+          `Parameter expansion: empty string if \`${targetText}\` is unset (avoids errors under \`set -u\`)`,
+        ));
+      }
+      if (make) {
+        const argNodes = kids.slice(opIdx + 1).filter((c) => c.isNamed && !isPlainWord(c) && c.type !== 'regex');
+        return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(targetText, arg)), this.subs(argNodes));
+      }
+    }
+    // `${var:offset:length}` has no operator field in some grammar versions.
+    const sub = inner.match(/^([A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-]):(-?\d+|\s*-\d+|[^-=+?][^}]*)$/);
+    if (sub) return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(expansionOps[':'](sub[1], sub[2])));
+    const d = base ?? this.varDesc(targetText);
+    return this.tok(n, 'variable', d
+      ? this.s(`\`\${${targetText}}\`: ${d}`, `\`\${${targetText}}\`: ${d}`)
+      : this.s(`変数 \`${targetText}\` の値に置き換わる（\`{}\` は変数名の範囲を明示する）`, `Value of \`${targetText}\` (braces delimit the name)`));
+  }
+
+  private commandSubstitution(n: SyntaxNode): Token {
+    const backtick = n.text.startsWith('`');
+    const t = this.tok(n, 'substitution', this.s(
+      `コマンド置換 ${backtick ? '`` `…` ``（旧式。`$(…)` 推奨）' : '`$(…)`'}: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える`,
+      `Command substitution ${backtick ? '`` `…` `` (legacy; prefer `$(…)`)' : '`$(…)`'}: runs the command and is replaced by its stdout (trailing newlines removed)`,
+    ), this.subs(n.namedChildren));
+    return t;
+  }
+
+  private processSubstitution(n: SyntaxNode): Token {
+    const out = n.text.startsWith('>(');
+    return this.tok(n, 'substitution', out
+      ? this.s('プロセス置換 `>(…)`: 書き込むと中のコマンドの標準入力に渡るファイル名（/dev/fd/N）に置き換わる', 'Process substitution `>(…)`: a file name whose writes go to the command\'s stdin')
+      : this.s('プロセス置換 `<(…)`: 中のコマンドの出力を、ファイルのように読めるファイル名（/dev/fd/N）に置き換える', 'Process substitution `<(…)`: a file name from which the command\'s output can be read'),
+    this.subs(n.namedChildren));
+  }
+}
+
+export function lookupCommand(name: string): CommandDoc | undefined {
+  if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
+  const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
+  if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];
+  if (base === 'egrep' || base === 'fgrep') return commands.grep;
+  if (base === 'python') return commands.python3;
+  if (base === 'zsh' || base === 'dash' || base === 'ksh') return commands.sh;
+  return undefined;
+}
+
+export function summaryOf(t: Token): string {
+  return t.summary ?? t.explanation;
+}
+
+function sortTokens(ts: Token[]): Token[] {
+  return ts.sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+}
