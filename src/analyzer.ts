@@ -5,6 +5,7 @@ import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -779,6 +780,13 @@ export class Analyzer {
         const flavor = this.regexFlavor();
         note = flavorName(flavor, this.lang);
         tokens = flavor === 'fixed' ? [] : explainRegex(lit.text, flavor, this.lang);
+        const flags = this.cmdFlags();
+        const ignoreCase = flags.has('-i') || flags.has('--ignore-case');
+        const js = flavor === 'fixed' ? literalRegex(lit.text, ignoreCase) : toJsRegex(lit.text, flavor, { ignoreCase });
+        if (js) {
+          const wrapped = grepWrap(js, flags.has('-x') || flags.has('--line-regexp'), flags.has('-w') || flags.has('--word-regexp'));
+          this.regexExampleNote(wrapped, flags.has('-v') || flags.has('--invert-match') ? 'inverted' : 'lines');
+        }
         break;
       }
       case 'sed': {
@@ -956,6 +964,39 @@ export class Analyzer {
     if (flags.includes('d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
     if (flags.includes('s') && sets.length === 1) return { role: 'squeeze', sets: lits };
     return { role: idx === 0 ? 'from' : 'to', sets: lits };
+  }
+
+  /** Short (`-v`) and long (`--invert-match`) option names used by the current command. */
+  private cmdFlags(): Set<string> {
+    const flags = new Set<string>();
+    for (const w of this.argCtx?.args ?? []) {
+      const t = w.text;
+      if (t === '--') break;
+      if (t.startsWith('--')) flags.add(t.split('=')[0]);
+      else if (/^-[A-Za-z]+$/.test(t)) for (const ch of t.slice(1)) flags.add('-' + ch);
+    }
+    return flags;
+  }
+
+  /** A line note with strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
+  private regexExampleNote(js: JsRegex, mode: 'lines' | 'inverted' | 'values'): void {
+    const ex = regexExamples(js);
+    if (!ex) return;
+    const list = (xs: string[]) => xs.map((x) => `\`${x}\``).join(this.s('、', ', '));
+    const yes = list(ex.matching);
+    const no = ex.nonMatching.length ? list(ex.nonMatching) : '';
+    let note: string;
+    if (mode === 'inverted') {
+      note = this.s(
+        `例（\`-v\` なので一致しない行が表示される）: 表示される ${no || '—'} ／ 表示されない ${yes}`,
+        `Example (with \`-v\`, non-matching lines are printed): printed ${no || '—'} / not printed ${yes}`,
+      );
+    } else if (mode === 'values') {
+      note = this.s(`例: 一致する値 ${yes}${no ? ` ／ 一致しない値 ${no}` : ''}`, `Example: matches ${yes}${no ? ` / does not match ${no}` : ''}`);
+    } else {
+      note = this.s(`例: 一致する行 ${yes}${no ? ` ／ 一致しない行 ${no}` : ''}`, `Example: matching lines ${yes}${no ? ` / non-matching lines ${no}` : ''}`);
+    }
+    this.extraNotes.push(note);
   }
 
   /** Regex dialect implied by the current command and its options. */
@@ -1150,6 +1191,8 @@ export class Analyzer {
     // Unquoted backslashes reach the regex unchanged (`\.` stays an escaped dot), so only quotes and expansions are excluded.
     if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
       const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
+      const js = toJsRegex(n.text, 'ere');
+      if (js) this.regexExampleNote(js, 'values');
       return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
     }
     return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
