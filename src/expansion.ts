@@ -270,9 +270,7 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
   const word = part('word') ?? '';
   // A plausible value for "when it has a value", chosen to look like the default.
   const sample = /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
-  const has = (val: string) => positional
-    ? (ja ? `値があれば（たとえば ${name} 番目の引数が ${val}）` : `if it has a value (say argument ${name} is ${val})`)
-    : (ja ? `値があれば（たとえば ${name}=${val}）` : `if it has a value (say ${name}=${val})`);
+  const has = (val: string) => (ja ? `${isSet(val)} なら` : `if ${isSet(val)}`);
   const emptyStr = ja ? '空文字' : 'an empty string';
   switch (p.op) {
     case ':-': case '-': case ':=': case '=': {
