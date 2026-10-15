@@ -10,6 +10,7 @@ import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/f
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainJq } from './embedded/jq';
 import { explainMode, explainUmask } from './embedded/mode';
+import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embedded/textutils';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
@@ -761,7 +762,11 @@ export class Analyzer {
    */
   private embedded(a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
     const lit = literalContent(a);
-    if (!lit) return undefined;
+    return lit && this.embeddedText(lit, lang, a);
+  }
+
+  /** Explain `lit.text`, which sits at offset `lit.base` inside `a` (e.g. after `-k` in `-k3,3n`). */
+  private embeddedText(lit: { text: string; base: number }, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
     let tokens: EmbeddedToken[];
     let note: string | undefined;
     switch (lang) {
@@ -792,6 +797,24 @@ export class Analyzer {
         if (!r) return undefined;
         tokens = r.tokens;
         note = r.note;
+        break;
+      }
+      case 'sortkey':
+      case 'cutfields':
+      case 'cutchars': {
+        const r = lang === 'sortkey' ? explainSortKey(lit.text, this.lang) : explainCutList(lit.text, lang === 'cutfields' ? 'field' : 'char', this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
+        break;
+      }
+      case 'trset': {
+        const { role, sets } = this.trContext(a);
+        const r = explainTrSet(lit.text, role, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        const summary = role === 'to' ? trSummary(sets[0] ?? '', lit.text, this.lang) : undefined;
+        note = summary ? `${r.note}${this.s('。つまり', '; that is, it ')}${summary}` : r.note;
         break;
       }
       case 'glob':
@@ -892,6 +915,18 @@ export class Analyzer {
     return out;
   }
 
+  /** How tr uses the set in `a`: its position among the sets and the -d/-s flags. */
+  private trContext(a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] } {
+    const args = this.argCtx?.args ?? [];
+    const flags = args.filter((w) => /^-[a-zA-Z]+$/.test(w.text)).map((w) => w.text.slice(1)).join('');
+    const sets = args.filter((w) => !/^-[a-zA-Z]+$/.test(w.text));
+    const idx = sets.findIndex((w) => same(w, a));
+    const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
+    if (flags.includes('d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
+    if (flags.includes('s') && sets.length === 1) return { role: 'squeeze', sets: lits };
+    return { role: idx === 0 ? 'from' : 'to', sets: lits };
+  }
+
   /** Regex dialect implied by the current command and its options. */
   private regexFlavor(): Flavor | 'fixed' {
     const ctx = this.argCtx;
@@ -938,7 +973,9 @@ export class Analyzer {
       if (visible(a)) {
         const val = text.slice(eq + 1);
         const known = opt?.values?.[val];
-        out.push(this.tok(a, 'option', (opt ? this.t(opt.text) : unknown) + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`)));
+        const emb = opt?.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: eq + 1 }, opt.lang, a) : undefined;
+        const extra = emb?.note ? ` — ${emb.note}` : '';
+        out.push(this.tok(a, 'option', (opt ? this.t(opt.text) : unknown) + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []));
       }
       return i;
     }
@@ -1001,7 +1038,14 @@ export class Analyzer {
       if (opt.arg) {
         if (k + 1 < letters.length) {
           const val = letters.slice(k + 1);
-          parts.push(sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``), val));
+          const valTok = sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``), val);
+          // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
+          const emb = opt.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: at + 1 }, opt.lang, a) : undefined;
+          if (emb) {
+            valTok.children = emb.tokens;
+            if (emb.note) valTok.explanation += ` — ${emb.note}`;
+          }
+          parts.push(valTok);
         } else if (i + 1 < args.length) {
           last = i + 1;
           if (visible(args[last])) parts.push(valueTok(opt, flag, args[last]));
