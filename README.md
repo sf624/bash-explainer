@@ -36,7 +36,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — Redirection applied
 - **Commands and options** — combined flags (`-rn`), options with values (`-o pipefail`, `--include=*.sh`) and the role of each argument, for about 120 commands and builtins (`grep`, `sed`, `awk`, `find`, `xargs`, `curl`, `tar`, `git`, `docker`, …)
 - **Nested commands** — subcommands (`git commit`) and commands run by other commands (`sudo`, `xargs`, `env`, `find -exec`)
 - **Operators and redirections** — `|`, `&&`, `||`, `;`, `&`, `>`, `>>`, `2>&1`, `&>`, `>/dev/null`, here-documents, here-strings
-- **Expansions** — `${var:-default}`, `${file%.sh}`, `${#array[@]}`, `$?`, `$@`, `$(…)`, `<(…)`, `$((…))`
+- **Expansions** — `${var:-default}`, `${file%.sh}`, `${#array[@]}`, `$?`, `$@`, `$(…)`, `<(…)`, `$((…))`. Parameter expansions are broken into their parts (name, operator, pattern, offset…) with a worked example such as `file=report.tar.gz → report.tar`
 - **Tests** — `[ ]`, `[[ ]]` and `(( ))` with `-f`, `-z`, `-eq`, `=~`, …
 - **Control flow** — `if`, `for`, `while`, `until`, `case` and functions; lines inside a block show where they are (e.g. *for loop › if statement*)
 - **Multi-line statements** — lines continued with `\`, here-document bodies, and calls to functions defined in the same script
