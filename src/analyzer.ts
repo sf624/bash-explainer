@@ -10,6 +10,7 @@ import { awkExample } from './examples/awk';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { commandExample, FILTERS } from './examples/textfilters';
+import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -467,6 +468,7 @@ export class Analyzer {
         ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`)
         : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``)));
     const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
+    if (!isDefault && (this.line === null || pats.some((p) => intersects(p, this.line!)))) this.caseExample(pats);
     return this.tok(n, 'pattern', expl + this.lineRef(n), sortTokens([...patToks, ...rest]));
   }
 
@@ -677,6 +679,7 @@ export class Analyzer {
     const head = this.commandHead(nameNode);
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
+    for (const a of args) this.wordExample(a);
     const t = this.tok(n, head.kind, head.explanation, sortTokens([
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]));
@@ -899,11 +902,18 @@ export class Analyzer {
         note = r.note;
         break;
       }
-      case 'glob':
+      case 'glob': {
         tokens = [];
         note = describeFindPattern(lit.text, this.lang);
         if (!note) return undefined;
+        // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
+        const opt = a.previousNamedSibling?.text ?? '';
+        if (!/^-i/.test(opt)) {
+          this.globExample(lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
+            opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
+        }
         break;
+      }
       case 'date': {
         // Only `+FORMAT` is a format; other date arguments set the clock.
         if (!lit.text.startsWith('+')) return undefined;
@@ -1129,11 +1139,96 @@ export class Analyzer {
   /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
   private commandExampleFor(name: string, args: SyntaxNode[]): void {
     const cmd = name.split('/').pop() ?? name;
+    if (cmd === 'printf') { this.printfExample(args); return; }
     if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
     const ex = commandExample(cmd, args.map((a) => literalContent(a)?.text));
     if (!ex) return;
     if (ex.input) this.ioExample(ex.input, ex.output);
     else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
+  }
+
+  /** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
+  private unquotedWord(a: SyntaxNode): string | undefined {
+    const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
+    if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return a.text;
+    return undefined;
+  }
+
+  /** Brace expansion results, or file names a glob matches, for an argument word. */
+  private wordExample(a: SyntaxNode): void {
+    if (this.line !== null && !intersects(a, this.line)) return;
+    const text = this.unquotedWord(a);
+    if (!text) return;
+    try {
+      const words = braceExpand(text);
+      if (words) {
+        this.examples.push({
+          title: this.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
+          sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: words.length > 12 ? [...words.slice(0, 11), '…'] : words }],
+        });
+        return;
+      }
+    } catch (e) {
+      if (!(e instanceof ShellWordsUnsupported)) throw e;
+      return;
+    }
+    if (isGlob(text)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
+  }
+
+  private globExample(pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
+    const ex = globExamples(pattern, mode);
+    if (!ex) return;
+    const [yes, no] = labels ?? (mode === 'file'
+      ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
+      : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
+    this.examples.push({ title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length) });
+  }
+
+  /** Values that select a case branch (any of its patterns) and values that do not. */
+  private caseExample(pats: SyntaxNode[]): void {
+    const texts = pats.map((p) => this.unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
+    if (texts.some((t) => t === undefined)) return;
+    const all = texts as string[];
+    const matching: string[] = [];
+    const candidates: string[] = [];
+    for (const t of all) {
+      const ex = globExamples(t, 'value');
+      if (!ex) return;
+      matching.push(...ex.matching.slice(0, all.length > 1 ? 1 : 3));
+      candidates.push(...ex.nonMatching);
+    }
+    const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value'))).slice(0, 2);
+    this.examples.push({
+      title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
+      sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
+    });
+  }
+
+  /** What `printf FORMAT ARGS…` prints, when all of them are literal. */
+  private printfExample(args: SyntaxNode[]): void {
+    const words = args.map((a) => literalContent(a)?.text);
+    if (words.some((w) => w === undefined)) return;
+    let list = words as string[];
+    let target: string | undefined;
+    if (list[0] === '-v') {
+      target = list[1];
+      list = list.slice(2);
+    }
+    if (list[0] === '--') list = list.slice(1);
+    if (!list.length) return;
+    let out: string;
+    try {
+      out = bashPrintf(list[0], list.slice(1));
+    } catch (e) {
+      if (e instanceof ShellWordsUnsupported) return;
+      throw e;
+    }
+    const endsWithNewline = out.endsWith('\n');
+    const lines = (endsWithNewline ? out.slice(0, -1) : out).split('\n').map(visible);
+    const label = target
+      ? this.s(`変数 \`${target}\` に入る値`, `Value stored in \`${target}\``)
+      : endsWithNewline ? this.s('出力', 'Output') : this.s('出力（末尾に改行なし）', 'Output (no trailing newline)');
+    this.examples.push({ title: this.s('例', 'Example'), sections: [{ label, lines, empty: this.s('（空文字）', '(empty)') }] });
   }
 
   /** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
