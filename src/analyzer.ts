@@ -3,6 +3,8 @@ import type { SyntaxNode, Tree } from './parser';
 import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
+import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
@@ -95,6 +97,8 @@ export class Analyzer {
   private line: number | null = null;
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
+  /** The command whose arguments are being explained (for option-dependent embedded languages). */
+  private argCtx: { cmd: string; args: SyntaxNode[] } | undefined;
 
   constructor(private lang: Lang) {}
 
@@ -312,7 +316,7 @@ export class Analyzer {
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
-      case 'regex': return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
+      case 'regex': return this.regexNode(n);
       case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern'));
       case 'variable_name': return this.variable(n.text, n);
       case 'special_variable_name': return this.variable(n.text, n);
@@ -650,9 +654,13 @@ export class Analyzer {
   /** Explain the argument words of a command according to its dictionary entry. */
   private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string): Token[] {
     const out: Token[] = [];
-    let posIndex = 0;
+    // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
+    let posIndex = fillsPositional(doc, args) ? 1 : 0;
     let endOfOpts = false;
     const isFn = this.functions.has(cmdName);
+    const savedCtx = this.argCtx;
+    this.argCtx = { cmd: cmdName, args };
+    try {
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
       const text = a.text;
@@ -680,24 +688,94 @@ export class Analyzer {
       let desc: string | undefined;
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
+      const lang = isFn ? undefined : doc?.positionalLang?.[posIndex];
       posIndex++;
       if (this.line !== null && !intersects(a, this.line)) continue;
-      out.push(this.positional(a, desc));
+      out.push(this.positional(a, desc, lang));
+    }
+    } finally {
+      this.argCtx = savedCtx;
     }
     return out;
   }
 
-  private positional(a: SyntaxNode, desc: string | undefined): Token {
+  private positional(a: SyntaxNode, desc: string | undefined, lang?: EmbeddedLang): Token {
+    const emb = lang && this.embedded(a, lang);
+    if (emb && desc && emb.note) desc += ` — ${emb.note}`;
     if (isPlainWord(a)) {
+      if (emb) return this.tok(a, 'argument', desc ?? this.s('引数', 'Argument'), emb.tokens);
       const base = this.word(a);
       if (!desc) return base;
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') : '';
       return this.tok(a, 'argument', desc + glob);
     }
     const inner = this.sub(a);
+    // The embedded tokens sit inside the quotes, so they become children of the string token.
+    if (emb && inner[0]) inner[0].children = sortTokens([...inner[0].children, ...emb.tokens]);
     if (!desc) return inner[0] ?? this.tok(a, 'argument', this.s('引数', 'Argument'));
     // Describe the role, then what the quoting/expansion does.
     return this.tok(a, 'argument', desc, inner);
+  }
+
+  /**
+   * Explain the contents of a quoted or plain word written in another language (a regex, a sed
+   * script…). Only literal text is handled: with expansions or escapes inside, the shell changes
+   * the text before the command sees it, so offsets would not line up.
+   */
+  private embedded(a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
+    const lit = literalContent(a);
+    if (!lit) return undefined;
+    let tokens: EmbeddedToken[];
+    let note: string | undefined;
+    switch (lang) {
+      case 'regex': {
+        const flavor = this.regexFlavor();
+        note = flavorName(flavor, this.lang);
+        tokens = flavor === 'fixed' ? [] : explainRegex(lit.text, flavor, this.lang);
+        break;
+      }
+      default:
+        return undefined;
+    }
+    return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit.base)), note };
+  }
+
+  private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, base: number): Token {
+    const text = node.text;
+    const at = (offset: number): Pos => {
+      const idx = base + offset;
+      const before = text.slice(0, idx);
+      const nl = before.lastIndexOf('\n');
+      const rows = before.split('\n').length - 1;
+      return rows === 0
+        ? { line: node.startPosition.row, character: node.startPosition.column + idx }
+        : { line: node.startPosition.row + rows, character: idx - nl - 1 };
+    };
+    const label = t.label ?? text.slice(base + t.start, base + t.end);
+    return {
+      kind: t.kind, label: shorten(label), explanation: t.explanation,
+      span: { start: at(t.start), end: at(t.end) },
+      children: t.children.map((c) => this.fromEmbedded(c, node, base)),
+    };
+  }
+
+  /** Regex dialect implied by the current command and its options. */
+  private regexFlavor(): Flavor | 'fixed' {
+    const ctx = this.argCtx;
+    if (!ctx) return 'ere';
+    const cmd = ctx.cmd.split('/').pop() ?? ctx.cmd;
+    const flags = new Set<string>();
+    for (const w of ctx.args) {
+      const t = w.text;
+      if (t === '--') break;
+      if (t.startsWith('--')) flags.add(t.split('=')[0]);
+      else if (/^-[A-Za-z]+$/.test(t)) for (const ch of t.slice(1)) flags.add('-' + ch);
+    }
+    if (cmd === 'sed') return flags.has('-E') || flags.has('-r') || flags.has('--regexp-extended') ? 'ere' : 'bre';
+    if (flags.has('-P') || flags.has('--perl-regexp')) return 'pcre';
+    if (flags.has('-F') || flags.has('--fixed-strings') || cmd === 'fgrep') return 'fixed';
+    if (flags.has('-E') || flags.has('--extended-regexp') || cmd === 'egrep') return 'ere';
+    return 'bre';
   }
 
   /** Explain an option at args[i]; returns the index of the last consumed word. */
@@ -712,6 +790,7 @@ export class Analyzer {
     const pre = disable ? this.s('無効化: ', 'Disable: ') : '';
 
     const valueTok = (opt: OptDoc, flag: string, v: SyntaxNode): Token => {
+      if (opt.lang) return this.positional(v, this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) + ': ' + this.t(opt.text), opt.lang);
       const known = opt.values?.[v.text];
       return this.tok(v, 'argument', known
         ? `${v.text}: ${this.t(known)}`
@@ -789,9 +868,11 @@ export class Analyzer {
     const own = parts.filter((p) => p.span.start.line === row && p.span.end.character <= col + text.length);
     const tail = parts.filter((p) => !own.includes(p));
     if (visible(a)) {
-      out.push(this.tok(a, 'option', letters.length > 1
-        ? this.s(`短いオプション ${own.filter((p) => p.kind === 'option').map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${own.filter((p) => p.kind === 'option').map((p) => `\`${p.label}\``).join(' ')}`)
-        : own[0]?.explanation ?? unknown, letters.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
+      const flags = own.filter((p) => p.kind === 'option');
+      // `-F,` / `-n5`: one option with its value attached is not a combination.
+      out.push(this.tok(a, 'option', flags.length > 1
+        ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
+        : flags[0]?.explanation ?? unknown, flags.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
     }
     out.push(...tail);
     return last;
@@ -828,6 +909,17 @@ export class Analyzer {
     const t = this.tok(n, 'test', expl, this.subs(n.namedChildren));
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     return t;
+  }
+
+  /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
+  private regexNode(n: SyntaxNode): Token {
+    const op = n.parent?.type === 'binary_expression' ? n.parent.childForFieldName('operator')?.text ?? n.parent.children.find((c) => c.type === '=~')?.text : undefined;
+    // Unquoted backslashes reach the regex unchanged (`\.` stays an escaped dot), so only quotes and expansions are excluded.
+    if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
+      const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, 0));
+      return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
+    }
+    return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
   }
 
   private inArithmetic(n: SyntaxNode): boolean {
@@ -1134,6 +1226,35 @@ export class Analyzer {
       : this.s('プロセス置換 `<(…)`: 中のコマンドの出力を、ファイルのように読めるファイル名（/dev/fd/N）に置き換える', 'Process substitution `<(…)`: a file name from which the command\'s output can be read'),
     this.subs(n.namedChildren));
   }
+}
+
+/** The literal text inside a raw string, plain double-quoted string or plain word, with its offset. */
+function literalContent(a: SyntaxNode): { text: string; base: number } | undefined {
+  if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
+  if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
+    return { text: a.text.slice(1, -1), base: 1 };
+  }
+  if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
+  return undefined;
+}
+
+/** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
+function fillsPositional(doc: CommandDoc | undefined, args: SyntaxNode[]): boolean {
+  const opts = doc?.options;
+  if (!opts) return false;
+  for (const a of args) {
+    const t = a.text;
+    if (t === '--') break;
+    if (opts[t.split('=')[0]]?.fillsPositional) return true;
+    if (/^-[A-Za-z]+/.test(t) && !t.startsWith('--')) {
+      for (const ch of t.slice(1)) {
+        const o = opts['-' + ch];
+        if (o?.fillsPositional) return true;
+        if (o?.arg) break;
+      }
+    }
+  }
+  return false;
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {
