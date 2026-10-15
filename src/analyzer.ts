@@ -9,7 +9,8 @@ import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './exa
 import { awkExample } from './examples/awk';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
-import { commandExample, FILTERS } from './examples/textfilters';
+import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
+import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
 import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
@@ -679,6 +680,7 @@ export class Analyzer {
     const head = this.commandHead(nameNode);
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
+    if (head.name === 'read') this.readExample(n, args);
     for (const a of args) this.wordExample(a);
     const t = this.tok(n, head.kind, head.explanation, sortTokens([
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
@@ -1140,6 +1142,7 @@ export class Analyzer {
   private commandExampleFor(name: string, args: SyntaxNode[]): void {
     const cmd = name.split('/').pop() ?? name;
     if (cmd === 'printf') { this.printfExample(args); return; }
+    if (cmd === 'xargs') { this.xargsExample(args); return; }
     if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
     const ex = commandExample(cmd, args.map((a) => literalContent(a)?.text));
     if (!ex) return;
@@ -1201,6 +1204,84 @@ export class Analyzer {
     this.examples.push({
       title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
       sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
+    });
+  }
+
+  /** The commands xargs runs for a sample input. */
+  private xargsExample(args: SyntaxNode[]): void {
+    const ex = xargsExample(args.map((a) => literalContent(a)?.text));
+    if (!ex) return;
+    const input = ex.input.endsWith('\n') ? ex.input.slice(0, -1).split('\n') : [ex.input];
+    this.examples.push({
+      title: this.s('例', 'Example'),
+      sections: [
+        { label: this.s('入力（標準入力）', 'Input (stdin)'), lines: input.map(visible) },
+        { label: this.s('実行されるコマンド', 'Commands that run'), lines: ex.commands, empty: this.s('（実行されない）', '(none)') },
+      ],
+    });
+  }
+
+  /** How `read` splits a sample line into its variables (with the IFS given before it). */
+  private readExample(n: SyntaxNode, args: SyntaxNode[]): void {
+    let ifs = ' \t\n';
+    for (const c of n.namedChildren) {
+      if (c.type !== 'variable_assignment' || c.childForFieldName('name')?.text !== 'IFS') continue;
+      const v = c.childForFieldName('value');
+      const lit = v ? literalContent(v) : { text: '' };
+      if (!lit) return;
+      ifs = lit.text.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
+    }
+    const words = args.map((a) => literalContent(a)?.text);
+    if (words.some((w) => w === undefined)) return;
+    let p;
+    try {
+      p = parseOptions(words, { flags: 'rse', values: 'aptu', long: {} });
+    } catch {
+      return;
+    }
+    const array = p.opts.find(([o]) => o === 'a')?.[1];
+    const names = (p.operands as string[]).length ? (p.operands as string[]) : array ? [] : ['REPLY'];
+    const raw = p.opts.some(([o]) => o === 'r');
+    const line = readSampleLine(names.length, ifs, !!array);
+    const r = runRead(line, names, { ifs, raw, array });
+    const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+    this.examples.push({
+      title: this.s('例', 'Example'),
+      sections: [{ label: this.s('読み込む行', 'Line read'), lines: [JSON.stringify(line)] }, { label: this.s('変数に入る値', 'Values stored'), lines }],
+    });
+  }
+
+  /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
+  private testExample(n: SyntaxNode): void {
+    const kind = n.child(0)?.type as '[' | '[[' | '((';
+    const expr = n.namedChildren[0];
+    if (!expr || n.namedChildren.length !== 1) return;
+    const operand = (x: SyntaxNode | null | undefined): Operand | undefined => {
+      if (!x) return undefined;
+      if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
+      if (x.type === 'variable_name') return { var: x.text };
+      if (x.type === 'string' && x.namedChildren.length === 1 && x.namedChildren[0].type === 'simple_expansion' && x.text === `"${x.namedChildren[0].text}"`) return operand(x.namedChildren[0]);
+      const lit = literalContent(x);
+      return lit ? { lit: lit.text } : undefined;
+    };
+    let cases;
+    if (expr.type === 'unary_expression') {
+      const op = expr.childForFieldName('operator')?.text ?? expr.child(0)?.text ?? '';
+      cases = testCases(kind, op, undefined, operand(expr.namedChildren.find((c) => c.type !== 'test_operator')));
+    } else if (expr.type === 'binary_expression') {
+      const l = expr.childForFieldName('left');
+      const r = expr.childForFieldName('right');
+      const op = expr.childForFieldName('operator')?.text ?? '';
+      cases = testCases(kind, op, operand(l), operand(r), r?.type === 'string' || r?.type === 'raw_string');
+    }
+    if (!cases) return;
+    const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
+    this.examples.push({
+      title: this.s('例', 'Example'),
+      sections: [
+        { label: this.s('真になる値', 'True when'), lines: cases.filter((c) => c.result).map((c) => show(c.vars)) },
+        { label: this.s('偽になる値', 'False when'), lines: cases.filter((c) => !c.result).map((c) => show(c.vars)) },
+      ],
     });
   }
 
@@ -1416,6 +1497,7 @@ export class Analyzer {
   // ---------------------------------------------------------------- tests
 
   private test(n: SyntaxNode): Token {
+    if (this.line === null || n.startPosition.row === this.line) this.testExample(n);
     const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
