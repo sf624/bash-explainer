@@ -1,0 +1,8 @@
+**
+!dist/extension.js
+!dist/*.wasm
+!media/**
+!package.json
+!package.nls*.json
+!README.md
+!LICENSE
