@@ -102,7 +102,10 @@ export const builtins: Record<string, CommandDoc> = {
   fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground'),
   bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background'),
   disown: b('ジョブをシェルの管理から外す（シェル終了時に終了させない）', 'Remove jobs from the job table (they survive shell exit)'),
-  umask: b('新規ファイルのパーミッションマスクを設定・表示する', 'Set or show the file creation mask'),
+  umask: b('新規ファイルのパーミッションマスク（作成時に外す権限）を設定・表示する', 'Set or show the file creation mask (permissions removed from new files)', [
+    ['-S', '記号形式（u=rwx,g=rx,o=rx など）で表示する', 'show in symbolic form (u=rwx,g=rx,…)'],
+    ['-p', '再入力できる形で表示する', 'output in a reusable form'],
+  ], { positional: [pos('マスク値（例: `022`）', 'mask (e.g. `022`)')], positionalLang: ['umask'] }),
   ulimit: b('プロセスのリソース上限を設定・表示する', 'Set or show resource limits', [
     ['-n', 'オープンできるファイル数', 'max open files'],
     ['-c', 'コアダンプのサイズ', 'core dump size'],

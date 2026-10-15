@@ -8,6 +8,7 @@ import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainJq } from './embedded/jq';
+import { explainMode, explainUmask } from './embedded/mode';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
@@ -758,6 +759,14 @@ export class Analyzer {
         tokens = explainPrintf(lit.text, this.lang);
         note = printfNote(lit.text, this.lang);
         break;
+      case 'mode':
+      case 'umask': {
+        const r = lang === 'mode' ? explainMode(lit.text, this.lang) : explainUmask(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
+        break;
+      }
       case 'glob':
         tokens = [];
         note = describeFindPattern(lit.text, this.lang);
