@@ -1,4 +1,5 @@
 import { Lang, Text } from './i18n';
+import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import type { SyntaxNode, Tree } from './parser';
 import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
@@ -103,6 +104,8 @@ export class Analyzer {
   private line: number | null = null;
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
+  /** Notes produced while explaining (e.g. the effect of several redirections). */
+  private extraNotes: string[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
   private argCtx: { cmd: string; args: SyntaxNode[] } | undefined;
 
@@ -117,12 +120,17 @@ export class Analyzer {
     }
     this.line = line;
     this.context = [];
+    this.extraNotes = [];
     const items = this.flatten(root);
+    const statements = root
+      .descendantsOfType(['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'while_statement'], { row: line, column: 0 }, { row: line + 1, column: 0 })
+      .filter((n) => intersects(n, line))
+      .map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text));
     const result: LineExplanation = {
       line,
       items,
       context: this.context,
-      notes: this.notes(root, line, items),
+      notes: [...this.notes(root, line, items), ...new Set(this.extraNotes), ...findIdioms(statements, this.lang)],
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;
@@ -471,6 +479,8 @@ export class Analyzer {
   private redirected(n: SyntaxNode): Token {
     const body = n.childForFieldName('body');
     const redirs = n.namedChildren.filter((c) => !same(c, body));
+    const effect = simulateRedirects(redirs.flatMap((r) => this.redirectInfo(r)), this.lang);
+    if (effect) this.extraNotes.push(effect);
     const bodyToks = this.sub(body);
     const redirToks = this.subs(redirs);
     // Simple commands carry their redirections as children so they read as one unit.
@@ -486,6 +496,23 @@ export class Analyzer {
     ), sortTokens([...bodyToks, ...redirToks]));
     w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
     return w;
+  }
+
+  /** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
+  private redirectInfo(r: SyntaxNode): Redirect[] {
+    if (r.type === 'file_redirect') {
+      return [{
+        op: r.children.find((c) => !c.isNamed)?.type ?? '>',
+        fd: r.childForFieldName('descriptor')?.text ?? '',
+        dest: fieldChildren(r, 'destination').map((d) => d.text).join(' '),
+      }];
+    }
+    if (r.type === 'heredoc_redirect') {
+      // Redirections written after `<<EOF` on the same line are nested in the heredoc node.
+      return [{ op: '<<', fd: '', dest: '' }, ...r.namedChildren.filter((c) => c.type === 'file_redirect').flatMap((c) => this.redirectInfo(c))];
+    }
+    if (r.type === 'herestring_redirect') return [{ op: '<<<', fd: '', dest: '' }];
+    return [];
   }
 
   private fileRedirect(n: SyntaxNode): Token {
