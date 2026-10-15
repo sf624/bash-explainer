@@ -8,6 +8,7 @@ import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
 import { perlExample, perlOptions } from './examples/perlrun';
+import { pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
@@ -475,7 +476,14 @@ export class Analyzer {
   }
 
   private pipeline(n: SyntaxNode): Token {
+    const before = this.examples.length;
     const children = this.ordered(n);
+    const whole = this.pipelineExample(n);
+    if (whole) {
+      // One example for the whole pipeline replaces the examples of its stages.
+      this.examples.length = before;
+      this.examples.push(whole);
+    }
     const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
     const t = this.tok(n, 'operator', this.s(
       `パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につないで、同時に実行する`,
@@ -1137,6 +1145,49 @@ export class Analyzer {
       }
     }
     return opts;
+  }
+
+  /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
+  private pipelineExample(n: SyntaxNode): Example | undefined {
+    if (this.line !== null && n.startPosition.row !== this.line && !isMultiline(n)) return undefined;
+    const stages: Stage[] = [];
+    let readsFile = false;
+    for (const [i, c] of n.namedChildren.entries()) {
+      let cmd = c;
+      if (c.type === 'redirected_statement') {
+        const body = c.childForFieldName('body');
+        if (!body || body.type !== 'command') return undefined;
+        // `grep x < file` reads a file; output redirections other than 2>/dev/null change where data goes.
+        for (const r of c.namedChildren.filter((x) => !same(x, body))) {
+          const op = r.children.find((x) => !x.isNamed)?.type;
+          if (r.type === 'file_redirect' && op === '<' && i === 0) readsFile = true;
+          else if (!(r.type === 'file_redirect' && r.childForFieldName('descriptor')?.text === '2')) return undefined;
+        }
+        cmd = body;
+      }
+      if (cmd.type !== 'command') return undefined;
+      const name = cmd.childForFieldName('name');
+      if (!name || !isPlainWord(name.namedChildren[0] ?? name)) return undefined;
+      const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
+      stages.push({ cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) });
+    }
+    const ex = pipelineExample(stages, readsFile);
+    if (!ex) return undefined;
+    const cap = (lines: string[]) => (lines.length > 8 ? [...lines.slice(0, 7), '…'] : lines).map(visible);
+    const sections: ExampleSection[] = [];
+    const fromFile = readsFile || readsFileOperand(stages[0]);
+    if (ex.input) sections.push({ label: fromFile ? this.s('入力（ファイルの中身の例）', 'Input (sample file contents)') : this.s('入力', 'Input'), lines: cap(ex.input) });
+    ex.steps.forEach((step, i) => {
+      // `cat file` passes the input on unchanged.
+      if (step.stage.cmd === 'cat' && i < ex.steps.length - 1) return;
+      const last = i === ex.steps.length - 1;
+      const label = step.stage.cmd === 'xargs'
+        ? this.s(`\`${step.stage.text}\` が実行するコマンド`, `Commands run by \`${step.stage.text}\``)
+        : last ? this.s(`出力（\`${step.stage.text}\` の後）`, `Output (after \`${step.stage.text}\`)`)
+          : this.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
+      sections.push({ label, lines: cap(step.output), empty: this.s('（なし）', '(nothing)') });
+    });
+    return { title: this.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections };
   }
 
   /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
