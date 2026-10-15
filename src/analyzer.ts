@@ -6,6 +6,7 @@ import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
+import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainJq } from './embedded/jq';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
@@ -657,6 +658,10 @@ export class Analyzer {
 
   /** Explain the argument words of a command according to its dictionary entry. */
   private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string): Token[] {
+    if (doc && cmdName.split('/').pop() === 'find') {
+      const found = this.findArgs(doc, args);
+      if (found) return found;
+    }
     const out: Token[] = [];
     // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
     let posIndex = fillsPositional(doc, args) ? 1 : 0;
@@ -753,6 +758,11 @@ export class Analyzer {
         tokens = explainPrintf(lit.text, this.lang);
         note = printfNote(lit.text, this.lang);
         break;
+      case 'glob':
+        tokens = [];
+        note = describeFindPattern(lit.text, this.lang);
+        if (!note) return undefined;
+        break;
       case 'date': {
         // Only `+FORMAT` is a format; other date arguments set the clock.
         if (!lit.text.startsWith('+')) return undefined;
@@ -782,6 +792,68 @@ export class Analyzer {
       span: { start: at(t.start), end: at(t.end) },
       children: t.children.map((c) => this.fromEmbedded(c, node, base)),
     };
+  }
+
+  /**
+   * find's arguments: global options, starting points, then an expression explained as a whole
+   * (`-o`, implicit `-a`, `!` and `\( \)` grouping) with the usual per-primary tokens inside.
+   * Returns undefined when the expression cannot be parsed, so the generic handling applies.
+   */
+  private findArgs(doc: CommandDoc, args: SyntaxNode[]): Token[] | undefined {
+    const out: Token[] = [];
+    const opts = doc.options ?? {};
+    const visible = (n: SyntaxNode) => this.line === null || intersects(n, this.line);
+    let i = 0;
+    while (i < args.length && /^-[HLP]$/.test(args[i].text)) i = this.option(doc, args, i, 'find', out) + 1;
+    while (i < args.length && !isExpressionStart(args[i].text)) {
+      if (visible(args[i])) out.push(this.positional(args[i], this.t(doc.positional![0])));
+      i++;
+    }
+    if (i >= args.length) return out;
+    const exprArgs = args.slice(i);
+    const words = exprArgs.map((a) => unquote(a.text));
+    const tree = parseFind(words, (w) => (opts[w]?.untilTerminator ? 'until' : opts[w]?.arg ? 1 : 0));
+    if (!tree) return undefined;
+
+    const opTok = (idx: number, ja: string, en: string): Token[] => (visible(exprArgs[idx]) ? [this.tok(exprArgs[idx], 'operator', this.s(ja, en))] : []);
+    const build = (n: FindNode): Token[] => {
+      switch (n.type) {
+        case 'primary': {
+          const tmp: Token[] = [];
+          this.option(doc, exprArgs, n.from, 'find', tmp);
+          return tmp;
+        }
+        case 'not':
+          return [...opTok(n.op, '`!`: 直後の条件を否定する', '`!`: negates what follows'), ...build(n.child)];
+        case 'group': {
+          const inner = [
+            ...opTok(n.open, '`\\(`: グループの開始（シェルに解釈されないよう `\\` でエスケープする）', '`\\(`: start of a group (escaped so the shell leaves it alone)'),
+            ...build(n.child),
+            ...opTok(n.close, '`\\)`: グループの終わり', '`\\)`: end of the group'),
+          ];
+          const span: Span = { start: spanOf(exprArgs[n.open]).start, end: spanOf(exprArgs[n.close]).end };
+          return [{ kind: 'block', label: shorten(words.slice(n.open, n.close + 1).join(' ')), span, children: inner, explanation: this.s('グループ: 括弧の中を先にまとめて評価する', 'Group: evaluated as one condition') }];
+        }
+        case 'and':
+        case 'or': {
+          const ops = new Set(n.ops);
+          const toks = n.children.flatMap(build);
+          for (const o of ops) {
+            toks.push(...(n.type === 'or'
+              ? opTok(o, '`-o`: または（左右どちらかが真なら真。`-a` より優先順位が低い）', '`-o`: or (lower precedence than `-a`)')
+              : opTok(o, '`-a`: かつ（省略しても同じ）', '`-a`: and (the default when omitted)')));
+          }
+          return sortTokens(toks);
+        }
+      }
+    };
+    const first = exprArgs[0];
+    const last = exprArgs[exprArgs.length - 1];
+    out.push({
+      kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, this.lang),
+      span: { start: spanOf(first).start, end: spanOf(last).end }, children: build(tree),
+    });
+    return out;
   }
 
   /** Regex dialect implied by the current command and its options. */
@@ -844,7 +916,18 @@ export class Analyzer {
         let j = i + 1;
         while (j < args.length && !TERMINATORS.has(args[j].text)) j++;
         const inner = args.slice(i + 1, j);
-        if (inner.length) children.push(this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: ')));
+        if (inner.length) {
+          const run = this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: '));
+          // `{}` is replaced by find (and `xargs -I{}`) with each path.
+          const mark = (ts: Token[]) => ts.forEach((t) => {
+            if (t.label === '{}') {
+              t.explanation = this.s('`{}`: 見つかったファイルのパスに置き換わる', '`{}`: replaced with the path that was found');
+              t.children = [];
+            } else mark(t.children);
+          });
+          mark(run.children);
+          children.push(run);
+        }
         if (j < args.length) {
           const term = args[j];
           if (visible(term)) {
