@@ -6,6 +6,7 @@ import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
+import { awkExample } from './examples/awk';
 import { sedExample } from './examples/sed';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
@@ -806,9 +807,12 @@ export class Analyzer {
       case 'jq':
         tokens = explainJq(lit.text, this.lang);
         break;
-      case 'awk':
+      case 'awk': {
         tokens = explainAwk(lit.text, this.lang);
+        const ex = awkExample(lit.text, this.awkOptions());
+        if (ex) this.extraNotes.push(this.ioExample(ex.input, ex.output));
         break;
+      }
       case 'printf':
         tokens = explainPrintf(lit.text, this.lang);
         note = printfNote(lit.text, this.lang);
@@ -1026,9 +1030,35 @@ export class Analyzer {
     return out.length ? out : undefined;
   }
 
+  /** -F and -v of the current awk command (literal values only). */
+  private awkOptions(): { fs?: string; vars: Record<string, string> } {
+    const args = this.argCtx?.args ?? [];
+    const opts: { fs?: string; vars: Record<string, string> } = { vars: {} };
+    const value = (i: number, prefix: number) => {
+      const lit = literalContent(args[i]);
+      return lit ? lit.text.slice(prefix) : undefined;
+    };
+    for (let i = 0; i < args.length; i++) {
+      const t = args[i].text;
+      let v: string | undefined;
+      if (t === '-F' || t === '-v') v = args[i + 1] && value(++i, 0);
+      else if (/^-[Fv]./.test(t)) v = value(i, 2);
+      else if (t.startsWith('--field-separator=')) v = value(i, '--field-separator='.length);
+      else continue;
+      if (v === undefined) continue;
+      if (t.startsWith('-v')) {
+        const eq = v.indexOf('=');
+        if (eq > 0) opts.vars[v.slice(0, eq)] = v.slice(eq + 1);
+      } else {
+        opts.fs = v === 't' ? '\t' : v.replace(/\\t/g, '\t');
+      }
+    }
+    return opts;
+  }
+
   /** "Example: `in` → `out`", or several lines separated by ⏎. */
   private ioExample(input: string[], output: string[], inPlace = false): string {
-    const show = (lines: string[]) => (lines.length ? lines.map((l) => `\`${l}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)'));
+    const show = (lines: string[]) => (lines.length ? lines.map((l) => `\`${l.replace(/\t/g, '⇥')}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)'));
     const head = inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example');
     if (input.length === 1 && output.length <= 1) return `${head}: ${show(input)} → ${show(output)}`;
     return this.s(`${head}: 入力 ${show(input)} → 出力 ${show(output)}`, `${head}: input ${show(input)} → output ${show(output)}`);
