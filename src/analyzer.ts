@@ -4,6 +4,7 @@ import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { explainJq } from './embedded/jq';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
@@ -740,6 +741,9 @@ export class Analyzer {
         tokens = explainSed(lit.text, flavor === 'ere' ? 'ere' : 'bre', this.lang);
         break;
       }
+      case 'jq':
+        tokens = explainJq(lit.text, this.lang);
+        break;
       default:
         return undefined;
     }
