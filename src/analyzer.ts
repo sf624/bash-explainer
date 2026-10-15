@@ -9,6 +9,7 @@ import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
+import { explainGitDate, explainGitFormat } from './embedded/gitformat';
 import { explainJq } from './embedded/jq';
 import { explainPerl, perlLoopNote } from './embedded/perl';
 import { explainMode, explainUmask } from './embedded/mode';
@@ -709,7 +710,9 @@ export class Analyzer {
         endOfOpts = true;
         continue;
       }
-      const optLike = !endOfOpts && isPlainWord(a) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
+      // `--pretty=format:'%h %s'` is one word made of a plain part and a quoted part.
+      const quotedLongOpt = a.type === 'concatenation' && /^--[\w-]+=/.test(a.namedChildren[0]?.text ?? '');
+      const optLike = !endOfOpts && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
         i = this.option(doc, args, i, cmdName, out);
         continue;
@@ -767,8 +770,8 @@ export class Analyzer {
     return lit && this.embeddedText(lit, lang, a);
   }
 
-  /** Explain `lit.text`, which sits at offset `lit.base` inside `a` (e.g. after `-k` in `-k3,3n`). */
-  private embeddedText(lit: { text: string; base: number }, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
+  /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */
+  private embeddedText(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
     let tokens: EmbeddedToken[];
     let note: string | undefined;
     switch (lang) {
@@ -837,6 +840,14 @@ export class Analyzer {
         note = perlLoopNote(flags, this.lang);
         break;
       }
+      case 'gitformat':
+      case 'gitdate': {
+        const r = lang === 'gitformat' ? explainGitFormat(lit.text, this.lang) : explainGitDate(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
+        break;
+      }
       case 'glob':
         tokens = [];
         note = describeFindPattern(lit.text, this.lang);
@@ -851,13 +862,13 @@ export class Analyzer {
         break;
       }
     }
-    return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit.base)), note };
+    return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit)), note };
   }
 
-  private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, base: number): Token {
+  private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal): Token {
     const text = node.text;
-    const at = (offset: number): Pos => {
-      const idx = base + offset;
+    const at = (offset: number, isEnd = false): Pos => {
+      const idx = sourceIndex(lit, offset, isEnd);
       const before = text.slice(0, idx);
       const nl = before.lastIndexOf('\n');
       const rows = before.split('\n').length - 1;
@@ -865,11 +876,11 @@ export class Analyzer {
         ? { line: node.startPosition.row, character: node.startPosition.column + idx }
         : { line: node.startPosition.row + rows, character: idx - nl - 1 };
     };
-    const label = t.label ?? text.slice(base + t.start, base + t.end);
+    const label = t.label ?? text.slice(sourceIndex(lit, t.start, false), sourceIndex(lit, t.end, true));
     return {
       kind: t.kind, label: shorten(label), explanation: t.explanation,
-      span: { start: at(t.start), end: at(t.end) },
-      children: t.children.map((c) => this.fromEmbedded(c, node, base)),
+      span: { start: at(t.start), end: at(t.end, true) },
+      children: t.children.map((c) => this.fromEmbedded(c, node, lit)),
     };
   }
 
@@ -991,9 +1002,14 @@ export class Analyzer {
       const flag = text.slice(0, eq);
       const opt = opts[flag];
       if (visible(a)) {
-        const val = text.slice(eq + 1);
+        const whole = literalContent(a);
+        const litEq = whole?.text.indexOf('=') ?? -1;
+        const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : text.slice(eq + 1);
         const known = opt?.values?.[val];
-        const emb = opt?.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: eq + 1 }, opt.lang, a) : undefined;
+        const valueLit: Literal | undefined = whole && litEq >= 0
+          ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: (whole.base ?? 0) + litEq + 1 })
+          : undefined;
+        const emb = opt?.lang && valueLit ? this.embeddedText(valueLit, opt.lang, a) : undefined;
         const extra = emb?.note ? ` — ${emb.note}` : '';
         out.push(this.tok(a, 'option', (opt ? this.t(opt.text) : unknown) + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []));
       }
@@ -1133,7 +1149,7 @@ export class Analyzer {
     const op = n.parent?.type === 'binary_expression' ? n.parent.childForFieldName('operator')?.text ?? n.parent.children.find((c) => c.type === '=~')?.text : undefined;
     // Unquoted backslashes reach the regex unchanged (`\.` stays an escaped dot), so only quotes and expansions are excluded.
     if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
-      const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, 0));
+      const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
       return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
     }
     return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
@@ -1447,14 +1463,44 @@ export class Analyzer {
   }
 }
 
-/** The literal text inside a raw string, plain double-quoted string or plain word, with its offset. */
-function literalContent(a: SyntaxNode): { text: string; base: number } | undefined {
+/**
+ * The text a command receives for a word, and where each of its characters sits in the word's
+ * source: either a fixed `base` offset, or per-character `offsets` when quotes are interleaved
+ * (`--pretty=format:'%h %s'`).
+ */
+interface Literal {
+  text: string;
+  base?: number;
+  offsets?: number[];
+}
+
+/** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
+function literalContent(a: SyntaxNode): Literal | undefined {
   if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
   if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
     return { text: a.text.slice(1, -1), base: 1 };
   }
   if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
+  if (a.type === 'concatenation' && a.startPosition.row === a.endPosition.row) {
+    let text = '';
+    const offsets: number[] = [];
+    for (const c of a.namedChildren) {
+      const lit = literalContent(c);
+      if (!lit || lit.offsets) return undefined;
+      const at = c.startIndex - a.startIndex + (lit.base ?? 0);
+      for (let k = 0; k < lit.text.length; k++) offsets.push(at + k);
+      text += lit.text;
+    }
+    return { text, offsets };
+  }
   return undefined;
+}
+
+/** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
+function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
+  if (!lit.offsets) return (lit.base ?? 0) + offset;
+  if (isEnd) return offset === 0 ? lit.offsets[0] ?? 0 : lit.offsets[offset - 1] + 1;
+  return lit.offsets[offset] ?? (lit.offsets[lit.offsets.length - 1] ?? 0) + 1;
 }
 
 /** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
