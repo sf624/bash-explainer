@@ -8,6 +8,7 @@ import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
+import { explainGetopts } from './embedded/getopts';
 import { explainJq } from './embedded/jq';
 import { explainMode, explainUmask } from './embedded/mode';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embedded/textutils';
@@ -815,6 +816,13 @@ export class Analyzer {
         tokens = r.tokens;
         const summary = role === 'to' ? trSummary(sets[0] ?? '', lit.text, this.lang) : undefined;
         note = summary ? `${r.note}${this.s('。つまり', '; that is, it ')}${summary}` : r.note;
+        break;
+      }
+      case 'getopts': {
+        const r = explainGetopts(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
         break;
       }
       case 'glob':

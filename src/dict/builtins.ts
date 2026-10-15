@@ -70,7 +70,7 @@ export const builtins: Record<string, CommandDoc> = {
   eval: b('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)'),
   exec: b('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [], { wraps: true }),
   shift: b('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], { positional: [pos('ずらす数（省略時は 1）', 'how many (default 1)')] }),
-  getopts: b('スクリプトのオプション引数を1つずつ解析する', 'Parse script options one at a time', [], { positional: [pos('受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)'), pos('見つけたオプションを入れる変数名', 'variable to receive the option')] }),
+  getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], { positional: [pos('受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)'), pos('見つけたオプションの文字を入れる変数名', 'variable that receives the option letter')], positionalLang: ['getopts'] }),
   wait: b('バックグラウンドジョブの終了を待つ', 'Wait for background jobs to finish', [
     ['-n', 'どれか1つの終了を待つ', 'wait for any single job'],
   ], { positional: [pos('待つプロセスID（省略時は全て）', 'PID to wait for (default: all)')] }),
