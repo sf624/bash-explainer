@@ -4,6 +4,7 @@ import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
 import {
@@ -732,6 +733,11 @@ export class Analyzer {
         const flavor = this.regexFlavor();
         note = flavorName(flavor, this.lang);
         tokens = flavor === 'fixed' ? [] : explainRegex(lit.text, flavor, this.lang);
+        break;
+      }
+      case 'sed': {
+        const flavor = this.regexFlavor();
+        tokens = explainSed(lit.text, flavor === 'ere' ? 'ere' : 'bre', this.lang);
         break;
       }
       default:
