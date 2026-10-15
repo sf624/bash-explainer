@@ -4,6 +4,7 @@ import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { explainAwk } from './embedded/awk';
 import { explainJq } from './embedded/jq';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
@@ -744,8 +745,9 @@ export class Analyzer {
       case 'jq':
         tokens = explainJq(lit.text, this.lang);
         break;
-      default:
-        return undefined;
+      case 'awk':
+        tokens = explainAwk(lit.text, this.lang);
+        break;
     }
     return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit.base)), note };
   }
