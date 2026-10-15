@@ -13,7 +13,7 @@ export interface EmbeddedToken {
   label?: string;
 }
 
-export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date';
+export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob';
 
 /** Pick the string for the current language. */
 export function pick(lang: Lang) {
