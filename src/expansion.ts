@@ -268,15 +268,22 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
   }
   const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
   const word = part('word') ?? '';
+  // A plausible value for "when it has a value", chosen to look like the default.
+  const sample = /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
+  const has = (val: string) => positional
+    ? (ja ? `値があれば（たとえば ${name} 番目の引数が ${val}）` : `if it has a value (say argument ${name} is ${val})`)
+    : (ja ? `値があれば（たとえば ${name}=${val}）` : `if it has a value (say ${name}=${val})`);
+  const emptyStr = ja ? '空文字' : 'an empty string';
   switch (p.op) {
     case ':-': case '-': case ':=': case '=': {
-      const fallback = `${word || '""'}${/\$/.test(word) ? (ja ? ' の展開結果' : ' (expanded)') : ''}`;
+      const fallback = word ? `${word}${/\$/.test(word) ? (ja ? ' の展開結果' : ' (expanded)') : ''}` : emptyStr;
       const none = missing(p.op.startsWith(':'));
-      return ja ? `${none}なら → ${fallback}、${isSet('abc')} なら → abc` : `if ${none} → ${fallback}; if ${isSet('abc')} → abc`;
+      return ja ? `${none}なら → ${fallback}、${has(sample)} → ${sample}` : `if ${none} → ${fallback}; ${has(sample)} → ${sample}`;
     }
     case ':+': case '+': {
       const none = missing(p.op === ':+');
-      return ja ? `${isSet('abc')} なら → ${word || '""'}、${none}なら → ""` : `if ${isSet('abc')} → ${word || '""'}; if ${none} → ""`;
+      const alt = word || emptyStr;
+      return ja ? `${has(sample)} → ${alt}、${none}なら → ${emptyStr}` : `${has(sample)} → ${alt}; if ${none} → ${emptyStr}`;
     }
     case ':?': case '?':
       return undefined;

@@ -78,7 +78,7 @@ describe('examples match bash', () => {
 describe('expansion tokens', () => {
   it('explains each part at its own column', () => {
     const t = expansionToken('echo "${LOG_DIR:-$HOME/log}"');
-    assert.match(t.explanation, /e\.g\. if LOG_DIR is unset or empty → \$HOME\/log \(expanded\); if LOG_DIR=abc → abc/);
+    assert.match(t.explanation, /e\.g\. if LOG_DIR is unset or empty → \$HOME\/log \(expanded\); if it has a value \(say LOG_DIR=hello\) → hello/);
     assert.deepStrictEqual(t.children.map((c) => [c.label, c.span.start.character]), [['LOG_DIR', 8], [':-', 15], ['$HOME/log', 17]]);
     const word = t.children[2];
     assert.match(word.explanation, /Default/);
@@ -86,9 +86,10 @@ describe('expansion tokens', () => {
   });
 
   it('describes positional parameters as arguments, not assignments', () => {
-    assert.match(expansionToken('echo ${2:-/tmp}').explanation, /e\.g\. if argument 2 is missing or empty → \/tmp; if argument 2 is abc → abc/);
-    assert.match(expansionToken('echo ${2:-/tmp}', 'ja').explanation, /例: 2 番目の引数が無いか空なら → \/tmp、2 番目の引数が abc なら → abc/);
-    assert.match(expansionToken('echo ${1+set}', 'en').explanation, /e\.g\. if argument 1 is abc → set; if argument 1 is missing → ""/);
+    assert.match(expansionToken('echo ${2:-/tmp}').explanation, /e\.g\. if argument 2 is missing or empty → \/tmp; if it has a value \(say argument 2 is \/data\) → \/data$/);
+    assert.match(expansionToken('echo ${2:-/tmp}', 'ja').explanation, /例: 2 番目の引数が無いか空なら → \/tmp、値があれば（たとえば 2 番目の引数が \/data） → \/data$/);
+    assert.match(expansionToken('echo ${1+set}', 'en').explanation, /e\.g\. if it has a value \(say argument 1 is hello\) → set; if argument 1 is missing → an empty string$/);
+    assert.match(expansionToken('echo ${PORT:-8080}', 'en').explanation, /say PORT=42\) → 42$/);
     assert.match(expansionToken('echo ${1%.*}').explanation, /e\.g\. if argument 1 is report\.tar\.gz → report\.tar/);
   });
 
