@@ -113,12 +113,47 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   echo "run directly"
 fi
 
-# --- sort / cut / tr ---
+# --- Text filters: sort / uniq / cut / tr / head / tail / seq ---
 sort -t: -k3,3nr /etc/passwd | head -n 5
 sort -k2 scores.txt
+sort -u -t, -k1,1 people.csv
+uniq -c sorted.txt
+uniq -d emails.txt
 cut -d, -f2-4,7 data.csv
+cut -c1-8 hashes.txt
 tr '[:upper:]' '[:lower:]' < names.txt
 tr -d '\r' < windows.txt > unix.txt
+tr -s ' ' < spaced.txt
+head -n -2 report.txt
+tail -n +2 table.csv
+seq -w 1 3 10
+basename /var/log/nginx/access.log .log
+dirname /var/log/nginx/access.log
+
+# --- printf / brace expansion / globs / case patterns ---
+printf '%5.1f%%\n' 2.25 99.5
+printf '%s=%s\n' user alice shell bash
+mkdir -p project/{src,test,docs}
+cp config.yml{,.bak}
+echo {1..10..3} {a..e}
+ls *.[ch]
+rm -f log-202[0-4]-??.txt
+case "$archive" in
+  *.tar.gz|*.tgz) tar -xzf "$archive" ;;
+  [Rr]eadme*) less "$archive" ;;
+  ?) echo "single character" ;;
+esac
+
+# --- xargs / conditions / read and IFS ---
+find . -name '*.tmp' -print0 | xargs -0 rm -f
+xargs -n 2 echo < pairs.txt
+ls *.txt | xargs -I{} mv {} {}.bak
+[ "$count" -gt 10 ] && echo "many"
+[ -z "$answer" ] && answer=no
+[[ $file == *.txt ]] && echo "text file"
+(( retries >= 3 )) && exit 1
+IFS=: read -r user _ uid gid rest <<< "$entry"
+IFS=, read -ra fields <<< "$csv_line"
 
 # --- getopts ---
 while getopts ":hv:o:" opt; do
@@ -135,9 +170,20 @@ shift $((OPTIND - 1))
 perl -pi -e 's/foo(\d+)/bar$1/g' *.txt
 perl -lane 'print $F[1] if $F[2] > 100' data.txt
 perl -ne 'print if /^ERROR/' app.log
+perl -lne '$c{$_}++; END { print "$_ $c{$_}" for sort keys %c }' words.txt
+perl -pe 's/(\w+)/\u$1/g' title.txt
+perl -nle '$sum += $_; END { print $sum }' numbers.txt
 perl -pie 's/a/b/' oops.txt
 
 # --- git log formats ---
 git log --pretty=format:'%h %an %ar %s' --date=short
 git log --format='%C(yellow)%h%Creset %<(20)%an %s%d' -n 5
 git log --date=format:'%Y-%m-%d %H:%M' --pretty=oneline
+
+# --- Whole pipelines ---
+grep -i error app.log | sort | uniq -c | sort -rn | head -n 3
+cat access.log | awk '{ print $1 }' | sort | uniq -c
+echo "hello world" | tr a-z A-Z
+seq 10 | awk '$1 % 2 == 0' | sort -rn
+cut -d: -f1,7 /etc/passwd | grep 'bash$' | sort
+grep -o '[0-9]\+' build.log | sort -n | uniq

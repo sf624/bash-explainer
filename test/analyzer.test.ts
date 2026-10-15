@@ -197,3 +197,15 @@ describe('robustness', () => {
     tree.delete();
   });
 });
+
+describe('standalone arithmetic commands', () => {
+  it('explains (( )) as a test and shows true/false values', () => {
+    const e = explain('(( retries >= 3 )) && exit 1');
+    assert.strictEqual(find(e, '(( retries >= 3 ))', 'test').kind, 'test');
+    assert.deepStrictEqual(e.examples[0].sections.map((s) => s.lines), [['retries="3"'], ['retries="2"']]);
+  });
+  it('shows matching values for bracket patterns in case', () => {
+    const e = explain('case "$f" in\n  [Rr]eadme*) less "$f" ;;\nesac', 1);
+    assert.ok(e.examples[0].sections[0].lines.every((v) => /^[Rr]eadme/.test(v)));
+  });
+});

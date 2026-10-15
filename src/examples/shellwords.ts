@@ -158,7 +158,7 @@ export function globExamples(pattern: string, mode: GlobMode): { matching: strin
         const end = pattern.indexOf(']', i + 2);
         if (end > 0) {
           const re = new RegExp(`^${globToRegex(pattern.slice(i, end + 1), 'value')!.source.slice(1, -1)}$`);
-          const pool = 'abcxyz0123456789ABC-_';
+          const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~';
           const ok = pool.split('').filter((ch) => re.test(ch));
           out += ok[v % Math.max(ok.length, 1)] ?? 'a';
           i = end;
