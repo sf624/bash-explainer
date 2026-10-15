@@ -8,11 +8,24 @@
   let flat = [];
   /** @type {HTMLElement[]} */
   let segments = [];
+  /** The last rendered update; an identical one is ignored so a text selection survives. */
+  let lastUpdate = '';
+
+  /** True while the user has text selected (a drag to copy should not count as a click). */
+  const selecting = () => String(window.getSelection() ?? '').length > 0;
 
   window.addEventListener('message', (event) => {
     const msg = event.data;
-    if (msg.type === 'update') render(msg);
-    if (msg.type === 'empty') showEmpty(msg.message);
+    if (msg.type === 'update') {
+      const key = JSON.stringify(msg);
+      if (key === lastUpdate) return;
+      lastUpdate = key;
+      render(msg);
+    }
+    if (msg.type === 'empty') {
+      lastUpdate = '';
+      showEmpty(msg.message);
+    }
   });
   vscode.postMessage({ type: 'ready' });
 
@@ -64,7 +77,9 @@
     flat.push({ token, el: row });
     row.addEventListener('mouseenter', () => focus(index));
     row.addEventListener('mouseleave', () => focus(-1));
-    row.addEventListener('click', () => vscode.postMessage({ type: 'reveal', span: token.span }));
+    row.addEventListener('click', () => {
+      if (!selecting()) vscode.postMessage({ type: 'reveal', span: token.span });
+    });
     if (token.children.length) {
       const ul = document.createElement('ul');
       ul.append(...token.children.map((c) => item(c, depth + 1)));
@@ -110,6 +125,7 @@
         span.addEventListener('mouseenter', () => focus(idx));
         span.addEventListener('mouseleave', () => focus(-1));
         span.addEventListener('click', () => {
+          if (selecting()) return;
           flat[idx].el.scrollIntoView({ block: 'nearest' });
           vscode.postMessage({ type: 'reveal', span: flat[idx].token.span });
         });
