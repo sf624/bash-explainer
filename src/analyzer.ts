@@ -54,6 +54,20 @@ export interface LineExplanation {
   /** Enclosing constructs, outermost first (e.g. "for loop (line 3)"). */
   context: ContextEntry[];
   notes: string[];
+  /** Worked examples (e.g. input and output of a sed script), shown line by line. */
+  examples: Example[];
+}
+
+export interface ExampleSection {
+  label: string;
+  lines: string[];
+  /** Shown instead when `lines` is empty (e.g. "(no output)"). */
+  empty?: string;
+}
+
+export interface Example {
+  title: string;
+  sections: ExampleSection[];
 }
 
 /** Constructs that own a body; when they span lines, each line explains only its own part. */
@@ -114,6 +128,8 @@ export class Analyzer {
   private functions = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
+  /** Worked examples produced while explaining (grep, sed, awk, jq). */
+  private examples: Example[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
   private argCtx: { cmd: string; args: SyntaxNode[] } | undefined;
 
@@ -129,6 +145,7 @@ export class Analyzer {
     this.line = line;
     this.context = [];
     this.extraNotes = [];
+    this.examples = [];
     const items = this.flatten(root);
     const statements = root
       .descendantsOfType(['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'while_statement'], { row: line, column: 0 }, { row: line + 1, column: 0 })
@@ -139,6 +156,8 @@ export class Analyzer {
       items,
       context: this.context,
       notes: [...this.notes(root, line, items), ...new Set(this.extraNotes), ...findIdioms(statements, this.lang)],
+      // Each -e of sed explains the same combined script, so drop repeated examples.
+      examples: this.examples.filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;
@@ -788,7 +807,7 @@ export class Analyzer {
         const js = flavor === 'fixed' ? literalRegex(lit.text, ignoreCase) : toJsRegex(lit.text, flavor, { ignoreCase });
         if (js) {
           const wrapped = grepWrap(js, flags.has('-x') || flags.has('--line-regexp'), flags.has('-w') || flags.has('--word-regexp'));
-          this.regexExampleNote(wrapped, flags.has('-v') || flags.has('--invert-match') ? 'inverted' : 'lines');
+          this.regexExample(wrapped, flags.has('-v') || flags.has('--invert-match') ? 'inverted' : 'lines');
         }
         break;
       }
@@ -802,7 +821,7 @@ export class Analyzer {
           quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'),
           extended: flavor === 'ere',
         });
-        if (ex) this.extraNotes.push(this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place')));
+        if (ex) this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place'));
         break;
       }
       case 'jq': {
@@ -813,13 +832,13 @@ export class Analyzer {
           nullInput: flags.has('-n') || flags.has('--null-input'),
           vars: this.jqVars(),
         });
-        if (runs) this.extraNotes.push(this.jqExampleNote(runs));
+        if (runs) this.jqExamples(runs);
         break;
       }
       case 'awk': {
         tokens = explainAwk(lit.text, this.lang);
         const ex = awkExample(lit.text, this.awkOptions());
-        if (ex) this.extraNotes.push(this.ioExample(ex.input, ex.output));
+        if (ex) this.ioExample(ex.input, ex.output);
         break;
       }
       case 'printf':
@@ -1000,25 +1019,27 @@ export class Analyzer {
     return flags;
   }
 
-  /** A line note with strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
-  private regexExampleNote(js: JsRegex, mode: 'lines' | 'inverted' | 'values'): void {
+  /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
+  private regexExample(js: JsRegex, mode: 'lines' | 'inverted' | 'values'): void {
     const ex = regexExamples(js);
     if (!ex) return;
-    const list = (xs: string[]) => xs.map((x) => `\`${x}\``).join(this.s('、', ', '));
-    const yes = list(ex.matching);
-    const no = ex.nonMatching.length ? list(ex.nonMatching) : '';
-    let note: string;
+    const yes = ex.matching;
+    const no = ex.nonMatching;
+    let sections: ExampleSection[];
     if (mode === 'inverted') {
-      note = this.s(
-        `例（\`-v\` なので一致しない行が表示される）: 表示される ${no || '—'} ／ 表示されない ${yes}`,
-        `Example (with \`-v\`, non-matching lines are printed): printed ${no || '—'} / not printed ${yes}`,
-      );
+      sections = [
+        { label: this.s('表示される行（一致しない行）', 'Printed (lines that do not match)'), lines: no },
+        { label: this.s('表示されない行（一致する行）', 'Not printed (lines that match)'), lines: yes },
+      ];
     } else if (mode === 'values') {
-      note = this.s(`例: 一致する値 ${yes}${no ? ` ／ 一致しない値 ${no}` : ''}`, `Example: matches ${yes}${no ? ` / does not match ${no}` : ''}`);
+      sections = [{ label: this.s('一致する値', 'Matches'), lines: yes }, { label: this.s('一致しない値', 'Does not match'), lines: no }];
     } else {
-      note = this.s(`例: 一致する行 ${yes}${no ? ` ／ 一致しない行 ${no}` : ''}`, `Example: matching lines ${yes}${no ? ` / non-matching lines ${no}` : ''}`);
+      sections = [{ label: this.s('一致する行', 'Matching lines'), lines: yes }, { label: this.s('一致しない行', 'Non-matching lines'), lines: no }];
     }
-    this.extraNotes.push(note);
+    this.examples.push({
+      title: mode === 'inverted' ? this.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : this.s('例', 'Example'),
+      sections: sections.filter((s) => s.lines.length),
+    });
   }
 
   /** The scripts given to sed with -e/--expression, in order; undefined when there are none. */
@@ -1060,15 +1081,21 @@ export class Analyzer {
     return vars;
   }
 
-  private jqExampleNote(runs: JqRun[]): string {
-    const show = (r: JqRun) => {
-      const out = r.error
-        ? this.s(`エラー「${r.error}」`, `error "${r.error}"`)
-        : r.outputs.length ? r.outputs.map((o) => `\`${o}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)');
-      return this.s(`入力 \`${toJson(r.input)}\` → 出力 ${out}`, `input \`${toJson(r.input)}\` → output ${out}`);
-    };
-    if (runs.length === 1) return `${this.s('例', 'Example')}: ${show(runs[0])}`;
-    return this.s(`例: ${show(runs[0])} ／ 値が無いとき: ${show(runs[1])}`, `Example: ${show(runs[0])} / when the value is missing: ${show(runs[1])}`);
+  private jqExamples(runs: JqRun[]): void {
+    runs.forEach((r, i) => {
+      // Short JSON stays on one line; longer JSON is indented like jq prints it.
+      const compact = toJson(r.input);
+      const input = compact.length <= 60 ? [compact] : JSON.stringify(r.input, null, 2).split('\n');
+      this.examples.push({
+        title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
+        sections: [
+          { label: this.s('入力', 'Input'), lines: input },
+          r.error
+            ? { label: this.s('エラー', 'Error'), lines: [r.error] }
+            : { label: this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') },
+        ],
+      });
+    });
   }
 
   /** -F and -v of the current awk command (literal values only). */
@@ -1097,12 +1124,16 @@ export class Analyzer {
     return opts;
   }
 
-  /** "Example: `in` → `out`", or several lines separated by ⏎. */
-  private ioExample(input: string[], output: string[], inPlace = false): string {
-    const show = (lines: string[]) => (lines.length ? lines.map((l) => `\`${l.replace(/\t/g, '⇥')}\``).join(' ⏎ ') : this.s('（出力なし）', '(no output)'));
-    const head = inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example');
-    if (input.length === 1 && output.length <= 1) return `${head}: ${show(input)} → ${show(output)}`;
-    return this.s(`${head}: 入力 ${show(input)} → 出力 ${show(output)}`, `${head}: input ${show(input)} → output ${show(output)}`);
+  /** An input → output example (sed, awk); tabs are shown as ⇥. */
+  private ioExample(input: string[], output: string[], inPlace = false): void {
+    const tabs = (lines: string[]) => lines.map((l) => l.replace(/\t/g, '⇥'));
+    this.examples.push({
+      title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example'),
+      sections: [
+        { label: this.s('入力', 'Input'), lines: tabs(input) },
+        { label: inPlace ? this.s('書き換え後', 'After') : this.s('出力', 'Output'), lines: tabs(output), empty: this.s('（出力なし）', '(no output)') },
+      ],
+    });
   }
 
   /** Regex dialect implied by the current command and its options. */
@@ -1298,7 +1329,7 @@ export class Analyzer {
     if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
       const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
       const js = toJsRegex(n.text, 'ere');
-      if (js) this.regexExampleNote(js, 'values');
+      if (js) this.regexExample(js, 'values');
       return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
     }
     return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
