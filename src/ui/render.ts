@@ -1,4 +1,4 @@
-import { LineExplanation, Pos, Token } from '../analyzer';
+import { Kind, LineExplanation, Pos, Token } from '../analyzer';
 import { Lang } from '../i18n';
 
 export const ui = {
@@ -38,11 +38,26 @@ export const ui = {
 
 export type DisplayMode = keyof typeof ui.ja.modes;
 
-function code(text: string): string {
-  const flat = text.replace(/\s*\n\s*/g, ' ⏎ ');
-  const fence = flat.includes('`') ? '`` ' : '`';
-  const close = flat.includes('`') ? ' ``' : '`';
-  return fence + flat + close;
+/** Theme colours per token kind; the same palette as the panel (media/panel.css). */
+const KIND_COLOR: Record<Kind, string> = {
+  command: '--vscode-charts-blue', builtin: '--vscode-charts-blue', function: '--vscode-charts-blue',
+  option: '--vscode-charts-orange',
+  argument: '--vscode-charts-green', string: '--vscode-charts-green', number: '--vscode-charts-green',
+  operator: '--vscode-charts-purple', keyword: '--vscode-charts-purple', block: '--vscode-charts-purple', test: '--vscode-charts-purple',
+  redirect: '--vscode-charts-yellow', pattern: '--vscode-charts-yellow',
+  variable: '--vscode-charts-red', expansion: '--vscode-charts-red', substitution: '--vscode-charts-red', assignment: '--vscode-charts-red',
+  comment: '--vscode-descriptionForeground',
+  error: '--vscode-errorForeground',
+};
+
+/** Escape text for inline HTML inside Markdown (entities also stop `*`, `_` etc. acting as Markdown). */
+function esc(text: string): string {
+  return text.replace(/[&<>"'*_`\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/ /g, '&nbsp;');
+}
+
+/** Hover HTML only keeps `<span style>` in exactly this shape: `color:<#hex|var(--vscode-…)>;`. */
+function colored(text: string, kind: Kind): string {
+  return `<span style="color:var(${KIND_COLOR[kind]});">${esc(text)}</span>`;
 }
 
 function contains(t: Token, p: Pos): boolean {
@@ -52,11 +67,42 @@ function contains(t: Token, p: Pos): boolean {
   return afterStart && beforeEnd;
 }
 
+/** Split a line into runs, each owned by the deepest token covering it (as the panel does). */
+export function lineSegments(text: string, line: number, items: Token[]): { text: string; kind?: Kind }[] {
+  const owner: (Token | undefined)[] = new Array(text.length).fill(undefined);
+  const depthAt: number[] = new Array(text.length).fill(-1);
+  const visit = (tok: Token, depth: number) => {
+    const { start, end } = tok.span;
+    if (start.line <= line && end.line >= line) {
+      const from = start.line < line ? 0 : start.character;
+      const to = Math.min(end.line > line ? text.length : end.character, text.length);
+      for (let i = from; i < to; i++) {
+        if (depth >= depthAt[i]) {
+          depthAt[i] = depth;
+          owner[i] = tok;
+        }
+      }
+    }
+    tok.children.forEach((c) => visit(c, depth + 1));
+  };
+  items.forEach((t) => visit(t, 0));
+  const out: { text: string; kind?: Kind }[] = [];
+  for (let i = 0; i < text.length;) {
+    let j = i;
+    while (j < text.length && owner[j] === owner[i]) j++;
+    const part = text.slice(i, j);
+    out.push({ text: part, kind: part.trim() ? owner[i]?.kind : undefined });
+    i = j;
+  }
+  return out;
+}
+
 /**
- * Markdown for the hover. Tokens under `at` (the mouse position) are emphasised.
- * `panelLink` is a command URI that opens this line in the panel.
+ * Markdown (with inline HTML, so `supportHtml` must be on) for the hover. Labels are coloured
+ * by token kind, and `lineText` is shown regex101-style at the top. Tokens under `at` (the
+ * mouse position) are emphasised. `panelLink` is a command URI that opens this line in the panel.
  */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string): string {
+export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string): string {
   const t = ui[lang];
   const out: string[] = [];
   let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
@@ -64,15 +110,22 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     header += ' · _' + ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`).join(' › ') + '_';
   }
   out.push(header, '');
+  if (lineText?.trim() && ex.items.length) {
+    const segs = lineSegments(lineText, ex.line, ex.items);
+    while (segs.length && !segs[0].text.trim()) segs.shift();
+    if (segs.length) segs[0].text = segs[0].text.trimStart();
+    out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind) : esc(g.text))).join('') + '</code>', '');
+  }
   for (const n of ex.notes) out.push(`> ${n}`, '');
   if (!ex.items.length) {
     out.push(t.empty);
     return out.join('\n');
   }
   const walk = (tok: Token, depth: number) => {
-    const hit = at && contains(tok, at);
-    const label = hit ? `**${code(tok.label)}**` : code(tok.label);
-    out.push(`${'  '.repeat(depth)}- ${label} — ${tok.explanation}`);
+    const flat = tok.label.replace(/\s*\n\s*/g, ' ⏎ ');
+    const label = `<code>${colored(flat, tok.kind)}</code>`;
+    const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
+    out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
