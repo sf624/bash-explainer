@@ -1,3 +1,4 @@
+import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
 export interface OptDoc {
@@ -8,6 +9,10 @@ export interface OptDoc {
   values?: Record<string, Text>;
   /** The option consumes words up to a terminator such as `;` or `+` (e.g. `find -exec`). */
   untilTerminator?: boolean;
+  /** The option's value is written in an embedded language (e.g. `grep -e PATTERN`). */
+  lang?: EmbeddedLang;
+  /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
+  fillsPositional?: boolean;
 }
 
 export interface CommandDoc {
@@ -16,6 +21,8 @@ export interface CommandDoc {
   options?: Record<string, OptDoc>;
   /** Descriptions of positional arguments in order; the last one repeats. */
   positional?: Text[];
+  /** Embedded language of positional arguments, by index (does not repeat). */
+  positionalLang?: (EmbeddedLang | undefined)[];
   /** After its own options, the remaining words form another command (sudo, xargs, env…). */
   wraps?: boolean;
   subcommands?: Record<string, CommandDoc>;
@@ -23,7 +30,7 @@ export interface CommandDoc {
   longSingleDash?: boolean;
 }
 
-/** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`. */
+/** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `lang:<name>`. */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
 export function cmd(
@@ -37,6 +44,9 @@ export function cmd(
     const doc: OptDoc = { text: tx(oja, oen) };
     if (flags.includes('arg')) doc.arg = true;
     if (flags.includes('until')) doc.untilTerminator = true;
+    if (flags.includes('fills')) doc.fillsPositional = true;
+    const lang = /lang:(\w+)/.exec(flags)?.[1];
+    if (lang) doc.lang = lang as EmbeddedLang;
     if (values) doc.values = values;
     for (const n of names.split('|')) options[n] = doc;
   }
