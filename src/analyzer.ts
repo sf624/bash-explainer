@@ -1210,7 +1210,9 @@ export class Analyzer {
       }
       if (make) {
         const argNodes = kids.slice(opIdx + 1).filter((c) => c.isNamed && !isPlainWord(c) && c.type !== 'regex');
-        return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(targetText, arg)), this.subs(argNodes));
+        // Positional parameters read better as `$2` than as a bare `2`.
+        const shownName = /^[1-9]\d*$/.test(targetText) ? `$${targetText}` : targetText;
+        return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(shownName, arg)), this.subs(argNodes));
       }
     }
     // `${var:offset:length}` has no operator field in some grammar versions.

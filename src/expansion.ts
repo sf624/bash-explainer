@@ -235,7 +235,15 @@ const q = (s: string) => (s === '' ? '""' : /['"]/.test(s) ? s : /\s/.test(s) ? 
 export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
   const ja = lang === 'ja';
   const name = p.name;
-  const v = (val: string) => `${name}=${/[\s']/.test(val) ? `"${val}"` : val || '""'}`;
+  // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
+  const positional = /^[1-9]\d*$/.test(name);
+  const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val || '""');
+  const isSet = (val: string) => (positional ? (ja ? `${name} 番目の引数が ${shown(val)}` : `argument ${name} is ${shown(val)}`) : `${name}=${shown(val)}`);
+  const v = (val: string) => (positional ? (ja ? `${isSet(val)} なら` : `if ${isSet(val)}`) : isSet(val));
+  /** "unset or empty" (with `:`) or just "unset", phrased for a variable or an argument. */
+  const missing = (orEmpty: boolean) => positional
+    ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空' : ''}` : `argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
+    : (ja ? `${name} が未設定${orEmpty ? 'か空' : ''}` : `${name} is unset${orEmpty ? ' or empty' : ''}`);
   const arrow = (input: string, out: string) => `${input} → ${q(out)}`;
   /** Arrays expand to several words, so show them unquoted. */
   const words = (input: string, out: string) => `${input} → ${out}`;
@@ -260,16 +268,16 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
   }
   const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
   const word = part('word') ?? '';
-  const unsetOrEmpty = ja ? '未設定' : 'unset';
   switch (p.op) {
     case ':-': case '-': case ':=': case '=': {
-      const colon = p.op.startsWith(':');
       const fallback = `${word || '""'}${/\$/.test(word) ? (ja ? ' の展開結果' : ' (expanded)') : ''}`;
-      const empty = colon ? (ja ? `${name} が未設定か空` : `${name} unset or empty`) : (ja ? `${name} が未設定` : `${name} unset`);
-      return ja ? `${empty} → ${fallback}、${v('abc')} → abc` : `${empty} → ${fallback}; ${v('abc')} → abc`;
+      const none = missing(p.op.startsWith(':'));
+      return ja ? `${none}なら → ${fallback}、${isSet('abc')} なら → abc` : `if ${none} → ${fallback}; if ${isSet('abc')} → abc`;
     }
-    case ':+': case '+':
-      return ja ? `${v('abc')} → ${word || '""'}、${name} が${p.op === ':+' ? '未設定か空' : unsetOrEmpty} → ""` : `${v('abc')} → ${word || '""'}; ${name} ${p.op === ':+' ? 'unset or empty' : 'unset'} → ""`;
+    case ':+': case '+': {
+      const none = missing(p.op === ':+');
+      return ja ? `${isSet('abc')} なら → ${word || '""'}、${none}なら → ""` : `if ${isSet('abc')} → ${word || '""'}; if ${none} → ""`;
+    }
     case ':?': case '?':
       return undefined;
     case '#': case '##': case '%': case '%%': {
