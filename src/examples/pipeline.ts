@@ -253,8 +253,8 @@ export function readsFileOperand(stage: Stage): boolean {
     perl: /^-\w*[eE]$/, sort: /^-[tkoS]$/, cut: /^-[dfcb]$/, head: /^-[nc]$/, tail: /^-[nc]$/, uniq: /^-[fsw]$/,
   };
   const value = takesValue[stage.cmd];
-  const operands = w.filter((x, i) => !x.startsWith('-') && !(value && value.test(w[i - 1] ?? '')));
-  const inline = w.some((x) => /^-[ef]$/.test(x) || (stage.cmd === 'perl' && /^-\w*[eE]$/.test(x)));
+  const operands = w.filter((x, i) => (x === undefined || !x.startsWith('-')) && !(value && value.test(w[i - 1] ?? '')));
+  const inline = w.some((x) => /^-[ef]$/.test(x ?? '') || (stage.cmd === 'perl' && /^-\w*[eE]$/.test(x ?? '')));
   switch (stage.cmd) {
     case 'grep': case 'egrep': case 'fgrep': case 'sed': case 'awk': case 'gawk': case 'mawk': case 'perl':
       // The first operand is the pattern, script or program unless given with -e / -f.
