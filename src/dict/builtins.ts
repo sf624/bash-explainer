@@ -24,7 +24,7 @@ export const builtins: Record<string, CommandDoc> = {
   ], { positional: [pos('表示する文字列', 'text to print')] }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     ['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'],
-  ], { positional: [pos('書式文字列', 'format string'), pos('書式に埋め込む値', 'value for the format')] }),
+  ], { positional: [pos('書式文字列', 'format string'), pos('書式に埋め込む値', 'value for the format')], positionalLang: ['printf'] }),
   read: b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
     ['-r', 'バックスラッシュをエスケープ文字として扱わない（ほぼ常に付けるべき）', 'do not treat backslashes as escapes (almost always wanted)'],
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],
