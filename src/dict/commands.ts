@@ -126,15 +126,15 @@ export const commands: Record<string, CommandDoc> = {
   ], { wraps: true }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
-    ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg'],
-    ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg'],
-    ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg'],
+    ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
+    ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg lang:cutchars'],
+    ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
   ], { positional: [files] }),
   sort: cmd('行を並べ替える', 'Sort lines', [
     ['-n|--numeric-sort', '数値として並べる', 'compare as numbers'],
     ['-r|--reverse', '逆順（降順）にする', 'reverse order'],
     ['-u|--unique', '重複行を1つにまとめる', 'output only unique lines'],
-    ['-k|--key', '並べ替えのキーとなる列（例: `-k2,2`）', 'sort key field (e.g. `-k2,2`)', 'arg'],
+    ['-k|--key', '並べ替えのキーとなる列（例: `-k2,2`）', 'sort key field (e.g. `-k2,2`)', 'arg lang:sortkey'],
     ['-t|--field-separator', '列の区切り文字', 'field separator', 'arg'],
     ['-h|--human-numeric-sort', '`2K`, `1G` のような単位付き数値で並べる', 'compare human-readable numbers (2K, 1G)'],
     ['-f|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
@@ -151,7 +151,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
-  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')] }),
+  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
