@@ -242,14 +242,14 @@ export const commands: Record<string, CommandDoc> = {
   ], { positional: [pos('削除するファイル', 'file to remove')] }),
   mkdir: cmd('ディレクトリを作成する', 'Create directories', [
     ['-p|--parents', '親ディレクトリもまとめて作成し、既に存在してもエラーにしない', 'create parents as needed; no error if it exists'],
-    ['-m|--mode', '作成するディレクトリの権限', 'permission mode', 'arg'],
+    ['-m|--mode', '作成するディレクトリの権限', 'permission mode', 'arg lang:mode'],
     ['-v|--verbose', '作成したディレクトリを表示', 'print each created directory'],
   ], { positional: [pos('作成するディレクトリ', 'directory to create')] }),
   rmdir: cmd('空のディレクトリを削除する', 'Remove empty directories'),
   touch: cmd('ファイルの更新日時を現在時刻にする。存在しなければ空ファイルを作成', 'Update file timestamps; create empty files if missing', [], { positional: [files] }),
   chmod: cmd('ファイルの権限（パーミッション）を変更する', 'Change file permissions', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
-  ], { positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files] }),
+  ], { positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
   chown: cmd('ファイルの所有者・グループを変更する', 'Change file owner and group', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
   ], { positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
@@ -356,7 +356,7 @@ export const commands: Record<string, CommandDoc> = {
   less: cmd('ファイルをページ単位でスクロール表示する', 'View text one screen at a time'),
   file: cmd('ファイルの種類を判定して表示する', 'Determine file type'),
   install: cmd('ファイルをコピーし、権限や所有者を設定する', 'Copy files and set attributes', [
-    ['-m|--mode', '権限', 'permission mode', 'arg'],
+    ['-m|--mode', '権限', 'permission mode', 'arg lang:mode'],
     ['-d|--directory', 'ディレクトリを作成', 'create directories'],
   ]),
   tac: cmd('ファイルを末尾の行から逆順に表示する', 'Print files in reverse line order'),
