@@ -141,6 +141,7 @@ export class PanelController implements vscode.Disposable {
 <pre id="line"></pre>
 <div id="notes"></div>
 <ul id="tree"></ul>
+<div id="examples"></div>
 <p id="empty" hidden></p>
 <script nonce="${nonce}" src="${js}"></script>
 </body>
