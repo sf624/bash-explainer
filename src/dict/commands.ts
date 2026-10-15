@@ -248,7 +248,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-d|--date', '現在時刻の代わりに指定した日時を使う（例: `yesterday`）', 'use the given date instead of now (e.g. `yesterday`)', 'arg'],
     ['-u|--utc', 'UTC で表示', 'use UTC'],
     ['-I|--iso-8601', 'ISO 8601 形式で表示', 'ISO 8601 format'],
-  ], { positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')] }),
+  ], { positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'] }),
   sleep: cmd('指定した時間だけ待つ', 'Pause for a duration', [], { positional: [pos('待つ時間（秒。`1m`, `0.5` なども可）', 'duration in seconds (`1m`, `0.5`… also allowed)')] }),
   diff: cmd('2つのファイルの差分を表示する', 'Compare files line by line', [
     ['-u|--unified', 'unified 形式で表示（パッチ用の一般的な形式）', 'unified format'],

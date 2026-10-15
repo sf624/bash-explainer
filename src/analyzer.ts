@@ -5,6 +5,7 @@ import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainAwk } from './embedded/awk';
+import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { explainJq } from './embedded/jq';
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
@@ -748,6 +749,18 @@ export class Analyzer {
       case 'awk':
         tokens = explainAwk(lit.text, this.lang);
         break;
+      case 'printf':
+        tokens = explainPrintf(lit.text, this.lang);
+        note = printfNote(lit.text, this.lang);
+        break;
+      case 'date': {
+        // Only `+FORMAT` is a format; other date arguments set the clock.
+        if (!lit.text.startsWith('+')) return undefined;
+        tokens = explainDate(lit.text, this.lang);
+        const sample = sampleDate(lit.text);
+        if (sample !== undefined) note = this.s(`今なら「${sample}」のように表示される`, `right now this prints "${sample}"`);
+        break;
+      }
     }
     return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit.base)), note };
   }
