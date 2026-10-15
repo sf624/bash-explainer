@@ -107,3 +107,7 @@ VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sam
 
 コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に
 `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
+
+## ライセンス
+
+[MIT](LICENSE)。同梱しているサードパーティのソフトウェアは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
