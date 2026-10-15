@@ -13,6 +13,8 @@ export interface OptDoc {
   lang?: EmbeddedLang;
   /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
   fillsPositional?: boolean;
+  /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */
+  attachedOnly?: boolean;
 }
 
 export interface CommandDoc {
@@ -45,6 +47,7 @@ export function cmd(
     if (flags.includes('arg')) doc.arg = true;
     if (flags.includes('until')) doc.untilTerminator = true;
     if (flags.includes('fills')) doc.fillsPositional = true;
+    if (flags.includes('attached')) doc.attachedOnly = true;
     const lang = /lang:(\w+)/.exec(flags)?.[1];
     if (lang) doc.lang = lang as EmbeddedLang;
     if (values) doc.values = values;
