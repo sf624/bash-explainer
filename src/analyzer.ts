@@ -18,6 +18,8 @@ import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
+import { explainGetoptLong, explainGetoptShort } from './embedded/getopt';
+import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './examples/getopt';
 import { explainGitDate, explainGitFormat } from './embedded/gitformat';
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './examples/gitlog';
 import { explainJq } from './embedded/jq';
@@ -952,6 +954,14 @@ export class Analyzer {
         note = summary ? `${r.note}${this.s('。つまり', '; that is, it ')}${summary}` : r.note;
         break;
       }
+      case 'getoptshort':
+      case 'getoptlong': {
+        const r = lang === 'getoptshort' ? explainGetoptShort(lit.text, this.lang) : explainGetoptLong(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
+        break;
+      }
       case 'getopts': {
         const r = explainGetopts(lit.text, this.lang);
         if (!r) return undefined;
@@ -1261,6 +1271,7 @@ export class Analyzer {
     const cmd = name.split('/').pop() ?? name;
     if (cmd === 'printf') { this.printfExample(args); return; }
     if (cmd === 'xargs') { this.xargsExample(args); return; }
+    if (cmd === 'getopt') { this.getoptExample(args); return; }
     if (cmd === 'perl') {
       const words = args.map((a) => literalContent(a)?.text);
       const parsed = perlOptions(words);
@@ -1365,6 +1376,69 @@ export class Analyzer {
       });
     } catch (e) {
       if (!(e instanceof GitFormatUnsupported)) throw e;
+    }
+  }
+
+  /** How getopt rearranges sample arguments, from the `-o` / `--long` given. */
+  private getoptExample(args: SyntaxNode[]): void {
+    const words = args.map((a) => literalContent(a)?.text);
+    const spec: GetoptSpec = { short: '', long: [] };
+    let i = 0;
+    const value = (w: string, short: string, long: string[]): string | undefined => {
+      if (w === short || long.includes(w)) return words[++i];
+      if (w.startsWith(short) && w.length > 2) return w.slice(2);
+      const eq = long.find((l) => w.startsWith(`${l}=`));
+      return eq ? w.slice(eq.length + 1) : undefined;
+    };
+    let shortGiven = false;
+    for (; i < words.length; i++) {
+      const w = words[i];
+      if (w === undefined) return;
+      if (w === '--') break;
+      if (!w.startsWith('-')) {
+        // The old form: `getopt OPTSTRING ARGS…`.
+        if (!shortGiven) {
+          spec.short = w;
+          spec.legacy = true;
+        }
+        break;
+      }
+      if (/^-(o|-options)/.test(w)) {
+        const v = value(w, '-o', ['--options']);
+        if (v === undefined) return;
+        spec.short = v;
+        shortGiven = true;
+      } else if (/^-(l|-long)/.test(w)) {
+        const v = value(w, '-l', ['--longoptions', '--long']);
+        if (v === undefined) return;
+        spec.long.push(...v.split(','));
+      } else if (/^-(n|s|-name|-shell)/.test(w)) {
+        if (!w.includes('=') && w.length === 2 || ['--name', '--shell'].includes(w)) i++;
+      } else if (w === '-a' || w === '--alternative') {
+        spec.alternative = true;
+      } else if (/^-(Q|T|-quiet-output|-test)$/.test(w)) {
+        return;
+      }
+    }
+    if (!spec.short && !spec.long.length) return;
+    try {
+      const sample = sampleGetoptArgs(spec);
+      const output = runGetopt(spec, sample);
+      const shown = sample.map((a) => (/^[\w.,=\/-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(' ');
+      this.examples.push({
+        title: this.s('例', 'Example'),
+        sections: [
+          { label: this.s('スクリプトに渡された引数の例', 'Sample arguments given to the script'), lines: [shown] },
+          {
+            label: spec.legacy
+              ? this.s('getopt の出力（`set --` に渡すと引数がこの順に並び直る。旧形式はクォートしないので空白を含む引数が壊れる）', 'What getopt prints (`set --` puts the arguments in this order; the old form does not quote, so arguments with spaces break)')
+              : this.s('getopt の出力（`eval set --` に渡すと引数がこの順に並び直る）', 'What getopt prints (`eval set --` puts the arguments in this order)'),
+            lines: [output.trimStart()],
+          },
+        ],
+      });
+    } catch (e) {
+      if (!(e instanceof GetoptUnsupported)) throw e;
     }
   }
 
