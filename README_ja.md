@@ -162,7 +162,7 @@
 
 ## 開発
 
-不具合報告やプルリクエストは [github.com/sf624/bash-explain](https://github.com/sf624/bash-explain) へどうぞ。
+不具合報告やプルリクエストは [github.com/sf624/bash-explainer](https://github.com/sf624/bash-explainer) へどうぞ。
 
 ```sh
 npm install

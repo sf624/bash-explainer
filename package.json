@@ -8,11 +8,11 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sf624/bash-explain.git"
+    "url": "https://github.com/sf624/bash-explainer.git"
   },
-  "homepage": "https://github.com/sf624/bash-explain#readme",
+  "homepage": "https://github.com/sf624/bash-explainer#readme",
   "bugs": {
-    "url": "https://github.com/sf624/bash-explain/issues"
+    "url": "https://github.com/sf624/bash-explainer/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
