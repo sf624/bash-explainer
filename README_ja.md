@@ -69,6 +69,12 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ![インライン](images/inline.png)
 
+## bash 以外のシェル
+
+解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方を指摘します。たとえば `#!/bin/sh` のスクリプト中の `[[ ]]`・配列・`&>`・`echo -e`・`{1..3}` などに注意を出し、移植性のある書き方を提案します。
+
+対象のシェルは shebang（`#!/bin/sh`、`#!/usr/bin/env dash`、`#!/bin/busybox sh` など）・`# shellcheck shell=` 指定・ファイル名から判定し、`bashExplain.shell` でも指定できます。対応しているのは POSIX `sh`（dash と busybox ash で動かないものを明記）・`dash`・`ash`（busybox）・`yash`・`ksh`（ksh93）・`mksh`・`zsh` です。どのシェルが何に対応しているかは各シェルで実測し、テストでも再確認しています。
+
 ## コマンド
 
 | コマンド | キー | 説明 |
@@ -83,6 +89,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
+| `bashExplain.shell` | `auto` | スクリプトの対象シェル（`auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh`）。そのシェルにない書き方を指摘 |
 | `bashExplain.examples.placement` | `first` | `first`（具体例を対応する部分の真下、その中の各要素の解説より先に表示） / `last`（各要素の解説の後に表示） / `bottom`（解説の後にまとめて表示） |
 | `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
 | `bashExplain.hover.followCursor` | `false` | カーソル移動に追従してホバーを自動表示 |
@@ -110,6 +117,7 @@ npm run package    # .vsix を作成
 
 VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
 `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
+シェルごとの対応表は、`PATH` または `$BASH_EXPLAIN_SHELLS` のディレクトリにあるシェル（`dash`・`busybox`・`yash`・`ksh93`・`mksh`・`zsh`）で検証します。無いシェルのテストはスキップされます。
 
 コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に
 `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。

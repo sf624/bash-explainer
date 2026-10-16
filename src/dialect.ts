@@ -1,0 +1,286 @@
+import type { SyntaxNode } from 'web-tree-sitter';
+import { pick } from './embedded/types';
+import { parseExpansion } from './expansion';
+import { Lang } from './i18n';
+
+/** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
+export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
+type RealShell = Exclude<Shell, 'sh'>;
+
+export const SHELL_NAMES: Record<Shell, string> = {
+  bash: 'bash', sh: 'POSIX sh', dash: 'dash', ash: 'busybox ash', yash: 'yash', ksh: 'ksh93', mksh: 'mksh', zsh: 'zsh',
+};
+
+/** The shell a script is written for, from its shebang, a ShellCheck directive or its file name. */
+export function detectShell(text: string, fileName = ''): Shell | undefined {
+  const head = text.slice(0, 2000);
+  const directive = /^#\s*shellcheck\s+shell=(\w+)/m.exec(head)?.[1];
+  if (directive) return shellFromName(directive);
+  const shebang = /^#!\s*(.*)/.exec(head);
+  if (shebang) {
+    const words = shebang[1].trim().split(/\s+/);
+    const prog = words[0].split('/').pop()!;
+    // `#!/bin/busybox sh`, `#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`.
+    if (prog === 'busybox') return 'ash';
+    if (prog === 'env') {
+      const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
+      return arg ? shellFromName(arg.split('/').pop()!) : undefined;
+    }
+    return shellFromName(prog);
+  }
+  const base = fileName.split(/[\\/]/).pop() ?? '';
+  if (/\.zsh$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return 'zsh';
+  if (/\.ksh$|^\.?mkshrc$/.test(base)) return base.includes('mksh') ? 'mksh' : 'ksh';
+  if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return 'bash';
+  return undefined;
+}
+
+function shellFromName(name: string): Shell | undefined {
+  const n = name.replace(/\d+(\.\d+)*$/, '');
+  if (n === 'bash') return 'bash';
+  if (n === 'sh' || n === 'posh') return 'sh';
+  if (n === 'dash') return 'dash';
+  if (n === 'ash') return 'ash';
+  if (n === 'yash') return 'yash';
+  if (n === 'ksh') return 'ksh';
+  if (n === 'mksh' || n === 'lksh' || n === 'pdksh' || n === 'oksh') return 'mksh';
+  if (n === 'zsh') return 'zsh';
+  return undefined;
+}
+
+/**
+ * Where each bash feature works, measured with bash 5.2, dash 0.5.12, busybox 1.36 ash, yash 2.55,
+ * ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (see test/dialect.test.ts, which re-checks the installed ones).
+ * The letters are b d a y k m z; `posix` says whether POSIX sh has it.
+ */
+interface Feature { works: string; posix?: boolean; ja: string; en: string; altJa?: string; altEn?: string }
+
+export const FEATURES: Record<string, Feature> = {
+  dbracket: { works: 'bayk mz', ja: '`[[ ]]`', en: '`[[ ]]`', altJa: '`[ ]` を使う', altEn: 'use `[ ]`' },
+  regex: { works: 'b  yk', ja: '`[[ =~ ]]` の正規表現マッチ', en: '`[[ =~ ]]` regex matching', altJa: '`expr` や `grep -E` を使う', altEn: 'use `expr` or `grep -E`' },
+  array: { works: 'b  ykmz', ja: '配列', en: 'arrays', altJa: '位置パラメータ（`set -- …`）を使う', altEn: 'use the positional parameters (`set -- …`)' },
+  assoc: { works: 'b   kmz', ja: '連想配列', en: 'associative arrays' },
+  plusAssign: { works: 'b   kmz', ja: '`+=` による追加', en: 'appending with `+=`', altJa: '`v="${v}…"` と書く', altEn: 'write `v="${v}…"`' },
+  replace: { works: 'b ayk mz', ja: '`${var/pattern/string}` の置換', en: '`${var/pattern/string}` replacement', altJa: '`sed` などを使う', altEn: 'use `sed` or similar' },
+  replaceAnchor: { works: 'b  ykmz', ja: '`${var/#…}` / `${var/%…}` の置換', en: '`${var/#…}` / `${var/%…}` replacement' },
+  caseMod: { works: 'b', ja: '`${var^^}` などの大文字・小文字変換', en: '`${var^^}`-style case conversion', altJa: '`tr` を使う', altEn: 'use `tr`' },
+  substr: { works: 'b a kmz', ja: '`${var:offset:length}` の部分文字列', en: '`${var:offset:length}` substrings', altJa: '`cut` や `expr substr` を使う', altEn: 'use `cut` or `expr substr`' },
+  indirect: { works: 'b', ja: '`${!var}` の間接参照', en: '`${!var}` indirection', altJa: '`eval` を使う', altEn: 'use `eval`' },
+  prefixNames: { works: 'b   k', ja: '`${!prefix*}` の変数名一覧', en: '`${!prefix*}` name lists' },
+  arrayKeys: { works: 'b   km', ja: '`${!array[@]}` のインデックス一覧', en: '`${!array[@]}` index lists' },
+  transform: { works: 'b', ja: '`${var@Q}` などの変換', en: '`${var@Q}`-style transformations' },
+  negIndex: { works: 'b  yk z', ja: '負の添字 `${a[-1]}`', en: 'negative subscripts `${a[-1]}`' },
+  funcKeyword: { works: 'b aykmz', ja: '`function` キーワードによる関数定義', en: 'the `function` keyword', altJa: '`name() { … }` と書く', altEn: 'write `name() { … }`' },
+  herestring: { works: 'b  ykmz', ja: 'ヒアストリング `<<<`', en: 'here-strings `<<<`', altJa: '`printf \'%s\\n\' … |` やヒアドキュメントを使う', altEn: 'use `printf \'%s\\n\' … |` or a here-document' },
+  ansiC: { works: 'b a kmz', ja: '`$\'…\'` の文字列', en: '`$\'…\'` strings', altJa: '`printf` を使う', altEn: 'use `printf`' },
+  procSub: { works: 'b ayk z', ja: 'プロセス置換 `<(…)` / `>(…)`', en: 'process substitution `<(…)` / `>(…)`', altJa: '一時ファイルや名前付きパイプを使う', altEn: 'use a temporary file or a named pipe' },
+  ampRedirect: { works: 'b a kmz', ja: '`&>`（標準出力と標準エラー出力をまとめてリダイレクト）', en: '`&>` (redirect stdout and stderr together)', altJa: '`>file 2>&1` と書く（dash では `cmd &> file` が「バックグラウンド実行 + 空のリダイレクト」と解釈される）', altEn: 'write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection")' },
+  ampAppend: { works: 'b    mz', ja: '`&>>`', en: '`&>>`', altJa: '`>>file 2>&1` と書く', altEn: 'write `>>file 2>&1`' },
+  pipeAmp: { works: 'b     z', ja: '`|&`（標準エラー出力もパイプに流す）', en: '`|&` (pipe stderr too)', altJa: '`2>&1 |` と書く', altEn: 'write `2>&1 |`' },
+  eqeqTest: { works: 'b ayk m', ja: '`[ a == b ]` の `==`', en: '`==` in `[ ]`', altJa: '`=` を使う', altEn: 'use `=`' },
+  arithCommand: { works: 'b   kmz', ja: '算術コマンド `(( ))`', en: 'the arithmetic command `(( ))`', altJa: '`[ "$((式))" -ne 0 ]` と書く', altEn: 'write `[ "$((expr))" -ne 0 ]`' },
+  cFor: { works: 'b   k z', ja: 'C 言語風の `for (( ; ; ))`', en: 'C-style `for (( ; ; ))`', altJa: '`while` と `$(( ))` で書く', altEn: 'use `while` with `$(( ))`' },
+  braceRange: { works: 'b   k z', ja: 'ブレース展開 `{1..3}`', en: 'brace ranges `{1..3}`', altJa: '`seq` を使う', altEn: 'use `seq`' },
+  braceList: { works: 'b   kmz', ja: 'ブレース展開 `{a,b}`', en: 'brace expansion `{a,b}`' },
+  caseFall: { works: 'b   kmz', ja: '`case` の `;&`（次の分岐へ続ける）', en: '`;&` in `case` (fall through)' },
+  caseCont: { works: 'b    m', ja: '`case` の `;;&`（続けて次のパターンも調べる）', en: '`;;&` in `case` (test the next patterns too)' },
+  extglob: { works: 'b   km', ja: '拡張グロブ `@(…)` など', en: 'extended globs like `@(…)`' },
+  select: { works: 'b   kmz', ja: '`select` ループ', en: '`select` loops' },
+  local: { works: 'bday mz', ja: '`local`', en: '`local`' },
+  declare: { works: 'b     z', ja: '`declare`', en: '`declare`' },
+  typeset: { works: 'b  ykmz', ja: '`typeset`', en: '`typeset`' },
+  readarray: { works: 'b', ja: '`readarray` / `mapfile`', en: '`readarray` / `mapfile`', altJa: '`while read` で1行ずつ読む', altEn: 'read lines with `while read`' },
+  source: { works: 'b a kmz', ja: '`source`', en: '`source`', altJa: '`.` を使う', altEn: 'use `.`' },
+  let: { works: 'b a kmz', ja: '`let`', en: '`let`', altJa: '`$(( ))` を使う', altEn: 'use `$(( ))`' },
+  shopt: { works: 'b', ja: '`shopt`', en: '`shopt`' },
+  pushd: { works: 'b  y  z', ja: '`pushd` / `popd`', en: '`pushd` / `popd`', altJa: '`cd` と変数で戻り先を覚える', altEn: 'remember the directory in a variable and `cd`' },
+  exportF: { works: 'b', ja: '`export -f`', en: '`export -f`' },
+  waitN: { works: 'b a', ja: '`wait -n`', en: '`wait -n`' },
+  coproc: { works: 'b     z', ja: '`coproc`', en: '`coproc`' },
+  typeT: { works: 'b   k', ja: '`type -t`', en: '`type -t`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
+  printfV: { works: 'b   k z', ja: '`printf -v`', en: '`printf -v`', altJa: '`v=$(printf …)` と書く', altEn: 'write `v=$(printf …)`' },
+  printfQ: { works: 'b     z', ja: '`printf %q`', en: '`printf %q`' },
+  echoE: { works: 'b a kmz', ja: '`echo -e`', en: '`echo -e`', altJa: '`printf` を使う（dash の echo は `-e` を文字として表示し、`\\t` などは常に解釈する）', altEn: 'use `printf` (dash prints `-e` literally and always interprets `\\t` and friends)' },
+  echoN: { works: 'bda kmz', ja: '`echo -n`', en: '`echo -n`', altJa: '`printf` を使う', altEn: 'use `printf`' },
+  readA: { works: 'b   k', ja: '`read -a`', en: '`read -a`' },
+  readP: { works: 'bday', ja: '`read -p`（プロンプト）', en: '`read -p` (prompt)', altJa: '`printf` でプロンプトを出してから `read` する（ksh/mksh/zsh の `-p` は別の意味）', altEn: 'print the prompt with `printf`, then `read` (`-p` means something else in ksh, mksh and zsh)' },
+  readOpts: { works: 'b a kmz', ja: '`read` の `-n` / `-s` / `-t` / `-d`', en: '`read -n` / `-s` / `-t` / `-d`' },
+  pipefail: { works: 'b aykmz', ja: '`set -o pipefail`', en: '`set -o pipefail`' },
+  trapErr: { works: 'b a kmz', ja: '`trap … ERR`', en: '`trap … ERR`' },
+  errtrace: { works: 'bda   z', ja: '`set -E`', en: '`set -E`' },
+  random: { works: 'b aykmz', ja: '`$RANDOM`', en: '`$RANDOM`', altJa: '`awk \'BEGIN{srand(); print int(rand()*32768)}\'` などを使う', altEn: 'use e.g. `awk \'BEGIN{srand(); print int(rand()*32768)}\'`' },
+  seconds: { works: 'b   kmz', ja: '`$SECONDS`', en: '`$SECONDS`' },
+  pipestatus: { works: 'b    m', ja: '`$PIPESTATUS`', en: '`$PIPESTATUS`' },
+  bashVar: { works: 'b', ja: 'bash 専用の変数', en: 'bash-only variables' },
+  funcname: { works: 'b a', ja: '`$FUNCNAME`', en: '`$FUNCNAME`' },
+  uid: { works: 'b     z', ja: '`$UID` / `$EUID`', en: '`$UID` / `$EUID`', altJa: '`$(id -u)` を使う', altEn: 'use `$(id -u)`' },
+  hostname: { works: 'b a', ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`' },
+};
+
+const LETTER: Record<RealShell, string> = { bash: 'b', dash: 'd', ash: 'a', yash: 'y', ksh: 'k', mksh: 'm', zsh: 'z' };
+
+function works(f: Feature, shell: RealShell): boolean {
+  return f.works.includes(LETTER[shell]);
+}
+
+/** Features used by the parts of `root` on `line`. */
+export function featuresOnLine(root: SyntaxNode, line: number): string[] {
+  const found: string[] = [];
+  const add = (id: string) => { if (!found.includes(id)) found.push(id); };
+  const visit = (n: SyntaxNode) => {
+    if (n.startPosition.row > line || n.endPosition.row < line) return;
+    const kids = n.children.map((c) => c.type);
+    // Report a construct on the line where it starts, so a block is reported once.
+    const here = n.startPosition.row === line;
+    if (here) classify(n, kids, add);
+    n.children.forEach(visit);
+  };
+  visit(root);
+  return found;
+}
+
+function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
+  switch (n.type) {
+    case 'test_command': {
+      const open = n.child(0)?.type;
+      if (open === '[[') {
+        add('dbracket');
+        if (n.descendantsOfType('=~').length) add('regex');
+      } else if (open === '((') add('arithCommand');
+      else if (open === '[' && n.descendantsOfType('==').length) add('eqeqTest');
+      return;
+    }
+    case 'command': {
+      const name = n.childForFieldName('name');
+      // `(( expr ))` parsed as a command named by an arithmetic expansion.
+      if (name?.text.startsWith('((')) { add('arithCommand'); return; }
+      const words = n.namedChildren.filter((c) => c.id !== name?.id).map((c) => c.text);
+      commandFeatures(name?.text ?? '', words, add);
+      return;
+    }
+    case 'declaration_command': {
+      const words = n.children.slice(1).map((c) => c.text);
+      commandFeatures(n.child(0)?.text ?? '', words, add);
+      return;
+    }
+    case 'brace_expression': add('braceRange'); return;
+    case 'c_style_for_statement': add('cFor'); return;
+    case 'select_statement': add('select'); return;
+    case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
+    case 'herestring_redirect': add('herestring'); return;
+    case 'ansi_c_string': add('ansiC'); return;
+    case 'process_substitution': add('procSub'); return;
+    case 'file_redirect':
+      if (kids.includes('&>')) add('ampRedirect');
+      if (kids.includes('&>>')) add('ampAppend');
+      return;
+    case 'pipeline': if (kids.includes('|&')) add('pipeAmp'); return;
+    case 'case_item':
+      if (kids.includes(';&')) add('caseFall');
+      if (kids.includes(';;&')) add('caseCont');
+      return;
+    case 'extglob_pattern': if (/[@!?*+]\(/.test(n.text)) add('extglob'); return;
+    case 'variable_assignment': {
+      const value = n.childForFieldName('value');
+      if (value?.type === 'array') add('array');
+      if (kids.includes('+=')) add('plusAssign');
+      return;
+    }
+    case 'expansion': {
+      const p = parseExpansion(n.text.trimStart());
+      if (!p) return;
+      if (p.subscript !== undefined) add(/^-\d/.test(p.subscript) ? 'negIndex' : 'array');
+      if (p.prefix === '!') add(p.op === '*' || p.op === '@' ? 'prefixNames' : p.subscript === '@' || p.subscript === '*' ? 'arrayKeys' : 'indirect');
+      if (p.op === '/' || p.op === '//') add('replace');
+      if (p.op === '/#' || p.op === '/%') add('replaceAnchor');
+      if (p.op && /^[\^,]{1,2}$/.test(p.op)) add('caseMod');
+      if (p.op === ':') add('substr');
+      if (p.op === '@') add('transform');
+      variableFeature(p.name, add);
+      return;
+    }
+    case 'simple_expansion': variableFeature(n.text.slice(1), add); return;
+    case 'word': case 'concatenation': {
+      // Only unquoted words brace-expand; `{` in a quoted string is plain text.
+      if (n.parent?.type === 'string' || n.parent?.type === 'concatenation') return;
+      const t = n.type === 'word' ? n.text : n.children.filter((c) => c.type === 'word' || c.type === '{' || c.type === '}' || c.type === ',').map((c) => c.text).join('');
+      if (/\{-?\w+\.\.-?\w+(\.\.-?\d+)?\}/.test(t)) add('braceRange');
+      else if (/\{[^{}\s'"]*,[^{}\s'"]*\}/.test(t)) add('braceList');
+      if (/[@!?+]\([^)]*\)/.test(t)) add('extglob');
+      return;
+    }
+  }
+}
+
+function variableFeature(name: string, add: (id: string) => void): void {
+  if (name === 'RANDOM') add('random');
+  else if (name === 'SECONDS') add('seconds');
+  else if (name === 'PIPESTATUS') add('pipestatus');
+  else if (name === 'FUNCNAME') add('funcname');
+  else if (name === 'UID' || name === 'EUID') add('uid');
+  else if (name === 'HOSTNAME') add('hostname');
+  else if (/^BASH_|^BASHPID$|^BASHOPTS$|^EPOCH(SECONDS|REALTIME)$/.test(name)) add('bashVar');
+}
+
+function commandFeatures(name: string, words: string[], add: (id: string) => void): void {
+  const flags = words.filter((w) => /^-[a-zA-Z]+$/.test(w)).join('').replace(/-/g, '');
+  switch (name) {
+    case 'declare': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'declare'); break;
+    case 'typeset': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'typeset'); break;
+    case 'local': add('local'); break;
+    case 'readarray': case 'mapfile': add('readarray'); break;
+    case 'source': add('source'); break;
+    case 'let': add('let'); break;
+    case 'shopt': add('shopt'); break;
+    case 'pushd': case 'popd': case 'dirs': add('pushd'); break;
+    case 'coproc': add('coproc'); break;
+    case 'export': if (/f/.test(flags)) add('exportF'); break;
+    case 'wait': if (/n/.test(flags)) add('waitN'); break;
+    case 'type': if (/t/.test(flags)) add('typeT'); break;
+    case 'printf':
+      if (words[0] === '-v') add('printfV');
+      if (words.some((w) => /%q/.test(w))) add('printfQ');
+      break;
+    case 'echo': {
+      const opts = words.filter((w, i) => /^-[neE]+$/.test(w) && words.slice(0, i).every((x) => /^-[neE]+$/.test(x))).join('');
+      if (/e/.test(opts)) add('echoE');
+      if (/n/.test(opts)) add('echoN');
+      break;
+    }
+    case 'read':
+      if (/a/.test(flags)) add('readA');
+      if (/p/.test(flags)) add('readP');
+      if (/[nstd]/.test(flags)) add('readOpts');
+      break;
+    case 'set':
+      // `-o NAME`, also bundled as in `set -euo pipefail`.
+      if (words.some((w, i) => w === 'pipefail' && /^-\w*o$/.test(words[i - 1] ?? ''))) add('pipefail');
+      if (/E/.test(flags) || words.some((w, i) => w === 'errtrace' && /^-\w*o$/.test(words[i - 1] ?? ''))) add('errtrace');
+      break;
+    case 'trap': if (words.slice(1).some((w) => w === 'ERR')) add('trapErr'); break;
+  }
+}
+
+/** Notes for features on the line that the target shell lacks. */
+export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
+  if (shell === 'bash') return [];
+  const s = pick(lang);
+  const notes: string[] = [];
+  for (const id of featuresOnLine(root, line)) {
+    const f = FEATURES[id];
+    const label = s(f.ja, f.en);
+    const alt = f.altJa ? s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`) : '';
+    if (shell === 'sh') {
+      if (f.posix) continue;
+      // Name the common /bin/sh implementations it breaks on.
+      const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
+      notes.push(s(
+        `⚠ ${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
+        `⚠ ${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
+      ));
+    } else if (!works(f, shell)) {
+      notes.push(s(`⚠ ${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `⚠ ${label} is not available in ${SHELL_NAMES[shell]}.${alt}`));
+    }
+  }
+  return notes;
+}

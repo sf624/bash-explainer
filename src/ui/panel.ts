@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { Span } from '../analyzer';
 import { ExplainService } from '../service';
+import { SHELL_NAMES } from '../dialect';
 import { placeExamples, ui } from './render';
 
 type FromWebview =
@@ -105,7 +106,7 @@ export class PanelController implements vscode.Disposable {
     void this.panel.webview.postMessage({
       type: 'update',
       file: path.basename(ed.document.fileName),
-      lineLabel: t.line(line + 1),
+      lineLabel: t.line(line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
       lineText: ed.document.lineAt(line).text,
       explanation: this.service.examplePlacement === 'bottom' ? ex : placeExamples(ex),
       examplesFirst: this.service.examplePlacement === 'first',
