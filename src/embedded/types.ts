@@ -13,7 +13,7 @@ export interface EmbeddedToken {
   label?: string;
 }
 
-export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate';
+export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path';
 
 /** Pick the string for the current language. */
 export function pick(lang: Lang) {

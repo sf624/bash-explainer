@@ -138,6 +138,23 @@
           "default": "auto",
           "markdownDescription": "%config.shell%"
         },
+        "bashExplain.yq.flavor": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "mikefarah4",
+            "kislyuk",
+            "mikefarah3"
+          ],
+          "enumDescriptions": [
+            "%config.yq.flavor.auto%",
+            "mikefarah/yq v4",
+            "%config.yq.flavor.kislyuk%",
+            "mikefarah/yq v3"
+          ],
+          "default": "auto",
+          "markdownDescription": "%config.yq.flavor%"
+        },
         "bashExplain.diagnostics.enabled": {
           "type": "boolean",
           "default": true,

@@ -1363,6 +1363,8 @@ function materializeOnce(s: Shape, i: number, depth: number, omit: boolean): Jso
 export interface JqRun {
   input: Json;
   outputs: string[];
+  /** The results as values (up to five). */
+  values: Json[];
   error?: string;
 }
 
@@ -1376,9 +1378,9 @@ export function jqExample(filter: string, opts: { raw?: boolean; vars?: Record<s
   const run = (input: Json): JqRun | undefined => {
     const res = runJq(filter, input, opts.vars);
     if (!res) return undefined;
-    if ('error' in res) return { input, outputs: [], error: res.error };
+    if ('error' in res) return { input, outputs: [], values: [], error: res.error };
     const shown = res.outputs.map((v) => (opts.raw && typeof v === 'string' ? v : toJson(v)));
-    return { input, outputs: shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown };
+    return { input, outputs: shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown, values: res.outputs.slice(0, 5) };
   };
   if (opts.nullInput) {
     const r = run(null);

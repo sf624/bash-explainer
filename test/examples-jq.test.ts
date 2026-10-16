@@ -122,6 +122,6 @@ describe('jq example input', () => {
   });
 
   it('respects -n and --arg', () => {
-    assert.deepStrictEqual(ex('{name: $n}', { nullInput: true, vars: { n: 'bob' } })[0], { input: null, outputs: ['{"name":"bob"}'] });
+    assert.deepStrictEqual(ex('{name: $n}', { nullInput: true, vars: { n: 'bob' } })[0], { input: null, outputs: ['{"name":"bob"}'], values: [{ name: 'bob' }] });
   });
 });

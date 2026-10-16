@@ -73,6 +73,15 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 
 Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents, the exec form `RUN ["cmd", "arg"]`, the script of `["sh", "-c", "…"]` and `SHELL [...]`, with a warning when a `RUN` pipe would hide failures without `pipefail`), Makefile recipes, CI YAML (`run:` in GitHub Actions workflows and composite `action.yml`, `script:` in GitLab CI…), `package.json` scripts, Markdown code blocks (`sh`, `bash`, `console`…) and Python's `subprocess.run(…)`, `os.system(…)` and friends (a string with `shell=True` is a `/bin/sh` script, a list is run without a shell; a string without `shell=True` and f-strings pasted into a shell command are flagged). GitHub Actions steps follow `defaults: run: shell:`, explain `$GITHUB_OUTPUT` and the other runner files, and warn when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script. Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
 
+## yq
+
+Three different tools are called `yq`: mikefarah/yq v4 (Go, jq-like expressions of its own), kislyuk/yq (Python, a wrapper around jq) and the older mikefarah/yq v3 (`yq r file a.b.c`). Bash Explain tells which one a command is for from its subcommands, options and functions (`-o json` and `pick` are v4's, `-y` and `ascii_downcase` belong to kislyuk/yq and jq, `r`/`w` to v3) and from how yq is installed in the same file (`pip install yq`, `brew install yq`, a mikefarah/yq release URL, GitHub Actions runners), and explains it as that one. When nothing tells, it assumes mikefarah/yq v4 and says so. Every yq line shows what it is explained as and why, and where the command works, down to the first mikefarah/yq v4 release that has everything it uses:
+
+> yq: explained as mikefarah/yq v4 (v4.22.1 or later). Because: `-o json` is a mikefarah/yq v4 option; `pick` is a mikefarah/yq function (jq has none)
+> Works with: mikefarah/yq v4 (v4.22.1 or later) ✓ / kislyuk/yq ✗ (no `-o json`, `pick`) / mikefarah/yq v3 ✗ (no jq-style expressions, `-o json`)
+
+Worked examples show sample YAML input and the output in each tool's own style. The release in which each feature appeared was measured by running it on the latest patch of every 4.x minor release, and the examples are compared with the real tools in the tests. Set `bashExplain.yq.flavor` to fix the choice.
+
 ## Other shells
 
 Explanations always follow bash, but when a script is written for another shell Bash Explain points out constructs that shell does not have, such as `[[ ]]`, arrays, `&>`, `echo -e` or `{1..3}` in a `#!/bin/sh` script, and suggests a portable alternative. Constructs that work but behave differently are noted too: `echo 'a\tb'` interprets `\t` in dash, yash, mksh and zsh; zsh does not split an unquoted `$var`; arrays start at 1 in yash and zsh; in ksh93 `typeset` inside a `name() { … }` function is not local. The ksh builtins `print` and `whence` are explained as well. zsh-only syntax such as `*(.)` or `${(f)var}` cannot be parsed, which is said on the line.
@@ -98,6 +107,7 @@ The warnings also appear in the Problems panel (and as squiggles), so they are f
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | `bashExplain.shell` | `auto` | The shell scripts are written for (`auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`); constructs it lacks are pointed out |
+| `bashExplain.yq.flavor` | `auto` | Which `yq` scripts use: `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | `bashExplain.diagnostics.enabled` | `true` | Show warnings in the Problems panel, with quick fixes |
 | `bashExplain.examples.placement` | `first` | `first` (each worked example right under the part it illustrates, before the explanations of its pieces), `last` (after them) or `bottom` (all together after the explanations) |
 | `bashExplain.hover.enabled` | `true` | Show the hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
