@@ -402,6 +402,7 @@
     "test": "tsc --noEmit && tsc --noEmit -p web && mocha",
     "package": "node esbuild.mjs --production && vsce package",
     "build:web": "tsx scripts/build-web.ts",
+    "test:integration": "node --import tsx integration/run.ts",
     "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
@@ -419,6 +420,7 @@
     "@types/mocha": "10.0.10",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
+    "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "2.32.0",
     "esbuild": "0.28.2",
     "mocha": "11.8.0",
