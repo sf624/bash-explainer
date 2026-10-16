@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # The workflows pin actions to commit SHAs; this proposes the new SHA when a release comes out.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # Must match engines.vscode (^1.85.0) and VS Code 1.85's Node.js 18.
+      - dependency-name: '@types/vscode'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Newer majors need a newer Node.js than 18, which CI tests on.
+      - dependency-name: mocha
+        versions: ['>=12']
+      - dependency-name: '@vscode/vsce'
+        versions: ['>=3']
+      # TypeScript 6 changes defaults tsconfig.json relies on (it no longer loads @types/* by itself).
+      - dependency-name: typescript
+        versions: ['>=6']
