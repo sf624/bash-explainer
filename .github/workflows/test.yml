@@ -16,7 +16,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        # Extensions run on the Node.js built into VS Code (Electron), so test both ends of the
+        # range we support: VS Code 1.85 (engines.vscode) has Node.js 18.15, current VS Code 24.21.
+        node: [18, 24]
     steps:
       - uses: actions/checkout@v5
 
