@@ -58,6 +58,8 @@ const PROBES: Record<string, string> = {
   waitN: 'sleep 0 & wait -n && echo ok',
   coproc: 'coproc cat </dev/null && echo ok',
   typeT: '[ "$(type -t echo)" = builtin ] && echo ok',
+  print: 'print ok',
+  whence: 'whence echo >/dev/null && echo ok',
   printfV: 'printf -v v %s ok; echo $v',
   printfQ: '[ "$(printf %q \'a b\')" = \'a\\ b\' ] && echo ok',
   echoE: '[ "$(echo -e \'a\\tb\')" = "$(printf \'a\\tb\')" ] && echo ok',
@@ -80,6 +82,7 @@ const BEHAVIOUR_PROBES: Record<string, string> = {
   echoEscape: '[ "$(echo \'a\\tb\')" = "$(printf \'a\\tb\')" ] && echo ok',
   wordSplit: 'v="a b"; set -- $v; [ $# = 1 ] && echo ok',
   arrayBase: 'a=(x y); [ "${a[1]}" = x ] && echo ok',
+  typesetScope: 'f() { typeset v=in; }; v=out; f; [ "$v" = in ] && echo ok',
 };
 // Probes that cannot be checked with `sh -c` (bash needs `shopt -s extglob` before parsing).
 const UNPROBED = ['extglob', 'bashVar'];
@@ -158,5 +161,8 @@ describe('dialect notes', () => {
     assert.match(notes('echo $v', 'zsh')[0], /In zsh an unquoted `\$var` is not split/);
     assert.deepStrictEqual(notes('echo "$v"', 'zsh'), []);
     assert.match(notes('ls *(.)', 'zsh')[0], /zsh-only syntax/);
+    const scope = (src: string) => dialectNotes(parser.parse(src).rootNode, 1, 'ksh', 'en');
+    assert.match(scope('f() {\n  typeset v=1\n}')[0], /does not make a local variable/);
+    assert.deepStrictEqual(scope('function f {\n  typeset v=1\n}'), []);
   });
 });

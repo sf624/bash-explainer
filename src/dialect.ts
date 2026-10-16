@@ -97,6 +97,8 @@ export const FEATURES: Record<string, Feature> = {
   exportF: { works: 'b', ja: '`export -f`', en: '`export -f`' },
   waitN: { works: 'b a', ja: '`wait -n`', en: '`wait -n`' },
   coproc: { works: 'b     z', ja: '`coproc`', en: '`coproc`' },
+  print: { works: '    kmz', ja: '`print`', en: '`print`', altJa: '`printf \'%s\\n\'` を使う', altEn: 'use `printf \'%s\\n\'`' },
+  whence: { works: '    kmz', ja: '`whence`', en: '`whence`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
   typeT: { works: 'b   k', ja: '`type -t`', en: '`type -t`', altJa: '`command -v` を使う', altEn: 'use `command -v`' },
   printfV: { works: 'b   k z', ja: '`printf -v`', en: '`printf -v`', altJa: '`v=$(printf …)` と書く', altEn: 'write `v=$(printf …)`' },
   printfQ: { works: 'b     z', ja: '`printf %q`', en: '`printf %q`' },
@@ -134,6 +136,11 @@ export const BEHAVIOURS: Record<string, Behaviour> = {
     ja: (sh) => `${sh} ではクォートしない \`$変数\` も単語分割・グロブ展開されません（bash では空白で分かれます）。`,
     en: (sh) => `In ${sh} an unquoted \`$var\` is not split into words or globbed (bash splits it on spaces).`,
   },
+  typesetScope: {
+    differs: 'k',
+    ja: (sh) => `${sh} では \`name() { … }\` の形の関数の中の \`typeset\` はローカル変数になりません（グローバル変数を変更します）。ローカルにするには \`function name { … }\` の形で定義します。`,
+    en: (sh) => `In ${sh}, \`typeset\` inside a function written \`name() { … }\` does not make a local variable (it changes the global one); define the function as \`function name { … }\` for local scope.`,
+  },
   arrayBase: {
     differs: 'yz',
     ja: (sh) => `${sh} の配列の添字は 1 から始まります（bash は 0 から）。この解説は bash の数え方です。`,
@@ -152,6 +159,11 @@ export function behavioursOnLine(root: SyntaxNode, line: number): string[] {
         && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
       // An unquoted `$var` used as a word of a command.
       if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
+      if (n.type === 'declaration_command' && n.child(0)?.text === 'typeset') {
+        let f: SyntaxNode | null = n.parent;
+        while (f && f.type !== 'function_definition') f = f.parent;
+        if (f && f.child(0)?.type !== 'function') add('typesetScope');
+      }
       if (n.type === 'expansion') {
         const p = parseExpansion(n.text.trimStart());
         if (p?.subscript && /^\d+$/.test(p.subscript)) add('arrayBase');
@@ -280,6 +292,8 @@ function commandFeatures(name: string, words: string[], add: (id: string) => voi
     case 'shopt': add('shopt'); break;
     case 'pushd': case 'popd': case 'dirs': add('pushd'); break;
     case 'coproc': add('coproc'); break;
+    case 'print': add('print'); break;
+    case 'whence': add('whence'); break;
     case 'export': if (/f/.test(flags)) add('exportF'); break;
     case 'wait': if (/n/.test(flags)) add('waitN'); break;
     case 'type': if (/t/.test(flags)) add('typeT'); break;
