@@ -1,0 +1,12 @@
+name: Defaults
+on: [push]
+defaults:
+  run:
+    shell: sh
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${RANDOM}
+      - run: echo "${{ github.head_ref }}"
+        shell: bash

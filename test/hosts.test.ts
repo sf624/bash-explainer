@@ -118,3 +118,25 @@ describe('package.json and Markdown', () => {
     assert.strictEqual(explain('README.md', 15), undefined);
   });
 });
+
+describe('GitHub Actions', () => {
+  it('reads composite actions and the shell of each step, skipping pwsh', () => {
+    assert.strictEqual(explain('action.yml', 13)!.context[0].label, 'GitHub Actions `run:` step');
+    assert.strictEqual(explain('action.yml', 20), undefined);
+    assert.ok(labels('action.yml', 23)[0].endsWith('@12'));
+    assert.ok(!explain('action.yml', 23)!.notes.some((n) => /POSIX/.test(n)), 'custom bash command line');
+  });
+  it('warns about untrusted input pasted into a script', () => {
+    const notes = explain('action.yml', 17)!.notes;
+    assert.match(notes[0], /^⚠ Script injection risk: `github\.event\.pull_request\.title`/);
+    assert.ok(!explain('action.yml', 13)!.notes.some((n) => /injection/.test(n)), 'inputs are not flagged');
+  });
+  it('explains the files GitHub provides', () => {
+    assert.match(explain('action.yml', 14)!.notes.join(), /`\$GITHUB_PATH` is the path of a file GitHub Actions provides: directories written here are added to PATH/);
+  });
+  it('follows defaults: run: shell:, overridden by a step', () => {
+    assert.match(explain('workflow-defaults.yml', 10)!.notes.join(), /`\$RANDOM` is not POSIX sh/);
+    assert.strictEqual(explain('workflow-defaults.yml', 4), undefined);
+    assert.match(explain('workflow-defaults.yml', 11)!.notes[0], /injection/);
+  });
+});
