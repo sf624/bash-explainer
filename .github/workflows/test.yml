@@ -75,7 +75,19 @@ jobs:
       - name: Download VS Code
         id: vscode
         shell: bash
-        run: echo "path=$(node --import tsx integration/run.ts --version=${{ matrix.vscode }} --download-only | tail -n 1)" >> "$GITHUB_OUTPUT"
+        # The update server sometimes fails to answer: try again, and stop here if it never does
+        # (the tests themselves run with no network and could not download it).
+        run: |
+          for attempt in 1 2 3; do
+            if path=$(node --import tsx integration/run.ts --version=${{ matrix.vscode }} --download-only | tail -n 1) && [ -e "$path" ]; then
+              echo "path=$path" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Download failed (attempt $attempt)"
+            sleep 15
+          done
+          echo "::error::Could not download VS Code ${{ matrix.vscode }}"
+          exit 1
 
       - name: Run the tests in VS Code, with no network
         if: runner.os == 'Linux'
