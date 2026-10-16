@@ -43,6 +43,13 @@
     "offline"
   ],
   "main": "./dist/extension.js",
+  "browser": "./dist/web/extension.js",
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
   "activationEvents": [
     "onLanguage:shellscript",
     "onLanguage:dockerfile",
@@ -404,6 +411,7 @@
     "build:web": "tsx scripts/build-web.ts",
     "notices": "tsx scripts/notices.ts",
     "test:integration": "node --import tsx integration/run.ts",
+    "test:integration:web": "node --import tsx integration/run-web.ts",
     "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
@@ -422,6 +430,7 @@
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "3.1.0",
+    "@vscode/test-web": "0.0.81",
     "@vscode/vsce": "2.32.0",
     "esbuild": "0.28.2",
     "mocha": "11.8.0",

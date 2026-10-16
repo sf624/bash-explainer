@@ -10,12 +10,20 @@ export interface WasmPaths {
   bashWasm: string;
 }
 
+/** The wasm files themselves, for hosts that read them on their own (VS Code, also on the web). */
+export interface WasmBinaries {
+  runtime: Uint8Array;
+  bash: Uint8Array;
+}
+
 let initialized: Promise<void> | undefined;
 
-export async function createBashParser(paths: WasmPaths): Promise<Parser> {
-  initialized ??= Parser.init({ locateFile: (name: string) => `${paths.runtimeDir.replace(/[\\/]$/, '')}/${name}` });
+export async function createBashParser(wasm: WasmPaths | WasmBinaries): Promise<Parser> {
+  initialized ??= 'runtime' in wasm
+    ? Parser.init({ wasmBinary: wasm.runtime })
+    : Parser.init({ locateFile: (name: string) => `${wasm.runtimeDir.replace(/[\\/]$/, '')}/${name}` });
   await initialized;
-  const bash = await Parser.Language.load(paths.bashWasm);
+  const bash = await Parser.Language.load('bash' in wasm ? wasm.bash : wasm.bashWasm);
   const parser = new Parser();
   parser.setLanguage(bash);
   return parser;

@@ -21,7 +21,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('offline by design', () => {
-  it('the source imports only vscode, path and web-tree-sitter', () => {
+  it('the source imports only vscode and web-tree-sitter', () => {
     const modules = new Set<string>();
     for (const file of sourceFiles('src')) {
       for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
@@ -29,7 +29,7 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name);
       }
     }
-    assert.deepStrictEqual([...modules].sort(), ['path', 'vscode', 'web-tree-sitter']);
+    assert.deepStrictEqual([...modules].sort(), ['vscode', 'web-tree-sitter']);
   });
 
   it('the web page imports only the editor, the parser and the source', () => {
@@ -50,19 +50,22 @@ describe('offline by design', () => {
     }
   });
 
-  it('the shipped bundle requires only vscode, fs and path, all by name', function () {
+  it('the shipped bundles (desktop and web) require only vscode, fs and path, all by name', function () {
     this.timeout(60000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-'));
     try {
       const out = path.join(dir, 'extension.js');
       // The same build as `npm run package`.
       execFileSync(process.execPath, ['esbuild.mjs', '--production', `--outfile=${out}`], { cwd: root, stdio: 'pipe' });
-      const bundle = fs.readFileSync(out, 'utf8');
-      const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
-      assert.deepStrictEqual([...required].sort(), ['fs', 'path', 'vscode']);
-      // A name built at run time could load anything.
-      assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/);
-      assert.doesNotMatch(bundle, /telemetry/i);
+      // fs and path: web-tree-sitter's code for Node.js, which reads the wasm files only when given paths.
+      for (const file of [out, path.join(dir, 'web', 'extension.js')]) {
+        const bundle = fs.readFileSync(file, 'utf8');
+        const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
+        assert.deepStrictEqual([...required].sort(), ['fs', 'path', 'vscode'], file);
+        // A name built at run time could load anything.
+        assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/, file);
+        assert.doesNotMatch(bundle, /telemetry/i, file);
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -71,6 +71,7 @@ A one-line summary at the end of the cursor line.
 - **Command line:** `code --install-extension shun-fujioka.bash-explainer`
 - **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **No installation:** the [web version](https://sf624.github.io/bash-explainer/) runs in the browser.
+- **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository), including Codespaces in the browser.
 
 Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
 
@@ -237,6 +238,8 @@ A [CI check](test/offline.test.ts) fails the build if network or process APIs ap
 
 The [web version](https://sf624.github.io/bash-explainer/) works the same way. GitHub Pages serves the page, but your script is parsed and explained in the browser and sent nowhere; the page's Content Security Policy allows no requests to other sites, and a link to a script carries it after `#`, which browsers do not send. The same CI check covers the page, and a test opens it in Chromium, blocking every request to other sites, and keeps using it offline.
 
+In VS Code for the Web, the extension runs in your browser; VS Code loads its files (including the parser) from the Marketplace, but your scripts are explained there and sent nowhere.
+
 This describes the extension and its web version, not VS Code, other extensions or your browser. It is provided as is, without warranty (see [LICENSE](LICENSE)); please evaluate it against your own requirements before using it with sensitive data.
 
 ## Release notes
@@ -253,6 +256,7 @@ npm run build      # bundle into dist/ (also copies the wasm files)
 npm test           # type check + unit tests
 npm run package    # build a .vsix
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
+npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```
 
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.

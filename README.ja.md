@@ -71,6 +71,7 @@
 - **コマンドライン:** `code --install-extension shun-fujioka.bash-explainer`
 - **VSCodium など Open VSX を使うエディタ:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **インストールなし:** [ブラウザ版](https://sf624.github.io/bash-explainer/) がブラウザだけで動きます。
+- **VS Code for the Web:** [vscode.dev](https://vscode.dev) や [github.dev](https://github.dev)（GitHub のリポジトリで `.` を押す）、ブラウザで開いた Codespaces でも動きます。
 
 VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は WebAssembly）、VS Code が動く環境ならどこでも動きます。
 
@@ -237,6 +238,8 @@ Bash Explainer は、設計上すべてオフラインで動きます。
 
 [ブラウザ版](https://sf624.github.io/bash-explainer/) も同じです。ページは GitHub Pages から配信されますが、スクリプトの構文解析と解説はブラウザの中で行い、どこにも送りません。ページの Content Security Policy は他のサイトへのリクエストを一切許可していません。スクリプトを共有するリンクでは、スクリプトを `#` より後ろに入れます。ブラウザはこの部分をサーバーに送りません。ページも同じ CI のチェックの対象です。さらに、ページを Chromium で開いて他のサイトへのリクエストをすべて遮断し、オフラインにしたまま使い続けるテストも行っています。
 
+VS Code for the Web では、拡張はお使いのブラウザの中で動きます。VS Code は拡張のファイル（構文解析器を含む）を Marketplace から読み込みますが、スクリプトの解説はブラウザの中で行い、どこにも送りません。
+
 ここで述べているのはこの拡張とブラウザ版の性質で、VS Code 本体、他の拡張、お使いのブラウザは含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
 
 ## リリースノート
@@ -253,6 +256,7 @@ npm run build      # dist/ にバンドル（wasm もコピー）
 npm test           # 型チェック + 単体テスト
 npm run package    # .vsix を作成
 npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
+npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
 ```
 
 - VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
