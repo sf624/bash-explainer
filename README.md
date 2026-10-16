@@ -11,7 +11,7 @@
 
 A Visual Studio Code extension that explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
 
-Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit.
+Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
 
 ![Bash Explainer demo](images/demo.gif)
 
