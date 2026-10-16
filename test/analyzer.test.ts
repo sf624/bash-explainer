@@ -220,3 +220,14 @@ describe('example titles', () => {
     assert.deepStrictEqual(explain('sort -u names.txt', 0, 'ja').examples.map((e) => e.title), ['例']);
   });
 });
+
+describe('git log examples', () => {
+  it('shows the output of --pretty and the dates of --date, each under its option', () => {
+    const e = explain("git log --pretty=format:'%h %ad' --date=format:%Y -n 2");
+    assert.deepStrictEqual(e.examples.map((x) => x.title), ['Example (`git log` output with this format)', 'Example (dates in this style)']);
+    const year = String(new Date().getFullYear());
+    assert.deepStrictEqual(e.examples[0].sections[0].lines, [`3f2a9c1 ${year}`, `b81e44a ${year}`]);
+    assert.strictEqual(e.examples[1].sections[0].lines.length, 2);
+    assert.match(JSON.stringify(e.examples[0].anchor), /"character":8/);
+  });
+});
