@@ -71,7 +71,7 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 
 ## Shell code in other files
 
-Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents), Makefile recipes, CI YAML (`run:` in GitHub Actions, `script:` in GitLab CI…), `package.json` scripts and Markdown code blocks (`sh`, `bash`, `console`…). Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
+Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents, the exec form `RUN ["cmd", "arg"]`, the script of `["sh", "-c", "…"]` and `SHELL [...]`, with a warning when a `RUN` pipe would hide failures without `pipefail`), Makefile recipes, CI YAML (`run:` in GitHub Actions, `script:` in GitLab CI…), `package.json` scripts and Markdown code blocks (`sh`, `bash`, `console`…). Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
 
 ## Other shells
 

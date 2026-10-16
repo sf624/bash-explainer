@@ -12,3 +12,7 @@ EOF
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN for f in /opt/*.conf; do sed -i 's/^#\(listen\)/\1/' "$f"; done &> /dev/null
 CMD exec /opt/app --port "${PORT:-8080}"
+CMD ["sh", "-c", "exec /opt/app --port \"${PORT:-8080}\" 2>&1 | tee /var/log/app.log"]
+ENTRYPOINT ["/opt/app", "--config", "$HOME/app.conf", \
+            "--name", "it's"]
+RUN curl -fsSL https://example.com/setup.sh | bash
