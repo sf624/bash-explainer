@@ -344,7 +344,7 @@ class SedParser {
           i++;
         } else if (/[0-9]/.test(n)) {
           flush(i);
-          out.push(this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)));
+          out.push({ ...this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)), ...(n !== '0' ? { group: Number(n) } : {}) });
           i++;
         } else if (special[n]) {
           flush(i);

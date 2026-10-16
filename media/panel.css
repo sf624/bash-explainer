@@ -158,12 +158,25 @@ code {
 
 header {
   display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 0.8rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0;
+  background: var(--vscode-editor-background);
 }
 
-#settings {
-  margin-left: auto;
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.6rem;
+}
+
+.tools button {
   background: none;
   border: none;
   padding: 0.1rem 0.3rem;
@@ -172,7 +185,135 @@ header {
   cursor: pointer;
 }
 
-#settings:hover {
+.tools button:hover {
   color: var(--vscode-textLink-activeForeground);
   text-decoration: underline;
+}
+
+.tools label {
+  color: var(--c-muted);
+}
+
+.tools select {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  font: inherit;
+  padding: 0 0.2rem;
+}
+
+/* Folding: the twisty, and a collapsed item's children. */
+.twisty {
+  flex: 0 0 0.8em;
+  color: var(--c-muted);
+  user-select: none;
+}
+
+li.collapsed > ul,
+li.collapsed > .example {
+  display: none;
+}
+
+/* Capture groups: the same colour for the group in the tree and what it matched in the examples. */
+.grp-1 { --grp: var(--vscode-charts-blue, #3794ff); }
+.grp-2 { --grp: var(--vscode-charts-green, #89d185); }
+.grp-3 { --grp: var(--vscode-charts-orange, #d18616); }
+.grp-4 { --grp: var(--vscode-charts-purple, #b180d7); }
+.grp-5 { --grp: var(--vscode-charts-yellow, #cca700); }
+.grp-6 { --grp: var(--vscode-charts-red, #f14c4c); }
+
+.grp-label {
+  border-bottom: 2px solid var(--grp);
+}
+
+.match {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  border-radius: 2px;
+}
+
+.match.grp {
+  background: color-mix(in srgb, var(--grp) 35%, transparent);
+}
+
+/* The example input: a transparent textarea over a layer showing the same text with highlights. */
+.editor {
+  position: relative;
+}
+
+.editor .layer,
+.editor textarea {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 1.5;
+  padding: 0.4rem 0.7rem;
+  margin: 0;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  tab-size: 8;
+}
+
+.editor .layer {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  color: var(--vscode-editor-foreground);
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+
+.editor textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--vscode-editor-foreground);
+  border: 1px dashed var(--vscode-input-border, rgba(127, 127, 127, 0.4));
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+
+.editor textarea:focus {
+  border: 1px solid var(--vscode-focusBorder);
+}
+
+.hint {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+/* Quick reference. */
+#reference h3 {
+  font-size: 1em;
+  margin: 1rem 0 0.3rem;
+}
+
+#ref-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.3rem 0.5rem;
+  margin: 0.4rem 0;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  font: inherit;
+}
+
+.ref-row {
+  display: flex;
+  gap: 0.8rem;
+  padding: 0.1rem 0.4rem;
+}
+
+.ref-row code {
+  flex: 0 0 auto;
+  min-width: 9em;
+  color: var(--c-command);
+}
+
+.ref-row span code {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  padding: 0 0.25em;
+  border-radius: 3px;
 }

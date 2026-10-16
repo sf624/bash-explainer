@@ -11,6 +11,7 @@ import { perlExample, perlOptions } from './examples/perlrun';
 import { pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
+import { Interactive, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
 import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, isGlob, ShellWordsUnsupported } from './examples/shellwords';
@@ -57,6 +58,8 @@ export interface Token {
   summary?: string;
   /** Worked examples shown right under this token (see `placeExamples`). */
   examples?: Example[];
+  /** A regex capture group (or a reference to one), coloured alike in the panel and the examples. */
+  group?: number;
 }
 
 export interface ContextEntry { label: string; line: number }
@@ -96,6 +99,8 @@ export interface Example {
   /** The source range the example belongs to; the example is shown under the token that covers it. */
   anchor?: Span;
   sections: ExampleSection[];
+  /** For the panel: input the user can edit, and how to run the example again on it. */
+  interactive?: Interactive;
 }
 
 /** Constructs that own a body; when they span lines, each line explains only its own part. */
@@ -932,7 +937,12 @@ export class Analyzer {
           quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'),
           extended: flavor === 'ere',
         });
-        if (ex) this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place'));
+        if (ex) {
+          this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place'), {
+            kind: 'sed', script: scripts.join('\n'), quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'), extended: flavor === 'ere',
+            highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
+          });
+        }
         break;
       }
       case 'jq': {
@@ -948,13 +958,14 @@ export class Analyzer {
           nullInput: flags.has('-n') || flags.has('--null-input'),
           vars: this.jqVars(),
         });
-        if (runs) this.jqExamples(runs);
+        if (runs) this.jqExamples(runs, { kind: 'jq', filter: lit.text, raw: flags.has('-r') || flags.has('--raw-output') || flags.has('-j') || flags.has('--join-output'), vars: this.jqVars() });
         break;
       }
       case 'awk': {
         tokens = explainAwk(lit.text, this.lang);
-        const ex = awkExample(lit.text, this.awkOptions());
-        if (ex) this.ioExample(ex.input, ex.output);
+        const opts = this.awkOptions();
+        const ex = awkExample(lit.text, opts);
+        if (ex) this.ioExample(ex.input, ex.output, false, { kind: 'awk', program: lit.text, fs: opts.fs, vars: opts.vars });
         break;
       }
       case 'printf':
@@ -1072,6 +1083,7 @@ export class Analyzer {
       kind: t.kind, label: shorten(label), explanation: t.explanation,
       span: { start: at(t.start), end: at(t.end, true) },
       children: t.children.map((c) => this.fromEmbedded(c, node, lit)),
+      ...(t.group ? { group: t.group } : {}),
     };
   }
 
@@ -1181,6 +1193,7 @@ export class Analyzer {
     this.examples.push({
       title: mode === 'inverted' ? this.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : this.s('例', 'Example'),
       sections: sections.filter((s) => s.lines.length),
+      interactive: this.interactive({ kind: 'regex', regex: js, mode }, [...yes, ...no], this.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)')),
     });
   }
 
@@ -1257,7 +1270,7 @@ export class Analyzer {
     }
   }
 
-  private jqExamples(runs: JqRun[]): void {
+  private jqExamples(runs: JqRun[], spec?: RerunSpec): void {
     runs.forEach((r, i) => {
       // Short JSON stays on one line; longer JSON is indented like jq prints it.
       const compact = toJson(r.input);
@@ -1270,6 +1283,8 @@ export class Analyzer {
             ? { label: this.s('エラー', 'Error'), lines: [r.error] }
             : { label: this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') },
         ],
+        // Only the first example can be edited; the second shows the missing-value case.
+        ...(spec && i === 0 && r.input !== null ? { interactive: this.interactive(spec, JSON.stringify(r.input, null, 2).split('\n'), this.s('入力（JSON）', 'Input (JSON)')) } : {}),
       });
     });
   }
@@ -1340,7 +1355,11 @@ export class Analyzer {
           : this.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
       sections.push({ label, lines: cap(step.output), empty: this.s('（なし）', '(nothing)') });
     });
-    return { title: this.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections };
+    return {
+      title: this.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
+      // Data from a file can be edited; data made by echo or seq cannot.
+      ...(ex.input ? { interactive: this.interactive({ kind: 'pipeline', stages }, ex.input, sections[0].label) } : {}),
+    };
   }
 
   /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
@@ -1355,14 +1374,15 @@ export class Analyzer {
       const ex = parsed && perlExample(parsed.code, parsed.opts);
       if (!ex) return;
       const inPlace = words.some((w) => /^-[a-zA-Z]*i/.test(w ?? ''));
-      if (ex.input.length) this.ioExample(ex.input, ex.output, inPlace);
+      if (ex.input.length) this.ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts });
       else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible), empty: this.s('（出力なし）', '(no output)') }] });
       return;
     }
     if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
-    const ex = commandExample(cmd, args.map((a) => literalContent(a)?.text));
+    const words = args.map((a) => literalContent(a)?.text);
+    const ex = commandExample(cmd, words);
     if (!ex) return;
-    if (ex.input) this.ioExample(ex.input, ex.output);
+    if (ex.input) this.ioExample(ex.input, ex.output, false, FILTERS[cmd] ? { kind: 'filter', cmd, words } : undefined);
     else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
   }
 
@@ -1400,7 +1420,15 @@ export class Analyzer {
     const [yes, no] = labels ?? (mode === 'file'
       ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
       : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
-    this.examples.push({ title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length) });
+    this.examples.push({
+      title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
+      interactive: this.interactive({ kind: 'glob', pattern, mode }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
+    });
+  }
+
+  /** An example's editable form for the panel: the spec to run it again, and what it gives now. */
+  private interactive(spec: RerunSpec, input: string[], inputLabel = this.s('入力', 'Input')): Interactive {
+    return { spec, inputLabel, input, result: rerun(spec, input, this.lang) };
   }
 
   /** Values that select a case branch (any of its patterns) and values that do not. */
@@ -1530,6 +1558,8 @@ export class Analyzer {
         { label: this.s('入力（標準入力）', 'Input (stdin)'), lines: input.map(visible) },
         { label: this.s('実行されるコマンド', 'Commands that run'), lines: ex.commands, empty: this.s('（実行されない）', '(none)') },
       ],
+      // Input split on NUL or another delimiter is not one item per line, so it is not editable.
+      ...(args.some((a) => /^(-0|--null|-d|--delimiter)/.test(a.text)) ? {} : { interactive: this.interactive({ kind: 'xargs', words: args.map((a) => literalContent(a)?.text) }, input, this.s('入力（標準入力）', 'Input (stdin)')) }),
     });
   }
 
@@ -1627,9 +1657,10 @@ export class Analyzer {
   }
 
   /** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
-  private ioExample(input: string[], output: string[], inPlace = false): void {
+  private ioExample(input: string[], output: string[], inPlace = false, spec?: RerunSpec): void {
     const tabs = (lines: string[]) => lines.map(visible);
     this.examples.push({
+      ...(spec ? { interactive: this.interactive(spec, input) } : {}),
       title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example'),
       sections: [
         { label: this.s('入力', 'Input'), lines: tabs(input) },
@@ -2231,6 +2262,22 @@ function fillsPositional(doc: CommandDoc | undefined, args: SyntaxNode[]): boole
     }
   }
   return false;
+}
+
+/** The pattern of a sed script made of a single `s` command, to highlight what it matches. */
+function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined {
+  const m = /^\s*s(.)/.exec(script);
+  if (!m || /[\s\\\n]/.test(m[1])) return undefined;
+  const delim = m[1];
+  let i = m[0].length;
+  let pat = '';
+  for (; i < script.length && script[i] !== delim; i++) {
+    if (script[i] === '\\' && script[i + 1] === delim) { pat += delim; i++; continue; }
+    if (script[i] === '\\') { pat += script[i] + (script[i + 1] ?? ''); i++; continue; }
+    pat += script[i];
+  }
+  const flags = /^[^;\n]*$/.test(script) ? (script.split(delim).pop() ?? '') : '';
+  return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {

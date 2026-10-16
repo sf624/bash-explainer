@@ -67,6 +67,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       updateStatus();
     }),
     vscode.window.onDidChangeActiveTextEditor(updateStatus),
+    // A shell or yq chosen in the panel changes the explanations and the warnings.
+    service.onDidChangeOverrides(() => {
+      panel.refresh();
+      inline.refresh();
+      diagnostics.refresh();
+    }),
     // A code block added to a Markdown file (or removed) changes whether it has shell code.
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document === vscode.window.activeTextEditor?.document) {

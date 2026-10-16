@@ -11,6 +11,10 @@ import type { ExamplePlacement, Feature } from './ui/render';
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
   private analyzers = new Map<Lang, Analyzer>();
+  private overrides = new Map<string, { shell?: Shell; yq?: string }>();
+  private changed = new vscode.EventEmitter<vscode.TextDocument>();
+  /** Fires when a choice made in the panel changes how a document is explained. */
+  readonly onDidChangeOverrides = this.changed.event;
   private extracted = new Map<string, { version: number; value: Extracted }>();
 
   constructor(private trees: TreeCache) {}
@@ -73,9 +77,39 @@ export class ExplainService implements vscode.Disposable {
 
   /** The shell the document is written for: the `shell` setting, else detected from the file. */
   shellOf(doc: vscode.TextDocument): Shell | undefined {
-    const set = this.config.get<string>('shell', 'auto');
-    if (set !== 'auto' && set in SHELL_NAMES) return set as Shell;
+    return this.forcedShell(doc) ?? this.detectedShell(doc);
+  }
+
+  /** The shell the file itself says (shebang, ShellCheck directive, file name). */
+  detectedShell(doc: vscode.TextDocument): Shell | undefined {
     return detectShell(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName);
+  }
+
+  /** The shell chosen in the panel for this document, else the `shell` setting (undefined: auto). */
+  forcedShell(doc: vscode.TextDocument): Shell | undefined {
+    const chosen = this.overrides.get(doc.uri.toString())?.shell;
+    if (chosen) return chosen;
+    const set = this.config.get<string>('shell', 'auto');
+    return set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
+  }
+
+  /** The yq chosen in the panel for this document, else the `yq.flavor` setting. */
+  yqFlavorOf(doc: vscode.TextDocument): string {
+    return this.overrides.get(doc.uri.toString())?.yq ?? this.config.get<string>('yq.flavor', 'auto');
+  }
+
+  /** Choices made in the panel for one document, for this session ('auto' clears them). */
+  override(doc: vscode.TextDocument, key: 'shell' | 'yq', value: string): void {
+    const key0 = doc.uri.toString();
+    const cur = { ...this.overrides.get(key0) };
+    if (key === 'shell') cur.shell = value === 'auto' ? undefined : (value as Shell);
+    else cur.yq = value === 'auto' ? undefined : value;
+    this.overrides.set(key0, cur);
+    this.changed.fire(doc);
+  }
+
+  overrideOf(doc: vscode.TextDocument): { shell?: Shell; yq?: string } {
+    return this.overrides.get(doc.uri.toString()) ?? {};
   }
 
   explain(doc: vscode.TextDocument, line: number): LineExplanation {
@@ -86,25 +120,22 @@ export class ExplainService implements vscode.Disposable {
     if (kind) {
       const extracted = this.extractedOf(doc, kind);
       const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
-      const set = this.config.get<string>('shell', 'auto');
-      const shell = set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
-      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, shell, this.explainOptions());
+      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, this.forcedShell(doc), this.explainOptions(doc));
       return ex ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
     }
     const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
-    return analyzer.explainLine(tree, line, this.shellOf(doc), this.explainOptions());
+    return analyzer.explainLine(tree, line, this.shellOf(doc), this.explainOptions(doc));
   }
 
-  private explainOptions(): ExplainOptions {
-    return { yqFlavor: this.config.get<string>('yq.flavor', 'auto') };
+  private explainOptions(doc: vscode.TextDocument): ExplainOptions {
+    return { yqFlavor: this.yqFlavorOf(doc) };
   }
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
     const lang = this.lang;
     const kind = this.hostOf(doc);
-    const set = this.config.get<string>('shell', 'auto');
-    const override = set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
+    const override = this.forcedShell(doc);
     if (kind) {
       const extracted = this.extractedOf(doc, kind);
       if (!extracted.regions.length) return [];
@@ -132,6 +163,7 @@ export class ExplainService implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.changed.dispose();
     this.trees.dispose();
   }
 }

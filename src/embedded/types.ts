@@ -11,6 +11,8 @@ export interface EmbeddedToken {
   children: EmbeddedToken[];
   /** Defaults to the source text between start and end. */
   label?: string;
+  /** A regex capture group (or a reference to one): its number, so it can be coloured alike everywhere. */
+  group?: number;
 }
 
 export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path';

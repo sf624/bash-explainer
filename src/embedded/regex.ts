@@ -202,6 +202,7 @@ function group(st: State, openLen: number): EmbeddedToken {
   const start = st.i;
   st.i += openLen;
   let explanation: string;
+  let group: number | undefined;
   const rest = st.src.slice(st.i);
   const ext = st.flavor === 'pcre' ? /^\?(:|=|!|<=|<!|P?<([A-Za-z_]\w*)>|[imsx-]+\))/.exec(rest) : null;
   if (ext) {
@@ -213,20 +214,20 @@ function group(st: State, openLen: number): EmbeddedToken {
     else if (k === '<=') explanation = s('`(?<=…)`: 直前が … である位置（後読み）', '`(?<=…)`: preceded by … (lookbehind)');
     else if (k === '<!') explanation = s('`(?<!…)`: 直前が … ではない位置（否定後読み）', '`(?<!…)`: not preceded by … (negative lookbehind)');
     else if (ext[2]) {
-      const no = ++st.groups;
-      explanation = s(`名前付きグループ \`${ext[2]}\`（グループ ${no}）: 一致した部分を名前で参照できる`, `Named group \`${ext[2]}\` (group ${no})`);
+      group = ++st.groups;
+      explanation = s(`名前付きグループ \`${ext[2]}\`（グループ ${group}）: 一致した部分を名前で参照できる`, `Named group \`${ext[2]}\` (group ${group})`);
     } else {
       return { start, end: st.i, kind: 'keyword', explanation: s(`\`(?${k}\`: 以降のマッチのオプションを切り替える（i: 大小文字を区別しない など）`, `\`(?${k}\`: set matching options from here (i: case-insensitive, …)`), children: [] };
     }
   } else {
-    const no = ++st.groups;
-    explanation = s(`グループ ${no}: 中身をひとまとめにする（\`\\${no}\` で一致した文字列を参照できる）`, `Group ${no}: treats its contents as one unit (\`\\${no}\` refers to what it matched)`);
+    group = ++st.groups;
+    explanation = s(`グループ ${group}: 中身をひとまとめにする（\`\\${group}\` で一致した文字列を参照できる）`, `Group ${group}: treats its contents as one unit (\`\\${group}\` refers to what it matched)`);
   }
   const children = sequence(st, 1);
   const close = isGroupClose(st);
   if (close) st.i += close;
   else explanation += s('（閉じ括弧がない）', ' (missing closing parenthesis)');
-  return { start, end: st.i, kind: 'block', explanation, children };
+  return { start, end: st.i, kind: 'block', explanation, children, ...(group ? { group } : {}) };
 }
 
 function bracket(st: State): EmbeddedToken {
@@ -288,7 +289,7 @@ function escape(st: State): EmbeddedToken {
   if (/[1-9]/.test(c)) {
     const missing = Number(c) > st.groups;
     return {
-      start, end: st.i, kind: 'variable', children: [],
+      start, end: st.i, kind: 'variable', children: [], group: Number(c),
       explanation: s(`後方参照 \`\\${c}\`: グループ ${c} に一致したのと同じ文字列${missing ? '（ここまでにグループ ' + c + ' がない）' : ''}`,
         `Backreference \`\\${c}\`: the same text group ${c} matched${missing ? ` (no group ${c} before this point)` : ''}`),
     };
