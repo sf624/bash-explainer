@@ -21,6 +21,11 @@ export const ui = {
     statusTooltip: 'Bash Explainer: クリックで表示方法を切り替え',
     openInPanel: 'パネルで詳しく見る',
     settings: '設定',
+    panel: {
+      copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
+      reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
+      editHint: '入力は書き換えられます（結果はその場で更新）', noMatch: '該当なし',
+    },
   },
   en: {
     title: 'Bash Explainer',
@@ -40,6 +45,11 @@ export const ui = {
     statusTooltip: 'Bash Explainer: click to change how explanations are shown',
     openInPanel: 'Open in panel',
     settings: 'Settings',
+    panel: {
+      copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
+      reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
+      editHint: 'You can edit the input; the result updates as you type', noMatch: 'Nothing found',
+    },
   },
 } satisfies Record<Lang, unknown>;
 
@@ -203,4 +213,19 @@ export function examplesMarkdown(examples: Example[], indent?: string): string[]
     }
   }
   return out;
+}
+
+/** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */
+export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string): string {
+  const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
+  for (const n of ex.notes) out.push(`> ${n}`, '');
+  // A label containing a backtick needs a double-backtick code span.
+  const code = (text: string) => (text.includes('`') ? `\`\` ${text} \`\`` : `\`${text}\``);
+  const walk = (tok: Token, depth: number) => {
+    out.push(`${'  '.repeat(depth)}- ${code(tok.label.replace(/\s*\n\s*/g, ' ⏎ '))} — ${tok.explanation}`);
+    for (const c of tok.children) walk(c, depth + 1);
+  };
+  for (const item of ex.items) walk(item, 0);
+  out.push(...examplesMarkdown(ex.examples));
+  return out.join('\n').trim() + '\n';
 }

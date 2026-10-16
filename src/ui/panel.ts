@@ -3,13 +3,20 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer';
 import { ExplainService } from '../service';
 import { SHELL_NAMES } from '../dialect';
-import { placeExamples, ui } from './render';
+import { placeExamples, toPlainMarkdown, ui } from './render';
+import { quickReference } from './reference';
+import { rerun, RerunSpec } from '../examples/rerun';
+import { YQ_NAMES } from '../embedded/yq';
 
 type FromWebview =
   | { type: 'ready' }
   | { type: 'highlight'; span: Span | null }
   | { type: 'reveal'; span: Span }
-  | { type: 'openSettings' };
+  | { type: 'openSettings' }
+  | { type: 'rerun'; id: number; spec: RerunSpec; input: string }
+  | { type: 'copy' }
+  | { type: 'override'; key: 'shell' | 'yq'; value: string }
+  | { type: 'reference' };
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 export class PanelController implements vscode.Disposable {
@@ -103,8 +110,19 @@ export class PanelController implements vscode.Disposable {
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
     const ex = this.service.explain(ed.document, line);
     this.panel.title = `${t.title}: ${path.basename(ed.document.fileName)}:${line + 1}`;
+    const choice = this.service.overrideOf(ed.document);
+    const detected = this.service.detectedShell(ed.document);
+    const tp = t.panel;
     void this.panel.webview.postMessage({
       type: 'update',
+      labels: tp,
+      dialect: {
+        shells: [['auto', `${tp.auto}${detected ? (lang === 'ja' ? `（${SHELL_NAMES[detected]}）` : ` (${SHELL_NAMES[detected]})`) : ''}`], ...Object.entries(SHELL_NAMES)],
+        shell: choice.shell ?? 'auto',
+        // The yq choice only matters on lines that run yq.
+        yqs: ex.notes.some((n) => n.startsWith('yq:')) ? [['auto', tp.auto], ...Object.entries(YQ_NAMES).map(([k, v]) => [k, v[lang === 'ja' ? 0 : 1]])] : undefined,
+        yq: choice.yq ?? 'auto',
+      },
       file: path.basename(ed.document.fileName),
       lineLabel: t.line(line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
       lineText: ed.document.lineAt(line).text,
@@ -120,7 +138,22 @@ export class PanelController implements vscode.Disposable {
     const ed = this.editor;
     if (m.type === 'ready') return this.post();
     if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
+    if (m.type === 'rerun') {
+      // The user edited the input of a worked example: run it again.
+      const lines = m.input.replace(/\n$/, '').split('\n');
+      return void this.panel?.webview.postMessage({ type: 'rerunResult', id: m.id, result: rerun(m.spec, lines, this.service.lang) });
+    }
+    if (m.type === 'reference') {
+      return void this.panel?.webview.postMessage({ type: 'reference', entries: quickReference(this.service.lang) });
+    }
     if (!ed || ed.document.isClosed) return;
+    if (m.type === 'copy') {
+      const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
+      const md = toPlainMarkdown(this.service.explain(ed.document, line), ed.document.lineAt(line).text, `${path.basename(ed.document.fileName)}:${line + 1}`);
+      void vscode.env.clipboard.writeText(md).then(() => vscode.window.showInformationMessage(ui[this.service.lang].panel.copied));
+      return;
+    }
+    if (m.type === 'override') return this.service.override(ed.document, m.key, m.value);
     if (m.type === 'highlight') {
       ed.setDecorations(this.highlight, m.span ? [toRange(m.span)] : []);
     } else if (m.type === 'reveal') {
@@ -146,12 +179,28 @@ export class PanelController implements vscode.Disposable {
 <link rel="stylesheet" href="${css}">
 </head>
 <body>
-<header><span id="where"></span><span id="context"></span><button id="settings" type="button"></button></header>
-<pre id="line"></pre>
-<div id="notes"></div>
-<ul id="tree"></ul>
-<div id="examples"></div>
-<p id="empty" hidden></p>
+<header>
+  <div class="where"><span id="where"></span><span id="context"></span></div>
+  <div class="tools">
+    <label id="shell-box" hidden><span id="shell-label"></span> <select id="shell"></select></label>
+    <label id="yq-box" hidden><span id="yq-label"></span> <select id="yq"></select></label>
+    <button id="toggle" type="button"></button>
+    <button id="copy" type="button"></button>
+    <button id="ref" type="button"></button>
+    <button id="settings" type="button"></button>
+  </div>
+</header>
+<main id="main">
+  <pre id="line"></pre>
+  <div id="notes"></div>
+  <ul id="tree"></ul>
+  <div id="examples"></div>
+  <p id="empty" hidden></p>
+</main>
+<section id="reference" hidden>
+  <input id="ref-search" type="search">
+  <div id="ref-list"></div>
+</section>
 <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;

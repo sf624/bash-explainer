@@ -34,7 +34,7 @@ No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://
 | | How | Default |
 | --- | --- | --- |
 | **Hover** | Hover a line, or press `Ctrl+Alt+E` on the cursor line | on |
-| **Panel** | A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor | open it from the hover or the editor title bar |
+| **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the hover or the editor title bar |
 | **Inline** | A faint one-line summary at the end of the cursor line | off |
 
 Turn them on or off by clicking **Bash Explainer** in the status bar.
@@ -46,6 +46,15 @@ Turn them on or off by clicking **Bash Explainer** in the status bar.
 ![Inline](images/inline.png)
 
 ---
+
+## The panel
+
+The panel works like regex101:
+
+- **Edit the examples.** Change the input of a worked example — grep and `[[ =~ ]]` test strings, sed, awk, jq, perl, `sort`, `cut`, `xargs`, whole pipelines — and the output updates as you type.
+- **See what matched.** Matches are highlighted in the input, each capture group in its own colour, the same colour as the group in the explanation; a table shows what `\1`, `\2`, … captured.
+- **Switch the shell or yq** for the current file from the header, and see the explanation and warnings change.
+- **Fold** the explanation tree, **copy** it as Markdown for a review or a document, and open the searchable **quick reference** of expansions, redirections, tests, variables and commands.
 
 ## What is explained
 
