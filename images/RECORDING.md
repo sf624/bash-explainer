@@ -9,7 +9,7 @@ README.md / README_ja.md は次の4ファイルを参照しています。この
 | `panel.gif` | パネルモード | 10〜15秒 |
 | `inline.png` | インラインモードの静止画 | — |
 
-`images/` は `.vscodeignore` で .vsix には含まれません。Marketplace の README は、`package.json` の `repository`（github.com/sf624/bash-explain）から画像を読み込みます。**push してから公開**してください。
+`images/` は `.vscodeignore` で .vsix には含まれません。Marketplace の README は、`package.json` の `repository`（github.com/sf624/bash-explainer）から画像を読み込みます。**push してから公開**してください。
 
 ## 準備
 

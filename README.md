@@ -162,7 +162,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 
 ## Contributing
 
-Issues and pull requests are welcome at [github.com/sf624/bash-explain](https://github.com/sf624/bash-explain).
+Issues and pull requests are welcome at [github.com/sf624/bash-explainer](https://github.com/sf624/bash-explainer).
 
 ```sh
 npm install
