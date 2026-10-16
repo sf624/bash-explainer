@@ -1,5 +1,3 @@
-<img src="media/icon.png" width="96" alt="Bash Explainer icon">
-
 # Bash Explainer
 
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
@@ -13,6 +11,8 @@ A Visual Studio Code extension that explains shell scripts line by line — like
 
 Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
 
+**No setup, and [offline by design](#privacy):** no network, no AI, no telemetry. In English and Japanese.
+
 ![Bash Explainer demo](images/demo.gif)
 
 ## Quick start
@@ -24,8 +24,6 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
 
 To try it without installing anything, open the **[web version](https://sf624.github.io/bash-explainer/)**, paste a script and move the cursor: the same explanations, in the browser.
-
-No setup, and [offline by design](#privacy): no network, no AI, no telemetry. Scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, in English or Japanese.
 
 ## What it shows
 
@@ -231,7 +229,7 @@ In-house tools are shown as *external commands* until you describe them:
 Bash Explainer works entirely offline by design:
 
 - **No network access.** The extension contains no code that opens network connections, and the panel's Content Security Policy blocks external requests.
-- **No AI.** Scripts are parsed with tree-sitter-bash and explained from built-in dictionaries, so the same line always gets the same explanation.
+- **No AI.** Scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, so the same line always gets the same explanation.
 - **No telemetry.** The extension collects nothing.
 - **No external processes.** Examples are computed by built-in code; your tools are never run.
 
