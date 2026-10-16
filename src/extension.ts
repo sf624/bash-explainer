@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { createBashParser, TreeCache } from './parser';
 import { ExplainService } from './service';
+import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
 import { InlineController } from './ui/inline';
 import { PanelController } from './ui/panel';
@@ -15,6 +16,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const hover = new HoverController(service);
   const panel = new PanelController(ctx, service);
   const inline = new InlineController(service);
+  const diagnostics = new DiagnosticsController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   status.command = 'bashExplain.selectDisplayMode';
 
@@ -33,7 +35,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
 
   ctx.subscriptions.push(
-    service, hover, panel, inline, status,
+    service, hover, panel, inline, diagnostics, status,
     vscode.commands.registerCommand('bashExplain.showAtCursor', () => hover.showAtCursor()),
     vscode.commands.registerCommand('bashExplain.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
     vscode.commands.registerCommand('bashExplain.openPanel', (target?: { uri: string; line: number }) => {
@@ -61,6 +63,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       if (e.affectsConfiguration('bashExplain.panel.autoOpen')) panel.autoOpen();
       panel.refresh();
       inline.refresh();
+      diagnostics.refresh();
       updateStatus();
     }),
     vscode.window.onDidChangeActiveTextEditor(updateStatus),

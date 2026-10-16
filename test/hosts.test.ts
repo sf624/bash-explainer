@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type Parser = require('web-tree-sitter');
 import { Analyzer, Token } from '../src/analyzer';
-import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
+import { explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
 import { createBashParser } from '../src/parser';
 
 const root = path.join(__dirname, '..');
@@ -163,5 +163,26 @@ describe('Python', () => {
     assert.ok(!all(explain('deploy.py', 12)!.items).some((t) => t.kind === 'error'));
     assert.strictEqual(explain('deploy.py', 17), undefined);
     assert.strictEqual(explain('deploy.py', 15), undefined);
+  });
+});
+
+describe('issues for the Problems panel', () => {
+  const issues = (file: string) => {
+    const src = fs.readFileSync(path.join(root, 'test/fixtures/hosts', file), 'utf8');
+    const extracted = extractShell(hostKind('', file)!, src);
+    const tree = parser.parse(extracted.text);
+    const out = hostIssues(tree, extracted, src.split('\n'), 'en');
+    tree.delete();
+    return out.map((i) => `${i.code}@${i.startLine + 1}:${i.startCol}-${i.endCol}`);
+  };
+  it('places Dockerfile issues at original columns', () => {
+    assert.deepStrictEqual(issues('Dockerfile'), ['dbracket@6:43-62', 'dockerPipefail@10:55-56']);
+  });
+  it('reports injection risks and shell checks in GitHub Actions', () => {
+    assert.deepStrictEqual(issues('action.yml'), ['injection@17:23-61']);
+    assert.deepStrictEqual(issues('workflow-defaults.yml'), ['random@10:18-27', 'injection@11:19-41']);
+  });
+  it('reports Python strings without shell=True and f-strings run by a shell', () => {
+    assert.deepStrictEqual(issues('deploy.py').filter((i) => i.startsWith('host')), ['host@8:21-64', 'host@10:8-13']);
   });
 });

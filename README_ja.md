@@ -79,6 +79,10 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 対象のシェルは shebang（`#!/bin/sh`、`#!/usr/bin/env dash`、`#!/bin/busybox sh` など）・`# shellcheck shell=` 指定・ファイル名から判定し、`bashExplain.shell` でも指定できます。対応しているのは POSIX `sh`（dash と busybox ash で動かないものを明記）・`dash`・`ash`（busybox）・`yash`・`ksh`（ksh93）・`mksh`・`zsh` です。どのシェルが何に対応しているかは各シェルで実測し、テストでも再確認しています。
 
+## 問題パネルとクイックフィックス
+
+警告は「問題」パネル（とエディタ上の波線）にも表示されるので、行にマウスを乗せなくても気づけます。対象は、スクリプトのシェルで使えない書き方、GitHub Actions のスクリプトインジェクション、`pipefail` なしの Docker `RUN` のパイプ、`shell=True` なしの Python の文字列やシェルに値を埋め込む書き方です。意味を変えずに書き換えられる場合はクイックフィックスも出ます: `[[ ]]` → `[ ]`（変数をクォートし、`&&`・`||` は分割）、`==` → `=`、`source` → `.`、`function f` → `f()`、`&> file` → `> file 2>&1`、`|&` → `2>&1 |`。`== *.txt` のパターン一致・`=~`・`<` のように `[ ]` で表せない `[[ ]]` は、警告だけ出してクイックフィックスは出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplain.diagnostics.enabled` でオフにできます。
+
 ## コマンド
 
 | コマンド | キー | 説明 |
@@ -94,6 +98,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
 | `bashExplain.shell` | `auto` | スクリプトの対象シェル（`auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh`）。そのシェルにない書き方を指摘 |
+| `bashExplain.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplain.examples.placement` | `first` | `first`（具体例を対応する部分の真下、その中の各要素の解説より先に表示） / `last`（各要素の解説の後に表示） / `bottom`（解説の後にまとめて表示） |
 | `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
 | `bashExplain.hover.followCursor` | `false` | カーソル移動に追従してホバーを自動表示 |
