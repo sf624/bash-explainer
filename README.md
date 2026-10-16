@@ -1,8 +1,14 @@
+<img src="media/icon.png" width="96" alt="Bash Explainer icon">
+
 # Bash Explainer
 
-**Understand any shell script, one line at a time** — like [regex101](https://regex101.com/), but for bash.
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shun-fujioka.bash-explainer?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/shun-fujioka.bash-explainer)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Hover a line and see what every command, option, redirection and `${…}` does, with worked examples.
+A Visual Studio Code extension that explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
+
+Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit.
 
 <sub>[Japanese](README_ja.md)</sub>
 
@@ -10,7 +16,7 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 
 ## Quick start
 
-1. Install **Bash Explainer** from the Marketplace.
+1. Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Visual Studio Marketplace.
 2. Open a shell script (`.sh`, `.bash`, …).
 3. Hover any line — or put the cursor on it and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS).
 
@@ -44,6 +50,14 @@ Turn them on or off by clicking **Bash Explainer** in the status bar.
 ![Panel](images/panel.gif)
 
 ![Inline](images/inline.png)
+
+## Installation
+
+- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+- **In VS Code:** open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) and search for *Bash Explainer*, or run `ext install shun-fujioka.bash-explainer` from Quick Open (`Ctrl+P` / `Cmd+P`).
+- **Command line:** `code --install-extension shun-fujioka.bash-explainer`
+
+Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
 
 ---
 
@@ -168,6 +182,14 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
 - A few constructs are mis-parsed by the underlying grammar, e.g. `[[ -f a && $x =~ re ]]` (mixing `&&` with `=~`), and zsh-only syntax such as `*(.)`.
+
+## Privacy
+
+Bash Explainer runs entirely on your machine. It sends nothing over the network and collects no telemetry.
+
+## Release notes
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
