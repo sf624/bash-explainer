@@ -147,6 +147,18 @@ export const commands: Record<string, CommandDoc> = {
     ['-u|--unique', '重複していない行だけ表示', 'only print unique lines'],
     ['-i|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
   ]),
+  getopt: cmd('コマンドライン引数を解析して、オプションを先・それ以外を `--` の後ろに並べ直した形で出力する（`eval set -- "$(getopt …)"` で使う。長いオプションも扱える）',
+    'Parse command-line arguments and print them normalised: options first, other arguments after `--` (used as `eval set -- "$(getopt …)"`; supports long options)', [
+      ['-o|--options', '受け付ける短いオプションの一覧', 'the short options to accept', 'arg fills lang:getoptshort'],
+      ['-l|--longoptions|--long', '受け付ける長いオプションの一覧（カンマ区切り）', 'the long options to accept (comma-separated)', 'arg lang:getoptlong'],
+      ['-n|--name', 'エラーメッセージに出すプログラム名（通常は `"$0"`）', 'program name used in error messages (usually `"$0"`)', 'arg'],
+      ['-a|--alternative', '長いオプションを `-name` のように `-` 1つでも書けるようにする', 'allow long options with a single `-`'],
+      ['-q|--quiet', '不正なオプションのエラーメッセージを出さない', 'do not report unknown options'],
+      ['-Q|--quiet-output', '解析結果を出力しない（引数が正しいかの確認だけ）', 'print nothing; only check the arguments'],
+      ['-s|--shell', 'クォートの仕方をこのシェルに合わせる（sh, bash, csh, tcsh）', 'quote for this shell (sh, bash, csh, tcsh)', 'arg'],
+      ['-u|--unquoted', '出力をクォートしない（空白を含む引数が壊れる）', 'do not quote the output (breaks arguments with spaces)'],
+      ['-T|--test', '拡張版の getopt か確認する（拡張版なら終了ステータス 4）', 'test for the enhanced getopt (exits 4 if so)'],
+    ], { positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
   tr: cmd('文字を置換・削除する（標準入力のみ）', 'Translate or delete characters (stdin only)', [
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
