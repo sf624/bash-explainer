@@ -14,6 +14,7 @@ const option = (name: string) => process.argv.find((a) => a.startsWith(`--${name
 
 async function main(): Promise<void> {
   let executable = option('executable');
+  if (executable === '') throw new Error('--executable is empty: VS Code was not downloaded');
   if (!executable) executable = await downloadAndUnzipVSCode({ version: option('version') ?? 'stable', cachePath: path.join(root, '.vscode-test') });
   if (process.argv.includes('--download-only')) {
     console.log(executable);
