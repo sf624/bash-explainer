@@ -85,7 +85,7 @@ A faint one-line summary at the end of the cursor line.
 | --- | --- | --- |
 | `bashExplain.displayMode` | `hover` | `hover`, `panel`, `inline` or `both` |
 | `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
-| `bashExplain.examples.placement` | `inline` | `inline` (each worked example right under the part it illustrates) or `bottom` (all together after the explanations) |
+| `bashExplain.examples.placement` | `first` | `first` (each worked example right under the part it illustrates, before the explanations of its pieces), `last` (after them) or `bottom` (all together after the explanations) |
 | `bashExplain.hover.followCursor` | `false` | In hover mode, show the hover automatically when the cursor moves |
 | `bashExplain.hover.followDelay` | `400` | Delay (ms) before the hover follows the cursor |
 | `bashExplain.inline.maxLength` | `120` | Maximum length of the inline summary |

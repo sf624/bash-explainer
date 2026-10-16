@@ -102,7 +102,8 @@ export class PanelController implements vscode.Disposable {
       file: path.basename(ed.document.fileName),
       lineLabel: t.line(line + 1),
       lineText: ed.document.lineAt(line).text,
-      explanation: this.service.examplePlacement === 'inline' ? placeExamples(ex) : ex,
+      explanation: this.service.examplePlacement === 'bottom' ? ex : placeExamples(ex),
+      examplesFirst: this.service.examplePlacement === 'first',
       contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
       emptyMessage: t.empty,
     });

@@ -19,7 +19,8 @@ export class ExplainService implements vscode.Disposable {
   }
 
   get examplePlacement(): ExamplePlacement {
-    return this.config.get<ExamplePlacement>('examples.placement', 'inline');
+    const v = this.config.get<string>('examples.placement', 'first');
+    return v === 'last' || v === 'bottom' ? v : 'first';
   }
 
   get lang(): Lang {

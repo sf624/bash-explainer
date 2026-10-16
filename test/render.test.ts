@@ -15,7 +15,7 @@ before(async () => {
   });
 });
 
-function hover(src: string, line = 0, placement: 'inline' | 'bottom' = 'inline') {
+function hover(src: string, line = 0, placement: 'first' | 'last' | 'bottom' = 'first') {
   const tree = parser.parse(src);
   const ex = new Analyzer('en').explainLine(tree, line);
   tree.delete();
@@ -72,8 +72,18 @@ describe('hover markdown', () => {
     assert.match(md, /#### Example\n\n\*\*Input\*\*\n\n```text\napple red tokyo\nbanana yellow osaka/);
   });
 
-  it('puts each example right under the token it explains', () => {
+  it('puts each example right under its token, before the explanations of its parts', () => {
     const { md } = hover('echo "${f%.*}" | sed -n "/^a/p" f');
+    const lines = md.split('\n');
+    const at = (re: RegExp) => lines.findIndex((l) => re.test(l));
+    assert.strictEqual(at(/^ {10}##### Example for `\$\{f%/), at(/^ {8}- .*Parameter expansion/) + 1);
+    assert.ok(at(/##### Example for `sed/) < at(/^ {6}- .*\/\^a\/p.*Double-quoted/), 'before the parts of the script argument');
+    assert.ok(at(/##### Example for `sed/) > at(/^ {4}- .*sed script/));
+    assert.ok(!/^#### /m.test(md), 'nothing left for the end');
+  });
+
+  it('puts each example after the explanations of its parts with the last placement', () => {
+    const { md } = hover('echo "${f%.*}" | sed -n "/^a/p" f', 0, 'last');
     const lines = md.split('\n');
     const at = (re: RegExp) => lines.findIndex((l) => re.test(l));
     // Under the expansion's parts, before the pipe; indented to stay inside the list item.
