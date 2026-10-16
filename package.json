@@ -230,7 +230,8 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit && mocha",
-    "package": "node esbuild.mjs --production && vsce package"
+    "package": "node esbuild.mjs --production && vsce package",
+    "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
     "tree-sitter-bash": "0.23.3",
@@ -243,6 +244,7 @@
     "@vscode/vsce": "2.26.1",
     "esbuild": "0.21.5",
     "mocha": "10.4.0",
+    "playwright-core": "1.59.1",
     "tsx": "4.15.7",
     "typescript": "5.4.5"
   },
