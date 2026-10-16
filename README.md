@@ -47,11 +47,11 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — Redirection applied
 - **Offline and instant** — parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries; no network, no AI
 - **English and Japanese**
 
-## Display modes
+## Ways to show explanations
 
-Choose with `bashExplain.displayMode`, or click **Bash Explain** in the status bar.
+The hover, the inline summary and the panel can be used together. Turn each on or off in the settings, or click **Bash Explain** in the status bar.
 
-### Hover (default)
+### Hover (on by default)
 
 Hover over a line to see its explanation. Press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS) to explain the line under the keyboard cursor. **Open in panel** at the bottom shows the same line in the panel.
 
@@ -59,17 +59,15 @@ Hover over a line to see its explanation. Press `Ctrl+Alt+E` (`Cmd+Alt+E` on mac
 
 ### Panel
 
-A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor; click it to select it.
+A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor; click it to select it. Open it from the editor title bar, the hover link or **Bash Explain: Open Explanation Panel**; with `bashExplain.panel.autoOpen` it opens by itself when you open a bash script.
 
 ![Panel mode](images/panel.gif)
 
-### Inline
+### Inline (off by default)
 
-A faint one-line summary at the end of the cursor line.
+A faint one-line summary at the end of the cursor line. Turn it on with `bashExplain.inline.enabled`.
 
 ![Inline mode](images/inline.png)
-
-`both` shows the hover and the panel together.
 
 ## Commands
 
@@ -77,18 +75,21 @@ A faint one-line summary at the end of the cursor line.
 | --- | --- | --- |
 | Bash Explain: Explain Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` | Explain the line under the cursor |
 | Bash Explain: Open Explanation Panel | | Open the side panel (also in the editor title bar) |
-| Bash Explain: Select Display Mode | | Switch between hover, panel, inline and both |
+| Bash Explain: Choose Display | | Turn the hover, the inline summary and opening the panel automatically on or off |
+| Bash Explain: Open Settings | | Open this extension's settings (also linked from the hover and the panel) |
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `bashExplain.displayMode` | `hover` | `hover`, `panel`, `inline` or `both` |
 | `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | `bashExplain.examples.placement` | `first` | `first` (each worked example right under the part it illustrates, before the explanations of its pieces), `last` (after them) or `bottom` (all together after the explanations) |
-| `bashExplain.hover.followCursor` | `false` | In hover mode, show the hover automatically when the cursor moves |
+| `bashExplain.hover.enabled` | `true` | Show the hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
+| `bashExplain.hover.followCursor` | `false` | Show the hover automatically when the cursor moves |
 | `bashExplain.hover.followDelay` | `400` | Delay (ms) before the hover follows the cursor |
+| `bashExplain.inline.enabled` | `false` | Show a one-line summary at the end of the cursor line |
 | `bashExplain.inline.maxLength` | `120` | Maximum length of the inline summary |
+| `bashExplain.panel.autoOpen` | `false` | Open the panel automatically when a bash script is opened |
 | `bashExplain.languages` | `["shellscript"]` | Language IDs to explain |
 
 ## Limitations
