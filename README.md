@@ -235,7 +235,7 @@ Bash Explainer works entirely offline by design:
 - **No telemetry.** The extension collects nothing.
 - **No external processes.** Examples are computed by built-in code; your tools are never run.
 
-A [CI check](test/offline.test.ts) fails the build if network or process APIs appear in the packaged extension ([latest runs](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)). You can also verify this yourself: the `.vsix` is a zip archive, and the extension works with networking disabled.
+A [CI check](test/offline.test.ts) fails the build if network or process APIs appear in the packaged extension ([latest runs](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)). [Integration tests](integration/extension.itest.ts) also run the packaged extension in VS Code — on Linux with no network at all — and fail if it opens a connection or starts a process. You can also verify this yourself: the `.vsix` is a zip archive, and the extension works with networking disabled.
 
 The [web version](https://sf624.github.io/bash-explainer/) works the same way. GitHub Pages serves the page, but your script is parsed and explained in the browser and sent nowhere; the page's Content Security Policy allows no requests to other sites, and a link to a script carries it after `#`, which browsers do not send. The same CI check covers the page, and a test opens it in Chromium, blocking every request to other sites, and keeps using it offline.
 
@@ -254,6 +254,7 @@ npm install
 npm run build      # bundle into dist/ (also copies the wasm files)
 npm test           # type check + unit tests
 npm run package    # build a .vsix
+npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 ```
 
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
