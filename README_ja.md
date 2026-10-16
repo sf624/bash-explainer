@@ -1,8 +1,14 @@
+<img src="media/icon.png" width="96" alt="Bash Explainer アイコン">
+
 # Bash Explainer
 
-**シェルスクリプトを1行ずつ理解する** — シェルスクリプト版の [regex101](https://regex101.com/) です。
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shun-fujioka.bash-explainer?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/shun-fujioka.bash-explainer)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、具体例つきで解説します。
+シェルスクリプトを1行ずつ解説する Visual Studio Code 拡張機能です。シェルスクリプト版の [regex101](https://regex101.com/) を目指しています。
+
+行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、書き換えて試せる具体例つきで解説します。
 
 [English README](README.md)
 
@@ -10,7 +16,7 @@
 
 ## クイックスタート
 
-1. Marketplace から **Bash Explainer** をインストールします。
+1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
 2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
 3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）です。
 
@@ -44,6 +50,14 @@
 ![パネル](images/panel.gif)
 
 ![インライン](images/inline.png)
+
+## インストール
+
+- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+- **VS Code の中から:** 拡張機能ビュー（`Ctrl+Shift+X` / `Cmd+Shift+X`）で *Bash Explainer* を検索します。またはクイックオープン（`Ctrl+P` / `Cmd+P`）で `ext install shun-fujioka.bash-explainer` を実行します。
+- **コマンドライン:** `code --install-extension shun-fujioka.bash-explainer`
+
+VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は WebAssembly）、VS Code が動く環境ならどこでも動きます。
 
 ---
 
@@ -168,6 +182,14 @@
 
 - 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
 - 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `[[ -f a && $x =~ re ]]` のように `&&` と `=~` を混ぜたもの、`*(.)` のような zsh 独自の書き方）。
+
+## プライバシー
+
+Bash Explainer の処理はすべて手元のマシンで完結します。ネットワークへの送信も、テレメトリの収集も行いません。
+
+## リリースノート
+
+[CHANGELOG.md](CHANGELOG.md) を参照してください。
 
 ## 開発
 
