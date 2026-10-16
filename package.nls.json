@@ -21,5 +21,6 @@
   "config.shell": "The shell scripts are written for. Constructs that shell does not support are pointed out (bash: no checks).",
   "config.shell.auto": "Detect from the shebang (`#!/bin/sh`…), a `# shellcheck shell=` directive or the file name; bash when unknown",
   "config.shell.sh": "POSIX sh (points out what fails in dash and busybox ash)",
-  "config.embedded.enabled": "Also explain shell code inside other files: Dockerfile `RUN`/`CMD`, Makefile recipes, CI YAML (`run:`, `script:`), `package.json` scripts, Markdown code blocks (`sh`, `bash`, `console`…) and Python's `subprocess` / `os.system` calls."
+  "config.embedded.enabled": "Also explain shell code inside other files: Dockerfile `RUN`/`CMD`, Makefile recipes, CI YAML (`run:`, `script:`), `package.json` scripts, Markdown code blocks (`sh`, `bash`, `console`…) and Python's `subprocess` / `os.system` calls.",
+  "config.diagnostics.enabled": "Show warnings in the Problems panel: constructs the script's shell does not support (with quick fixes such as `[[ ]]` → `[ ]` where the meaning is kept), and risks in embedded shell code (script injection, Docker `RUN` pipes without `pipefail`, Python strings without `shell=True`)."
 }

@@ -148,31 +148,46 @@ export const BEHAVIOURS: Record<string, Behaviour> = {
   },
 };
 
-/** Behaviours used on the line (see BEHAVIOURS). */
-export function behavioursOnLine(root: SyntaxNode, line: number): string[] {
-  const found: string[] = [];
-  const add = (id: string) => { if (!found.includes(id)) found.push(id); };
+/** A construct found in the tree: what it is, and the node where it starts. */
+export interface Found { id: string; node: SyntaxNode }
+
+/** Calls `check` for every node starting on lines [from, to]. */
+function walk(root: SyntaxNode, from: number, to: number, check: (n: SyntaxNode) => void): void {
   const visit = (n: SyntaxNode) => {
-    if (n.startPosition.row > line || n.endPosition.row < line) return;
-    if (n.startPosition.row === line) {
-      if (n.type === 'command' && n.childForFieldName('name')?.text === 'echo'
-        && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
-      // An unquoted `$var` used as a word of a command.
-      if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
-      if (n.type === 'declaration_command' && n.child(0)?.text === 'typeset') {
-        let f: SyntaxNode | null = n.parent;
-        while (f && f.type !== 'function_definition') f = f.parent;
-        if (f && f.child(0)?.type !== 'function') add('typesetScope');
-      }
-      if (n.type === 'expansion') {
-        const p = parseExpansion(n.text.trimStart());
-        if (p?.subscript && /^\d+$/.test(p.subscript)) add('arrayBase');
-      }
-    }
+    if (n.startPosition.row > to || n.endPosition.row < from) return;
+    if (n.startPosition.row >= from) check(n);
     n.children.forEach(visit);
   };
   visit(root);
+}
+
+/** Behaviours used on lines [from, to] (see BEHAVIOURS). */
+export function collectBehaviours(root: SyntaxNode, from: number, to: number): Found[] {
+  const found: Found[] = [];
+  walk(root, from, to, (n) => {
+    const add = (id: string) => found.push({ id, node: n });
+    if (n.type === 'command' && n.childForFieldName('name')?.text === 'echo'
+      && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
+    // An unquoted `$var` used as a word of a command.
+    if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
+    if (n.type === 'declaration_command' && n.child(0)?.text === 'typeset') {
+      let f: SyntaxNode | null = n.parent;
+      while (f && f.type !== 'function_definition') f = f.parent;
+      if (f && f.child(0)?.type !== 'function') add('typesetScope');
+    }
+    if (n.type === 'expansion') {
+      const p = parseExpansion(n.text.trimStart());
+      if (p?.subscript && /^\d+$/.test(p.subscript)) add('arrayBase');
+    }
+  });
   return found;
+}
+
+const ids = (found: Found[]) => [...new Set(found.map((f) => f.id))];
+
+/** Behaviours used on the line (see BEHAVIOURS). */
+export function behavioursOnLine(root: SyntaxNode, line: number): string[] {
+  return ids(collectBehaviours(root, line, line));
 }
 
 const LETTER: Record<RealShell, string> = { bash: 'b', dash: 'd', ash: 'a', yash: 'y', ksh: 'k', mksh: 'm', zsh: 'z' };
@@ -181,20 +196,16 @@ function works(f: Feature, shell: RealShell): boolean {
   return f.works.includes(LETTER[shell]);
 }
 
-/** Features used by the parts of `root` on `line`. */
-export function featuresOnLine(root: SyntaxNode, line: number): string[] {
-  const found: string[] = [];
-  const add = (id: string) => { if (!found.includes(id)) found.push(id); };
-  const visit = (n: SyntaxNode) => {
-    if (n.startPosition.row > line || n.endPosition.row < line) return;
-    const kids = n.children.map((c) => c.type);
-    // Report a construct on the line where it starts, so a block is reported once.
-    const here = n.startPosition.row === line;
-    if (here) classify(n, kids, add);
-    n.children.forEach(visit);
-  };
-  visit(root);
+/** Features used by the constructs starting on lines [from, to]. */
+export function collectFeatures(root: SyntaxNode, from: number, to: number): Found[] {
+  const found: Found[] = [];
+  walk(root, from, to, (n) => classify(n, n.children.map((c) => c.type), (id) => found.push({ id, node: n })));
   return found;
+}
+
+/** Features used by the parts of `root` on `line` (a construct counts on the line where it starts). */
+export function featuresOnLine(root: SyntaxNode, line: number): string[] {
+  return ids(collectFeatures(root, line, line));
 }
 
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
@@ -321,45 +332,81 @@ function commandFeatures(name: string, words: string[], add: (id: string) => voi
   }
 }
 
-/** Whether a syntax error (or a missing token) is on the line. */
-function hasErrorOn(n: SyntaxNode, line: number): boolean {
-  if (!n.hasError || n.startPosition.row > line || n.endPosition.row < line) return false;
-  if ((n.type === 'ERROR' || n.isMissing) && n.startPosition.row <= line) return true;
-  return n.children.some((c) => hasErrorOn(c, line));
+/** A problem in a script for its target shell, with where it is. */
+export interface Issue {
+  id: string;
+  /** `unsupported`: fails in the shell; `behaviour`: works differently; `parse`: zsh-only syntax. */
+  kind: 'unsupported' | 'behaviour' | 'parse';
+  message: string;
+  node: SyntaxNode;
 }
 
-/** Notes for features on the line that the target shell lacks. */
-export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
-  if (shell === 'bash') return [];
+function featureMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
-  const notes: string[] = [];
-  if (shell === 'zsh' && hasErrorOn(root, line)) {
-    notes.push(s(
-      'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
-      'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
-    ));
+  const f = FEATURES[id];
+  const label = s(f.ja, f.en);
+  const alt = f.altJa ? s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`) : '';
+  if (shell === 'sh') {
+    if (f.posix) return undefined;
+    // Name the common /bin/sh implementations it breaks on.
+    const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
+    return s(
+      `⚠ ${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
+      `⚠ ${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
+    );
   }
-  for (const id of behavioursOnLine(root, line)) {
-    const b = BEHAVIOURS[id];
-    // For POSIX sh, name the common /bin/sh implementations that differ.
-    const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : b.differs.includes(LETTER[shell]) ? [shell] : [];
-    if (differ.length) notes.push('ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))));
-  }
-  for (const id of featuresOnLine(root, line)) {
-    const f = FEATURES[id];
-    const label = s(f.ja, f.en);
-    const alt = f.altJa ? s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`) : '';
-    if (shell === 'sh') {
-      if (f.posix) continue;
-      // Name the common /bin/sh implementations it breaks on.
-      const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
-      notes.push(s(
-        `⚠ ${label}は POSIX sh にない書き方です${fails.length ? `（${fails.join('・')} では動きません）` : '（dash・busybox ash では動きますが、POSIX にはありません）'}。${alt}`,
-        `⚠ ${label} is not POSIX sh${fails.length ? ` (it fails in ${fails.join(' and ')})` : ' (dash and busybox ash accept it, but POSIX does not have it)'}.${alt}`,
-      ));
-    } else if (!works(f, shell)) {
-      notes.push(s(`⚠ ${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `⚠ ${label} is not available in ${SHELL_NAMES[shell]}.${alt}`));
+  if (shell === 'bash' || works(f, shell)) return undefined;
+  return s(`⚠ ${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `⚠ ${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
+}
+
+function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {
+  const s = pick(lang);
+  const b = BEHAVIOURS[id];
+  // For POSIX sh, name the common /bin/sh implementations that differ.
+  const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
+  return differ.length ? 'ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
+}
+
+/** The first node of each line in [from, to] holding a syntax error (or a missing token). */
+function errorNodes(n: SyntaxNode, from: number, to: number, out: SyntaxNode[] = []): SyntaxNode[] {
+  if (!n.hasError || n.startPosition.row > to || n.endPosition.row < from) return out;
+  if ((n.type === 'ERROR' || n.isMissing) && n.startPosition.row >= from && !out.some((e) => e.startPosition.row === n.startPosition.row)) out.push(n);
+  n.children.forEach((c) => errorNodes(c, from, to, out));
+  return out;
+}
+
+const ZSH_SYNTAX: [string, string] = [
+  'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
+  'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
+];
+
+/** Problems on lines [from, to] of a script written for `shell`. */
+export function dialectIssues(root: SyntaxNode, shell: Shell, lang: Lang, from = 0, to = root.endPosition.row): Issue[] {
+  if (shell === 'bash') return [];
+  const issues: Issue[] = [];
+  if (shell === 'zsh') {
+    for (const node of errorNodes(root, from, to)) {
+      issues.push({
+        id: 'zshSyntax', kind: 'parse', node, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
+      });
     }
   }
-  return notes;
+  for (const f of collectBehaviours(root, from, to)) {
+    const message = behaviourMessage(f.id, shell, lang);
+    if (message) issues.push({ id: f.id, kind: 'behaviour', message, node: f.node });
+  }
+  for (const f of collectFeatures(root, from, to)) {
+    const message = featureMessage(f.id, shell, lang);
+    if (message) issues.push({ id: f.id, kind: 'unsupported', message, node: f.node });
+  }
+  return issues;
+}
+
+/** Notes for the line: features the target shell lacks, and behaviour that differs. */
+export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
+  const issues = dialectIssues(root, shell, lang, line, line).filter((i) => i.kind !== 'parse');
+  // On every line a zsh parse error covers, not only where it starts.
+  const parse = shell === 'zsh' && errorNodes(root, 0, root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
+    ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];
+  return [...new Set([...parse, ...issues.map((i) => i.message)])];
 }
