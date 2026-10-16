@@ -402,6 +402,7 @@
     "test": "tsc --noEmit && tsc --noEmit -p web && mocha",
     "package": "node esbuild.mjs --production && vsce package",
     "build:web": "tsx scripts/build-web.ts",
+    "notices": "tsx scripts/notices.ts",
     "test:integration": "node --import tsx integration/run.ts",
     "images": "node scripts/capture-readme-images.mjs"
   },

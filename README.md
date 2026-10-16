@@ -259,6 +259,7 @@ npm run test:integration   # run the extension in VS Code (downloaded into .vsco
 - `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 - Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped. The web page test needs Chromium (`npx playwright-core install --with-deps chromium-headless-shell`).
+- After changing dependencies, run `npm run notices` to regenerate [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) from what the builds include; a test fails while it is out of date, or if something under a license not yet reviewed gets in.
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`.
 - To release, bump `version` in `package.json`, add a section to `CHANGELOG.md`, and push a tag `v<version>`. The [Release workflow](.github/workflows/release.yml) tests and packages it, waits for approval in the `release` environment, then publishes to the VS Code Marketplace and Open VSX and creates a GitHub Release; see [docs/publishing.md](docs/publishing.md) for the one-time setup.
 

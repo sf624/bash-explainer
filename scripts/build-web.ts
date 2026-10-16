@@ -7,6 +7,8 @@ import { PANEL_BODY } from '../src/ui/panelView';
 
 const root = path.join(__dirname, '..');
 const outdir = path.resolve(root, process.argv.find((a) => a.startsWith('--outdir='))?.slice('--outdir='.length) ?? 'site');
+/** Where to write what went into the bundle, for scripts/notices.ts. */
+const metafile = process.argv.find((a) => a.startsWith('--metafile='))?.slice('--metafile='.length);
 const version: string = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 /** The panel page shown in the frame: the extension's panel markup and script, as they are. */
@@ -31,7 +33,7 @@ ${PANEL_BODY}
 async function main(): Promise<void> {
   fs.rmSync(outdir, { recursive: true, force: true });
   fs.mkdirSync(outdir, { recursive: true });
-  await esbuild.build({
+  const result = await esbuild.build({
     entryPoints: [path.join(root, 'web/main.ts')],
     bundle: true,
     outfile: path.join(outdir, 'app.js'),
@@ -43,7 +45,9 @@ async function main(): Promise<void> {
     external: ['fs', 'path'],
     define: { __VERSION__: JSON.stringify(version) },
     logLevel: 'warning',
+    metafile: true,
   });
+  if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   const copy = (from: string, to = path.basename(from)) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
   copy('web/index.html');
   copy('web/page.css');
@@ -55,6 +59,9 @@ async function main(): Promise<void> {
   copy('media/icon.png');
   copy('node_modules/web-tree-sitter/tree-sitter.wasm');
   copy('node_modules/tree-sitter-bash/tree-sitter-bash.wasm');
+  // The licenses of what the page includes, linked from its footer.
+  copy('LICENSE', 'LICENSE.txt');
+  copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.txt');
   fs.writeFileSync(path.join(outdir, 'panel.html'), PANEL_HTML);
   // GitHub Pages: serve the files as they are, without Jekyll.
   fs.writeFileSync(path.join(outdir, '.nojekyll'), '');
