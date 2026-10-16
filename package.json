@@ -36,7 +36,8 @@
     "onLanguage:yaml",
     "onLanguage:github-actions-workflow",
     "onLanguage:markdown",
-    "onLanguage:json"
+    "onLanguage:json",
+    "onLanguage:python"
   ],
   "contributes": {
     "commands": [

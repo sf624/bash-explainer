@@ -21,5 +21,5 @@
   "config.shell": "スクリプトの対象シェル。そのシェルで使えない書き方を指摘します（bash では指摘なし）。",
   "config.shell.auto": "shebang（`#!/bin/sh` など）・`# shellcheck shell=` 指定・ファイル名から判定。分からなければ bash",
   "config.shell.sh": "POSIX sh（dash や busybox ash で動かない書き方を指摘）",
-  "config.embedded.enabled": "他のファイルに書かれたシェルも解説する: Dockerfile の `RUN`/`CMD`、Makefile のレシピ、CI の YAML（`run:`・`script:`）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）。"
+  "config.embedded.enabled": "他のファイルに書かれたシェルも解説する: Dockerfile の `RUN`/`CMD`、Makefile のレシピ、CI の YAML（`run:`・`script:`）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）、Python の `subprocess`・`os.system` の呼び出し。"
 }

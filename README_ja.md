@@ -71,7 +71,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ## 他のファイルの中のシェル
 
-他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメント、exec 形式の `RUN ["cmd", "arg"]`、`["sh", "-c", "…"]` に渡すスクリプト、`SHELL [...]` も。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告）、Makefile のレシピ、CI の YAML（GitHub Actions の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）です。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
+他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメント、exec 形式の `RUN ["cmd", "arg"]`、`["sh", "-c", "…"]` に渡すスクリプト、`SHELL [...]` も。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告）、Makefile のレシピ、CI の YAML（GitHub Actions のワークフローと composite の `action.yml` の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）、Python の `subprocess.run(…)`・`os.system(…)` などです（`shell=True` の文字列は `/bin/sh` のスクリプト、リストはシェルを通さない実行として解説し、`shell=True` なしの文字列や f-string をシェルに渡す危険な書き方を指摘）。GitHub Actions では `defaults: run: shell:` に従い、`$GITHUB_OUTPUT` などの専用ファイルを説明し、`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むとスクリプトインジェクションの危険があることを警告します。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
 
 ## bash 以外のシェル
 
@@ -101,7 +101,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | `bashExplain.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
 | `bashExplain.panel.autoOpen` | `false` | bash スクリプトを開いたらパネルを自動で開く |
-| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json` の scripts・Markdown のコードブロック中のシェルも解説 |
+| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json` の scripts・Markdown のコードブロック・Python の `subprocess` 呼び出し中のシェルも解説 |
 | `bashExplain.languages` | `["shellscript"]` | 解説の対象とする言語 ID |
 
 ## 制限事項
