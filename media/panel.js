@@ -64,7 +64,8 @@
     labels = msg.labels ?? labels;
     $('settings').textContent = `⚙ ${msg.settingsLabel}`;
     $('copy').textContent = labels.copy;
-    $('ref').textContent = labels.reference;
+    // The quick reference stays open while the cursor moves; keep its button saying how to go back.
+    $('ref').textContent = $('reference').hidden ? labels.reference : labels.back;
     $('toggle').textContent = labels.collapseAll;
     $('ref-search').setAttribute('placeholder', labels.search);
     examplesFirst = msg.examplesFirst !== false;
