@@ -104,6 +104,33 @@
           "default": "auto",
           "description": "%config.language%"
         },
+        "bashExplain.shell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "bash",
+            "sh",
+            "dash",
+            "ash",
+            "yash",
+            "ksh",
+            "mksh",
+            "zsh"
+          ],
+          "enumDescriptions": [
+            "%config.shell.auto%",
+            "bash",
+            "%config.shell.sh%",
+            "dash",
+            "busybox ash",
+            "yash",
+            "ksh93",
+            "mksh",
+            "zsh"
+          ],
+          "default": "auto",
+          "markdownDescription": "%config.shell%"
+        },
         "bashExplain.examples.placement": {
           "type": "string",
           "enum": [

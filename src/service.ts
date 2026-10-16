@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Analyzer, LineExplanation } from './analyzer';
+import { detectShell, Shell, SHELL_NAMES } from './dialect';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
@@ -43,12 +44,19 @@ export class ExplainService implements vscode.Disposable {
     return !!doc && this.languages.includes(doc.languageId);
   }
 
+  /** The shell the document is written for: the `shell` setting, else detected from the file. */
+  shellOf(doc: vscode.TextDocument): Shell | undefined {
+    const set = this.config.get<string>('shell', 'auto');
+    if (set !== 'auto' && set in SHELL_NAMES) return set as Shell;
+    return detectShell(doc.getText(new vscode.Range(0, 0, 50, 0)), doc.fileName);
+  }
+
   explain(doc: vscode.TextDocument, line: number): LineExplanation {
     const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
     const lang = this.lang;
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
-    return analyzer.explainLine(tree, line);
+    return analyzer.explainLine(tree, line, this.shellOf(doc));
   }
 
   forget(doc: vscode.TextDocument): void {

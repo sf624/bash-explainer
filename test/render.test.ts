@@ -115,3 +115,14 @@ describe('placeExamples', () => {
     assert.strictEqual(placed.examples.length, 1);
   });
 });
+
+describe('dialect in the hover', () => {
+  it('names the target shell and warns about bash-only constructs', () => {
+    const tree = parser.parse('#!/bin/sh\n[[ -f x ]]');
+    const ex = new Analyzer('en').explainLine(tree, 1, 'sh');
+    tree.delete();
+    const md = toMarkdown(ex, 'en');
+    assert.match(md, /^\*\*Bash Explain\*\* · Line 2 · checked for POSIX sh/);
+    assert.match(md, /> ⚠ `\[\[ \]\]` is not POSIX sh/);
+  });
+});
