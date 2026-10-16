@@ -63,9 +63,9 @@
   }
 
   /** One worked example: a heading, then a labelled block per section with one line per row. */
-  function example(ex) {
+  function example(ex, nested) {
     const box = document.createElement('section');
-    box.className = 'example';
+    box.className = nested ? 'example nested' : 'example';
     const h = document.createElement('h3');
     h.append(...inline(ex.title));
     box.append(h);
@@ -109,6 +109,8 @@
       ul.append(...token.children.map((c) => item(c, depth + 1)));
       li.append(ul);
     }
+    // With the "inline" placement, examples sit right after the token they explain.
+    if (token.examples?.length) li.append(...token.examples.map((e) => example(e, true)));
     return li;
   }
 

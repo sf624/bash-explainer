@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { Span } from '../analyzer';
 import { ExplainService } from '../service';
-import { ui } from './render';
+import { placeExamples, ui } from './render';
 
 type FromWebview =
   | { type: 'ready' }
@@ -102,7 +102,7 @@ export class PanelController implements vscode.Disposable {
       file: path.basename(ed.document.fileName),
       lineLabel: t.line(line + 1),
       lineText: ed.document.lineAt(line).text,
-      explanation: ex,
+      explanation: this.service.examplePlacement === 'inline' ? placeExamples(ex) : ex,
       contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
       emptyMessage: t.empty,
     });

@@ -14,5 +14,8 @@
   "config.hover.followCursor": "ホバーモードで、カーソルが移動するたびに自動でホバーを表示する。",
   "config.hover.followDelay": "カーソル移動からホバー表示までの遅延（ミリ秒）。",
   "config.inline.maxLength": "インライン要約の最大文字数。",
-  "config.languages": "解説の対象とする言語 ID。"
+  "config.languages": "解説の対象とする言語 ID。",
+  "config.examples.placement": "具体例（入力例と出力など）を表示する位置。",
+  "config.examples.placement.inline": "対応する部分の解説の真下に表示",
+  "config.examples.placement.bottom": "解説の後にまとめて表示"
 }

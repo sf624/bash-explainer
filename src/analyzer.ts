@@ -48,6 +48,8 @@ export interface Token {
   children: Token[];
   /** One-line summary used for the inline display; falls back to `explanation`. */
   summary?: string;
+  /** Worked examples shown right under this token (see `placeExamples`). */
+  examples?: Example[];
 }
 
 export interface ContextEntry { label: string; line: number }
@@ -74,6 +76,8 @@ export interface Example {
   title: string;
   /** The command the example is for, named in the title when the line has several commands. */
   target?: string;
+  /** The source range the example belongs to; the example is shown under the token that covers it. */
+  anchor?: Span;
   sections: ExampleSection[];
 }
 
@@ -473,7 +477,11 @@ export class Analyzer {
         ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`)
         : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``)));
     const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
-    if (!isDefault && (this.line === null || pats.some((p) => intersects(p, this.line!)))) this.caseExample(pats);
+    if (!isDefault && (this.line === null || pats.some((p) => intersects(p, this.line!)))) {
+      const before = this.examples.length;
+      this.caseExample(pats);
+      this.anchorExamples(before, n);
+    }
     return this.tok(n, 'pattern', expl + this.lineRef(n), sortTokens([...patToks, ...rest]));
   }
 
@@ -484,7 +492,7 @@ export class Analyzer {
     if (whole) {
       // One example for the whole pipeline replaces the examples of its stages.
       this.examples.length = before;
-      this.examples.push(whole);
+      this.examples.push({ ...whole, anchor: spanOf(n) });
     }
     const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
     const t = this.tok(n, 'operator', this.s(
@@ -690,6 +698,12 @@ export class Analyzer {
   private tagExamples(before: number, n: SyntaxNode): void {
     const target = shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40);
     for (const e of this.examples.slice(before)) e.target ??= target;
+    this.anchorExamples(before, n);
+  }
+
+  /** Attaches the examples added since `before` to `n`, unless a more specific node already took them. */
+  private anchorExamples(before: number, n: SyntaxNode): void {
+    for (const e of this.examples.slice(before)) e.anchor ??= spanOf(n);
   }
 
   private commandToken(n: SyntaxNode): Token {
@@ -729,7 +743,11 @@ export class Analyzer {
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
     if (head.name === 'read') this.readExample(n, args);
-    for (const a of args) this.wordExample(a);
+    for (const a of args) {
+      const before = this.examples.length;
+      this.wordExample(a);
+      this.anchorExamples(before, a);
+    }
     const t = this.tok(n, head.kind, head.explanation, sortTokens([
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]));
@@ -850,6 +868,13 @@ export class Analyzer {
 
   /** Explain `lit.text`, which sits inside `a` as `lit` describes (e.g. after `-k` in `-k3,3n`). */
   private embeddedText(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
+    const before = this.examples.length;
+    const result = this.embeddedTextInner(lit, lang, a);
+    this.anchorExamples(before, a);
+    return result;
+  }
+
+  private embeddedTextInner(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
     let tokens: EmbeddedToken[];
     let note: string | undefined;
     switch (lang) {
@@ -1606,7 +1631,6 @@ export class Analyzer {
   private test(n: SyntaxNode): Token {
     const before = this.examples.length;
     if (this.line === null || n.startPosition.row === this.line) this.testExample(n);
-    this.tagExamples(before, n);
     const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
@@ -1617,6 +1641,8 @@ export class Analyzer {
           'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
     const t = this.tok(n, 'test', expl, this.subs(n.namedChildren));
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
+    // Includes examples from inside the test, such as the regex of `=~`.
+    this.tagExamples(before, n);
     return t;
   }
 
@@ -1757,6 +1783,7 @@ export class Analyzer {
         title: this.s(`\`${text}\` の例`, `Example for \`${text}\``),
         // The title already names the expansion.
         target: '',
+        anchor: summary.span,
         sections: cases.map((c) => ({ label: c.when, lines: c.result ? [c.result] : [], empty: this.s('（空文字）', '(empty string)') })),
       });
     }
