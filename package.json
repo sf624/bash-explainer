@@ -19,14 +19,28 @@
   },
   "categories": [
     "Programming Languages",
+    "Linters",
     "Education"
   ],
   "keywords": [
     "bash",
     "shell",
-    "explain",
     "shellscript",
-    "learning"
+    "sh",
+    "zsh",
+    "dash",
+    "posix",
+    "explain",
+    "learning",
+    "regex",
+    "sed",
+    "awk",
+    "jq",
+    "yq",
+    "dockerfile",
+    "makefile",
+    "github actions",
+    "offline"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [

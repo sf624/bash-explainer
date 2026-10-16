@@ -87,9 +87,9 @@ const BEHAVIOUR_PROBES: Record<string, string> = {
 // Probes that cannot be checked with `sh -c` (bash needs `shopt -s extglob` before parsing).
 const UNPROBED = ['extglob', 'bashVar'];
 
-/** Find a shell in $BASH_EXPLAIN_SHELLS (a directory) or on PATH. */
+/** Find a shell in $BASH_EXPLAINER_SHELLS (a directory) or on PATH. */
 function locate(names: string[]): string | undefined {
-  const dirs = [process.env.BASH_EXPLAIN_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
+  const dirs = [process.env.BASH_EXPLAINER_SHELLS, ...(process.env.PATH ?? '').split(':')].filter(Boolean) as string[];
   for (const n of names) for (const d of dirs) if (fs.existsSync(path.join(d, n))) return path.join(d, n);
   return undefined;
 }

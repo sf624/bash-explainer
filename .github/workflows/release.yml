@@ -78,7 +78,7 @@ jobs:
         with:
           name: vsix
 
-      # The Marketplace accepts the managed identity added to the publisher (see README).
+      # The Marketplace accepts the managed identity added to the publisher (see docs/publishing.md).
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
