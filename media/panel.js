@@ -72,7 +72,7 @@
     for (const sec of ex.sections) {
       const label = document.createElement('div');
       label.className = 'example-label';
-      label.textContent = sec.label;
+      label.append(...inline(sec.label));
       const pre = document.createElement('pre');
       if (sec.lines.length) pre.textContent = sec.lines.join('\n');
       else {

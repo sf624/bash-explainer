@@ -51,6 +51,8 @@ name="hello world"
 echo "${name^^} ${name/world/bash} ${name// /_} ${name:0:5} ${name: -5}"
 items=(apple banana cherry)
 echo "${#items[@]} ${items[1]} ${!items[@]}"
+echo "${DEBUG-off} ${VERBOSE+-v} ${greeting@Q} ${name,,} ${file/#report/summary}"
+cd "${TARGET_DIR:?TARGET_DIR is required}"
 
 # --- Regular expressions ---
 grep -E '^[A-Z]{3}-[0-9]+$' ids.txt

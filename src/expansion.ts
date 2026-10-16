@@ -226,43 +226,58 @@ function pickSample(test: (s: string) => boolean): string | undefined {
 
 // ---------------------------------------------------------------- examples
 
-const q = (s: string) => (s === '' ? '""' : /['"]/.test(s) ? s : /\s/.test(s) ? `"${s}"` : s);
+/** One case of a worked example: a condition (Markdown) and what the expansion gives. */
+export interface ExpansionCase {
+  when: string;
+  result: string;
+  /** Bash that sets up the condition (for named variables), used by the tests. */
+  setup?: string;
+}
+
+const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /**
- * A worked example such as `file=report.tar.gz → report.tar`, computed with the same matching
+ * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
  * rules as bash. Undefined when the expansion depends on values we cannot know.
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | undefined {
   const ja = lang === 'ja';
   const name = p.name;
   // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
   const positional = /^[1-9]\d*$/.test(name);
   const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val || '""');
-  const isSet = (val: string) => (positional ? (ja ? `${name} 番目の引数が ${shown(val)}` : `argument ${name} is ${shown(val)}`) : `${name}=${shown(val)}`);
-  const v = (val: string) => (positional ? (ja ? `${isSet(val)} なら` : `if ${isSet(val)}`) : isSet(val));
+  const set = (val: string, result: string): ExpansionCase => ({
+    when: positional
+      ? (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``)
+      : (ja ? `\`${name}=${shown(val)}\` のとき` : `When \`${name}=${shown(val)}\``),
+    result,
+    setup: positional ? undefined : `${name}=${sq(val)}`,
+  });
+  const array = (result: string): ExpansionCase => ({ when: ja ? `\`${name}=(a b c)\` のとき` : `When \`${name}=(a b c)\``, result, setup: `${name}=(a b c)` });
   /** "unset or empty" (with `:`) or just "unset", phrased for a variable or an argument. */
-  const missing = (orEmpty: boolean) => positional
-    ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空' : ''}` : `argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
-    : (ja ? `${name} が未設定${orEmpty ? 'か空' : ''}` : `${name} is unset${orEmpty ? ' or empty' : ''}`);
-  const arrow = (input: string, out: string) => `${input} → ${q(out)}`;
-  /** Arrays expand to several words, so show them unquoted. */
-  const words = (input: string, out: string) => `${input} → ${out}`;
+  const missing = (orEmpty: boolean, result: string): ExpansionCase => ({
+    when: positional
+      ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空の' : ''}とき` : `When argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
+      : (ja ? `${name} が未設定${orEmpty ? 'か空' : ''}のとき` : `When ${name} is unset${orEmpty ? ' or empty' : ''}`),
+    result,
+    setup: positional ? undefined : `unset ${name}`,
+  });
 
   if (p.prefix === '#') {
-    if (p.subscript === '@' || p.subscript === '*') return arrow(`${name}=(a b c)`, '3');
-    return arrow(v('hello'), '5');
+    if (p.subscript === '@' || p.subscript === '*') return [array('3')];
+    return [set('hello', '5')];
   }
   if (p.prefix === '!') {
-    if (p.op === '*' || p.op === '@') return ja ? `${name}_A と ${name}_B があれば → ${name}_A ${name}_B` : `with ${name}_A and ${name}_B set → ${name}_A ${name}_B`;
-    if (p.subscript === '@' || p.subscript === '*') return words(`${name}=(a b c)`, '0 1 2');
-    return ja ? `${name}=HOME なら → $HOME の値` : `${name}=HOME → the value of $HOME`;
+    if (p.op === '*' || p.op === '@') {
+      return [{ when: ja ? `${name}_A と ${name}_B があるとき` : `When ${name}_A and ${name}_B are set`, result: `${name}_A ${name}_B`, setup: `${name}_A=1 ${name}_B=2` }];
+    }
+    if (p.subscript === '@' || p.subscript === '*') return [array('0 1 2')];
+    return [{ when: ja ? `\`${name}=HOME\` のとき` : `When \`${name}=HOME\``, result: ja ? '$HOME の値' : 'the value of $HOME' }];
   }
   if (!p.op) {
-    if (p.subscript === '@' || p.subscript === '*') return words(`${name}=(a b c)`, 'a b c');
+    if (p.subscript === '@' || p.subscript === '*') return [array('a b c')];
     if (p.subscript && /^\d+$/.test(p.subscript)) {
-      const arr = ['a', 'b', 'c', 'd', 'e'];
-      const idx = Number(p.subscript);
-      return `${name}=(a b c d e) → ${arr[idx] ?? (ja ? '（空）' : '(empty)')}`;
+      return [array(['a', 'b', 'c'][Number(p.subscript)] ?? '')];
     }
     return undefined;
   }
@@ -270,21 +285,26 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
   const word = part('word') ?? '';
   // A plausible value for "when it has a value", chosen to look like the default.
   const sample = /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
-  const has = (val: string) => (ja ? `${isSet(val)} なら` : `if ${isSet(val)}`);
-  const emptyStr = ja ? '空文字' : 'an empty string';
+  const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;
+  const emptyCase = (result: string): ExpansionCase => ({
+    when: positional ? (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`) : (ja ? `\`${name}=""\` のとき` : `When \`${name}=""\``),
+    result,
+    setup: positional ? undefined : `${name}=`,
+  });
   switch (p.op) {
-    case ':-': case '-': case ':=': case '=': {
-      const fallback = word ? `${word}${/\$/.test(word) ? (ja ? ' の展開結果' : ' (expanded)') : ''}` : emptyStr;
-      const none = missing(p.op.startsWith(':'));
-      return ja ? `${none}なら → ${fallback}、${has(sample)} → ${sample}` : `if ${none} → ${fallback}; ${has(sample)} → ${sample}`;
+    case ':-': case ':=':
+      return [missing(true, expanded(word)), set(sample, sample)];
+    case '-': case '=':
+      return [missing(false, expanded(word)), emptyCase(''), set(sample, sample)];
+    case ':+':
+      return [set(sample, expanded(word)), missing(true, '')];
+    case '+':
+      return [set(sample, expanded(word)), emptyCase(expanded(word)), missing(false, '')];
+    case ':?': case '?': {
+      const msg = word || (ja ? '（既定のメッセージ）' : '(a default message)');
+      const fail = ja ? `エラー「${msg}」を表示して終了` : `prints the error "${msg}" and exits`;
+      return [missing(p.op === ':?', fail), set(sample, sample)];
     }
-    case ':+': case '+': {
-      const none = missing(p.op === ':+');
-      const alt = word || emptyStr;
-      return ja ? `${has(sample)} → ${alt}、${none}なら → ${emptyStr}` : `${has(sample)} → ${alt}; if ${none} → ${emptyStr}`;
-    }
-    case ':?': case '?':
-      return undefined;
     case '#': case '##': case '%': case '%%': {
       const glob = globParts(part('pattern') ?? '');
       if (!glob) return undefined;
@@ -292,11 +312,11 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
       const longest = p.op.length === 2;
       const removes = (s: string) => strip(s, glob, from, longest) !== s;
       // Prefer a sample where the shortest and longest matches differ, so `%` vs `%%` is visible.
-      const sample = pickSample((s) => removes(s) && strip(s, glob, from, true) !== strip(s, glob, from, false))
+      const value = pickSample((s) => removes(s) && strip(s, glob, from, true) !== strip(s, glob, from, false))
         ?? pickSample(removes)
         ?? synthesize(glob, from);
-      if (!sample) return undefined;
-      return arrow(v(sample), strip(sample, glob, from, longest));
+      if (!value) return undefined;
+      return [set(value, strip(value, glob, from, longest))];
     }
     case '/': case '//': case '/#': case '/%': {
       const glob = globParts(part('pattern') ?? '');
@@ -306,16 +326,16 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
       const test = new RegExp(globRegex(glob));
       // For `/` and `//` show a value with two matches, so "first" vs "every" is visible.
       const twice = p.op === '/' || p.op === '//';
-      const sample = (twice ? pickSample((s) => (s.match(new RegExp(globRegex(glob), 'g')) ?? []).length > 1) ?? synthesizeReplace(glob, p.op) : undefined)
+      const value = (twice ? pickSample((s) => (s.match(new RegExp(globRegex(glob), 'g')) ?? []).length > 1) ?? synthesizeReplace(glob, p.op) : undefined)
         ?? pickSample((s) => test.test(s) && replace(s, glob, repText, p.op as '/') !== s)
         ?? synthesizeReplace(glob, p.op);
-      if (!sample) return undefined;
-      return arrow(v(sample), replace(sample, glob, repText, p.op as '/'));
+      if (!value) return undefined;
+      return [set(value, replace(value, glob, repText, p.op as '/'))];
     }
-    case '^': return arrow(v('hello world'), 'Hello world');
-    case '^^': return arrow(v('hello world'), 'HELLO WORLD');
-    case ',': return arrow(v('HELLO World'), 'hELLO World');
-    case ',,': return arrow(v('HELLO World'), 'hello world');
+    case '^': return [set('hello world', 'Hello world')];
+    case '^^': return [set('hello world', 'HELLO WORLD')];
+    case ',': return [set('HELLO World', 'hELLO World')];
+    case ',,': return [set('HELLO World', 'hello world')];
     case ':': {
       const off = part('offset')?.trim();
       const len = part('length')?.trim();
@@ -325,7 +345,7 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
       const start = o < 0 ? Math.max(0, s.length + o) : o;
       let end = s.length;
       if (len !== undefined) end = Number(len) < 0 ? s.length + Number(len) : start + Number(len);
-      return arrow(v(s), s.slice(start, Math.max(start, end)));
+      return [set(s, s.slice(start, Math.max(start, end)))];
     }
     case '@': {
       const t = part('transform');
@@ -334,7 +354,7 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): string | undefined {
         L: ['HELLO', 'hello'], A: ['abc', `${name}='abc'`], P: ['\\u@\\h', ja ? 'ユーザー名@ホスト名' : 'user@host'],
       };
       const e = t && ex[t];
-      return e ? arrow(v(e[0]), e[1]) : undefined;
+      return e ? [set(e[0], e[1])] : undefined;
     }
   }
   return undefined;
@@ -352,7 +372,8 @@ function synthesizeReplace(glob: GlobPart[], op: string): string | undefined {
   if (!lit) return undefined;
   if (op === '/#') return `${lit}-abc`;
   if (op === '/%') return `abc-${lit}`;
-  return `a-${lit}-b-${lit}`;
+  // A space or other separator reads best between words.
+  return /\w/.test(lit) ? `a-${lit}-b-${lit}` : `foo${lit}bar${lit}baz`;
 }
 
 // ---------------------------------------------------------------- part explanations
