@@ -2,11 +2,15 @@ import * as vscode from 'vscode';
 import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
 import { detectShell, Shell, SHELL_NAMES } from './dialect';
 import { dialectIssues } from './dialect';
+import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, extractShell, HostKind, hostKind, hostIssues } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
+
+/** Kinds of files with embedded shell code, as named in the `embedded.files` setting. */
+export const EMBEDDED_FILES = ['dockerfile', 'makefile', 'yaml', 'packageJson', 'markdown', 'python'] as const;
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
@@ -55,8 +59,11 @@ export class ExplainService implements vscode.Disposable {
 
   /** The kind of host file, when embedded shell code is explained. */
   hostOf(doc: vscode.TextDocument): HostKind | undefined {
-    if (this.languages.includes(doc.languageId) || !this.config.get<boolean>('embedded.enabled', true)) return undefined;
-    return hostKind(doc.languageId, doc.fileName);
+    if (this.languages.includes(doc.languageId)) return undefined;
+    const kind = hostKind(doc.languageId, doc.fileName);
+    // The setting names package.json files `packageJson`.
+    const files = this.config.get<string[]>('embedded.files', [...EMBEDDED_FILES]);
+    return kind && files.includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
   }
 
   /** The shell parts of a host document (cached per version). */
@@ -128,15 +135,29 @@ export class ExplainService implements vscode.Disposable {
   }
 
   private explainOptions(doc: vscode.TextDocument): ExplainOptions {
-    return { yqFlavor: this.yqFlavorOf(doc) };
+    const c = this.config;
+    return {
+      yqFlavor: this.yqFlavorOf(doc),
+      examples: { enabled: c.get<boolean>('examples.enabled', true), disabled: c.get<string[]>('examples.disabled', []) },
+      idioms: c.get<boolean>('notes.idioms', true),
+      customCommands: c.get<Record<string, unknown>>('customCommands', {}),
+    };
   }
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
+    // Codes turned off in the settings, or by `# bash-explainer disable=` comments in the file.
+    const ignore = new Set(this.config.get<string[]>('diagnostics.ignore', []));
+    const directives = parseDirectives(doc.getText().split(/\r?\n/));
+    return this.allIssues(doc).filter((i) => !ignore.has(i.code) && !suppressed(directives, i.startLine, i.code));
+  }
+
+  private allIssues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
     const lang = this.lang;
     const kind = this.hostOf(doc);
     const override = this.forcedShell(doc);
     if (kind) {
+      if (!this.config.get<boolean>('diagnostics.embedded', true)) return [];
       const extracted = this.extractedOf(doc, kind);
       if (!extracted.regions.length) return [];
       const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);

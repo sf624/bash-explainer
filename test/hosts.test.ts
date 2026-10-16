@@ -183,6 +183,6 @@ describe('issues for the Problems panel', () => {
     assert.deepStrictEqual(issues('workflow-defaults.yml'), ['random@10:18-27', 'injection@11:19-41']);
   });
   it('reports Python strings without shell=True and f-strings run by a shell', () => {
-    assert.deepStrictEqual(issues('deploy.py').filter((i) => i.startsWith('host')), ['host@8:21-64', 'host@10:8-13']);
+    assert.deepStrictEqual(issues('deploy.py').filter((i) => i.startsWith('python')), ['pythonInjection@8:21-64', 'pythonNoShell@10:8-13']);
   });
 });

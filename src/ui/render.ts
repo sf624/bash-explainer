@@ -229,3 +229,13 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   out.push(...examplesMarkdown(ex.examples));
   return out.join('\n').trim() + '\n';
 }
+
+/**
+ * The tree without levels below `maxDepth` (1: only the top level; 0: everything). Examples of
+ * a removed token move to the deepest token still shown, since they are placed by source range.
+ */
+export function pruneDepth(items: Token[], maxDepth: number): Token[] {
+  if (!maxDepth || maxDepth < 1) return items;
+  const cut = (t: Token, depth: number): Token => ({ ...t, children: depth + 1 >= maxDepth ? [] : t.children.map((c) => cut(c, depth + 1)) });
+  return items.map((t) => cut(t, 0));
+}

@@ -135,7 +135,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 | Markdown | code blocks marked `sh`, `bash`, `console`, … |
 | Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
 
-Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Turn this off with `bashExplainer.embedded.enabled`.
+Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Choose which kinds of files with `bashExplainer.embedded.files`.
 
 ## yq
 
@@ -159,7 +159,7 @@ Warnings also appear in the Problems panel, so you see them without hovering. Wh
 | `cmd &> log` | `cmd > log 2>&1` |
 | `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
 
-Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. Turn this off with `bashExplainer.diagnostics.enabled`.
+Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. To silence a warning, add `# bash-explainer disable=<code>` on the line before it (or after the code on the same line), `# bash-explainer disable-file=<code>` anywhere for the whole file, or list the code in `bashExplainer.diagnostics.ignore`; `all` matches every warning. Turn the Problems panel entries off with `bashExplainer.diagnostics.enabled`.
 
 ## Commands
 
@@ -178,18 +178,44 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 | `bashExplainer.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+K Ctrl+E` works either way) |
 | `bashExplainer.hover.followCursor` | `false` | Show the hover whenever the cursor moves |
 | `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
+| `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
 | `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
 | `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
+| `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
+| `bashExplainer.examples.disabled` | `[]` | Kinds of examples not to show: `regex`, `sed`, `awk`, `jq`, `yq`, `perl`, `textFilters`, `pipeline`, `expansion`, `printf`, `glob`, `test`, `xargs`, `read`, `getopt`, `gitLog` |
+| `bashExplainer.examples.inHover` | `true` | Show examples in the hover too (off: only in the panel) |
 | `bashExplainer.examples.placement` | `first` | Worked examples under the part they illustrate, before (`first`) or after (`last`) its pieces, or all at the end (`bottom`) |
 | `bashExplainer.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
+| `bashExplainer.notes.idioms` | `true` | Notes about well-known idioms (strict mode, `IFS= read -r`…) |
 | **Checks** | | |
 | `bashExplainer.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
 | `bashExplainer.diagnostics.enabled` | `true` | Warnings in the Problems panel, with quick fixes |
+| `bashExplainer.diagnostics.ignore` | `[]` | Warning codes to leave out (the code shown in the Problems panel, e.g. `dbracket`, `echoE`, `dockerPipefail`) |
+| `bashExplainer.diagnostics.embedded` | `true` | Also warn about shell code inside other files |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
-| `bashExplainer.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json`, Markdown and Python |
+| `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python` |
 | `bashExplainer.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
+| **Dictionary** | | |
+| `bashExplainer.customCommands` | `{}` | Describe commands the dictionary does not know (see below) |
+
+### Your own commands
+
+In-house tools are shown as *external commands* until you describe them:
+
+```json
+"bashExplainer.customCommands": {
+  "deploy": {
+    "summary": "Deploy a service to production",
+    "options": {
+      "-n|--dry-run": "only show what would happen",
+      "-e": { "description": "target environment", "takesValue": true }
+    },
+    "arguments": ["service name"]
+  }
+}
+```
 
 ## Limitations
 
