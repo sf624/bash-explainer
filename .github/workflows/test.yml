@@ -124,3 +124,47 @@ jobs:
 
       - name: Run the tests in VS Code for the Web
         run: npm run test:integration:web
+
+  action:
+    # The GitHub Action (action.yml), on this repository's fixtures, with the command-line tool
+    # packed from this commit instead of the published one.
+    name: GitHub Action
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Pack the command-line tool
+        id: pack
+        run: |
+          npm run build:cli
+          echo "tgz=$RUNNER_TEMP/$(npm pack ./cli --pack-destination "$RUNNER_TEMP" --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: A POSIX sh script with bashisms fails the check
+        id: failing
+        continue-on-error: true
+        uses: ./
+        with:
+          files: test/fixtures/posix.sh
+          sarif: ${{ runner.temp }}/results.sarif
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that it failed and wrote SARIF
+        env:
+          OUTCOME: ${{ steps.failing.outcome }}
+          SARIF: ${{ runner.temp }}/results.sarif
+        run: |
+          test "$OUTCOME" = failure
+          node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
+
+      - name: Scripts without problems pass
+        uses: ./
+        with:
+          files: test/fixtures/sample.sh images/*.sh
+          package: ${{ steps.pack.outputs.tgz }}
