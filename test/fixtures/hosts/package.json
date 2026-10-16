@@ -1,0 +1,9 @@
+{
+  "name": "demo",
+  "scripts": {
+    "build": "rm -rf dist && tsc -p . && cp -r \"static/\" dist/",
+    "lint": "eslint 'src/**/*.ts' --max-warnings=0",
+    "clean": "find . -name '*.log' -delete"
+  },
+  "dependencies": {}
+}

@@ -69,6 +69,10 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ![インライン](images/inline.png)
 
+## 他のファイルの中のシェル
+
+他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメントも）、Makefile のレシピ、CI の YAML（GitHub Actions の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）です。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
+
 ## bash 以外のシェル
 
 解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方を指摘します。たとえば `#!/bin/sh` のスクリプト中の `[[ ]]`・配列・`&>`・`echo -e`・`{1..3}` などに注意を出し、移植性のある書き方を提案します。
@@ -97,6 +101,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | `bashExplain.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
 | `bashExplain.panel.autoOpen` | `false` | bash スクリプトを開いたらパネルを自動で開く |
+| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json` の scripts・Markdown のコードブロック中のシェルも解説 |
 | `bashExplain.languages` | `["shellscript"]` | 解説の対象とする言語 ID |
 
 ## 制限事項

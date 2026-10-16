@@ -30,7 +30,13 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:shellscript"
+    "onLanguage:shellscript",
+    "onLanguage:dockerfile",
+    "onLanguage:makefile",
+    "onLanguage:yaml",
+    "onLanguage:github-actions-workflow",
+    "onLanguage:markdown",
+    "onLanguage:json"
   ],
   "contributes": {
     "commands": [
@@ -187,6 +193,11 @@
             "shellscript"
           ],
           "description": "%config.languages%"
+        },
+        "bashExplain.embedded.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.embedded.enabled%"
         }
       }
     }

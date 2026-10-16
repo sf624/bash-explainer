@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
+import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { createBashParser } from '../src/parser';
 
 const root = path.join(__dirname, '..');
@@ -14,7 +15,10 @@ const root = path.join(__dirname, '..');
     bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
   });
   const src = fs.readFileSync(file, 'utf8');
-  const tree = parser.parse(src);
+  // Dockerfiles, Makefiles, YAML, package.json and Markdown: explain only their shell parts.
+  const kind = hostKind('', file);
+  const extracted = kind && extractShell(kind, src);
+  const tree = parser.parse(extracted ? extracted.text : src);
   const analyzer = new Analyzer(lang as 'ja' | 'en');
   const lines = src.split('\n');
   const print = (t: Token, d: number) => {
@@ -23,7 +27,8 @@ const root = path.join(__dirname, '..');
   };
   lines.forEach((text, i) => {
     if (only && Number(only) !== i + 1) return;
-    const e = analyzer.explainLine(tree, i, detectShell(src, file));
+    const e = extracted ? explainHostedLine(analyzer, tree, extracted, lines, i, lang as 'ja' | 'en') : analyzer.explainLine(tree, i, detectShell(src, file));
+    if (!e) return;
     console.log(`\n### ${i + 1}: ${text}`);
     if (e.context.length) console.log('  context: ' + e.context.map((c) => `${c.label}@${c.line + 1}`).join(' > '));
     e.notes.forEach((n) => console.log('  note: ' + n));

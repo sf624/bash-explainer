@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Analyzer, LineExplanation } from './analyzer';
 import { detectShell, Shell, SHELL_NAMES } from './dialect';
+import { explainHostedLine, Extracted, extractShell, HostKind, hostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
@@ -8,6 +9,7 @@ import type { ExamplePlacement, Feature } from './ui/render';
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
   private analyzers = new Map<Lang, Analyzer>();
+  private extracted = new Map<string, { version: number; value: Extracted }>();
 
   constructor(private trees: TreeCache) {}
 
@@ -40,8 +42,31 @@ export class ExplainService implements vscode.Disposable {
     return this.config.get<string[]>('languages', ['shellscript']);
   }
 
+  /** A shell script, or a file with embedded shell code (Dockerfile, Makefile, CI YAML…). */
   isTarget(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
-    return !!doc && this.languages.includes(doc.languageId);
+    return !!doc && (this.languages.includes(doc.languageId) || !!this.hostOf(doc));
+  }
+
+  /** The kind of host file, when embedded shell code is explained. */
+  hostOf(doc: vscode.TextDocument): HostKind | undefined {
+    if (this.languages.includes(doc.languageId) || !this.config.get<boolean>('embedded.enabled', true)) return undefined;
+    return hostKind(doc.languageId, doc.fileName);
+  }
+
+  /** The shell parts of a host document (cached per version). */
+  extractedOf(doc: vscode.TextDocument, kind: HostKind): Extracted {
+    const key = doc.uri.toString();
+    const hit = this.extracted.get(key);
+    if (hit && hit.version === doc.version) return hit.value;
+    const value = extractShell(kind, doc.getText());
+    this.extracted.set(key, { version: doc.version, value });
+    return value;
+  }
+
+  /** Whether the document has anything to explain (a host file may have no shell code). */
+  hasShell(doc: vscode.TextDocument): boolean {
+    const kind = this.hostOf(doc);
+    return !kind || this.extractedOf(doc, kind).regions.length > 0;
   }
 
   /** The shell the document is written for: the `shell` setting, else detected from the file. */
@@ -52,15 +77,26 @@ export class ExplainService implements vscode.Disposable {
   }
 
   explain(doc: vscode.TextDocument, line: number): LineExplanation {
-    const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
     const lang = this.lang;
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
+    const kind = this.hostOf(doc);
+    if (kind) {
+      const extracted = this.extractedOf(doc, kind);
+      const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
+      const set = this.config.get<string>('shell', 'auto');
+      const shell = set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
+      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, shell);
+      return ex ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
+    }
+    const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
     return analyzer.explainLine(tree, line, this.shellOf(doc));
   }
 
   forget(doc: vscode.TextDocument): void {
     this.trees.evict(doc.uri.toString());
+    this.trees.evict(`${doc.uri.toString()}#shell`);
+    this.extracted.delete(doc.uri.toString());
   }
 
   dispose(): void {

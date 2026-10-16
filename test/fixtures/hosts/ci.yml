@@ -1,0 +1,16 @@
+name: CI
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test -- --coverage | tee "out-${{ matrix.node }}.log"
+      - name: Portable
+        shell: sh
+        run: '[[ -f package.json ]] && echo ok'
+      - run: echo "${{ github.sha }}" | cut -c1-7

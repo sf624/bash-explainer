@@ -23,7 +23,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const on = (Object.keys(t.features) as Feature[]).filter((f) => service.enabled(f));
     status.text = `$(comment-discussion) ${on.map((f) => t.short[f]).join(' + ') || t.off}`;
     status.tooltip = t.statusTooltip;
-    if (service.isTarget(vscode.window.activeTextEditor?.document)) status.show();
+    const doc = vscode.window.activeTextEditor?.document;
+    if (service.isTarget(doc) && service.hasShell(doc)) status.show();
     else status.hide();
   };
 
@@ -52,6 +53,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplain')) return;
       if (e.affectsConfiguration('bashExplain.languages')) hover.register();
+      if (e.affectsConfiguration('bashExplain.embedded.enabled')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplain.panel.autoOpen')) panel.autoOpen();
       panel.refresh();
       inline.refresh();
