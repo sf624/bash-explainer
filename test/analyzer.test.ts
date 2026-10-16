@@ -209,3 +209,14 @@ describe('standalone arithmetic commands', () => {
     assert.ok(e.examples[0].sections[0].lines.every((v) => /^[Rr]eadme/.test(v)));
   });
 });
+
+describe('example titles', () => {
+  it('names the command when the line runs several', () => {
+    const src = 'grep -rn x ./src | sort -u > errors.txt && echo "done: $(date +%F)"';
+    assert.deepStrictEqual(explain(src, 0, 'ja').examples.map((e) => e.title), ['`grep -rn x ./src` の例', '`sort -u` の例']);
+    assert.deepStrictEqual(explain(src, 0, 'en').examples.map((e) => e.title), ['Example for `grep -rn x ./src`', 'Example for `sort -u`']);
+  });
+  it('keeps the plain title for a single command', () => {
+    assert.deepStrictEqual(explain('sort -u names.txt', 0, 'ja').examples.map((e) => e.title), ['例']);
+  });
+});
