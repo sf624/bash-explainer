@@ -19,7 +19,12 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
   register(): void {
     this.registration?.dispose();
     this.registration = vscode.languages.registerHoverProvider(
-      this.service.languages.map((language) => ({ language })),
+      [
+        ...this.service.languages.map((language) => ({ language })),
+        // Files with embedded shell code; provideHover skips them when that is turned off.
+        ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown'].map((language) => ({ language })),
+        { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' },
+      ],
       this,
     );
   }
@@ -36,6 +41,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     const forced = this.forceNext;
     this.forceNext = false;
     if (!forced && !this.service.enabled('hover')) return undefined;
+    if (!this.service.isTarget(doc)) return undefined;
     const ex = this.service.explain(doc, pos.line);
     if (!ex.items.length && !forced) return undefined;
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
