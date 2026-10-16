@@ -1,4 +1,4 @@
-import type { LineExplanation, Pos, Token } from './analyzer';
+import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
 
 /** Kinds of files whose shell snippets are explained. */
@@ -877,12 +877,12 @@ function pipesOn(n: import('web-tree-sitter').SyntaxNode, line: number): boolean
 
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
 export function explainHostedLine(
-  analyzer: { explainLine(tree: import('web-tree-sitter').Tree, line: number, shell?: Shell): LineExplanation },
-  tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], line: number, lang: 'ja' | 'en', shell?: Shell,
+  analyzer: { explainLine(tree: import('web-tree-sitter').Tree, line: number, shell?: Shell, opts?: ExplainOptions): LineExplanation },
+  tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], line: number, lang: 'ja' | 'en', shell?: Shell, opts: ExplainOptions = {},
 ): LineExplanation | undefined {
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
-  const ex = analyzer.explainLine(tree, line, shell ?? region.shell);
+  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1] });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];

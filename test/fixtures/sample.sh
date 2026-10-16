@@ -196,3 +196,11 @@ echo "hello world" | tr a-z A-Z
 seq 10 | awk '$1 % 2 == 0' | sort -rn
 cut -d: -f1,7 /etc/passwd | grep 'bash$' | sort
 grep -o '[0-9]\+' build.log | sort -n | uniq
+
+# --- yq (mikefarah/yq v4, kislyuk/yq, mikefarah/yq v3) ---
+yq '.items[] | select(.kind == "Pod") | .metadata.name' pods.yml
+yq e -i '.spec.replicas = 3' deployment.yaml
+yq -o json '.metadata | pick(["name", "labels"])' pod.yml
+yq '.a line_comment = "managed by CI" | ... style = ""' values.yaml
+yq -y '.users | map(.name) | add' users.yml
+yq r deploy.yml 'spec.template.spec.containers.(name==web).image'

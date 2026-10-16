@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Analyzer, LineExplanation } from './analyzer';
+import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
 import { detectShell, Shell, SHELL_NAMES } from './dialect';
 import { dialectIssues } from './dialect';
 import { Fix, fixFor } from './fixes';
@@ -88,11 +88,15 @@ export class ExplainService implements vscode.Disposable {
       const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
       const set = this.config.get<string>('shell', 'auto');
       const shell = set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
-      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, shell);
+      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, shell, this.explainOptions());
       return ex ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
     }
     const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
-    return analyzer.explainLine(tree, line, this.shellOf(doc));
+    return analyzer.explainLine(tree, line, this.shellOf(doc), this.explainOptions());
+  }
+
+  private explainOptions(): ExplainOptions {
+    return { yqFlavor: this.config.get<string>('yq.flavor', 'auto') };
   }
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
