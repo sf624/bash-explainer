@@ -18,13 +18,17 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   status.command = 'bashExplain.selectDisplayMode';
 
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
   const updateStatus = () => {
     const t = ui[service.lang];
     const on = (Object.keys(t.features) as Feature[]).filter((f) => service.enabled(f));
     status.text = `$(comment-discussion) ${on.map((f) => t.short[f]).join(' + ') || t.off}`;
     status.tooltip = t.statusTooltip;
     const doc = vscode.window.activeTextEditor?.document;
-    if (service.isTarget(doc) && service.hasShell(doc)) status.show();
+    const active = service.isTarget(doc) && service.hasShell(doc);
+    // Shows the panel button and the context-menu entry in any file with shell code.
+    void vscode.commands.executeCommand('setContext', 'bashExplain.hasShell', active);
+    if (active) status.show();
     else status.hide();
   };
 
@@ -60,6 +64,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       updateStatus();
     }),
     vscode.window.onDidChangeActiveTextEditor(updateStatus),
+    // A code block added to a Markdown file (or removed) changes whether it has shell code.
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document === vscode.window.activeTextEditor?.document) {
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(updateStatus, 300);
+      }
+    }),
     vscode.workspace.onDidCloseTextDocument((doc) => service.forget(doc)),
   );
 

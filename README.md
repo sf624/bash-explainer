@@ -59,7 +59,7 @@ Hover over a line to see its explanation. Press `Ctrl+Alt+E` (`Cmd+Alt+E` on mac
 
 ### Panel
 
-A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor; click it to select it. Open it from the editor title bar, the hover link or **Bash Explain: Open Explanation Panel**; with `bashExplain.panel.autoOpen` it opens by itself when you open a bash script.
+A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor; click it to select it. Open it from the editor title bar, the hover link or **Bash Explain: Open Bash Explanation Panel**; with `bashExplain.panel.autoOpen` it opens by itself when you open a bash script.
 
 ![Panel mode](images/panel.gif)
 
@@ -83,8 +83,8 @@ The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/bu
 
 | Command | Key | Description |
 | --- | --- | --- |
-| Bash Explain: Explain Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` | Explain the line under the cursor |
-| Bash Explain: Open Explanation Panel | | Open the side panel (also in the editor title bar) |
+| Bash Explain: Explain Bash on Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` | Explain the line under the cursor |
+| Bash Explain: Open Bash Explanation Panel | | Open the side panel (also in the editor title bar) |
 | Bash Explain: Choose Display | | Turn the hover, the inline summary and opening the panel automatically on or off |
 | Bash Explain: Open Settings | | Open this extension's settings (also linked from the hover and the panel) |
 
