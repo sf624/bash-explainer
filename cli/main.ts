@@ -9,6 +9,7 @@ import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
 import { createBashParser } from '../src/parser';
 import { toPlainMarkdown } from '../src/ui/render';
+import { startLanguageServer } from './lsp';
 
 declare const __VERSION__: string;
 
@@ -19,6 +20,7 @@ type Format = 'text' | 'markdown' | 'json';
 const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
        bash-explainer [options] -e '<command line>'
        cat script.sh | bash-explainer [options] -
+       bash-explainer --lsp
 
 Explains shell scripts line by line: every command, option, redirection and
 expansion, with worked examples. Also reads the shell code in Dockerfiles,
@@ -37,6 +39,8 @@ Options:
       --format <format>  text, markdown or json (default: text)
       --no-examples      leave out worked examples
       --color, --no-color  colour the text output (default: when a terminal)
+      --lsp              run as a Language Server on standard input and output
+                         (hover, diagnostics, quick fixes) for editors
   -h, --help             show this help
   -v, --version          show the version
 
@@ -261,7 +265,10 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   return o.check && warnings > 0 ? 1 : 0;
 }
 
-if (require.main === module) {
+if (require.main === module && process.argv.includes('--lsp')) {
+  // --stdio, which some editors add, is the only transport there is.
+  startLanguageServer({ input: process.stdin, output: process.stdout, env: process.env, version: __VERSION__, exit: (code) => process.exit(code) });
+} else if (require.main === module) {
   main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
