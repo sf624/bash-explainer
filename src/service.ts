@@ -1,10 +1,8 @@
 import * as vscode from 'vscode';
 import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
 import { detectShell, Shell, SHELL_NAMES } from './dialect';
-import { dialectIssues } from './dialect';
-import { parseDirectives, suppressed } from './directives';
-import { Fix, fixFor } from './fixes';
-import { DocIssue, explainHostedLine, Extracted, extractShell, HostKind, hostKind, hostIssues } from './hosts';
+import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from './document';
+import { Extracted, extractShell, HostKind, hostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
@@ -123,15 +121,20 @@ export class ExplainService implements vscode.Disposable {
     const lang = this.lang;
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
+    return explainDocumentLine(analyzer, this.shellDocument(doc), line, lang, this.shells(doc), this.explainOptions(doc));
+  }
+
+  /** The document's lines and parse tree; for a host file, the tree of its shell parts. */
+  private shellDocument(doc: vscode.TextDocument): ShellDocument {
+    const lines = doc.getText().split(/\r?\n/);
     const kind = this.hostOf(doc);
-    if (kind) {
-      const extracted = this.extractedOf(doc, kind);
-      const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
-      const ex = explainHostedLine(analyzer, tree, extracted, doc.getText().split(/\r?\n/), line, lang, this.forcedShell(doc), this.explainOptions(doc));
-      return ex ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
-    }
-    const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
-    return analyzer.explainLine(tree, line, this.shellOf(doc), this.explainOptions(doc));
+    if (!kind) return { lines, tree: this.trees.get(doc.uri.toString(), doc.version, () => doc.getText()) };
+    const extracted = this.extractedOf(doc, kind);
+    return { lines, extracted, tree: this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text) };
+  }
+
+  private shells(doc: vscode.TextDocument): Shells {
+    return { forced: this.forcedShell(doc), detected: this.detectedShell(doc) };
   }
 
   private explainOptions(doc: vscode.TextDocument): ExplainOptions {
@@ -145,36 +148,10 @@ export class ExplainService implements vscode.Disposable {
   }
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
-  issues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
+  issues(doc: vscode.TextDocument): DocumentIssue[] {
+    if (this.hostOf(doc) && !this.config.get<boolean>('diagnostics.embedded', true)) return [];
     // Codes turned off in the settings, or by `# bash-explainer disable=` comments in the file.
-    const ignore = new Set(this.config.get<string[]>('diagnostics.ignore', []));
-    const directives = parseDirectives(doc.getText().split(/\r?\n/));
-    return this.allIssues(doc).filter((i) => !ignore.has(i.code) && !suppressed(directives, i.startLine, i.code));
-  }
-
-  private allIssues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
-    const lang = this.lang;
-    const kind = this.hostOf(doc);
-    const override = this.forcedShell(doc);
-    if (kind) {
-      if (!this.config.get<boolean>('diagnostics.embedded', true)) return [];
-      const extracted = this.extractedOf(doc, kind);
-      if (!extracted.regions.length) return [];
-      const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
-      return hostIssues(tree, extracted, doc.getText().split(/\r?\n/), lang, override);
-    }
-    const shell = this.shellOf(doc);
-    if (!shell || shell === 'bash') return [];
-    const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
-    return dialectIssues(tree.rootNode, shell, lang).map((i) => {
-      const n = i.node;
-      const sameLine = n.startPosition.row === n.endPosition.row;
-      return {
-        code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message, fix: fixFor(i),
-        startLine: n.startPosition.row, startCol: n.startPosition.column,
-        endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lineAt(n.startPosition.row).text.length,
-      };
-    });
+    return documentIssues(this.shellDocument(doc), this.lang, this.shells(doc), this.config.get<string[]>('diagnostics.ignore', []));
   }
 
   forget(doc: vscode.TextDocument): void {

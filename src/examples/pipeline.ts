@@ -1,5 +1,6 @@
 /** Run a whole pipeline of supported commands on sample input, keeping every stage's output. */
 import { awkExample, runAwk } from './awk';
+import { utf8Length } from './bytes';
 import { perlExample, perlOptions, runPerl } from './perlrun';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './regex';
 import { runSed, sedExample } from './sed';
@@ -144,7 +145,7 @@ function runWc(words: (string | undefined)[], input: string[]): string[] {
   if (p.operands.length) throw new Unsupported('wc files');
   const text = input.map((l) => l + '\n').join('');
   const counts: Record<string, number> = {
-    l: input.length, w: text.split(/\s+/).filter(Boolean).length, c: Buffer.byteLength(text), m: [...text].length,
+    l: input.length, w: text.split(/\s+/).filter(Boolean).length, c: utf8Length(text), m: [...text].length,
   };
   let which = p.opts.map(([c]) => c);
   if (!which.length) which = ['l', 'w', 'c'];

@@ -1,4 +1,5 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
+import { base64Decode, base64Encode, utf8Length } from './bytes';
 
 /** Raised for jq features the example runner does not implement; no example is shown then. */
 class Unsupported extends Error {}
@@ -717,8 +718,8 @@ class Evaluator {
     switch (name) {
       case '@text': return text;
       case '@json': return toJson(v);
-      case '@base64': return Buffer.from(text, 'utf8').toString('base64');
-      case '@base64d': return Buffer.from(text, 'base64').toString('utf8');
+      case '@base64': return base64Encode(text);
+      case '@base64d': return base64Decode(text);
       case '@uri': return encodeURIComponent(text).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
       case '@html': return text.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[c]!));
       case '@sh': {
@@ -921,7 +922,7 @@ class Evaluator {
         if (typeof x === 'number') return [Math.abs(x)];
         if (typeof x === 'string') return [[...x].length];
         return [Array.isArray(x) ? x.length : Object.keys(x).length];
-      case 'utf8bytelength/0': return [Buffer.byteLength(str(x))];
+      case 'utf8bytelength/0': return [utf8Length(str(x))];
       case 'keys/0': case 'keys_unsorted/0':
         if (Array.isArray(x)) return [x.map((_, i) => i)];
         if (!isObj(x)) throw new JqError(`${typeName(x)} has no keys`);
