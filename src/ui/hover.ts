@@ -24,7 +24,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     );
   }
 
-  /** Show the hover at the cursor, regardless of the display mode. */
+  /** Show the hover at the cursor, even when the hover is turned off. */
   async showAtCursor(): Promise<void> {
     this.forceNext = true;
     await vscode.commands.executeCommand('editor.action.showHover');
@@ -35,7 +35,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
   provideHover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
     const forced = this.forceNext;
     this.forceNext = false;
-    if (!forced && !this.service.showsHover()) return undefined;
+    if (!forced && !this.service.enabled('hover')) return undefined;
     const ex = this.service.explain(doc, pos.line);
     if (!ex.items.length && !forced) return undefined;
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
@@ -48,7 +48,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
 
   private onSelection(e: vscode.TextEditorSelectionChangeEvent): void {
     clearTimeout(this.followTimer);
-    if (!this.service.showsHover() || !this.service.config.get<boolean>('hover.followCursor', false)) return;
+    if (!this.service.enabled('hover') || !this.service.config.get<boolean>('hover.followCursor', false)) return;
     if (e.kind === vscode.TextEditorSelectionChangeKind.Command) return;
     if (!this.service.isTarget(e.textEditor.document) || !e.selections[0].isEmpty) return;
     const editor = e.textEditor;

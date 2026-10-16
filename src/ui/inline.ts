@@ -42,7 +42,7 @@ export class InlineController implements vscode.Disposable {
   }
 
   private update(editor: vscode.TextEditor): void {
-    if (this.service.mode !== 'inline' || !this.service.isTarget(editor.document)) {
+    if (!this.service.enabled('inline') || !this.service.isTarget(editor.document)) {
       this.clear(editor);
       return;
     }

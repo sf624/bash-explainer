@@ -4,7 +4,7 @@ import { ExplainService } from './service';
 import { HoverController } from './ui/hover';
 import { InlineController } from './ui/inline';
 import { PanelController } from './ui/panel';
-import { DisplayMode, ui } from './ui/render';
+import { Feature, ui } from './ui/render';
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const parser = await createBashParser({
@@ -20,7 +20,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   const updateStatus = () => {
     const t = ui[service.lang];
-    status.text = `$(comment-discussion) ${t.modes[service.mode][0]}`;
+    const on = (Object.keys(t.features) as Feature[]).filter((f) => service.enabled(f));
+    status.text = `$(comment-discussion) ${on.map((f) => t.short[f]).join(' + ') || t.off}`;
     status.tooltip = t.statusTooltip;
     if (service.isTarget(vscode.window.activeTextEditor?.document)) status.show();
     else status.hide();
@@ -37,19 +38,22 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
     vscode.commands.registerCommand('bashExplain.selectDisplayMode', async () => {
       const t = ui[service.lang];
-      const modes = Object.keys(t.modes) as DisplayMode[];
+      const features = Object.keys(t.features) as Feature[];
       const picked = await vscode.window.showQuickPick(
-        modes.map((m) => ({ label: t.modes[m][0], description: m === service.mode ? '✓' : '', detail: t.modes[m][1], mode: m })),
-        { placeHolder: t.pickMode },
+        features.map((f) => ({ label: t.features[f][0], detail: t.features[f][1], picked: service.enabled(f), feature: f })),
+        { placeHolder: t.pickFeatures, canPickMany: true },
       );
-      if (picked) await service.config.update('displayMode', picked.mode, vscode.ConfigurationTarget.Global);
+      if (!picked) return;
+      for (const f of features) {
+        const on = picked.some((p) => p.feature === f);
+        if (on !== service.enabled(f)) await service.config.update(ExplainService.FEATURES[f][0], on, vscode.ConfigurationTarget.Global);
+      }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplain')) return;
       if (e.affectsConfiguration('bashExplain.languages')) hover.register();
-      if (e.affectsConfiguration('bashExplain.displayMode') || e.affectsConfiguration('bashExplain.language') || e.affectsConfiguration('bashExplain.examples.placement')) {
-        panel.refresh();
-      }
+      if (e.affectsConfiguration('bashExplain.panel.autoOpen')) panel.autoOpen();
+      panel.refresh();
       inline.refresh();
       updateStatus();
     }),
@@ -58,7 +62,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   );
 
   updateStatus();
-  panel.refresh();
+  panel.autoOpen();
 }
 
 export function deactivate(): void {}

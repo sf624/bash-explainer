@@ -49,9 +49,9 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ## 表示方法
 
-`bashExplain.displayMode` で選べます。ステータスバーの **Bash Explain** をクリックしても切り替えられます。
+ホバー・インライン要約・パネルは同時に使えます。それぞれ設定でオン/オフでき、ステータスバーの **Bash Explain** をクリックしても切り替えられます。
 
-### ホバー（既定）
+### ホバー（既定でオン）
 
 行にマウスを乗せると解説が表示されます。`Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）でキーボードカーソルの行を解説します。下部の **パネルで詳しく見る** で、同じ行をパネルに表示します。
 
@@ -59,17 +59,15 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ### パネル
 
-カーソルに追従するサイドペインです。regex101 のように行を色分けして表示します。部分にマウスを乗せるとエディタ側の該当箇所がハイライトされ、クリックすると選択されます。
+カーソルに追従するサイドペインです。regex101 のように行を色分けして表示します。部分にマウスを乗せるとエディタ側の該当箇所がハイライトされ、クリックすると選択されます。エディタのタイトルバー・ホバーのリンク・**Bash Explain: 解説パネルを開く** から開けます。`bashExplain.panel.autoOpen` をオンにすると、bash スクリプトを開いたときに自動で開きます。
 
 ![パネル](images/panel.gif)
 
-### インライン
+### インライン（既定でオフ）
 
-カーソル行の行末に1行の要約を薄く表示します。
+カーソル行の行末に1行の要約を薄く表示します。`bashExplain.inline.enabled` でオンにします。
 
 ![インライン](images/inline.png)
-
-`both` ではホバーとパネルを両方使います。
 
 ## コマンド
 
@@ -77,18 +75,21 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | --- | --- | --- |
 | Bash Explain: カーソル行を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` | カーソル行の解説を表示 |
 | Bash Explain: 解説パネルを開く | | サイドパネルを開く（エディタのタイトルバーからも可） |
-| Bash Explain: 表示方法を選択 | | ホバー・パネル・インライン・両方を切り替え |
+| Bash Explain: 表示方法を選択 | | ホバー・インライン要約・パネルの自動表示をそれぞれオン/オフ |
+| Bash Explain: 設定を開く | | この拡張の設定を開く（ホバーとパネルのリンクからも可） |
 
 ## 設定
 
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
-| `bashExplain.displayMode` | `hover` | `hover` / `panel` / `inline` / `both` |
 | `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
 | `bashExplain.examples.placement` | `first` | `first`（具体例を対応する部分の真下、その中の各要素の解説より先に表示） / `last`（各要素の解説の後に表示） / `bottom`（解説の後にまとめて表示） |
-| `bashExplain.hover.followCursor` | `false` | ホバーモードで、カーソル移動に追従して自動表示 |
+| `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
+| `bashExplain.hover.followCursor` | `false` | カーソル移動に追従してホバーを自動表示 |
 | `bashExplain.hover.followDelay` | `400` | 追従表示までの遅延（ミリ秒） |
+| `bashExplain.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
+| `bashExplain.panel.autoOpen` | `false` | bash スクリプトを開いたらパネルを自動で開く |
 | `bashExplain.languages` | `["shellscript"]` | 解説の対象とする言語 ID |
 
 ## 制限事項

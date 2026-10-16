@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Analyzer, LineExplanation } from './analyzer';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
-import type { DisplayMode, ExamplePlacement } from './ui/render';
+import type { ExamplePlacement, Feature } from './ui/render';
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
@@ -14,8 +14,16 @@ export class ExplainService implements vscode.Disposable {
     return vscode.workspace.getConfiguration('bashExplain');
   }
 
-  get mode(): DisplayMode {
-    return this.config.get<DisplayMode>('displayMode', 'hover');
+  /** The setting behind each display feature, and its default. */
+  static readonly FEATURES: Record<Feature, [string, boolean]> = {
+    hover: ['hover.enabled', true],
+    inline: ['inline.enabled', false],
+    panel: ['panel.autoOpen', false],
+  };
+
+  enabled(feature: Feature): boolean {
+    const [key, def] = ExplainService.FEATURES[feature];
+    return this.config.get<boolean>(key, def);
   }
 
   get examplePlacement(): ExamplePlacement {
@@ -29,14 +37,6 @@ export class ExplainService implements vscode.Disposable {
 
   get languages(): string[] {
     return this.config.get<string[]>('languages', ['shellscript']);
-  }
-
-  showsHover(): boolean {
-    return this.mode === 'hover' || this.mode === 'both';
-  }
-
-  showsPanel(): boolean {
-    return this.mode === 'panel' || this.mode === 'both';
   }
 
   isTarget(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
