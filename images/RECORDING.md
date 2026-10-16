@@ -1,49 +1,60 @@
-# README 用 GIF の撮り方
+# Recording the README images
 
-README.md / README_ja.md は次の4ファイルを参照しています。このディレクトリに同じ名前で置いてください。
+[日本語](RECORDING_ja.md)
 
-| ファイル | 内容 | 目安 |
+README.md and README_ja.md use these four files from this directory:
+
+| File | What it shows | Length |
 | --- | --- | --- |
-| `demo.gif` | 冒頭のデモ。ホバー → パネルの流れを短く | 10〜15秒 |
-| `hover.gif` | ホバーモード | 8〜12秒 |
-| `panel.gif` | パネルモード | 10〜15秒 |
-| `inline.png` | インラインモードの静止画 | — |
+| `demo.gif` | The opening demo: hover → panel | about 17 s |
+| `hover.gif` | Hover mode | about 15 s |
+| `panel.gif` | Panel mode | about 17 s |
+| `inline.png` | Inline mode (still image) | — |
 
-`images/` は `.vscodeignore` で .vsix には含まれません。Marketplace の README は、`package.json` の `repository`（github.com/sf624/bash-explainer）から画像を読み込みます。**push してから公開**してください。
+`images/` is left out of the .vsix by `.vscodeignore`. The Marketplace README loads the images from GitHub, through `repository` in `package.json` (github.com/sf624/bash-explainer), so **push before you publish**.
 
-## 準備
+## Recording them automatically
 
-- 録画ツール: Windows は [ScreenToGif](https://www.screentogif.com/)、macOS は [Kap](https://getkap.co/)
-- 開くファイル: `images/demo.sh`
-- ウィンドウ: VS Code を 1280×720 前後にする。サイドバーとミニマップは閉じ、エディタのフォントは 16px 前後
-- テーマ: Dark Modern など定番のもの
-- 言語: 英語版 README 用なので、`"bashExplainer.language": "en"` にする（日本語の GIF も欲しければ `ja` で別に撮り、README_ja.md の参照先を変える）
-- 書き出し: 横幅 1000px 以下、10〜15fps、1ファイル 5MB 以下を目安に
+```sh
+npm ci
+npm run images                 # all four
+npm run images -- hover panel  # only some of them
+npm run images -- --keep       # keep the frames and the temporary profile
+```
 
-## シナリオ
+[scripts/capture-readme-images.mjs](../scripts/capture-readme-images.mjs) overwrites the files in this directory. It:
 
-### demo.gif
+1. builds the extension and packages it into a .vsix
+2. installs the .vsix into an empty, temporary extensions directory, so your own VS Code settings and extensions are not used or changed
+3. starts VS Code once per image with `--remote-debugging-port`, a fresh user-data directory and the settings for that scenario, and drives it with [Playwright](https://playwright.dev/) (`playwright-core`, no browser download)
+4. takes screenshots while it moves the mouse and presses keys, and draws a mouse pointer on them, because screenshots do not include it
+5. turns the frames into GIFs with ffmpeg
 
-1. `displayMode` を `both` にしておく
-2. 8行目（`grep -n "ERROR" …`）にマウスを乗せ、ホバーを1〜2秒見せる
-3. ホバー下部の **Open in panel** をクリックする
-4. パネルで `2>/dev/null` の部分にマウスを乗せ、エディタ側がハイライトされるところを見せる
-5. 矢印キーでカーソルを 11行目 → 12行目と動かし、パネルが追従するところを見せる
+You need:
 
-### hover.gif
+- VS Code installed. The script looks in the usual install location for your OS; otherwise set `VSCODE_PATH` to the Code executable (and `VSCODE_CLI` to the `code` command, if it is not in `bin/` next to it).
+- `ffmpeg` on `PATH`, or set `FFMPEG`.
 
-1. `displayMode` を `hover` にしておく
-2. 2行目（`set -euo pipefail`）にマウスを乗せる
-3. 4行目（`${1:-…}`）にマウスを乗せる
-4. 7行目（ループ内）に乗せ、ヘッダーに「for loop」と出るところを見せる
+Leave the computer alone while it runs (about three minutes): VS Code windows open and close on their own.
 
-### panel.gif
+If a step fails, the script keeps the temporary directory and saves `<scenario>-error.png` there.
 
-1. `displayMode` を `panel` にしておく（パネルが右に開く）
-2. 2行目から矢印キーで1行ずつ下へ動かし、12行目まで進める（各行1秒程度）
-3. 11行目（`find … -exec rm -f {} \;`）で、パネルのツリーの `-exec` 行にマウスを乗せる
+### What it records
 
-### inline.png
+The settings are the same for every image: Dark Modern theme, 16px editor font, minimap, activity bar and sidebar hidden, and `"bashExplainer.language": "en"`. The window is 1280×720 (1000×600 for `hover.gif`), recorded at 1.5× scale and written 1000px wide at 10 fps.
 
-1. `displayMode` を `inline` にしておく
-2. カーソルを 8行目に置き、行末の要約が見える状態で撮る
+| Image | Settings | Steps |
+| --- | --- | --- |
+| `demo.gif` | defaults (hover on) | Hover line 8 (`grep -n "ERROR" …`), scroll the hover to **Open in panel** and click it. In the panel, point at `2>/dev/null` so the editor highlights it. Then move the cursor to line 11 and line 12 with the arrow keys; the panel follows. |
+| `hover.gif` | defaults (hover on) | Hover line 2 (`set -euo pipefail`), line 4 (`${1:-…}`) and line 7 (inside the loop; the header says "for loop"). |
+| `panel.gif` | `hover.enabled: false`, `panel.autoOpen: true` | Move down from line 1 to line 11 with the arrow keys, point at the `-exec` row of the tree, then go on to line 12. |
+| `inline.png` | `hover.enabled: false`, `inline.enabled: true` | Cursor on line 8, so its summary shows at the end of the line. Cropped to the editor lines. |
+
+To change a scenario, edit `record()` in the script.
+
+## Recording them by hand
+
+- Tools: [ScreenToGif](https://www.screentogif.com/) on Windows, [Kap](https://getkap.co/) on macOS
+- Open `images/demo.sh` and use the settings and steps in the table above
+- Export at most 1000px wide, 10–15 fps, under 5 MB per file
+- For Japanese images, set `"bashExplainer.language": "ja"`, save them under other names, and point README_ja.md at them
