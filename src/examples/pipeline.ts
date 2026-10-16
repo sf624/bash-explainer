@@ -278,7 +278,8 @@ export interface PipelineExample {
  * Run every stage. `readsFile` says the first stage reads a file (cat file, < file), whose
  * contents are made up for the stage that consumes them.
  */
-export function pipelineExample(stages: Stage[], readsFile: boolean): PipelineExample | undefined {
+/** Run sample data (or `given`, the user's own input) through every stage. */
+export function pipelineExample(stages: Stage[], readsFile: boolean, given?: string[]): PipelineExample | undefined {
   try {
     if (stages.length < 2) return undefined;
     let input: string[] | undefined;
@@ -293,10 +294,10 @@ export function pipelineExample(stages: Stage[], readsFile: boolean): PipelineEx
     } else {
       // The data comes from a file: invent it for the first stage that processes it.
       const consumer = firstIsCatFile ? stages[1] : first;
-      input = sampleFor(consumer);
+      input = given ?? sampleFor(consumer);
       if (!input) return undefined;
       // Duplicates make uniq, sort -u and counting visible further down.
-      if (stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && s.words.some((x) => /^-[a-zA-Z]*u/.test(x ?? ''))))) {
+      if (!given && stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && s.words.some((x) => /^-[a-zA-Z]*u/.test(x ?? ''))))) {
         const keep = consumer.cmd.endsWith('grep') ? runGrep(consumer.words, input) : input;
         if (keep.length) input = [...input, keep[0], keep[keep.length - 1], keep[0]];
       }
