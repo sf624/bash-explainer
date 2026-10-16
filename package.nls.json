@@ -18,5 +18,6 @@
   "config.examples.placement": "Where worked examples (sample input and output) are shown.",
   "config.examples.placement.bottom": "All together after the explanations",
   "config.examples.placement.first": "Right under the part they illustrate, before the explanations of its pieces",
-  "config.examples.placement.last": "Under the part they illustrate, after the explanations of its pieces"
+  "config.examples.placement.last": "Under the part they illustrate, after the explanations of its pieces",
+  "cmd.openSettings": "Open Settings"
 }
