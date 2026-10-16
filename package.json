@@ -408,17 +408,21 @@
     "web-tree-sitter": "0.22.6"
   },
   "devDependencies": {
-    "@types/mocha": "10.0.6",
+    "@types/mocha": "10.0.10",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
-    "@vscode/vsce": "2.26.1",
-    "esbuild": "0.21.5",
-    "mocha": "10.4.0",
+    "@vscode/vsce": "2.32.0",
+    "esbuild": "0.28.2",
+    "mocha": "11.8.0",
     "playwright-core": "1.59.1",
-    "tsx": "4.15.7",
-    "typescript": "5.4.5"
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
   },
   "overrides": {
-    "cheerio": "1.0.0-rc.12"
+    "cheerio": "1.0.0-rc.12",
+    "diff": "8.0.4",
+    "js-yaml": "4.3.2",
+    "markdown-it": "14.3.3",
+    "serialize-javascript": "7.1.2"
   }
 }
