@@ -65,7 +65,7 @@ export interface ContextEntry { label: string; line: number }
 export interface ExplainOptions {
   /** The kind of file the shell code is in (e.g. "GitHub Actions `run:` step"). */
   host?: string;
-  /** The `bashExplain.yq.flavor` setting. */
+  /** The `bashExplainer.yq.flavor` setting. */
   yqFlavor?: string;
 }
 

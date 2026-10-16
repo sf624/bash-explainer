@@ -194,7 +194,7 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
   if (ctx.setting && ctx.setting !== 'auto' && ctx.setting in YQ_NAMES) {
     flavor = ctx.setting as YqFlavor;
     decided = true;
-    reasons.push(['設定 `bashExplain.yq.flavor` の指定', 'the `bashExplain.yq.flavor` setting']);
+    reasons.push(['設定 `bashExplainer.yq.flavor` の指定', 'the `bashExplainer.yq.flavor` setting']);
   } else if (clues.length) {
     const score = (f: YqFlavor) => clues.filter((c) => c.flavor === f).reduce((a, c) => a + c.weight, 0);
     flavor = (['mikefarah4', 'kislyuk', 'mikefarah3'] as YqFlavor[]).reduce((a, b) => (score(b) > score(a) ? b : a));

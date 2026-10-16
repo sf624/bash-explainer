@@ -1,6 +1,6 @@
 # Third-party notices
 
-Bash Explain includes the following third-party software. Their license texts are reproduced below.
+Bash Explainer includes the following third-party software. Their license texts are reproduced below.
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |

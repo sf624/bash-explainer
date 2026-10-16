@@ -7,7 +7,7 @@ import { ExplainService } from '../service';
  * into the Problems panel, with quick fixes where a portable rewrite exists.
  */
 export class DiagnosticsController implements vscode.CodeActionProvider, vscode.Disposable {
-  private collection = vscode.languages.createDiagnosticCollection('bashExplain');
+  private collection = vscode.languages.createDiagnosticCollection('bashExplainer');
   /** Quick fixes of each document, by diagnostic code and range. */
   private fixes = new Map<string, { code: string; range: vscode.Range; fix: Fix }[]>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -52,7 +52,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       const range = new vscode.Range(i.startLine, i.startCol, i.endLine, i.endCol);
       // The ⚠ / ℹ marks are for the hover; the Problems panel has its own icons.
       const d = new vscode.Diagnostic(range, i.message.replace(/^[⚠ℹ]\s*/u, ''), i.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
-      d.source = 'Bash Explain';
+      d.source = 'Bash Explainer';
       d.code = i.code;
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
       return d;
@@ -65,7 +65,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     const lang = this.service.lang;
     const known = this.fixes.get(doc.uri.toString()) ?? [];
     return context.diagnostics
-      .filter((d) => d.source === 'Bash Explain')
+      .filter((d) => d.source === 'Bash Explainer')
       .flatMap((d) => known.filter((k) => k.code === d.code && k.range.isEqual(d.range)).map((k) => {
         const action = new vscode.CodeAction(k.fix.title[lang === 'ja' ? 0 : 1], vscode.CodeActionKind.QuickFix);
         action.diagnostics = [d];

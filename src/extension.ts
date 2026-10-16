@@ -18,7 +18,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const inline = new InlineController(service);
   const diagnostics = new DiagnosticsController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  status.command = 'bashExplain.selectDisplayMode';
+  status.command = 'bashExplainer.selectDisplayMode';
 
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
   const updateStatus = () => {
@@ -29,21 +29,21 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const doc = vscode.window.activeTextEditor?.document;
     const active = service.isTarget(doc) && service.hasShell(doc);
     // Shows the panel button and the context-menu entry in any file with shell code.
-    void vscode.commands.executeCommand('setContext', 'bashExplain.hasShell', active);
+    void vscode.commands.executeCommand('setContext', 'bashExplainer.hasShell', active);
     if (active) status.show();
     else status.hide();
   };
 
   ctx.subscriptions.push(
     service, hover, panel, inline, diagnostics, status,
-    vscode.commands.registerCommand('bashExplain.showAtCursor', () => hover.showAtCursor()),
-    vscode.commands.registerCommand('bashExplain.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
-    vscode.commands.registerCommand('bashExplain.openPanel', (target?: { uri: string; line: number }) => {
+    vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
+    vscode.commands.registerCommand('bashExplainer.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
+    vscode.commands.registerCommand('bashExplainer.openPanel', (target?: { uri: string; line: number }) => {
       // From the hover link: show the hovered line, which may differ from the cursor line.
       const editor = target && vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === target.uri);
       panel.open(editor ?? vscode.window.activeTextEditor, editor ? target.line : undefined);
     }),
-    vscode.commands.registerCommand('bashExplain.selectDisplayMode', async () => {
+    vscode.commands.registerCommand('bashExplainer.selectDisplayMode', async () => {
       const t = ui[service.lang];
       const features = Object.keys(t.features) as Feature[];
       const picked = await vscode.window.showQuickPick(
@@ -57,10 +57,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (!e.affectsConfiguration('bashExplain')) return;
-      if (e.affectsConfiguration('bashExplain.languages')) hover.register();
-      if (e.affectsConfiguration('bashExplain.embedded.enabled')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
-      if (e.affectsConfiguration('bashExplain.panel.autoOpen')) panel.autoOpen();
+      if (!e.affectsConfiguration('bashExplainer')) return;
+      if (e.affectsConfiguration('bashExplainer.languages')) hover.register();
+      if (e.affectsConfiguration('bashExplainer.embedded.enabled')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
+      if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();
       panel.refresh();
       inline.refresh();
       diagnostics.refresh();

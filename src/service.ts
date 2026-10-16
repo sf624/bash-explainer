@@ -16,7 +16,7 @@ export class ExplainService implements vscode.Disposable {
   constructor(private trees: TreeCache) {}
 
   get config() {
-    return vscode.workspace.getConfiguration('bashExplain');
+    return vscode.workspace.getConfiguration('bashExplainer');
   }
 
   /** The setting behind each display feature, and its default. */

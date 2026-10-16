@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bash-only constructs in a /bin/sh script: Bash Explain points out what fails in dash or busybox ash.
+# Bash-only constructs in a /bin/sh script: Bash Explainer points out what fails in dash or busybox ash.
 set -euo pipefail
 if [[ -z "${1:-}" ]]; then echo "usage" >&2; fi
 files=(*.txt)
