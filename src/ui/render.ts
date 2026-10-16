@@ -4,7 +4,7 @@ import { Lang } from '../i18n';
 
 export const ui = {
   ja: {
-    title: 'Bash Explain',
+    title: 'Bash Explainer',
     line: (n: number) => `${n} 行目`,
     lineShort: (n: number) => `行 ${n}`,
     forShell: (name: string) => `${name} 向けとして確認`,
@@ -18,12 +18,12 @@ export const ui = {
     short: { hover: 'ホバー', inline: 'インライン', panel: 'パネル' },
     off: 'オフ',
     pickFeatures: '使う表示方法を選択（複数可）',
-    statusTooltip: 'Bash Explain: クリックで表示方法を切り替え',
+    statusTooltip: 'Bash Explainer: クリックで表示方法を切り替え',
     openInPanel: 'パネルで詳しく見る',
     settings: '設定',
   },
   en: {
-    title: 'Bash Explain',
+    title: 'Bash Explainer',
     line: (n: number) => `Line ${n}`,
     lineShort: (n: number) => `line ${n}`,
     forShell: (name: string) => `checked for ${name}`,
@@ -37,7 +37,7 @@ export const ui = {
     short: { hover: 'Hover', inline: 'Inline', panel: 'Panel' },
     off: 'Off',
     pickFeatures: 'Choose how explanations are shown (any number)',
-    statusTooltip: 'Bash Explain: click to change how explanations are shown',
+    statusTooltip: 'Bash Explainer: click to change how explanations are shown',
     openInPanel: 'Open in panel',
     settings: 'Settings',
   },
@@ -181,7 +181,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   };
   for (const item of ex.items) walk(item, 0);
   out.push(...examplesMarkdown(ex.examples));
-  const links = [panelLink && `[$(comment-discussion) ${t.openInPanel}](${panelLink})`, `[$(gear) ${t.settings}](command:bashExplain.openSettings)`];
+  const links = [panelLink && `[$(comment-discussion) ${t.openInPanel}](${panelLink})`, `[$(gear) ${t.settings}](command:bashExplainer.openSettings)`];
   out.push('', '---', links.filter(Boolean).join(' &nbsp;·&nbsp; '));
   return out.join('\n');
 }

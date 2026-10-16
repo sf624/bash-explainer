@@ -17,7 +17,7 @@ README.md / README_ja.md は次の4ファイルを参照しています。この
 - 開くファイル: `images/demo.sh`
 - ウィンドウ: VS Code を 1280×720 前後にする。サイドバーとミニマップは閉じ、エディタのフォントは 16px 前後
 - テーマ: Dark Modern など定番のもの
-- 言語: 英語版 README 用なので、`"bashExplain.language": "en"` にする（日本語の GIF も欲しければ `ja` で別に撮り、README_ja.md の参照先を変える）
+- 言語: 英語版 README 用なので、`"bashExplainer.language": "en"` にする（日本語の GIF も欲しければ `ja` で別に撮り、README_ja.md の参照先を変える）
 - 書き出し: 横幅 1000px 以下、10〜15fps、1ファイル 5MB 以下を目安に
 
 ## シナリオ

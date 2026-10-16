@@ -1,4 +1,4 @@
-# Bash Explain
+# Bash Explainer
 
 **シェルスクリプトを1行ずつ理解する** — シェルスクリプト版の [regex101](https://regex101.com/) です。
 
@@ -6,11 +6,11 @@
 
 [English README](README.md)
 
-![Bash Explain デモ](images/demo.gif)
+![Bash Explainer デモ](images/demo.gif)
 
 ## クイックスタート
 
-1. Marketplace から **Bash Explain** をインストールします。
+1. Marketplace から **Bash Explainer** をインストールします。
 2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
 3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）です。
 
@@ -20,7 +20,7 @@
 
 ## こんなことがわかります
 
-| 書いたもの | Bash Explain の解説 |
+| 書いたもの | Bash Explainer の解説 |
 | --- | --- |
 | `tar -czf backup.tgz -C src .` | `-c`・`-z`・`-f`・`-C src` がそれぞれ何をするか |
 | `cmd 2>&1 > out.log` | 標準出力と標準エラー出力の行き先。この書き方ではエラーがファイルに入らないこと |
@@ -37,7 +37,7 @@
 | **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、部分にマウスを乗せるとエディタ側がハイライトされる | ホバーやエディタのタイトルバーから開く |
 | **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
 
-ステータスバーの **Bash Explain** をクリックすると、それぞれオン/オフできます。
+ステータスバーの **Bash Explainer** をクリックすると、それぞれオン/オフできます。
 
 ![ホバー](images/hover.gif)
 
@@ -72,7 +72,7 @@
 | `xargs`・`read`・`getopt` | 実行されるコマンド、変数に入る値、引数の並び替え結果 |
 | `git log --pretty`・`--date` | 例のコミットでの表示 |
 
-具体例は、対応する部分の解説の真下に表示します（`bashExplain.examples.placement` で変更可）。
+具体例は、対応する部分の解説の真下に表示します（`bashExplainer.examples.placement` で変更可）。
 
 ## bash 以外のシェル向けのスクリプト
 
@@ -86,7 +86,7 @@
 ```
 
 - **対応シェル:** POSIX `sh`（dash と busybox ash で動かないものを明記）、`dash`、`ash`、`yash`、`ksh`、`mksh`、`zsh`。どのシェルで何が動くかは、各シェルで実測しています。
-- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplain.shell` で指定もできます。
+- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplainer.shell` で指定もできます。
 
 ## 他のファイルの中のシェル
 
@@ -99,16 +99,16 @@
 | Markdown | `sh`・`bash`・`console` などのコードブロック |
 | Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
 
-それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
+それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplainer.embedded.enabled` でオフにできます。
 
 ## yq
 
-`yq` という名前のツールは3種類あり、記法がそれぞれ違います。**mikefarah/yq v4**、**kislyuk/yq**（jq のラッパー）、古い **mikefarah/yq v3** です。Bash Explain は、オプション・サブコマンド・関数や、同じファイル内のインストール方法からどれ向けかを判定し、その結果を行ごとに表示します。
+`yq` という名前のツールは3種類あり、記法がそれぞれ違います。**mikefarah/yq v4**、**kislyuk/yq**（jq のラッパー）、古い **mikefarah/yq v3** です。Bash Explainer は、オプション・サブコマンド・関数や、同じファイル内のインストール方法からどれ向けかを判定し、その結果を行ごとに表示します。
 
 > yq: mikefarah/yq v4（v4.22.1 以降）として解説。根拠: `-o json` は mikefarah/yq v4 のオプション、`pick` は mikefarah/yq の関数（jq にはない）
 > 互換性: mikefarah/yq v4（v4.22.1 以降） ✓ ／ kislyuk/yq ✗（`-o json`・`pick` が使えない） ／ mikefarah/yq v3 ✗（jq 形式の式・`-o json` が使えない）
 
-各機能がどのリリースで入ったかは、4.x の全マイナーリリースで実際に動かして調べています。判定できないときは mikefarah/yq v4 として扱います。`bashExplain.yq.flavor` で種類を固定することもできます。
+各機能がどのリリースで入ったかは、4.x の全マイナーリリースで実際に動かして調べています。判定できないときは mikefarah/yq v4 として扱います。`bashExplainer.yq.flavor` で種類を固定することもできます。
 
 ## 問題パネルとクイックフィックス
 
@@ -123,37 +123,37 @@
 | `cmd &> log` | `cmd > log 2>&1` |
 | `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
 
-クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplain.diagnostics.enabled` でオフにできます。
+クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplainer.diagnostics.enabled` でオフにできます。
 
 ## コマンド
 
 | コマンド | ショートカット・呼び出し場所 |
 | --- | --- |
-| Bash Explain: カーソル行の bash を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` |
-| Bash Explain: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
-| Bash Explain: 表示方法を選択 | ステータスバー |
-| Bash Explain: 設定を開く | ホバー、パネル |
+| Bash Explainer: カーソル行の bash を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` |
+| Bash Explainer: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
+| Bash Explainer: 表示方法を選択 | ステータスバー |
+| Bash Explainer: 設定を開く | ホバー、パネル |
 
 ## 設定
 
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
 | **表示** | | |
-| `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
-| `bashExplain.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
-| `bashExplain.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
-| `bashExplain.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
-| `bashExplain.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
-| `bashExplain.inline.maxLength` | `120` | その要約の最大文字数 |
-| `bashExplain.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
-| `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
+| `bashExplainer.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
+| `bashExplainer.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
+| `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
+| `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
+| `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
+| `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
+| `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
+| `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
 | **確認** | | |
-| `bashExplain.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
-| `bashExplain.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
-| `bashExplain.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
+| `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
+| `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
+| `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
-| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json`・Markdown・Python の中のシェルも解説 |
-| `bashExplain.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
+| `bashExplainer.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json`・Markdown・Python の中のシェルも解説 |
+| `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 
 ## 制限事項
 

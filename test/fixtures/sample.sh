@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sample script for Bash Explain
+# Sample script for Bash Explainer
 set -euo pipefail
 
 readonly LOG_DIR="${LOG_DIR:-/var/log/myapp}"

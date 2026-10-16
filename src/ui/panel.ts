@@ -65,7 +65,7 @@ export class PanelController implements vscode.Disposable {
     }
     const media = vscode.Uri.file(path.join(this.ctx.extensionPath, 'media'));
     this.panel = vscode.window.createWebviewPanel(
-      'bashExplain.panel',
+      'bashExplainer.panel',
       ui[this.service.lang].title,
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       { enableScripts: true, localResourceRoots: [media], retainContextWhenHidden: true },
@@ -119,7 +119,7 @@ export class PanelController implements vscode.Disposable {
   private onMessage(m: FromWebview): void {
     const ed = this.editor;
     if (m.type === 'ready') return this.post();
-    if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplain.openSettings');
+    if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
     if (!ed || ed.document.isClosed) return;
     if (m.type === 'highlight') {
       ed.setDecorations(this.highlight, m.span ? [toRange(m.span)] : []);
