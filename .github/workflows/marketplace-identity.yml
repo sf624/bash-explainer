@@ -1,0 +1,29 @@
+name: Marketplace identity
+
+# Run once by hand while setting up publishing: prints the ID of the Azure managed identity,
+# which is what you add as a member of the Marketplace publisher.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Print the identity's ID for the Marketplace
+        run: |
+          id=$(az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv)
+          echo "Add this ID to the publisher on https://marketplace.visualstudio.com/manage as a Contributor:"
+          echo "$id"
+          echo "### Marketplace identity ID: \`$id\`" >> "$GITHUB_STEP_SUMMARY"
