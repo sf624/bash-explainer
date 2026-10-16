@@ -85,6 +85,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | --- | --- | --- |
 | `bashExplain.displayMode` | `hover` | `hover` / `panel` / `inline` / `both` |
 | `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
+| `bashExplain.examples.placement` | `inline` | `inline`（具体例を対応する部分の解説の真下に表示） / `bottom`（解説の後にまとめて表示） |
 | `bashExplain.hover.followCursor` | `false` | ホバーモードで、カーソル移動に追従して自動表示 |
 | `bashExplain.hover.followDelay` | `400` | 追従表示までの遅延（ミリ秒） |
 | `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |

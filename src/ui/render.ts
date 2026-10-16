@@ -1,4 +1,4 @@
-import { Example, Kind, LineExplanation, Pos, Token } from '../analyzer';
+import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
 import { Lang } from '../i18n';
 
 export const ui = {
@@ -37,6 +37,40 @@ export const ui = {
 } satisfies Record<Lang, unknown>;
 
 export type DisplayMode = keyof typeof ui.ja.modes;
+
+/** Where worked examples go: under the token they explain, or all together at the end. */
+export type ExamplePlacement = 'inline' | 'bottom';
+
+function covers(outer: Span, inner: Span): boolean {
+  const le = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
+  return le(outer.start, inner.start) && le(inner.end, outer.end);
+}
+
+/**
+ * A copy of the explanation with each example moved onto the token for its anchor
+ * (`Token.examples`): the outermost token with exactly that range, else the deepest one covering
+ * it. Examples with no such token stay in `examples`, shown at the end.
+ */
+export function placeExamples(ex: LineExplanation): LineExplanation {
+  const copy = (t: Token): Token => ({ ...t, children: t.children.map(copy), examples: undefined });
+  const items = ex.items.map(copy);
+  const rest: Example[] = [];
+  for (const e of ex.examples) {
+    let best: { tok: Token; depth: number } | undefined;
+    let exact: Token | undefined;
+    const visit = (t: Token, depth: number) => {
+      if (!e.anchor || !covers(t.span, e.anchor)) return;
+      if (!exact && covers(e.anchor, t.span)) exact = t;
+      if (!best || depth >= best.depth) best = { tok: t, depth };
+      t.children.forEach((c) => visit(c, depth + 1));
+    };
+    items.forEach((t) => visit(t, 0));
+    const target = exact ?? best?.tok;
+    if (target) (target.examples ??= []).push(e);
+    else rest.push(e);
+  }
+  return { ...ex, items, examples: rest };
+}
 
 /** Theme colours per token kind; the same palette as the panel (media/panel.css). */
 const KIND_COLOR: Record<Kind, string> = {
@@ -102,7 +136,8 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
  * by token kind, and `lineText` is shown regex101-style at the top. Tokens under `at` (the
  * mouse position) are emphasised. `panelLink` is a command URI that opens this line in the panel.
  */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string): string {
+export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'inline'): string {
+  if (placement === 'inline') ex = placeExamples(ex);
   const t = ui[lang];
   const out: string[] = [];
   let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
@@ -127,6 +162,8 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
     out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
     for (const c of tok.children) walk(c, depth + 1);
+    // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
+    if (tok.examples?.length) out.push(...examplesMarkdown(tok.examples, '  '.repeat(depth + 1)));
   };
   for (const item of ex.items) walk(item, 0);
   out.push(...examplesMarkdown(ex.examples));
@@ -135,16 +172,19 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
 }
 
 /** Examples as headings with one code block per section, so every line keeps its own row. */
-export function examplesMarkdown(examples: Example[]): string[] {
+export function examplesMarkdown(examples: Example[], indent?: string): string[] {
   const out: string[] = [];
   for (const e of examples) {
-    out.push('', '---', '', `#### ${e.title}`);
+    if (indent === undefined) out.push('', '---', '', `#### ${e.title}`);
+    else out.push(`${indent}##### ${e.title}`);
     for (const sec of e.sections) {
       const lines = sec.lines.length ? sec.lines : [sec.empty ?? ''];
       // The fence must be longer than any run of backticks inside.
       const longest = Math.max(2, ...lines.map((l) => Math.max(0, ...(l.match(/`+/g) ?? []).map((m) => m.length))));
       const fence = '`'.repeat(longest + 1);
-      out.push('', `**${sec.label}**`, '', `${fence}text`, ...lines, fence);
+      if (indent === undefined) out.push('', `**${sec.label}**`, '', `${fence}text`, ...lines, fence);
+      // A heading and a fence may each interrupt a paragraph, so the label needs no blank line around it.
+      else out.push(`${indent}**${sec.label}**`, `${indent}${fence}text`, ...lines.map((l) => indent + l), `${indent}${fence}`);
     }
   }
   return out;

@@ -46,7 +46,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplain')) return;
       if (e.affectsConfiguration('bashExplain.languages')) hover.register();
-      if (e.affectsConfiguration('bashExplain.displayMode') || e.affectsConfiguration('bashExplain.language')) {
+      if (e.affectsConfiguration('bashExplain.displayMode') || e.affectsConfiguration('bashExplain.language') || e.affectsConfiguration('bashExplain.examples.placement')) {
         panel.refresh();
       }
       inline.refresh();

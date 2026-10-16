@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Analyzer, LineExplanation } from './analyzer';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
-import type { DisplayMode } from './ui/render';
+import type { DisplayMode, ExamplePlacement } from './ui/render';
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
@@ -16,6 +16,10 @@ export class ExplainService implements vscode.Disposable {
 
   get mode(): DisplayMode {
     return this.config.get<DisplayMode>('displayMode', 'hover');
+  }
+
+  get examplePlacement(): ExamplePlacement {
+    return this.config.get<ExamplePlacement>('examples.placement', 'inline');
   }
 
   get lang(): Lang {
