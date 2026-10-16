@@ -40,6 +40,8 @@ describe('the web page in a browser', function () {
   let base = '';
 
   before(async function () {
+    // Playwright exits the process on Node.js before 20 instead of throwing.
+    if (Number(process.versions.node.split('.')[0]) < 20) return this.skip();
     try {
       const { chromium } = await import('playwright-core');
       browser = await chromium.launch();
