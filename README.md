@@ -69,6 +69,12 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 
 ![Inline mode](images/inline.png)
 
+## Other shells
+
+Explanations always follow bash, but when a script is written for another shell Bash Explain points out constructs that shell does not have, such as `[[ ]]`, arrays, `&>`, `echo -e` or `{1..3}` in a `#!/bin/sh` script, and suggests a portable alternative.
+
+The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/busybox sh`…), a `# shellcheck shell=` directive or the file name, and can be set with `bashExplain.shell`. Supported: POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash` (busybox), `yash`, `ksh` (ksh93), `mksh` and `zsh`. Which shell supports what was measured with each shell and is re-checked in the tests.
+
 ## Commands
 
 | Command | Key | Description |
@@ -83,6 +89,7 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 | Setting | Default | Description |
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
+| `bashExplain.shell` | `auto` | The shell scripts are written for (`auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`); constructs it lacks are pointed out |
 | `bashExplain.examples.placement` | `first` | `first` (each worked example right under the part it illustrates, before the explanations of its pieces), `last` (after them) or `bottom` (all together after the explanations) |
 | `bashExplain.hover.enabled` | `true` | Show the hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
 | `bashExplain.hover.followCursor` | `false` | Show the hover automatically when the cursor moves |
@@ -110,6 +117,7 @@ npm run package    # build a .vsix
 
 Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
 `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
+The shell-support table is checked against every shell found on `PATH` or in the directory `$BASH_EXPLAIN_SHELLS` (`dash`, `busybox`, `yash`, `ksh93`, `mksh`, `zsh`); missing ones are skipped.
 
 To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts):
 `cmd(japanese, english, [options…], { positional: […] })`.

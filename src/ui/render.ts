@@ -1,4 +1,5 @@
 import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
+import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 
 export const ui = {
@@ -6,6 +7,7 @@ export const ui = {
     title: 'Bash Explain',
     line: (n: number) => `${n} 行目`,
     lineShort: (n: number) => `行 ${n}`,
+    forShell: (name: string) => `${name} 向けとして確認`,
     empty: 'この行には解説する内容がありません。',
     noEditor: 'bash スクリプトを開いてカーソルを置くと、その行の解説がここに表示されます。',
     features: {
@@ -24,6 +26,7 @@ export const ui = {
     title: 'Bash Explain',
     line: (n: number) => `Line ${n}`,
     lineShort: (n: number) => `line ${n}`,
+    forShell: (name: string) => `checked for ${name}`,
     empty: 'Nothing to explain on this line.',
     noEditor: 'Open a bash script and place the cursor on a line to see its explanation here.',
     features: {
@@ -149,6 +152,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   const t = ui[lang];
   const out: string[] = [];
   let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
+  if (ex.shell) header += ` · ${t.forShell(SHELL_NAMES[ex.shell])}`;
   if (ex.context.length) {
     header += ' · _' + ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`).join(' › ') + '_';
   }

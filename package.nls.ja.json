@@ -17,5 +17,8 @@
   "cmd.openSettings": "設定を開く",
   "config.hover.enabled": "マウスを乗せた行の解説をホバーで表示する。オフでも **Bash Explain: カーソル行を解説**（`Ctrl+Alt+E`）は使えます。",
   "config.inline.enabled": "カーソル行の行末に1行の要約を薄く表示する。",
-  "config.panel.autoOpen": "bash スクリプトを開いたら解説パネルを自動で開く。パネルは **Bash Explain: 解説パネルを開く** やホバーのリンクからいつでも開けます。"
+  "config.panel.autoOpen": "bash スクリプトを開いたら解説パネルを自動で開く。パネルは **Bash Explain: 解説パネルを開く** やホバーのリンクからいつでも開けます。",
+  "config.shell": "スクリプトの対象シェル。そのシェルで使えない書き方を指摘します（bash では指摘なし）。",
+  "config.shell.auto": "shebang（`#!/bin/sh` など）・`# shellcheck shell=` 指定・ファイル名から判定。分からなければ bash",
+  "config.shell.sh": "POSIX sh（dash や busybox ash で動かない書き方を指摘）"
 }

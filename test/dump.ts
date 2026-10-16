@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
+import { detectShell } from '../src/dialect';
 import { createBashParser } from '../src/parser';
 
 const root = path.join(__dirname, '..');
@@ -22,7 +23,7 @@ const root = path.join(__dirname, '..');
   };
   lines.forEach((text, i) => {
     if (only && Number(only) !== i + 1) return;
-    const e = analyzer.explainLine(tree, i);
+    const e = analyzer.explainLine(tree, i, detectShell(src, file));
     console.log(`\n### ${i + 1}: ${text}`);
     if (e.context.length) console.log('  context: ' + e.context.map((c) => `${c.label}@${c.line + 1}`).join(' > '));
     e.notes.forEach((n) => console.log('  note: ' + n));
