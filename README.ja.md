@@ -72,7 +72,7 @@
 - **VSCodium など Open VSX を使うエディタ:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **インストールなし:** [ブラウザ版](https://sf624.github.io/bash-explainer/) がブラウザだけで動きます。
 - **VS Code for the Web:** [vscode.dev](https://vscode.dev) や [github.dev](https://github.dev)（GitHub のリポジトリで `.` を押す）でも動きます。
-- **ターミナルで:** `npx bash-explainer deploy.sh:12`（または `npm install --global bash-explainer` でインストール）で、同じ解説をコマンドラインで見られます。`--check` で CI での検査にも使えます。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。
+- **ターミナルで:** `npx bash-explainer deploy.sh:12`（または `npm install --global bash-explainer` でインストール）で、同じ解説をコマンドラインで見られます。`--check` で CI での検査にも使えます。GitHub Action（`uses: sf624/bash-explainer@v0.2.0`）としても使えます。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。
 - **Neovim、Helix、Emacs などのエディタ:** `bash-explainer --lsp` が Language Server として動き、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。
 
 VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は WebAssembly）、VS Code が動く環境ならどこでも動きます。

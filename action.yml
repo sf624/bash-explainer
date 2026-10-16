@@ -1,0 +1,72 @@
+name: Bash Explainer check
+description: Check shell scripts, and the shell code in Dockerfiles, Makefiles and workflows, for constructs their shell lacks. Offline, no AI.
+author: Shun Fujioka
+branding:
+  icon: terminal
+  color: green
+
+inputs:
+  files:
+    description: >-
+      Files to check: bash globs separated by spaces or new lines (** matches any directories;
+      node_modules and .git are skipped). Dockerfiles, Makefiles, YAML, package.json, Markdown and
+      Python files are read for the shell code in them.
+    default: '**/*.sh'
+  shell:
+    description: The shell the scripts are written for (sh, dash, bash…). Default, for each script, from its shebang or its name.
+    default: ''
+  fail-on-warning:
+    description: Fail the step when there is a warning ('true' or 'false').
+    default: 'true'
+  sarif:
+    description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
+    default: ''
+  package:
+    description: The npm package to run. Default, bash-explainer at this action's version.
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check the scripts
+      shell: bash
+      # Inputs reach the script as environment variables, never pasted into it.
+      env:
+        FILES: ${{ inputs.files }}
+        CHECK_SHELL: ${{ inputs.shell }}
+        FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+        SARIF: ${{ inputs.sarif }}
+        PACKAGE: ${{ inputs.package }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -uo pipefail
+        shopt -s globstar nullglob
+        package=${PACKAGE:-bash-explainer@$(node -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
+
+        # Expand each pattern as a glob, skipping dependencies and git internals.
+        files=()
+        read -r -d '' -a patterns <<< "$FILES" || true
+        for pattern in "${patterns[@]}"; do
+          for file in $pattern; do
+            case "/$file/" in */node_modules/* | */.git/*) continue ;; esac
+            [ -f "$file" ] && files+=("$file")
+          done
+        done
+        if [ "${#files[@]}" -eq 0 ]; then
+          echo "No files match: $FILES"
+          exit 0
+        fi
+
+        args=(--check)
+        [ -n "$CHECK_SHELL" ] && args+=(--shell "$CHECK_SHELL")
+        check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
+
+        if [ -n "$SARIF" ]; then
+          check --format sarif > "$SARIF"
+          [ $? -le 1 ] || exit 2
+        fi
+        check --format github
+        status=$?
+        echo "Checked ${#files[@]} file(s) with $package."
+        if [ "$status" -eq 1 ] && [ "$FAIL_ON_WARNING" != 'true' ]; then status=0; fi
+        exit "$status"

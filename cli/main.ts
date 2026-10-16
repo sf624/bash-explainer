@@ -15,7 +15,7 @@ declare const __VERSION__: string;
 
 type Kind = 'shell' | HostKind;
 const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python'];
-type Format = 'text' | 'markdown' | 'json';
+type Format = 'text' | 'markdown' | 'json' | 'sarif' | 'github';
 
 const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
        bash-explainer [options] -e '<command line>'
@@ -36,7 +36,9 @@ Options:
       --kind <kind>      what the file is: ${KINDS.join(', ')}
                          (default: from the file name)
       --lang <en|ja>     language (default: from LANG)
-      --format <format>  text, markdown or json (default: text)
+      --format <format>  text, markdown or json (default: text); with --check also
+                         sarif (for code scanning) or github (annotations in
+                         GitHub Actions)
       --no-examples      leave out worked examples
       --color, --no-color  colour the text output (default: when a terminal)
       --lsp              run as a Language Server on standard input and output
@@ -81,6 +83,11 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
   const o: Options = { inputs: [], check: false, lang: defaultLang(env), format: 'text', examples: true, color: isTTY && !env.NO_COLOR };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    // Everything after -- is a file, even if it starts with -.
+    if (arg === '--') {
+      o.inputs.push(...argv.slice(i + 1).map((spec) => ({ spec })));
+      break;
+    }
     const [name, inline] = arg.startsWith('--') && arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, undefined];
     const value = () => {
       if (inline !== undefined) return inline;
@@ -116,8 +123,8 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       }
       case '--format': {
         const v = value();
-        if (v !== 'text' && v !== 'markdown' && v !== 'json') throw new UsageError(`unknown format: ${v} (text, markdown, json)`);
-        o.format = v;
+        if (!['text', 'markdown', 'json', 'sarif', 'github'].includes(v)) throw new UsageError(`unknown format: ${v} (text, markdown, json, sarif, github)`);
+        o.format = v as Format;
         break;
       }
       default: {
@@ -129,6 +136,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       }
     }
   }
+  if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
   if (!o.inputs.length && o.command === undefined) throw new UsageError('nothing to explain: give a file, - for standard input, or -e <command line>');
   return o;
 }
@@ -199,6 +207,46 @@ function issueText(name: string, i: DocumentIssue, color: boolean): string {
   return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message)} [${i.code}]`;
 }
 
+/** A GitHub Actions workflow command, which shows the problem on the pull request's diff. */
+function annotation(name: string, i: DocumentIssue): string {
+  const data = (s: string) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  const prop = (s: string) => data(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
+  const where = `file=${prop(name)},line=${i.startLine + 1},col=${i.startCol + 1},endLine=${i.endLine + 1},endColumn=${i.endCol + 1}`;
+  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer: ${i.code}`)}::${data(plain(i.message))}`;
+}
+
+interface Problem { file: string; line: number; column: number; endLine: number; endColumn: number; severity: string; code: string; message: string }
+
+/** SARIF 2.1.0, as code scanning (github/codeql-action/upload-sarif) reads it. */
+function sarif(problems: Problem[]) {
+  const codes = [...new Set(problems.map((p) => p.code))].sort();
+  return {
+    $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+    version: '2.1.0',
+    runs: [{
+      tool: {
+        driver: {
+          name: 'Bash Explainer',
+          version: __VERSION__,
+          informationUri: 'https://github.com/sf624/bash-explainer',
+          rules: codes.map((id) => ({ id, shortDescription: { text: id } })),
+        },
+      },
+      results: problems.map((p) => ({
+        ruleId: p.code,
+        level: p.severity === 'warning' ? 'warning' : 'note',
+        message: { text: p.message },
+        locations: [{
+          physicalLocation: {
+            artifactLocation: { uri: p.file.replace(/\\/g, '/') },
+            region: { startLine: p.line, startColumn: p.column, endLine: p.endLine, endColumn: p.endColumn },
+          },
+        }],
+      })),
+    }],
+  };
+}
+
 const plain = (message: string) => message.replace(/^[⚠ℹ]️?\s*/u, '').replace(/`/g, '');
 
 /** Examples without what only the panel uses. */
@@ -238,9 +286,12 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     const shells = { forced: o.shell, detected: detectShell(lines.slice(0, 50).join('\n'), input.name) };
 
     if (o.check) {
-      const issues = documentIssues(doc, o.lang, shells).filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]));
+      const issues = documentIssues(doc, o.lang, shells)
+        .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
+        .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       warnings += issues.filter((i) => i.severity === 'warning').length;
-      if (o.format === 'json') json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message) })));
+      if (o.format === 'json' || o.format === 'sarif') json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message) })));
+      else if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
       else chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
     } else {
       const [from, to] = input.lines ?? [1, lines.length];
@@ -261,6 +312,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   }
 
   if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
+  else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
   else if (chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
   return o.check && warnings > 0 ? 1 : 0;
 }

@@ -61,6 +61,24 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
   });
 
+  it('writes problems as GitHub annotations or SARIF, in line order', () => {
+    const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
+    assert.strictEqual(gh.code, 1);
+    const lines = gh.out.trim().split('\n');
+    assert.match(lines[0], /^::warning file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is not POSIX sh/);
+    const order = lines.map((l) => Number(/line=(\d+)/.exec(l)![1]));
+    assert.deepStrictEqual(order, [...order].sort((a, b) => a - b));
+    const sarif = JSON.parse(run(['--check', '--format', 'sarif', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
+    assert.strictEqual(sarif.version, '2.1.0');
+    const [result] = sarif.runs[0].results;
+    assert.deepStrictEqual([result.ruleId, result.level, result.locations[0].physicalLocation.region], ['dbracket', 'warning', { startLine: 1, startColumn: 1, endLine: 1, endColumn: 11 }]);
+    assert.strictEqual(run(['--format', 'sarif', '-e', 'ls']).code, 2);
+  });
+
+  it('takes the files after -- as files', () => {
+    assert.strictEqual(run(['--check', '--', fixture('sample.sh')]).code, 0);
+  });
+
   it('reports usage errors with exit status 2', () => {
     assert.strictEqual(run(['--bogus']).code, 2);
     assert.strictEqual(run([path.join(dir, 'missing.sh')]).code, 2);

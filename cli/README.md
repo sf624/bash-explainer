@@ -50,7 +50,20 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--no-examples` | leave out worked examples |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
-`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up.
+`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.
+
+## In CI (GitHub Actions)
+
+The repository is also a GitHub Action, which runs this tool at its own version:
+
+```yaml
+- uses: actions/checkout@v5
+- uses: sf624/bash-explainer@v0.2.0
+  with:
+    files: '**/*.sh Dockerfile .github/workflows/*.yml'
+```
+
+Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green). The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `fail-on-warning`, `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
 
 ## In your editor (Language Server)
 
