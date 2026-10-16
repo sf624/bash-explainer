@@ -1,0 +1,23 @@
+name: Setup tool
+description: Install the tool
+inputs:
+  version:
+    description: Version to install
+    default: latest
+runs:
+  using: composite
+  steps:
+    - name: Download
+      shell: bash
+      run: |
+        curl -fsSL "https://example.com/tool-${{ inputs.version }}.tar.gz" | tar -xz
+        echo "$PWD/tool/bin" >> "$GITHUB_PATH"
+    - name: Greet
+      shell: sh
+      run: echo "Hello ${{ github.event.pull_request.title }}"
+    - name: Report
+      shell: pwsh
+      run: Write-Output "pwsh is not shell"
+    - name: Custom
+      shell: bash --noprofile --norc -eo pipefail {0}
+      run: '[[ -x tool/bin/tool ]] && tool --version'

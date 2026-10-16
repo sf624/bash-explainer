@@ -22,6 +22,8 @@ export interface HostSubstitution {
   line: number;
   text: string;
   meaning: [string, string];
+  /** A warning about the substitution (e.g. untrusted input pasted into a script). */
+  warning?: [string, string];
 }
 
 /**
@@ -359,9 +361,13 @@ function yaml(b: Builder): void {
     const key = m[2];
     const indent = m[1].length;
     const rest = (m[3] ?? '').replace(/\s+#.*$/, '');
+    // `defaults: run: shell:` holds no script.
+    if (key === 'run' && !rest && /^\s*defaults\s*:/.test(b.lines[i - 1] ?? '')) continue;
     const shell = yamlShell(b, i, indent, key, githubLike);
     if (shell === null) continue;
-    const label: [string, string] = [`YAML の \`${key}:\``, `YAML \`${key}:\``];
+    const label: [string, string] = githubLike && key === 'run'
+      ? ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step']
+      : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
     if (/^[|>][-+]?\d*$/.test(rest)) {
       i = yamlBlock(b, i, indent, label, shell);
@@ -404,7 +410,17 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
     const m = /^\s*shell:\s*(\S+)/.exec(b.lines[j]);
     if (m && indentOf(b.lines[j]) === level) return shellName(m[1]);
   }
-  return githubLike ? 'bash' : undefined;
+  if (!githubLike) return undefined;
+  // `defaults: run: shell:` for the workflow, or for the job that holds this step.
+  for (let d = at - 1; d >= 2; d--) {
+    const m = /^(\s*)shell:\s*(\S+)/.exec(b.lines[d]);
+    if (!m || !/^\s*run\s*:\s*$/.test(b.lines[d - 1]) || !/^\s*defaults\s*:\s*$/.test(b.lines[d - 2])) continue;
+    const k = indentOf(b.lines[d - 2]);
+    // A job's defaults apply only until the job ends.
+    if (b.lines.slice(d + 1, at).some((l) => l.trim() && indentOf(l) < k)) continue;
+    return shellName(m[2]);
+  }
+  return 'bash';
 }
 
 function shellName(s: string): Shell | null {
@@ -449,10 +465,34 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
     const name = m[1].replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR';
     const meaning: [string, string] = [`GitHub Actions の式で、スクリプトが実行される前に \`${m[1]}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${m[1]}\` before the script runs`];
     o.insert(`\${${name}}`, m.index, m.index + m[0].length, meaning);
-    b.substitutions.push({ line: i, text: m[0], meaning });
+    b.substitutions.push({ line: i, text: m[0], meaning, warning: UNTRUSTED.test(m[1]) ? [
+      `⚠ スクリプトインジェクションの危険: \`${m[1]}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
+      `⚠ Script injection risk: \`${m[1]}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`,
+    ] : undefined });
     at = m.index + m[0].length;
   }
   o.copy(line, at, to);
+}
+
+/** Contexts an outside contributor controls (GitHub's security hardening guide). */
+const UNTRUSTED = /^github\.(head_ref|event\.(issue\.(title|body)|pull_request\.(title|body|head\.(ref|label|repo\.default_branch))|comment\.body|review\.body|review_comment\.body|discussion\.(title|body)|pages\.[^.]+\.page_name|commits\.[^.]+\.(message|author\.(email|name))|head_commit\.(message|author\.(email|name))|workflow_run\.(head_branch|display_title|head_commit\.(message|author\.(email|name)))))$/;
+
+/** Files GitHub Actions provides to steps, by environment variable. */
+const GITHUB_FILES: Record<string, [string, string]> = {
+  GITHUB_ENV: ['ここに `名前=値` を書くと、後のステップで環境変数として使えます', 'lines `NAME=value` written here become environment variables in later steps'],
+  GITHUB_OUTPUT: ['ここに `名前=値` を書くと、ステップの出力（`steps.<id>.outputs.名前`）になります', 'lines `name=value` written here become step outputs (`steps.<id>.outputs.name`)'],
+  GITHUB_PATH: ['ここに書いたディレクトリが、後のステップの PATH に追加されます', 'directories written here are added to PATH for later steps'],
+  GITHUB_STEP_SUMMARY: ['ここに書いた Markdown が、ジョブの実行結果のページに表示されます', 'Markdown written here is shown on the run\'s summary page'],
+  GITHUB_STATE: ['ここに書いた値を、同じアクションの pre/post の処理で読めます', 'values written here can be read by the action\'s pre and post steps'],
+};
+
+/** Notes for GitHub's special files used on a line of a GitHub Actions step. */
+function githubFileNotes(text: string, lang: 'ja' | 'en'): string[] {
+  const out: string[] = [];
+  for (const [name, [ja, en]] of Object.entries(GITHUB_FILES)) {
+    if (new RegExp(`\\$\\{?${name}\\b`).test(text)) out.push(lang === 'ja' ? `\`$${name}\` は GitHub Actions が用意するファイルのパスです。${ja}。` : `\`$${name}\` is the path of a file GitHub Actions provides: ${en}.`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- package.json
@@ -548,7 +588,10 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
   const seen = new Set<string>();
   return extracted.substitutions
     .filter((s) => s.line === line && !seen.has(s.text) && seen.add(s.text))
-    .map((s) => (lang === 'ja' ? `\`${s.text}\` は${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`));
+    .flatMap((s) => [
+      ...(s.warning ? [lang === 'ja' ? s.warning[0] : s.warning[1]] : []),
+      lang === 'ja' ? `\`${s.text}\` は${/^[A-Za-z]/.test(s.meaning[0]) ? ' ' : ''}${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`,
+    ]);
 }
 
 /** Whether a pipe `|` starts on the line. */
@@ -569,6 +612,7 @@ export function explainHostedLine(
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
+  if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line] ?? '', lang));
   if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
     notes.push(pick([
       '⚠ パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
