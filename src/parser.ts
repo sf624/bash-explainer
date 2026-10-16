@@ -1,20 +1,19 @@
-import * as path from 'path';
 import Parser = require('web-tree-sitter');
 
 export type SyntaxNode = Parser.SyntaxNode;
 export type Tree = Parser.Tree;
 
 export interface WasmPaths {
-  /** Directory containing `tree-sitter.wasm` (the web-tree-sitter runtime). */
+  /** Directory (or, in a browser, URL) containing `tree-sitter.wasm`, the web-tree-sitter runtime. */
   runtimeDir: string;
-  /** Path to `tree-sitter-bash.wasm`. */
+  /** Path (or URL) to `tree-sitter-bash.wasm`. */
   bashWasm: string;
 }
 
 let initialized: Promise<void> | undefined;
 
 export async function createBashParser(paths: WasmPaths): Promise<Parser> {
-  initialized ??= Parser.init({ locateFile: (name: string) => path.join(paths.runtimeDir, name) });
+  initialized ??= Parser.init({ locateFile: (name: string) => `${paths.runtimeDir.replace(/[\\/]$/, '')}/${name}` });
   await initialized;
   const bash = await Parser.Language.load(paths.bashWasm);
   const parser = new Parser();
