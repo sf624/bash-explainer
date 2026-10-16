@@ -1,5 +1,3 @@
-<img src="media/icon.png" width="96" alt="Bash Explainer アイコン">
-
 # Bash Explainer
 
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
@@ -13,6 +11,8 @@
 
 行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、書き換えて試せる具体例つきで解説します。知らないスクリプトを読むときにも、シェルを学ぶときにも、教えるときにも役立ちます。
 
+**設定不要で、[設計上オフラインで動きます](#プライバシー)。** 通信も AI もテレメトリも使いません。日本語と英語に対応しています。
+
 ![Bash Explainer デモ](images/demo.gif)
 
 ## クイックスタート
@@ -24,8 +24,6 @@
 カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
 インストールせずに試すなら、**[ブラウザ版](https://sf624.github.io/bash-explainer/)** にスクリプトを貼り付けて、カーソルを動かしてみてください。拡張と同じ解説がブラウザで見られます。
-
-設定は不要で、[設計上オフラインで動きます](#プライバシー)。通信も AI もテレメトリも使いません。[tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説します（日本語・英語）。
 
 ## こんなことがわかります
 
@@ -231,7 +229,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 Bash Explainer は、設計上すべてオフラインで動きます。
 
 - **通信しません。** 拡張にはネットワーク接続を開くコードが含まれていません。パネルも Content Security Policy で外部へのリクエストを禁止しています。
-- **AI を使いません。** tree-sitter-bash で構文解析し、組み込みの辞書で解説します。同じ行には毎回同じ解説が出ます。
+- **AI を使いません。** [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説します。同じ行には毎回同じ解説が出ます。
 - **テレメトリはありません。** 拡張は何も収集しません。
 - **外部プロセスを起動しません。** 具体例の結果は組み込みのコードで計算します。手元のツールを実行することはありません。
 
