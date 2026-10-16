@@ -3,7 +3,7 @@ import * as path from 'path';
 import type Parser = require('web-tree-sitter');
 import { Analyzer } from '../src/analyzer';
 import { createBashParser } from '../src/parser';
-import { examplesMarkdown, lineSegments, toMarkdown } from '../src/ui/render';
+import { examplesMarkdown, lineSegments, placeExamples, toMarkdown } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -15,11 +15,11 @@ before(async () => {
   });
 });
 
-function hover(src: string, line = 0) {
+function hover(src: string, line = 0, placement: 'inline' | 'bottom' = 'inline') {
   const tree = parser.parse(src);
   const ex = new Analyzer('en').explainLine(tree, line);
   tree.delete();
-  return { ex, md: toMarkdown(ex, 'en', undefined, 'command:x', src.split('\n')[line]) };
+  return { ex, md: toMarkdown(ex, 'en', undefined, 'command:x', src.split('\n')[line], placement) };
 }
 
 // The style shape VS Code's hover sanitizer keeps on <span> (src/vs/base/browser/markdownRenderer.ts).
@@ -65,11 +65,43 @@ describe('hover markdown', () => {
     assert.ok(fenced.includes('````text'), 'the fence is longer than backticks inside');
   });
 
-  it('puts worked examples in the hover after the tree', () => {
-    const { ex, md } = hover("awk '{ print $1 }'");
+  it('puts worked examples in the hover after the tree with the bottom placement', () => {
+    const { ex, md } = hover("awk '{ print $1 }'", 0, 'bottom');
     assert.strictEqual(ex.examples.length, 1);
     assert.ok(!ex.notes.some((n) => /^Example/.test(n)), 'examples are not notes');
     assert.match(md, /#### Example\n\n\*\*Input\*\*\n\n```text\napple red tokyo\nbanana yellow osaka/);
   });
+
+  it('puts each example right under the token it explains', () => {
+    const { md } = hover('echo "${f%.*}" | sed -n "/^a/p" f');
+    const lines = md.split('\n');
+    const at = (re: RegExp) => lines.findIndex((l) => re.test(l));
+    // Under the expansion's parts, before the pipe; indented to stay inside the list item.
+    assert.ok(at(/^ {10}##### `\$\{f%\.\*\}` example|^ {10}##### Example for `\$\{f%\.\*\}`/) > at(/^ {10}- .*Pattern/));
+    assert.ok(at(/##### Example for `\$\{f%/) < at(/^ {2}- .*Pipe:/));
+    // The sed example follows the script argument, before the file operand.
+    assert.ok(at(/##### Example for `sed/) > at(/^ {4}- .*sed script/));
+    assert.ok(at(/##### Example for `sed/) < at(/^ {4}- .*f<\/span><\/code> — /));
+    assert.ok(!/^#### /m.test(md), 'nothing left for the end');
+    assert.ok(!/\n\n {2,}/.test(md.split('<code>').slice(1).join('')), 'no blank lines inside the list');
+  });
 });
 
+describe('placeExamples', () => {
+  it('prefers the outermost token with the same range, and keeps the input untouched', () => {
+    const tree = parser.parse('sed -n "/^a/p" f');
+    const ex = new Analyzer('en').explainLine(tree, 0);
+    tree.delete();
+    const placed = placeExamples(ex);
+    const arg = placed.items[0].children.find((c) => c.label === '"/^a/p"')!;
+    assert.strictEqual(arg.examples?.length, 1);
+    assert.strictEqual(arg.children[0].examples, undefined);
+    assert.strictEqual(placed.examples.length, 0);
+    assert.strictEqual(ex.examples.length, 1);
+    assert.ok(!JSON.stringify(ex.items).includes('"examples"'));
+  });
+  it('keeps examples without a token at the end', () => {
+    const placed = placeExamples({ line: 0, summary: '', items: [], context: [], notes: [], examples: [{ title: 'E', sections: [] }] });
+    assert.strictEqual(placed.examples.length, 1);
+  });
+});

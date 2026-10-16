@@ -14,5 +14,8 @@
   "config.hover.followCursor": "In hover mode, automatically show the hover whenever the cursor moves to another position.",
   "config.hover.followDelay": "Delay in milliseconds before the hover follows the cursor.",
   "config.inline.maxLength": "Maximum length of the inline summary.",
-  "config.languages": "Language IDs to explain."
+  "config.languages": "Language IDs to explain.",
+  "config.examples.placement": "Where worked examples (sample input and output) are shown.",
+  "config.examples.placement.inline": "Right under the explanation of the part they illustrate",
+  "config.examples.placement.bottom": "All together after the explanations"
 }

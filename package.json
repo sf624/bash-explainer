@@ -110,6 +110,19 @@
           "default": "auto",
           "description": "%config.language%"
         },
+        "bashExplain.examples.placement": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "bottom"
+          ],
+          "enumDescriptions": [
+            "%config.examples.placement.inline%",
+            "%config.examples.placement.bottom%"
+          ],
+          "default": "inline",
+          "description": "%config.examples.placement%"
+        },
         "bashExplain.hover.followCursor": {
           "type": "boolean",
           "default": false,
