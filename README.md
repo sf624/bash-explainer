@@ -75,7 +75,7 @@ Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOI
 
 ## Other shells
 
-Explanations always follow bash, but when a script is written for another shell Bash Explain points out constructs that shell does not have, such as `[[ ]]`, arrays, `&>`, `echo -e` or `{1..3}` in a `#!/bin/sh` script, and suggests a portable alternative.
+Explanations always follow bash, but when a script is written for another shell Bash Explain points out constructs that shell does not have, such as `[[ ]]`, arrays, `&>`, `echo -e` or `{1..3}` in a `#!/bin/sh` script, and suggests a portable alternative. Constructs that work but behave differently are noted too: `echo 'a\tb'` interprets `\t` in dash, yash, mksh and zsh; zsh does not split an unquoted `$var`; arrays start at 1 in yash and zsh. zsh-only syntax such as `*(.)` or `${(f)var}` cannot be parsed, which is said on the line.
 
 The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/busybox sh`…), a `# shellcheck shell=` directive or the file name, and can be set with `bashExplain.shell`. Supported: POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash` (busybox), `yash`, `ksh` (ksh93), `mksh` and `zsh`. Which shell supports what was measured with each shell and is re-checked in the tests.
 

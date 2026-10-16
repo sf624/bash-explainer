@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import type Parser = require('web-tree-sitter');
-import { detectShell, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
+import { BEHAVIOURS, behavioursOnLine, detectShell, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
 import { createBashParser } from '../src/parser';
 
 const root = path.join(__dirname, '..');
@@ -75,6 +75,12 @@ const PROBES: Record<string, string> = {
   uid: '[ -n "$UID" ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
 };
+// A snippet per behaviour that prints "ok" only where it differs from bash.
+const BEHAVIOUR_PROBES: Record<string, string> = {
+  echoEscape: '[ "$(echo \'a\\tb\')" = "$(printf \'a\\tb\')" ] && echo ok',
+  wordSplit: 'v="a b"; set -- $v; [ $# = 1 ] && echo ok',
+  arrayBase: 'a=(x y); [ "${a[1]}" = x ] && echo ok',
+};
 // Probes that cannot be checked with `sh -c` (bash needs `shopt -s extglob` before parsing).
 const UNPROBED = ['extglob', 'bashVar'];
 
@@ -99,6 +105,12 @@ describe('the dialect table agrees with the installed shells', () => {
         it(id, () => {
           const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
           assert.strictEqual(r.stdout.toString().trim() === 'ok', FEATURES[id].works.includes(letter), `${id} in ${names[0]}`);
+        });
+      }
+      for (const [id, code] of Object.entries(BEHAVIOUR_PROBES)) {
+        it(`behaviour ${id}`, () => {
+          const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
+          assert.strictEqual(r.stdout.toString().trim() === 'ok', BEHAVIOURS[id].differs.includes(letter), `${id} in ${names[0]}`);
         });
       }
     });
@@ -136,5 +148,15 @@ describe('dialect notes', () => {
     assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], '⚠ `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'ksh'), []);
     assert.deepStrictEqual(notes('[[ -f x ]]', 'bash'), []);
+  });
+
+  it('notes behaviour that differs from bash', () => {
+    const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src).rootNode, 0, shell, 'en');
+    assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' $v ${a[0]} \"$q\"").rootNode, 0), ['echoEscape', 'wordSplit', 'arrayBase']);
+    assert.match(notes("echo 'a\\tb'", 'sh')[0], /^ℹ dash's `echo` interprets/);
+    assert.deepStrictEqual(notes("echo 'a\\tb'", 'ksh'), []);
+    assert.match(notes('echo $v', 'zsh')[0], /In zsh an unquoted `\$var` is not split/);
+    assert.deepStrictEqual(notes('echo "$v"', 'zsh'), []);
+    assert.match(notes('ls *(.)', 'zsh')[0], /zsh-only syntax/);
   });
 });

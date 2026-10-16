@@ -117,6 +117,52 @@ export const FEATURES: Record<string, Feature> = {
   hostname: { works: 'b a', ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`' },
 };
 
+/**
+ * Constructs that work everywhere but behave differently from bash in some shells (the letters
+ * in `differs`, measured like FEATURES).
+ */
+interface Behaviour { differs: string; ja: (shell: string) => string; en: (shell: string) => string }
+
+export const BEHAVIOURS: Record<string, Behaviour> = {
+  echoEscape: {
+    differs: 'dymz',
+    ja: (sh) => `${sh} の \`echo\` は引数の \`\\t\` や \`\\n\` などを解釈します（bash は文字のまま表示）。どちらでも同じにするには \`printf\` を使います。`,
+    en: (sh) => `${sh}'s \`echo\` interprets \`\\t\`, \`\\n\` and the like in its arguments (bash prints them as they are). Use \`printf\` to get the same result everywhere.`,
+  },
+  wordSplit: {
+    differs: 'z',
+    ja: (sh) => `${sh} ではクォートしない \`$変数\` も単語分割・グロブ展開されません（bash では空白で分かれます）。`,
+    en: (sh) => `In ${sh} an unquoted \`$var\` is not split into words or globbed (bash splits it on spaces).`,
+  },
+  arrayBase: {
+    differs: 'yz',
+    ja: (sh) => `${sh} の配列の添字は 1 から始まります（bash は 0 から）。この解説は bash の数え方です。`,
+    en: (sh) => `Array subscripts start at 1 in ${sh} (bash starts at 0); this explanation counts the bash way.`,
+  },
+};
+
+/** Behaviours used on the line (see BEHAVIOURS). */
+export function behavioursOnLine(root: SyntaxNode, line: number): string[] {
+  const found: string[] = [];
+  const add = (id: string) => { if (!found.includes(id)) found.push(id); };
+  const visit = (n: SyntaxNode) => {
+    if (n.startPosition.row > line || n.endPosition.row < line) return;
+    if (n.startPosition.row === line) {
+      if (n.type === 'command' && n.childForFieldName('name')?.text === 'echo'
+        && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
+      // An unquoted `$var` used as a word of a command.
+      if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
+      if (n.type === 'expansion') {
+        const p = parseExpansion(n.text.trimStart());
+        if (p?.subscript && /^\d+$/.test(p.subscript)) add('arrayBase');
+      }
+    }
+    n.children.forEach(visit);
+  };
+  visit(root);
+  return found;
+}
+
 const LETTER: Record<RealShell, string> = { bash: 'b', dash: 'd', ash: 'a', yash: 'y', ksh: 'k', mksh: 'm', zsh: 'z' };
 
 function works(f: Feature, shell: RealShell): boolean {
@@ -261,11 +307,30 @@ function commandFeatures(name: string, words: string[], add: (id: string) => voi
   }
 }
 
+/** Whether a syntax error (or a missing token) is on the line. */
+function hasErrorOn(n: SyntaxNode, line: number): boolean {
+  if (!n.hasError || n.startPosition.row > line || n.endPosition.row < line) return false;
+  if ((n.type === 'ERROR' || n.isMissing) && n.startPosition.row <= line) return true;
+  return n.children.some((c) => hasErrorOn(c, line));
+}
+
 /** Notes for features on the line that the target shell lacks. */
 export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
   if (shell === 'bash') return [];
   const s = pick(lang);
   const notes: string[] = [];
+  if (shell === 'zsh' && hasErrorOn(root, line)) {
+    notes.push(s(
+      'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
+      'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
+    ));
+  }
+  for (const id of behavioursOnLine(root, line)) {
+    const b = BEHAVIOURS[id];
+    // For POSIX sh, name the common /bin/sh implementations that differ.
+    const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : b.differs.includes(LETTER[shell]) ? [shell] : [];
+    if (differ.length) notes.push('ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))));
+  }
   for (const id of featuresOnLine(root, line)) {
     const f = FEATURES[id];
     const label = s(f.ja, f.en);
