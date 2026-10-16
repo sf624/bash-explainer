@@ -49,6 +49,12 @@
         "command": "bashExplain.selectDisplayMode",
         "title": "%cmd.selectDisplayMode%",
         "category": "Bash Explain"
+      },
+      {
+        "command": "bashExplain.openSettings",
+        "title": "%cmd.openSettings%",
+        "category": "Bash Explain",
+        "icon": "$(gear)"
       }
     ],
     "keybindings": [
@@ -64,6 +70,11 @@
         {
           "command": "bashExplain.openPanel",
           "when": "editorLangId == shellscript",
+          "group": "navigation"
+        },
+        {
+          "command": "bashExplain.openSettings",
+          "when": "activeWebviewPanelId == 'bashExplain.panel'",
           "group": "navigation"
         }
       ],

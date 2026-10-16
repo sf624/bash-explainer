@@ -26,6 +26,7 @@
     if (msg.type === 'empty') {
       lastUpdate = '';
       showEmpty(msg.message);
+      $('settings').textContent = `⚙ ${msg.settingsLabel}`;
     }
   });
   vscode.postMessage({ type: 'ready' });
@@ -43,6 +44,7 @@
 
   function render(msg) {
     const ex = msg.explanation;
+    $('settings').textContent = `⚙ ${msg.settingsLabel}`;
     examplesFirst = msg.examplesFirst !== false;
     $('where').textContent = `${msg.file} · ${msg.lineLabel}`;
     $('context').textContent = msg.contextLabels.length ? ' › ' + msg.contextLabels.join(' › ') : '';
@@ -193,4 +195,5 @@
       return document.createTextNode(part);
     });
   }
+  $('settings').addEventListener('click', () => vscode.postMessage({ type: 'openSettings' }));
 })();

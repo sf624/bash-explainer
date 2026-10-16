@@ -155,3 +155,24 @@ code {
   border-top: none;
   border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
 }
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+#settings {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 0.1rem 0.3rem;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+#settings:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}

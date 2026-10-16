@@ -54,8 +54,8 @@ describe('hover markdown', () => {
     assert.match(first, /^<code><span style="color:var\(--vscode-charts-blue\);">echo(&nbsp;)?<\/span>/);
   });
 
-  it('keeps the panel link', () => {
-    assert.match(hover('ls').md, /\[\$\(comment-discussion\) Open in panel\]\(command:x\)$/);
+  it('ends with links to the panel and the settings', () => {
+    assert.match(hover('ls').md, /\[\$\(comment-discussion\) Open in panel\]\(command:x\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]\(command:bashExplain\.openSettings\)$/);
   });
 
   it('shows examples as headings with one code block per section', () => {
