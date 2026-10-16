@@ -23,6 +23,8 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 
 For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
 
+To try it without installing anything, open the **[web version](https://sf624.github.io/bash-explainer/)**, paste a script and move the cursor: the same explanations, in the browser.
+
 No setup, and [offline by design](#privacy): no network, no AI, no telemetry. Scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, in English or Japanese.
 
 ## What it shows
@@ -70,6 +72,7 @@ A one-line summary at the end of the cursor line.
 - **In VS Code:** open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) and search for *Bash Explainer*, or run `ext install shun-fujioka.bash-explainer` from Quick Open (`Ctrl+P` / `Cmd+P`).
 - **Command line:** `code --install-extension shun-fujioka.bash-explainer`
 - **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+- **No installation:** the [web version](https://sf624.github.io/bash-explainer/) runs in the browser.
 
 Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
 
@@ -234,7 +237,9 @@ Bash Explainer works entirely offline by design:
 
 A [CI check](test/offline.test.ts) fails the build if network or process APIs appear in the packaged extension ([latest runs](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)). You can also verify this yourself: the `.vsix` is a zip archive, and the extension works with networking disabled.
 
-This describes the extension itself, not VS Code or other extensions. It is provided as is, without warranty (see [LICENSE](LICENSE)); please evaluate it against your own requirements before using it with sensitive data.
+The [web version](https://sf624.github.io/bash-explainer/) works the same way. GitHub Pages serves the page, but your script is parsed and explained in the browser and sent nowhere; the page's Content Security Policy allows no requests to other sites, and a link to a script carries it after `#`, which browsers do not send. The same CI check covers the page.
+
+This describes the extension and its web version, not VS Code, other extensions or your browser. It is provided as is, without warranty (see [LICENSE](LICENSE)); please evaluate it against your own requirements before using it with sensitive data.
 
 ## Release notes
 
@@ -252,6 +257,7 @@ npm run package    # build a .vsix
 ```
 
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
+- `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 - Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped.
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`.

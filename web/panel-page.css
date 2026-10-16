@@ -1,0 +1,8 @@
+/* The panel inside the web page: no settings to open there. */
+#settings {
+  display: none;
+}
+
+body {
+  background: var(--vscode-editor-background);
+}

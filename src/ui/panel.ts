@@ -2,21 +2,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { Span } from '../analyzer';
 import { ExplainService } from '../service';
-import { SHELL_NAMES } from '../dialect';
-import { placeExamples, toPlainMarkdown, ui } from './render';
+import { toPlainMarkdown, ui } from './render';
+import { FromPanel, PANEL_BODY, panelUpdate } from './panelView';
 import { quickReference } from './reference';
-import { rerun, RerunSpec } from '../examples/rerun';
-import { YQ_NAMES } from '../embedded/yq';
-
-type FromWebview =
-  | { type: 'ready' }
-  | { type: 'highlight'; span: Span | null }
-  | { type: 'reveal'; span: Span }
-  | { type: 'openSettings' }
-  | { type: 'rerun'; id: number; spec: RerunSpec; input: string }
-  | { type: 'copy' }
-  | { type: 'override'; key: 'shell' | 'yq'; value: string }
-  | { type: 'reference' };
+import { rerun } from '../examples/rerun';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 export class PanelController implements vscode.Disposable {
@@ -79,7 +68,7 @@ export class PanelController implements vscode.Disposable {
     );
     this.panel.iconPath = vscode.Uri.joinPath(media, 'icon.svg');
     this.panel.webview.html = this.html(this.panel.webview, media);
-    this.panel.webview.onDidReceiveMessage((m: FromWebview) => this.onMessage(m), undefined, this.disposables);
+    this.panel.webview.onDidReceiveMessage((m: FromPanel) => this.onMessage(m), undefined, this.disposables);
     this.panel.onDidDispose(() => {
       this.panel = undefined;
       this.dismissed = true;
@@ -110,31 +99,19 @@ export class PanelController implements vscode.Disposable {
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
     const ex = this.service.explain(ed.document, line);
     this.panel.title = `${t.title}: ${path.basename(ed.document.fileName)}:${line + 1}`;
-    const choice = this.service.overrideOf(ed.document);
-    const detected = this.service.detectedShell(ed.document);
-    const tp = t.panel;
-    void this.panel.webview.postMessage({
-      type: 'update',
-      labels: tp,
-      dialect: {
-        shells: [['auto', `${tp.auto}${detected ? (lang === 'ja' ? `（${SHELL_NAMES[detected]}）` : ` (${SHELL_NAMES[detected]})`) : ''}`], ...Object.entries(SHELL_NAMES)],
-        shell: choice.shell ?? 'auto',
-        // The yq choice only matters on lines that run yq.
-        yqs: ex.notes.some((n) => n.startsWith('yq:')) ? [['auto', tp.auto], ...Object.entries(YQ_NAMES).map(([k, v]) => [k, v[lang === 'ja' ? 0 : 1]])] : undefined,
-        yq: choice.yq ?? 'auto',
-      },
+    void this.panel.webview.postMessage(panelUpdate({
+      lang,
+      explanation: ex,
       file: path.basename(ed.document.fileName),
-      lineLabel: t.line(line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
+      line,
       lineText: ed.document.lineAt(line).text,
-      explanation: this.service.examplePlacement === 'bottom' ? ex : placeExamples(ex),
-      examplesFirst: this.service.examplePlacement === 'first',
-      contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
-      emptyMessage: t.empty,
-      settingsLabel: t.settings,
-    });
+      choice: this.service.overrideOf(ed.document),
+      detected: this.service.detectedShell(ed.document),
+      placement: this.service.examplePlacement,
+    }));
   }
 
-  private onMessage(m: FromWebview): void {
+  private onMessage(m: FromPanel): void {
     const ed = this.editor;
     if (m.type === 'ready') return this.post();
     if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
@@ -179,28 +156,7 @@ export class PanelController implements vscode.Disposable {
 <link rel="stylesheet" href="${css}">
 </head>
 <body>
-<header>
-  <div class="where"><span id="where"></span><span id="context"></span></div>
-  <div class="tools">
-    <label id="shell-box" hidden><span id="shell-label"></span> <select id="shell"></select></label>
-    <label id="yq-box" hidden><span id="yq-label"></span> <select id="yq"></select></label>
-    <button id="toggle" type="button"></button>
-    <button id="copy" type="button"></button>
-    <button id="ref" type="button"></button>
-    <button id="settings" type="button"></button>
-  </div>
-</header>
-<main id="main">
-  <pre id="line"></pre>
-  <div id="notes"></div>
-  <ul id="tree"></ul>
-  <div id="examples"></div>
-  <p id="empty" hidden></p>
-</main>
-<section id="reference" hidden>
-  <input id="ref-search" type="search">
-  <div id="ref-list"></div>
-</section>
+${PANEL_BODY}
 <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;
