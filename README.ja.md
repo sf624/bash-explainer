@@ -135,7 +135,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | Markdown | `sh`・`bash`・`console` などのコードブロック |
 | Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
 
-それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplainer.embedded.enabled` でオフにできます。
+それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
 
 ## yq
 
@@ -159,7 +159,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `cmd &> log` | `cmd > log 2>&1` |
 | `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
 
-クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplainer.diagnostics.enabled` でオフにできます。
+クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
 ## コマンド
 
@@ -178,18 +178,44 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+K Ctrl+E` はオフでも使える） |
 | `bashExplainer.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
 | `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
+| `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
+| `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
+| `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog` |
+| `bashExplainer.examples.inHover` | `true` | ホバーにも具体例を表示する（オフならパネルだけ） |
 | `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
 | `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
+| `bashExplainer.notes.idioms` | `true` | 定番の書き方（strict mode、`IFS= read -r` など）の補足を表示する |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
 | `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
+| `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
+| `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
-| `bashExplainer.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json`・Markdown・Python の中のシェルも解説 |
+| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python` |
 | `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
+| **辞書** | | |
+| `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |
+
+### 自分のコマンドを追加する
+
+社内ツールなどは、説明を書くまで「外部コマンド」として表示されます:
+
+```json
+"bashExplainer.customCommands": {
+  "deploy": {
+    "summary": "サービスを本番にデプロイする",
+    "options": {
+      "-n|--dry-run": "実行せずに内容だけ表示",
+      "-e": { "description": "デプロイ先の環境", "takesValue": true }
+    },
+    "arguments": ["サービス名"]
+  }
+}
+```
 
 ## 制限事項
 

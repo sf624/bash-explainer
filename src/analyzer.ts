@@ -22,6 +22,8 @@ import { explainGetopts } from './embedded/getopts';
 import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
 import { YQ_DOCS } from './dict/yq';
+import { customCommandDoc } from './dict/custom';
+import { DIRECTIVE } from './directives';
 import { explainGetoptLong, explainGetoptShort } from './embedded/getopt';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './examples/getopt';
 import { explainGitDate, explainGitFormat } from './embedded/gitformat';
@@ -70,6 +72,12 @@ export interface ExplainOptions {
   host?: string;
   /** The `bashExplainer.yq.flavor` setting. */
   yqFlavor?: string;
+  /** Worked examples: off altogether, or off for some kinds. */
+  examples?: { enabled: boolean; disabled: string[] };
+  /** Notes about well-known idioms (strict mode…); on unless false. */
+  idioms?: boolean;
+  /** The `bashExplainer.customCommands` setting: commands the dictionary does not know. */
+  customCommands?: Record<string, unknown>;
 }
 
 export interface LineExplanation {
@@ -92,7 +100,14 @@ export interface ExampleSection {
   empty?: string;
 }
 
+/** What an example shows, so it can be turned off by kind (`bashExplainer.examples.disabled`). */
+export type ExampleKind = 'regex' | 'sed' | 'awk' | 'jq' | 'yq' | 'perl' | 'textFilters' | 'pipeline' | 'expansion' | 'printf' | 'glob'
+  | 'test' | 'xargs' | 'read' | 'getopt' | 'gitLog';
+
+export const EXAMPLE_KINDS: ExampleKind[] = ['regex', 'sed', 'awk', 'jq', 'yq', 'perl', 'textFilters', 'pipeline', 'expansion', 'printf', 'glob', 'test', 'xargs', 'read', 'getopt', 'gitLog'];
+
 export interface Example {
+  kind?: ExampleKind;
   title: string;
   /** The command the example is for, named in the title when the line has several commands. */
   target?: string;
@@ -195,9 +210,11 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...findIdioms(statements, this.lang)],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang))],
       // Each -e of sed explains the same combined script, so drop repeated examples.
-      examples: this.titledExamples(root, line).filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
+      examples: this.titledExamples(root, line)
+        .filter((e) => this.wantsExample(e))
+        .filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;
@@ -431,6 +448,13 @@ export class Analyzer {
         `Shebang: run this script with \`${interp}\``,
       ));
     }
+    const own = DIRECTIVE.exec(n.text);
+    if (own) {
+      const codes = own[2].split(',').map((c) => `\`${c}\``).join(own[2].includes(',') ? this.s('・', ', ') : '');
+      return this.tok(n, 'comment', own[1] === 'disable-file'
+        ? this.s(`Bash Explainer への指示コメント: このファイル全体で警告 ${codes} を出さない`, `Bash Explainer directive: no ${codes} warnings in this file`)
+        : this.s(`Bash Explainer への指示コメント: ${n.startPosition.column ? 'この行' : '次の行'}で警告 ${codes} を出さない`, `Bash Explainer directive: no ${codes} warnings on ${n.startPosition.column ? 'this' : 'the next'} line`));
+    }
     if (/^#\s*shellcheck\s/.test(n.text)) {
       return this.tok(n, 'comment', this.s('ShellCheck への指示コメント（警告の抑制など）', 'ShellCheck directive (e.g. disable a warning)'));
     }
@@ -521,7 +545,7 @@ export class Analyzer {
     if (whole) {
       // One example for the whole pipeline replaces the examples of its stages.
       this.examples.length = before;
-      this.examples.push({ ...whole, anchor: spanOf(n) });
+      this.examples.push({ ...whole, anchor: spanOf(n), kind: 'pipeline' });
     }
     const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
     const t = this.tok(n, 'operator', this.s(
@@ -698,6 +722,13 @@ export class Analyzer {
     return t;
   }
 
+  /** Whether the settings keep this example (examples.enabled / examples.disabled). */
+  private wantsExample(e: Example): boolean {
+    const o = this.opts.examples;
+    if (!o) return true;
+    return o.enabled && !(e.kind && o.disabled.includes(e.kind));
+  }
+
   /** When the line runs several commands, names the one each example is for in its title. */
   private titledExamples(root: SyntaxNode, line: number): Example[] {
     const commands = root
@@ -809,6 +840,11 @@ export class Analyzer {
         explanation: this.s(`このスクリプトの行 ${fnLine + 1} で定義された関数 \`${name}\` を呼び出す`, `Call the function \`${name}\` defined on line ${fnLine + 1}`),
         doc: { summary: { ja: '', en: '' }, positional: [] },
       };
+    }
+    // A command described in the customCommands setting wins over the built-in dictionary.
+    const custom = customCommandDoc(this.opts.customCommands?.[name.split('/').pop() ?? name]);
+    if (custom) {
+      return { name, doc: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
     const doc = lookupCommand(name);
     if (doc) {
@@ -1190,7 +1226,7 @@ export class Analyzer {
     } else {
       sections = [{ label: this.s('一致する行', 'Matching lines'), lines: yes }, { label: this.s('一致しない行', 'Non-matching lines'), lines: no }];
     }
-    this.examples.push({
+    this.examples.push({ kind: 'regex',
       title: mode === 'inverted' ? this.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : this.s('例', 'Example'),
       sections: sections.filter((s) => s.lines.length),
       interactive: this.interactive({ kind: 'regex', regex: js, mode }, [...yes, ...no], this.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)')),
@@ -1257,7 +1293,7 @@ export class Analyzer {
         const output = r.error ? [r.error] : json
           ? r.values.map((v) => (raw && typeof v === 'string' ? v : toJson(v)))
           : yqYamlOutput(r.values, style);
-        this.examples.push({
+        this.examples.push({ kind: 'yq',
           title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
           sections: [
             { label: this.s('入力（YAML）', 'Input (YAML)'), lines: input },
@@ -1275,7 +1311,7 @@ export class Analyzer {
       // Short JSON stays on one line; longer JSON is indented like jq prints it.
       const compact = toJson(r.input);
       const input = compact.length <= 60 ? [compact] : JSON.stringify(r.input, null, 2).split('\n');
-      this.examples.push({
+      this.examples.push({ kind: 'jq',
         title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
         sections: [
           { label: this.s('入力', 'Input'), lines: input },
@@ -1375,7 +1411,7 @@ export class Analyzer {
       if (!ex) return;
       const inPlace = words.some((w) => /^-[a-zA-Z]*i/.test(w ?? ''));
       if (ex.input.length) this.ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts });
-      else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible), empty: this.s('（出力なし）', '(no output)') }] });
+      else this.examples.push({ kind: 'perl', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible), empty: this.s('（出力なし）', '(no output)') }] });
       return;
     }
     if (!(cmd in FILTERS) && !['seq', 'basename', 'dirname'].includes(cmd)) return;
@@ -1383,7 +1419,7 @@ export class Analyzer {
     const ex = commandExample(cmd, words);
     if (!ex) return;
     if (ex.input) this.ioExample(ex.input, ex.output, false, FILTERS[cmd] ? { kind: 'filter', cmd, words } : undefined);
-    else this.examples.push({ title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
+    else this.examples.push({ kind: 'textFilters', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
   }
 
   /** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
@@ -1401,7 +1437,7 @@ export class Analyzer {
     try {
       const words = braceExpand(text);
       if (words) {
-        this.examples.push({
+        this.examples.push({ kind: 'glob',
           title: this.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
           sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: words.length > 12 ? [...words.slice(0, 11), '…'] : words }],
         });
@@ -1420,7 +1456,7 @@ export class Analyzer {
     const [yes, no] = labels ?? (mode === 'file'
       ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
       : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
-    this.examples.push({
+    this.examples.push({ kind: 'glob',
       title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
       interactive: this.interactive({ kind: 'glob', pattern, mode }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
     });
@@ -1445,7 +1481,7 @@ export class Analyzer {
       candidates.push(...ex.nonMatching);
     }
     const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value'))).slice(0, 2);
-    this.examples.push({
+    this.examples.push({ kind: 'glob',
       title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
       sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
     });
@@ -1463,7 +1499,7 @@ export class Analyzer {
     if (count !== undefined) commits = commits.slice(0, Math.max(1, Number(count)));
     try {
       if (kind === 'gitdate') {
-        this.examples.push({
+        this.examples.push({ kind: 'gitLog',
           title: this.s('例（この形式で表示した日時）', 'Example (dates in this style)'),
           sections: [{
             label: this.s('例のコミットの日時がこう表示される（`%ad`・`%cd` や Date: 行）', 'How the sample commits\' dates are shown (`%ad`, `%cd`, the Date: line)'),
@@ -1475,7 +1511,7 @@ export class Analyzer {
       // Multi-line formats get long; two commits show the layout.
       const multi = !pretty || ['short', 'medium', 'full', 'fuller'].includes(pretty);
       const lines = runGitLog(multi ? commits.slice(0, 2) : commits, pretty, date, now);
-      this.examples.push({
+      this.examples.push({ kind: 'gitLog',
         title: this.s('例（この書式での `git log` の出力）', 'Example (`git log` output with this format)'),
         sections: [{ label: this.s('例のコミットでの出力', 'Output for sample commits'), lines: lines.map(visible) }],
       });
@@ -1530,7 +1566,7 @@ export class Analyzer {
       const sample = sampleGetoptArgs(spec);
       const output = runGetopt(spec, sample);
       const shown = sample.map((a) => (/^[\w.,=\/-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(' ');
-      this.examples.push({
+      this.examples.push({ kind: 'getopt',
         title: this.s('例', 'Example'),
         sections: [
           { label: this.s('スクリプトに渡された引数の例', 'Sample arguments given to the script'), lines: [shown] },
@@ -1552,7 +1588,7 @@ export class Analyzer {
     const ex = xargsExample(args.map((a) => literalContent(a)?.text));
     if (!ex) return;
     const input = ex.input.endsWith('\n') ? ex.input.slice(0, -1).split('\n') : [ex.input];
-    this.examples.push({
+    this.examples.push({ kind: 'xargs',
       title: this.s('例', 'Example'),
       sections: [
         { label: this.s('入力（標準入力）', 'Input (stdin)'), lines: input.map(visible) },
@@ -1587,7 +1623,7 @@ export class Analyzer {
     const line = readSampleLine(names.length, ifs, !!array);
     const r = runRead(line, names, { ifs, raw, array });
     const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
-    this.examples.push({
+    this.examples.push({ kind: 'read',
       title: this.s('例', 'Example'),
       sections: [{ label: this.s('読み込む行', 'Line read'), lines: [JSON.stringify(line)] }, { label: this.s('変数に入る値', 'Values stored'), lines }],
     });
@@ -1620,7 +1656,7 @@ export class Analyzer {
     }
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
-    this.examples.push({
+    this.examples.push({ kind: 'test',
       title: this.s('例', 'Example'),
       sections: [
         { label: this.s('真になる値', 'True when'), lines: cases.filter((c) => c.result).map((c) => show(c.vars)) },
@@ -1653,13 +1689,13 @@ export class Analyzer {
     const label = target
       ? this.s(`変数 \`${target}\` に入る値`, `Value stored in \`${target}\``)
       : endsWithNewline ? this.s('出力', 'Output') : this.s('出力（末尾に改行なし）', 'Output (no trailing newline)');
-    this.examples.push({ title: this.s('例', 'Example'), sections: [{ label, lines, empty: this.s('（空文字）', '(empty)') }] });
+    this.examples.push({ kind: 'printf', title: this.s('例', 'Example'), sections: [{ label, lines, empty: this.s('（空文字）', '(empty)') }] });
   }
 
   /** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
   private ioExample(input: string[], output: string[], inPlace = false, spec?: RerunSpec): void {
     const tabs = (lines: string[]) => lines.map(visible);
-    this.examples.push({
+    this.examples.push({ kind: spec?.kind === 'sed' || spec?.kind === 'awk' || spec?.kind === 'perl' ? spec.kind : 'textFilters',
       ...(spec ? { interactive: this.interactive(spec, input) } : {}),
       title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example'),
       sections: [
@@ -1826,7 +1862,7 @@ export class Analyzer {
   private wrapped(words: SyntaxNode[], prefix = ''): Token {
     const first = words[0];
     const name = first.text;
-    const doc = lookupCommand(name);
+    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop() ?? name]) ?? lookupCommand(name);
     const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     const children = this.args(doc, words.slice(1), name);
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
@@ -1996,7 +2032,7 @@ export class Analyzer {
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
     const cases = exampleFor(parsed, this.lang);
     if (cases && (this.line === null || n.startPosition.row === this.line)) {
-      this.examples.push({
+      this.examples.push({ kind: 'expansion',
         title: this.s(`\`${text}\` の例`, `Example for \`${text}\``),
         // The title already names the expansion.
         target: '',

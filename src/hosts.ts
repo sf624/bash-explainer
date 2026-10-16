@@ -12,7 +12,8 @@ export interface ShellRegion {
   label: [string, string];
   shell?: Shell;
   /** Notes shown on every line of the region. */
-  notes?: [string, string][];
+  /** [ja, en, code]: a code makes the note a warning in the Problems panel. */
+  notes?: [string, string, string?][];
   /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
   warnPipefail?: boolean;
 }
@@ -98,7 +99,7 @@ class Builder {
     o.copy(this.lines[line], from, to);
     return o;
   }
-  region(start: number, end: number, label: [string, string], shell?: Shell, notes?: [string, string][], warnPipefail?: boolean): void {
+  region(start: number, end: number, label: [string, string], shell?: Shell, notes?: [string, string, string?][], warnPipefail?: boolean): void {
     if (end >= start) this.regions.push({ start, end, label, shell, notes, warnPipefail });
   }
   build(): Extracted {
@@ -693,17 +694,19 @@ function python(b: Builder): void {
     }
     const script = pyScript(b, src, a0, z0, pos);
     if (!script) continue;
-    const notes: [string, string][] = [];
+    const notes: [string, string, string?][] = [];
     if (!usesShell && /\s/.test(script.text.trim())) {
       notes.push(shellArg === undefined || shellArg === 'False' ? [
         '⚠ shell=True なしで文字列を渡すと、文字列全体が1つのプログラム名として扱われます（引数やパイプは使えず、多くの場合 FileNotFoundError）。`["cmd", "arg"]` のようなリストで渡すか、shell=True を付けます。',
         '⚠ Without shell=True the whole string is taken as one program name (no arguments or pipes; usually FileNotFoundError). Pass a list like `["cmd", "arg"]`, or add shell=True.',
+        'pythonNoShell',
       ] : ['shell= の値が式なので、この文字列をシェルが実行するかは実行時に決まります。', 'shell= is an expression, so whether a shell runs this string is decided at run time.']);
     }
     if (usesShell && script.interpolated) {
       notes.push([
         '⚠ シェルインジェクションの危険: Python の値を埋め込んだ文字列をシェルが実行します。値に `;` や `$(…)` が含まれると任意のコマンドが実行されます。`shlex.quote()` でクォートするか、shell=True をやめてリストで渡してください。',
         '⚠ Shell injection risk: the shell runs a string with Python values pasted in, so a value containing `;` or `$(…)` runs arbitrary commands. Quote it with `shlex.quote()`, or drop shell=True and pass a list.',
+        'pythonInjection',
       ]);
     }
     if (script.partial) notes.push(['文字列の後ろは Python のコードで組み立てられるため、解説しているのは文字列リテラルの部分だけです。', 'The rest of the string is built by Python code; only the string literal is explained.']);
@@ -884,7 +887,7 @@ export function explainHostedLine(
   if (!region) return undefined;
   const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1] });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
-  const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
+  const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
   if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line] ?? '', lang));
   if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
@@ -913,7 +916,7 @@ export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extr
       endLine: n.startPosition.row, endCol: sameLine ? col(n.endPosition.row, n.endPosition.column) : (original[n.startPosition.row] ?? '').length,
     };
   };
-  const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
+  const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   for (const region of extracted.regions) {
     for (const issue of dialectIssues(tree.rootNode, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.node) });
@@ -926,9 +929,9 @@ export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extr
       }
     }
     for (const n of region.notes ?? []) {
-      if (!n[0].startsWith('⚠')) continue;
+      if (!n[2]) continue;
       const first = extracted.maps[region.start];
-      out.push({ code: 'host', severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0] ?? 0, endLine: region.start, endCol: first[first.length - 1] ?? 0 });
+      out.push({ code: n[2], severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0] ?? 0, endLine: region.start, endCol: first[first.length - 1] ?? 0 });
     }
   }
   for (const sub of extracted.substitutions) {

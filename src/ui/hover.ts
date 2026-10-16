@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ExplainService } from '../service';
-import { toMarkdown } from './render';
+import { pruneDepth, toMarkdown } from './render';
 
 export class HoverController implements vscode.HoverProvider, vscode.Disposable {
   private registration: vscode.Disposable | undefined;
@@ -42,8 +42,15 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     this.forceNext = false;
     if (!forced && !this.service.enabled('hover')) return undefined;
     if (!this.service.isTarget(doc)) return undefined;
-    const ex = this.service.explain(doc, pos.line);
-    if (!ex.items.length && !forced) return undefined;
+    const full = this.service.explain(doc, pos.line);
+    if (!full.items.length && !forced) return undefined;
+    // The hover can be kept short: fewer levels of the tree, examples only in the panel.
+    const cfg = this.service.config;
+    const ex = {
+      ...full,
+      items: pruneDepth(full.items, cfg.get<number>('hover.maxDepth', 0)),
+      examples: cfg.get<boolean>('examples.inHover', true) ? full.examples : [],
+    };
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
     const link = `command:bashExplainer.openPanel?${args}`;
     const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos, link, doc.lineAt(pos.line).text, this.service.examplePlacement), true);

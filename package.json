@@ -111,6 +111,11 @@
           "default": "auto",
           "description": "%config.language%"
         },
+        "bashExplainer.notes.idioms": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.notes.idioms%"
+        },
         "bashExplainer.shell": {
           "type": "string",
           "enum": [
@@ -160,6 +165,70 @@
           "default": true,
           "markdownDescription": "%config.diagnostics.enabled%"
         },
+        "bashExplainer.diagnostics.ignore": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "%config.diagnostics.ignore%"
+        },
+        "bashExplainer.diagnostics.embedded": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.diagnostics.embedded%"
+        },
+        "bashExplainer.examples.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.examples.enabled%"
+        },
+        "bashExplainer.examples.disabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "regex",
+              "sed",
+              "awk",
+              "jq",
+              "yq",
+              "perl",
+              "textFilters",
+              "pipeline",
+              "expansion",
+              "printf",
+              "glob",
+              "test",
+              "xargs",
+              "read",
+              "getopt",
+              "gitLog"
+            ],
+            "enumDescriptions": [
+              "%config.examples.kind.regex%",
+              "%config.examples.kind.sed%",
+              "%config.examples.kind.awk%",
+              "%config.examples.kind.jq%",
+              "%config.examples.kind.yq%",
+              "%config.examples.kind.perl%",
+              "%config.examples.kind.textFilters%",
+              "%config.examples.kind.pipeline%",
+              "%config.examples.kind.expansion%",
+              "%config.examples.kind.printf%",
+              "%config.examples.kind.glob%",
+              "%config.examples.kind.test%",
+              "%config.examples.kind.xargs%",
+              "%config.examples.kind.read%",
+              "%config.examples.kind.getopt%",
+              "%config.examples.kind.gitLog%"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "%config.examples.disabled%"
+        },
         "bashExplainer.examples.placement": {
           "type": "string",
           "enum": [
@@ -174,6 +243,11 @@
           ],
           "default": "first",
           "description": "%config.examples.placement%"
+        },
+        "bashExplainer.examples.inHover": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.examples.inHover%"
         },
         "bashExplainer.hover.enabled": {
           "type": "boolean",
@@ -190,6 +264,12 @@
           "default": 400,
           "minimum": 0,
           "description": "%config.hover.followDelay%"
+        },
+        "bashExplainer.hover.maxDepth": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "%config.hover.maxDepth%"
         },
         "bashExplainer.inline.enabled": {
           "type": "boolean",
@@ -217,10 +297,86 @@
           ],
           "description": "%config.languages%"
         },
-        "bashExplainer.embedded.enabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.embedded.enabled%"
+        "bashExplainer.embedded.files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "dockerfile",
+              "makefile",
+              "yaml",
+              "packageJson",
+              "markdown",
+              "python"
+            ],
+            "enumDescriptions": [
+              "%config.embedded.files.dockerfile%",
+              "%config.embedded.files.makefile%",
+              "%config.embedded.files.yaml%",
+              "%config.embedded.files.packageJson%",
+              "%config.embedded.files.markdown%",
+              "%config.embedded.files.python%"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [
+            "dockerfile",
+            "makefile",
+            "yaml",
+            "packageJson",
+            "markdown",
+            "python"
+          ],
+          "markdownDescription": "%config.embedded.files%"
+        },
+        "bashExplainer.customCommands": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "%config.customCommands%",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "summary"
+            ],
+            "properties": {
+              "summary": {
+                "type": "string",
+                "description": "What the command does."
+              },
+              "options": {
+                "type": "object",
+                "description": "Option (e.g. \"-n\" or \"-o|--output\") → description, or { \"description\", \"takesValue\" }.",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "description"
+                      ],
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "takesValue": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Descriptions of the arguments in order; the last one repeats."
+              }
+            }
+          }
         }
       }
     }
