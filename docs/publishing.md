@@ -2,7 +2,7 @@
 
 Releases are published by the [Release workflow](../.github/workflows/release.yml) when a tag `v<version>` is pushed. It publishes the same `.vsix` to the VS Code Marketplace and Open VSX and creates a GitHub Release, after approval in the `release` environment. Then it updates the web page on GitHub Pages with the [Web page workflow](../.github/workflows/pages.yml).
 
-The Marketplace is reached with Microsoft Entra ID through GitHub's OpenID Connect, so there is no Azure DevOps personal access token to renew. (Global Azure DevOps PATs are retired on December 1, 2026; see [Secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).)
+Both registries are reached through GitHub's OpenID Connect, so there is no access token to store or renew: the Marketplace with Microsoft Entra ID, and Open VSX with [trusted publishing](https://github.com/eclipse-openvsx/openvsx/wiki/Trusted-Publishing). For the Marketplace, there is no Azure DevOps personal access token. (Global Azure DevOps PATs are retired on December 1, 2026; see [Secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).)
 
 ## Releasing a version
 
@@ -30,14 +30,22 @@ An Azure subscription is needed (a free one will do; the identity itself costs n
 In *Settings → Environments → release* (reviewers and the `v*` tag / `main` branch policy are already set):
 
 - **Environment variables:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
-- **Environment secret:** `OVSX_PAT`, the Open VSX access token (Open VSX has no equivalent of the Entra ID login).
+- No secrets are needed.
 
 ### 3. The Marketplace publisher
 
 1. Run the [Marketplace identity](../.github/workflows/marketplace-identity.yml) workflow by hand (*Actions → Marketplace identity → Run workflow*, then approve). It prints the identity's ID.
 2. On <https://marketplace.visualstudio.com/manage>, open the `shun-fujioka` publisher, *Members → Add*, paste the ID and give it the **Contributor** role.
 
-### 4. The web page (GitHub Pages)
+### 4. Open VSX
+
+On <https://open-vsx.org>, in the settings of the `shun-fujioka/bash-explainer` extension, add a **trusted publisher**: owner `sf624`, repository `bash-explainer`, workflow `release.yml`, environment `release`. The Release workflow then publishes with `ovsx publish --trusted-publishing`, which exchanges the job's OIDC token for a publishing token that lasts minutes.
+
+- The extension must already have a version on Open VSX (the first one is published with an access token).
+- The registration cannot be edited: to change it, delete it and add a new one.
+- `OVSX_PAT`, if set, would take precedence over trusted publishing: keep it out of the workflow.
+
+### 5. The web page (GitHub Pages)
 
 1. In *Settings → Pages → Build and deployment*, set **Source** to **GitHub Actions**. This creates the `github-pages` environment.
 2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy.
