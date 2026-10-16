@@ -78,7 +78,12 @@ export function collect(): Target[] {
     const web: Target = { title: 'In the web version', uses: new Map() };
     for (const name of bundled(path.join(tmp, 'web.json'))) add(web.uses, name, 'bundled into `app.js`');
     for (const file of fs.readdirSync(path.join(tmp, 'site')).filter((f) => f.endsWith('.wasm')).sort()) add(web.uses, owner(file), `\`${file}\``);
-    return [extension, web];
+    node(['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${path.join(tmp, 'cli')}`, `--metafile=${path.join(tmp, 'cli.json')}`]);
+    const cli: Target = { title: 'In the command-line tool (npm package bash-explainer)', uses: new Map() };
+    for (const name of bundled(path.join(tmp, 'cli.json'))) add(cli.uses, name, 'bundled into `dist/cli.js`');
+    for (const file of fs.readdirSync(path.join(tmp, 'cli', 'dist')).filter((f) => f.endsWith('.wasm')).sort()) add(cli.uses, owner(file), `\`dist/${file}\``);
+
+    return [extension, web, cli];
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

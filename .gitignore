@@ -5,3 +5,6 @@ site/
 out/
 .vscode-test/
 .vscode-test-web/
+cli/dist/
+cli/LICENSE
+cli/THIRD_PARTY_NOTICES.md

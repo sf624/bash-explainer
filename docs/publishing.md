@@ -6,7 +6,7 @@ Both registries are reached through GitHub's OpenID Connect, so there is no acce
 
 ## Releasing a version
 
-1. Bump `version` in `package.json` and add a `## <version>` section to `CHANGELOG.md`; merge to `main`.
+1. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and add a `## <version>` section to `CHANGELOG.md`; merge to `main`.
 2. Push the tag: `git tag v0.1.0 && git push origin v0.1.0`.
 3. In the workflow run, approve the `release` environment (**Review deployments**).
 
@@ -45,7 +45,15 @@ On <https://open-vsx.org>, in the settings of the `shun-fujioka/bash-explainer` 
 - The registration cannot be edited: to change it, delete it and add a new one.
 - `OVSX_PAT`, if set, would take precedence over trusted publishing: keep it out of the workflow.
 
-### 5. The web page (GitHub Pages)
+### 5. npm (the command-line tool)
+
+The Release workflow also publishes `cli/` as the npm package [`bash-explainer`](https://www.npmjs.com/package/bash-explainer), at the same version as the extension (a test keeps `cli/package.json` and `package.json` in step). npm's trusted publishing works only for a package that exists, so:
+
+1. Publish the first version by hand, logged in to npm: `npm run build:cli && npm publish ./cli --access public`.
+2. On npmjs.com, in the package's *Settings → Trusted publisher*, choose **GitHub Actions** and enter owner `sf624`, repository `bash-explainer`, workflow `release.yml`, environment `release`. Then, under *Publishing access*, disallow tokens.
+3. In the repository's *Settings → Secrets and variables → Actions → Variables*, add `NPM_PUBLISH` = `true`. Until then the Release workflow skips npm.
+
+### 6. The web page (GitHub Pages)
 
 1. In *Settings → Pages → Build and deployment*, set **Source** to **GitHub Actions**. This creates the `github-pages` environment.
 2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy.

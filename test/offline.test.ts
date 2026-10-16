@@ -16,7 +16,8 @@ const NETWORK_APIS = /\bfetch\s*\(|\b(XMLHttpRequest|WebSocket|EventSource|RTCPe
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => {
     const file = path.join(dir, e.name);
-    return e.isDirectory() ? sourceFiles(file) : /\.[cm]?[jt]s$/.test(e.name) ? [file] : [];
+    // Build output (cli/dist) is checked as a bundle, below.
+    return e.isDirectory() ? (e.name === 'dist' ? [] : sourceFiles(file)) : /\.[cm]?[jt]s$/.test(e.name) ? [file] : [];
   });
 }
 
@@ -43,8 +44,8 @@ describe('offline by design', () => {
     for (const name of modules) assert.match(name, /^(@codemirror\/(commands|language|legacy-modes|lint|state|view)|@lezer\/highlight|web-tree-sitter)$/, name);
   });
 
-  it('the source, the panel script and the web page use no browser network APIs', () => {
-    for (const file of [...sourceFiles('src'), ...sourceFiles('media'), ...sourceFiles('web')]) {
+  it('the source, the panel script, the web page and the command-line tool use no browser network APIs', () => {
+    for (const file of [...sourceFiles('src'), ...sourceFiles('media'), ...sourceFiles('web'), ...sourceFiles('cli')]) {
       const hit = read(file).match(NETWORK_APIS);
       assert.ok(!hit, `${file}: ${hit?.[0]}`);
     }
@@ -66,6 +67,29 @@ describe('offline by design', () => {
         assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/, file);
         assert.doesNotMatch(bundle, /telemetry/i, file);
       }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the command-line tool imports only fs and path, and its bundle requires nothing else', function () {
+    this.timeout(60000);
+    const modules = new Set<string>();
+    for (const file of sourceFiles('cli')) {
+      for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
+        const name = m[1] ?? m[2];
+        if (!name.startsWith('.')) modules.add(name);
+      }
+    }
+    assert.deepStrictEqual([...modules].sort(), ['fs', 'path']);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-cli-'));
+    try {
+      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+      const bundle = fs.readFileSync(path.join(dir, 'dist', 'cli.js'), 'utf8');
+      const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
+      assert.deepStrictEqual([...required].sort(), ['fs', 'path']);
+      assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/);
+      assert.doesNotMatch(bundle, /telemetry/i);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

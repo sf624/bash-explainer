@@ -42,6 +42,22 @@ describe('licenses', function () {
     for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) assert.ok(shipped.includes(`!${file}`), `.vscodeignore leaves out ${file}`);
   });
 
+  it('ships the license and the notices in the npm package, at the same version as the extension', () => {
+    const cli = JSON.parse(fs.readFileSync(path.join(root, 'cli', 'package.json'), 'utf8'));
+    const extension = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    assert.strictEqual(cli.license, 'MIT');
+    assert.strictEqual(cli.version, extension.version, 'cli/package.json and package.json must have the same version');
+    for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'dist/*.wasm']) assert.ok(cli.files.includes(file), `cli/package.json leaves out ${file}`);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-cli-'));
+    try {
+      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+      assert.strictEqual(fs.readFileSync(path.join(dir, 'LICENSE'), 'utf8'), fs.readFileSync(path.join(root, 'LICENSE'), 'utf8'));
+      assert.strictEqual(fs.readFileSync(path.join(dir, 'THIRD_PARTY_NOTICES.md'), 'utf8'), fs.readFileSync(NOTICES, 'utf8'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('ships the license and the notices with the web page, linked from it', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-site-'));
     try {
