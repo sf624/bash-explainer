@@ -1,7 +1,5 @@
 # Recording the README images
 
-[日本語](RECORDING_ja.md)
-
 README.md and README_ja.md use these four files from this directory:
 
 | File | What it shows | Length |
