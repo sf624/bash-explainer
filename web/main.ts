@@ -38,6 +38,7 @@ const TEXT = {
     copied: 'Copied the explanation as Markdown.',
     problems: 'Problems',
     privacy: 'Your script stays in this browser: it is parsed and explained here, with no server and no AI.',
+    notices: 'Third-party notices',
     loading: 'Loading the parser…',
     failed: 'Could not load the parser:',
     replace: 'Replace your script with the sample?',
@@ -55,6 +56,7 @@ const TEXT = {
     copied: '解説を Markdown でコピーしました。',
     problems: '問題',
     privacy: 'スクリプトはこのブラウザから出ません。構文解析も解説もこのページの中で行い、サーバーも AI も使いません。',
+    notices: 'サードパーティのライセンス',
     loading: '構文解析器を読み込んでいます…',
     failed: '構文解析器を読み込めませんでした:',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
@@ -321,6 +323,7 @@ function applyLanguage(): void {
   $('sample').textContent = t.sample;
   $('share').textContent = t.share;
   $('privacy').textContent = t.privacy;
+  $('notices').textContent = t.notices;
   $<HTMLSelectElement>('lang').value = lang;
   $<HTMLSelectElement>('kind').replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind, false, k.kind === kind)));
 }
