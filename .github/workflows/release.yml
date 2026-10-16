@@ -56,10 +56,12 @@ jobs:
     name: Publish
     needs: build
     runs-on: ubuntu-24.04
-    # Waits for approval; VSCE_PAT and OVSX_PAT are secrets of this environment.
+    # Waits for approval. The Azure IDs are variables of this environment, OVSX_PAT a secret.
     environment: release
     permissions:
       contents: write
+      # Lets azure/login exchange the job's OIDC token for an Entra ID token (no PAT to expire).
+      id-token: write
     env:
       VSIX: bash-explainer-${{ needs.build.outputs.version }}.vsix
     steps:
@@ -76,11 +78,16 @@ jobs:
         with:
           name: vsix
 
+      # The Marketplace accepts the managed identity added to the publisher (see README).
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       # The same .vsix goes to both registries; --skip-duplicate makes a re-run safe.
       - name: Publish to the VS Code Marketplace
-        run: npx vsce publish --packagePath "$VSIX" --skip-duplicate
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --azure-credential --packagePath "$VSIX" --skip-duplicate
 
       - name: Publish to Open VSX
         run: npx --yes ovsx@1.2.0 publish --packagePath "$VSIX" --skip-duplicate
