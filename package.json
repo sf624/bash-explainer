@@ -113,14 +113,16 @@
         "bashExplain.examples.placement": {
           "type": "string",
           "enum": [
-            "inline",
+            "first",
+            "last",
             "bottom"
           ],
           "enumDescriptions": [
-            "%config.examples.placement.inline%",
+            "%config.examples.placement.first%",
+            "%config.examples.placement.last%",
             "%config.examples.placement.bottom%"
           ],
-          "default": "inline",
+          "default": "first",
           "description": "%config.examples.placement%"
         },
         "bashExplain.hover.followCursor": {

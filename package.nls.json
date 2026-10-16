@@ -16,6 +16,7 @@
   "config.inline.maxLength": "Maximum length of the inline summary.",
   "config.languages": "Language IDs to explain.",
   "config.examples.placement": "Where worked examples (sample input and output) are shown.",
-  "config.examples.placement.inline": "Right under the explanation of the part they illustrate",
-  "config.examples.placement.bottom": "All together after the explanations"
+  "config.examples.placement.bottom": "All together after the explanations",
+  "config.examples.placement.first": "Right under the part they illustrate, before the explanations of its pieces",
+  "config.examples.placement.last": "Under the part they illustrate, after the explanations of its pieces"
 }

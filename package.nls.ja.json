@@ -16,6 +16,7 @@
   "config.inline.maxLength": "インライン要約の最大文字数。",
   "config.languages": "解説の対象とする言語 ID。",
   "config.examples.placement": "具体例（入力例と出力など）を表示する位置。",
-  "config.examples.placement.inline": "対応する部分の解説の真下に表示",
-  "config.examples.placement.bottom": "解説の後にまとめて表示"
+  "config.examples.placement.bottom": "解説の後にまとめて表示",
+  "config.examples.placement.first": "対応する部分の真下に、その中の各要素の解説より先に表示",
+  "config.examples.placement.last": "対応する部分の下に、その中の各要素の解説の後に表示"
 }
