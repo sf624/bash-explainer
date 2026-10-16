@@ -61,24 +61,40 @@ describe('examples match bash', () => {
   const cases = [
     '${file%.*}', '${file%%.*}', '${path#*/}', '${path##*/}', '${f%.sh}', '${v#v}',
     '${s/foo/bar}', '${s//foo/bar}', '${s/#foo/bar}', '${s/%foo/bar}', '${s//o/}', '${d//-/}',
-    '${s^}', '${s^^}', '${s,}', '${s,,}', '${s:2}', '${s:1:3}', '${s: -2}', '${s:2:-1}', '${s@U}',
+    '${s^}', '${s^^}', '${s,}', '${s,,}', '${s:2}', '${s:1:3}', '${s: -2}', '${s:2:-1}', '${s@U}', '${s// /_}',
+    '${v:-def}', '${v-def}', '${v:=def}', '${v=def}', '${v:+alt}', '${v+alt}', '${#s}', '${#a[@]}', '${!a[@]}', '${a[1]}', '${a[@]}',
   ];
   for (const text of cases) {
     it(text, () => {
       const p = parseExpansion(text)!;
       const ex = exampleFor(p, 'en');
       assert.ok(ex, `no example for ${text}`);
-      const [input, expected] = ex.split(' → ');
-      const actual = execFileSync('bash', ['-c', `${input}; printf %s "${text}"`]).toString();
-      assert.strictEqual(expected.replace(/^"(.*)"$/, '$1'), actual, `${input}; ${text}`);
+      for (const c of ex) {
+        assert.ok(c.setup, c.when);
+        const actual = execFileSync('bash', ['-c', `${c.setup}; echo -n "${text}"`]).toString();
+        assert.strictEqual(c.result, actual, `${c.setup}; ${text}`);
+      }
     });
   }
+  it('${v:?msg} exits with the message when missing', () => {
+    const ex = exampleFor(parseExpansion('${v:?not set}')!, 'en')!;
+    assert.match(ex[0].result, /prints the error "not set" and exits/);
+    assert.strictEqual(execFileSync('bash', ['-c', `${ex[1].setup}; printf %s "\${v:?not set}"`]).toString(), ex[1].result);
+  });
 });
+
+/** The examples of a line as "label → result" strings. */
+function examples(src: string, lang: 'ja' | 'en' = 'en'): string[] {
+  const tree = parser.parse(src);
+  const ex = new Analyzer(lang).explainLine(tree, 0);
+  tree.delete();
+  return ex.examples.flatMap((e) => e.sections.map((sec) => `${sec.label} → ${sec.lines.join(' ') || sec.empty}`));
+}
 
 describe('expansion tokens', () => {
   it('explains each part at its own column', () => {
     const t = expansionToken('echo "${LOG_DIR:-$HOME/log}"');
-    assert.match(t.explanation, /e\.g\. if LOG_DIR is unset or empty → \$HOME\/log \(expanded\); if LOG_DIR=hello → hello/);
+    assert.deepStrictEqual(examples('echo "${LOG_DIR:-$HOME/log}"'), ['When LOG_DIR is unset or empty → $HOME/log (expanded)', 'When `LOG_DIR=hello` → hello']);
     assert.deepStrictEqual(t.children.map((c) => [c.label, c.span.start.character]), [['LOG_DIR', 8], [':-', 15], ['$HOME/log', 17]]);
     const word = t.children[2];
     assert.match(word.explanation, /Default/);
@@ -86,11 +102,11 @@ describe('expansion tokens', () => {
   });
 
   it('describes positional parameters as arguments, not assignments', () => {
-    assert.match(expansionToken('echo ${2:-/tmp}').explanation, /e\.g\. if argument 2 is missing or empty → \/tmp; if argument 2 is \/data → \/data$/);
-    assert.match(expansionToken('echo ${2:-/tmp}', 'ja').explanation, /例: 2 番目の引数が無いか空なら → \/tmp、2 番目の引数が \/data なら → \/data$/);
-    assert.match(expansionToken('echo ${1+set}', 'en').explanation, /e\.g\. if argument 1 is hello → set; if argument 1 is missing → an empty string$/);
-    assert.match(expansionToken('echo ${PORT:-8080}', 'en').explanation, /if PORT=42 → 42$/);
-    assert.match(expansionToken('echo ${1%.*}').explanation, /e\.g\. if argument 1 is report\.tar\.gz → report\.tar/);
+    assert.deepStrictEqual(examples('echo ${2:-/tmp}'), ['When argument 2 is missing or empty → /tmp', 'When argument 2 is `/data` → /data']);
+    assert.deepStrictEqual(examples('echo ${2:-/tmp}', 'ja'), ['2 番目の引数が無いか空のとき → /tmp', '2 番目の引数が `/data` のとき → /data']);
+    assert.deepStrictEqual(examples('echo ${1+set}'), ['When argument 1 is `hello` → set', 'When argument 1 is empty → set', 'When argument 1 is missing → (empty string)']);
+    assert.deepStrictEqual(examples('echo ${PORT:-8080}')[1], 'When `PORT=42` → 42');
+    assert.deepStrictEqual(examples('echo ${1%.*}'), ['When argument 1 is `report.tar.gz` → report.tar']);
   });
 
   it('reads patterns and numbers', () => {
@@ -101,14 +117,16 @@ describe('expansion tokens', () => {
     assert.match(sub.children[2].explanation, /space or parentheses/);
     assert.match(expansionToken('echo ${arr[0]}').children[1].explanation, /1st element \(0-based\)/);
     const del = expansionToken('echo ${s//x/}');
-    assert.match(del.explanation, /Delete every match of `x` in `s`\. e\.g\. s=a-x-b-x → a--b-/);
+    assert.match(del.explanation, /Delete every match of `x` in `s`/);
+    assert.deepStrictEqual(examples('echo ${s//x/}'), ['When `s=a-x-b-x` → a--b-']);
     assert.match(del.children[3].explanation, /matches are deleted/);
     assert.match(expansionToken('echo ${s//x/y}').children[4].explanation, /Replacement `y`/);
   });
 
   it('explains transformations', () => {
     const t = expansionToken('echo ${s@Q}', 'ja');
-    assert.match(t.explanation, /クォートする。例: s="it's" → 'it'\\''s'/);
+    assert.match(t.explanation, /クォートする$/);
+    assert.deepStrictEqual(examples('echo ${s@Q}', 'ja'), [`\`s="it's"\` のとき → 'it'\\''s'`]);
     assert.match(t.children[2].explanation, /^`Q`: /);
   });
 });

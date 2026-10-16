@@ -1739,15 +1739,29 @@ export class Analyzer {
   /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
   private expansion(n: SyntaxNode): Token {
     const summary = this.expansionSummary(n);
-    const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(n.text) : undefined;
+    // Inside a string, tree-sitter-bash starts a `${…}` after a space at the space.
+    const text = n.text.trimStart();
+    const lead = n.text.length - text.length;
+    if (lead && n.startPosition.row === n.endPosition.row) {
+      summary.label = shorten(text);
+      summary.span = { ...summary.span, start: { ...summary.span.start, character: summary.span.start.character + lead } };
+    }
+    const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
     if (!parsed) return summary;
     const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
-    const example = exampleFor(parsed, this.lang);
-    if (example) summary.explanation += this.s(`。例: ${example}`, `. e.g. ${example}`);
+    const cases = exampleFor(parsed, this.lang);
+    if (cases && (this.line === null || n.startPosition.row === this.line)) {
+      this.examples.push({
+        title: this.s(`\`${text}\` の例`, `Example for \`${text}\``),
+        // The title already names the expansion.
+        target: '',
+        sections: cases.map((c) => ({ label: c.when, lines: c.result ? [c.result] : [], empty: this.s('（空文字）', '(empty string)') })),
+      });
+    }
     const row = n.startPosition.row;
-    const col = n.startPosition.column;
+    const col = n.startPosition.column + lead;
     const mainOp = parsed.parts.find((p) => p.role === 'op');
     summary.children = parsed.parts.flatMap((part) => {
       const expl = this.expansionPart(parsed, part, part === mainOp);
@@ -1875,7 +1889,7 @@ export class Analyzer {
 
   private expansionSummary(n: SyntaxNode): Token {
     const kids = n.children;
-    const inner = n.text.slice(2, -1);
+    const inner = n.text.trimStart().slice(2, -1);
     const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
     const targetText = target?.text ?? inner;
     const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);
