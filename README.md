@@ -69,6 +69,10 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 
 ![Inline mode](images/inline.png)
 
+## Shell code in other files
+
+Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents), Makefile recipes, CI YAML (`run:` in GitHub Actions, `script:` in GitLab CI…), `package.json` scripts and Markdown code blocks (`sh`, `bash`, `console`…). Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
+
 ## Other shells
 
 Explanations always follow bash, but when a script is written for another shell Bash Explain points out constructs that shell does not have, such as `[[ ]]`, arrays, `&>`, `echo -e` or `{1..3}` in a `#!/bin/sh` script, and suggests a portable alternative.
@@ -97,6 +101,7 @@ The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/bu
 | `bashExplain.inline.enabled` | `false` | Show a one-line summary at the end of the cursor line |
 | `bashExplain.inline.maxLength` | `120` | Maximum length of the inline summary |
 | `bashExplain.panel.autoOpen` | `false` | Open the panel automatically when a bash script is opened |
+| `bashExplain.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json` scripts and Markdown code blocks |
 | `bashExplain.languages` | `["shellscript"]` | Language IDs to explain |
 
 ## Limitations

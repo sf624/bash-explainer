@@ -20,5 +20,6 @@
   "config.panel.autoOpen": "Open the explanation panel automatically when a bash script is opened. The panel can always be opened with **Bash Explain: Open Explanation Panel** or the link in the hover.",
   "config.shell": "The shell scripts are written for. Constructs that shell does not support are pointed out (bash: no checks).",
   "config.shell.auto": "Detect from the shebang (`#!/bin/sh`…), a `# shellcheck shell=` directive or the file name; bash when unknown",
-  "config.shell.sh": "POSIX sh (points out what fails in dash and busybox ash)"
+  "config.shell.sh": "POSIX sh (points out what fails in dash and busybox ash)",
+  "config.embedded.enabled": "Also explain shell code inside other files: Dockerfile `RUN`/`CMD`, Makefile recipes, CI YAML (`run:`, `script:`), `package.json` scripts and Markdown code blocks (`sh`, `bash`, `console`…)."
 }
