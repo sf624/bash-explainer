@@ -75,7 +75,7 @@
       "editor/title": [
         {
           "command": "bashExplain.openPanel",
-          "when": "editorLangId == shellscript",
+          "when": "bashExplain.hasShell",
           "group": "navigation"
         },
         {
@@ -87,7 +87,7 @@
       "editor/context": [
         {
           "command": "bashExplain.showAtCursor",
-          "when": "editorLangId == shellscript",
+          "when": "bashExplain.hasShell",
           "group": "navigation@100"
         }
       ]
