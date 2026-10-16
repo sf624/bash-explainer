@@ -1,0 +1,98 @@
+name: Release
+
+# Push a tag such as v0.1.0 (matching "version" in package.json) to publish that version to the
+# VS Code Marketplace and Open VSX, and to create a GitHub Release with the .vsix attached.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and package
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check that the tag matches package.json
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match version $version in package.json"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install the tools the tests compare against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh
+
+      - run: npm ci
+
+      - name: Type check and unit tests
+        run: npm test
+
+      - name: Package the extension
+        run: npm run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: bash-explainer-${{ steps.version.outputs.version }}.vsix
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    # Waits for approval; VSCE_PAT and OVSX_PAT are secrets of this environment.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VSIX: bash-explainer-${{ needs.build.outputs.version }}.vsix
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      # The same .vsix goes to both registries; --skip-duplicate makes a re-run safe.
+      - name: Publish to the VS Code Marketplace
+        run: npx vsce publish --packagePath "$VSIX" --skip-duplicate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        run: npx --yes ovsx@1.2.0 publish --packagePath "$VSIX" --skip-duplicate
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Create the GitHub Release
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          # The notes are this version's section of CHANGELOG.md.
+          awk -v v="$version" '$0 ~ "^## \\[?" v "\\]?( |$)" { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See [CHANGELOG.md](CHANGELOG.md)." > notes.md
+          gh release create "$GITHUB_REF_NAME" "$VSIX" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}

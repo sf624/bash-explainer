@@ -208,6 +208,7 @@ npm run package    # .vsix を作成
 - `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAIN_SHELLS` にあるシェルと、`$BASH_EXPLAIN_YQ` にある yq を使います。無いものはスキップされます。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
+- リリースするには、`package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace と Open VSX に公開して GitHub Release を作成します。
 
 ## ライセンス
 
