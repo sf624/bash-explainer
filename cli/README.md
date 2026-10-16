@@ -52,6 +52,45 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up.
 
+## In your editor (Language Server)
+
+`bash-explainer --lsp` is a Language Server on standard input and output: hover a line for its explanation, and get the warnings with their quick fixes, in any editor that speaks LSP. It handles shell scripts (language IDs `sh`, `bash`, `zsh`, `shellscript`…) and the shell code in Dockerfiles, Makefiles, YAML, `package.json`, Markdown and Python. It runs next to other servers, such as bash-language-server.
+
+Install it with `npm install --global bash-explainer` (see [Installation](#installation)), so the editor does not wait for `npx`.
+
+**Neovim** (0.11 or later), in `init.lua`:
+
+```lua
+vim.lsp.config('bash_explainer', {
+  cmd = { 'bash-explainer', '--lsp' },
+  filetypes = { 'sh', 'bash', 'zsh', 'dockerfile', 'make', 'yaml' },
+  root_markers = { '.git' },
+  -- init_options = { language = 'ja', shell = 'dash' },
+})
+vim.lsp.enable('bash_explainer')
+```
+
+**Helix**, in `languages.toml`:
+
+```toml
+[language-server.bash-explainer]
+command = "bash-explainer"
+args = ["--lsp"]
+
+[[language]]
+name = "bash"
+language-servers = ["bash-language-server", "bash-explainer"]
+```
+
+**Emacs** (Eglot, one server per mode):
+
+```elisp
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs '((sh-mode bash-ts-mode) . ("bash-explainer" "--lsp"))))
+```
+
+Settings, as `initializationOptions` or through `workspace/didChangeConfiguration` (under `bashExplainer`): `language` (`en` or `ja`; default from `LANG`), `shell` (the shell to check for; default: from the file), `examples` (`false` leaves out worked examples).
+
 ## Privacy
 
 Everything runs in the Node.js process: the tool contains no code that opens a network connection or starts a process, which a test checks on every change. See [Privacy](https://github.com/sf624/bash-explainer#privacy).
