@@ -404,7 +404,7 @@
     "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
-    "tree-sitter-bash": "0.23.3",
+    "tree-sitter-bash": "0.25.1",
     "web-tree-sitter": "0.22.6"
   },
   "devDependencies": {
