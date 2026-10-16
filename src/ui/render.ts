@@ -38,8 +38,11 @@ export const ui = {
 
 export type DisplayMode = keyof typeof ui.ja.modes;
 
-/** Where worked examples go: under the token they explain, or all together at the end. */
-export type ExamplePlacement = 'inline' | 'bottom';
+/**
+ * Where worked examples go: under the token they explain, before (`first`) or after (`last`) the
+ * explanations of its parts, or all together at the end (`bottom`).
+ */
+export type ExamplePlacement = 'first' | 'last' | 'bottom';
 
 function covers(outer: Span, inner: Span): boolean {
   const le = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
@@ -136,8 +139,8 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
  * by token kind, and `lineText` is shown regex101-style at the top. Tokens under `at` (the
  * mouse position) are emphasised. `panelLink` is a command URI that opens this line in the panel.
  */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'inline'): string {
-  if (placement === 'inline') ex = placeExamples(ex);
+export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'first'): string {
+  if (placement !== 'bottom') ex = placeExamples(ex);
   const t = ui[lang];
   const out: string[] = [];
   let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
@@ -161,9 +164,11 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     const label = `<code>${colored(flat, tok.kind)}</code>`;
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
     out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
-    for (const c of tok.children) walk(c, depth + 1);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
-    if (tok.examples?.length) out.push(...examplesMarkdown(tok.examples, '  '.repeat(depth + 1)));
+    const examples = tok.examples?.length ? examplesMarkdown(tok.examples, '  '.repeat(depth + 1)) : [];
+    if (placement === 'first') out.push(...examples);
+    for (const c of tok.children) walk(c, depth + 1);
+    if (placement !== 'first') out.push(...examples);
   };
   for (const item of ex.items) walk(item, 0);
   out.push(...examplesMarkdown(ex.examples));

@@ -6,6 +6,7 @@
 
   /** @type {Array<{ token: any, el: HTMLElement }>} */
   let flat = [];
+  let examplesFirst = true;
   /** @type {HTMLElement[]} */
   let segments = [];
   /** The last rendered update; an identical one is ignored so a text selection survives. */
@@ -42,6 +43,7 @@
 
   function render(msg) {
     const ex = msg.explanation;
+    examplesFirst = msg.examplesFirst !== false;
     $('where').textContent = `${msg.file} · ${msg.lineLabel}`;
     $('context').textContent = msg.contextLabels.length ? ' › ' + msg.contextLabels.join(' › ') : '';
 
@@ -97,6 +99,9 @@
     text.append(...inline(token.explanation));
     row.append(label, text);
     li.append(row);
+    // Examples placed under this token go before (first) or after (last) its parts.
+    const examples = (token.examples ?? []).map((e) => example(e, true));
+    if (examplesFirst) li.append(...examples);
     const index = flat.length;
     flat.push({ token, el: row });
     row.addEventListener('mouseenter', () => focus(index));
@@ -109,8 +114,7 @@
       ul.append(...token.children.map((c) => item(c, depth + 1)));
       li.append(ul);
     }
-    // With the "inline" placement, examples sit right after the token they explain.
-    if (token.examples?.length) li.append(...token.examples.map((e) => example(e, true)));
+    if (!examplesFirst) li.append(...examples);
     return li;
   }
 
