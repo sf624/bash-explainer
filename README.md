@@ -46,9 +46,21 @@ No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://
 
 Turn them on or off by clicking **Bash Explainer** in the status bar.
 
+### Hover
+
+Hover a line to see its breakdown, right where you are reading.
+
 ![Hover](images/hover.gif)
 
+### Panel
+
+The panel follows the cursor line by line. Point at a part of the tree to highlight it in the editor.
+
 ![Panel](images/panel.gif)
+
+### Inline
+
+A one-line summary at the end of the cursor line.
 
 ![Inline](images/inline.png)
 
