@@ -231,3 +231,17 @@ describe('git log examples', () => {
     assert.match(JSON.stringify(e.examples[0].anchor), /"character":8/);
   });
 });
+
+describe('getopt', () => {
+  it('reads -o and --long, and shows how sample arguments are rearranged', () => {
+    const e = explain('OPTS=$(getopt -o hv: --long help,level:: -n "$0" -- "$@")');
+    const t = find(e, 'help,level::');
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['help', ',', 'level::']);
+    assert.match(find(e, 'v:').explanation, /option -v takes a value/);
+    assert.deepStrictEqual(e.examples[0].sections.map((s) => s.lines[0]), ['file1.txt -h -v value --level=3 file2.txt', "-h -v 'value' --level '3' -- 'file1.txt' 'file2.txt'"]);
+  });
+  it('understands the old form', () => {
+    const e = explain('set -- $(getopt ab: "$@")');
+    assert.strictEqual(e.examples[0].sections[1].lines[0], '-a -b value -- file1.txt file2.txt');
+  });
+});

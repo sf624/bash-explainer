@@ -168,6 +168,11 @@ while getopts ":hv:o:" opt; do
 done
 shift $((OPTIND - 1))
 
+# --- getopt (long options) ---
+OPTS=$(getopt -o hv:o: --long help,verbose:,output: -n "$0" -- "$@") || exit 1
+eval set -- "$OPTS"
+args=$(getopt -o +c::q -l color::,quiet -- "$@")
+
 # --- perl one-liners ---
 perl -pi -e 's/foo(\d+)/bar$1/g' *.txt
 perl -lane 'print $F[1] if $F[2] > 100' data.txt
