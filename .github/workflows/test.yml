@@ -36,8 +36,16 @@ jobs:
 
       - run: npm ci
 
+      # The web page test drives Chromium; playwright needs Node.js 20 or later.
+      - name: Install Chromium for the web page test
+        if: matrix.node == 24
+        run: npx playwright-core install --with-deps chromium-headless-shell
+
       - name: Type check and unit tests
         run: npm test
+        env:
+          # Fail instead of skipping when the browser cannot start.
+          BASH_EXPLAINER_BROWSER: ${{ matrix.node == 24 && '1' || '' }}
 
       - name: Package the extension
         run: npm run package

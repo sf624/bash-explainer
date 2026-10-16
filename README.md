@@ -237,7 +237,7 @@ Bash Explainer works entirely offline by design:
 
 A [CI check](test/offline.test.ts) fails the build if network or process APIs appear in the packaged extension ([latest runs](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)). You can also verify this yourself: the `.vsix` is a zip archive, and the extension works with networking disabled.
 
-The [web version](https://sf624.github.io/bash-explainer/) works the same way. GitHub Pages serves the page, but your script is parsed and explained in the browser and sent nowhere; the page's Content Security Policy allows no requests to other sites, and a link to a script carries it after `#`, which browsers do not send. The same CI check covers the page.
+The [web version](https://sf624.github.io/bash-explainer/) works the same way. GitHub Pages serves the page, but your script is parsed and explained in the browser and sent nowhere; the page's Content Security Policy allows no requests to other sites, and a link to a script carries it after `#`, which browsers do not send. The same CI check covers the page, and a test opens it in Chromium, blocking every request to other sites, and keeps using it offline.
 
 This describes the extension and its web version, not VS Code, other extensions or your browser. It is provided as is, without warranty (see [LICENSE](LICENSE)); please evaluate it against your own requirements before using it with sensitive data.
 
@@ -259,7 +259,7 @@ npm run package    # build a .vsix
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
 - `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
-- Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped.
+- Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped. The web page test needs Chromium (`npx playwright-core install --with-deps chromium-headless-shell`).
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`.
 - To release, bump `version` in `package.json`, add a section to `CHANGELOG.md`, and push a tag `v<version>`. The [Release workflow](.github/workflows/release.yml) tests and packages it, waits for approval in the `release` environment, then publishes to the VS Code Marketplace and Open VSX and creates a GitHub Release; see [docs/publishing.md](docs/publishing.md) for the one-time setup.
 

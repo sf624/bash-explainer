@@ -237,7 +237,7 @@ Bash Explainer は、設計上すべてオフラインで動きます。
 
 配布する拡張に通信やプロセス起動の API が入ると、[CI のチェック](test/offline.test.ts)でビルドが失敗します（[実行履歴](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)）。ご自身で確かめることもできます。`.vsix` は zip ファイルなので中身を確認でき、ネットワークを切った環境でもそのまま動きます。
 
-[ブラウザ版](https://sf624.github.io/bash-explainer/) も同じです。ページは GitHub Pages から配信されますが、スクリプトの構文解析と解説はブラウザの中で行い、どこにも送りません。ページの Content Security Policy は他のサイトへのリクエストを一切許可していません。スクリプトを共有するリンクでは、スクリプトを `#` より後ろに入れます。ブラウザはこの部分をサーバーに送りません。ページも同じ CI のチェックの対象です。
+[ブラウザ版](https://sf624.github.io/bash-explainer/) も同じです。ページは GitHub Pages から配信されますが、スクリプトの構文解析と解説はブラウザの中で行い、どこにも送りません。ページの Content Security Policy は他のサイトへのリクエストを一切許可していません。スクリプトを共有するリンクでは、スクリプトを `#` より後ろに入れます。ブラウザはこの部分をサーバーに送りません。ページも同じ CI のチェックの対象です。さらに、ページを Chromium で開いて他のサイトへのリクエストをすべて遮断し、オフラインにしたまま使い続けるテストも行っています。
 
 ここで述べているのはこの拡張とブラウザ版の性質で、VS Code 本体、他の拡張、お使いのブラウザは含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
 
@@ -259,7 +259,7 @@ npm run package    # .vsix を作成
 - VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
 - `npm run build:web` でブラウザ版を `site/` にビルドします。`python3 -m http.server -d site` で <http://localhost:8000/> から確認できます。
 - `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
-- 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。
+- 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
 - リリースするには、`package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace と Open VSX に公開して GitHub Release を作成します。最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
 
