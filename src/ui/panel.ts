@@ -1,4 +1,3 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { Span } from '../analyzer';
 import { ExplainService } from '../service';
@@ -59,7 +58,7 @@ export class PanelController implements vscode.Disposable {
       this.post();
       return;
     }
-    const media = vscode.Uri.file(path.join(this.ctx.extensionPath, 'media'));
+    const media = vscode.Uri.joinPath(this.ctx.extensionUri, 'media');
     this.panel = vscode.window.createWebviewPanel(
       'bashExplainer.panel',
       ui[this.service.lang].title,
@@ -98,11 +97,11 @@ export class PanelController implements vscode.Disposable {
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
     const ex = this.service.explain(ed.document, line);
-    this.panel.title = `${t.title}: ${path.basename(ed.document.fileName)}:${line + 1}`;
+    this.panel.title = `${t.title}: ${fileName(ed.document)}:${line + 1}`;
     void this.panel.webview.postMessage(panelUpdate({
       lang,
       explanation: ex,
-      file: path.basename(ed.document.fileName),
+      file: fileName(ed.document),
       line,
       lineText: ed.document.lineAt(line).text,
       choice: this.service.overrideOf(ed.document),
@@ -126,7 +125,7 @@ export class PanelController implements vscode.Disposable {
     if (!ed || ed.document.isClosed) return;
     if (m.type === 'copy') {
       const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-      const md = toPlainMarkdown(this.service.explain(ed.document, line), ed.document.lineAt(line).text, `${path.basename(ed.document.fileName)}:${line + 1}`);
+      const md = toPlainMarkdown(this.service.explain(ed.document, line), ed.document.lineAt(line).text, `${fileName(ed.document)}:${line + 1}`);
       void vscode.env.clipboard.writeText(md).then(() => vscode.window.showInformationMessage(ui[this.service.lang].panel.copied));
       return;
     }
@@ -168,6 +167,11 @@ ${PANEL_BODY}
     this.highlight.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
+}
+
+/** The document's file name, from its URI (there is no file system path on the web). */
+function fileName(doc: vscode.TextDocument): string {
+  return doc.uri.path.split('/').pop() || doc.fileName;
 }
 
 function toRange(s: Span): vscode.Range {

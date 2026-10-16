@@ -50,8 +50,9 @@ export function packageInfo(name: string): Package {
 }
 
 /** Packages in a metafile's inputs (node_modules/<name>/… or node_modules/@scope/<name>/…). */
-function bundled(metafile: string): string[] {
-  const inputs = Object.keys(JSON.parse(fs.readFileSync(metafile, 'utf8')).inputs);
+function bundled(metafile: string, key?: string): string[] {
+  const json = JSON.parse(fs.readFileSync(metafile, 'utf8'));
+  const inputs = Object.keys((key ? json[key] : json).inputs);
   return [...new Set(inputs.map((p) => p.replace(/\\/g, '/').match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//)?.[1]).filter((n): n is string => !!n))];
 }
 
@@ -68,7 +69,9 @@ export function collect(): Target[] {
     node(['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${path.join(tmp, 'site')}`, `--metafile=${path.join(tmp, 'web.json')}`]);
 
     const extension: Target = { title: 'In the extension', uses: new Map() };
-    for (const name of bundled(path.join(tmp, 'extension.json'))) add(extension.uses, name, 'bundled into `dist/extension.js`');
+    // esbuild.mjs builds one bundle for VS Code on the desktop and one for VS Code on the web.
+    for (const name of bundled(path.join(tmp, 'extension.json'), 'node')) add(extension.uses, name, 'bundled into `dist/extension.js`');
+    for (const name of bundled(path.join(tmp, 'extension.json'), 'web')) add(extension.uses, name, 'bundled into `dist/web/extension.js`');
     // esbuild.mjs copies the wasm files into dist/, which the .vsix includes.
     for (const file of fs.readdirSync(path.join(root, 'dist')).filter((f) => f.endsWith('.wasm')).sort()) add(extension.uses, owner(file), `\`dist/${file}\``);
 

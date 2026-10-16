@@ -4,3 +4,4 @@ dist/
 site/
 out/
 .vscode-test/
+.vscode-test-web/

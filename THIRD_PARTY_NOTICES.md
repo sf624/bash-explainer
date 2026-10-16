@@ -9,7 +9,7 @@ Bash Explainer includes the following third-party software (MIT). Their license 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
 | [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.23.3 | MIT | `dist/tree-sitter-bash.wasm` |
-| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `dist/extension.js`; `dist/tree-sitter.wasm` |
+| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `dist/extension.js`; bundled into `dist/web/extension.js`; `dist/tree-sitter.wasm` |
 
 ## In the web version
 

@@ -1,5 +1,6 @@
 **
 !dist/extension.js
+!dist/web/extension.js
 !dist/*.wasm
 !media/**
 !package.json
