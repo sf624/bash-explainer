@@ -56,11 +56,12 @@ jobs:
     name: Publish
     needs: build
     runs-on: ubuntu-24.04
-    # Waits for approval. The Azure IDs are variables of this environment, OVSX_PAT a secret.
+    # Waits for approval. The Azure IDs are variables of this environment.
     environment: release
     permissions:
       contents: write
-      # Lets azure/login exchange the job's OIDC token for an Entra ID token (no PAT to expire).
+      # The job's OIDC token is exchanged for short-lived publishing tokens: an Entra ID token for
+      # the Marketplace (azure/login) and an Open VSX token (trusted publishing). No PAT to expire.
       id-token: write
     env:
       VSIX: bash-explainer-${{ needs.build.outputs.version }}.vsix
@@ -90,9 +91,8 @@ jobs:
         run: npx vsce publish --azure-credential --packagePath "$VSIX" --skip-duplicate
 
       - name: Publish to Open VSX
-        run: npx --yes ovsx@1.2.0 publish --packagePath "$VSIX" --skip-duplicate
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        # This workflow is registered as the extension's trusted publisher on open-vsx.org.
+        run: npx --yes ovsx@1.2.0 publish --trusted-publishing --packagePath "$VSIX" --skip-duplicate
 
       - name: Create the GitHub Release
         run: |
