@@ -140,3 +140,28 @@ describe('GitHub Actions', () => {
     assert.match(explain('workflow-defaults.yml', 11)!.notes[0], /injection/);
   });
 });
+
+describe('Python', () => {
+  it('explains a shell=True string as a /bin/sh script', () => {
+    const ex = explain('deploy.py', 6)!;
+    assert.strictEqual(ex.context[0].label, 'Python `sp.run` (a string the shell (/bin/sh) runs)');
+    assert.ok(labels('deploy.py', 6).includes('tar -czf backup.tgz data/@8'));
+    assert.ok(labels('deploy.py', 9).includes('ls *.log@11'), 'os.system');
+  });
+  it('explains a list as arguments run without a shell', () => {
+    assert.match(explain('deploy.py', 7)!.notes[0], /run directly, without a shell/);
+    assert.ok(labels('deploy.py', 7).includes('"--oneline"@19'));
+    const ssh = all(explain('deploy.py', 18)!.items);
+    assert.match(ssh.find((t) => t.label === 'host')!.explanation, /The value of the Python expression `host`/);
+  });
+  it('warns about f-strings with shell=True and strings without it', () => {
+    assert.match(explain('deploy.py', 8)!.notes[0], /^⚠ Shell injection risk/);
+    assert.match(explain('deploy.py', 10)!.notes[0], /^⚠ Without shell=True the whole string is taken as one program name/);
+  });
+  it('joins adjacent literals across lines, and skips comments and other strings', () => {
+    assert.ok(labels('deploy.py', 12).includes('wc -l@10'));
+    assert.ok(!all(explain('deploy.py', 12)!.items).some((t) => t.kind === 'error'));
+    assert.strictEqual(explain('deploy.py', 17), undefined);
+    assert.strictEqual(explain('deploy.py', 15), undefined);
+  });
+});

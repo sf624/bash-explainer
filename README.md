@@ -71,7 +71,7 @@ A faint one-line summary at the end of the cursor line. Turn it on with `bashExp
 
 ## Shell code in other files
 
-Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents, the exec form `RUN ["cmd", "arg"]`, the script of `["sh", "-c", "…"]` and `SHELL [...]`, with a warning when a `RUN` pipe would hide failures without `pipefail`), Makefile recipes, CI YAML (`run:` in GitHub Actions, `script:` in GitLab CI…), `package.json` scripts and Markdown code blocks (`sh`, `bash`, `console`…). Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
+Shell code inside other files is explained too: Dockerfile `RUN`/`CMD`/`ENTRYPOINT` (including `RUN <<EOF` here-documents, the exec form `RUN ["cmd", "arg"]`, the script of `["sh", "-c", "…"]` and `SHELL [...]`, with a warning when a `RUN` pipe would hide failures without `pipefail`), Makefile recipes, CI YAML (`run:` in GitHub Actions workflows and composite `action.yml`, `script:` in GitLab CI…), `package.json` scripts, Markdown code blocks (`sh`, `bash`, `console`…) and Python's `subprocess.run(…)`, `os.system(…)` and friends (a string with `shell=True` is a `/bin/sh` script, a list is run without a shell; a string without `shell=True` and f-strings pasted into a shell command are flagged). GitHub Actions steps follow `defaults: run: shell:`, explain `$GITHUB_OUTPUT` and the other runner files, and warn when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script. Host syntax is explained for what it is (`$(CC)`, `$@` and `$$` in make, `${{ … }}` in GitHub Actions), and each snippet is checked for the shell that runs it, e.g. `/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise. Turn this off with `bashExplain.embedded.enabled`.
 
 ## Other shells
 
@@ -101,7 +101,7 @@ The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/bu
 | `bashExplain.inline.enabled` | `false` | Show a one-line summary at the end of the cursor line |
 | `bashExplain.inline.maxLength` | `120` | Maximum length of the inline summary |
 | `bashExplain.panel.autoOpen` | `false` | Open the panel automatically when a bash script is opened |
-| `bashExplain.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json` scripts and Markdown code blocks |
+| `bashExplain.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json` scripts, Markdown code blocks and Python `subprocess` calls |
 | `bashExplain.languages` | `["shellscript"]` | Language IDs to explain |
 
 ## Limitations
