@@ -71,7 +71,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 ## 他のファイルの中のシェル
 
-他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメントも）、Makefile のレシピ、CI の YAML（GitHub Actions の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）です。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
+他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメント、exec 形式の `RUN ["cmd", "arg"]`、`["sh", "-c", "…"]` に渡すスクリプト、`SHELL [...]` も。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告）、Makefile のレシピ、CI の YAML（GitHub Actions の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）です。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
 
 ## bash 以外のシェル
 

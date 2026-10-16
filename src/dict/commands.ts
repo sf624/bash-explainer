@@ -1,3 +1,4 @@
+import { shellOptions } from './builtins';
 import { CommandDoc, cmd, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -396,11 +397,23 @@ export const commands: Record<string, CommandDoc> = {
   bash: cmd('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
     ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg'],
     ['-e', 'エラーで即終了', 'exit on error'],
+    ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを表示', 'trace commands'],
     ['-n', '構文チェックのみ', 'syntax check only'],
+    ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
     ['-l|--login', 'ログインシェルとして起動', 'act as a login shell'],
+    ['-i', '対話シェルとして起動', 'act as an interactive shell'],
+    ['-s', 'コマンドを標準入力から読む', 'read commands from stdin'],
+    ['--norc', '~/.bashrc を読まない', 'do not read ~/.bashrc'],
+    ['--noprofile', 'ログイン時の設定ファイルを読まない', 'do not read the login profile files'],
   ], { positional: [pos('実行するスクリプト', 'script to run')] }),
-  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg']]),
+  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
+    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg'],
+    ['-e', 'エラーで即終了', 'exit on error'],
+    ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
+    ['-x', '実行するコマンドを表示', 'trace commands'],
+    ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
+  ], { positional: [pos('実行するスクリプト', 'script to run')] }),
   perl: cmd('Perl を実行する（`-e` でその場のコードを実行。sed や awk の代わりのワンライナーによく使う）', 'Run Perl (`-e` runs code given on the command line; common for one-liners instead of sed/awk)', [
     ['-e', '実行する Perl のコード', 'Perl code to run', 'arg fills lang:perl'],
     ['-E', '実行する Perl のコード（say などの新機能を有効にして）', 'Perl code to run, with newer features like say', 'arg fills lang:perl'],

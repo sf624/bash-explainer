@@ -1,7 +1,7 @@
 import { tx } from '../i18n';
 import { CommandDoc, cmd, pos } from './types';
 
-const shellOptions = {
+export const shellOptions = {
   errexit: tx('コマンドが失敗したら即座にスクリプトを終了（`-e` と同じ）', 'exit immediately when a command fails (same as `-e`)'),
   nounset: tx('未定義の変数を参照したらエラー（`-u` と同じ）', 'error on unset variables (same as `-u`)'),
   pipefail: tx('パイプライン中のどれかが失敗したら、パイプライン全体を失敗扱いにする', 'a pipeline fails if any command in it fails'),
