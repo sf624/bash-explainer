@@ -181,6 +181,8 @@ perl -pie 's/a/b/' oops.txt
 git log --pretty=format:'%h %an %ar %s' --date=short
 git log --format='%C(yellow)%h%Creset %<(20)%an %s%d' -n 5
 git log --date=format:'%Y-%m-%d %H:%M' --pretty=oneline
+git log --pretty=fuller --date=iso -n 2
+git log --date=relative --format='%h %<(14)%ad %s'
 
 # --- Whole pipelines ---
 grep -i error app.log | sort | uniq -c | sort -rn | head -n 3

@@ -19,6 +19,7 @@ import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/f
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
 import { explainGitDate, explainGitFormat } from './embedded/gitformat';
+import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './examples/gitlog';
 import { explainJq } from './embedded/jq';
 import { explainPerl, perlLoopNote } from './embedded/perl';
 import { explainMode, explainUmask } from './embedded/mode';
@@ -975,6 +976,7 @@ export class Analyzer {
         if (!r) return undefined;
         tokens = r.tokens;
         note = r.note;
+        this.gitLogExample(lang, lit.text);
         break;
       }
       case 'glob': {
@@ -1331,6 +1333,39 @@ export class Analyzer {
       title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
       sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
     });
+  }
+
+  /** `git log` output for sample commits, for a `--pretty`/`--format` or `--date` value. */
+  private gitLogExample(kind: 'gitformat' | 'gitdate', value: string): void {
+    const words = (this.argCtx?.args ?? []).map((a) => literalContent(a)?.text ?? '');
+    const opt = (re: RegExp) => words.map((w) => re.exec(w)?.[1]).filter((v) => v !== undefined).pop();
+    const pretty = kind === 'gitformat' ? value : opt(/^--(?:pretty|format)=([\s\S]*)$/) ?? (words.includes('--oneline') ? 'oneline' : undefined);
+    const date = kind === 'gitdate' ? value : opt(/^--date=([\s\S]*)$/) ?? 'default';
+    const now = Date.now();
+    let commits = sampleCommits(now);
+    const count = opt(/^(?:-n|--max-count=)(\d+)$/) ?? opt(/^-(\d+)$/) ?? words.find((w, i) => words[i - 1] === '-n' && /^\d+$/.test(w));
+    if (count !== undefined) commits = commits.slice(0, Math.max(1, Number(count)));
+    try {
+      if (kind === 'gitdate') {
+        this.examples.push({
+          title: this.s('例（この形式で表示した日時）', 'Example (dates in this style)'),
+          sections: [{
+            label: this.s('例のコミットの日時がこう表示される（`%ad`・`%cd` や Date: 行）', 'How the sample commits\' dates are shown (`%ad`, `%cd`, the Date: line)'),
+            lines: commits.map((c) => visible(formatDate(c.time, date, now))),
+          }],
+        });
+        return;
+      }
+      // Multi-line formats get long; two commits show the layout.
+      const multi = !pretty || ['short', 'medium', 'full', 'fuller'].includes(pretty);
+      const lines = runGitLog(multi ? commits.slice(0, 2) : commits, pretty, date, now);
+      this.examples.push({
+        title: this.s('例（この書式での `git log` の出力）', 'Example (`git log` output with this format)'),
+        sections: [{ label: this.s('例のコミットでの出力', 'Output for sample commits'), lines: lines.map(visible) }],
+      });
+    } catch (e) {
+      if (!(e instanceof GitFormatUnsupported)) throw e;
+    }
   }
 
   /** The commands xargs runs for a sample input. */
