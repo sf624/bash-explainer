@@ -45,8 +45,8 @@ describe('judgeYq', () => {
   });
 });
 
-/** Directory with yq-<version> binaries (mikefarah) and yq-kislyuk, from $BASH_EXPLAIN_YQ. */
-const dir = process.env.BASH_EXPLAIN_YQ;
+/** Directory with yq-<version> binaries (mikefarah) and yq-kislyuk, from $BASH_EXPLAINER_YQ. */
+const dir = process.env.BASH_EXPLAINER_YQ;
 (dir ? describe : describe.skip)('minimum versions agree with the yq releases', () => {
   const vkey = (v: string) => v.split('.').map(Number).reduce((a, n) => a * 1000 + n, 0);
   const versions = dir ? fs.readdirSync(dir).filter((f) => /^yq-4\./.test(f)).map((f) => f.slice(3)).sort((a, b) => vkey(a) - vkey(b)) : [];
