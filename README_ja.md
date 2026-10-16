@@ -1,128 +1,164 @@
 # Bash Explain
 
-**bash スクリプトを1行ずつ解説** — シェルスクリプト版の [regex101](https://regex101.com/) です。
+**シェルスクリプトを1行ずつ理解する** — シェルスクリプト版の [regex101](https://regex101.com/) です。
 
-カーソルを置いた行を、コマンド・オプション・リダイレクト・変数展開などに分解して、それぞれが何をしているかを解説します。
+行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、具体例つきで解説します。
 
 [English README](README.md)
 
 ![Bash Explain デモ](images/demo.gif)
 
-## 例
+## クイックスタート
 
-```bash
-grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt
-```
+1. Marketplace から **Bash Explain** をインストールします。
+2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
+3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）です。
 
-```text
-grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダイレクト: … 全体の入出力を切り替える
-├─ grep -rn "ERROR $USER" ./src 2>&1 | sort -u — パイプライン: 各コマンドの標準出力を次のコマンドの標準入力につなぐ
-│  ├─ grep -rn "ERROR $USER" ./src 2>&1 — パターン（正規表現）に一致する行を検索して表示する
-│  │  ├─ -rn — 短いオプション -r -n をまとめて指定
-│  │  │  ├─ -r — ディレクトリ内を再帰的に検索
-│  │  │  └─ -n — 行番号を表示
-│  │  ├─ "ERROR $USER" — 検索パターン（正規表現）
-│  │  │  └─ $USER — ログインユーザー名
-│  │  ├─ ./src — 検索対象のファイル（省略時は標準入力）
-│  │  └─ 2>&1 — 標準エラー出力(fd 2)を標準出力(fd 1)と同じ出力先に向ける
-│  ├─ | — パイプ: 左のコマンドの標準出力を右のコマンドの標準入力に渡す
-│  └─ sort -u — 行を並べ替える
-│     └─ -u — 重複行を1つにまとめる
-└─ > errors.txt — 標準出力(fd 1)をファイル errors.txt に書き込む（既存の内容は上書き）
-```
+カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
-## 特長
+設定は不要で、通信も AI も使いません。[tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説します（日本語・英語）。
 
-- **コマンドとオプション** — 結合オプション（`-rn`）、値付きオプション（`-o pipefail`, `--include=*.sh`）、各引数の役割。約120のコマンド・ビルトインに対応（`grep`, `sed`, `awk`, `find`, `xargs`, `curl`, `tar`, `git`, `docker` …）
-- **入れ子のコマンド** — サブコマンド（`git commit`）や、他のコマンドから実行されるコマンド（`sudo`, `xargs`, `env`, `find -exec`）
-- **演算子とリダイレクト** — `|`, `&&`, `||`, `;`, `&`, `>`, `>>`, `2>&1`, `&>`, `>/dev/null`、ヒアドキュメント、ヒアストリング
-- **展開** — `${var:-default}`, `${file%.sh}`, `${#array[@]}`, `$?`, `$@`, `$(…)`, `<(…)`, `$((…))`。パラメータ展開は変数名・演算子・パターン・開始位置などの部品に分けて解説し、`file=report.tar.gz → report.tar` のような具体例も表示
-- **引数の中のミニ言語** — 正規表現（grep、`[[ =~ ]]`。オプションに応じて BRE / ERE / PCRE）、sed スクリプト（アドレス、`s///` とフラグ、`&`、`\1` など）、jq フィルタ（パス、パイプ、`select`、`map` など）、定番の awk プログラム（`BEGIN`/`END`、パターン、`$1`、`NR`、`print` など）も分解して解説
-- **具体例** — grep のパターンには一致する行・しない行の例を、sed スクリプト・awk プログラム・jq フィルタには入力例とその出力を表示。`sort`・`uniq`・`cut`・`tr`・`head`/`tail`・`seq`・`basename`/`dirname`・`printf`・ブレース展開（`{a,b}`、`{1..10..3}`）・グロブと `case` のパターン・`xargs`（実行されるコマンド）・`[ ]`/`[[ ]]`/`(( ))` の条件（真になる値・偽になる値）・`IFS` 付きの `read`・perl のワンライナー・`git log` の `--pretty`/`--format` と `--date`（例のコミットでの表示）にも具体例を表示し、パイプライン全体は段ごとの途中経過を表示（すべて組み込みの実行器で計算。テストで GNU sed/coreutils/findutils・gawk・jq・perl・bash・git と照合）
-- **さらに多くのミニ言語** — printf と `date` の書式（`%-10s`、`%05.2f`、`+%Y-%m-%d`。date は今の表示例も）、1つの文として読み下す `find` の条件式（`-o`、`!`、`\( \)`、`-prune -o` の定番）、`chmod`/`umask` のモード（`755` → rwxr-xr-x、`u+rwX,go-w`、`umask 022` → 644/755）、`sort -k`・`cut -f`・`tr` の指定、`getopts` のオプション文字列と `getopt -o`・`--long`（例の引数がどう並べ直されるかも表示）、perl のワンライナー（`perl -pi -e 's/…/…/g'`、`-lane`）、`git log --pretty=format:`
-- **定番の書き方と落とし穴** — よく使われる書き方（`IFS= read -r`、スクリプトのディレクトリを得る書き方、`command -v … >/dev/null 2>&1`、strict mode、`trap … EXIT` など）や、リダイレクトの評価順（`2>&1 >file` でエラーがファイルに行かない理由など）を補足
-- **条件式** — `[ ]`, `[[ ]]`, `(( ))` と `-f`, `-z`, `-eq`, `=~` などの演算子
-- **制御構文** — `if`, `for`, `while`, `until`, `case`、関数。ブロック内の行では「for ループ › if 文」のように位置も表示
-- **複数行の文** — `\` による行継続、ヒアドキュメントの本文、同じスクリプト内で定義した関数の呼び出し
-- **オフラインで即座に表示** — [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説。通信も AI も使いません
-- **日本語と英語に対応**
+## こんなことがわかります
+
+| 書いたもの | Bash Explain の解説 |
+| --- | --- |
+| `tar -czf backup.tgz -C src .` | `-c`・`-z`・`-f`・`-C src` がそれぞれ何をするか |
+| `cmd 2>&1 > out.log` | 標準出力と標準エラー出力の行き先。この書き方ではエラーがファイルに入らないこと |
+| `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
+| `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | 正規表現の部品ごとの意味と、入力例 `a=x` → 出力 `x=a` |
+| `#!/bin/sh` の中の `[[ -f $f ]]` | ⚠ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
+| Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・`package.json`・Python の中のシェルも同じように解説 |
 
 ## 表示方法
 
-ホバー・インライン要約・パネルは同時に使えます。それぞれ設定でオン/オフでき、ステータスバーの **Bash Explain** をクリックしても切り替えられます。
+| | 使い方 | 既定 |
+| --- | --- | --- |
+| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+Alt+E` | オン |
+| **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、部分にマウスを乗せるとエディタ側がハイライトされる | ホバーやエディタのタイトルバーから開く |
+| **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
 
-### ホバー（既定でオン）
-
-行にマウスを乗せると解説が表示されます。`Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）でキーボードカーソルの行を解説します。下部の **パネルで詳しく見る** で、同じ行をパネルに表示します。
+ステータスバーの **Bash Explain** をクリックすると、それぞれオン/オフできます。
 
 ![ホバー](images/hover.gif)
 
-### パネル
-
-カーソルに追従するサイドペインです。regex101 のように行を色分けして表示します。部分にマウスを乗せるとエディタ側の該当箇所がハイライトされ、クリックすると選択されます。エディタのタイトルバー・ホバーのリンク・**Bash Explain: bash の解説パネルを開く** から開けます。`bashExplain.panel.autoOpen` をオンにすると、bash スクリプトを開いたときに自動で開きます。
-
 ![パネル](images/panel.gif)
-
-### インライン（既定でオフ）
-
-カーソル行の行末に1行の要約を薄く表示します。`bashExplain.inline.enabled` でオンにします。
 
 ![インライン](images/inline.png)
 
+---
+
+## 解説できるもの
+
+| | 例 |
+| --- | --- |
+| コマンドとオプション | 約120のコマンド・組み込みコマンド（`grep`、`sed`、`awk`、`find`、`curl`、`tar`、`git`、`docker` など）。まとめたオプション（`-rn`）、値付きのオプション（`-o pipefail`、`--include=*.sh`）、サブコマンド（`git commit`）、他のコマンドから実行されるコマンド（`sudo`、`xargs`、`find -exec`） |
+| 演算子とリダイレクト | `\|`、`&&`、`\|\|`、`;`、`&`、`>`、`>>`、`2>&1`、`&>`、ヒアドキュメント、ヒアストリング。リダイレクトの順序の影響も |
+| 展開 | `${var:-default}`、`${file%.sh}`、`${#array[@]}`、`$?`、`$@`、`$(…)`、`<(…)`、`$((…))` を部品に分けて解説 |
+| 引数の中の言語 | 正規表現（オプションに応じて BRE・ERE・PCRE）、sed スクリプト、awk プログラム、jq・yq のフィルタ、perl のワンライナー、`printf`・`date` の書式、`find` の条件式、`chmod` のモード、`sort -k`・`cut -f`・`tr` の指定、`getopts`・`getopt` のオプション文字列、`git log --pretty`・`--date` |
+| 制御構文 | `if`、`for`、`while`、`case`、関数。ブロック内の行では「for ループ › if 文」のように位置も表示 |
+| 定番の書き方と落とし穴 | `IFS= read -r`、スクリプトのディレクトリを得る書き方、strict mode、`trap … EXIT`、`command -v … >/dev/null 2>&1` など |
+
+## 具体例
+
+多くの書き方に、入力例とその出力を表示します。計算は組み込みの実行器で行い、テストで実物（GNU sed・coreutils、gawk、jq、perl、bash、git、yq）と照合しています。
+
+| 対象 | 表示される内容 |
+| --- | --- |
+| `grep` のパターン、`[[ =~ ]]`、グロブ、`case` のパターン | 一致する文字列と一致しない文字列 |
+| `sed`・`awk`・`jq`・`yq`・`perl`・`sort`・`uniq`・`cut`・`tr`・`head`・`tail` | 入力例 → 出力 |
+| パイプライン全体 | 段ごとの途中経過 |
+| `${…}` の展開、`printf`、ブレース展開 | 展開・出力される値 |
+| `[ ]`・`[[ ]]`・`(( ))` | 真になる値と偽になる値 |
+| `xargs`・`read`・`getopt` | 実行されるコマンド、変数に入る値、引数の並び替え結果 |
+| `git log --pretty`・`--date` | 例のコミットでの表示 |
+
+具体例は、対応する部分の解説の真下に表示します（`bashExplain.examples.placement` で変更可）。
+
+## bash 以外のシェル向けのスクリプト
+
+解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方や、意味が変わる書き方も指摘します。
+
+```sh
+#!/bin/sh
+[[ -n $name ]] && echo -e "hi\t$name"
+# ⚠ `[[ ]]`は POSIX sh にない書き方です（dash では動きません）。代わりに `[ ]` を使う。
+# ⚠ `echo -e`は POSIX sh にない書き方です（dash では動きません）。代わりに `printf` を使う…
+```
+
+- **対応シェル:** POSIX `sh`（dash と busybox ash で動かないものを明記）、`dash`、`ash`、`yash`、`ksh`、`mksh`、`zsh`。どのシェルで何が動くかは、各シェルで実測しています。
+- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplain.shell` で指定もできます。
+
 ## 他のファイルの中のシェル
 
-他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメント、exec 形式の `RUN ["cmd", "arg"]`、`["sh", "-c", "…"]` に渡すスクリプト、`SHELL [...]` も。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告）、Makefile のレシピ、CI の YAML（GitHub Actions のワークフローと composite の `action.yml` の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）、Python の `subprocess.run(…)`・`os.system(…)` などです（`shell=True` の文字列は `/bin/sh` のスクリプト、リストはシェルを通さない実行として解説し、`shell=True` なしの文字列や f-string をシェルに渡す危険な書き方を指摘）。GitHub Actions では `defaults: run: shell:` に従い、`$GITHUB_OUTPUT` などの専用ファイルを説明し、`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むとスクリプトインジェクションの危険があることを警告します。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
+| ファイル | 解説する部分 |
+| --- | --- |
+| Dockerfile | `RUN`・`CMD`・`ENTRYPOINT`（シェル形式、`RUN <<EOF`、exec 形式、`["sh", "-c", "…"]`）と `SHELL [...]`。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告 |
+| Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明 |
+| CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
+| `package.json` | `scripts` |
+| Markdown | `sh`・`bash`・`console` などのコードブロック |
+| Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
+
+それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
 
 ## yq
 
-`yq` という名前のツールは3種類あります。mikefarah/yq v4（Go 製。jq に似た独自の式）、kislyuk/yq（Python 製。jq のラッパー）、古い mikefarah/yq v3（`yq r file a.b.c`）です。Bash Explain は、サブコマンド・オプション・関数（`-o json` や `pick` は v4、`-y` や `ascii_downcase` は kislyuk/yq と jq、`r`・`w` は v3）と、同じファイル内のインストール方法（`pip install yq`、`brew install yq`、mikefarah/yq のリリース URL、GitHub Actions のランナー）からどれ向けかを判定し、それに合わせて解説します。判定できないときは mikefarah/yq v4 として扱い、その旨を表示します。yq の行には、何として解説したか・その根拠・どの yq で動くか（mikefarah/yq v4 なら、使っている機能がそろう最初のリリース）を表示します:
+`yq` という名前のツールは3種類あり、記法がそれぞれ違います。**mikefarah/yq v4**、**kislyuk/yq**（jq のラッパー）、古い **mikefarah/yq v3** です。Bash Explain は、オプション・サブコマンド・関数や、同じファイル内のインストール方法からどれ向けかを判定し、その結果を行ごとに表示します。
 
 > yq: mikefarah/yq v4（v4.22.1 以降）として解説。根拠: `-o json` は mikefarah/yq v4 のオプション、`pick` は mikefarah/yq の関数（jq にはない）
 > 互換性: mikefarah/yq v4（v4.22.1 以降） ✓ ／ kislyuk/yq ✗（`-o json`・`pick` が使えない） ／ mikefarah/yq v3 ✗（jq 形式の式・`-o json` が使えない）
 
-具体例では、入力の YAML とその出力を、それぞれのツールの書式で表示します。各機能がどのリリースで入ったかは、4.x の各マイナーリリースの最新パッチすべてで実際に動かして調べ、具体例もテストで実物と照合しています。`bashExplain.yq.flavor` で種類を固定することもできます。
-
-## bash 以外のシェル
-
-解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方を指摘します。たとえば `#!/bin/sh` のスクリプト中の `[[ ]]`・配列・`&>`・`echo -e`・`{1..3}` などに注意を出し、移植性のある書き方を提案します。動くけれど意味が変わる書き方も補足します（`echo 'a\tb'` の `\t` は dash・yash・mksh・zsh では解釈される、zsh ではクォートしない `$var` が単語分割されない、yash と zsh の配列の添字は 1 から、ksh93 では `name() { … }` の関数内の `typeset` がローカルにならない、など）。ksh の組み込みコマンド `print`・`whence` も解説します。`*(.)` や `${(f)var}` のような zsh 独自の書き方は解析できないため、その旨を表示します。
-
-対象のシェルは shebang（`#!/bin/sh`、`#!/usr/bin/env dash`、`#!/bin/busybox sh` など）・`# shellcheck shell=` 指定・ファイル名から判定し、`bashExplain.shell` でも指定できます。対応しているのは POSIX `sh`（dash と busybox ash で動かないものを明記）・`dash`・`ash`（busybox）・`yash`・`ksh`（ksh93）・`mksh`・`zsh` です。どのシェルが何に対応しているかは各シェルで実測し、テストでも再確認しています。
+各機能がどのリリースで入ったかは、4.x の全マイナーリリースで実際に動かして調べています。判定できないときは mikefarah/yq v4 として扱います。`bashExplain.yq.flavor` で種類を固定することもできます。
 
 ## 問題パネルとクイックフィックス
 
-警告は「問題」パネル（とエディタ上の波線）にも表示されるので、行にマウスを乗せなくても気づけます。対象は、スクリプトのシェルで使えない書き方、GitHub Actions のスクリプトインジェクション、`pipefail` なしの Docker `RUN` のパイプ、`shell=True` なしの Python の文字列やシェルに値を埋め込む書き方です。意味を変えずに書き換えられる場合はクイックフィックスも出ます: `[[ ]]` → `[ ]`（変数をクォートし、`&&`・`||` は分割）、`==` → `=`、`source` → `.`、`function f` → `f()`、`&> file` → `> file 2>&1`、`|&` → `2>&1 |`。`== *.txt` のパターン一致・`=~`・`<` のように `[ ]` で表せない `[[ ]]` は、警告だけ出してクイックフィックスは出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplain.diagnostics.enabled` でオフにできます。
+警告は「問題」パネルにも表示されるので、マウスを乗せなくても気づけます。意味を変えずに書き換えられる場合は、クイックフィックスも出します。
+
+| 修正前 | 修正後 |
+| --- | --- |
+| `[[ -f $f && -n $x ]]` | `[ -f "$f" ] && [ -n "$x" ]` |
+| `[ "$a" == b ]` | `[ "$a" = b ]` |
+| `source ./lib.sh` | `. ./lib.sh` |
+| `function f {` | `f() {` |
+| `cmd &> log` | `cmd > log 2>&1` |
+| `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
+
+クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。`bashExplain.diagnostics.enabled` でオフにできます。
 
 ## コマンド
 
-| コマンド | キー | 説明 |
-| --- | --- | --- |
-| Bash Explain: カーソル行の bash を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` | カーソル行の解説を表示 |
-| Bash Explain: bash の解説パネルを開く | | サイドパネルを開く（エディタのタイトルバーからも可） |
-| Bash Explain: 表示方法を選択 | | ホバー・インライン要約・パネルの自動表示をそれぞれオン/オフ |
-| Bash Explain: 設定を開く | | この拡張の設定を開く（ホバーとパネルのリンクからも可） |
+| コマンド | ショートカット・呼び出し場所 |
+| --- | --- |
+| Bash Explain: カーソル行の bash を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` |
+| Bash Explain: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
+| Bash Explain: 表示方法を選択 | ステータスバー |
+| Bash Explain: 設定を開く | ホバー、パネル |
 
 ## 設定
 
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
-| `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
-| `bashExplain.shell` | `auto` | スクリプトの対象シェル（`auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh`）。そのシェルにない書き方を指摘 |
-| `bashExplain.yq.flavor` | `auto` | スクリプトで使う `yq` の種類（`auto`・`mikefarah4`・`kislyuk`・`mikefarah3`） |
-| `bashExplain.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
-| `bashExplain.examples.placement` | `first` | `first`（具体例を対応する部分の真下、その中の各要素の解説より先に表示） / `last`（各要素の解説の後に表示） / `bottom`（解説の後にまとめて表示） |
+| **表示** | | |
 | `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
-| `bashExplain.hover.followCursor` | `false` | カーソル移動に追従してホバーを自動表示 |
-| `bashExplain.hover.followDelay` | `400` | 追従表示までの遅延（ミリ秒） |
+| `bashExplain.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
+| `bashExplain.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
+| `bashExplain.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplain.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
-| `bashExplain.inline.maxLength` | `120` | インライン要約の最大文字数 |
-| `bashExplain.panel.autoOpen` | `false` | bash スクリプトを開いたらパネルを自動で開く |
-| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json` の scripts・Markdown のコードブロック・Python の `subprocess` 呼び出し中のシェルも解説 |
-| `bashExplain.languages` | `["shellscript"]` | 解説の対象とする言語 ID |
+| `bashExplain.inline.maxLength` | `120` | その要約の最大文字数 |
+| `bashExplain.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
+| `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
+| **確認** | | |
+| `bashExplain.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
+| `bashExplain.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
+| `bashExplain.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
+| **ファイル** | | |
+| `bashExplain.embedded.enabled` | `true` | Dockerfile・Makefile・CI の YAML・`package.json`・Markdown・Python の中のシェルも解説 |
+| `bashExplain.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 
 ## 制限事項
 
 - 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
-- 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `[[ -f a && $x =~ re ]]` のように `&&` と `=~` を混ぜたもの）。
+- 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `[[ -f a && $x =~ re ]]` のように `&&` と `=~` を混ぜたもの、`*(.)` のような zsh 独自の書き方）。
 
 ## 開発
 
@@ -135,12 +171,10 @@ npm test           # 型チェック + 単体テスト
 npm run package    # .vsix を作成
 ```
 
-VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
-`npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
-シェルごとの対応表は、`PATH` または `$BASH_EXPLAIN_SHELLS` のディレクトリにあるシェル（`dash`・`busybox`・`yash`・`ksh93`・`mksh`・`zsh`）で検証します。無いシェルのテストはスキップされます。
-
-コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に
-`cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
+- VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/sample.sh` を開いた拡張機能開発ホストが起動します。
+- `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
+- 実物と照合するテストは、`PATH` または `$BASH_EXPLAIN_SHELLS` にあるシェルと、`$BASH_EXPLAIN_YQ` にある yq を使います。無いものはスキップされます。
+- コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
 
 ## ライセンス
 
