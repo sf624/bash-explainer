@@ -7,7 +7,8 @@ import { placeExamples, ui } from './render';
 type FromWebview =
   | { type: 'ready' }
   | { type: 'highlight'; span: Span | null }
-  | { type: 'reveal'; span: Span };
+  | { type: 'reveal'; span: Span }
+  | { type: 'openSettings' };
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 export class PanelController implements vscode.Disposable {
@@ -91,7 +92,7 @@ export class PanelController implements vscode.Disposable {
     const t = ui[lang];
     const ed = this.editor;
     if (!ed || ed.document.isClosed) {
-      void this.panel.webview.postMessage({ type: 'empty', message: t.noEditor });
+      void this.panel.webview.postMessage({ type: 'empty', message: t.noEditor, settingsLabel: t.settings });
       return;
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
@@ -106,12 +107,14 @@ export class PanelController implements vscode.Disposable {
       examplesFirst: this.service.examplePlacement === 'first',
       contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
       emptyMessage: t.empty,
+      settingsLabel: t.settings,
     });
   }
 
   private onMessage(m: FromWebview): void {
     const ed = this.editor;
     if (m.type === 'ready') return this.post();
+    if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplain.openSettings');
     if (!ed || ed.document.isClosed) return;
     if (m.type === 'highlight') {
       ed.setDecorations(this.highlight, m.span ? [toRange(m.span)] : []);
@@ -138,7 +141,7 @@ export class PanelController implements vscode.Disposable {
 <link rel="stylesheet" href="${css}">
 </head>
 <body>
-<header><span id="where"></span><span id="context"></span></header>
+<header><span id="where"></span><span id="context"></span><button id="settings" type="button"></button></header>
 <pre id="line"></pre>
 <div id="notes"></div>
 <ul id="tree"></ul>

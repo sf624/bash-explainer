@@ -18,5 +18,6 @@
   "config.examples.placement": "具体例（入力例と出力など）を表示する位置。",
   "config.examples.placement.bottom": "解説の後にまとめて表示",
   "config.examples.placement.first": "対応する部分の真下に、その中の各要素の解説より先に表示",
-  "config.examples.placement.last": "対応する部分の下に、その中の各要素の解説の後に表示"
+  "config.examples.placement.last": "対応する部分の下に、その中の各要素の解説の後に表示",
+  "cmd.openSettings": "設定を開く"
 }

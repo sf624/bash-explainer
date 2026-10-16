@@ -17,6 +17,7 @@ export const ui = {
     pickMode: '解説の表示方法を選択',
     statusTooltip: 'Bash Explain: クリックで表示方法を切り替え',
     openInPanel: 'パネルで詳しく見る',
+    settings: '設定',
   },
   en: {
     title: 'Bash Explain',
@@ -33,6 +34,7 @@ export const ui = {
     pickMode: 'Choose how explanations are shown',
     statusTooltip: 'Bash Explain: click to change the display mode',
     openInPanel: 'Open in panel',
+    settings: 'Settings',
   },
 } satisfies Record<Lang, unknown>;
 
@@ -172,7 +174,8 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   };
   for (const item of ex.items) walk(item, 0);
   out.push(...examplesMarkdown(ex.examples));
-  if (panelLink) out.push('', '---', `[$(comment-discussion) ${t.openInPanel}](${panelLink})`);
+  const links = [panelLink && `[$(comment-discussion) ${t.openInPanel}](${panelLink})`, `[$(gear) ${t.settings}](command:bashExplain.openSettings)`];
+  out.push('', '---', links.filter(Boolean).join(' &nbsp;·&nbsp; '));
   return out.join('\n');
 }
 
