@@ -61,6 +61,20 @@ export const builtins: Record<string, CommandDoc> = {
     ['-u', 'オプションを無効にする', 'disable the options'],
     ['-q', '何も表示せず、終了ステータスで状態を返す', 'quiet; report via exit status'],
   ], { positional: [pos('オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)')] }),
+  print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
+    ['-n', '最後に改行を出さない', 'do not print a trailing newline'],
+    ['-r', '`\\` によるエスケープを解釈しない', 'do not interpret `\\` escapes'],
+    ['-R', '`-r` に加えて、以降の `-` で始まる引数もオプションとして扱わない', 'like `-r`, and treat later `-` arguments as text'],
+    ['-u', '指定したファイル記述子に書き出す（`-u2` で標準エラー出力）', 'write to the given file descriptor (`-u2` for stderr)', 'arg'],
+    ['-f', 'printf と同じ書式で表示する（ksh93）', 'format like printf (ksh93)', 'arg'],
+    ['-s', 'コマンド履歴に追加する', 'append to the command history'],
+    ['-l', '引数を1行ずつ表示する（zsh）', 'print each argument on its own line (zsh)'],
+  ]),
+  whence: b('コマンド名がどう解釈されるか（パスやエイリアスなど）を表示する（ksh・mksh・zsh の組み込み。bash の `type`・`command -v` に相当）', 'Show how a command name is interpreted (a ksh, mksh and zsh builtin; like bash\'s `type` / `command -v`)', [
+    ['-v', '種類（組み込み・関数・エイリアスなど）も表示する', 'say what kind of command it is'],
+    ['-p', '関数やエイリアスを無視して PATH から探す', 'search PATH only, ignoring functions and aliases'],
+    ['-a', '見つかったものをすべて表示する', 'show every match'],
+  ], { positional: [pos('調べるコマンド名', 'command name to look up')] }),
   trap: b('シグナルや終了時に実行するコマンドを登録する', 'Run a command when a signal or event occurs', [
     ['-l', 'シグナル名の一覧を表示', 'list signal names'],
     ['-p', '登録済みの trap を表示', 'show registered traps'],
