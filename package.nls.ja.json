@@ -15,7 +15,7 @@
   "config.examples.placement.first": "対応する部分の真下に、その中の各要素の解説より先に表示",
   "config.examples.placement.last": "対応する部分の下に、その中の各要素の解説の後に表示",
   "cmd.openSettings": "設定を開く",
-  "config.hover.enabled": "マウスを乗せた行の解説をホバーで表示する。オフでも **Bash Explainer: カーソル行の bash を解説**（`Ctrl+Alt+E`）は使えます。",
+  "config.hover.enabled": "マウスを乗せた行の解説をホバーで表示する。オフでも **Bash Explainer: カーソル行の bash を解説**（`Ctrl+K Ctrl+E`）は使えます。",
   "config.inline.enabled": "カーソル行の行末に1行の要約を薄く表示する。",
   "config.panel.autoOpen": "bash スクリプトを開いたら解説パネルを自動で開く。パネルは **Bash Explainer: bash の解説パネルを開く** やホバーのリンクからいつでも開けます。",
   "config.shell": "スクリプトの対象シェル。そのシェルで使えない書き方を指摘します（bash では指摘なし）。",

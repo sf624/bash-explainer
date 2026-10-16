@@ -67,9 +67,9 @@
     "keybindings": [
       {
         "command": "bashExplainer.showAtCursor",
-        "key": "ctrl+alt+e",
-        "mac": "cmd+alt+e",
-        "when": "editorTextFocus"
+        "key": "ctrl+k ctrl+e",
+        "mac": "cmd+k cmd+e",
+        "when": "editorTextFocus && bashExplainer.hasShell"
       }
     ],
     "menus": {

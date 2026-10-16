@@ -18,7 +18,7 @@
 
 1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
 2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
-3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+Alt+E`（macOS は `Cmd+Alt+E`）です。
+3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+K Ctrl+E`（macOS は `Cmd+K Cmd+E`）です。
 
 カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
@@ -39,7 +39,7 @@
 
 | | 使い方 | 既定 |
 | --- | --- | --- |
-| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+Alt+E` | オン |
+| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+K Ctrl+E` | オン |
 | **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | ホバーやエディタのタイトルバーから開く |
 | **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
 
@@ -165,7 +165,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 | コマンド | ショートカット・呼び出し場所 |
 | --- | --- |
-| Bash Explainer: カーソル行の bash を解説 | `Ctrl+Alt+E` / `Cmd+Alt+E` |
+| Bash Explainer: カーソル行の bash を解説 | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
 | Bash Explainer: 表示方法を選択 | ステータスバー |
 | Bash Explainer: 設定を開く | ホバー、パネル |
@@ -175,7 +175,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
 | **表示** | | |
-| `bashExplainer.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
+| `bashExplainer.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+K Ctrl+E` はオフでも使える） |
 | `bashExplainer.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
 | `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
