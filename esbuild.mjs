@@ -3,6 +3,8 @@ import { copyFileSync, mkdirSync } from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
+// The offline test builds the shipped bundle elsewhere to inspect it.
+const outfile = process.argv.find((a) => a.startsWith('--outfile='))?.slice('--outfile='.length) ?? 'dist/extension.js';
 
 mkdirSync('dist', { recursive: true });
 copyFileSync('node_modules/web-tree-sitter/tree-sitter.wasm', 'dist/tree-sitter.wasm');
@@ -11,7 +13,7 @@ copyFileSync('node_modules/tree-sitter-bash/tree-sitter-bash.wasm', 'dist/tree-s
 const ctx = await esbuild.context({
   entryPoints: ['src/extension.ts'],
   bundle: true,
-  outfile: 'dist/extension.js',
+  outfile,
   platform: 'node',
   format: 'cjs',
   target: 'node18',

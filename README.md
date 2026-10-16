@@ -5,6 +5,8 @@
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shun-fujioka.bash-explainer?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/shun-fujioka.bash-explainer)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+[![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
+[![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#privacy)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![lang: English](https://img.shields.io/badge/lang-English-lightgrey)
 [![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-blue)](./README.ja.md)
 
@@ -22,7 +24,7 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 
 For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
 
-No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, in English or Japanese.
+No setup, and [offline by design](#privacy): no network, no AI, no telemetry. Scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, in English or Japanese.
 
 ## What it shows
 
@@ -224,7 +226,16 @@ In-house tools are shown as *external commands* until you describe them:
 
 ## Privacy
 
-Bash Explainer runs entirely on your machine. It sends nothing over the network and collects no telemetry.
+Bash Explainer works entirely offline by design:
+
+- **No network access.** The extension contains no code that opens network connections, and the panel's Content Security Policy blocks external requests.
+- **No AI.** Scripts are parsed with tree-sitter-bash and explained from built-in dictionaries, so the same line always gets the same explanation.
+- **No telemetry.** The extension collects nothing.
+- **No external processes.** Examples are computed by built-in code; your tools are never run.
+
+A [CI check](test/offline.test.ts) fails the build if network or process APIs appear in the packaged extension ([latest runs](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)). You can also verify this yourself: the `.vsix` is a zip archive, and the extension works with networking disabled.
+
+This describes the extension itself, not VS Code or other extensions. It is provided as is, without warranty (see [LICENSE](LICENSE)); please evaluate it against your own requirements before using it with sensitive data.
 
 ## Release notes
 
