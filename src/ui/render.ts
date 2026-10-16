@@ -8,13 +8,14 @@ export const ui = {
     lineShort: (n: number) => `行 ${n}`,
     empty: 'この行には解説する内容がありません。',
     noEditor: 'bash スクリプトを開いてカーソルを置くと、その行の解説がここに表示されます。',
-    modes: {
-      hover: ['ホバー', 'マウスを乗せた行、またはコマンドで呼び出した行をフローティング表示'],
-      panel: ['パネル', '右側のペインにカーソル行の解説を常に表示'],
+    features: {
+      hover: ['ホバー', 'マウスを乗せた行の解説をフローティング表示'],
       inline: ['インライン', 'カーソル行の行末に1行の要約を薄く表示'],
-      both: ['ホバー + パネル', 'ホバーとパネルの両方を使う'],
+      panel: ['パネルを自動で開く', 'bash スクリプトを開いたら、カーソル行に追従するパネルを開く'],
     },
-    pickMode: '解説の表示方法を選択',
+    short: { hover: 'ホバー', inline: 'インライン', panel: 'パネル' },
+    off: 'オフ',
+    pickFeatures: '使う表示方法を選択（複数可）',
     statusTooltip: 'Bash Explain: クリックで表示方法を切り替え',
     openInPanel: 'パネルで詳しく見る',
     settings: '設定',
@@ -25,20 +26,22 @@ export const ui = {
     lineShort: (n: number) => `line ${n}`,
     empty: 'Nothing to explain on this line.',
     noEditor: 'Open a bash script and place the cursor on a line to see its explanation here.',
-    modes: {
-      hover: ['Hover', 'Floating explanation when hovering a line or running the command'],
-      panel: ['Panel', 'Always show the cursor line explanation in a side pane'],
+    features: {
+      hover: ['Hover', 'Floating explanation of the line under the mouse'],
       inline: ['Inline', 'Faint one-line summary at the end of the cursor line'],
-      both: ['Hover + Panel', 'Use both hover and panel'],
+      panel: ['Open the panel automatically', 'Open the panel that follows the cursor line when a bash script is opened'],
     },
-    pickMode: 'Choose how explanations are shown',
-    statusTooltip: 'Bash Explain: click to change the display mode',
+    short: { hover: 'Hover', inline: 'Inline', panel: 'Panel' },
+    off: 'Off',
+    pickFeatures: 'Choose how explanations are shown (any number)',
+    statusTooltip: 'Bash Explain: click to change how explanations are shown',
     openInPanel: 'Open in panel',
     settings: 'Settings',
   },
 } satisfies Record<Lang, unknown>;
 
-export type DisplayMode = keyof typeof ui.ja.modes;
+/** Display features that can each be turned on or off. */
+export type Feature = keyof typeof ui.ja.features;
 
 /**
  * Where worked examples go: under the token they explain, before (`first`) or after (`last`) the

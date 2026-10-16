@@ -89,23 +89,6 @@
     "configuration": {
       "title": "Bash Explain",
       "properties": {
-        "bashExplain.displayMode": {
-          "type": "string",
-          "enum": [
-            "hover",
-            "panel",
-            "inline",
-            "both"
-          ],
-          "enumDescriptions": [
-            "%config.displayMode.hover%",
-            "%config.displayMode.panel%",
-            "%config.displayMode.inline%",
-            "%config.displayMode.both%"
-          ],
-          "default": "hover",
-          "markdownDescription": "%config.displayMode%"
-        },
         "bashExplain.language": {
           "type": "string",
           "enum": [
@@ -136,6 +119,11 @@
           "default": "first",
           "description": "%config.examples.placement%"
         },
+        "bashExplain.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hover.enabled%"
+        },
         "bashExplain.hover.followCursor": {
           "type": "boolean",
           "default": false,
@@ -147,11 +135,21 @@
           "minimum": 0,
           "description": "%config.hover.followDelay%"
         },
+        "bashExplain.inline.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.inline.enabled%"
+        },
         "bashExplain.inline.maxLength": {
           "type": "number",
           "default": 120,
           "minimum": 20,
           "description": "%config.inline.maxLength%"
+        },
+        "bashExplain.panel.autoOpen": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.panel.autoOpen%"
         },
         "bashExplain.languages": {
           "type": "array",

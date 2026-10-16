@@ -37,16 +37,20 @@ export class PanelController implements vscode.Disposable {
     );
   }
 
-  /** Called on activation and whenever the display mode changes. */
-  refresh(): void {
-    if (!this.service.showsPanel()) {
-      this.panel?.dispose();
-      return;
-    }
+  /**
+   * Called on activation and when `panel.autoOpen` is turned on: open the panel for the active
+   * script. A panel the user opened stays open when auto-open is turned off.
+   */
+  autoOpen(): void {
+    if (!this.service.enabled('panel')) return;
     this.dismissed = false;
     const ed = vscode.window.activeTextEditor;
     if (ed && this.service.isTarget(ed.document)) this.open(ed);
-    else if (this.panel) this.post();
+  }
+
+  /** Re-render after a setting such as the language changes. */
+  refresh(): void {
+    this.post();
   }
 
   open(editor = vscode.window.activeTextEditor, line?: number): void {
@@ -81,7 +85,7 @@ export class PanelController implements vscode.Disposable {
     this.pinnedLine = undefined;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => {
-      if (!this.panel && this.service.showsPanel() && !this.dismissed) this.open(editor);
+      if (!this.panel && this.service.enabled('panel') && !this.dismissed) this.open(editor);
       else this.post();
     }, delay);
   }
