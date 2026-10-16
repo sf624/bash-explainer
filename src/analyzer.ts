@@ -18,6 +18,9 @@ import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
+import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
+import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
+import { YQ_DOCS } from './dict/yq';
 import { explainGetoptLong, explainGetoptShort } from './embedded/getopt';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './examples/getopt';
 import { explainGitDate, explainGitFormat } from './embedded/gitformat';
@@ -57,6 +60,14 @@ export interface Token {
 }
 
 export interface ContextEntry { label: string; line: number }
+
+/** Context for explaining a line. */
+export interface ExplainOptions {
+  /** The kind of file the shell code is in (e.g. "GitHub Actions `run:` step"). */
+  host?: string;
+  /** The `bashExplain.yq.flavor` setting. */
+  yqFlavor?: string;
+}
 
 export interface LineExplanation {
   line: number;
@@ -145,6 +156,10 @@ export class Analyzer {
   private functions = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
+  /** Context of the current explainLine call. */
+  private opts: ExplainOptions = {};
+  /** The whole text being explained (for hints such as how yq was installed). */
+  private source = '';
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   private examples: Example[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
@@ -152,8 +167,10 @@ export class Analyzer {
 
   constructor(private lang: Lang) {}
 
-  explainLine(tree: Tree, line: number, shell?: Shell): LineExplanation {
+  explainLine(tree: Tree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
     const root = tree.rootNode;
+    this.opts = opts;
+    this.source = root.text;
     this.functions.clear();
     for (const f of root.descendantsOfType('function_definition')) {
       const name = f.childForFieldName('name')?.text;
@@ -747,6 +764,13 @@ export class Analyzer {
       return t;
     }
     const head = this.commandHead(nameNode);
+    if (head.name.split('/').pop() === 'yq') {
+      // Three tools are called yq; explain the arguments as the one this command is for.
+      const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: this.source, host: this.opts.host, setting: this.opts.yqFlavor });
+      head.doc = YQ_DOCS[verdict.flavor];
+      head.explanation = this.t(head.doc.summary);
+      if (this.line === null || n.startPosition.row === this.line) this.extraNotes.push(...yqNotes(verdict, this.lang));
+    }
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
     if (head.name === 'read') this.readExample(n, args);
@@ -913,6 +937,11 @@ export class Analyzer {
       }
       case 'jq': {
         tokens = explainJq(lit.text, this.lang);
+        // kislyuk/yq passes the filter to jq, but reads and (with -y) writes YAML.
+        if (this.argCtx?.cmd.split('/').pop() === 'yq') {
+          this.yqExample(lit.text, 'kislyuk');
+          break;
+        }
         const flags = this.cmdFlags();
         const runs = jqExample(lit.text, {
           raw: flags.has('-r') || flags.has('--raw-output') || flags.has('-j') || flags.has('--join-output'),
@@ -956,6 +985,16 @@ export class Analyzer {
         tokens = r.tokens;
         const summary = role === 'to' ? trSummary(sets[0] ?? '', lit.text, this.lang) : undefined;
         note = summary ? `${r.note}${this.s('。つまり', '; that is, it ')}${summary}` : r.note;
+        break;
+      }
+      case 'yq4':
+        tokens = explainJq(lit.text, this.lang, 'yq');
+        this.yqExample(lit.text, 'mikefarah');
+        break;
+      case 'yq3path': {
+        const r = explainYq3Path(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
         break;
       }
       case 'getoptshort':
@@ -1182,6 +1221,40 @@ export class Analyzer {
       i += 2;
     }
     return vars;
+  }
+
+  /** Input and output of a yq expression, in the YAML each yq reads and prints. */
+  private yqExample(filter: string, style: YamlStyle): void {
+    const flags = this.cmdFlags();
+    const words = (this.argCtx?.args ?? []).map((a) => literalContent(a)?.text ?? '');
+    // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
+    if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
+    const format = words.map((w, i) => (/^(-o|--output-format)$/.test(w) ? words[i + 1] : /^-o=?(.+)$/.exec(w)?.[1] ?? /^--output-format=(.+)$/.exec(w)?.[1])).find(Boolean);
+    const json = style === 'mikefarah' ? format === 'json' || format === 'j' : !(flags.has('-y') || flags.has('--yaml-output') || flags.has('-Y') || flags.has('--yaml-roundtrip'));
+    if (style === 'mikefarah' && format && !json && format !== 'yaml' && format !== 'y') return;
+    const raw = style === 'mikefarah' ? !json : flags.has('-r') || flags.has('--raw-output');
+    let runs = jqExample(filter, { raw, nullInput: flags.has('-n') || flags.has('--null-input'), vars: style === 'kislyuk' ? this.jqVars() : {} });
+    // Where jq stops with an error, mikefarah/yq is often lenient (it adds a string and a number), so show nothing.
+    if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
+    if (!runs?.length) return;
+    const inPlace = flags.has('-i') || flags.has('--inplace') || flags.has('--in-place');
+    try {
+      runs.forEach((r, i) => {
+        const input = yamlLines(r.input, style);
+        const output = r.error ? [r.error] : json
+          ? r.values.map((v) => (raw && typeof v === 'string' ? v : toJson(v)))
+          : yqYamlOutput(r.values, style);
+        this.examples.push({
+          title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
+          sections: [
+            { label: this.s('入力（YAML）', 'Input (YAML)'), lines: input },
+            r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`), lines: output, empty: this.s('（出力なし）', '(no output)') },
+          ],
+        });
+      });
+    } catch (e) {
+      if (!(e instanceof YamlUnsupported)) throw e;
+    }
   }
 
   private jqExamples(runs: JqRun[]): void {

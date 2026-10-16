@@ -1,5 +1,9 @@
 import type { Lang } from '../i18n';
 import { EmbeddedToken, pick } from './types';
+import { JQ_ONLY, YQ_BUILTINS } from './yqfuncs';
+
+/** `yq`: the expression language of mikefarah/yq v4, which is jq-like with its own functions. */
+export type JqDialect = 'jq' | 'yq';
 
 type S = (ja: string, en: string) => string;
 
@@ -11,7 +15,7 @@ export interface Lex {
 }
 
 const KEYWORDS = new Set(['if', 'then', 'elif', 'else', 'end', 'as', 'def', 'reduce', 'foreach', 'try', 'catch', 'label', 'import', 'include', 'and', 'or', '__loc__']);
-const OPS = ['?//', '|=', '+=', '-=', '*=', '/=', '%=', '//=', '==', '!=', '<=', '>=', '//', '..', '|', ',', '+', '-', '*', '/', '%', '<', '>', '=', '(', ')', '[', ']', '{', '}', ':', ';', '?', '.'];
+const OPS = ['...', '?//', '|=', '+=', '-=', '*=', '/=', '%=', '//=', '==', '!=', '<=', '>=', '//', '..', '|', ',', '+', '-', '*', '/', '%', '<', '>', '=', '(', ')', '[', ']', '{', '}', ':', ';', '?', '.'];
 
 /** Built-in functions: [ja, en]. */
 const BUILTINS: Record<string, [string, string]> = {
@@ -214,11 +218,14 @@ function stringEnd(src: string, i: number): number {
 
 type Node = EmbeddedToken & { short?: string; isPipe?: boolean };
 
+/** yq node properties set with `.path prop = value`. */
+const YQ_PROPS = new Set(['line_comment', 'head_comment', 'foot_comment', 'style', 'tag', 'anchor', 'alias', 'key']);
+
 class JqParser {
   private p = 0;
   private s: S;
 
-  constructor(private src: string, private toks: Lex[], lang: Lang) {
+  constructor(private src: string, private toks: Lex[], lang: Lang, private dialect: JqDialect = 'jq') {
     this.s = pick(lang);
   }
 
@@ -269,6 +276,22 @@ class JqParser {
     if (as) {
       this.p++;
       const pat = this.next();
+      // yq: `expr as $x ireduce (init; update)`.
+      const ired = this.dialect === 'yq' ? this.peek('ireduce') : undefined;
+      if (ired) {
+        this.p++;
+        this.expect('(');
+        const init = this.pipe();
+        this.expect(';');
+        const update = this.pipe();
+        const close = this.expect(')');
+        return this.node(left.start, close.end, 'block', s(
+          `畳み込み: 初期値 \`${this.text(init)}\` から始めて、\`${this.text(left)}\` の各結果を \`${pat.text}\` に入れて \`${this.text(update)}\` で更新していく（jq の \`reduce\` に当たる）`,
+          `Fold: start from \`${this.text(init)}\` and update it with \`${this.text(update)}\` for each result of \`${this.text(left)}\` as \`${pat.text}\` (jq's \`reduce\`)`,
+        ), [left, this.opNode(as, s('左の結果を変数に入れる', 'binds the result to a variable')),
+          this.node(pat.start, pat.end, 'variable', s(`変数 \`${pat.text}\``, `Variable \`${pat.text}\``)),
+          this.node(ired.start, ired.end, 'keyword', s('`ireduce`: 畳み込み', '`ireduce`: fold')), init, update]);
+      }
       const bar = this.expect('|');
       const body = this.pipe();
       return this.node(left.start, body.end, 'block', s(
@@ -324,6 +347,18 @@ class JqParser {
       '%=': ['左のパスの値を右の値で割った余りにする', 'set the value at the path to the remainder'],
       '//=': ['左のパスの値が null・false なら右の値を設定する', 'set the path if it is null or false'],
     };
+    // yq: `.a line_comment = "x"` sets a property of the node on the left.
+    const prop = this.dialect === 'yq' && t?.type === 'ident' && YQ_PROPS.has(t.text) ? t : undefined;
+    const propOp = prop && this.toks[this.p + 1];
+    if (prop && propOp?.type === 'op' && (propOp.text === '=' || propOp.text === '|=')) {
+      this.p += 2;
+      const value = this.alternative();
+      const d = YQ_BUILTINS[prop.text];
+      return this.node(left.start, value.end, 'operator', this.s(
+        `\`${this.text(left)}\` の ${prop.text}（${d ? d[0] : ''}）を設定し、文書全体を出力する`,
+        `Set the ${prop.text} of \`${this.text(left)}\` (${d ? d[1] : ''}) and output the whole document`,
+      ), [left, this.node(prop.start, prop.end, 'function', `\`${prop.text}\`: ${d ? this.s(d[0], d[1]) : ''}`), this.opNode(propOp, this.s('設定する', 'sets it')), value]);
+    }
     if (t?.type !== 'op' || !ops[t.text]) return left;
     this.p++;
     const right = this.alternative();
@@ -521,6 +556,9 @@ class JqParser {
         return this.node(t.start, t.end, 'variable', s('`.`: 入力そのもの', '`.`: the input itself'), [], s('入力', 'the input'));
       case '..':
         return this.node(t.start, t.end, 'operator', s('`..`: 入力とそのすべての子孫を再帰的に出力する', '`..`: the input and all of its descendants'));
+      case '...':
+        if (this.dialect !== 'yq') throw new ParseError(t.start, 'unexpected ...');
+        return this.node(t.start, t.end, 'operator', s('`...`: 入力とそのすべての子孫を、マップのキーも含めて再帰的に出力する', '`...`: the input and all of its descendants, map keys included'));
       case '-': {
         const operand = this.postfix();
         return this.node(t.start, operand.end, 'operator', s('符号を反転する', 'negation'), [operand]);
@@ -561,8 +599,14 @@ class JqParser {
         if (sep.text !== ';') throw new ParseError(sep.start, 'expected ; or )');
       }
     }
-    const d = BUILTINS[name];
-    const what = d ? s(d[0], d[1]) : s('関数（jq の組み込み関数か、`def` で定義した関数）', 'a function (built-in or defined with `def`)');
+    const yq = this.dialect === 'yq';
+    const d = (yq ? YQ_BUILTINS[name] : undefined) ?? BUILTINS[name];
+    let what = d ? s(d[0], d[1]) : yq ? s('関数', 'a function') : s('関数（jq の組み込み関数か、`def` で定義した関数）', 'a function (built-in or defined with `def`)');
+    if (yq && JQ_ONLY.has(name)) what += s('（⚠ jq の関数で、mikefarah/yq にはない）', ' (⚠ a jq function; mikefarah/yq does not have it)');
+    // yq: `env(HOME)` takes the name of an environment variable, not a filter.
+    if (yq && (name === 'env' || name === 'strenv') && args.length === 1 && /^[A-Za-z_]\w*$/.test(this.text(args[0]))) {
+      args[0] = { ...args[0], kind: 'variable', explanation: s(`環境変数名 \`${this.text(args[0])}\``, `the environment variable name \`${this.text(args[0])}\``), children: [] };
+    }
     if (!args.length) return this.node(t.start, t.end, 'function', `\`${name}\`: ${what}`, [], `\`${name}\``);
     const nameNode = this.node(t.start, t.end, 'function', s('関数名', 'Function name'));
     return this.node(t.start, end, 'function', `\`${name}(…)\`: ${what}`, [nameNode, ...args.map((a, i) => ({
@@ -706,12 +750,12 @@ class JqParser {
 }
 
 /** Explain a jq filter. The top-level pipeline is returned as a flat sequence of stages and `|`. */
-export function explainJq(src: string, lang: Lang): EmbeddedToken[] {
+export function explainJq(src: string, lang: Lang, dialect: JqDialect = 'jq'): EmbeddedToken[] {
   const s = pick(lang);
   try {
     const toks = lex(src);
     if (!toks.length) return [];
-    const parser = new JqParser(src, toks, lang);
+    const parser = new JqParser(src, toks, lang, dialect);
     const root = parser.pipe();
     if (!parser.done) throw new ParseError(toks[toks.length - 1].start, 'trailing input');
     return strip(root.isPipe ? root.children : [root]);

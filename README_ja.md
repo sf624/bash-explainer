@@ -73,6 +73,15 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 
 他のファイルに書かれたシェルも解説します。対象は Dockerfile の `RUN`/`CMD`/`ENTRYPOINT`（`RUN <<EOF` のヒアドキュメント、exec 形式の `RUN ["cmd", "arg"]`、`["sh", "-c", "…"]` に渡すスクリプト、`SHELL [...]` も。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告）、Makefile のレシピ、CI の YAML（GitHub Actions のワークフローと composite の `action.yml` の `run:`、GitLab CI の `script:` など）、`package.json` の scripts、Markdown のコードブロック（`sh`・`bash`・`console` など）、Python の `subprocess.run(…)`・`os.system(…)` などです（`shell=True` の文字列は `/bin/sh` のスクリプト、リストはシェルを通さない実行として解説し、`shell=True` なしの文字列や f-string をシェルに渡す危険な書き方を指摘）。GitHub Actions では `defaults: run: shell:` に従い、`$GITHUB_OUTPUT` などの専用ファイルを説明し、`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むとスクリプトインジェクションの危険があることを警告します。make の `$(CC)`・`$@`・`$$` や GitHub Actions の `${{ … }}` のようなシェル以外の書き方はその意味を説明し、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。`bashExplain.embedded.enabled` でオフにできます。
 
+## yq
+
+`yq` という名前のツールは3種類あります。mikefarah/yq v4（Go 製。jq に似た独自の式）、kislyuk/yq（Python 製。jq のラッパー）、古い mikefarah/yq v3（`yq r file a.b.c`）です。Bash Explain は、サブコマンド・オプション・関数（`-o json` や `pick` は v4、`-y` や `ascii_downcase` は kislyuk/yq と jq、`r`・`w` は v3）と、同じファイル内のインストール方法（`pip install yq`、`brew install yq`、mikefarah/yq のリリース URL、GitHub Actions のランナー）からどれ向けかを判定し、それに合わせて解説します。判定できないときは mikefarah/yq v4 として扱い、その旨を表示します。yq の行には、何として解説したか・その根拠・どの yq で動くか（mikefarah/yq v4 なら、使っている機能がそろう最初のリリース）を表示します:
+
+> yq: mikefarah/yq v4（v4.22.1 以降）として解説。根拠: `-o json` は mikefarah/yq v4 のオプション、`pick` は mikefarah/yq の関数（jq にはない）
+> 互換性: mikefarah/yq v4（v4.22.1 以降） ✓ ／ kislyuk/yq ✗（`-o json`・`pick` が使えない） ／ mikefarah/yq v3 ✗（jq 形式の式・`-o json` が使えない）
+
+具体例では、入力の YAML とその出力を、それぞれのツールの書式で表示します。各機能がどのリリースで入ったかは、4.x の各マイナーリリースの最新パッチすべてで実際に動かして調べ、具体例もテストで実物と照合しています。`bashExplain.yq.flavor` で種類を固定することもできます。
+
 ## bash 以外のシェル
 
 解説は bash に基づきますが、スクリプトが別のシェル向けのときは、そのシェルにない書き方を指摘します。たとえば `#!/bin/sh` のスクリプト中の `[[ ]]`・配列・`&>`・`echo -e`・`{1..3}` などに注意を出し、移植性のある書き方を提案します。動くけれど意味が変わる書き方も補足します（`echo 'a\tb'` の `\t` は dash・yash・mksh・zsh では解釈される、zsh ではクォートしない `$var` が単語分割されない、yash と zsh の配列の添字は 1 から、ksh93 では `name() { … }` の関数内の `typeset` がローカルにならない、など）。ksh の組み込みコマンド `print`・`whence` も解説します。`*(.)` や `${(f)var}` のような zsh 独自の書き方は解析できないため、その旨を表示します。
@@ -98,6 +107,7 @@ grep -rn "ERROR $USER" ./src 2>&1 | sort -u > errors.txt — 入出力のリダ�
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto`（VS Code の表示言語に合わせる） / `ja` / `en` |
 | `bashExplain.shell` | `auto` | スクリプトの対象シェル（`auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh`）。そのシェルにない書き方を指摘 |
+| `bashExplain.yq.flavor` | `auto` | スクリプトで使う `yq` の種類（`auto`・`mikefarah4`・`kislyuk`・`mikefarah3`） |
 | `bashExplain.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplain.examples.placement` | `first` | `first`（具体例を対応する部分の真下、その中の各要素の解説より先に表示） / `last`（各要素の解説の後に表示） / `bottom`（解説の後にまとめて表示） |
 | `bashExplain.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+Alt+E` はオフでも使える） |
