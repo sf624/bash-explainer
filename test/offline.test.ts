@@ -1,5 +1,6 @@
 // Bash Explainer is offline by design: no network access, no AI, no telemetry and no external
-// processes. These checks keep it that way; the Privacy section of README.md links here.
+// processes; its web page runs in the browser alone. These checks keep it that way; the Privacy
+// section of README.md links here.
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -31,8 +32,19 @@ describe('offline by design', () => {
     assert.deepStrictEqual([...modules].sort(), ['path', 'vscode', 'web-tree-sitter']);
   });
 
-  it('the source and the panel script use no browser network APIs', () => {
-    for (const file of [...sourceFiles('src'), ...sourceFiles('media')]) {
+  it('the web page imports only the editor, the parser and the source', () => {
+    const modules = new Set<string>();
+    for (const file of sourceFiles('web')) {
+      for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
+        const name = m[1] ?? m[2];
+        if (!name.startsWith('.')) modules.add(name.replace(/^(@codemirror\/[^/]+).*/, '$1'));
+      }
+    }
+    for (const name of modules) assert.match(name, /^(@codemirror\/(commands|language|legacy-modes|lint|state|view)|@lezer\/highlight|web-tree-sitter)$/, name);
+  });
+
+  it('the source, the panel script and the web page use no browser network APIs', () => {
+    for (const file of [...sourceFiles('src'), ...sourceFiles('media'), ...sourceFiles('web')]) {
       const hit = read(file).match(NETWORK_APIS);
       assert.ok(!hit, `${file}: ${hit?.[0]}`);
     }
@@ -63,6 +75,35 @@ describe('offline by design', () => {
     assert.strictEqual(directives[0], "default-src 'none'");
     assert.deepStrictEqual(directives.slice(1).map((d) => d.split(/\s+/)[0]).sort(), ['script-src', 'style-src']);
     assert.doesNotMatch(csp, /https?:|\*/);
+  });
+
+  it('the web page loads only its own files and can send nothing to other sites', function () {
+    this.timeout(60000);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-site-'));
+    try {
+      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+      for (const page of ['index.html', 'panel.html']) {
+        const html = fs.readFileSync(path.join(dir, page), 'utf8');
+        const csp = html.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
+        assert.ok(csp, `${page} has no Content Security Policy`);
+        const directives = new Map(csp.split(';').map((d) => d.trim()).filter(Boolean).map((d) => [d.split(/\s+/)[0], d.split(/\s+/).slice(1)]));
+        // Nothing from other sites, and no requests but to the page's own files.
+        for (const [name, sources] of directives) {
+          for (const src of sources) assert.match(src, /^('(self|none|wasm-unsafe-eval|unsafe-inline)'|data:)$/, `${page}: ${name} ${src}`);
+        }
+        assert.ok(['default-src', 'connect-src'].every((d) => !directives.get(d) || directives.get(d)!.every((s) => s === "'self'" || s === "'none'")));
+        assert.ok(directives.has('default-src'), `${page}: no default-src`);
+        // Scripts, styles and images come from the page's own files (links to other sites may be followed by the reader).
+        for (const m of html.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)="([^"]*)"/g)) assert.doesNotMatch(m[1], /:/, `${page}: ${m[0]}`);
+      }
+      const app = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
+      // Node.js modules appear only in web-tree-sitter's code for Node.js, never run in a browser.
+      const builtins = /\b[\w$]+\(\s*"((?:node:)?(?:fs|path|http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster))"\s*\)/g;
+      assert.deepStrictEqual([...new Set([...app.matchAll(builtins)].map((m) => m[1]))].sort(), ['fs', 'path']);
+      assert.doesNotMatch(app, /telemetry|sendBeacon|WebSocket|EventSource/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('depends at run time on tree-sitter only', () => {

@@ -1,6 +1,6 @@
 # Publishing
 
-Releases are published by the [Release workflow](../.github/workflows/release.yml) when a tag `v<version>` is pushed. It publishes the same `.vsix` to the VS Code Marketplace and Open VSX and creates a GitHub Release, after approval in the `release` environment.
+Releases are published by the [Release workflow](../.github/workflows/release.yml) when a tag `v<version>` is pushed. It publishes the same `.vsix` to the VS Code Marketplace and Open VSX and creates a GitHub Release, after approval in the `release` environment. Then it updates the web page on GitHub Pages with the [Web page workflow](../.github/workflows/pages.yml).
 
 The Marketplace is reached with Microsoft Entra ID through GitHub's OpenID Connect, so there is no Azure DevOps personal access token to renew. (Global Azure DevOps PATs are retired on December 1, 2026; see [Secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).)
 
@@ -36,5 +36,11 @@ In *Settings → Environments → release* (reviewers and the `v*` tag / `main` 
 
 1. Run the [Marketplace identity](../.github/workflows/marketplace-identity.yml) workflow by hand (*Actions → Marketplace identity → Run workflow*, then approve). It prints the identity's ID.
 2. On <https://marketplace.visualstudio.com/manage>, open the `shun-fujioka` publisher, *Members → Add*, paste the ID and give it the **Contributor** role.
+
+### 4. The web page (GitHub Pages)
+
+1. In *Settings → Pages → Build and deployment*, set **Source** to **GitHub Actions**. This creates the `github-pages` environment.
+2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy.
+3. For the first deployment, run the [Web page](../.github/workflows/pages.yml) workflow by hand (*Actions → Web page → Run workflow* on `main`). The page is at <https://sf624.github.io/bash-explainer/>.
 
 After this, pushing a version tag is all a release needs.

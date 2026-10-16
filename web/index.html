@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Everything runs in this page: scripts are explained here and sent nowhere. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Explains shell scripts line by line, like regex101 for bash. Runs in your browser; your script is sent nowhere.">
+<title>Bash Explainer</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="page.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"><span>Bash Explainer</span></a>
+  <p class="tagline" id="tagline">Explains shell scripts line by line. Move the cursor to a line to see what it does.</p>
+  <nav class="links">
+    <a id="install" class="install" href="https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer">Install for VS Code</a>
+    <a href="https://github.com/sf624/bash-explainer">GitHub</a>
+  </nav>
+</header>
+<div class="toolbar">
+  <label><span id="kind-label">File</span> <select id="kind"></select></label>
+  <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
+  <button id="sample" type="button">Load the sample</button>
+  <button id="share" type="button">Copy a link to this script</button>
+  <span id="status" role="status"></span>
+</div>
+<main class="split">
+  <section class="source">
+    <div id="editor"></div>
+    <section id="problems" hidden>
+      <h2 id="problems-title">Problems</h2>
+      <ul id="problem-list"></ul>
+    </section>
+  </section>
+  <iframe id="panel" src="panel.html" title="Explanation"></iframe>
+</main>
+<footer>
+  <p id="privacy">Your script stays in this browser: it is parsed and explained here, with no server and no AI.</p>
+  <p><span id="version"></span> · <a href="https://github.com/sf624/bash-explainer/blob/main/LICENSE">MIT License</a></p>
+</footer>
+<noscript><p class="noscript">Bash Explainer needs JavaScript to run in the browser.</p></noscript>
+<script src="app.js"></script>
+</body>
+</html>

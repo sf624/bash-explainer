@@ -103,3 +103,13 @@ jobs:
           gh release create "$GITHUB_REF_NAME" "$VSIX" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
         env:
           GH_TOKEN: ${{ github.token }}
+
+  pages:
+    name: Web page
+    needs: publish
+    # The page shows the version just published.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
