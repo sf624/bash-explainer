@@ -1,5 +1,5 @@
 {
-  "name": "bash-explain",
+  "name": "bash-explainer",
   "displayName": "%displayName%",
   "description": "%description%",
   "version": "0.1.0",
@@ -42,31 +42,31 @@
   "contributes": {
     "commands": [
       {
-        "command": "bashExplain.showAtCursor",
+        "command": "bashExplainer.showAtCursor",
         "title": "%cmd.showAtCursor%",
-        "category": "Bash Explain"
+        "category": "Bash Explainer"
       },
       {
-        "command": "bashExplain.openPanel",
+        "command": "bashExplainer.openPanel",
         "title": "%cmd.openPanel%",
-        "category": "Bash Explain",
+        "category": "Bash Explainer",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "bashExplain.selectDisplayMode",
+        "command": "bashExplainer.selectDisplayMode",
         "title": "%cmd.selectDisplayMode%",
-        "category": "Bash Explain"
+        "category": "Bash Explainer"
       },
       {
-        "command": "bashExplain.openSettings",
+        "command": "bashExplainer.openSettings",
         "title": "%cmd.openSettings%",
-        "category": "Bash Explain",
+        "category": "Bash Explainer",
         "icon": "$(gear)"
       }
     ],
     "keybindings": [
       {
-        "command": "bashExplain.showAtCursor",
+        "command": "bashExplainer.showAtCursor",
         "key": "ctrl+alt+e",
         "mac": "cmd+alt+e",
         "when": "editorTextFocus"
@@ -75,28 +75,28 @@
     "menus": {
       "editor/title": [
         {
-          "command": "bashExplain.openPanel",
-          "when": "bashExplain.hasShell",
+          "command": "bashExplainer.openPanel",
+          "when": "bashExplainer.hasShell",
           "group": "navigation"
         },
         {
-          "command": "bashExplain.openSettings",
-          "when": "activeWebviewPanelId == 'bashExplain.panel'",
+          "command": "bashExplainer.openSettings",
+          "when": "activeWebviewPanelId == 'bashExplainer.panel'",
           "group": "navigation"
         }
       ],
       "editor/context": [
         {
-          "command": "bashExplain.showAtCursor",
-          "when": "bashExplain.hasShell",
+          "command": "bashExplainer.showAtCursor",
+          "when": "bashExplainer.hasShell",
           "group": "navigation@100"
         }
       ]
     },
     "configuration": {
-      "title": "Bash Explain",
+      "title": "Bash Explainer",
       "properties": {
-        "bashExplain.language": {
+        "bashExplainer.language": {
           "type": "string",
           "enum": [
             "auto",
@@ -111,7 +111,7 @@
           "default": "auto",
           "description": "%config.language%"
         },
-        "bashExplain.shell": {
+        "bashExplainer.shell": {
           "type": "string",
           "enum": [
             "auto",
@@ -138,7 +138,7 @@
           "default": "auto",
           "markdownDescription": "%config.shell%"
         },
-        "bashExplain.yq.flavor": {
+        "bashExplainer.yq.flavor": {
           "type": "string",
           "enum": [
             "auto",
@@ -155,12 +155,12 @@
           "default": "auto",
           "markdownDescription": "%config.yq.flavor%"
         },
-        "bashExplain.diagnostics.enabled": {
+        "bashExplainer.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.diagnostics.enabled%"
         },
-        "bashExplain.examples.placement": {
+        "bashExplainer.examples.placement": {
           "type": "string",
           "enum": [
             "first",
@@ -175,39 +175,39 @@
           "default": "first",
           "description": "%config.examples.placement%"
         },
-        "bashExplain.hover.enabled": {
+        "bashExplainer.hover.enabled": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.hover.enabled%"
         },
-        "bashExplain.hover.followCursor": {
+        "bashExplainer.hover.followCursor": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "%config.hover.followCursor%"
         },
-        "bashExplain.hover.followDelay": {
+        "bashExplainer.hover.followDelay": {
           "type": "number",
           "default": 400,
           "minimum": 0,
           "description": "%config.hover.followDelay%"
         },
-        "bashExplain.inline.enabled": {
+        "bashExplainer.inline.enabled": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "%config.inline.enabled%"
         },
-        "bashExplain.inline.maxLength": {
+        "bashExplainer.inline.maxLength": {
           "type": "number",
           "default": 120,
           "minimum": 20,
           "description": "%config.inline.maxLength%"
         },
-        "bashExplain.panel.autoOpen": {
+        "bashExplainer.panel.autoOpen": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "%config.panel.autoOpen%"
         },
-        "bashExplain.languages": {
+        "bashExplainer.languages": {
           "type": "array",
           "items": {
             "type": "string"
@@ -217,7 +217,7 @@
           ],
           "description": "%config.languages%"
         },
-        "bashExplain.embedded.enabled": {
+        "bashExplainer.embedded.enabled": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.embedded.enabled%"

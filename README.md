@@ -1,16 +1,16 @@
-# Bash Explain
+# Bash Explainer
 
 **Understand any shell script, one line at a time** — like [regex101](https://regex101.com/), but for bash.
 
 Hover a line and see what every command, option, redirection and `${…}` does, with worked examples.
 
-[日本語版 README はこちら](README_ja.md)
+<sub>[Japanese](README_ja.md)</sub>
 
-![Bash Explain demo](images/demo.gif)
+![Bash Explainer demo](images/demo.gif)
 
 ## Quick start
 
-1. Install **Bash Explain** from the Marketplace.
+1. Install **Bash Explainer** from the Marketplace.
 2. Open a shell script (`.sh`, `.bash`, …).
 3. Hover any line — or put the cursor on it and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS).
 
@@ -20,7 +20,7 @@ No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://
 
 ## What it shows
 
-| You write | Bash Explain tells you |
+| You write | Bash Explainer tells you |
 | --- | --- |
 | `tar -czf backup.tgz -C src .` | what `-c`, `-z`, `-f` and `-C src` each do |
 | `cmd 2>&1 > out.log` | where stdout and stderr end up — and that errors do *not* go to the file here |
@@ -37,7 +37,7 @@ No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://
 | **Panel** | A side pane that follows the cursor, colour-coded like regex101. Hover a part to highlight it in the editor | open it from the hover or the editor title bar |
 | **Inline** | A faint one-line summary at the end of the cursor line | off |
 
-Turn them on or off by clicking **Bash Explain** in the status bar.
+Turn them on or off by clicking **Bash Explainer** in the status bar.
 
 ![Hover](images/hover.gif)
 
@@ -72,11 +72,11 @@ Many constructs come with a made-up input and the output it produces. The built-
 | `xargs`, `read`, `getopt` | the commands that run, the variables that get set, how arguments are rearranged |
 | `git log --pretty` / `--date` | the output for sample commits |
 
-Examples appear right under the part they illustrate (see `bashExplain.examples.placement`).
+Examples appear right under the part they illustrate (see `bashExplainer.examples.placement`).
 
 ## Scripts for other shells
 
-Explanations follow bash. When a script is written for another shell, Bash Explain also points out what that shell does not have, and what behaves differently there:
+Explanations follow bash. When a script is written for another shell, Bash Explainer also points out what that shell does not have, and what behaves differently there:
 
 ```sh
 #!/bin/sh
@@ -86,7 +86,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 ```
 
 - **Shells:** POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`. What works where was measured with each shell.
-- **Which shell:** from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, …), a `# shellcheck shell=` line or the file name — or set `bashExplain.shell`.
+- **Which shell:** from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, …), a `# shellcheck shell=` line or the file name — or set `bashExplainer.shell`.
 
 ## Shell code in other files
 
@@ -99,16 +99,16 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 | Markdown | code blocks marked `sh`, `bash`, `console`, … |
 | Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
 
-Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Turn this off with `bashExplain.embedded.enabled`.
+Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Turn this off with `bashExplainer.embedded.enabled`.
 
 ## yq
 
-Three different tools are called `yq`, each with its own syntax: **mikefarah/yq v4**, **kislyuk/yq** (a jq wrapper) and the older **mikefarah/yq v3**. Bash Explain tells which one a command is for — from its options, subcommands and functions, and from how yq is installed in the same file — and says so on the line:
+Three different tools are called `yq`, each with its own syntax: **mikefarah/yq v4**, **kislyuk/yq** (a jq wrapper) and the older **mikefarah/yq v3**. Bash Explainer tells which one a command is for — from its options, subcommands and functions, and from how yq is installed in the same file — and says so on the line:
 
 > yq: explained as mikefarah/yq v4 (v4.22.1 or later). Because: `-o json` is a mikefarah/yq v4 option; `pick` is a mikefarah/yq function (jq has none)
 > Works with: mikefarah/yq v4 (v4.22.1 or later) ✓ / kislyuk/yq ✗ (no `-o json`, `pick`) / mikefarah/yq v3 ✗ (no jq-style expressions, `-o json`)
 
-The first release with each feature was measured on every 4.x minor release. When nothing tells, mikefarah/yq v4 is assumed; set `bashExplain.yq.flavor` to fix the choice.
+The first release with each feature was measured on every 4.x minor release. When nothing tells, mikefarah/yq v4 is assumed; set `bashExplainer.yq.flavor` to fix the choice.
 
 ## Problems panel and quick fixes
 
@@ -123,37 +123,37 @@ Warnings also appear in the Problems panel, so you see them without hovering. Wh
 | `cmd &> log` | `cmd > log 2>&1` |
 | `cmd \|& tee log` | `cmd 2>&1 \| tee log` |
 
-Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. Turn this off with `bashExplain.diagnostics.enabled`.
+Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. Turn this off with `bashExplainer.diagnostics.enabled`.
 
 ## Commands
 
 | Command | Shortcut / where |
 | --- | --- |
-| Bash Explain: Explain Bash on Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` |
-| Bash Explain: Open Bash Explanation Panel | the editor title bar, the hover |
-| Bash Explain: Choose Display | the status bar item |
-| Bash Explain: Open Settings | the hover and the panel |
+| Bash Explainer: Explain Bash on Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` |
+| Bash Explainer: Open Bash Explanation Panel | the editor title bar, the hover |
+| Bash Explainer: Choose Display | the status bar item |
+| Bash Explainer: Open Settings | the hover and the panel |
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Display** | | |
-| `bashExplain.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
-| `bashExplain.hover.followCursor` | `false` | Show the hover whenever the cursor moves |
-| `bashExplain.hover.followDelay` | `400` | Delay (ms) before it does |
-| `bashExplain.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
-| `bashExplain.inline.enabled` | `false` | One-line summary at the end of the cursor line |
-| `bashExplain.inline.maxLength` | `120` | Maximum length of that summary |
-| `bashExplain.examples.placement` | `first` | Worked examples under the part they illustrate, before (`first`) or after (`last`) its pieces, or all at the end (`bottom`) |
-| `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
+| `bashExplainer.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
+| `bashExplainer.hover.followCursor` | `false` | Show the hover whenever the cursor moves |
+| `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
+| `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
+| `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
+| `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
+| `bashExplainer.examples.placement` | `first` | Worked examples under the part they illustrate, before (`first`) or after (`last`) its pieces, or all at the end (`bottom`) |
+| `bashExplainer.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | **Checks** | | |
-| `bashExplain.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
-| `bashExplain.diagnostics.enabled` | `true` | Warnings in the Problems panel, with quick fixes |
-| `bashExplain.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
+| `bashExplainer.shell` | `auto` | The shell scripts are written for: `auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` |
+| `bashExplainer.diagnostics.enabled` | `true` | Warnings in the Problems panel, with quick fixes |
+| `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
-| `bashExplain.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json`, Markdown and Python |
-| `bashExplain.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
+| `bashExplainer.embedded.enabled` | `true` | Explain shell code in Dockerfiles, Makefiles, CI YAML, `package.json`, Markdown and Python |
+| `bashExplainer.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
 
 ## Limitations
 

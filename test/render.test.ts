@@ -55,7 +55,7 @@ describe('hover markdown', () => {
   });
 
   it('ends with links to the panel and the settings', () => {
-    assert.match(hover('ls').md, /\[\$\(comment-discussion\) Open in panel\]\(command:x\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]\(command:bashExplain\.openSettings\)$/);
+    assert.match(hover('ls').md, /\[\$\(comment-discussion\) Open in panel\]\(command:x\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]\(command:bashExplainer\.openSettings\)$/);
   });
 
   it('shows examples as headings with one code block per section', () => {
@@ -122,7 +122,7 @@ describe('dialect in the hover', () => {
     const ex = new Analyzer('en').explainLine(tree, 1, 'sh');
     tree.delete();
     const md = toMarkdown(ex, 'en');
-    assert.match(md, /^\*\*Bash Explain\*\* · Line 2 · checked for POSIX sh/);
+    assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
     assert.match(md, /> ⚠ `\[\[ \]\]` is not POSIX sh/);
   });
 });

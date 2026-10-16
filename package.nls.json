@@ -1,5 +1,5 @@
 {
-  "displayName": "Bash Explain",
+  "displayName": "Bash Explainer",
   "description": "Explain bash scripts line by line, like regex101 for shell scripts.",
   "cmd.showAtCursor": "Explain Bash on Current Line",
   "cmd.openPanel": "Open Bash Explanation Panel",
@@ -15,9 +15,9 @@
   "config.examples.placement.first": "Right under the part they illustrate, before the explanations of its pieces",
   "config.examples.placement.last": "Under the part they illustrate, after the explanations of its pieces",
   "cmd.openSettings": "Open Settings",
-  "config.hover.enabled": "Show the explanation when the mouse is over a line. **Bash Explain: Explain Bash on Current Line** (`Ctrl+Alt+E`) works even when this is off.",
+  "config.hover.enabled": "Show the explanation when the mouse is over a line. **Bash Explainer: Explain Bash on Current Line** (`Ctrl+Alt+E`) works even when this is off.",
   "config.inline.enabled": "Show a faint one-line summary at the end of the cursor line.",
-  "config.panel.autoOpen": "Open the explanation panel automatically when a bash script is opened. The panel can always be opened with **Bash Explain: Open Bash Explanation Panel** or the link in the hover.",
+  "config.panel.autoOpen": "Open the explanation panel automatically when a bash script is opened. The panel can always be opened with **Bash Explainer: Open Bash Explanation Panel** or the link in the hover.",
   "config.shell": "The shell scripts are written for. Constructs that shell does not support are pointed out (bash: no checks).",
   "config.shell.auto": "Detect from the shebang (`#!/bin/sh`…), a `# shellcheck shell=` directive or the file name; bash when unknown",
   "config.shell.sh": "POSIX sh (points out what fails in dash and busybox ash)",
