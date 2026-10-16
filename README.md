@@ -79,6 +79,10 @@ Explanations always follow bash, but when a script is written for another shell 
 
 The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/busybox sh`…), a `# shellcheck shell=` directive or the file name, and can be set with `bashExplain.shell`. Supported: POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash` (busybox), `yash`, `ksh` (ksh93), `mksh` and `zsh`. Which shell supports what was measured with each shell and is re-checked in the tests.
 
+## Problems panel and quick fixes
+
+The warnings also appear in the Problems panel (and as squiggles), so they are found without hovering: constructs the script's shell lacks, script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`, Python strings without `shell=True` or with values pasted into a shell command. Where a portable rewrite keeps the meaning, a quick fix is offered: `[[ ]]` → `[ ]` (quoting variables, splitting `&&` / `||`), `==` → `=`, `source` → `.`, `function f` → `f()`, `&> file` → `> file 2>&1`, `|&` → `2>&1 |`. A `[[ ]]` that `[ ]` cannot express (`== *.txt` patterns, `=~`, `<`) keeps its warning without a fix. Each rewrite is checked to give the same result in dash as the original in bash. Turn this off with `bashExplain.diagnostics.enabled`.
+
 ## Commands
 
 | Command | Key | Description |
@@ -94,6 +98,7 @@ The shell comes from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, `#!/bin/bu
 | --- | --- | --- |
 | `bashExplain.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |
 | `bashExplain.shell` | `auto` | The shell scripts are written for (`auto`, `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`); constructs it lacks are pointed out |
+| `bashExplain.diagnostics.enabled` | `true` | Show warnings in the Problems panel, with quick fixes |
 | `bashExplain.examples.placement` | `first` | `first` (each worked example right under the part it illustrates, before the explanations of its pieces), `last` (after them) or `bottom` (all together after the explanations) |
 | `bashExplain.hover.enabled` | `true` | Show the hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
 | `bashExplain.hover.followCursor` | `false` | Show the hover automatically when the cursor moves |

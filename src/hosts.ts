@@ -1,5 +1,5 @@
 import type { LineExplanation, Pos, Token } from './analyzer';
-import type { Shell } from './dialect';
+import { dialectIssues, Shell } from './dialect';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python';
@@ -863,6 +863,11 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
     ]);
 }
 
+const PIPEFAIL: [string, string] = [
+  '⚠ パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
+  '⚠ If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.',
+];
+
 /** Whether a pipe `|` starts on the line. */
 function pipesOn(n: import('web-tree-sitter').SyntaxNode, line: number): boolean {
   if (n.startPosition.row > line || n.endPosition.row < line) return false;
@@ -883,11 +888,53 @@ export function explainHostedLine(
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
   if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line] ?? '', lang));
   if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
-    notes.push(pick([
-      '⚠ パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
-      '⚠ If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.',
-    ]));
+    notes.push(pick(PIPEFAIL));
   }
   ex.notes.unshift(...notes);
   return remapExplanation(ex, extracted, original, lang);
+}
+
+/** A problem to show in the Problems panel, at original document positions. */
+export interface DocIssue {
+  code: string;
+  severity: 'warning' | 'info';
+  message: string;
+  startLine: number; startCol: number; endLine: number; endCol: number;
+}
+
+/** All problems in the shell parts of a host document (one pass, for diagnostics). */
+export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell): DocIssue[] {
+  const out: DocIssue[] = [];
+  const col = (line: number, c: number) => extracted.maps[line]?.[c] ?? c;
+  const at = (n: { startPosition: { row: number; column: number }; endPosition: { row: number; column: number } }) => {
+    const sameLine = n.startPosition.row === n.endPosition.row;
+    return {
+      startLine: n.startPosition.row, startCol: col(n.startPosition.row, n.startPosition.column),
+      endLine: n.startPosition.row, endCol: sameLine ? col(n.endPosition.row, n.endPosition.column) : (original[n.startPosition.row] ?? '').length,
+    };
+  };
+  const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
+  for (const region of extracted.regions) {
+    for (const issue of dialectIssues(tree.rootNode, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
+      out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.node) });
+    }
+    if (region.warnPipefail && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
+      for (let line = region.start; line <= region.end; line++) {
+        if (!pipesOn(tree.rootNode, line)) continue;
+        const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
+        out.push({ code: 'dockerPipefail', severity: 'warning', message: pick(PIPEFAIL), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
+      }
+    }
+    for (const n of region.notes ?? []) {
+      if (!n[0].startsWith('⚠')) continue;
+      const first = extracted.maps[region.start];
+      out.push({ code: 'host', severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0] ?? 0, endLine: region.start, endCol: first[first.length - 1] ?? 0 });
+    }
+  }
+  for (const sub of extracted.substitutions) {
+    if (!sub.warning) continue;
+    const c = Math.max(0, (original[sub.line] ?? '').indexOf(sub.text));
+    out.push({ code: 'injection', severity: 'warning', message: pick(sub.warning), startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
+  }
+  return out;
 }

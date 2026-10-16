@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { Analyzer, LineExplanation } from './analyzer';
 import { detectShell, Shell, SHELL_NAMES } from './dialect';
-import { explainHostedLine, Extracted, extractShell, HostKind, hostKind } from './hosts';
+import { dialectIssues } from './dialect';
+import { Fix, fixFor } from './fixes';
+import { DocIssue, explainHostedLine, Extracted, extractShell, HostKind, hostKind, hostIssues } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
@@ -91,6 +93,32 @@ export class ExplainService implements vscode.Disposable {
     }
     const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
     return analyzer.explainLine(tree, line, this.shellOf(doc));
+  }
+
+  /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
+  issues(doc: vscode.TextDocument): (DocIssue & { fix?: Fix })[] {
+    const lang = this.lang;
+    const kind = this.hostOf(doc);
+    const set = this.config.get<string>('shell', 'auto');
+    const override = set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
+    if (kind) {
+      const extracted = this.extractedOf(doc, kind);
+      if (!extracted.regions.length) return [];
+      const tree = this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text);
+      return hostIssues(tree, extracted, doc.getText().split(/\r?\n/), lang, override);
+    }
+    const shell = this.shellOf(doc);
+    if (!shell || shell === 'bash') return [];
+    const tree = this.trees.get(doc.uri.toString(), doc.version, () => doc.getText());
+    return dialectIssues(tree.rootNode, shell, lang).map((i) => {
+      const n = i.node;
+      const sameLine = n.startPosition.row === n.endPosition.row;
+      return {
+        code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message, fix: fixFor(i),
+        startLine: n.startPosition.row, startCol: n.startPosition.column,
+        endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lineAt(n.startPosition.row).text.length,
+      };
+    });
   }
 
   forget(doc: vscode.TextDocument): void {
