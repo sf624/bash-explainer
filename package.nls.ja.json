@@ -3,7 +3,7 @@
   "description": "bash スクリプトを1行ずつ解説します。シェル版 regex101。",
   "cmd.showAtCursor": "カーソル行の bash を解説",
   "cmd.openPanel": "bash の解説パネルを開く",
-  "cmd.selectDisplayMode": "表示方法を選択",
+  "cmd.selectDisplayMode": "ホバー・インライン・パネルの表示を切り替え",
   "config.language": "解説の言語。",
   "config.language.auto": "VS Code の表示言語に合わせる。",
   "config.hover.followCursor": "ホバーが有効なとき、カーソルが移動するたびに自動でホバーを表示する。",

@@ -168,7 +168,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 | --- | --- |
 | Bash Explainer: Explain Bash on Current Line | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: Open Bash Explanation Panel | the editor title bar, the hover |
-| Bash Explainer: Choose Display | the status bar item |
+| Bash Explainer: Turn Hover, Inline and Panel On or Off | the status bar item |
 | Bash Explainer: Open Settings | the hover and the panel |
 
 ## Settings
