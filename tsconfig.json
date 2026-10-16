@@ -9,5 +9,5 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src", "test", "scripts/*.ts", "integration"]
+  "include": ["src", "test", "scripts/*.ts", "integration", "cli"]
 }

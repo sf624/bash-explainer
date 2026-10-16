@@ -30,6 +30,13 @@ Bash Explainer includes the following third-party software (MIT). Their license 
 | [w3c-keyname](https://github.com/marijnh/w3c-keyname#readme) | 2.2.8 | MIT | bundled into `app.js` |
 | [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `app.js`; `tree-sitter.wasm` |
 
+## In the command-line tool (npm package bash-explainer)
+
+| Component | Version | License | Included as |
+| --- | --- | --- | --- |
+| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.23.3 | MIT | `dist/tree-sitter-bash.wasm` |
+| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `dist/cli.js`; `dist/tree-sitter.wasm` |
+
 ## License texts
 
 ### @codemirror/commands, @codemirror/language, @codemirror/legacy-modes, @codemirror/lint, @codemirror/state, @codemirror/view

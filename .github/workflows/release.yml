@@ -94,6 +94,20 @@ jobs:
         # This workflow is registered as the extension's trusted publisher on open-vsx.org.
         run: npx --yes ovsx@1.2.0 publish --trusted-publishing --packagePath "$VSIX" --skip-duplicate
 
+      # The command-line tool (cli/), as the npm package bash-explainer. Skipped until the package
+      # exists on npm with this workflow as its trusted publisher and the repository variable
+      # NPM_PUBLISH is true (docs/publishing.md). npm exchanges the job's OIDC token, and adds
+      # provenance, by itself.
+      - name: Publish the command-line tool to npm
+        if: vars.NPM_PUBLISH == 'true'
+        run: |
+          npm run build:cli
+          if npm view "bash-explainer@${{ needs.build.outputs.version }}" version >/dev/null 2>&1; then
+            echo "bash-explainer ${{ needs.build.outputs.version }} is already on npm"
+          else
+            npx --yes npm@11.20.0 publish ./cli --access public
+          fi
+
       - name: Create the GitHub Release
         run: |
           version="${{ needs.build.outputs.version }}"
