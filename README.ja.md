@@ -168,7 +168,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- |
 | Bash Explainer: カーソル行の bash を解説 | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
-| Bash Explainer: 表示方法を選択 | ステータスバー |
+| Bash Explainer: ホバー・インライン・パネルの表示を切り替え | ステータスバー |
 | Bash Explainer: 設定を開く | ホバー、パネル |
 
 ## 設定
