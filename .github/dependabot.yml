@@ -27,6 +27,10 @@ updates:
         versions: ['>=12']
       - dependency-name: '@vscode/vsce'
         versions: ['>=3']
+      # The grammar's .wasm must match the runtime, and an upgrade can change the syntax trees
+      # the explanations rely on: upgrade these two together, by hand.
+      - dependency-name: web-tree-sitter
+      - dependency-name: tree-sitter-bash
       # TypeScript 6 changes defaults tsconfig.json relies on (it no longer loads @types/* by itself).
       - dependency-name: typescript
         versions: ['>=6']
