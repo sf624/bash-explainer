@@ -2,8 +2,8 @@
 
 # Bash Explainer
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shun-fujioka.bash-explainer?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/shun-fujioka.bash-explainer)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 [![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
 [![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#privacy)
