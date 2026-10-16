@@ -5,6 +5,8 @@
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/shun-fujioka.bash-explainer?label=VS%20Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/shun-fujioka.bash-explainer)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+[![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
+[![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#プライバシー)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![lang: English](https://img.shields.io/badge/lang-English-blue)](./README.md)
 ![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-lightgrey)
 
@@ -22,7 +24,7 @@
 
 カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
-設定は不要で、通信も AI も使いません。[tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説します（日本語・英語）。
+設定は不要で、[設計上オフラインで動きます](#プライバシー)。通信も AI もテレメトリも使いません。[tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) で構文解析し、組み込みの辞書で解説します（日本語・英語）。
 
 ## こんなことがわかります
 
@@ -224,7 +226,16 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 ## プライバシー
 
-Bash Explainer の処理はすべて手元のマシンで完結します。ネットワークへの送信も、テレメトリの収集も行いません。
+Bash Explainer は、設計上すべてオフラインで動きます。
+
+- **通信しません。** 拡張にはネットワーク接続を開くコードが含まれていません。パネルも Content Security Policy で外部へのリクエストを禁止しています。
+- **AI を使いません。** tree-sitter-bash で構文解析し、組み込みの辞書で解説します。同じ行には毎回同じ解説が出ます。
+- **テレメトリはありません。** 拡張は何も収集しません。
+- **外部プロセスを起動しません。** 具体例の結果は組み込みのコードで計算します。手元のツールを実行することはありません。
+
+配布する拡張に通信やプロセス起動の API が入ると、[CI のチェック](test/offline.test.ts)でビルドが失敗します（[実行履歴](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)）。ご自身で確かめることもできます。`.vsix` は zip ファイルなので中身を確認でき、ネットワークを切った環境でもそのまま動きます。
+
+ここで述べているのはこの拡張自体の性質で、VS Code 本体や他の拡張は含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
 
 ## リリースノート
 
