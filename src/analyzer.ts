@@ -72,6 +72,8 @@ export interface ExampleSection {
 
 export interface Example {
   title: string;
+  /** The command the example is for, named in the title when the line has several commands. */
+  target?: string;
   sections: ExampleSection[];
 }
 
@@ -162,7 +164,7 @@ export class Analyzer {
       context: this.context,
       notes: [...this.notes(root, line, items), ...new Set(this.extraNotes), ...findIdioms(statements, this.lang)],
       // Each -e of sed explains the same combined script, so drop repeated examples.
-      examples: this.examples.filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
+      examples: this.titledExamples(root, line).filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;
@@ -659,9 +661,38 @@ export class Analyzer {
     return t;
   }
 
+  /** When the line runs several commands, names the one each example is for in its title. */
+  private titledExamples(root: SyntaxNode, line: number): Example[] {
+    const commands = root
+      .descendantsOfType(['command', 'test_command'], { row: line, column: 0 }, { row: line + 1, column: 0 })
+      .filter((c) => intersects(c, line));
+    if (commands.length < 2) return this.examples;
+    return this.examples.map((e) => {
+      if (!e.target) return e;
+      const target = `\`${e.target}\``;
+      const title = this.lang === 'ja'
+        ? e.title.replace(/^例/, `${target} の例`)
+        : e.title.replace(/^Example/, `Example for ${target}`);
+      return { ...e, title };
+    });
+  }
+
   // ---------------------------------------------------------------- commands
 
   private command(n: SyntaxNode): Token {
+    const before = this.examples.length;
+    const t = this.commandToken(n);
+    this.tagExamples(before, n);
+    return t;
+  }
+
+  /** Records which command the examples added since `before` belong to (inner commands tag theirs first). */
+  private tagExamples(before: number, n: SyntaxNode): void {
+    const target = shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40);
+    for (const e of this.examples.slice(before)) e.target ??= target;
+  }
+
+  private commandToken(n: SyntaxNode): Token {
     const nameNode = n.childForFieldName('name');
     const prefix: Token[] = [];
     const args: SyntaxNode[] = [];
@@ -1573,7 +1604,9 @@ export class Analyzer {
   }
 
   private test(n: SyntaxNode): Token {
+    const before = this.examples.length;
     if (this.line === null || n.startPosition.row === this.line) this.testExample(n);
+    this.tagExamples(before, n);
     const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
