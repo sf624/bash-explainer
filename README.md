@@ -18,7 +18,7 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 
 1. Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Visual Studio Marketplace.
 2. Open a shell script (`.sh`, `.bash`, …).
-3. Hover any line — or put the cursor on it and press `Ctrl+Alt+E` (`Cmd+Alt+E` on macOS).
+3. Hover any line — or put the cursor on it and press `Ctrl+K Ctrl+E` (`Cmd+K Cmd+E` on macOS).
 
 For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
 
@@ -39,7 +39,7 @@ No setup, no network, no AI: scripts are parsed with [tree-sitter-bash](https://
 
 | | How | Default |
 | --- | --- | --- |
-| **Hover** | Hover a line, or press `Ctrl+Alt+E` on the cursor line | on |
+| **Hover** | Hover a line, or press `Ctrl+K Ctrl+E` on the cursor line | on |
 | **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the hover or the editor title bar |
 | **Inline** | A faint one-line summary at the end of the cursor line | off |
 
@@ -165,7 +165,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 
 | Command | Shortcut / where |
 | --- | --- |
-| Bash Explainer: Explain Bash on Current Line | `Ctrl+Alt+E` / `Cmd+Alt+E` |
+| Bash Explainer: Explain Bash on Current Line | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: Open Bash Explanation Panel | the editor title bar, the hover |
 | Bash Explainer: Choose Display | the status bar item |
 | Bash Explainer: Open Settings | the hover and the panel |
@@ -175,7 +175,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Display** | | |
-| `bashExplainer.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+Alt+E` works either way) |
+| `bashExplainer.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+K Ctrl+E` works either way) |
 | `bashExplainer.hover.followCursor` | `false` | Show the hover whenever the cursor moves |
 | `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
