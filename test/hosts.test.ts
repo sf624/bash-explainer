@@ -46,11 +46,30 @@ describe('Dockerfile', () => {
     assert.ok(!labels('Dockerfile', 5).some((l) => l.startsWith('&&@') === false && /error/.test(l)));
     assert.ok(!all(explain('Dockerfile', 5)!.items).some((t) => t.kind === 'error'));
   });
-  it('skips flags, the exec form and non-shell lines; reads here-documents', () => {
+  it('skips flags and non-shell lines; reads here-documents', () => {
     assert.ok(labels('Dockerfile', 6)[0].endsWith('@43'));
-    assert.strictEqual(explain('Dockerfile', 7), undefined);
     assert.strictEqual(explain('Dockerfile', 1), undefined);
     assert.deepStrictEqual(explain('Dockerfile', 9)!.context.map((c) => c.label), ['Dockerfile RUN (here-document)']);
+  });
+  it('explains the exec form as a command run without a shell', () => {
+    const ex = explain('Dockerfile', 7)!;
+    assert.match(ex.notes[0], /runs the command directly, without a shell/);
+    assert.deepStrictEqual(all(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo", "exec form is not a shell"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
+    const multi = labels('Dockerfile', 17);
+    assert.ok(multi.includes('"--config"@24') && multi.includes('"--name"@12') && multi.includes('"$HOME/app.conf"@36'), multi.join());
+  });
+  it('explains SHELL, and the script of an exec-form `sh -c`', () => {
+    const shell = explain('Dockerfile', 12)!;
+    assert.match(shell.notes[0], /Later shell-form RUN, CMD and ENTRYPOINT instructions run with this command/);
+    assert.ok(labels('Dockerfile', 12).includes('"pipefail"@26'));
+    const script = explain('Dockerfile', 15)!;
+    assert.strictEqual(script.context[0].label, 'Dockerfile CMD (a script passed to `sh -c` in exec form)');
+    assert.ok(labels('Dockerfile', 15).includes('tee /var/log/app.log@64'));
+  });
+  it('warns about pipes in RUN until SHELL sets pipefail', () => {
+    assert.match(explain('Dockerfile', 10)!.notes.join(), /If a command in the middle of the pipe fails/);
+    assert.ok(!explain('Dockerfile', 18)!.notes.some((n) => /middle of the pipe/.test(n)));
+    assert.ok(!explain('Dockerfile', 3)!.notes.some((n) => /middle of the pipe/.test(n)), 'no pipe, no warning');
   });
   it('checks for /bin/sh until SHELL switches to bash', () => {
     assert.match(explain('Dockerfile', 6)!.notes.join(), /`\[\[ \]\]` is not POSIX sh/);

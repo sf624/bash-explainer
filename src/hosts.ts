@@ -11,6 +11,10 @@ export interface ShellRegion {
   /** What the snippet is, e.g. "Dockerfile RUN" (ja, en). */
   label: [string, string];
   shell?: Shell;
+  /** Notes shown on every line of the region. */
+  notes?: [string, string][];
+  /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
+  warnPipefail?: boolean;
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */
@@ -91,8 +95,8 @@ class Builder {
     o.copy(this.lines[line], from, to);
     return o;
   }
-  region(start: number, end: number, label: [string, string], shell?: Shell): void {
-    if (end >= start) this.regions.push({ start, end, label, shell });
+  region(start: number, end: number, label: [string, string], shell?: Shell, notes?: [string, string][], warnPipefail?: boolean): void {
+    if (end >= start) this.regions.push({ start, end, label, shell, notes, warnPipefail });
   }
   build(): Extracted {
     const maps = this.lines.map((l, i) => this.outs[i]?.finish(l.length) ?? [l.length]);
@@ -114,30 +118,121 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 
 // ---------------------------------------------------------------- Dockerfile
 
-function dockerfile(b: Builder): void {
-  // `SHELL ["/bin/bash", "-c"]` changes the shell for later instructions.
-  let shell: Shell = 'sh';
-  for (let i = 0; i < b.lines.length; i++) {
-    const line = b.lines[i];
-    const shellInstr = /^\s*SHELL\s+\[\s*"([^"]+)"/i.exec(line);
-    if (shellInstr) {
-      const name = shellInstr[1].split('/').pop()!;
-      shell = name === 'bash' ? 'bash' : name === 'sh' || name === 'dash' ? 'sh' : name === 'ash' ? 'ash' : shell;
+/** One string of a JSON array (the exec form), with the original column of each character. */
+interface JsonWord { line: number; start: number; end: number; value: string; cols: number[] }
+
+/** Parse a JSON array of strings starting at `[` on `line`, possibly continued with `\`. */
+function jsonWords(lines: string[], line: number, at: number): { words: JsonWord[]; last: number } | undefined {
+  const words: JsonWord[] = [];
+  let i = line;
+  let k = at + 1;
+  for (;;) {
+    const l = lines[i];
+    while (k < l.length && /[\s,]/.test(l[k])) k++;
+    if (k >= l.length || (l[k] === '\\' && !l.slice(k + 1).trim())) {
+      if (++i >= lines.length) return undefined;
+      k = 0;
       continue;
     }
-    const m = /^(\s*)(RUN|CMD|ENTRYPOINT)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i.exec(line);
+    if (l[k] === ']') return { words, last: i };
+    if (l[k] !== '"') return undefined;
+    const w: JsonWord = { line: i, start: k, end: k, value: '', cols: [] };
+    for (k++; k < l.length && l[k] !== '"'; k++) {
+      if (l[k] === '\\') {
+        const e = l[++k];
+        w.value += e === 'n' ? '\n' : e === 't' ? '\t' : e;
+        w.cols.push(k - 1);
+      } else {
+        w.value += l[k];
+        w.cols.push(k);
+      }
+    }
+    if (l[k] !== '"') return undefined;
+    w.end = ++k;
+    words.push(w);
+  }
+}
+
+/** Write exec-form words as shell words, each at its own columns. */
+function execWords(b: Builder, words: JsonWord[]): void {
+  words.forEach((w, n) => {
+    const o = (b.outs[w.line] ??= new LineOut());
+    const next = words[n + 1];
+    const char = (c: number) => o.insert(w.value[c], w.cols[c], w.cols[c] + 1);
+    if (/^[\w@%+=:,./-]+$/.test(w.value)) {
+      // A plain word reads the same to the shell, so commands and options are recognised.
+      // The first and last characters stand for the quotes too, so the word covers `"echo"`.
+      const last = w.value.length - 1;
+      for (let c = 0; c <= last; c++) o.insert(w.value[c], c === 0 ? w.start : w.cols[c], c === last ? w.end : w.cols[c] + 1);
+    } else {
+      // Single quotes keep every character literal, as the exec form does; `'` becomes `'\''`.
+      o.insert("'", w.start, w.start + 1);
+      for (let c = 0; c < w.value.length; c++) {
+        if (w.value[c] === "'") o.insert("'\\''", w.cols[c], w.cols[c] + 1);
+        else char(c);
+      }
+      o.insert("'", w.end - 1, w.end);
+    }
+    if (next && next.line === w.line) o.insert(' ', w.end, next.start);
+    else if (next) o.insert(' \\', w.end, w.end);
+  });
+}
+
+const SHELLS = /^(sh|bash|dash|ash|zsh|ksh|ksh93|mksh|yash|busybox)$/;
+
+function dockerfile(b: Builder): void {
+  // `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` changes the shell of later shell-form instructions.
+  let shell: Shell = 'sh';
+  let pipefail = false;
+  for (let i = 0; i < b.lines.length; i++) {
+    const line = b.lines[i];
+    const m = /^(\s*)(RUN|CMD|ENTRYPOINT|SHELL)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i.exec(line);
     if (!m) continue;
     const at = m[0].length;
     const instr = m[2].toUpperCase();
-    // The exec form `RUN ["cmd", "arg"]` does not use a shell.
-    if (/^\[\s*"/.test(line.slice(at))) continue;
+    if (/^\[\s*"/.test(line.slice(at))) {
+      const parsed = jsonWords(b.lines, i, at);
+      if (!parsed || !parsed.words.length) continue;
+      const { words, last } = parsed;
+      const prog = words[0].value.split('/').pop()!;
+      if (instr === 'SHELL') {
+        shell = prog === 'bash' ? 'bash' : prog === 'zsh' ? 'zsh' : prog === 'ash' || prog === 'busybox' ? 'ash' : 'sh';
+        pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
+        execWords(b, words);
+        b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [[
+          '以降の RUN・CMD・ENTRYPOINT のシェル形式は、このコマンドの最後に命令の内容を付けて実行されます（例: `/bin/bash -o pipefail -c "<RUN の内容>"`）。',
+          'Later shell-form RUN, CMD and ENTRYPOINT instructions run with this command, followed by their text (e.g. `/bin/bash -o pipefail -c "<RUN text>"`).',
+        ]]);
+        i = last;
+        continue;
+      }
+      // `RUN ["sh", "-c", "script"]`: the string after `-c` is a shell script.
+      const c = words.findIndex((w, n) => n > 0 && /^-\w*c$/.test(w.value));
+      if (SHELLS.test(prog) && c > 0 && words[c + 1]) {
+        const script = words[c + 1];
+        const o = (b.outs[script.line] ??= new LineOut());
+        for (let k = 0; k < script.value.length; k++) o.insert(script.value[k], script.cols[k], script.cols[k] + 1);
+        const target: Shell = prog === 'bash' ? 'bash' : prog === 'zsh' ? 'zsh' : prog === 'dash' ? 'dash' : prog === 'ash' || prog === 'busybox' ? 'ash' : prog === 'mksh' ? 'mksh' : /^ksh/.test(prog) ? 'ksh' : prog === 'yash' ? 'yash' : 'sh';
+        b.region(script.line, script.line, [`Dockerfile の ${instr}（exec 形式で \`${words[0].value} ${words[c].value}\` に渡すスクリプト）`, `Dockerfile ${instr} (a script passed to \`${words[0].value} ${words[c].value}\` in exec form)`], target);
+        i = last;
+        continue;
+      }
+      execWords(b, words);
+      b.region(i, last, [`Dockerfile の ${instr}（exec 形式）`, `Dockerfile ${instr} (exec form)`], 'bash', [[
+        'exec 形式（`[...]`）はシェルを通さずにコマンドを直接実行します。`$VAR` の展開・パイプ・リダイレクト・`&&` などは働かず、各要素がそのまま引数になります。',
+        'The exec form (`[...]`) runs the command directly, without a shell: `$VAR`, pipes, redirections and `&&` do not work, and each element is passed as it is.',
+      ]]);
+      i = last;
+      continue;
+    }
+    if (instr === 'SHELL') continue;
     const heredoc = /^<<-?\s*["']?(\w+)["']?/.exec(line.slice(at));
     if (heredoc) {
       // `RUN <<EOF` … `EOF`: the body is the script.
       const start = i + 1;
       let j = start;
       while (j < b.lines.length && b.lines[j].trim() !== heredoc[1]) b.plain(j++);
-      b.region(start, j - 1, [`Dockerfile の ${instr}（ヒアドキュメント）`, `Dockerfile ${instr} (here-document)`], shell);
+      b.region(start, j - 1, [`Dockerfile の ${instr}（ヒアドキュメント）`, `Dockerfile ${instr} (here-document)`], shell, undefined, instr === 'RUN' && !pipefail);
       i = j;
       continue;
     }
@@ -150,7 +245,7 @@ function dockerfile(b: Builder): void {
       while (/^\s*#/.test(b.lines[i]) && i + 1 < b.lines.length) (b.outs[i] ??= new LineOut()).insert('\\', 0, 0), i++;
       b.plain(i);
     }
-    b.region(start, i, [`Dockerfile の ${instr}`, `Dockerfile ${instr}`], shell);
+    b.region(start, i, [`Dockerfile の ${instr}`, `Dockerfile ${instr}`], shell, undefined, instr === 'RUN' && !pipefail);
   }
 }
 
@@ -456,6 +551,13 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
     .map((s) => (lang === 'ja' ? `\`${s.text}\` は${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`));
 }
 
+/** Whether a pipe `|` starts on the line. */
+function pipesOn(n: import('web-tree-sitter').SyntaxNode, line: number): boolean {
+  if (n.startPosition.row > line || n.endPosition.row < line) return false;
+  if (n.type === 'pipeline' && n.children.some((c) => c.type === '|' && c.startPosition.row === line)) return true;
+  return n.children.some((c) => pipesOn(c, line));
+}
+
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
 export function explainHostedLine(
   analyzer: { explainLine(tree: import('web-tree-sitter').Tree, line: number, shell?: Shell): LineExplanation },
@@ -465,6 +567,14 @@ export function explainHostedLine(
   if (!region) return undefined;
   const ex = analyzer.explainLine(tree, line, shell ?? region.shell);
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
-  ex.notes.unshift(...substitutionNotes(extracted, line, lang));
+  const pick = (m: [string, string]) => (lang === 'ja' ? m[0] : m[1]);
+  const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
+  if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
+    notes.push(pick([
+      '⚠ パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
+      '⚠ If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.',
+    ]));
+  }
+  ex.notes.unshift(...notes);
   return remapExplanation(ex, extracted, original, lang);
 }
