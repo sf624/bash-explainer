@@ -1762,7 +1762,8 @@ export class Analyzer {
 
     // `--name=value`
     const eq = text.indexOf('=');
-    if (text.startsWith('--') && eq > 0) {
+    // `--name=value`, and `-name=value` for commands with single-dash long options (`terraform -var-file=x`).
+    if (eq > 0 && (text.startsWith('--') || (doc?.longSingleDash && opts[text.slice(0, eq)]))) {
       const flag = text.slice(0, eq);
       const opt = opts[flag];
       if (visible(a)) {

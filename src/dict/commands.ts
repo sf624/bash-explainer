@@ -1,8 +1,73 @@
 import { shellOptions } from './builtins';
+import { ops } from './ops';
 import { system } from './system';
-import { CommandDoc, cmd, pos } from './types';
+import { CommandDoc, cmd, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
+
+/** Options of `docker run` (and `docker container run`, `podman run`). */
+const dockerRun: OptSpec[] = [
+  ['-d|--detach', 'バックグラウンドで実行', 'run in the background'],
+  ['-it', '対話的に端末付きで実行（`-i` と `-t`）', 'interactive with a TTY (`-i` + `-t`)'],
+  ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'],
+  ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'],
+  ['--rm', '終了後にコンテナを削除', 'remove the container on exit'],
+  ['-p|--publish', 'ポート公開（`ホスト:コンテナ`）', 'publish a port (`host:container`)', 'arg'],
+  ['-v|--volume', 'ボリュームをマウント（`ホスト:コンテナ`）', 'bind-mount a volume (`host:container`)', 'arg'],
+  ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'],
+  ['--name', 'コンテナ名', 'container name', 'arg'],
+  ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'],
+  ['--network', '接続するネットワーク（`host` でホストのネットワークをそのまま使う）', 'network to join (`host`: the host network)', 'arg'],
+  ['--platform', '使うプラットフォーム（`linux/amd64`…）', 'platform (`linux/amd64`…)', 'arg'],
+  ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'],
+  ['--entrypoint', 'イメージの ENTRYPOINT を置き換える', "override the image's ENTRYPOINT", 'arg'],
+  ['--privileged', 'ホストのほぼすべての権限を与える（注意）', 'give nearly all host privileges (careful)'],
+  ['--init', 'PID 1 に小さな init を置き、シグナルとゾンビを処理させる', 'run a tiny init as PID 1 to handle signals and zombies'],
+  ['-l|--label', 'ラベルを付ける', 'set a label', 'arg'],
+];
+
+/** Options of `docker build` (and `docker buildx build`). */
+const dockerBuild: OptSpec[] = [
+  ['-t|--tag', 'イメージ名とタグ', 'name and tag', 'arg'],
+  ['-f|--file', 'Dockerfile のパス', 'Dockerfile path', 'arg'],
+  ['--build-arg', 'Dockerfile の `ARG` に値を渡す（`名前=値`）', 'set a Dockerfile `ARG` (`name=value`)', 'arg'],
+  ['--platform', '対象のプラットフォーム（`linux/amd64`…）', 'target platform (`linux/amd64`…)', 'arg'],
+  ['--no-cache', 'キャッシュを使わない', 'do not use the cache'],
+  ['--pull', 'ベースイメージを取り直す', 'pull newer base images'],
+];
+
+/** Subcommands shared by docker and podman. */
+const dockerSubs: Record<string, CommandDoc> = {
+  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { positional: [pos('イメージ', 'image'), pos('コンテナで実行するコマンド', 'command to run in the container')] }),
+  build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
+  login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
+  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY']]),
+  ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
+  images: cmd('イメージ一覧を表示する', 'List images'),
+  pull: cmd('イメージを取得する', 'Pull an image'),
+  push: cmd('イメージを送信する', 'Push an image'),
+  logs: cmd('コンテナのログを表示する', 'Fetch container logs', [['-f|--follow', 'ログを追い続ける', 'follow log output']]),
+  stop: cmd('コンテナを停止する', 'Stop containers'),
+  rm: cmd('コンテナを削除する', 'Remove containers', [['-f|--force', '実行中でも強制削除', 'force removal']]),
+  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)'),
+  system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
+    ['-a|--all', '使っていないイメージもすべて削除する', 'also remove all unused images'], ['-f|--force', '確認しない', 'do not ask for confirmation'], ['--volumes', 'ボリュームも削除する', 'remove volumes too'],
+  ]),
+  buildx: cmd('BuildKit でビルドする（マルチプラットフォームなど）。`buildx build`、`buildx bake`', 'Build with BuildKit (multi-platform and more): `buildx build`, `buildx bake`', [
+    ...dockerBuild,
+    ['--push', 'ビルドしたイメージをレジストリに送る', 'push the result to a registry'], ['--load', 'ビルドしたイメージをローカルの Docker に読み込む', 'load the result into the local Docker'],
+    ['--progress', '進捗の表示形式（`plain`、`quiet`…）', 'progress output (`plain`, `quiet`…)', 'arg'], ['--print', 'ビルドせず設定を表示（`bake`）', 'print the configuration without building (`bake`)'],
+  ]),
+  container: cmd('コンテナを操作する（`run`、`ls`、`rm`… `docker run` などの正式な名前）', 'Manage containers (`run`, `ls`, `rm`…; the long names of `docker run` and others)', dockerRun),
+  image: cmd('イメージを操作する（`ls`、`rm`、`prune`…）', 'Manage images (`ls`, `rm`, `prune`…)', [['-a|--all', 'すべて', 'all'], ['-f|--force', '確認しない・強制する', 'force, do not ask']]),
+  inspect: cmd('コンテナやイメージの詳細を JSON で表示する', 'Show low-level details of containers or images as JSON', [['-f|--format', 'Go テンプレートで取り出す（`{{.State.Status}}`…）', 'pick values with a Go template (`{{.State.Status}}`…)', 'arg']], { positional: [pos('コンテナまたはイメージ', 'container or image')] }),
+  volume: cmd('ボリュームを操作する（`create`、`ls`、`rm`、`prune`）', 'Manage volumes (`create`, `ls`, `rm`, `prune`)'),
+  network: cmd('ネットワークを操作する（`create`、`ls`、`connect`…）', 'Manage networks (`create`, `ls`, `connect`…)'),
+  tag: cmd('イメージに別の名前（タグ）を付ける', 'Give an image another name (tag)', [], { positional: [pos('元のイメージ', 'source image'), pos('新しい名前', 'new name')] }),
+  save: cmd('イメージを tar に書き出す', 'Write images to a tar archive', [['-o|--output', '書き出すファイル', 'output file', 'arg']]),
+  load: cmd('tar からイメージを読み込む', 'Load images from a tar archive', [['-i|--input', '読み込むファイル', 'input file', 'arg']]),
+  cp: cmd('コンテナとの間でファイルをコピーする（`コンテナ:パス`）', 'Copy files to or from a container (`container:path`)'),
+};
 
 export const commands: Record<string, CommandDoc> = {
   ls: cmd('ディレクトリの中身（ファイル一覧）を表示する', 'List directory contents', [
@@ -126,6 +191,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-r|--no-run-if-empty', '入力が空ならコマンドを実行しない', 'do not run if input is empty'],
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
     ['-d|--delimiter', '入力の区切り文字', 'input delimiter', 'arg'],
+    ['-L|--max-lines', '入力のこの行数ごとに1回実行する', 'run once per this many input lines', 'arg'],
   ], { wraps: true }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
@@ -189,6 +255,10 @@ export const commands: Record<string, CommandDoc> = {
   curl: cmd('URL を指定してデータを送受信する（HTTP リクエストなど）', 'Transfer data to or from a URL (HTTP requests etc.)', [
     ['-s|--silent', '進捗やエラーを表示しない', 'silent mode'],
     ['--retry', '一時的なエラーのとき、この回数まで再試行する', 'retry this many times on transient errors', 'arg'],
+    ['--retry-delay', '再試行の間隔（秒）', 'seconds between retries', 'arg'],
+    ['--retry-all-errors', 'どんなエラーでも再試行する', 'retry on any error'],
+    ['--connect-timeout', '接続までの時間切れ（秒）', 'seconds allowed for connecting', 'arg'],
+    ['-m|--max-time', '全体の時間切れ（秒）', 'seconds allowed in total', 'arg'],
     ['--compressed', '圧縮した転送を求め、受け取ったら展開する', 'ask for a compressed response and decompress it'],
     ['-V|--version', '版と対応する機能を表示する', 'print the version and features'],
     ['-S|--show-error', '`-s` と併用時もエラーは表示する', 'show errors even with `-s`'],
@@ -223,6 +293,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-J|--xz', 'xz で圧縮・展開する', 'xz'],
     ['-v|--verbose', '処理したファイル名を表示', 'list processed files'],
     ['-C|--directory', 'このディレクトリに移動してから処理', 'change to this directory first', 'arg'],
+    ['--transform|--xform', 'アーカイブ内のパスを sed の置換で書き換える（`s,^,prefix/,`）', 'rewrite member paths with a sed substitution (`s,^,prefix/,`)', 'arg'],
     ['--strip-components', '展開するとき、パスの先頭からこの数の階層を取り除く（`--strip-components=1` で最上位のフォルダを外す）', 'strip this many leading path parts when extracting (`--strip-components=1` drops the top folder)', 'arg'],
     ['--exclude', '除外するパターン', 'exclude pattern', 'arg'],
   ]),
@@ -292,6 +363,8 @@ export const commands: Record<string, CommandDoc> = {
     ['-d|--date', '現在時刻の代わりに指定した日時を使う（例: `yesterday`）', 'use the given date instead of now (e.g. `yesterday`)', 'arg'],
     ['-u|--utc', 'UTC で表示', 'use UTC'],
     ['-I|--iso-8601', 'ISO 8601 形式で表示', 'ISO 8601 format'],
+    ['-r|--reference', 'このファイルの更新日時を表示する（BSD / macOS では UNIX 時刻を指定）', "show this file's modification time (BSD/macOS: a Unix timestamp)", 'arg'],
+    ['-R|--rfc-email', 'メールの形式（RFC 5322）で表示', 'RFC 5322 (e-mail) format'],
   ], { positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'] }),
   sleep: cmd('指定した時間だけ待つ', 'Pause for a duration', [], { positional: [pos('待つ時間（秒。`1m`, `0.5` なども可）', 'duration in seconds (`1m`, `0.5`… also allowed)')] }),
   diff: cmd('2つのファイルの差分を表示する', 'Compare files line by line', [
@@ -322,6 +395,9 @@ export const commands: Record<string, CommandDoc> = {
     ['--delete', '転送元にないファイルを転送先から削除（注意）', 'delete extraneous files from the destination (careful!)'],
     ['--exclude', '除外するパターン', 'exclude pattern', 'arg'],
     ['-e', '使うリモートシェル（例: `ssh -p 2222`）', 'remote shell to use', 'arg'],
+    ['-h|--human-readable', 'サイズを読みやすい単位で表示', 'human-readable sizes'],
+    ['-r|--recursive', 'ディレクトリを再帰的に', 'recurse into directories'],
+    ['--progress', '進捗を表示', 'show progress'],
   ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)'), pos('転送先', 'destination')] }),
   sudo: cmd('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
     ['-u|--user', '実行するユーザー', 'run as this user', 'arg'],
@@ -373,6 +449,8 @@ export const commands: Record<string, CommandDoc> = {
   ]),
   stat: cmd('ファイルの詳細情報（サイズ・権限・日時など）を表示する', 'Display file status (size, permissions, times…)', [
     ['-c|--format', '表示書式（例: `%s` はサイズ）', 'output format (e.g. `%s` = size)', 'arg'],
+    ['-f|--file-system', 'ファイルでなく、それがあるファイルシステムの情報（Linux。macOS の `-f` は書式の指定）', 'the file system instead of the file (Linux; on macOS `-f` gives the format)'],
+    ['-L|--dereference', 'シンボリックリンクの先を見る', 'follow symbolic links'],
   ]),
   du: cmd('ファイル・ディレクトリのディスク使用量を表示する', 'Estimate disk usage', [
     ['-s|--summarize', '合計だけを表示', 'show only a total'],
@@ -386,6 +464,8 @@ export const commands: Record<string, CommandDoc> = {
   install: cmd('ファイルをコピーし、権限や所有者を設定する', 'Copy files and set attributes', [
     ['-m|--mode', '権限', 'permission mode', 'arg lang:mode'],
     ['-d|--directory', 'ディレクトリを作成', 'create directories'],
+    ['-D', 'コピー先の親ディレクトリも作る', 'create the leading directories of the destination'],
+    ['-o|--owner', '所有者', 'owner', 'arg'], ['-g|--group', 'グループ', 'group', 'arg'],
   ]),
   tac: cmd('ファイルを末尾の行から逆順に表示する', 'Print files in reverse line order'),
   rev: cmd('各行の文字を左右反転する', 'Reverse characters of each line'),
@@ -398,7 +478,11 @@ export const commands: Record<string, CommandDoc> = {
     ['-t|--table', '表形式に揃える', 'create a table'],
     ['-s|--separator', '入力の区切り文字', 'input separator', 'arg'],
   ]),
-  comm: cmd('ソート済みの2ファイルを比較し、共通行・片方だけの行を表示する', 'Compare two sorted files line by line'),
+  comm: cmd('ソート済みの2ファイルを比較し、共通行・片方だけの行を表示する（3列: 1つ目だけ、2つ目だけ、両方）', 'Compare two sorted files line by line (3 columns: only in the first, only in the second, in both)', [
+    ['-1', '1列目（1つ目のファイルだけにある行）を出さない', 'leave out column 1 (lines only in the first file)'],
+    ['-2', '2列目（2つ目のファイルだけにある行）を出さない', 'leave out column 2 (lines only in the second file)'],
+    ['-3', '3列目（両方にある行）を出さない（`-23` で1つ目だけにある行）', 'leave out column 3 (lines in both; `-23`: lines only in the first)'],
+  ], { positional: [pos('ソート済みのファイル1', 'sorted file 1'), pos('ソート済みのファイル2', 'sorted file 2')] }),
   split: cmd('ファイルを複数に分割する', 'Split a file into pieces', [
     ['-l|--lines', '1ファイルあたりの行数', 'lines per file', 'arg'],
     ['-b|--bytes', '1ファイルあたりのサイズ', 'size per file', 'arg'],
@@ -454,11 +538,20 @@ export const commands: Record<string, CommandDoc> = {
   ], { positional: [pos('ビルドするターゲット', 'target to build')] }),
   git: cmd('Git バージョン管理システム', 'Git version control', [
     ['-C', 'このディレクトリで実行', 'run as if started in this directory', 'arg'],
+    ['-c', '設定を1つ上書きして実行する（`-c 名前=値`）', 'run with one setting overridden (`-c name=value`)', 'arg'],
+    ['--no-pager', 'ページャを使わない', 'do not use a pager'],
   ], {
     subcommands: {
+      submodule: cmd('サブモジュールを操作する（`update --init --recursive` で取得）', 'Manage submodules (`update --init --recursive` fetches them)', [['--init', 'まだ初期化していないものも初期化する', 'initialise those not yet initialised'], ['--recursive', '入れ子のサブモジュールも', 'nested submodules too'], ['--remote', '追跡するブランチの最新にする', "update to the tracked branch's latest"], ['--depth', '取得する履歴の深さ', 'history depth', 'arg']]),
+      'show-ref': cmd('参照（ブランチやタグ）とそのコミットを一覧表示する', 'List references and their commits', [['--verify', 'この参照があるかを確かめる', 'check that this exact reference exists'], ['-q|--quiet', '何も表示せず、終了ステータスで返す', 'print nothing; report via the exit status'], ['--tags', 'タグだけ', 'tags only'], ['--heads', 'ブランチだけ', 'branches only']]),
+      'symbolic-ref': cmd('HEAD などが指す参照を表示する（今のブランチ名）', 'Show what a symbolic reference such as HEAD points to (the current branch)', [['--short', '`refs/heads/` を除いた短い名前', 'short name without `refs/heads/`'], ['-q|--quiet', 'ブランチにいないときも何も表示しない', 'print nothing when not on a branch']]),
+      'ls-remote': cmd('リモートの参照を一覧表示する（クローンせずに）', "List a remote's references (without cloning)", [['--tags', 'タグだけ', 'tags only'], ['--heads|--branches', 'ブランチだけ', 'branches only'], ['--refs', '`^{}` の行を除く', 'leave out `^{}` lines']]),
+      lfs: cmd('Git LFS（大きなファイル）を操作する（`install`、`pull`、`track`）', 'Git LFS for large files (`install`, `pull`, `track`)', [['--skip-repo', 'このリポジトリのフックは入れない', 'do not install hooks in this repository'], ['--system', 'システム全体の設定にする', 'configure system-wide']]),
+      worktree: cmd('作業ツリーを追加・削除する（`add`、`remove`、`list`）', 'Add or remove working trees (`add`, `remove`, `list`)', [['-f|--force', '強制する', 'force'], ['-d|--detach', 'ブランチにしない（HEAD を切り離す）', 'detached HEAD']]),
+      archive: cmd('リポジトリの中身を tar や zip に書き出す', 'Write the tree to a tar or zip archive', [['-o|--output', '書き出すファイル', 'output file', 'arg'], ['--format', '形式（`tar`、`zip`、`tar.gz`）', 'format (`tar`, `zip`, `tar.gz`)', 'arg'], ['--prefix', '中のパスの先頭に付ける', 'prefix for the paths inside', 'arg']]),
       clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']]),
       add: cmd('変更をステージする', 'Stage changes', [['-A|--all', '全ての変更をステージ', 'stage all changes'], ['-p|--patch', '変更を対話的に選んでステージ', 'stage hunks interactively']]),
-      commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output']]),
+      commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output'], ['-s|--signoff', '`Signed-off-by:` の行を付ける', 'add a `Signed-off-by:` line'], ['--allow-empty', '変更がなくてもコミットする', 'commit even with no changes'], ['--no-verify', 'フックを実行しない', 'skip the hooks']]),
       show: cmd('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']]),
       'ls-files': cmd('Git が知っているファイルを一覧表示する', 'List the files Git knows about', [['-c|--cached', '追跡中のファイル', 'tracked files'], ['-m|--modified', '変更されたファイル', 'modified files'], ['-o|--others', '追跡していないファイル', 'untracked files'], ['--exclude-standard', '`.gitignore` などで無視されるものを除く', 'leave out files ignored by `.gitignore` and the like'], ['-z', 'NUL で区切って出力（`xargs -0` 向け）', 'NUL-separated output (for `xargs -0`)']]),
       push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']]),
@@ -492,38 +585,13 @@ export const commands: Record<string, CommandDoc> = {
       rebase: cmd('コミットを別の基点に付け替える', 'Reapply commits on another base', [['-i|--interactive', '対話的にリベース', 'interactive rebase']]),
       reset: cmd('HEAD やステージを指定状態に戻す', 'Reset HEAD or the index', [['--hard', '作業ツリーも含めて完全に戻す（変更は失われる）', 'discard all changes (destructive)'], ['--soft', 'コミットだけ戻し、変更はステージに残す', 'keep changes staged']]),
       stash: cmd('変更を一時退避する', 'Stash changes away'),
-      tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a', '注釈付きタグを作る', 'annotated tag', 'arg'], ['-m', 'タグメッセージ', 'tag message', 'arg']]),
+      tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a', '注釈付きタグを作る', 'annotated tag', 'arg'], ['-m', 'タグメッセージ', 'tag message', 'arg'], ['-l|--list', 'タグを一覧表示（パターンで絞れる）', 'list tags (a pattern filters them)'], ['-f|--force', '同じ名前のタグを付け直す', 'replace an existing tag'], ['-d|--delete', 'タグを削除', 'delete a tag'], ['--sort', '並べ方（`-v:refname` で版の新しい順）', 'sort order (`-v:refname`: newest version first)', 'arg']]),
       remote: cmd('リモートを管理する', 'Manage remotes', [['-v', 'URL も表示', 'show URLs']]),
       config: cmd('設定を取得・変更する', 'Get or set configuration', [['--global', 'ユーザー全体の設定', 'user-wide config'], ['--get', '値を取得', 'get a value']]),
     },
   }),
-  docker: cmd('Docker コンテナを操作する', 'Manage Docker containers', [], {
-    subcommands: {
-      run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', [
-        ['-d|--detach', 'バックグラウンドで実行', 'run in the background'],
-        ['-it', '対話的に端末付きで実行（`-i` と `-t`）', 'interactive with a TTY (`-i` + `-t`)'],
-        ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'],
-        ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'],
-        ['--rm', '終了後にコンテナを削除', 'remove the container on exit'],
-        ['-p|--publish', 'ポート公開（`ホスト:コンテナ`）', 'publish a port (`host:container`)', 'arg'],
-        ['-v|--volume', 'ボリュームをマウント（`ホスト:コンテナ`）', 'bind-mount a volume (`host:container`)', 'arg'],
-        ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'],
-        ['--name', 'コンテナ名', 'container name', 'arg'],
-        ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'],
-      ]),
-      build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', [['-t|--tag', 'イメージ名とタグ', 'name and tag', 'arg'], ['-f|--file', 'Dockerfile のパス', 'Dockerfile path', 'arg'], ['--build-arg', 'Dockerfile の `ARG` に値を渡す（`名前=値`）', 'set a Dockerfile `ARG` (`name=value`)', 'arg'], ['--platform', '対象のプラットフォーム（`linux/amd64`…）', 'target platform (`linux/amd64`…)', 'arg'], ['--no-cache', 'キャッシュを使わない', 'do not use the cache'], ['--pull', 'ベースイメージを取り直す', 'pull newer base images']]),
-      login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-      exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY']]),
-      ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
-      images: cmd('イメージ一覧を表示する', 'List images'),
-      pull: cmd('イメージを取得する', 'Pull an image'),
-      push: cmd('イメージを送信する', 'Push an image'),
-      logs: cmd('コンテナのログを表示する', 'Fetch container logs', [['-f|--follow', 'ログを追い続ける', 'follow log output']]),
-      stop: cmd('コンテナを停止する', 'Stop containers'),
-      rm: cmd('コンテナを削除する', 'Remove containers', [['-f|--force', '実行中でも強制削除', 'force removal']]),
-      compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)'),
-    },
-  }),
+  docker: cmd('Docker コンテナを操作する', 'Manage Docker containers', [], { subcommands: dockerSubs }),
+  podman: cmd('Podman: Docker と互換のコンテナツール（デーモン不要、root なしでも動く）', 'Podman: a Docker-compatible container tool (no daemon, runs rootless)', [], { subcommands: dockerSubs }),
   npm: cmd('Node.js のパッケージマネージャ', 'Node.js package manager', [], {
     subcommands: {
       install: cmd('依存パッケージをインストールする', 'Install dependencies', [['-D|--save-dev', '開発用依存として追加', 'save as a dev dependency'], ['-g|--global', 'グローバルにインストール', 'install globally']]),
@@ -533,4 +601,5 @@ export const commands: Record<string, CommandDoc> = {
     },
   }),
   ...system,
+  ...ops,
 };
