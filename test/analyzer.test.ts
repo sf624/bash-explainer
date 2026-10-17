@@ -332,3 +332,47 @@ describe('pipelines and aliases', () => {
     assert.ok(!explain('alias grep=ggrep\ngrep x f', 1).notes.some((n) => /aliases/.test(n)));
   });
 });
+
+describe('syntax the other tests do not reach', () => {
+  const ex = (src: string, line = 0) => all(explain(src, line).items).map((t) => `${t.label}: ${t.explanation}`).join('\n');
+  const cases: [string, RegExp, number?][] = [
+    ['until ping -c1 host; do sleep 1; done', /until loop: repeat the body until the condition succeeds/],
+    ['for a; do echo "$a"; done', /for loop over the positional parameters \("\$@"\) as `a`/],
+    ['echo $"hello $USER"', /\$"hello \$USER": `\$"…"` string: translated according to the locale/],
+    ["cat <<'EOF'\n$HOME\nEOF", /The delimiter is quoted, so nothing in the body is expanded/],
+    ['x+=1', /Append to variable `x`/],
+    ['declare -ix n=1', /-ix: treat as integer .*export to the environment/],
+    ['unset -v a b', /-v: unset variables\na: Unset the variable `a`/],
+    ['unset -f cleanup', /cleanup: Remove the function `cleanup`/],
+    ['(( i++ ))', /i\+\+: Arithmetic: `i\+\+` \(increment\)/],
+    ['[[ ! -f x ]]', /! -f x: Negation: true if `-f x` is false/],
+    ['(( n += 2 ))', /Arithmetic assignment: `n` \+= `2`/],
+    ['echo ${a[-1]}', /Index -1: the 1st element from the end/],
+    ['echo ${s:1:-2}', /up to 2 characters before the end/],
+    ['tee >(gzip > f.gz)', /Process substitution `>\(…\)`: a file name whose writes go to the command's stdin/],
+    ['# shellcheck disable=SC2086', /ShellCheck directive/],
+    ['# bash-explainer disable-file=shopt', /Bash Explainer directive: no `shopt` warnings in this file/],
+    ['echo x # bash-explainer disable=procSub,shopt', /no `procSub`, `shopt` warnings on this line/],
+  ];
+  for (const [src, re, line] of cases) it(src.split('\n')[0], () => assert.match(ex(src, line), re));
+});
+
+describe('pitfalls for other shells and settings', () => {
+  const notes = (src: string, line: number, shell?: Parameters<Analyzer['explainLine']>[2]) => {
+    const tree = parser.parse(src);
+    try {
+      return new Analyzer('en').explainLine(tree, line, shell).notes.join('\n');
+    } finally {
+      tree.delete();
+    }
+  };
+  it('in dash, suggests what dash has', () => {
+    assert.match(notes('cat f | while read -r l; do n=$l; done\necho "$n"', 0, 'dash'), /Feed the loop with a redirection, `done < file`, or use a temporary file/);
+    assert.match(notes('echo x | read y; echo "$y"', 0, 'dash'), /Take the output with command substitution: `y=\$\(command\)`/);
+    assert.match(notes('ls **/*.ts', 0, 'dash'), /dash has no globstar/);
+    assert.match(notes('for f in *.log; do gzip "$f"; done', 0, 'dash'), /Start the body with `\[ -e "\$f" \] \|\| continue`$/m);
+  });
+  it('after shopt -u extglob', () => {
+    assert.match(notes('shopt -u extglob\nrm !(keep).log', 1), /and `shopt -u extglob` turned it off/);
+  });
+});
