@@ -264,3 +264,31 @@ describe('globstar', () => {
     assert.ok(!explain('ls *.ts').notes.some((n) => /globstar/.test(n)));
   });
 });
+
+describe('extglob', () => {
+  it('reads an extended glob in an argument as one word, keeping its text', () => {
+    const tree = parser.parse('rm -- !(*.txt) x; ls *.@(jpg|png)');
+    try {
+      assert.deepStrictEqual(tree.rootNode.descendantsOfType('word').map((w) => w?.text), ['rm', '--', '!(*.txt)', 'x', 'ls', '*.@(jpg|png)']);
+      assert.ok(!tree.rootNode.hasError);
+    } finally {
+      tree.delete();
+    }
+    for (const src of ['if !(false); then :; fi', 'echo $((x*(2+3)))']) {
+      const t = parser.parse(src);
+      assert.ok(t.rootNode.descendantsOfType(['subshell', 'parenthesized_expression']).length, src);
+      t.delete();
+    }
+  });
+  it('explains it, with a pitfall until shopt -s extglob is seen', () => {
+    const e = explain('rm !(keep).log');
+    assert.match(find(e, '!(keep).log').explanation, /Extended glob: `!\(keep\)` is anything but `keep`/);
+    assert.ok(e.notes.some((n) => /Pitfall: extended globs like `!\(keep\).log` are a syntax error unless `shopt -s extglob`/.test(n)));
+    assert.ok(!explain('shopt -s extglob\nrm !(keep).log', 1).notes.some((n) => /extglob/.test(n)));
+    assert.ok(!explain('[[ $x == +([0-9]) ]]').notes.some((n) => /extglob/.test(n)));
+  });
+  it('points out shopt -s extglob inside the same function', () => {
+    const e = explain('f() {\n  shopt -s extglob\n  rm !(keep).log\n}', 2);
+    assert.ok(e.notes.some((n) => /a `shopt -s extglob` inside the same block is not yet on/.test(n)));
+  });
+});

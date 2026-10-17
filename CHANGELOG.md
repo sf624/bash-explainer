@@ -4,6 +4,7 @@
 
 - `**` in file-name globs is explained as any depth of directories, as it is meant, with examples such as `src/lib/error.ts`. When no `shopt -s globstar` comes before it, a pitfall says that bash then treats `**` as `*` (one level only), unless a file read with `source` turns it on; after `shopt -u globstar`, and in shells without globstar (`sh`, `dash`…), it is explained as `*`. zsh always has it. Examples no longer show names like `appapp/app.ts`. The options of `shopt` (`globstar`, `nullglob`, `dotglob`, `extglob`…) are explained.
 - Glob examples follow `shopt -s dotglob` (names starting with `.` match too), `nocaseglob` (file names ignore case) and `nocasematch` (`case` and `[[ == ]]` patterns ignore case), set earlier in the script; the explanation says which is on.
+- Extended globs (`!(*.txt)`, `*.@(jpg|png)`, `+([0-9])`…) in arguments are read as one word; before, the parser took `!(…)` for a subshell and explained `*.txt` as a command. They are explained part by part, with matching and non-matching names. A pitfall points out a missing `shopt -s extglob` (bash's syntax error), or one inside the same function or block as the glob, which comes too late because bash reads the whole block first. In zsh, `*(…)` is noted as zsh-only syntax (glob qualifiers), as before.
 
 ## 0.3.0
 

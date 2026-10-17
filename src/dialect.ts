@@ -379,6 +379,18 @@ function errorNodes(n: SyntaxNode, from: number, to: number, out: SyntaxNode[] =
   return out;
 }
 
+/**
+ * Where zsh-only syntax may be: syntax errors, and words with `*(…)` and the like, which the parser
+ * reads as ksh's extended globs but zsh takes as glob qualifiers (`*(.)`, `*(/om)`).
+ */
+function zshSyntaxNodes(root: SyntaxNode, from: number, to: number): SyntaxNode[] {
+  const out = errorNodes(root, from, to);
+  for (const w of root.descendantsOfType('word', { row: from, column: 0 }, { row: to + 1, column: 0 })) {
+    if (w && w.startPosition.row >= from && w.startPosition.row <= to && /(^|[^\\])[?*+@!]\(/.test(w.text) && !out.some((e) => e.startPosition.row === w.startPosition.row)) out.push(w);
+  }
+  return out;
+}
+
 const ZSH_SYNTAX: [string, string] = [
   'この行には解析できない部分があります。zsh 独自の書き方（グロブ修飾子 `*(.)`、パラメータフラグ `${(f)var}` など）は解説できません。',
   'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
@@ -389,7 +401,7 @@ export function dialectIssues(root: SyntaxNode, shell: Shell, lang: Lang, from =
   if (shell === 'bash') return [];
   const issues: Issue[] = [];
   if (shell === 'zsh') {
-    for (const node of errorNodes(root, from, to)) {
+    for (const node of zshSyntaxNodes(root, from, to)) {
       issues.push({
         id: 'zshSyntax', kind: 'parse', node, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
       });
@@ -410,7 +422,7 @@ export function dialectIssues(root: SyntaxNode, shell: Shell, lang: Lang, from =
 export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
   const issues = dialectIssues(root, shell, lang, line, line).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
-  const parse = shell === 'zsh' && errorNodes(root, 0, root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
+  const parse = shell === 'zsh' && zshSyntaxNodes(root, 0, root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
     ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];
   return [...new Set([...parse, ...issues.map((i) => i.message)])];
 }
