@@ -195,6 +195,8 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
           if (c === '!') {
             // Anything (in this name) but the alternatives, followed by the rest: only at the top level.
             if (to !== pattern.length) throw new Unmatchable();
+            // A rest of varying length (`!(a)*`) lets bash end `!(…)` anywhere, which a lookahead cannot say.
+            if (/(^|[^\\])(\*|[?+@!]\()/.test(pattern.slice(end + 1, to))) throw new Unmatchable();
             const rest = convert(end + 1, to);
             return `${out}(?!(?:${inner})${rest}$)${noDot(i)}${any}*${rest}`;
           }
@@ -261,10 +263,10 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
           const alts = alternatives(pattern, i + 2, end);
           const alt = (k: number) => make(v, ...alts[k % alts.length], miss);
           if (c === '!') {
-            const inner = alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')?.source.slice(1, -1) ?? '$^').join('|');
+            const inner = alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')!.source.slice(1, -1)).join('|');
             out += miss ? make(v, ...alts[v % alts.length]) : (STARS.map((_, k) => STARS[(v + k) % STARS.length]).find((s) => !new RegExp(`^(?:${inner})$`).test(s)) ?? 'zz');
           } else if (c === '@') {
-            const inner = new RegExp(`^(?:${alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')?.source.slice(1, -1) ?? '$^').join('|')})$`);
+            const inner = new RegExp(`^(?:${alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')!.source.slice(1, -1)).join('|')})$`);
             out += miss ? (['txt', 'bak', 'zz'].find((x) => !inner.test(x)) ?? 'zz') : alt(v);
           }
           else if (c === '?') out += v % 2 && !miss ? '' : alt(v);
@@ -280,7 +282,7 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
       }
       if (c === '*') {
         while (pattern[i + 1] === '*' && pattern[i + 2] !== '(') i++;
-        out += v === 3 ? '' : STARS[v % STARS.length];
+        out += STARS[v % STARS.length];
         continue;
       }
       if (c === '?') { out += 'abc1'[v % 4]; continue; }
@@ -400,7 +402,8 @@ export function bashPrintf(format: string, args: string[]): string {
       }
       if (conv === 'q') { out += sprintf(`${spec}s`, [shellQuote(arg ?? '')]); continue; }
       if (conv === 's') { out += sprintf(`${spec}s`, [arg ?? '']); continue; }
-      if (conv === 'c') { out += sprintf(`${spec}s`, [(arg ?? '').slice(0, 1)]); continue; }
+      // An empty argument prints a NUL byte.
+      if (conv === 'c') { out += sprintf(`${spec}s`, [(arg ?? '').slice(0, 1) || '\0']); continue; }
       out += sprintf(`${spec}${conv}`, [numberArg(arg)]);
     }
     if (stopped) return out;
