@@ -20,6 +20,12 @@ const cases: string[][] = [
   ['-lne', 'if (/a/) { print "A" } elsif (/b/) { print "B" } else { print "-" }'], ['-lne', 'unless (/a/) { print }'],
   ['-lne', 'my $n = $_; $n++; print $n * 2'], ['-lne', 'print if $_ eq "x" || $_ == 3'], ['-lne', 'print join "|", split ",", $_'],
   ['-lne', 'my @m = /(\\w)/g; print scalar @m'], ['-lane', 'my @a = @F; print "@a"'],
+  ['-lane', 'print join ",", sort { $a <=> $b } @F'], ['-pe', 's/(\\d+)/$1*2/e'], ['-pe', 'tr/abc/x/'], ['-le', 'print 2**10'],
+  ['-le', 'print join ",", 1 < 2, 2 >= 2, 1 <=> 2, "a" lt "b", "b" gt "a", "a" le "a", "b" ge "a", "a" cmp "b"'],
+  ['-lne', 'print ucfirst($_), lcfirst("AB"), abs(-3), int(3.7), sqrt(16), chr(65), ord("a"), substr($_, 1, 2), substr($_, -2), index($_, "b")'],
+  ['-ne', 'chomp; print "[$_]", defined($_) ? 1 : 0, "\\n"'], ['-lne', '$h{$_} = 1; delete $h{a}; print exists $h{$_} ? "y" : "n"'],
+  ['-lne', 'push @a, $_; END { print scalar @a }'], ['-lne', '$h{$_}++; END { print scalar(keys %h), scalar(%h) }'], ['-lne', 'print scalar(split /,/, $_)'],
+  ['-ne', 'print; /b/ and last'], ['-ne', 'next if /a/; last if /c/; print'], ['-le', 'for (1..5) { last if $_ > 2; print }'],
 ];
 
 describe('perl examples agree with perl', () => {

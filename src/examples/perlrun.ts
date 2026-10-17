@@ -840,7 +840,7 @@ export function perlOptions(words: (string | undefined)[]): { opts: PerlOptions;
         opts.loop = opts.loop ?? 'n';
         break;
       } else if (c === 'i') { break; }
-      else if (c === 'w' || c === 's' && false) continue;
+      else if (c === 'w') continue;
       else return undefined;
     }
   }
@@ -878,6 +878,8 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
         try {
           run(prog.main);
         } catch (sig) {
+          // `last` leaves the loop (END still runs; with -p the line is not printed), `next` goes on.
+          if (sig instanceof LastSig) break;
           if (!(sig instanceof NextSig)) throw sig;
         }
         if (opts.loop === 'p') it.out += str(it.scalars.get('_')) + str(it.scalars.get('\\'));

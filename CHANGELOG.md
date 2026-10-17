@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- perl one-liners that leave the `-n`/`-p` loop with `last` (`perl -ne 'last if /^END/; print'`) get worked examples, as perl runs them: the loop stops, `END` still runs.
 - jq filters with `.a.[0]` (jq 1.7) or a `def` after a comma (`1, def f: 2; f`) are explained; before, the whole filter was "could not parse".
 - `git log --date=relative` examples over a year old read like git's: "1 year, 1 month ago" up to five years, instead of "1 year ago".
 - perl one-liners with a `BEGIN { … }` or `END { … }` block followed by more code without `;` (`perl -lne 'END { print $n } $n++'`) are explained statement by statement; the block and the code after it were taken for one assignment.

@@ -25,6 +25,11 @@ const programs: [string, string?][] = [
   ['{ print tolower($1), exp(0), log(1), sqrt(16), int(-3.5) }'], ['$2 > 5 || $1 == "x"'], ['!($2 > 5)'], ['{ x = $2; x++; ++x; x--; print x, x ^ 2 }'],
   ['function g(a, b,   loc) { loc = a b; return loc } { print g($1, "!") }'], ['{ a[NR] = $1 } END { for (i = NR; i >= 1; i--) print a[i] }'],
   ['{ a[$1]++ } END { for (k in a) delete a[k]; print length(a) }'], ['{ s = $1; s = s "x"; t = (s < "b"); print s, t }'],
+  ['function f(x,   arr) { arr[x] = 1; arr["y"] = 2; n = 0; for (k in arr) n++; return n } { print f($1) }'], ['{ n = split($0, a, /[ ,]/); print n, a[2] }'],
+  ['$0 ~ "[0-9]+"'], ['{ print cos(0), atan2(0, 1) }'], ['{ for (i = 1; i <= 3; i++) { if (i == 2) continue; if (i == 3) break; print i } }'],
+  ['{ i = 0; while (1) { i++; if (i == 1) continue; if (i > 2) break } print i }'], ['{ i = 0; do { i++; if (i == 1) continue; if (i > 2) break } while (1); print i }'],
+  ['{ a[1] = 1; delete a; print length(a) }'], ['NR == 2 { exit } END { print "end", NR }'], ['BEGIN { print "b"; exit } END { print "e" }'], ['END { print "a"; exit; print "b" }'],
+  ['BEGIN { FS = ", *" } { print $2 }', undefined], ['{ a[1]; a[2]; a[3]; for (k in a) { n++; if (n == 2) continue; if (n == 3) break } print n }'],
 ];
 
 describe('awk examples agree with gawk', () => {

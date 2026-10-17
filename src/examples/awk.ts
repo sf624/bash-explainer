@@ -1040,6 +1040,8 @@ export function runAwk(src: string, input: string[], opts: { fs?: string; vars?:
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
     if (e instanceof NextSig || e instanceof BreakSig || e instanceof ContinueSig || e instanceof ReturnSig) return undefined;
+    /* c8 ignore next 2 */
+    // Anything else is a bug in the runner, not an input it cannot run: let it surface.
     throw e;
   }
   const text = it.out.join('');
