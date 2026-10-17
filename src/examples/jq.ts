@@ -310,6 +310,8 @@ class Parser {
       } else if (k.text === '(') {
         key = this.pipe();
         this.expect(')');
+        // `{(expr)}` has no shorthand: jq wants `:`.
+        if (!this.peek(':')) throw new Unsupported('object shorthand');
       } else if (k.type === 'ident' || k.type === 'kw') {
         key = { t: 'lit', v: k.text };
       } else throw new Unsupported('object key');
@@ -318,9 +320,9 @@ class Parser {
         value = this.objectValue();
       }
       if (!value) {
-        // `{name}` is `{name: .name}`.
-        if (key.t !== 'lit' && key.t !== 'str') throw new Unsupported('object shorthand');
-        const name = key.t === 'lit' ? String(key.v) : (key.parts.length === 1 && typeof key.parts[0] === 'string' ? key.parts[0] : undefined);
+        // `{name}` is `{name: .name}`; the key is a name or a string here (`{(…)}` was rejected above).
+        const k = key as Extract<Node, { t: 'lit' | 'str' }>;
+        const name = k.t === 'lit' ? String(k.v) : (k.parts.length === 1 && typeof k.parts[0] === 'string' ? k.parts[0] : undefined);
         if (name === undefined) throw new Unsupported('object shorthand');
         value = { t: 'field', base: { t: 'id' }, name };
       }
@@ -332,14 +334,9 @@ class Parser {
     return { t: 'object', entries };
   }
 
-  /** Object values stop at `,` and `}`; a pipe needs parentheses there. */
+  /** Object values stop at `,` and `}`; a pipe needs parentheses there (jq rejects `{a: .b | f}`). */
   private objectValue(): Node {
-    let v = this.alt();
-    while (this.peek('|')) {
-      this.p++;
-      v = { t: 'pipe', l: v, r: this.alt() };
-    }
-    return v;
+    return this.alt();
   }
 
   private keyword(t: Lex): Node {
@@ -408,6 +405,8 @@ export function parseJq(src: string): Node | undefined {
     return p.done ? n : undefined;
   } catch (e) {
     if (e instanceof Unsupported || e instanceof ParseError || e instanceof SyntaxError) return undefined;
+    // A bug in the parser: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
@@ -415,9 +414,25 @@ export function parseJq(src: string): Node | undefined {
 // ---------------------------------------------------------------- values
 
 class JqError extends Error {
+  /** What was output before the error (jq streams its outputs, so `try` keeps them). */
+  partial: Json[] = [];
   constructor(readonly value: Json) {
     super(typeof value === 'string' ? value : JSON.stringify(value));
   }
+}
+
+/** The outputs of `f` for each item, keeping the earlier ones on an error. */
+function each<T>(items: T[], f: (item: T) => Json[]): Json[] {
+  const out: Json[] = [];
+  for (const item of items) {
+    try {
+      out.push(...f(item));
+    } catch (e) {
+      if (e instanceof JqError) e.partial = [...out, ...e.partial];
+      throw e;
+    }
+  }
+  return out;
 }
 
 type Obj = { [k: string]: Json };
@@ -563,7 +578,7 @@ class Evaluator {
           return this.ev(n.body, x, env);
         } catch (e) {
           if (!(e instanceof JqError)) throw e;
-          return n.catch ? this.ev(n.catch, e.value, env) : [];
+          return [...e.partial, ...(n.catch ? this.ev(n.catch, e.value, env) : [])];
         }
       case 'str': {
         let outs = [''];
@@ -575,14 +590,16 @@ class Evaluator {
         return outs;
       }
       case 'fmt': return [this.format(n.name, x)];
-      case 'pipe': return this.ev(n.l, x, env).flatMap((y) => this.ev(n.r, y, env));
-      case 'comma': return [...this.ev(n.l, x, env), ...this.ev(n.r, x, env)];
+      case 'pipe': return each(this.ev(n.l, x, env), (y) => this.ev(n.r, y, env));
+      case 'comma': return each([n.l, n.r], (side) => this.ev(side, x, env));
       case 'alt': {
-        let left: Json[] = [];
+        // An error on the left is not caught: jq reports it after the values it gave.
+        let left: Json[];
         try {
           left = this.ev(n.l, x, env).filter(truthy);
         } catch (e) {
-          if (!(e instanceof JqError)) throw e;
+          if (e instanceof JqError) e.partial = e.partial.filter(truthy);
+          throw e;
         }
         return left.length ? left : this.ev(n.r, x, env);
       }
@@ -719,7 +736,10 @@ class Evaluator {
       case '@text': return text;
       case '@json': return toJson(v);
       case '@base64': return base64Encode(text);
-      case '@base64d': return base64Decode(text);
+      case '@base64d':
+        // One character left over cannot be decoded.
+        if (text.replace(/=+$/, '').length % 4 === 1) throw new JqError(`${typeName(text)} (${toJson(text)}) trailing base64 byte found`);
+        return base64Decode(text);
       case '@uri': return encodeURIComponent(text).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
       case '@html': return text.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;' }[c]!));
       case '@sh': {
@@ -741,6 +761,7 @@ class Evaluator {
         }).join(name === '@csv' ? ',' : '\t');
       }
     }
+    // A format jq does not have.
     throw new Unsupported(name);
   }
 
@@ -818,6 +839,7 @@ class Evaluator {
     if (typeof k === 'number') {
       const arr = x === null ? [] : Array.isArray(x) ? [...x] : (() => { throw new JqError(`Cannot index ${typeName(x)} with number`); })();
       const i = k < 0 ? arr.length + k : k;
+      if (i < 0) throw new JqError('Out of bounds negative array index');
       while (arr.length <= i) arr.push(null);
       arr[i] = this.setpath(arr[i], rest, value);
       return arr;
@@ -839,7 +861,7 @@ class Evaluator {
     if (!p.length) return null;
     const [k, ...rest] = p;
     if (x === null) return null;
-    if (typeof k === 'object') throw new Unsupported('slice path');
+    // Paths from `del` hold no slices (they are not followed).
     if (!rest.length) {
       if (Array.isArray(x) && typeof k === 'number') return x.filter((_, i) => i !== (k < 0 ? x.length + k : k));
       if (isObj(x) && typeof k === 'string') {
@@ -858,7 +880,9 @@ class Evaluator {
       let v = x;
       for (const p of paths) {
         const out = this.ev(n.r, this.getpath(v, p), env);
-        v = out.length ? this.setpath(v, p, out[0]) : this.delpath(v, p);
+        // `|= empty` deletes, differently in each jq release (`[1, 2] | .[] |= empty`).
+        if (!out.length) throw new Unsupported('|= empty');
+        v = this.setpath(v, p, out[0]);
       }
       return v;
     }
@@ -962,7 +986,8 @@ class Evaluator {
       case 'range/2': { const s = one(0) as number; const e = one(1) as number; const out: number[] = []; for (let i = s; i < e && out.length < 1000; i++) out.push(i); return out; }
       case 'floor/0': return [Math.floor(x as number)];
       case 'ceil/0': return [Math.ceil(x as number)];
-      case 'round/0': return [Math.round(x as number)];
+      // Halves away from zero, as C's round().
+      case 'round/0': return [Math.sign(x as number) * Math.round(Math.abs(x as number))];
       case 'sqrt/0': return [Math.sqrt(x as number)];
       case 'fabs/0': case 'abs/0': return [Math.abs(x as number)];
       case 'tostring/0': return [typeof x === 'string' ? x : toJson(x)];
@@ -1057,7 +1082,6 @@ class Evaluator {
         if (/[^gix]/.test(flags)) throw new Unsupported('regex flags');
         return [new RegExp(str(one(0)), flags.replace('g', '').replace('x', '')).test(str(x))];
       }
-      case 'ascii/0': return [String.fromCharCode(x as number)];
       case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
       case 'implode/0': return [String.fromCodePoint(...(arr(x) as number[]))];
       case 'tojson/0': return [toJson(x)];
@@ -1105,12 +1129,14 @@ export function runJq(filter: string, input: Json, vars: Record<string, Json> = 
   const node = parseJq(filter);
   if (!node) return undefined;
   const env: Env = { vars: new Map(Object.entries(vars).map(([k, v]) => [`$${k}`, v])), funcs: new Map() };
-  env.vars.set('$__loc__', { file: '<stdin>', line: 1 });
+  env.vars.set('$__loc__', { file: '<top-level>', line: 1 });
   try {
     return { outputs: new Evaluator().ev(node, input, env) };
   } catch (e) {
     if (e instanceof JqError) return { error: e.message };
     if (e instanceof Unsupported) return undefined;
+    // A bug in the evaluator: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
@@ -1175,7 +1201,8 @@ class Inferer {
         const b = this.run(n.base, s);
         if (n.idx.t === 'lit' && typeof n.idx.v === 'number') {
           const el = b.arr();
-          b.minLength = Math.max(b.minLength, n.idx.v >= 0 ? n.idx.v + 1 : -n.idx.v);
+          // `.[-2]` is a negation, not a literal: the index is 0 or more.
+          b.minLength = Math.max(b.minLength, n.idx.v + 1);
           return el;
         }
         if (n.idx.t === 'str' && n.idx.parts.length === 1 && typeof n.idx.parts[0] === 'string') return b.field(n.idx.parts[0]);
@@ -1339,7 +1366,7 @@ function materializeOnce(s: Shape, i: number, depth: number, omit: boolean): Jso
     }
     case 'array': {
       const len = Math.min(Math.max(depth > 1 ? 2 : 3, s.minLength), 8);
-      return Array.from({ length: len }, (_, j) => materialize(s.elem ?? new Shape(), j, depth + 1, omit));
+      return Array.from({ length: len }, (_, j) => materialize(s.elem!, j, depth + 1, omit));
     }
     case 'number': {
       if (s.thresholds.length) {

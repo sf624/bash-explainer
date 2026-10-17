@@ -1,7 +1,6 @@
 {
   "lines": {},
   "branches": {
-    "src/analyzer.ts": 86,
-    "src/examples/jq.ts": 83
+    "src/analyzer.ts": 86
   }
 }

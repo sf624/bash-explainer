@@ -16,6 +16,7 @@ import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser } from '../src/parser';
 import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
+import { jqExample, runJq } from '../src/examples/jq';
 import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { explainJq } from '../src/embedded/jq';
 import { explainYq3Path, judgeYq as judge, yqNotes, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
@@ -684,3 +685,38 @@ describe('host files: branches no other test takes', () => {
     assert.deepStrictEqual(substitutionNotes(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo ${{ github.head_ref }}'), 3, 'en').length, 2);
   });
 });
+
+describe('jq runner: what it gives up on, and what newer jq releases do', () => {
+  it('gives up on syntax and functions it does not run', () => {
+    for (const f of ['1 )', '"\\q"', '.a ?// 1', 'f(1 2)', ')', '{"a\\(1)"}', '{(1)}', '{a: .b | .}', '{1: 2}', '{a b}', 'reduce .[] as [$a] (0; .)', '[range(200000)] | map(. + 1) | length', '@foo', '(1) |= 2',
+      '(.[[0]]) |= 1', '(.[1:]) |= .', 'del(.[1:])', '.[1:] = [1]', '.[] |= empty', '.[0] = (1, 2)', '.[0] += (1, 2)', 'test("a"; "q")', 'foo', 'def f($a): $a; f(1, 2)', 'ltrimstr("a", "b")',
+      'input', '$__loc__ | .x | input', '.a |', '(1', '(map(.)) |= 1', 'getpath([{"start": 1, "end": null}])', '(.[0] | input)?', '.[input:]?', 'try input', 'reduce .[] as $x 0', 'setpath([{"start": 1, "end": null}]; 1)']) {
+      assert.strictEqual(runJq(f, [1, 2]), undefined, f);
+    }
+    assert.deepStrictEqual(runJq('$__loc__', null), { outputs: [{ file: '<top-level>', line: 1 }] });
+  });
+
+  it('follows jq 1.7.1 and later where releases differ', () => {
+    const out = (f: string, x: Parameters<typeof runJq>[1]) => {
+      const r = runJq(f, x);
+      return r && 'outputs' in r ? r.outputs : r;
+    };
+    assert.deepStrictEqual(out('reverse', 'abc'), ['cba']);
+    assert.deepStrictEqual(out('from_entries', [{ k: 'a', v: 1 }, { Name: 'b', Value: 2 }, { Key: 'c' }, { name: 1, value: 2 }, { K: 'd' }]), [{ a: 1, b: 2, c: null, 1: 2, d: null }]);
+    assert.deepStrictEqual(out('to_array, ([1] | to_array)', 1), [[1], [1]]);
+    assert.deepStrictEqual(out('trim', ' a '), ['a']);
+    assert.deepStrictEqual(out('from_entries', [{ value: 1 }]), [{ null: 1 }]);
+    assert.deepStrictEqual(out('"x" * 0', null), [null]);
+    assert.deepStrictEqual(out('walk(empty)', 1), [null]);
+    assert.deepStrictEqual(out('try (1, error("x"), 3) catch .', null), [1, 'x']);
+    assert.deepStrictEqual(out('map(round)', [-2.5, 2.5]), [[-3, 3]]);
+  });
+
+  it('makes up input of the right shape', () => {
+    const filters = ['.[-1].name', '.["key"]', 'try .a', '-.n', '.a and .b', '.n > 5 or .m < 2', 'map_values(. * 2)', 'max_by(.n) | .n', 'sort | first', 'first(.[])',
+      'any(.ok)', 'all', 'map(select(.name | test("a")))', 'map(select(.x | not))', '.users | map(.name)', '.flags | map(not)', '[.[] | select(.)] | length', '.[0] | keys'];
+    for (const f of filters) assert.ok(jqExample(f), f);
+    assert.strictEqual(jqExample('range(10)')![0].outputs[4], '…');
+  });
+});
+
