@@ -227,4 +227,37 @@ describe('lines no other test reaches', () => {
     assert.throws(() => runTr(['-ds', 'a'], ['x']), /two sets/);
     assert.throws(() => runTr(['a'], ['x']), /two sets/);
   });
+
+  describe('languages inside arguments', () => {
+    const cases: [string, RegExp[]][] = [
+      [`awk 'BEGIN { while ((getline line) > 0) n++ } { print >> "log" } NR==3 { exit 1 } { for (i = 1; i <= NF; i++) s += $i; print $NF } END { if (s) { print s } }'`,
+        [/`getline`: read the next line/, /appended to the file "log"/, /exit awk with status 1/, /loop with init; condition; update/, /`\$NF`: the last field/]],
+      [`find . -mtime 3 -regex '.*\.sh' -atime +1 -empty -ls`,
+        [/modified exactly 3 days ago/, /the whole path matches the regex/, /accessed more than 1 days ago/, /empty/, /list it in detail/]],
+      [`sed -e '1c\\' -e 'new' -e 't done' -e ':done'`, [/if an `s` succeeded, branch to "done"/]],
+      [`jq '.. | numbers, $ENV.HOME, (foreach .[] as $x (0; . + $x)), (def f: 1; f), (.a / ","), env.PATH' f.json`,
+        [/`\.\.`: the input and all of its descendants/, /Foreach/, /division \(splits strings\)/]],
+      [`grep -P '(?i)foo(?<n>x)?a{2,}(b' f`, [/set matching options/, /2 or more times/, /missing closing parenthesis/]],
+      [String.raw`sed 's/a\tb/x/' f`, [/`\\t`: /]],
+      [`awk 'function f(a) { return a } { print | "sort"; if (x) continue; delete a[1]; getline; print $(NF-1), $(i+1) }'`,
+        [/Defines the function `f`/, /return from the function/, /piped to the command "sort"/, /continue with the next iteration/, /delete the array element `a\[1\]`/, /read the next line/, /the second-to-last field/, /`\$\(i\+1\)`/]],
+      [`find . -ctime -1 -cmin 5 -size +10k -size -1M -size 3 -group g -perm 644 -maxdepth 2 -mindepth 1 -readable -writable -executable -true -false -quit`,
+        [/changed less than 1 days ago/, /larger than 10k/, /smaller than 1M/, /group g/, /permissions 644/, /at most 2 levels deep/, /at least 1 levels deep/, /readable/, /writable/, /executable/, /always true/, /always false/, /quit/]],
+      [`jq '.a or .b, 5 % 2, .a.[0], .b?, @base64 "x\\(.)", -(.x), [], {(.k): 1}, (label $out | 1), (.a | def f: 1; f), (def g(x): x; g(1)), (foreach .[] as $x (0; . + $x; [$x]))' f`,
+        [/true if either side is true/, /remainder/, /`\?`: ignore errors/, /applied to each `\\\(…\)` in the string/, /negation/, /An empty array/, /the computed key/, /Label `\$out`/]],
+      [`yq '.[] as $x ireduce (0; . + $x)' f.yml`, [/Fold: start from `0`/]],
+      [`yq 'env(HOME)' f.yml`, [/the environment variable name `HOME`/]],
+      [`jq '.a, def f: 1; f' f`, [/Defines the function `f`/]],
+      [`grep -P 'a*+b??c{2,}+' f`, [/possessive, no backtracking/, /as few as possible/, /2 or more times \(possessive/]],
+      [`grep -P 'a+?b{,3}c{2,3}d{x}[\\d_]' f`, [/at most 3 times/, /2 to 3 times/, /a digit/]],
+      [`sed -n -e '# note' -e '2,~4p' -e 'T end' -e 's/a/b/2w out.txt' -e 's/a/\\x/' -e 's/b/c' -e 's/b' f`,
+        [/Comment/, /up to the next line that is a multiple of 4/, /if no `s` succeeded, branch to "end"/, /replace only the 2th match/, /write changed lines to "out.txt"/, /Unterminated `s` command/]],
+    ];
+    for (const [src, res] of cases) {
+      it(src.slice(0, 60), () => {
+        const t = flat(explain(src));
+        for (const re of res) assert.match(t, re);
+      });
+    }
+  });
 });

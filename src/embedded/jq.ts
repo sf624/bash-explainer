@@ -440,7 +440,9 @@ class JqParser {
         this.p++;
         steps.push(this.field(t));
       } else if (t.text === '.' && this.toks[this.p + 1]?.text === '[' && adjacent) {
+        // `.a.[0]` (jq 1.7): the same as `.a[0]`.
         this.p++;
+        steps.push(this.bracket());
       } else if (t.text === '[' && adjacent) {
         steps.push(this.bracket());
       } else if (t.text === '?') {
@@ -721,8 +723,9 @@ class JqParser {
         return this.node(t.start, body.end, 'keyword', s(`ラベル \`${name.text}\`: \`break ${name.text}\` で抜けられる範囲`, `Label \`${name.text}\`: \`break ${name.text}\` exits here`), [body]);
       }
       case 'def':
+        // `1, def f: 2; f`: the definition and the expression after it, as at the start of a pipe.
         this.p--;
-        return this.definition();
+        return this.pipe();
     }
     throw new ParseError(t.start, `unexpected "${t.text}"`);
   }
