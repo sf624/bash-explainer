@@ -100,14 +100,14 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
       const eq = /^(--?[\w-]+)=(.*)$/.exec(w);
       const attached: [string, string] | undefined = !w.startsWith('--') && /^-[opI]./.test(w) ? [w.slice(0, 2), w.slice(2)] : undefined;
       const [name, inline]: [string, string | undefined] = eq ? [eq[1], eq[2]] : attached ?? [w, undefined];
-      const v3 = !!(sub && V3_COMMANDS[sub]);
-      if (KISLYUK_OPTIONS.has(name) && !(name === '-j' && v3)) {
+      // Options after a v3 command are not read (the loop stops there), so these are v4's or kislyuk's.
+      if (KISLYUK_OPTIONS.has(name)) {
         clues.push({ flavor: 'kislyuk', weight: 3, why: [`${code(name)} は kislyuk/yq（jq）のオプション`, `${code(name)} is a kislyuk/yq (jq) option`] });
         uses.push({ label: code(name), v4: null, kislyuk: true, v3: false });
         i += KISLYUK_VALUE[name] && inline === undefined ? KISLYUK_VALUE[name] : 0;
         continue;
       }
-      if (V4_ONLY_OPTIONS.has(name) && !v3) {
+      if (V4_ONLY_OPTIONS.has(name)) {
         const value = inline ?? (V4_VALUE.has(name) ? words[i + 1] : undefined);
         let min = V4_OPTION[name] ?? '4.0.0';
         if ((name === '-o' || name === '--output-format') && value) min = V4_OUTPUT[value] ?? '4.12.2';
@@ -257,8 +257,8 @@ export function explainYq3Path(src: string, lang: Lang): { tokens: import('./typ
     if ((m = /^\[(\d+)\]/.exec(rest))) { len = m[0].length; expl = s(`配列の ${Number(m[1]) + 1} 番目の要素（0 始まり）`, `element ${m[1]} of the array (from 0)`); }
     else if ((m = /^\[\*\]/.exec(rest))) { len = 3; kind = 'pattern'; expl = s('配列のすべての要素', 'every element of the array'); }
     else if ((m = /^\[\+\]/.exec(rest))) { len = 3; kind = 'operator'; expl = s('配列の末尾に追加する位置（write で使う）', 'a new element at the end of the array (for write)'); }
-    else if ((m = /^\(([^)]*?)(==|!=)([^)]*)\)/.exec(rest))) { len = m[0].length; kind = 'pattern'; expl = s(`\`${m[1]}\` が \`${m[3]}\` ${m[2] === '==' ? 'に一致する' : 'でない'}要素（\`*\` はワイルドカード）`, `the elements whose \`${m[1]}\` ${m[2] === '==' ? 'matches' : 'does not match'} \`${m[3]}\` (\`*\` is a wildcard)`); }
     else if ((m = /^\(\.==([^)]*)\)/.exec(rest))) { len = m[0].length; kind = 'pattern'; expl = s(`値が \`${m[1]}\` の要素`, `the elements equal to \`${m[1]}\``); }
+    else if ((m = /^\(([^)]*?)(==|!=)([^)]*)\)/.exec(rest))) { len = m[0].length; kind = 'pattern'; expl = s(`\`${m[1]}\` が \`${m[3]}\` ${m[2] === '==' ? 'に一致する' : 'でない'}要素（\`*\` はワイルドカード）`, `the elements whose \`${m[1]}\` ${m[2] === '==' ? 'matches' : 'does not match'} \`${m[3]}\` (\`*\` is a wildcard)`); }
     else if ((m = /^\*\*/.exec(rest))) { len = 2; kind = 'pattern'; expl = s('`**`: 任意の深さのすべての子孫', '`**`: every descendant at any depth'); }
     else if ((m = /^"([^"]*)"/.exec(rest))) { len = m[0].length; expl = s(`キー \`${m[1]}\`（\`.\` を含むキーはクォートする）`, `the key \`${m[1]}\` (keys containing \`.\` are quoted)`); }
     else if ((m = /^[^.[(]+/.exec(rest))) {

@@ -3,8 +3,6 @@
   "branches": {
     "src/analyzer.ts": 86,
     "src/dialect.ts": 81,
-    "src/embedded/jq.ts": 88,
-    "src/embedded/yq.ts": 80,
     "src/examples/awk.ts": 86,
     "src/examples/jq.ts": 83,
     "src/examples/perlrun.ts": 79,

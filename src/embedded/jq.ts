@@ -353,11 +353,12 @@ class JqParser {
     if (prop && propOp?.type === 'op' && (propOp.text === '=' || propOp.text === '|=')) {
       this.p += 2;
       const value = this.alternative();
-      const d = YQ_BUILTINS[prop.text];
+      // Every property is described.
+      const d = YQ_BUILTINS[prop.text]!;
       return this.node(left.start, value.end, 'operator', this.s(
-        `\`${this.text(left)}\` の ${prop.text}（${d ? d[0] : ''}）を設定し、文書全体を出力する`,
-        `Set the ${prop.text} of \`${this.text(left)}\` (${d ? d[1] : ''}) and output the whole document`,
-      ), [left, this.node(prop.start, prop.end, 'function', `\`${prop.text}\`: ${d ? this.s(d[0], d[1]) : ''}`), this.opNode(propOp, this.s('設定する', 'sets it')), value]);
+        `\`${this.text(left)}\` の ${prop.text}（${d[0]}）を設定し、文書全体を出力する`,
+        `Set the ${prop.text} of \`${this.text(left)}\` (${d[1]}) and output the whole document`,
+      ), [left, this.node(prop.start, prop.end, 'function', `\`${prop.text}\`: ${this.s(d[0], d[1])}`), this.opNode(propOp, this.s('設定する', 'sets it')), value]);
     }
     if (t?.type !== 'op' || !ops[t.text]) return left;
     this.p++;
@@ -763,6 +764,8 @@ export function explainJq(src: string, lang: Lang, dialect: JqDialect = 'jq'): E
     if (!parser.done) throw new ParseError(toks[toks.length - 1].start, 'trailing input');
     return strip(root.isPipe ? root.children : [root]);
   } catch (e) {
+    // A bug in the parser: let it show.
+    /* c8 ignore next */
     if (!(e instanceof ParseError)) throw e;
     return [{
       start: 0, end: src.length, kind: 'error', children: [],
