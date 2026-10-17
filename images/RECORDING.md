@@ -45,8 +45,12 @@ The editor font is Cascadia Code (falling back to Consolas), so recordings on Wi
 
 The [README images workflow](../.github/workflows/readme-images.yml) runs the same script on Ubuntu, in the latest VS Code on a virtual display (xvfb), with Cascadia Code and an emoji font installed:
 
-- **After each release** (the Release workflow calls it) and **by hand** (*Actions → README images → Run workflow*): when the images changed, it opens a pull request with them and starts the tests on it. Look at the images under *Files changed* before merging; close the pull request if the new ones are no better. The repository must let Actions create pull requests (*Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*).
+- **By hand** (*Actions → README images → Run workflow*): it opens a pull request with the new images and starts the tests on it. Look at the images under *Files changed* before merging. The repository must let Actions create pull requests (*Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*).
 - **On a pull request that changes the script or the workflow**: it only uploads the images as an artifact (*readme-images*) to look at.
+
+### Keeping them up to date
+
+A full recording also writes `images/.source-hash`: a hash of the files that decide how the images look (`src/ui/`, `media/`, `images/demo.sh` and the recording script; not the explanations' wording). The Release workflow runs `node scripts/images-hash.mjs --check` before publishing and stops when the hash differs, so the Marketplace never shows images of an older UI. Re-record them by hand (above), merge the pull request, then push the tag again.
 
 ### In WSL
 
