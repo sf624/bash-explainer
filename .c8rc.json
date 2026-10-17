@@ -1,0 +1,7 @@
+{
+  "all": true,
+  "src": ["src"],
+  "include": ["src/**"],
+  "reporter": ["text-summary", "html", "json-summary"],
+  "report-dir": "coverage"
+}

@@ -8,3 +8,4 @@ out/
 cli/dist/
 cli/LICENSE
 cli/THIRD_PARTY_NOTICES.md
+coverage/
