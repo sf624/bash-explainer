@@ -55,7 +55,11 @@ The Release workflow also publishes `cli/` as the npm package [`bash-explainer`]
 
 The GitHub Action (`action.yml`) runs `bash-explainer` from npm at the version of the tag it is used at, so a version is usable as an action once it is on npm. The Release workflow also moves the major tag (`v0`, later `v1`) to each release, which is what the README tells people to use (`uses: sf624/bash-explainer@v0`).
 
-### 6. The web page (GitHub Pages)
+### 6. README images
+
+After publishing, the Release workflow re-records the README images and opens a pull request when they changed ([images/RECORDING.md](../images/RECORDING.md)). For that, in *Settings → Actions → General*, turn on **Allow GitHub Actions to create and approve pull requests**.
+
+### 7. The web page (GitHub Pages)
 
 1. In *Settings → Pages → Build and deployment*, set **Source** to **GitHub Actions**. This creates the `github-pages` environment.
 2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy.

@@ -127,6 +127,16 @@ jobs:
           git tag --force "$major" "$GITHUB_SHA"
           git push --force origin "refs/tags/$major"
 
+  images:
+    name: README images
+    needs: publish
+    # Re-records the README images with the released version; opens a pull request when they change.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    uses: ./.github/workflows/readme-images.yml
+
   pages:
     name: Web page
     needs: publish
