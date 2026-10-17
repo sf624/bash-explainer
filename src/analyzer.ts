@@ -1418,7 +1418,7 @@ export class Analyzer {
 
   /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
   private pipelineExample(n: SyntaxNode): Example | undefined {
-    if (this.line !== null && n.startPosition.row !== this.line && !isMultiline(n)) return undefined;
+    // A pipeline is explained on the line it is on, or whole (see sub).
     const stages: Stage[] = [];
     let readsFile = false;
     for (const [i, c] of n.namedChildren.entries()) {
@@ -1436,7 +1436,7 @@ export class Analyzer {
       }
       if (cmd.type !== 'command') return undefined;
       const name = cmd.childForFieldName('name');
-      if (!name || !isPlainWord(name.namedChildren[0] ?? name)) return undefined;
+      if (!name || !isPlainWord(name.namedChildren[0]!)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
       stages.push({ cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) });
     }
@@ -1483,7 +1483,8 @@ export class Analyzer {
     const words = args.map((a) => literalContent(a)?.text);
     const ex = commandExample(cmd, words);
     if (!ex) return;
-    if (ex.input) this.ioExample(ex.input, ex.output, false, FILTERS[cmd] ? { kind: 'filter', cmd, words } : undefined);
+    // Only the filters take input.
+    if (ex.input) this.ioExample(ex.input, ex.output, false, { kind: 'filter', cmd, words });
     else this.examples.push({ kind: 'textFilters', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
   }
 
@@ -1594,7 +1595,7 @@ export class Analyzer {
         || (v.type === 'concatenation' && v.namedChildren.some((c) => c?.type === 'word' && isGlob(c.text)))));
       const v = loop.childForFieldName('variable')?.text;
       if (!glob || !v) continue;
-      const body = loop.childForFieldName('body')?.text ?? '';
+      const body = loop.childForFieldName('body')!.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = this.shopt.nullglob !== 'unsupported';
       const fix = this.s(nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます', nullglob ? ', or turn on `shopt -s nullglob` before the loop' : '');
