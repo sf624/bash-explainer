@@ -118,12 +118,12 @@ type E =
   | { k: 'call'; name: string; args: E[]; block?: S[] } | { k: 'list'; items: E[] };
 
 type S =
-  | { k: 'expr'; e: E } | { k: 'block'; body: S[] }
+  | { k: 'expr'; e: E }
   | { k: 'if'; c: E; t: S[]; f?: S[]; unless?: boolean }
   | { k: 'for'; v?: string; list: E; body: S[] }
   | { k: 'next' } | { k: 'last' };
 
-const NAMED_UNARY = new Set(['length', 'uc', 'lc', 'ucfirst', 'lcfirst', 'chomp', 'chop', 'defined', 'abs', 'int', 'sqrt', 'keys', 'values', 'scalar', 'exists', 'delete', 'chr', 'ord', 'reverse']);
+const NAMED_UNARY = new Set(['length', 'uc', 'lc', 'ucfirst', 'lcfirst', 'chomp', 'chop', 'defined', 'abs', 'int', 'sqrt', 'keys', 'values', 'scalar', 'exists', 'delete', 'chr', 'ord']);
 const LIST_FUNCS = new Set(['print', 'say', 'printf', 'join', 'split', 'sprintf', 'substr', 'index', 'push', 'sort', 'reverse', 'die', 'warn', 'lc', 'uc']);
 
 class Parser {
@@ -402,8 +402,9 @@ class Parser {
         if (name === 'STDERR' || name === 'STDOUT') throw new Unsupported('filehandle');
         if (name === 'sort' && this.peek('{')) {
           const block = this.block();
-          const args = this.atListEnd() ? [] : [this.comma()];
-          return { k: 'call', name, args, block };
+          // perl rejects a sort with nothing to sort.
+          if (this.atListEnd()) throw new Unsupported('sort without a list');
+          return { k: 'call', name, args: [this.comma()], block };
         }
         if (this.peek('(')) {
           this.p++;
@@ -494,12 +495,15 @@ class Interp {
   /** "…$x…" with variables, $F[1], $h{k}, @a, escapes and the case escapes \U \L \u \l \E. */
   interpolate(s: string): string {
     const esc: Record<string, string> = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', $: '$', '@': '@', e: '\x1b', a: '\x07', '0': '\0' };
+    // Slices (`"@a[0]"`, `"@h{x}"`) are not followed.
+    if (/(^|[^\\])@\w+[[{]/.test(s)) throw new Unsupported('slice in a string');
     // Mark case escapes, substitute values, then apply the case changes.
     const marked = s.replace(/\\([ULulEQ])/g, '\u0001$1').replace(/\\(.)|\$\{(\w+)\}|\$(\w+|&|\.(?!\w))(?:\[(-?\d+|\$\w+)\]|\{(\w+|\$\w+)\})?|@(\w+)/g, (m, e: string, braced: string, name: string, idx: string, key: string, arrName: string) => {
       if (e !== undefined) return esc[e] ?? e;
       if (braced) return str(this.scalar(braced));
       if (arrName) {
-        if (!this.arrays.has(arrName)) return m;
+        // perl puts nothing for an unknown array (an error under strict): an address such as "a@b.c" is not shown.
+        if (!this.arrays.has(arrName)) throw new Unsupported('unknown array in a string');
         return this.arr(arrName).map(str).join(' ');
       }
       if (idx !== undefined) {
@@ -514,17 +518,20 @@ class Interp {
     let out = '';
     let mode = '';
     let once = '';
+    // A \u or \l counts within \U or \L only right at its start (`"\L\uHELLO"` is "Hello", `"\Lab\uc"` is "abc").
+    let fresh = false;
     for (let i = 0; i < marked.length; i++) {
       if (marked[i] === '\u0001') {
         const c = marked[++i];
-        if (c === 'U' || c === 'L') mode = c;
+        if (c === 'U' || c === 'L') { mode = c; fresh = true; }
         else if (c === 'E') mode = '';
-        else if (c === 'u' || c === 'l') once = c;
+        else if ((c === 'u' || c === 'l') && (!mode || fresh)) once = c;
         else if (c === 'Q') throw new Unsupported('\\Q');
         continue;
       }
       let ch = mode === 'U' ? marked[i].toUpperCase() : mode === 'L' ? marked[i].toLowerCase() : marked[i];
       if (once) { ch = once === 'u' ? ch.toUpperCase() : ch.toLowerCase(); once = ''; }
+      fresh = false;
       out += ch;
     }
     return out;
@@ -565,7 +572,9 @@ class Interp {
           const re = new RegExp(e.re.source, e.re.flags.replace('g', '') + 'g');
           return [...str(e.target ? this.ev(e.target) : this.scalar('_')).matchAll(re)].map((m) => (m.length > 1 ? m[1] : m[0]));
         }
-        return [this.ev(e)];
+        // In list context a match gives its groups (or 1 without groups), and nothing when it fails.
+        if (!truthy(this.ev(e))) return [];
+        return this.caps.length > 1 ? this.caps.slice(1) : [1];
       default: return [this.ev(e)];
     }
   }
@@ -579,7 +588,8 @@ class Interp {
     const [sep, target, limit] = e.args;
     const s = str(target ? this.ev(target) : this.scalar('_'));
     let parts: string[];
-    if (sep.k === 'str' && sep.v === ' ') parts = s.replace(/^\s+/, '').split(/\s+/);
+    // `split` alone, and `split ' '` or `split " "`, split on runs of blanks and drop leading ones.
+    if (!sep || ((sep.k === 'str' || sep.k === 'istr') && sep.v === ' ')) parts = s.replace(/^\s+/, '').split(/\s+/);
     else if (sep.k === 'match') parts = s.split(new RegExp(sep.re.source, sep.re.flags));
     else parts = s.split(str(this.ev(sep)));
     if (limit) throw new Unsupported('split limit');
@@ -645,20 +655,25 @@ class Interp {
         if (!to.length && !e.flags.includes('d')) to = from;
         let count = 0;
         let out = '';
+        // With s, a run of characters translated to the same one becomes one (untranslated ones stay).
+        let last: string | undefined;
         for (const ch of str(this.ev(target))) {
           const i = from.indexOf(ch);
-          if (i < 0) { out += ch; continue; }
+          if (i < 0) { out += ch; last = undefined; continue; }
           count++;
-          if (i < to.length) out += to[i];
-          else if (!e.flags.includes('d')) out += to[to.length - 1] ?? ch;
+          // Without d, a short replacement list repeats its last character.
+          const r = i < to.length ? to[i] : e.flags.includes('d') ? undefined : to[to.length - 1];
+          if (r === undefined) continue;
+          if (e.flags.includes('s') && r === last) continue;
+          out += r;
+          last = r;
         }
-        if (e.flags.includes('s')) out = out.replace(/(.)\1+/g, (m, c: string) => (to.includes(c) ? c : m));
         if (e.flags.includes('r')) return out;
         this.lvalueSet(target, out);
         return count;
       }
       case 'un':
-        if (e.op === '!') return truthy(this.ev(e.e)) ? 1 : '';
+        if (e.op === '!') return truthy(this.ev(e.e)) ? '' : 1;
         return -num(this.ev(e.e));
       case 'cond': return truthy(this.ev(e.c)) ? this.ev(e.a) : this.ev(e.b);
       case 'incr': {
@@ -712,9 +727,9 @@ class Interp {
       case 'gt': return str(a) > str(b) ? 1 : '';
       case 'le': return str(a) <= str(b) ? 1 : '';
       case 'ge': return str(a) >= str(b) ? 1 : '';
-      case 'cmp': return str(a) < str(b) ? -1 : str(a) > str(b) ? 1 : 0;
+      // `cmp`
+      default: return str(a) < str(b) ? -1 : str(a) > str(b) ? 1 : 0;
     }
-    throw new Unsupported(op);
   }
 
   private call(e: Extract<E, { k: 'call' }>): V {
@@ -775,7 +790,6 @@ class Interp {
     this.tick();
     switch (s.k) {
       case 'expr': this.ev(s.e); return;
-      case 'block': s.body.forEach((x) => this.exec(x)); return;
       case 'next': throw new NextSig();
       case 'last': throw new LastSig();
       case 'if': {
@@ -791,7 +805,12 @@ class Interp {
         try {
           for (const it of items) {
             this.scalars.set(name, it);
-            s.body.forEach((x) => this.exec(x));
+            // `next` goes on with the next item.
+            try {
+              s.body.forEach((x) => this.exec(x));
+            } catch (sig) {
+              if (!(sig instanceof NextSig)) throw sig;
+            }
           }
         } catch (sig) {
           if (!(sig instanceof LastSig)) throw sig;
@@ -854,6 +873,8 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
     prog = new Parser(lex(code)).program();
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the parser: let it show.
+    /* c8 ignore next */
     throw e;
   }
   const it = new Interp();
@@ -869,10 +890,9 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
         it.scalars.set('.', k + 1);
         it.scalars.set('_', opts.chompL ? line : line + '\n');
         if (opts.autosplit) {
-          const text = line;
-          const parts = sep ? text.split(new RegExp(sep.source, sep.flags)) : text.replace(/^\s+/, '').split(/\s+/);
+          // perl splits $_, with its newline unless -l removed it (a blank, for the default split).
+          const parts = sep ? (opts.chompL ? line : line + '\n').split(new RegExp(sep.source, sep.flags)) : line.replace(/^\s+/, '').split(/\s+/);
           while (parts.length && parts[parts.length - 1] === '') parts.pop();
-          if (!opts.chompL && !sep) { /* the newline was a separator */ } else if (!opts.chompL && sep && parts.length) parts[parts.length - 1] += '\n';
           it.arrays.set('F', parts);
         }
         try {
@@ -890,6 +910,8 @@ export function runPerl(code: string, opts: PerlOptions, input: string[]): strin
     run(prog.end);
   } catch (e) {
     if (e instanceof Unsupported || e instanceof NextSig || e instanceof LastSig) return undefined;
+    // A bug in the runner: let it show.
+    /* c8 ignore next */
     throw e;
   }
   if (it.out === '') return [];
@@ -963,7 +985,8 @@ export function perlExample(code: string, opts: PerlOptions): { input: string[];
     }
     input = ['line one', ...lines, 'line two'];
   }
-  if (counts) input.push(input[1] ?? input[0]);
+  // Every kind of input has at least two lines.
+  if (counts) input.push(input[1]);
   const output = runPerl(code, opts, input);
   return output && { input, output: output.length > 8 ? [...output.slice(0, 7), '…'] : output };
 }
