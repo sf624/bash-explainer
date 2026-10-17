@@ -85,7 +85,8 @@ class Parser {
       const delim = rest[0] === '/' ? '/' : rest[1];
       this.i += rest[0] === '/' ? 1 : 2;
       const save = this.i;
-      this.regex(delim, 'address');
+      // Empty (`//`): the last regex used, when the line is run.
+      const re = this.regex(delim, 'address');
       const ignoreCase = this.src[this.i] === 'I';
       if (ignoreCase) {
         // Redo with the case-insensitive flag.
@@ -96,7 +97,7 @@ class Parser {
         return { kind: 're', re };
       }
       if (this.src[this.i] === 'M') throw new Unsupported();
-      return { kind: 're', re: this.patterns[this.patterns.length - 1]?.re };
+      return { kind: 're', re };
     }
     return undefined;
   }
@@ -146,6 +147,9 @@ class Parser {
           this.i = end;
         }
         cmd.rep = delim === '/' ? cmd.rep : cmd.rep.split('\\' + delim).join(delim);
+        // GNU sed rejects a reference to a group the pattern does not have.
+        const groups = cmd.re ? new RegExp(`${cmd.re.source}|`).exec('')!.length - 1 : 9;
+        if ([...cmd.rep.matchAll(/\\(.)/g)].some(([, d]) => /[1-9]/.test(d) && Number(d) > groups)) throw new Unsupported();
         void repStart;
         return cmd;
       }
@@ -155,7 +159,7 @@ class Parser {
           const start = this.i;
           while (this.i < this.src.length && this.src[this.i] !== delim) this.i += this.src[this.i] === '\\' ? 2 : 1;
           if (this.i >= this.src.length) throw new Unsupported();
-          return unescape(this.src.slice(start, this.i++), delim);
+          return unescape(this.src.slice(start, this.i++));
         };
         cmd.from = read();
         cmd.to = read();
@@ -187,8 +191,9 @@ class Parser {
   }
 }
 
-function unescape(s: string, delim: string): string {
-  return s.replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c === 't' ? '\t' : c === delim ? delim : c));
+function unescape(s: string): string {
+  // `\/` (the delimiter) and other escaped characters stand for themselves.
+  return s.replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c === 't' ? '\t' : c));
 }
 
 /** Build the replacement for one match, handling &, \1…\9, \n and GNU case conversion (\U \L \u \l \E). */
@@ -214,8 +219,9 @@ function replacement(rep: string, m: RegExpExecArray): string {
     if (/[0-9]/.test(n)) add(m[Number(n)] ?? '');
     else if (n === 'n') add('\n');
     else if (n === 't') add('\t');
-    else if (n === 'U' || n === 'L') mode = n;
-    else if (n === 'E') mode = '';
+    // A case conversion cancels a pending \u or \l, as in GNU sed (`\u\L&` is all lower case).
+    else if (n === 'U' || n === 'L') { mode = n; once = ''; }
+    else if (n === 'E') { mode = ''; once = ''; }
     else if (n === 'u' || n === 'l') once = n;
     else add(n);
   }
@@ -236,7 +242,8 @@ function matches(a: Addr, line: string, no: number, last: boolean, st: RunState)
     case 'step': return a.step === 0 ? no === a.first : no >= a.first && (no - a.first) % a.step === 0;
     case 're': {
       const re = a.re ?? st.lastRe;
-      if (!re) return false;
+      // GNU sed stops: "no previous regular expression".
+      if (!re) throw new Unsupported();
       st.lastRe = re;
       return new RegExp(re.source, re.flags).test(line);
     }
@@ -298,7 +305,7 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
       }
       case 's': {
         const re = cmd.re ?? st.lastRe;
-        if (!re) break;
+        if (!re) throw new Unsupported();
         st.lastRe = re;
         const g = new RegExp(re.source, re.flags + 'g');
         let count = 0;
@@ -327,21 +334,22 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
 
 /** Run a script over input lines, as `sed [-n] [-E]` would. Undefined if the script uses unsupported features. */
 export function runSed(script: string, input: string[], opts: { quiet: boolean; extended: boolean }): string[] | undefined {
-  let cmds: Cmd[];
+  const st: RunState = { out: [], quit: false, printQuit: false };
   try {
-    cmds = new Parser(script, opts.extended ? 'ere' : 'bre').script();
+    const cmds = new Parser(script, opts.extended ? 'ere' : 'bre').script();
+    input.forEach((line, k) => {
+      if (st.quit) return;
+      const after: string[] = [];
+      const ps = exec(cmds, line, k + 1, k === input.length - 1, st, after, opts.quiet);
+      if (ps !== undefined && (!opts.quiet && !st.quit || st.printQuit)) st.out.push(ps);
+      st.out.push(...after);
+    });
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the runner: let it show.
+    /* c8 ignore next */
     throw e;
   }
-  const st: RunState = { out: [], quit: false, printQuit: false };
-  input.forEach((line, k) => {
-    if (st.quit) return;
-    const after: string[] = [];
-    const ps = exec(cmds, line, k + 1, k === input.length - 1, st, after, opts.quiet);
-    if (ps !== undefined && (!opts.quiet && !st.quit || st.printQuit)) st.out.push(ps);
-    st.out.push(...after);
-  });
   return st.out.flatMap((l) => l.split('\n'));
 }
 
@@ -359,6 +367,8 @@ export function sedExample(script: string, opts: { quiet: boolean; extended: boo
     cmds = parser.script();
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the parser: let it show.
+    /* c8 ignore next */
     throw e;
   }
   const res = parser.patterns.map((p) => ({ ...p, rx: new RegExp(p.re.source, p.re.flags) }));
