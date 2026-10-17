@@ -41,6 +41,11 @@ const pairs: [string, Json][] = [
   ['.[] | numbers, strings', [1, 'a']], ['map(floor), map(sqrt)', [4.7, 9]], ['[.[] | . as $x | $x + 1]', [1, 2]],
   ['getpath(["a","b"]), setpath(["a","c"]; 1)', { a: { b: 2 } }], ['to_entries | map("\\(.key)=\\(.value)") | join("&")', { a: 1, b: 'x' }],
   ['1 / 0', null], ['{} | .a.b.c', null], ['"x" * 3', null], ['.[] += 1', { a: 1, b: 2 }], ['first, last', []],
+  // Syntax and functions the ones above do not reach.
+  ['.a or .b, .a and .b, (.b | not)', { a: true, b: false }], ['{"a b": 1, "k\\(1)": 2} | ."a b", .k1', null], ['[.[]?], .a?', 1],
+  ['sort', [{ b: 1 }, { a: 2 }, { a: 1, b: 0 }, { a: 1 }]], ['contains([1]), contains({a: 1})', [1, 2]], ['contains({a: 1})', { a: 1, b: 2 }],
+  ['[paths]', [[1], { b: 2 }]], ['to_entries[] | select(.value > 1) | .key', { a: 1, b: 2 }], ['.a[1:]', { a: [1, 2, 3] }],
+  ['.[] | (.a // "none")', [{ a: 1 }, {}]], ['[.[] | -(.)]', [1, -2]], ['{a: 1} | has("a"), (keys | contains(["a"]))', null],
 ];
 
 describe('jq evaluator agrees with jq', function () {

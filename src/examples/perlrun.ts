@@ -173,6 +173,20 @@ class Parser {
     return body;
   }
 
+  /** What follows an `if` block: `elsif (…) {…}` (an `if` in the else part) and `else {…}`. */
+  private ifTail(): S[] | undefined {
+    if (this.peek('elsif')) {
+      this.p++;
+      this.expect('(');
+      const c = this.expr();
+      this.expect(')');
+      const t = this.block();
+      return [{ k: 'if', c, t, f: this.ifTail(), unless: false }];
+    }
+    if (this.peek('else')) { this.p++; return this.block(); }
+    return undefined;
+  }
+
   private statement(): S {
     const t = this.peek();
     if (t?.t === 'word' && (t.v === 'if' || t.v === 'unless')) {
@@ -181,10 +195,7 @@ class Parser {
       const c = this.expr();
       this.expect(')');
       const then = this.block();
-      let f: S[] | undefined;
-      if (this.peek('elsif')) throw new Unsupported('elsif');
-      if (this.peek('else')) { this.p++; f = this.block(); }
-      return { k: 'if', c, t: then, f, unless: t.v === 'unless' };
+      return { k: 'if', c, t: then, f: this.ifTail(), unless: t.v === 'unless' };
     }
     if (t?.t === 'word' && (t.v === 'for' || t.v === 'foreach')) {
       this.p++;
