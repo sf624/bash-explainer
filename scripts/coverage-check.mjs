@@ -54,7 +54,8 @@ const results = Object.entries(coverage).map(([file, cov]) => {
 
 if (process.argv.includes('--update')) {
   const lines = Object.fromEntries(results.filter((r) => r.pct < 100).map((r) => [r.file, r.pct]));
-  const branches = Math.floor(summary.total.branches.pct * 100) / 100;
+  // Branch counts differ a little between machines (tool versions): keep a margin below.
+  const branches = Math.floor(summary.total.branches.pct * 10) / 10;
   fs.writeFileSync(FLOORS, JSON.stringify({ branches, lines }, null, 2) + '\n');
   console.log(`${FLOORS}: ${Object.keys(lines).length} files below 100% of lines, branches at ${branches}%.`);
   process.exit(0);
