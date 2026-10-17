@@ -29,6 +29,7 @@ import { extractShell } from '../src/hosts';
 import { resolveLang } from '../src/i18n';
 import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser, TreeCache } from '../src/parser';
+import { panelUpdate } from '../src/ui/panelView';
 import { toMarkdown } from '../src/ui/render';
 
 // Lines that the tests of each feature do not reach: the less common inputs, and the ways a
@@ -277,6 +278,70 @@ describe('lines no other test reaches', () => {
     assert.match(ex('echo "${x//[ab]/-}"'), /-/);
     assert.match(ex('echo "${!pre@}"'), /pre_A pre_B/);
     assert.match(ex('echo "${x#zq*}"'), /zq/);
+  });
+
+  it('panel: the message that shows a line', () => {
+    const e = explain('yq .a f.yml');
+    const msg = panelUpdate({ lang: 'ja', explanation: { ...e, shell: 'dash', notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'bottom' });
+    assert.strictEqual(msg.dialect.shells[0][1], '自動（zsh）');
+    assert.ok(msg.dialect.yqs!.length > 1);
+    assert.match(msg.lineLabel, /dash/);
+    const en = panelUpdate({ lang: 'en', explanation: explain('echo hi'), file: 'a.sh', line: 0, lineText: 'echo hi', choice: { shell: 'bash', yq: 'kislyuk' }, placement: 'first' });
+    assert.deepStrictEqual([en.dialect.shell, en.dialect.yq, en.dialect.yqs, en.examplesFirst], ['bash', 'kislyuk', undefined, true]);
+  });
+
+  describe('the analyzer: constructs no other test explains', () => {
+    const cases: [string, number, RegExp][] = [
+      ['case $x in\n  a)\n    echo a\n    ;;\nesac', 2, /case branch `a\)`/],
+      ['(\n  echo a\n)', 1, /\( \) subshell/],
+      ['if then fi\necho ok )\n  more (\nx', 1, /syntax error region|./],
+      ['( cd /tmp && ls )', 0, /Subshell: runs `\( \)` in a child process/],
+      ['declare -i n', 0, /n: Variable `n`/],
+      ['FOO=1 2>/dev/null', 0, /Variable assignment/],
+      ['(( n > 1 )) 2>/dev/null', 0, /test \(\( n > 1 \)\)|Arithmetic/],
+      ["grep -v 'foo[0-9]' f", 0, /Printed \(lines that do not match\)/],
+      ["jq --argjson n '{bad' '.a' f", 0, /./],
+      ["jq 'error(\"x\")' f", 0, /Error/],
+      ["awk -vx=1 '{ print x }' f", 0, /./],
+      ["printf 'a\\n' | xargs echo", 0, /Commands run by `xargs echo`/],
+      ["perl -e 'print 1+1'", 0, /Output/],
+      ['echo {1..1000}', 0, /Brace expansion/],
+      ["git log --format='%G?'", 0, /./],
+      ['getopt --options=ab --longoptions=help,file: -- "$@"', 0, /./],
+      ['getopt -a -o x -l long -- "$@"', 0, /./],
+      ['getopt -T', 0, /./],
+      ['printf -v out "%s-%s" a b', 0, /Value stored in `out`/],
+      ["printf '%(%F)T\\n' -1", 0, /./],
+      ['echo ${s:i:2}', 0, /substring of `s` \(offset `i`, length `2`\)/],
+      ['echo ${a[@]:1}', 0, /take the elements of array `a` from index `1` on/],
+      ['echo "${@:2}"', 0, /Offset 2: from `\$2`/],
+      ['x=$"hi"', 0, /`\$"…"` string: translated according to the locale/],
+      ['a[1]=x', 0, /Assign to element `\[1\]` of array `a`/],
+      ['declare a[1]', 0, /Element `\[1\]` of array `a`/],
+      ['declare a[@]', 0, /All elements of array `a`/],
+      ['f()\n{ echo; }', 1, /\{ \}/],
+      ['read -z x', 0, /./],
+      ['grep --regexp="$p" f', 0, /value: `"\$p"`/],
+    ];
+    for (const [src, line, re] of cases) it(src.split('\n')[0], () => assert.match(flat(explain(src, line)) + JSON.stringify(explain(src, line).examples) + explain(src, line).context.map((c) => c.label).join('\n'), re));
+    it('yq -r with kislyuk/yq prints raw strings', () => {
+      const tree = parser.parse("yq -r '.name' f.yml");
+      try {
+        const e = new Analyzer('en').explainLine(tree, 0, undefined, { yqFlavor: 'kislyuk' });
+        assert.ok(e.examples.some((x) => x.kind === 'yq'));
+      } finally {
+        tree.delete();
+      }
+    });
+    it('a distribution alias in a README', () => {
+      const tree = parser.parse('ll');
+      try {
+        const e = new Analyzer('en').explainLine(tree, 0, undefined, { host: 'Markdown code block (bash)' });
+        assert.ok(e.notes.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
+      } finally {
+        tree.delete();
+      }
+    });
   });
 
   describe('languages inside arguments', () => {
