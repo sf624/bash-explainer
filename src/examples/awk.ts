@@ -454,7 +454,6 @@ class Parser {
           return { k: 'field', e: this.primary() };
         }
         if (t.text === '(') {
-          this.skipNl();
           const first = this.expr();
           if (this.is(',')) {
             const list = [first];
@@ -662,6 +661,7 @@ class Interp {
       return v;
     }
     if (name === 'NF') return this.fields.length - 1;
+    if (this.arrays.has(name)) throw new Unsupported('array as scalar');
     return this.vars.get(name);
   }
 
@@ -760,7 +760,8 @@ class Interp {
         return a.get(k);
       }
       case 'field': return this.getField(Math.trunc(toNum(this.eval(e.e))));
-      case 'group': return this.eval(e.list[e.list.length - 1]);
+      // `(a, b)` is only a subscript list (`(a, b) in arr`); gawk rejects it as a value.
+      case 'group': throw new Unsupported('list as a value');
       case 'in': return this.array(e.name).has(this.key(e.subs)) ? 1 : 0;
       case 'cond': return truthy(this.eval(e.c)) ? this.eval(e.a) : this.eval(e.b);
       case 'unary': {
@@ -823,7 +824,11 @@ class Interp {
         this.locals.pop();
       }
     }
-    const v = (i: number) => (args[i] ? this.eval(args[i]) : undefined);
+    // gawk stops when a built-in lacks an argument.
+    const v = (i: number) => {
+      if (!args[i]) throw new Unsupported(`${name} without argument ${i + 1}`);
+      return this.eval(args[i]);
+    };
     switch (name) {
       case 'length': {
         if (!args.length) return this.fields[0].length;
@@ -833,10 +838,9 @@ class Interp {
       }
       case 'substr': {
         const s = toStr(v(0));
-        const m = Math.round(toNum(v(1)));
-        const end = args.length > 2 ? m + Math.round(toNum(v(2))) : Infinity;
-        const from = Math.max(m, 1);
-        const to = Math.min(end, s.length + 1);
+        // As gawk and mawk do: both truncated, and a start before 1 counts from 1 (`substr("hello", 0, 2)` is "he").
+        const from = Math.max(Math.trunc(toNum(v(1))), 1);
+        const to = Math.min(args.length > 2 ? from + Math.trunc(toNum(v(2))) : Infinity, s.length + 1);
         return to > from ? s.slice(from - 1, to - 1) : '';
       }
       case 'index': return toStr(v(0)).indexOf(toStr(v(1))) + 1;
@@ -858,7 +862,8 @@ class Interp {
         const g = new RegExp(re.source, re.flags + (name === 'gsub' ? 'g' : ''));
         const result = toStr(this.eval(target)).replace(g, (m) => {
           count++;
-          return repl.replace(/\\\\|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : '\\'));
+          // As gawk and mawk: `\\&` is a backslash and the match, `\&` a literal &, other backslashes stay.
+          return repl.replace(/\\\\&|\\&|&/g, (x) => (x === '&' ? m : x === '\\&' ? '&' : `\\${m}`));
         });
         if (count) this.assignTo(target, result);
         return count;
@@ -981,9 +986,9 @@ function arith(op: string, a: number, b: number): number {
     case '*': return a * b;
     case '/': if (b === 0) throw new Unsupported('division by zero'); return a / b;
     case '%': if (b === 0) throw new Unsupported('division by zero'); return a % b;
-    case '^': return a ** b;
+    // `^`
+    default: return a ** b;
   }
-  throw new Unsupported(op);
 }
 
 export function parseAwk(src: string): Program | undefined {
@@ -991,6 +996,8 @@ export function parseAwk(src: string): Program | undefined {
     return new Parser(lex(src)).program();
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the parser: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
