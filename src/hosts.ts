@@ -1001,6 +1001,8 @@ function pyScript(b: Builder, src: string, a: number, z: number, pos: PyPos):
         if (e === '\n') { insert('\\', c, c + 1); continue; }
         const simple: Record<string, string> = { n: ';', t: '\t', '\\': '\\', "'": "'", '"': '"' };
         if (e in simple) { insert(simple[e], c, c + 2); c++; continue; }
+        const hex = /^x([0-9a-fA-F]{2})|^u([0-9a-fA-F]{4})/.exec(src.slice(c + 1, c + 6));
+        if (hex) { insert(String.fromCharCode(parseInt(hex[1] ?? hex[2], 16)), c, c + 1 + hex[0].length); c += hex[0].length; continue; }
       }
       insert(ch, c, c + 1);
     }

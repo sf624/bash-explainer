@@ -278,3 +278,37 @@ describe('variables of CI systems', () => {
     assert.match(jk, /the branch being built \(in multibranch pipelines\)/);
   });
 });
+
+describe('host files the other tests do not reach', () => {
+  /** The notes and explanations of a line (0-based) of `src`, read as the file `file`. */
+  const text = (file: string, src: string, line: number) => {
+    const extracted = extractShell(hostKind('', file)!, src);
+    const tree = parser.parse(extracted.text);
+    try {
+      const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
+      return ex ? [...ex.context.map((c) => c.label), ...ex.notes, ...all(ex.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n') : '';
+    } finally {
+      tree.delete();
+    }
+  };
+  it('Makefile: SHELL, and one-letter make variables', () => {
+    assert.match(text('Makefile', 'SHELL := /bin/bash\nall:\n\techo $O\n', 2), /the make variable `O`, expanded by make before the shell runs/);
+    const ex = extractShell('makefile', 'SHELL := /bin/zsh\nall:\n\techo hi\n');
+    assert.strictEqual(ex.regions[0].shell, 'zsh');
+  });
+  it('YAML: a script: list of commands', () => {
+    const src = 'build:\n  script:\n    - make\n    - |\n      echo done\n';
+    assert.match(text('.gitlab-ci.yml', src, 2), /YAML `script:`/);
+    assert.match(text('.gitlab-ci.yml', src, 4), /echo done: Print arguments/);
+  });
+  it('Azure Pipelines: template expressions', () => {
+    const src = 'trigger: none\npool:\n  vmImage: ubuntu-latest\nsteps:\n  - bash: echo ${{ parameters.env }}\n';
+    assert.match(text('azure-pipelines.yml', src, 4), /an Azure Pipelines template expression, replaced with the value of `parameters.env` when the pipeline is expanded/);
+  });
+  it('Python: shell=True with a list, and escapes in the script', () => {
+    const src = 'import subprocess\nsubprocess.run(["echo \\x41 \\\\n $0", "arg"], shell=True)\n';
+    const t = text('x.py', src, 1);
+    assert.match(t, /With shell=True and a list, only the first item is the shell command/);
+    assert.match(extractShell('python', src).text, /^echo A \\n \$0$/m);
+  });
+});
