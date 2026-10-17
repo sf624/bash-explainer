@@ -42,6 +42,7 @@ export class BashParser {
   private parseText(text: string): Tree {
     const tree = this.parser.parse(text);
     // Only when parsing is cancelled or times out, which this extension never asks for.
+    /* c8 ignore next */
     if (!tree) throw new Error('tree-sitter returned no tree');
     return tree;
   }

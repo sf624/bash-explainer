@@ -1,4 +1,29 @@
 {
-  "branches": 85.5,
-  "lines": {}
+  "lines": {},
+  "branches": {
+    "src/analyzer.ts": 86,
+    "src/dialect.ts": 81,
+    "src/embedded/awk.ts": 90,
+    "src/embedded/find.ts": 90,
+    "src/embedded/format.ts": 85,
+    "src/embedded/jq.ts": 88,
+    "src/embedded/perl.ts": 89,
+    "src/embedded/regex.ts": 92,
+    "src/embedded/sed.ts": 82,
+    "src/embedded/yq.ts": 80,
+    "src/examples/awk.ts": 86,
+    "src/examples/gitlog.ts": 88,
+    "src/examples/jq.ts": 82,
+    "src/examples/perlrun.ts": 79,
+    "src/examples/pipeline.ts": 72,
+    "src/examples/regex.ts": 86,
+    "src/examples/runtime.ts": 93,
+    "src/examples/sed.ts": 85,
+    "src/examples/shellwords.ts": 91,
+    "src/examples/textfilters.ts": 88,
+    "src/examples/yaml.ts": 72,
+    "src/expansion.ts": 84,
+    "src/fixes.ts": 82,
+    "src/hosts.ts": 84
+  }
 }

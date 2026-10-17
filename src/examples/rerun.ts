@@ -49,7 +49,7 @@ export function matchMarks(regex: JsRegex, line: string): Mark[] {
   const re = new RegExp(regex.source, `${regex.flags.replace(/[gd]/g, '')}gd`);
   const marks: Mark[] = [];
   for (let m = re.exec(line), n = 0; m && n < 50; m = re.exec(line), n++) {
-    const idx = (m as RegExpExecArray & { indices?: ([number, number] | undefined)[] }).indices ?? [];
+    const idx = (m as RegExpExecArray & { indices: ([number, number] | undefined)[] }).indices;
     idx.forEach((r, g) => { if (r && (g === 0 || r[1] > r[0])) marks.push({ start: r[0], end: r[1], group: g }); });
     if (m[0] === '') re.lastIndex++;
   }
