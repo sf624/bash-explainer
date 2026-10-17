@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `**` in file-name globs: after `shopt -s globstar` (and always in zsh) it is explained as any depth of directories, with examples such as `src/lib/error.ts`; without it, as the same as `*`, one level only. Examples no longer show names like `appapp/app.ts`. The options of `shopt` (`globstar`, `nullglob`, `dotglob`, `extglob`…) are explained.
+
 ## 0.3.0
 
 - About 100 more commands and builtins, chosen from a survey of shell scripts, Dockerfiles and workflows in popular repositories: package managers (`apt-get`, `apk`, `dpkg`, `dnf`, `brew`, `pip`), users and groups (`id`, `useradd`, `adduser`), system information and services (`uname`, `nproc`, `systemctl`), signatures and checksums (`gpg`, `openssl`, `sha512sum`), compression (`xz`, `zstd`), toolchains (`go`, `cargo`, `node`), `gh`, `shellcheck` and more, plus frequent options of known ones (`set -E`, `test -z`, `tar --strip-components`, `curl --retry`, `jq --argjson`…). In that survey, the share of commands explained went from 80% to 89%.

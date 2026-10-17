@@ -103,16 +103,36 @@ export function isGlob(word: string): boolean {
   return /(^|[^\\])([*?]|\[[^\]]+\])/.test(word);
 }
 
-/** A regex for a glob: in `file` mode `*` and `?` do not match `/`, and a leading `.` must be explicit. */
-export function globToRegex(pattern: string, mode: GlobMode): RegExp | undefined {
+/** A `**` that is a whole path segment: with globstar it matches any depth of directories. */
+export function hasGlobstar(pattern: string): boolean {
+  return /(^|\/)\*\*(\/|$)/.test(pattern);
+}
+
+/**
+ * A regex for a glob: in `file` mode `*` and `?` do not match `/` nor a leading `.` of a name, and
+ * with `globstar` a `**` segment matches any number of directories (bash's `shopt -s globstar`, zsh).
+ * Otherwise `**` is the same as `*`.
+ */
+export function globToRegex(pattern: string, mode: GlobMode, globstar = false): RegExp | undefined {
   if (/[?*+@!]\(/.test(pattern)) return undefined;
   let out = '';
-  const any = mode === 'file' ? '[^/]' : '[\\s\\S]';
+  const file = mode === 'file';
+  const any = file ? '[^/]' : '[\\s\\S]';
+  // In file mode, a name (at the start or after `/`) starting with `.` is only matched by a literal dot.
+  const noDot = (i: number) => (file && (i === 0 || pattern[i - 1] === '/') ? '(?!\\.)' : '');
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
     if (c === '\\' && i + 1 < pattern.length) { out += pattern[++i].replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'); continue; }
-    if (c === '*') { out += `${any}*`; continue; }
-    if (c === '?') { out += any; continue; }
+    if (c === '*' && file && globstar && pattern.startsWith('**', i) && (i === 0 || pattern[i - 1] === '/')) {
+      if (pattern[i + 2] === '/') { out += '(?:(?!\\.)[^/]+/)*'; i += 2; continue; }
+      if (i + 2 === pattern.length) { out += '(?:(?!\\.)[^/]+/)*(?!\\.)[^/]*'; i += 1; continue; }
+    }
+    if (c === '*') {
+      out += `${noDot(i)}${any}*`;
+      while (pattern[i + 1] === '*') i++;
+      continue;
+    }
+    if (c === '?') { out += noDot(i) + any; continue; }
     if (c === '[') {
       const end = pattern.indexOf(']', i + 2);
       if (end > 0) {
@@ -120,7 +140,7 @@ export function globToRegex(pattern: string, mode: GlobMode): RegExp | undefined
         const neg = set[0] === '!' || set[0] === '^';
         if (neg) set = set.slice(1);
         set = set.replace(/\[:(\w+):\]/g, (_, n: string) => ({ digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s' } as Record<string, string>)[n] ?? '').replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
-        out += `[${neg ? '^' : ''}${set}]`;
+        out += `${noDot(i)}[${neg ? '^' : ''}${set}]`;
         i = end;
         continue;
       }
@@ -134,25 +154,31 @@ export function globToRegex(pattern: string, mode: GlobMode): RegExp | undefined
   }
 }
 
-export function globMatches(pattern: string, name: string, mode: GlobMode): boolean {
-  const re = globToRegex(pattern, mode);
-  if (!re) return false;
-  // A leading dot (and a dot after /) is only matched by a literal dot.
-  if (mode === 'file' && name.split('/').some((seg, k) => seg.startsWith('.') && !pattern.split('/')[k]?.startsWith('.'))) return false;
-  return re.test(name);
+export function globMatches(pattern: string, name: string, mode: GlobMode, globstar = false): boolean {
+  return globToRegex(pattern, mode, globstar)?.test(name) ?? false;
 }
 
 const STARS = ['app', 'data', 'error', 'x'];
+const DIRS = ['', 'src/', 'src/lib/'];
 
 /** Names that match the glob and near misses that do not, verified with the same matcher. */
-export function globExamples(pattern: string, mode: GlobMode): { matching: string[]; nonMatching: string[] } | undefined {
-  if (!globToRegex(pattern, mode)) return undefined;
+export function globExamples(pattern: string, mode: GlobMode, globstar = false): { matching: string[]; nonMatching: string[] } | undefined {
+  if (!globToRegex(pattern, mode, globstar)) return undefined;
+  const deep = mode === 'file' && globstar && hasGlobstar(pattern);
   const make = (v: number) => {
     let out = '';
     for (let i = 0; i < pattern.length; i++) {
       const c = pattern[i];
       if (c === '\\' && i + 1 < pattern.length) { out += pattern[++i]; continue; }
-      if (c === '*') { out += v === 3 ? '' : STARS[v % STARS.length]; continue; }
+      if (deep && pattern.startsWith('**', i) && (i === 0 || pattern[i - 1] === '/')) {
+        if (pattern[i + 2] === '/') { out += DIRS[v % DIRS.length]; i += 2; continue; }
+        if (i + 2 === pattern.length) { out += DIRS[v % DIRS.length] + STARS[v % STARS.length]; i += 1; continue; }
+      }
+      if (c === '*') {
+        while (pattern[i + 1] === '*') i++;
+        out += v === 3 ? '' : STARS[v % STARS.length];
+        continue;
+      }
       if (c === '?') { out += 'abc1'[v % 4]; continue; }
       if (c === '[') {
         const end = pattern.indexOf(']', i + 2);
@@ -172,17 +198,19 @@ export function globExamples(pattern: string, mode: GlobMode): { matching: strin
   const matching: string[] = [];
   for (let v = 0; v < 6 && matching.length < 3; v++) {
     const n = make(v);
-    if (n && !matching.includes(n) && globMatches(pattern, n, mode)) matching.push(n);
+    if (n && !matching.includes(n) && globMatches(pattern, n, mode, globstar)) matching.push(n);
   }
   if (!matching.length) return undefined;
   const base = matching[0];
   const ext = /\.[^./]+$/.exec(pattern)?.[0];
   const candidates = [
     ext ? base.slice(0, -ext.length) + (ext === '.txt' ? '.md' : '.txt') : base + '.bak',
+    // `**` without globstar is one level only; with it, hidden directories are still skipped.
+    ...(hasGlobstar(pattern) && mode === 'file' ? [deep ? `.cache/${base}` : `src/${base}`] : []),
     mode === 'file' ? '.' + base : base.toUpperCase(),
     base.slice(0, -1), base.slice(1), 'x' + base, base + 'x', base.toUpperCase(),
   ];
-  const nonMatching = [...new Set(candidates)].filter((n) => n && n !== base && !globMatches(pattern, n, mode)).slice(0, 2);
+  const nonMatching = [...new Set(candidates)].filter((n) => n && n !== base && !globMatches(pattern, n, mode, globstar)).slice(0, 2);
   return { matching, nonMatching };
 }
 

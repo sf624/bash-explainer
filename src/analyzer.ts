@@ -2,7 +2,7 @@ import { Lang, Text } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes } from './pitfalls';
 import type { SyntaxNode, Tree } from './parser';
-import { builtins } from './dict/builtins';
+import { builtins, shoptOptions } from './dict/builtins';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
@@ -15,7 +15,7 @@ import { sedExample } from './examples/sed';
 import { Interactive, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
-import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, isGlob, ShellWordsUnsupported } from './examples/shellwords';
+import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -175,6 +175,8 @@ const hasGlob = (s: string) => /(^|[^\\])[*?]|\[[^\]]+\]/.test(s);
 
 export class Analyzer {
   private line: number | null = null;
+  /** Whether `**` reaches into subdirectories on this line (`shopt -s globstar` before it, or zsh). */
+  private globstar = false;
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
@@ -200,6 +202,7 @@ export class Analyzer {
       if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
     }
     this.line = line;
+    this.globstar = globstarOn(root.text, line, shell);
     this.context = [];
     this.extraNotes = [];
     this.examples = [];
@@ -904,6 +907,7 @@ export class Analyzer {
       // Positional argument.
       let desc: string | undefined;
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
+      else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
       const lang = isFn ? undefined : doc?.positionalLang?.[posIndex];
       posIndex++;
@@ -923,7 +927,7 @@ export class Analyzer {
       if (emb) return this.tok(a, 'argument', desc ?? this.s('引数', 'Argument'), emb.tokens);
       const base = this.word(a);
       if (!desc) return base;
-      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') : '';
+      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globstarNote(a.text) : '';
       return this.tok(a, 'argument', desc + glob);
     }
     const inner = this.sub(a);
@@ -1455,15 +1459,24 @@ export class Analyzer {
     if (isGlob(text)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
+  /** What `**` does in a file-name glob: any depth with globstar, else the same as `*`. */
+  private globstarNote(text: string): string {
+    if (!hasGlobstar(text)) return '';
+    return this.globstar
+      ? this.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)')
+      : this.s('。globstar が無効なので `**` は `*` と同じで、1階層分にしか一致しない（`shopt -s globstar` で任意の深さに一致する）', '. Without globstar, `**` is the same as `*` and matches one level only (`shopt -s globstar` makes it match any depth)');
+  }
+
   private globExample(pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
-    const ex = globExamples(pattern, mode);
+    const globstar = mode === 'file' && this.globstar && hasGlobstar(pattern);
+    const ex = globExamples(pattern, mode, globstar);
     if (!ex) return;
     const [yes, no] = labels ?? (mode === 'file'
       ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
       : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
     this.examples.push({ kind: 'glob',
       title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
-      interactive: this.interactive({ kind: 'glob', pattern, mode }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
+      interactive: this.interactive({ kind: 'glob', pattern, mode, ...(globstar ? { globstar } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
     });
   }
 
@@ -1993,7 +2006,7 @@ export class Analyzer {
   private word(n: SyntaxNode): Token {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
-    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`));
+    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globstarNote(text));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``));
   }
 
@@ -2312,6 +2325,23 @@ function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
 /** Tabs as ⇥ and other control characters as their Unicode pictures (CR → ␍), so examples show them. */
 function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
+}
+
+/**
+ * Whether `**` in globs on `line` matches any depth: always in zsh, in bash after `shopt -s globstar`,
+ * in ksh93 after `set -G` / `set -o globstar`. The last setting before the line wins.
+ */
+export function globstarOn(source: string, line: number, shell?: Shell): boolean {
+  if (shell === 'zsh') return true;
+  let on = false;
+  for (const l of source.split('\n').slice(0, line)) {
+    const code = l.replace(/(^|\s)#.*/, '');
+    const m = /\bshopt\s+(-[a-z]+)[^;&|]*\bglobstar\b/.exec(code);
+    if (m && /[su]/.test(m[1]) && (!shell || shell === 'bash')) on = m[1].includes('s');
+    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) on = true;
+    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) on = false;
+  }
+  return on;
 }
 
 /** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
