@@ -672,7 +672,8 @@ export class Analyzer {
     expl += this.lineRef(n);
     const label = `${op}${start}`;
     const children = [
-      ...(body ? this.subs(body.namedChildren.filter((c) => c.type !== 'heredoc_content')) : []),
+      // An empty here-document still has a (empty) body.
+      ...this.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content')),
       // The grammar nests redirections that follow `<<EOF` on the same line inside the heredoc node.
       ...this.subs(n.namedChildren.filter((c) => c.type.endsWith('redirect'))),
     ];
