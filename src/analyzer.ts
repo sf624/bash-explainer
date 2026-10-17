@@ -739,7 +739,16 @@ export class Analyzer {
   }
 
   private unset(n: SyntaxNode): Token {
-    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), this.subs(n.namedChildren.filter((c) => !isPlainWord(c) && c.type !== 'variable_name')));
+    const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
+    const children = n.namedChildren.filter((c): c is SyntaxNode => !!c && (this.line === null || intersects(c, this.line))).map((c) => {
+      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options?.[c.text] : undefined;
+      if (opt) return this.tok(c, 'option', this.t(opt.text));
+      if (c.type === 'variable_name' || isPlainWord(c)) {
+        return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
+      }
+      return this.explain(c);
+    });
+    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), children);
     t.summary = `unset: ${t.explanation}`;
     return t;
   }
@@ -2191,6 +2200,13 @@ export class Analyzer {
   }
 
   private string(n: SyntaxNode): Token {
+    // `$"…"`: tree-sitter-bash reads it as `$` and a string.
+    const dollar = n.previousSibling;
+    if (dollar?.type === '$' && dollar.endIndex === n.startIndex) {
+      const t = this.tok(n, 'string', this.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列（翻訳がなければそのまま。中の変数は展開される）', '`$"…"` string: translated according to the locale (as it is when there is no translation; variables inside expand)'), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
+      t.span = { start: spanOf(dollar).start, end: t.span.end };
+      return t;
+    }
     return this.tok(n, 'string', this.s(
       'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
       'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
