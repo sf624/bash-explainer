@@ -143,6 +143,7 @@ export class ExplainService implements vscode.Disposable {
       yqFlavor: this.yqFlavorOf(doc),
       examples: { enabled: c.get<boolean>('examples.enabled', true), disabled: c.get<string[]>('examples.disabled', []) },
       idioms: c.get<boolean>('notes.idioms', true),
+      pitfalls: c.get<boolean>('notes.pitfalls', true),
       customCommands: c.get<Record<string, unknown>>('customCommands', {}),
     };
   }

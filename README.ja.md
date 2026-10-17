@@ -49,7 +49,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | 展開 | `${var:-default}`、`${file%.sh}`、`${#array[@]}`、`$?`、`$@`、`$(…)`、`<(…)`、`$((…))` を部品に分けて解説 |
 | 引数の中の言語 | 正規表現（オプションに応じて BRE・ERE・PCRE）、sed スクリプト、awk プログラム、jq・yq のフィルタ、perl のワンライナー、`printf`・`date` の書式、`find` の条件式、`chmod` のモード、`sort -k`・`cut -f`・`tr` の指定、`getopts`・`getopt` のオプション文字列、`git log --pretty`・`--date` |
 | 制御構文 | `if`、`for`、`while`、`case`、関数。ブロック内の行では「for ループ › if 文」のように位置も表示 |
-| 定番の書き方と落とし穴 | `IFS= read -r`、スクリプトのディレクトリを得る書き方、strict mode、`trap … EXIT`、`command -v … >/dev/null 2>&1` など |
+| 定番の書き方と落とし穴 | `IFS= read -r`、スクリプトのディレクトリを得る書き方、strict mode、`trap … EXIT`、`command -v … >/dev/null 2>&1` など。`x = 1`、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)`、`-r` のない `read`、`local x=$(cmd)`、`sudo cmd > /etc/…` で何が起きるか |
 
 ## 具体例
 
@@ -203,6 +203,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
 | `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
 | `bashExplainer.notes.idioms` | `true` | 定番の書き方（strict mode、`IFS= read -r` など）の補足を表示する |
+| `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（`x = 1`、クォートしていない変数、`for f in $(ls)` など） |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
 | `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |

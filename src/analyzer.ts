@@ -1,5 +1,6 @@
 import { Lang, Text } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
+import { pitfallNotes } from './pitfalls';
 import type { SyntaxNode, Tree } from './parser';
 import { builtins } from './dict/builtins';
 import { commands } from './dict/commands';
@@ -76,6 +77,8 @@ export interface ExplainOptions {
   examples?: { enabled: boolean; disabled: string[] };
   /** Notes about well-known idioms (strict mode…); on unless false. */
   idioms?: boolean;
+  /** Notes about common mistakes (unquoted variables, `x = 1`…); on unless false. */
+  pitfalls?: boolean;
   /** The `bashExplainer.customCommands` setting: commands the dictionary does not know. */
   customCommands?: Record<string, unknown>;
 }
@@ -210,7 +213,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang))],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang))],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
