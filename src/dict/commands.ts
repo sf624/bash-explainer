@@ -55,7 +55,7 @@ export const commands: Record<string, CommandDoc> = {
     ['--color', '一致部分を色付けする', 'highlight matches'],
   ], { positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'] }),
   sed: cmd('ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する（置換は `s/前/後/g`）', 'Stream editor: edit input line by line (substitute with `s/old/new/g`)', [
-    ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップ作成）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
+    ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップを作る）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
     ['-n|--quiet|--silent', '自動出力を抑止し、`p` コマンドで指定した行だけ出力', 'suppress automatic printing; print only with `p`'],
     ['-e|--expression', '実行するスクリプトを指定（複数指定可）', 'add a script to run', 'arg fills lang:sed'],
     ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills'],
@@ -197,11 +197,11 @@ export const commands: Record<string, CommandDoc> = {
     ['-o|--output', 'レスポンスをファイルに保存', 'write output to a file', 'arg'],
     ['-O|--remote-name', 'URL のファイル名で保存', 'save with the remote file name'],
     ['-X|--request', 'HTTP メソッドを指定（GET, POST など）', 'HTTP method (GET, POST…)', 'arg'],
-    ['-H|--header', 'リクエストヘッダを追加', 'add a request header', 'arg'],
+    ['-H|--header', 'リクエストヘッダーを追加', 'add a request header', 'arg'],
     ['-d|--data', 'リクエストボディとして送るデータ（POST になる）', 'request body data (implies POST)', 'arg'],
     ['-u|--user', '認証情報 `user:password`', 'credentials `user:password`', 'arg'],
-    ['-i|--include', 'レスポンスヘッダも表示', 'include response headers'],
-    ['-I|--head', 'ヘッダだけを取得（HEAD リクエスト）', 'fetch headers only (HEAD)'],
+    ['-i|--include', 'レスポンスヘッダーも表示', 'include response headers'],
+    ['-I|--head', 'ヘッダーだけを取得（HEAD リクエスト）', 'fetch headers only (HEAD)'],
     ['-k|--insecure', 'TLS 証明書の検証をしない（注意）', 'skip TLS verification (careful!)'],
     ['-v|--verbose', '通信の詳細を表示', 'verbose output'],
     ['-w|--write-out', '完了後に表示する情報の書式', 'output format after completion', 'arg'],
@@ -214,7 +214,7 @@ export const commands: Record<string, CommandDoc> = {
     ['--version', '版を表示する', 'print the version'],
   ], { positional: [pos('ダウンロードする URL', 'URL to download')] }),
   tar: cmd('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
-    ['-c|--create', 'アーカイブを作成する', 'create an archive'],
+    ['-c|--create', 'アーカイブを作る', 'create an archive'],
     ['-x|--extract', 'アーカイブを展開する', 'extract an archive'],
     ['-t|--list', 'アーカイブの中身を一覧表示', 'list contents'],
     ['-f|--file', 'アーカイブファイル名', 'archive file name', 'arg'],
@@ -231,8 +231,8 @@ export const commands: Record<string, CommandDoc> = {
     ['-c|--stdout', '結果を標準出力に出す（元ファイルを残す）', 'write to stdout, keep originals'],
     ['-k|--keep', '元ファイルを残す', 'keep the original'],
   ]),
-  gunzip: cmd('gzip ファイルを展開する', 'Decompress gzip files', [['-c|--stdout', '展開した内容を標準出力に書く（元のファイルは残す）', 'write to stdout (keep the file)'], ['-k|--keep', '元のファイルを消さない', 'keep the input file'], ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files']], { positional: [files] }),
-  zip: cmd('ZIP アーカイブを作成する', 'Create ZIP archives', [['-r', 'ディレクトリを再帰的に追加', 'recurse into directories']]),
+  gunzip: cmd('gzip ファイルを展開する', 'Decompress gzip files', [['-c|--stdout', '展開した内容を標準出力に書く（元のファイルは残す）', 'write to stdout (keep the file)'], ['-k|--keep', '元のファイルを削除しない', 'keep the input file'], ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files']], { positional: [files] }),
+  zip: cmd('ZIP アーカイブを作る', 'Create ZIP archives', [['-r', 'ディレクトリを再帰的に追加', 'recurse into directories']]),
   unzip: cmd('ZIP アーカイブを展開する', 'Extract ZIP archives', [
     ['-d', '展開先ディレクトリ', 'destination directory', 'arg'],
     ['-o', '確認せず上書き', 'overwrite without asking'],
@@ -261,11 +261,11 @@ export const commands: Record<string, CommandDoc> = {
     ['-v|--verbose', '処理内容を表示', 'explain what is being done'],
     ['-d|--dir', '空のディレクトリを削除', 'remove empty directories'],
   ], { positional: [pos('削除するファイル', 'file to remove')] }),
-  mkdir: cmd('ディレクトリを作成する', 'Create directories', [
-    ['-p|--parents', '親ディレクトリもまとめて作成し、既に存在してもエラーにしない', 'create parents as needed; no error if it exists'],
-    ['-m|--mode', '作成するディレクトリの権限', 'permission mode', 'arg lang:mode'],
-    ['-v|--verbose', '作成したディレクトリを表示', 'print each created directory'],
-  ], { positional: [pos('作成するディレクトリ', 'directory to create')] }),
+  mkdir: cmd('ディレクトリを作る', 'Create directories', [
+    ['-p|--parents', '親ディレクトリもまとめて作り、既に存在してもエラーにしない', 'create parents as needed; no error if it exists'],
+    ['-m|--mode', '作るディレクトリの権限', 'permission mode', 'arg lang:mode'],
+    ['-v|--verbose', '作ったディレクトリを表示', 'print each created directory'],
+  ], { positional: [pos('作るディレクトリ', 'directory to create')] }),
   rmdir: cmd('空のディレクトリを削除する', 'Remove empty directories'),
   touch: cmd('ファイルの更新日時を現在時刻にする。存在しなければ空ファイルを作成', 'Update file timestamps; create empty files if missing', [
     ['-t', 'この日時にする（`[[CC]YY]MMDDhhmm[.ss]`）', 'use this time (`[[CC]YY]MMDDhhmm[.ss]`)', 'arg'], ['-d|--date', 'この日時にする（`2024-01-02 03:04`）', 'use this date (`2024-01-02 03:04`)', 'arg'],
@@ -277,11 +277,11 @@ export const commands: Record<string, CommandDoc> = {
   chown: cmd('ファイルの所有者・グループを変更する', 'Change file owner and group', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
   ], { positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
-  ln: cmd('ファイルへのリンクを作成する', 'Create links between files', [
+  ln: cmd('ファイルへのリンクを作る', 'Create links between files', [
     ['-s|--symbolic', 'シンボリックリンクを作成（なければハードリンク）', 'make a symbolic link (otherwise hard link)'],
     ['-f|--force', '既存のリンク先ファイルを置き換える', 'remove existing destination files'],
     ['-n|--no-dereference', 'リンク先がディレクトリへのシンボリックリンクでもその中に作らない', 'treat a symlinked destination directory as a file'],
-  ], { positional: [pos('リンク先（実体）', 'target'), pos('作成するリンクの名前', 'link name')] }),
+  ], { positional: [pos('リンク先（実体）', 'target'), pos('作るリンクの名前', 'link name')] }),
   basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')] }),
   dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', [], { positional: [pos('パス', 'path')] }),
   realpath: cmd('シンボリックリンクや `..` を解決した絶対パスを表示する', 'Print the resolved absolute path', [], { positional: [pos('パス', 'path')] }),

@@ -32,8 +32,8 @@ const aptSubs = (extra: Record<string, CommandDoc> = {}): Record<string, Command
   remove: cmd('パッケージを削除する（設定ファイルは残る）', 'Remove packages (configuration files stay)', aptCommon, { positional: [pkg] }),
   purge: cmd('パッケージを設定ファイルごと削除する', 'Remove packages with their configuration files', aptCommon, { positional: [pkg] }),
   autoremove: cmd('依存先として入り、もう不要になったパッケージを削除する', 'Remove packages installed as dependencies and no longer needed', aptCommon),
-  clean: cmd('ダウンロード済みのパッケージファイルを消す（`/var/cache/apt/archives`）', 'Delete downloaded package files (`/var/cache/apt/archives`)', aptCommon),
-  autoclean: cmd('もう入手できない古いパッケージファイルだけ消す', 'Delete only package files that can no longer be downloaded', aptCommon),
+  clean: cmd('ダウンロード済みのパッケージファイルを削除する（`/var/cache/apt/archives`）', 'Delete downloaded package files (`/var/cache/apt/archives`)', aptCommon),
+  autoclean: cmd('もう入手できない古いパッケージファイルだけ削除する', 'Delete only package files that can no longer be downloaded', aptCommon),
   download: cmd('パッケージの .deb をカレントディレクトリにダウンロードする', "Download packages' .deb files into the current directory", aptCommon, { positional: [pkg] }),
   ...extra,
 });
@@ -63,7 +63,7 @@ const rpmSubs = (): Record<string, CommandDoc> => ({
   remove: cmd('パッケージを削除する', 'Remove packages', rpmCommon, { positional: [pkg] }),
   update: cmd('パッケージを更新する', 'Update packages', rpmCommon),
   upgrade: cmd('パッケージを更新する', 'Upgrade packages', rpmCommon),
-  clean: cmd('キャッシュを消す（`clean all` ですべて）', 'Delete cached data (`clean all`: everything)', rpmCommon),
+  clean: cmd('キャッシュを削除する（`clean all` ですべて）', 'Delete cached data (`clean all`: everything)', rpmCommon),
   makecache: cmd('リポジトリのメタデータを取得してキャッシュする', 'Download and cache repository metadata', rpmCommon),
 });
 
@@ -100,7 +100,7 @@ const checksum = (bits: string): CommandDoc => cmd(`${bits} のハッシュ値�
 const compressor = (ja: string, en: string, ext: string, extra: OptSpec[] = []): CommandDoc => cmd(ja, en, [
   ['-d|--decompress', '展開する', 'decompress'],
   ['-c|--stdout', '結果を標準出力に書く（元のファイルはそのまま）', 'write to stdout (keep the input files)'],
-  ['-k|--keep', '元のファイルを消さない', 'keep the input files'],
+  ['-k|--keep', '元のファイルを削除しない', 'keep the input files'],
   ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files'],
   ['-q|--quiet', '表示を減らす', 'less output'],
   ['-v|--verbose', '詳しく表示する', 'more output'],
@@ -189,7 +189,7 @@ export const system: Record<string, CommandDoc> = {
       list: cmd('入っているパッケージを一覧表示する', 'List installed packages'),
       info: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
       tap: cmd('追加のリポジトリ（tap）を登録する', 'Add a third-party repository (tap)', [], { positional: [pos('tap の名前（`ユーザー/リポジトリ`）', 'tap name (`user/repo`)')] }),
-      cleanup: cmd('古い版やキャッシュを消す', 'Remove old versions and caches'),
+      cleanup: cmd('古い版やキャッシュを削除する', 'Remove old versions and caches'),
       bundle: cmd('Brewfile に書かれたものをまとめて入れる', 'Install everything in a Brewfile'),
     },
   }),
@@ -204,7 +204,7 @@ export const system: Record<string, CommandDoc> = {
       add: cmd('依存を追加する', 'Add dependencies', [['-D|--dev', '開発用の依存として追加', 'as development dependencies']], { positional: [pkg] }),
       remove: cmd('依存を削除する', 'Remove dependencies', [], { positional: [pkg] }),
       run: cmd('package.json の scripts を実行する', 'Run a package.json script', [], { positional: [pos('スクリプト名', 'script name')] }),
-      cache: cmd('キャッシュを操作する（`yarn cache clean` で消す）', 'Manage the cache (`yarn cache clean` empties it)'),
+      cache: cmd('キャッシュを操作する（`yarn cache clean` で削除する）', 'Manage the cache (`yarn cache clean` empties it)'),
     },
   }),
 
@@ -261,7 +261,7 @@ export const system: Record<string, CommandDoc> = {
     subcommands: {
       component: cmd('部品（`rustfmt`、`clippy`…）を追加・削除する（`component add`）', 'Add or remove components (`rustfmt`, `clippy`…; `component add`)'),
       target: cmd('クロスコンパイルの対象を追加する（`target add`）', 'Add cross-compilation targets (`target add`)'),
-      toolchain: cmd('ツールチェーンを入れる・消す（`toolchain install`）', 'Install or remove toolchains (`toolchain install`)'),
+      toolchain: cmd('ツールチェーンを入れる・削除する（`toolchain install`）', 'Install or remove toolchains (`toolchain install`)'),
       default: cmd('既定のツールチェーンを設定する', 'Set the default toolchain', [], { positional: [pos('ツールチェーン（`stable`、`nightly`…）', 'toolchain (`stable`, `nightly`…)')] }),
       update: cmd('ツールチェーンを更新する', 'Update toolchains'),
       show: cmd('入っているツールチェーンを表示する', 'Show installed toolchains'),
@@ -439,7 +439,7 @@ export const system: Record<string, CommandDoc> = {
     ['-b|--detach-sign', '別ファイルの署名を作る', 'make a detached signature'], ['-q|--quiet', '表示を減らす', 'less output'],
   ], { positional: [pos('ファイルまたは鍵 ID', 'file or key ID')] }),
   gpgconf: cmd('GnuPG の部品を管理する', 'Manage GnuPG components', [
-    ['--kill', 'この部品（`gpg-agent`、`all`）を止める（一時ディレクトリを消す前に）', 'stop this component (`gpg-agent`, `all`; before deleting a temporary home)', 'arg'],
+    ['--kill', 'この部品（`gpg-agent`、`all`）を止める（一時ディレクトリを削除する前に）', 'stop this component (`gpg-agent`, `all`; before deleting a temporary home)', 'arg'],
     ['--list-dirs', '使うディレクトリを表示する', 'list the directories used'], ['--reload', 'この部品に設定を読み直させる', 'reload this component', 'arg'],
   ]),
   openssl: cmd('OpenSSL: 暗号・証明書のツール', 'OpenSSL: cryptography and certificate tool', [], {
@@ -507,7 +507,7 @@ export const system: Record<string, CommandDoc> = {
   unxz: compressor('xz 形式を展開する', 'Decompress xz files', '.xz'),
   xzcat: decompressToStdout('xz 形式を展開して標準出力に出す', 'Decompress xz files to stdout'),
   zstd: compressor('zstd 形式で圧縮・展開する（速くて圧縮率も高い）', 'Compress or decompress zstd files (fast, good ratio)', '.zst', [
-    ['-T|--threads', '使うスレッド数（`-T0` で CPU 数）', 'threads to use (`-T0`: one per CPU)', 'arg'], ['-o', '出力するファイル', 'output file', 'arg'], ['--rm', '成功したら元のファイルを消す', 'remove the input on success'],
+    ['-T|--threads', '使うスレッド数（`-T0` で CPU 数）', 'threads to use (`-T0`: one per CPU)', 'arg'], ['-o', '出力するファイル', 'output file', 'arg'], ['--rm', '成功したら元のファイルを削除する', 'remove the input on success'],
   ]),
   unzstd: compressor('zstd 形式を展開する', 'Decompress zstd files', '.zst'),
   zstdcat: decompressToStdout('zstd 形式を展開して標準出力に出す', 'Decompress zstd files to stdout'),

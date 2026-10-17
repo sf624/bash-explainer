@@ -282,6 +282,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
+- 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
 - リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
 

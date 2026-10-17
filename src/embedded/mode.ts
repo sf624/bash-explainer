@@ -60,7 +60,7 @@ function octal(src: string, s: S, umask: boolean): ModeResult {
     const bits = [
       special & 4 && s('setuid（4: 実行時に所有者の権限で動く）', 'setuid (4: runs with the owner\'s privileges)'),
       special & 2 && s('setgid（2: グループの権限で動く。ディレクトリなら中のファイルがグループを継承）', 'setgid (2: runs with the group\'s privileges; in a directory, new files inherit the group)'),
-      special & 1 && s('スティッキービット（1: ディレクトリ内のファイルは所有者しか消せない。/tmp など）', 'sticky bit (1: in a directory, only owners can delete files, as in /tmp)'),
+      special & 1 && s('スティッキービット（1: ディレクトリ内のファイルは所有者しか削除できない。/tmp など）', 'sticky bit (1: in a directory, only owners can delete files, as in /tmp)'),
     ].filter(Boolean);
     tokens.push({
       start: 0, end: 1, kind: 'number', children: [],
