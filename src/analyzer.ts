@@ -1402,7 +1402,8 @@ export class Analyzer {
         const eq = v.indexOf('=');
         if (eq > 0) opts.vars[v.slice(0, eq)] = v.slice(eq + 1);
       } else {
-        opts.fs = v === 't' ? '\t' : v.replace(/\\t/g, '\t');
+        // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
+        opts.fs = v.replace(/\\t/g, '\t');
       }
     }
     return opts;
