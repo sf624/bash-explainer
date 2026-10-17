@@ -10,7 +10,7 @@
     "src/embedded/sed.ts": 82,
     "src/embedded/yq.ts": 80,
     "src/examples/awk.ts": 86,
-    "src/examples/gitlog.ts": 88,
+    "src/examples/gitlog.ts": 85,
     "src/examples/jq.ts": 82,
     "src/examples/perlrun.ts": 79,
     "src/examples/pipeline.ts": 72,
