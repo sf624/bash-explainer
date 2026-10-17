@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
-import { explainDate, explainPrintf, printfNote, sampleDate } from '../src/embedded/format';
+import { explainDate, explainPrintf, formatDate, parseSampleDate, printfNote } from '../src/embedded/format';
 
 function parts(src: string, ts = explainPrintf(src, 'en')): string[] {
   return ts.map((t) => src.slice(t.start, t.end));
@@ -41,12 +41,28 @@ describe('date formats', () => {
     assert.strictEqual(explainDate('+%Q', 'en')[1].kind, 'error');
   });
 
-  it('renders the same text as date(1)', () => {
-    const at = 1760600703; // a fixed moment, rendered in the local time zone by both sides
-    for (const fmt of ['+%Y-%m-%dT%H:%M:%S', '+%F %T', '+%-d %B %Y (%a)', '+%D %R', '+%j %u %w %e', '+%^a %b %y %%']) {
-      const expected = execFileSync('date', ['-d', `@${at}`, fmt], { env: { ...process.env, LC_ALL: 'C' } }).toString().replace(/\n$/, '');
-      assert.strictEqual(sampleDate(fmt, new Date(at * 1000)), expected, fmt);
+  it('renders the same text as GNU date -u', function () {
+    try {
+      if (!/GNU/.test(execFileSync('date', ['--version']).toString())) return this.skip();
+    } catch {
+      return this.skip();
     }
-    assert.strictEqual(sampleDate('+%Z'), undefined, 'zone names depend on the system');
+    const formats = ['%Y-%m-%dT%H:%M:%S', '%F %T', '%-d %B %Y (%a)', '%D %R', '%j %u %w %e', '%^a %b %y %%', '%c', '%x', '%X', '%r', '%Z %z %:z %::z',
+      '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d'];
+    // Week numbers and ISO years change around the turn of the year.
+    for (const when of ['2024-03-05 07:08:09', '2025-12-31 23:59:59', '2021-01-03 12:00:00', '2020-12-31 00:30:00', '2027-01-01 13:05:00']) {
+      for (const fmt of formats) {
+        const expected = execFileSync('date', ['-u', '-d', when, `+${fmt}`], { env: { ...process.env, LC_ALL: 'C' } }).toString().replace(/\n$/, '');
+        assert.strictEqual(formatDate(`+${fmt}`, parseSampleDate(when)!), expected, `${when} ${fmt}`);
+      }
+    }
+    assert.strictEqual(formatDate('+%Q', parseSampleDate('2024-01-01')!), undefined);
+  });
+
+  it('reads the dates typed in the panel', () => {
+    assert.strictEqual(parseSampleDate('2024-03-05T07:08:09Z')?.toISOString(), '2024-03-05T07:08:09.000Z');
+    assert.strictEqual(parseSampleDate('2024-3-5')?.toISOString(), '2024-03-05T00:00:00.000Z');
+    assert.strictEqual(parseSampleDate('2024-02-30'), undefined);
+    assert.strictEqual(parseSampleDate('tomorrow'), undefined);
   });
 });

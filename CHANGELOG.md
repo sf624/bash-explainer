@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `date +FORMAT` gets a worked example: what it prints at two fixed moments (in UTC), editable in the panel. It replaces the note "right now this prints…", which changed with the time, so the same line now always gets the same explanation. More conversions are worked out (`%s`, `%I`, `%p`, `%Z`, `%z`, week numbers, `%c`…), checked against GNU `date`. Turn it off with the `date` kind in `bashExplainer.examples.disabled`.
 - About 100 more commands and builtins, chosen from a survey of shell scripts, Dockerfiles and workflows in popular repositories: package managers (`apt-get`, `apk`, `dpkg`, `dnf`, `brew`, `pip`), users and groups (`id`, `useradd`, `adduser`), system information and services (`uname`, `nproc`, `systemctl`), signatures and checksums (`gpg`, `openssl`, `sha512sum`), compression (`xz`, `zstd`), toolchains (`go`, `cargo`, `node`), `gh`, `shellcheck` and more, plus frequent options of known ones (`set -E`, `test -z`, `tar --strip-components`, `curl --retry`, `jq --argjson`…). In that survey, the share of commands explained went from 80% to 89%.
 - `head -1`, `tail -5` and `git log -3` are read as `-n N`.
 - `sed -i.bak` takes `.bak` as the backup suffix instead of more options.

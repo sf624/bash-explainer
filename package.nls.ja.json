@@ -50,6 +50,7 @@
   "config.examples.kind.read": "read が変数に入れる値",
   "config.examples.kind.getopt": "getopt による引数の並び替え",
   "config.examples.kind.gitLog": "git log の --pretty・--date",
+  "config.examples.kind.date": "date +書式 の出力",
   "config.embedded.files.dockerfile": "Dockerfile",
   "config.embedded.files.makefile": "Makefile",
   "config.embedded.files.yaml": "CI の YAML（GitHub Actions・GitLab CI など）",

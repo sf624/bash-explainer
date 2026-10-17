@@ -225,7 +225,8 @@
               "xargs",
               "read",
               "getopt",
-              "gitLog"
+              "gitLog",
+              "date"
             ],
             "enumDescriptions": [
               "%config.examples.kind.regex%",
@@ -243,7 +244,8 @@
               "%config.examples.kind.xargs%",
               "%config.examples.kind.read%",
               "%config.examples.kind.getopt%",
-              "%config.examples.kind.gitLog%"
+              "%config.examples.kind.gitLog%",
+              "%config.examples.kind.date%"
             ]
           },
           "uniqueItems": true,

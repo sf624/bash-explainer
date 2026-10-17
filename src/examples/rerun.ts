@@ -1,5 +1,6 @@
 // Re-runs a worked example on input the user typed in the panel (regex101's test string).
 import type { Lang } from '../i18n';
+import { formatDate, parseSampleDate } from '../embedded/format';
 import { runAwk } from './awk';
 import { Json, runJq, toJson } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
@@ -20,7 +21,8 @@ export type RerunSpec =
   | { kind: 'perl'; code: string; opts: PerlOptions }
   | { kind: 'filter'; cmd: string; words: (string | undefined)[] }
   | { kind: 'pipeline'; stages: Stage[] }
-  | { kind: 'xargs'; words: (string | undefined)[] };
+  | { kind: 'xargs'; words: (string | undefined)[] }
+  | { kind: 'date'; format: string };
 
 /** A highlighted range on a line of the input: the whole match (group 0) or a capture group. */
 export interface Mark { start: number; end: number; group: number }
@@ -136,5 +138,12 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
       };
     }
     case 'xargs': return out(runXargs(spec.words, input.join('\n') + '\n').map(showCommand), s('実行されるコマンド', 'Commands that run'));
+    case 'date': {
+      const unreadable = s('（日時として読めません。`2024-03-05 07:08:09` の形で）', '(not a date; write it like `2024-03-05 07:08:09`)');
+      return out(input.filter((l) => l.trim()).map((l) => {
+        const when = parseSampleDate(l);
+        return when ? (formatDate(spec.format, when) ?? '') : unreadable;
+      }));
+    }
   }
 }

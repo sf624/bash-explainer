@@ -50,6 +50,7 @@
   "config.examples.kind.read": "what read stores",
   "config.examples.kind.getopt": "how getopt rearranges arguments",
   "config.examples.kind.gitLog": "git log --pretty and --date",
+  "config.examples.kind.date": "date +FORMAT output",
   "config.embedded.files.dockerfile": "Dockerfile",
   "config.embedded.files.makefile": "Makefile",
   "config.embedded.files.yaml": "CI YAML (GitHub Actions, GitLab CI…)",

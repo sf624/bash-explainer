@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/parser';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
+import { rerun } from '../src/examples/rerun';
 import { createBashParser } from '../src/parser';
 
 const root = path.join(__dirname, '..');
@@ -213,8 +214,14 @@ describe('standalone arithmetic commands', () => {
 describe('example titles', () => {
   it('names the command when the line runs several', () => {
     const src = 'grep -rn x ./src | sort -u > errors.txt && echo "done: $(date +%F)"';
-    assert.deepStrictEqual(explain(src, 0, 'ja').examples.map((e) => e.title), ['`grep -rn x ./src` の例', '`sort -u` の例']);
-    assert.deepStrictEqual(explain(src, 0, 'en').examples.map((e) => e.title), ['Example for `grep -rn x ./src`', 'Example for `sort -u`']);
+    assert.deepStrictEqual(explain(src, 0, 'ja').examples.map((e) => e.title), ['`grep -rn x ./src` の例', '`sort -u` の例', '`date +%F` の例']);
+    assert.deepStrictEqual(explain(src, 0, 'en').examples.map((e) => e.title), ['Example for `grep -rn x ./src`', 'Example for `sort -u`', 'Example for `date +%F`']);
+  });
+  it('shows date +FORMAT at fixed moments, the same every time', () => {
+    const [ex] = explain('date -u +%Y%m%dT%H%M%SZ').examples;
+    assert.deepStrictEqual(ex.sections.map((x) => x.lines), [['2024-03-05 07:08:09', '2025-12-31 23:59:59'], ['20240305T070809Z', '20251231T235959Z']]);
+    assert.strictEqual(ex.kind, 'date');
+    assert.deepStrictEqual(rerun(ex.interactive!.spec, ['2000-01-01 00:00:00', 'soon'], 'en').sections[0].lines, ['20000101T000000Z', '(not a date; write it like `2024-03-05 07:08:09`)']);
   });
   it('keeps the plain title for a single command', () => {
     assert.deepStrictEqual(explain('sort -u names.txt', 0, 'ja').examples.map((e) => e.title), ['例']);
