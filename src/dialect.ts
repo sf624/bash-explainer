@@ -1,4 +1,4 @@
-import type { SyntaxNode } from 'web-tree-sitter';
+import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
@@ -210,6 +210,10 @@ export function featuresOnLine(root: SyntaxNode, line: number): string[] {
 
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
   switch (n.type) {
+    // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
+    case 'compound_statement':
+      if (n.child(0)?.type === '((') add('arithCommand');
+      return;
     case 'test_command': {
       const open = n.child(0)?.type;
       if (open === '[[') {

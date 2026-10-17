@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import type Parser = require('web-tree-sitter');
+import type { BashParser as Parser } from '../src/parser';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
 import { createBashParser } from '../src/parser';
 

@@ -51,18 +51,19 @@ describe('offline by design', () => {
     }
   });
 
-  it('the shipped bundles (desktop and web) require only vscode, fs and path, all by name', function () {
+  it('the shipped bundles (desktop and web) require only vscode and file modules, all by name', function () {
     this.timeout(60000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-'));
     try {
       const out = path.join(dir, 'extension.js');
       // The same build as `npm run package`.
       execFileSync(process.execPath, ['esbuild.mjs', '--production', `--outfile=${out}`], { cwd: root, stdio: 'pipe' });
-      // fs and path: web-tree-sitter's code for Node.js, which reads the wasm files only when given paths.
+      // fs, path and url: web-tree-sitter's code for Node.js, which reads the wasm files only when given paths.
       for (const file of [out, path.join(dir, 'web', 'extension.js')]) {
         const bundle = fs.readFileSync(file, 'utf8');
         const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
-        assert.deepStrictEqual([...required].sort(), ['fs', 'path', 'vscode'], file);
+        assert.ok(required.has('vscode'), file);
+        for (const name of required) assert.ok(['fs', 'path', 'url', 'vscode'].includes(name), `${file} requires ${name}`);
         // A name built at run time could load anything.
         assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/, file);
         assert.doesNotMatch(bundle, /telemetry/i, file);
@@ -125,8 +126,8 @@ describe('offline by design', () => {
       }
       const app = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
       // Node.js modules appear only in web-tree-sitter's code for Node.js, never run in a browser.
-      const builtins = /\b[\w$]+\(\s*"((?:node:)?(?:fs|path|http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster))"\s*\)/g;
-      assert.deepStrictEqual([...new Set([...app.matchAll(builtins)].map((m) => m[1]))].sort(), ['fs', 'path']);
+      const builtins = /\b[\w$]+\(\s*"((?:node:)?(?:fs|path|url|module|http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster))"\s*\)/g;
+      for (const name of new Set([...app.matchAll(builtins)].map((m) => m[1]))) assert.ok(['fs', 'path', 'url', 'module'].includes(name), `the page requires ${name}`);
       assert.doesNotMatch(app, /telemetry|sendBeacon|WebSocket|EventSource/i);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

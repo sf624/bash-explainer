@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type Parser = require('web-tree-sitter');
+import type { BashParser as Parser } from '../src/parser';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, parseFind } from '../src/embedded/find';
 import { createBashParser } from '../src/parser';

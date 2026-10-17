@@ -14,7 +14,7 @@ export const ALLOWED_LICENSES = ['MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', '
 
 /** The files the builds copy as they are, and the package each comes from. */
 export const ASSETS: Record<string, string> = {
-  'tree-sitter.wasm': 'web-tree-sitter',
+  'web-tree-sitter.wasm': 'web-tree-sitter',
   'tree-sitter-bash.wasm': 'tree-sitter-bash',
 };
 

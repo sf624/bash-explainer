@@ -10,7 +10,7 @@ import { Feature, ui } from './ui/render';
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // Read through VS Code, so that the same code works on the desktop and on the web (vscode.dev).
   const wasm = (name: string) => vscode.workspace.fs.readFile(vscode.Uri.joinPath(ctx.extensionUri, 'dist', name));
-  const parser = await createBashParser({ runtime: await wasm('tree-sitter.wasm'), bash: await wasm('tree-sitter-bash.wasm') });
+  const parser = await createBashParser({ runtime: await wasm('web-tree-sitter.wasm'), bash: await wasm('tree-sitter-bash.wasm') });
   const service = new ExplainService(new TreeCache(parser));
   const hover = new HoverController(service);
   const panel = new PanelController(ctx, service);

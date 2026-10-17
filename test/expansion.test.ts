@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import type Parser = require('web-tree-sitter');
+import type { BashParser as Parser } from '../src/parser';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { createBashParser } from '../src/parser';
