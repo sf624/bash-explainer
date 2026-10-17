@@ -46,3 +46,33 @@ describe('sed example input', () => {
     assert.strictEqual(runSed('x', ['a'], { quiet: false, extended: false }), undefined);
   });
 });
+
+describe('the sed runner agrees with GNU sed on the less common commands', () => {
+  const input = ['abc', 'foo bar', 'Abc def', 'line 4', 'end'];
+  const scripts: [string, boolean?][] = [
+    ['\\%a%p', true], ['1 !d'], ['2! d'], ['y/a\\nb/x\\ty/'], ['2q0'], ['2q;p'], ['2,3c X'], ['2,4d'], ['2~0p', true],
+    ['s/\\(a\\)\\?b/[\\1]/'], ['s/a/\\n\\t/'], ['s/\\(b\\)/\\2|\\1/'.replace('\\2', ''), false], ['s/.*/\\U&\\E!/'], ['s/.*/\\l&/'], ['s/A/\\u\\La/'],
+    ['/a/s//X/'], ['s/b/B/;//p'], ['s/A/\\l\\UB/'], ['s/.*/\\L\\u&/'], ['/b/p;/x/!{//p}', true], ['y/a\\/b/x\\/\\q/'], ['2{q};p'], ['2{d};p'],
+  ];
+  for (const [script, quiet = false] of scripts) {
+    it(script, () => {
+      assert.deepStrictEqual(runSed(script, input, { quiet, extended: false }), realSed(script, input, quiet, false));
+    });
+  }
+  it('gives up on what it does not run', () => {
+    for (const script of ['{p', '}', 's/a\nb/x/', 's/a', 's/[[:foo:]]/x/', '/a/Mp', 's/a/b\nc/', 's/a/b', 'y/ab/c/', 'y/ab/', 's/a/b/w out', 'n', 's/\\(b\\)/\\9/', '//p', 's//x/', '2{/a/p};//p']) {
+      assert.strictEqual(runSed(script, input, { quiet: false, extended: false }), undefined, script);
+    }
+  });
+  it('makes up input only while it stays short', () => {
+    assert.strictEqual(sedExample('9p', { quiet: false, extended: false }), undefined);
+    assert.strictEqual(sedExample('/a/p;/b/p;/c/p;/d/p;/e/p', { quiet: true, extended: false }), undefined);
+    const ex = sedExample('/line\\|text\\|data\\|note/d', { quiet: false, extended: false })!;
+    assert.ok(ex.input.includes('1'), JSON.stringify(ex.input));
+    for (const script of ['s/^a/b/', 's/a$/b/', 's/^a$/b/', '1,3p', '2~0p']) {
+      const e = sedExample(script, { quiet: false, extended: false })!;
+      assert.deepStrictEqual(e.output, realSed(script, e.input, false, false), script);
+    }
+  });
+});
+
