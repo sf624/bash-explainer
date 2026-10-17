@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { Analyzer } from '../src/analyzer';
+import { Analyzer, ExplainOptions } from '../src/analyzer';
+import type { Shell } from '../src/dialect';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
 import { customCommandDoc } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
@@ -720,3 +721,31 @@ describe('jq runner: what it gives up on, and what newer jq releases do', () => 
   });
 });
 
+describe('the analyzer: branches no other test takes', () => {
+  const both = (src: string, line = 0, shell?: Shell, opts: ExplainOptions = {}) => {
+    const tree = parser.parse(src);
+    try {
+      const en = new Analyzer('en').explainLine(tree, line, shell, opts);
+      const ja = new Analyzer('ja').explainLine(tree, line, shell, opts);
+      const all = (ts: typeof en.items): typeof en.items => ts.flatMap((t) => [t, ...all(t.children)]);
+      return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
+    } finally {
+      tree.delete();
+    }
+  };
+  const cases: [string, number?, Shell?, ExplainOptions?][] = [
+    ['echo ${a[10]} ${a[11]} ${a[12]} ${a[13]} ${a[1]} ${a[2]} ${a[3]} ${a[-11]} ${a[-2]} ${s:10:1} ${s:11} ${s:21:1} ${s:22:1} ${s:23}'],
+    ['echo "$x" | grep -c a', 0, undefined, { idioms: false, pitfalls: false }],
+    ['until false; do\n  echo a\ndone', 1], ['((\n  x = 1\n))', 1], ['a=1 b=2'], ['(( x ? 1 : 2 )); (( x-- )); (( (1 + 2) ))'], ["echo $'a\\tb'"],
+    ['echo ${@} $? ${#} $_'], ['for ((i = 0; i < 3; i++)); do :; done'], ['cat <<-EOF\n\tx\n\tEOF'], ['cat <<"EOF" > out\nx\nEOF'],
+    ['case $x in\n  @(a|b)) echo;;\n  *.txt|a?) :;;\n  plain) :;;\nesac', 1], ['case $x in\n  *.txt|a?) :;;\nesac', 1], ['case $x in\n  plain) :;;\nesac', 1],
+    ['{ echo a; } > out'], ['while read -r l; do :; done < f'], ['cat <<< "$x"'], ['x+=(a)'], ['x='], ['declare -x -Q a b=1'], ['declare -a \\\n  x', 1],
+    ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
+  ];
+  for (const [src, line = 0, shell, opts] of cases) {
+    it(src.replace(/\n/g, '⏎'), () => {
+      const [en, ja] = both(src, line, shell, opts);
+      assert.ok(en.length > 0 && ja.length > 0);
+    });
+  }
+});
