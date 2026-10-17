@@ -1,13 +1,8 @@
 {
-  "branches": 84.0,
+  "branches": 84.7,
   "lines": {
     "src/analyzer.ts": 97.35,
     "src/dialect.ts": 95.79,
-    "src/embedded/awk.ts": 95.15,
-    "src/embedded/find.ts": 88.5,
-    "src/embedded/jq.ts": 92.5,
-    "src/embedded/regex.ts": 94.78,
-    "src/embedded/sed.ts": 89.76,
     "src/examples/awk.ts": 97.83,
     "src/examples/perlrun.ts": 94.3,
     "src/expansion.ts": 96.87,

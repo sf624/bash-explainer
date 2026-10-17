@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- jq filters with `.a.[0]` (jq 1.7) or a `def` after a comma (`1, def f: 2; f`) are explained; before, the whole filter was "could not parse".
 - `git log --date=relative` examples over a year old read like git's: "1 year, 1 month ago" up to five years, instead of "1 year ago".
 - perl one-liners with a `BEGIN { … }` or `END { … }` block followed by more code without `;` (`perl -lne 'END { print $n } $n++'`) are explained statement by statement; the block and the code after it were taken for one assignment.
 - `exec 3>&-` and `exec 3<&-` are explained again as closing the descriptor; since the parser update in 0.3.0 they were only "redirection `>&-`".
