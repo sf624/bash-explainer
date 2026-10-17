@@ -46,8 +46,9 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
-| `--format <format>` | `text`, `markdown` or `json` |
+| `--format <format>` | `text`, `markdown` or `json`; with `--check`, also `github` (annotations in GitHub Actions) or `sarif` (for code scanning) |
 | `--no-examples` | leave out worked examples |
+| `--lsp` | run as a Language Server on standard input and output (see [In your editor](#in-your-editor-language-server)) |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.

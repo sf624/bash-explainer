@@ -255,7 +255,9 @@ Bash Explainer は、設計上すべてオフラインで動きます。
 
 VS Code for the Web では、拡張はお使いのブラウザの中で動きます。VS Code は拡張のファイル（構文解析器を含む）を Marketplace から読み込みますが、スクリプトの解説はブラウザの中で行い、どこにも送りません。
 
-ここで述べているのはこの拡張とブラウザ版の性質で、VS Code 本体、他の拡張、お使いのブラウザは含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
+[コマンドラインツール](cli/README.md)（Language Server を兼ねます）も同じです。ネットワーク接続を開いたりプロセスを起動したりするコードを含まず、同じ CI のチェックで確かめています。さらに、通信やプロセス起動のモジュールを塞いだ状態で動かすテストも行っています。ネットワークを使うのは入手するときだけです。`npx` と GitHub Action は npm からダウンロードしますが、インストール後はオフラインで動きます。
+
+ここで述べているのはこの拡張、ブラウザ版、コマンドラインツールの性質で、VS Code 本体、他の拡張、お使いのブラウザ、npm、GitHub Actions は含みません。本拡張は無保証で提供されます（[LICENSE](LICENSE) を参照）。機密性の高いデータに使う場合は、ご自身の要件に照らして評価してください。
 
 ## リリースノート
 
@@ -281,7 +283,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
-- リリースするには、`package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace と Open VSX に公開して GitHub Release を作成します。最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
+- リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
 
 ## ライセンス
 

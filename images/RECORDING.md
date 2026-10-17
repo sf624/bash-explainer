@@ -1,6 +1,6 @@
 # Recording the README images
 
-README.md and README_ja.md use these four files from this directory:
+README.md and README.ja.md use these four files from this directory, recorded by the script below:
 
 | File | What it shows | Length |
 | --- | --- | --- |
@@ -8,6 +8,8 @@ README.md and README_ja.md use these four files from this directory:
 | `hover.gif` | Hover mode | about 15 s |
 | `panel.gif` | Panel mode | about 17 s |
 | `inline.png` | Inline mode (still image) | — |
+
+`action-annotations.png`, used by cli/README.md, is a screenshot of a pull request on GitHub, taken by hand: the action's warnings on a script's lines under *Files changed*.
 
 `images/` is left out of the .vsix by `.vscodeignore`. The Marketplace README loads the images from GitHub, through `repository` in `package.json` (github.com/sf624/bash-explainer), so **push before you publish**.
 
@@ -55,4 +57,4 @@ To change a scenario, edit `record()` in the script.
 - Tools: [ScreenToGif](https://www.screentogif.com/) on Windows, [Kap](https://getkap.co/) on macOS
 - Open `images/demo.sh` and use the settings and steps in the table above
 - Export at most 1000px wide, 10–15 fps, under 5 MB per file
-- For Japanese images, set `"bashExplainer.language": "ja"`, save them under other names, and point README_ja.md at them
+- For Japanese images, set `"bashExplainer.language": "ja"`, save them under other names, and point README.ja.md at them
