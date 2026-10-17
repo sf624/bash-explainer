@@ -118,6 +118,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      # The GitHub Action is used as `sf624/bash-explainer@v0`: move that major tag to this
+      # release (v1 from 1.0.0 on). It does not match `v*.*.*`, so it starts no release.
+      - name: Move the major version tag
+        run: |
+          major="v${{ needs.build.outputs.version }}"
+          major="${major%%.*}"
+          git tag --force "$major" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$major"
+
   pages:
     name: Web page
     needs: publish
