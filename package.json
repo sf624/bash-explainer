@@ -137,6 +137,11 @@
           "default": true,
           "markdownDescription": "%config.notes.idioms%"
         },
+        "bashExplainer.notes.pitfalls": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.notes.pitfalls%"
+        },
         "bashExplainer.shell": {
           "type": "string",
           "enum": [

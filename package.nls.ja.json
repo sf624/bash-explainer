@@ -29,6 +29,7 @@
   "config.examples.disabled": "表示しない具体例の種類（`regex`・`pipeline` など）。",
   "config.examples.inHover": "ホバーにも具体例を表示する。オフにするとホバーが短くなります（パネルには表示されます）。",
   "config.hover.maxDepth": "ホバーに表示する解説ツリーの階層の深さ（`1`: 最上位だけ、`0`: すべて）。パネルでは常にすべて表示し、自由に折りたためます。",
+  "config.notes.pitfalls": "よくある間違いと避け方を注記する: `x = 1`（代入にならない）、空の `DIR` での `rm -rf $DIR/…`、クォートしていない変数、`for f in $(ls)`、`-r` のない `read`、`local x=$(cmd)`、`sudo cmd > file` など。",
   "config.notes.idioms": "定番の書き方（strict mode、`IFS= read -r`、`trap … EXIT` など）についての補足を表示する。",
   "config.diagnostics.ignore": "「問題」パネルに出さない警告を、そこに表示されるコードで指定する: `dbracket`（`[[ ]]`）、`echoE`、`ampRedirect`（`&>`）、`array`、`local`、`echoEscape`、`dockerPipefail`、`injection`、`pythonNoShell`、`pythonInjection` など。ファイルの中では `# bash-explainer disable=<コード>` で次の行、`# bash-explainer disable-file=<コード>` でファイル全体の警告を消せます（`all` ですべて）。",
   "config.diagnostics.embedded": "Dockerfile・Makefile・CI の YAML・package.json・Markdown・Python の中のシェルで見つかった警告も「問題」パネルに出す。",
