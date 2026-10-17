@@ -1,13 +1,13 @@
 # Publishing
 
-Releases are published by the [Release workflow](../.github/workflows/release.yml) when a tag `v<version>` is pushed. It publishes the same `.vsix` to the VS Code Marketplace and Open VSX and creates a GitHub Release, after approval in the `release` environment. Then it updates the web page on GitHub Pages with the [Web page workflow](../.github/workflows/pages.yml).
+Releases are published by the [Release workflow](../.github/workflows/release.yml) when a tag `v<version>` is pushed. After approval in the `release` environment, it publishes the same `.vsix` to the VS Code Marketplace and Open VSX, publishes the command-line tool (`cli/`) to npm, creates a GitHub Release, and moves the major tag (`v0`) that the GitHub Action is used by. Then it updates the web page on GitHub Pages with the [Web page workflow](../.github/workflows/pages.yml).
 
-Both registries are reached through GitHub's OpenID Connect, so there is no access token to store or renew: the Marketplace with Microsoft Entra ID, and Open VSX with [trusted publishing](https://github.com/eclipse-openvsx/openvsx/wiki/Trusted-Publishing). For the Marketplace, there is no Azure DevOps personal access token. (Global Azure DevOps PATs are retired on December 1, 2026; see [Secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).)
+All three registries are reached through GitHub's OpenID Connect, so there is no access token to store or renew: the Marketplace with Microsoft Entra ID, Open VSX and npm with trusted publishing ([Open VSX](https://github.com/eclipse-openvsx/openvsx/wiki/Trusted-Publishing), [npm](https://docs.npmjs.com/trusted-publishers)). For the Marketplace, there is no Azure DevOps personal access token. (Global Azure DevOps PATs are retired on December 1, 2026; see [Secure automated publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).)
 
 ## Releasing a version
 
 1. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and add a `## <version>` section to `CHANGELOG.md`; merge to `main`.
-2. Push the tag: `git tag v0.1.0 && git push origin v0.1.0`.
+2. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`.
 3. In the workflow run, approve the `release` environment (**Review deployments**).
 
 ## One-time setup
