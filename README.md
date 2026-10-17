@@ -72,7 +72,7 @@ A one-line summary at the end of the cursor line.
 - **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **No installation:** the [web version](https://sf624.github.io/bash-explainer/) runs in the browser.
 - **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository).
-- **In the terminal:** `npx bash-explainer deploy.sh:12` — the same explanations on the command line, and `--check` for CI. See [cli/README.md](cli/README.md).
+- **In the terminal:** `npx bash-explainer deploy.sh:12`, or `npm install --global bash-explainer` — the same explanations on the command line, and `--check` for CI. See [cli/README.md](cli/README.md#installation).
 
 Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
 
