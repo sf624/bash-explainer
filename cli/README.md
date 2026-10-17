@@ -58,10 +58,12 @@ The repository is also a GitHub Action, which runs this tool at its own version:
 
 ```yaml
 - uses: actions/checkout@v5
-- uses: sf624/bash-explainer@v0.2.0
+- uses: sf624/bash-explainer@v0
   with:
     files: '**/*.sh Dockerfile .github/workflows/*.yml'
 ```
+
+`@v0` follows the latest 0.x release. To stay on one version, use its tag (`@v0.2.0`); to be sure the code cannot change, its commit SHA (`@<sha> # v0.2.0`), which Dependabot can keep up to date.
 
 Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green). The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `fail-on-warning`, `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
 

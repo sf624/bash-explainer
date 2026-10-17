@@ -53,7 +53,7 @@ The Release workflow also publishes `cli/` as the npm package [`bash-explainer`]
 2. On npmjs.com, in the package's *Settings → Trusted publisher*, choose **GitHub Actions** and enter owner `sf624`, repository `bash-explainer`, workflow `release.yml`, environment `release`. Then, under *Publishing access*, disallow tokens.
 3. In the repository's *Settings → Secrets and variables → Actions → Variables*, add `NPM_PUBLISH` = `true`. Until then the Release workflow skips npm.
 
-The GitHub Action (`action.yml`) runs `bash-explainer` from npm at the version of the tag it is used at (`uses: sf624/bash-explainer@v<version>`), so a version is usable as an action once it is on npm.
+The GitHub Action (`action.yml`) runs `bash-explainer` from npm at the version of the tag it is used at, so a version is usable as an action once it is on npm. The Release workflow also moves the major tag (`v0`, later `v1`) to each release, which is what the README tells people to use (`uses: sf624/bash-explainer@v0`).
 
 ### 6. The web page (GitHub Pages)
 
