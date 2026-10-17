@@ -292,3 +292,17 @@ describe('extglob', () => {
     assert.ok(e.notes.some((n) => /a `shopt -s extglob` inside the same block is not yet on/.test(n)));
   });
 });
+
+describe('globs that match nothing', () => {
+  const pitfall = (e: LineExplanation) => e.notes.some((n) => /when no file matches/.test(n));
+  it('points out a for loop over a glob', () => {
+    assert.ok(pitfall(explain('for f in *.log; do gzip "$f"; done')));
+    assert.ok(pitfall(explain('for f in "$dir"/*.log; do gzip "$f"; done')));
+  });
+  it('says nothing when the body checks the file, with nullglob, or for plain words', () => {
+    assert.ok(!pitfall(explain('for f in *.log; do [ -e "$f" ] || continue; gzip "$f"; done')));
+    assert.ok(!pitfall(explain('for f in *.log; do\n  [[ -f $f ]] || continue\ndone')));
+    assert.ok(!pitfall(explain('shopt -s nullglob\nfor f in *.log; do gzip "$f"; done', 1)));
+    assert.ok(!pitfall(explain('for f in a b; do :; done')));
+  });
+});

@@ -218,7 +218,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line)])],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line)])],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -1480,6 +1480,30 @@ export class Analyzer {
       return this.s(`\`${t}\` は ${ja}`, `\`${t}\` is ${en}`);
     });
     return parts.length ? this.s(`。拡張グロブ: ${parts.join('、')}`, `. Extended glob: ${parts.join('; ')}`) : '';
+  }
+
+  /**
+   * `for f in *.log`: when nothing matches, the loop runs once with `*.log` itself (unless nullglob or
+   * failglob is on, or zsh, where it is an error). Quiet when the body checks that the file exists.
+   */
+  private unmatchedGlobPitfalls(root: SyntaxNode, line: number): string[] {
+    if (this.shell === 'zsh' || this.shopt.nullglob === 'on' || this.shopt.failglob === 'on') return [];
+    for (const loop of root.descendantsOfType('for_statement', { row: line, column: 0 }, { row: line + 1, column: 0 })) {
+      if (!loop || loop.startPosition.row !== line) continue;
+      // `*.log`, and `"$dir"/*.log` too.
+      const glob = loop.childrenForFieldName('value').find((v) => !!v && ((!!this.unquotedWord(v) && isGlob(v.text))
+        || (v.type === 'concatenation' && v.namedChildren.some((c) => c?.type === 'word' && isGlob(c.text)))));
+      const v = loop.childForFieldName('variable')?.text;
+      if (!glob || !v) continue;
+      const body = loop.childForFieldName('body')?.text ?? '';
+      if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
+      const nullglob = this.shopt.nullglob !== 'unsupported';
+      const fix = this.s(nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます', nullglob ? ', or turn on `shopt -s nullglob` before the loop' : '');
+      return [this.s(
+        `⚠ 落とし穴: \`${glob.text}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob.text}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${fix}`,
+        `⚠ Pitfall: when no file matches \`${glob.text}\`, the loop runs once with \`${v}\` set to the text \`${glob.text}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${fix}`)];
+    }
+    return [];
   }
 
   /**
