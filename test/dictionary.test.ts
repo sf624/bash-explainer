@@ -101,6 +101,38 @@ describe('the dictionary', () => {
     'docker build --build-arg VERSION=1 -t app .',
     'echo "$TOKEN" | docker login -u user --password-stdin ghcr.io',
     "sed -i.bak 's/a/b/' file",
+    // From a second survey: operations, cloud, node bootstrap and dotfiles.
+    'kubectl get pods -n kube-system -o wide',
+    'kubectl rollout status deploy/web --timeout 120s',
+    'helm upgrade --install web ./chart -n prod --create-namespace -f values.yaml',
+    'kustomize build overlays/prod | kubectl apply -f -',
+    'kind create cluster --name e2e --config kind.yaml',
+    'terraform apply -auto-approve -var-file=prod.tfvars',
+    'aws s3 sync ./dist s3://bucket/ --delete --region us-east-1',
+    'gcloud container clusters get-credentials c --zone z --project p',
+    'envsubst < job.yaml | kubectl apply -f -',
+    'docker buildx build --platform linux/amd64,linux/arm64 -t img --push .',
+    'docker system prune -a -f',
+    'docker inspect --format "{{.State.Status}}" web',
+    'podman run --rm -it alpine sh',
+    'gh pr create --title t --body b --base main --head x --label bug',
+    'git submodule update --init --recursive',
+    'git symbolic-ref -q --short HEAD',
+    'git tag -l --sort=-v:refname',
+    'comm -23 expected actual',
+    'usermod -aG docker "$USER"',
+    "ssh-keygen -t ed25519 -N '' -f key",
+    'ssh-keyscan github.com >> ~/.ssh/known_hosts',
+    'dd if=/dev/zero of=disk.img bs=1M count=100',
+    'lsblk -f -o NAME,FSTYPE,MOUNTPOINT',
+    'blkid -s UUID -o value /dev/sda1',
+    'modprobe nvidia',
+    'iptables-save > rules.txt',
+    'defaults write -g ApplePressAndHoldEnabled -bool false',
+    'echo "1.5*2" | bc -l',
+    'pnpm i --frozen-lockfile',
+    'go test -count=1 -json ./...',
+    'curl --retry 3 --retry-delay 2 --connect-timeout 5 -fsSL "$url"',
   ];
   for (const line of lines) {
     it(`knows ${line.length > 60 ? line.slice(0, 57) + '…' : line}`, () => assert.deepStrictEqual(unknown(line), []));
@@ -117,6 +149,11 @@ describe('the dictionary', () => {
     const value = tokens("sed -i.bak 's/a/b/' f").find((t) => t.label === '.bak');
     assert.ok(value, 'no token for .bak');
     assert.match(value.explanation, /Value `\.bak` for `-i`/);
+  });
+
+  it('reads -name=value for commands with single-dash long options', () => {
+    const t = tokens('terraform plan -var-file=prod.tfvars').find((x) => x.label === '-var-file=prod.tfvars')!;
+    assert.match(t.explanation, /variables file .* \(value: `prod\.tfvars`\)/);
   });
 
   it('treats gawk and mawk as awk', () => {

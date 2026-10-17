@@ -22,6 +22,7 @@ const aptCommon: OptSpec[] = [
   ['-s|--simulate|--dry-run', '実際には何もせず、行うことを表示する', 'show what would be done, without doing it'],
   ['-d|--download-only', 'ダウンロードだけして入れない', 'download only, do not install'],
   ['--reinstall', '入っているパッケージも入れ直す', 'reinstall packages already installed'],
+  ['--fix-missing|-m', '取得できないパッケージがあっても続ける', 'go on when some packages cannot be downloaded'],
 ];
 
 const aptSubs = (extra: Record<string, CommandDoc> = {}): Record<string, CommandDoc> => ({
@@ -56,6 +57,7 @@ const rpmCommon: OptSpec[] = [
   ['--setopt', '設定を1つ上書きする（`--setopt=名前=値`）', 'set one configuration option (`--setopt=name=value`)', 'arg'],
   ['--enablerepo', 'このリポジトリを有効にする', 'enable this repository', 'arg'],
   ['--disablerepo', 'このリポジトリを無効にする', 'disable this repository', 'arg'],
+  ['--allowerasing', '依存の衝突を解くためにパッケージの削除も許す', 'allow removing packages to resolve conflicts'],
 ];
 
 const rpmSubs = (): Record<string, CommandDoc> => ({
@@ -218,7 +220,7 @@ export const system: Record<string, CommandDoc> = {
   go: cmd('Go のツール（ビルド・テスト・依存管理）', 'Go toolchain (build, test, modules)', [], {
     subcommands: {
       build: cmd('パッケージをビルドする', 'Compile packages', [
-        ['-o', '出力するファイル名', 'output file', 'arg'], ['-v', 'ビルドするパッケージ名を表示', 'print package names'],
+        ['-o', '出力するファイル名', 'output file', 'arg'], ['-mod', '依存の扱い（`readonly`: go.mod を変えない、`vendor`）', 'module mode (`readonly`: do not change go.mod; `vendor`)', 'arg'], ['-v', 'ビルドするパッケージ名を表示', 'print package names'],
         ['-ldflags', 'リンカに渡すフラグ（`-s -w` で小さく、`-X` で変数を埋め込む）', 'linker flags (`-s -w`: smaller; `-X`: set a variable)', 'arg'],
         ['-trimpath', 'ビルドした場所のパスを埋め込まない（再現可能なビルド）', 'leave out local paths (reproducible builds)'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
         ['-tags', 'ビルドタグ', 'build tags', 'arg'],
@@ -226,6 +228,8 @@ export const system: Record<string, CommandDoc> = {
       test: cmd('テストを実行する', 'Run tests', [
         ['-v', '各テストの結果を表示', 'verbose'], ['-run', 'この正規表現に合うテストだけ', 'only tests matching this regex', 'arg'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
         ['-count', '実行回数（`-count=1` でキャッシュを使わない）', 'run count (`-count=1` skips the cache)', 'arg'], ['-cover', 'カバレッジを表示', 'show coverage'], ['-timeout', '時間切れ', 'timeout', 'arg'],
+        ['-json', '結果を JSON で出力', 'JSON output'], ['-c', 'テストのバイナリを作るだけで実行しない', 'compile the test binary, do not run it'], ['-o', 'テストのバイナリの出力先', 'test binary output', 'arg'],
+        ['-tags', 'ビルドタグ', 'build tags', 'arg'], ['-ldflags', 'リンカに渡すフラグ', 'linker flags', 'arg'], ['-short', '時間のかかるテストを省く', 'skip long tests'],
       ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], longSingleDash: true }),
       run: cmd('ビルドしてすぐ実行する', 'Compile and run', [], { positional: [pos('main パッケージかファイル（`パス@版` も可）', 'main package or files (or `path@version`)'), pos('プログラムへの引数', 'argument to the program')], longSingleDash: true }),
       install: cmd('ビルドしてコマンドを `$GOPATH/bin` に入れる（`パス@版`）', 'Build and install commands into `$GOPATH/bin` (`path@version`)', [], { positional: [pos('パッケージ（`パス@版`）', 'package (`path@version`)')] }),
@@ -235,6 +239,7 @@ export const system: Record<string, CommandDoc> = {
       vet: cmd('怪しいコードを検査する', 'Report suspicious code', [], { positional: [pos('パッケージ', 'packages')] }),
       fmt: cmd('コードを整形する', 'Format code', [], { positional: [pos('パッケージ', 'packages')] }),
       generate: cmd('`//go:generate` のコマンドを実行する', 'Run `//go:generate` commands'),
+      tool: cmd('Go のツールや、go.mod に登録したツールを実行する（`go tool 名前`）', 'Run a Go tool, or a tool listed in go.mod (`go tool name`)', [], { longSingleDash: true }),
       version: cmd('Go の版を表示する', 'Print the Go version'),
       env: cmd('Go の環境変数を表示する', "Print Go's environment", [], { positional: [pos('変数名（`GOPATH`、`GOOS`…）', 'variable name (`GOPATH`, `GOOS`…)')] }),
     },
@@ -297,7 +302,13 @@ export const system: Record<string, CommandDoc> = {
         ['--paginate', 'すべてのページを取得する', 'fetch every page'], ['-H|--header', 'HTTP ヘッダーを追加する', 'add an HTTP header', 'arg'],
         ['-i|--include', 'レスポンスのヘッダーも表示する', 'include response headers'],
       ], { positional: [pos('API のパス（`repos/{owner}/{repo}/…`）', 'API path (`repos/{owner}/{repo}/…`)')] }),
-      pr: cmd('プルリクエストを操作する（`create`、`view`、`checkout`、`merge`、`list`…）', 'Work with pull requests (`create`, `view`, `checkout`, `merge`, `list`…)', ghRepo),
+      pr: cmd('プルリクエストを操作する（`create`、`view`、`checkout`、`merge`、`list`…）', 'Work with pull requests (`create`, `view`, `checkout`, `merge`, `list`…)', [
+        ...ghRepo,
+        ['-t|--title', 'タイトル', 'title', 'arg'], ['-b|--body', '本文', 'body', 'arg'], ['-F|--body-file', '本文のファイル', 'body file', 'arg'],
+        ['-H|--head', 'PR の元のブランチ', 'branch the changes come from', 'arg'], ['-B|--base', 'マージ先のブランチ', 'branch to merge into', 'arg'],
+        ['-l|--label', 'ラベル', 'label', 'arg'], ['-d|--draft', '下書きにする', 'as a draft'], ['-f|--fill', 'コミットからタイトルと本文を埋める', 'fill title and body from the commits'],
+        ['--json', '出力する項目を JSON で（`number,title`…）', 'JSON output with these fields (`number,title`…)', 'arg'], ['-q|--jq', 'JSON をこの jq の式で絞る', 'filter the JSON with this jq expression', 'arg lang:jq'],
+      ]),
       issue: cmd('Issue を操作する（`create`、`view`、`list`…）', 'Work with issues (`create`, `view`, `list`…)', ghRepo),
       release: cmd('リリースを操作する（`create`、`download`、`view`…）', 'Work with releases (`create`, `download`, `view`…)', ghRepo),
       run: cmd('GitHub Actions の実行を操作する（`list`、`view`、`watch`…）', 'Work with GitHub Actions runs (`list`, `view`, `watch`…)', ghRepo),
@@ -428,7 +439,7 @@ export const system: Record<string, CommandDoc> = {
 
   // ---- Signatures, checksums and binary data ----
   gpg: cmd('GnuPG: 署名の検証・暗号化・鍵の管理', 'GnuPG: verify signatures, encrypt, manage keys', [
-    ['--batch', '対話せずに動く（スクリプト向け）', 'never ask (for scripts)'], ['--yes', '確認に「はい」と答える', 'answer yes to questions'],
+    ['--batch', '対話せずに動く（スクリプト向け）', 'never ask (for scripts)'], ['--no-tty', '端末を使わない', 'do not use the terminal'], ['--yes', '確認に「はい」と答える', 'answer yes to questions'],
     ['--keyserver', '鍵を取得する鍵サーバー', 'key server to fetch keys from', 'arg'], ['--recv-keys|--receive-keys', '鍵サーバーから、続く ID の鍵を取得する', 'fetch the keys with the IDs that follow from the key server'],
     ['--verify', '署名を検証する（`gpg --verify 署名 ファイル`）', 'verify a signature (`gpg --verify sig file`)'], ['--dearmor', 'テキスト形式（ASCII armor）の鍵をバイナリに変換する（APT の鍵の定番）', 'convert an ASCII-armored key to binary (the usual step for APT keys)'],
     ['-a|--armor', 'テキスト形式で出力する', 'ASCII-armored output'], ['-o|--output', '出力するファイル', 'output file', 'arg'],

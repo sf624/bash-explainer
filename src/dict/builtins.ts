@@ -106,6 +106,7 @@ export const builtins: Record<string, CommandDoc> = {
     ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
   ], { longSingleDash: true }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
+    ['-G', 'このグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching this glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', 'この単語の一覧から候補を作る', 'candidates from this word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
     ['-f', 'ファイル名', 'file names'], ['-d', 'ディレクトリ名', 'directory names'], ['-c', 'コマンド名', 'command names'], ['-v', '変数名', 'variable names'],
     ['-o', '補完の動作オプション', 'completion option', 'arg'],
