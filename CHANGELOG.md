@@ -19,6 +19,9 @@
 - Variables of CI systems are explained: about 100 environment variables that GitHub Actions, GitLab CI/CD, CircleCI, Jenkins, Bitbucket Pipelines and Azure Pipelines set (`$GITHUB_WORKSPACE`, `$CI_COMMIT_SHA`, `$BUILD_NUMBER`…), unless the script sets them itself; the contexts of GitHub Actions expressions (`${{ github.head_ref }}`, `secrets.*`, `matrix.*`, `steps.<id>.outputs.*`…); Azure Pipelines macros (`$(Build.SourcesDirectory)`); and Jenkins' `${env.BRANCH_NAME}` and `${params.X}`.
 - Fixes found by new tests: `$"…"` (a translated string) is explained as such instead of as a plain string without its `$`; `unset` explains its options and names; a Python `shell=True` script with `\x41` or `\u0041` escapes is decoded as Python does; perl one-liners with `elsif` get worked examples.
 - The pitfall for `rm -rf "$DIR"/…` no longer fires on special parameters such as `"$$/x"`, where it suggested `${VAR:?}`.
+- `git log` examples with `%<(1,trunc)` show `..`, as git does, instead of the first character; a width of 0, which git does not take, gets no example.
+- perl one-liners: `s{a{1}}{b}` (nested brackets) and `s{a} {b}` are split into pattern and replacement as perl does, and `s/a//` reads "delete" instead of "replace with ``".
+- awk: the pattern `0` is explained as always false; it was "always true (non-zero)".
 - Aliases and functions that distributions define for interactive shells are explained, with what they stand for on each system, as checked in the files the distributions ship: Ubuntu's `ll`, `la`, `l` and `alert`; Fedora / RHEL's `ll` and `l.`; openSUSE's `ll`, `la`, `l`, `ls-l`, `o`, `..`, `...`, `cd..`, `+`, `-`, `md`, `rd`, `rehash`, `beep`, `unmount`, `remount` and `xd`; Git for Windows' `ll`. A note says they depend on the system and are missing in scripts, and what to write instead; in Markdown code blocks, typed into a terminal, the note is milder.
 
 ## 0.3.0

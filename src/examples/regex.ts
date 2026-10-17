@@ -293,11 +293,11 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
     const p = new Parser(js.source);
     tree = p.alt();
     if (p.i < js.source.length) return undefined;
-  } catch {
     /* c8 ignore start */
+  } catch {
     return undefined;
-    /* c8 ignore stop */
   }
+  /* c8 ignore stop */
   const matching: string[] = [];
   for (let v = 0; v < 12 && matching.length < max; v++) {
     const text = gen(tree, v, []);

@@ -241,7 +241,7 @@ export function formatDate(src: string, when: Date): string | undefined {
   const out = fmt.replace(/%([-_0^#]?)(\d*)(:{1,2}z|[a-zA-Z%])/g, (whole, flag: string, width: string, c: string) => {
     if (composite[c]) {
       if (flag || width) { unknown = true; return whole; }
-      return formatDate(composite[c], when) ?? '';
+      return formatDate(composite[c], when)!;
     }
     const entry = v[c];
     if (!entry) { unknown = true; return whole; }
