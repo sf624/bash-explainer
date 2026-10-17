@@ -26,14 +26,12 @@ export function fixFor(issue: Issue): Fix | undefined {
     case 'eqeqTest':
       return { title: ['`==` を `=` に書き換える', 'Replace `==` with `=`'], edits: n.descendantsOfType('==').map((op) => replace(op, '=')) };
     case 'source': {
-      const name = n.childForFieldName('name');
-      return name ? { title: ['`source` を `.` に書き換える', 'Replace `source` with `.`'], edits: [replace(name, '.')] } : undefined;
+      return { title: ['`source` を `.` に書き換える', 'Replace `source` with `.`'], edits: [replace(n.childForFieldName('name')!, '.')] };
     }
     case 'funcKeyword': {
       // `function f {` or `function f() {` → `f() {`.
-      const kw = n.child(0);
-      const name = n.childForFieldName('name');
-      if (!kw || !name) return undefined;
+      const kw = n.child(0)!;
+      const name = n.childForFieldName('name')!;
       const close = n.children.find((c) => c.type === ')');
       const end = close ?? name;
       return {
@@ -42,9 +40,8 @@ export function fixFor(issue: Issue): Fix | undefined {
       };
     }
     case 'ampRedirect': case 'ampAppend': {
-      const op = n.children.find((c) => c.type === '&>' || c.type === '&>>');
-      const dest = n.childForFieldName('destination');
-      if (!op || !dest) return undefined;
+      const op = n.children.find((c) => c.type === '&>' || c.type === '&>>')!;
+      const dest = n.childForFieldName('destination')!;
       const to = op.type === '&>' ? '>' : '>>';
       return { title: [`\`${op.type}\` を \`${to}file 2>&1\` に書き換える`, `Rewrite \`${op.type}\` as \`${to}file 2>&1\``], edits: [replace(n, `${to} ${dest.text} 2>&1`)] };
     }
@@ -81,9 +78,8 @@ function testChain(e: SyntaxNode): string | undefined {
 /** The inside of one `[ ]` for a `[[ ]]` expression without `&&` / `||`. */
 function single(e: SyntaxNode): string | undefined {
   if (e.type === 'unary_expression') {
-    const op = e.childForFieldName('operator')?.text ?? e.child(0)?.text ?? '';
-    const operand = e.namedChildren.filter((c) => c.type !== 'test_operator').pop();
-    if (!operand) return undefined;
+    const op = e.childForFieldName('operator')!.text;
+    const operand = e.namedChildren.filter((c) => c.type !== 'test_operator').pop()!;
     if (op === '!') {
       const inner = single(operand);
       return inner === undefined ? undefined : `! ${inner}`;
@@ -92,10 +88,9 @@ function single(e: SyntaxNode): string | undefined {
     return SAME_IN_TEST.test(op) && w !== undefined ? `${op} ${w}` : undefined;
   }
   if (e.type === 'binary_expression') {
-    let op = e.childForFieldName('operator')?.text ?? '';
-    const left = e.childForFieldName('left');
-    const right = e.childForFieldName('right');
-    if (!left || !right) return undefined;
+    let op = e.childForFieldName('operator')!.text;
+    const left = e.childForFieldName('left')!;
+    const right = e.childForFieldName('right')!;
     if (op === '==') op = '=';
     if (!SAME_IN_TEST.test(op)) return undefined;
     // In `[[ ]]` an unquoted right side of `=` / `!=` is a pattern; `[ ]` compares text.

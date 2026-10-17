@@ -159,23 +159,21 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
   }
 }
 
-function describe(n: FindNode, lang: Lang, nested = false): string {
+function describe(n: FindNode, lang: Lang): string {
   const s = pick(lang);
   switch (n.type) {
     case 'primary': return phrase(n, lang);
-    case 'not': return s(`「${describe(n.child, lang, true)}」ではない`, `not (${describe(n.child, lang, true)})`);
+    case 'not': return s(`「${describe(n.child, lang)}」ではない`, `not (${describe(n.child, lang)})`);
     case 'group': return s(`（${describe(n.child, lang)}）`, `(${describe(n.child, lang)})`);
-    case 'or': {
-      const text = n.children.map((c) => describe(c, lang, true)).join(s('、または ', '; or '));
-      return nested ? s(`（${text}）`, `(${text})`) : text;
-    }
+    // Only at the top or in `( )`: `-o` binds the loosest.
+    case 'or': return n.children.map((c) => describe(c, lang)).join(s('、または ', '; or '));
     case 'and': {
       // Conditions followed by actions read as "if <conditions>: <actions>".
       const conds = n.children.filter((c) => !(c.type === 'primary' && (ACTIONS.has(c.name) || c.name === '-prune')));
       const acts = n.children.filter((c) => !conds.includes(c));
-      const condText = conds.map((c) => describe(c, lang, true)).join(s(' かつ ', ' and '));
+      const condText = conds.map((c) => describe(c, lang)).join(s(' かつ ', ' and '));
       if (!acts.length) return condText;
-      const actText = acts.map((c) => describe(c, lang, true)).join(s('して', ', then '));
+      const actText = acts.map((c) => describe(c, lang)).join(s('して', ', then '));
       return condText ? s(`${condText}なら${actText}`, `if ${condText}: ${actText}`) : actText;
     }
   }

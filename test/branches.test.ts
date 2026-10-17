@@ -13,6 +13,15 @@ import { GetoptUnsupported, runGetopt, sampleGetoptArgs } from '../src/examples/
 import { rerun } from '../src/examples/rerun';
 import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser } from '../src/parser';
+import { dialectIssues } from '../src/dialect';
+import { explainRegex } from '../src/embedded/regex';
+import { describeFind, parseFind } from '../src/embedded/find';
+import { fixFor } from '../src/fixes';
+import { runRead, runXargs, showCommand, testCases } from '../src/examples/runtime';
+import { Unsupported } from '../src/examples/textfilters';
+import { yamlLines, yqYamlOutput } from '../src/examples/yaml';
+import type { Json } from '../src/examples/jq';
+import { execFileSync } from 'child_process';
 import { panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { examplesMarkdown, lineSegments, placeExamples, toPlainMarkdown } from '../src/ui/render';
@@ -168,5 +177,80 @@ describe('branches no other test takes', () => {
     assert.match(expansionOps['/']('x', 'a').en, /Delete the first match of `a`/);
     assert.match(expansionOps['/#']('x', 'a/').en, /Delete `a` at the start/);
     assert.match(expansionOps['/%']('x', 'a').en, /Delete `a` at the end/);
+  });
+
+  it('quick fixes: [[ ]] that [ ] cannot say', () => {
+    const fix = (src: string) => {
+      const tree = parser.parse(src);
+      try {
+        return dialectIssues(tree.rootNode, 'sh', 'en').map(fixFor).find(Boolean)?.edits[0].text;
+      } finally {
+        tree.delete();
+      }
+    };
+    for (const src of ['[[ a b ]]', '[[ a == ]]', '[[ ! -f a* ]]', '[[ -f a* ]]', '[[ $a -eq 1* ]]', '[[ $a == "a"b ]]', '[[ $a == x$b ]]', '[[ -f "a"$b ]]', '[[ -n a\\ b ]]']) {
+      assert.strictEqual(fix(src), undefined, src);
+    }
+    assert.strictEqual(fix('[[ ! -f a ]]'), '[ ! -f a ]');
+  });
+
+  it('YAML: as PyYAML writes it, and as mikefarah/yq quotes', function () {
+    const values: Json[] = [null, true, 1.5, ' a', '- a', '#x', 'true', '123', 'yes', "it's: x", [], {}, [1, [2]], { a: [] }, { a: { b: 1 } }];
+    let python: string[];
+    try {
+      python = JSON.parse(execFileSync('python3', ['-c', 'import json,sys,yaml\nprint(json.dumps([yaml.safe_dump(v, default_flow_style=False, allow_unicode=True, sort_keys=False) for v in json.load(sys.stdin)]))'], { input: JSON.stringify(values) }).toString());
+    } catch {
+      this.skip();
+    }
+    values.forEach((v, i) => assert.strictEqual(yqYamlOutput([v], 'kislyuk').join('\n') + '\n', python[i], JSON.stringify(v)));
+    assert.deepStrictEqual(yqYamlOutput([1, 'a'], 'kislyuk'), ['1', '---', 'a', '...']);
+    assert.deepStrictEqual(['true', '123', "it's: x"].map((v) => yamlLines(v, 'mikefarah')[0]), ['"true"', '"123"', '"it\'s: x"']);
+    assert.deepStrictEqual(yamlLines('a\n', 'mikefarah'), ['|', '  a']);
+    assert.throws(() => yamlLines(1e-5, 'mikefarah'), /number/);
+  });
+
+  it('find: -a, times in minutes, owners, -printf, -delete, unknown tests, actions alone', () => {
+    const f = (src: string) => flat(explain(src));
+    assert.match(f("find . -iname '*.c' -a -ipath '*src*' -mmin 5 -amin +3 -user bob -printf '%p' -delete"), /any case.*path matches.*exactly 5 minutes.*more than 3 minutes.*owned by bob.*format.*delete it/s);
+    assert.match(f('find . -xdev -foo bar -print'), /-xdev.*-foo bar/s);
+    assert.match(f('find . -print -quit'), /print it, then quit/);
+    assert.strictEqual(parseFind(['-name', 'x', ')'], () => 1), undefined);
+    assert.match(describeFind(parseFind(['-foo', 'bar'], () => 1)!, 'en'), /-foo bar/);
+    assert.strictEqual(describeFind(parseFind(['-xdev', '-type', 'x'], (p) => (p === '-type' ? 1 : 0))!, 'en'), 'Print what matches: -xdev and x (no action is given, so `-print` is implied)');
+  });
+
+  it('regex: BRE alternation and anchors, empty intervals, PCRE groups, classes, escapes', () => {
+    type T = ReturnType<typeof explainRegex>;
+    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
+    const r = (src: string, flavor: 'bre' | 'ere' | 'pcre') => all(explainRegex(src, flavor, 'en')).map((t) => t.explanation).join('\n');
+    assert.match(r('a$\\|b', 'bre'), /end of the line/);
+    assert.match(r('\\(a$\\)', 'bre'), /end of the line/);
+    assert.ok(!/repeated/.test(r('a\\{,\\}', 'bre')));
+    assert.match(r('(+a)', 'ere'), /the previous item/);
+    assert.match(r('(?:a)(?!b)(?<!c)', 'pcre'), /non-capturing.*not followed.*not preceded/s);
+    assert.match(r('[[:foo:]\\q]', 'pcre'), /\[:foo:\]/);
+    assert.match(r('a\\', 'ere'), /Trailing/);
+    assert.match(r('\\A\\d', 'pcre'), /\\A/);
+    assert.match(r('\\,', 'ere'), /Literal ","/);
+  });
+
+  it('xargs, tests and read: the cases the simulation leaves out', () => {
+    assert.throws(() => runXargs([], "a 'b"), Unsupported);
+    assert.throws(() => runXargs(['-'], ''), Unsupported);
+    assert.throws(() => runXargs(['echo', undefined], 'a'), Unsupported);
+    assert.throws(() => runXargs(['-s', '10'], 'a'), Unsupported);
+    assert.deepStrictEqual(runXargs(['-r', 'echo'], ''), []);
+    assert.deepStrictEqual(runXargs(['echo'], ''), [['echo']]);
+    assert.strictEqual(showCommand(['echo', '']), "echo ''");
+    assert.strictEqual(testCases('[', '-f', undefined, { var: 'f' }), undefined);
+    assert.strictEqual(testCases('[', '=', { lit: 'a' }, { lit: 'b' }), undefined);
+    assert.strictEqual(testCases('[', '-eq', { var: 'n' }, { lit: 'x' }), undefined);
+    assert.strictEqual(testCases('((', '%', { var: 'n' }, { lit: '2' }), undefined);
+    assert.strictEqual(testCases('[', '-z', { var: 'a' }, undefined), undefined);
+    assert.strictEqual(testCases('[[', '==', { var: 'f' }, { lit: '*' }), undefined);
+    assert.strictEqual(testCases('[', '<', { var: 'f' }, { lit: 'b' }), undefined);
+    const nocase = testCases('[[', '==', { var: 'f' }, { lit: '*.txt' }, false, true)!;
+    assert.ok(nocase[0].result && /\.txt$/i.test(nocase[0].vars.f));
+    assert.deepStrictEqual(runRead('a b\\', ['x', 'y'], { ifs: ' \t\n', raw: false }).vars, [['x', 'a'], ['y', 'b']]);
   });
 });

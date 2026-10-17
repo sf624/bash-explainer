@@ -19,11 +19,10 @@ function needsQuotes(s: string, style: YamlStyle): boolean {
   return /: |:$| #|[\t]/.test(s);
 }
 
-function scalar(v: Json, style: YamlStyle): string {
+function scalar(v: string | number | boolean | null, style: YamlStyle): string {
   if (v === null) return 'null';
   if (typeof v === 'boolean') return String(v);
   if (typeof v === 'number') return Number.isInteger(v) || Math.abs(v) >= 1e-4 ? String(v) : (() => { throw new YamlUnsupported('number'); })();
-  if (typeof v !== 'string') throw new YamlUnsupported('not a scalar');
   if (!needsQuotes(v, style)) return v;
   // mikefarah/yq quotes look-alike numbers and booleans with "…", other strings with '…'; PyYAML always uses '…'.
   if (style === 'mikefarah' && (CORE.test(v) || NUMBER.test(v))) return JSON.stringify(v);
@@ -43,7 +42,6 @@ export function yamlLines(v: Json, style: YamlStyle): string[] {
     if (!v.length) return ['[]'];
     return v.flatMap((item) => {
       const lines = yamlLines(item, style);
-      if (typeof item === 'string' && item.includes('\n')) return [`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`)];
       return [`- ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`)];
     });
   }
