@@ -376,3 +376,16 @@ describe('pitfalls for other shells and settings', () => {
     assert.match(notes('shopt -u extglob\nrm !(keep).log', 1), /and `shopt -u extglob` turned it off/);
   });
 });
+
+describe('aliases of distributions', () => {
+  it('explains ll as an alias, its arguments as ls ones, and warns that it depends on the system', () => {
+    const e = explain('ll /tmp');
+    assert.match(find(e, 'll /tmp').explanation, /^Alias `ll`: list files in long format .*Ubuntu: `ls -alF`/);
+    assert.match(find(e, '/tmp').explanation, /file or directory/);
+    assert.ok(e.notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, Git for Windows define/.test(n)));
+  });
+  it('lets a function or alias of the script win', () => {
+    assert.ok(!explain('ll() { ls -l "$@"; }\nll', 1).notes.some((n) => /System-dependent/.test(n)));
+    assert.ok(!explain("alias ll='ls -lh'\nll", 1).notes.some((n) => /System-dependent/.test(n)));
+  });
+});

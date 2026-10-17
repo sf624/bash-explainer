@@ -4,6 +4,7 @@ import { pitfallNotes } from './pitfalls';
 import type { SyntaxNode, Tree } from './parser';
 import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
+import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
@@ -897,6 +898,22 @@ export class Analyzer {
     const doc = lookupCommand(name);
     if (doc) {
       return { name, doc, kind: doc.builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(doc.summary) + (doc.builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
+    }
+    const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
+    if (distro) {
+      const where = distro.definitions.map(([os]) => os).join(this.s('・', ', '));
+      const defs = distro.definitions.map(([os, v]) => `${os}: \`${v}\``).join(this.s('、', ', '));
+      // In a README the commands are typed into a terminal, where the alias may exist.
+      const interactive = /^Markdown/.test(this.opts.host ?? '');
+      this.extraNotes.push(interactive
+        ? this.s(`ℹ 環境依存: \`${name}\` は ${where} が対話シェル用に定義するエイリアスで、ほかの環境にはありません。どこでも動かすには \`${distro.portable}\` と書きます`,
+          `ℹ System-dependent: \`${name}\` is an alias ${where} define for interactive shells; other systems lack it. Write \`${distro.portable}\` to work everywhere`)
+        : this.s(`⚠ 環境依存: \`${name}\` は ${where} が対話シェル用に定義するエイリアスで、コマンドではありません。ほかの環境にはなく、スクリプトの中では${distro.definitions.length > 1 ? "これらの" : "その"}環境でも使えません（command not found）。\`${distro.portable}\` と書きます`,
+          `⚠ System-dependent: \`${name}\` is an alias ${where} define for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). Write \`${distro.portable}\``));
+      return {
+        name, doc: lookupCommand(distro.command), kind: 'command', nameTokens: [],
+        explanation: this.s(`エイリアス \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `Alias \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
+      };
     }
     const explanation = name.includes('/')
       ? this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``)
