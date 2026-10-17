@@ -38,7 +38,7 @@ Bash Explainer is a VS Code extension, and more: the same explanations and warni
 | `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | the regex piece by piece, and a sample: `a=x` → `x=a` |
 | `#!/bin/sh` … `[[ -f $f ]]` | ⚠ `[[ ]]` fails in dash — with a quick fix to `[ -f "$f" ]` |
-| `RUN apt-get update && …` in a Dockerfile | the same explanations inside Dockerfiles, Makefiles, CI YAML, `package.json` and Python |
+| `RUN apt-get update && …` in a Dockerfile | the same explanations inside Dockerfiles, Makefiles, CI YAML, Jenkinsfiles, `package.json` and Python |
 
 ## What is explained
 

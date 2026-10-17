@@ -24,7 +24,8 @@ const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
 
 Explains shell scripts line by line: every command, option, redirection and
 expansion, with worked examples. Also reads the shell code in Dockerfiles,
-Makefiles, CI YAML, package.json, Markdown and Python. Runs offline.
+Makefiles, CI YAML, Jenkinsfiles, package.json, Markdown and Python, and
+points out common pitfalls. Runs offline.
 
 Options:
   -e, --command <text>   explain this command line

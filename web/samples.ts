@@ -118,4 +118,26 @@ subprocess.run(["rsync", "-az", "--delete", "build/", "server:/srv/app/"])
 os.system(f"tar -czf {name}.tar.gz dist/")
 `,
   },
+  {
+    kind: 'jenkinsfile',
+    name: 'Jenkinsfile',
+    fileName: 'Jenkinsfile',
+    cursorLine: 7,
+    sample: `pipeline {
+  agent any
+  stages {
+    stage('Build') {
+      steps {
+        sh 'make -j"$(nproc)" build'
+        sh "docker build -t app:\${env.BUILD_NUMBER} ."
+        sh '''
+          set -eu
+          for f in dist/*.tar.gz; do sha256sum "$f"; done
+        '''
+      }
+    }
+  }
+}
+`,
+  },
 ];

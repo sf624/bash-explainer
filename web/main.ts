@@ -3,6 +3,7 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, StreamParser, syntaxHighlighting } from '@codemirror/language';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { groovy } from '@codemirror/legacy-modes/mode/groovy';
 import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
@@ -108,7 +109,7 @@ function shells(): Shells {
 // ---- Editor ---------------------------------------------------------------------------------
 
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
-  shell, makefile: shell, dockerfile: dockerFile, yaml, npm: json, python,
+  shell, makefile: shell, dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
 const languageMode = new Compartment();
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);

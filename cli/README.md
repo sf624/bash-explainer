@@ -1,6 +1,6 @@
 # bash-explainer
 
-Explains shell scripts line by line in the terminal — every command, option, redirection and `${…}` — with worked examples. The command-line companion of the [Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer) VS Code extension, with the same explanations.
+Explains shell scripts line by line in the terminal — every command, option, redirection and `${…}` — with worked examples, and points out common pitfalls (unquoted variables, `x = 1`, `for f in $(ls)`…). The command-line companion of the [Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer) VS Code extension, with the same explanations.
 
 **Offline by design:** no network, no AI, no telemetry. English and Japanese.
 
@@ -34,7 +34,7 @@ bash-explainer deploy.sh:12           # one line (or deploy.sh:12-20)
 bash-explainer -e 'cmd 2>&1 > out'    # a command line
 cat deploy.sh | bash-explainer -      # standard input
 bash-explainer Dockerfile             # the shell code in Dockerfiles, Makefiles, CI YAML,
-                                      # package.json, Markdown and Python
+                                      # Jenkinsfiles, package.json, Markdown and Python
 bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…) lacks
 ```
 
@@ -44,7 +44,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `-l`, `--line <n>[-<m>]` | only these lines |
 | `--check` | report constructs the script's shell lacks, and other risks (script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`…); exit 1 if there is a warning |
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
-| `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python` (default: from the file name) |
+| `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
 | `--format <format>` | `text`, `markdown` or `json`; with `--check`, also `github` (annotations in GitHub Actions) or `sarif` (for code scanning) |
 | `--no-examples` | leave out worked examples |
