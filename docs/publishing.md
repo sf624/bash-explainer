@@ -6,9 +6,10 @@ All three registries are reached through GitHub's OpenID Connect, so there is no
 
 ## Releasing a version
 
-1. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and add a `## <version>` section to `CHANGELOG.md`; merge to `main`.
-2. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`.
-3. In the workflow run, approve the `release` environment (**Review deployments**).
+1. If the UI changed since the README images were recorded (`node scripts/images-hash.mjs --check` fails), run the [README images](../.github/workflows/readme-images.yml) workflow and merge its pull request; the Release workflow stops otherwise.
+2. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and add a `## <version>` section to `CHANGELOG.md`; merge to `main`.
+3. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`.
+4. In the workflow run, approve the `release` environment (**Review deployments**).
 
 ## One-time setup
 
@@ -57,7 +58,7 @@ The GitHub Action (`action.yml`) runs `bash-explainer` from npm at the version o
 
 ### 6. README images
 
-After publishing, the Release workflow re-records the README images and opens a pull request when they changed ([images/RECORDING.md](../images/RECORDING.md)). For that, in *Settings → Actions → General*, turn on **Allow GitHub Actions to create and approve pull requests**.
+The README images are re-recorded by a workflow run by hand, which opens a pull request with them ([images/RECORDING.md](../images/RECORDING.md)). For that, in *Settings → Actions → General*, turn on **Allow GitHub Actions to create and approve pull requests**.
 
 ### 7. The web page (GitHub Pages)
 

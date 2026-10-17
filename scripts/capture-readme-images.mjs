@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { imagesHash } from './images-hash.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IMAGES = path.join(ROOT, 'images');
@@ -383,6 +384,8 @@ try {
     }
     encode(scenario, frameDir);
   }
+  // Record which UI the images show, for the Release workflow's check (scripts/images-hash.mjs).
+  if (!scenarios.length || ALL.every((s) => scenarios.includes(s))) fs.writeFileSync(path.join(IMAGES, '.source-hash'), `${imagesHash()}\n`);
   for (const f of ['demo.gif', 'hover.gif', 'panel.gif', 'inline.png']) {
     const p = path.join(IMAGES, f);
     if (fs.existsSync(p)) console.log(`${f}: ${(fs.statSync(p).size / 1024).toFixed(0)} KB`);
