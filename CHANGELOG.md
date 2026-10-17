@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `git log --date=relative` examples over a year old read like git's: "1 year, 1 month ago" up to five years, instead of "1 year ago".
+- perl one-liners with a `BEGIN { … }` or `END { … }` block followed by more code without `;` (`perl -lne 'END { print $n } $n++'`) are explained statement by statement; the block and the code after it were taken for one assignment.
 - `exec 3>&-` and `exec 3<&-` are explained again as closing the descriptor; since the parser update in 0.3.0 they were only "redirection `>&-`".
 - A Jenkinsfile `sh` step starting with a shebang (`#!/bin/bash`, `#!/usr/bin/env zsh`) is read as that shell; the shebang was misread before.
 - `**` in file-name globs is explained as any depth of directories, as it is meant, with examples such as `src/lib/error.ts`. When no `shopt -s globstar` comes before it, a pitfall says that bash then treats `**` as `*` (one level only), unless a file read with `source` turns it on; after `shopt -u globstar`, and in shells without globstar (`sh`, `dash`…), it is explained as `*`. zsh always has it. Examples no longer show names like `appapp/app.ts`. The options of `shopt` (`globstar`, `nullglob`, `dotglob`, `extglob`…) are explained.

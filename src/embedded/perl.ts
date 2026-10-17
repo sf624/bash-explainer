@@ -122,10 +122,31 @@ class PerlExplainer {
   }
 
   statements(start: number, end: number): EmbeddedToken[] {
-    return splitTop(this.src, start, end, /^;/)
-      .map(([a, b]) => this.trim(a, b))
-      .filter(([a, b]) => b > a)
-      .map(([a, b]) => this.statement(a, b));
+    const out: EmbeddedToken[] = [];
+    for (const piece of splitTop(this.src, start, end, /^;/)) {
+      let [a, b] = this.trim(...piece);
+      // `BEGIN { … }` and `END { … }` end at their `}`: `END { print $n } $n++` is two statements.
+      while (b > a) {
+        const block = /^(?:BEGIN|END)\s*\{/.exec(this.src.slice(a, b));
+        const close = block ? this.closingBrace(a + block[0].length - 1, b) : -1;
+        if (close < 0 || close + 1 >= b) { out.push(this.statement(a, b)); break; }
+        out.push(this.statement(a, close + 1));
+        [a, b] = this.trim(close + 1, b);
+      }
+    }
+    return out;
+  }
+
+  /** The `}` closing the `{` at `open`, before `end`; -1 if none. */
+  private closingBrace(open: number, end: number): number {
+    let depth = 0;
+    for (let k = open; k < end; k++) {
+      const c = this.src[k];
+      if (c === '\\') k++;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) return k;
+    }
+    return -1;
   }
 
   private trim(a: number, b: number): [number, number] {
@@ -304,10 +325,14 @@ class PerlExplainer {
 
 /** Explain Perl code given with -e. */
 export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
+  // No input is known to throw (the explainer reads any text): the catch keeps a bug in it from
+  // breaking the explanation of the whole shell line.
   try {
     return new PerlExplainer(src, lang).statements(0, src.length);
   } catch {
+    /* c8 ignore start */
     return [{ start: 0, end: src.length, kind: 'error', explanation: pick(lang)('Perl のコードを解析できませんでした', 'Could not parse the Perl code'), children: [] }];
+    /* c8 ignore stop */
   }
 }
 

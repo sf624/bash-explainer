@@ -85,8 +85,14 @@ export function relativeDate(time: number, now: number): string {
   if (days < 14) return ago(days, 'day');
   if (days < 70) return ago(Math.floor((days + 3) / 7), 'week');
   if (days < 365) return ago(Math.floor((days + 15) / 30), 'month');
-  const years = Math.floor((days * 12 + 180) / 365 / 12);
-  return ago(years, 'year');
+  // Years and months for 5 years or so, then years.
+  if (days < 1825) {
+    const total = Math.floor((days * 12 * 2 + 365) / (365 * 2));
+    const years = Math.floor(total / 12);
+    const months = total % 12;
+    return months ? `${years} year${years === 1 ? '' : 's'}, ${ago(months, 'month')}` : ago(years, 'year');
+  }
+  return ago(Math.floor((days + 183) / 365), 'year');
 }
 
 /** A date in a `--date` style (`default`, `iso`, `short`, `format:…`…). */

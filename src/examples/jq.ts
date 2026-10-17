@@ -1388,10 +1388,13 @@ export function jqExample(filter: string, opts: { raw?: boolean; vars?: Record<s
     return r && [r];
   }
   const shape = new Shape();
+  // Inferer throws nothing itself: the catch keeps a bug in it from breaking the explanation.
   try {
     new Inferer().run(node, shape);
   } catch {
+    /* c8 ignore start */
     return undefined;
+    /* c8 ignore stop */
   }
   const first = run(materialize(shape, 0));
   if (!first) return undefined;
