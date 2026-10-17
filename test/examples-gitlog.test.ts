@@ -37,7 +37,9 @@ describe('git log formats agree with git', () => {
   for (const [pretty, date] of cases) {
     const args = ['log', ...(pretty ? [`--pretty=${pretty}`] : []), ...(date ? [`--date=${date}`] : [])];
     it(args.slice(1).join(' ') || 'log', () => {
-      assert.deepStrictEqual(runGitLog(real, pretty, date ?? 'default', now), git(args).replace(/\n$/, '').split('\n'));
+      // Older git writes UTC as +00:00 in strict ISO dates; newer git, as on CI, writes Z.
+      const expected = git(args).replace(/(T\d\d:\d\d:\d\d)\+00:00/g, '$1Z');
+      assert.deepStrictEqual(runGitLog(real, pretty, date ?? 'default', now), expected.replace(/\n$/, '').split('\n'));
     });
   }
 });

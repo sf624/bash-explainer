@@ -141,7 +141,7 @@ export function globParts(pattern: string): GlobPart[] | undefined {
     } else if (c === '*') out.push({ type: 'any' });
     else if (c === '?') out.push({ type: 'one' });
     else if (c === '[') {
-      const end = pattern.indexOf(']', i + 2);
+      const end = classEnd(pattern, i);
       if (end < 0) { text(c); continue; }
       let set = pattern.slice(i + 1, end);
       const negated = set[0] === '!' || set[0] === '^';
@@ -153,12 +153,36 @@ export function globParts(pattern: string): GlobPart[] | undefined {
   return out;
 }
 
+/** The `]` closing the bracket expression at `open` (a `]` first, and `[:digit:]` inside, do not close it); -1 if none. */
+function classEnd(pattern: string, open: number): number {
+  let j = open + 1;
+  if (pattern[j] === '!' || pattern[j] === '^') j++;
+  if (pattern[j] === ']') j++;
+  for (; j < pattern.length; j++) {
+    const named = /^\[:\w+:\]/.exec(pattern.slice(j));
+    if (named) j += named[0].length - 1;
+    else if (pattern[j] === ']') return j;
+  }
+  return -1;
+}
+
+const POSIX_CLASSES: Record<string, string> = {
+  digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s', xdigit: '0-9A-Fa-f', punct: '!-/:-@[-`{-~',
+};
+
 function globRegex(parts: GlobPart[]): string {
   return parts.map((p) => {
     switch (p.type) {
       case 'any': return '[\\s\\S]*';
       case 'one': return '[\\s\\S]';
-      case 'class': return `[${p.negated ? '^' : ''}${p.set.replace(/[\\\]]/g, '\\$&')}]`;
+      case 'class': {
+        // Named classes become ranges; other characters are taken literally.
+        const body = p.set.split(/(\[:\w+:\])/).map((x) => {
+          const named = /^\[:(\w+):\]$/.exec(x);
+          return named ? POSIX_CLASSES[named[1]] ?? '' : x.replace(/[\\\]\[^-]/g, (ch, k: number) => (ch === '-' && k > 0 && k < x.length - 1 ? ch : `\\${ch}`));
+        }).join('');
+        return `[${p.negated ? '^' : ''}${body}]`;
+      }
       case 'text': return p.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
   }).join('');
@@ -250,7 +274,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
   const name = p.name;
   // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
   const positional = /^[1-9]\d*$/.test(name);
-  const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val || '""');
+  // Values are never empty here (an empty one is `emptyCase`).
+  const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val);
   const set = (val: string, result: string): ExpansionCase => ({
     when: positional
       ? (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``)
@@ -324,7 +349,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
       return [set(value, strip(value, glob, from, longest))];
     }
     case '/': case '//': case '/#': case '/%': {
-      const glob = globParts(part('pattern') ?? '');
+      // The pattern is always there, if empty (`${v/}`).
+      const glob = globParts(part('pattern')!);
       const rep = part('replacement') ?? '';
       if (!glob || /[$`]/.test(rep)) return undefined;
       const repText = rep.replace(/^["']|["']$/g, '');
@@ -364,7 +390,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
       if (len !== undefined) end = Number(len) < 0 ? s.length + Number(len) : start + Number(len);
       return [set(s, s.slice(start, Math.max(start, end)))];
     }
-    case '@': {
+    // `@`: a transformation.
+    default: {
       const t = part('transform');
       const ex: Record<string, [string, string]> = {
         Q: ["it's", `'it'\\''s'`], E: ['a\\tb', ja ? 'a<タブ>b' : 'a<TAB>b'], U: ['hello', 'HELLO'], u: ['hello', 'Hello'],
@@ -374,7 +401,6 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
       return e ? [set(e[0], e[1])] : undefined;
     }
   }
-  return undefined;
 }
 
 /** Build a sample that the pattern clearly matches at the given end. */
