@@ -748,6 +748,12 @@ describe('the analyzer: branches no other test takes', () => {
     ["awk -F, -v x=1 -vy=2 --field-separator=: -F \"$s\" -v \"$v\" -v novalue '{ print }' f"], ['seq 3 |\n  sort -r', 1], ['for i in 1; do seq 3 | sort; done'],
     ['grep a f 2>/dev/null | sort'], ['grep a f > out | sort'], ['sort < f | uniq'], ['echo | sort < f'], ['(echo) | sort'], ['"$cmd" | sort'], ['seq 3 | xargs -n1 echo'],
     ['cat f | sort | cat'], ["perl -le 'print 1'"], ["perl -pi -e 's/a/b/' f"], ["perl -ne 'print ~1'"], ['basename /a/b.txt .txt'], ['echo {1..20}'], ['echo {1..1000}'],
+    ['x=$(case $y in @(a|b)) echo;; *.c) :;; plain) :;; esac; declare -x z; find . -name "*.c" -print; seq 3 | sort -r; { echo a; } > out; echo {a,b} *.txt; f() { local v=$(date); }; yq .a f.yml; tr -d x; sed -n p; awk 1; getopts ab o; read -r a b; [[ $a =~ ^x ]]; (( i++ )); echo ${a:1:2} ${#a} ${!a} ${a[*]} ${a/x/y} ${a,,} ${a@Q}) \\\n  && echo done'],
+    ['echo $(case $y in a) :;; *.c) :;; esac) \\\n  x'], ['> out'], ['cat <<< x 2>&1 > f'], ['cat <<EOF'], ['declare -x a \\\n  b', 1], ['unset a \\\n  b', 1],
+    ['echo $(yq .a f.yml) \\\n  x'], ['alert', 0, undefined, { host: 'Markdown code block (bash)' }], ['grep -r a \\\n  b', 1], ['for x; do :; done'],
+    ['{ cat; } <<< x 2>&1 > f'], ['case $x in\n  a |\n  b) :;;\nesac', 1], ['case $x in\n  (\n  a) :;;\nesac', 1], ['case $x in\n  a)\n    echo;;\nesac', 2],
+    ['x=1 \\\n  && case $y in a) :;; esac'], ['cat <<EOF\nEOF'], ['x=1 \\\n  && yq .a f.yml'], ['find . \\\n  -name a -o -name b'], ['find -L . -name a'], ['find . /tmp'],
+    ['x=1 \\\n  && grep -e a -A 2 --color=auto f'], ['x=1 \\\n  && git log --oneline -n 3 --format=%h'],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {
