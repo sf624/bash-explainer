@@ -13,7 +13,7 @@ import { GetoptUnsupported, runGetopt, sampleGetoptArgs } from '../src/examples/
 import { rerun } from '../src/examples/rerun';
 import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser } from '../src/parser';
-import { dialectIssues } from '../src/dialect';
+import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
 import { explainJq } from '../src/embedded/jq';
 import { explainYq3Path, judgeYq as judge, yqNotes, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
@@ -455,5 +455,28 @@ describe('branches no other test takes', () => {
     assert.match(j('true, splits("a"; "g")'), /boolean true[^]*Argument 2/);
     assert.match(j('getpath(["a"])', 'yq'), /mikefarah\/yq does not have it/);
     assert.match(j('{"a": 1, (.k): 2, $x}'), /Key `a`[^]*the computed key[^]*Key `x` gets `\$x`/);
+  });
+
+  it('dialects: features in case patterns and words, odd expansions, set without -o, zsh in Japanese', () => {
+    const features = (src: string) => {
+      const tree = parser.parse(src);
+      try {
+        return featuresOnLine(tree.rootNode, 0);
+      } finally {
+        tree.delete();
+      }
+    };
+    assert.deepStrictEqual(features('case $x in @(a|b)) :;; esac'), ['extglob']);
+    assert.deepStrictEqual(features('echo ${}'), []);
+    assert.deepStrictEqual(features('echo x{a..c}y; ls @(a|b)'), ['braceRange', 'extglob']);
+    assert.deepStrictEqual(features('echo $BASHPID'), ['bashVar']);
+    assert.deepStrictEqual(features('set pipefail; set errtrace; set -o errtrace'), ['errtrace']);
+    const tree = parser.parse('setopt extended_glob\nprint ${(j:,:)arr}');
+    try {
+      assert.ok(dialectIssues(tree.rootNode, 'zsh', 'ja').some((i) => i.kind === 'parse' && /zsh/.test(i.message)));
+      assert.ok(dialectNotes(tree.rootNode, 1, 'zsh', 'ja').length > 0);
+    } finally {
+      tree.delete();
+    }
   });
 });

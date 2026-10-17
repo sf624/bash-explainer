@@ -120,11 +120,28 @@ describe('the dialect table agrees with the installed shells', () => {
   }
 });
 
+describe('the dialect detector finds each feature in its own probe', () => {
+  for (const [id, code] of Object.entries(PROBES)) {
+    it(id, () => {
+      const tree = parser.parse(code);
+      try {
+        const found = new Set<string>();
+        for (let line = 0; line <= tree.rootNode.endPosition.row; line++) featuresOnLine(tree.rootNode, line).forEach((f) => found.add(f));
+        assert.ok(found.has(id), `${code}: ${[...found].join(' ')}`);
+      } finally {
+        tree.delete();
+      }
+    });
+  }
+});
+
 describe('detectShell', () => {
   const cases: [string, string, string | undefined][] = [
     ['#!/bin/sh\n', 'x.sh', 'sh'], ['#!/usr/bin/env bash\n', '', 'bash'], ['#!/bin/dash -e\n', '', 'dash'], ['#!/bin/busybox sh\n', '', 'ash'],
     ['#!/usr/bin/env -S ksh93\n', '', 'ksh'], ['#!/bin/mksh\n', '', 'mksh'], ['#!/bin/zsh\n', '', 'zsh'], ['echo\n', '.zshrc', 'zsh'],
     ['# shellcheck shell=dash\necho\n', 'a.sh', 'dash'], ['echo\n', 'a.sh', undefined], ['#!/usr/bin/python3\n', 'a.sh', undefined],
+    ['#!/usr/bin/env -S\n', '', undefined], ['#!/bin/ash\n', '', 'ash'], ['#!/usr/bin/yash\n', '', 'yash'], ['echo\n', 'x.ksh', 'ksh'],
+    ['echo\n', '.mkshrc', 'mksh'], ['echo\n', '.bashrc', 'bash'], ['echo\n', 'dir\\a.zsh', 'zsh'],
   ];
   for (const [text, file, expected] of cases) {
     it(`${JSON.stringify(text.split('\n')[0])} ${file}`, () => assert.strictEqual(detectShell(text, file), expected));
