@@ -1,0 +1,134 @@
+import * as assert from 'assert';
+import * as path from 'path';
+import type { BashParser as Parser } from '../src/parser';
+import { Analyzer, Token } from '../src/analyzer';
+import { builtins } from '../src/dict/builtins';
+import { commands } from '../src/dict/commands';
+import { CommandDoc } from '../src/dict/types';
+import { createBashParser } from '../src/parser';
+
+const root = path.join(__dirname, '..');
+let parser: Parser;
+
+before(async () => {
+  parser = await createBashParser({
+    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
+    bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
+  });
+});
+
+function tokens(src: string, lang: 'en' | 'ja' = 'en'): Token[] {
+  const tree = parser.parse(src);
+  try {
+    const out: Token[] = [];
+    const walk = (t: Token) => (out.push(t), t.children.forEach(walk));
+    new Analyzer(lang).explainLine(tree, 0).items.forEach(walk);
+    return out;
+  } finally {
+    tree.delete();
+  }
+}
+
+const unknown = (src: string) => tokens(src).filter((t) => /not in the dictionary/.test(t.explanation)).map((t) => t.label);
+
+describe('the dictionary', () => {
+  // Lines as they appear in installers, official Docker images and CI images: the commands and
+  // options a survey of those repositories found most often that the dictionary did not know.
+  const lines = [
+    'apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*',
+    'apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false',
+    'savedAptMark="$(apt-mark showmanual)"',
+    'dpkgArch="$(dpkg --print-architecture)"',
+    'gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"',
+    'dpkg-query -W -f=\'${Package} ${Version}\\n\'',
+    'apk add --no-cache --virtual .build-deps gcc make',
+    'apk del --no-network .build-deps',
+    'arch="$(apk --print-arch)"',
+    'dnf install -y --setopt=install_weak_deps=False --nodocs git',
+    'microdnf install -y tar && microdnf clean all',
+    'brew install --cask iterm2',
+    'pip install --no-cache-dir -r requirements.txt',
+    'yarn install --frozen-lockfile',
+    'case "$(uname -s)" in',
+    'machine="$(uname -m)"',
+    'USER="$(id -un)"',
+    'useradd -r -u 999 -g mysql -l -s /usr/sbin/nologin mysql',
+    'groupadd --system --gid 999 mysql',
+    'addgroup -g 1000 app && adduser -h /app -s /bin/sh -G app -D -H -u 1000 app',
+    'getent passwd "$uid"',
+    'make -j"$(nproc)"',
+    'jobs="$(getconf _NPROCESSORS_ONLN)"',
+    'gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4',
+    'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg',
+    'gpg --batch --verify python.tar.xz.asc python.tar.xz',
+    'gpgconf --kill all',
+    'pass="$(openssl rand -base64 24)"',
+    'openssl x509 -in cert.pem -noout -enddate',
+    'echo "$sum  file" | sha512sum -c -',
+    'shasum -a 256 file',
+    'xzcat dump.sql.xz | head',
+    'zstd -dc dump.sql.zst',
+    'patch -p1 < fix.patch',
+    'systemctl enable --now docker',
+    'systemctl -q is-active nginx',
+    'sysctl -n hw.memsize',
+    'os=$(sw_vers -productVersion)',
+    'lsb_release -cs',
+    'mountpoint -q /var/lib/postgresql/data',
+    'ldd --version',
+    'go build -o bin/app -ldflags "-s -w" ./cmd/app',
+    'go test -v -race ./...',
+    'go list -m -json all',
+    'cargo install --locked cargo-audit',
+    'rustup component add rustfmt clippy',
+    'node --version',
+    'gh api repos/owner/repo/releases/latest --jq .tag_name',
+    'gh workflow run build.yml --repo owner/repo',
+    'shellcheck -x -e SC2086 script.sh',
+    'gofmt -l .',
+    'set -Eeuo pipefail',
+    'test -z "$x"',
+    'complete -F _app app',
+    'tail -1 log && head -20 log',
+    'git log -1 --format=%H',
+    'git diff --exit-code',
+    'git fetch --depth 1 --tags -q origin',
+    'tar -xf go.tgz -C /usr/local --strip-components=1',
+    'curl -fsSL --retry 3 --compressed "$url"',
+    'jq -sRc . file',
+    'jq -n --argjson n 1 \'$n\'',
+    'docker ps -f label=app --format "{{.ID}}"',
+    'docker build --build-arg VERSION=1 -t app .',
+    'echo "$TOKEN" | docker login -u user --password-stdin ghcr.io',
+    "sed -i.bak 's/a/b/' file",
+  ];
+  for (const line of lines) {
+    it(`knows ${line.length > 60 ? line.slice(0, 57) + '…' : line}`, () => assert.deepStrictEqual(unknown(line), []));
+  }
+
+  it('reads -N as -n N for head, tail and git log', () => {
+    const tail = tokens('tail -1 log').find((t) => t.label === '-1')!;
+    assert.match(tail.explanation, /^1 line \(old way to write `-n 1`\)$/);
+    assert.match(tokens('head -20 log').find((t) => t.label === '-20')!.explanation, /^20 lines/);
+    assert.match(tokens('git log -3').find((t) => t.label === '-3')!.explanation, /^only 3 \(same as `-n 3`\)$/);
+  });
+
+  it('takes the rest of sed -i.bak as the backup suffix', () => {
+    const value = tokens("sed -i.bak 's/a/b/' f").find((t) => t.label === '.bak');
+    assert.ok(value, 'no token for .bak');
+    assert.match(value.explanation, /Value `\.bak` for `-i`/);
+  });
+
+  it('treats gawk and mawk as awk', () => {
+    assert.match(tokens("gawk '{ print $1 }' f")[0].explanation, /Pattern-scanning language/);
+  });
+
+  it('describes every command and option in both languages', () => {
+    const check = (name: string, d: CommandDoc) => {
+      assert.ok(d.summary.ja.trim() && d.summary.en.trim(), `${name}: summary`);
+      for (const [flag, o] of Object.entries(d.options ?? {})) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${flag}`);
+      for (const [sub, sd] of Object.entries(d.subcommands ?? {})) check(`${name} ${sub}`, sd);
+    };
+    for (const [name, d] of [...Object.entries(commands), ...Object.entries(builtins)]) check(name, d);
+  });
+});

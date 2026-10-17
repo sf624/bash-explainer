@@ -1766,6 +1766,18 @@ export class Analyzer {
       return i;
     }
 
+    // `head -5`, `tail -1`, `git log -3`: the old way to write `-n N`.
+    const count = /^-(\d+)$/.exec(text)?.[1];
+    const countCmd = cmdName.split(' ').map((w, k) => (k ? w : w.split('/').pop())).join(' ');
+    if (count && !opts[text] && ['head', 'tail', 'git log', 'git show'].includes(countCmd)) {
+      if (visible(a)) {
+        out.push(this.tok(a, 'option', countCmd.startsWith('git')
+          ? this.s(`${count} 件だけ（\`-n ${count}\` と同じ）`, `only ${count} (same as \`-n ${count}\`)`)
+          : this.s(`${count} 行（\`-n ${count}\` の古い書き方）`, `${count} line${count === '1' ? '' : 's'} (old way to write \`-n ${count}\`)`)));
+      }
+      return i;
+    }
+
     const exact = opts[text];
     if (exact || text.startsWith('--') || doc?.longSingleDash) {
       const opt = exact;
@@ -2325,6 +2337,7 @@ export function lookupCommand(name: string): CommandDoc | undefined {
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
   if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];
   if (base === 'egrep' || base === 'fgrep') return commands.grep;
+  if (base === 'gawk' || base === 'mawk' || base === 'nawk') return commands.awk;
   if (base === 'python') return commands.python3;
   if (base === 'zsh' || base === 'dash' || base === 'ksh') return commands.sh;
   return undefined;

@@ -1,0 +1,567 @@
+import { CommandDoc, cmd, OptSpec, pos } from './types';
+
+// Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
+// repositories (installers, official Docker images, CI images): the ones most often met that the
+// dictionary did not know. Package managers, users and groups, system information, signatures and
+// checksums, compression, and the language toolchains that scripts call.
+
+const files = pos('対象のファイル', 'target file');
+const pkg = pos('パッケージ名（`名前=バージョン` で版を指定）', 'package name (`name=version` pins a version)');
+
+// ---- Package managers ---------------------------------------------------------------------------
+
+/** Options apt-get and apt accept before or after the subcommand. */
+const aptCommon: OptSpec[] = [
+  ['-y|--yes|--assume-yes', '確認せずに「はい」と答える（スクリプトや Dockerfile で必須）', 'answer yes to prompts (needed in scripts and Dockerfiles)'],
+  ['-q|--quiet', '進捗の表示を減らす（`-qq` でさらに減らす）', 'less progress output (`-qq`: even less)'],
+  ['--no-install-recommends', '推奨パッケージを入れない（イメージを小さく保つ定番）', 'do not install recommended packages (keeps images small)'],
+  ['-o|--option', 'APT の設定を1つ上書きする（`-o APT::…=値`）', 'set one APT configuration option (`-o APT::…=value`)', 'arg'],
+  ['--auto-remove|--autoremove', '不要になった依存パッケージも一緒に削除する', 'also remove dependencies no longer needed'],
+  ['--purge', '設定ファイルも含めて削除する', 'remove configuration files too'],
+  ['-f|--fix-broken', '壊れた依存関係を直そうとする', 'try to fix broken dependencies'],
+  ['-s|--simulate|--dry-run', '実際には何もせず、行うことを表示する', 'show what would be done, without doing it'],
+  ['-d|--download-only', 'ダウンロードだけして入れない', 'download only, do not install'],
+  ['--reinstall', '入っているパッケージも入れ直す', 'reinstall packages already installed'],
+];
+
+const aptSubs = (extra: Record<string, CommandDoc> = {}): Record<string, CommandDoc> => ({
+  update: cmd('リポジトリからパッケージの一覧を取り直す（install の前に必要）', 'Refresh the package lists from the repositories (needed before install)', aptCommon),
+  upgrade: cmd('入っているパッケージを新しい版に更新する', 'Upgrade installed packages', aptCommon),
+  'dist-upgrade': cmd('依存関係の変化も含めてすべて更新する（パッケージの追加・削除もあり）', 'Upgrade everything, adding or removing packages as dependencies change', aptCommon),
+  install: cmd('パッケージをインストールする', 'Install packages', aptCommon, { positional: [pkg] }),
+  remove: cmd('パッケージを削除する（設定ファイルは残る）', 'Remove packages (configuration files stay)', aptCommon, { positional: [pkg] }),
+  purge: cmd('パッケージを設定ファイルごと削除する', 'Remove packages with their configuration files', aptCommon, { positional: [pkg] }),
+  autoremove: cmd('依存先として入り、もう不要になったパッケージを削除する', 'Remove packages installed as dependencies and no longer needed', aptCommon),
+  clean: cmd('ダウンロード済みのパッケージファイルを消す（`/var/cache/apt/archives`）', 'Delete downloaded package files (`/var/cache/apt/archives`)', aptCommon),
+  autoclean: cmd('もう入手できない古いパッケージファイルだけ消す', 'Delete only package files that can no longer be downloaded', aptCommon),
+  download: cmd('パッケージの .deb をカレントディレクトリにダウンロードする', "Download packages' .deb files into the current directory", aptCommon, { positional: [pkg] }),
+  ...extra,
+});
+
+const apkCommon: OptSpec[] = [
+  ['--no-cache', 'インデックスを取得して使い、キャッシュを残さない（`apk update` と後片付けが不要）', 'fetch the index, use it and keep no cache (no `apk update` or cleanup needed)'],
+  ['-U|--update-cache', '先にパッケージの一覧を取り直す', 'refresh the package index first'],
+  ['-t|--virtual', 'まとめて入れたパッケージに仮の名前を付ける（あとで `apk del 名前` で一括削除）', 'group the packages under a virtual name (remove them all later with `apk del name`)', 'arg'],
+  ['--no-network', 'ネットワークを使わない', 'do not use the network'],
+  ['-q|--quiet', '表示を減らす', 'less output'],
+  ['-v|--verbose', '詳しく表示する', 'more output'],
+  ['--print-arch', 'このシステムのアーキテクチャ（`x86_64`、`aarch64`…）を表示する', "print the system's architecture (`x86_64`, `aarch64`…)"],
+  ['-X|--repository', '使うリポジトリを追加する', 'use this repository too', 'arg'],
+];
+
+const rpmCommon: OptSpec[] = [
+  ['-y|--assumeyes', '確認せずに「はい」と答える', 'answer yes to prompts'],
+  ['-q|--quiet', '表示を減らす', 'less output'],
+  ['--nodocs', 'ドキュメントを入れない（イメージを小さく保つ）', 'do not install documentation (keeps images small)'],
+  ['--setopt', '設定を1つ上書きする（`--setopt=名前=値`）', 'set one configuration option (`--setopt=name=value`)', 'arg'],
+  ['--enablerepo', 'このリポジトリを有効にする', 'enable this repository', 'arg'],
+  ['--disablerepo', 'このリポジトリを無効にする', 'disable this repository', 'arg'],
+];
+
+const rpmSubs = (): Record<string, CommandDoc> => ({
+  install: cmd('パッケージをインストールする', 'Install packages', rpmCommon, { positional: [pkg] }),
+  remove: cmd('パッケージを削除する', 'Remove packages', rpmCommon, { positional: [pkg] }),
+  update: cmd('パッケージを更新する', 'Update packages', rpmCommon),
+  upgrade: cmd('パッケージを更新する', 'Upgrade packages', rpmCommon),
+  clean: cmd('キャッシュを消す（`clean all` ですべて）', 'Delete cached data (`clean all`: everything)', rpmCommon),
+  makecache: cmd('リポジトリのメタデータを取得してキャッシュする', 'Download and cache repository metadata', rpmCommon),
+});
+
+const pipInstall: OptSpec[] = [
+  ['-r|--requirement', 'このファイル（`requirements.txt`）に並んだパッケージを入れる', 'install the packages listed in this file (`requirements.txt`)', 'arg'],
+  ['-U|--upgrade', '入っていても最新版に更新する', 'upgrade if already installed'],
+  ['--no-cache-dir', 'ダウンロードをキャッシュしない（イメージを小さく保つ）', 'do not cache downloads (keeps images small)'],
+  ['--user', 'ユーザーのホームに入れる（管理者権限が不要）', "install into the user's home (no admin rights needed)"],
+  ['-e|--editable', 'ソースのディレクトリを編集可能なまま入れる（開発用）', 'install a source directory in editable mode (for development)', 'arg'],
+  ['-q|--quiet', '表示を減らす', 'less output'],
+  ['--break-system-packages', 'OS が管理する Python にも入れる（PEP 668 の保護を外す。注意）', 'install into the OS-managed Python (overrides PEP 668; careful)'],
+  ['-c|--constraint', '版の上限・下限をこのファイルで制約する', 'constrain versions with this file', 'arg'],
+  ['--index-url|-i', 'パッケージの取得元を PyPI 以外にする', 'download packages from this index instead of PyPI', 'arg'],
+];
+
+const pip = cmd('Python のパッケージマネージャ', 'Python package manager', [['-q|--quiet', '表示を減らす', 'less output'], ['--version|-V', '版を表示する', 'show the version']], {
+  subcommands: {
+    install: cmd('パッケージをインストールする', 'Install packages', pipInstall, { positional: [pos('パッケージ（`名前==版` で版を指定）', 'package (`name==version` pins a version)')] }),
+    uninstall: cmd('パッケージを削除する', 'Uninstall packages', [['-y|--yes', '確認しない', 'do not ask for confirmation']], { positional: [pkg] }),
+    list: cmd('入っているパッケージを一覧表示する', 'List installed packages', [['--outdated|-o', '更新があるものだけ', 'only outdated ones']]),
+    freeze: cmd('入っているパッケージを requirements 形式で出力する', 'Print installed packages in requirements format'),
+    show: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
+  },
+});
+
+// ---- Checksums, signatures and compression -------------------------------------------------------
+
+const checksum = (bits: string): CommandDoc => cmd(`${bits} のハッシュ値（チェックサム）を計算する`, `Compute ${bits} checksums`, [
+  ['-c|--check', 'ハッシュ値の一覧ファイルと照合する（ダウンロードの検証）', 'verify against a checksum list (checking downloads)'],
+  ['-b|--binary', 'バイナリモードで読む', 'read in binary mode'],
+  ['--status', '何も表示せず、結果を終了ステータスで返す', 'print nothing; report via the exit status'],
+], { positional: [files] });
+
+const compressor = (ja: string, en: string, ext: string, extra: OptSpec[] = []): CommandDoc => cmd(ja, en, [
+  ['-d|--decompress', '展開する', 'decompress'],
+  ['-c|--stdout', '結果を標準出力に書く（元のファイルはそのまま）', 'write to stdout (keep the input files)'],
+  ['-k|--keep', '元のファイルを消さない', 'keep the input files'],
+  ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files'],
+  ['-q|--quiet', '表示を減らす', 'less output'],
+  ['-v|--verbose', '詳しく表示する', 'more output'],
+  ...extra,
+], { positional: [pos(`対象のファイル（展開なら \`${ext}\`）`, `file (\`${ext}\` to decompress)`)] });
+
+const decompressToStdout = (ja: string, en: string): CommandDoc => cmd(ja, en, [], { positional: [files] });
+
+/** `-R owner/name`, which gh's subcommands accept too. */
+const ghRepo: OptSpec[] = [['-R|--repo', '対象のリポジトリ（`オーナー/名前`）', 'repository (`owner/name`)', 'arg']];
+
+// ---- Users and groups -------------------------------------------------------------------------
+
+const user = pos('ユーザー名', 'user name');
+const group = pos('グループ名', 'group name');
+
+// ---- The dictionary ---------------------------------------------------------------------------
+
+export const system: Record<string, CommandDoc> = {
+  'apt-get': cmd('Debian / Ubuntu のパッケージ管理（APT）', 'Debian/Ubuntu package manager (APT)', aptCommon, { subcommands: aptSubs() }),
+  apt: cmd('Debian / Ubuntu のパッケージ管理（対話向けの APT。スクリプトでは `apt-get` が推奨）', 'Debian/Ubuntu package manager (interactive APT; scripts should use `apt-get`)', aptCommon, {
+    subcommands: aptSubs({
+      'full-upgrade': cmd('依存関係の変化も含めてすべて更新する', 'Upgrade everything, adding or removing packages as needed', aptCommon),
+      list: cmd('パッケージを一覧表示する（`--installed`、`--upgradable`）', 'List packages (`--installed`, `--upgradable`)', [['--installed', '入っているものだけ', 'installed ones only'], ['--upgradable', '更新があるものだけ', 'upgradable ones only']]),
+      search: cmd('パッケージを検索する', 'Search for packages', [], { positional: [pos('検索語', 'search term')] }),
+      show: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
+    }),
+  }),
+  'apt-mark': cmd('APT のパッケージに印を付ける（自動・手動・固定）', 'Mark APT packages (automatic, manual, held)', [], {
+    subcommands: {
+      auto: cmd('依存先として入ったものとして扱う（`autoremove` の対象になる）', 'Mark as installed automatically (`autoremove` may remove them)', [], { positional: [pkg] }),
+      manual: cmd('手動で入れたものとして扱う（`autoremove` で消えない）', 'Mark as installed manually (`autoremove` keeps them)', [], { positional: [pkg] }),
+      hold: cmd('版を固定して更新させない', 'Hold the version: do not upgrade', [], { positional: [pkg] }),
+      unhold: cmd('版の固定を外す', 'Release a hold', [], { positional: [pkg] }),
+      showmanual: cmd('手動で入れたパッケージを一覧表示する', 'List packages marked manual'),
+      showauto: cmd('自動で入ったパッケージを一覧表示する', 'List packages marked automatic'),
+      showhold: cmd('固定されたパッケージを一覧表示する', 'List held packages'),
+    },
+  }),
+  dpkg: cmd('Debian のパッケージ（.deb）を直接操作する', 'Manage Debian packages (.deb) directly', [
+    ['-i|--install', '.deb ファイルをインストールする', 'install a .deb file'],
+    ['-r|--remove', 'パッケージを削除する', 'remove a package'],
+    ['-P|--purge', '設定ファイルごと削除する', 'remove with configuration files'],
+    ['-l|--list', 'パッケージを一覧表示する', 'list packages'],
+    ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
+    ['-S|--search', 'このファイルを入れたパッケージを探す', 'find the package that installed a file'],
+    ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
+    ['--print-architecture', 'このシステムのアーキテクチャ（`amd64`、`arm64`…）を表示する', "print the system's architecture (`amd64`, `arm64`…)"],
+    ['--add-architecture', '別のアーキテクチャのパッケージも入れられるようにする', "allow another architecture's packages", 'arg'],
+    ['--configure', '展開済みのパッケージを設定する（`-a` ですべて）', 'configure unpacked packages (`-a`: all)'],
+  ], { positional: [pos('パッケージ名または .deb ファイル', 'package name or .deb file')] }),
+  'dpkg-query': cmd('入っている Debian パッケージの情報を問い合わせる', 'Query installed Debian packages', [
+    ['-W|--show', 'パッケージを一覧表示する（`-f` で形式を指定）', 'show packages (format with `-f`)'],
+    ['-f|--showformat', '`-W` の出力形式（`${Package} ${Version}\\n` など）', 'output format for `-W` (`${Package} ${Version}\\n`…)', 'arg'],
+    ['-l|--list', 'パッケージを一覧表示する', 'list packages'],
+    ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
+    ['-S|--search', 'このファイルを入れたパッケージを探す', 'find the package that installed a file'],
+    ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
+  ], { positional: [pkg] }),
+  'dpkg-architecture': cmd('Debian のビルド用アーキテクチャの値を表示する', 'Print Debian build architecture values', [
+    ['-q|--query', 'この変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only this variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
+    ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use this Debian host architecture', 'arg'],
+  ]),
+  apk: cmd('Alpine Linux のパッケージ管理', 'Alpine Linux package manager', apkCommon, {
+    subcommands: {
+      add: cmd('パッケージをインストールする', 'Install packages', apkCommon, { positional: [pos('パッケージ名（`名前=版` で版を指定）', 'package name (`name=version` pins a version)')] }),
+      del: cmd('パッケージ（または `--virtual` の名前）を削除する', 'Remove packages (or a `--virtual` name)', apkCommon, { positional: [pkg] }),
+      update: cmd('パッケージの一覧を取り直す', 'Refresh the package index', apkCommon),
+      upgrade: cmd('入っているパッケージを更新する', 'Upgrade installed packages', apkCommon),
+      info: cmd('パッケージの情報を表示する', 'Show package information', apkCommon, { positional: [pkg] }),
+      search: cmd('パッケージを検索する', 'Search for packages', apkCommon, { positional: [pos('検索語', 'search term')] }),
+    },
+  }),
+  dnf: cmd('Fedora / RHEL のパッケージ管理', 'Fedora/RHEL package manager', rpmCommon, { subcommands: rpmSubs() }),
+  yum: cmd('RHEL / CentOS のパッケージ管理（古い版。新しくは dnf）', 'RHEL/CentOS package manager (older; dnf replaces it)', rpmCommon, { subcommands: rpmSubs() }),
+  microdnf: cmd('最小構成のコンテナ向けの dnf', 'Minimal dnf for containers', rpmCommon, { subcommands: rpmSubs() }),
+  brew: cmd('Homebrew（macOS / Linux のパッケージ管理）', 'Homebrew (package manager for macOS and Linux)', [
+    ['--prefix', 'Homebrew（またはパッケージ）の置き場所を表示する', 'print where Homebrew (or a package) lives'],
+    ['-q|--quiet', '表示を減らす', 'less output'],
+  ], {
+    subcommands: {
+      install: cmd('パッケージをインストールする', 'Install packages', [['--cask', 'GUI アプリ（cask）として入れる', 'install a GUI app (cask)']], { positional: [pkg] }),
+      uninstall: cmd('パッケージを削除する', 'Uninstall packages', [], { positional: [pkg] }),
+      update: cmd('Homebrew 自身とパッケージの一覧を更新する', 'Update Homebrew and the package lists'),
+      upgrade: cmd('入っているパッケージを更新する', 'Upgrade installed packages', [], { positional: [pkg] }),
+      list: cmd('入っているパッケージを一覧表示する', 'List installed packages'),
+      info: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
+      tap: cmd('追加のリポジトリ（tap）を登録する', 'Add a third-party repository (tap)', [], { positional: [pos('tap の名前（`ユーザー/リポジトリ`）', 'tap name (`user/repo`)')] }),
+      cleanup: cmd('古い版やキャッシュを消す', 'Remove old versions and caches'),
+      bundle: cmd('Brewfile に書かれたものをまとめて入れる', 'Install everything in a Brewfile'),
+    },
+  }),
+  pip,
+  pip3: pip,
+  yarn: cmd('Node.js のパッケージマネージャ（Yarn）', 'Node.js package manager (Yarn)', [
+    ['--frozen-lockfile|--immutable', 'yarn.lock を書き換えない（CI 向け。合わなければ失敗）', 'do not change yarn.lock (for CI; fail if it is out of date)'],
+    ['--production', '開発用の依存を入れない', 'skip development dependencies'],
+  ], {
+    subcommands: {
+      install: cmd('依存をインストールする', 'Install dependencies', [['--frozen-lockfile|--immutable', 'yarn.lock を書き換えない（CI 向け）', 'do not change yarn.lock (for CI)'], ['--production', '開発用の依存を入れない', 'skip development dependencies']]),
+      add: cmd('依存を追加する', 'Add dependencies', [['-D|--dev', '開発用の依存として追加', 'as development dependencies']], { positional: [pkg] }),
+      remove: cmd('依存を削除する', 'Remove dependencies', [], { positional: [pkg] }),
+      run: cmd('package.json の scripts を実行する', 'Run a package.json script', [], { positional: [pos('スクリプト名', 'script name')] }),
+      cache: cmd('キャッシュを操作する（`yarn cache clean` で消す）', 'Manage the cache (`yarn cache clean` empties it)'),
+    },
+  }),
+
+  // ---- Language toolchains ----
+  node: cmd('JavaScript を実行する（Node.js）', 'Run JavaScript (Node.js)', [
+    ['-e|--eval', 'この JavaScript を実行する', 'run this JavaScript', 'arg'],
+    ['-p|--print', 'この JavaScript を実行して結果を表示する', 'run this JavaScript and print the result', 'arg'],
+    ['-v|--version', '版を表示する', 'print the version'],
+    ['-r|--require', '先にこのモジュールを読み込む', 'load this module first', 'arg'],
+  ], { positional: [pos('実行するスクリプト', 'script to run'), pos('スクリプトへの引数', 'argument to the script')] }),
+  go: cmd('Go のツール（ビルド・テスト・依存管理）', 'Go toolchain (build, test, modules)', [], {
+    subcommands: {
+      build: cmd('パッケージをビルドする', 'Compile packages', [
+        ['-o', '出力するファイル名', 'output file', 'arg'], ['-v', 'ビルドするパッケージ名を表示', 'print package names'],
+        ['-ldflags', 'リンカに渡すフラグ（`-s -w` で小さく、`-X` で変数を埋め込む）', 'linker flags (`-s -w`: smaller; `-X`: set a variable)', 'arg'],
+        ['-trimpath', 'ビルドした場所のパスを埋め込まない（再現可能なビルド）', 'leave out local paths (reproducible builds)'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
+        ['-tags', 'ビルドタグ', 'build tags', 'arg'],
+      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], longSingleDash: true }),
+      test: cmd('テストを実行する', 'Run tests', [
+        ['-v', '各テストの結果を表示', 'verbose'], ['-run', 'この正規表現に合うテストだけ', 'only tests matching this regex', 'arg'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
+        ['-count', '実行回数（`-count=1` でキャッシュを使わない）', 'run count (`-count=1` skips the cache)', 'arg'], ['-cover', 'カバレッジを表示', 'show coverage'], ['-timeout', '時間切れ', 'timeout', 'arg'],
+      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], longSingleDash: true }),
+      run: cmd('ビルドしてすぐ実行する', 'Compile and run', [], { positional: [pos('main パッケージかファイル（`パス@版` も可）', 'main package or files (or `path@version`)'), pos('プログラムへの引数', 'argument to the program')], longSingleDash: true }),
+      install: cmd('ビルドしてコマンドを `$GOPATH/bin` に入れる（`パス@版`）', 'Build and install commands into `$GOPATH/bin` (`path@version`)', [], { positional: [pos('パッケージ（`パス@版`）', 'package (`path@version`)')] }),
+      get: cmd('依存を追加・更新する（go.mod を書き換える）', 'Add or update dependencies (edits go.mod)', [['-u', '最新版に更新', 'update to the latest']], { positional: [pkg], longSingleDash: true }),
+      mod: cmd('モジュール（go.mod）を操作する（`tidy`、`download`、`vendor`、`edit`）', 'Manage modules (`tidy`, `download`, `vendor`, `edit`)', [], { longSingleDash: true }),
+      list: cmd('パッケージやモジュールを一覧表示する', 'List packages or modules', [['-m', 'パッケージでなくモジュールを', 'modules instead of packages'], ['-json', 'JSON で出力', 'JSON output'], ['-f', 'Go テンプレートで出力形式を指定', 'output format as a Go template', 'arg'], ['-e', 'エラーのあるパッケージも表示', 'include packages with errors'], ['-deps', '依存もすべて', 'include dependencies'], ['-find', '依存を解決せずに探すだけ', 'only find, do not resolve dependencies']], { positional: [pos('パッケージ（`./...`、`all`）', 'packages (`./...`, `all`)')], longSingleDash: true }),
+      vet: cmd('怪しいコードを検査する', 'Report suspicious code', [], { positional: [pos('パッケージ', 'packages')] }),
+      fmt: cmd('コードを整形する', 'Format code', [], { positional: [pos('パッケージ', 'packages')] }),
+      generate: cmd('`//go:generate` のコマンドを実行する', 'Run `//go:generate` commands'),
+      version: cmd('Go の版を表示する', 'Print the Go version'),
+      env: cmd('Go の環境変数を表示する', "Print Go's environment", [], { positional: [pos('変数名（`GOPATH`、`GOOS`…）', 'variable name (`GOPATH`, `GOOS`…)')] }),
+    },
+  }),
+  gofmt: cmd('Go のコードを整形する', 'Format Go code', [
+    ['-l', '整形が必要なファイル名だけを表示（CI での検査向け）', 'list files that need formatting (for CI checks)'], ['-w', 'ファイルを直接書き換える', 'rewrite files in place'],
+    ['-d', '差分を表示する', 'show diffs'], ['-s', 'コードを簡略化する', 'simplify code'],
+  ], { positional: [files] }),
+  cargo: cmd('Rust のビルドツール・パッケージマネージャ', 'Rust build tool and package manager', [], {
+    subcommands: {
+      build: cmd('ビルドする', 'Compile', [['--release', '最適化してビルド（`target/release`）', 'optimised build (`target/release`)'], ['--locked', 'Cargo.lock のとおりに（変えない）', 'use Cargo.lock as is']]),
+      test: cmd('テストを実行する', 'Run tests', [['--release', '最適化してビルド', 'optimised build'], ['--locked', 'Cargo.lock のとおりに', 'use Cargo.lock as is']]),
+      run: cmd('ビルドして実行する', 'Compile and run', [['--release', '最適化してビルド', 'optimised build']]),
+      install: cmd('Rust のコマンドを入れる', 'Install a Rust binary', [['--locked', '公開時の Cargo.lock のとおりに入れる（推奨）', "use the published Cargo.lock (recommended)"]], { positional: [pkg] }),
+      check: cmd('ビルドせずに型などを検査する', 'Check without building'),
+      fmt: cmd('コードを整形する', 'Format code', [['--check', '整形が必要なら失敗する（CI 向け）', 'fail if formatting is needed (for CI)']]),
+      clippy: cmd('リンター（Clippy）で検査する', 'Lint with Clippy'),
+      add: cmd('依存を追加する', 'Add dependencies', [], { positional: [pkg] }),
+      update: cmd('Cargo.lock の依存を更新する', 'Update dependencies in Cargo.lock'),
+      doc: cmd('ドキュメントを作る', 'Build documentation'),
+    },
+  }),
+  rustup: cmd('Rust のツールチェーン管理', 'Rust toolchain manager', [['-y', '確認しない', 'do not ask for confirmation']], {
+    subcommands: {
+      component: cmd('部品（`rustfmt`、`clippy`…）を追加・削除する（`component add`）', 'Add or remove components (`rustfmt`, `clippy`…; `component add`)'),
+      target: cmd('クロスコンパイルの対象を追加する（`target add`）', 'Add cross-compilation targets (`target add`)'),
+      toolchain: cmd('ツールチェーンを入れる・消す（`toolchain install`）', 'Install or remove toolchains (`toolchain install`)'),
+      default: cmd('既定のツールチェーンを設定する', 'Set the default toolchain', [], { positional: [pos('ツールチェーン（`stable`、`nightly`…）', 'toolchain (`stable`, `nightly`…)')] }),
+      update: cmd('ツールチェーンを更新する', 'Update toolchains'),
+      show: cmd('入っているツールチェーンを表示する', 'Show installed toolchains'),
+      run: cmd('指定したツールチェーンでコマンドを実行する', 'Run a command with a given toolchain'),
+    },
+  }),
+  rustc: cmd('Rust のコンパイラ', 'Rust compiler', [
+    ['-V|--version', '版を表示する（`-Vv` で詳しく）', 'print the version (`-Vv`: verbose)'], ['-v|--verbose', '詳しく表示する', 'verbose'],
+    ['-o', '出力するファイル名', 'output file', 'arg'], ['--edition', 'Rust のエディション', 'Rust edition', 'arg'],
+  ], { positional: [files] }),
+  php: cmd('PHP を実行する', 'Run PHP', [
+    ['-r', 'この PHP のコードを実行する（`<?php` は不要）', 'run this PHP code (no `<?php`)', 'arg'], ['-v|--version', '版を表示する', 'print the version'],
+    ['-m', '入っている拡張を一覧表示する', 'list loaded extensions'], ['-i', '設定の情報（phpinfo）を表示する', 'show configuration (phpinfo)'],
+    ['-d', 'php.ini の設定を1つ上書きする（`-d 名前=値`）', 'set one php.ini setting (`-d name=value`)', 'arg'],
+  ], { positional: [pos('実行するスクリプト', 'script to run'), pos('スクリプトへの引数', 'argument to the script')] }),
+  gcc: cmd('C コンパイラ（GCC）', 'C compiler (GCC)', [
+    ['-o', '出力するファイル名', 'output file', 'arg'], ['-c', 'コンパイルだけしてリンクしない（.o を作る）', 'compile only, do not link (make .o files)'],
+    ['-g', 'デバッグ情報を入れる', 'include debug information'], ['-O0', '最適化しない', 'no optimisation'], ['-O2', '一般的な最適化', 'usual optimisation'],
+    ['-O3', 'より強い最適化', 'more optimisation'], ['-Os', 'サイズを小さくする最適化', 'optimise for size'], ['-Wall', '主な警告を有効にする', 'enable the common warnings'],
+    ['-Wextra', '追加の警告を有効にする', 'enable extra warnings'], ['-Werror', '警告をエラーにする', 'treat warnings as errors'],
+    ['-shared', '共有ライブラリを作る', 'build a shared library'], ['-fPIC', '位置独立コードを作る（共有ライブラリ向け）', 'position-independent code (for shared libraries)'],
+    ['-static', '静的にリンクする', 'link statically'], ['-dumpversion', 'コンパイラの版だけを表示する', 'print only the compiler version'], ['-dumpmachine', '対象のアーキテクチャを表示する', 'print the target triple'],
+  ], { positional: [pos('ソースファイル', 'source file')], longSingleDash: true }),
+
+  // ---- GitHub ----
+  gh: cmd('GitHub CLI', 'GitHub CLI', ghRepo, {
+    subcommands: {
+      api: cmd('GitHub の API を呼び出す', 'Call the GitHub API', [
+        ['--jq|-q', '結果をこの jq の式で絞る', 'filter the result with this jq expression', 'arg lang:jq'],
+        ['-X|--method', 'HTTP メソッド（既定は GET、値があれば POST）', 'HTTP method (GET; POST when fields are given)', 'arg'],
+        ['-f|--raw-field', '文字列の値を送る（`名前=値`）', 'send a string field (`name=value`)', 'arg'],
+        ['-F|--field', '型を推測して値を送る（数値・真偽値・`@ファイル`）', 'send a typed field (numbers, booleans, `@file`)', 'arg'],
+        ['--paginate', 'すべてのページを取得する', 'fetch every page'], ['-H|--header', 'HTTP ヘッダーを追加する', 'add an HTTP header', 'arg'],
+        ['-i|--include', 'レスポンスのヘッダーも表示する', 'include response headers'],
+      ], { positional: [pos('API のパス（`repos/{owner}/{repo}/…`）', 'API path (`repos/{owner}/{repo}/…`)')] }),
+      pr: cmd('プルリクエストを操作する（`create`、`view`、`checkout`、`merge`、`list`…）', 'Work with pull requests (`create`, `view`, `checkout`, `merge`, `list`…)', ghRepo),
+      issue: cmd('Issue を操作する（`create`、`view`、`list`…）', 'Work with issues (`create`, `view`, `list`…)', ghRepo),
+      release: cmd('リリースを操作する（`create`、`download`、`view`…）', 'Work with releases (`create`, `download`, `view`…)', ghRepo),
+      run: cmd('GitHub Actions の実行を操作する（`list`、`view`、`watch`…）', 'Work with GitHub Actions runs (`list`, `view`, `watch`…)', ghRepo),
+      workflow: cmd('GitHub Actions のワークフローを操作する（`run`、`list`…）', 'Work with GitHub Actions workflows (`run`, `list`…)', ghRepo),
+      repo: cmd('リポジトリを操作する（`clone`、`view`、`create`…）', 'Work with repositories (`clone`, `view`, `create`…)', ghRepo),
+      auth: cmd('GitHub へのログインを管理する（`login`、`status`、`token`）', 'Manage authentication (`login`, `status`, `token`)'),
+    },
+  }),
+
+  // ---- Users and groups ----
+  id: cmd('ユーザーの ID とグループを表示する', "Print a user's IDs and groups", [
+    ['-u|--user', 'ユーザー ID だけ（`0` なら root）', 'only the user ID (`0` is root)'], ['-g|--group', '主グループの ID だけ', 'only the primary group ID'],
+    ['-G|--groups', '所属するグループの ID すべて', 'all group IDs'], ['-n|--name', '数値でなく名前で表示（`-un` でユーザー名）', 'names instead of numbers (`-un`: user name)'],
+    ['-r|--real', '実 ID を表示する', 'real IDs instead of effective'],
+  ], { positional: [user] }),
+  whoami: cmd('今のユーザー名を表示する', 'Print the current user name'),
+  getent: cmd('ユーザー・グループ・ホストなどのデータベースを引く（`/etc/passwd` や LDAP も見る）', 'Look up users, groups, hosts and other databases (`/etc/passwd`, LDAP…)', [], {
+    positional: [pos('データベース（`passwd`、`group`、`hosts`…）', 'database (`passwd`, `group`, `hosts`…)'), pos('探すキー（名前や ID）', 'key to look up (name or ID)')],
+  }),
+  useradd: cmd('ユーザーを作る', 'Create a user', [
+    ['-m|--create-home', 'ホームディレクトリを作る', 'create the home directory'], ['-M|--no-create-home', 'ホームディレクトリを作らない', 'do not create a home directory'],
+    ['-r|--system', 'システムユーザー（サービス用）として作る', 'create a system account (for services)'], ['-u|--uid', 'ユーザー ID', 'user ID', 'arg'],
+    ['-g|--gid', '主グループ', 'primary group', 'arg'], ['-G|--groups', '追加で所属するグループ（カンマ区切り）', 'extra groups (comma-separated)', 'arg'],
+    ['-s|--shell', 'ログインシェル（`/usr/sbin/nologin` でログイン不可）', 'login shell (`/usr/sbin/nologin`: no login)', 'arg'], ['-d|--home-dir', 'ホームディレクトリ', 'home directory', 'arg'],
+    ['-c|--comment', '説明（氏名など）', 'comment (full name…)', 'arg'], ['-U|--user-group', '同じ名前のグループも作る', 'create a group with the same name'],
+    ['-l|--no-log-init', 'lastlog などに記録しない（大きな UID で Docker イメージが膨らむのを防ぐ）', 'do not add to lastlog (avoids huge Docker images with large UIDs)'],
+  ], { positional: [user] }),
+  groupadd: cmd('グループを作る', 'Create a group', [
+    ['-r|--system', 'システムグループとして作る', 'create a system group'], ['-g|--gid', 'グループ ID', 'group ID', 'arg'], ['-f|--force', 'すでにあっても成功にする', 'succeed if it already exists'],
+  ], { positional: [group] }),
+  adduser: cmd('ユーザーを作る（Debian の対話的な版、または BusyBox / Alpine 版）', "Create a user (Debian's friendlier tool, or BusyBox/Alpine's)", [
+    ['--system|-S', 'システムユーザーとして作る', 'create a system user'], ['--disabled-password|-D', 'パスワードを設定しない', 'do not set a password'],
+    ['--home|-h', 'ホームディレクトリ', 'home directory', 'arg'], ['--shell|-s', 'ログインシェル', 'login shell', 'arg'],
+    ['--uid|-u', 'ユーザー ID', 'user ID', 'arg'], ['--ingroup|-G', '所属させるグループ', 'group to put the user in', 'arg'],
+    ['--group', '同じ名前のグループも作る（`--system` と）', 'create a group with the same name (with `--system`)'], ['--gecos|-g', '説明（氏名など）', 'comment (full name…)', 'arg'],
+    ['--no-create-home|-H', 'ホームディレクトリを作らない', 'do not create a home directory'],
+  ], { positional: [user, group] }),
+  addgroup: cmd('グループを作る（Debian / BusyBox）', 'Create a group (Debian, BusyBox)', [
+    ['--system|-S', 'システムグループとして作る', 'create a system group'], ['--gid|-g', 'グループ ID', 'group ID', 'arg'],
+  ], { positional: [group] }),
+  su: cmd('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
+    ['-c|--command', 'シェルでこのコマンドを実行する', 'run this command with the shell', 'arg'], ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
+    ['-s|--shell', '使うシェル', 'shell to use', 'arg'], ['-m|-p|--preserve-environment', '今の環境変数を引き継ぐ', 'keep the environment'],
+  ], { positional: [user] }),
+  gosu: cmd('別のユーザーでコマンドを実行する（コンテナの入口向け。sudo と違い PID 1 を引き継ぐ）', "Run a command as another user (for container entrypoints; unlike sudo it keeps PID 1)", [], {
+    positional: [pos('ユーザー（`ユーザー:グループ` も可）', 'user (or `user:group`)'), pos('実行するコマンド', 'command to run'), pos('コマンドへの引数', 'argument to the command')],
+  }),
+
+  // ---- System information and services ----
+  uname: cmd('OS とマシンの情報を表示する', 'Print system information', [
+    ['-a|--all', 'すべての情報', 'all information'], ['-s|--kernel-name', 'カーネル名（`Linux`、`Darwin`…。スクリプトで OS 判定に使う）', 'kernel name (`Linux`, `Darwin`…; used to tell the OS)'],
+    ['-m|--machine', 'マシンのアーキテクチャ（`x86_64`、`arm64`、`aarch64`…）', 'machine architecture (`x86_64`, `arm64`, `aarch64`…)'], ['-r|--kernel-release', 'カーネルのリリース', 'kernel release'],
+    ['-n|--nodename', 'ホスト名', 'host name'], ['-o|--operating-system', 'OS 名', 'operating system'], ['-p|--processor', 'プロセッサの種類', 'processor type'], ['-v|--kernel-version', 'カーネルの版', 'kernel version'],
+  ]),
+  arch: cmd('マシンのアーキテクチャを表示する（`uname -m` と同じ）', 'Print the machine architecture (same as `uname -m`)'),
+  hostname: cmd('ホスト名を表示・設定する', 'Show or set the host name', [
+    ['-f|--fqdn|--long', '完全修飾ドメイン名', 'fully qualified domain name'], ['-s|--short', 'ドメインを除いた名前', 'short name'],
+    ['-I|--all-ip-addresses', 'すべての IP アドレス（Linux）', 'all IP addresses (Linux)'], ['-i|--ip-address', 'ホスト名の IP アドレス', "the host name's IP address"],
+  ]),
+  nproc: cmd('使える CPU の数を表示する（`make -j$(nproc)` の定番）', 'Print the number of usable CPUs (as in `make -j$(nproc)`)', [
+    ['--all', '制限を無視して全 CPU 数', 'all CPUs, ignoring limits'], ['--ignore', 'この数だけ引いて表示', 'subtract this many', 'arg'],
+  ]),
+  getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [], {
+    positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)')],
+  }),
+  lsb_release: cmd('Linux ディストリビューションの情報を表示する', 'Print Linux distribution information', [
+    ['-a|--all', 'すべての情報', 'all information'], ['-i|--id', 'ディストリビューション名（`Ubuntu`…）', 'distributor ID (`Ubuntu`…)'], ['-d|--description', '説明', 'description'],
+    ['-r|--release', 'リリース番号', 'release number'], ['-c|--codename', 'コードネーム（`noble`…）', 'code name (`noble`…)'], ['-s|--short', '見出しなしで値だけ', 'values only, no labels'],
+  ]),
+  sw_vers: cmd('macOS の版を表示する', 'Print the macOS version', [
+    ['-productName', '製品名（`macOS`）', 'product name (`macOS`)'], ['-productVersion', '版（`14.5`…）', 'version (`14.5`…)'], ['-buildVersion', 'ビルド番号', 'build number'],
+  ], { longSingleDash: true }),
+  sysctl: cmd('カーネルのパラメータを表示・変更する', 'Show or change kernel parameters', [
+    ['-n', '名前を付けず値だけ', 'values only, no names'], ['-w', '値を書き込む（`名前=値`）', 'write a value (`name=value`)'],
+    ['-a', 'すべて表示する', 'show all'], ['-p', '設定ファイル（既定は `/etc/sysctl.conf`）から読み込む', 'load from a file (default `/etc/sysctl.conf`)'],
+  ], { positional: [pos('パラメータ名（`hw.memsize`、`net.ipv4.ip_forward`…）', 'parameter name (`hw.memsize`, `net.ipv4.ip_forward`…)')] }),
+  systemctl: cmd('systemd のサービスを操作する', 'Control systemd services', [
+    ['--user', '自分のユーザーのサービスを操作する', "control the user's own services"], ['-q|--quiet', '表示を減らす（`is-active` を条件判定に使うとき）', 'less output (when `is-active` is used as a test)'],
+    ['--now', '`enable` と同時に起動（`disable` なら停止）', 'also start with `enable` (stop with `disable`)'], ['--no-pager', 'ページャを使わない', 'do not use a pager'],
+  ], {
+    subcommands: {
+      start: cmd('サービスを起動する', 'Start a service', [], { positional: [pos('サービス名', 'service name')] }),
+      stop: cmd('サービスを停止する', 'Stop a service', [], { positional: [pos('サービス名', 'service name')] }),
+      restart: cmd('サービスを再起動する', 'Restart a service', [], { positional: [pos('サービス名', 'service name')] }),
+      reload: cmd('サービスに設定を読み直させる', 'Reload a service', [], { positional: [pos('サービス名', 'service name')] }),
+      enable: cmd('起動時に自動で起動するようにする', 'Start a service at boot', [['--now', '今すぐ起動もする', 'also start it now']], { positional: [pos('サービス名', 'service name')] }),
+      disable: cmd('起動時に自動で起動しないようにする', 'Do not start a service at boot', [['--now', '今すぐ停止もする', 'also stop it now']], { positional: [pos('サービス名', 'service name')] }),
+      status: cmd('サービスの状態を表示する', "Show a service's status", [['--no-pager', 'ページャを使わない', 'do not use a pager']], { positional: [pos('サービス名', 'service name')] }),
+      'is-active': cmd('サービスが動いているかを終了ステータスで返す', 'Exit 0 if the service is running', [['-q|--quiet', '何も表示しない', 'print nothing']], { positional: [pos('サービス名', 'service name')] }),
+      'is-enabled': cmd('起動時に自動で起動するかを返す', 'Exit 0 if the service starts at boot', [['-q|--quiet', '何も表示しない', 'print nothing']], { positional: [pos('サービス名', 'service name')] }),
+      'daemon-reload': cmd('ユニットファイルの変更を読み込む', 'Reload unit files after changes'),
+      mask: cmd('サービスを起動できないようにする', 'Make a service impossible to start', [], { positional: [pos('サービス名', 'service name')] }),
+      unmask: cmd('`mask` を解除する', 'Undo `mask`', [], { positional: [pos('サービス名', 'service name')] }),
+    },
+  }),
+  mount: cmd('ファイルシステムをマウントする', 'Mount a file system', [
+    ['-t|--types', 'ファイルシステムの種類', 'file system type', 'arg'], ['-o|--options', 'マウントオプション（`ro`、`bind`…）', 'mount options (`ro`, `bind`…)', 'arg'],
+    ['--bind', 'ディレクトリを別の場所にも見せる', 'make a directory visible elsewhere'], ['--make-rshared', '配下のマウントを共有にする（コンテナ向け）', 'make mounts below shared (for containers)'],
+    ['-a|--all', '`/etc/fstab` のすべてをマウントする', 'mount everything in `/etc/fstab`'], ['-r|--read-only', '読み取り専用', 'read-only'],
+  ], { positional: [pos('デバイス', 'device'), pos('マウント先のディレクトリ', 'directory to mount on')] }),
+  mountpoint: cmd('ディレクトリがマウントポイントかを調べる', 'Check whether a directory is a mount point', [
+    ['-q|--quiet', '何も表示せず終了ステータスで返す', 'print nothing; report via the exit status'],
+  ], { positional: [pos('ディレクトリ', 'directory')] }),
+  ldd: cmd('プログラムが使う共有ライブラリを表示する', 'Print the shared libraries a program uses', [
+    ['--version', '版を表示する（glibc の版がわかる）', 'print the version (tells the glibc version)'], ['-v|--verbose', '詳しく表示する', 'more detail'],
+  ], { positional: [pos('プログラム', 'program')] }),
+  'locale-gen': cmd('ロケールのデータを作る', 'Generate locale data', [], { positional: [pos('ロケール（`en_US.UTF-8`…）', 'locale (`en_US.UTF-8`…)')] }),
+  stty: cmd('端末の設定を表示・変更する', 'Show or change terminal settings', [
+    ['-echo', '入力した文字を表示しない（パスワード入力向け）', 'do not echo typed characters (for passwords)'], ['-icanon', '行単位でなく1文字ずつ読む', 'read character by character, not by line'],
+    ['-g|--save', '今の設定を、あとで戻せる形で表示する', 'print the settings in a form that can restore them'], ['-F|--file', '対象の端末デバイス', 'terminal device', 'arg'],
+  ], { positional: [pos('設定（`size`: 行数と桁数、`sane`: 既定に戻す、`raw`、`echo`…）', 'setting (`size`: rows and columns, `sane`: reset, `raw`, `echo`…)')] }),
+  ip: cmd('ネットワークの設定を表示・変更する（iproute2）', 'Show or change network configuration (iproute2)', [
+    ['-4', 'IPv4 だけ', 'IPv4 only'], ['-6', 'IPv6 だけ', 'IPv6 only'], ['-br|-brief', '簡潔な表形式', 'brief table'], ['-j|-json', 'JSON で出力', 'JSON output'],
+  ], {
+    longSingleDash: true,
+    subcommands: {
+      addr: cmd('IP アドレスを表示・設定する', 'Show or set IP addresses'),
+      address: cmd('IP アドレスを表示・設定する', 'Show or set IP addresses'),
+      link: cmd('ネットワークインターフェースを表示・設定する', 'Show or set network interfaces'),
+      route: cmd('ルーティングテーブルを表示・設定する', 'Show or set routes'),
+      neigh: cmd('ARP / 近隣のテーブルを表示する', 'Show the neighbour (ARP) table'),
+    },
+  }),
+  ss: cmd('ソケット（通信の接続や待ち受け）を表示する', 'Show sockets (connections and listeners)', [
+    ['-t|--tcp', 'TCP', 'TCP'], ['-u|--udp', 'UDP', 'UDP'], ['-l|--listening', '待ち受け中のものだけ', 'listening sockets only'],
+    ['-n|--numeric', '名前に変換せず数字で表示', 'numeric addresses and ports'], ['-p|--processes', '使っているプロセスも表示', 'show the processes using them'], ['-a|--all', 'すべて', 'all sockets'],
+  ]),
+
+  // ---- Signatures, checksums and binary data ----
+  gpg: cmd('GnuPG: 署名の検証・暗号化・鍵の管理', 'GnuPG: verify signatures, encrypt, manage keys', [
+    ['--batch', '対話せずに動く（スクリプト向け）', 'never ask (for scripts)'], ['--yes', '確認に「はい」と答える', 'answer yes to questions'],
+    ['--keyserver', '鍵を取得する鍵サーバー', 'key server to fetch keys from', 'arg'], ['--recv-keys|--receive-keys', '鍵サーバーから、続く ID の鍵を取得する', 'fetch the keys with the IDs that follow from the key server'],
+    ['--verify', '署名を検証する（`gpg --verify 署名 ファイル`）', 'verify a signature (`gpg --verify sig file`)'], ['--dearmor', 'テキスト形式（ASCII armor）の鍵をバイナリに変換する（APT の鍵の定番）', 'convert an ASCII-armored key to binary (the usual step for APT keys)'],
+    ['-a|--armor', 'テキスト形式で出力する', 'ASCII-armored output'], ['-o|--output', '出力するファイル', 'output file', 'arg'],
+    ['--import', '鍵を取り込む', 'import keys'], ['--export', '鍵を書き出す', 'export keys'], ['--fingerprint', '鍵の指紋を表示する', 'show key fingerprints'],
+    ['-k|--list-keys', '鍵を一覧表示する', 'list keys'], ['--no-default-keyring', '既定の鍵束を使わない', 'do not use the default keyring'], ['--keyring', '使う鍵束のファイル', 'keyring file to use', 'arg'],
+    ['--homedir', 'GnuPG の設定ディレクトリ（既定は `~/.gnupg`）', 'GnuPG home directory (default `~/.gnupg`)', 'arg'], ['-d|--decrypt', '復号する', 'decrypt'],
+    ['-e|--encrypt', '暗号化する', 'encrypt'], ['-r|--recipient', '暗号化の宛先', 'encrypt for this recipient', 'arg'], ['-s|--sign', '署名する', 'sign'],
+    ['-b|--detach-sign', '別ファイルの署名を作る', 'make a detached signature'], ['-q|--quiet', '表示を減らす', 'less output'],
+  ], { positional: [pos('ファイルまたは鍵 ID', 'file or key ID')] }),
+  gpgconf: cmd('GnuPG の部品を管理する', 'Manage GnuPG components', [
+    ['--kill', 'この部品（`gpg-agent`、`all`）を止める（一時ディレクトリを消す前に）', 'stop this component (`gpg-agent`, `all`; before deleting a temporary home)', 'arg'],
+    ['--list-dirs', '使うディレクトリを表示する', 'list the directories used'], ['--reload', 'この部品に設定を読み直させる', 'reload this component', 'arg'],
+  ]),
+  openssl: cmd('OpenSSL: 暗号・証明書のツール', 'OpenSSL: cryptography and certificate tool', [], {
+    subcommands: {
+      rand: cmd('ランダムなバイト列を作る（パスワードや鍵の生成）', 'Generate random bytes (passwords, keys)', [
+        ['-base64', 'Base64 で出力', 'Base64 output'], ['-hex', '16進数で出力', 'hex output'], ['-out', '出力するファイル', 'output file', 'arg'],
+      ], { positional: [pos('バイト数', 'number of bytes')], longSingleDash: true }),
+      x509: cmd('証明書を表示・変換する', 'Show or convert certificates', [
+        ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-noout', '証明書そのものは出力しない', 'do not print the certificate itself'],
+        ['-text', '内容を読める形で表示', 'print the contents as text'], ['-enddate', '有効期限を表示', 'print the expiry date'], ['-subject', 'サブジェクトを表示', 'print the subject'],
+        ['-fingerprint', '指紋を表示', 'print the fingerprint'], ['-checkend', 'この秒数以内に期限切れなら失敗する', 'fail if it expires within this many seconds', 'arg'],
+      ], { longSingleDash: true }),
+      req: cmd('証明書署名要求（CSR）や自己署名証明書を作る', 'Create certificate requests (CSR) or self-signed certificates', [
+        ['-new', '新しい要求を作る', 'new request'], ['-x509', '要求の代わりに自己署名証明書を作る', 'make a self-signed certificate instead'], ['-nodes|-noenc', '秘密鍵を暗号化しない', 'do not encrypt the private key'],
+        ['-newkey', '新しい鍵も作る（`rsa:2048`…）', 'also make a new key (`rsa:2048`…)', 'arg'], ['-keyout', '秘密鍵の出力先', 'where to write the private key', 'arg'],
+        ['-out', '出力ファイル', 'output file', 'arg'], ['-days', '有効日数', 'days of validity', 'arg'], ['-subj', 'サブジェクト（`/CN=example.com`）', 'subject (`/CN=example.com`)', 'arg'],
+      ], { longSingleDash: true }),
+      s_client: cmd('TLS でサーバーにつないで証明書などを確かめる', 'Connect to a server over TLS to inspect it', [
+        ['-connect', '接続先（`ホスト:ポート`）', 'where to connect (`host:port`)', 'arg'], ['-servername', 'SNI で名乗るホスト名', 'host name to send in SNI', 'arg'], ['-showcerts', '証明書チェーンをすべて表示', 'show the whole chain'],
+      ], { longSingleDash: true }),
+      dgst: cmd('ハッシュ値の計算や署名の検証をする', 'Hash, sign or verify', [
+        ['-sha256', 'SHA-256', 'SHA-256'], ['-verify', 'この公開鍵で署名を検証する', 'verify with this public key', 'arg'], ['-signature', '署名のファイル', 'signature file', 'arg'], ['-sign', 'この秘密鍵で署名する', 'sign with this private key', 'arg'],
+      ], { positional: [files], longSingleDash: true }),
+      genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], longSingleDash: true }),
+      version: cmd('OpenSSL の版を表示する', 'Print the OpenSSL version'),
+    },
+  }),
+  shasum: cmd('SHA のハッシュ値（チェックサム）を計算する（macOS にもある）', 'Compute SHA checksums (also on macOS)', [
+    ['-a|--algorithm', '方式（`1`、`256`、`512`…。既定は 1）', 'algorithm (`1`, `256`, `512`…; default 1)', 'arg'],
+    ['-c|--check', 'ハッシュ値の一覧ファイルと照合する', 'verify against a checksum list'], ['-b|--binary', 'バイナリモードで読む', 'read in binary mode'],
+  ], { positional: [files] }),
+  sha1sum: checksum('SHA-1'),
+  sha224sum: checksum('SHA-224'),
+  sha384sum: checksum('SHA-384'),
+  sha512sum: checksum('SHA-512'),
+  cmp: cmd('2つのファイルをバイト単位で比べる', 'Compare two files byte by byte', [
+    ['-s|--silent|--quiet', '何も表示せず終了ステータスで返す（同じなら 0）', 'print nothing; exit 0 if the same'], ['-l|--verbose', '違うバイトをすべて表示', 'list every differing byte'], ['-n|--bytes', '先頭からこのバイト数だけ比べる', 'compare at most this many bytes', 'arg'],
+  ], { positional: [files] }),
+  xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
+    ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
+    ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', 'このバイト数だけ', 'stop after this many bytes', 'arg'], ['-s|-seek', 'この位置から', 'start at this offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
+  ], { positional: [files], longSingleDash: true }),
+  od: cmd('ファイルを8進数・16進数などでダンプする', 'Dump files in octal, hex and other formats', [
+    ['-A|--address-radix', '位置の表示形式（`n` で表示しない、`x` 16進…）', 'offset format (`n`: none, `x`: hex…)', 'arg'],
+    ['-t|--format', '出力形式（`x1`: 1バイトずつ16進、`c`: 文字…）', 'output format (`x1`: hex bytes, `c`: characters…)', 'arg'],
+    ['-v|--output-duplicates', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'], ['-c', '文字で表示（`-t c` と同じ）', 'characters (same as `-t c`)'],
+    ['-x', '2バイトずつ16進で表示', 'hex, two bytes at a time'], ['-N|--read-bytes', 'このバイト数だけ', 'read only this many bytes', 'arg'], ['-j|--skip-bytes', '先頭からこのバイト数を飛ばす', 'skip this many bytes first', 'arg'],
+  ], { positional: [files] }),
+  hexdump: cmd('ファイルを16進数でダンプする', 'Dump files in hex', [
+    ['-C', '16進数と文字を並べた定番の形式', 'canonical hex + ASCII display'], ['-v', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'],
+    ['-e', '出力の書式', 'output format string', 'arg'], ['-n', 'このバイト数だけ', 'only this many bytes', 'arg'], ['-s', '先頭からこのバイト数を飛ばす', 'skip this many bytes first', 'arg'],
+  ], { positional: [files] }),
+  readelf: cmd('ELF 形式の実行ファイルの中身を表示する', 'Show the contents of ELF binaries', [
+    ['-h|--file-header', 'ファイルヘッダー', 'file header'], ['-l|--program-headers', 'プログラムヘッダー', 'program headers'], ['-S|--section-headers', 'セクションヘッダー', 'section headers'],
+    ['-s|--syms|--symbols', 'シンボル表', 'symbol table'], ['-d|--dynamic', '動的セクション（必要な共有ライブラリなど）', 'dynamic section (needed libraries…)'], ['-W|--wide', '長い行を折り返さない', 'do not wrap long lines'],
+    ['-n|--notes', 'ノートセクション', 'note sections'],
+  ], { positional: [pos('実行ファイル', 'binary')] }),
+  iconv: cmd('文字コードを変換する', 'Convert text between character encodings', [
+    ['-f|--from-code', '元の文字コード（`SHIFT_JIS`…）', 'source encoding (`SHIFT_JIS`…)', 'arg'], ['-t|--to-code', '変換後の文字コード（`UTF-8`…。`//TRANSLIT` で近い文字に置換）', 'target encoding (`UTF-8`…; `//TRANSLIT` substitutes)', 'arg'],
+    ['-c', '変換できない文字を捨てる', 'drop characters that cannot be converted'], ['-l|--list', '使える文字コードを一覧表示', 'list encodings'],
+  ], { positional: [files] }),
+
+  // ---- Compression ----
+  xz: compressor('xz 形式で圧縮・展開する（高い圧縮率）', 'Compress or decompress xz files (high ratio)', '.xz', [['-T|--threads', '使うスレッド数（`0` で CPU 数）', 'threads to use (`0`: one per CPU)', 'arg'], ['-z|--compress', '圧縮する', 'compress']]),
+  unxz: compressor('xz 形式を展開する', 'Decompress xz files', '.xz'),
+  xzcat: decompressToStdout('xz 形式を展開して標準出力に出す', 'Decompress xz files to stdout'),
+  zstd: compressor('zstd 形式で圧縮・展開する（速くて圧縮率も高い）', 'Compress or decompress zstd files (fast, good ratio)', '.zst', [
+    ['-T|--threads', '使うスレッド数（`-T0` で CPU 数）', 'threads to use (`-T0`: one per CPU)', 'arg'], ['-o', '出力するファイル', 'output file', 'arg'], ['--rm', '成功したら元のファイルを消す', 'remove the input on success'],
+  ]),
+  unzstd: compressor('zstd 形式を展開する', 'Decompress zstd files', '.zst'),
+  zstdcat: decompressToStdout('zstd 形式を展開して標準出力に出す', 'Decompress zstd files to stdout'),
+  bzip2: compressor('bzip2 形式で圧縮・展開する', 'Compress or decompress bzip2 files', '.bz2'),
+  bunzip2: compressor('bzip2 形式を展開する', 'Decompress bzip2 files', '.bz2'),
+  bzcat: decompressToStdout('bzip2 形式を展開して標準出力に出す', 'Decompress bzip2 files to stdout'),
+  zcat: decompressToStdout('gzip 形式を展開して標準出力に出す', 'Decompress gzip files to stdout'),
+  patch: cmd('差分（diff）をファイルに当てる', 'Apply a diff to files', [
+    ['-p|--strip', 'パスの先頭からこの数の階層を取り除く（`-p1` で `a/` `b/` を除く。git の差分の定番）', 'strip this many leading path parts (`-p1` drops `a/` and `b/`, as git diffs need)', 'arg'],
+    ['-i|--input', '差分のファイル（省略時は標準入力）', 'diff file (default: stdin)', 'arg'], ['-R|--reverse', '逆向きに当てる（元に戻す）', 'apply in reverse (undo)'],
+    ['-N|--forward', 'すでに当たっている差分は無視する', 'skip patches that seem applied'], ['--dry-run', '実際には変更せず、当たるかを確かめる', 'check without changing files'],
+    ['-s|--silent|--quiet', '表示を減らす', 'less output'], ['-b|--backup', '元のファイルのバックアップを残す', 'keep backups of the originals'],
+  ], { positional: [pos('対象のファイル', 'file to patch'), pos('差分のファイル', 'diff file')] }),
+  expr: cmd('式を評価して結果を出力する（古い書き方。今は `$(( ))` や `[[ =~ ]]`）', 'Evaluate an expression and print the result (old style; today `$(( ))` or `[[ =~ ]]`)', [], {
+    positional: [pos('式（`$a + 1`、`文字列 : 正規表現`、`length 文字列`…。各語は別の引数）', 'expression (`$a + 1`, `string : regex`, `length string`…; one word per argument)')],
+  }),
+
+  // ---- macOS and Windows helpers ----
+  osascript: cmd('AppleScript（または JavaScript）を実行する（macOS）', 'Run AppleScript or JavaScript (macOS)', [
+    ['-e', '実行するスクリプトの1行', 'one line of script to run', 'arg'], ['-l', '言語（`AppleScript`、`JavaScript`）', 'language (`AppleScript`, `JavaScript`)', 'arg'],
+  ], { positional: [pos('スクリプトのファイル', 'script file')] }),
+  'xcode-select': cmd('使う Xcode（コマンドラインツール）を選ぶ（macOS）', 'Choose the active Xcode or Command Line Tools (macOS)', [
+    ['-p|--print-path', '使っている開発ツールの場所を表示（入っているかの確認にも）', 'print the active developer directory (also checks they are installed)'],
+    ['--install', 'コマンドラインツールを入れる', 'install the Command Line Tools'], ['-s|--switch', '使う開発ツールを切り替える', 'switch the active developer directory', 'arg'],
+  ]),
+  xcrun: cmd('Xcode の開発ツールを探して実行する（macOS）', 'Find and run Xcode developer tools (macOS)', [
+    ['--sdk', '使う SDK（`macosx`、`iphoneos`…）', 'SDK to use (`macosx`, `iphoneos`…)', 'arg'], ['-f|--find', 'ツールの場所だけを表示', 'print the tool path only', 'arg'],
+  ], { positional: [pos('実行するツール', 'tool to run')] }),
+  otool: cmd('Mach-O 形式の実行ファイルの中身を表示する（macOS）', 'Show the contents of Mach-O binaries (macOS)', [
+    ['-L', '使う共有ライブラリ', 'shared libraries used'], ['-l', 'ロードコマンド', 'load commands'], ['-h', 'ヘッダー', 'header'],
+  ], { positional: [pos('実行ファイル', 'binary')] }),
+  cygpath: cmd('Windows と Unix のパスを変換する（Cygwin / MSYS2 / Git Bash）', 'Convert between Windows and Unix paths (Cygwin, MSYS2, Git Bash)', [
+    ['-w|--windows', 'Windows 形式（`C:\\…`）に', 'to Windows form (`C:\\…`)'], ['-u|--unix', 'Unix 形式（`/c/…`）に', 'to Unix form (`/c/…`)'],
+    ['-m|--mixed', '`C:/…` の形に', 'to mixed form (`C:/…`)'], ['-a|--absolute', '絶対パスにする', 'absolute path'],
+  ], { positional: [pos('パス', 'path')] }),
+
+  // ---- Linters and downloaders ----
+  shellcheck: cmd('シェルスクリプトの静的解析（リンター）', 'Static analysis (lint) for shell scripts', [
+    ['-x|--external-sources', '`source` されるファイルも追う', 'follow `source`d files'], ['-s|--shell', 'シェルの種類（`sh`、`bash`…）', 'shell dialect (`sh`, `bash`…)', 'arg'],
+    ['-e|--exclude', '無視する警告（`SC2086` など）', 'warnings to ignore (`SC2086`…)', 'arg'], ['-S|--severity', 'この重さ以上だけ（`error`、`warning`、`info`、`style`）', 'minimum severity (`error`, `warning`, `info`, `style`)', 'arg'],
+    ['-f|--format', '出力形式（`gcc`、`json`、`diff`…）', 'output format (`gcc`, `json`, `diff`…)', 'arg'], ['-V|--version', '版を表示する', 'print the version'], ['-a|--check-sourced', '`source` されるファイルの警告も出す', 'also report on sourced files'],
+  ], { positional: [files] }),
+  shfmt: cmd('シェルスクリプトを整形する', 'Format shell scripts', [
+    ['-i', 'インデントの幅（`0` でタブ）', 'indent width (`0`: tabs)', 'arg'], ['-w', 'ファイルを直接書き換える', 'rewrite files in place'], ['-l', '整形が必要なファイル名だけを表示', 'list files that need formatting'],
+    ['-d', '差分を表示（整形が必要なら失敗。CI 向け）', 'show diffs (fail if formatting is needed; for CI)'], ['-s', 'コードを簡略化する', 'simplify code'],
+    ['-ci', '`case` の中身もインデントする', 'indent `case` bodies'], ['-bn', '`&&` や `|` を行頭に置く', 'put `&&` and `|` at line starts'],
+    ['-ln|--language-dialect', 'シェルの種類（`bash`、`posix`、`mksh`）', 'dialect (`bash`, `posix`, `mksh`)', 'arg'],
+  ], { positional: [files], longSingleDash: true }),
+  aria2c: cmd('高速なダウンローダー（複数接続）', 'Fast downloader (several connections)', [
+    ['-x|--max-connection-per-server', 'サーバーあたりの最大接続数', 'connections per server', 'arg'], ['-s|--split', '分割数', 'number of pieces', 'arg'],
+    ['-o|--out', '保存するファイル名', 'output file name', 'arg'], ['-d|--dir', '保存するディレクトリ', 'output directory', 'arg'], ['-c|--continue', '途中から再開する', 'resume'], ['-q|--quiet', '表示しない', 'no output'],
+  ], { positional: [pos('URL', 'URL')] }),
+  scanelf: cmd('ELF 形式の実行ファイルを調べる（Alpine の Docker イメージで依存ライブラリを探す定番）', 'Scan ELF binaries (used in Alpine images to find needed libraries)', [
+    ['--needed|-n', '必要な共有ライブラリを表示', 'print needed libraries'], ['--nobanner|-B', '見出しを出さない', 'no header'],
+    ['--format|-F', '出力形式（`%n#p`…）', 'output format (`%n#p`…)', 'arg'], ['--recursive|-R', 'ディレクトリを再帰的に調べる', 'scan directories recursively'],
+  ], { positional: [pos('ファイルまたはディレクトリ', 'file or directory')] }),
+};
