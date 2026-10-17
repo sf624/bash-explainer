@@ -63,8 +63,9 @@ export function runGrep(words: (string | undefined)[], input: string[]): string[
     count++;
     if (has('q') || has('c')) continue;
     const prefix = has('n') ? `${i + 1}:` : '';
-    if (has('o') && !has('v')) {
-      for (const r of res) for (const m of line.matchAll(new RegExp(r.source, r.flags + 'g'))) if (m[0]) out.push(prefix + m[0]);
+    // `-o -v` prints nothing: the selected lines have no match to print.
+    if (has('o')) {
+      if (!has('v')) for (const r of res) for (const m of line.matchAll(new RegExp(r.source, r.flags + 'g'))) if (m[0]) out.push(prefix + m[0]);
     } else out.push(prefix + line);
   }
   if (has('q')) return [];
@@ -136,7 +137,8 @@ function awkArgs(words: (string | undefined)[]): { program: string; fs?: string;
   }
   const program = words[i];
   if (program === undefined) throw new Unsupported('program');
-  if (fs !== undefined) fs = fs === 't' ? '\t' : fs.replace(/\\t/g, '\t');
+  // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
+  if (fs !== undefined) fs = fs.replace(/\\t/g, '\t');
   return { program, fs, vars };
 }
 
@@ -318,6 +320,8 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
     return { input: src ? undefined : input, steps };
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in a runner: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
