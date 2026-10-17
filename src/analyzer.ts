@@ -15,7 +15,7 @@ import { sedExample } from './examples/sed';
 import { Interactive, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
-import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
+import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, GlobOpts, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -175,8 +175,8 @@ const hasGlob = (s: string) => /(^|[^\\])[*?]|\[[^\]]+\]/.test(s);
 
 export class Analyzer {
   private line: number | null = null;
-  /** Whether `**` reaches into subdirectories on this line (see globstarState). */
-  private globstar: GlobstarState = 'unknown';
+  /** The shell options in effect on this line (see shoptStates). */
+  private shopt: ShoptStates = shoptStates('', 0);
   private shell: Shell | undefined;
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
@@ -204,7 +204,7 @@ export class Analyzer {
     }
     this.line = line;
     this.shell = shell;
-    this.globstar = globstarState(root.text, line, shell);
+    this.shopt = shoptStates(root.text, line, shell);
     this.context = [];
     this.extraNotes = [];
     this.examples = [];
@@ -1466,33 +1466,57 @@ export class Analyzer {
    * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
    */
   private globstarNote(text: string): string {
+    return this.globOptionNote() + this.starStarNote(text);
+  }
+
+  /** What dotglob and nocaseglob, turned on before the line, change for a file-name glob. */
+  private globOptionNote(): string {
+    const notes: string[] = [];
+    if (this.shopt.dotglob === 'on') notes.push(this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
+    if (this.shopt.nocaseglob === 'on') notes.push(this.s('nocaseglob が有効なので大文字と小文字を区別しない', 'with nocaseglob on, case is ignored'));
+    return notes.map((n) => this.s(`。${n}`, `; ${n}`)).join('');
+  }
+
+  private starStarNote(text: string): string {
     if (!hasGlobstar(text)) return '';
-    if (this.globstar === 'unknown' && this.opts.pitfalls !== false) {
+    const globstar = this.shopt.globstar;
+    if (globstar === 'unknown' && this.opts.pitfalls !== false) {
       const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
       this.extraNotes.push(this.s(
         `⚠ 落とし穴: \`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
         `⚠ Pitfall: \`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``));
     }
-    if (this.globstar === 'unsupported' && this.opts.pitfalls !== false) {
+    if (globstar === 'unsupported' && this.opts.pitfalls !== false) {
       this.extraNotes.push(this.s(
         `⚠ 落とし穴: ${this.shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
         `⚠ Pitfall: ${this.shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``));
     }
-    return this.globstar === 'off' || this.globstar === 'unsupported'
-      ? this.s(`。${this.globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${this.globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
+    return globstar === 'off' || globstar === 'unsupported'
+      ? this.s(`。${globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
       : this.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)');
   }
 
+  /** How globs match on this line: file names, or `case` and `[[ == ]]` patterns (`find -name` takes neither). */
+  private globOpts(use: 'file' | 'pattern' | 'none'): GlobOpts {
+    const on = (name: ShoptName) => this.shopt[name] === 'on';
+    if (use === 'file') {
+      const o: GlobOpts = { globstar: this.shopt.globstar === 'on' || this.shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob') };
+      return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
+    }
+    return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};
+  }
+
   private globExample(pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
-    const globstar = mode === 'file' && (this.globstar === 'on' || this.globstar === 'unknown') && hasGlobstar(pattern);
-    const ex = globExamples(pattern, mode, globstar);
+    const opts = this.globOpts(mode === 'file' ? 'file' : 'none');
+    if (!hasGlobstar(pattern)) delete opts.globstar;
+    const ex = globExamples(pattern, mode, opts);
     if (!ex) return;
     const [yes, no] = labels ?? (mode === 'file'
       ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
       : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
     this.examples.push({ kind: 'glob',
       title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
-      interactive: this.interactive({ kind: 'glob', pattern, mode, ...(globstar ? { globstar } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
+      interactive: this.interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
     });
   }
 
@@ -1508,13 +1532,14 @@ export class Analyzer {
     const all = texts as string[];
     const matching: string[] = [];
     const candidates: string[] = [];
+    const opts = this.globOpts('pattern');
     for (const t of all) {
-      const ex = globExamples(t, 'value');
+      const ex = globExamples(t, 'value', opts);
       if (!ex) return;
       matching.push(...ex.matching.slice(0, all.length > 1 ? 1 : 3));
       candidates.push(...ex.nonMatching);
     }
-    const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value'))).slice(0, 2);
+    const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value', opts))).slice(0, 2);
     this.examples.push({ kind: 'glob',
       title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
       sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
@@ -1686,7 +1711,7 @@ export class Analyzer {
       const l = expr.childForFieldName('left');
       const r = expr.childForFieldName('right');
       const op = expr.childForFieldName('operator')?.text ?? '';
-      cases = testCases(kind, op, operand(l), operand(r), r?.type === 'string' || r?.type === 'raw_string');
+      cases = testCases(kind, op, operand(l), operand(r), r?.type === 'string' || r?.type === 'raw_string', !!this.globOpts('pattern').nocase);
     }
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
@@ -2343,25 +2368,35 @@ function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
 
-export type GlobstarState = 'on' | 'off' | 'unknown' | 'unsupported';
+const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
+export type ShoptName = typeof SHOPT_NAMES[number];
+/** `unknown`: not set before the line, so the default (off) unless a file read with `source` sets it. */
+export type ShoptState = 'on' | 'off' | 'unknown' | 'unsupported';
+export type ShoptStates = Record<ShoptName, ShoptState>;
 
 /**
- * Whether `**` in globs on `line` matches any depth: always in zsh; in bash after `shopt -s globstar`
- * and in ksh93 after `set -G` / `set -o globstar` (the last setting before the line wins; with
- * none, `unknown`, as a file read with `source` may set it); never in the other shells.
+ * The shell options in effect on `line`: bash's `shopt -s` / `-u` before it (the last one wins). zsh
+ * always has globstar, ksh93 has it after `set -G` / `set -o globstar`; the other options, and every
+ * option in the other shells, are `unsupported`.
  */
-export function globstarState(source: string, line: number, shell?: Shell): GlobstarState {
-  if (shell === 'zsh') return 'on';
-  if (shell && shell !== 'bash' && shell !== 'ksh') return 'unsupported';
-  let state: GlobstarState = 'unknown';
+export function shoptStates(source: string, line: number, shell?: Shell): ShoptStates {
+  const bash = !shell || shell === 'bash';
+  const states = Object.fromEntries(SHOPT_NAMES.map((n) => [n, bash ? 'unknown' : 'unsupported'])) as ShoptStates;
+  if (shell === 'zsh') states.globstar = 'on';
+  if (shell === 'ksh') states.globstar = 'unknown';
   for (const l of source.split('\n').slice(0, line)) {
     const code = l.replace(/(^|\s)#.*/, '');
-    const m = /\bshopt\s+(-[a-z]+)[^;&|]*\bglobstar\b/.exec(code);
-    if (m && /[su]/.test(m[1]) && shell !== 'ksh') state = m[1].includes('s') ? 'on' : 'off';
-    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) state = 'on';
-    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) state = 'off';
+    if (bash) {
+      for (const m of code.matchAll(/\bshopt((?:\s+-[a-z]+)+)((?:\s+\w+)+)/g)) {
+        const flags = m[1].replace(/[\s-]/g, '');
+        if (!/[su]/.test(flags)) continue;
+        for (const n of m[2].trim().split(/\s+/)) if (n in states) states[n as ShoptName] = flags.includes('s') ? 'on' : 'off';
+      }
+    }
+    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) states.globstar = 'on';
+    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) states.globstar = 'off';
   }
-  return state;
+  return states;
 }
 
 /** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
