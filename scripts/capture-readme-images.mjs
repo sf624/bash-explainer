@@ -20,6 +20,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // The terminal inside VS Code sets ELECTRON_RUN_AS_NODE, which makes Code.exe start as plain Node,
 // and VSCODE_* variables, which can hand the window over to the running instance.
 const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ELECTRON_|VSCODE_)/i.test(k)));
+// In WSL, the Linux `code` command asks whether to use the Windows one instead.
+cleanEnv.DONT_PROMPT_WSL_INSTALL = '1';
 
 function findCode() {
   if (process.env.VSCODE_PATH) return process.env.VSCODE_PATH;
@@ -67,6 +69,8 @@ const baseSettings = {
   'chat.disableAIFeatures': true,
   'chat.commandCenter.enabled': false,
   'editor.fontSize': 16,
+  // The same font on Windows and on the Linux runner (fonts-cascadia-code) that records them in CI.
+  'editor.fontFamily': "'Cascadia Code', Consolas, monospace",
   'editor.minimap.enabled': false,
   'editor.stickyScroll.enabled': false,
   'editor.guides.indentation': false,

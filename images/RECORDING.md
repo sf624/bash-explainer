@@ -39,6 +39,26 @@ Leave the computer alone while it runs (about three minutes): VS Code windows op
 
 If a step fails, the script keeps the temporary directory and saves `<scenario>-error.png` there.
 
+The editor font is Cascadia Code (falling back to Consolas), so recordings on Windows and on Linux look alike.
+
+### In GitHub Actions
+
+The [README images workflow](../.github/workflows/readme-images.yml) runs the same script on Ubuntu, in the latest VS Code on a virtual display (xvfb), with Cascadia Code and an emoji font installed:
+
+- **After each release** (the Release workflow calls it) and **by hand** (*Actions → README images → Run workflow*): when the images changed, it opens a pull request with them and starts the tests on it. Look at the images under *Files changed* before merging; close the pull request if the new ones are no better. The repository must let Actions create pull requests (*Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*).
+- **On a pull request that changes the script or the workflow**: it only uploads the images as an artifact (*readme-images*) to look at.
+
+### In WSL
+
+Install no VS Code in WSL: use the Linux build the integration tests download, and the WSLg display.
+
+```sh
+npm run test:integration -- --download-only   # prints the path of the Linux VS Code
+VSCODE_PATH=<that path> npm run images
+```
+
+The Linux `code` command asks, in WSL, whether to use the Windows VS Code instead; the script answers for it (`DONT_PROMPT_WSL_INSTALL=1`). VS Code and ffmpeg need their libraries installed (`sudo apt-get install ffmpeg libnss3 libasound2t64`).
+
 ### What it records
 
 The settings are the same for every image: Dark Modern theme, 16px editor font, minimap, activity bar and sidebar hidden, and `"bashExplainer.language": "en"`. The window is 1280×720 (1000×600 for `hover.gif`), recorded at 1.5× scale and written 1000px wide at 10 fps.
