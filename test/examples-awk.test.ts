@@ -19,6 +19,12 @@ const programs: [string, string?][] = [
   ['{ for (i = NF; i > 0; i--) printf "%s%s", $i, (i > 1 ? OFS : ORS) }'], ['{ i = 0; while (i < 2) { i++; print i, $i } }'],
   ['$2 ~ /^[0-9]+$/ && $2 >= 10'], ['{ print toupper(substr($1, 1, 1)) substr($1, 2) }'], ['match($0, /[0-9]+/) { print RSTART, RLENGTH }'],
   ['{ sub(/^[a-z]+/, "[&]"); print }'], ['BEGIN { x = 2 ^ 10; print x, x % 7, -x, int(3.9), 1e3 }'], ['NR == 2 { exit } { print }'],
+  // Statements, operators and functions the ones above do not reach.
+  ['{ if ($2 > 5) { print "big" } else if ($2 > 2) { print "mid" } else { print "small" } }'], ['{ n = 0; do { n++ } while (n < 3); print n }'],
+  ['BEGIN { while (i++ < 4) { if (i == 2) continue; if (i == 4) break; print i } }'], ['BEGIN { split("a b c", arr); print (2 in arr), ("z" in arr) }'],
+  ['{ print tolower($1), exp(0), log(1), sqrt(16), int(-3.5) }'], ['$2 > 5 || $1 == "x"'], ['!($2 > 5)'], ['{ x = $2; x++; ++x; x--; print x, x ^ 2 }'],
+  ['function g(a, b,   loc) { loc = a b; return loc } { print g($1, "!") }'], ['{ a[NR] = $1 } END { for (i = NR; i >= 1; i--) print a[i] }'],
+  ['{ a[$1]++ } END { for (k in a) delete a[k]; print length(a) }'], ['{ s = $1; s = s "x"; t = (s < "b"); print s, t }'],
 ];
 
 describe('awk examples agree with gawk', () => {

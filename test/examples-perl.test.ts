@@ -15,6 +15,11 @@ const cases: string[][] = [
   ['-pe', 's/(\\w+)/\\u$1/g'], ['-lne', 'my @w = split /,/; print $w[1]'], ['-pi', '-e', 's/a/b/'], ['-lne', 'print "$1-$2" if /(\\w+) (\\w+)/'],
   ['-lne', 'print uc($_) . "!"'], ['-lane', 'print $F[-1]'], ['-lne', '$n++ if /e/; END { print $n }'], ['-pe', 's/^/> /'],
   ['-lne', 'print if length > 8'], ['-le', 'print join "-", map { $_ * 2 } 1..3'],
+  // Syntax the ones above do not reach.
+  ['-le', 'print for qw(a b c)'], ['-lne', 'print $_ > 5 ? "big" : "small"'], ['-lne', 'print if $_ !~ /x/'], ['-lane', 'print "$F[1] $F[-1]"'],
+  ['-lne', 'if (/a/) { print "A" } elsif (/b/) { print "B" } else { print "-" }'], ['-lne', 'unless (/a/) { print }'],
+  ['-lne', 'my $n = $_; $n++; print $n * 2'], ['-lne', 'print if $_ eq "x" || $_ == 3'], ['-lne', 'print join "|", split ",", $_'],
+  ['-lne', 'my @m = /(\\w)/g; print scalar @m'], ['-lane', 'my @a = @F; print "@a"'],
 ];
 
 describe('perl examples agree with perl', () => {
