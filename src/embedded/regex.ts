@@ -174,23 +174,23 @@ function quantifier(st: State, start: number, target: EmbeddedToken | undefined)
   const of = target ? `\`${st.src.slice(target.start, target.end)}\`` : s('直前の要素', 'the previous item');
   let q = raw.replace(/^\\/, '').replace(/\\\}$/, '}').replace(/^\\\{/, '{');
   let mode = '';
-  if (st.flavor === 'pcre' && q.length > 1 && /[?+]$/.test(q) && !/^\{.*\}$/.test(q)) {
-    mode = q.slice(-1);
-    q = q.slice(0, -1);
-  } else if (st.flavor === 'pcre' && /\}[?+]$/.test(q)) {
+  // PCRE: a trailing `?` makes it lazy, a `+` possessive (`*?`, `{2,}+`).
+  if (st.flavor === 'pcre' && q.length > 1 && /[?+]$/.test(q)) {
     mode = q.slice(-1);
     q = q.slice(0, -1);
   }
   let times: string;
-  const m = /^\{(\d*)(,?)(\d*)\}$/.exec(q);
   if (q === '*') times = s('0回以上', 'zero or more times');
   else if (q === '+') times = s('1回以上', 'one or more times');
   else if (q === '?') times = s('0回か1回（あってもなくてもよい）', 'zero or one time (optional)');
-  else if (m && !m[2]) times = s(`ちょうど${m[1]}回`, `exactly ${m[1]} times`);
-  else if (m && !m[3]) times = s(`${m[1]}回以上`, `${m[1]} or more times`);
-  else if (m && !m[1]) times = s(`${m[3]}回以下`, `at most ${m[3]} times`);
-  else if (m) times = s(`${m[1]}〜${m[3]}回`, `${m[1]} to ${m[3]} times`);
-  else times = raw;
+  else {
+    // `{n}`, `{n,}`, `{,m}` or `{n,m}`: quantifierLength takes no other braces.
+    const [, lo, comma, hi] = /^\{(\d*)(,?)(\d*)\}$/.exec(q)!;
+    if (!comma) times = s(`ちょうど${lo}回`, `exactly ${lo} times`);
+    else if (!hi) times = s(`${lo}回以上`, `${lo} or more times`);
+    else if (!lo) times = s(`${hi}回以下`, `at most ${hi} times`);
+    else times = s(`${lo}〜${hi}回`, `${lo} to ${hi} times`);
+  }
   const greed = mode === '?' ? s('（できるだけ少なく）', ' (as few as possible)')
     : mode === '+' ? s('（バックトラックしない）', ' (possessive, no backtracking)')
       : '';
