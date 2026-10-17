@@ -54,8 +54,9 @@
   "config.examples.kind.date": "date +書式 の出力",
   "config.embedded.files.dockerfile": "Dockerfile",
   "config.embedded.files.makefile": "Makefile",
-  "config.embedded.files.yaml": "CI の YAML（GitHub Actions・GitLab CI など）",
+  "config.embedded.files.yaml": "CI の YAML（GitHub Actions・GitLab CI・CircleCI・Azure Pipelines など）",
   "config.embedded.files.packageJson": "package.json の scripts",
   "config.embedded.files.markdown": "Markdown のコードブロック",
-  "config.embedded.files.python": "Python の subprocess・os.system"
+  "config.embedded.files.python": "Python の subprocess・os.system",
+  "config.embedded.files.jenkinsfile": "Jenkinsfile の sh ステップ"
 }

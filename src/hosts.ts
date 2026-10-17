@@ -2,7 +2,7 @@ import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
 
 /** Kinds of files whose shell snippets are explained. */
-export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python';
+export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile';
 
 /** A run of lines holding shell code inside another kind of file. */
 export interface ShellRegion {
@@ -50,6 +50,7 @@ export function hostKind(languageId: string, fileName: string): HostKind | undef
   if (languageId === 'yaml' || languageId === 'github-actions-workflow' || /\.ya?ml$/i.test(base)) return 'yaml';
   if (languageId === 'markdown' || /\.md$/i.test(base)) return 'markdown';
   if (languageId === 'python' || /\.py$/i.test(base)) return 'python';
+  if (languageId === 'jenkinsfile' || /^Jenkinsfile(\..*)?$|\.jenkinsfile$/i.test(base)) return 'jenkinsfile';
   return undefined;
 }
 
@@ -89,6 +90,8 @@ class Builder {
   outs: (LineOut | undefined)[];
   regions: ShellRegion[] = [];
   substitutions: HostSubstitution[] = [];
+  /** Azure Pipelines: variables whose `$(name)` macros the pipeline replaces before the script runs. */
+  azure?: { vars: Set<string> };
   constructor(text: string) {
     this.lines = text.split(/\r?\n/);
     this.outs = this.lines.map(() => undefined);
@@ -117,6 +120,7 @@ export function extractShell(kind: HostKind, text: string): Extracted {
     case 'npm': npm(b); break;
     case 'markdown': markdown(b); break;
     case 'python': python(b); break;
+    case 'jenkinsfile': jenkinsfile(b); break;
   }
   return b.build();
 }
@@ -373,6 +377,96 @@ function matching(s: string, open: number): number {
   return -1;
 }
 
+// ---------------------------------------------------------------- Jenkinsfile
+
+/**
+ * The scripts of `sh` steps in a Jenkins pipeline: `sh 'cmd'`, `sh "…"`, `sh '''…'''`, `sh """…"""`,
+ * `sh(script: '…', returnStdout: true)`, `sh label: 'x', script: '…'`. Jenkins runs them with
+ * `/bin/sh -xe` unless the script starts with a shebang.
+ */
+function jenkinsfile(b: Builder): void {
+  const start = /\bsh\s*\(?\s*(?:(?:label|returnStdout|returnStatus|encoding)\s*:\s*(?:'[^']*'|"[^"]*"|true|false)\s*,\s*)*(?:script\s*:\s*)?('''|"""|'|")/g;
+  for (let i = 0; i < b.lines.length; i++) {
+    const line = b.lines[i];
+    if (/^\s*\/\//.test(line)) continue;
+    start.lastIndex = 0;
+    const m = start.exec(line);
+    if (!m) continue;
+    const quote = m[1];
+    const interpolate = quote.startsWith('"');
+    const from = m.index + m[0].length;
+    // Where the string ends: on this line, or (triple quotes) on a later one.
+    let endLine = i;
+    let endCol = closingQuote(line, from, quote);
+    if (endCol < 0 && quote.length === 3) {
+      for (endLine = i + 1; endLine < b.lines.length && (endCol = closingQuote(b.lines[endLine], 0, quote)) < 0; endLine++);
+    }
+    if (endCol < 0) continue;
+    // A triple-quoted script usually starts on the next line.
+    const first = quote.length === 3 && !line.slice(from).trim() ? i + 1 : i;
+    for (let k = first; k <= endLine; k++) {
+      groovyText(b, k, k === i ? from : 0, k === endLine ? endCol : b.lines[k].length, interpolate);
+    }
+    // A closing triple quote on a line of its own is not part of the script.
+    const last = endLine > first && !b.lines[endLine].slice(0, endCol).trim() ? endLine - 1 : endLine;
+    const script = b.lines.slice(first, last + 1).join('\n');
+    const shebang = /^\s*#!\s*\S*?(\w+)(?:\s+(\w+))?/.exec(script);
+    const shell = shebang ? (shellFromShebang(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
+    const notes: [string, string, string?][] = [];
+    if (interpolate && /(^|[^\\])\$[A-Za-z_{]/.test(script)) {
+      notes.push([
+        '二重引用符の文字列では、`$名前` や `${…}` をシェルより先に Groovy が埋め込みます。シェルの変数として使うには `\\$HOME` のようにエスケープするか、単一引用符（`\'…\'`、`\'\'\'…\'\'\'`）にします。',
+        'In a double-quoted string, Groovy fills in `$name` and `${…}` before the shell runs. To use a shell variable, escape it (`\\$HOME`) or use single quotes (`\'…\'`, `\'\'\'…\'\'\'`).',
+      ]);
+    }
+    b.region(first, last, ['Jenkinsfile の `sh` ステップ', 'Jenkinsfile `sh` step'], shell, notes.length ? notes : undefined);
+    i = endLine;
+  }
+}
+
+function shellFromShebang(name: string): Shell | undefined {
+  return ({ bash: 'bash', sh: 'sh', dash: 'dash', zsh: 'zsh', ksh: 'ksh', mksh: 'mksh', ash: 'ash', yash: 'yash' } as Record<string, Shell>)[name];
+}
+
+/** The column of the closing `quote` from `from` on, skipping backslash escapes; -1 if none. */
+function closingQuote(line: string, from: number, quote: string): number {
+  for (let k = from; k < line.length; k++) {
+    if (line[k] === '\\') { k++; continue; }
+    if (line.startsWith(quote, k)) return k;
+  }
+  return -1;
+}
+
+/** Copy part of a Groovy string as shell text: undo escapes, and stand in for `${…}` and `$name`. */
+function groovyText(b: Builder, i: number, from: number, to: number, interpolate: boolean): void {
+  const line = b.lines[i];
+  const o = (b.outs[i] ??= new LineOut());
+  let k = from;
+  while (k < to) {
+    const ch = line[k];
+    if (ch === '\\' && k + 1 < to && /[\\'"$]/.test(line[k + 1])) {
+      o.insert(line[k + 1], k, k + 2);
+      k += 2;
+      continue;
+    }
+    if (interpolate && ch === '$') {
+      const braced = line[k + 1] === '{' ? line.indexOf('}', k + 2) : -1;
+      const bare = /^\$([A-Za-z_][\w.]*)/.exec(line.slice(k, to));
+      const end = braced >= 0 && braced < to ? braced + 1 : bare ? k + bare[0].length : -1;
+      if (end > 0) {
+        const expr = braced >= 0 && braced < to ? line.slice(k + 2, braced).trim() : bare![1];
+        const meaning: [string, string] = [`Groovy の式 \`${expr}\` の値で、シェルが実行される前に Jenkins が埋め込みます`, `the value of the Groovy expression \`${expr}\`, filled in by Jenkins before the shell runs`];
+        o.insert(`\${${expr.replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR'}}`, k, end, meaning);
+        b.substitutions.push({ line: i, text: line.slice(k, end), meaning });
+        k = end;
+        continue;
+      }
+    }
+    o.copy(line, k, k + 1);
+    k++;
+  }
+}
+
 // ---------------------------------------------------------------- YAML (CI workflows)
 
 /** Keys whose value is a shell script in common CI systems. */
@@ -380,6 +474,10 @@ const YAML_KEYS = /^(run|script|before_script|after_script|bash|sh|cmds?|command
 
 function yaml(b: Builder): void {
   const githubLike = b.lines.some((l) => /^\s*(runs-on|steps|jobs)\s*:/.test(l));
+  const circleci = !b.lines.some((l) => /^\s*runs-on\s*:/.test(l)) && b.lines.some((l) => /^version\s*:\s*['"]?2(\.\d)?['"]?\s*$/.test(l));
+  if (b.lines.some((l) => /^\s*(pool|trigger)\s*:|^\s*-\s+task\s*:|vmImage\s*:/.test(l))) b.azure = { vars: azureVariables(b.lines) };
+  // Azure Pipelines runs `script:` with cmd.exe on Windows agents.
+  const azureWindows = !!b.azure && b.lines.some((l) => /vmImage\s*:\s*['"]?windows/i.test(l));
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = /^(\s*(?:-\s+)?)([\w-]+)\s*:(?:\s+(.*))?$/.exec(line);
@@ -391,11 +489,23 @@ function yaml(b: Builder): void {
     if (key === 'run' && !rest && /^\s*defaults\s*:/.test(b.lines[i - 1] ?? '')) continue;
     // An action's input (`with: script:` of actions/github-script is JavaScript), not a shell script.
     if (githubLike && key !== 'run' && /^\s*with\s*:\s*$/.test(parentLine(b, i, indent) ?? '')) continue;
+    // CircleCI's `run:` with `name:` and `command:` under it: the command is found as its own key.
+    if (key === 'run' && !rest) {
+      const next = b.lines.slice(i + 1).find((l) => l.trim());
+      if (next && indentOf(next) > indent && !/^\s*-\s/.test(next)) continue;
+    }
+    if (key === 'script' && azureWindows) continue;
     const shell = yamlShell(b, i, indent, key, githubLike);
     if (shell === null) continue;
-    const label: [string, string] = githubLike && key === 'run'
-      ? ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step']
-      : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
+    const label: [string, string] = b.azure && (key === 'script' || key === 'bash')
+      ? [`Azure Pipelines の \`${key}:\` ステップ`, `Azure Pipelines \`${key}:\` step`]
+      : key === 'command' && /^\s*(-\s+)?run\s*:\s*$/.test(parentLine(b, i, indent) ?? '')
+        ? ['CircleCI の `run` ステップ', 'CircleCI `run` step']
+        : circleci && key === 'run'
+          ? ['CircleCI の `run` ステップ', 'CircleCI `run` step']
+          : githubLike && key === 'run'
+          ? ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step']
+          : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
     if (/^[|>][-+]?\d*$/.test(rest)) {
       i = yamlBlock(b, i, indent, label, shell);
@@ -416,6 +526,20 @@ function yaml(b: Builder): void {
       i = j - 1;
     }
   }
+}
+
+/** Names defined under `variables:` (`name: value` or `- name: x`), for `$(name)` macros. */
+function azureVariables(lines: string[]): Set<string> {
+  const vars = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)variables\s*:\s*$/.exec(lines[i]);
+    if (!m) continue;
+    for (let j = i + 1; j < lines.length && (!lines[j].trim() || indentOf(lines[j]) > m[1].length); j++) {
+      const v = /^\s*(?:-\s+name\s*:\s*['"]?([\w.]+)|([\w.]+)\s*:)/.exec(lines[j]);
+      if (v && v[2] !== 'value' && v[2] !== 'group' && v[2] !== 'readonly') vars.add(v[1] ?? v[2]);
+    }
+  }
+  return vars;
 }
 
 function indentOf(line: string): number {
@@ -507,15 +631,27 @@ function yamlScalar(b: Builder, i: number, from: number, value: string, label: [
 function githubLine(b: Builder, i: number, from: number, to: number): void {
   const line = b.lines[i];
   const o = (b.outs[i] ??= new LineOut());
-  const re = /\$\{\{\s*(.*?)\s*\}\}/g;
+  const re = b.azure ? /\$\{\{\s*(.*?)\s*\}\}|\$\(([A-Za-z_][\w.]*)\)/g : /\$\{\{\s*(.*?)\s*\}\}/g;
   re.lastIndex = from;
   let at = from;
   for (let m: RegExpExecArray | null; (m = re.exec(line)) && m.index < to;) {
+    if (m[2] !== undefined) {
+      // `$(name)`: an Azure Pipelines macro when it names a pipeline variable; otherwise bash's `$(command)`.
+      if (!(m[2].includes('.') || b.azure!.vars.has(m[2]))) continue;
+      o.copy(line, at, m.index);
+      const meaning: [string, string] = [`Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `an Azure Pipelines macro, replaced with the value of the variable \`${m[2]}\` before the script runs`];
+      o.insert(`\${${m[2].replace(/\W+/g, '_').toUpperCase()}}`, m.index, m.index + m[0].length, meaning);
+      b.substitutions.push({ line: i, text: m[0], meaning });
+      at = m.index + m[0].length;
+      continue;
+    }
     o.copy(line, at, m.index);
     const name = m[1].replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR';
-    const meaning: [string, string] = [`GitHub Actions の式で、スクリプトが実行される前に \`${m[1]}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${m[1]}\` before the script runs`];
+    const meaning: [string, string] = b.azure
+      ? [`Azure Pipelines のテンプレート式で、パイプラインの展開時に \`${m[1]}\` の値に置き換わります`, `an Azure Pipelines template expression, replaced with the value of \`${m[1]}\` when the pipeline is expanded`]
+      : [`GitHub Actions の式で、スクリプトが実行される前に \`${m[1]}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${m[1]}\` before the script runs`];
     o.insert(`\${${name}}`, m.index, m.index + m[0].length, meaning);
-    b.substitutions.push({ line: i, text: m[0], meaning, warning: UNTRUSTED.test(m[1]) ? [
+    b.substitutions.push({ line: i, text: m[0], meaning, warning: !b.azure && UNTRUSTED.test(m[1]) ? [
       `⚠ スクリプトインジェクションの危険: \`${m[1]}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
       `⚠ Script injection risk: \`${m[1]}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`,
     ] : undefined });

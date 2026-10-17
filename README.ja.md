@@ -88,10 +88,11 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | --- | --- |
 | Dockerfile | `RUN`・`CMD`・`ENTRYPOINT`（シェル形式、`RUN <<EOF`、exec 形式、`["sh", "-c", "…"]`）と `SHELL [...]`。`pipefail` なしの `RUN` のパイプで失敗が見逃される場合は警告 |
 | Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明 |
-| CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
+| CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`、CircleCI の `run:`・`command:`、Azure Pipelines の `script:`・`bash:`（`$(変数)` のマクロも）。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
 | `package.json` | `scripts` |
 | Markdown | `sh`・`bash`・`console` などのコードブロック |
 | Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
+| Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
 
 それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
 
@@ -211,7 +212,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
-| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python` |
+| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile` |
 | `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 | **辞書** | | |
 | `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |

@@ -153,6 +153,41 @@ describe('package.json and Markdown', () => {
   });
 });
 
+describe('other CI systems', () => {
+  const shellLines = (file: string) => {
+    const src = fs.readFileSync(path.join(root, 'test/fixtures/hosts', file), 'utf8');
+    return extractShell(hostKind('', file)!, src).regions.flatMap((r) => Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start + k + 1));
+  };
+
+  it('reads Jenkinsfile sh steps in every quoting, leaving Groovy out', () => {
+    assert.strictEqual(hostKind('groovy', '/p/Jenkinsfile'), 'jenkinsfile');
+    assert.strictEqual(hostKind('plaintext', 'deploy.jenkinsfile'), 'jenkinsfile');
+    assert.deepStrictEqual(shellLines('Jenkinsfile'), [6, 7, 9, 10, 13, 16]);
+    assert.deepStrictEqual(labels('Jenkinsfile', 6).slice(0, 2), ['make -j"$(nproc)" build@12', '-j"$(nproc)"@17']);
+  });
+
+  it('marks Groovy interpolation in double quotes, and undoes \\$', () => {
+    const ex = explain('Jenkinsfile', 16)!;
+    assert.ok(ex.notes.some((n) => /Groovy fills in `\$name`/.test(n)), ex.notes.join('\n'));
+    assert.ok(all(ex.items).some((t) => t.label === '$ver' && /Groovy expression `ver`/.test(t.explanation)));
+    assert.ok(all(ex.items).some((t) => t.label === '\\$HOME' || t.label === '$HOME'));
+    assert.deepStrictEqual(explain('Jenkinsfile', 6)!.notes.filter((n) => /Groovy/.test(n)), []);
+  });
+
+  it('reads CircleCI run steps, with name: and command: under run:', () => {
+    assert.deepStrictEqual(shellLines('circleci.yml'), [8, 12, 13]);
+    assert.match(explain('circleci.yml', 12)!.context[0]?.label ?? '', /CircleCI `run` step/);
+  });
+
+  it('reads Azure Pipelines script: and bash:, with $(var) macros, not PowerShell', () => {
+    assert.deepStrictEqual(shellLines('azure-pipelines.yml'), [8, 11, 12]);
+    const items = all(explain('azure-pipelines.yml', 8)!.items);
+    assert.ok(items.some((t) => t.label === '$(buildConfiguration)' && /Azure Pipelines macro/.test(t.explanation)));
+    assert.ok(!items.some((t) => t.label === 'buildConfiguration' && t.kind === 'command'));
+    assert.ok(all(explain('azure-pipelines.yml', 11)!.items).some((t) => t.label === '$(Build.SourceBranchName)'));
+  });
+});
+
 describe('GitHub Actions', () => {
   it('reads composite actions and the shell of each step, skipping pwsh', () => {
     assert.strictEqual(explain('action.yml', 13)!.context[0].label, 'GitHub Actions `run:` step');

@@ -1,0 +1,14 @@
+trigger:
+  - main
+pool:
+  vmImage: ubuntu-latest
+variables:
+  buildConfiguration: Release
+steps:
+  - script: dotnet build --configuration $(buildConfiguration)
+    displayName: Build
+  - bash: |
+      echo "Branch: $(Build.SourceBranchName)"
+      ls -la "$(Pipeline.Workspace)"
+  - powershell: Write-Host "hi"
+  - pwsh: Get-ChildItem

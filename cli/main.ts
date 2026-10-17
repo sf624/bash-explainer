@@ -14,7 +14,7 @@ import { startLanguageServer } from './lsp';
 declare const __VERSION__: string;
 
 type Kind = 'shell' | HostKind;
-const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python'];
+const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python', 'jenkinsfile'];
 type Format = 'text' | 'markdown' | 'json' | 'sarif' | 'github';
 
 const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
