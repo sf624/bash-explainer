@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import type Parser = require('web-tree-sitter');
+import type { BashParser as Parser } from '../src/parser';
 import { Analyzer, EXAMPLE_KINDS, ExplainOptions, Token } from '../src/analyzer';
 import { parseDirectives, suppressed } from '../src/directives';
 import { createBashParser } from '../src/parser';

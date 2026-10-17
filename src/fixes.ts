@@ -1,4 +1,4 @@
-import type { SyntaxNode } from 'web-tree-sitter';
+import type { Node as SyntaxNode } from 'web-tree-sitter';
 import type { Issue } from './dialect';
 
 /** A text replacement, in tree positions (0-based rows and columns). */

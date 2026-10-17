@@ -17,7 +17,7 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png',
 };
 /** What the page may load: its own files, nothing else. */
-const FILES = ['/', '/app.js', '/icon.png', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/tree-sitter-bash.wasm', '/tree-sitter.wasm'];
+const FILES = ['/', '/app.js', '/icon.png', '/page.css', '/panel-host.js', '/panel-page.css', '/panel.css', '/panel.html', '/panel.js', '/theme.css', '/tree-sitter-bash.wasm', '/web-tree-sitter.wasm'];
 /** Typed into the editor: it must not appear in any request. */
 const MARKER = 'secret-7f3a9c';
 

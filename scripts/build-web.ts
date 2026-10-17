@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     target: 'es2020',
     minify: true,
     // web-tree-sitter loads these only when it runs in Node.js.
-    external: ['fs', 'path'],
+    external: ['fs', 'path', 'url', 'module'],
     define: { __VERSION__: JSON.stringify(version) },
     logLevel: 'warning',
     metafile: true,
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   copy('media/panel.css');
   copy('media/panel.js');
   copy('media/icon.png');
-  copy('node_modules/web-tree-sitter/tree-sitter.wasm');
+  copy('node_modules/web-tree-sitter/web-tree-sitter.wasm');
   copy('node_modules/tree-sitter-bash/tree-sitter-bash.wasm');
   // The licenses of what the page includes, linked from its footer.
   copy('LICENSE', 'LICENSE.txt');

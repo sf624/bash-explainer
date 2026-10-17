@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The parser is updated: tree-sitter-bash 0.25.1 (from 0.23.3) with web-tree-sitter 0.27.0 (from 0.22.6). Explanations of bash scripts stay the same; scripts with syntax the grammar cannot read, such as zsh-only code, may be split up differently.
+
 ## 0.2.0
 
 - A command-line tool, the npm package [`bash-explainer`](cli/README.md): `npx bash-explainer deploy.sh:12` explains lines in the terminal (text, Markdown or JSON), and `--check` reports what the script's shell lacks, as compilers print warnings.

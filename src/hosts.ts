@@ -872,7 +872,7 @@ const PIPEFAIL: [string, string] = [
 ];
 
 /** Whether a pipe `|` starts on the line. */
-function pipesOn(n: import('web-tree-sitter').SyntaxNode, line: number): boolean {
+function pipesOn(n: import('web-tree-sitter').Node, line: number): boolean {
   if (n.startPosition.row > line || n.endPosition.row < line) return false;
   if (n.type === 'pipeline' && n.children.some((c) => c.type === '|' && c.startPosition.row === line)) return true;
   return n.children.some((c) => pipesOn(c, line));

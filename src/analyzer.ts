@@ -307,7 +307,7 @@ export class Analyzer {
       case 'function_definition':
         return this.s(`関数 \`${n.childForFieldName('name')?.text}\``, `function \`${n.childForFieldName('name')?.text}\``);
       case 'compound_statement':
-        return this.s('{ } グループ', '{ } group');
+        return n.child(0)?.type === '((' ? this.s('(( )) 算術評価', '(( )) arithmetic') : this.s('{ } グループ', '{ } group');
       case 'subshell':
         return this.s('( ) サブシェル', '( ) subshell');
       case 'ERROR':
@@ -420,7 +420,9 @@ export class Analyzer {
       case 'special_variable_name': return this.variable(n.text, n);
       case 'test_operator': return this.tok(n, 'operator', this.t(unaryTestOps[n.text] ?? binaryTestOps[n.text] ?? { ja: '演算子', en: 'Operator' }));
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
-      case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+      // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
+      case 'compound_statement': if (n.child(0)?.type === '((') return this.test(n);
+        return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
       case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
       case 'function_definition': return this.functionDef(n);
       case 'for_statement': return this.forStatement(n);
@@ -732,8 +734,9 @@ export class Analyzer {
   /** When the line runs several commands, names the one each example is for in its title. */
   private titledExamples(root: SyntaxNode, line: number): Example[] {
     const commands = root
-      .descendantsOfType(['command', 'test_command'], { row: line, column: 0 }, { row: line + 1, column: 0 })
-      .filter((c) => intersects(c, line));
+      .descendantsOfType(['command', 'test_command', 'compound_statement'], { row: line, column: 0 }, { row: line + 1, column: 0 })
+      // A compound statement counts only as `(( expr ))`, which tree-sitter-bash 0.25 parses that way.
+      .filter((c): c is SyntaxNode => !!c && intersects(c, line) && (c.type !== 'compound_statement' || c.child(0)?.type === '(('));
     if (commands.length < 2) return this.examples;
     return this.examples.map((e) => {
       if (!e.target) return e;
@@ -1915,7 +1918,7 @@ export class Analyzer {
   private inArithmetic(n: SyntaxNode): boolean {
     for (let p = n.parent; p; p = p.parent) {
       if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
-      if (p.type === 'test_command') return p.child(0)?.type === '((';
+      if (p.type === 'test_command' || p.type === 'compound_statement') return p.child(0)?.type === '((';
     }
     return false;
   }
@@ -2002,6 +2005,7 @@ export class Analyzer {
     if (['string', 'heredoc_body', 'variable_assignment', 'case_statement'].includes(p.type)) return true;
     for (let a: SyntaxNode | null = p; a; a = a.parent) {
       if (a.type === 'test_command') return a.child(0)?.type === '[[' || a.child(0)?.type === '((';
+      if (a.type === 'compound_statement' && a.child(0)?.type === '((') return true;
       if (a.type === 'arithmetic_expansion') return true;
       if (a.type === 'command' || a.type === 'string') return false;
     }

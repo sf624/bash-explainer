@@ -11,7 +11,7 @@ import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
 import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import type Parser = require('web-tree-sitter');
+import type { BashParser as Parser } from '../src/parser';
 import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';

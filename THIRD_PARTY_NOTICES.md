@@ -8,8 +8,8 @@ Bash Explainer includes the following third-party software (MIT). Their license 
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.23.3 | MIT | `dist/tree-sitter-bash.wasm` |
-| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `dist/extension.js`; bundled into `dist/web/extension.js`; `dist/tree-sitter.wasm` |
+| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.25.1 | MIT | `dist/tree-sitter-bash.wasm` |
+| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter) | 0.27.0 | MIT | bundled into `dist/extension.js`; bundled into `dist/web/extension.js`; `dist/web-tree-sitter.wasm` |
 
 ## In the web version
 
@@ -26,16 +26,16 @@ Bash Explainer includes the following third-party software (MIT). Their license 
 | [@marijn/find-cluster-break](https://code.haverbeke.berlin/marijn/find-cluster-break) | 1.0.4 | MIT | bundled into `app.js` |
 | [crelt](https://code.haverbeke.berlin/marijn/crelt) | 1.0.7 | MIT | bundled into `app.js` |
 | [style-mod](https://code.haverbeke.berlin/marijn/style-mod) | 4.1.4 | MIT | bundled into `app.js` |
-| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.23.3 | MIT | `tree-sitter-bash.wasm` |
+| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.25.1 | MIT | `tree-sitter-bash.wasm` |
 | [w3c-keyname](https://github.com/marijnh/w3c-keyname#readme) | 2.2.8 | MIT | bundled into `app.js` |
-| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `app.js`; `tree-sitter.wasm` |
+| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter) | 0.27.0 | MIT | bundled into `app.js`; `web-tree-sitter.wasm` |
 
 ## In the command-line tool (npm package bash-explainer)
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.23.3 | MIT | `dist/tree-sitter-bash.wasm` |
-| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) | 0.22.6 | MIT | bundled into `dist/cli.js`; `dist/tree-sitter.wasm` |
+| [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | 0.25.1 | MIT | `dist/tree-sitter-bash.wasm` |
+| [web-tree-sitter](https://github.com/tree-sitter/tree-sitter) | 0.27.0 | MIT | bundled into `dist/cli.js`; `dist/web-tree-sitter.wasm` |
 
 ## License texts
 
@@ -220,7 +220,7 @@ THE SOFTWARE.
 ```text
 The MIT License (MIT)
 
-Copyright (c) 2018-2024 Max Brunsfeld
+Copyright (c) 2018 Max Brunsfeld
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
