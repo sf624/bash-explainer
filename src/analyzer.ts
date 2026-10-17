@@ -175,8 +175,9 @@ const hasGlob = (s: string) => /(^|[^\\])[*?]|\[[^\]]+\]/.test(s);
 
 export class Analyzer {
   private line: number | null = null;
-  /** Whether `**` reaches into subdirectories on this line (`shopt -s globstar` before it, or zsh). */
-  private globstar = false;
+  /** Whether `**` reaches into subdirectories on this line (see globstarState). */
+  private globstar: GlobstarState = 'unknown';
+  private shell: Shell | undefined;
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
@@ -202,7 +203,8 @@ export class Analyzer {
       if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
     }
     this.line = line;
-    this.globstar = globstarOn(root.text, line, shell);
+    this.shell = shell;
+    this.globstar = globstarState(root.text, line, shell);
     this.context = [];
     this.extraNotes = [];
     this.examples = [];
@@ -1459,16 +1461,30 @@ export class Analyzer {
     if (isGlob(text)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
-  /** What `**` does in a file-name glob: any depth with globstar, else the same as `*`. */
+  /**
+   * What `**` does in a file-name glob. It is written for any depth, so it is explained that way, with
+   * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
+   */
   private globstarNote(text: string): string {
     if (!hasGlobstar(text)) return '';
-    return this.globstar
-      ? this.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)')
-      : this.s('。globstar が無効なので `**` は `*` と同じで、1階層分にしか一致しない（`shopt -s globstar` で任意の深さに一致する）', '. Without globstar, `**` is the same as `*` and matches one level only (`shopt -s globstar` makes it match any depth)');
+    if (this.globstar === 'unknown' && this.opts.pitfalls !== false) {
+      const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: \`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
+        `⚠ Pitfall: \`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``));
+    }
+    if (this.globstar === 'unsupported' && this.opts.pitfalls !== false) {
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: ${this.shell} には globstar がなく、\`**\` は \`*\` と同じく1階層分にしか一致しません。サブディレクトリまでたどるには \`find\` を使います`,
+        `⚠ Pitfall: ${this.shell} has no globstar, so \`**\` is the same as \`*\` and matches one level only. To reach into subdirectories, use \`find\``));
+    }
+    return this.globstar === 'off' || this.globstar === 'unsupported'
+      ? this.s(`。${this.globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${this.globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
+      : this.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)');
   }
 
   private globExample(pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
-    const globstar = mode === 'file' && this.globstar && hasGlobstar(pattern);
+    const globstar = mode === 'file' && (this.globstar === 'on' || this.globstar === 'unknown') && hasGlobstar(pattern);
     const ex = globExamples(pattern, mode, globstar);
     if (!ex) return;
     const [yes, no] = labels ?? (mode === 'file'
@@ -2327,21 +2343,25 @@ function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
 
+export type GlobstarState = 'on' | 'off' | 'unknown' | 'unsupported';
+
 /**
- * Whether `**` in globs on `line` matches any depth: always in zsh, in bash after `shopt -s globstar`,
- * in ksh93 after `set -G` / `set -o globstar`. The last setting before the line wins.
+ * Whether `**` in globs on `line` matches any depth: always in zsh; in bash after `shopt -s globstar`
+ * and in ksh93 after `set -G` / `set -o globstar` (the last setting before the line wins; with
+ * none, `unknown`, as a file read with `source` may set it); never in the other shells.
  */
-export function globstarOn(source: string, line: number, shell?: Shell): boolean {
-  if (shell === 'zsh') return true;
-  let on = false;
+export function globstarState(source: string, line: number, shell?: Shell): GlobstarState {
+  if (shell === 'zsh') return 'on';
+  if (shell && shell !== 'bash' && shell !== 'ksh') return 'unsupported';
+  let state: GlobstarState = 'unknown';
   for (const l of source.split('\n').slice(0, line)) {
     const code = l.replace(/(^|\s)#.*/, '');
     const m = /\bshopt\s+(-[a-z]+)[^;&|]*\bglobstar\b/.exec(code);
-    if (m && /[su]/.test(m[1]) && (!shell || shell === 'bash')) on = m[1].includes('s');
-    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) on = true;
-    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) on = false;
+    if (m && /[su]/.test(m[1]) && shell !== 'ksh') state = m[1].includes('s') ? 'on' : 'off';
+    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) state = 'on';
+    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) state = 'off';
   }
-  return on;
+  return state;
 }
 
 /** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
