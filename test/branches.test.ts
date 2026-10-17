@@ -740,6 +740,14 @@ describe('the analyzer: branches no other test takes', () => {
     ['echo ${@} $? ${#} $_'], ['for ((i = 0; i < 3; i++)); do :; done'], ['cat <<-EOF\n\tx\n\tEOF'], ['cat <<"EOF" > out\nx\nEOF'],
     ['case $x in\n  @(a|b)) echo;;\n  *.txt|a?) :;;\n  plain) :;;\nesac', 1], ['case $x in\n  *.txt|a?) :;;\nesac', 1], ['case $x in\n  plain) :;;\nesac', 1],
     ['{ echo a; } > out'], ['while read -r l; do :; done < f'], ['cat <<< "$x"'], ['x+=(a)'], ['x='], ['declare -x -Q a b=1'], ['declare -a \\\n  x', 1],
+    ['yq \'.a\' \\\n  f.yml', 1], ['git foo bar'], ['alias ll="ls -l"\nll', 1, 'zsh'], ['l -a', 0, undefined, { host: 'Markdown code block (bash)' }], ['l -a'],
+    ['set +e -u'], ['shopt -s nullglob foo'], ['echo a \\\n  b', 1], ['chmod 999 f'], ['sort -k x f'], ['cut -f x f'], ["tr '' x"], ["yq r f.yml 'a[x]'"],
+    ["getopt -o '!' -- \"$@\""], ["getopts '!' opt"], ['git log --date=nonsense'], ["find . -path '*/src/*'"], ["find . -name '*.c'"], ['date 0101'],
+    ["yq -o=xml '.a' f.yml"], ["yq -oj '.a' f.yml"], ["yq --output-format=json '.a' f.yml"], ["yq -y '.a' f.yml"], ["yq -r '.name' f.yml"], ["yq -i '.a = 1' f.yml"],
+    ["yq -y '.a | tonumber' f.yml"], ['sed --expression=s/a/b/ f'], ['sed -e'], ['sed -e "$x" f'], ["jq --argjson n x --arg s v --arg \"$k\" v '.a' f"],
+    ["awk -F, -v x=1 -vy=2 --field-separator=: -F \"$s\" -v \"$v\" -v novalue '{ print }' f"], ['seq 3 |\n  sort -r', 1], ['for i in 1; do seq 3 | sort; done'],
+    ['grep a f 2>/dev/null | sort'], ['grep a f > out | sort'], ['sort < f | uniq'], ['echo | sort < f'], ['(echo) | sort'], ['"$cmd" | sort'], ['seq 3 | xargs -n1 echo'],
+    ['cat f | sort | cat'], ["perl -le 'print 1'"], ["perl -pi -e 's/a/b/' f"], ["perl -ne 'print ~1'"], ['basename /a/b.txt .txt'], ['echo {1..20}'], ['echo {1..1000}'],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {

@@ -193,6 +193,7 @@ export class Analyzer {
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   private examples: Example[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
+  /** The command whose arguments are being explained (set while they are, which is when the helpers that read it run). */
   private argCtx: { cmd: string; args: SyntaxNode[] } | undefined;
 
   constructor(private lang: Lang) {}
@@ -371,7 +372,7 @@ export class Analyzer {
     for (const h of root.descendantsOfType('heredoc_redirect', lineStart, lineEnd)) {
       const body = h.namedChildren.find((c) => c.type === 'heredoc_body');
       const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
-      const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text ?? '';
+      const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')!.text;
       if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
         notes.push(this.s(
           `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`<<${delim}\`）の本文です。`,
@@ -483,10 +484,10 @@ export class Analyzer {
   }
 
   private functionDef(n: SyntaxNode): Token {
-    const nameNode = n.childForFieldName('name');
-    const name = nameNode?.text ?? '?';
+    const nameNode = n.childForFieldName('name')!;
+    const name = nameNode.text;
     // A definition is explained on the line it starts on, where its name is.
-    const nameTok = [nameNode].filter((x): x is SyntaxNode => !!x).map((x) => this.tok(x, 'function', this.s('関数名', 'Function name')));
+    const nameTok = [this.tok(nameNode, 'function', this.s('関数名', 'Function name'))];
     return this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${this.lineRef(n)}`,
       `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${this.lineRef(n)}`,
@@ -653,8 +654,9 @@ export class Analyzer {
   }
 
   private heredoc(n: SyntaxNode): Token {
-    const op = n.children.find((c) => !c.isNamed)?.type ?? '<<';
-    const start = n.namedChildren.find((c) => c.type === 'heredoc_start')?.text ?? '';
+    const op = n.children.find((c) => !c.isNamed)!.type;
+    const startNode = n.namedChildren.find((c) => c.type === 'heredoc_start')!;
+    const start = startNode.text;
     const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
     const delim = start.replace(/^['"\\]|['"]$/g, '');
     const quoted = start !== delim;
@@ -674,10 +676,9 @@ export class Analyzer {
       ...this.subs(n.namedChildren.filter((c) => c.type.endsWith('redirect'))),
     ];
     // Keep the token span on the operator so highlighting does not swallow the whole body.
-    const opEnd = n.namedChildren.find((c) => c.type === 'heredoc_start') ?? n;
     return {
       kind: 'redirect', label, explanation: expl, children,
-      span: { start: spanOf(n).start, end: spanOf(opEnd).end },
+      span: { start: spanOf(n).start, end: spanOf(startNode).end },
     };
   }
 
@@ -689,10 +690,10 @@ export class Analyzer {
   }
 
   private assignment(n: SyntaxNode): Token {
-    const name = n.childForFieldName('name');
+    const name = n.childForFieldName('name')!;
     const value = n.childForFieldName('value');
-    const op = n.children.find((c) => !c.isNamed && (c.type === '=' || c.type === '+='))?.type ?? '=';
-    const nm = name?.text ?? '?';
+    const op = n.children.find((c) => !c.isNamed && (c.type === '=' || c.type === '+='))!.type;
+    const nm = name.text;
     let expl = op === '+='
       ? this.s(`変数 \`${nm}\` に値を追記する（配列なら要素を追加）`, `Append to variable \`${nm}\` (adds elements for arrays)`)
       : value
@@ -710,7 +711,8 @@ export class Analyzer {
   }
 
   private declaration(n: SyntaxNode): Token {
-    const kw = n.child(0)?.type ?? 'declare';
+    // declare, typeset, export, readonly or local, all in the dictionary.
+    const kw = n.child(0)!.type;
     const base = declarationCommands[kw];
     const children: Token[] = [];
     for (const c of n.namedChildren) {
@@ -724,7 +726,7 @@ export class Analyzer {
         children.push(...this.sub(c));
       }
     }
-    const t = this.tok(n, 'builtin', base ? this.t(base) : kw, children);
+    const t = this.tok(n, 'builtin', this.t(base), children);
     t.summary = `${kw}: ${t.explanation}`;
     return t;
   }
@@ -877,7 +879,7 @@ export class Analyzer {
       };
     }
     // A command described in the customCommands setting wins over the built-in dictionary.
-    const custom = customCommandDoc(this.opts.customCommands?.[name.split('/').pop() ?? name]);
+    const custom = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]);
     if (custom) {
       return { name, doc: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
@@ -934,7 +936,7 @@ export class Analyzer {
         continue;
       }
       // `--pretty=format:'%h %s'` is one word made of a plain part and a quoted part.
-      const quotedLongOpt = a.type === 'concatenation' && /^--[\w-]+=/.test(a.namedChildren[0]?.text ?? '');
+      const quotedLongOpt = a.type === 'concatenation' && /^--[\w-]+=/.test(a.namedChildren[0]!.text);
       const optLike = !endOfOpts && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
         i = this.option(doc, args, i, cmdName, out);
@@ -1040,7 +1042,7 @@ export class Analyzer {
       case 'jq': {
         tokens = explainJq(lit.text, this.lang);
         // kislyuk/yq passes the filter to jq, but reads and (with -y) writes YAML.
-        if (this.argCtx?.cmd.split('/').pop() === 'yq') {
+        if (this.argCtx!.cmd.split('/').pop() === 'yq') {
           this.yqExample(lit.text, 'kislyuk');
           break;
         }
@@ -1118,7 +1120,7 @@ export class Analyzer {
       case 'perl': {
         tokens = explainPerl(lit.text, this.lang);
         const flags = new Set<string>();
-        for (const w of this.argCtx?.args ?? []) {
+        for (const w of this.argCtx!.args) {
           const m = /^-([a-zA-Z0-9]+)/.exec(w.text);
           // Letters up to the first value-taking one (`-lane`, `-pi.bak`).
           if (m && !w.text.startsWith('--')) for (const ch of m[1]) { flags.add(ch); if ('eEiFM0'.includes(ch)) break; }
@@ -1140,7 +1142,8 @@ export class Analyzer {
         note = describeFindPattern(lit.text, this.lang);
         if (!note) return undefined;
         // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
-        const opt = a.previousNamedSibling?.text ?? '';
+        // The test before the pattern: -name, -path…
+        const opt = a.previousNamedSibling!.text;
         if (!/^-i/.test(opt)) {
           this.globExample(lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
             opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
@@ -1242,7 +1245,7 @@ export class Analyzer {
 
   /** How tr uses the set in `a`: its position among the sets and the -d/-s flags. */
   private trContext(a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] } {
-    const args = this.argCtx?.args ?? [];
+    const args = this.argCtx!.args;
     const flags = args.filter((w) => /^-[a-zA-Z]+$/.test(w.text)).map((w) => w.text.slice(1)).join('');
     const sets = args.filter((w) => !/^-[a-zA-Z]+$/.test(w.text));
     const idx = sets.findIndex((w) => same(w, a));
@@ -1255,7 +1258,7 @@ export class Analyzer {
   /** Short (`-v`) and long (`--invert-match`) option names used by the current command. */
   private cmdFlags(): Set<string> {
     const flags = new Set<string>();
-    for (const w of this.argCtx?.args ?? []) {
+    for (const w of this.argCtx!.args) {
       const t = w.text;
       if (t === '--') break;
       if (t.startsWith('--')) flags.add(t.split('=')[0]);
@@ -1290,7 +1293,7 @@ export class Analyzer {
 
   /** The scripts given to sed with -e/--expression, in order; undefined when there are none. */
   private sedScripts(): string[] | undefined {
-    const args = this.argCtx?.args ?? [];
+    const args = this.argCtx!.args;
     const out: string[] = [];
     for (let i = 0; i < args.length; i++) {
       const t = args[i].text;
@@ -1308,7 +1311,7 @@ export class Analyzer {
 
   /** --arg / --argjson values of the current jq command. */
   private jqVars(): Record<string, Json> {
-    const args = this.argCtx?.args ?? [];
+    const args = this.argCtx!.args;
     const vars: Record<string, Json> = {};
     for (let i = 0; i + 2 < args.length; i++) {
       const t = args[i].text;
@@ -1330,7 +1333,7 @@ export class Analyzer {
   /** Input and output of a yq expression, in the YAML each yq reads and prints. */
   private yqExample(filter: string, style: YamlStyle): void {
     const flags = this.cmdFlags();
-    const words = (this.argCtx?.args ?? []).map((a) => literalContent(a)?.text ?? '');
+    const words = this.argCtx!.args.map((a) => literalContent(a)?.text ?? '');
     // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
     const format = words.map((w, i) => (/^(-o|--output-format)$/.test(w) ? words[i + 1] : /^-o=?(.+)$/.exec(w)?.[1] ?? /^--output-format=(.+)$/.exec(w)?.[1])).find(Boolean);
@@ -1356,11 +1359,12 @@ export class Analyzer {
           ],
         });
       });
+      /* c8 ignore start */
     } catch (e) {
-      /* c8 ignore next 2 */
       // The sample inputs, and what filters make of them, fit in YAML so far: a guard.
       if (!(e instanceof YamlUnsupported)) throw e;
     }
+    /* c8 ignore stop */
   }
 
   private jqExamples(runs: JqRun[], spec?: RerunSpec): void {
@@ -1384,7 +1388,7 @@ export class Analyzer {
 
   /** -F and -v of the current awk command (literal values only). */
   private awkOptions(): { fs?: string; vars: Record<string, string> } {
-    const args = this.argCtx?.args ?? [];
+    const args = this.argCtx!.args;
     const opts: { fs?: string; vars: Record<string, string> } = { vars: {} };
     const value = (i: number, prefix: number) => {
       const lit = literalContent(args[i]);
@@ -1458,7 +1462,7 @@ export class Analyzer {
 
   /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
   private commandExampleFor(name: string, args: SyntaxNode[]): void {
-    const cmd = name.split('/').pop() ?? name;
+    const cmd = name.split('/').pop()!;
     if (cmd === 'printf') { this.printfExample(args); return; }
     if (cmd === 'xargs') { this.xargsExample(args); return; }
     if (cmd === 'getopt') { this.getoptExample(args); return; }
@@ -1705,7 +1709,7 @@ export class Analyzer {
 
   /** `git log` output for sample commits, for a `--pretty`/`--format` or `--date` value. */
   private gitLogExample(kind: 'gitformat' | 'gitdate', value: string): void {
-    const words = (this.argCtx?.args ?? []).map((a) => literalContent(a)?.text ?? '');
+    const words = this.argCtx!.args.map((a) => literalContent(a)?.text ?? '');
     const opt = (re: RegExp) => words.map((w) => re.exec(w)?.[1]).filter((v) => v !== undefined).pop();
     const pretty = kind === 'gitformat' ? value : opt(/^--(?:pretty|format)=([\s\S]*)$/) ?? (words.includes('--oneline') ? 'oneline' : undefined);
     const date = kind === 'gitdate' ? value : opt(/^--date=([\s\S]*)$/) ?? 'default';
@@ -1794,11 +1798,12 @@ export class Analyzer {
           },
         ],
       });
+      /* c8 ignore start */
     } catch (e) {
-      /* c8 ignore next 2 */
       // The sample arguments are made to fit the spec, so getopt never rejects them: a guard.
       if (!(e instanceof GetoptUnsupported)) throw e;
     }
+    /* c8 ignore stop */
   }
 
   /** The commands xargs runs for a sample input. */
