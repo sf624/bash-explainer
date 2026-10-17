@@ -108,9 +108,14 @@ export interface GlobOpts {
   nocase?: boolean;
 }
 
-/** Whether a word contains unquoted glob characters. */
+/** Whether a word contains unquoted glob characters, extended globs (`!(…)`, `@(…)`…) included. */
 export function isGlob(word: string): boolean {
-  return /(^|[^\\])([*?]|\[[^\]]+\])/.test(word);
+  return /(^|[^\\])([*?]|\[[^\]]+\]|[+@!]\()/.test(word);
+}
+
+/** Whether a word contains an extended glob: `?(…)`, `*(…)`, `+(…)`, `@(…)` or `!(…)`. */
+export function hasExtglob(word: string): boolean {
+  return /(^|[^\\])[?*+@!]\(/.test(word);
 }
 
 /** A `**` that is a whole path segment: with globstar it matches any depth of directories. */
@@ -118,56 +123,116 @@ export function hasGlobstar(pattern: string): boolean {
   return /(^|\/)\*\*(\/|$)/.test(pattern);
 }
 
+/** The index of the `)` closing the `(` at `open`, or -1. */
+function closingParen(pattern: string, open: number): number {
+  let depth = 0;
+  for (let k = open; k < pattern.length; k++) {
+    if (pattern[k] === '\\') k++;
+    else if (pattern[k] === '(') depth++;
+    else if (pattern[k] === ')' && --depth === 0) return k;
+  }
+  return -1;
+}
+
+/** The alternatives of an extended glob, `a|b` between `from` and `to`, as [start, end] ranges. */
+function alternatives(pattern: string, from: number, to: number): [number, number][] {
+  const out: [number, number][] = [];
+  let depth = 0;
+  let start = from;
+  for (let k = from; k < to; k++) {
+    if (pattern[k] === '\\') k++;
+    else if (pattern[k] === '(') depth++;
+    else if (pattern[k] === ')') depth--;
+    else if (pattern[k] === '|' && depth === 0) { out.push([start, k]); start = k + 1; }
+  }
+  out.push([start, to]);
+  return out;
+}
+
+/** The extended globs of a pattern (not those nested in another), with their alternatives. */
+export function extglobs(pattern: string): { op: string; text: string; alts: string[] }[] {
+  const out: { op: string; text: string; alts: string[] }[] = [];
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '\\') { i++; continue; }
+    if (!'?*+@!'.includes(pattern[i]) || pattern[i + 1] !== '(') continue;
+    const end = closingParen(pattern, i + 1);
+    if (end < 0) break;
+    out.push({ op: pattern[i], text: pattern.slice(i, end + 1), alts: alternatives(pattern, i + 2, end).map(([a, b]) => pattern.slice(a, b)) });
+    i = end;
+  }
+  return out;
+}
+
+class Unmatchable extends Error {}
+
 /**
  * A regex for a glob: in `file` mode `*` and `?` do not match `/` nor (without `dotglob`) a leading
  * `.` of a name, and with `globstar` a `**` segment matches any number of directories. Otherwise `**`
- * is the same as `*`.
+ * is the same as `*`. Extended globs are read as with `shopt -s extglob`.
  */
 export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}): RegExp | undefined {
   const globstar = !!opts.globstar;
-  if (/[?*+@!]\(/.test(pattern)) return undefined;
-  let out = '';
   const file = mode === 'file';
   const any = file ? '[^/]' : '[\\s\\S]';
+  const segStart = (i: number) => i === 0 || pattern[i - 1] === '/';
   // In file mode, a name (at the start or after `/`) starting with `.` is only matched by a literal dot.
-  const noDot = (i: number) => (file && !opts.dotglob && (i === 0 || pattern[i - 1] === '/') ? '(?!\\.)' : '');
+  const noDot = (i: number) => (file && !opts.dotglob && segStart(i) ? '(?!\\.)' : '');
   // nocaseglob ignores case only in path segments with glob characters: bash looks up the others as they are.
   const segStarts = [...pattern.matchAll(/(?:^|\/)([^/]*)/g)].map((m) => ({ from: m.index! + (m[0].startsWith('/') ? 1 : 0), glob: isGlob(m[1]) }));
   const ci = (i: number) => !!opts.nocase && file && !!segStarts.filter((g) => g.from <= i).pop()?.glob;
   const lit = (i: number, ch: string) => (ci(i) && /[a-zA-Z]/.test(ch) ? `[${ch.toLowerCase()}${ch.toUpperCase()}]` : ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
   // `.` and `..` are never matched, even with dotglob.
   const dirs = file && opts.dotglob ? '(?!\\.\\.?(?:/|$))' : '';
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === '\\' && i + 1 < pattern.length) { i++; out += lit(i, pattern[i]); continue; }
-    if (c === '*' && file && globstar && pattern.startsWith('**', i) && (i === 0 || pattern[i - 1] === '/')) {
-      const seg = `${noDot(i)}${dirs}[^/]+`;
-      if (pattern[i + 2] === '/') { out += `(?:${seg}/)*`; i += 2; continue; }
-      if (i + 2 === pattern.length) { out += `(?:${seg}/)*${noDot(i)}${dirs}[^/]*`; i += 1; continue; }
-    }
-    if (c === '*') {
-      out += `${noDot(i)}${file && (i === 0 || pattern[i - 1] === '/') ? dirs : ''}${any}*`;
-      while (pattern[i + 1] === '*') i++;
-      continue;
-    }
-    if (c === '?') { out += noDot(i) + any; continue; }
-    if (c === '[') {
-      const end = pattern.indexOf(']', i + 2);
-      if (end > 0) {
-        let set = pattern.slice(i + 1, end);
-        const neg = set[0] === '!' || set[0] === '^';
-        if (neg) set = set.slice(1);
-        set = set.replace(/\[:(\w+):\]/g, (_, n: string) => ({ digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s' } as Record<string, string>)[n] ?? '').replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
-        if (ci(i)) set += set.toUpperCase() + set.toLowerCase();
-        out += `${noDot(i)}[${neg ? '^' : ''}${set}]`;
-        i = end;
+  const convert = (from: number, to: number): string => {
+    let out = '';
+    for (let i = from; i < to; i++) {
+      const c = pattern[i];
+      if (c === '\\' && i + 1 < to) { i++; out += lit(i, pattern[i]); continue; }
+      if ('?*+@!'.includes(c) && pattern[i + 1] === '(') {
+        const end = closingParen(pattern, i + 1);
+        if (end > 0 && end < to) {
+          const inner = alternatives(pattern, i + 2, end).map(([a, b]) => convert(a, b)).join('|');
+          if (c === '!') {
+            // Anything (in this name) but the alternatives, followed by the rest: only at the top level.
+            if (to !== pattern.length) throw new Unmatchable();
+            const rest = convert(end + 1, to);
+            return `${out}(?!(?:${inner})${rest}$)${noDot(i)}${any}*${rest}`;
+          }
+          out += `${c === '@' || c === '?' ? noDot(i) : ''}(?:${inner})${{ '@': '', '?': '?', '*': '*', '+': '+' }[c]}`;
+          i = end;
+          continue;
+        }
+      }
+      if (c === '*' && file && globstar && pattern.startsWith('**', i) && segStart(i)) {
+        const seg = `${noDot(i)}${dirs}[^/]+`;
+        if (pattern[i + 2] === '/') { out += `(?:${seg}/)*`; i += 2; continue; }
+        if (i + 2 === pattern.length) { out += `(?:${seg}/)*${noDot(i)}${dirs}[^/]*`; i += 1; continue; }
+      }
+      if (c === '*') {
+        out += `${noDot(i)}${file && segStart(i) ? dirs : ''}${any}*`;
+        while (pattern[i + 1] === '*' && pattern[i + 2] !== '(') i++;
         continue;
       }
+      if (c === '?') { out += noDot(i) + any; continue; }
+      if (c === '[') {
+        const end = pattern.indexOf(']', i + 2);
+        if (end > 0 && end < to) {
+          let set = pattern.slice(i + 1, end);
+          const neg = set[0] === '!' || set[0] === '^';
+          if (neg) set = set.slice(1);
+          set = set.replace(/\[:(\w+):\]/g, (_, n: string) => ({ digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s' } as Record<string, string>)[n] ?? '').replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
+          if (ci(i)) set += set.toUpperCase() + set.toLowerCase();
+          out += `${noDot(i)}[${neg ? '^' : ''}${set}]`;
+          i = end;
+          continue;
+        }
+      }
+      out += lit(i, c);
     }
-    out += lit(i, c);
-  }
+    return out;
+  };
   try {
-    return new RegExp(`^${out}$`, opts.nocase && !file ? 'i' : '');
+    return new RegExp(`^${convert(0, pattern.length)}$`, opts.nocase && !file ? 'i' : '');
   } catch {
     return undefined;
   }
@@ -184,24 +249,44 @@ const DIRS = ['', 'src/', 'src/lib/'];
 export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {}): { matching: string[]; nonMatching: string[] } | undefined {
   if (!globToRegex(pattern, mode, opts)) return undefined;
   const deep = mode === 'file' && !!opts.globstar && hasGlobstar(pattern);
-  const make = (v: number) => {
+  // A name for the pattern between `from` and `to`, varied by `v`; `miss` picks what extended globs exclude.
+  const make = (v: number, from = 0, to = pattern.length, miss = false): string => {
     let out = '';
-    for (let i = 0; i < pattern.length; i++) {
+    for (let i = from; i < to; i++) {
       const c = pattern[i];
-      if (c === '\\' && i + 1 < pattern.length) { out += pattern[++i]; continue; }
+      if (c === '\\' && i + 1 < to) { out += pattern[++i]; continue; }
+      if ('?*+@!'.includes(c) && pattern[i + 1] === '(') {
+        const end = closingParen(pattern, i + 1);
+        if (end > 0 && end < to) {
+          const alts = alternatives(pattern, i + 2, end);
+          const alt = (k: number) => make(v, ...alts[k % alts.length], miss);
+          if (c === '!') {
+            const inner = alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')?.source.slice(1, -1) ?? '$^').join('|');
+            out += miss ? make(v, ...alts[v % alts.length]) : (STARS.map((_, k) => STARS[(v + k) % STARS.length]).find((s) => !new RegExp(`^(?:${inner})$`).test(s)) ?? 'zz');
+          } else if (c === '@') {
+            const inner = new RegExp(`^(?:${alts.map(([a, b]) => globToRegex(pattern.slice(a, b), 'value')?.source.slice(1, -1) ?? '$^').join('|')})$`);
+            out += miss ? (['txt', 'bak', 'zz'].find((x) => !inner.test(x)) ?? 'zz') : alt(v);
+          }
+          else if (c === '?') out += v % 2 && !miss ? '' : alt(v);
+          else if (c === '*') out += miss ? 'zz' : alt(v).repeat(v % 3);
+          else out += miss ? '' : alt(v).repeat(1 + (v % 2));
+          i = end;
+          continue;
+        }
+      }
       if (deep && pattern.startsWith('**', i) && (i === 0 || pattern[i - 1] === '/')) {
         if (pattern[i + 2] === '/') { out += DIRS[v % DIRS.length]; i += 2; continue; }
         if (i + 2 === pattern.length) { out += DIRS[v % DIRS.length] + STARS[v % STARS.length]; i += 1; continue; }
       }
       if (c === '*') {
-        while (pattern[i + 1] === '*') i++;
+        while (pattern[i + 1] === '*' && pattern[i + 2] !== '(') i++;
         out += v === 3 ? '' : STARS[v % STARS.length];
         continue;
       }
       if (c === '?') { out += 'abc1'[v % 4]; continue; }
       if (c === '[') {
         const end = pattern.indexOf(']', i + 2);
-        if (end > 0) {
+        if (end > 0 && end < to) {
           const re = new RegExp(`^${globToRegex(pattern.slice(i, end + 1), 'value')!.source.slice(1, -1)}$`);
           const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~';
           const ok = pool.split('').filter((ch) => re.test(ch));
@@ -225,8 +310,10 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
   const lastSeg = base.lastIndexOf('/') + 1;
   const extra = [opts.dotglob && mode === 'file' ? base.slice(0, lastSeg) + '.' + base.slice(lastSeg) : '', opts.nocase ? base.slice(0, lastSeg) + swapCase(base.slice(lastSeg)) : ''].filter((n) => n && n !== base && globMatches(pattern, n, mode, opts));
   if (extra.length) matching.splice(Math.max(1, 3 - extra.length), Infinity, ...extra);
-  const ext = /\.[^./]+$/.exec(pattern)?.[0];
+  const ext = /\.[^./()|]+$/.exec(pattern)?.[0];
   const candidates = [
+    // What an extended glob leaves out: `keep.log` for `!(keep).log`.
+    ...(hasExtglob(pattern) ? [0, 1].map((v) => make(v, 0, pattern.length, true)) : []),
     ext ? base.slice(0, -ext.length) + (ext === '.txt' ? '.md' : '.txt') : base + '.bak',
     // `**` without globstar is one level only; with it, hidden directories are still skipped.
     ...(hasGlobstar(pattern) && mode === 'file' ? [deep ? `.cache/${base}` : `src/${base}`] : []),

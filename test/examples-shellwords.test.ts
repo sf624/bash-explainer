@@ -82,6 +82,35 @@ describe('glob examples agree with bash and find', () => {
       });
     }
   }
+  const EXT_TREE = ['a.txt', 'b.md', 'app.ts', 'keep.log', 'old.log', 'ab.txt', 'aab.txt', 'c.txt', 'y', 'xy', 'xxy', '.hidden.ts', 'ababc', 'c', 'src/lib/x.ts', 'src/app/y.ts'];
+  for (const p of ['!(*.txt)', '*.@(ts|md)', '+(a|b).txt', '?(x)y', 'src/!(lib)', '!(keep).log', '@(app|old)*', '*(ab)c', '!(*.@(txt|md))', 'src/@(lib|app)/*.ts']) {
+    it(`extglob file ${p}`, () => {
+      const dir = tmp();
+      for (const f of EXT_TREE) {
+        fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+        fs.writeFileSync(path.join(dir, f), '');
+      }
+      // extglob must be on when bash reads the line, so the pattern comes from a variable.
+      const out = execFileSync('bash', ['-c', 'shopt -s extglob nullglob\ncd "$1" && for f in $2; do echo "$f"; done', '_', dir, p]).toString();
+      const all = execFileSync('find', ['.', '-mindepth', '1', '-printf', '%P\\n'], { cwd: dir }).toString().trim().split('\n');
+      fs.rmSync(dir, { recursive: true });
+      const expected = out.trim().split('\n').filter(Boolean).sort();
+      assert.deepStrictEqual(all.filter((n) => globMatches(p, n, 'file')).sort(), expected);
+      const ex = globExamples(p, 'file')!;
+      assert.ok(ex, 'examples');
+      for (const n of ex.matching) assert.ok(globMatches(p, n, 'file'), n);
+      for (const n of ex.nonMatching) assert.ok(!globMatches(p, n, 'file'), n);
+    });
+  }
+  for (const p of ['@(start|stop)', '!(*.bak)', '+([0-9])', 'v?(.)+([0-9])', '*.@(jpg|png)']) {
+    it(`extglob value ${p}`, () => {
+      const ex = globExamples(p, 'value')!;
+      assert.ok(ex?.nonMatching.length, 'examples');
+      const caseMatches = (v: string) => execFileSync('bash', ['-c', 'shopt -s extglob\neval \'case "$1" in \'"$2"\') echo y;; *) echo n;; esac\'', '_', v, p]).toString().trim() === 'y';
+      for (const v of ex.matching) assert.ok(caseMatches(v), `${v} should match`);
+      for (const v of ex.nonMatching) assert.ok(!caseMatches(v), `${v} should not match`);
+    });
+  }
   it('examples show what dotglob and nocase add', () => {
     assert.ok(globExamples('*.ts', 'file', { dotglob: true })!.matching.includes('.app.ts'));
     assert.ok(globExamples('*.ts', 'file', { nocase: true })!.matching.includes('APP.TS'));

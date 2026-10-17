@@ -15,7 +15,7 @@ import { sedExample } from './examples/sed';
 import { Interactive, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
-import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, GlobOpts, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
+import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
@@ -171,7 +171,7 @@ function fieldChildren(n: SyntaxNode, field: string): SyntaxNode[] {
 }
 
 const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
-const hasGlob = (s: string) => /(^|[^\\])[*?]|\[[^\]]+\]/.test(s);
+const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()|\[[^\]]+\]/.test(s);
 
 export class Analyzer {
   private line: number | null = null;
@@ -218,7 +218,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang))],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line)])],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -423,7 +423,7 @@ export class Analyzer {
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
       case 'regex': return this.regexNode(n);
-      case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern'));
+      case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
       case 'variable_name': return this.variable(n.text, n);
       case 'special_variable_name': return this.variable(n.text, n);
       case 'test_operator': return this.tok(n, 'operator', this.t(unaryTestOps[n.text] ?? binaryTestOps[n.text] ?? { ja: '演算子', en: 'Operator' }));
@@ -536,8 +536,9 @@ export class Analyzer {
       : this.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
     const patToks = pats
       .filter((p) => this.line === null || intersects(p, this.line))
-      .map((p) => this.tok(p, 'pattern', hasGlob(p.text)
-        ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`)
+      .map((p) => this.tok(p, 'pattern', hasExtglob(p.text) && !hasGlob(p.text.replace(/[?*+@!]\(/g, '(')) ? this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``) + this.extglobNote(p.text)
+        : hasGlob(p.text)
+        ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`) + this.extglobNote(p.text)
         : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``)));
     const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
     if (!isDefault && (this.line === null || pats.some((p) => intersects(p, this.line!)))) {
@@ -929,7 +930,7 @@ export class Analyzer {
       if (emb) return this.tok(a, 'argument', desc ?? this.s('引数', 'Argument'), emb.tokens);
       const base = this.word(a);
       if (!desc) return base;
-      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globstarNote(a.text) : '';
+      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
       return this.tok(a, 'argument', desc + glob);
     }
     const inner = this.sub(a);
@@ -1465,8 +1466,48 @@ export class Analyzer {
    * What `**` does in a file-name glob. It is written for any depth, so it is explained that way, with
    * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
    */
-  private globstarNote(text: string): string {
-    return this.globOptionNote() + this.starStarNote(text);
+  private globNotes(text: string): string {
+    return this.globOptionNote() + this.starStarNote(text) + this.extglobNote(text);
+  }
+
+  /** The extended globs of a pattern in words: `!(*.txt)` is anything but `*.txt`. */
+  private extglobNote(text: string): string {
+    const parts = extglobs(text).map(({ op, text: t, alts }) => {
+      const list = alts.map((a) => `\`${a}\``).join(this.s('、', ', '));
+      const one = alts.length === 1;
+      const ja = { '@': one ? list : `${list} のどれか`, '!': `${list} の${one ? '' : 'どれにも'}一致しないもの`.replace('` の一致', '` に一致'), '?': `${list} が0回か1回`, '*': `${list} の0回以上の繰り返し`, '+': `${list} の1回以上の繰り返し` }[op];
+      const en = { '@': one ? list : `one of ${list}`, '!': `anything but ${list}`, '?': `${list} zero or one time`, '*': `${list} repeated zero or more times`, '+': `${list} repeated one or more times` }[op];
+      return this.s(`\`${t}\` は ${ja}`, `\`${t}\` is ${en}`);
+    });
+    return parts.length ? this.s(`。拡張グロブ: ${parts.join('、')}`, `. Extended glob: ${parts.join('; ')}`) : '';
+  }
+
+  /**
+   * bash reads an extended glob only after `shopt -s extglob` (except in `[[ ]]`), and reads a whole
+   * function or block before running it, so turning it on inside the same block is too late.
+   */
+  private extglobPitfalls(root: SyntaxNode, line: number): string[] {
+    if (this.shell && this.shell !== 'bash') return [];
+    const uses = root.descendantsOfType(['word', 'extglob_pattern'], { row: line, column: 0 }, { row: line + 1, column: 0 })
+      .filter((n): n is SyntaxNode => !!n && n.startPosition.row === line && hasExtglob(n.text) && !ancestorOf(n, (a) => a.type === 'test_command' && a.child(0)?.type === '[['));
+    if (!uses.length) return [];
+    const use = uses[0];
+    let top = use;
+    while (top.parent && top.parent.type !== 'program') top = top.parent;
+    const inBlock = top !== use && top.descendantsOfType('command').some((c) => !!c && c.startIndex < use.startIndex && c.childForFieldName('name')?.text === 'shopt'
+      && /(^|\s)-\w*s/.test(c.text) && /\bextglob\b/.test(c.text));
+    if (inBlock) {
+      return [this.s(
+        `⚠ 落とし穴: bash は関数や \`if\`・\`{ }\` などのまとまりを最後まで読んでから実行します。そのため、同じまとまりの中の \`shopt -s extglob\` は \`${use.text}\` を読む時点ではまだ効いておらず、構文エラーになります。\`shopt -s extglob\` は、まとまりの外のそれより前の行に書きます`,
+        `⚠ Pitfall: bash reads a whole function or block (\`if\`, \`{ }\`…) before running it, so a \`shopt -s extglob\` inside the same block is not yet on when it reads \`${use.text}\`: a syntax error. Put \`shopt -s extglob\` on an earlier line, outside the block`)];
+    }
+    const state = this.shopt.extglob;
+    if (state === 'on') return [];
+    return [state === 'off'
+      ? this.s(`⚠ 落とし穴: \`${use.text}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
+        `⚠ Pitfall: extended globs like \`${use.text}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`)
+      : this.s(`⚠ 落とし穴: \`${use.text}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
+        `⚠ Pitfall: extended globs like \`${use.text}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``)];
   }
 
   /** What dotglob and nocaseglob, turned on before the line, change for a file-name glob. */
@@ -2047,7 +2088,7 @@ export class Analyzer {
   private word(n: SyntaxNode): Token {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
-    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globstarNote(text));
+    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``));
   }
 
@@ -2452,4 +2493,10 @@ export function summaryOf(t: Token): string {
 
 function sortTokens(ts: Token[]): Token[] {
   return ts.sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+}
+
+/** Whether an ancestor of `n` satisfies `test`. */
+function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
+  for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
+  return false;
 }
