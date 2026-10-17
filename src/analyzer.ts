@@ -1509,10 +1509,13 @@ export class Analyzer {
         });
         return;
       }
+      /* c8 ignore start */
     } catch (e) {
+      // A guard: braceExpand throws nothing else.
       if (!(e instanceof ShellWordsUnsupported)) throw e;
       return;
     }
+    /* c8 ignore stop */
     if (isGlob(text)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
@@ -1555,14 +1558,16 @@ export class Analyzer {
       }
       for (const c of [last, ...last.descendantsOfType('command')]) {
         if (c?.type === 'command' && c.childForFieldName('name')?.text === 'read' && (c === last || last.type !== 'while_statement' || !ancestorOf(c, (x) => x === last.childForFieldName('condition')))) {
-          for (const w of c.childrenForFieldName('argument')) if (w && /^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(w.previousSibling?.text ?? '')) names.add(w.text);
+          for (const w of c.childrenForFieldName('argument')) if (w && /^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(w.previousSibling!.text)) names.add(w.text);
         }
       }
       if (!names.size) continue;
       // Used after the pipeline, in the same block.
       let scope: SyntaxNode = p;
       while (scope.parent && !['program', 'compound_statement', 'do_group', 'subshell', 'if_statement', 'else_clause', 'elif_clause', 'case_item'].includes(scope.parent.type)) scope = scope.parent;
-      const after = (scope.parent ?? root).text.slice(scope.endIndex - (scope.parent ?? root).startIndex);
+      // The program at least holds the pipeline.
+      const block = scope.parent!;
+      const after = block.text.slice(scope.endIndex - block.startIndex);
       // Read before being set again (a later loop may set the same names for itself).
       const used = [...names].find((n) => {
         const use = after.search(new RegExp(`\\$\\{?${n}\\b`));
@@ -1739,9 +1744,12 @@ export class Analyzer {
         title: this.s('例（この書式での `git log` の出力）', 'Example (`git log` output with this format)'),
         sections: [{ label: this.s('例のコミットでの出力', 'Output for sample commits'), lines: lines.map(visible) }],
       });
+      /* c8 ignore start */
     } catch (e) {
+      // A guard: runGitLog throws nothing else.
       if (!(e instanceof GitFormatUnsupported)) throw e;
     }
+    /* c8 ignore stop */
   }
 
   /** How getopt rearranges sample arguments, from the `-o` / `--long` given. */
@@ -1863,8 +1871,7 @@ export class Analyzer {
   }
 
   private testExampleFor(kind: '[' | '[[' | '((', expr: SyntaxNode): void {
-    const operand = (x: SyntaxNode | null | undefined): Operand | undefined => {
-      if (!x) return undefined;
+    const operand = (x: SyntaxNode): Operand | undefined => {
       if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
       if (x.type === 'variable_name') return { var: x.text };
       if (x.type === 'string' && x.namedChildren.length === 1 && x.namedChildren[0].type === 'simple_expansion' && x.text === `"${x.namedChildren[0].text}"`) return operand(x.namedChildren[0]);
@@ -1873,13 +1880,13 @@ export class Analyzer {
     };
     let cases;
     if (expr.type === 'unary_expression') {
-      const op = expr.childForFieldName('operator')?.text ?? expr.child(0)?.text ?? '';
-      cases = testCases(kind, op, undefined, operand(expr.namedChildren.find((c) => c.type !== 'test_operator')));
+      const op = expr.childForFieldName('operator')!.text;
+      cases = testCases(kind, op, undefined, operand(expr.namedChildren.find((c) => c.type !== 'test_operator')!));
     } else if (expr.type === 'binary_expression') {
-      const l = expr.childForFieldName('left');
-      const r = expr.childForFieldName('right');
-      const op = expr.childForFieldName('operator')?.text ?? '';
-      cases = testCases(kind, op, operand(l), operand(r), r?.type === 'string' || r?.type === 'raw_string', !!this.globOpts('pattern').nocase);
+      const l = expr.childForFieldName('left')!;
+      const r = expr.childForFieldName('right')!;
+      const op = expr.childForFieldName('operator')!.text;
+      cases = testCases(kind, op, operand(l), operand(r), r.type === 'string' || r.type === 'raw_string', !!this.globOpts('pattern').nocase);
     }
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
@@ -1909,6 +1916,8 @@ export class Analyzer {
       out = bashPrintf(list[0], list.slice(1));
     } catch (e) {
       if (e instanceof ShellWordsUnsupported) return;
+      // A bug in bashPrintf: let it show.
+      /* c8 ignore next */
       throw e;
     }
     const endsWithNewline = out.endsWith('\n');
@@ -1935,10 +1944,10 @@ export class Analyzer {
     });
   }
 
-  private ioExample(input: string[], output: string[], inPlace = false, spec?: RerunSpec): void {
+  private ioExample(input: string[], output: string[], inPlace: boolean, spec: RerunSpec): void {
     const tabs = (lines: string[]) => lines.map(visible);
-    this.examples.push({ kind: spec?.kind === 'sed' || spec?.kind === 'awk' || spec?.kind === 'perl' ? spec.kind : 'textFilters',
-      ...(spec ? { interactive: this.interactive(spec, input) } : {}),
+    this.examples.push({ kind: spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters',
+      interactive: this.interactive(spec, input),
       title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example'),
       sections: [
         { label: this.s('入力', 'Input'), lines: tabs(input) },
@@ -1949,9 +1958,8 @@ export class Analyzer {
 
   /** Regex dialect implied by the current command and its options. */
   private regexFlavor(): Flavor | 'fixed' {
-    const ctx = this.argCtx;
-    if (!ctx) return 'ere';
-    const cmd = ctx.cmd.split('/').pop() ?? ctx.cmd;
+    const ctx = this.argCtx!;
+    const cmd = ctx.cmd.split('/').pop()!;
     const flags = new Set<string>();
     for (const w of ctx.args) {
       const t = w.text;
@@ -1997,7 +2005,7 @@ export class Analyzer {
         const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : text.slice(eq + 1);
         const known = opt?.values?.[val];
         const valueLit: Literal | undefined = whole && litEq >= 0
-          ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: (whole.base ?? 0) + litEq + 1 })
+          ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
           : undefined;
         const emb = opt?.lang && valueLit ? this.embeddedText(valueLit, opt.lang, a) : undefined;
         const extra = emb?.note ? ` — ${emb.note}` : '';
@@ -2107,7 +2115,7 @@ export class Analyzer {
       // `-F,` / `-n5`: one option with its value attached is not a combination.
       out.push(this.tok(a, 'option', flags.length > 1
         ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
-        : flags[0]?.explanation ?? unknown, flags.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
+        : flags[0].explanation, flags.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
     }
     out.push(...tail);
     return last;
@@ -2117,7 +2125,7 @@ export class Analyzer {
   private wrapped(words: SyntaxNode[], prefix = ''): Token {
     const first = words[0];
     const name = first.text;
-    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop() ?? name]) ?? lookupCommand(name);
+    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
     const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     const children = this.args(doc, words.slice(1), name);
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
@@ -2157,15 +2165,11 @@ export class Analyzer {
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
   private regexNode(n: SyntaxNode): Token {
-    const op = n.parent?.type === 'binary_expression' ? n.parent.childForFieldName('operator')!.text : undefined;
-    // Unquoted backslashes reach the regex unchanged (`\.` stays an escaped dot), so only quotes and expansions are excluded.
-    if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
-      const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
-      const js = toJsRegex(n.text, 'ere');
-      if (js) this.regexExample(js, 'values');
-      return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
-    }
-    return this.tok(n, 'pattern', this.s('正規表現（またはパターン）', 'Regular expression (or pattern)'));
+    // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (quotes and expansions make other nodes).
+    const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
+    const js = toJsRegex(n.text, 'ere');
+    if (js) this.regexExample(js, 'values');
+    return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
   }
 
   private inArithmetic(n: SyntaxNode): boolean {
@@ -2180,7 +2184,7 @@ export class Analyzer {
 
   private unary(n: SyntaxNode): Token {
     // `!` is not an operator field.
-    const opNode = n.childForFieldName('operator') ?? n.child(0)!;
+    const opNode = n.childForFieldName('operator')!;
     const op = opNode.text;
     const operand = n.namedChildren.find((c) => !same(c, opNode))!;
     if (op === '!' && !this.inArithmetic(n)) {
@@ -2445,7 +2449,8 @@ export class Analyzer {
       // `transform`
       default: {
         const m = transformMeaning[t];
-        return ['operator', m ? `\`${t}\`: ${m[this.lang === 'ja' ? 0 : 1]}` : s(`変換 \`${t}\``, `Transformation \`${t}\``)];
+        // The grammar reads only the letters bash has, all in the table.
+        return ['operator', `\`${t}\`: ${m![this.lang === 'ja' ? 0 : 1]}`];
       }
     }
   }
@@ -2476,7 +2481,8 @@ export class Analyzer {
     if (opIdx > 0) {
       const op = kids[opIdx].type;
       const close = kids[kids.length - 1];
-      const arg = n.text.slice(kids[opIdx].endIndex - n.startIndex, close.type === '}' ? close.startIndex - n.startIndex : undefined);
+      // The grammar closes every `${` with `}`.
+      const arg = n.text.slice(kids[opIdx].endIndex - n.startIndex, close.startIndex - n.startIndex);
       const make = expansionOps[op];
       if (arg === '' && (op === ':-' || op === '-')) {
         return this.tok(n, 'expansion', this.s(
@@ -2491,9 +2497,6 @@ export class Analyzer {
         return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(shownName, arg)), this.subs(argNodes));
       }
     }
-    // `${var:offset:length}` has no operator field in some grammar versions.
-    const sub = inner.match(/^([A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-]):(-?\d+|\s*-\d+|[^-=+?][^}]*)$/);
-    if (sub) return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(expansionOps[':'](sub[1], sub[2])));
     const d = base ?? this.varDesc(targetText);
     return this.tok(n, 'variable', d
       ? this.s(`\`\${${targetText}}\`: ${d}`, `\`\${${targetText}}\`: ${d}`)
@@ -2542,7 +2545,7 @@ function literalContent(a: SyntaxNode): Literal | undefined {
     for (const c of a.namedChildren) {
       const lit = literalContent(c);
       if (!lit || lit.offsets) return undefined;
-      const at = c.startIndex - a.startIndex + (lit.base ?? 0);
+      const at = c.startIndex - a.startIndex + lit.base!;
       for (let k = 0; k < lit.text.length; k++) offsets.push(at + k);
       text += lit.text;
     }
@@ -2553,9 +2556,10 @@ function literalContent(a: SyntaxNode): Literal | undefined {
 
 /** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
 function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
-  if (!lit.offsets) return (lit.base ?? 0) + offset;
-  if (isEnd) return offset === 0 ? lit.offsets[0] ?? 0 : lit.offsets[offset - 1] + 1;
-  return lit.offsets[offset] ?? (lit.offsets[lit.offsets.length - 1] ?? 0) + 1;
+  // A literal has a base or offsets, one for each character (tokens lie within its text).
+  if (!lit.offsets) return lit.base! + offset;
+  if (isEnd) return lit.offsets[offset - 1] + 1;
+  return lit.offsets[offset];
 }
 
 /** Tabs as ⇥ and other control characters as their Unicode pictures (CR → ␍), so examples show them. */
@@ -2623,10 +2627,10 @@ function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined 
   let pat = '';
   for (; i < script.length && script[i] !== delim; i++) {
     if (script[i] === '\\' && script[i + 1] === delim) { pat += delim; i++; continue; }
-    if (script[i] === '\\') { pat += script[i] + (script[i + 1] ?? ''); i++; continue; }
+    if (script[i] === '\\') { pat += script[i] + script[i + 1]; i++; continue; }
     pat += script[i];
   }
-  const flags = /^[^;\n]*$/.test(script) ? (script.split(delim).pop() ?? '') : '';
+  const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
   return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
 }
 
@@ -2660,7 +2664,7 @@ function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
  * a descriptor) as one operator: they are `>&` and `<&` to `-`.
  */
 function redirectParts(n: SyntaxNode): { op: string; dest: string } {
-  const op = n.children.find((c) => !c.isNamed)?.type ?? '>';
+  const op = n.children.find((c) => !c.isNamed)!.type;
   if (op === '>&-' || op === '<&-') return { op: op.slice(0, 2), dest: '-' };
   return { op, dest: fieldChildren(n, 'destination').map((d) => d.text).join(' ') };
 }

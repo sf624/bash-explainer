@@ -769,6 +769,11 @@ describe('the analyzer: branches no other test takes', () => {
     ['[ -n "$x" ]'], ['[[ $x == "$y" ]]'], ['(( x > 3 ))'], ['[ $x = a -o $y = b ]'], ['shopt -s nocasematch\n[[ $x == a* ]]', 1], ['[ "$1" = a ]'], ['[ -z ]'], ['[ ! -f a ]'], ['[[ a == ]]'],
     ['printf -v v "%s" a'], ['printf -- "%s\\n" a'], ['printf -v v'], ["printf '%q' $'a\\tb'"], ['printf "$f"'], ['printf "%s"'],
     ['[[ $a =~ "x"y ]]'], ['(( -x ))'], ['(( x = $y ))'], ['echo "${a:-\nb}"'], ['echo ${a[@]:1:2} ${@:2} ${s:$i:$n} ${s:$i} ${a[key]} ${x:=d} ${x^^[a-c]} ${x#$y} ${s:1:$n} ${x@Z}'],
+    ['echo ${s:$i:2}'], ['echo ${x@Z}'], ["grep a\"b\"c f"], ["grep 'a'b f"], ["printf 'a\\177b\\n'"], ['shopt -p globstar\nls **/*.c', 1], ['set +o globstar\nls **/*.c', 1, 'ksh'],
+    ["sed 's/a\\/b/X/' f"], ["sed 's/a\\.b/X/I' f"], ["sed 's/a/b/;p' f"], ["sed 's/a\\' f"], ['python -c "print(1)"'], ['zsh -c "echo"'],
+    ["perl -ne 'print' file \"$f\""], ['seq 3 | while read l; do x=1; done && echo $x'], ['getopt --optionsx'], ['xargs -s 10 echo'], ['[ ]'], ['[ ${x} = a ]'],
+    ['printf -v x -- a'], ['date +%Q'], ['echo ${s:$i}'], ['echo ${x@w}'], ['grep "a"\'b\' f'],
+    ['echo ${s:i} ${s:i:2}'], ["yq -y '.a | error' f.yml"], ["yq -r '.a | error' f.yml"],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {
