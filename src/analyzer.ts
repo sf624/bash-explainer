@@ -627,11 +627,8 @@ export class Analyzer {
   /** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
   private redirectInfo(r: SyntaxNode): Redirect[] {
     if (r.type === 'file_redirect') {
-      return [{
-        op: r.children.find((c) => !c.isNamed)?.type ?? '>',
-        fd: r.childForFieldName('descriptor')?.text ?? '',
-        dest: fieldChildren(r, 'destination').map((d) => d.text).join(' '),
-      }];
+      const { op, dest } = redirectParts(r);
+      return [{ op, fd: r.childForFieldName('descriptor')?.text ?? '', dest }];
     }
     if (r.type === 'heredoc_redirect') {
       // Redirections written after `<<EOF` on the same line are nested in the heredoc node.
@@ -643,9 +640,8 @@ export class Analyzer {
 
   private fileRedirect(n: SyntaxNode): Token {
     const fd = n.childForFieldName('descriptor')?.text ?? '';
-    const op = n.children.find((c) => !c.isNamed)?.type ?? '>';
+    const { op, dest } = redirectParts(n);
     const dests = fieldChildren(n, 'destination');
-    const dest = dests.map((d) => d.text).join(' ');
     const make = redirects[op];
     let expl = make ? this.t(make(fd, dest)) : this.s(`リダイレクト \`${op}\``, `Redirection \`${op}\``);
     const special = specialDestinations[dest];
@@ -2639,4 +2635,14 @@ function sortTokens(ts: Token[]): Token[] {
 function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
   return false;
+}
+
+/**
+ * The operator and destination of a file redirection. tree-sitter-bash reads `>&-` and `<&-` (close
+ * a descriptor) as one operator: they are `>&` and `<&` to `-`.
+ */
+function redirectParts(n: SyntaxNode): { op: string; dest: string } {
+  const op = n.children.find((c) => !c.isNamed)?.type ?? '>';
+  if (op === '>&-' || op === '<&-') return { op: op.slice(0, 2), dest: '-' };
+  return { op, dest: fieldChildren(n, 'destination').map((d) => d.text).join(' ') };
 }

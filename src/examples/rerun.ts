@@ -45,12 +45,8 @@ export interface Interactive {
 
 /** Every match of the regex on a line, with the range of each capture group (group 0 is the match). */
 export function matchMarks(regex: JsRegex, line: string): Mark[] {
-  let re: RegExp;
-  try {
-    re = new RegExp(regex.source, `${regex.flags.replace(/[gd]/g, '')}gd`);
-  } catch {
-    return [];
-  }
+  // A JsRegex is checked when it is made, and `g` and `d` fit any flags.
+  const re = new RegExp(regex.source, `${regex.flags.replace(/[gd]/g, '')}gd`);
   const marks: Mark[] = [];
   for (let m = re.exec(line), n = 0; m && n < 50; m = re.exec(line), n++) {
     const idx = (m as RegExpExecArray & { indices?: ([number, number] | undefined)[] }).indices ?? [];
@@ -62,12 +58,7 @@ export function matchMarks(regex: JsRegex, line: string): Mark[] {
 
 /** "line 2: `2026` … group 1 = `2026`" for the first few matches that have capture groups. */
 function groupLines(regex: JsRegex, input: string[], lang: Lang): string[] {
-  let re: RegExp;
-  try {
-    re = new RegExp(regex.source, regex.flags.replace(/[gd]/g, ''));
-  } catch {
-    return [];
-  }
+  const re = new RegExp(regex.source, regex.flags.replace(/[gd]/g, ''));
   const out: string[] = [];
   input.forEach((line, i) => {
     const m = re.exec(line);

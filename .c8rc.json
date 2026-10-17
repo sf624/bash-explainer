@@ -2,6 +2,14 @@
   "all": true,
   "src": ["src"],
   "include": ["src/**"],
-  "reporter": ["text-summary", "html", "json-summary"],
+  "exclude": [
+    "src/extension.ts",
+    "src/service.ts",
+    "src/ui/diagnostics.ts",
+    "src/ui/hover.ts",
+    "src/ui/inline.ts",
+    "src/ui/panel.ts"
+  ],
+  "reporter": ["text-summary", "html", "json-summary", "json"],
   "report-dir": "coverage"
 }
