@@ -71,7 +71,7 @@ A one-line summary at the end of the cursor line.
 - **Command line:** `code --install-extension shun-fujioka.bash-explainer`
 - **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **No installation:** the [web version](https://sf624.github.io/bash-explainer/) runs in the browser.
-- **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository), including Codespaces in the browser.
+- **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository).
 
 Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
 
