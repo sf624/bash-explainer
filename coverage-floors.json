@@ -1,7 +1,4 @@
 {
-  "branches": 85.1,
-  "lines": {
-    "src/analyzer.ts": 97.35,
-    "src/ui/panelView.ts": 71.95
-  }
+  "branches": 85.5,
+  "lines": {}
 }

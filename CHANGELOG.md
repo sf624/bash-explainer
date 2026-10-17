@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `${a[@]:1:2}` and `${@:2}` are explained as taking elements (of the array, or the arguments from `$2`), with examples checked in bash; they were explained, with a wrong example, as taking characters.
+- An assignment with only a redirection (`FOO=1 2>/dev/null`) is explained as an assignment in the shell; it was "the external command ``".
 - perl one-liners that leave the `-n`/`-p` loop with `last` (`perl -ne 'last if /^END/; print'`) get worked examples, as perl runs them: the loop stops, `END` still runs.
 - jq filters with `.a.[0]` (jq 1.7) or a `def` after a comma (`1, def f: 2; f`) are explained; before, the whole filter was "could not parse".
 - `git log --date=relative` examples over a year old read like git's: "1 year, 1 month ago" up to five years, instead of "1 year ago".

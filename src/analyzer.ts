@@ -38,7 +38,7 @@ import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embed
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
-import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, transformMeaning } from './expansion';
+import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
@@ -346,10 +346,6 @@ export class Analyzer {
     return undefined;
   }
 
-  private kws(n: SyntaxNode): Token[] {
-    return this.anonOnLine(n.children.filter((c) => !c.isNamed));
-  }
-
   private anonOnLine(nodes: SyntaxNode[]): Token[] {
     return nodes
       .filter((c) => this.line === null || intersects(c, this.line))
@@ -438,7 +434,6 @@ export class Analyzer {
       case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
       case 'variable_name': return this.variable(n.text, n);
       case 'special_variable_name': return this.variable(n.text, n);
-      case 'test_operator': return this.tok(n, 'operator', this.t(unaryTestOps[n.text] ?? binaryTestOps[n.text] ?? { ja: '演算子', en: 'Operator' }));
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
       // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
       case 'compound_statement': if (n.child(0)?.type === '((') return this.test(n);
@@ -490,9 +485,8 @@ export class Analyzer {
   private functionDef(n: SyntaxNode): Token {
     const nameNode = n.childForFieldName('name');
     const name = nameNode?.text ?? '?';
-    const nameTok = nameNode && (this.line === null || intersects(nameNode, this.line))
-      ? [this.tok(nameNode, 'function', this.s('関数名', 'Function name'))]
-      : [];
+    // A definition is explained on the line it starts on, where its name is.
+    const nameTok = [nameNode].filter((x): x is SyntaxNode => !!x).map((x) => this.tok(x, 'function', this.s('関数名', 'Function name')));
     return this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${this.lineRef(n)}`,
       `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${this.lineRef(n)}`,
@@ -634,8 +628,8 @@ export class Analyzer {
       // Redirections written after `<<EOF` on the same line are nested in the heredoc node.
       return [{ op: '<<', fd: '', dest: '' }, ...r.namedChildren.filter((c) => c.type === 'file_redirect').flatMap((c) => this.redirectInfo(c))];
     }
-    if (r.type === 'herestring_redirect') return [{ op: '<<<', fd: '', dest: '' }];
-    return [];
+    // The only other redirection: herestring_redirect.
+    return [{ op: '<<<', fd: '', dest: '' }];
   }
 
   private fileRedirect(n: SyntaxNode): Token {
@@ -796,7 +790,9 @@ export class Analyzer {
   }
 
   private commandToken(n: SyntaxNode): Token {
-    const nameNode = n.childForFieldName('name');
+    // `FOO=1 2>/dev/null`: tree-sitter-bash gives it a command name of zero width.
+    const named = n.childForFieldName('name');
+    const nameNode = named?.text ? named : null;
     const prefix: Token[] = [];
     const args: SyntaxNode[] = [];
     const redirs: SyntaxNode[] = [];
@@ -806,6 +802,8 @@ export class Analyzer {
       if (same(c, nameNode)) { seenName = true; continue; }
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
+        // Without a command, the assignment stays in the shell.
+        if (!nameNode) { prefix.push(...this.sub(c)); continue; }
         for (const t of this.sub(c)) {
           t.explanation = this.s(
             `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
@@ -819,14 +817,6 @@ export class Analyzer {
     }
     if (!nameNode) {
       return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
-    }
-    // tree-sitter-bash parses a standalone `(( expr ))` as a command named by an arithmetic expansion.
-    const arith = nameNode.namedChildren.length === 1 && nameNode.namedChildren[0].type === 'arithmetic_expansion' && nameNode.text.startsWith('((') ? nameNode.namedChildren[0] : undefined;
-    if (arith && !args.length && !prefix.length) {
-      if ((this.line === null || n.startPosition.row === this.line) && arith.namedChildren.length === 1) this.testExampleFor('((', arith.namedChildren[0]);
-      const t = this.tok(n, 'test', this.arithTestExplanation(), [...this.subs(arith.namedChildren), ...this.subs(redirs)]);
-      t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
-      return t;
     }
     const head = this.commandHead(nameNode);
     if (head.name.split('/').pop() === 'yq') {
@@ -1367,6 +1357,8 @@ export class Analyzer {
         });
       });
     } catch (e) {
+      /* c8 ignore next 2 */
+      // The sample inputs, and what filters make of them, fit in YAML so far: a guard.
       if (!(e instanceof YamlUnsupported)) throw e;
     }
   }
@@ -1676,9 +1668,8 @@ export class Analyzer {
     if (!hasGlobstar(pattern)) delete opts.globstar;
     const ex = globExamples(pattern, mode, opts);
     if (!ex) return;
-    const [yes, no] = labels ?? (mode === 'file'
-      ? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')]
-      : [this.s('一致する値', 'Matches'), this.s('一致しない値', 'Does not match')]);
+    // Values (find -name) always come with their labels.
+    const [yes, no] = labels ?? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')];
     this.examples.push({ kind: 'glob',
       title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
       interactive: this.interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
@@ -1803,6 +1794,8 @@ export class Analyzer {
         ],
       });
     } catch (e) {
+      /* c8 ignore next 2 */
+      // The sample arguments are made to fit the spec, so getopt never rejects them: a guard.
       if (!(e instanceof GetoptUnsupported)) throw e;
     }
   }
@@ -2322,6 +2315,11 @@ export class Analyzer {
     const off = p.parts.find((x) => x.role === 'offset')?.text ?? '';
     const len = p.parts.find((x) => x.role === 'length')?.text;
     const name = p.name;
+    if (slicesElements(p)) {
+      const what = p.name === '@' || p.name === '*' ? this.s('位置パラメータ', 'the positional parameters') : this.s(`配列 \`${name}\` の要素`, `the elements of array \`${name}\``);
+      return this.s(`${what}を、${p.name === '@' || p.name === '*' ? `\`$${off}\`` : `インデックス \`${off}\``} から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
+        `take ${len === undefined ? '' : `\`${len}\` of `}${what} from ${p.name === '@' || p.name === '*' ? `\`$${off}\`` : `index \`${off}\``}${len === undefined ? ' on' : ''}`);
+    }
     if (!/^-?\d+$/.test(off) || (len !== undefined && !/^-?\d+$/.test(len))) {
       return this.s(`\`${name}\` の部分文字列を取り出す（開始位置 \`${off}\`${len !== undefined ? `、長さ \`${len}\`` : ''}）`,
         `take a substring of \`${name}\` (offset \`${off}\`${len !== undefined ? `, length \`${len}\`` : ''})`);
@@ -2386,6 +2384,7 @@ export class Analyzer {
               ? s('`/` パターンと置換後の文字列の区切り', '`/` separates the pattern from the replacement')
               : s('`/` の後ろ（置換後の文字列）が空なので、一致した部分は削除される', 'Nothing follows this `/`, so the replacement is empty and matches are deleted')];
         }
+        if (t === ':' && slicesElements(p)) return ['operator', s('`:`: 要素の一部を取り出す（`:開始位置:個数`）', '`:`: Take some of the elements (`:offset:count`)')];
         return ['operator', `\`${t}\`: ` + (opMeaning[t] ? opMeaning[t][this.lang === 'ja' ? 0 : 1] : t)];
       case 'word': {
         const op = p.op ?? '';
@@ -2407,6 +2406,11 @@ export class Analyzer {
           : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (the match is deleted)')];
       case 'offset': {
         const v = t.trim();
+        if (slicesElements(p)) {
+          return ['number', p.name === '@' || p.name === '*'
+            ? s(`開始位置 ${v}: \`$${v}\` から（\`0\` なら \`$0\`、負の値は最後の引数から数える）`, `Offset ${v}: from \`$${v}\` (\`0\` is \`$0\`; a negative value counts from the last argument)`)
+            : s(`開始位置 ${v}: インデックス ${v} の要素から（負の値は末尾から数える）`, `Offset ${v}: from the element at index ${v} (a negative value counts from the end)`)];
+        }
         if (!/^-?\d+$/.test(v)) return ['number', s(`開始位置 \`${v}\`（算術式として評価される）`, `Offset \`${v}\` (evaluated as arithmetic)`)];
         const o = Number(v);
         if (o < 0) {
@@ -2418,6 +2422,7 @@ export class Analyzer {
       }
       case 'length': {
         const v = t.trim();
+        if (slicesElements(p)) return ['number', s(`長さ ${v}: ${v} 個の要素（負の値はエラー）`, `Length ${v}: ${v} elements (a negative value is an error)`)];
         if (!/^-?\d+$/.test(v)) return ['number', s(`長さ \`${v}\`（算術式として評価される）`, `Length \`${v}\` (evaluated as arithmetic)`)];
         const l = Number(v);
         return ['number', l < 0

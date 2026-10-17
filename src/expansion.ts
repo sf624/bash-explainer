@@ -226,6 +226,11 @@ function pickSample(test: (s: string) => boolean): string | undefined {
 
 // ---------------------------------------------------------------- examples
 
+/** Whether `:offset:length` takes elements (`${a[@]:1}`, `${@:2}`) rather than characters. */
+export function slicesElements(p: ParsedExpansion): boolean {
+  return p.subscript === '@' || p.subscript === '*' || p.name === '@' || p.name === '*';
+}
+
 /** One case of a worked example: a condition (Markdown) and what the expansion gives. */
 export interface ExpansionCase {
   when: string;
@@ -340,6 +345,18 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
       const off = part('offset')?.trim();
       const len = part('length')?.trim();
       if (!off || !/^-?\d+$/.test(off) || (len !== undefined && !/^-?\d+$/.test(len))) return undefined;
+      if (slicesElements(p)) {
+        // Elements, not characters: `${a[@]:1:2}`, `${@:2}` (which counts from $1; $0 is the script).
+        const items = ['a', 'b', 'c', 'd', 'e'];
+        const args = name === '@' || name === '*';
+        const o = Number(off);
+        if ((args && o === 0) || (len !== undefined && Number(len) < 0)) return undefined;
+        const start = o < 0 ? Math.max(0, items.length + o) : args ? o - 1 : o;
+        const result = items.slice(start, len === undefined ? undefined : start + Number(len)).join(' ');
+        return [args
+          ? { when: ja ? '引数が `a b c d e` のとき' : 'When the arguments are `a b c d e`', result, setup: 'set -- a b c d e' }
+          : { when: ja ? `\`${name}=(a b c d e)\` のとき` : `When \`${name}=(a b c d e)\``, result, setup: `${name}=(a b c d e)` }];
+      }
       const s = 'abcdefgh';
       const o = Number(off);
       const start = o < 0 ? Math.max(0, s.length + o) : o;
