@@ -2138,7 +2138,8 @@ export class Analyzer {
 
   private test(n: SyntaxNode): Token {
     const before = this.examples.length;
-    if (this.line === null || n.startPosition.row === this.line) this.testExample(n);
+    // A test over several lines is explained whole (see sub), so it is always where the line starts.
+    this.testExample(n);
     const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
@@ -2156,7 +2157,7 @@ export class Analyzer {
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
   private regexNode(n: SyntaxNode): Token {
-    const op = n.parent?.type === 'binary_expression' ? n.parent.childForFieldName('operator')?.text ?? n.parent.children.find((c) => c.type === '=~')?.text : undefined;
+    const op = n.parent?.type === 'binary_expression' ? n.parent.childForFieldName('operator')!.text : undefined;
     // Unquoted backslashes reach the regex unchanged (`\.` stays an escaped dot), so only quotes and expansions are excluded.
     if (op === '=~' && !/\$[\w{(@*#?!-]|[`"']/.test(n.text) && n.startPosition.row === n.endPosition.row) {
       const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
@@ -2172,28 +2173,30 @@ export class Analyzer {
       if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
       if (p.type === 'test_command' || p.type === 'compound_statement') return p.child(0)?.type === '((';
     }
+    // Unary and binary expressions are always inside a test or arithmetic.
+    /* c8 ignore next */
     return false;
   }
 
   private unary(n: SyntaxNode): Token {
-    const opNode = n.childForFieldName('operator') ?? n.child(0);
-    const op = opNode?.text ?? '';
-    const operand = n.namedChildren.find((c) => !same(c, opNode));
+    // `!` is not an operator field.
+    const opNode = n.childForFieldName('operator') ?? n.child(0)!;
+    const op = opNode.text;
+    const operand = n.namedChildren.find((c) => !same(c, opNode))!;
     if (op === '!' && !this.inArithmetic(n)) {
-      return this.tok(n, 'test', this.s(`否定: \`${operand?.text ?? ''}\` が偽なら真`, `Negation: true if \`${operand?.text ?? ''}\` is false`), this.sub(operand));
+      return this.tok(n, 'test', this.s(`否定: \`${operand.text}\` が偽なら真`, `Negation: true if \`${operand.text}\` is false`), this.sub(operand));
     }
     const d = unaryTestOps[op];
     if (d && !this.inArithmetic(n)) {
-      return this.tok(n, 'test', this.s(`条件: \`${operand?.text ?? ''}\` が${this.t(d)}`, `Condition: \`${operand?.text ?? ''}\` ${this.t(d)}`), this.subs([operand].filter((x) => x && !isPlainWord(x))));
+      return this.tok(n, 'test', this.s(`条件: \`${operand.text}\` が${this.t(d)}`, `Condition: \`${operand.text}\` ${this.t(d)}`), this.subs([operand].filter((x) => !isPlainWord(x))));
     }
     return this.tok(n, 'operator', this.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), this.subs(n.namedChildren));
   }
 
   private binary(n: SyntaxNode): Token {
     const left = n.childForFieldName('left');
-    const right = n.childForFieldName('right') ?? n.namedChildren[n.namedChildren.length - 1];
-    const opNode = n.childForFieldName('operator') ?? n.children.find((c) => !same(c, left) && !same(c, right));
-    const op = opNode?.text ?? '';
+    const right = n.childForFieldName('right')!;
+    const op = n.childForFieldName('operator')!.text;
     const operands = this.subs([left, right].filter((x) => x && !isPlainWord(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
@@ -2264,8 +2267,7 @@ export class Analyzer {
 
   /** Contexts where an unquoted expansion is not word-split (quotes, `[[ ]]`, assignments, heredocs, case). */
   private noSplit(n: SyntaxNode): boolean {
-    const p = n.parent;
-    if (!p) return false;
+    const p = n.parent!;
     if (['string', 'heredoc_body', 'variable_assignment', 'case_statement'].includes(p.type)) return true;
     for (let a: SyntaxNode | null = p; a; a = a.parent) {
       if (a.type === 'test_command') return a.child(0)?.type === '[[' || a.child(0)?.type === '((';
@@ -2277,8 +2279,8 @@ export class Analyzer {
   }
 
   private subscript(n: SyntaxNode): Token {
-    const name = n.childForFieldName('name')?.text ?? '';
-    const idx = n.childForFieldName('index')?.text ?? '';
+    const name = n.childForFieldName('name')!.text;
+    const idx = n.childForFieldName('index')!.text;
     if (idx === '@' || idx === '*') return this.tok(n, 'variable', this.s(`配列 \`${name}\` の全要素`, `All elements of array \`${name}\``));
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``));
   }
@@ -2299,7 +2301,8 @@ export class Analyzer {
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
     const cases = exampleFor(parsed, this.lang);
-    if (cases && (this.line === null || n.startPosition.row === this.line)) {
+    // A `${…}` on one line is always on the line explained.
+    if (cases) {
       this.examples.push({ kind: 'expansion',
         title: this.s(`\`${text}\` の例`, `Example for \`${text}\``),
         // The title already names the expansion.
@@ -2322,7 +2325,7 @@ export class Analyzer {
   }
 
   private substringSummary(p: ParsedExpansion): string {
-    const off = p.parts.find((x) => x.role === 'offset')?.text ?? '';
+    const off = p.parts.find((x) => x.role === 'offset')!.text;
     const len = p.parts.find((x) => x.role === 'length')?.text;
     const name = p.name;
     if (slicesElements(p)) {
@@ -2374,7 +2377,7 @@ export class Analyzer {
         return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
       }
       case 'subscript': {
-        const idx = p.subscript ?? '';
+        const idx = p.subscript!;
         if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
         if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
         if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string)')];
@@ -2395,9 +2398,9 @@ export class Analyzer {
               : s('`/` の後ろ（置換後の文字列）が空なので、一致した部分は削除される', 'Nothing follows this `/`, so the replacement is empty and matches are deleted')];
         }
         if (t === ':' && slicesElements(p)) return ['operator', s('`:`: 要素の一部を取り出す（`:開始位置:個数`）', '`:`: Take some of the elements (`:offset:count`)')];
-        return ['operator', `\`${t}\`: ` + (opMeaning[t] ? opMeaning[t][this.lang === 'ja' ? 0 : 1] : t)];
+        return ['operator', `\`${t}\`: ` + opMeaning[t][this.lang === 'ja' ? 0 : 1]];
       case 'word': {
-        const op = p.op ?? '';
+        const op = p.op!;
         if (op === ':-' || op === '-') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` の代わりに使う値`, `Default \`${t}\`: used instead of \`${p.name}\``)];
         if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
         if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
@@ -2405,7 +2408,7 @@ export class Analyzer {
       }
       case 'pattern': {
         const glob = globParts(t);
-        const casePat = /^[\^,]/.test(p.op ?? '');
+        const casePat = /^[\^,]/.test(p.op!);
         const what = casePat ? s('変換する文字のパターン', 'Pattern of characters to convert') : s('パターン', 'Pattern');
         if (!glob) return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
         return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}`];
@@ -2439,12 +2442,12 @@ export class Analyzer {
           ? s(`長さ ${l}: 末尾の ${-l} 文字を除いた位置まで`, `Length ${l}: up to ${-l} characters before the end`)
           : s(`長さ ${l}: ${l} 文字分`, `Length ${l}: ${l} characters`)];
       }
-      case 'transform': {
+      // `transform`
+      default: {
         const m = transformMeaning[t];
         return ['operator', m ? `\`${t}\`: ${m[this.lang === 'ja' ? 0 : 1]}` : s(`変換 \`${t}\``, `Transformation \`${t}\``)];
       }
     }
-    return undefined;
   }
 
   private expansionSummary(n: SyntaxNode): Token {

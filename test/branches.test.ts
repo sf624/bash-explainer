@@ -768,6 +768,7 @@ describe('the analyzer: branches no other test takes', () => {
     ['IFS= read -r a b'], ['IFS="$x" read a'], ['read -r "$v"'], ['read -q'], ['read'], ['read -a arr'], ['IFS=: read -r a b'],
     ['[ -n "$x" ]'], ['[[ $x == "$y" ]]'], ['(( x > 3 ))'], ['[ $x = a -o $y = b ]'], ['shopt -s nocasematch\n[[ $x == a* ]]', 1], ['[ "$1" = a ]'], ['[ -z ]'], ['[ ! -f a ]'], ['[[ a == ]]'],
     ['printf -v v "%s" a'], ['printf -- "%s\\n" a'], ['printf -v v'], ["printf '%q' $'a\\tb'"], ['printf "$f"'], ['printf "%s"'],
+    ['[[ $a =~ "x"y ]]'], ['(( -x ))'], ['(( x = $y ))'], ['echo "${a:-\nb}"'], ['echo ${a[@]:1:2} ${@:2} ${s:$i:$n} ${s:$i} ${a[key]} ${x:=d} ${x^^[a-c]} ${x#$y} ${s:1:$n} ${x@Z}'],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {
