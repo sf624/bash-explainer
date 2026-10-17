@@ -22,7 +22,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
       [
         ...this.service.languages.map((language) => ({ language })),
         // Files with embedded shell code; provideHover skips them when that is turned off.
-        ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python'].map((language) => ({ language })),
+        ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile'].map((language) => ({ language })),
         { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' },
       ],
       this,

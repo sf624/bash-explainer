@@ -8,7 +8,7 @@ import { TreeCache } from './parser';
 import type { ExamplePlacement, Feature } from './ui/render';
 
 /** Kinds of files with embedded shell code, as named in the `embedded.files` setting. */
-export const EMBEDDED_FILES = ['dockerfile', 'makefile', 'yaml', 'packageJson', 'markdown', 'python'] as const;
+export const EMBEDDED_FILES = ['dockerfile', 'makefile', 'yaml', 'packageJson', 'markdown', 'python', 'jenkinsfile'] as const;
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {

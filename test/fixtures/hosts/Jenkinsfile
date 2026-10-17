@@ -1,0 +1,21 @@
+pipeline {
+  agent any
+  stages {
+    stage('Build') {
+      steps {
+        sh 'make -j"$(nproc)" build'
+        sh "docker build -t app:${env.BUILD_NUMBER} ."
+        sh '''
+          set -eu
+          for f in dist/*.tar.gz; do sha256sum "$f"; done
+        '''
+        script {
+          def ver = sh(script: 'git describe --tags --always', returnStdout: true).trim()
+        }
+        sh """
+          echo "Deploying $ver to \$HOME"
+        """
+      }
+    }
+  }
+}

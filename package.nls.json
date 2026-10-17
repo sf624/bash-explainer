@@ -54,8 +54,9 @@
   "config.examples.kind.date": "date +FORMAT output",
   "config.embedded.files.dockerfile": "Dockerfile",
   "config.embedded.files.makefile": "Makefile",
-  "config.embedded.files.yaml": "CI YAML (GitHub Actions, GitLab CI…)",
+  "config.embedded.files.yaml": "CI YAML (GitHub Actions, GitLab CI, CircleCI, Azure Pipelines…)",
   "config.embedded.files.packageJson": "package.json scripts",
   "config.embedded.files.markdown": "Markdown code blocks",
-  "config.embedded.files.python": "Python's subprocess and os.system"
+  "config.embedded.files.python": "Python's subprocess and os.system",
+  "config.embedded.files.jenkinsfile": "Jenkinsfile sh steps"
 }

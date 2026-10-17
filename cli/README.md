@@ -72,7 +72,7 @@ Warnings appear on the pull request's diff, and fail the step (`fail-on-warning:
 
 ## In your editor (Language Server)
 
-`bash-explainer --lsp` is a Language Server on standard input and output: hover a line for its explanation, and get the warnings with their quick fixes, in any editor that speaks LSP. It handles shell scripts (language IDs `sh`, `bash`, `zsh`, `shellscript`…) and the shell code in Dockerfiles, Makefiles, YAML, `package.json`, Markdown and Python. It runs next to other servers, such as bash-language-server.
+`bash-explainer --lsp` is a Language Server on standard input and output: hover a line for its explanation, and get the warnings with their quick fixes, in any editor that speaks LSP. It handles shell scripts (language IDs `sh`, `bash`, `zsh`, `shellscript`…) and the shell code in Dockerfiles, Makefiles, YAML, `package.json`, Markdown, Python and Jenkinsfiles. It runs next to other servers, such as bash-language-server.
 
 Install it with `npm install --global bash-explainer` (see [Installation](#installation)), so the editor does not wait for `npx`.
 
@@ -81,7 +81,7 @@ Install it with `npm install --global bash-explainer` (see [Installation](#insta
 ```lua
 vim.lsp.config('bash_explainer', {
   cmd = { 'bash-explainer', '--lsp' },
-  filetypes = { 'sh', 'bash', 'zsh', 'dockerfile', 'make', 'yaml' },
+  filetypes = { 'sh', 'bash', 'zsh', 'dockerfile', 'make', 'yaml', 'groovy' },
   root_markers = { '.git' },
   -- init_options = { language = 'ja', shell = 'dash' },
 })

@@ -58,7 +58,9 @@
     "onLanguage:github-actions-workflow",
     "onLanguage:markdown",
     "onLanguage:json",
-    "onLanguage:python"
+    "onLanguage:python",
+    "onLanguage:groovy",
+    "onLanguage:jenkinsfile"
   ],
   "contributes": {
     "commands": [
@@ -335,7 +337,8 @@
               "yaml",
               "packageJson",
               "markdown",
-              "python"
+              "python",
+              "jenkinsfile"
             ],
             "enumDescriptions": [
               "%config.embedded.files.dockerfile%",
@@ -343,7 +346,8 @@
               "%config.embedded.files.yaml%",
               "%config.embedded.files.packageJson%",
               "%config.embedded.files.markdown%",
-              "%config.embedded.files.python%"
+              "%config.embedded.files.python%",
+              "%config.embedded.files.jenkinsfile%"
             ]
           },
           "uniqueItems": true,
@@ -353,7 +357,8 @@
             "yaml",
             "packageJson",
             "markdown",
-            "python"
+            "python",
+            "jenkinsfile"
           ],
           "markdownDescription": "%config.embedded.files%"
         },

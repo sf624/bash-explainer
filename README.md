@@ -88,10 +88,11 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 | --- | --- |
 | Dockerfile | `RUN` / `CMD` / `ENTRYPOINT` (shell form, `RUN <<EOF`, exec form, `["sh", "-c", "…"]`) and `SHELL [...]`; warns when a `RUN` pipe hides failures without `pipefail` |
 | Makefile | recipes, with make's `$(VAR)`, `$@` and `$$` explained |
-| CI YAML | GitHub Actions `run:` (workflows and `action.yml`, following `shell:` and `defaults`) and GitLab CI `script:`; warns when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script |
+| CI YAML | GitHub Actions `run:` (workflows and `action.yml`, following `shell:` and `defaults`), GitLab CI `script:`, CircleCI `run:` / `command:`, and Azure Pipelines `script:` / `bash:` with its `$(variable)` macros; warns when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script |
 | `package.json` | `scripts` |
 | Markdown | code blocks marked `sh`, `bash`, `console`, … |
 | Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
+| Jenkinsfile | `sh '…'`, `sh "…"`, `sh '''…'''`, `sh(script: …)`; points out the `$name` and `${…}` that Groovy fills in before the shell runs |
 
 Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Choose which kinds of files with `bashExplainer.embedded.files`.
 
@@ -211,7 +212,7 @@ The panel works like regex101:
 | `bashExplainer.diagnostics.embedded` | `true` | Also warn about shell code inside other files |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
-| `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python` |
+| `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python`, `jenkinsfile` |
 | `bashExplainer.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
 | **Dictionary** | | |
 | `bashExplainer.customCommands` | `{}` | Describe commands the dictionary does not know (see below) |
