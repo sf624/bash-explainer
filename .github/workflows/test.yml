@@ -66,6 +66,12 @@ jobs:
           name: coverage
           path: coverage/
 
+      # Every file covers all its lines, but those in coverage-floors.json, which must not go below
+      # their floors.
+      - name: Check coverage
+        if: matrix.node == 24
+        run: npm run coverage:check
+
       - name: Package the extension
         run: npm run package
 

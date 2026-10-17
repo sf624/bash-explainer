@@ -410,8 +410,10 @@ function jenkinsfile(b: Builder): void {
     }
     // A closing triple quote on a line of its own is not part of the script.
     const last = endLine > first && !b.lines[endLine].slice(0, endCol).trim() ? endLine - 1 : endLine;
-    const script = b.lines.slice(first, last + 1).join('\n');
-    const shebang = /^\s*#!\s*\S*?(\w+)(?:\s+(\w+))?/.exec(script);
+    // From just after the opening quote: `sh '''#!/bin/bash` starts with its shebang.
+    const script = [b.lines[first].slice(first === i ? from : 0), ...b.lines.slice(first + 1, last + 1)].join('\n');
+    // `#!/bin/bash`, `#!/usr/bin/env bash`: the last part of the path, or the word after env.
+    const shebang = /^\s*#!\s*(?:\S*\/)?(\w+)(?:[ \t]+(\w+))?/.exec(script);
     const shell = shebang ? (shellFromShebang(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
     const notes: [string, string, string?][] = [];
     if (interpolate && /(^|[^\\])\$[A-Za-z_{]/.test(script)) {

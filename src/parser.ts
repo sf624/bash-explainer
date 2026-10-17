@@ -78,9 +78,11 @@ function maskExtglobs(text: string, root: SyntaxNode): string {
 }
 
 export async function createBashParser(wasm: WasmPaths | WasmBinaries): Promise<BashParser> {
-  initialized ??= 'runtime' in wasm
-    ? Parser.init({ wasmBinary: wasm.runtime })
-    : Parser.init({ locateFile: (name: string) => `${wasm.runtimeDir.replace(/[\\/]$/, '')}/${name}` });
+  // The runtime is set up once, by the first parser made.
+  const runtime = 'runtime' in wasm
+    ? { wasmBinary: wasm.runtime }
+    : { locateFile: (name: string) => `${wasm.runtimeDir.replace(/[\\/]$/, '')}/${name}` };
+  initialized ??= Parser.init(runtime);
   await initialized;
   const bash = await Language.load('bash' in wasm ? wasm.bash : wasm.bashWasm);
   const parser = new Parser();
