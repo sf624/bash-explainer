@@ -15,6 +15,7 @@ import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser } from '../src/parser';
 import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
+import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { explainJq } from '../src/embedded/jq';
 import { explainYq3Path, judgeYq as judge, yqNotes, yqSameAsJq as sameAsJq } from '../src/embedded/yq';
 import { explainSed } from '../src/embedded/sed';
@@ -478,5 +479,29 @@ describe('branches no other test takes', () => {
     } finally {
       tree.delete();
     }
+  });
+
+  it('expansions: forms not parsed, examples not made, and the Japanese wording', () => {
+    for (const text of ['$x', '${%x}', '${#x:-a}', '${x~y}', '${a[1}']) assert.strictEqual(parseExpansion(text), undefined, text);
+    assert.deepStrictEqual(parseExpansion('${x#}')!.parts.map((p) => p.role), ['name', 'op']);
+    assert.ok(parseExpansion('${a[${i}]/$(echo "x")/y}'));
+    const ex = (text: string, lang: 'ja' | 'en' = 'en') => exampleFor(parseExpansion(text)!, lang);
+    for (const text of ['${x#$y}', '${x#}', '${x/a/$y}', '${@:0}', '${a[@]:1:-1}', '${x@K}', '${x#"a}']) assert.strictEqual(ex(text), undefined, text);
+    assert.match(ex('${v:?}')![0].result, /a default message/);
+    assert.match(ex('${v:?}', 'ja')![0].result, /既定のメッセージ/);
+    assert.match(ex('${!v*}', 'ja')![0].when, /v_A と v_B/);
+    assert.match(ex('${!a[@]}', 'ja')![0].when, /a=\(a b c\)/);
+    assert.match(ex('${!x}', 'ja')![0].result, /\$HOME の値/);
+    assert.match(ex('${!x}')![0].result, /the value of \$HOME/);
+    assert.match(ex('${1:-x}', 'ja')![0].when, /引数が無いか空のとき/);
+    assert.match(ex('${v:-$HOME}', 'ja')![0].result, /（展開結果）/);
+    assert.match(ex('${1-x}', 'ja')![1].when, /1 番目の引数が空のとき/);
+    assert.match(ex('${@:2}', 'ja')![0].when, /引数が `a b c d e` のとき/);
+    assert.match(ex('${a[@]:2}', 'ja')![0].when, /a=\(a b c d e\)/);
+    const g = (pattern: string, lang: 'ja' | 'en') => describeGlob(globParts(pattern)!, lang);
+    assert.strictEqual(g('?[!a-c][[:digit:]]', 'ja'), '任意の1文字 + a〜c以外の1文字 + 数字のどれか1文字');
+    assert.strictEqual(g('?[!x][[:digit:]][a-c]', 'en'), 'any one character + one character other than x + one character from digits + one character from a-c');
+    assert.strictEqual(ex('${x/#}'), undefined);
+    assert.ok(ex('${x%[[:foo:]]}'));
   });
 });
