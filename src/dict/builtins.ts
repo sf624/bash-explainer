@@ -13,6 +13,20 @@ export const shellOptions = {
   posix: tx('POSIX 互換モードにする', 'POSIX compatibility mode'),
 };
 
+/** Options of bash's `shopt`. */
+export const shoptOptions = {
+  globstar: tx('`**` が任意の深さのディレクトリに一致する（`**/*.sh` でサブディレクトリの中まで）', '`**` matches directories at any depth (`**/*.sh` reaches into subdirectories)'),
+  nullglob: tx('何にも一致しないグロブを、そのままの文字列ではなく空にする', 'a glob that matches nothing expands to nothing instead of itself'),
+  failglob: tx('何にも一致しないグロブをエラーにする', 'a glob that matches nothing is an error'),
+  dotglob: tx('`*` などが `.` で始まる名前にも一致する', '`*` and the like also match names starting with `.`'),
+  extglob: tx('拡張グロブ `@(…)`、`!(…)`、`+(…)` などを使えるようにする', 'enable extended globs such as `@(…)`, `!(…)` and `+(…)`'),
+  nocaseglob: tx('グロブで大文字と小文字を区別しない', 'globs ignore case'),
+  nocasematch: tx('`[[ == ]]` や `case` のパターンで大文字と小文字を区別しない', '`[[ == ]]` and `case` patterns ignore case'),
+  inherit_errexit: tx('`$(…)` の中でも `set -e` を効かせる', 'keep `set -e` inside `$(…)`'),
+  lastpipe: tx('パイプラインの最後のコマンドを今のシェルで実行する（`… | read x` の `x` が残る）', 'run the last command of a pipeline in the current shell (so `… | read x` keeps `x`)'),
+  expand_aliases: tx('スクリプトの中でもエイリアスを展開する', 'expand aliases in scripts too'),
+};
+
 const b = (ja: string, en: string, opts: Parameters<typeof cmd>[2] = [], extra: Parameters<typeof cmd>[3] = {}): CommandDoc =>
   cmd(ja, en, opts, { builtin: true, ...extra });
 

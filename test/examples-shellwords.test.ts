@@ -3,7 +3,8 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { bashPrintf, braceExpand, globExamples } from '../src/examples/shellwords';
+import { globstarOn } from '../src/analyzer';
+import { bashPrintf, braceExpand, globExamples, globMatches } from '../src/examples/shellwords';
 
 const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', script, '_', ...args]).toString();
 
@@ -55,6 +56,41 @@ describe('glob examples agree with bash and find', () => {
       for (const v of ex.nonMatching) assert.ok(!caseMatches(v), `${v} should not match`);
     });
   }
+  // Every file and directory of a small tree, as bash expands the glob, with and without globstar.
+  const TREE = ['app.ts', 'readme.md', '.env.ts', 'src/a.ts', 'src/b.sh', 'src/lib/c.ts', 'src/lib/deep/d.ts', 'src/.hidden/e.ts', '.cache/f.ts', 'test/g.ts'];
+  for (const globstar of [false, true]) {
+    for (const p of ['**/*.ts', 'src/**/*.ts', 'src/**', '**', '*/*.ts', 'src/**/lib/*.ts', '**/lib/*', 'a**.ts', '**/.hidden/*.ts']) {
+      it(`${globstar ? 'globstar' : 'no globstar'}: ${p}`, () => {
+        const dir = tmp();
+        for (const f of TREE) {
+          fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+          fs.writeFileSync(path.join(dir, f), '');
+        }
+        const opts = `shopt -s nullglob${globstar ? ' globstar' : ''}`;
+        const out = execFileSync('bash', ['-c', `cd "$1" && ${opts} && for f in $2; do echo "$f"; done`, '_', dir, p]).toString();
+        const all = execFileSync('find', ['.', '-mindepth', '1', '-printf', '%P\\n'], { cwd: dir }).toString().trim().split('\n');
+        fs.rmSync(dir, { recursive: true });
+        // bash lists `src/` itself for `src/**`; this matcher only answers for file names.
+        const expected = out.trim().split('\n').filter((n) => n && !n.endsWith('/')).sort();
+        assert.deepStrictEqual(all.filter((n) => globMatches(p, n, 'file', globstar)).sort(), expected);
+        const ex = globExamples(p, 'file', globstar);
+        if (ex) for (const n of ex.nonMatching) assert.ok(!globMatches(p, n, 'file', globstar), n);
+      });
+    }
+  }
+  it('globstar examples reach into subdirectories, without it one level only', () => {
+    assert.deepStrictEqual(globExamples('**/*.ts', 'file', true)!.matching, ['app.ts', 'src/data.ts', 'src/lib/error.ts']);
+    assert.ok(globExamples('**/*.ts', 'file', true)!.nonMatching.includes('.cache/app.ts'));
+    assert.deepStrictEqual(globExamples('**/*.ts', 'file')!.matching, ['app/app.ts', 'data/data.ts', 'error/error.ts']);
+    assert.ok(globExamples('**/*.ts', 'file')!.nonMatching.includes('src/app/app.ts'));
+  });
+  it('globstar is on after shopt -s globstar, and in zsh', () => {
+    const src = 'ls **\nshopt -s globstar\nls **\nshopt -u globstar\nls **';
+    assert.deepStrictEqual([0, 2, 4].map((l) => globstarOn(src, l)), [false, true, false]);
+    assert.strictEqual(globstarOn('ls **', 0, 'zsh'), true);
+    assert.strictEqual(globstarOn('# shopt -s globstar\nls **', 1), false);
+    assert.strictEqual(globstarOn('set -o globstar\nls **', 1, 'ksh'), true);
+  });
   it('find -name matches names starting with a dot', () => {
     const ex = globExamples('*.tmp', 'value')!;
     const dir = tmp();

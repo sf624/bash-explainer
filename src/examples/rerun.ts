@@ -14,7 +14,7 @@ import { FILTERS } from './textfilters';
 /** Everything needed to run an example again on new input; plain data, so it can go to the webview and back. */
 export type RerunSpec =
   | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values' }
-  | { kind: 'glob'; pattern: string; mode: GlobMode }
+  | { kind: 'glob'; pattern: string; mode: GlobMode; globstar?: boolean }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
   | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string> }
   | { kind: 'jq'; filter: string; raw: boolean; vars: Record<string, Json> }
@@ -98,10 +98,10 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
       return { sections, marks };
     }
     case 'glob': {
-      const hit = input.filter((l) => globMatches(spec.pattern, l, spec.mode));
+      const hit = input.filter((l) => globMatches(spec.pattern, l, spec.mode, spec.globstar));
       return {
         sections: [{ label: s('一致する名前', 'Matching names'), lines: hit, empty: s('（なし）', '(none)') }],
-        marks: input.map((l) => (globMatches(spec.pattern, l, spec.mode) ? [{ start: 0, end: l.length, group: 0 }] : [])),
+        marks: input.map((l) => (globMatches(spec.pattern, l, spec.mode, spec.globstar) ? [{ start: 0, end: l.length, group: 0 }] : [])),
       };
     }
     case 'sed': {
