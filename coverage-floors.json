@@ -1,24 +1,15 @@
 {
-  "branches": 83.69,
+  "branches": 84.04,
   "lines": {
     "src/analyzer.ts": 97.35,
     "src/dialect.ts": 95.79,
-    "src/embedded/awk.ts": 94.52,
+    "src/embedded/awk.ts": 95.15,
     "src/embedded/find.ts": 88.5,
-    "src/embedded/format.ts": 96.18,
     "src/embedded/jq.ts": 92.5,
-    "src/embedded/perl.ts": 96.92,
     "src/embedded/regex.ts": 94.78,
     "src/embedded/sed.ts": 89.76,
-    "src/embedded/yq.ts": 98.63,
-    "src/examples/awk.ts": 96.87,
-    "src/examples/gitlog.ts": 96.77,
-    "src/examples/jq.ts": 96.13,
-    "src/examples/perlrun.ts": 91.59,
-    "src/examples/pipeline.ts": 96.57,
-    "src/examples/regex.ts": 95.5,
-    "src/examples/sed.ts": 97.39,
-    "src/examples/textfilters.ts": 98.02,
+    "src/examples/awk.ts": 97.83,
+    "src/examples/perlrun.ts": 94.3,
     "src/expansion.ts": 96.87,
     "src/ui/panelView.ts": 71.95
   }

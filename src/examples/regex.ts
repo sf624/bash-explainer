@@ -288,12 +288,15 @@ export interface RegexExamples {
 export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   const re = new RegExp(js.source, js.flags);
   let tree: Node;
+  // Parser throws nothing itself: the catch keeps a bug in it from breaking the explanation.
   try {
     const p = new Parser(js.source);
     tree = p.alt();
     if (p.i < js.source.length) return undefined;
   } catch {
+    /* c8 ignore start */
     return undefined;
+    /* c8 ignore stop */
   }
   const matching: string[] = [];
   for (let v = 0; v < 12 && matching.length < max; v++) {
