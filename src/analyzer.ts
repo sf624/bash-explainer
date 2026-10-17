@@ -434,7 +434,6 @@ export class Analyzer {
       case 'regex': return this.regexNode(n);
       case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
       case 'variable_name': return this.variable(n.text, n);
-      case 'special_variable_name': return this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
       // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
       case 'compound_statement': if (n.child(0)?.type === '((') return this.test(n);
@@ -451,6 +450,8 @@ export class Analyzer {
       case 'case_item': return this.caseItem(n);
       case 'ERROR': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
       default:
+        // Callers explain keywords and operators themselves; any other punctuation is shown as itself.
+        /* c8 ignore next */
         if (!n.isNamed) return this.anon(n) ?? this.tok(n, 'operator', n.type);
         return this.tok(n, 'argument', n.type, this.subs(n.namedChildren));
     }
@@ -522,9 +523,9 @@ export class Analyzer {
   }
 
   private caseStatement(n: SyntaxNode): Token {
-    const v = n.childForFieldName('value');
+    const v = n.childForFieldName('value')!;
     const children = this.ordered(n, (c) => same(c, v));
-    const vt = v ? this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation })) : [];
+    const vt = this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation }));
     for (const c of children) {
       if (c.kind === 'keyword' && c.label === 'in') c.explanation = this.s('値の後に、パターンごとの分岐を並べる', 'Introduces the list of pattern branches');
     }
@@ -637,8 +638,8 @@ export class Analyzer {
     const fd = n.childForFieldName('descriptor')?.text ?? '';
     const { op, dest } = redirectParts(n);
     const dests = fieldChildren(n, 'destination');
-    const make = redirects[op];
-    let expl = make ? this.t(make(fd, dest)) : this.s(`リダイレクト \`${op}\``, `Redirection \`${op}\``);
+    // Every operator the grammar has is in the dictionary.
+    let expl = this.t(redirects[op](fd, dest));
     const special = specialDestinations[dest];
     if (special) expl += this.s('。', '. ') + this.t(special);
     if (fd === '2' && op === '>&' && dest === '1') {
@@ -715,8 +716,8 @@ export class Analyzer {
     const kw = n.child(0)!.type;
     const base = declarationCommands[kw];
     const children: Token[] = [];
+    // A declaration over several lines is explained whole (see sub), so every part counts.
     for (const c of n.namedChildren) {
-      if (this.line !== null && !intersects(c, this.line)) continue;
       if (c.type === 'word' && c.text.startsWith('-')) {
         const flags = c.text.slice(1).split('').map((ch) => declarationFlags['-' + ch]).filter(Boolean);
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
@@ -733,7 +734,7 @@ export class Analyzer {
 
   private unset(n: SyntaxNode): Token {
     const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
-    const children = n.namedChildren.filter((c): c is SyntaxNode => !!c && (this.line === null || intersects(c, this.line))).map((c) => {
+    const children = n.namedChildren.map((c) => {
       const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options?.[c.text] : undefined;
       if (opt) return this.tok(c, 'option', this.t(opt.text));
       if (c.type === 'variable_name' || isPlainWord(c)) {
@@ -826,7 +827,8 @@ export class Analyzer {
       const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: this.source, host: this.opts.host, setting: this.opts.yqFlavor });
       head.doc = YQ_DOCS[verdict.flavor];
       head.explanation = this.t(head.doc.summary);
-      if (this.line === null || n.startPosition.row === this.line) this.extraNotes.push(...yqNotes(verdict, this.lang));
+      // A command over several lines is explained whole, so it always starts on the line explained.
+      this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
     const argToks = this.args(head.doc, args, head.name);
     this.commandExampleFor(head.name, args);
@@ -841,12 +843,14 @@ export class Analyzer {
     ]));
     t.summary = `${head.name}: ${head.explanation}`;
     const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'command' && !a.children.length);
-    if (subTok) t.summary = `${head.name} ${subTok.label}: ${this.t(head.doc!.subcommands![subTok.label]?.summary ?? head.doc!.summary)}`;
+    // Every subcommand in the dictionary has a summary.
+    if (subTok) t.summary = `${head.name} ${subTok.label}: ${this.t(head.doc!.subcommands![subTok.label].summary)}`;
     return t;
   }
 
   private commandHead(nameNode: SyntaxNode): { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] } {
-    const word = nameNode.namedChildren[0] ?? nameNode;
+    // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
+    const word = nameNode.namedChildren[0]!;
     const name = isPlainWord(word) ? word.text : nameNode.text;
     if (!isPlainWord(word) && word.type !== 'raw_string') {
       return {
@@ -959,7 +963,6 @@ export class Analyzer {
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
       const lang = isFn ? undefined : doc?.positionalLang?.[posIndex];
       posIndex++;
-      if (this.line !== null && !intersects(a, this.line)) continue;
       out.push(this.positional(a, desc, lang));
     }
     } finally {
@@ -972,7 +975,8 @@ export class Analyzer {
     const emb = lang && this.embedded(a, lang);
     if (emb && desc && emb.note) desc += ` — ${emb.note}`;
     if (isPlainWord(a)) {
-      if (emb) return this.tok(a, 'argument', desc ?? this.s('引数', 'Argument'), emb.tokens);
+      // Arguments in another language are positional ones the dictionary describes.
+      if (emb) return this.tok(a, 'argument', desc!, emb.tokens);
       const base = this.word(a);
       if (!desc) return base;
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
@@ -981,7 +985,7 @@ export class Analyzer {
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
     if (emb && inner[0]) inner[0].children = sortTokens([...inner[0].children, ...emb.tokens]);
-    if (!desc) return inner[0] ?? this.tok(a, 'argument', this.s('引数', 'Argument'));
+    if (!desc) return inner[0];
     // Describe the role, then what the quoting/expansion does.
     return this.tok(a, 'argument', desc, inner);
   }
@@ -1088,7 +1092,7 @@ export class Analyzer {
         const r = explainTrSet(lit.text, role, this.lang);
         if (!r) return undefined;
         tokens = r.tokens;
-        const summary = role === 'to' ? trSummary(sets[0] ?? '', lit.text, this.lang) : undefined;
+        const summary = role === 'to' ? trSummary(sets[0], lit.text, this.lang) : undefined;
         note = summary ? `${r.note}${this.s('。つまり', '; that is, it ')}${summary}` : r.note;
         break;
       }
@@ -1188,12 +1192,11 @@ export class Analyzer {
    */
   private findArgs(doc: CommandDoc, args: SyntaxNode[]): Token[] | undefined {
     const out: Token[] = [];
-    const opts = doc.options ?? {};
-    const visible = (n: SyntaxNode) => this.line === null || intersects(n, this.line);
+    const opts = doc.options!;
     let i = 0;
     while (i < args.length && /^-[HLP]$/.test(args[i].text)) i = this.option(doc, args, i, 'find', out) + 1;
     while (i < args.length && !isExpressionStart(args[i].text)) {
-      if (visible(args[i])) out.push(this.positional(args[i], this.t(doc.positional![0])));
+      out.push(this.positional(args[i], this.t(doc.positional![0])));
       i++;
     }
     if (i >= args.length) return out;
@@ -1202,7 +1205,7 @@ export class Analyzer {
     const tree = parseFind(words, (w) => (opts[w]?.untilTerminator ? 'until' : opts[w]?.arg ? 1 : 0));
     if (!tree) return undefined;
 
-    const opTok = (idx: number, ja: string, en: string): Token[] => (visible(exprArgs[idx]) ? [this.tok(exprArgs[idx], 'operator', this.s(ja, en))] : []);
+    const opTok = (idx: number, ja: string, en: string): Token[] => [this.tok(exprArgs[idx], 'operator', this.s(ja, en))];
     const build = (n: FindNode): Token[] => {
       switch (n.type) {
         case 'primary': {
@@ -1493,7 +1496,6 @@ export class Analyzer {
 
   /** Brace expansion results, or file names a glob matches, for an argument word. */
   private wordExample(a: SyntaxNode): void {
-    if (this.line !== null && !intersects(a, this.line)) return;
     const text = this.unquotedWord(a);
     if (!text) return;
     try {
@@ -1967,7 +1969,7 @@ export class Analyzer {
     const a = args[i];
     let text = a.text;
     const opts = doc?.options ?? {};
-    const visible = (n: SyntaxNode) => this.line === null || intersects(n, this.line);
+    // Options are explained with the whole command, which is on the line (see sub): all of them show.
     const unknown = this.s(`オプション（辞書に未登録。\`man ${cmdName.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${cmdName.split(' ')[0]}\`)`);
     let disable = false;
     if (cmdName === 'set' && text.startsWith('+')) { disable = true; text = '-' + text.slice(1); }
@@ -1987,7 +1989,7 @@ export class Analyzer {
     if (eq > 0 && (text.startsWith('--') || (doc?.longSingleDash && opts[text.slice(0, eq)]))) {
       const flag = text.slice(0, eq);
       const opt = opts[flag];
-      if (visible(a)) {
+      {
         const whole = literalContent(a);
         const litEq = whole?.text.indexOf('=') ?? -1;
         const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : text.slice(eq + 1);
@@ -2006,7 +2008,7 @@ export class Analyzer {
     const count = /^-(\d+)$/.exec(text)?.[1];
     const countCmd = cmdName.split(' ').map((w, k) => (k ? w : w.split('/').pop())).join(' ');
     if (count && !opts[text] && ['head', 'tail', 'git log', 'git show'].includes(countCmd)) {
-      if (visible(a)) {
+      {
         out.push(this.tok(a, 'option', countCmd.startsWith('git')
           ? this.s(`${count} 件だけ（\`-n ${count}\` と同じ）`, `only ${count} (same as \`-n ${count}\`)`)
           : this.s(`${count} 行（\`-n ${count}\` の古い書き方）`, `${count} line${count === '1' ? '' : 's'} (old way to write \`-n ${count}\`)`)));
@@ -2037,7 +2039,7 @@ export class Analyzer {
         }
         if (j < args.length) {
           const term = args[j];
-          if (visible(term)) {
+          {
             children.push(this.tok(term, 'operator', term.text === '+'
               ? this.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
               : this.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
@@ -2046,9 +2048,9 @@ export class Analyzer {
         last = Math.min(j, args.length - 1);
       } else if (opt?.arg && i + 1 < args.length) {
         last = i + 1;
-        if (visible(args[last])) children.push(valueTok(opt, text, args[last]));
+        children.push(valueTok(opt, text, args[last]));
       }
-      if (visible(a)) out.push(this.tok(a, 'option', pre + (opt ? this.t(opt.text) : unknown), []));
+      out.push(this.tok(a, 'option', pre + (opt ? this.t(opt.text) : unknown), []));
       out.push(...children);
       return last;
     }
@@ -2091,14 +2093,14 @@ export class Analyzer {
           parts.push(valTok);
         } else if (i + 1 < args.length) {
           last = i + 1;
-          if (visible(args[last])) parts.push(valueTok(opt, flag, args[last]));
+          parts.push(valueTok(opt, flag, args[last]));
         }
         break;
       }
     }
     const own = parts.filter((p) => p.span.start.line === row && p.span.end.character <= col + text.length);
     const tail = parts.filter((p) => !own.includes(p));
-    if (visible(a)) {
+    {
       const flags = own.filter((p) => p.kind === 'option');
       // `-F,` / `-n5`: one option with its value attached is not a combination.
       out.push(this.tok(a, 'option', flags.length > 1
