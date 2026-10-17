@@ -18,6 +18,14 @@ $ npx bash-explainer --no-examples -e 'tar -czf backup.tgz -C src .'
     …
 ```
 
+## Installation
+
+Requires Node.js 18 or later. The parser is WebAssembly, so there are no native dependencies: it runs wherever Node.js does.
+
+- **Without installing:** `npx bash-explainer <file>` fetches the package on first use.
+- **Installed:** `npm install --global bash-explainer`, then `bash-explainer <file>`. Use this when you run it often, or from an editor.
+- **From source:** in a clone of [the repository](https://github.com/sf624/bash-explainer), `npm ci && npm run build:cli`, then `node cli/dist/cli.js <file>`.
+
 ## Usage
 
 ```sh
@@ -43,8 +51,6 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up.
-
-Requires Node.js 18 or later. The parser is WebAssembly: no native dependencies.
 
 ## Privacy
 
