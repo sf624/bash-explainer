@@ -760,6 +760,14 @@ describe('the analyzer: branches no other test takes', () => {
     ['echo a | X=1 cat; echo $X'], ['f() { echo | while read -r l; do local q=1; done; echo $q; }'], ['echo | while read -r -d x l; do :; done; echo $l'],
     ['if :; then\n  echo | while read l; do n=1; done\n  echo $n\nfi', 1], ['echo | while read l; do n=1; done; n=2; echo $n'], ['echo | cat | (cd /)'],
     ['for f in *.log; do\n  [ -e "$f" ] || continue\ndone'], ['for f in "$d"/*.log; do echo; done'], ['shopt -s dotglob nocaseglob\nls *.txt', 1],
+    ['sed -e s/a/b/ --expression="$x" f'], ['sed -e s/a/b/ -e'], ['sed -e s/a/b/ -e "$x" f'], ["yq '.a' \"$f\""], ["yq -y '.name | tonumber' f.yml"], ["perl -ne 'print' \"$f\""],
+    ['ls **/*.c', 0, 'ksh'], ['shopt -s nocasematch\ncase $x in a*) :;; esac', 1], ["find . -name '[é]'"], ['case $x in "$y") :;; esac'], ['case $x in [é]) :;; esac'],
+    ['git log --format=%h "$r"'], ['git log --date=short --pretty=%ad'], ['git log --oneline --date=short'], ['git log --date=short'],
+    ['getopt -oab: -- "$@"'], ['getopt --options=ab --longoptions=x,y: -- "$@"'], ['getopt -o'], ['getopt -o a -l'], ['getopt -n prog -o a -- x'], ['getopt --name=prog -o a --'],
+    ['getopt -a -o a --'], ['getopt -T'], ['getopt -n prog'], ['getopt ab "$@"'], ['getopt "$o"'],
+    ['IFS= read -r a b'], ['IFS="$x" read a'], ['read -r "$v"'], ['read -q'], ['read'], ['read -a arr'], ['IFS=: read -r a b'],
+    ['[ -n "$x" ]'], ['[[ $x == "$y" ]]'], ['(( x > 3 ))'], ['[ $x = a -o $y = b ]'], ['shopt -s nocasematch\n[[ $x == a* ]]', 1], ['[ "$1" = a ]'], ['[ -z ]'], ['[ ! -f a ]'], ['[[ a == ]]'],
+    ['printf -v v "%s" a'], ['printf -- "%s\\n" a'], ['printf -v v'], ["printf '%q' $'a\\tb'"], ['printf "$f"'], ['printf "%s"'],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {
