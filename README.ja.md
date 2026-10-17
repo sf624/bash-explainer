@@ -38,7 +38,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | 正規表現の部品ごとの意味と、入力例 `a=x` → 出力 `x=a` |
 | `#!/bin/sh` の中の `[[ -f $f ]]` | ⚠ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
-| Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・`package.json`・Python の中のシェルも同じように解説 |
+| Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・Jenkinsfile・`package.json`・Python の中のシェルも同じように解説 |
 
 ## 解説できるもの
 

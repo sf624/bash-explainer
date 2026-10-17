@@ -40,6 +40,9 @@
     "dockerfile",
     "makefile",
     "github actions",
+    "jenkins",
+    "circleci",
+    "azure pipelines",
     "offline"
   ],
   "main": "./dist/extension.js",
