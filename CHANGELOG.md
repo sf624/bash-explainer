@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `**` in file-name globs: after `shopt -s globstar` (and always in zsh) it is explained as any depth of directories, with examples such as `src/lib/error.ts`; without it, as the same as `*`, one level only. Examples no longer show names like `appapp/app.ts`. The options of `shopt` (`globstar`, `nullglob`, `dotglob`, `extglob`…) are explained.
+- `**` in file-name globs is explained as any depth of directories, as it is meant, with examples such as `src/lib/error.ts`. When no `shopt -s globstar` comes before it, a pitfall says that bash then treats `**` as `*` (one level only), unless a file read with `source` turns it on; after `shopt -u globstar`, and in shells without globstar (`sh`, `dash`…), it is explained as `*`. zsh always has it. Examples no longer show names like `appapp/app.ts`. The options of `shopt` (`globstar`, `nullglob`, `dotglob`, `extglob`…) are explained.
 
 ## 0.3.0
 

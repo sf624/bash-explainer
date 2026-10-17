@@ -252,3 +252,15 @@ describe('getopt', () => {
     assert.strictEqual(e.examples[0].sections[1].lines[0], '-a -b value -- file1.txt file2.txt');
   });
 });
+
+describe('globstar', () => {
+  it('explains ** as any depth, with a pitfall until shopt -s globstar is seen', () => {
+    const before = explain('ls **/*.ts');
+    assert.match(find(before, '**/*.ts').explanation, /any depth/);
+    assert.ok(before.notes.some((n) => /Pitfall: `\*\*` reaches into subdirectories only after `shopt -s globstar`/.test(n)));
+    const after = explain('shopt -s globstar\nls **/*.ts', 1);
+    assert.ok(!after.notes.some((n) => /globstar/.test(n)));
+    assert.match(find(explain('shopt -u globstar\nls **/*.ts', 1), '**/*.ts').explanation, /same as `\*`/);
+    assert.ok(!explain('ls *.ts').notes.some((n) => /globstar/.test(n)));
+  });
+});

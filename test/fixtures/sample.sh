@@ -204,3 +204,6 @@ yq -o json '.metadata | pick(["name", "labels"])' pod.yml
 yq '.a line_comment = "managed by CI" | ... style = ""' values.yaml
 yq -y '.users | map(.name) | add' users.yml
 yq r deploy.yml 'spec.template.spec.containers.(name==web).image'
+
+shopt -s globstar
+ls **/*.conf

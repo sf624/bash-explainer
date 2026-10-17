@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { globstarOn } from '../src/analyzer';
+import { globstarState } from '../src/analyzer';
 import { bashPrintf, braceExpand, globExamples, globMatches } from '../src/examples/shellwords';
 
 const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', script, '_', ...args]).toString();
@@ -86,10 +86,11 @@ describe('glob examples agree with bash and find', () => {
   });
   it('globstar is on after shopt -s globstar, and in zsh', () => {
     const src = 'ls **\nshopt -s globstar\nls **\nshopt -u globstar\nls **';
-    assert.deepStrictEqual([0, 2, 4].map((l) => globstarOn(src, l)), [false, true, false]);
-    assert.strictEqual(globstarOn('ls **', 0, 'zsh'), true);
-    assert.strictEqual(globstarOn('# shopt -s globstar\nls **', 1), false);
-    assert.strictEqual(globstarOn('set -o globstar\nls **', 1, 'ksh'), true);
+    assert.deepStrictEqual([0, 2, 4].map((l) => globstarState(src, l)), ['unknown', 'on', 'off']);
+    assert.strictEqual(globstarState('ls **', 0, 'zsh'), 'on');
+    assert.strictEqual(globstarState('ls **', 0, 'dash'), 'unsupported');
+    assert.strictEqual(globstarState('# shopt -s globstar\nls **', 1), 'unknown');
+    assert.strictEqual(globstarState('set -o globstar\nls **', 1, 'ksh'), 'on');
   });
   it('find -name matches names starting with a dot', () => {
     const ex = globExamples('*.tmp', 'value')!;
