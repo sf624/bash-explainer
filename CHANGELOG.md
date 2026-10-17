@@ -2,9 +2,13 @@
 
 ## Unreleased
 
-- The parser is updated: tree-sitter-bash 0.25.1 (from 0.23.3) with web-tree-sitter 0.27.0 (from 0.22.6). Explanations of bash scripts stay the same; scripts with syntax the grammar cannot read, such as zsh-only code, may be split up differently.
+- About 100 more commands and builtins, chosen from a survey of shell scripts, Dockerfiles and workflows in popular repositories: package managers (`apt-get`, `apk`, `dpkg`, `dnf`, `brew`, `pip`), users and groups (`id`, `useradd`, `adduser`), system information and services (`uname`, `nproc`, `systemctl`), signatures and checksums (`gpg`, `openssl`, `sha512sum`), compression (`xz`, `zstd`), toolchains (`go`, `cargo`, `node`), `gh`, `shellcheck` and more, plus frequent options of known ones (`set -E`, `test -z`, `tar --strip-components`, `curl --retry`, `jq --argjson`…). In that survey, the share of commands explained went from 80% to 89%.
+- `head -1`, `tail -5` and `git log -3` are read as `-n N`.
+- `sed -i.bak` takes `.bak` as the backup suffix instead of more options.
+- `gawk`, `mawk` and `nawk` are explained as `awk`.
 - Code that is not shell is no longer explained as shell: the JavaScript of `actions/github-script` (`with: script:`), `run:` steps of jobs on Windows runners (PowerShell by default, unless the step says `shell: bash`), and Dockerfile stages that use PowerShell or cmd (`SHELL ["powershell", …]`, Windows base images). `SHELL` now applies until the next `FROM`, as in Docker.
 - A step's `shell:` written after `- run:` is now taken into account.
+- The parser is updated: tree-sitter-bash 0.25.1 (from 0.23.3) with web-tree-sitter 0.27.0 (from 0.22.6). Explanations of bash scripts stay the same; scripts with syntax the grammar cannot read, such as zsh-only code, may be split up differently.
 
 ## 0.2.0
 

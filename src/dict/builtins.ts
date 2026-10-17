@@ -54,6 +54,8 @@ export const builtins: Record<string, CommandDoc> = {
     ['-C', '`>` で既存ファイルを上書きしない', 'do not overwrite files with `>`'],
     ['-n', 'コマンドを読むだけで実行しない（構文チェック）', 'read commands but do not execute (syntax check)'],
     ['-a', '以降に設定した変数を自動でエクスポートする', 'export all subsequently set variables'],
+    ['-E', '`trap … ERR` を関数やサブシェルの中でも効かせる（`set -Eeuo pipefail` の定番）', 'make `trap … ERR` work inside functions and subshells too (as in `set -Eeuo pipefail`)'],
+    ['-T', '`trap … DEBUG` と `RETURN` を関数の中でも効かせる', 'make `trap … DEBUG` and `RETURN` work inside functions too'],
     ['--', '以降の引数を位置パラメータ $1, $2... に設定する', 'set the remaining arguments as $1, $2…'],
   ]),
   shopt: b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
@@ -94,7 +96,30 @@ export const builtins: Record<string, CommandDoc> = {
     ['-l', 'シグナル一覧を表示', 'list signals'],
     ['-0', 'プロセスが存在するか確認するだけ', 'only check whether the process exists'],
   ], { positional: [pos('対象のプロセスID', 'target PID')] }),
-  test: b('条件式を評価し、真なら 0、偽なら 1 を返す', 'Evaluate a conditional expression; exit 0 if true'),
+  test: b('条件式を評価し、真なら 0、偽なら 1 を返す（`[ ]` と同じ）', 'Evaluate a conditional expression; exit 0 if true (same as `[ ]`)', [
+    ['-z', '文字列が空なら真', 'true if the string is empty'], ['-n', '文字列が空でなければ真', 'true if the string is not empty'],
+    ['-e', 'ファイルが存在すれば真', 'true if the file exists'], ['-f', '通常のファイルなら真', 'true if it is a regular file'],
+    ['-d', 'ディレクトリなら真', 'true if it is a directory'], ['-s', 'ファイルが空でなければ真', 'true if the file is not empty'],
+    ['-r', '読めるなら真', 'true if readable'], ['-w', '書けるなら真', 'true if writable'], ['-x', '実行できるなら真', 'true if executable'],
+    ['-L|-h', 'シンボリックリンクなら真', 'true if it is a symbolic link'],
+    ['-eq', '数値として等しい', 'numerically equal'], ['-ne', '数値として等しくない', 'numerically not equal'],
+    ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
+  ], { longSingleDash: true }),
+  compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
+    ['-W', 'この単語の一覧から候補を作る', 'candidates from this word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
+    ['-f', 'ファイル名', 'file names'], ['-d', 'ディレクトリ名', 'directory names'], ['-c', 'コマンド名', 'command names'], ['-v', '変数名', 'variable names'],
+    ['-o', '補完の動作オプション', 'completion option', 'arg'],
+  ], { positional: [pos('補完中の単語（これで始まる候補だけ）', 'word being completed (only candidates starting with it)')] }),
+  complete: b('コマンドの引数の補完方法を登録する', "Register how a command's arguments are completed", [
+    ['-F', 'この関数で候補を作る', 'use this function to generate candidates', 'arg'], ['-W', 'この単語の一覧から候補を作る', 'candidates from this word list', 'arg'],
+    ['-C', 'このコマンドの出力を候補にする', "use this command's output as candidates", 'arg'], ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
+    ['-r', '登録を削除する', 'remove the registration'], ['-p', '登録を表示する', 'print the registrations'],
+  ], { positional: [pos('対象のコマンド名', 'command name')] }),
+  compopt: b('補完中に補完の動作オプションを変える', 'Change completion options while completing', [
+    ['-o', 'オプションを有効にする（`nospace`、`nosort`…）', 'enable an option (`nospace`, `nosort`…)', 'arg'], ['+o', 'オプションを無効にする', 'disable an option', 'arg'],
+  ]),
+  setopt: b('zsh のオプションを有効にする', 'Turn zsh options on', [], { positional: [pos('オプション名（`local_options`、`extended_glob`…）', 'option name (`local_options`, `extended_glob`…)')] }),
+  unsetopt: b('zsh のオプションを無効にする', 'Turn zsh options off', [], { positional: [pos('オプション名', 'option name')] }),
   true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)'),
   false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)'),
   ':': b('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions'),
@@ -146,7 +171,6 @@ export const builtins: Record<string, CommandDoc> = {
   enable: b('ビルトインを有効・無効にする', 'Enable or disable builtins'),
   help: b('ビルトインのヘルプを表示する', 'Show help for builtins'),
   history: b('コマンド履歴を表示・操作する', 'Show or manipulate command history'),
-  complete: b('コマンドの補完方法を定義する', 'Define programmable completion'),
   times: b('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
   caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)'),
 };

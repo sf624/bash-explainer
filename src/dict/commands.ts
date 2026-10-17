@@ -1,4 +1,5 @@
 import { shellOptions } from './builtins';
+import { system } from './system';
 import { CommandDoc, cmd, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -54,7 +55,7 @@ export const commands: Record<string, CommandDoc> = {
     ['--color', '一致部分を色付けする', 'highlight matches'],
   ], { positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'] }),
   sed: cmd('ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する（置換は `s/前/後/g`）', 'Stream editor: edit input line by line (substitute with `s/old/new/g`)', [
-    ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップ作成）', 'edit files in place (`-i.bak` keeps a backup)'],
+    ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップ作成）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
     ['-n|--quiet|--silent', '自動出力を抑止し、`p` コマンドで指定した行だけ出力', 'suppress automatic printing; print only with `p`'],
     ['-e|--expression', '実行するスクリプトを指定（複数指定可）', 'add a script to run', 'arg fills lang:sed'],
     ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills'],
@@ -96,6 +97,7 @@ export const commands: Record<string, CommandDoc> = {
       f: pos('通常ファイル', 'regular file'), d: pos('ディレクトリ', 'directory'), l: pos('シンボリックリンク', 'symbolic link'),
     }],
     ['-maxdepth', '探索する階層の深さの上限', 'descend at most N levels', 'arg'],
+    ['-depth', 'ディレクトリの中身を先に処理する（削除するときに必要）', 'process directory contents before the directory itself (needed when deleting)'],
     ['-mindepth', 'この深さ未満の階層は対象外', 'ignore levels shallower than N', 'arg'],
     ['-mtime', '更新日時で絞る（`-7` は7日以内, `+7` は7日より前）', 'modified N days ago (`-7` within 7 days, `+7` older)', 'arg'],
     ['-mmin', '更新日時（分単位）で絞る', 'modified N minutes ago', 'arg'],
@@ -186,6 +188,9 @@ export const commands: Record<string, CommandDoc> = {
   ], { positional: [pos('書き出すファイル', 'file to write')] }),
   curl: cmd('URL を指定してデータを送受信する（HTTP リクエストなど）', 'Transfer data to or from a URL (HTTP requests etc.)', [
     ['-s|--silent', '進捗やエラーを表示しない', 'silent mode'],
+    ['--retry', '一時的なエラーのとき、この回数まで再試行する', 'retry this many times on transient errors', 'arg'],
+    ['--compressed', '圧縮した転送を求め、受け取ったら展開する', 'ask for a compressed response and decompress it'],
+    ['-V|--version', '版と対応する機能を表示する', 'print the version and features'],
     ['-S|--show-error', '`-s` と併用時もエラーは表示する', 'show errors even with `-s`'],
     ['-f|--fail', 'HTTP エラー(4xx/5xx)時に失敗の終了ステータスを返す', 'fail with non-zero exit on HTTP errors'],
     ['-L|--location', 'リダイレクトをたどる', 'follow redirects'],
@@ -205,6 +210,8 @@ export const commands: Record<string, CommandDoc> = {
     ['-O', '保存するファイル名（`-` で標準出力）', 'output file (`-` = stdout)', 'arg'],
     ['-q|--quiet', '何も表示しない', 'quiet'],
     ['-c|--continue', '途中まで落としたファイルを再開', 'resume a partial download'],
+    ['--spider', 'ダウンロードせず、ファイルがあるかだけ確かめる', 'only check that the file exists, do not download'],
+    ['--version', '版を表示する', 'print the version'],
   ], { positional: [pos('ダウンロードする URL', 'URL to download')] }),
   tar: cmd('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
     ['-c|--create', 'アーカイブを作成する', 'create an archive'],
@@ -216,6 +223,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-J|--xz', 'xz で圧縮・展開する', 'xz'],
     ['-v|--verbose', '処理したファイル名を表示', 'list processed files'],
     ['-C|--directory', 'このディレクトリに移動してから処理', 'change to this directory first', 'arg'],
+    ['--strip-components', '展開するとき、パスの先頭からこの数の階層を取り除く（`--strip-components=1` で最上位のフォルダを外す）', 'strip this many leading path parts when extracting (`--strip-components=1` drops the top folder)', 'arg'],
     ['--exclude', '除外するパターン', 'exclude pattern', 'arg'],
   ]),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
@@ -223,7 +231,7 @@ export const commands: Record<string, CommandDoc> = {
     ['-c|--stdout', '結果を標準出力に出す（元ファイルを残す）', 'write to stdout, keep originals'],
     ['-k|--keep', '元ファイルを残す', 'keep the original'],
   ]),
-  gunzip: cmd('gzip ファイルを展開する', 'Decompress gzip files'),
+  gunzip: cmd('gzip ファイルを展開する', 'Decompress gzip files', [['-c|--stdout', '展開した内容を標準出力に書く（元のファイルは残す）', 'write to stdout (keep the file)'], ['-k|--keep', '元のファイルを消さない', 'keep the input file'], ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files']], { positional: [files] }),
   zip: cmd('ZIP アーカイブを作成する', 'Create ZIP archives', [['-r', 'ディレクトリを再帰的に追加', 'recurse into directories']]),
   unzip: cmd('ZIP アーカイブを展開する', 'Extract ZIP archives', [
     ['-d', '展開先ディレクトリ', 'destination directory', 'arg'],
@@ -259,7 +267,10 @@ export const commands: Record<string, CommandDoc> = {
     ['-v|--verbose', '作成したディレクトリを表示', 'print each created directory'],
   ], { positional: [pos('作成するディレクトリ', 'directory to create')] }),
   rmdir: cmd('空のディレクトリを削除する', 'Remove empty directories'),
-  touch: cmd('ファイルの更新日時を現在時刻にする。存在しなければ空ファイルを作成', 'Update file timestamps; create empty files if missing', [], { positional: [files] }),
+  touch: cmd('ファイルの更新日時を現在時刻にする。存在しなければ空ファイルを作成', 'Update file timestamps; create empty files if missing', [
+    ['-t', 'この日時にする（`[[CC]YY]MMDDhhmm[.ss]`）', 'use this time (`[[CC]YY]MMDDhhmm[.ss]`)', 'arg'], ['-d|--date', 'この日時にする（`2024-01-02 03:04`）', 'use this date (`2024-01-02 03:04`)', 'arg'],
+    ['-r|--reference', 'このファイルと同じ日時にする', "use this file's times", 'arg'], ['-c|--no-create', 'ファイルがなければ作らない', 'do not create missing files'],
+  ], { positional: [files] }),
   chmod: cmd('ファイルの権限（パーミッション）を変更する', 'Change file permissions', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
   ], { positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
@@ -335,10 +346,14 @@ export const commands: Record<string, CommandDoc> = {
   jq: cmd('JSON を整形・抽出・変換する', 'Filter and transform JSON', [
     ['-r|--raw-output', '文字列をクォートなしで出力', 'output raw strings without quotes'],
     ['-c|--compact-output', '1行に詰めて出力', 'compact output'],
+    ['-R|--raw-input', '入力を JSON でなく、1行ずつの文字列として読む', 'read input lines as strings, not JSON'],
     ['-e|--exit-status', '結果が null/false なら失敗の終了ステータス', 'set exit status from the output'],
     ['-n|--null-input', '入力を読まない', 'do not read input'],
     ['-s|--slurp', '全入力を1つの配列として読む', 'read all inputs into one array'],
     ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg'],
+    ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg'],
+    ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg'],
+    ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg'],
   ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'] }),
   ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
@@ -443,10 +458,16 @@ export const commands: Record<string, CommandDoc> = {
     subcommands: {
       clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']]),
       add: cmd('変更をステージする', 'Stage changes', [['-A|--all', '全ての変更をステージ', 'stage all changes'], ['-p|--patch', '変更を対話的に選んでステージ', 'stage hunks interactively']]),
-      commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit']]),
+      commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output']]),
+      show: cmd('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']]),
+      'ls-files': cmd('Git が知っているファイルを一覧表示する', 'List the files Git knows about', [['-c|--cached', '追跡中のファイル', 'tracked files'], ['-m|--modified', '変更されたファイル', 'modified files'], ['-o|--others', '追跡していないファイル', 'untracked files'], ['--exclude-standard', '`.gitignore` などで無視されるものを除く', 'leave out files ignored by `.gitignore` and the like'], ['-z', 'NUL で区切って出力（`xargs -0` 向け）', 'NUL-separated output (for `xargs -0`)']]),
       push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']]),
       pull: cmd('リモートから取得して統合する', 'Fetch and integrate from a remote', [['--rebase', 'マージではなくリベースで統合', 'rebase instead of merge']]),
-      fetch: cmd('リモートから取得する（統合はしない）', 'Download objects from a remote', [['--all', '全てのリモートから取得', 'fetch all remotes'], ['--prune', '削除されたリモートブランチを掃除', 'prune deleted branches']]),
+      fetch: cmd('リモートから取得する（統合はしない）', 'Download objects from a remote', [['--all', '全てのリモートから取得', 'fetch all remotes'], ['--prune', '削除されたリモートブランチを掃除', 'prune deleted branches'], ['--depth', '取得する履歴の深さ', 'history depth to fetch', 'arg'], ['--tags', 'タグもすべて取得', 'fetch all tags'], ['-q|--quiet', '表示を減らす', 'less output']]),
+      init: cmd('リポジトリを作る', 'Create a repository', [['-b|--initial-branch', '最初のブランチ名', 'name of the first branch', 'arg'], ['-q|--quiet', '表示を減らす', 'less output'], ['--bare', '作業ツリーのないリポジトリ', 'repository without a working tree']]),
+      rm: cmd('ファイルを削除して、その削除をステージする', 'Remove files and stage the removal', [['--cached', 'ファイルは残し、追跡だけやめる', 'stop tracking but keep the file'], ['-r', 'ディレクトリを再帰的に', 'recursively'], ['-q|--quiet', '表示を減らす', 'less output'], ['-f|--force', '変更があっても削除', 'remove even with changes']]),
+      'rev-parse': cmd('参照をコミットの ID などに変換する（`--short HEAD`、`--show-toplevel`）', 'Turn references into commit IDs and more (`--short HEAD`, `--show-toplevel`)', [['--short', '短い ID', 'short ID'], ['--show-toplevel', 'リポジトリの最上位のディレクトリ', 'top-level directory'], ['--abbrev-ref', 'ブランチ名で表示（`--abbrev-ref HEAD` で今のブランチ）', 'branch name (`--abbrev-ref HEAD`: current branch)'], ['--verify', '有効な参照かを確かめる', 'check that it is a valid reference'], ['-q|--quiet', '表示を減らす', 'less output']]),
+      describe: cmd('一番近いタグからの名前を表示する（`v1.2-3-gabc123`）', 'Name a commit after the nearest tag (`v1.2-3-gabc123`)', [['--tags', '注釈なしのタグも使う', 'use lightweight tags too'], ['--abbrev', 'ID の長さ（`0` でタグだけ）', 'ID length (`0`: tag only)', 'arg'], ['--always', 'タグがなくても ID を表示', 'show the ID if no tag'], ['--dirty', '変更があれば `-dirty` を付ける', 'append `-dirty` when there are changes']]),
       checkout: cmd('ブランチを切り替える・ファイルを復元する', 'Switch branches or restore files', [['-b', '新しいブランチを作って切り替える', 'create and switch to a new branch', 'arg']]),
       switch: cmd('ブランチを切り替える', 'Switch branches', [['-c|--create', '新しいブランチを作って切り替える', 'create a new branch', 'arg']]),
       branch: cmd('ブランチを一覧・作成・削除する', 'List, create or delete branches', [['-d|--delete', 'ブランチを削除', 'delete a branch'], ['-D', '強制削除', 'force delete'], ['-a|--all', 'リモートブランチも表示', 'list remote branches too']]),
@@ -462,14 +483,16 @@ export const commands: Record<string, CommandDoc> = {
         ['--no-merges', 'マージコミットを除く', 'exclude merge commits'],
         ['--all', 'すべてのブランチの履歴', 'history of all branches'],
         ['-p|--patch', '差分も表示', 'show the diff'],
+        ['--name-only', '変更されたファイル名も表示', 'list the changed files'],
+        ['--diff-filter', '変更の種類で絞る（`D`: 削除、`A`: 追加…）', 'filter by kind of change (`D`: deleted, `A`: added…)', 'arg'],
+        ['--no-renames', '名前の変更を、削除と追加として扱う', 'treat renames as a delete and an add'],
       ]),
-      diff: cmd('差分を表示する', 'Show changes', [['--cached|--staged', 'ステージ済みの差分', 'staged changes'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']]),
+      diff: cmd('差分を表示する', 'Show changes', [['--cached|--staged', 'ステージ済みの差分', 'staged changes'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only'], ['--exit-code', '差分があれば終了ステータス 1（CI で変更がないことの確認に）', 'exit 1 if there are changes (CI checks for none)'], ['--quiet', '何も表示せず、差分の有無を終了ステータスで返す', 'print nothing; report via the exit status']]),
       merge: cmd('ブランチを統合する', 'Merge branches', [['--no-ff', '早送りせずマージコミットを作る', 'always create a merge commit']]),
       rebase: cmd('コミットを別の基点に付け替える', 'Reapply commits on another base', [['-i|--interactive', '対話的にリベース', 'interactive rebase']]),
       reset: cmd('HEAD やステージを指定状態に戻す', 'Reset HEAD or the index', [['--hard', '作業ツリーも含めて完全に戻す（変更は失われる）', 'discard all changes (destructive)'], ['--soft', 'コミットだけ戻し、変更はステージに残す', 'keep changes staged']]),
       stash: cmd('変更を一時退避する', 'Stash changes away'),
       tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a', '注釈付きタグを作る', 'annotated tag', 'arg'], ['-m', 'タグメッセージ', 'tag message', 'arg']]),
-      'rev-parse': cmd('リビジョンやリポジトリ情報を解決して表示する', 'Resolve revisions and repository info', [['--show-toplevel', 'リポジトリのルートディレクトリを表示', 'print the repository root'], ['--abbrev-ref', '短いブランチ名で表示（`HEAD` なら現在のブランチ）', 'short ref name (`HEAD` = current branch)'], ['--short', '短いハッシュを表示', 'short hash']]),
       remote: cmd('リモートを管理する', 'Manage remotes', [['-v', 'URL も表示', 'show URLs']]),
       config: cmd('設定を取得・変更する', 'Get or set configuration', [['--global', 'ユーザー全体の設定', 'user-wide config'], ['--get', '値を取得', 'get a value']]),
     },
@@ -488,9 +511,10 @@ export const commands: Record<string, CommandDoc> = {
         ['--name', 'コンテナ名', 'container name', 'arg'],
         ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'],
       ]),
-      build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', [['-t|--tag', 'イメージ名とタグ', 'name and tag', 'arg'], ['-f|--file', 'Dockerfile のパス', 'Dockerfile path', 'arg']]),
+      build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', [['-t|--tag', 'イメージ名とタグ', 'name and tag', 'arg'], ['-f|--file', 'Dockerfile のパス', 'Dockerfile path', 'arg'], ['--build-arg', 'Dockerfile の `ARG` に値を渡す（`名前=値`）', 'set a Dockerfile `ARG` (`name=value`)', 'arg'], ['--platform', '対象のプラットフォーム（`linux/amd64`…）', 'target platform (`linux/amd64`…)', 'arg'], ['--no-cache', 'キャッシュを使わない', 'do not use the cache'], ['--pull', 'ベースイメージを取り直す', 'pull newer base images']]),
+      login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
       exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY']]),
-      ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs']]),
+      ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
       images: cmd('イメージ一覧を表示する', 'List images'),
       pull: cmd('イメージを取得する', 'Pull an image'),
       push: cmd('イメージを送信する', 'Push an image'),
@@ -508,4 +532,5 @@ export const commands: Record<string, CommandDoc> = {
       test: cmd('テストスクリプトを実行する', 'Run the test script'),
     },
   }),
+  ...system,
 };
