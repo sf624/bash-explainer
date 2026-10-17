@@ -15,6 +15,9 @@ import { simulateRedirects } from '../src/idioms';
 import { BashParser, createBashParser } from '../src/parser';
 import { dialectIssues } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
+import { explainSed } from '../src/embedded/sed';
+import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, ShellWordsUnsupported } from '../src/examples/shellwords';
+import { literalRegex, regexExamples, toJsRegex } from '../src/examples/regex';
 import { explainAwk } from '../src/embedded/awk';
 import { explainDate, explainPrintf } from '../src/embedded/format';
 import { explainPerl, perlLoopNote } from '../src/embedded/perl';
@@ -340,5 +343,61 @@ describe('branches no other test takes', () => {
     assert.match(a('{ a b }'), /evaluate `a b`/);
     assert.match(a('{ print $(NF-1), $(i + 1), $(NF }'), /second-to-last[^]*computed number/);
     assert.match(a('{ a[i] = 1; print (a > b) > "f"; exit }'), /exit awk \(END still runs\)/);
+  });
+
+  it('regex examples: what JavaScript or the generator cannot do', () => {
+    for (const [src, flavor] of [['[[:foo:]]', 'ere'], ['[[.a.]]', 'ere'], ['[abc', 'ere'], ['a\\', 'bre'], ['a\\`', 'ere']] as const) {
+      assert.strictEqual(toJsRegex(src, flavor), undefined, src);
+    }
+    for (const src of ['[é]x', '([é])', '[é]+', '(?:[é])']) assert.strictEqual(regexExamples({ source: src, flags: '' }), undefined, src);
+    assert.ok(regexExamples({ source: '(a)?\\1b', flags: '' }));
+    assert.strictEqual(literalRegex('a.b', true).flags, 'i');
+  });
+
+  it('shell words: what the simulations give up on, and globs with odd parts', () => {
+    assert.throws(() => braceExpand('{1..30}{1..30}'), ShellWordsUnsupported);
+    assert.throws(() => braceExpand('{1..600}'), ShellWordsUnsupported);
+    assert.throws(() => bashPrintf('%q', ['a\tb']), ShellWordsUnsupported);
+    assert.throws(() => bashPrintf('%d', ['abc']), ShellWordsUnsupported);
+    assert.throws(() => bashPrintf('%s', Array(60).fill('x')), ShellWordsUnsupported);
+    assert.strictEqual(globMatches('[z-a]', 'x', 'value'), false);
+    assert.strictEqual(globExamples('[z-a]', 'value'), undefined);
+    assert.strictEqual(globExamples('[é]', 'file'), undefined);
+    assert.deepStrictEqual(extglobs('a\\*!(x)').map((e) => e.text), ['!(x)']);
+    // Nothing is left for `!(*)`.
+    assert.strictEqual(globExamples('!(*)x', 'file'), undefined);
+    assert.ok(globExamples('@(*).log', 'file'));
+    // bash may end `!(…)` anywhere when the rest varies in length, which the matcher cannot follow.
+    assert.strictEqual(globExamples('!(app)*', 'file'), undefined);
+  });
+
+  it('sed scripts: every command, address and replacement escape', () => {
+    type T = ReturnType<typeof explainSed>;
+    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
+    const e = (src: string) => all(explainSed(src, 'bre', 'en')).map((t) => t.explanation).join('\n');
+    assert.match(e('a foo\np'), /append the line "foo"/);
+    assert.match(e('s/a\n/b/'), /Unterminated/);
+    assert.match(e('\\%x%Ip'), /matching the regex `x` \(case-insensitive\)/);
+    assert.match(e('/x/Mp'), /matching the regex `x`/);
+    assert.match(e('0,/x/d'), /the start through/);
+    assert.match(e('1,3s/a/b/'), /For line 1 through line 3: Substitute/);
+    assert.match(e('1,!p'), /line 1/);
+    assert.match(e('Q'), /quit without printing/);
+    assert.match(e('a\\\nfoo'), /append the line "foo"/);
+    assert.match(e('i foo'), /insert the line "foo"/);
+    assert.match(e('c foo'), /replace the line with "foo"/);
+    assert.match(e('b'), /branch to the end of the script/);
+    assert.match(e('t'), /if an `s` succeeded, branch to the end/);
+    assert.match(e('T x'), /if no `s` succeeded, branch to "x"/);
+    assert.match(e('T'), /if no `s` succeeded, branch to the end/);
+    assert.match(e('r a.txt'), /contents of "a.txt"/);
+    assert.match(e('R a.txt'), /one line of "a.txt"/);
+    assert.match(e('w out'), /write the line to "out"/);
+    assert.match(e('W out'), /write the first line/);
+    assert.match(e('e date'), /run "date"/);
+    assert.match(e('e'), /run the pattern space as a command/);
+    assert.match(e('s//x/'), /Empty pattern/);
+    assert.match(e('s/a/\\n/'), /a newline/);
+    assert.match(e('s/\\(a\\)/\\\\\\0\\L\\1/'), /a literal backslash[^]*the whole match[^]*lowercase what follows/);
   });
 });

@@ -7,7 +7,8 @@ function realMatches(pattern: string, flavor: 'bre' | 'ere' | 'pcre', input: str
   const text = input.join('\n') + '\n';
   if (flavor === 'pcre') {
     // PCRE follows Perl's regex syntax, so perl itself is the reference.
-    return execFileSync('perl', ['-ne', 'print if /$ENV{RE}/'], { input: text, env: { ...process.env, RE: pattern } })
+    // -l: lines without their newline, as grep -P matches them.
+    return execFileSync('perl', ['-lne', 'print if /$ENV{RE}/'], { input: text, env: { ...process.env, RE: pattern } })
       .toString().split('\n').filter(Boolean);
   }
   // GNU sed uses the same POSIX regex engine as grep; pick a delimiter that is not in the pattern.
@@ -21,6 +22,8 @@ const cases: [string, 'bre' | 'ere' | 'pcre'][] = [
   ['^v([0-9]+)\\.([0-9]+)$', 'ere'], ['[[:digit:]]\\{4\\}-[[:digit:]]\\{2\\}', 'bre'], ['a+(b)', 'bre'], ['^#', 'bre'],
   ['[^0-9]+', 'ere'], ['^[a-z_][a-z0-9_]*=', 'ere'], ['\\.log$', 'bre'], ['x{2,3}y?', 'ere'], ['[]a]b', 'ere'],
   ['(?<=id=)\\d+', 'pcre'], ['\\bfoo\\b', 'pcre'], ['^\\s*#', 'pcre'], ['(?<year>\\d{4})-\\d\\d', 'pcre'],
+  ['^a{,2}$', 'ere'], ['^a\\{,2\\}$', 'bre'], ['^[]a]+$', 'pcre'], ['^[^]a]x', 'pcre'], ['\\(a\\)\\1', 'bre'], ['a^b$c', 'bre'], ['a\\,b', 'ere'],
+  ['(?s)a.b', 'pcre'], ['(?i)abc', 'pcre'], ['\\Aab\\z', 'pcre'], ['a\\hb', 'pcre'], ['(?P<n>a)b', 'pcre'], ['\\D\\W\\S', 'pcre'], ['(?:ab)+c', 'pcre'], ['(?!x)a', 'pcre'], ['\\w+\\s', 'ere'], ['a{2,}b', 'ere'],
 ];
 
 describe('regex examples agree with real engines', () => {
@@ -40,6 +43,8 @@ describe('regex translation', () => {
   it('turns BRE syntax into JavaScript', () => {
     assert.strictEqual(toJsRegex('\\(a\\)\\{2,\\}b+?', 'bre')!.source, '(a){2,}b\\+\\?');
     assert.strictEqual(toJsRegex('*a', 'bre')!.source, '\\*a');
+    // GNU grep -E reads a `{` that starts no interval as itself (GNU sed rejects it).
+    assert.strictEqual(toJsRegex('a{x', 'ere')!.source, 'a\\{x');
     assert.strictEqual(toJsRegex('[[:upper:]]\\<x\\>', 'bre')!.source, '[A-Z]\\bx\\b');
   });
 

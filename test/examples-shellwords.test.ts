@@ -10,7 +10,8 @@ const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', 
 
 describe('brace expansion agrees with bash', () => {
   const words = ['{1..5}', 'file{,.bak}', 'img_{a,b}{1,2}.png', '{01..10..3}', '{a..e}', 'x{a,{b,c}}y', '{10..1..4}', '{a}', '{}', 'a{b..x..5}',
-    '{-2..2}', 'dir_{a,b}/{src,test}', '{a,b', 'pre{1..3}post', '\\{a,b\\}', '{,x}{,y}'];
+    '{-2..2}', 'dir_{a,b}/{src,test}', '{a,b', 'pre{1..3}post', '\\{a,b\\}', '{,x}{,y}',
+    '{a\\,b,c}', 'x{a,b\\}c}', '{1..5..0}', '{-05..3}', '{a..e..2}', '{e..a}', '{e..a..2}', '{a..e..0}'];
   for (const w of words) {
     it(w, () => {
       assert.strictEqual((braceExpand(w) ?? [w.replace(/\\(.)/g, '$1')]).join(' '), bash(`echo ${w}`).trim());
@@ -24,6 +25,7 @@ describe('printf agrees with bash', () => {
     ['%b\\n', 'a\\tb'], ['%b|', 'stop\\chere'], ['%q\\n', "it's a test"], ['%c|%5s|%-5s|\\n', 'hello', 'ab', 'cd'], ['%d\\n', "'A"], ['%x %o %e\\n', '255', '8', '1234.5'],
     ['hello\\n'], ['%s\\n'], ['%5.1f|%-6d|%+d\\n', '2.25', '42', '7'], ['%.0f %.0f %.1f %.2f\\n', '0.5', '1.5', '0.25', '2.675'], ['%s\\n', 'a', 'b', 'c'], ['%*d|\\n', '5', '42'], ['%.3s\\n', 'abcdef'], ['no newline'],
     ['%d\\n', '0x1F'], ['%g %g\\n', '0.0001234', '1e7'], ['\\x41\\u00e9\\n'],
+    ['%q|%.*f|%b|%q|%c|%d|%d\\n', '', '2', '3.14159', 'a\\qb', '', '', "'", '010'], ['%s|%b|%q|%c|%d\\n'],
   ];
   for (const [fmt, ...args] of cases) {
     it(JSON.stringify([fmt, ...args]), () => {
@@ -102,7 +104,7 @@ describe('glob examples agree with bash and find', () => {
       for (const n of ex.nonMatching) assert.ok(!globMatches(p, n, 'file'), n);
     });
   }
-  for (const p of ['@(start|stop)', '!(*.bak)', '+([0-9])', 'v?(.)+([0-9])', '*.@(jpg|png)']) {
+  for (const p of ['@(start|stop)', '!(*.bak)', '+([0-9])', 'v?(.)+([0-9])', '*.@(jpg|png)', '*.!(x)', 'a!(b)?', '!(x)[ab]']) {
     it(`extglob value ${p}`, () => {
       const ex = globExamples(p, 'value')!;
       assert.ok(ex?.nonMatching.length, 'examples');

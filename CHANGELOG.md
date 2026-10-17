@@ -22,6 +22,9 @@
 - `git log` examples with `%<(1,trunc)` show `..`, as git does, instead of the first character; a width of 0, which git does not take, gets no example.
 - perl one-liners: `s{a{1}}{b}` (nested brackets) and `s{a} {b}` are split into pattern and replacement as perl does, and `s/a//` reads "delete" instead of "replace with ``".
 - awk: the pattern `0` is explained as always false; it was "always true (non-zero)".
+- Regex examples: `a{,2}` in `grep -E`/`sed -E` (and `a\{,2\}` in basic regexes) is read as "at most 2", as GNU tools do, instead of as the text `{,2}`; in `grep -P`, `[]a]` is a class of `]` and `a` instead of a class that matches nothing.
+- `printf '%c' ""` in examples prints a NUL byte, as bash does.
+- Extended globs such as `!(app)*`, where `!(…)` is followed by a part of varying length, get no examples: bash may end `!(…)` at any point, so names like `appapp` match, which the examples said did not.
 - Aliases and functions that distributions define for interactive shells are explained, with what they stand for on each system, as checked in the files the distributions ship: Ubuntu's `ll`, `la`, `l` and `alert`; Fedora / RHEL's `ll` and `l.`; openSUSE's `ll`, `la`, `l`, `ls-l`, `o`, `..`, `...`, `cd..`, `+`, `-`, `md`, `rd`, `rehash`, `beep`, `unmount`, `remount` and `xd`; Git for Windows' `ll`. A note says they depend on the system and are missing in scripts, and what to write instead; in Markdown code blocks, typed into a terminal, the note is milder.
 
 ## 0.3.0

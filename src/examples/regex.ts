@@ -69,6 +69,11 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
       if (c === '\\' && (n === 'z' || n === 'Z')) { out += '$'; i += 2; continue; }
       if (c === '\\' && n === 'h') { out += '[ \\t]'; i += 2; continue; }
       if (src.startsWith('(?P<', i)) { out += '(?<'; i += 4; continue; }
+      // `]` first in a class is literal in Perl, but would close an empty class in JavaScript.
+      if (c === '[') {
+        const m = /^\[\^?\]/.exec(src.slice(i));
+        if (m) { out += m[0].slice(0, -1) + '\\]'; i += m[0].length; continue; }
+      }
       if (c === '\\' && n !== undefined) { out += c + n; i += 2; continue; }
       out += c;
       i++;
@@ -88,6 +93,8 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
       if (n === '<' || n === '>') { out += '\\b'; continue; }
       if ('wWsSbB'.includes(n)) { out += '\\' + n; continue; }
       if (opts.sedEscapes && SED_ESCAPES[n]) { out += SED_ESCAPES[n]; continue; }
+      // `\{,n\}`: at most n, which JavaScript writes `{0,n}`.
+      if (flavor === 'bre' && n === '{' && src[i] === ',') { out += '{0'; continue; }
       if (flavor === 'bre' && '(){}|+?'.includes(n)) { out += n; continue; }
       if (n === '`' || n === "'") return undefined;
       // Anything else escaped is that character itself.
@@ -101,6 +108,10 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
       if (c === '$' && i < src.length - 1 && !src.startsWith('\\)', i + 1) && !src.startsWith('\\|', i + 1)) { out += '\\$'; i++; continue; }
     } else if (c === '{' && !/^\{\d*,?\d*\}/.test(src.slice(i))) {
       out += '\\{';
+      i++;
+      continue;
+    } else if (c === '{' && src[i + 1] === ',') {
+      out += '{0';
       i++;
       continue;
     }
@@ -138,8 +149,8 @@ function shorthand(c: string): (v: number) => string | undefined {
     case 's': return () => ' ';
     case 'D': return (v) => LETTERS[v % 26];
     case 'W': return () => '-';
-    case 'S': return (v) => LETTERS[v % 26];
-    default: return () => undefined;
+    // \S
+    default: return (v) => LETTERS[v % 26];
   }
 }
 
@@ -217,7 +228,6 @@ class Parser {
       const negated = this.s[j] === '^';
       if (negated) j++;
       let body = '';
-      if (this.s[j] === ']') { body += '\\]'; j++; }
       while (j < this.s.length && this.s[j] !== ']') {
         if (this.s[j] === '\\') { body += this.s.slice(j, j + 2); j += 2; continue; }
         body += this.s[j++];
@@ -288,12 +298,13 @@ export interface RegexExamples {
 export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   const re = new RegExp(js.source, js.flags);
   let tree: Node;
-  // Parser throws nothing itself: the catch keeps a bug in it from breaking the explanation.
+  // Parser reads every regex JavaScript accepts, to the end, and throws nothing itself: the check
+  // and the catch keep a bug in it from breaking the explanation.
   try {
     const p = new Parser(js.source);
     tree = p.alt();
-    if (p.i < js.source.length) return undefined;
     /* c8 ignore start */
+    if (p.i < js.source.length) return undefined;
   } catch {
     return undefined;
   }
