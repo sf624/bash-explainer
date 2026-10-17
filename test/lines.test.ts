@@ -14,7 +14,7 @@ import { yamlLines } from '../src/examples/yaml';
 import { extractShell } from '../src/hosts';
 import { resolveLang } from '../src/i18n';
 import { simulateRedirects } from '../src/idioms';
-import { BashParser, createBashParser } from '../src/parser';
+import { BashParser, createBashParser, TreeCache } from '../src/parser';
 import { toMarkdown } from '../src/ui/render';
 
 // Lines that the tests of each feature do not reach: the less common inputs, and the ways a
@@ -50,6 +50,25 @@ describe('lines no other test reaches', () => {
     const tree = p.parse('echo hi');
     assert.strictEqual(tree.rootNode.type, 'program');
     tree.delete();
+  });
+
+  it('parser: one tree per document, parsed again only for a new version', () => {
+    const cache = new TreeCache(parser);
+    let parses = 0;
+    const text = (src: string) => () => { parses++; return src; };
+    const a1 = cache.get('a', 1, text('echo 1'));
+    assert.strictEqual(cache.get('a', 1, text('echo 1')), a1);
+    assert.strictEqual(parses, 1);
+    assert.strictEqual(cache.get('a', 2, text('echo 2')).rootNode.text, 'echo 2');
+    cache.get('b', 1, text('echo b'));
+    assert.strictEqual(parses, 3);
+    cache.evict('a');
+    cache.get('a', 2, text('echo 2'));
+    assert.strictEqual(parses, 4);
+    cache.dispose();
+    cache.get('b', 1, text('echo b'));
+    assert.strictEqual(parses, 5);
+    cache.dispose();
   });
 
   it('i18n: the language setting, then the UI language', () => {

@@ -2,7 +2,8 @@
 // every file must reach 100%, except those listed in coverage-floors.json, which must not go below
 // their floor. The whole must not go below the branch floor either. CI runs it on the job where every
 // tool the tests compare against is installed; locally, tests for missing tools are skipped, so the
-// numbers are lower.
+// numbers are lower. Measure with Node.js 24, as CI does: Node.js 22 reports the methods of a class
+// that never ran as run.
 //
 //   node scripts/coverage-check.mjs           check
 //   node scripts/coverage-check.mjs --update  set the floors to the current numbers (after adding tests)
