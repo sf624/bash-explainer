@@ -1,0 +1,33 @@
+name: Demo - Bash Explainer action
+
+# A throwaway workflow: checks demo/install.sh with the action in this repository and the
+# command-line tool built from this commit, so the warnings show on the pull request's diff.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Pack the command-line tool
+        id: pack
+        run: |
+          npm run build:cli
+          echo "tgz=$RUNNER_TEMP/$(npm pack ./cli --pack-destination "$RUNNER_TEMP" --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./
+        with:
+          files: demo/*.sh
+          package: ${{ steps.pack.outputs.tgz }}
