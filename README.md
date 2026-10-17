@@ -64,6 +64,7 @@ Many constructs come with a made-up input and the output it produces. The built-
 | `[ ]`, `[[ ]]`, `(( ))` | values that make the test true and false |
 | `xargs`, `read`, `getopt` | the commands that run, the variables that get set, how arguments are rearranged |
 | `git log --pretty` / `--date` | the output for sample commits |
+| `date +FORMAT` | the output at two fixed moments; edit them in the panel |
 
 Examples appear right under the part they illustrate (see `bashExplainer.examples.placement`).
 
@@ -197,7 +198,7 @@ The panel works like regex101:
 | `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
 | `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
 | `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
-| `bashExplainer.examples.disabled` | `[]` | Kinds of examples not to show: `regex`, `sed`, `awk`, `jq`, `yq`, `perl`, `textFilters`, `pipeline`, `expansion`, `printf`, `glob`, `test`, `xargs`, `read`, `getopt`, `gitLog` |
+| `bashExplainer.examples.disabled` | `[]` | Kinds of examples not to show: `regex`, `sed`, `awk`, `jq`, `yq`, `perl`, `textFilters`, `pipeline`, `expansion`, `printf`, `glob`, `test`, `xargs`, `read`, `getopt`, `gitLog`, `date` |
 | `bashExplainer.examples.inHover` | `true` | Show examples in the hover too (off: only in the panel) |
 | `bashExplainer.examples.placement` | `first` | Worked examples under the part they illustrate, before (`first`) or after (`last`) its pieces, or all at the end (`bottom`) |
 | `bashExplainer.language` | `auto` | `auto` (follow VS Code), `en` or `ja` |

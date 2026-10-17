@@ -190,27 +190,73 @@ export function explainDate(src: string, lang: Lang): EmbeddedToken[] {
   return out;
 }
 
-/** What `date +FORMAT` prints right now, e.g. `2026-10-16T09:30:00`, computed in JavaScript. */
-export function sampleDate(src: string, now = new Date()): string | undefined {
+/** The made-up moments a `date +FORMAT` example is shown for, in UTC. */
+export const SAMPLE_DATES = ['2024-03-05 07:08:09', '2025-12-31 23:59:59'];
+
+/** Reads a date and time typed in the panel (`2024-03-05 07:08:09`, optional `T`, seconds or `Z`) as UTC. */
+export function parseSampleDate(text: string): Date | undefined {
+  const m = /^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*(?:Z|UTC)?\s*$/i.exec(text);
+  if (!m) return undefined;
+  const [y, mo, d, h = '0', mi = '0', se = '0'] = m.slice(1);
+  const t = Date.UTC(+y, +mo - 1, +d, +h, +mi, +se);
+  const date = new Date(t);
+  // Reject what Date would roll over (February 30, hour 25…).
+  if (date.getUTCMonth() !== +mo - 1 || date.getUTCDate() !== +d || date.getUTCHours() !== +h) return undefined;
+  return date;
+}
+
+/**
+ * What GNU `date -u +FORMAT` prints for `when`, in the C locale; undefined when the format uses
+ * something this does not reproduce. The leading `+` is optional.
+ */
+export function formatDate(src: string, when: Date): string | undefined {
   const fmt = src.startsWith('+') ? src.slice(1) : src;
-  if (/%[-_0^#]?\d*(:{0,3}z|[cxXZUVWGCNsrIlkpPh])/.test(fmt)) return undefined;
   const pad = (n: number, w = 2) => String(n).padStart(w, '0');
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const v: Record<string, string> = {
-    Y: String(now.getFullYear()), y: pad(now.getFullYear() % 100), m: pad(now.getMonth() + 1), d: pad(now.getDate()), e: String(now.getDate()).padStart(2, ' '),
-    H: pad(now.getHours()), M: pad(now.getMinutes()), S: pad(now.getSeconds()), a: days[now.getDay()].slice(0, 3), A: days[now.getDay()],
-    b: months[now.getMonth()].slice(0, 3), B: months[now.getMonth()], j: pad(Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 864e5), 3),
-    u: String(now.getDay() || 7), w: String(now.getDay()), n: '\n', t: '\t', '%': '%',
+  const Y = when.getUTCFullYear(), mo = when.getUTCMonth(), d = when.getUTCDate(), H = when.getUTCHours(), M = when.getUTCMinutes(), S = when.getUTCSeconds();
+  const wday = when.getUTCDay();
+  const yday = Math.floor((Date.UTC(Y, mo, d) - Date.UTC(Y, 0, 1)) / 864e5);
+  const h12 = H % 12 || 12;
+  // ISO 8601 week: the week with the year's first Thursday is week 1.
+  const thursday = new Date(Date.UTC(Y, mo, d + 3 - ((wday + 6) % 7)));
+  const isoYear = thursday.getUTCFullYear();
+  const isoWeek = 1 + Math.floor((thursday.getTime() - Date.UTC(isoYear, 0, 1)) / (7 * 864e5));
+  /** Value of each conversion, and how it is padded by default (`0`, ` ` or not at all). */
+  const v: Record<string, [string, '0' | ' ' | '']> = {
+    Y: [String(Y), ''], y: [pad(Y % 100), '0'], C: [pad(Math.floor(Y / 100)), '0'],
+    m: [pad(mo + 1), '0'], d: [pad(d), '0'], e: [String(d).padStart(2, ' '), ' '], j: [pad(yday + 1, 3), '0'],
+    H: [pad(H), '0'], I: [pad(h12), '0'], k: [String(H).padStart(2, ' '), ' '], l: [String(h12).padStart(2, ' '), ' '],
+    M: [pad(M), '0'], S: [pad(S), '0'], N: ['000000000', '0'], s: [String(Math.floor(when.getTime() / 1000)), ''],
+    p: [H < 12 ? 'AM' : 'PM', ''], P: [H < 12 ? 'am' : 'pm', ''],
+    a: [days[wday].slice(0, 3), ''], A: [days[wday], ''], b: [months[mo].slice(0, 3), ''], h: [months[mo].slice(0, 3), ''], B: [months[mo], ''],
+    u: [String(wday || 7), ''], w: [String(wday), ''],
+    U: [pad(Math.floor((yday + 7 - wday) / 7)), '0'], W: [pad(Math.floor((yday + 7 - ((wday + 6) % 7)) / 7)), '0'],
+    V: [pad(isoWeek), '0'], G: [String(isoYear), ''], g: [pad(isoYear % 100), '0'],
+    Z: ['UTC', ''], z: ['+0000', ''], ':z': ['+00:00', ''], '::z': ['+00:00:00', ''],
+    n: ['\n', ''], t: ['\t', ''], '%': ['%', ''],
   };
-  v.F = `${v.Y}-${v.m}-${v.d}`;
-  v.T = `${v.H}:${v.M}:${v.S}`;
-  v.D = `${v.m}/${v.d}/${v.y}`;
-  v.R = `${v.H}:${v.M}`;
-  return fmt.replace(/%([-_0^#]?)(\d*)([a-zA-Z%])/g, (_, flag: string, _w: string, c: string) => {
-    let r = v[c] ?? '';
-    if (flag === '-') r = r.replace(/^[0 ]+(?=.)/, '');
+  const composite: Record<string, string> = { F: '%Y-%m-%d', T: '%H:%M:%S', D: '%m/%d/%y', R: '%H:%M', r: '%I:%M:%S %p', c: '%a %b %e %H:%M:%S %Y', x: '%m/%d/%y', X: '%H:%M:%S' };
+  let unknown = false;
+  const out = fmt.replace(/%([-_0^#]?)(\d*)(:{1,2}z|[a-zA-Z%])/g, (whole, flag: string, width: string, c: string) => {
+    if (composite[c]) {
+      if (flag || width) { unknown = true; return whole; }
+      return formatDate(composite[c], when) ?? '';
+    }
+    const entry = v[c];
+    if (!entry) { unknown = true; return whole; }
+    let [r, padWith] = entry;
     if (flag === '^') r = r.toUpperCase();
+    // `#` swaps case: names become upper case, AM/PM and the zone lower case.
+    if (flag === '#') r = /[pZ]/.test(c) ? r.toLowerCase() : r.toUpperCase();
+    if (flag === '-') return padWith ? r.replace(/^[0 ]+(?=.)/, '') : r;
+    if (flag === '_' && padWith) r = r.replace(/^0+(?=.)/, (z) => ' '.repeat(z.length));
+    if (flag === '0' && padWith) r = r.replace(/^ +/, (z) => '0'.repeat(z.length));
+    if (width && r.length < +width) {
+      const fill = flag === '_' ? ' ' : flag === '0' ? '0' : padWith || (/^\d+$/.test(r) ? '0' : ' ');
+      r = r.trimStart().padStart(+width, fill);
+    }
     return r;
   });
+  return unknown ? undefined : out;
 }

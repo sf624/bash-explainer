@@ -16,7 +16,7 @@ import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
 import { bashPrintf, braceExpand, globExamples, globMatches, GlobMode, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
-import { explainDate, explainPrintf, printfNote, sampleDate } from './embedded/format';
+import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
 import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
@@ -102,9 +102,9 @@ export interface ExampleSection {
 
 /** What an example shows, so it can be turned off by kind (`bashExplainer.examples.disabled`). */
 export type ExampleKind = 'regex' | 'sed' | 'awk' | 'jq' | 'yq' | 'perl' | 'textFilters' | 'pipeline' | 'expansion' | 'printf' | 'glob'
-  | 'test' | 'xargs' | 'read' | 'getopt' | 'gitLog';
+  | 'test' | 'xargs' | 'read' | 'getopt' | 'gitLog' | 'date';
 
-export const EXAMPLE_KINDS: ExampleKind[] = ['regex', 'sed', 'awk', 'jq', 'yq', 'perl', 'textFilters', 'pipeline', 'expansion', 'printf', 'glob', 'test', 'xargs', 'read', 'getopt', 'gitLog'];
+export const EXAMPLE_KINDS: ExampleKind[] = ['regex', 'sed', 'awk', 'jq', 'yq', 'perl', 'textFilters', 'pipeline', 'expansion', 'printf', 'glob', 'test', 'xargs', 'read', 'getopt', 'gitLog', 'date'];
 
 export interface Example {
   kind?: ExampleKind;
@@ -1098,8 +1098,7 @@ export class Analyzer {
         // Only `+FORMAT` is a format; other date arguments set the clock.
         if (!lit.text.startsWith('+')) return undefined;
         tokens = explainDate(lit.text, this.lang);
-        const sample = sampleDate(lit.text);
-        if (sample !== undefined) note = this.s(`今なら「${sample}」のように表示される`, `right now this prints "${sample}"`);
+        this.dateExample(lit.text);
         break;
       }
     }
@@ -1696,6 +1695,21 @@ export class Analyzer {
   }
 
   /** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
+  /** What `date +FORMAT` prints at fixed, made-up moments (in UTC, so the same line always shows the same). */
+  private dateExample(format: string): void {
+    const outputs = SAMPLE_DATES.map((d) => formatDateCommand(format, parseSampleDate(d)!));
+    if (outputs.some((o) => o === undefined)) return;
+    const spec: RerunSpec = { kind: 'date', format };
+    this.examples.push({ kind: 'date',
+      interactive: this.interactive(spec, SAMPLE_DATES),
+      title: this.s('例', 'Example'),
+      sections: [
+        { label: this.s('日時（UTC）', 'Date and time (UTC)'), lines: SAMPLE_DATES },
+        { label: this.s('出力', 'Output'), lines: outputs.map((o) => visible(o!)) },
+      ],
+    });
+  }
+
   private ioExample(input: string[], output: string[], inPlace = false, spec?: RerunSpec): void {
     const tabs = (lines: string[]) => lines.map(visible);
     this.examples.push({ kind: spec?.kind === 'sed' || spec?.kind === 'awk' || spec?.kind === 'perl' ? spec.kind : 'textFilters',

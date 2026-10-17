@@ -64,6 +64,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | `[ ]`・`[[ ]]`・`(( ))` | 真になる値と偽になる値 |
 | `xargs`・`read`・`getopt` | 実行されるコマンド、変数に入る値、引数の並び替え結果 |
 | `git log --pretty`・`--date` | 例のコミットでの表示 |
+| `date +書式` | 決まった2つの日時での出力（パネルで日時を書き換えられる） |
 
 具体例は、対応する部分の解説の真下に表示します（`bashExplainer.examples.placement` で変更可）。
 
@@ -197,7 +198,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
 | `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
-| `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog` |
+| `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog`・`date` |
 | `bashExplainer.examples.inHover` | `true` | ホバーにも具体例を表示する（オフならパネルだけ） |
 | `bashExplainer.examples.placement` | `first` | 具体例を対応する部分の下の、各要素の解説より先（`first`）・後（`last`）、またはすべての解説の後（`bottom`）に表示 |
 | `bashExplainer.language` | `auto` | `auto`（VS Code の表示言語に合わせる）・`ja`・`en` |
