@@ -42,9 +42,12 @@ export interface Extracted {
   substitutions: HostSubstitution[];
 }
 
+/** Japanese text followed by more: a space after a closing backtick, so the code span ends. */
+const spaced = (ja: string) => (ja.endsWith('`') ? `${ja} ` : ja);
+
 /** Which kind of host a document is, from its language id and file name. */
 export function hostKind(languageId: string, fileName: string): HostKind | undefined {
-  const base = fileName.split(/[\\/]/).pop() ?? '';
+  const base = fileName.split(/[\\/]/).pop()!;
   if (languageId === 'dockerfile' || /^(Dockerfile|Containerfile)(\..*)?$|\.(dockerfile|containerfile)$/i.test(base)) return 'dockerfile';
   if (languageId === 'makefile' || /^(GNU)?makefile$|\.mk$/i.test(base)) return 'makefile';
   if (base === 'package.json') return 'npm';
@@ -180,6 +183,12 @@ function execWords(b: Builder, words: JsonWord[]): void {
       // The first and last characters stand for the quotes too, so the word covers `"echo"`.
       const last = w.value.length - 1;
       for (let c = 0; c <= last; c++) o.insert(w.value[c], c === 0 ? w.start : w.cols[c], c === last ? w.end : w.cols[c] + 1);
+    } else if (/[\n\r\t]/.test(w.value)) {
+      // Control characters as `$'…'` escapes: a newline must not start a new line of shell text.
+      const esc: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t', "'": "\\'", '\\': '\\\\' };
+      o.insert("$'", w.start, w.start + 1);
+      for (let c = 0; c < w.value.length; c++) o.insert(esc[w.value[c]] ?? w.value[c], w.cols[c], w.cols[c] + 1);
+      o.insert("'", w.end - 1, w.end);
     } else {
       // Single quotes keep every character literal, as the exec form does; `'` becomes `'\''`.
       o.insert("'", w.start, w.start + 1);
@@ -217,8 +226,9 @@ function dockerfile(b: Builder): void {
     const at = m[0].length;
     const instr = m[2].toUpperCase();
     if (/^\[\s*"/.test(line.slice(at))) {
+      // Starting with `[ "`, a list that parses has a word.
       const parsed = jsonWords(b.lines, i, at);
-      if (!parsed || !parsed.words.length) continue;
+      if (!parsed) continue;
       const { words, last } = parsed;
       const prog = words[0].value.split('/').pop()!;
       if (instr === 'SHELL') {
@@ -462,7 +472,7 @@ function groovyText(b: Builder, i: number, from: number, to: number, interpolate
         const envVar = /^env\.(\w+)$/.exec(expr)?.[1];
         const known = envVar && Object.hasOwn(ciVariables, envVar) ? ciVariables[envVar].meaning : /^params\.\w+$/.test(expr) ? { ja: `ビルドパラメータ \`${expr.slice(7)}\``, en: `the build parameter \`${expr.slice(7)}\`` } : undefined;
         const meaning: [string, string] = known
-          ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す Groovy の式 \`${expr}\` で、シェルが実行される前に Jenkins が値を埋め込みます`, `the Groovy expression \`${expr}\`: ${known.en}; Jenkins fills in its value before the shell runs`]
+          ? [`${spaced(known.ja)}を表す Groovy の式 \`${expr}\` で、シェルが実行される前に Jenkins が値を埋め込みます`, `the Groovy expression \`${expr}\`: ${known.en}; Jenkins fills in its value before the shell runs`]
           : [`Groovy の式 \`${expr}\` の値で、シェルが実行される前に Jenkins が埋め込みます`, `the value of the Groovy expression \`${expr}\`, filled in by Jenkins before the shell runs`];
         o.insert(`\${${expr.replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR'}}`, k, end, meaning);
         b.substitutions.push({ line: i, text: line.slice(k, end), meaning });
@@ -562,9 +572,13 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
   if (key !== 'run') return undefined;
   // Look at the sibling keys of the same step. `indent` is the column of the key, after any `- `.
   const level = indent;
-  for (let j = at - 1; j >= 0 && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j--) {
-    const m = /^\s*(?:-\s+)?shell:\s*(\S+)/.exec(b.lines[j]);
-    if (m && indentOf(b.lines[j].replace(/-\s+/, '  ')) === level) return shellName(m[1]);
+  // Above, up to the line that starts the step (`- name: …`); none when `run:` starts it.
+  const startsItem = (j: number) => /^\s*-\s/.test(b.lines[j]) && indentOf(b.lines[j].replace(/-\s+/, (d) => ' '.repeat(d.length))) === level;
+  if (!startsItem(at)) {
+    for (let j = at - 1; j >= 0 && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j--) {
+      const m = /^\s*(?:-\s+)?shell:\s*(\S+)/.exec(b.lines[j]);
+      if (m && indentOf(b.lines[j].replace(/-\s+/, (d) => ' '.repeat(d.length))) === level) return shellName(m[1]);
+    }
   }
   for (let j = at + 1; j < b.lines.length && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j++) {
     const m = /^\s*shell:\s*(\S+)/.exec(b.lines[j]);
@@ -649,7 +663,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
       o.copy(line, at, m.index);
       const known = Object.hasOwn(AZURE_VARIABLES, m[2]) ? AZURE_VARIABLES[m[2]] : undefined;
       const meaning: [string, string] = known
-        ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `the Azure Pipelines variable \`${m[2]}\`: ${known.en}; the macro is replaced with its value before the script runs`]
+        ? [`${spaced(known.ja)}を表す Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `the Azure Pipelines variable \`${m[2]}\`: ${known.en}; the macro is replaced with its value before the script runs`]
         : [`Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `an Azure Pipelines macro, replaced with the value of the variable \`${m[2]}\` before the script runs`];
       o.insert(`\${${m[2].replace(/\W+/g, '_').toUpperCase()}}`, m.index, m.index + m[0].length, meaning);
       b.substitutions.push({ line: i, text: m[0], meaning });
@@ -675,7 +689,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
 function githubMeaning(expr: string): [string, string] {
   const known = githubContext(expr);
   return known
-    ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す GitHub Actions の式 \`${expr}\` で、スクリプトが実行される前に値に置き換わります`, `the GitHub Actions expression \`${expr}\`: ${known.en}; replaced with its value before the script runs`]
+    ? [`${spaced(known.ja)}を表す GitHub Actions の式 \`${expr}\` で、スクリプトが実行される前に値に置き換わります`, `the GitHub Actions expression \`${expr}\`: ${known.en}; replaced with its value before the script runs`]
     : [`GitHub Actions の式で、スクリプトが実行される前に \`${expr}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${expr}\` before the script runs`];
 }
 
@@ -807,12 +821,21 @@ function pySplit(src: string, open: number, close: number): [number, number][] {
     if ('([{'.includes(src[k])) { k = pyClose(src, k) - 1; continue; }
     if (src[k] === ',') { parts.push([from, k]); from = k + 1; }
   }
-  if (src.slice(from, close - 1).trim()) parts.push([from, close - 1]);
+  parts.push([from, close - 1]);
+  // Without the blanks and comments around each part; empty ones (after a last comma) dropped.
   return parts.map(([a, z]) => {
-    while (a < z && /\s/.test(src[a])) a++;
-    while (z > a && /\s/.test(src[z - 1])) z--;
+    for (;;) {
+      while (a < z && /\s/.test(src[a])) a++;
+      if (src[a] !== '#') break;
+      while (a < z && src[a] !== '\n') a++;
+    }
+    const trim = () => { while (z > a && /\s/.test(src[z - 1])) z--; };
+    trim();
+    const comment = /#[^'"\n]*$/.exec(src.slice(a, z));
+    if (comment) z = a + comment.index;
+    trim();
     return [a, z] as [number, number];
-  });
+  }).filter(([a, z]) => z > a);
 }
 
 type PyPos = (off: number) => { line: number; col: number };
@@ -1024,11 +1047,12 @@ function pyScript(b: Builder, src: string, a: number, z: number, pos: PyPos):
  * document, and relabel tokens with the original text (`$(CC)` rather than `${CC}`).
  */
 export function remapExplanation(ex: LineExplanation, extracted: Extracted, original: string[], lang: 'ja' | 'en' = 'en'): LineExplanation {
-  const pos = (p: Pos): Pos => ({ line: p.line, character: extracted.maps[p.line]?.[p.character] ?? p.character });
+  // Positions in the explanation are in the extracted text, which every map covers.
+  const pos = (p: Pos): Pos => ({ line: p.line, character: extracted.maps[p.line][p.character] });
   const span = (sp: Token['span']) => ({ start: pos(sp.start), end: pos(sp.end) });
   // A part of a placeholder (the name inside `${make_target}`) has no counterpart in the original.
   const insidePlaceholder = (t: Token) => t.span.start.line === t.span.end.line
-    && (extracted.inserted[t.span.start.line] ?? []).some(([a, b]) => t.span.start.character >= a && t.span.end.character <= b && (t.span.start.character > a || t.span.end.character < b));
+    && extracted.inserted[t.span.start.line].some(([a, b]) => t.span.start.character >= a && t.span.end.character <= b && (t.span.start.character > a || t.span.end.character < b));
   const token = (t: Token): Token => {
     const sp = span(t.span);
     let label = t.label;
@@ -1038,7 +1062,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     }
     // A token that is exactly a placeholder is the host syntax it stands for.
     const whole = t.span.start.line === t.span.end.line
-      ? (extracted.inserted[t.span.start.line] ?? []).find(([a, b]) => a === t.span.start.character && b === t.span.end.character)
+      ? extracted.inserted[t.span.start.line].find(([a, b]) => a === t.span.start.character && b === t.span.end.character)
       : undefined;
     if (whole?.[2]) {
       const m = whole[2][lang === 'ja' ? 0 : 1];
@@ -1087,7 +1111,7 @@ export function explainHostedLine(
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
-  if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line] ?? '', lang));
+  if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line], lang));
   if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
     notes.push(pick(PIPEFAIL));
   }
@@ -1106,12 +1130,12 @@ export interface DocIssue {
 /** All problems in the shell parts of a host document (one pass, for diagnostics). */
 export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell): DocIssue[] {
   const out: DocIssue[] = [];
-  const col = (line: number, c: number) => extracted.maps[line]?.[c] ?? c;
+  const col = (line: number, c: number) => extracted.maps[line][c];
   const at = (n: { startPosition: { row: number; column: number }; endPosition: { row: number; column: number } }) => {
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
       startLine: n.startPosition.row, startCol: col(n.startPosition.row, n.startPosition.column),
-      endLine: n.startPosition.row, endCol: sameLine ? col(n.endPosition.row, n.endPosition.column) : (original[n.startPosition.row] ?? '').length,
+      endLine: n.startPosition.row, endCol: sameLine ? col(n.endPosition.row, n.endPosition.column) : original[n.startPosition.row].length,
     };
   };
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
@@ -1129,12 +1153,12 @@ export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extr
     for (const n of region.notes ?? []) {
       if (!n[2]) continue;
       const first = extracted.maps[region.start];
-      out.push({ code: n[2], severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0] ?? 0, endLine: region.start, endCol: first[first.length - 1] ?? 0 });
+      out.push({ code: n[2], severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
-    const c = Math.max(0, (original[sub.line] ?? '').indexOf(sub.text));
+    const c = Math.max(0, original[sub.line].indexOf(sub.text));
     out.push({ code: 'injection', severity: 'warning', message: pick(sub.warning), startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
   }
   return out;

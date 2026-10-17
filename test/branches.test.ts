@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
+import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
 import { customCommandDoc } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
 import { expansionOps, redirects } from '../src/dict/syntax';
@@ -503,5 +504,183 @@ describe('branches no other test takes', () => {
     assert.strictEqual(g('?[!x][[:digit:]][a-c]', 'en'), 'any one character + one character other than x + one character from digits + one character from a-c');
     assert.strictEqual(ex('${x/#}'), undefined);
     assert.ok(ex('${x%[[:foo:]]}'));
+  });
+});
+
+describe('host files: branches no other test takes', () => {
+  const lines = (e: Extracted) => e.text.split('\n');
+  const shells = (e: Extracted) => e.regions.map((r) => `${r.start}:${r.shell ?? '-'}`);
+  const explainHost = (kind: HostKind, text: string, line: number, lang: 'ja' | 'en' = 'en') => {
+    const extracted = extractShell(kind, text);
+    const tree = parser.parse(extracted.text);
+    try {
+      return explainHostedLine(new Analyzer(lang), tree, extracted, text.split('\n'), line, lang);
+    } finally {
+      tree.delete();
+    }
+  };
+
+  it('Dockerfile: odd exec forms, every SHELL, and scripts passed to each shell', () => {
+    assert.strictEqual(hostKind('', 'Containerfile'), 'dockerfile');
+    const e = extractShell('dockerfile', [
+      'FROM alpine', 'RUN   ', 'RUN ["a", 1]', 'RUN ["a\\n\\tb", "x"]', 'RUN ["echo", "open', 'RUN []',
+      'SHELL ["/bin/zsh", "-c"]', 'RUN echo z', 'SHELL ["/bin/ash", "-c"]', 'RUN echo a', 'SHELL ["/bin/busybox", "sh", "-c"]', 'RUN echo b',
+      'SHELL ["/bin/dash", "-c"]', 'RUN echo d', 'SHELL ["pipefail"]', 'SHELL /bin/bash',
+      'RUN ["bash", "-c", "echo 1"]', 'RUN ["zsh", "-c", "echo 2"]', 'RUN ["dash", "-c", "echo 3"]', 'RUN ["busybox", "-c", "echo 4"]',
+      'RUN ["mksh", "-c", "echo 5"]', 'RUN ["ksh93", "-c", "echo 6"]', 'RUN ["yash", "-c", "echo 7"]', 'RUN ["sh", "-c", "echo 8"]',
+      'RUN ["echo", \\',
+    ].join('\n'));
+    assert.deepStrictEqual(shells(e), ['1:sh', '3:bash', '5:sh', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:sh', '14:bash',
+      '16:bash', '17:zsh', '18:dash', '19:ash', '20:mksh', '21:ksh', '22:yash', '23:sh']);
+    assert.strictEqual(lines(e)[3], "$'a\\n\\tb' x");
+    assert.strictEqual(lines(e).length, 25);
+    assert.strictEqual(extractShell('dockerfile', 'RUN ["a\\nb\\\\\'c"]').text, "$'a\\nb\\\\\\'c'");
+  });
+
+  it('Makefile: SHELL of each kind, recipe lines outside rules, prefixes only, unclosed $(', () => {
+    const e = extractShell('makefile', [
+      'SHELL := /bin/zsh', '\techo outside', 'all:', '\t@echo $(CC) ${CFLAGS} $$HOME $@ $X $(oops', '\t@-+', '\techo a \\', 'continued', 'SHELL = /bin/ksh', 'b:', '\techo b',
+    ].join('\n'));
+    assert.deepStrictEqual(shells(e), ['3:zsh', '4:zsh', '5:zsh', '9:sh']);
+    assert.strictEqual(lines(e)[3], 'echo ${CC} ${CFLAGS} $HOME ${make_target} ${X} $(oops');
+    assert.strictEqual(lines(e)[6], 'continued');
+  });
+
+  it('Jenkinsfile: comments, unclosed strings, shebangs of other languages, Groovy expressions', () => {
+    const e = extractShell('jenkinsfile', [
+      "// sh 'commented'", "sh 'open", "sh '#!/usr/bin/python3\\nprint(1)'", 'sh "echo ${env.GITHUB_REPOSITORY} ${params.T} ${a.b()} ${ } $env.HOME"',
+      "sh '''", 'echo hi', "'''",
+    ].join('\n'));
+    assert.deepStrictEqual(shells(e), ['2:sh', '3:sh', '5:sh']);
+    assert.match(lines(e)[3], /\$\{ENV_GITHUB_REPOSITORY\} \$\{PARAMS_T\} \$\{A_B\} \$\{EXPR\} \$\{ENV_HOME\}/);
+    assert.ok(e.substitutions.some((x) => /owner\/repository/.test(x.meaning[1])));
+    assert.ok(e.substitutions.some((x) => /build parameter `T`/.test(x.meaning[1])));
+  });
+
+  it('YAML: scripts at the top, Azure on Windows, CircleCI commands, sh keys, shells beside run, job defaults and runners', () => {
+    const top = extractShell('yaml', ['run: echo top', 'script: echo two', 'steps:', '  - run: echo x'].join('\n'));
+    assert.deepStrictEqual(shells(top), ['0:bash', '1:-', '3:bash']);
+    const azure = extractShell('yaml', ['pool:', '  vmImage: windows-latest', 'variables:', '  Foo: 1', 'steps:', '- script: echo hi', '- bash: echo $(Foo) $(Build.SourcesDirectory) $(date)'].join('\n'));
+    assert.deepStrictEqual(shells(azure), ['6:bash']);
+    assert.strictEqual(lines(azure)[6], 'echo ${FOO} ${BUILD_SOURCESDIRECTORY} $(date)');
+    assert.deepStrictEqual(shells(extractShell('yaml', 'command: ls\nsh: echo x')), ['1:sh']);
+    const gh = extractShell('yaml', [
+      'jobs:', '  a:', '    defaults:', '      run:', '        shell: sh', '    runs-on: ubuntu-latest', '    steps:', '      - run: echo a',
+      '  b:', '    runs-on: ${{ matrix.os }}', '    steps:', '      - run: echo ${{ }}', '        shell: sh', '      - run: echo c', '        shell: pwsh', '      - run: echo d',
+      '  c:', '    steps:', '      - run: echo e',
+    ].join('\n'));
+    assert.deepStrictEqual(shells(gh), ['7:sh', '11:sh', '15:bash', '18:bash']);
+    assert.strictEqual(lines(gh)[11], 'echo ${EXPR}');
+    const list = extractShell('yaml', ['script:', '  - echo a', '  - |', '    echo b', '- other: x'].join('\n'));
+    assert.deepStrictEqual(shells(list), ['1:-', '3:-']);
+    const notes = explainHost('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo x >> $GITHUB_ENV', 3, 'ja')!.notes;
+    assert.ok(notes.some((n) => /GitHub Actions が用意するファイル/.test(n)), notes.join('\n'));
+  });
+
+  it('npm and Markdown: escapes in scripts, other lines, and code blocks of each shell', () => {
+    const npm = extractShell('npm', ['{', '  "scripts": {', '    "a": "echo \\"x\\"\\n\\ty",', '    not a script', '  }', '}'].join('\n'));
+    assert.strictEqual(lines(npm)[2], 'echo "x" \ty');
+    const md = extractShell('markdown', ['```', 'plain', '```', '```zsh', 'echo z', '```', '```ksh', 'echo k', '```', '```dash', 'echo d', '```'].join('\n'));
+    assert.deepStrictEqual(shells(md), ['4:zsh', '7:ksh', '10:dash']);
+  });
+  it('YAML: a bare run: at the top, command at the top, run below another key, run: outside CI', () => {
+    assert.deepStrictEqual(shells(extractShell('yaml', 'run:\n  - echo a\nsteps:\n- x')), ['1:bash']);
+    assert.deepStrictEqual(shells(extractShell('yaml', 'command: ls\nsteps:\n- x')), ['0:-']);
+    assert.deepStrictEqual(shells(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - name: a\n        run: echo a\n        shell: sh')), ['4:sh']);
+    assert.deepStrictEqual(shells(extractShell('yaml', 'run: echo x')), ['0:-']);
+    assert.strictEqual(extractShell('jenkinsfile', 'sh "echo $1 ${open"').text, 'echo $1 ${open');
+  });
+
+  it('Python: imports in every form, calls in comments and strings, lists, keywords, f-strings and escapes', () => {
+    const py = [
+      'import subprocess as sp, os',
+      'from subprocess import (',
+      '    run,',
+      '    check_output as co,',
+      ')',
+      'from asyncio import create_subprocess_exec',
+      '# sp.run("commented")',
+      'x = "sp.run(\'in a string\')"',
+      'run(shell=True)',
+      'run(["ls", "-l"], shell=True)',
+      'run([], shell=False)',
+      'run(["a", name, "\\x41\\u0041"])',
+      'run(["a",',
+      '     "b"])',
+      'create_subprocess_exec("ls", "-l", *args)',
+      'run("ls -l")',
+      'run("ls -l", shell=flag)',
+      'run("echo " + x, shell=True)',
+      'run("echo a", shell=True, executable="/bin/bash")',
+      'run("echo z", shell=True, executable="/bin/zsh")',
+      'os.system(f"echo {x!r:>3} {{}} { }")',
+      'os.system("""echo a',
+      'b""")',
+      'os.system("a \\',
+      'b")',
+      'os.system(cmd)',
+      'os.system("x %s" % y)',
+      'co(  # why',
+      '   "date",  # when',
+      '   )',
+      'os.system(rb"raw\\n" "two")',
+      'os.system("open',
+      'sp.run(',
+    ].join('\n');
+    const e = extractShell('python', py);
+    const regions = e.regions.map((r) => `${r.start}:${r.label[1].replace(/^Python `[\w.]+` \(|\)$/g, '')}`);
+    assert.deepStrictEqual(regions, [
+      '9:shell=True: the shell runs the first item of the list', '11:arguments run without a shell', '12:arguments run without a shell', '14:arguments run without a shell',
+      '15:a command string run without a shell', '16:a command string run without a shell', '17:a string the shell (/bin/sh) runs', '18:a string the shell (bash) runs',
+      '19:a string the shell (zsh) runs', '20:a string the shell (/bin/sh) runs', '21:a string the shell (/bin/sh) runs', '23:a string the shell (/bin/sh) runs',
+      '26:a string the shell (/bin/sh) runs', '28:a command string run without a shell', '30:a string the shell (/bin/sh) runs',
+    ]);
+    assert.strictEqual(lines(e)[11], 'a "${py_name}" AA');
+    assert.strictEqual(lines(e)[20], 'echo ${py_x} {} ${py_expr}');
+    assert.strictEqual(lines(e)[30], 'raw\\ntwo');
+    const notes = e.regions.flatMap((r) => (r.notes ?? []).map((n) => n[1]));
+    assert.ok(notes.some((n) => /decided at run time/.test(n)));
+    assert.ok(notes.some((n) => /only the string literal is explained/.test(n)));
+    assert.deepStrictEqual(extractShell('python', 'run("x")').regions, []);
+  });
+  it('Python and YAML: lists that cannot be read, escapes in scripts, a blank line before shell:', () => {
+    const e = extractShell('python', ['import subprocess', 'subprocess.run([cmd, "x"], shell=True)', 'subprocess.run(["a" +', '  "b"])', 'subprocess.run("\\u0041"  # c', ')', 'subprocess.run("eof'].join('\n'));
+    assert.deepStrictEqual(e.regions.map((r) => r.start), [4]);
+    assert.strictEqual(lines(e)[4], 'A');
+    assert.deepStrictEqual(shells(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo a\n\n        shell: sh')), ['3:sh']);
+  });
+
+  it('explanations and problems of host files, in both languages', () => {
+    const mk = explainHost('makefile', 'all:\n\techo $(CC)', 1, 'ja')!;
+    const every = (ts: typeof mk.items): typeof mk.items => ts.flatMap((t) => [t, ...every(t.children)]);
+    assert.ok(every(mk.items).some((t) => /make の変数/.test(t.explanation)));
+    assert.ok(mk.notes.some((n) => /^`\$\(CC\)` は make の変数/.test(n)), mk.notes.join('\n'));
+    assert.strictEqual(mk.context[0].label, 'Makefile のレシピ');
+    const gh = explainHost('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo "${{ github.head_ref }}"', 3, 'ja')!;
+    assert.ok(gh.notes.some((n) => /スクリプトインジェクション/.test(n)));
+    const pipe = explainHost('dockerfile', 'FROM alpine\nRUN seq 3 | sort -r', 1)!;
+    assert.ok(pipe.examples.length > 0);
+    const issues = (kind: HostKind, text: string, lang: 'ja' | 'en' = 'en') => {
+      const extracted = extractShell(kind, text);
+      const tree = parser.parse(extracted.text);
+      try {
+        return hostIssues(tree, extracted, text.split('\n'), lang);
+      } finally {
+        tree.delete();
+      }
+    };
+    assert.deepStrictEqual(issues('markdown', '```bash\n[[ -f a ]]\n```'), []);
+    const sh = issues('dockerfile', 'FROM alpine\nRUN echo -e "a\\tb" && [[ -f a &&\\\n  -f b ]] | cat', 'ja');
+    assert.ok(sh.some((i) => i.severity === 'info'));
+    assert.ok(sh.some((i) => i.code === 'dbracket' && i.endCol === 'RUN echo -e "a\\tb" && [[ -f a &&\\'.length));
+    assert.ok(sh.some((i) => i.code === 'dockerPipefail' && /パイプ/.test(i.message)));
+    const py = issues('python', 'import os\nimport subprocess\nsubprocess.run("ls -l")', 'ja');
+    assert.ok(py.some((i) => i.code === 'pythonNoShell' && /shell=True/.test(i.message)));
+    const exec = explainHost('dockerfile', 'FROM alpine\nCMD ["echo", "hi"]', 1, 'ja')!;
+    assert.ok(exec.notes.some((n) => /exec 形式/.test(n)));
+    const e = extractShell('dockerfile', 'RUN echo');
+    const plain = remapExplanation({ line: 0, summary: '', items: [], context: [], notes: [], examples: [{ title: 'E', sections: [] }] }, e, ['RUN echo']);
+    assert.strictEqual(plain.examples[0].anchor, undefined);
+    assert.deepStrictEqual(substitutionNotes(extractShell('yaml', 'jobs:\n  a:\n    steps:\n      - run: echo ${{ github.head_ref }}'), 3, 'en').length, 2);
   });
 });
