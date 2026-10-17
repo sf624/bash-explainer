@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![lang: English](https://img.shields.io/badge/lang-English-lightgrey)
 [![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-blue)](./README.ja.md)
 
-A Visual Studio Code extension that explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
+Explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
 
 Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
 
@@ -15,15 +15,19 @@ Hover a line and see what every command, option, redirection and `${…}` does, 
 
 ![Bash Explainer demo](images/demo.gif)
 
-## Quick start
+Bash Explainer is a VS Code extension, and more: the same explanations and warnings also come as a web page you can try without installing anything, a command-line tool, a Language Server for other editors, and a GitHub Action that checks scripts in pull requests.
 
-1. Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Visual Studio Marketplace.
-2. Open a shell script (`.sh`, `.bash`, …).
-3. Hover any line — or put the cursor on it and press `Ctrl+K Ctrl+E` (`Cmd+K Cmd+E` on macOS).
+## Where to use it
 
-For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
-
-To try it without installing anything, open the **[web version](https://sf624.github.io/bash-explainer/)**, paste a script and move the cursor: the same explanations, in the browser.
+| Where | How |
+| --- | --- |
+| **VS Code** | Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Marketplace, open a shell script and hover a line. See [In VS Code](#in-vs-code). |
+| VSCodium and other editors using Open VSX | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
+| vscode.dev and github.dev | The same extension works in VS Code for the Web (press `.` in a GitHub repository). |
+| **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script and move the cursor. |
+| **Terminal** | `npx bash-explainer deploy.sh:12`, or `npm install --global bash-explainer`. See [cli/README.md](cli/README.md#installation). |
+| **Neovim, Helix, Emacs** and other LSP editors | `bash-explainer --lsp`, a Language Server with the same hovers, warnings and quick fixes. See [In your editor](cli/README.md#in-your-editor-language-server). |
+| **CI** | `uses: sf624/bash-explainer@v0` in GitHub Actions puts the warnings on the pull request's diff; elsewhere, `npx bash-explainer --check`. See [In CI](cli/README.md#in-ci-github-actions). |
 
 ## What it shows
 
@@ -35,58 +39,6 @@ To try it without installing anything, open the **[web version](https://sf624.gi
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | the regex piece by piece, and a sample: `a=x` → `x=a` |
 | `#!/bin/sh` … `[[ -f $f ]]` | ⚠ `[[ ]]` fails in dash — with a quick fix to `[ -f "$f" ]` |
 | `RUN apt-get update && …` in a Dockerfile | the same explanations inside Dockerfiles, Makefiles, CI YAML, `package.json` and Python |
-
-## Ways to show explanations
-
-| | How | Default |
-| --- | --- | --- |
-| **Hover** | Hover a line, or press `Ctrl+K Ctrl+E` on the cursor line | on |
-| **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the hover or the editor title bar |
-| **Inline** | A faint one-line summary at the end of the cursor line | off |
-
-Turn them on or off by clicking **Bash Explainer** in the status bar.
-
-### Hover
-
-Hover a line to see its breakdown, right where you are reading.
-
-![Hover](images/hover.gif)
-
-### Panel
-
-The panel follows the cursor line by line. Point at a part of the tree to highlight it in the editor.
-
-![Panel](images/panel.gif)
-
-### Inline
-
-A one-line summary at the end of the cursor line.
-
-![Inline](images/inline.png)
-
-## Installation
-
-- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
-- **In VS Code:** open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) and search for *Bash Explainer*, or run `ext install shun-fujioka.bash-explainer` from Quick Open (`Ctrl+P` / `Cmd+P`).
-- **Command line:** `code --install-extension shun-fujioka.bash-explainer`
-- **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
-- **No installation:** the [web version](https://sf624.github.io/bash-explainer/) runs in the browser.
-- **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository).
-- **In the terminal:** `npx bash-explainer deploy.sh:12`, or `npm install --global bash-explainer` — the same explanations on the command line, and `--check` for CI, also as a GitHub Action (`uses: sf624/bash-explainer@v0`). See [cli/README.md](cli/README.md#installation).
-- **Neovim, Helix, Emacs and other editors:** `bash-explainer --lsp` is a Language Server with the same hovers, warnings and quick fixes. See [In your editor](cli/README.md#in-your-editor-language-server).
-
-Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
-
----
-
-## The panel
-
-The panel works like regex101:
-
-- **Edit the examples.** Change the input of a worked example — grep and `[[ =~ ]]` test strings, sed, awk, jq, perl, `sort`, `cut`, `xargs`, whole pipelines — and the output updates as you type.
-- **See what matched.** Matches are highlighted in the input, each capture group in its own colour, the same colour as the group in the explanation; a table shows what `\1`, `\2`, … captured.
-- **Switch the shell or yq** for the current file from the header, and see the explanation and warnings change.
-- **Fold** the explanation tree, **copy** it as Markdown for a review or a document, and open the searchable **quick reference** of expansions, redirections, tests, variables and commands.
 
 ## What is explained
 
@@ -151,9 +103,9 @@ Three different tools are called `yq`, each with its own syntax: **mikefarah/yq 
 
 The first release with each feature was measured on every 4.x minor release. When nothing tells, mikefarah/yq v4 is assumed; set `bashExplainer.yq.flavor` to fix the choice.
 
-## Problems panel and quick fixes
+## Warnings and quick fixes
 
-Warnings also appear in the Problems panel, so you see them without hovering. Where a rewrite keeps the meaning, a quick fix is offered:
+Warnings appear in VS Code's Problems panel, so you see them without hovering, and the same warnings come from the command-line tool (`--check`), the Language Server and the GitHub Action. Where a rewrite keeps the meaning, a quick fix is offered:
 
 | Before | After |
 | --- | --- |
@@ -166,7 +118,64 @@ Warnings also appear in the Problems panel, so you see them without hovering. Wh
 
 Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. To silence a warning, add `# bash-explainer disable=<code>` on the line before it (or after the code on the same line), `# bash-explainer disable-file=<code>` anywhere for the whole file, or list the code in `bashExplainer.diagnostics.ignore`; `all` matches every warning. Turn the Problems panel entries off with `bashExplainer.diagnostics.enabled`.
 
-## Commands
+## In VS Code
+
+### Quick start
+
+1. Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Visual Studio Marketplace.
+2. Open a shell script (`.sh`, `.bash`, …).
+3. Hover any line — or put the cursor on it and press `Ctrl+K Ctrl+E` (`Cmd+K Cmd+E` on macOS).
+
+For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
+
+### Installation
+
+- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+- **In VS Code:** open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) and search for *Bash Explainer*, or run `ext install shun-fujioka.bash-explainer` from Quick Open (`Ctrl+P` / `Cmd+P`).
+- **Command line:** `code --install-extension shun-fujioka.bash-explainer`
+- **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+- **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository).
+
+Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
+
+### Ways to show explanations
+
+| | How | Default |
+| --- | --- | --- |
+| **Hover** | Hover a line, or press `Ctrl+K Ctrl+E` on the cursor line | on |
+| **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the hover or the editor title bar |
+| **Inline** | A faint one-line summary at the end of the cursor line | off |
+
+Turn them on or off by clicking **Bash Explainer** in the status bar.
+
+#### Hover
+
+Hover a line to see its breakdown, right where you are reading.
+
+![Hover](images/hover.gif)
+
+#### Panel
+
+The panel follows the cursor line by line. Point at a part of the tree to highlight it in the editor.
+
+![Panel](images/panel.gif)
+
+#### Inline
+
+A one-line summary at the end of the cursor line.
+
+![Inline](images/inline.png)
+
+### The panel
+
+The panel works like regex101:
+
+- **Edit the examples.** Change the input of a worked example — grep and `[[ =~ ]]` test strings, sed, awk, jq, perl, `sort`, `cut`, `xargs`, whole pipelines — and the output updates as you type.
+- **See what matched.** Matches are highlighted in the input, each capture group in its own colour, the same colour as the group in the explanation; a table shows what `\1`, `\2`, … captured.
+- **Switch the shell or yq** for the current file from the header, and see the explanation and warnings change.
+- **Fold** the explanation tree, **copy** it as Markdown for a review or a document, and open the searchable **quick reference** of expansions, redirections, tests, variables and commands.
+
+### Commands
 
 | Command | Shortcut / where |
 | --- | --- |
@@ -175,7 +184,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 | Bash Explainer: Turn Hover, Inline and Panel On or Off | the status bar item |
 | Bash Explainer: Open Settings | the hover and the panel |
 
-## Settings
+### Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -205,7 +214,7 @@ Fixes are offered only when the script's shell lacks the construct, and only whe
 | **Dictionary** | | |
 | `bashExplainer.customCommands` | `{}` | Describe commands the dictionary does not know (see below) |
 
-### Your own commands
+#### Your own commands
 
 In-house tools are shown as *external commands* until you describe them:
 
@@ -221,6 +230,10 @@ In-house tools are shown as *external commands* until you describe them:
   }
 }
 ```
+
+## Command line, other editors and CI
+
+The command-line tool, the Language Server and the GitHub Action are one npm package, [`bash-explainer`](cli/README.md). Its README covers the options, the output formats (text, Markdown, JSON, SARIF, GitHub annotations), the set-up for Neovim, Helix and Emacs, and the action's inputs.
 
 ## Limitations
 
