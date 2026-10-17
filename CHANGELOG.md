@@ -3,6 +3,8 @@
 ## Unreleased
 
 - The parser is updated: tree-sitter-bash 0.25.1 (from 0.23.3) with web-tree-sitter 0.27.0 (from 0.22.6). Explanations of bash scripts stay the same; scripts with syntax the grammar cannot read, such as zsh-only code, may be split up differently.
+- Code that is not shell is no longer explained as shell: the JavaScript of `actions/github-script` (`with: script:`), `run:` steps of jobs on Windows runners (PowerShell by default, unless the step says `shell: bash`), and Dockerfile stages that use PowerShell or cmd (`SHELL ["powershell", …]`, Windows base images). `SHELL` now applies until the next `FROM`, as in Docker.
+- A step's `shell:` written after `- run:` is now taken into account.
 
 ## 0.2.0
 
