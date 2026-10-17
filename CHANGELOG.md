@@ -10,6 +10,7 @@
 - Aliases defined in the script (`alias ll='ls -l'`) are explained where they are used, with a pitfall that bash does not expand them in scripts without `shopt -s expand_aliases`.
 - Variables of CI systems are explained: about 100 environment variables that GitHub Actions, GitLab CI/CD, CircleCI, Jenkins, Bitbucket Pipelines and Azure Pipelines set (`$GITHUB_WORKSPACE`, `$CI_COMMIT_SHA`, `$BUILD_NUMBER`…), unless the script sets them itself; the contexts of GitHub Actions expressions (`${{ github.head_ref }}`, `secrets.*`, `matrix.*`, `steps.<id>.outputs.*`…); Azure Pipelines macros (`$(Build.SourcesDirectory)`); and Jenkins' `${env.BRANCH_NAME}` and `${params.X}`.
 - Fixes found by new tests: `$"…"` (a translated string) is explained as such instead of as a plain string without its `$`; `unset` explains its options and names; a Python `shell=True` script with `\x41` or `\u0041` escapes is decoded as Python does; perl one-liners with `elsif` get worked examples.
+- Aliases that distributions define for interactive shells (`ll`, `la`, `l`, `l.`) are explained, with what they stand for on Ubuntu, Fedora / RHEL and Git for Windows, and their arguments as those of `ls`. A note says they depend on the system and are missing in scripts, and what to write instead; in Markdown code blocks, typed into a terminal, the note is milder.
 
 ## 0.3.0
 
