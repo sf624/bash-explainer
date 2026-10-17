@@ -6,6 +6,8 @@
 - Glob examples follow `shopt -s dotglob` (names starting with `.` match too), `nocaseglob` (file names ignore case) and `nocasematch` (`case` and `[[ == ]]` patterns ignore case), set earlier in the script; the explanation says which is on.
 - Extended globs (`!(*.txt)`, `*.@(jpg|png)`, `+([0-9])`…) in arguments are read as one word; before, the parser took `!(…)` for a subshell and explained `*.txt` as a command. They are explained part by part, with matching and non-matching names. A pitfall points out a missing `shopt -s extglob` (bash's syntax error), or one inside the same function or block as the glob, which comes too late because bash reads the whole block first. In zsh, `*(…)` is noted as zsh-only syntax (glob qualifiers), as before.
 - A pitfall for `for f in *.log` (and `"$dir"/*`): when nothing matches, the loop runs once with the pattern itself. It suggests `[ -e "$f" ] || continue` or `shopt -s nullglob`, and stays quiet when the body already checks, or with nullglob or failglob on.
+- A pitfall for variables set on the right of a pipe and read after it (`cat f | while read -r l; do n=…; done; echo "$n"`): the pipeline ran in a subshell. It suggests `done < file`, `< <(command)` or `shopt -s lastpipe`, and stays quiet in zsh and ksh, where the last part runs in the shell itself.
+- Aliases defined in the script (`alias ll='ls -l'`) are explained where they are used, with a pitfall that bash does not expand them in scripts without `shopt -s expand_aliases`.
 
 ## 0.3.0
 

@@ -306,3 +306,29 @@ describe('globs that match nothing', () => {
     assert.ok(!pitfall(explain('for f in a b; do :; done')));
   });
 });
+
+describe('pipelines and aliases', () => {
+  const lost = (e: LineExplanation) => e.notes.some((n) => /the commands of a pipeline/.test(n));
+  it('points out a variable set on the right of a pipe and read after it', () => {
+    assert.ok(lost(explain('cat f | while read -r l; do n=$l; done\necho "$n"')));
+    assert.ok(lost(explain('echo x | read y; echo "$y"')));
+  });
+  it('says nothing with lastpipe, in zsh, when unused, or set again before use', () => {
+    assert.ok(!lost(explain('shopt -s lastpipe\ncat f | while read -r l; do n=$l; done\necho "$n"', 1)));
+    assert.ok(!lost(explain('cat f | while read -r l; do echo "$l"; done')));
+    assert.ok(!lost(explain('cat f | while read -r l; do n=$l; done\nn=0; echo "$n"')));
+    const tree = parser.parse('cat f | while read -r l; do n=$l; done\necho "$n"');
+    try {
+      assert.ok(!new Analyzer('en').explainLine(tree, 0, 'zsh').notes.some((n) => /pipeline/.test(n)));
+    } finally {
+      tree.delete();
+    }
+  });
+  it('explains an alias defined in the script, with a pitfall without expand_aliases', () => {
+    const e = explain('alias ll="ls -l"\nll /tmp', 1);
+    assert.match(find(e, 'll /tmp').explanation, /alias `ll` defined on line 1: replaced by `ls -l`/);
+    assert.ok(e.notes.some((n) => /bash does not expand aliases in scripts/.test(n)));
+    assert.ok(!explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2).notes.some((n) => /aliases/.test(n)));
+    assert.ok(!explain('alias grep=ggrep\ngrep x f', 1).notes.some((n) => /aliases/.test(n)));
+  });
+});
