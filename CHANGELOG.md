@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - About 100 more commands and builtins, chosen from a survey of shell scripts, Dockerfiles and workflows in popular repositories: package managers (`apt-get`, `apk`, `dpkg`, `dnf`, `brew`, `pip`), users and groups (`id`, `useradd`, `adduser`), system information and services (`uname`, `nproc`, `systemctl`), signatures and checksums (`gpg`, `openssl`, `sha512sum`), compression (`xz`, `zstd`), toolchains (`go`, `cargo`, `node`), `gh`, `shellcheck` and more, plus frequent options of known ones (`set -E`, `test -z`, `tar --strip-components`, `curl --retry`, `jq --argjson`…). In that survey, the share of commands explained went from 80% to 89%.
 - About 45 more from a second survey, of operations and cloud scripts, node bootstrap scripts and dotfiles: `kubectl`, `helm`, `kustomize`, `kind`, `terraform`, `aws`, `gcloud`, `az`, `cosign`, `podman` (with docker's subcommands), `envsubst`, `dd`, `lsblk`, `iptables`, `usermod`, `ssh-keygen`, `bc`, `npx`, `pnpm`, macOS's `defaults` and `hdiutil`, and more; `docker buildx`/`system`/`inspect`, `gh pr` options, `git submodule`/`symbolic-ref`/`show-ref`, `comm -1 -2 -3`. Across both surveys, about 90% of the commands met are now explained.
