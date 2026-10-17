@@ -111,16 +111,18 @@ async function launch(code, work, extDir, scenario) {
     '--skip-release-notes',
     '--disable-telemetry',
     '--new-window',
+    // CI runners (Ubuntu 24.04) do not allow Chromium's sandbox.
+    ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []),
     IMAGES,
     path.join(IMAGES, 'demo.sh'),
-  ], { stdio: 'ignore', env: cleanEnv });
+  ], { stdio: ['ignore', 'ignore', fs.openSync(path.join(work, `${scenario}-vscode.log`), 'w')], env: cleanEnv });
 
   let browser;
   for (let i = 0; i < 60 && !browser; i++) {
     await sleep(500);
     try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`); } catch {}
   }
-  if (!browser) throw new Error('could not connect to VS Code');
+  if (!browser) throw new Error(`could not connect to VS Code; see ${path.join(work, `${scenario}-vscode.log`)}`);
   let page;
   for (let i = 0; i < 60 && !page; i++) {
     for (const c of browser.contexts()) for (const p of c.pages()) if (p.url().includes('workbench')) page = p;
