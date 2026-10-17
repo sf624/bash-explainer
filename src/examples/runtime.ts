@@ -118,7 +118,7 @@ export interface TestCase {
  * Values that make a simple test true and false. `kind` is `[` (test), `[[` or `((`.
  * Undefined for tests whose result depends on the system (file tests) or on several conditions.
  */
-export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false): TestCase[] | undefined {
+export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | undefined, right: Operand | undefined, quotedRight = false, nocase = false): TestCase[] | undefined {
   // Unary string tests.
   if (left === undefined && right && 'var' in right) {
     const v = right.var;
@@ -154,10 +154,10 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
     const neg = op === '!=';
     // In [[ ]], an unquoted right side of == / != is a glob pattern.
     if (kind === '[[' && varOnLeft && !quotedRight && /[*?[]/.test(lit)) {
-      const ex = globExamples(lit, 'value');
+      const ex = globExamples(lit, 'value', { nocase });
       if (!ex?.nonMatching.length) return undefined;
-      const yes = ex.matching[0];
-      const no = ex.nonMatching.find((x) => !globMatches(lit, x, 'value'))!;
+      const yes = ex.matching[nocase && ex.matching.length > 1 ? ex.matching.length - 1 : 0];
+      const no = ex.nonMatching.find((x) => !globMatches(lit, x, 'value', { nocase }))!;
       return [{ vars: { [v]: neg ? no : yes }, result: true }, { vars: { [v]: neg ? yes : no }, result: false }];
     }
     const other = lit === '' ? 'abc' : lit + 'x';
