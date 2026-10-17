@@ -28,7 +28,7 @@ export function detectShell(text: string, fileName = ''): Shell | undefined {
     }
     return shellFromName(prog);
   }
-  const base = fileName.split(/[\\/]/).pop() ?? '';
+  const base = fileName.split(/[\\/]/).pop()!;
   if (/\.zsh$|^\.?z(shrc|profile|login|logout|shenv)$/.test(base)) return 'zsh';
   if (/\.ksh$|^\.?mkshrc$/.test(base)) return base.includes('mksh') ? 'mksh' : 'ksh';
   if (/\.bash$|^\.?bash(rc|_profile|_login|_logout|_aliases)$/.test(base)) return 'bash';
@@ -51,9 +51,9 @@ function shellFromName(name: string): Shell | undefined {
 /**
  * Where each bash feature works, measured with bash 5.2, dash 0.5.12, busybox 1.36 ash, yash 2.55,
  * ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (see test/dialect.test.ts, which re-checks the installed ones).
- * The letters are b d a y k m z; `posix` says whether POSIX sh has it.
+ * The letters are b d a y k m z; none of them is in POSIX sh.
  */
-interface Feature { works: string; posix?: boolean; ja: string; en: string; altJa?: string; altEn?: string }
+interface Feature { works: string; ja: string; en: string; altJa?: string; altEn?: string }
 
 export const FEATURES: Record<string, Feature> = {
   dbracket: { works: 'bayk mz', ja: '`[[ ]]`', en: '`[[ ]]`', altJa: '`[ ]` を使う', altEn: 'use `[ ]`' },
@@ -219,26 +219,24 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       if (open === '[[') {
         add('dbracket');
         if (n.descendantsOfType('=~').length) add('regex');
-      } else if (open === '((') add('arithCommand');
-      else if (open === '[' && n.descendantsOfType('==').length) add('eqeqTest');
+      } else if (open === '[' && n.descendantsOfType('==').length) add('eqeqTest');
       return;
     }
     case 'command': {
-      const name = n.childForFieldName('name');
-      // `(( expr ))` parsed as a command named by an arithmetic expansion.
-      if (name?.text.startsWith('((')) { add('arithCommand'); return; }
-      const words = n.namedChildren.filter((c) => c.id !== name?.id).map((c) => c.text);
-      commandFeatures(name?.text ?? '', words, add);
+      const name = n.childForFieldName('name')!;
+      const words = n.namedChildren.filter((c) => c.id !== name.id).map((c) => c.text);
+      commandFeatures(name.text, words, add);
       return;
     }
     case 'declaration_command': {
       const words = n.children.slice(1).map((c) => c.text);
-      commandFeatures(n.child(0)?.text ?? '', words, add);
+      commandFeatures(n.child(0)!.text, words, add);
       return;
     }
     case 'brace_expression': add('braceRange'); return;
     case 'c_style_for_statement': add('cFor'); return;
-    case 'select_statement': add('select'); return;
+    // tree-sitter-bash reads `select x in …` as a for statement opened by `select`.
+    case 'for_statement': if (n.child(0)!.type === 'select') add('select'); return;
     case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
     case 'herestring_redirect': add('herestring'); return;
     case 'ansi_c_string': add('ansiC'); return;
@@ -296,7 +294,8 @@ function variableFeature(name: string, add: (id: string) => void): void {
 }
 
 function commandFeatures(name: string, words: string[], add: (id: string) => void): void {
-  const flags = words.filter((w) => /^-[a-zA-Z]+$/.test(w)).join('').replace(/-/g, '');
+  // The letters of `-abc`, also with a value attached (`read -n1`).
+  const flags = words.map((w) => /^-([a-zA-Z]+)/.exec(w)?.[1] ?? '').join('');
   switch (name) {
     case 'declare': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'declare'); break;
     case 'typeset': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'typeset'); break;
@@ -351,7 +350,6 @@ function featureMessage(id: string, shell: Shell, lang: Lang): string | undefine
   const label = s(f.ja, f.en);
   const alt = f.altJa ? s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`) : '';
   if (shell === 'sh') {
-    if (f.posix) return undefined;
     // Name the common /bin/sh implementations it breaks on.
     const fails = (['dash', 'ash'] as RealShell[]).filter((sh) => !works(f, sh)).map((sh) => SHELL_NAMES[sh]);
     return s(
