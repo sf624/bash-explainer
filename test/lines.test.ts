@@ -4,6 +4,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import * as os from 'os';
 import { Analyzer } from '../src/analyzer';
+import { dialectIssues, featuresOnLine } from '../src/dialect';
 import { explainPrintf } from '../src/embedded/format';
 import { explainPerl } from '../src/embedded/perl';
 import { judgeYq, yqSameAsJq } from '../src/embedded/yq';
@@ -11,6 +12,8 @@ import { relativeDate, runGitLog, sampleCommits } from '../src/examples/gitlog';
 import { jqExample } from '../src/examples/jq';
 import { pipelineExample } from '../src/examples/pipeline';
 import { regexExamples } from '../src/examples/regex';
+import { runAwk } from '../src/examples/awk';
+import { perlExample, perlOptions, runPerl } from '../src/examples/perlrun';
 import { runSed } from '../src/examples/sed';
 import { runCut, runTr } from '../src/examples/textfilters';
 import { explainGetoptShort } from '../src/embedded/getopt';
@@ -226,6 +229,54 @@ describe('lines no other test reaches', () => {
     assert.deepStrictEqual(runTr(['-ds', 'a', 'b'], ['aabbbc']), ['bc']);
     assert.throws(() => runTr(['-ds', 'a'], ['x']), /two sets/);
     assert.throws(() => runTr(['a'], ['x']), /two sets/);
+  });
+
+  it('awk and perl runners: what they leave to the real tools', () => {
+    assert.strictEqual(runAwk('BEGIN { FS = "((" } { print $1 }', ['a((b']), undefined);
+    const ex = (words: string[]) => { const p = perlOptions(words)!; return perlExample(p.code, p.opts); };
+    assert.strictEqual(ex(['-ne', 'print "a']), undefined);
+    assert.strictEqual(ex(['-pe', 's/\\Qa.b/x/']), undefined);
+    assert.strictEqual(ex(['-ne', String.raw`print "\Q$_"`]), undefined);
+    assert.strictEqual(perlOptions(['-Xe', 'print']), undefined);
+    assert.ok(perlOptions(['-wne', 'print']));
+    const tr = perlOptions(['-pe', 'tr/abc/x/'])!;
+    assert.deepStrictEqual(runPerl(tr.code, tr.opts, ['abcd']), ['xxxd']);
+  });
+
+  it('dialects: bash features found for other shells', () => {
+    const features = (src: string) => {
+      const tree = parser.parse(src);
+      try {
+        return featuresOnLine(tree.rootNode, 0);
+      } finally {
+        tree.delete();
+      }
+    };
+    const cases: [string, string][] = [
+      ['diff <(a) <(b)', 'procSub'], ['shopt -s nullglob', 'shopt'], ['pushd /tmp', 'pushd'], ['coproc cat', 'coproc'], ['print hi', 'print'],
+      ['whence ls', 'whence'], ['export -f f', 'exportF'], ['wait -n', 'waitN'], ['type -t ls', 'typeT'], ['printf -v x %s y', 'printfV'], ["printf '%q' \"$x\"", 'printfQ'],
+    ];
+    for (const [src, id] of cases) assert.ok(features(src).includes(id), `${src}: ${features(src)}`);
+    const tree = parser.parse('case $x in\n  a) echo a ;&\n  b) echo b ;;&\nesac');
+    try {
+      assert.deepStrictEqual([1, 2].map((l) => featuresOnLine(tree.rootNode, l)), [['caseFall'], ['caseCont']]);
+    } finally {
+      tree.delete();
+    }
+    const zsh = parser.parse('if true; then\n  echo ${(f)x}\nfi');
+    try {
+      assert.ok(dialectIssues(zsh.rootNode, 'zsh', 'en').some((i) => i.kind === 'parse'));
+    } finally {
+      zsh.delete();
+    }
+  });
+
+  it('expansions: quoted patterns, classes in replacements, names by prefix, made-up samples', () => {
+    const ex = (src: string) => JSON.stringify(explain(src).examples);
+    assert.match(ex('echo "${x#"a"*}"'), /"a"|a/);
+    assert.match(ex('echo "${x//[ab]/-}"'), /-/);
+    assert.match(ex('echo "${!pre@}"'), /pre_A pre_B/);
+    assert.match(ex('echo "${x#zq*}"'), /zq/);
   });
 
   describe('languages inside arguments', () => {
