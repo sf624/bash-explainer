@@ -42,10 +42,29 @@ jobs:
         run: npx playwright-core install --with-deps chromium-headless-shell
 
       - name: Type check and unit tests
+        if: matrix.node != 24
         run: npm test
+
+      # On the newest Node.js, with every tool installed, the unit tests also measure coverage.
+      - name: Type check, and unit tests with coverage
+        if: matrix.node == 24
+        run: |
+          npx tsc --noEmit
+          npx tsc --noEmit -p web
+          npm run coverage
         env:
           # Fail instead of skipping when the browser cannot start.
-          BASH_EXPLAINER_BROWSER: ${{ matrix.node == 24 && '1' || '' }}
+          BASH_EXPLAINER_BROWSER: '1'
+
+      - name: Coverage summary
+        if: matrix.node == 24
+        run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.node == 24
+        with:
+          name: coverage
+          path: coverage/
 
       - name: Package the extension
         run: npm run package

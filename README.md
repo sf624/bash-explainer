@@ -274,6 +274,7 @@ Issues and pull requests are welcome at [github.com/sf624/bash-explainer](https:
 npm install
 npm run build      # bundle into dist/ (also copies the wasm files)
 npm test           # type check + unit tests
+npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
@@ -284,6 +285,7 @@ npm run test:integration:web   # …and in VS Code for the Web (needs `npx playw
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 - To try the command-line tool from this repository, `npm run build:cli`, then `node cli/dist/cli.js <file>` (or `npx --package=./cli bash-explainer <file>`). A bare `npx bash-explainer` does not work here: the extension's own `package.json` is also named `bash-explainer`, so npx takes this project for the package.
 - Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped. The web page test needs Chromium (`npx playwright-core install --with-deps chromium-headless-shell`).
+- CI measures the coverage of the unit tests with every tool installed (the Node.js 24 job): the run's summary lists the least covered files, and the `coverage` artifact holds the HTML report. Measured locally, it is lower when tools are missing, as their tests are skipped.
 - After changing dependencies, run `npm run notices` to regenerate [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) from what the builds include; a test fails while it is out of date, or if something under a license not yet reviewed gets in.
 - Japanese text follows [docs/japanese-style.md](docs/japanese-style.md) (in Japanese); a test checks it.
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`.

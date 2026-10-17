@@ -274,6 +274,7 @@ VS Code for the Web では、拡張はお使いのブラウザの中で動きま
 npm install
 npm run build      # dist/ にバンドル（wasm もコピー）
 npm test           # 型チェック + 単体テスト
+npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
 npm run package    # .vsix を作成
 npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
 npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
@@ -284,6 +285,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
 - このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
+- CI では、ツールをすべて入れた状態で単体テストのカバレッジを計測します（Node.js 24 のジョブ）。実行結果のページにカバーされていない部分の多いファイルが並び、成果物 `coverage` に HTML のレポートが入ります。ローカルで計測すると、ツールがない分のテストが飛ばされるので低めに出ます。
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
