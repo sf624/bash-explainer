@@ -1,3 +1,4 @@
+import { azureVariables as AZURE_VARIABLES, ciVariables, githubContext } from './dict/ciVariables';
 import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
 
@@ -455,7 +456,12 @@ function groovyText(b: Builder, i: number, from: number, to: number, interpolate
       const end = braced >= 0 && braced < to ? braced + 1 : bare ? k + bare[0].length : -1;
       if (end > 0) {
         const expr = braced >= 0 && braced < to ? line.slice(k + 2, braced).trim() : bare![1];
-        const meaning: [string, string] = [`Groovy の式 \`${expr}\` の値で、シェルが実行される前に Jenkins が埋め込みます`, `the value of the Groovy expression \`${expr}\`, filled in by Jenkins before the shell runs`];
+        // `env.BRANCH_NAME`, `params.TARGET`.
+        const envVar = /^env\.(\w+)$/.exec(expr)?.[1];
+        const known = envVar && Object.hasOwn(ciVariables, envVar) ? ciVariables[envVar].meaning : /^params\.\w+$/.test(expr) ? { ja: `ビルドパラメータ \`${expr.slice(7)}\``, en: `the build parameter \`${expr.slice(7)}\`` } : undefined;
+        const meaning: [string, string] = known
+          ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す Groovy の式 \`${expr}\` で、シェルが実行される前に Jenkins が値を埋め込みます`, `the Groovy expression \`${expr}\`: ${known.en}; Jenkins fills in its value before the shell runs`]
+          : [`Groovy の式 \`${expr}\` の値で、シェルが実行される前に Jenkins が埋め込みます`, `the value of the Groovy expression \`${expr}\`, filled in by Jenkins before the shell runs`];
         o.insert(`\${${expr.replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR'}}`, k, end, meaning);
         b.substitutions.push({ line: i, text: line.slice(k, end), meaning });
         k = end;
@@ -639,7 +645,10 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
       // `$(name)`: an Azure Pipelines macro when it names a pipeline variable; otherwise bash's `$(command)`.
       if (!(m[2].includes('.') || b.azure!.vars.has(m[2]))) continue;
       o.copy(line, at, m.index);
-      const meaning: [string, string] = [`Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `an Azure Pipelines macro, replaced with the value of the variable \`${m[2]}\` before the script runs`];
+      const known = Object.hasOwn(AZURE_VARIABLES, m[2]) ? AZURE_VARIABLES[m[2]] : undefined;
+      const meaning: [string, string] = known
+        ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `the Azure Pipelines variable \`${m[2]}\`: ${known.en}; the macro is replaced with its value before the script runs`]
+        : [`Azure Pipelines の変数 \`${m[2]}\` のマクロで、スクリプトが実行される前に値に置き換わります`, `an Azure Pipelines macro, replaced with the value of the variable \`${m[2]}\` before the script runs`];
       o.insert(`\${${m[2].replace(/\W+/g, '_').toUpperCase()}}`, m.index, m.index + m[0].length, meaning);
       b.substitutions.push({ line: i, text: m[0], meaning });
       at = m.index + m[0].length;
@@ -649,7 +658,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
     const name = m[1].replace(/\W+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'EXPR';
     const meaning: [string, string] = b.azure
       ? [`Azure Pipelines のテンプレート式で、パイプラインの展開時に \`${m[1]}\` の値に置き換わります`, `an Azure Pipelines template expression, replaced with the value of \`${m[1]}\` when the pipeline is expanded`]
-      : [`GitHub Actions の式で、スクリプトが実行される前に \`${m[1]}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${m[1]}\` before the script runs`];
+      : githubMeaning(m[1]);
     o.insert(`\${${name}}`, m.index, m.index + m[0].length, meaning);
     b.substitutions.push({ line: i, text: m[0], meaning, warning: !b.azure && UNTRUSTED.test(m[1]) ? [
       `⚠ スクリプトインジェクションの危険: \`${m[1]}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
@@ -658,6 +667,14 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
     at = m.index + m[0].length;
   }
   o.copy(line, at, to);
+}
+
+/** What a GitHub Actions expression in a script stands for: `${{ github.head_ref }}` → its branch. */
+function githubMeaning(expr: string): [string, string] {
+  const known = githubContext(expr);
+  return known
+    ? [`${known.ja}${known.ja.endsWith("`") ? " " : ""}を表す GitHub Actions の式 \`${expr}\` で、スクリプトが実行される前に値に置き換わります`, `the GitHub Actions expression \`${expr}\`: ${known.en}; replaced with its value before the script runs`]
+    : [`GitHub Actions の式で、スクリプトが実行される前に \`${expr}\` の値に置き換わります`, `a GitHub Actions expression, replaced with the value of \`${expr}\` before the script runs`];
 }
 
 /** Contexts an outside contributor controls (GitHub's security hardening guide). */
