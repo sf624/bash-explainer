@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { commandExample, expandSet, runSort } from '../src/examples/textfilters';
+import { commandExample, expandSet, FILTERS, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
 
 /** The real command's output (GNU coreutils, C locale). */
 function real(cmd: string, args: string[], input?: string[]): string[] {
@@ -21,7 +21,7 @@ const cases: string[][] = [
   ['tail', '-n', '3'], ['tail', '-n', '+2'], ['tail', '-3'], ['tail', '-c', '4'], ['tail', '-c', '+15'],
   ['seq', '5'], ['seq', '2', '5'], ['seq', '1', '3', '10'], ['seq', '-w', '8', '11'], ['seq', '-s', ',', '3'], ['seq', '0', '0.5', '2'], ['seq', '10', '-3', '1'], ['seq', '-w', '-2', '2'],
   ['basename', '/a/b/report.txt', '.txt'], ['basename', '-a', '/x/y', 'z/w/'], ['basename', '-s', '.sh', 'a.sh', 'b/c.sh'], ['basename', '/'], ['basename', '.sh', '.sh'],
-  ['dirname', '/a/b/c.txt'], ['dirname', 'file'], ['dirname', '/a/b/', 'x/y', '/z'], ['dirname', '//a//b//'],
+  ['dirname', '/a/b/c.txt'], ['dirname', 'file'], ['dirname', '/'], ['cut', '-b', '2-4'], ['cut', '-d,', '-f9'], ['uniq', '-w', '3'], ['dirname', '/a/b/', 'x/y', '/z'], ['dirname', '//a//b//'],
 ];
 
 describe('coreutils examples agree with GNU coreutils', () => {
@@ -56,3 +56,51 @@ describe('coreutils example input', () => {
     assert.throws(() => runSort(['--bogus'], []));
   });
 });
+
+describe('coreutils filters agree with GNU coreutils on fixed input', () => {
+  const input: Record<string, string[]> = {
+    sort: ['b 10 x', 'a  2 y', '', 'B 1.5K z', 'a-1 2 y', 'c\t3', 'v1.10', 'v1.2', 'v1.2', ' d 7', 'é 1'],
+    // GNU's version sort treats leading blanks and punctuation in ways the examples leave out.
+    'sort -V': ['1.10', '1.2', '', '1.2', '1.2a', 'a', '1.2b'],
+    'sort -h': ['0K', '1K', '2', '1M', '-1K'],
+    'tr -d a-z\\n': ['abc', 'de'],
+    uniq: ['a b', 'a b', 'x b', 'A c', 'a c', 'a c'],
+    cut: ['a,b,c', 'abcdef', 'x,,y'],
+    tr: ['Hello aaa World', 'xyz\\q 123'],
+    head: ['one', 'two', 'three', 'four'],
+    tail: ['one', 'two', 'three', 'four'],
+  };
+  const cases: string[][] = [
+    ['sort', '-d'], ['sort', '-i'], ['sort', '-g'], ['sort', '-V'], ['sort', '-b', '-k2'], ['sort', '-k2b,2'], ['sort', '-k2.2b,3.1b'], ['sort', '-k5'],
+    ['sort', '-k1,9'], ['sort', '-s', '-k1,1'], ['sort', '-f'], ['sort', '-h', '-k2,2'], ['sort', '-t', ' ', '-k2,2n'],
+    ['uniq', '-w', '1'], ['uniq', '-s', '2'], ['uniq', '-f', '1', '-c'], ['uniq', '-i', '-u'],
+    ['cut', '-c', '2,4', '--output-delimiter=:'], ['cut', '-f', '2', '-d', ','],
+    ['tr', '[=a=]', 'b'], ['tr', '\\101\\154', 'xy'], ['tr', '\\q', 'x'], ['tr', '-t', 'abc', 'xy'], ['tr', 'abcl', 'xy'], ['tr', '-s', 'a'], ['tr', '-c', 'a-z\\n', '_'],
+    ['head', '-c', '-3'], ['head', '-c', '6'], ['tail', '-c', '3'], ['tail', '-n', '2'], ['head', '--lines=2'], ['sort', '-h'], ['sort', '--reverse'], ['tr', '-d', 'a-z\\n'], ['tail', '+2'], ['tail'],
+  ];
+  for (const [cmd, ...args] of cases) {
+    it([cmd, ...args].join(' '), () => {
+      const lines = input[[cmd, ...args].join(' ')] ?? input[cmd];
+      assert.deepStrictEqual(FILTERS[cmd](args, lines), real(cmd, args, lines));
+    });
+  }
+  it('gives up on what it does not run', () => {
+    const fails: [() => unknown, string][] = [
+      [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
+      [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'sets'], [() => runTr(['-c', 'a', 'xy'], []), '-c with'],
+      [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), '-ds'], [() => runTr(['a'], []), 'two sets'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
+      [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
+    ];
+    for (const [f, msg] of fails) assert.throws(f, (e: Error) => e instanceof Unsupported && e.message.includes(msg), msg);
+    assert.deepStrictEqual(parseOptions(['--', '-x'], { flags: 'x', values: '' }).operands, ['-x']);
+    assert.strictEqual(sampleInput('wc', []), undefined);
+    assert.strictEqual(commandExample('nope', []), undefined);
+    assert.ok(sampleInput('cut', ['-s', '-f', '2'])!.includes('no delimiter here'));
+    assert.deepStrictEqual(expandSet('a[x*]'), ['a']);
+    assert.deepStrictEqual(runHead([undefined, '-1'], ['a', 'b']), ['a']);
+    assert.ok(sampleInput('cut', ['-d,']));
+    assert.ok(sampleInput('tr', [undefined, 'x']));
+  });
+});
+

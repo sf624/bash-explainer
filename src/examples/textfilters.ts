@@ -81,7 +81,7 @@ interface SortKey {
 function parseKey(def: string, global: string): SortKey {
   const m = /^(\d+)(?:\.(\d+))?([bdfghinrV]*)(?:,(\d+)(?:\.(\d+))?([bdfghinrV]*))?$/.exec(def);
   if (!m) throw new Unsupported(`key ${def}`);
-  const own = (m[3] ?? '') + (m[6] ?? '');
+  const own = m[3] + (m[6] ?? '');
   return {
     sf: Number(m[1]), sc: m[2] ? Number(m[2]) : 1,
     ef: m[4] ? Number(m[4]) : 0, ec: m[5] ? Number(m[5]) : 0,
@@ -132,8 +132,8 @@ function human(s: string): number {
   const m = /^\s*(-?\d*\.?\d+)\s*([KMGTPEZY]?)/i.exec(s);
   if (!m) return 0;
   const mult = 'KMGTPEZY'.indexOf(m[2].toUpperCase()) + 1;
-  // GNU compares the suffix first, then the number.
-  return (m[2] ? mult * 1e30 * Math.sign(Number(m[1]) || 1) : 0) + Number(m[1]);
+  // GNU compares the sign, then the suffix, then the number (`0K` is zero).
+  return (m[2] ? mult * 1e30 * Math.sign(Number(m[1])) : 0) + Number(m[1]);
 }
 
 function versionCmp(a: string, b: string): number {
@@ -365,9 +365,10 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     } else {
       let from = set1;
       let to = expandSet(sets[1]!, from.length);
+      // tr: "when not truncating set1, string2 must be non-empty".
+      if (!to.length) throw new Unsupported('empty set2');
       if (has(p, 't')) from = from.slice(0, to.length);
       else if (to.length < from.length) to = [...to, ...Array(from.length - to.length).fill(to[to.length - 1])];
-      if (!to.length) throw new Unsupported('empty set2');
       const map = new Map<string, string>();
       from.forEach((c, i) => map.set(c, to[i]));
       out = out.map((c) => map.get(c) ?? c);
@@ -470,7 +471,7 @@ export function runBasename(words: (string | undefined)[]): string[] {
   const list = multiple ? names : [names[0]];
   return list.map((n) => {
     if (/^\/+$/.test(n)) return '/';
-    const base = n.replace(/\/+$/, '').split('/').pop() ?? '';
+    const base = n.replace(/\/+$/, '').split('/').pop()!;
     return suffix && base !== suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base;
   });
 }
@@ -581,6 +582,8 @@ export function sampleInput(cmd: string, words: (string | undefined)[]): string[
     }
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the simulation: let it show.
+    /* c8 ignore next */
     throw e;
   }
   return undefined;
@@ -604,6 +607,8 @@ export function commandExample(cmd: string, words: (string | undefined)[]): Comm
     return { input, output: run(words, input) };
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the simulation: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
