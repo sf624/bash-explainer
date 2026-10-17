@@ -100,6 +100,8 @@ export function xargsExample(words: (string | undefined)[]): { input: string; co
     return { input, commands };
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
+    // A bug in the simulation: let it show.
+    /* c8 ignore next */
     throw e;
   }
 }
@@ -130,8 +132,8 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
   const vars = [left, right].filter((o): o is { var: string } => 'var' in o);
   if (vars.length !== 1) return undefined;
   const v = vars[0].var;
-  const litSide = 'lit' in left ? left : right;
-  const lit = 'lit' in litSide ? litSide.lit : '';
+  // The other side is the literal.
+  const lit = ('lit' in left ? left : right as { lit: string }).lit;
   const varOnLeft = 'var' in left;
   const numeric: Record<string, (a: number, b: number) => boolean> = {
     '-eq': (a, b) => a === b, '-ne': (a, b) => a !== b, '-lt': (a, b) => a < b, '-le': (a, b) => a <= b, '-gt': (a, b) => a > b, '-ge': (a, b) => a >= b,
@@ -144,9 +146,9 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
     const f = numeric[numOp];
     const candidates = [n, n + 1, n - 1, n + 10, n - 10];
     const truth = (x: number) => (varOnLeft ? f(x, n) : f(n, x));
-    const t = candidates.find(truth);
-    const fl = candidates.find((x) => !truth(x));
-    if (t === undefined || fl === undefined) return undefined;
+    // n and n + 1 always give one of each.
+    const t = candidates.find(truth)!;
+    const fl = candidates.find((x) => !truth(x))!;
     return [{ vars: { [v]: String(t) }, result: true }, { vars: { [v]: String(fl) }, result: false }];
   }
   if (kind === '((') return undefined;
