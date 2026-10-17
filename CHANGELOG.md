@@ -8,6 +8,7 @@
 - A pitfall for `for f in *.log` (and `"$dir"/*`): when nothing matches, the loop runs once with the pattern itself. It suggests `[ -e "$f" ] || continue` or `shopt -s nullglob`, and stays quiet when the body already checks, or with nullglob or failglob on.
 - A pitfall for variables set on the right of a pipe and read after it (`cat f | while read -r l; do n=…; done; echo "$n"`): the pipeline ran in a subshell. It suggests `done < file`, `< <(command)` or `shopt -s lastpipe`, and stays quiet in zsh and ksh, where the last part runs in the shell itself.
 - Aliases defined in the script (`alias ll='ls -l'`) are explained where they are used, with a pitfall that bash does not expand them in scripts without `shopt -s expand_aliases`.
+- Variables of CI systems are explained: about 100 environment variables that GitHub Actions, GitLab CI/CD, CircleCI, Jenkins, Bitbucket Pipelines and Azure Pipelines set (`$GITHUB_WORKSPACE`, `$CI_COMMIT_SHA`, `$BUILD_NUMBER`…), unless the script sets them itself; the contexts of GitHub Actions expressions (`${{ github.head_ref }}`, `secrets.*`, `matrix.*`, `steps.<id>.outputs.*`…); Azure Pipelines macros (`$(Build.SourcesDirectory)`); and Jenkins' `${env.BRANCH_NAME}` and `${params.X}`.
 
 ## 0.3.0
 

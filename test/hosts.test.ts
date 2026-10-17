@@ -97,7 +97,7 @@ describe('Makefile', () => {
 
 describe('YAML', () => {
   it('explains run: blocks, GitHub expressions and the shell of each step', () => {
-    assert.match(explain('ci.yml', 12)!.notes[0], /`\$\{\{ matrix\.node \}\}` is a GitHub Actions expression/);
+    assert.match(explain('ci.yml', 12)!.notes[0], /`\$\{\{ matrix\.node \}\}` is the GitHub Actions expression `matrix\.node`: the matrix value `node`/);
     assert.ok(labels('ci.yml', 10).includes('set -euo pipefail@10'));
     assert.ok(!explain('ci.yml', 10)!.notes.some((n) => /POSIX/.test(n)), 'run: defaults to bash');
     assert.match(explain('ci.yml', 15)!.notes.join(), /not POSIX sh/);
@@ -253,5 +253,28 @@ describe('issues for the Problems panel', () => {
   });
   it('reports Python strings without shell=True and f-strings run by a shell', () => {
     assert.deepStrictEqual(issues('deploy.py').filter((i) => i.startsWith('python')), ['pythonInjection@8:21-64', 'pythonNoShell@10:8-13']);
+  });
+});
+
+/** Explain a line (0-based) of `src`, read as the file `file`. */
+function explainHosted(file: string, src: string, line: number) {
+  const extracted = extractShell(hostKind('', file)!, src);
+  const tree = parser.parse(extracted.text);
+  try {
+    return explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
+  } finally {
+    tree.delete();
+  }
+}
+
+describe('variables of CI systems', () => {
+  it('explains GitHub Actions contexts, Jenkins env and params, and CI environment variables', () => {
+    const gh = explainHosted('.github/workflows/ci.yml', 'on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "${{ github.ref_name }} ${{ steps.b.outputs.dir }}" "$GITHUB_WORKSPACE"\n', 5);
+    const all = JSON.stringify(gh);
+    assert.match(all, /the branch or tag that triggered the workflow/);
+    assert.match(all, /the output `dir` of the step with ID `b`/);
+    assert.match(all, /set by GitHub Actions: the default working directory of steps/);
+    const jk = JSON.stringify(explainHosted('Jenkinsfile', 'node {\n  sh "echo ${env.BRANCH_NAME}"\n}\n', 1));
+    assert.match(jk, /the branch being built \(in multibranch pipelines\)/);
   });
 });

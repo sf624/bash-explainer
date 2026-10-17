@@ -3,6 +3,7 @@ import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes } from './pitfalls';
 import type { SyntaxNode, Tree } from './parser';
 import { builtins, shoptOptions } from './dict/builtins';
+import { ciVariables } from './dict/ciVariables';
 import { commands } from './dict/commands';
 import { CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
@@ -2200,6 +2201,11 @@ export class Analyzer {
     if (specialVariables[name]) return this.t(specialVariables[name]);
     if (/^\d+$/.test(name)) return this.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
     if (wellKnownVariables[name]) return this.t(wellKnownVariables[name]);
+    // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).
+    const ci = Object.hasOwn(ciVariables, name) ? ciVariables[name] : undefined;
+    if (ci && !new RegExp(`(^|[\\s;&|(])(export\\s+)?${name}=|\\bread\\b[^\\n;|&]*\\s${name}\\b`, 'm').test(this.source)) {
+      return this.s(`${ci.ci} が設定する環境変数: ${this.t(ci.meaning)}`, `set by ${ci.ci}: ${this.t(ci.meaning)}`);
+    }
     return undefined;
   }
 
