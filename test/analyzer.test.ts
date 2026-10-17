@@ -382,7 +382,25 @@ describe('aliases of distributions', () => {
     const e = explain('ll /tmp');
     assert.match(find(e, 'll /tmp').explanation, /^Alias `ll`: list files in long format .*Ubuntu: `ls -alF`/);
     assert.match(find(e, '/tmp').explanation, /file or directory/);
-    assert.ok(e.notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, Git for Windows define/.test(n)));
+    assert.ok(e.notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells/.test(n)));
+  });
+  it('covers more than ls: names that are not commands at all', () => {
+    const cases: [string, RegExp][] = [
+      ['sleep 9; alert', /Alias `alert`: show a desktop notification .*\(Ubuntu: /],
+      ['..', /Alias `\.\.`: go up one directory \(openSUSE: `cd \.\.`\)/],
+      ['+', /pushd \./], ['-', /popd/], ['cd..', /go up one directory/], ['o README', /page through files/],
+      ['md a/b', /Alias `md`: make directories/], ['rd old', /remove empty directories/], ['unmount /mnt', /the command to unmount is `umount`/],
+      ['remount ro /', /Function `remount`: remount a mounted file system/], ['xd /usr/bin/vi', /go to the directory the given file is in/],
+    ];
+    for (const [src, re] of cases) {
+      const e = explain(src, 0);
+      assert.match(all(e.items).map((t) => t.explanation).join('\n'), re, src);
+      assert.ok(e.notes.some((n) => /System-dependent/.test(n)), src);
+    }
+    assert.match(explain('md a/b').notes.join('\n'), /is an alias openSUSE defines for interactive shells.*Write `mkdir -p`/);
+    assert.match(explain('l').notes.join('\n'), /write the command you mean/i);
+    // Commands of their own are not taken for the aliases of the same name.
+    assert.ok(!explain('dir /tmp').notes.some((n) => /System-dependent/.test(n)));
   });
   it('lets a function or alias of the script win', () => {
     assert.ok(!explain('ll() { ls -l "$@"; }\nll', 1).notes.some((n) => /System-dependent/.test(n)));

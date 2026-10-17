@@ -903,16 +903,20 @@ export class Analyzer {
     if (distro) {
       const where = distro.definitions.map(([os]) => os).join(this.s('・', ', '));
       const defs = distro.definitions.map(([os, v]) => `${os}: \`${v}\``).join(this.s('、', ', '));
+      const what = distro.kind === 'alias' ? this.s('エイリアス', 'alias') : this.s('関数', 'function');
+      const instead = distro.portable
+        ? this.s(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``)
+        : this.s('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean');
       // In a README the commands are typed into a terminal, where the alias may exist.
       const interactive = /^Markdown/.test(this.opts.host ?? '');
       this.extraNotes.push(interactive
-        ? this.s(`ℹ 環境依存: \`${name}\` は ${where} が対話シェル用に定義するエイリアスで、ほかの環境にはありません。どこでも動かすには \`${distro.portable}\` と書きます`,
-          `ℹ System-dependent: \`${name}\` is an alias ${where} define for interactive shells; other systems lack it. Write \`${distro.portable}\` to work everywhere`)
-        : this.s(`⚠ 環境依存: \`${name}\` は ${where} が対話シェル用に定義するエイリアスで、コマンドではありません。ほかの環境にはなく、スクリプトの中では${distro.definitions.length > 1 ? "これらの" : "その"}環境でも使えません（command not found）。\`${distro.portable}\` と書きます`,
-          `⚠ System-dependent: \`${name}\` is an alias ${where} define for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). Write \`${distro.portable}\``));
+        ? this.s(`ℹ 環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what}で、ほかの環境にはありません。どこでも動かすには${distro.portable ? ` \`${distro.portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
+          `ℹ System-dependent: \`${name}\` is an ${what} ${where} define${distro.definitions.length > 1 ? '' : 's'} for interactive shells; other systems lack it. ${distro.portable ? `Write \`${distro.portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`)
+        : this.s(`⚠ 環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${distro.definitions.length > 1 ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead}`,
+          `⚠ System-dependent: \`${name}\` is an ${what} ${where} define${distro.definitions.length > 1 ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead}`));
       return {
-        name, doc: lookupCommand(distro.command), kind: 'command', nameTokens: [],
-        explanation: this.s(`エイリアス \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `Alias \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
+        name, doc: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
+        explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
       };
     }
     const explanation = name.includes('/')
