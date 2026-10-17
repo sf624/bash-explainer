@@ -6,7 +6,6 @@
     "src/examples/jq.ts": 83,
     "src/examples/perlrun.ts": 79,
     "src/examples/pipeline.ts": 72,
-    "src/examples/textfilters.ts": 88,
     "src/hosts.ts": 84
   }
 }

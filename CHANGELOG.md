@@ -29,6 +29,7 @@
 - sed examples follow GNU sed in more cases: `\L`/`\U` cancel a pending `\u`/`\l` (`s/.*/\u\L&/` is all lower case); an empty regex (`//`) is the last one used when the line runs, not the one written before it; and scripts GNU sed rejects (`\9` for a group the pattern lacks, `//` with no regex used yet) get no example instead of a made-up output.
 - Shell dialects: `select` loops and `read -n1` (a value attached to `-n`, `-t`…) are noted in scripts for shells that lack them; the parser reads `select` as a `for` loop, and only separate values were seen.
 - Examples for `${v#[[:digit:]]}` and other patterns with POSIX classes (`[[:alpha:]]`, `[[:space:]]`…) follow bash; the class was cut at its first `]`.
+- coreutils examples: `sort -h` puts `0K` with the zeros, as GNU sort does, and `tr a ''` gets no example (GNU tr rejects an empty second set).
 - Aliases and functions that distributions define for interactive shells are explained, with what they stand for on each system, as checked in the files the distributions ship: Ubuntu's `ll`, `la`, `l` and `alert`; Fedora / RHEL's `ll` and `l.`; openSUSE's `ll`, `la`, `l`, `ls-l`, `o`, `..`, `...`, `cd..`, `+`, `-`, `md`, `rd`, `rehash`, `beep`, `unmount`, `remount` and `xd`; Git for Windows' `ll`. A note says they depend on the system and are missing in scripts, and what to write instead; in Markdown code blocks, typed into a terminal, the note is milder.
 
 ## 0.3.0
