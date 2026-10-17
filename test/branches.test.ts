@@ -754,6 +754,12 @@ describe('the analyzer: branches no other test takes', () => {
     ['{ cat; } <<< x 2>&1 > f'], ['case $x in\n  a |\n  b) :;;\nesac', 1], ['case $x in\n  (\n  a) :;;\nesac', 1], ['case $x in\n  a)\n    echo;;\nesac', 2],
     ['x=1 \\\n  && case $y in a) :;; esac'], ['cat <<EOF\nEOF'], ['x=1 \\\n  && yq .a f.yml'], ['find . \\\n  -name a -o -name b'], ['find -L . -name a'], ['find . /tmp'],
     ['x=1 \\\n  && grep -e a -A 2 --color=auto f'], ['x=1 \\\n  && git log --oneline -n 3 --format=%h'],
+    ['tr "$a" x'], ['tr -d a b'], ['grep -- -a f'], ['sed --expression="$x" f'], ['sed -e "$x" f'], ['yq "$e" f'], ['yq -o json .a f.yml'], ["yq '.a | input' f.yml"],
+    ["yq -y '.a // \"d\"' f.yml"], ["yq -r '.a | tonumber' f.yml"], ['{ echo; } > f | sort'], ['grep a | sort'], ['perl -ne "$x"'],
+    ['seq 3 | while read -r n; do t=$n; done; echo "$t"'], ['seq 3 | read v; echo "$v"', 0, 'dash'], ['seq 3 | { read v; }; echo "$v"'], ['seq 3 | for i in 1; do s=1; done; echo $s'],
+    ['echo a | X=1 cat; echo $X'], ['f() { echo | while read -r l; do local q=1; done; echo $q; }'], ['echo | while read -r -d x l; do :; done; echo $l'],
+    ['if :; then\n  echo | while read l; do n=1; done\n  echo $n\nfi', 1], ['echo | while read l; do n=1; done; n=2; echo $n'], ['echo | cat | (cd /)'],
+    ['for f in *.log; do\n  [ -e "$f" ] || continue\ndone'], ['for f in "$d"/*.log; do echo; done'], ['shopt -s dotglob nocaseglob\nls *.txt', 1],
     ['export -n x'], ['unset -f f; unset -v x; unset "a[1]"'], ['function f() { :; }'], ['f() (echo)'], ['typeset -i n=1'], ['readonly r'],
   ];
   for (const [src, line = 0, shell, opts] of cases) {
