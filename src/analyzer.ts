@@ -178,6 +178,8 @@ export class Analyzer {
   /** The shell options in effect on this line (see shoptStates). */
   private shopt: ShoptStates = shoptStates('', 0);
   private shell: Shell | undefined;
+  /** Aliases defined in the script (`alias ll='ls -l'`): name → where, and what it stands for. */
+  private aliases = new Map<string, { line: number; value: string }>();
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
@@ -202,6 +204,14 @@ export class Analyzer {
       const name = f.childForFieldName('name')?.text;
       if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
     }
+    this.aliases.clear();
+    for (const c of root.descendantsOfType('command')) {
+      if (c?.childForFieldName('name')?.text !== 'alias') continue;
+      for (const a of c.childrenForFieldName('argument')) {
+        const m = a && /^([\w.:-]+)=(['"]?)([\s\S]*)\2$/.exec(a.text);
+        if (m && !this.aliases.has(m[1])) this.aliases.set(m[1], { line: c.startPosition.row, value: m[3] });
+      }
+    }
     this.line = line;
     this.shell = shell;
     this.shopt = shoptStates(root.text, line, shell);
@@ -218,7 +228,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line)])],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line)])],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -843,6 +853,22 @@ export class Analyzer {
       return {
         name, kind: 'command', nameTokens: this.sub(word),
         explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
+      };
+    }
+    // An alias over a known command (`alias grep=ggrep`) is still explained as that command.
+    const alias = lookupCommand(name) ? undefined : this.aliases.get(name);
+    if (alias) {
+      // bash expands aliases in scripts only with expand_aliases (interactive shells always do);
+      // a script that turns it on anywhere is taken to know.
+      if ((!this.shell || this.shell === 'bash') && this.shopt.expand_aliases !== 'on' && !/\bshopt\s+-s\b[^\n;]*\bexpand_aliases\b/.test(this.source) && this.opts.pitfalls !== false) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${alias.value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
+          `⚠ Pitfall: bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${alias.value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`));
+      }
+      return {
+        name, kind: 'function', nameTokens: [],
+        explanation: this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${alias.line + 1}: replaced by \`${alias.value}\``),
+        doc: { summary: { ja: '', en: '' }, positional: [] },
       };
     }
     const fnLine = this.functions.get(name);
@@ -1480,6 +1506,53 @@ export class Analyzer {
       return this.s(`\`${t}\` は ${ja}`, `\`${t}\` is ${en}`);
     });
     return parts.length ? this.s(`。拡張グロブ: ${parts.join('、')}`, `. Extended glob: ${parts.join('; ')}`) : '';
+  }
+
+  /**
+   * `… | while read l; do n=…; done; echo "$n"`: each part of a pipeline runs in a subshell (the last
+   * one too, in bash without lastpipe, and in dash and the like), so variables set there are gone after
+   * it. Pointed out where the pipeline starts, when such a variable is used after it.
+   */
+  private pipeSubshellPitfalls(root: SyntaxNode, line: number): string[] {
+    if (this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on') return [];
+    for (const p of root.descendantsOfType('pipeline', { row: line, column: 0 }, { row: line + 1, column: 0 })) {
+      if (!p || p.startPosition.row !== line) continue;
+      const last = p.namedChildren[p.namedChildren.length - 1];
+      if (!last || !['while_statement', 'until_statement', 'for_statement', 'compound_statement', 'command'].includes(last.type)) continue;
+      const names = new Set<string>();
+      for (const a of last.descendantsOfType('variable_assignment')) {
+        const n = a?.childForFieldName('name')?.text;
+        // Not `X=1 cmd`, which only sets X for cmd, nor `local`.
+        if (n && a!.parent?.type !== 'command' && !ancestorOf(a!, (x) => x.type === 'declaration_command' && /^local\b/.test(x.text))) names.add(n);
+      }
+      for (const c of [last, ...last.descendantsOfType('command')]) {
+        if (c?.type === 'command' && c.childForFieldName('name')?.text === 'read' && (c === last || last.type !== 'while_statement' || !ancestorOf(c, (x) => x === last.childForFieldName('condition')))) {
+          for (const w of c.childrenForFieldName('argument')) if (w && /^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(w.previousSibling?.text ?? '')) names.add(w.text);
+        }
+      }
+      if (!names.size) continue;
+      // Used after the pipeline, in the same block.
+      let scope: SyntaxNode = p;
+      while (scope.parent && !['program', 'compound_statement', 'do_group', 'subshell', 'if_statement', 'else_clause', 'elif_clause', 'case_item'].includes(scope.parent.type)) scope = scope.parent;
+      const after = (scope.parent ?? root).text.slice(scope.endIndex - (scope.parent ?? root).startIndex);
+      // Read before being set again (a later loop may set the same names for itself).
+      const used = [...names].find((n) => {
+        const use = after.search(new RegExp(`\\$\\{?${n}\\b`));
+        const set = after.search(new RegExp(`(^|[^\\w$])${n}\\+?=|\\bread\\b[^\\n;|&]*\\s${n}\\b`));
+        return use >= 0 && (set < 0 || use < set);
+      });
+      if (!used) continue;
+      const bash = !this.shell || this.shell === 'bash';
+      const fix: [string, string] = last.type === 'command'
+        ? (bash ? [`\`read ${used} < <(コマンド)\` のようにプロセス置換で渡すか、\`shopt -s lastpipe\` にします`, `Use process substitution, \`read ${used} < <(command)\`, or turn on \`shopt -s lastpipe\``]
+          : [`\`${used}=$(コマンド)\` のようにコマンド置換で受け取ります`, `Take the output with command substitution: \`${used}=$(command)\``])
+        : (bash ? ['`done < ファイル` や `done < <(コマンド)` のようにリダイレクトで渡すか、`shopt -s lastpipe` にします', 'Feed the loop with a redirection, `done < file` or `done < <(command)`, or turn on `shopt -s lastpipe`']
+          : ['`done < ファイル` のようにリダイレクトで渡すか、一時ファイルを使います', 'Feed the loop with a redirection, `done < file`, or use a temporary file']);
+      return [this.s(
+        `⚠ 落とし穴: パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix[0]}`,
+        `⚠ Pitfall: the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix[1]}`)];
+    }
+    return [];
   }
 
   /**
