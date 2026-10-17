@@ -1,7 +1,18 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
+import * as os from 'os';
 import { Analyzer } from '../src/analyzer';
+import { explainPrintf } from '../src/embedded/format';
+import { explainPerl } from '../src/embedded/perl';
+import { judgeYq, yqSameAsJq } from '../src/embedded/yq';
+import { relativeDate, runGitLog, sampleCommits } from '../src/examples/gitlog';
+import { jqExample } from '../src/examples/jq';
+import { pipelineExample } from '../src/examples/pipeline';
+import { regexExamples } from '../src/examples/regex';
+import { runSed } from '../src/examples/sed';
+import { runCut, runTr } from '../src/examples/textfilters';
 import { explainGetoptShort } from '../src/embedded/getopt';
 import { explainGitFormat } from '../src/embedded/gitformat';
 import { explainMode, explainUmask } from '../src/embedded/mode';
@@ -138,5 +149,82 @@ describe('lines no other test reaches', () => {
     assert.strictEqual(jk.regions[0].shell, 'bash');
     assert.strictEqual(extractShell('jenkinsfile', "node {\n  sh '''\n    #!/bin/zsh\n    echo hi\n  '''\n}\n").regions[0].shell, 'zsh');
     assert.match(extractShell('python', 'import subprocess\nsubprocess.run(["ls", "-l\\x41"])\n').text, /ls -lA/);
+  });
+
+  it('printf formats: \\x and \\u escapes, a bad conversion, a precision on integers', () => {
+    const t = explainPrintf('\\x41 \\u00e9 %.3d 100%', 'en').map((x) => x.explanation).join('\n');
+    assert.match(t, /the character with hex code 41/);
+    assert.match(t, /Unicode character U\+00E9/);
+    assert.match(t, /at least 3 digits/);
+    assert.match(t, /Invalid conversion after `%`/);
+  });
+
+  it('perl: BEGIN and END blocks, tr///, <STDIN>, %ENV', () => {
+    const t = JSON.stringify([explainPerl('BEGIN { $n = 0 } tr/a-z/A-Z/; $l = <STDIN>; print $ENV{HOME}', 'en'), explainPerl('y/a/b', 'en')]);
+    assert.match(t, /`BEGIN \{ \}`: runs once before any input/);
+    assert.match(JSON.stringify(explainPerl('END { print $n } $n++', 'en')), /`END \{ \}`: runs once after all input.*"start":17/);
+    assert.match(t, /Transliterate: each character of `a-z`/);
+    assert.match(t, /Transliterate \(tr\)/);
+    assert.match(t, /read a line of input/);
+    assert.match(t, /an environment variable/);
+  });
+
+  it('yq: expressions that cannot be read are not taken for jq', () => {
+    assert.strictEqual(yqSameAsJq('.a | "x'), false);
+    assert.strictEqual(judgeYq(['.a | "x', 'f.yml']).flavor, 'mikefarah4');
+  });
+
+  it('git log: relative dates over a year agree with git', function () {
+    const now = Date.now();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reldate-'));
+    try {
+      execFileSync('git', ['init', '-q', dir]);
+      for (const days of [400, 500, 730, 800, 1500, 2000, 4000]) {
+        const when = Math.floor(now / 1000) - days * 86400;
+        const env = { ...process.env, GIT_AUTHOR_DATE: `${when} +0000`, GIT_COMMITTER_DATE: `${when} +0000`, GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@b', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@b' };
+        execFileSync('git', ['-C', dir, 'commit', '-q', '--allow-empty', '-m', String(days)], { env });
+        const real = execFileSync('git', ['-C', dir, 'log', '-1', '--date=relative', '--format=%ad']).toString().trim();
+        assert.strictEqual(relativeDate(when, now), real, `${days} days`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('git log: %N and %e are empty, %x41 is a byte', () => {
+    assert.deepStrictEqual(runGitLog(sampleCommits().slice(0, 1), 'format:[%N%e]%x41'), ['[]A']);
+  });
+
+  it('jq: shapes of input for as-bindings and tonumber', () => {
+    assert.ok(jqExample('.a as $x | $x + 1'));
+    assert.ok(jqExample('.n | tonumber'));
+  });
+
+  it('regex: examples give up on patterns their parser does not follow', () => {
+    assert.strictEqual(regexExamples({ source: '(?<n>a)\\k<n>', flags: '' }), undefined);
+  });
+
+  it('pipelines: sed -nE -e and awk -v in a stage', () => {
+    const stages = [
+      { cmd: 'printf', words: ['a\\nb\\n'], text: "printf 'a\\nb\\n'" },
+      { cmd: 'sed', words: ['-nEe', 's/a/x/p'], text: "sed -nEe 's/a/x/p'" },
+      { cmd: 'awk', words: ['-vy=1', '{ print $0 y }'], text: "awk -vy=1 '{ print $0 y }'" },
+    ];
+    const ex = pipelineExample(stages, false);
+    assert.ok(ex, 'has an example');
+    assert.deepStrictEqual(ex.steps[ex.steps.length - 1].output, ['x1']);
+    assert.strictEqual(pipelineExample([stages[0], { cmd: 'awk', words: ['-v', 'y', '{ print }'], text: 'awk -v y' }], false), undefined);
+  });
+
+  it('sed: comments, the I flag on an address, a range ending on an earlier line', () => {
+    assert.deepStrictEqual(runSed('# drop A lines\n/a/I d', ['A', 'b'], { quiet: false, extended: false }), ['b']);
+    assert.deepStrictEqual(runSed('2,1d', ['a', 'b', 'c'], { quiet: false, extended: false }), ['a', 'c']);
+  });
+
+  it('cut and tr: --output-delimiter on characters, tr -ds, and tr without a second set', () => {
+    assert.deepStrictEqual(runCut(['-c', '1-2,4', '--output-delimiter=:'], ['abcde']), ['ab:d']);
+    assert.deepStrictEqual(runTr(['-ds', 'a', 'b'], ['aabbbc']), ['bc']);
+    assert.throws(() => runTr(['-ds', 'a'], ['x']), /two sets/);
+    assert.throws(() => runTr(['a'], ['x']), /two sets/);
   });
 });
