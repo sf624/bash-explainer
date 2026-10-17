@@ -155,12 +155,25 @@ jobs:
           sarif: ${{ runner.temp }}/results.sarif
           package: ${{ steps.pack.outputs.tgz }}
 
-      - name: Check that it failed and wrote SARIF
+      - name: The same script, without failing the step
+        id: lenient
+        uses: ./
+        with:
+          files: test/fixtures/posix.sh
+          fail-on-warning: 'false'
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that it failed, annotated, and wrote SARIF
         env:
           OUTCOME: ${{ steps.failing.outcome }}
+          WARNINGS: ${{ steps.failing.outputs.warnings }}
+          LENIENT: ${{ steps.lenient.outputs.warnings }}
           SARIF: ${{ runner.temp }}/results.sarif
         run: |
           test "$OUTCOME" = failure
+          # The annotations are printed after the SARIF, so they must be there too.
+          test "$WARNINGS" -gt 0
+          test "$LENIENT" = "$WARNINGS"
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
 
       - name: Scripts without problems pass
