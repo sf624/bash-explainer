@@ -193,10 +193,20 @@ const SHELLS = /^(sh|bash|dash|ash|zsh|ksh|ksh93|mksh|yash|busybox)$/;
 
 function dockerfile(b: Builder): void {
   // `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` changes the shell of later shell-form instructions.
+  // Each stage (`FROM`) starts again with the default: `/bin/sh -c`, or `cmd /S /C` on Windows images.
   let shell: Shell = 'sh';
   let pipefail = false;
+  /** Shell-form instructions run with PowerShell or cmd, not a POSIX shell: they are not explained. */
+  let notShell = false;
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
+    const from = /^\s*FROM\s+(?:--[\w-]+(?:=\S*)?\s+)*(\S+)/i.exec(line);
+    if (from) {
+      shell = 'sh';
+      pipefail = false;
+      notShell = /mcr\.microsoft\.com\/(windows|powershell)|\b(windowsservercore|nanoserver|servercore|ltsc\d{4})\b/i.test(from[1]);
+      continue;
+    }
     const m = /^(\s*)(RUN|CMD|ENTRYPOINT|SHELL)(\s+(?:--[\w-]+(?:=\S*)?\s+)*)/i.exec(line);
     if (!m) continue;
     const at = m[0].length;
@@ -207,6 +217,8 @@ function dockerfile(b: Builder): void {
       const { words, last } = parsed;
       const prog = words[0].value.split('/').pop()!;
       if (instr === 'SHELL') {
+        notShell = /^(powershell|pwsh|cmd)(\.exe)?$/i.test(prog);
+        if (notShell) { i = last; continue; }
         shell = prog === 'bash' ? 'bash' : prog === 'zsh' ? 'zsh' : prog === 'ash' || prog === 'busybox' ? 'ash' : 'sh';
         pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
         execWords(b, words);
@@ -237,6 +249,11 @@ function dockerfile(b: Builder): void {
       continue;
     }
     if (instr === 'SHELL') continue;
+    if (notShell) {
+      // Skip the instruction and its continuation lines (PowerShell continues with a backtick).
+      while (/[\\`]\s*$/.test(b.lines[i]) && i + 1 < b.lines.length) i++;
+      continue;
+    }
     const heredoc = /^<<-?\s*["']?(\w+)["']?/.exec(line.slice(at));
     if (heredoc) {
       // `RUN <<EOF` … `EOF`: the body is the script.
@@ -372,6 +389,8 @@ function yaml(b: Builder): void {
     const rest = (m[3] ?? '').replace(/\s+#.*$/, '');
     // `defaults: run: shell:` holds no script.
     if (key === 'run' && !rest && /^\s*defaults\s*:/.test(b.lines[i - 1] ?? '')) continue;
+    // An action's input (`with: script:` of actions/github-script is JavaScript), not a shell script.
+    if (githubLike && key !== 'run' && /^\s*with\s*:\s*$/.test(parentLine(b, i, indent) ?? '')) continue;
     const shell = yamlShell(b, i, indent, key, githubLike);
     if (shell === null) continue;
     const label: [string, string] = githubLike && key === 'run'
@@ -409,8 +428,8 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
   if (key === 'bash') return 'bash';
   if (key === 'sh') return 'sh';
   if (key !== 'run') return undefined;
-  // Look at the sibling keys of the same step.
-  const level = indent + (/^\s*-\s/.test(b.lines[at]) ? 2 : 0);
+  // Look at the sibling keys of the same step. `indent` is the column of the key, after any `- `.
+  const level = indent;
   for (let j = at - 1; j >= 0 && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j--) {
     const m = /^\s*(?:-\s+)?shell:\s*(\S+)/.exec(b.lines[j]);
     if (m && indentOf(b.lines[j].replace(/-\s+/, '  ')) === level) return shellName(m[1]);
@@ -429,7 +448,29 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
     if (b.lines.slice(d + 1, at).some((l) => l.trim() && indentOf(l) < k)) continue;
     return shellName(m[2]);
   }
+  // A job on a Windows runner runs `run:` with PowerShell unless told otherwise.
+  if (/windows/i.test(runsOn(b, at) ?? '')) return null;
   return 'bash';
+}
+
+/** The nearest line above `at` that is less indented than `indent`: the key `at` belongs to. */
+function parentLine(b: Builder, at: number, indent: number): string | undefined {
+  for (let j = at - 1; j >= 0; j--) {
+    if (b.lines[j].trim() && indentOf(b.lines[j]) < indent) return b.lines[j];
+  }
+  return undefined;
+}
+
+/** `runs-on:` of the job holding line `at`, when it names a runner (not a matrix expression). */
+function runsOn(b: Builder, at: number): string | undefined {
+  for (let j = at - 1; j >= 0; j--) {
+    const m = /^(\s*)runs-on\s*:\s*(.*)$/.exec(b.lines[j]);
+    if (!m) continue;
+    // The job ended between there and here.
+    if (b.lines.slice(j + 1, at).some((l) => l.trim() && !l.trim().startsWith('#') && indentOf(l) < m[1].length)) return undefined;
+    return m[2].includes('${{') ? undefined : m[2];
+  }
+  return undefined;
 }
 
 function shellName(s: string): Shell | null {

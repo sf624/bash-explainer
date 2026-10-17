@@ -106,6 +106,40 @@ describe('YAML', () => {
   });
 });
 
+describe('code that is not shell', () => {
+  /** The lines (1-based) that are explained as shell. */
+  const shellLines = (kind: 'yaml' | 'dockerfile', text: string) =>
+    extractShell(kind, text).regions.flatMap((r) => Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start + k + 1));
+
+  it('skips the JavaScript of actions/github-script', () => {
+    const wf = [
+      'jobs:', '  a:', '    runs-on: ubuntu-latest', '    steps:',
+      '      - uses: actions/github-script@v7', '        with:', '          script: |', '            const n = 1;', '            await github.rest.issues.list();',
+      '      - run: echo hi',
+    ].join('\n');
+    assert.deepStrictEqual(shellLines('yaml', wf), [10]);
+  });
+
+  it('skips steps of Windows jobs (PowerShell by default), unless the step says bash', () => {
+    const wf = [
+      'jobs:', '  win:', '    runs-on: windows-2025', '    steps:', '      - run: Write-Host hi', '      - run: echo "$HOME"', '        shell: bash',
+      '  linux:', '    runs-on: ubuntu-24.04', '    steps:', '      - run: echo hi',
+      '  matrix:', '    runs-on: ${{ matrix.os }}', '    steps:', '      - run: echo hi',
+    ].join('\n');
+    assert.deepStrictEqual(shellLines('yaml', wf), [6, 11, 15]);
+  });
+
+  it('skips Dockerfile stages that run PowerShell or cmd, until the next FROM', () => {
+    const df = [
+      'FROM mcr.microsoft.com/windows/servercore:ltsc2022', 'RUN echo %PATH%',
+      'SHELL ["powershell", "-Command"]', 'RUN Write-Host hi; `', '    Remove-Item x',
+      'FROM alpine:3.20', 'RUN echo hi',
+      'SHELL ["cmd", "/S", "/C"]', 'RUN dir',
+    ].join('\n');
+    assert.deepStrictEqual(shellLines('dockerfile', df), [7]);
+  });
+});
+
 describe('package.json and Markdown', () => {
   it('reads npm scripts, undoing JSON escapes', () => {
     assert.ok(labels('package.json', 4).includes('cp -r \\"static/\\" dist/@41'), labels('package.json', 4).join());
