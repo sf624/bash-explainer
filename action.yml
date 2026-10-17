@@ -25,10 +25,16 @@ inputs:
     description: The npm package to run. Default, bash-explainer at this action's version.
     default: ''
 
+outputs:
+  warnings:
+    description: The number of warnings found.
+    value: ${{ steps.check.outputs.warnings }}
+
 runs:
   using: composite
   steps:
     - name: Check the scripts
+      id: check
       shell: bash
       # Inputs reach the script as environment variables, never pasted into it.
       env:
@@ -39,7 +45,8 @@ runs:
         PACKAGE: ${{ inputs.package }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
-        set -uo pipefail
+        # GitHub runs this with bash -e; the exit statuses below are handled by hand.
+        set +e -uo pipefail
         shopt -s globstar nullglob
         package=${PACKAGE:-bash-explainer@$(node -p 'require(process.env.ACTION_PATH + "/cli/package.json").version')}
 
@@ -54,6 +61,7 @@ runs:
         done
         if [ "${#files[@]}" -eq 0 ]; then
           echo "No files match: $FILES"
+          echo "warnings=0" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -65,8 +73,12 @@ runs:
           check --format sarif > "$SARIF"
           [ $? -le 1 ] || exit 2
         fi
-        check --format github
+        out=$(check --format github)
         status=$?
+        # Printed, these lines become annotations on the pull request.
+        [ -n "$out" ] && printf '%s\n' "$out"
+        [ "$status" -le 1 ] || exit 2
+        echo "warnings=$(grep -c '^::warning ' <<< "$out")" >> "$GITHUB_OUTPUT"
         echo "Checked ${#files[@]} file(s) with $package."
         if [ "$status" -eq 1 ] && [ "$FAIL_ON_WARNING" != 'true' ]; then status=0; fi
         exit "$status"
