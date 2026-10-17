@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Works in VS Code for the Web: on [vscode.dev](https://vscode.dev), [github.dev](https://github.dev) and Codespaces in the browser.
+- Works in VS Code for the Web: on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev).
 - The web version now links to the licenses of the software it includes (CodeMirror and others), listed in THIRD_PARTY_NOTICES.md.
 
 ## 0.1.1
