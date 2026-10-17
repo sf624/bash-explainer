@@ -56,7 +56,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
     return {
       code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message, fix: fixFor(i),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
-      endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : (doc.lines[n.startPosition.row] ?? '').length,
+      endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
   });
 }

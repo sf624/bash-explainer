@@ -54,10 +54,10 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         if (name === 'rm' && a.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) {
           for (const w of a) {
             const first = w.type === 'concatenation' || w.type === 'string' ? w.namedChildren[0] : undefined;
-            const rest = first && w.text.slice(first.endIndex - w.startIndex);
-            // HOME and PWD are always set.
-            if (first && (first.type === 'simple_expansion' || first.type === 'expansion') && rest?.startsWith('/') && !/:\?/.test(first.text) && !['HOME', 'PWD'].includes(varName(first) ?? '')) {
-              const v = varName(first) ?? 'VAR';
+            if (!first || (first.type !== 'simple_expansion' && first.type !== 'expansion')) continue;
+            // HOME and PWD are always set; special parameters such as `$$` have no name to put in `${…:?}`.
+            const v = varName(first);
+            if (v && !['HOME', 'PWD'].includes(v) && w.text.slice(first.endIndex - w.startIndex).startsWith('/') && !/:\?/.test(first.text)) {
               add(`\`${v}\` が空だと \`rm -r ${w.text.replace(first.text, '')}\` になり、ルートから削除してしまいます。\`"\${${v}:?}/…"\` と書くと、空のときは止まります`,
                 `if \`${v}\` is empty this becomes \`rm -r ${w.text.replace(first.text, '')}\`, deleting from the root. Write \`"\${${v}:?}/…"\` to stop when it is empty`);
               break;
@@ -97,8 +97,8 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         const value = n.childForFieldName('value');
         if (!value) break;
         // `for f in $(ls …)`
-        if (value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' && ['ls', 'find'].includes(commandName(value.namedChildren[0]) ?? '')) {
-          const cmd = commandName(value.namedChildren[0]);
+        const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
+        if (cmd === 'ls' || cmd === 'find') {
           add(`\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
             `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`);
         }
@@ -113,7 +113,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         // `[ $x = y ]`: an empty or spaced value breaks the test.
         if (n.child(0)?.type !== '[') break;
         // Operands of the test itself, not variables inside a `$(…)` in it.
-        const operand = (e: SyntaxNode) => ['test_command', 'binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(e.parent?.type ?? '');
+        const operand = (e: SyntaxNode) => ['test_command', 'binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(e.parent!.type);
         const bare = n.descendantsOfType(['simple_expansion', 'expansion']).find((e) => e && unquotedExpansion(e) && operand(e) && !alwaysNumber(e));
         if (bare) {
           add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` など）。\`"${bare.text}"\` と書きます`,
@@ -123,11 +123,11 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       }
       case 'declaration_command': {
         // `local x=$(cmd)`: the status of local hides the status of cmd.
-        const kw = n.child(0)?.text;
-        if (!['local', 'export', 'declare', 'readonly', 'typeset'].includes(kw ?? '')) break;
+        // The keyword: local, export, declare, readonly or typeset.
+        const kw = n.child(0)!.text;
         const assign = n.namedChildren.find((c) => c?.type === 'variable_assignment' && c.childForFieldName('value')?.type === 'command_substitution');
         if (assign) {
-          const v = assign.childForFieldName('name')?.text ?? 'x';
+          const v = assign.childForFieldName('name')!.text;
           add(`\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
             `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``);
         }
