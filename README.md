@@ -263,6 +263,7 @@ npm run test:integration:web   # …and in VS Code for the Web (needs `npx playw
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
 - `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
+- To try the command-line tool from this repository, `npm run build:cli`, then `node cli/dist/cli.js <file>` (or `npx --package=./cli bash-explainer <file>`). A bare `npx bash-explainer` does not work here: the extension's own `package.json` is also named `bash-explainer`, so npx takes this project for the package.
 - Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped. The web page test needs Chromium (`npx playwright-core install --with-deps chromium-headless-shell`).
 - After changing dependencies, run `npm run notices` to regenerate [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) from what the builds include; a test fails while it is out of date, or if something under a license not yet reviewed gets in.
 - To add a command, add an entry to [`src/dict/commands.ts`](src/dict/commands.ts): `cmd(japanese, english, [options…], { positional: […] })`.
