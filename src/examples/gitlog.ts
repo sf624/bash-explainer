@@ -142,7 +142,7 @@ export function runGitLog(commits: SampleCommit[], pretty: string | undefined, d
 
 /** Expand the placeholders of a `format:` template for one commit. */
 function expand(template: string, c: SampleCommit, date: (c: SampleCommit) => string, now: number): string {
-  const value = (p: string): string | undefined => {
+  const value = (p: string): string => {
     const who = p[0] === 'a' || p[0] === 'c' ? c.author : undefined;
     switch (p) {
       case 'H': return c.hash;
@@ -168,9 +168,9 @@ function expand(template: string, c: SampleCommit, date: (c: SampleCommit) => st
       case 'D': return c.refs;
       case 'n': return '\n';
       case '%': return '%';
-      case 'N': case 'e': return '';
+      // %N (notes) and %e (encoding): empty for these commits.
+      default: return '';
     }
-    return undefined;
   };
   let out = '';
   let align: { dir: string; width: number; trunc?: string } | undefined;
@@ -183,7 +183,8 @@ function expand(template: string, c: SampleCommit, date: (c: SampleCommit) => st
       i += 1 + m[0].length;
       continue;
     }
-    if ((m = /^(<|>|>>|><)\((\d+)(?:,(trunc|ltrunc|mtrunc))?\)/.exec(rest))) {
+    // git takes no width 0 (and prints the text as it is, which is left to it).
+    if ((m = /^(<|>|>>|><)\(([1-9]\d*)(?:,(trunc|ltrunc|mtrunc))?\)/.exec(rest))) {
       align = { dir: m[1], width: Number(m[2]), trunc: m[3] };
       i += 1 + m[0].length;
       continue;
@@ -195,7 +196,7 @@ function expand(template: string, c: SampleCommit, date: (c: SampleCommit) => st
     }
     m = /^(an|ae|al|ad|ar|at|ai|aI|as|cn|ce|cl|cd|cr|ct|ci|cI|cs|[HhTtPpsfbBdDnN%e])/.exec(rest);
     if (!m) throw new GitFormatUnsupported(`%${rest.slice(0, 2)}`);
-    let v = value(m[1])!;
+    let v = value(m[1]);
     if (align) {
       v = fit(v, align.dir, align.width, align.trunc);
       align = undefined;
@@ -209,7 +210,8 @@ function expand(template: string, c: SampleCommit, date: (c: SampleCommit) => st
 /** Pad (and with `trunc` shorten, marking the cut with `..`) to `width` columns. */
 function fit(v: string, dir: string, width: number, trunc?: string): string {
   if (v.length > width && trunc) {
-    if (width < 2) return v.slice(0, width);
+    // Only the `..` fits.
+    if (width < 2) return '..';
     if (trunc === 'trunc') return v.slice(0, width - 2) + '..';
     if (trunc === 'ltrunc') return '..' + v.slice(v.length - (width - 2));
     const keep = width - 2;

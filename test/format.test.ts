@@ -48,7 +48,7 @@ describe('date formats', () => {
       return this.skip();
     }
     const formats = ['%Y-%m-%dT%H:%M:%S', '%F %T', '%-d %B %Y (%a)', '%D %R', '%j %u %w %e', '%^a %b %y %%', '%c', '%x', '%X', '%r', '%Z %z %:z %::z',
-      '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d'];
+      '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d', '%_H %_10Y %05H %08s %-p %_Z %10Z %10a'];
     // Week numbers and ISO years change around the turn of the year.
     for (const when of ['2024-03-05 07:08:09', '2025-12-31 23:59:59', '2021-01-03 12:00:00', '2020-12-31 00:30:00', '2027-01-01 13:05:00']) {
       for (const fmt of formats) {
@@ -57,6 +57,8 @@ describe('date formats', () => {
       }
     }
     assert.strictEqual(formatDate('+%Q', parseSampleDate('2024-01-01')!), undefined);
+    // Flags on composites are left out.
+    assert.strictEqual(formatDate('+%-F', parseSampleDate('2024-01-01')!), undefined);
   });
 
   it('reads the dates typed in the panel', () => {

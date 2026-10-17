@@ -245,30 +245,36 @@ class PerlExplainer {
     const { s, src } = this;
     const open = src[delimAt];
     const close = PAIRS[open] ?? open;
+    // The delimiter closing a part from `from`; bracket pairs nest.
+    const closing = (from: number, o: string, c: string) => {
+      let depth = 1;
+      let k = from;
+      for (; k < end; k += src[k] === '\\' ? 2 : 1) {
+        if (o !== c && src[k] === o) depth++;
+        else if (src[k] === c && --depth === 0) break;
+      }
+      return k;
+    };
     const patStart = delimAt + 1;
-    let i = patStart;
-    while (i < end && src[i] !== close) i += src[i] === '\\' ? 2 : 1;
-    const patEnd = i;
+    const patEnd = closing(patStart, open, close);
+    let i = patEnd + 1;
     let repStart: number;
+    let repEnd: number;
     if (open !== close) {
-      i++;
+      // `s{a}{b}`, `s{a} {b}` or `s{a}/b/`.
       while (i < end && /\s/.test(src[i])) i++;
       repStart = i + 1;
-      const c2 = PAIRS[src[i]] ?? src[i];
-      i = repStart;
-      while (i < end && src[i] !== c2) i += src[i] === '\\' ? 2 : 1;
+      repEnd = closing(repStart, src[i], PAIRS[src[i]] ?? src[i]);
     } else {
       repStart = patEnd + 1;
-      i = repStart;
-      while (i < end && src[i] !== close) i += src[i] === '\\' ? 2 : 1;
+      repEnd = closing(repStart, open, close);
     }
-    const repEnd = i;
     const flags = src.slice(repEnd + 1, end);
     const pat = src.slice(patStart, patEnd);
     const rep = src.slice(repStart, repEnd);
     const kids: EmbeddedToken[] = [
       this.tok(patStart, patEnd, 'pattern', s(`検索パターン（Perl の正規表現）\`${pat}\``, `Pattern (Perl regex) \`${pat}\``), shift(explainRegex(pat, 'pcre', this.lang), patStart)),
-      this.tok(repStart, repEnd, 'string', rep ? s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`) : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (deletes the match)'), this.atoms(repStart, repEnd)),
+      this.tok(repStart, repEnd, 'string', s(`置換後の文字列 \`${rep}\`（\`$1\` などはグループの内容）`, `Replacement \`${rep}\` (\`$1\`… are the groups)`), this.atoms(repStart, repEnd)),
     ].filter((t) => t.end > t.start);
     const flagText: Record<string, [string, string]> = {
       g: ['すべて置換する（付けないと最初の1つだけ）', 'replace every match (otherwise only the first)'],
@@ -283,7 +289,9 @@ class PerlExplainer {
     }
     const on = target ? `\`${target}\`` : s('現在の行（`$_`）', 'the line (`$_`)');
     const which = flags.includes('g') ? s('すべて', 'every match') : s('最初の1つ', 'the first match');
-    return this.tok(start, end, 'command', s(`置換: ${on}の中で \`${pat}\` に一致した部分（${which}）を \`${rep}\` に置き換える`, `Substitute in ${on}: replace ${which} of \`${pat}\` with \`${rep}\``), kids);
+    return this.tok(start, end, 'command', rep
+      ? s(`置換: ${on}の中で \`${pat}\` に一致した部分（${which}）を \`${rep}\` に置き換える`, `Substitute in ${on}: replace ${which} of \`${pat}\` with \`${rep}\``)
+      : s(`置換: ${on}の中で \`${pat}\` に一致した部分（${which}）を削除する`, `Substitute in ${on}: delete ${which} of \`${pat}\``), kids);
   }
 
   private transliteration(start: number, end: number): EmbeddedToken {
@@ -329,11 +337,11 @@ export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
   // breaking the explanation of the whole shell line.
   try {
     return new PerlExplainer(src, lang).statements(0, src.length);
-  } catch {
     /* c8 ignore start */
+  } catch {
     return [{ start: 0, end: src.length, kind: 'error', explanation: pick(lang)('Perl のコードを解析できませんでした', 'Could not parse the Perl code'), children: [] }];
-    /* c8 ignore stop */
   }
+  /* c8 ignore stop */
 }
 
 /** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */

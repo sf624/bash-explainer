@@ -231,7 +231,8 @@ class AwkExplainer {
       return { token: this.regexToken(toks[0], s(`正規表現 \`${re}\` に一致する行`, `Lines matching the regex \`${re}\``)), when: s(`\`${re}\` に一致する行`, `lines matching \`${re}\``) };
     }
     if (toks.length === 1 && toks[0].type === 'num') {
-      return { token: this.tok(start, end, 'pattern', s(`\`${text}\`: 常に真（0 以外の数値）`, `\`${text}\`: always true (non-zero)`)), when: text === '0' ? s('どの行も', 'no lines') : s('すべての行', 'every line') };
+      if (Number(text) === 0) return { token: this.tok(start, end, 'pattern', s(`\`${text}\`: 常に偽（0）`, `\`${text}\`: always false (zero)`)), when: s('どの行も', 'no lines') };
+      return { token: this.tok(start, end, 'pattern', s(`\`${text}\`: 常に真（0 以外の数値）`, `\`${text}\`: always true (non-zero)`)), when: s('すべての行', 'every line') };
     }
     return {
       token: this.tok(start, end, 'pattern', s(`条件 \`${text}\` が真（0 や空文字以外）になる行`, `Lines where \`${text}\` is true (not 0 or empty)`), this.atoms(toks)),
