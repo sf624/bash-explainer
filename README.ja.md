@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![lang: English](https://img.shields.io/badge/lang-English-blue)](./README.md)
 ![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-lightgrey)
 
-シェルスクリプトを1行ずつ解説する Visual Studio Code 拡張機能です。シェルスクリプト版の [regex101](https://regex101.com/) を目指しています。
+シェルスクリプトを1行ずつ解説します。シェルスクリプト版の [regex101](https://regex101.com/) を目指しています。
 
 行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、書き換えて試せる具体例つきで解説します。知らないスクリプトを読むときにも、シェルを学ぶときにも、教えるときにも役立ちます。
 
@@ -15,15 +15,19 @@
 
 ![Bash Explainer デモ](images/demo.gif)
 
-## クイックスタート
+Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解説と警告をほかの形でも使えます。インストールせずに試せるブラウザ版、コマンドラインツール、他のエディタ向けの Language Server、PR でスクリプトを検査する GitHub Action です。
 
-1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
-2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
-3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+K Ctrl+E`（macOS は `Cmd+K Cmd+E`）です。
+## 使える場所
 
-カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
-
-インストールせずに試すなら、**[ブラウザ版](https://sf624.github.io/bash-explainer/)** にスクリプトを貼り付けて、カーソルを動かしてみてください。拡張と同じ解説がブラウザで見られます。
+| 場所 | 使い方 |
+| --- | --- |
+| **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて行にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
+| VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
+| vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
+| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けて、カーソルを動かします。 |
+| **ターミナル** | `npx bash-explainer deploy.sh:12`、または `npm install --global bash-explainer`。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。 |
+| **Neovim、Helix、Emacs** など LSP に対応したエディタ | `bash-explainer --lsp` が Language Server として、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。 |
+| **CI** | GitHub Actions で `uses: sf624/bash-explainer@v0` とすると、警告が PR の差分に表示されます。他の CI では `npx bash-explainer --check` を使います。詳しくは [In CI](cli/README.md#in-ci-github-actions) を参照してください。 |
 
 ## こんなことがわかります
 
@@ -35,58 +39,6 @@
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | 正規表現の部品ごとの意味と、入力例 `a=x` → 出力 `x=a` |
 | `#!/bin/sh` の中の `[[ -f $f ]]` | ⚠ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
 | Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・`package.json`・Python の中のシェルも同じように解説 |
-
-## 表示方法
-
-| | 使い方 | 既定 |
-| --- | --- | --- |
-| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+K Ctrl+E` | オン |
-| **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | ホバーやエディタのタイトルバーから開く |
-| **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
-
-ステータスバーの **Bash Explainer** をクリックすると、それぞれオン/オフできます。
-
-### ホバー
-
-行にマウスを乗せると、その場で分解した解説が出ます。
-
-![ホバー](images/hover.gif)
-
-### パネル
-
-パネルはカーソル行に追従します。ツリーの項目を指すと、エディタ側の該当箇所がハイライトされます。
-
-![パネル](images/panel.gif)
-
-### インライン
-
-カーソル行の行末に、1行の要約が出ます。
-
-![インライン](images/inline.png)
-
-## インストール
-
-- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
-- **VS Code の中から:** 拡張機能ビュー（`Ctrl+Shift+X` / `Cmd+Shift+X`）で *Bash Explainer* を検索します。またはクイックオープン（`Ctrl+P` / `Cmd+P`）で `ext install shun-fujioka.bash-explainer` を実行します。
-- **コマンドライン:** `code --install-extension shun-fujioka.bash-explainer`
-- **VSCodium など Open VSX を使うエディタ:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
-- **インストールなし:** [ブラウザ版](https://sf624.github.io/bash-explainer/) がブラウザだけで動きます。
-- **VS Code for the Web:** [vscode.dev](https://vscode.dev) や [github.dev](https://github.dev)（GitHub のリポジトリで `.` を押す）でも動きます。
-- **ターミナルで:** `npx bash-explainer deploy.sh:12`（または `npm install --global bash-explainer` でインストール）で、同じ解説をコマンドラインで見られます。`--check` で CI での検査にも使えます。GitHub Action（`uses: sf624/bash-explainer@v0`）としても使えます。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。
-- **Neovim、Helix、Emacs などのエディタ:** `bash-explainer --lsp` が Language Server として動き、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。
-
-VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は WebAssembly）、VS Code が動く環境ならどこでも動きます。
-
----
-
-## パネル
-
-パネルは regex101 と同じように使えます。
-
-- **具体例を書き換える:** grep や `[[ =~ ]]` のテスト文字列、sed・awk・jq・perl・`sort`・`cut`・`xargs`・パイプライン全体の入力を書き換えると、出力がその場で更新されます。
-- **一致した部分を見る:** 入力の中の一致部分を色付けし、キャプチャグループごとに、解説ツリーのグループと同じ色で示します。`\1`・`\2`… に入る文字列も一覧にします。
-- **シェルや yq を切り替える:** ヘッダーで、そのファイルの対象シェルや yq の種類を切り替えると、解説と警告がすぐ変わります。
-- **折りたたみ・コピー・早見表:** 解説ツリーを折りたたんだり、Markdown としてコピーしてレビューやドキュメントに貼ったりできます。展開・リダイレクト・条件式・変数・コマンドを検索できる早見表もあります。
 
 ## 解説できるもの
 
@@ -151,9 +103,9 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 各機能がどのリリースで入ったかは、4.x の全マイナーリリースで実際に動かして調べています。判定できないときは mikefarah/yq v4 として扱います。`bashExplainer.yq.flavor` で種類を固定することもできます。
 
-## 問題パネルとクイックフィックス
+## 警告とクイックフィックス
 
-警告は「問題」パネルにも表示されるので、マウスを乗せなくても気づけます。意味を変えずに書き換えられる場合は、クイックフィックスも出します。
+警告は VS Code の「問題」パネルにも表示されるので、マウスを乗せなくても気づけます。コマンドラインツール（`--check`）、Language Server、GitHub Action からも同じ警告が出ます。意味を変えずに書き換えられる場合は、クイックフィックスも出します。
 
 | 修正前 | 修正後 |
 | --- | --- |
@@ -166,7 +118,64 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
-## コマンド
+## VS Code で使う
+
+### クイックスタート
+
+1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
+2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
+3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+K Ctrl+E`（macOS は `Cmd+K Cmd+E`）です。
+
+カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
+
+### インストール
+
+- **Marketplace:** [shun-fujioka.bash-explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
+- **VS Code の中から:** 拡張機能ビュー（`Ctrl+Shift+X` / `Cmd+Shift+X`）で *Bash Explainer* を検索します。またはクイックオープン（`Ctrl+P` / `Cmd+P`）で `ext install shun-fujioka.bash-explainer` を実行します。
+- **コマンドライン:** `code --install-extension shun-fujioka.bash-explainer`
+- **VSCodium など Open VSX を使うエディタ:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+- **VS Code for the Web:** [vscode.dev](https://vscode.dev) や [github.dev](https://github.dev)（GitHub のリポジトリで `.` を押す）でも動きます。
+
+VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文解析は WebAssembly）、VS Code が動く環境ならどこでも動きます。
+
+### 表示方法
+
+| | 使い方 | 既定 |
+| --- | --- | --- |
+| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+K Ctrl+E` | オン |
+| **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | ホバーやエディタのタイトルバーから開く |
+| **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
+
+ステータスバーの **Bash Explainer** をクリックすると、それぞれオン/オフできます。
+
+#### ホバー
+
+行にマウスを乗せると、その場で分解した解説が出ます。
+
+![ホバー](images/hover.gif)
+
+#### パネル
+
+パネルはカーソル行に追従します。ツリーの項目を指すと、エディタ側の該当箇所がハイライトされます。
+
+![パネル](images/panel.gif)
+
+#### インライン
+
+カーソル行の行末に、1行の要約が出ます。
+
+![インライン](images/inline.png)
+
+### パネル
+
+パネルは regex101 と同じように使えます。
+
+- **具体例を書き換える:** grep や `[[ =~ ]]` のテスト文字列、sed・awk・jq・perl・`sort`・`cut`・`xargs`・パイプライン全体の入力を書き換えると、出力がその場で更新されます。
+- **一致した部分を見る:** 入力の中の一致部分を色付けし、キャプチャグループごとに、解説ツリーのグループと同じ色で示します。`\1`・`\2`… に入る文字列も一覧にします。
+- **シェルや yq を切り替える:** ヘッダーで、そのファイルの対象シェルや yq の種類を切り替えると、解説と警告がすぐ変わります。
+- **折りたたみ・コピー・早見表:** 解説ツリーを折りたたんだり、Markdown としてコピーしてレビューやドキュメントに貼ったりできます。展開・リダイレクト・条件式・変数・コマンドを検索できる早見表もあります。
+
+### コマンド
 
 | コマンド | ショートカット・呼び出し場所 |
 | --- | --- |
@@ -175,7 +184,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | Bash Explainer: ホバー・インライン・パネルの表示を切り替え | ステータスバー |
 | Bash Explainer: 設定を開く | ホバー、パネル |
 
-## 設定
+### 設定
 
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
@@ -205,7 +214,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | **辞書** | | |
 | `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |
 
-### 自分のコマンドを追加する
+#### 自分のコマンドを追加する
 
 社内ツールなどは、説明を書くまで「外部コマンド」として表示されます:
 
@@ -221,6 +230,10 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
   }
 }
 ```
+
+## コマンドライン、他のエディタ、CI
+
+コマンドラインツール、Language Server、GitHub Action は、1つの npm パッケージ [`bash-explainer`](cli/README.md) にまとまっています。オプション、出力形式（テキスト、Markdown、JSON、SARIF、GitHub のアノテーション）、Neovim・Helix・Emacs の設定、Action の入力は、そちらの README を参照してください（英語）。
 
 ## 制限事項
 
