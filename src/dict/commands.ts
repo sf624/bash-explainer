@@ -1,5 +1,6 @@
 import { shellOptions } from './builtins';
 import { ops } from './ops';
+import { distro } from './distro';
 import { system } from './system';
 import { CommandDoc, cmd, OptSpec, pos } from './types';
 
@@ -600,6 +601,7 @@ export const commands: Record<string, CommandDoc> = {
       test: cmd('テストスクリプトを実行する', 'Run the test script'),
     },
   }),
+  ...distro,
   ...system,
   ...ops,
 };

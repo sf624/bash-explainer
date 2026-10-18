@@ -160,6 +160,24 @@ describe('the dictionary', () => {
     assert.match(tokens("gawk '{ print $1 }' f")[0].explanation, /Pattern-scanning language/);
   });
 
+  it('explains the commands that distributions install by default, with their options', () => {
+    const flock = tokens("flock -n /tmp/l -c 'x'");
+    assert.match(flock[0].explanation, /holding a lock/);
+    assert.match(flock.find((t) => t.label === '-n')!.explanation, /fail instead of waiting/);
+    assert.match(flock.find((t) => t.label === '/tmp/l')!.explanation, /lock file/);
+    const journal = tokens('journalctl -u nginx -f');
+    assert.match(journal.find((t) => t.label === '-u')!.explanation, /only this unit/);
+    assert.match(journal.find((t) => t.label === 'nginx')!.explanation, /Value for `-u`/);
+    assert.match(journal.find((t) => t.label === '-f')!.explanation, /follow new entries/);
+    const ping = tokens('ping -c 3 example.com');
+    assert.match(ping.find((t) => t.label === '3')!.explanation, /Value for `-c`/);
+    assert.match(ping.find((t) => t.label === 'example.com')!.explanation, /host name/);
+    assert.match(tokens('mkfs.ext4 -L data /dev/sdb1')[0].explanation, /ext4 file system/);
+    assert.match(tokens('vim -c q f')[0].explanation, /Text editor/);
+    for (const c of ['setsid', 'stdbuf', 'ionice', 'unshare', 'nsenter']) assert.ok(commands[c].wraps, c);
+    assert.deepStrictEqual(unknown('flock -n /tmp/l ls; ping -c 1 h; dig +short a.com; chattr +i f'), []);
+  });
+
   it('describes every command and option in both languages', () => {
     const check = (name: string, d: CommandDoc) => {
       assert.ok(d.summary.ja.trim() && d.summary.en.trim(), `${name}: summary`);
