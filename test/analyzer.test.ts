@@ -98,43 +98,35 @@ describe('time keyword', () => {
     assert.ok(find(p, '-p', 'option'));
     assert.ok(find(explain('time ls 2>&1'), '2>&1'));
   });
-  it('explains a timed pipeline as a pipeline whose first stage is the timed command', () => {
+  it('explains `time` as timing the whole pipeline after it', () => {
     const e = explain('time -p cat f | sort -u | uniq -c');
     assert.strictEqual(e.items.length, 1);
-    const [pipe] = e.items;
-    assert.strictEqual(pipe.kind, 'operator');
-    assert.strictEqual(pipe.label, 'time -p cat f | sort -u | uniq -c');
-    assert.deepStrictEqual(pipe.children.map((c) => c.label), ['time -p cat f', '|', 'sort -u', '|', 'uniq -c']);
-    assert.match(pipe.children[0].explanation, /^Time `cat f`: run it and report how long/);
-    assert.deepStrictEqual(pipe.children[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 13 } });
-    assert.deepStrictEqual(pipe.children[0].children.map((c) => c.label), ['time', '-p', 'f']);
-    // A pipeline example is made of the commands it is made of, and `time` is not one.
-    assert.ok(!e.examples.some((x) => x.kind === 'pipeline'));
-    assert.ok(find(explain('time cat f | sort 2>&1'), 'time cat f | sort 2>&1'));
-    assert.strictEqual(explain('time a >f | b').items[0].children[0].label, 'time a >f');
+    const [t] = e.items;
+    assert.strictEqual(t.label, 'time -p cat f | sort -u | uniq -c');
+    assert.match(t.explanation, /^Time `cat f \| sort -u \| uniq -c`: run it and report how long/);
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['time', '-p', 'time -p cat f | sort -u | uniq -c'].slice(0, 2).concat(t.children[2].label));
+    const pipe = t.children[2];
+    assert.deepStrictEqual(pipe.children.map((c) => c.label), ['cat f', '|', 'sort -u', '|', 'uniq -c']);
+    assert.match(e.summary, /^time /);
+    // The commands after `time` are commands like the others.
+    assert.match(find(explain('time cat f | sort -u'), 'sort -u').explanation, /Sort/);
+    assert.ok(find(explain('time a >f | b'), '>f'));
   });
   it('explains each line of a timed pipeline that spans lines', () => {
     const src = 'time ls | while read x; do\n  echo $x\ndone\necho after';
     const first = explain(src, 0);
-    assert.deepStrictEqual(first.items[0].children.map((c) => c.label), ['time ls', '|', 'while read x; do …']);
-    assert.match(first.items[0].children[0].explanation, /^Time `ls`/);
+    assert.strictEqual(first.items[0].children[0].label, 'time');
     assert.deepStrictEqual(explain(src, 1).context.map((c) => c.label), ['while loop']);
     assert.strictEqual(explain(src, 2).items[0].label, 'done');
     const wrapped = explain('time ls |\n  grep x', 1);
-    assert.strictEqual(wrapped.items[0].children[0].label, 'time ls');
     assert.match(wrapped.notes[0], /starts on line 1/);
   });
-  it('counts the timed command once when it names the command of an example', () => {
+  it('makes an example of the whole timed pipeline', () => {
     const titles = (src: string) => explain(src).examples.map((x) => x.title);
     assert.deepStrictEqual(titles('time sort -u f'), ['Example']);
-    assert.deepStrictEqual(titles('time sort -u f | uniq'), ['Example for `time sort -u f`', 'Example for `uniq`']);
-    assert.deepStrictEqual(titles('time ls | sort -u'), ['Example for `sort -u`']);
-    assert.deepStrictEqual(titles('time; sort -u f'), ['Example for `sort -u f`']);
+    assert.deepStrictEqual(titles('time sort -u f | uniq'), ['Example for `time sort -u f | uniq` (the whole pipeline)']);
+    assert.deepStrictEqual(titles('time; sort -u f'), ['Example']);
     assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `time sort -u f`']);
-  });
-  it('makes no example of the whole pipeline when `time` leads it', () => {
-    assert.deepStrictEqual(explain('cat f | grep x').examples.map((x) => x.title), ['Example (the whole pipeline)']);
-    assert.deepStrictEqual(explain('time cat f | grep x').examples.map((x) => x.title), ['Example for `grep x`']);
   });
   it('explains the keyword alone when nothing follows it in a pipeline', () => {
     assert.strictEqual(explain('time | wc').items[0].children[0].kind, 'keyword');
@@ -163,11 +155,21 @@ describe('input that is not finished', () => {
     assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'redirect'), []);
     assert.strictEqual(e.items[0].children[0].kind, 'test');
   });
-  it('explains a construct without its closing keyword', () => {
-    for (const src of ['if true; then', 'for f in *.sh; do\n  echo $f', 'case $x in', '{ echo', 'x=(1', 'echo "abc', 'echo $(foo', 'select x in a; do']) {
-      for (let line = 0; line < src.split('\n').length; line++) assert.doesNotThrow(() => explain(src, line), src);
-    }
-    assert.strictEqual(explain('if true; then').items[0].label, 'if true; then');
+  it('explains a construct without its closing keyword, with the parts it has', () => {
+    const shape = (src: string, line = 0) => explain(src, line).items.map((t) => [t.kind, t.label, t.children.map((c) => c.label)]);
+    assert.deepStrictEqual(shape('if true; then'), [['keyword', 'if true; then', ['if', 'true', 'then']]]);
+    assert.deepStrictEqual(shape('select x in a; do'), [['keyword', 'select x in a; do', ['select', 'x', 'in', 'a', 'do']]]);
+    assert.deepStrictEqual(shape('x=(1'), [['assignment', 'x=(1', ['(1']]]);
+    assert.deepStrictEqual(shape('echo $(foo'), [['builtin', 'echo $(foo', ['$(foo']]]);
+    // What the parser could not close it takes for a syntax error, line by line.
+    assert.deepStrictEqual(shape('{ echo'), [['error', '{ echo', ['echo']]]);
+    assert.deepStrictEqual(shape('case $x in'), [['error', 'case $x in', ['$x']]]);
+    assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo', []], ['error', '"abc', ['abc']]]);
+    const loop = 'for f in *.sh; do\n  echo $f';
+    assert.deepStrictEqual(shape(loop), [['error', 'for f in *.sh; do …', ['f', '*.sh']]]);
+    assert.deepStrictEqual(shape(loop, 1), [['builtin', 'echo $f', ['$f']]]);
+    assert.match(explain('if true; then').summary, /^if statement: runs the `then` branch/);
+    assert.match(explain('{ echo').summary, /^Syntax error/);
   });
 });
 

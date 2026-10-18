@@ -1,5 +1,5 @@
 import { Lang } from './i18n';
-import { descendants, field, fields } from './syntax/tree';
+import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // Common mistakes in shell scripts, explained where they appear: what goes wrong and how to write
@@ -112,9 +112,8 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       }
       case 'test_command': {
         // `[ $x = y ]`: an empty or spaced value breaks the test.
-        // Operands of the test itself, not variables inside a `$(…)` in it.
-        const operand = (e: SyntaxNode) => ['test_command', 'binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(e.parent!.type);
-        const bare = descendants(n, ['simple_expansion', 'expansion']).find((e) => unquotedExpansion(e) && operand(e) && !alwaysNumber(e));
+        // The words of the test itself, not variables inside a `$(…)` in it.
+        const bare = n.namedChildren.find((e) => unquotedExpansion(e) && !alwaysNumber(e));
         if (bare) {
           add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` など）。\`"${bare.text}"\` と書きます`,
             `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces ("unary operator expected"). Write \`"${bare.text}"\``);

@@ -32,6 +32,10 @@ describe('pitfalls', () => {
     ['sudo echo 1 > /proc/sys/vm/drop_caches', /done by your own shell .* `… \| sudo tee file`/],
     ['for a in $*; do :; done', /unquoted `\$\*` splits arguments/],
     ['cp $src "$dst"', /`\$src` is not quoted/],
+    // `time` times what follows; what follows is a command like any other.
+    ['time read x', /without `-r`, backslashes/],
+    ['time rm $f', /`\$f` is not quoted/],
+    ['time -p rm -rf $DIR/x | cat', /if `DIR` is empty/],
   ];
   for (const [src, expected] of cases) {
     it(`points out ${src}`, () => assert.ok(notes(src).some((n) => expected.test(n)), notes(src).join('\n') || '(none)'));

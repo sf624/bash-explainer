@@ -91,7 +91,7 @@ const dir = process.env.BASH_EXPLAINER_YQ;
   const { Analyzer } = require('../src/analyzer');
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { createTreeSitterParser } = require('../src/syntax/adapters/tree-sitter');
-  let parser: { parse(s: string): { root: unknown; delete(): void } };
+  let parser: { parse(s: string): { root: unknown } };
   before(async () => {
     const root = path.join(__dirname, '..');
     parser = await createTreeSitterParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });

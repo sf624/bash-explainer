@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
+import { fixFor } from '../src/fixes';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
 import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
@@ -157,22 +158,26 @@ describe('dialect notes', () => {
     const src = 'function f {\n  [[ -n $1 ]]\n}';
     assert.deepStrictEqual([0, 1, 2].map((l) => features(src, l)), [['funcKeyword'], ['dbracket'], []]);
   });
-  it('looks at the command after `time` only as the argument of `time`, as it always has', () => {
-    assert.deepStrictEqual(featuresOnLine(parser.parse('echo -e hi').root, 0), ['echoE']);
-    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi').root, 0), []);
-    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi | cat').root, 0), []);
-    assert.deepStrictEqual(behavioursOnLine(parser.parse("time echo 'a\\tb'").root, 0), []);
-    assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' | time cat").root, 0), ['echoEscape']);
-    assert.deepStrictEqual(featuresOnLine(parser.parse('cat f | time echo -e hi').root, 0), []);
+  it('looks at the commands after `time` like any other', () => {
+    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi').root, 0), ['echoE']);
+    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi | cat').root, 0), ['echoE']);
+    assert.deepStrictEqual(behavioursOnLine(parser.parse("time echo 'a\\tb'").root, 0), ['echoEscape']);
   });
-  it('puts the issue of a timed pipeline where the pipeline starts, at `time`', () => {
-    const [issue] = dialectIssues(parser.parse('time ls |& wc'), 'sh', 'en');
-    assert.strictEqual(issue.id, 'pipeAmp');
-    assert.deepStrictEqual([issue.node.startPosition.column, issue.node.endPosition.column], [0, 13]);
+  it('has no fix for a syntax error', () => {
+    const [issue] = dialectIssues(parser.parse('x=('), 'zsh', 'en');
+    assert.strictEqual(issue.kind, 'parse');
+    assert.strictEqual(fixFor(issue), undefined);
+  });
+  it('fixes `|&` in a timed pipeline', () => {
+    for (const [src, col] of [['time ls |& wc', 8], ['time -p ls |& wc', 11]] as const) {
+      const [issue] = dialectIssues(parser.parse(src), 'sh', 'en');
+      assert.strictEqual(issue.id, 'pipeAmp');
+      assert.deepStrictEqual(fixFor(issue)!.edits, [{ startLine: 0, startCol: col, endLine: 0, endCol: col + 2, text: '2>&1 |' }], src);
+    }
   });
   it('shows where zsh syntax or a missing token is, once on each line', () => {
     const at = (src: string) => dialectIssues(parser.parse(src), 'zsh', 'en').filter((i) => i.kind === 'parse')
-      .map((i) => [i.node.startPosition.row, i.node.startPosition.column, i.node.endPosition.column - (i.node.endPosition.row === i.node.startPosition.row ? i.node.startPosition.column : 0)]);
+      .map((i) => [i.place.startPosition.row, i.place.startPosition.column, i.place.endPosition.column - (i.place.endPosition.row === i.place.startPosition.row ? i.place.startPosition.column : 0)]);
     // Where the closing `)` should be: a place of no width.
     assert.deepStrictEqual(at('x=('), [[0, 3, 0]]);
     // An error node covers what it could not read; a glob qualifier is a word.
