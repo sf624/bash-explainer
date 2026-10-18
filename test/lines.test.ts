@@ -38,7 +38,7 @@ import { toMarkdown } from '../src/ui/render';
 const root = path.join(__dirname, '..');
 const wasm = {
   runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-  bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
+  bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
 };
 let parser: BashParser;
 before(async () => {

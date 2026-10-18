@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   const { Analyzer } = require('../src/analyzer') as typeof import('../src/analyzer');
   const parser = await createBashParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
+    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
   let lines = 0;
   for (const file of ['sample.sh', 'posix.sh', 'ksh.ksh']) {
