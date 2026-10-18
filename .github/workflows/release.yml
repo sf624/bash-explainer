@@ -112,6 +112,8 @@ jobs:
             npx --yes npm@11.20.0 publish ./cli --access public
           fi
 
+      # The GitHub Marketplace listing of the action is a checkbox on the release page, with no API
+      # for it; see docs/publishing.md.
       - name: Create the GitHub Release
         run: |
           version="${{ needs.build.outputs.version }}"
