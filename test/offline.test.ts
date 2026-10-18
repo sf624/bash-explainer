@@ -22,7 +22,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('offline by design', () => {
-  it('the source imports only vscode and web-tree-sitter', () => {
+  it('the source imports only vscode, web-tree-sitter and, in an adapter nothing uses yet, unbash', () => {
     const modules = new Set<string>();
     for (const file of sourceFiles('src')) {
       for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
@@ -30,7 +30,8 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name);
       }
     }
-    assert.deepStrictEqual([...modules].sort(), ['vscode', 'web-tree-sitter']);
+    // unbash is imported by src/syntax/adapters/unbash.ts only, which no bundle includes until the extension switches to it.
+    assert.deepStrictEqual([...modules].sort(), ['unbash', 'vscode', 'web-tree-sitter']);
   });
 
   it('the web page imports only the editor, the parser and the source', () => {
