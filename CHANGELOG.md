@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `-a` and `-o` in `[ ]` are grouped as bash does: `[ "$a" -eq 1 -a "$b" -eq 2 ]` is two comparisons joined by AND, `[ ! a = b -a -f c ]` is `!(a = b)` AND `-f c`, and `[ -a file ]` and `[ -o noclobber ]` are the unary tests; they were mis-grouped (`("$a" -eq 1 -a "$b") -eq 2`, `-f (a -a (-f b))`, `!(a = b -a -f c)`), and `-a file` was an "arithmetic unary operator". `-g`, `-u`, `-k`, `-O`, `-G`, `-N` and `-R` are explained as tests too.
 - `${a[@]:1:2}` and `${@:2}` are explained as taking elements (of the array, or the arguments from `$2`), with examples checked in bash; they were explained, with a wrong example, as taking characters.
 - An assignment with only a redirection (`FOO=1 2>/dev/null`) is explained as an assignment in the shell; it was "the external command ``".
 - perl one-liners that leave the `-n`/`-p` loop with `last` (`perl -ne 'last if /^END/; print'`) get worked examples, as perl runs them: the loop stops, `END` still runs.
