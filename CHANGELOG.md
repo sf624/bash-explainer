@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `time ls -a` explains `ls` itself ("List directory contents") under `time`, as it does after `time` in a pipeline; before, only its options were shown, and the command was left out.
 - `time` is explained as timing the whole pipeline after it, as bash does: `time cat f | sort` is one timed pipeline, with an example for the whole pipeline; it was `time cat f` piped into `sort`. The commands after `time` are checked like any other, for dialects (`time echo -e x` under dash) and pitfalls (`time read x`, `time rm $f`); they were left out.
 - Under zsh, a syntax error nested in a larger one is also reported as "could not be parsed" on its line, as every other error is.
 - An unfinished script (`if x; then` with no `fi`) no longer lists a keyword of no width ("End of the `if` statement") for what is missing.

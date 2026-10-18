@@ -870,18 +870,15 @@ export class Analyzer {
     const lead = this.timeLead(token(n, 'time')!, field(n, 'option'));
     const cmd = field(n, 'body');
     if (!cmd) return this.tok(n, 'keyword', lead[0].explanation, lead);
-    // `time a | b` times the whole pipeline; `time a` is explained as the command it times.
-    const nameNode = cmd.type === 'command' ? field(cmd, 'name')! : undefined;
-    const inner = nameNode
-      ? (({ args, redirs }) => this.commandTail(n, nameNode, args, [], redirs))(this.commandParts(cmd, nameNode))
-      : (parts => ({ kind: 'keyword' as Kind, children: parts, summary: parts.map(summaryOf).join(' ') }))(this.sub(cmd));
+    // What `time` times, a command or a whole pipeline, is explained as it would be on its own.
+    const inner = this.sub(cmd);
     const text = shorten(n.text.slice(cmd.startIndex - n.startIndex).replace(/\s*\\\n\s*/g, ' '), 40);
     const explanation = this.s(
       `\`${text}\` の実行時間を計測する（実時間・ユーザー時間・システム時間を stderr に表示。パイプラインなら全体の時間）`,
       `Time \`${text}\`: run it and report how long it took (real, user and sys time, on stderr; a pipeline is timed as a whole)`,
     );
-    const t = this.tok(n, inner.kind, explanation, sortTokens([...lead, ...inner.children]));
-    t.summary = `time ${inner.summary}`;
+    const t = this.tok(n, 'keyword', explanation, sortTokens([...lead, ...inner]));
+    t.summary = `time ${inner.map(summaryOf).join(' ')}`;
     return t;
   }
 
