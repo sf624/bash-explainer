@@ -90,7 +90,8 @@ export type NodeType =
 export type FieldName =
   | 'name' | 'value' | 'argument' | 'operator' | 'left' | 'right' | 'body' | 'condition'
   | 'descriptor' | 'destination' | 'index' | 'variable' | 'redirect' | 'option'
-  | 'initializer' | 'update' | 'alternative' | 'consequence' | 'operand';
+  | 'initializer' | 'update' | 'alternative' | 'consequence' | 'operand'
+  | 'fallthrough' | 'termination'; // the `;&` / `;;&` and `;;` that end a case item
 
 /**
  * A node of the tree, or a token: a keyword or operator (`if`, `then`, `&&`, `[[`, `=~`, `>>`…), which
