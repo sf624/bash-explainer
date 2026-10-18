@@ -1897,6 +1897,8 @@ export class Analyzer {
     const operand = (x: SyntaxNode): Operand | undefined => {
       if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
       if (x.type === 'variable_name') return { var: x.text };
+      // The grammar reads the right side of `=`, `==` and `!=` as a pattern, even a plain `a`.
+      if (x.type === 'extglob_pattern' && /^[\w.@%+:,/-]+$/.test(x.text)) return { lit: x.text };
       if (x.type === 'string' && x.namedChildren.length === 1 && x.namedChildren[0].type === 'simple_expansion' && x.text === `"${x.namedChildren[0].text}"`) return operand(x.namedChildren[0]);
       const lit = literalContent(x);
       return lit ? { lit: lit.text } : undefined;
@@ -2224,7 +2226,9 @@ export class Analyzer {
     const left = n.childForFieldName('left');
     const right = n.childForFieldName('right')!;
     const op = n.childForFieldName('operator')!.text;
-    const operands = this.subs([left, right].filter((x) => x && !isPlainWord(x)));
+    // `[ $x = a ]` has a plain `a` on the right, though the grammar reads it as a pattern like the one after `==`.
+    const plain = (x: SyntaxNode) => isPlainWord(x) || (op === '=' && x.type === 'extglob_pattern' && !hasGlob(x.text));
+    const operands = this.subs([left, right].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, right]));
