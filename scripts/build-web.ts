@@ -43,7 +43,11 @@ async function main(): Promise<void> {
     minify: true,
     // web-tree-sitter loads these only when it runs in Node.js.
     external: ['fs', 'path', 'url', 'module'],
-    define: { __VERSION__: JSON.stringify(version) },
+    define: {
+      __VERSION__: JSON.stringify(version),
+      // The web page's samples come from the tour of every feature (web/samples.ts).
+      __SAMPLE_SH__: JSON.stringify(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8')),
+    },
     logLevel: 'warning',
     metafile: true,
   });

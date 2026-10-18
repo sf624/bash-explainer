@@ -44,7 +44,7 @@ const TEXT = {
     failed: 'Could not load the parser:',
     replace: 'Replace your script with the sample?',
     line: (n: number) => `Ln ${n}`,
-    kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
+    kinds: { shell: 'Shell script', tour: 'Shell script: all features' } as Partial<Record<Kind, string>>,
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -62,7 +62,7 @@ const TEXT = {
     failed: '構文解析器を読み込めませんでした:',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
     line: (n: number) => `${n} 行目`,
-    kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
+    kinds: { shell: 'シェルスクリプト', tour: 'シェルスクリプト: 全機能ツアー' } as Partial<Record<Kind, string>>,
   },
 };
 
@@ -91,7 +91,7 @@ function shellDocument(): ShellDocument | undefined {
   parsed?.doc.tree.delete();
   const lines = text.split('\n');
   let doc: ShellDocument;
-  if (kind === 'shell') {
+  if (kind === 'shell' || kind === 'tour') {
     doc = { lines, tree: parser.parse(text) };
   } else {
     const extracted = extractShell(kind, text);
@@ -109,7 +109,7 @@ function shells(): Shells {
 // ---- Editor ---------------------------------------------------------------------------------
 
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
-  shell, makefile: shell, dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
+  shell, tour: shell, makefile: shell, dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
 const languageMode = new Compartment();
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);

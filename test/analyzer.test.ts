@@ -229,6 +229,18 @@ describe('robustness', () => {
     src.split('\n').forEach((_, i) => a.explainLine(tree, i));
     tree.delete();
   });
+
+  it('explains every line of the coverage script, in both languages, without throwing', async () => {
+    // Many one-line cases of every command and example kind, kept apart from the curated sample.sh.
+    const fs = await import('fs');
+    const src = fs.readFileSync(path.join(root, 'test/fixtures/coverage.sh'), 'utf8');
+    const tree = parser.parse(src);
+    for (const lang of ['en', 'ja'] as const) {
+      const a = new Analyzer(lang);
+      src.split('\n').forEach((_, i) => a.explainLine(tree, i));
+    }
+    tree.delete();
+  });
 });
 
 describe('standalone arithmetic commands', () => {

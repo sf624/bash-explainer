@@ -10,3 +10,4 @@ cli/LICENSE
 cli/THIRD_PARTY_NOTICES.md
 coverage/
 .claude/worktrees/
+test/fixtures/playground.sh

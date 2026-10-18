@@ -34,7 +34,7 @@ describe('example settings', () => {
       seen.add(e.kind);
     }));
     tree.delete();
-    assert.ok(seen.size >= 12, [...seen].join());
+    assert.deepStrictEqual([...seen].sort(), [...EXAMPLE_KINDS].sort());
   });
   it('turns examples off altogether or by kind', () => {
     const src = "grep -E '^v[0-9]+' tags.txt | sort -u";

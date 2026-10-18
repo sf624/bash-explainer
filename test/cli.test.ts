@@ -27,9 +27,11 @@ describe('the command-line tool', function () {
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   it('explains a line of a file', () => {
-    const r = run([`${fixture('sample.sh')}:8`, '--no-color']);
+    const line = fs.readFileSync(fixture('sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('grep -rn')) + 1;
+    assert.ok(line > 0);
+    const r = run([`${fixture('sample.sh')}:${line}`, '--no-color']);
     assert.strictEqual(r.code, 0, r.err);
-    assert.match(r.out, /sample\.sh:8 {2}grep -rn/);
+    assert.match(r.out, new RegExp(`sample\\.sh:${line} {2}grep -rn`));
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 

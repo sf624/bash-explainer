@@ -1,7 +1,16 @@
 import type { HostKind } from '../src/hosts';
 
-/** The kinds of file the page explains: a shell script, or a file with shell code in it. */
-export type Kind = 'shell' | HostKind;
+/** The kinds of file the page explains: a shell script (the short sample, or the tour of every feature), or a file with shell code in it. */
+export type Kind = 'shell' | 'tour' | HostKind;
+
+/** test/fixtures/sample.sh as a whole, put in by scripts/build-web.ts (esbuild `define`). */
+declare const __SAMPLE_SH__: string;
+const SAMPLE_SH = __SAMPLE_SH__;
+/**
+ * The opening of sample.sh is the page's first sample: everything before the first section header,
+ * a line that starts with `# --- ` (the headers are what mark the sections of the tour).
+ */
+const SAMPLE_OPENING = SAMPLE_SH.slice(0, SAMPLE_SH.search(/^# --- /m)).trimEnd() + '\n';
 
 export const KINDS: { kind: Kind; name: string; fileName: string; cursorLine: number; sample: string }[] = [
   {
@@ -9,22 +18,14 @@ export const KINDS: { kind: Kind; name: string; fileName: string; cursorLine: nu
     name: 'Shell script',
     fileName: 'script.sh',
     cursorLine: 8,
-    sample: `#!/usr/bin/env bash
-set -euo pipefail
-
-LOG_DIR="\${1:-/var/log/myapp}"
-
-for f in "$LOG_DIR"/*.log; do
-  [[ -s $f ]] || continue
-  grep -n "ERROR" "$f" 2>/dev/null | tail -n 5 >> errors.txt
-done
-
-sed -E 's/^([a-z]+)=(.*)$/\\2=\\1/' config.ini
-jq -r '.items[] | select(.enabled) | .name' items.json
-echo "\${file%.*}" "$(basename "$PWD")"
-find "$LOG_DIR" -name '*.log' -mtime +7 -exec rm -f {} \\;
-tar -czf "backup-$(date +%F).tar.gz" -C "$LOG_DIR" .
-`,
+    sample: SAMPLE_OPENING,
+  },
+  {
+    kind: 'tour',
+    name: 'Shell script: all features',
+    fileName: 'tour.sh',
+    cursorLine: 8,
+    sample: SAMPLE_SH,
   },
   {
     kind: 'dockerfile',
