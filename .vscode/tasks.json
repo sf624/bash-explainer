@@ -1,6 +1,15 @@
 {
   "version": "2.0.0",
   "tasks": [
-    { "type": "npm", "script": "build", "group": "build", "problemMatcher": [] }
+    { "type": "npm", "script": "build", "group": "build", "problemMatcher": [] },
+    {
+      "label": "playground",
+      "detail": "Create the gitignored test/fixtures/playground.sh from sample.sh when it is missing",
+      "type": "shell",
+      "command": "test -f test/fixtures/playground.sh || cp test/fixtures/sample.sh test/fixtures/playground.sh",
+      "windows": { "command": "if not exist test\\fixtures\\playground.sh copy test\\fixtures\\sample.sh test\\fixtures\\playground.sh" },
+      "problemMatcher": []
+    },
+    { "label": "build and playground", "dependsOn": ["npm: build", "playground"], "dependsOrder": "sequence", "problemMatcher": [] }
   ]
 }

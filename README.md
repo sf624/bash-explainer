@@ -282,7 +282,7 @@ npm run test:integration   # run the extension in VS Code (downloaded into .vsco
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```
 
-- Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/sample.sh` open.
+- Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/playground.sh` open (a gitignored copy of `sample.sh`, the tour of every feature, made when it is missing; edit it freely).
 - `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 - To try the command-line tool from this repository, `npm run build:cli`, then `node cli/dist/cli.js <file>` (or `npx --package=./cli bash-explainer <file>`). A bare `npx bash-explainer` does not work here: the extension's own `package.json` is also named `bash-explainer`, so npx takes this project for the package.
