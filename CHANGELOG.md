@@ -5,6 +5,7 @@
 - `time` is explained as timing the whole pipeline after it, as bash does: `time cat f | sort` is one timed pipeline, with an example for the whole pipeline; it was `time cat f` piped into `sort`. The commands after `time` are checked like any other, for dialects (`time echo -e x` under dash) and pitfalls (`time read x`, `time rm $f`); they were left out.
 - Under zsh, a syntax error nested in a larger one is also reported as "could not be parsed" on its line, as every other error is.
 - An unfinished script (`if x; then` with no `fi`) no longer lists a keyword of no width ("End of the `if` statement") for what is missing.
+- A bare `seq` (and `seq` with more than three numbers) gets no example, as GNU seq reports an error for it; before, explaining the line threw and no explanation was shown. `printf` with a backslash at the end of the format (`printf 'a\\'`) or before a newline is explained and prints the backslash, as bash does, instead of throwing. `printf` formats that bash rejects (`\x`, `\u` without digits) or that write bytes which are not text (`\400`, `\xe9`, `\ud800`) get no example; before, they showed a wrong output (`\x` lost its `x`, `\400` printed `Ā`).
 
 ## 0.4.0
 

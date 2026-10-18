@@ -52,6 +52,8 @@ describe('coreutils example input', () => {
     assert.strictEqual(commandExample('sort', ['-M']), undefined);
     assert.strictEqual(commandExample('sort', ['-k', 'x']), undefined);
     assert.strictEqual(commandExample('seq', [undefined as unknown as string]), undefined);
+    // GNU seq needs one to three numbers.
+    for (const args of [[], ['-w'], ['-s', ','], ['1', '2', '3', '4']]) assert.strictEqual(commandExample('seq', args), undefined, args.join(' '));
     assert.strictEqual(commandExample('basename', []), undefined);
     assert.throws(() => runSort(['--bogus'], []));
   });
