@@ -242,7 +242,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 ## 制限事項
 
 - 解説はルールベースです。辞書に無いコマンドは「外部コマンド」として表示され、オプションの詳細は出ません。
-- 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `*(.)` のような zsh 独自の書き方）。
+- 構文解析に使っている文法の都合で、正しく解析できない書き方があります（例: `*(.)` のような zsh 独自の書き方や、bash ではテスト全体を否定する `[[ ! $x =~ re ]]`。後者は `(! $x) =~ re` と読まれます）。文法に当てているパッチが直すのは、`&&` や `||` と並んだ `[[ ]]` 内の `=`・`==`・`=~` と、`${s:$i+1}` のオフセットに入る変数だけです。
 
 ## プライバシー
 
@@ -277,6 +277,7 @@ npm run build      # dist/ にバンドル（wasm もコピー）
 npm test           # 型チェック + 単体テスト
 npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
 npm run package    # .vsix を作成
+node scripts/build-grammar.mjs   # grammar/tree-sitter-bash.wasm を作り直す（tree-sitter-bash に patches/tree-sitter-bash/grammar.patch を当てる。初回はネットワークが必要で、npx が tree-sitter-cli を、CLI が wasi-sdk をダウンロードする）
 npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
 npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
 ```

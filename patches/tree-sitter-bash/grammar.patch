@@ -1,11 +1,20 @@
 --- a/grammar.js
 +++ b/grammar.js
+@@ -450,7 +450,7 @@
+       ),
+     ),
+ 
+-    _test_command_binary_expression: $ => prec(PREC.ASSIGN,
++    _test_command_binary_expression: $ => prec(PREC.EQUALITY,
+       seq(
+         field('left', $._expression),
+         field('operator', '='),
 @@ -611,7 +611,8 @@
      binary_expression: $ => {
        const table = [
          [choice('+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '&=', '^=', '|='), PREC.UPDATE],
 -        [choice('=', '=~'), PREC.ASSIGN],
-+        ['=', PREC.ASSIGN],
++        ['=', PREC.EQUALITY],
 +        ['=~', PREC.EQUALITY],
          ['||', PREC.LOGICAL_OR],
          ['&&', PREC.LOGICAL_AND],
@@ -27,3 +36,11 @@
          $._simple_variable_name,
          $.number,
          $.arithmetic_expansion,
+@@ -1019,6 +1021,7 @@
+     ),
+ 
+     _expansion_max_length_expression: $ => choice(
++      $.simple_expansion,
+       $._simple_variable_name,
+       $.number,
+       $.expansion,
