@@ -52,7 +52,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-o|--output', '標準出力のバッファ（`L`: 行単位、`0`: なし）', 'stdout buffering (`L`: line, `0`: none)', 'arg'],
     ['-e|--error', '標準エラー出力のバッファ（`L`: 行単位、`0`: なし）', 'stderr buffering (`L`: line, `0`: none)', 'arg'],
   ], { wraps: true }),
-  truncate: cmd('ファイルのサイズを変える（足りない分は 0 で埋める）', 'Shrink or extend the size of a file (padding with zeros)', [
+  truncate: cmd('ファイルのサイズを変える（足りない分は 0 で埋める）', 'Make a file shorter or longer (new bytes are zeros)', [
     ['-s|--size', '新しいサイズ（`+` で増やす、`-` で減らす、`K` `M` `G` の単位）', 'new size (`+` grows, `-` shrinks; units `K` `M` `G`)', 'arg'],
     ['-c|--no-create', 'ファイルがなければ作らない', 'do not create the file'],
     ['-r|--reference', 'このファイルと同じサイズにする', 'use the size of this file', 'arg'],
@@ -109,7 +109,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-a|--algorithm', 'アルゴリズム（`crc`、`sha256`、`blake2b`…）', 'algorithm (`crc`, `sha256`, `blake2b`…)', 'arg'],
     ['-c|--check', 'チェックサムのファイルを読み、各ファイルを検証する', 'read checksums from files and verify them'],
   ], { positional: [files] }),
-  tty: cmd('標準入力につながっている端末のファイル名を表示する', 'Print the file name of the terminal connected to stdin', [
+  tty: cmd('標準入力につながっている端末のファイル名を表示する', 'Show which terminal device stdin is attached to', [
     ['-s|--silent|--quiet', '何も出力せず、端末かどうかを終了ステータスで返す', 'print nothing; report via the exit status'],
   ]),
   groups: cmd('ユーザーが属するグループを表示する', 'Print the groups a user belongs to', [], { positional: [pos('ユーザー名（省略時は自分）', 'user name (default: yourself)')] }),
@@ -192,7 +192,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-J|--json', 'JSON で出力', 'output JSON'],
   ]),
   lsmod: cmd('読み込まれているカーネルモジュールを表示する', 'Show loaded kernel modules'),
-  taskset: cmd('プロセスを動かす CPU を指定・確認する', 'Set or get the CPU affinity of a process', [
+  taskset: cmd('プロセスを動かす CPU を指定・確認する', 'Pin a command or process to some CPUs, or show which it may use', [
     ['-c|--cpu-list', 'CPU を番号の一覧（`0,2-3`）で指定', 'give CPUs as a list (`0,2-3`)'],
     ['-p|--pid', '動いているプロセスを対象にする', 'operate on a running PID'],
   ], { positional: [pos('CPU のマスクまたは一覧', 'CPU mask or list'), pos('コマンドまたは PID', 'command or PID')] }),
@@ -202,8 +202,8 @@ export const distro: Record<string, CommandDoc> = {
     ['-u|--user', '対象はユーザー', 'targets are users'],
     ['-g|--pgrp', '対象はプロセスグループ', 'targets are process groups'],
   ], { positional: [pos('プロセス ID', 'process ID')] }),
-  ionice: cmd('ディスク入出力の優先度を指定してコマンドを実行する', 'Run a command with a given I/O scheduling class and priority', [
-    ['-c|--class', 'クラス（`1`: realtime、`2`: best-effort、`3`: idle）', 'class (`1`: realtime, `2`: best-effort, `3`: idle)', 'arg'],
+  ionice: cmd('ディスク入出力の優先度を指定してコマンドを実行する', 'Run a command with a lower or higher priority for disk I/O', [
+    ['-c|--class', 'クラス（`1`: リアルタイム、`2`: ベストエフォート（既定）、`3`: ディスクが空いているときだけ）', 'class: `1` real time, `2` best effort (the default), `3` only when the disk is idle', 'arg'],
     ['-n|--classdata', 'クラス内の優先度（0〜7、小さいほど優先）', 'priority within the class (0 to 7, lower is higher)', 'arg'],
     ['-p|--pid', '動いているプロセスを対象にする', 'operate on a running PID', 'arg'],
   ], { wraps: true }),
@@ -227,11 +227,11 @@ export const distro: Record<string, CommandDoc> = {
     ['-p|--pid', 'PID 名前空間に入る', 'enter the PID namespace'],
     ['-a|--all', 'すべての名前空間に入る', 'enter all namespaces'],
   ], { wraps: true }),
-  script: cmd('端末での操作と出力をファイルに記録する', 'Make a typescript of a terminal session', [
+  script: cmd('端末での操作と出力をファイルに記録する', 'Record everything shown in the terminal to a file', [
     ['-q|--quiet', '開始・終了のメッセージを出さない', 'do not print start and done messages'],
     ['-a|--append', 'ファイルに追記する', 'append to the file'],
     ['-c|--command', '対話シェルではなくこのコマンドを実行する', 'run this command instead of an interactive shell', 'arg'],
-    ['-e|--return', '実行したコマンドの終了ステータスを返す', 'return the exit status of the command'],
+    ['-e|--return', '実行したコマンドの終了ステータスを返す', 'exit with the status the command exited with'],
     ['-f|--flush', '書くたびにフラッシュする', 'flush after each write'],
   ], { positional: [pos('記録するファイル（既定 `typescript`）', 'output file (default `typescript`)')] }),
 
@@ -455,7 +455,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-t', 'ファイルシステムの種類', 'file system type', 'arg'],
   ], { positional: [device] }),
   losetup: cmd('ループデバイスを設定・表示する（ファイルをデバイスとして扱う）', 'Set up and show loop devices (files used as block devices)', [
-    ['-f|--find', '空いているループデバイスを探す', 'find the first unused loop device'],
+    ['-f|--find', '空いているループデバイスを探す', 'pick a free loop device'],
     ['-P|--partscan', 'パーティションを読み取る', 'scan for partitions'],
     ['-d|--detach', 'ループデバイスを切り離す', 'detach a loop device'],
     ['-D|--detach-all', 'すべてのループデバイスを切り離す', 'detach all loop devices'],
