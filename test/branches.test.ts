@@ -358,6 +358,9 @@ describe('branches no other test takes', () => {
     assert.throws(() => braceExpand('{1..600}'), ShellWordsUnsupported);
     assert.throws(() => bashPrintf('%q', ['a\tb']), ShellWordsUnsupported);
     assert.throws(() => bashPrintf('%d', ['abc']), ShellWordsUnsupported);
+    // Bash rejects these, or writes bytes that are not text.
+    for (const f of ['\\x', '\\xg', '\\u', '\\U', '\\777', '\\xe9', '\\U00110000', '\\ud800']) assert.throws(() => bashPrintf(f, []), ShellWordsUnsupported, f);
+    assert.throws(() => bashPrintf('%b', ['\\xe9']), ShellWordsUnsupported);
     assert.throws(() => bashPrintf('%s', Array(60).fill('x')), ShellWordsUnsupported);
     assert.strictEqual(globMatches('[z-a]', 'x', 'value'), false);
     assert.strictEqual(globExamples('[z-a]', 'value'), undefined);

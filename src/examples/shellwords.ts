@@ -332,21 +332,49 @@ function swapCase(s: string): string {
 
 // ---------------------------------------------------------------- printf
 
-const ESC: Record<string, string> = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v', '\\': '\\', '"': '"', "'": "'" };
+const ESC: Record<string, string> = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v', '\\': '\\' };
+/** Escapes only the format has: `%b` leaves `\"`, `\'` and `\?` as they are. */
+const FORMAT_ESC: Record<string, string> = { '"': '"', "'": "'", '?': '?' };
 
-/** Backslash escapes as printf interprets them in the format (and %b in arguments). Returns [text, stop]. */
-function unescape(s: string, inB: boolean): [string, boolean] {
+/**
+ * The backslash escape at `s[i]` (a backslash) as printf interprets it, in the format or, with `inB`, in a `%b` argument.
+ * Returns the text, the length of the escape and whether `\c` stops the output.
+ * Escapes that make a raw byte (not UTF-8) or that bash rejects are unsupported.
+ */
+function escapeAt(s: string, i: number, inB: boolean): { text: string; length: number; stop: boolean } {
+  const rest = s.slice(i + 1);
+  let m: RegExpExecArray | null;
+  if (inB && rest[0] === 'c') return { text: '', length: 2, stop: true };
+  if ((m = (inB ? /^0[0-7]{0,3}/ : /^[0-7]{1,3}/).exec(rest))) return { text: byteChar(parseInt(m[0], 8)), length: 1 + m[0].length, stop: false };
+  if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) return { text: byteChar(parseInt(m[1], 16)), length: 1 + m[0].length, stop: false };
+  if (rest[0] === 'x') throw new Unsupported('\\x without digits');
+  if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest)) || (m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) {
+    const cp = parseInt(m[1], 16);
+    if (cp > 0x10ffff || (cp >= 0xd800 && cp < 0xe000)) throw new Unsupported('not a character');
+    return { text: String.fromCodePoint(cp), length: 1 + m[0].length, stop: false };
+  }
+  if (rest[0] === 'u' || rest[0] === 'U') throw new Unsupported('\\u without digits');
+  const single = ESC[rest[0]] ?? (inB ? undefined : FORMAT_ESC[rest[0]]);
+  if (single !== undefined) return { text: single, length: 2, stop: false };
+  // A lone backslash at the end, or before a character that means nothing, prints as it is.
+  return { text: '\\', length: 1, stop: false };
+}
+
+/** A byte from an octal or hex escape: bash wraps it to 8 bits, and a byte of 0x80 or more is not text. */
+function byteChar(code: number): string {
+  if ((code & 0xff) >= 0x80) throw new Unsupported('raw byte');
+  return String.fromCharCode(code & 0xff);
+}
+
+/** Backslash escapes as printf interprets them in a `%b` argument. Returns [text, stop]. */
+function unescape(s: string): [string, boolean] {
   let out = '';
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] !== '\\' || i + 1 >= s.length) { out += s[i]; continue; }
-    const rest = s.slice(i + 1);
-    let m: RegExpExecArray | null;
-    if (inB && rest[0] === 'c') return [out, true];
-    if ((m = (inB ? /^0[0-7]{0,3}/ : /^[0-7]{1,3}/).exec(rest))) { out += String.fromCharCode(parseInt(m[0], 8)); i += m[0].length; continue; }
-    if ((m = /^x([0-9a-fA-F]{1,2})/.exec(rest))) { out += String.fromCharCode(parseInt(m[1], 16)); i += m[0].length; continue; }
-    if ((m = /^u([0-9a-fA-F]{1,4})/.exec(rest)) || (m = /^U([0-9a-fA-F]{1,8})/.exec(rest))) { out += String.fromCodePoint(parseInt(m[1], 16)); i += m[0].length; continue; }
-    if (ESC[rest[0]] !== undefined && (inB || rest[0] !== "'" )) { out += ESC[rest[0]]; i++; continue; }
-    out += '\\';
+  for (let i = 0; i < s.length; ) {
+    if (s[i] !== '\\') { out += s[i++]; continue; }
+    const e = escapeAt(s, i, true);
+    if (e.stop) return [out, true];
+    out += e.text;
+    i += e.length;
   }
   return [out, false];
 }
@@ -379,9 +407,9 @@ export function bashPrintf(format: string, args: string[]): string {
     while (i < format.length) {
       const c = format[i];
       if (c === '\\') {
-        const m = /^\\(0[0-7]{0,3}|[0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|.)/.exec(format.slice(i));
-        out += unescape(m![0], false)[0];
-        i += m![0].length;
+        const e = escapeAt(format, i, false);
+        out += e.text;
+        i += e.length;
         continue;
       }
       if (c !== '%') { out += c; i++; continue; }
@@ -395,7 +423,7 @@ export function bashPrintf(format: string, args: string[]): string {
       const spec = `%${flags.replace("'", '')}${width ?? ''}${prec !== undefined ? '.' + prec : ''}`;
       const arg = args[ai++];
       if (conv === 'b') {
-        const [text, stop] = unescape(arg ?? '', true);
+        const [text, stop] = unescape(arg ?? '');
         out += sprintf(`${spec}s`, [text]);
         if (stop) { stopped = true; break; }
         continue;

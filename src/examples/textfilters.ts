@@ -435,7 +435,8 @@ export function runSeq(words: (string | undefined)[]): string[] {
   const fixed = words.map((w) => (w && /^-\d/.test(w) ? `\u0000${w}` : w));
   const p = parseOptions(fixed, { flags: 'w', values: 'sf', long: { 'equal-width': 'w', separator: 's', format: 'f' } });
   const nums = p.operands.map((o) => o?.replace('\u0000', ''));
-  if (nums.some((n) => n === undefined || !/^-?(\d+\.?\d*|\.\d+)$/.test(n))) throw new Unsupported('seq operands');
+  // seq needs one to three numbers.
+  if (nums.length < 1 || nums.length > 3 || nums.some((n) => n === undefined || !/^-?(\d+\.?\d*|\.\d+)$/.test(n))) throw new Unsupported('seq operands');
   const [first, inc, last] = nums.length === 1 ? ['1', '1', nums[0]!] : nums.length === 2 ? [nums[0]!, '1', nums[1]!] : [nums[0]!, nums[1]!, nums[2]!];
   const prec = (s: string) => (s.includes('.') ? s.split('.')[1].length : 0);
   const digits = Math.max(prec(first), prec(inc));
