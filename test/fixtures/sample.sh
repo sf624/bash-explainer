@@ -46,6 +46,7 @@ grep -E '^[A-Z]{3}-[0-9]+$' ids.txt
 grep -oP '(?<=id=)\d+' access.log
 sed -n '/^BEGIN/,/^END/p' config.txt
 sed -i '1d;$d' data.csv
+sed -E 's/^([a-z]+)=(.*)$/\2=\1/' config.ini
 awk -F, '$3 > 100 { print $1 }' sales.csv
 awk '!seen[$0]++' list.txt
 jq '.config.timeout // 30' app.json
