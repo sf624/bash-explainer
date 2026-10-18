@@ -119,6 +119,8 @@ export interface SyntaxNode {
 }
 
 export interface SyntaxError {
+  /** `missing`: a token the grammar expects is not there (see `incomplete`); `unreadable`: text the parser could not read (see the `error` node). */
+  readonly kind: 'missing' | 'unreadable';
   readonly message: string;
   readonly startIndex: number;
   readonly endIndex: number;
@@ -177,12 +179,4 @@ export function descendants(n: SyntaxNode, types: readonly string[], rows?: { fr
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);
-}
-
-/** The `time_statement` that times this command (its body, or the first stage of its pipeline), if any. */
-export function timedBy(n: SyntaxNode): SyntaxNode | undefined {
-  const p = n.parent;
-  if (p?.type === 'time_statement') return p;
-  const pp = p?.parent;
-  return p?.type === 'pipeline' && pp?.type === 'time_statement' && p.children[0] === n ? pp : undefined;
 }

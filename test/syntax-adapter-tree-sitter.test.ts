@@ -50,14 +50,29 @@ function compare(a: SyntaxNode, b: Node, text: string, where: string): number {
   sameSpan(a, b, here);
   if (a.type === 'time_statement') return 1;
   const kids: { n: Node; field: string | null }[] = [];
-  for (let i = 0; i < b.childCount; i++) if (!b.child(i)!.isMissing) kids.push({ n: b.child(i)!, field: b.fieldNameForChild(i) });
+  let missing = 0;
+  // `[ ]` is a flat list of words: tree-sitter's groups are opened, and its operators are words.
+  const gather = (x: Node, flat: boolean): void => {
+    for (let i = 0; i < x.childCount; i++) {
+      const c = x.child(i)!;
+      if (c.isMissing) missing++;
+      else if (flat && ['binary_expression', 'unary_expression', 'parenthesized_expression'].includes(c.type)) gather(c, flat);
+      else kids.push({ n: c, field: flat ? null : x.fieldNameForChild(i) });
+    }
+  };
+  const flat = a.type === 'test_command';
+  gather(b, flat);
   assert.equal(a.children.length, kids.length, `${here} child count`);
-  assert.equal(a.incomplete, kids.length < b.childCount, `${here} incomplete`);
+  assert.equal(a.incomplete, missing > 0, `${here} incomplete`);
   let count = 1;
   a.children.forEach((c, i) => {
     assert.equal(c.parent, a, `${here} parent`);
     assert.equal(c.field, kids[i].field, `${here} field of child ${i}`);
-    count += compare(c, kids[i].n, text, here);
+    const k = kids[i].n;
+    if (flat && (!k.isNamed || k.type === 'test_operator') && i > 0 && i < kids.length - 1) {
+      assert.equal(c.type, 'word', `${here} operator word`);
+      assert.equal(c.text, k.text);
+    } else count += compare(c, k, text, here);
   });
   assert.deepEqual(a.namedChildren, a.children.filter((c) => c.named));
   return count;
@@ -111,6 +126,24 @@ describe('tree-sitter adapter: the vocabulary', () => {
 });
 
 describe('tree-sitter adapter: normalizations', () => {
+  it('[ ] holds a flat list of words, between its brackets', () => {
+    const t = parser.parse('[ ! -f "$a" -a x = y* ]');
+    const test = t.root.namedChildren[0];
+    assert.equal(test.type, 'test_command');
+    assert.deepEqual(test.children.map((c) => `${c.type}:${c.text}`), ['[:[', 'word:!', 'word:-f', 'string:"$a"', 'word:-a', 'word:x', 'word:=', 'extglob_pattern:y*', ']:]']);
+    assert.deepEqual(test.namedChildren, test.children.filter((c) => c.named));
+    assert.deepEqual(types(test, 'binary_expression').concat(types(test, 'unary_expression')), []);
+    const group = parser.parse('[ ( a ) ]').root.namedChildren[0];
+    assert.deepEqual(group.namedChildren.map((c) => c.text), ['(', 'a', ')']);
+    // [[ ]] keeps its expressions.
+    assert.equal(types(parser.parse('[[ -f a && b = c ]]').root, 'binary_expression').length, 2);
+  });
+  it('tells missing tokens from text it could not read, and leaves out the empty error after a trailing backslash', () => {
+    assert.deepEqual(parser.parse('if x; then').errors.map((e) => e.kind), ['missing']);
+    assert.ok(parser.parse("ls @(a'b").errors.some((e) => e.kind === 'unreadable'));
+    const trailing = parser.parse('%*d|\\\n');
+    assert.deepEqual(trailing.errors.map((e) => [e.kind, e.startIndex, e.endIndex]), [['unreadable', 0, 6]]);
+  });
   it('(( x++ )) is an arithmetic_command', () => {
     const t = parser.parse('(( x++ ))');
     const n = t.root.namedChildren[0];
@@ -203,7 +236,7 @@ describe('tree-sitter adapter: normalizations', () => {
     assert.equal(n.incomplete, true);
     assert.equal(token(n, 'fi'), undefined);
     assert.equal(t.root.incomplete, false);
-    assert.deepEqual(t.errors, [{ message: 'Missing "fi"', startIndex: 10, endIndex: 10 }]);
+    assert.deepEqual(t.errors, [{ kind: 'missing', message: 'Missing "fi"', startIndex: 10, endIndex: 10 }]);
     assert.equal(hasError(t.root), true);
   });
   it('unreadable text is an error node with an error entry', () => {

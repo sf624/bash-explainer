@@ -51,7 +51,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
   const shell = shells.forced ?? shells.detected;
   if (!shell || shell === 'bash') return [];
   return dialectIssues(doc.tree, shell, lang).map((i) => {
-    const n = i.node;
+    const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
       code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message, fix: fixFor(i),

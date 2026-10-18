@@ -154,7 +154,7 @@ class Converter {
       const c = n.child(i)!;
       if (!c.isMissing) continue;
       into.incomplete = true;
-      this.errors.push({ message: `Missing "${c.type}"`, startIndex: c.startIndex, endIndex: c.endIndex });
+      this.errors.push({ kind: 'missing', message: `Missing "${c.type}"`, startIndex: c.startIndex, endIndex: c.endIndex });
     }
   }
 
@@ -176,10 +176,28 @@ class Converter {
       if (t) return t;
     }
     const m = this.node(this.kind(n), n.isNamed, n, parent, field);
-    if (n.isError) this.errors.push({ message: 'Syntax error', startIndex: n.startIndex, endIndex: n.endIndex });
+    // (After a trailing `\`, tree-sitter adds an empty `ERROR` leaf next to the real one; it is not another place.)
+    if (n.isError && (n.childCount || n.endIndex > n.startIndex)) this.errors.push({ kind: 'unreadable', message: 'Syntax error', startIndex: n.startIndex, endIndex: n.endIndex });
     this.noteMissing(n, m);
-    for (const p of this.parts(n)) this.convert(p.n, m, p.field);
+    if (m.type === 'test_command') this.flatTest(this.parts(n), m);
+    else for (const p of this.parts(n)) this.convert(p.n, m, p.field);
     return m;
+  }
+
+  /**
+   * `[ … ]` holds its words as a flat list, as the shell reads it: tree-sitter's groups (binary, unary and
+   * parenthesized expressions) are opened, and operators and parentheses become words like the rest.
+   */
+  flatTest(parts: Part[], m: Mut, top = true): void {
+    parts.forEach((p, i) => {
+      const c = p.n;
+      if (top && !c.isNamed && (i === 0 || i === parts.length - 1) && (c.type === '[' || c.type === ']')) this.convert(c, m, null);
+      else if (c.type === 'binary_expression' || c.type === 'unary_expression' || c.type === 'parenthesized_expression') {
+        this.noteMissing(c, m);
+        this.flatTest(this.parts(c), m, false);
+      } else if (!c.isNamed || c.type === 'test_operator') this.node('word', true, c, m, null);
+      else this.convert(c, m, null);
+    });
   }
 
   /** `time [-p] …` is a command named `time` to tree-sitter; the first command of a pipeline times all of it. */

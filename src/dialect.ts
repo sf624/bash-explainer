@@ -1,8 +1,8 @@
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { ancestor, descendants, field, timedBy } from './syntax/tree';
-import type { SyntaxNode, SyntaxTree } from './syntax/tree';
+import { ancestor, descendants, field } from './syntax/tree';
+import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 
 /** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
@@ -167,8 +167,7 @@ export function collectBehaviours(root: SyntaxNode, from: number, to: number): F
   const found: Found[] = [];
   walk(root, from, to, (n) => {
     const add = (id: string) => found.push({ id, node: n });
-    // The command after `time` has never been looked at: it used to be an argument of the command `time`.
-    if (n.type === 'command' && !timedBy(n) && field(n, 'name')?.text === 'echo'
+    if (n.type === 'command' && field(n, 'name')?.text === 'echo'
       && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
     // An unquoted `$var` used as a word of a command.
     if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
@@ -200,8 +199,7 @@ function works(f: Feature, shell: RealShell): boolean {
 /** Features used by the constructs starting on lines [from, to]. */
 export function collectFeatures(root: SyntaxNode, from: number, to: number): Found[] {
   const found: Found[] = [];
-  // `time a |& b` is a pipeline starting at `time`, as far as its features go.
-  walk(root, from, to, (n) => classify(n, n.children.map((c) => c.type), (id) => found.push({ id, node: n.type === 'pipeline' && n.parent?.type === 'time_statement' ? n.parent : n })));
+  walk(root, from, to, (n) => classify(n, n.children.map((c) => c.type), (id) => found.push({ id, node: n })));
   return found;
 }
 
@@ -218,10 +216,9 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       if (descendants(n, ['=~']).length) add('regex');
       return;
     case 'test_command':
-      if (descendants(n, ['==']).length) add('eqeqTest');
+      if (n.namedChildren.some((w) => w.text === '==')) add('eqeqTest');
       return;
     case 'command': {
-      if (timedBy(n)) return;
       const name = field(n, 'name')!;
       const words = n.namedChildren.filter((c) => c !== name).map((c) => c.text);
       commandFeatures(name.text, words, add);
@@ -339,8 +336,13 @@ export interface Issue {
   /** `unsupported`: fails in the shell; `behaviour`: works differently; `parse`: zsh-only syntax. */
   kind: 'unsupported' | 'behaviour' | 'parse';
   message: string;
-  node: SyntaxNode;
+  /** Where it is: the lines and columns the construct, or the syntax error, covers. */
+  place: Place;
+  /** The construct, for the issues about one (not `parse`). */
+  node?: SyntaxNode;
 }
+
+export interface Place { startPosition: Point; endPosition: Point }
 
 function featureMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
@@ -367,39 +369,27 @@ function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefi
   return differ.length ? 'ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
 }
 
-/** A node of no width at `index`, where the parser left out a token it expected. */
-function missingAt(tree: SyntaxTree, index: number): SyntaxNode {
-  const before = tree.text.slice(0, index);
-  const row = before.split('\n').length - 1;
-  const at = { row, column: index - (before.lastIndexOf('\n') + 1) };
-  return { type: 'missing', named: false, text: '', startIndex: index, endIndex: index, startPosition: at, endPosition: at, parent: null, children: [], namedChildren: [], field: null, incomplete: true };
+/** The line and column of an offset in the text. */
+function pointAt(text: string, index: number): Point {
+  const before = text.slice(0, index);
+  return { row: before.split('\n').length - 1, column: index - (before.lastIndexOf('\n') + 1) };
 }
 
 /**
- * The first place on each line in [from, to] with a syntax error: an `error` node, or where a token is
- * missing. (A leaf `error` of no width, which the parser puts after a trailing `\` and the like, is no place.)
+ * Where zsh-only syntax may be, in lines [from, to], the first on each line: text the parser could not
+ * read, where it left out a token it expected (a place of no width), and words with `*(…)` and the like,
+ * which the parser reads as ksh's extended globs but zsh takes as glob qualifiers (`*(.)`, `*(/om)`).
  */
-function errorNodes(tree: SyntaxTree, from: number, to: number): SyntaxNode[] {
-  const places = [
-    ...tree.errors.filter((e) => e.message.startsWith('Missing')).map((e) => missingAt(tree, e.startIndex)),
-    ...descendants(tree.root, ['error'], { from, to }).filter((e) => e.endIndex > e.startIndex || e.children.length),
-  ].sort((a, b) => a.startIndex - b.startIndex);
-  const out: SyntaxNode[] = [];
-  for (const n of places) {
-    if (n.startPosition.row >= from && n.startPosition.row <= to && !out.some((e) => e.startPosition.row === n.startPosition.row)) out.push(n);
-  }
-  return out;
-}
-
-/**
- * Where zsh-only syntax may be: syntax errors, and words with `*(…)` and the like, which the parser
- * reads as ksh's extended globs but zsh takes as glob qualifiers (`*(.)`, `*(/om)`).
- */
-function zshSyntaxNodes(tree: SyntaxTree, from: number, to: number): SyntaxNode[] {
-  const out = errorNodes(tree, from, to);
-  for (const w of descendants(tree.root, ['word'], { from, to })) {
-    if (w.startPosition.row >= from && w.startPosition.row <= to && /(^|[^\\])[?*+@!]\(/.test(w.text) && !out.some((e) => e.startPosition.row === w.startPosition.row)) out.push(w);
-  }
+function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
+  const places: (Place & { index: number })[] = tree.errors.map((e) => ({
+    index: e.startIndex, startPosition: pointAt(tree.text, e.startIndex), endPosition: pointAt(tree.text, e.endIndex),
+  })).sort((a, b) => a.index - b.index);
+  const out: Place[] = [];
+  const add = (p: Place): void => {
+    if (p.startPosition.row >= from && p.startPosition.row <= to && !out.some((e) => e.startPosition.row === p.startPosition.row)) out.push(p);
+  };
+  places.forEach(add);
+  for (const w of descendants(tree.root, ['word'], { from, to })) if (/(^|[^\\])[?*+@!]\(/.test(w.text)) add(w);
   return out;
 }
 
@@ -413,19 +403,19 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
   if (shell === 'bash') return [];
   const issues: Issue[] = [];
   if (shell === 'zsh') {
-    for (const node of zshSyntaxNodes(tree, from, to)) {
+    for (const place of zshSyntaxPlaces(tree, from, to)) {
       issues.push({
-        id: 'zshSyntax', kind: 'parse', node, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
+        id: 'zshSyntax', kind: 'parse', place, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
       });
     }
   }
   for (const f of collectBehaviours(tree.root, from, to)) {
     const message = behaviourMessage(f.id, shell, lang);
-    if (message) issues.push({ id: f.id, kind: 'behaviour', message, node: f.node });
+    if (message) issues.push({ id: f.id, kind: 'behaviour', message, node: f.node, place: f.node });
   }
   for (const f of collectFeatures(tree.root, from, to)) {
     const message = featureMessage(f.id, shell, lang);
-    if (message) issues.push({ id: f.id, kind: 'unsupported', message, node: f.node });
+    if (message) issues.push({ id: f.id, kind: 'unsupported', message, node: f.node, place: f.node });
   }
   return issues;
 }
@@ -434,7 +424,7 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
 export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang: Lang): string[] {
   const issues = dialectIssues(tree, shell, lang, line, line).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
-  const parse = shell === 'zsh' && zshSyntaxNodes(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
+  const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
     ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];
   return [...new Set([...parse, ...issues.map((i) => i.message)])];
 }

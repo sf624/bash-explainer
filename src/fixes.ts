@@ -1,5 +1,5 @@
 import type { Issue } from './dialect';
-import { descendants, field, fields } from './syntax/tree';
+import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 /** A text replacement, in tree positions (0-based rows and columns). */
@@ -18,6 +18,7 @@ const replace = (n: { startPosition: { row: number; column: number }; endPositio
  */
 export function fixFor(issue: Issue): Fix | undefined {
   const n = issue.node;
+  if (!n) return undefined;
   switch (issue.id) {
     case 'dbracket': {
       const expr = n.namedChildren.length === 1 ? n.namedChildren[0] : undefined;
@@ -25,7 +26,7 @@ export function fixFor(issue: Issue): Fix | undefined {
       return text ? { title: ['`[[ ]]` を `[ ]` に書き換える', 'Rewrite `[[ ]]` as `[ ]`'], edits: [replace(n, text)] } : undefined;
     }
     case 'eqeqTest':
-      return { title: ['`==` を `=` に書き換える', 'Replace `==` with `=`'], edits: descendants(n, ['==']).map((op) => replace(op, '=')) };
+      return { title: ['`==` を `=` に書き換える', 'Replace `==` with `=`'], edits: n.namedChildren.filter((w) => w.text === '==').map((op) => replace(op, '=')) };
     case 'source': {
       return { title: ['`source` を `.` に書き換える', 'Replace `source` with `.`'], edits: [replace(field(n, 'name')!, '.')] };
     }

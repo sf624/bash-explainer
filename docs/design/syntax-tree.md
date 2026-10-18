@@ -19,7 +19,7 @@ unbash parses more scripts correctly (451 of 451 in a sweep of system scripts, a
 
 ## The model
 
-`SyntaxTree` holds the text, the root node, and `errors` (each with a message and a range). `BashParser.parse(text)` is synchronous. Loading a library's wasm or modules happens when the adapter is created.
+`SyntaxTree` holds the text, the root node, and `errors` (each with a `kind`, a message and a range). The `kind` is `missing` (a token the grammar expects is not there; the open construct is `incomplete`, and the error is a place of no width) or `unreadable` (text the parser could not read; there is an `error` node over it). An adapter lists a place once: tree-sitter's empty `ERROR` leaf after a trailing `\` is not an error entry. `BashParser.parse(text)` is synchronous. Loading a library's wasm or modules happens when the adapter is created.
 
 A `SyntaxNode` has:
 
@@ -45,7 +45,7 @@ Helpers in the same module (`field`, `fields`, `token`, `ancestor`, `descendants
    | bash construct | tree-sitter-bash gave | model |
    |---|---|---|
    | `(( … ))` | `compound_statement` starting with `((` | `arithmetic_command` |
-   | `[ … ]` | `test_command` starting with `[` | `test_command` |
+   | `[ … ]` | `test_command` starting with `[`, holding binary, unary and parenthesized expressions | `test_command`: the tokens `[` and `]`, and between them a flat list of words (`word`, `string`, `raw_string`, `expansion`, `concatenation`…); operators and parentheses (`-f`, `=`, `-a`, `(`) are `word`s too |
    | `[[ … ]]` | `test_command` starting with `[[` | `extended_test` |
    | `select x in …` | `for_statement` starting with `select` | `select_statement` |
    | `time [-p] pipeline` | a command named `time` | `time_statement` (token `time`, `option`, `body`) |
@@ -60,11 +60,25 @@ Helpers in the same module (`field`, `fields`, `token`, `ancestor`, `descendants
 ### Not in the model
 
 - **Incremental parsing.** The extension never used it: it re-parses a document when its version changes. unbash parses bash_completion (2,291 lines) in about 2 ms.
-- **The grouping of `[ … ]` arguments.** `[ ]` and `test` take words at run time. src/testexpr.ts groups them as bash's `test` does, whatever the tree says.
+- **The grouping of `[ … ]` arguments.** `[ ]` and `test` take words at run time, so a `test_command` has no binary, unary or parenthesized expression: the tree-sitter adapter opens tree-sitter's groups. src/testexpr.ts groups the words as bash's `test` does, and the analyzer and pitfalls read only that. (`[[ … ]]` keeps its expressions.)
+- **What `time` binds.** A `time_statement` has a `body`, which is a command or the whole pipeline after `time`, as in bash. The commands in it are explained, and checked for dialect and pitfalls, like any other.
+
+## Known tree-sitter residue
+
+The tree-sitter adapter leaves these as tree-sitter gives them, and the analyzer still has code for them. The unbash adapter does not need to reproduce them, and the code can go with tree-sitter:
+
+- **A command with a name of no width** for `FOO=1 2>/dev/null` (the analyzer's `commandToken`). It is explained as an assignment in the shell.
+- **`$"…"` as a `$` token and a `string`** (the analyzer's `string`), where the model has `translated_string`. The analyzer joins the two for the label and the range.
+- **Redirections with no children**, the residue of a MISSING operator (`[range(2)] | x`). The analyzer's `redirected` leaves them out.
+- **A command name with no word** in `echo a |` (the analyzer's `pipelineExample` accepts a `command_name` with no named child).
+- **A `[ ]` with no `]`** (`bracketTest` takes the `]` only if it is there).
+- **`>&-` and `<&-` as one operator** (the analyzer's `redirectParts` splits them into `>&` and `<&` to `-`).
+- **`${` after a space inside a string**, which tree-sitter starts at the space (the analyzer's `expansion` trims it and moves the range).
+- **A `time` with nothing to time before a pipe** (`time | wc`) stays a command named `time` (the analyzer's `timeAlone`).
 
 ## Where libraries may be imported
 
-Only `src/syntax/adapters/*` may import `web-tree-sitter`, `unbash` or any other parser library. A test checks this, so the boundary does not erode.
+Only `src/syntax/adapters/*` may import `web-tree-sitter`, `unbash` or any other parser library; `cli/` and `web/` make their parser with the adapters' exports. A test checks this, so the boundary does not erode.
 
 ## The move to unbash
 
@@ -82,7 +96,7 @@ The move happens in steps, each a PR with the test suite as the safety net. Most
 These come from a survey of unbash 6.0.0. The adapter fills them; most are small.
 
 - **No positions for comments, keywords and operators.** The token scanner recovers them (estimated at 400–700 lines with tests).
-- **`[ ]` and `test` are plain commands.** The adapter makes `[ … ]` a `test_command`; testexpr does the grouping.
+- **`[ ]` and `test` are plain commands.** The adapter makes `[ … ]` a `test_command` with its words as a flat list; testexpr does the grouping.
 - **Array elements `[k]=v`, tilde words and `=~` right sides are plain words.** The adapter splits them where the explanations need it.
 - **Unclosed compound commands come out with zero width.** For `if x; then`, `{ echo` and `case x in a)`, the adapter extends them to what follows and marks them `incomplete`.
 - **`echo a |` drops the whole pipeline**, and a heredoc with no closing line raises no error. These are errors the adapter reports itself.

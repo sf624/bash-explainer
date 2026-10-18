@@ -1142,7 +1142,7 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   for (const region of extracted.regions) {
     for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
-      out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.node) });
+      out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
     }
     if (region.warnPipefail && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
       for (let line = region.start; line <= region.end; line++) {
