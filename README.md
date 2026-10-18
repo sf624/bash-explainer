@@ -242,7 +242,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 ## Limitations
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
-- A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`, and `-a`/`-o` in `[ ]` next to any test operator, with or without `=`: `[ "$a" -eq 1 -a "$b" -eq 2 ]` is read as `(("$a" -eq 1) -a "$b") -eq 2`, `[ -f a -a -f b ]` as `-f (a -a (-f b))`, and `[ ! a = b -a -f c ]` as `!((a = b) -a -f c)` (bash reads `(!(a = b)) -a (-f c)`). The grammar is patched only for `=` and `=~` next to `&&` and `||` in `[[ ]]`, for a pattern of several parts after `=`/`==`/`!=` (`*"$y"*z`), for `!` negating the whole test after it (`[[ ! $x =~ re ]]`, `[[ ! $a -eq 1 ]]`, `[ ! a = b ]`), and for variables in `${s:$i+1}` offsets.
+- A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`, and `[ ]` with escaped parentheses (`[ \( a = b \) -o c ]`) or with `!` before a word that looks like an operator (`[ ! = a ]`), which it does not read as a test. In a `[ ]` it does read, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the tree says. The grammar is patched only for `=` and `=~` next to `&&` and `||` in `[[ ]]`, for a pattern of several parts after `=`/`==`/`!=` (`*"$y"*z`), for `!` negating the whole test after it (`[[ ! $x =~ re ]]`, `[[ ! $a -eq 1 ]]`, `[ ! a = b ]`), and for variables in `${s:$i+1}` offsets.
 
 ## Privacy
 

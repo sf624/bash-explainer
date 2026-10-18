@@ -114,6 +114,14 @@ export const wellKnownVariables: Record<string, Text> = {
 
 /** Unary test operators used in `[ ]`, `[[ ]]` and `test`. */
 export const unaryTestOps: Record<string, Text> = {
+  '-a': tx('存在する（`-e` と同じ。非推奨）', 'exists (same as `-e`, obsolescent)'),
+  '-g': tx('setgid ビットが付いている', 'has the setgid bit set'),
+  '-u': tx('setuid ビットが付いている', 'has the setuid bit set'),
+  '-k': tx('スティッキービットが付いている', 'has the sticky bit set'),
+  '-O': tx('実効ユーザー ID が所有している', 'is owned by the effective user ID'),
+  '-G': tx('実効グループ ID が所有している', 'is owned by the effective group ID'),
+  '-N': tx('前回読んでから変更されている', 'was modified since it was last read'),
+  '-R': tx('参照変数（nameref）として設定された変数名である', 'is the name of a variable set as a name reference'),
   '-e': tx('存在する（種類は問わない）', 'exists'),
   '-f': tx('通常ファイルとして存在する', 'is an existing regular file'),
   '-d': tx('ディレクトリとして存在する', 'is an existing directory'),

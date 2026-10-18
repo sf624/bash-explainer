@@ -22,6 +22,7 @@ import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainGetopts } from './embedded/getopts';
+import { parseTest, TestExpr, testRange } from './testexpr';
 import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
 import { YQ_DOCS } from './dict/yq';
@@ -1888,12 +1889,20 @@ export class Analyzer {
   }
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-  private testExample(n: SyntaxNode): void {
-    if (n.namedChildren.length !== 1) return;
-    this.testExampleFor(n.child(0)?.type as '[' | '[[' | '((', n.namedChildren[0]);
-  }
-
-  private testExampleFor(kind: '[' | '[[' | '((', expr: SyntaxNode): void {
+  private testExample(n: SyntaxNode, bracket: BracketTest | undefined): void {
+    const kind = n.child(0)?.type as '[' | '[[' | '((';
+    let shape: TestShape | undefined;
+    if (kind === '[') {
+      shape = bracketShape(bracket);
+    } else if (n.namedChildren.length === 1) {
+      const expr = n.namedChildren[0];
+      if (expr.type === 'unary_expression') {
+        shape = { op: expr.childForFieldName('operator')!.text, right: expr.namedChildren.find((c) => c.type !== 'test_operator')! };
+      } else if (expr.type === 'binary_expression' && expr.childrenForFieldName('right').length === 1) {
+        shape = { left: expr.childForFieldName('left')!, op: expr.childForFieldName('operator')!.text, right: expr.childForFieldName('right')! };
+      }
+    }
+    if (!shape) return;
     const operand = (x: SyntaxNode): Operand | undefined => {
       if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
       if (x.type === 'variable_name') return { var: x.text };
@@ -1903,16 +1912,10 @@ export class Analyzer {
       const lit = literalContent(x);
       return lit ? { lit: lit.text } : undefined;
     };
-    let cases;
-    if (expr.type === 'unary_expression') {
-      const op = expr.childForFieldName('operator')!.text;
-      cases = testCases(kind, op, undefined, operand(expr.namedChildren.find((c) => c.type !== 'test_operator')!));
-    } else if (expr.type === 'binary_expression' && expr.childrenForFieldName('right').length === 1) {
-      const l = expr.childForFieldName('left')!;
-      const r = expr.childForFieldName('right')!;
-      const op = expr.childForFieldName('operator')!.text;
-      cases = testCases(kind, op, operand(l), operand(r), r.type === 'string' || r.type === 'raw_string', !!this.globOpts('pattern').nocase);
-    }
+    const { left, op, right } = shape;
+    const cases = left
+      ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', !!this.globOpts('pattern').nocase)
+      : testCases(kind, op, undefined, operand(right));
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
     this.examples.push({ kind: 'test',
@@ -2172,7 +2175,8 @@ export class Analyzer {
   private test(n: SyntaxNode): Token {
     const before = this.examples.length;
     // A test over several lines is explained whole (see sub), so it is always where the line starts.
-    this.testExample(n);
+    const bracket = n.child(0)?.type === '[' ? bracketTest(n) : undefined;
+    this.testExample(n, bracket);
     const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
@@ -2181,11 +2185,50 @@ export class Analyzer {
         ? this.arithTestExplanation()
         : this.s('条件式 `[ ]`: 条件を評価し、真なら成功(0)を返す（`test` コマンドと同じ。`[` の後と `]` の前には空白が必要）',
           'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
-    const t = this.tok(n, 'test', expl, this.subs(n.namedChildren));
+    const t = this.tok(n, 'test', expl, bracket ? this.testTokens(n, bracket, bracket.expr) : this.subs(n.namedChildren));
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     // Includes examples from inside the test, such as the regex of `=~`.
     this.tagExamples(before, n);
     return t;
+  }
+
+  /** The tokens of a `[ ]` test read as bash reads it (see testexpr.ts). */
+  private testTokens(n: SyntaxNode, b: BracketTest, e: TestExpr): Token[] {
+    const words = b.words;
+    const slice = (from: number, to: number) => n.text.slice(words[from].nodes[0].startIndex - n.startIndex, words[to].nodes[words[to].nodes.length - 1].endIndex - n.startIndex);
+    const [first, last] = testRange(e);
+    const make = (kind: Kind, explanation: string, children: Token[]): Token => ({
+      kind, label: shorten(slice(first, last)), explanation, children,
+      span: { start: spanOf(words[first].nodes[0]).start, end: spanOf(words[last].nodes[words[last].nodes.length - 1]).end },
+    });
+    // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
+    const wordTokens = (i: number) => words[i].nodes.flatMap((x) => (x.isNamed && x.type !== 'test_operator'
+      ? this.sub(x)
+      : [this.tok(x, 'argument', this.s(`文字列 \`${x.text}\``, `Word \`${x.text}\``))]));
+    const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => this.subs(words[i].nodes.filter((x) => x.isNamed && x.type !== 'test_operator' && !plain(x)));
+    switch (e.type) {
+      case 'word': return wordTokens(e.at);
+      case 'not': {
+        const [from, to] = testRange(e.operand);
+        return [make('test', this.s(`否定: \`${slice(from, to)}\` が偽なら真`, `Negation: true if \`${slice(from, to)}\` is false`), this.testTokens(n, b, e.operand))];
+      }
+      case 'group': return [make('operator', this.s('括弧でまとめた式', 'Parenthesized expression'), this.testTokens(n, b, e.inner))];
+      case 'unary': {
+        const d = unaryTestOps[words[e.op].text!];
+        return [make('test', this.s(`条件: \`${slice(e.arg, e.arg)}\` が${this.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${this.t(d)}`), operandTokens(e.arg, isPlainWord))];
+      }
+      case 'binary': {
+        const op = words[e.op].text!;
+        // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; in `[ ]` any text is a word.
+        const plain = (w: BracketWord) => (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && w.nodes.length === 1);
+        return [make('test', this.s(
+          `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${this.t(binaryTestOps[op])}`,
+          `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${this.t(binaryTestOps[op])}`,
+        ), [...operandTokens(e.left, plain(words[e.left])), ...operandTokens(e.right, plain(words[e.right]))])];
+      }
+      default:
+        return [make('test', this.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...this.testTokens(n, b, e.left), ...this.testTokens(n, b, e.right)])];
+    }
   }
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
@@ -2565,6 +2608,51 @@ interface Literal {
 }
 
 /** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
+/** A word `[` receives: the nodes that make it up (a pattern with a quoted part is several), and its text, null if it depends on an expansion. */
+interface BracketWord { nodes: SyntaxNode[]; text: string | null }
+interface BracketTest { words: BracketWord[]; expr: TestExpr }
+interface TestShape { left?: SyntaxNode; op: string; right: SyntaxNode }
+
+/**
+ * Reads a `[ ]` as bash does, from its words alone: the grammar cannot tell the unary `-a file` / `-o option` from AND / OR,
+ * so its groups are wrong with them. Undefined when bash would report an error (the tree is then used as it is).
+ */
+function bracketTest(n: SyntaxNode): BracketTest | undefined {
+  const leaves: SyntaxNode[] = [];
+  const walk = (x: SyntaxNode) => {
+    for (const c of x.children) {
+      if (c.type === 'unary_expression' || c.type === 'binary_expression' || c.type === 'parenthesized_expression') walk(c);
+      else leaves.push(c);
+    }
+  };
+  walk(n);
+  // `[` and `]`.
+  leaves.shift();
+  leaves.pop();
+  const words: BracketWord[] = [];
+  for (const x of leaves) {
+    const last = words[words.length - 1];
+    if (last && last.nodes[last.nodes.length - 1].endIndex === x.startIndex) last.nodes.push(x);
+    else words.push({ nodes: [x], text: null });
+  }
+  for (const w of words) {
+    const parts = w.nodes.map((x) => (!x.isNamed || x.type === 'test_operator' || x.type === 'number' || x.type === 'extglob_pattern' ? x.text : literalContent(x)?.text));
+    w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
+  }
+  const expr = parseTest(words.map((w) => w.text));
+  return expr && { words, expr };
+}
+
+/** The operator and the operands of a `[ ]` that is a single comparison or unary test of one-node words. */
+function bracketShape(b: BracketTest | undefined): TestShape | undefined {
+  const e = b?.expr;
+  if (e?.type === 'unary' && b!.words[e.arg].nodes.length === 1) return { op: b!.words[e.op].text!, right: b!.words[e.arg].nodes[0] };
+  if (e?.type === 'binary' && b!.words[e.left].nodes.length === 1 && b!.words[e.right].nodes.length === 1) {
+    return { left: b!.words[e.left].nodes[0], op: b!.words[e.op].text!, right: b!.words[e.right].nodes[0] };
+  }
+  return undefined;
+}
+
 function literalContent(a: SyntaxNode): Literal | undefined {
   if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
   if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
