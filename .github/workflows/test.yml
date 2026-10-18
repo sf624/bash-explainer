@@ -37,13 +37,14 @@ jobs:
       - run: npm ci
 
       # grammar/tree-sitter-bash.wasm is committed; rebuilding it must give the same bytes. The build
-      # downloads wasi-sdk (about 113 MB), which is cached by the tree-sitter-cli version.
-      - name: Cache wasi-sdk
+      # downloads the tree-sitter CLI and wasi-sdk (about 120 MB), checks their SHA-256 and keeps them in
+      # ~/.cache/bash-explainer; the key follows the hashes in the script.
+      - name: Cache the tree-sitter CLI and wasi-sdk
         if: matrix.node == 24
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/tree-sitter
-          key: wasi-sdk-tree-sitter-cli-0.26.8
+          path: ~/.cache/bash-explainer
+          key: grammar-tools-${{ hashFiles('scripts/build-grammar.mjs') }}
 
       - name: Check the patched grammar
         if: matrix.node == 24

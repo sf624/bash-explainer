@@ -277,7 +277,7 @@ npm run build      # bundle into dist/ (also copies the wasm files)
 npm test           # type check + unit tests
 npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
-node scripts/build-grammar.mjs   # rebuild grammar/tree-sitter-bash.wasm (tree-sitter-bash plus patches/tree-sitter-bash/grammar.patch; needs network the first time: npx downloads tree-sitter-cli and the CLI downloads wasi-sdk)
+node scripts/build-grammar.mjs   # rebuild grammar/tree-sitter-bash.wasm (tree-sitter-bash plus patches/tree-sitter-bash/grammar.patch; needs network the first time: it downloads the tree-sitter CLI and wasi-sdk and checks their SHA-256)
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```
