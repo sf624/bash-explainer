@@ -76,6 +76,38 @@ describe('commands and options', () => {
   });
 });
 
+describe('time keyword', () => {
+  it('explains time as a keyword and the rest as the timed command', () => {
+    const e = explain('time sleep 1');
+    assert.strictEqual(find(e, 'time', 'keyword').kind, 'keyword');
+    assert.match(e.items[0].explanation, /^Time `sleep 1`: run it and report how long/);
+    assert.match(e.summary, /^time sleep:/);
+    assert.ok(all(e.items).some((t) => t.label === 'sleep' || t.label === '1' || t.kind === 'argument'));
+  });
+  it('explains -p and the options of the timed command', () => {
+    const e = explain('time -p ls -l');
+    assert.match(find(e, '-p', 'option').explanation, /POSIX format/);
+    assert.ok(find(e, '-l', 'option'));
+    const g = explain('time grep -r x .');
+    assert.match(find(g, '-r', 'option').explanation, /recursive/i);
+    const ja = explain('time grep -r x .', 0, 'ja');
+    assert.match(ja.items[0].explanation, /の実行時間を計測する/);
+    assert.match(find(explain('time -p ls', 0, 'ja'), '-p', 'option').explanation, /POSIX 形式/);
+  });
+  it('explains a bare time and a timed command with redirections', () => {
+    assert.strictEqual(explain('time').items[0].kind, 'keyword');
+    const p = explain('time -p 2>/dev/null');
+    assert.strictEqual(p.items[0].kind, 'keyword');
+    assert.ok(find(p, '-p', 'option'));
+    assert.ok(find(explain('time ls 2>&1'), '2>&1'));
+  });
+  it('leaves other things named time as commands', () => {
+    assert.match(explain('/usr/bin/time ls').items[0].explanation, /Run the program or script at `\/usr\/bin\/time`/);
+    assert.match(explain('"time" ls').items[0].explanation, /Run the expanded value as a command/);
+    assert.match(explain('FOO=1 time ls').items[0].explanation, /Run the external command `time`/);
+  });
+});
+
 describe('operators, redirections and expansions', () => {
   it('explains pipes, && and || in order', () => {
     const e = explain('a | b && c || d');
