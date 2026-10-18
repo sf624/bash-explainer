@@ -50,7 +50,7 @@ Helpers in the same module (`field`, `fields`, `token`, `ancestor`, `descendants
    | `select x in …` | `for_statement` starting with `select` | `select_statement` |
    | `time [-p] pipeline` | a command named `time` | `time_statement` (token `time`, `option`, `body`) |
    | `coproc …` | a command named `coproc` | `coproc_statement` |
-   | `rm !(*.txt)` | a word and a subshell (masked and parsed again) | one `word` with an `extglob_pattern` |
+   | `rm !(*.txt)` | a word and a subshell (masked and parsed again) | one `word` |
    | text it cannot read | `ERROR`, or a MISSING token | `error` node, or `incomplete` on the open construct, plus an entry in `errors` |
 
 4. **Text is the original text.** If an adapter masks parts of the text before parsing (as the tree-sitter adapter does for extended globs), node texts still come from the original.
