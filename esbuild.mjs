@@ -11,7 +11,7 @@ const metafile = process.argv.find((a) => a.startsWith('--metafile='))?.slice('-
 
 mkdirSync('dist', { recursive: true });
 copyFileSync('node_modules/web-tree-sitter/web-tree-sitter.wasm', 'dist/web-tree-sitter.wasm');
-copyFileSync('node_modules/tree-sitter-bash/tree-sitter-bash.wasm', 'dist/tree-sitter-bash.wasm');
+copyFileSync('grammar/tree-sitter-bash.wasm', 'dist/tree-sitter-bash.wasm');
 
 const common = {
   entryPoints: ['src/extension.ts'],

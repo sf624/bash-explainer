@@ -94,7 +94,7 @@ const dir = process.env.BASH_EXPLAINER_YQ;
   let parser: { parse(s: string): { rootNode: unknown; delete(): void } };
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createBashParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm') });
+    parser = await createBashParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
   });
   const cmds = [
     "yq '.items[] | select(.kind == \"Pod\") | .metadata.name' pods.yml", "yq e '.spec.replicas = 3' d.yml", "yq -i '.version = \"1.2\"' chart.yaml",

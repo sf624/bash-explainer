@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   copy('media/panel.js');
   copy('media/icon.png');
   copy('node_modules/web-tree-sitter/web-tree-sitter.wasm');
-  copy('node_modules/tree-sitter-bash/tree-sitter-bash.wasm');
+  copy('grammar/tree-sitter-bash.wasm');
   // The licenses of what the page includes, linked from its footer.
   copy('LICENSE', 'LICENSE.txt');
   copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.txt');

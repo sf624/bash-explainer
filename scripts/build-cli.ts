@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   fs.chmodSync(path.join(dist, 'cli.js'), 0o755);
   const copy = (from: string, to: string) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
   copy('node_modules/web-tree-sitter/web-tree-sitter.wasm', 'dist/web-tree-sitter.wasm');
-  copy('node_modules/tree-sitter-bash/tree-sitter-bash.wasm', 'dist/tree-sitter-bash.wasm');
+  copy('grammar/tree-sitter-bash.wasm', 'dist/tree-sitter-bash.wasm');
   copy('LICENSE', 'LICENSE');
   copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md');
   if (outdir !== path.join(root, 'cli')) copy('cli/package.json', 'package.json');

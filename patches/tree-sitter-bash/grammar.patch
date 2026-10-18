@@ -1,0 +1,29 @@
+--- a/grammar.js
++++ b/grammar.js
+@@ -611,7 +611,8 @@
+     binary_expression: $ => {
+       const table = [
+         [choice('+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '&=', '^=', '|='), PREC.UPDATE],
+-        [choice('=', '=~'), PREC.ASSIGN],
++        ['=', PREC.ASSIGN],
++        ['=~', PREC.EQUALITY],
+         ['||', PREC.LOGICAL_OR],
+         ['&&', PREC.LOGICAL_AND],
+         ['|', PREC.BITWISE_OR],
+@@ -636,7 +637,7 @@
+             field('right', $._expression),
+           ));
+         })),
+-        prec(PREC.ASSIGN, seq(
++        prec(PREC.EQUALITY, seq(
+           field('left', $._expression),
+           field('operator', '=~'),
+           field('right', alias($._regex_no_space, $.regex)),
+@@ -993,6 +994,7 @@
+     _expansion_max_length: $ => seq(
+       field('operator', ':'),
+       optional(choice(
++        $.simple_expansion,
+         $._simple_variable_name,
+         $.number,
+         $.arithmetic_expansion,

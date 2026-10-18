@@ -71,7 +71,7 @@ describe('awk in a command line', () => {
     const root = path.join(__dirname, '..');
     parser = await createBashParser({
       runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-      bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
+      bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
     });
   });
 

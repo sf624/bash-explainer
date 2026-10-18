@@ -12,7 +12,7 @@ const root = path.join(__dirname, '..');
   const [file, lang = 'ja', only] = process.argv.slice(2);
   const parser = await createBashParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm'),
+    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
   const src = fs.readFileSync(file, 'utf8');
   // Dockerfiles, Makefiles, YAML, package.json and Markdown: explain only their shell parts.

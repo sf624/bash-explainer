@@ -36,6 +36,19 @@ jobs:
 
       - run: npm ci
 
+      # grammar/tree-sitter-bash.wasm is committed; rebuilding it must give the same bytes. The build
+      # downloads wasi-sdk (about 113 MB), which is cached by the tree-sitter-cli version.
+      - name: Cache wasi-sdk
+        if: matrix.node == 24
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/tree-sitter
+          key: wasi-sdk-tree-sitter-cli-0.26.8
+
+      - name: Check the patched grammar
+        if: matrix.node == 24
+        run: node scripts/build-grammar.mjs --check
+
       # The web page test drives Chromium; playwright needs Node.js 20 or later.
       - name: Install Chromium for the web page test
         if: matrix.node == 24
