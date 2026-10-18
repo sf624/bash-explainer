@@ -49,7 +49,7 @@ Helpers in the same module (`field`, `fields`, `token`, `ancestor`, `descendants
    | `[[ … ]]` | `test_command` starting with `[[` | `extended_test` |
    | `select x in …` | `for_statement` starting with `select` | `select_statement` |
    | `time [-p] pipeline` | a command named `time` | `time_statement` (token `time`, `option`, `body`) |
-   | `coproc …` | a command named `coproc` | `coproc_statement` |
+   | `coproc [NAME] command` | a command named `coproc` | `coproc_statement`: the token `coproc`, the `name` (a `word`, if there is one) and the `body` (a command, or a compound command such as `{ …; }`) |
    | `rm !(*.txt)` | a word and a subshell (masked and parsed again) | one `word` |
    | text it cannot read | `ERROR`, or a MISSING token | `error` node, or `incomplete` on the open construct, plus an entry in `errors` |
 
@@ -101,6 +101,30 @@ These come from a survey of unbash 6.0.0. The adapter fills them; most are small
 - **Unclosed compound commands come out with zero width.** For `if x; then`, `{ echo` and `case x in a)`, the adapter extends them to what follows and marks them `incomplete`.
 - **`echo a |` drops the whole pipeline**, and a heredoc with no closing line raises no error. These are errors the adapter reports itself.
 - **Escaped backquotes inside backquotes** get positions in the decoded text. The adapter maps them back.
+
+### The unbash adapter
+
+`src/syntax/adapters/unbash.ts` builds the model from unbash's AST, and `src/syntax/adapters/tokens.ts` finds what unbash does not position (comments, keywords, operators) in the text between the nodes it does. unbash is a dev dependency until the switch, and no bundle imports the adapter yet. How it is checked:
+
+- **The oracle** (test/syntax-adapter-unbash.test.ts, with test/support/oracle.ts): both adapters build the model of the shell code of the fixtures and of the snippets the tests pass to the parser or the analyzer (test/fixtures/snippets.json, made by scripts/extract-snippets.ts), and the trees are compared node for node. `npx tsx scripts/syntax-oracle.ts` runs it by hand (`-v` for the first difference of each input, `--causes` to group them, `-e 'script'` or file names for other input).
+- **The differences are listed** in that test, with their reasons, and the test fails if one is no longer there. Where tree-sitter is wrong (#347, `for i do`, `coproc`, `<<-` with tabs, a here string after `}`, unfinished input…), the test holds the tree unbash must give.
+- **Soundness**: every tree, also of text that is not bash, has children inside their parent and in order, and texts and positions that fit the source.
+
+What the adapter does beyond a change of names:
+
+- **Positions of tokens.** A node's gaps (the stretches between its children) are scanned for tokens and comments. A heredoc body is skipped. For a `` `…` `` with escapes in it, unbash parses the text without the escapes; the adapter parses that with a converter of its own and maps the positions back.
+- **Where tree-sitter's grammar puts things, it does too**: the redirections after the last command of a pipeline or list go to the whole; what follows `<<EOF` on its line (redirections, `| cmd`, `&& cmd`, `; cmd`) is inside the heredoc node, which ends with the body; `!` negates the first command; an `else`, an `elif` or a `case` item ends with the newline of its last statement; a string is cut into lines.
+- **Unfinished input.** An open construct gets `incomplete` and an error of kind `missing`, and ends where its content ends. For `echo a |` and `echo a &&` the adapter puts the operator back, in a `pipeline` or `list` with `incomplete` and no right side, since unbash drops it. A heredoc with no closing line is `incomplete`, an array with no `)` too. A token unbash drops (`unexpected token ')'`) becomes an `error` node and an error of kind `unreadable`.
+- **`[k]=v` in an array, `~/x`, and `$"…"`** are a `word` and a `translated_string` (a `$` and a `string`): the explanations do not need more.
+
+Not reproduced, because tree-sitter's shape is an accident of its scanner, and the consumers cope with both:
+
+- **`extglob_pattern` or `word`** for a plain pattern after `=`/`==` in a test and in a `case` item: tree-sitter's external scanner decides (`y` is a pattern, `ab` a word, `*.txt` a word, `a*` a pattern). The adapter copies its rule as far as it could work it out, so most agree, but not all. The consumers read both types as a pattern.
+- **A word cut at `{ } [ ]`**: tree-sitter makes `{src,test}`, `*.[ch]` and `{}` (of `find -exec`) concatenations of single-character words; the adapter keeps one `word`.
+- **`{1..10..3}`**: a `brace_expression` with the step (tree-sitter does not read it).
+- **A space before an expansion in a string** (see the residue above), **`>&-` as one operator**, **a redirection alone in a substitution**, and **`time` before a pipe with a redirection** (`time a >f | b`).
+
+What unbash does not give, which the adapter does not repair: `echo (` is accepted without an error, `a | time b` reads `time` as a command, and `x=(a b` reports an "unterminated extended glob".
 
 ### Risks
 
