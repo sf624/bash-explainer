@@ -822,7 +822,31 @@ export class Analyzer {
     if (!nameNode) {
       return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
     }
-    const head = this.commandHead(nameNode);
+    // `time` is a reserved word; `FOO=1 time x` runs the program instead.
+    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time') return this.timed(n, nameNode, args, redirs);
+    return this.commandTail(n, nameNode, args, prefix, redirs);
+  }
+
+  /** `time [-p] command …`: the keyword, and the rest explained as the command it times. */
+  private timed(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], redirs: SyntaxNode[]): Token {
+    const kw = this.tok(nameNode, 'keyword', this.t(keywords.time));
+    const posix = args[0]?.type === 'word' && args[0].text === '-p' ? args.shift()! : undefined;
+    const lead = posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
+    const [cmd, ...rest] = args;
+    if (!cmd) return this.tok(n, 'keyword', kw.explanation, sortTokens([...lead, ...this.subs(redirs)]));
+    const inner = this.commandTail(n, cmd, rest, [], redirs, cmd);
+    const text = shorten(n.text.slice(cmd.startIndex - n.startIndex).replace(/\s*\\\n\s*/g, ' '), 40);
+    const explanation = this.s(
+      `\`${text}\` の実行時間を計測する（実時間・ユーザー時間・システム時間を stderr に表示。パイプラインなら全体の時間）`,
+      `Time \`${text}\`: run it and report how long it took (real, user and sys time, on stderr; a pipeline is timed as a whole)`,
+    );
+    const t = this.tok(n, inner.kind, explanation, sortTokens([...lead, ...inner.children]));
+    t.summary = `time ${inner.summary}`;
+    return t;
+  }
+
+  private commandTail(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], word?: SyntaxNode): Token {
+    const head = this.commandHead(nameNode, word);
     if (head.name.split('/').pop() === 'yq') {
       // Three tools are called yq; explain the arguments as the one this command is for.
       const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: this.source, host: this.opts.host, setting: this.opts.yqFlavor });
@@ -849,9 +873,8 @@ export class Analyzer {
     return t;
   }
 
-  private commandHead(nameNode: SyntaxNode): { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] } {
+  private commandHead(nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] } {
     // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
-    const word = nameNode.namedChildren[0]!;
     const name = isPlainWord(word) ? word.text : nameNode.text;
     if (!isPlainWord(word) && word.type !== 'raw_string') {
       return {
