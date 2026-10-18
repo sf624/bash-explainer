@@ -19,16 +19,16 @@ const out = [
   `| Functions | ${pct(total.functions)} |`,
   '',
   'The VS Code side (`src/extension.ts`, `src/ui/` except the renderers) and the language server run in the integration tests and the CLI tests, which are not measured.',
-  '',
-  '### Most uncovered',
-  '',
-  '| File | Lines | Branches | Missed lines | Missed branches |',
-  '|---|---|---|---|---|',
 ];
 const rows = Object.entries(files)
   .map(([file, m]) => ({ file: path.relative(process.cwd(), file).replace(/\\/g, '/'), m }))
   .filter(({ m }) => missed(m.lines) + missed(m.branches) > 0)
   .sort((a, b) => missed(b.m.lines) + missed(b.m.branches) - (missed(a.m.lines) + missed(a.m.branches)))
   .slice(0, 20);
-for (const { file, m } of rows) out.push(`| \`${file}\` | ${m.lines.pct}% | ${m.branches.pct}% | ${missed(m.lines)} | ${missed(m.branches)} |`);
+if (rows.length) {
+  out.push('', '### Most uncovered', '', '| File | Lines | Branches | Missed lines | Missed branches |', '|---|---|---|---|---|');
+  for (const { file, m } of rows) out.push(`| \`${file}\` | ${m.lines.pct}% | ${m.branches.pct}% | ${missed(m.lines)} | ${missed(m.branches)} |`);
+} else {
+  out.push('', 'Every measured file runs all its lines and takes all its branches.');
+}
 console.log(out.join('\n'));

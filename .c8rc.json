@@ -10,6 +10,6 @@
     "src/ui/inline.ts",
     "src/ui/panel.ts"
   ],
-  "reporter": ["text-summary", "html", "json-summary", "json"],
+  "reporter": ["json"],
   "report-dir": "coverage"
 }
