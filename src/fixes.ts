@@ -92,7 +92,7 @@ function single(e: SyntaxNode): string | undefined {
     const left = e.childForFieldName('left')!;
     const right = e.childForFieldName('right')!;
     if (op === '==') op = '=';
-    if (!SAME_IN_TEST.test(op)) return undefined;
+    if (!SAME_IN_TEST.test(op) || e.childrenForFieldName('right').length > 1) return undefined;
     // In `[[ ]]` an unquoted right side of `=` / `!=` is a pattern; `[ ]` compares text.
     if ((op === '=' || op === '!=') && (/[*?[]/.test(unquotedText(right)) || hasUnquotedExpansion(right))) return undefined;
     const l = word(left);

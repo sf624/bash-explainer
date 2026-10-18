@@ -201,7 +201,7 @@ describe('branches no other test takes', () => {
         tree.delete();
       }
     };
-    for (const src of ['[[ a b ]]', '[[ a == ]]', '[[ ! -f a* ]]', '[[ -f a* ]]', '[[ $a -eq 1* ]]', '[[ $a == "a"b ]]', '[[ $a == x$b ]]', '[[ -f "a"$b ]]', '[[ -n a\\ b ]]']) {
+    for (const src of ['[[ a b ]]', '[[ a == ]]', '[[ ! -f a* ]]', '[[ -f a* ]]', '[[ $a -eq 1* ]]', '[[ $a == "a"b ]]', '[[ $a == x$b ]]', '[[ -f "a"$b ]]', '[[ -n a\\ b ]]', '[[ $x = a"$y" ]]', '[[ $x = *"$y"*z ]]']) {
       assert.strictEqual(fix(src), undefined, src);
     }
     assert.strictEqual(fix('[[ ! -f a ]]'), '[ ! -f a ]');

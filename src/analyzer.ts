@@ -1897,8 +1897,8 @@ export class Analyzer {
     const operand = (x: SyntaxNode): Operand | undefined => {
       if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
       if (x.type === 'variable_name') return { var: x.text };
-      // The grammar reads the right side of `=`, `==` and `!=` as a pattern, even a plain `a`.
-      if (x.type === 'extglob_pattern' && /^[\w.@%+:,/-]+$/.test(x.text)) return { lit: x.text };
+      // The grammar reads the right side of `=`, `==` and `!=` as a pattern; `[ ]` compares it as text.
+      if (x.type === 'extglob_pattern' && (kind === '[' || /^[\w.@%+:,/-]+$/.test(x.text))) return { lit: x.text };
       if (x.type === 'string' && x.namedChildren.length === 1 && x.namedChildren[0].type === 'simple_expansion' && x.text === `"${x.namedChildren[0].text}"`) return operand(x.namedChildren[0]);
       const lit = literalContent(x);
       return lit ? { lit: lit.text } : undefined;
@@ -1907,7 +1907,7 @@ export class Analyzer {
     if (expr.type === 'unary_expression') {
       const op = expr.childForFieldName('operator')!.text;
       cases = testCases(kind, op, undefined, operand(expr.namedChildren.find((c) => c.type !== 'test_operator')!));
-    } else if (expr.type === 'binary_expression') {
+    } else if (expr.type === 'binary_expression' && expr.childrenForFieldName('right').length === 1) {
       const l = expr.childForFieldName('left')!;
       const r = expr.childForFieldName('right')!;
       const op = expr.childForFieldName('operator')!.text;
@@ -2224,24 +2224,29 @@ export class Analyzer {
 
   private binary(n: SyntaxNode): Token {
     const left = n.childForFieldName('left');
-    const right = n.childForFieldName('right')!;
+    // The right side of `=`, `==` and `!=` in `[[ ]]` can be several fields: `*"$y"*z` is a pattern, a string and a pattern.
+    // (The binary expression in `${s:$i+1}` has no fields at all.)
+    const fields = n.childrenForFieldName('right') as SyntaxNode[];
+    const rights = fields.length ? fields : [n.lastNamedChild!];
+    const rightText = n.text.slice(rights[0].startIndex - n.startIndex, rights[rights.length - 1].endIndex - n.startIndex);
     const op = n.childForFieldName('operator')!.text;
-    // `[ $x = a ]` has a plain `a` on the right, though the grammar reads it as a pattern like the one after `==`.
-    const plain = (x: SyntaxNode) => isPlainWord(x) || (op === '=' && x.type === 'extglob_pattern' && !hasGlob(x.text));
-    const operands = this.subs([left, right].filter((x) => x && !plain(x)));
+    // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
+    const plain = (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && rights.length === 1
+      && (!hasGlob(x.text) || ancestorOf(n, (a) => a.type === 'test_command' && a.child(0)?.type === '[')));
+    const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
-        return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, right]));
+        return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
       }
       return this.tok(n, 'test', this.s(
-        `条件: \`${left?.text}\` と \`${right?.text}\` を比較 — ${this.t(binaryTestOps[op])}`,
-        `Condition: \`${left?.text}\` vs \`${right?.text}\` — ${this.t(binaryTestOps[op])}`,
+        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.t(binaryTestOps[op])}`,
+        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.t(binaryTestOps[op])}`,
       ), operands);
     }
     const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
     return this.tok(n, 'operator', assignOps.includes(op)
-      ? this.s(`算術代入: \`${left?.text}\` ${op} \`${right?.text}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${right?.text}\``)
-      : this.s(`算術演算: \`${left?.text}\` ${op} \`${right?.text}\``, `Arithmetic: \`${left?.text}\` ${op} \`${right?.text}\``), operands);
+      ? this.s(`算術代入: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${rightText}\``)
+      : this.s(`算術演算: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic: \`${left?.text}\` ${op} \`${rightText}\``), operands);
   }
 
   // ---------------------------------------------------------------- words & expansions

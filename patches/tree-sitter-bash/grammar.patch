@@ -1,5 +1,5 @@
 diff --git a/grammar.js b/grammar.js
-index 513f485..d55b300 100644
+index 513f485..0c3a32b 100644
 --- a/grammar.js
 +++ b/grammar.js
 @@ -441,23 +441,12 @@ module.exports = grammar({
@@ -37,7 +37,7 @@ index 513f485..d55b300 100644
          ['||', PREC.LOGICAL_OR],
          ['&&', PREC.LOGICAL_AND],
          ['|', PREC.BITWISE_OR],
-@@ -636,14 +626,14 @@ module.exports = grammar({
+@@ -636,15 +626,15 @@ module.exports = grammar({
              field('right', $._expression),
            ));
          })),
@@ -50,10 +50,12 @@ index 513f485..d55b300 100644
          prec(PREC.EQUALITY, seq(
            field('left', $._expression),
 -          field('operator', choice('==', '!=')),
+-          field('right', $._extglob_blob),
 +          field('operator', choice('==', '!=', '=')),
-           field('right', $._extglob_blob),
++          field('right', $._test_pattern),
          )),
        );
+     },
 @@ -666,7 +656,7 @@ module.exports = grammar({
          field('operator', tokenLiterals(1, '-', '+', '~')),
          $._expression,
@@ -79,3 +81,15 @@ index 513f485..d55b300 100644
        $._simple_variable_name,
        $.number,
        $.expansion,
+@@ -1091,6 +1083,11 @@ module.exports = grammar({
+       ')',
+     ),
+ 
++    _test_pattern: $ => prec.right(seq(
++      choice($.extglob_pattern, alias(token(prec(2, /~[^\s"'`$()|&;<>\]]*/)), $.extglob_pattern)),
++      repeat(choice($.extglob_pattern, alias(token.immediate(prec(1, /([^\s"'`$&;<>\\]|\\.)+/)), $.extglob_pattern), $.string, $.raw_string, $.expansion, $.simple_expansion, $.command_substitution)),
++    )),
++
+     _extglob_blob: $ => choice(
+       $.extglob_pattern,
+       seq(
