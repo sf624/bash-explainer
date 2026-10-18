@@ -3,6 +3,7 @@
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 [![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
+[![Coverage: 100% of lines and branches](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
 [![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#プライバシー)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![lang: English](https://img.shields.io/badge/lang-English-blue)](./README.md)
 ![lang: 日本語](https://img.shields.io/badge/lang-%E6%97%A5%E6%9C%AC%E8%AA%9E-lightgrey)
@@ -286,7 +287,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。
 - CI では、ツールをすべて入れた状態で単体テストのカバレッジを計測します（Node.js 24 のジョブ）。実行結果のページにカバーされていない部分の多いファイルが並び、成果物 `coverage` に HTML のレポートが入ります。ローカルで計測すると、ツールがない分のテストが飛ばされるので低めに出ます。また、CI と同じ Node.js 24 を使ってください。古い版では、一度も実行されなかったメソッドが実行済みとして数えられます。時刻帯によって通る分岐が変わるので、`npm run coverage` は CI と同じく UTC で実行します。レポートでは、テストのために tsx がソースを変換するときに足すコード（補助関数や export の getter）を数えません。これらはどのテストでも実行できない位置に対応づけられるためです（[scripts/coverage-report.mjs](scripts/coverage-report.mjs)）。
-- `src/` のすべての行は単体テストで実行され、すべての分岐を通る必要があります。そうでなければ CI が失敗します（`npm run coverage:check`）。まだ届いていないファイルは [coverage-floors.json](coverage-floors.json) に今の割合とともに載っていて、それを下回ってはいけません。テストを足したら `node scripts/coverage-check.mjs --update` で下限を引き上げ、100% に届いたファイルを一覧から外します。どのテストも通れない分岐は削除します。ほかの部分の不具合に備える分岐の場合は、理由をコメントに書いて `/* c8 ignore next */` を付けます。VS Code 側（`extension.ts`、`service.ts`、描画以外の `ui/`）は結合テストに任せます。
+- `src/` のすべての行は単体テストで実行され、すべての分岐を通る必要があります。そうでなければ CI が失敗します（`npm run coverage:check`）。まだ届いていないファイルは [coverage-floors.json](coverage-floors.json) に今の割合とともに載っていて、それを下回ってはいけません。テストを足したら `node scripts/coverage-check.mjs --update` で下限を引き上げ、100% に届いたファイルを一覧から外します。どのテストも通れない分岐は削除します。ほかの部分の不具合に備える分岐の場合は、理由をコメントに書いて `/* c8 ignore next */` を付けます。VS Code 側（`extension.ts`、`service.ts`、描画以外の `ui/`）は結合テストに任せます。先頭のカバレッジのバッジは固定の表示ですが、100% を下回ると CI が失敗するので、常に正しい状態が保たれます。
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
