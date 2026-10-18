@@ -103,9 +103,10 @@ describe('the web page in a browser', function () {
     await page.keyboard.type(`\necho "${MARKER}" | tr a-z A-Z`);
     await until('the typed line explained', text('#line'), (t) => t.includes(MARKER));
 
-    // A worked example, edited.
+    // A worked example, edited: the sed line of the sample (test/fixtures/sample.sh).
+    const sedLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('sed -E'));
     await page.keyboard.press('Control+Home');
-    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+    for (let i = 0; i < sedLine; i++) await page.keyboard.press('ArrowDown');
     await until('the sed line', text('#line'), (t) => t.startsWith('sed -E'));
     await panel().locator('textarea').first().fill('user=alice');
     await until('the rerun example', text('#tree'), (t) => t.includes('alice=user'));
