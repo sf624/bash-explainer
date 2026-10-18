@@ -242,7 +242,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 ## Limitations
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
-- A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`.
+- A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`, and `[[ ! $x =~ re ]]`, which is read as `(! $x) =~ re` (bash negates the whole test). The grammar is patched only for `=`, `==` and `=~` next to `&&` and `||`, and for variables in `${s:$i+1}` offsets.
 
 ## Privacy
 
@@ -277,7 +277,7 @@ npm run build      # bundle into dist/ (also copies the wasm files)
 npm test           # type check + unit tests
 npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
-node scripts/build-grammar.mjs   # rebuild grammar/tree-sitter-bash.wasm (tree-sitter-bash plus patches/tree-sitter-bash/grammar.patch; needs network once for wasi-sdk)
+node scripts/build-grammar.mjs   # rebuild grammar/tree-sitter-bash.wasm (tree-sitter-bash plus patches/tree-sitter-bash/grammar.patch; needs network the first time: npx downloads tree-sitter-cli and the CLI downloads wasi-sdk)
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```
