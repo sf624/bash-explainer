@@ -292,7 +292,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - `src/` のすべての行は単体テストで実行され、すべての分岐を通る必要があります。そうでなければ CI が失敗します（`npm run coverage:check`）。まだ届いていないファイルは [coverage-floors.json](coverage-floors.json) に今の割合とともに載っていて、それを下回ってはいけません。テストを足したら `node scripts/coverage-check.mjs --update` で下限を引き上げ、100% に届いたファイルを一覧から外します。どのテストも通れない分岐は削除します。ほかの部分の不具合に備える分岐の場合は、理由をコメントに書いて `/* c8 ignore next */` を付けます。VS Code 側（`extension.ts`、`service.ts`、描画以外の `ui/`）は結合テストに任せます。先頭のカバレッジのバッジは固定の表示ですが、100% を下回ると CI が失敗するので、常に正しい状態が保たれます。
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
-- コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。
+- コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。説明は自分の言葉で書いてください。man ページや `--help` の出力などの文書から写してはいけません。それらのライセンス（GPL や GFDL が多い）は、このプロジェクトのライセンスと異なるためです。
 - リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
 
 ## ライセンス
