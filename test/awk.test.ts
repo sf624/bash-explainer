@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainAwk } from '../src/embedded/awk';
 import { EmbeddedToken } from '../src/embedded/types';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 function all(ts: EmbeddedToken[]): EmbeddedToken[] {
   return ts.flatMap((t) => [t, ...all(t.children)]);
@@ -69,7 +69,7 @@ describe('awk in a command line', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createBashParser({
+    parser = await createTreeSitterParser({
       runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
       bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
     });
@@ -79,7 +79,6 @@ describe('awk in a command line', () => {
     const src = "awk '\n  NR > 1 { total += $2 }\n  END { print total }\n' data.txt";
     const tree = parser.parse(src);
     const ex = new Analyzer('en').explainLine(tree, 2);
-    tree.delete();
     const flat = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...flat(t.children)]);
     const end = flat(ex.items).find((t) => t.label === 'END')!;
     assert.deepStrictEqual(end.span.start, { line: 2, character: 2 });

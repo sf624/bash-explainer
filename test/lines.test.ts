@@ -28,7 +28,9 @@ import { yamlLines } from '../src/examples/yaml';
 import { extractShell } from '../src/hosts';
 import { resolveLang } from '../src/i18n';
 import { simulateRedirects } from '../src/idioms';
-import { BashParser, createBashParser, TreeCache } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { TreeCache } from '../src/syntax/cache';
+import type { BashParser } from '../src/syntax/tree';
 import { panelUpdate } from '../src/ui/panelView';
 import { toMarkdown } from '../src/ui/render';
 
@@ -42,16 +44,12 @@ const wasm = {
 };
 let parser: BashParser;
 before(async () => {
-  parser = await createBashParser(wasm);
+  parser = await createTreeSitterParser(wasm);
 });
 
 const explain = (src: string, line = 0) => {
   const tree = parser.parse(src);
-  try {
-    return new Analyzer('en').explainLine(tree, line);
-  } finally {
-    tree.delete();
-  }
+  return new Analyzer('en').explainLine(tree, line);
 };
 const flat = (e: ReturnType<typeof explain>): string => {
   const all = (ts: typeof e.items): typeof e.items => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -61,10 +59,9 @@ const flat = (e: ReturnType<typeof explain>): string => {
 describe('lines no other test reaches', () => {
   it('parser: made from the wasm files themselves, as in VS Code', async () => {
     const binaries = { runtime: fs.readFileSync(path.join(wasm.runtimeDir, 'web-tree-sitter.wasm')), bash: fs.readFileSync(wasm.bashWasm) };
-    const p = await createBashParser(binaries);
+    const p = await createTreeSitterParser(binaries);
     const tree = p.parse('echo hi');
-    assert.strictEqual(tree.rootNode.type, 'program');
-    tree.delete();
+    assert.strictEqual(tree.root.type, 'program');
   });
 
   it('parser: one tree per document, parsed again only for a new version', () => {
@@ -74,7 +71,7 @@ describe('lines no other test reaches', () => {
     const a1 = cache.get('a', 1, text('echo 1'));
     assert.strictEqual(cache.get('a', 1, text('echo 1')), a1);
     assert.strictEqual(parses, 1);
-    assert.strictEqual(cache.get('a', 2, text('echo 2')).rootNode.text, 'echo 2');
+    assert.strictEqual(cache.get('a', 2, text('echo 2')).root.text, 'echo 2');
     cache.get('b', 1, text('echo b'));
     assert.strictEqual(parses, 3);
     cache.evict('a');
@@ -247,11 +244,7 @@ describe('lines no other test reaches', () => {
   it('dialects: bash features found for other shells', () => {
     const features = (src: string) => {
       const tree = parser.parse(src);
-      try {
-        return featuresOnLine(tree.rootNode, 0);
-      } finally {
-        tree.delete();
-      }
+      return featuresOnLine(tree.root, 0);
     };
     const cases: [string, string][] = [
       ['diff <(a) <(b)', 'procSub'], ['shopt -s nullglob', 'shopt'], ['pushd /tmp', 'pushd'], ['coproc cat', 'coproc'], ['print hi', 'print'],
@@ -259,17 +252,9 @@ describe('lines no other test reaches', () => {
     ];
     for (const [src, id] of cases) assert.ok(features(src).includes(id), `${src}: ${features(src)}`);
     const tree = parser.parse('case $x in\n  a) echo a ;&\n  b) echo b ;;&\nesac');
-    try {
-      assert.deepStrictEqual([1, 2].map((l) => featuresOnLine(tree.rootNode, l)), [['caseFall'], ['caseCont']]);
-    } finally {
-      tree.delete();
-    }
+    assert.deepStrictEqual([1, 2].map((l) => featuresOnLine(tree.root, l)), [['caseFall'], ['caseCont']]);
     const zsh = parser.parse('if true; then\n  echo ${(f)x}\nfi');
-    try {
-      assert.ok(dialectIssues(zsh.rootNode, 'zsh', 'en').some((i) => i.kind === 'parse'));
-    } finally {
-      zsh.delete();
-    }
+    assert.ok(dialectIssues(zsh, 'zsh', 'en').some((i) => i.kind === 'parse'));
   });
 
   it('expansions: quoted patterns, classes in replacements, names by prefix, made-up samples', () => {
@@ -326,21 +311,13 @@ describe('lines no other test reaches', () => {
     for (const [src, line, re] of cases) it(src.split('\n')[0], () => assert.match(flat(explain(src, line)) + JSON.stringify(explain(src, line).examples) + explain(src, line).context.map((c) => c.label).join('\n'), re));
     it('yq -r with kislyuk/yq prints raw strings', () => {
       const tree = parser.parse("yq -r '.name' f.yml");
-      try {
-        const e = new Analyzer('en').explainLine(tree, 0, undefined, { yqFlavor: 'kislyuk' });
-        assert.ok(e.examples.some((x) => x.kind === 'yq'));
-      } finally {
-        tree.delete();
-      }
+      const e = new Analyzer('en').explainLine(tree, 0, undefined, { yqFlavor: 'kislyuk' });
+      assert.ok(e.examples.some((x) => x.kind === 'yq'));
     });
     it('a distribution alias in a README', () => {
       const tree = parser.parse('ll');
-      try {
-        const e = new Analyzer('en').explainLine(tree, 0, undefined, { host: 'Markdown code block (bash)' });
-        assert.ok(e.notes.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
-      } finally {
-        tree.delete();
-      }
+      const e = new Analyzer('en').explainLine(tree, 0, undefined, { host: 'Markdown code block (bash)' });
+      assert.ok(e.notes.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
     });
   });
 

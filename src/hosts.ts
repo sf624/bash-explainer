@@ -1,6 +1,7 @@
 import { azureVariables as AZURE_VARIABLES, ciVariables, githubContext } from './dict/ciVariables';
 import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
+import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile';
@@ -1094,7 +1095,7 @@ const PIPEFAIL: [string, string] = [
 ];
 
 /** Whether a pipe `|` starts on the line. */
-function pipesOn(n: import('web-tree-sitter').Node, line: number): boolean {
+function pipesOn(n: SyntaxNode, line: number): boolean {
   if (n.startPosition.row > line || n.endPosition.row < line) return false;
   if (n.type === 'pipeline' && n.children.some((c) => c.type === '|' && c.startPosition.row === line)) return true;
   return n.children.some((c) => pipesOn(c, line));
@@ -1102,8 +1103,8 @@ function pipesOn(n: import('web-tree-sitter').Node, line: number): boolean {
 
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
 export function explainHostedLine(
-  analyzer: { explainLine(tree: import('web-tree-sitter').Tree, line: number, shell?: Shell, opts?: ExplainOptions): LineExplanation },
-  tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], line: number, lang: 'ja' | 'en', shell?: Shell, opts: ExplainOptions = {},
+  analyzer: { explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts?: ExplainOptions): LineExplanation },
+  tree: SyntaxTree, extracted: Extracted, original: string[], line: number, lang: 'ja' | 'en', shell?: Shell, opts: ExplainOptions = {},
 ): LineExplanation | undefined {
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
@@ -1112,7 +1113,7 @@ export function explainHostedLine(
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
   if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line], lang));
-  if (region.warnPipefail && pipesOn(tree.rootNode, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
+  if (region.warnPipefail && pipesOn(tree.root, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
     notes.push(pick(PIPEFAIL));
   }
   ex.notes.unshift(...notes);
@@ -1128,7 +1129,7 @@ export interface DocIssue {
 }
 
 /** All problems in the shell parts of a host document (one pass, for diagnostics). */
-export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell): DocIssue[] {
+export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell): DocIssue[] {
   const out: DocIssue[] = [];
   const col = (line: number, c: number) => extracted.maps[line][c];
   const at = (n: { startPosition: { row: number; column: number }; endPosition: { row: number; column: number } }) => {
@@ -1140,12 +1141,12 @@ export function hostIssues(tree: import('web-tree-sitter').Tree, extracted: Extr
   };
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   for (const region of extracted.regions) {
-    for (const issue of dialectIssues(tree.rootNode, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
+    for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.node) });
     }
     if (region.warnPipefail && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
       for (let line = region.start; line <= region.end; line++) {
-        if (!pipesOn(tree.rootNode, line)) continue;
+        if (!pipesOn(tree.root, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         out.push({ code: 'dockerPipefail', severity: 'warning', message: pick(PIPEFAIL), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
       }

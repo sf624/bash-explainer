@@ -1,15 +1,15 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { examplesMarkdown, lineSegments, placeExamples, toMarkdown } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -18,7 +18,6 @@ before(async () => {
 function hover(src: string, line = 0, placement: 'first' | 'last' | 'bottom' = 'first') {
   const tree = parser.parse(src);
   const ex = new Analyzer('en').explainLine(tree, line);
-  tree.delete();
   return { ex, md: toMarkdown(ex, 'en', undefined, 'command:x', src.split('\n')[line], placement) };
 }
 
@@ -101,7 +100,6 @@ describe('placeExamples', () => {
   it('prefers the outermost token with the same range, and keeps the input untouched', () => {
     const tree = parser.parse('sed -n "/^a/p" f');
     const ex = new Analyzer('en').explainLine(tree, 0);
-    tree.delete();
     const placed = placeExamples(ex);
     const arg = placed.items[0].children.find((c) => c.label === '"/^a/p"')!;
     assert.strictEqual(arg.examples?.length, 1);
@@ -120,7 +118,6 @@ describe('dialect in the hover', () => {
   it('names the target shell and warns about bash-only constructs', () => {
     const tree = parser.parse('#!/bin/sh\n[[ -f x ]]');
     const ex = new Analyzer('en').explainLine(tree, 1, 'sh');
-    tree.delete();
     const md = toMarkdown(ex, 'en');
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
     assert.match(md, /> ⚠ `\[\[ \]\]` is not POSIX sh/);

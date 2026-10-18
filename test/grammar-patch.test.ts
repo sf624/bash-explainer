@@ -2,22 +2,26 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
 import type { Node } from 'web-tree-sitter';
-import type { BashParser as Parser } from '../src/parser';
-import { createBashParser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
+import { createRawParser, createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 // patches/tree-sitter-bash/grammar.patch: `=` and `=~` in `[[ ]]` bind tighter than `&&`/`||`, `=` takes a pattern like `==`, `!` negates the whole comparison, and `${s:$i+1}` has a variable in its offset.
 const root = path.join(__dirname, '..');
+const wasm = {
+  runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
+  bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
+};
+// The grammar itself is checked on tree-sitter's own trees (`raw`); what the analyzer makes of them, on the model's.
+let raw: Awaited<ReturnType<typeof createRawParser>>;
 let parser: Parser;
 
 before(async () => {
-  parser = await createBashParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  raw = await createRawParser(wasm);
+  parser = await createTreeSitterParser(wasm);
 });
 
 function sexp(src: string): string {
-  const tree = parser.parse(src);
+  const tree = raw.parse(src);
   try {
     return tree.rootNode.toString();
   } finally {
@@ -27,7 +31,7 @@ function sexp(src: string): string {
 
 // The tree with operators: binary_expression is `(left op right)`, other nodes are their text (or `name[children]`).
 function shape(src: string): string {
-  const tree = parser.parse(src);
+  const tree = raw.parse(src);
   try {
     const walk = (n: Node): string => {
       if (n.type === 'binary_expression') {
@@ -51,12 +55,7 @@ function shape(src: string): string {
 }
 
 function explain(src: string): LineExplanation {
-  const tree = parser.parse(src);
-  try {
-    return new Analyzer('en').explainLine(tree, 0);
-  } finally {
-    tree.delete();
-  }
+  return new Analyzer('en').explainLine(parser.parse(src), 0);
 }
 
 function all(tokens: Token[]): Token[] {

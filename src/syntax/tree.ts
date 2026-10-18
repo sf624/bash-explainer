@@ -178,3 +178,11 @@ export function descendants(n: SyntaxNode, types: readonly string[], rows?: { fr
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);
 }
+
+/** The `time_statement` that times this command (its body, or the first stage of its pipeline), if any. */
+export function timedBy(n: SyntaxNode): SyntaxNode | undefined {
+  const p = n.parent;
+  if (p?.type === 'time_statement') return p;
+  const pp = p?.parent;
+  return p?.type === 'pipeline' && pp?.type === 'time_statement' && p.children[0] === n ? pp : undefined;
+}

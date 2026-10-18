@@ -12,14 +12,14 @@ import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
 import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
 import { extractShell } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
@@ -88,7 +88,6 @@ function shellDocument(): ShellDocument | undefined {
   if (!parser) return undefined;
   const text = view.state.doc.toString();
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
-  parsed?.doc.tree.delete();
   const lines = text.split('\n');
   let doc: ShellDocument;
   if (kind === 'shell') {
@@ -425,7 +424,7 @@ async function start(): Promise<void> {
   }
   status(TEXT[lang].loading, true);
   try {
-    parser = await createBashParser({ runtimeDir: '.', bashWasm: 'tree-sitter-bash.wasm' });
+    parser = await createTreeSitterParser({ runtimeDir: '.', bashWasm: 'tree-sitter-bash.wasm' });
   } catch (e) {
     status(`${TEXT[lang].failed} ${e instanceof Error ? e.message : String(e)}`, true);
     return;

@@ -7,7 +7,7 @@ import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 
@@ -269,7 +269,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     return 2;
   }
 
-  const parser = await createBashParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') });
+  const parser = await createTreeSitterParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') });
   const analyzer = new Analyzer(o.lang);
   const json: unknown[] = [];
   const chunks: string[] = [];
@@ -309,7 +309,6 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         else chunks.push(textOutput(input.name, line, lines[line], ex, o.color));
       }
     }
-    doc.tree.delete();
   }
 
   if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');

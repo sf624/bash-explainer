@@ -36,9 +36,9 @@ try {
 if (used.shift() !== 'require("http")') throw new Error('the module hook is not active');
 
 async function main(): Promise<void> {
-  const { createBashParser } = require('../src/parser') as typeof import('../src/parser');
+  const { createTreeSitterParser } = require('../src/syntax/adapters/tree-sitter') as typeof import('../src/syntax/adapters/tree-sitter');
   const { Analyzer } = require('../src/analyzer') as typeof import('../src/analyzer');
-  const parser = await createBashParser({
+  const parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   for (const file of ['sample.sh', 'posix.sh', 'ksh.ksh']) {
     const tree = parser.parse(fs.readFileSync(path.join(root, 'test/fixtures', file), 'utf8'));
     for (const lang of ['en', 'ja'] as const) {
-      for (let line = 0; line <= tree.rootNode.endPosition.row; line++, lines++) new Analyzer(lang).explainLine(tree, line);
+      for (let line = 0; line <= tree.root.endPosition.row; line++, lines++) new Analyzer(lang).explainLine(tree, line);
     }
   }
   if (used.length) throw new Error(`used: ${used.join(', ')}`);

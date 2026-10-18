@@ -2,14 +2,14 @@ import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
-import { BEHAVIOURS, behavioursOnLine, detectShell, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
-import { createBashParser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
+import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -124,13 +124,9 @@ describe('the dialect detector finds each feature in its own probe', () => {
   for (const [id, code] of Object.entries(PROBES)) {
     it(id, () => {
       const tree = parser.parse(code);
-      try {
-        const found = new Set<string>();
-        for (let line = 0; line <= tree.rootNode.endPosition.row; line++) featuresOnLine(tree.rootNode, line).forEach((f) => found.add(f));
-        assert.ok(found.has(id), `${code}: ${[...found].join(' ')}`);
-      } finally {
-        tree.delete();
-      }
+      const found = new Set<string>();
+      for (let line = 0; line <= tree.root.endPosition.row; line++) featuresOnLine(tree.root, line).forEach((f) => found.add(f));
+      assert.ok(found.has(id), `${code}: ${[...found].join(' ')}`);
     });
   }
 });
@@ -149,7 +145,7 @@ describe('detectShell', () => {
 });
 
 describe('dialect notes', () => {
-  const features = (src: string, line = 0) => featuresOnLine(parser.parse(src).rootNode, line);
+  const features = (src: string, line = 0) => featuresOnLine(parser.parse(src).root, line);
   it('finds bash-only constructs', () => {
     assert.deepStrictEqual(features('[[ -f $f ]] && echo "${f//x/y}" &> log'), ['dbracket', 'replace', 'ampRedirect']);
     assert.deepStrictEqual(features('a=(x y); echo "${a[1]}" {1..3} a{b,c} $RANDOM <<< x'), ['array', 'braceRange', 'braceList', 'random', 'herestring']);
@@ -161,8 +157,35 @@ describe('dialect notes', () => {
     const src = 'function f {\n  [[ -n $1 ]]\n}';
     assert.deepStrictEqual([0, 1, 2].map((l) => features(src, l)), [['funcKeyword'], ['dbracket'], []]);
   });
+  it('looks at the command after `time` only as the argument of `time`, as it always has', () => {
+    assert.deepStrictEqual(featuresOnLine(parser.parse('echo -e hi').root, 0), ['echoE']);
+    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi').root, 0), []);
+    assert.deepStrictEqual(featuresOnLine(parser.parse('time echo -e hi | cat').root, 0), []);
+    assert.deepStrictEqual(behavioursOnLine(parser.parse("time echo 'a\\tb'").root, 0), []);
+    assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' | time cat").root, 0), ['echoEscape']);
+    assert.deepStrictEqual(featuresOnLine(parser.parse('cat f | time echo -e hi').root, 0), []);
+  });
+  it('puts the issue of a timed pipeline where the pipeline starts, at `time`', () => {
+    const [issue] = dialectIssues(parser.parse('time ls |& wc'), 'sh', 'en');
+    assert.strictEqual(issue.id, 'pipeAmp');
+    assert.deepStrictEqual([issue.node.startPosition.column, issue.node.endPosition.column], [0, 13]);
+  });
+  it('shows where zsh syntax or a missing token is, once on each line', () => {
+    const at = (src: string) => dialectIssues(parser.parse(src), 'zsh', 'en').filter((i) => i.kind === 'parse')
+      .map((i) => [i.node.startPosition.row, i.node.startPosition.column, i.node.endPosition.column - (i.node.endPosition.row === i.node.startPosition.row ? i.node.startPosition.column : 0)]);
+    // Where the closing `)` should be: a place of no width.
+    assert.deepStrictEqual(at('x=('), [[0, 3, 0]]);
+    // An error node covers what it could not read; a glob qualifier is a word.
+    assert.deepStrictEqual(at("ls @(a'b"), [[0, 0, 8]]);
+    assert.deepStrictEqual(at('ls *(.)\nls ok'), [[0, 3, 4]]);
+    // The empty error the parser adds after a trailing backslash is not a place.
+    assert.deepStrictEqual(at('%*d|\\\n').map((p) => p.slice(0, 2)), [[0, 0]]);
+    // The first place on a line only, and one on each line.
+    assert.deepStrictEqual(at('echo ok\nx=(\ny=(1').map((p) => p[0]), [0]);
+    assert.deepStrictEqual(at('ls *(.)\nls *(/)').map((p) => p[0]), [0, 1]);
+  });
   it('words the note for POSIX sh and for a specific shell', () => {
-    const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src).rootNode, 0, shell, 'en');
+    const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
     assert.deepStrictEqual(notes('[[ -f x ]]', 'sh'), ['⚠ `[[ ]]` is not POSIX sh (it fails in dash). Instead, use `[ ]`.']);
     assert.deepStrictEqual(notes('f() { local v; }', 'sh'), ['⚠ `local` is not POSIX sh (dash and busybox ash accept it, but POSIX does not have it).']);
     assert.deepStrictEqual(notes('cmd &> log', 'dash')[0], '⚠ `&>` (redirect stdout and stderr together) is not available in dash. Instead, write `>file 2>&1` (dash reads `cmd &> file` as "run in the background, then an empty redirection").');
@@ -171,14 +194,14 @@ describe('dialect notes', () => {
   });
 
   it('notes behaviour that differs from bash', () => {
-    const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src).rootNode, 0, shell, 'en');
-    assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' $v ${a[0]} \"$q\"").rootNode, 0), ['echoEscape', 'wordSplit', 'arrayBase']);
+    const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
+    assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' $v ${a[0]} \"$q\"").root, 0), ['echoEscape', 'wordSplit', 'arrayBase']);
     assert.match(notes("echo 'a\\tb'", 'sh')[0], /^ℹ dash's `echo` interprets/);
     assert.deepStrictEqual(notes("echo 'a\\tb'", 'ksh'), []);
     assert.match(notes('echo $v', 'zsh')[0], /In zsh an unquoted `\$var` is not split/);
     assert.deepStrictEqual(notes('echo "$v"', 'zsh'), []);
     assert.match(notes('ls *(.)', 'zsh')[0], /zsh-only syntax/);
-    const scope = (src: string) => dialectNotes(parser.parse(src).rootNode, 1, 'ksh', 'en');
+    const scope = (src: string) => dialectNotes(parser.parse(src), 1, 'ksh', 'en');
     assert.match(scope('f() {\n  typeset v=1\n}')[0], /does not make a local variable/);
     assert.deepStrictEqual(scope('function f {\n  typeset v=1\n}'), []);
   });

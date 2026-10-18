@@ -1,9 +1,38 @@
 // The tree-sitter adapter: turns web-tree-sitter's tree for tree-sitter-bash into the model of
-// ../tree.ts, as plain objects (see docs/design/syntax-tree.md). The only module besides src/parser.ts
-// that knows tree-sitter's node names; the normalizations the design lists happen here.
-import type { Node, Parser, Tree } from 'web-tree-sitter';
-import { createBashParser, WasmBinaries, WasmPaths } from '../../parser';
+// ../tree.ts, as plain objects (see docs/design/syntax-tree.md). The only module that imports
+// web-tree-sitter or knows tree-sitter's node names; the normalizations the design lists happen here.
+import { Language, Parser } from 'web-tree-sitter';
+import type { Node, Tree } from 'web-tree-sitter';
 import type { BashParser, FieldName, NodeType, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
+
+export interface WasmPaths {
+  /** Directory (or, in a browser, URL) containing `web-tree-sitter.wasm`, the web-tree-sitter runtime. */
+  runtimeDir: string;
+  /** Path (or URL) to `tree-sitter-bash.wasm`. */
+  bashWasm: string;
+}
+
+/** The wasm files themselves, for hosts that read them on their own (VS Code, also on the web). */
+export interface WasmBinaries {
+  runtime: Uint8Array;
+  bash: Uint8Array;
+}
+
+let initialized: Promise<void> | undefined;
+
+/** A tree-sitter parser for bash whose `parse` always returns a tree (web-tree-sitter's may return null), with the extended globs read as words. The trees are raw: free them with `delete()`. Tests of the grammar use it; the rest of the code uses `createTreeSitterParser`. */
+export async function createRawParser(wasm: WasmPaths | WasmBinaries): Promise<{ parse(text: string): Tree }> {
+  // The runtime is set up once, by the first parser made.
+  const runtime = 'runtime' in wasm
+    ? { wasmBinary: wasm.runtime }
+    : { locateFile: (name: string) => `${wasm.runtimeDir.replace(/[\\/]$/, '')}/${name}` };
+  initialized ??= Parser.init(runtime);
+  await initialized;
+  const bash = await Language.load('bash' in wasm ? wasm.bash : wasm.bashWasm);
+  const parser = new Parser();
+  parser.setLanguage(bash);
+  return { parse: (text) => parseMasked(parser, text) };
+}
 
 /** Every type of the model. A test checks that tree-sitter-bash's named types all map into it. */
 export const NODE_TYPES: Record<NodeType, true> = {
@@ -210,7 +239,7 @@ const span = (from: Span, to: Span): Span => ({
 
 /** The adapter's parser: parses with tree-sitter, copies the tree into plain objects, and frees the wasm tree. */
 export async function createTreeSitterParser(wasm: WasmPaths | WasmBinaries): Promise<BashParser> {
-  const bash = await createBashParser(wasm);
+  const bash = await createRawParser(wasm);
   return {
     parse(text: string): SyntaxTree {
       const tree = bash.parse(text);

@@ -1,16 +1,16 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, EXAMPLE_KINDS, ExplainOptions, Token } from '../src/analyzer';
 import { parseDirectives, suppressed } from '../src/directives';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { pruneDepth } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -18,7 +18,6 @@ before(async () => {
 const explain = (src: string, opts: ExplainOptions = {}, line = 0) => {
   const tree = parser.parse(src);
   const ex = new Analyzer('en').explainLine(tree, line, undefined, opts);
-  tree.delete();
   return ex;
 };
 const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -33,7 +32,6 @@ describe('example settings', () => {
       assert.ok(e.kind && EXAMPLE_KINDS.includes(e.kind), `line ${i + 1}: ${e.title}`);
       seen.add(e.kind);
     }));
-    tree.delete();
     assert.deepStrictEqual([...seen].sort(), [...EXAMPLE_KINDS].sort());
   });
   it('turns examples off altogether or by kind', () => {

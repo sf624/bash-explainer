@@ -1,15 +1,15 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { dialectIssues } from '../src/dialect';
 import { Edit, fixFor } from '../src/fixes';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -25,8 +25,7 @@ function apply(src: string, edits: Edit[]): string {
 /** The fixed source for the first fixable issue, if any. */
 function fixed(src: string, shell: 'sh' | 'dash' = 'sh'): string | undefined {
   const tree = parser.parse(src);
-  const fix = dialectIssues(tree.rootNode, shell, 'en').map(fixFor).find(Boolean);
-  tree.delete();
+  const fix = dialectIssues(tree, shell, 'en').map(fixFor).find(Boolean);
   return fix && apply(src, fix.edits);
 }
 
@@ -60,10 +59,9 @@ describe('[[ ]] quick fix keeps the meaning (bash [[ ]] vs dash [ ])', () => {
   });
   it('only fixes where the shell lacks [[ ]]', () => {
     const tree = parser.parse('[[ -f x ]]');
-    assert.deepStrictEqual(dialectIssues(tree.rootNode, 'bash', 'en'), []);
-    assert.deepStrictEqual(dialectIssues(tree.rootNode, 'ash', 'en'), []);
-    assert.strictEqual(dialectIssues(tree.rootNode, 'dash', 'en').length, 1);
-    tree.delete();
+    assert.deepStrictEqual(dialectIssues(tree, 'bash', 'en'), []);
+    assert.deepStrictEqual(dialectIssues(tree, 'ash', 'en'), []);
+    assert.strictEqual(dialectIssues(tree, 'dash', 'en').length, 1);
   });
 });
 
