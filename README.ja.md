@@ -277,7 +277,7 @@ npm run build      # dist/ にバンドル（wasm もコピー）
 npm test           # 型チェック + 単体テスト
 npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
 npm run package    # .vsix を作成
-node scripts/build-grammar.mjs   # grammar/tree-sitter-bash.wasm を作り直す（tree-sitter-bash に patches/tree-sitter-bash/grammar.patch を当てる。初回はネットワークが必要で、npx が tree-sitter-cli を、CLI が wasi-sdk をダウンロードする）
+node scripts/build-grammar.mjs   # grammar/tree-sitter-bash.wasm を作り直す（tree-sitter-bash に patches/tree-sitter-bash/grammar.patch を当てる。初回はネットワークが必要で、tree-sitter CLI と wasi-sdk をダウンロードして SHA-256 を照合する）
 npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
 npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
 ```
