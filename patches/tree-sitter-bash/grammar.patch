@@ -1,15 +1,33 @@
+diff --git a/grammar.js b/grammar.js
+index 513f485..d55b300 100644
 --- a/grammar.js
 +++ b/grammar.js
-@@ -450,7 +450,7 @@
+@@ -441,23 +441,12 @@ module.exports = grammar({
+         seq('[', optional(choice($._expression, $.redirected_statement)), ']'),
+         seq(
+           '[[',
+-          choice(
+-            $._expression,
+-            alias($._test_command_binary_expression, $.binary_expression),
+-          ),
++          $._expression,
+           ']]',
+         ),
        ),
      ),
  
 -    _test_command_binary_expression: $ => prec(PREC.ASSIGN,
-+    _test_command_binary_expression: $ => prec(PREC.EQUALITY,
-       seq(
-         field('left', $._expression),
-         field('operator', '='),
-@@ -611,7 +611,8 @@
+-      seq(
+-        field('left', $._expression),
+-        field('operator', '='),
+-        field('right', alias($._regex_no_space, $.regex)),
+-      ),
+-    ),
+-
+     declaration_command: $ => prec.left(seq(
+       choice('declare', 'typeset', 'export', 'readonly', 'local'),
+       repeat(choice(
+@@ -611,7 +600,8 @@ module.exports = grammar({
      binary_expression: $ => {
        const table = [
          [choice('+=', '-=', '*=', '/=', '%=', '**=', '<<=', '>>=', '&=', '^=', '|='), PREC.UPDATE],
@@ -19,7 +37,7 @@
          ['||', PREC.LOGICAL_OR],
          ['&&', PREC.LOGICAL_AND],
          ['|', PREC.BITWISE_OR],
-@@ -636,7 +637,7 @@
+@@ -636,14 +626,14 @@ module.exports = grammar({
              field('right', $._expression),
            ));
          })),
@@ -28,7 +46,24 @@
            field('left', $._expression),
            field('operator', '=~'),
            field('right', alias($._regex_no_space, $.regex)),
-@@ -993,6 +994,7 @@
+         )),
+         prec(PREC.EQUALITY, seq(
+           field('left', $._expression),
+-          field('operator', choice('==', '!=')),
++          field('operator', choice('==', '!=', '=')),
+           field('right', $._extglob_blob),
+         )),
+       );
+@@ -666,7 +656,7 @@ module.exports = grammar({
+         field('operator', tokenLiterals(1, '-', '+', '~')),
+         $._expression,
+       )),
+-      prec.right(PREC.UNARY, seq(
++      prec.right(PREC.BITWISE_AND, seq(
+         field('operator', '!'),
+         $._expression,
+       )),
+@@ -993,6 +983,7 @@ module.exports = grammar({
      _expansion_max_length: $ => seq(
        field('operator', ':'),
        optional(choice(
@@ -36,7 +71,7 @@
          $._simple_variable_name,
          $.number,
          $.arithmetic_expansion,
-@@ -1019,6 +1021,7 @@
+@@ -1019,6 +1010,7 @@ module.exports = grammar({
      ),
  
      _expansion_max_length_expression: $ => choice(

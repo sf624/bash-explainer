@@ -1,5 +1,5 @@
 // Builds grammar/tree-sitter-bash.wasm: tree-sitter-bash 0.25.1 with patches/tree-sitter-bash/grammar.patch
-// applied (`=` and `=~` in `[[ ]]` bind tighter than `&&`; `${s:$i+1}` takes a variable in the offset).
+// applied (`=~` and `=` in `[[ ]]` bind tighter than `&&`, `=` takes a pattern like `==`, `!` negates the whole comparison; `${s:$i+1}` takes a variable in the offset).
 //
 //   node scripts/build-grammar.mjs           rebuild grammar/tree-sitter-bash.wasm
 //   node scripts/build-grammar.mjs --check   rebuild and fail if it differs from the committed file

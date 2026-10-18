@@ -135,7 +135,7 @@ export const unaryTestOps: Record<string, Text> = {
 };
 
 export const binaryTestOps: Record<string, Text> = {
-  '=': tx('文字列が等しい', 'strings are equal'),
+  '=': tx('文字列が等しい（`[[ ]]` では右辺はグロブパターン）', 'strings are equal (right side is a glob pattern in `[[ ]]`)'),
   '==': tx('文字列が等しい（`[[ ]]` では右辺はグロブパターン）', 'strings are equal (right side is a glob pattern in `[[ ]]`)'),
   '!=': tx('文字列が等しくない', 'strings differ'),
   '=~': tx('左辺が右辺の正規表現(ERE)に一致する。一致結果は `BASH_REMATCH` に入る', 'left side matches the regex (ERE) on the right; captures go to `BASH_REMATCH`'),
