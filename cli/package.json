@@ -1,6 +1,6 @@
 {
   "name": "bash-explainer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Explain shell scripts line by line in the terminal, like regex101 for bash. Offline, no AI.",
   "license": "MIT",
   "author": "Shun Fujioka",

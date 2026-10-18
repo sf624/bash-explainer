@@ -243,6 +243,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
 - A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`, and `[ ]` with escaped parentheses (`[ \( a = b \) -o c ]`) or with `!` before a word that looks like an operator (`[ ! = a ]`), which it does not read as a test. In a `[ ]` it does read, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the tree says. The grammar is patched only for `=` and `=~` next to `&&` and `||` in `[[ ]]`, for a pattern of several parts after `=`/`==`/`!=` (`*"$y"*z`), for `!` negating the whole test after it (`[[ ! $x =~ re ]]`, `[[ ! $a -eq 1 ]]`, `[ ! a = b ]`), and for variables in `${s:$i+1}` offsets.
+- After a line with a pipeline of two or more commands (`a | b | c`), a later line with `&&` or `||` is misread by the grammar ([tree-sitter-bash#347](https://github.com/tree-sitter/tree-sitter-bash/issues/347)): it and the lines between are taken as arguments of the pipeline's last command. A line ending in `;`, or a compound command such as `if … fi`, in between avoids it.
 
 ## Privacy
 
