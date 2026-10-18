@@ -56,6 +56,12 @@ The Release workflow also publishes `cli/` as the npm package [`bash-explainer`]
 
 The GitHub Action (`action.yml`) runs `bash-explainer` from npm at the version of the tag it is used at, so a version is usable as an action once it is on npm. The Release workflow also moves the major tag (`v0`, later `v1`) to each release, which is what the README tells people to use (`uses: sf624/bash-explainer@v0`).
 
+Listing the action in the [GitHub Marketplace](https://docs.github.com/en/actions/sharing-automations/creating-actions/publishing-actions-in-github-marketplace) cannot be automated: neither the REST API for releases nor `gh release create` has an option for it. Do it once by hand:
+
+1. Accept the GitHub Marketplace Developer Agreement (the release page asks for it; two-factor authentication is required).
+2. Open the latest release (*Releases → Edit*), tick *Publish this Action to the GitHub Marketplace*, choose a primary category (e.g. *Code quality*), check that the metadata shows no warnings, and update the release. The name in `action.yml` (`Bash Explainer check`) must not be taken by another listed action.
+3. After the next tagged release, check that the Marketplace page shows the new version. If it does not, releases created by the workflow are not listed on their own: tick the checkbox on each release by hand (*Edit release*).
+
 ### 6. README images
 
 The README images are re-recorded by a workflow run by hand, which opens a pull request with them ([images/RECORDING.md](../images/RECORDING.md)). For that, in *Settings → Actions → General*, turn on **Allow GitHub Actions to create and approve pull requests**.
