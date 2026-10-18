@@ -121,12 +121,18 @@ describe('time keyword', () => {
     const wrapped = explain('time ls |\n  grep x', 1);
     assert.match(wrapped.notes[0], /starts on line 1/);
   });
+  it('explains the timed command as it would be on its own', () => {
+    const t = explain('time ls -a').items[0];
+    assert.deepStrictEqual(t.children.map((c) => [c.kind, c.label]), [['keyword', 'time'], ['command', 'ls -a']]);
+    assert.match(t.children[1].explanation, /List directory contents/);
+    assert.deepStrictEqual(t.children[1].children.map((c) => c.label), ['-a']);
+  });
   it('makes an example of the whole timed pipeline', () => {
     const titles = (src: string) => explain(src).examples.map((x) => x.title);
     assert.deepStrictEqual(titles('time sort -u f'), ['Example']);
     assert.deepStrictEqual(titles('time sort -u f | uniq'), ['Example for `time sort -u f | uniq` (the whole pipeline)']);
     assert.deepStrictEqual(titles('time; sort -u f'), ['Example']);
-    assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `time sort -u f`']);
+    assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `sort -u f`']);
   });
   it('explains the keyword alone when nothing follows it in a pipeline', () => {
     assert.strictEqual(explain('time | wc').items[0].children[0].kind, 'keyword');
