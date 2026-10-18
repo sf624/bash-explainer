@@ -7,10 +7,11 @@ import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import type { BashParser } from '../src/syntax/tree';
 import { toPlainMarkdown } from '../src/ui/render';
 
-type Parser = Awaited<ReturnType<typeof createBashParser>>;
+type Parser = BashParser;
 type Message = { id?: number | string; method?: string; params?: any; result?: unknown; error?: unknown };
 
 /** Language IDs editors use for shell scripts (VS Code, Neovim, Helix, Emacs, Zed…). */
@@ -47,7 +48,7 @@ export function startLanguageServer(io: Io): void {
   const docs = new Map<string, Doc>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let parser: Parser | undefined;
-  const ready = createBashParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') }).then((p) => (parser = p));
+  const ready = createTreeSitterParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') }).then((p) => (parser = p));
   let shuttingDown = false;
 
   const send = (msg: Message) => {
@@ -76,7 +77,6 @@ export function startLanguageServer(io: Io): void {
   }
 
   function forget(doc: Doc | undefined): void {
-    doc?.parsed?.tree.delete();
     if (doc) doc.parsed = undefined;
   }
 

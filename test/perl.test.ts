@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainPerl, perlLoopNote } from '../src/embedded/perl';
 import { EmbeddedToken } from '../src/embedded/types';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const all = (ts: EmbeddedToken[]): EmbeddedToken[] => ts.flatMap((t) => [t, ...all(t.children)]);
 const text = (src: string, t: EmbeddedToken) => src.slice(t.start, t.end);
@@ -53,7 +53,7 @@ describe('perl in a command line', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createBashParser({
+    parser = await createTreeSitterParser({
       runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
       bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
     });
@@ -61,7 +61,6 @@ describe('perl in a command line', () => {
   const tokens = (src: string): Token[] => {
     const tree = parser.parse(src);
     const ex = new Analyzer('en').explainLine(tree, 0);
-    tree.delete();
     const flat = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...flat(t.children)]);
     return flat(ex.items);
   };

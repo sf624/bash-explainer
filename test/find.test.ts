@@ -1,16 +1,16 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, parseFind } from '../src/embedded/find';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-type', '-mtime', '-newer', '-maxdepth'].includes(w) ? 1 : 0);
 
 let parser: Parser;
 before(async () => {
   const root = path.join(__dirname, '..');
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -19,7 +19,6 @@ before(async () => {
 function tokens(src: string, lang: 'ja' | 'en' = 'en'): Token[] {
   const tree = parser.parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 0);
-  tree.delete();
   const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   return all(ex.items);
 }

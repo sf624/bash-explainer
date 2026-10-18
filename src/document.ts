@@ -4,7 +4,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import type { Tree } from './parser';
+import type { SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -14,7 +14,7 @@ export interface ShellDocument {
   lines: string[];
   /** The shell parts of a host file (Dockerfile, Makefile…); `tree` is then the tree of their text. */
   extracted?: Extracted;
-  tree: Tree;
+  tree: SyntaxTree;
 }
 
 export type DocumentIssue = DocIssue & { fix?: Fix };
@@ -50,7 +50,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
   }
   const shell = shells.forced ?? shells.detected;
   if (!shell || shell === 'bash') return [];
-  return dialectIssues(doc.tree.rootNode, shell, lang).map((i) => {
+  return dialectIssues(doc.tree, shell, lang).map((i) => {
     const n = i.node;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {

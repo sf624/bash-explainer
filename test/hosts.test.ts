@@ -1,15 +1,15 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -22,7 +22,6 @@ function explain(file: string, line: number, lang: 'ja' | 'en' = 'en') {
   const extracted = extractShell(kind, src);
   const tree = parser.parse(extracted.text);
   const ex = explainHostedLine(new Analyzer(lang), tree, extracted, src.split('\n'), line - 1, lang);
-  tree.delete();
   return ex;
 }
 const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -241,7 +240,6 @@ describe('issues for the Problems panel', () => {
     const extracted = extractShell(hostKind('', file)!, src);
     const tree = parser.parse(extracted.text);
     const out = hostIssues(tree, extracted, src.split('\n'), 'en');
-    tree.delete();
     return out.map((i) => `${i.code}@${i.startLine + 1}:${i.startCol}-${i.endCol}`);
   };
   it('places Dockerfile issues at original columns', () => {
@@ -260,11 +258,7 @@ describe('issues for the Problems panel', () => {
 function explainHosted(file: string, src: string, line: number) {
   const extracted = extractShell(hostKind('', file)!, src);
   const tree = parser.parse(extracted.text);
-  try {
-    return explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
-  } finally {
-    tree.delete();
-  }
+  return explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
 }
 
 describe('variables of CI systems', () => {
@@ -284,12 +278,8 @@ describe('host files the other tests do not reach', () => {
   const text = (file: string, src: string, line: number) => {
     const extracted = extractShell(hostKind('', file)!, src);
     const tree = parser.parse(extracted.text);
-    try {
-      const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
-      return ex ? [...ex.context.map((c) => c.label), ...ex.notes, ...all(ex.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n') : '';
-    } finally {
-      tree.delete();
-    }
+    const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
+    return ex ? [...ex.context.map((c) => c.label), ...ex.notes, ...all(ex.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n') : '';
   };
   it('Makefile: SHELL, and one-letter make variables', () => {
     assert.match(text('Makefile', 'SHELL := /bin/bash\nall:\n\techo $O\n', 2), /the make variable `O`, expanded by make before the shell runs/);

@@ -4,15 +4,15 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
-import type { BashParser as Parser } from '../src/parser';
-import { createBashParser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { parseTest, TestExpr, testRange } from '../src/testexpr';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 let dir: string;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -238,7 +238,7 @@ function groups(t: Token): string {
 describe('[ ] in the analyzer groups as bash does', () => {
   const analyze = (src: string) => {
     const tree = parser.parse(src)!;
-    assert.strictEqual(tree.rootNode.child(0)!.type, 'test_command', src);
+    assert.strictEqual(tree.root.children[0].type, 'test_command', src);
     return new Analyzer('en').explainLine(tree, 0, 'bash')!.items[0].children[0];
   };
   const cases: [string, string][] = [

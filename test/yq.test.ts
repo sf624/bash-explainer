@@ -90,11 +90,11 @@ const dir = process.env.BASH_EXPLAINER_YQ;
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Analyzer } = require('../src/analyzer');
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createBashParser } = require('../src/parser');
-  let parser: { parse(s: string): { rootNode: unknown; delete(): void } };
+  const { createTreeSitterParser } = require('../src/syntax/adapters/tree-sitter');
+  let parser: { parse(s: string): { root: unknown; delete(): void } };
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createBashParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
+    parser = await createTreeSitterParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
   });
   const cmds = [
     "yq '.items[] | select(.kind == \"Pod\") | .metadata.name' pods.yml", "yq e '.spec.replicas = 3' d.yml", "yq -i '.version = \"1.2\"' chart.yaml",
@@ -109,7 +109,6 @@ const dir = process.env.BASH_EXPLAINER_YQ;
     it(cmd, () => {
       const tree = parser.parse(cmd);
       const ex = new Analyzer('en').explainLine(tree, 0);
-      tree.delete();
       const e = ex.examples[0];
       assert.ok(e, 'has an example');
       const kislyuk = /explained as kislyuk/.test(ex.notes[0]);

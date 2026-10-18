@@ -1,7 +1,8 @@
 import { Lang, Text } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes } from './pitfalls';
-import type { SyntaxNode, Tree } from './parser';
+import { ancestor, descendants, field, fields, timedBy, token } from './syntax/tree';
+import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
@@ -128,7 +129,7 @@ export interface Example {
 const BLOCKS = new Set([
   'for_statement', 'c_style_for_statement', 'while_statement', 'if_statement', 'elif_clause',
   'else_clause', 'case_statement', 'case_item', 'function_definition', 'compound_statement',
-  'subshell', 'do_group', 'ERROR',
+  'subshell', 'do_group', 'error', 'arithmetic_command', 'select_statement',
 ]);
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
 const WRAPPERS = new Set(['list', 'pipeline', 'redirected_statement', 'negated_command', 'program']);
@@ -158,20 +159,59 @@ function shorten(text: string, max = 60): string {
   return first.length < text.length && s === first ? s + ' …' : s;
 }
 
+/**
+ * `time a | b` is one `time_statement` of the model, timing a pipeline. The analyzer explains it as the
+ * pipeline it has always been: `time a` (a `time_statement` over `a` alone) piped into `b`. The same
+ * nodes come back each time, so they can be compared.
+ */
+const timedPipelines = new WeakMap<SyntaxNode, SyntaxNode>();
+function reading(n: SyntaxNode): SyntaxNode {
+  if (n.type !== 'time_statement') return n;
+  const pipe = field(n, 'body');
+  if (pipe?.type !== 'pipeline') return n;
+  let view = timedPipelines.get(n);
+  if (!view) {
+    const first = pipe.children[0];
+    const head = {
+      ...n, endIndex: first.endIndex, endPosition: first.endPosition, text: n.text.slice(0, first.endIndex - n.startIndex),
+      children: [...n.children.filter((c) => c !== pipe)], namedChildren: [...n.namedChildren.filter((c) => c !== pipe)],
+    };
+    const body = { ...first, field: 'body' as const, parent: head };
+    head.children.push(body);
+    head.namedChildren.push(body);
+    view = { ...pipe, startIndex: n.startIndex, startPosition: n.startPosition, text: n.text, field: n.field, parent: n.parent, children: [head, ...pipe.children.slice(1)], namedChildren: [head, ...pipe.namedChildren.slice(1)] };
+    (head as { parent: SyntaxNode | null }).parent = view;
+    timedPipelines.set(n, view);
+  }
+  return view;
+}
+/** What the analyzer sees in place of `m`: for a timed command, the `time …` command; for the pipeline a `time_statement` times, the whole pipeline. */
+function timedAs(m: SyntaxNode): SyntaxNode {
+  const ts = m.type === 'time_statement' ? m : m.type === 'command' ? timedBy(m) : undefined;
+  if (ts) {
+    const view = reading(ts);
+    return view === ts ? ts : view.children[0];
+  }
+  return m.type === 'pipeline' && m.parent?.type === 'time_statement' ? reading(m.parent) : m;
+}
+
 function isBlockLike(n: SyntaxNode): boolean {
+  n = reading(n);
   if (BLOCKS.has(n.type)) return isMultiline(n);
   if (WRAPPERS.has(n.type)) return n.namedChildren.some(isBlockLike);
   return false;
 }
 
-/** web-tree-sitter returns a fresh object on every access, so nodes must be compared by id. */
-const same = (a: SyntaxNode | null | undefined, b: SyntaxNode | null | undefined) => !!a && !!b && a.id === b.id;
-const has = (list: SyntaxNode[], n: SyntaxNode) => list.some((x) => x.id === n.id);
-function fieldChildren(n: SyntaxNode, field: string): SyntaxNode[] {
-  const out: SyntaxNode[] = [];
-  for (let i = 0; i < n.childCount; i++) if (n.fieldNameForChild(i) === field) out.push(n.child(i)!);
-  return out;
-}
+const same = (a: SyntaxNode | null | undefined, b: SyntaxNode | null | undefined) => !!a && a === b;
+/** The nodes of these types under `n` that overlap `line`; one that ends where the line starts does not. */
+const onLine = (n: SyntaxNode, types: string[], line: number): SyntaxNode[] =>
+  descendants(n, types, { from: line, to: line }).filter((m) => m.endPosition.row > line || m.endPosition.column > 0);
+/** The sibling `by` places away (-1: the one before), or undefined. */
+const sibling = (n: SyntaxNode, by: number): SyntaxNode | undefined => {
+  const kids = n.parent!.children;
+  return kids[kids.indexOf(n) + by];
+};
+const has = (list: readonly SyntaxNode[], n: SyntaxNode) => list.some((x) => x === n);
 
 const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
 const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()|\[[^\]]+\]/.test(s);
@@ -199,20 +239,20 @@ export class Analyzer {
 
   constructor(private lang: Lang) {}
 
-  explainLine(tree: Tree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
-    const root = tree.rootNode;
+  explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
+    const root = tree.root;
     this.opts = opts;
     this.source = root.text;
     this.functions.clear();
-    for (const f of root.descendantsOfType('function_definition')) {
-      const name = f.childForFieldName('name')?.text;
+    for (const f of descendants(root, ['function_definition'])) {
+      const name = field(f, 'name')?.text;
       if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
     }
     this.aliases.clear();
-    for (const c of root.descendantsOfType('command')) {
-      if (c?.childForFieldName('name')?.text !== 'alias') continue;
-      for (const a of c.childrenForFieldName('argument')) {
-        const m = a && /^([\w.:-]+)=(['"]?)([\s\S]*)\2$/.exec(a.text);
+    for (const c of descendants(root, ['command'])) {
+      if (field(c, 'name')?.text !== 'alias') continue;
+      for (const a of fields(c, 'argument')) {
+        const m = /^([\w.:-]+)=(['"]?)([\s\S]*)\2$/.exec(a.text);
         if (m && !this.aliases.has(m[1])) this.aliases.set(m[1], { line: c.startPosition.row, value: m[3] });
       }
     }
@@ -223,8 +263,8 @@ export class Analyzer {
     this.extraNotes = [];
     this.examples = [];
     const items = this.flatten(root);
-    const statements = root
-      .descendantsOfType(['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'while_statement'], { row: line, column: 0 }, { row: line + 1, column: 0 })
+    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'], line)
+      .map(timedAs)
       .filter((n) => intersects(n, line))
       .map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text));
     const result: LineExplanation = {
@@ -232,7 +272,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(root, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line)])],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line)])],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -267,6 +307,7 @@ export class Analyzer {
   /** Explain a child node, respecting the current line filter. */
   private sub(n: SyntaxNode | null | undefined): Token[] {
     if (!n) return [];
+    n = reading(n);
     if (this.line === null) return [this.explain(n)];
     if (!intersects(n, this.line)) return [];
     if (isBlockLike(n)) {
@@ -276,7 +317,13 @@ export class Analyzer {
     return [this.full(n)];
   }
 
-  private subs(nodes: (SyntaxNode | null | undefined)[]): Token[] {
+  /** The named sibling before `n`. */
+  private previousNamed(n: SyntaxNode): SyntaxNode {
+    const kids = n.parent!.namedChildren;
+    return kids[kids.indexOf(n) - 1];
+  }
+
+  private subs(nodes: readonly (SyntaxNode | null | undefined)[]): Token[] {
     return nodes.flatMap((n) => this.sub(n));
   }
 
@@ -298,7 +345,7 @@ export class Analyzer {
     const out: Token[] = [];
     for (const c of n.children) {
       if (this.line !== null && !intersects(c, this.line)) continue;
-      if (c.isNamed) out.push(...this.sub(c));
+      if (c.named) out.push(...this.sub(c));
       else {
         const k = this.anon(c);
         if (k) out.push(k);
@@ -310,10 +357,11 @@ export class Analyzer {
   private contextLabel(n: SyntaxNode): string | undefined {
     switch (n.type) {
       case 'for_statement':
+      case 'select_statement':
       case 'c_style_for_statement':
         return this.s('for ループ', 'for loop');
       case 'while_statement':
-        return n.child(0)?.type === 'until' ? this.s('until ループ', 'until loop') : this.s('while ループ', 'while loop');
+        return n.children[0].type === 'until' ? this.s('until ループ', 'until loop') : this.s('while ループ', 'while loop');
       case 'if_statement':
         return this.s('if 文', 'if statement');
       case 'elif_clause':
@@ -323,16 +371,18 @@ export class Analyzer {
       case 'case_statement':
         return this.s('case 文', 'case statement');
       case 'case_item': {
-        const pats = fieldChildren(n, 'value').map((c) => c.text);
+        const pats = fields(n, 'value').map((c) => c.text);
         return this.s(`case 分岐 \`${pats.join('|')})\``, `case branch \`${pats.join('|')})\``);
       }
       case 'function_definition':
-        return this.s(`関数 \`${n.childForFieldName('name')?.text}\``, `function \`${n.childForFieldName('name')?.text}\``);
+        return this.s(`関数 \`${field(n, 'name')?.text}\``, `function \`${field(n, 'name')?.text}\``);
+      case 'arithmetic_command':
+        return this.s('(( )) 算術評価', '(( )) arithmetic');
       case 'compound_statement':
-        return n.child(0)?.type === '((' ? this.s('(( )) 算術評価', '(( )) arithmetic') : this.s('{ } グループ', '{ } group');
+        return this.s('{ } グループ', '{ } group');
       case 'subshell':
         return this.s('( ) サブシェル', '( ) subshell');
-      case 'ERROR':
+      case 'error':
         return this.s('構文エラーの範囲', 'syntax error region');
       default:
         return undefined;
@@ -360,7 +410,7 @@ export class Analyzer {
     const out: Token[] = [];
     for (const c of n.children) {
       if (skip(c)) continue;
-      if (c.isNamed) out.push(...this.sub(c));
+      if (c.named) out.push(...this.sub(c));
       else out.push(...this.anonOnLine([c]));
     }
     return out;
@@ -368,9 +418,7 @@ export class Analyzer {
 
   private notes(root: SyntaxNode, line: number, items: Token[]): string[] {
     const notes: string[] = [];
-    const lineStart = { row: line, column: 0 };
-    const lineEnd = { row: line + 1, column: 0 };
-    for (const h of root.descendantsOfType('heredoc_redirect', lineStart, lineEnd)) {
+    for (const h of onLine(root, ['heredoc_redirect'], line)) {
       const body = h.namedChildren.find((c) => c.type === 'heredoc_body');
       const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
       const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')!.text;
@@ -397,9 +445,11 @@ export class Analyzer {
   // ---------------------------------------------------------------- dispatch
 
   private explain(n: SyntaxNode): Token {
+    n = reading(n);
     switch (n.type) {
       case 'comment': return this.comment(n);
       case 'command': return this.command(n);
+      case 'time_statement': return this.timeStatement(n);
       case 'declaration_command': return this.declaration(n);
       case 'unset_command': return this.unset(n);
       case 'variable_assignment': return this.assignment(n);
@@ -411,7 +461,7 @@ export class Analyzer {
       case 'heredoc_redirect': return this.heredoc(n);
       case 'herestring_redirect': return this.herestring(n);
       case 'negated_command': return this.tok(n, 'operator', this.t(keywords['!']), this.subs(n.namedChildren));
-      case 'test_command': return this.test(n);
+      case 'test_command': case 'extended_test': case 'arithmetic_command': return this.test(n);
       case 'unary_expression': return this.unary(n);
       case 'binary_expression': return this.binary(n);
       case 'ternary_expression': return this.tok(n, 'expansion', this.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), this.subs(n.namedChildren));
@@ -436,12 +486,10 @@ export class Analyzer {
       case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
       case 'variable_name': return this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
-      // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
-      case 'compound_statement': if (n.child(0)?.type === '((') return this.test(n);
-        return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+      case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
       case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
       case 'function_definition': return this.functionDef(n);
-      case 'for_statement': return this.forStatement(n);
+      case 'for_statement': case 'select_statement': return this.forStatement(n);
       case 'c_style_for_statement': return this.block(n, 'keyword', this.s('C 言語風 for ループ: `((初期化; 条件; 更新))` で回数を制御して繰り返す', 'C-style for loop: `((init; condition; update))`') + this.lineRef(n));
       case 'while_statement': return this.whileStatement(n);
       case 'if_statement': return this.block(n, 'keyword', this.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + this.lineRef(n));
@@ -449,11 +497,11 @@ export class Analyzer {
       case 'else_clause': return this.block(n, 'keyword', this.t(keywords.else));
       case 'case_statement': return this.caseStatement(n);
       case 'case_item': return this.caseItem(n);
-      case 'ERROR': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
+      case 'error': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
       default:
         // Callers explain keywords and operators themselves; any other punctuation is shown as itself.
         /* c8 ignore next */
-        if (!n.isNamed) return this.anon(n) ?? this.tok(n, 'operator', n.type);
+        if (!n.named) return this.anon(n) ?? this.tok(n, 'operator', n.type);
         return this.tok(n, 'argument', n.type, this.subs(n.namedChildren));
     }
   }
@@ -486,7 +534,7 @@ export class Analyzer {
   }
 
   private functionDef(n: SyntaxNode): Token {
-    const nameNode = n.childForFieldName('name')!;
+    const nameNode = field(n, 'name')!;
     const name = nameNode.text;
     // A definition is explained on the line it starts on, where its name is.
     const nameTok = [this.tok(nameNode, 'function', this.s('関数名', 'Function name'))];
@@ -497,8 +545,8 @@ export class Analyzer {
   }
 
   private forStatement(n: SyntaxNode): Token {
-    const v = n.childForFieldName('variable');
-    const values = fieldChildren(n, 'value');
+    const v = field(n, 'variable');
+    const values = fields(n, 'value');
     const list = values.map((c) => c.text).join(' ');
     const expl = values.length
       ? this.s(`for ループ: \`${list}\` の各値を順に変数 \`${v?.text}\` に入れて本体を繰り返す`, `for loop: assign each of \`${list}\` to \`${v?.text}\` and run the body`)
@@ -516,7 +564,7 @@ export class Analyzer {
   }
 
   private whileStatement(n: SyntaxNode): Token {
-    const until = n.child(0)?.type === 'until';
+    const until = n.children[0].type === 'until';
     const expl = until
       ? this.s('until ループ: 条件コマンドが成功（終了ステータス 0）するまで本体を繰り返す', 'until loop: repeat the body until the condition succeeds')
       : this.s('while ループ: 条件コマンドが成功（終了ステータス 0）する間、本体を繰り返す', 'while loop: repeat the body while the condition succeeds');
@@ -524,7 +572,7 @@ export class Analyzer {
   }
 
   private caseStatement(n: SyntaxNode): Token {
-    const v = n.childForFieldName('value')!;
+    const v = field(n, 'value')!;
     const children = this.ordered(n, (c) => same(c, v));
     const vt = this.sub(v).map((t) => ({ ...t, explanation: this.s('照合する値: ', 'Value to match: ') + t.explanation }));
     for (const c of children) {
@@ -537,7 +585,7 @@ export class Analyzer {
   }
 
   private caseItem(n: SyntaxNode): Token {
-    const pats = fieldChildren(n, 'value');
+    const pats = fields(n, 'value');
     const ptext = pats.map((p) => p.text).join(' | ');
     const isDefault = pats.length === 1 && pats[0].text === '*';
     const expl = isDefault
@@ -588,7 +636,7 @@ export class Analyzer {
     walk(n);
     const children: Token[] = [];
     for (const c of parts) {
-      if (c.isNamed) children.push(...this.sub(c));
+      if (c.named) children.push(...this.sub(c));
       else children.push(...this.anonOnLine([c]));
     }
     const t = this.tok(n, 'operator', this.s(
@@ -600,14 +648,15 @@ export class Analyzer {
   }
 
   private redirected(n: SyntaxNode): Token {
-    const body = n.childForFieldName('body');
-    const redirs = n.namedChildren.filter((c) => !same(c, body));
+    const body = field(n, 'body');
+    // (A redirection the parser left without its operator and target is nothing to explain.)
+    const redirs = n.namedChildren.filter((c) => !same(c, body) && c.children.length);
     const effect = simulateRedirects(redirs.flatMap((r) => this.redirectInfo(r)), this.lang);
     if (effect) this.extraNotes.push(effect);
     const bodyToks = this.sub(body);
     const redirToks = this.subs(redirs);
     // Simple commands carry their redirections as children so they read as one unit.
-    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command'].includes(body.type)) {
+    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command', 'time_statement'].includes(reading(body).type)) {
       const t = bodyToks[0];
       return { ...t, span: spanOf(n), label: shorten(n.text), children: sortTokens([...t.children, ...redirToks]) };
     }
@@ -625,7 +674,7 @@ export class Analyzer {
   private redirectInfo(r: SyntaxNode): Redirect[] {
     if (r.type === 'file_redirect') {
       const { op, dest } = redirectParts(r);
-      return [{ op, fd: r.childForFieldName('descriptor')?.text ?? '', dest }];
+      return [{ op, fd: field(r, 'descriptor')?.text ?? '', dest }];
     }
     if (r.type === 'heredoc_redirect') {
       // Redirections written after `<<EOF` on the same line are nested in the heredoc node.
@@ -636,9 +685,9 @@ export class Analyzer {
   }
 
   private fileRedirect(n: SyntaxNode): Token {
-    const fd = n.childForFieldName('descriptor')?.text ?? '';
+    const fd = field(n, 'descriptor')?.text ?? '';
     const { op, dest } = redirectParts(n);
-    const dests = fieldChildren(n, 'destination');
+    const dests = fields(n, 'destination');
     // Every operator the grammar has is in the dictionary.
     let expl = this.t(redirects[op](fd, dest));
     const special = specialDestinations[dest];
@@ -656,7 +705,7 @@ export class Analyzer {
   }
 
   private heredoc(n: SyntaxNode): Token {
-    const op = n.children.find((c) => !c.isNamed)!.type;
+    const op = n.children.find((c) => !c.named)!.type;
     const startNode = n.namedChildren.find((c) => c.type === 'heredoc_start')!;
     const start = startNode.text;
     const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
@@ -693,16 +742,16 @@ export class Analyzer {
   }
 
   private assignment(n: SyntaxNode): Token {
-    const name = n.childForFieldName('name')!;
-    const value = n.childForFieldName('value');
-    const op = n.children.find((c) => !c.isNamed && (c.type === '=' || c.type === '+='))!.type;
+    const name = field(n, 'name')!;
+    const value = field(n, 'value');
+    const op = n.children.find((c) => !c.named && (c.type === '=' || c.type === '+='))!.type;
     const nm = name.text;
     let expl = op === '+='
       ? this.s(`変数 \`${nm}\` に値を追記する（配列なら要素を追加）`, `Append to variable \`${nm}\` (adds elements for arrays)`)
       : value
         ? this.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`)
         : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
-    if (name?.type === 'subscript') expl = this.s(`配列 \`${name.childForFieldName('name')?.text}\` の要素 \`[${name.childForFieldName('index')?.text}]\` に代入する`, `Assign to element \`[${name.childForFieldName('index')?.text}]\` of array \`${name.childForFieldName('name')?.text}\``);
+    if (name?.type === 'subscript') expl = this.s(`配列 \`${field(name, 'name')?.text}\` の要素 \`[${field(name, 'index')?.text}]\` に代入する`, `Assign to element \`[${field(name, 'index')?.text}]\` of array \`${field(name, 'name')?.text}\``);
     const children: Token[] = [];
     if (value) {
       for (const t of this.sub(value)) {
@@ -715,7 +764,7 @@ export class Analyzer {
 
   private declaration(n: SyntaxNode): Token {
     // declare, typeset, export, readonly or local, all in the dictionary.
-    const kw = n.child(0)!.type;
+    const kw = n.children[0].type;
     const base = declarationCommands[kw];
     const children: Token[] = [];
     // A declaration over several lines is explained whole (see sub), so every part counts.
@@ -758,11 +807,10 @@ export class Analyzer {
 
   /** When the line runs several commands, names the one each example is for in its title. */
   private titledExamples(root: SyntaxNode, line: number): Example[] {
-    const commands = root
-      .descendantsOfType(['command', 'test_command', 'compound_statement'], { row: line, column: 0 }, { row: line + 1, column: 0 })
-      // A compound statement counts only as `(( expr ))`, which tree-sitter-bash 0.25 parses that way.
-      .filter((c): c is SyntaxNode => !!c && intersects(c, line) && (c.type !== 'compound_statement' || c.child(0)?.type === '(('));
-    if (commands.length < 2) return this.examples;
+    const commands = new Set(onLine(root, ['command', 'time_statement', 'test_command', 'extended_test', 'arithmetic_command'], line)
+      .map(timedAs)
+      .filter((c) => intersects(c, line)));
+    if (commands.size < 2) return this.examples;
     return this.examples.map((e) => {
       if (!e.target) return e;
       const target = `\`${e.target}\``;
@@ -794,16 +842,13 @@ export class Analyzer {
     for (const e of this.examples.slice(before)) e.anchor ??= spanOf(n);
   }
 
-  private commandToken(n: SyntaxNode): Token {
-    // `FOO=1 2>/dev/null`: tree-sitter-bash gives it a command name of zero width.
-    const named = n.childForFieldName('name');
-    const nameNode = named?.text ? named : null;
+  /** The assignments before the command name (as tokens), the arguments, and the redirections of a command. */
+  private commandParts(n: SyntaxNode, nameNode: SyntaxNode | null): { prefix: Token[]; args: SyntaxNode[]; redirs: SyntaxNode[] } {
     const prefix: Token[] = [];
     const args: SyntaxNode[] = [];
     const redirs: SyntaxNode[] = [];
     let seenName = false;
-    for (let i = 0; i < n.childCount; i++) {
-      const c = n.child(i)!;
+    for (const c of n.children) {
       if (same(c, nameNode)) { seenName = true; continue; }
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
@@ -818,24 +863,51 @@ export class Analyzer {
         }
         continue;
       }
-      if (c.isNamed) args.push(c);
+      if (c.named) args.push(c);
     }
+    return { prefix, args, redirs };
+  }
+
+  private timeStatement(n: SyntaxNode): Token {
+    const before = this.examples.length;
+    const t = this.timed(n);
+    this.tagExamples(before, n);
+    return t;
+  }
+
+  private commandToken(n: SyntaxNode): Token {
+    // `FOO=1 2>/dev/null`: tree-sitter-bash gives it a command name of zero width.
+    const named = field(n, 'name');
+    const nameNode = named?.text ? named : null;
+    const { prefix, args, redirs } = this.commandParts(n, nameNode);
     if (!nameNode) {
       return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
     }
-    // `time` is a reserved word; `FOO=1 time x` runs the program instead.
-    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time') return this.timed(n, nameNode, args, redirs);
+    // `time` is a reserved word; `FOO=1 time x` runs the program instead. What remains a command is `time | wc`, which times nothing.
+    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time') return this.timeAlone(n, nameNode, args, redirs);
     return this.commandTail(n, nameNode, args, prefix, redirs);
   }
 
+  /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
+  private timeLead(time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
+    const kw = this.tok(time, 'keyword', this.t(keywords.time));
+    return posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
+  }
+
+  /** `time` with nothing to time: the keyword alone. */
+  private timeAlone(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], redirs: SyntaxNode[]): Token {
+    const lead = this.timeLead(nameNode, args[0]?.type === 'word' && args[0].text === '-p' ? args[0] : undefined);
+    return this.tok(n, 'keyword', lead[0].explanation, sortTokens([...lead, ...this.subs(redirs)]));
+  }
+
   /** `time [-p] command …`: the keyword, and the rest explained as the command it times. */
-  private timed(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], redirs: SyntaxNode[]): Token {
-    const kw = this.tok(nameNode, 'keyword', this.t(keywords.time));
-    const posix = args[0]?.type === 'word' && args[0].text === '-p' ? args.shift()! : undefined;
-    const lead = posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
-    const [cmd, ...rest] = args;
-    if (!cmd) return this.tok(n, 'keyword', kw.explanation, sortTokens([...lead, ...this.subs(redirs)]));
-    const inner = this.commandTail(n, cmd, rest, [], redirs, cmd);
+  private timed(n: SyntaxNode): Token {
+    const lead = this.timeLead(token(n, 'time')!, field(n, 'option'));
+    const cmd = field(n, 'body');
+    if (!cmd) return this.tok(n, 'keyword', lead[0].explanation, lead);
+    const nameNode = field(cmd, 'name')!;
+    const { args, redirs } = this.commandParts(cmd, nameNode);
+    const inner = this.commandTail(n, nameNode, args, [], redirs);
     const text = shorten(n.text.slice(cmd.startIndex - n.startIndex).replace(/\s*\\\n\s*/g, ' '), 40);
     const explanation = this.s(
       `\`${text}\` の実行時間を計測する（実時間・ユーザー時間・システム時間を stderr に表示。パイプラインなら全体の時間）`,
@@ -1172,7 +1244,7 @@ export class Analyzer {
         if (!note) return undefined;
         // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
         // The test before the pattern: -name, -path…
-        const opt = a.previousNamedSibling!.text;
+        const opt = this.previousNamed(a).text;
         if (!/^-i/.test(opt)) {
           this.globExample(lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
             opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
@@ -1449,19 +1521,20 @@ export class Analyzer {
     for (const [i, c] of n.namedChildren.entries()) {
       let cmd = c;
       if (c.type === 'redirected_statement') {
-        const body = c.childForFieldName('body');
+        const body = field(c, 'body');
         if (!body || body.type !== 'command') return undefined;
         // `grep x < file` reads a file; output redirections other than 2>/dev/null change where data goes.
         for (const r of c.namedChildren.filter((x) => !same(x, body))) {
-          const op = r.children.find((x) => !x.isNamed)?.type;
+          const op = r.children.find((x) => !x.named)?.type;
           if (r.type === 'file_redirect' && op === '<' && i === 0) readsFile = true;
-          else if (!(r.type === 'file_redirect' && r.childForFieldName('descriptor')?.text === '2')) return undefined;
+          else if (!(r.type === 'file_redirect' && field(r, 'descriptor')?.text === '2')) return undefined;
         }
         cmd = body;
       }
       if (cmd.type !== 'command') return undefined;
-      const name = cmd.childForFieldName('name');
-      if (!name || !isPlainWord(name.namedChildren[0]!)) return undefined;
+      const name = field(cmd, 'name');
+      // (An incomplete `echo a |` has a stage with a name of no word.)
+      if (!name || (name.namedChildren.length && !isPlainWord(name.namedChildren[0]))) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
       stages.push({ cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) });
     }
@@ -1570,19 +1643,19 @@ export class Analyzer {
    */
   private pipeSubshellPitfalls(root: SyntaxNode, line: number): string[] {
     if (this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on') return [];
-    for (const p of root.descendantsOfType('pipeline', { row: line, column: 0 }, { row: line + 1, column: 0 })) {
-      if (!p || p.startPosition.row !== line) continue;
+    for (const p of onLine(root, ['pipeline'], line)) {
+      if (p.startPosition.row !== line) continue;
       const last = p.namedChildren[p.namedChildren.length - 1];
-      if (!last || !['while_statement', 'until_statement', 'for_statement', 'compound_statement', 'command'].includes(last.type)) continue;
+      if (!last || !['while_statement', 'until_statement', 'for_statement', 'select_statement', 'compound_statement', 'arithmetic_command', 'command'].includes(last.type)) continue;
       const names = new Set<string>();
-      for (const a of last.descendantsOfType('variable_assignment')) {
-        const n = a?.childForFieldName('name')?.text;
+      for (const a of descendants(last, ['variable_assignment'])) {
+        const n = field(a, 'name')?.text;
         // Not `X=1 cmd`, which only sets X for cmd, nor `local`.
-        if (n && a!.parent?.type !== 'command' && !ancestorOf(a!, (x) => x.type === 'declaration_command' && /^local\b/.test(x.text))) names.add(n);
+        if (n && a.parent?.type !== 'command' && !ancestorOf(a, (x) => x.type === 'declaration_command' && /^local\b/.test(x.text))) names.add(n);
       }
-      for (const c of [last, ...last.descendantsOfType('command')]) {
-        if (c?.type === 'command' && c.childForFieldName('name')?.text === 'read' && (c === last || last.type !== 'while_statement' || !ancestorOf(c, (x) => x === last.childForFieldName('condition')))) {
-          for (const w of c.childrenForFieldName('argument')) if (w && /^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(w.previousSibling!.text)) names.add(w.text);
+      for (const c of [last, ...descendants(last, ['command'])]) {
+        if (c.type === 'command' && field(c, 'name')?.text === 'read' && (c === last || last.type !== 'while_statement' || !ancestorOf(c, (x) => x === field(last, 'condition')))) {
+          for (const w of fields(c, 'argument')) if (/^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(sibling(w, -1)!.text)) names.add(w.text);
         }
       }
       if (!names.size) continue;
@@ -1618,14 +1691,14 @@ export class Analyzer {
    */
   private unmatchedGlobPitfalls(root: SyntaxNode, line: number): string[] {
     if (this.shell === 'zsh' || this.shopt.nullglob === 'on' || this.shopt.failglob === 'on') return [];
-    for (const loop of root.descendantsOfType('for_statement', { row: line, column: 0 }, { row: line + 1, column: 0 })) {
-      if (!loop || loop.startPosition.row !== line) continue;
+    for (const loop of onLine(root, ['for_statement', 'select_statement'], line)) {
+      if (loop.startPosition.row !== line) continue;
       // `*.log`, and `"$dir"/*.log` too.
-      const glob = loop.childrenForFieldName('value').find((v) => !!v && ((!!this.unquotedWord(v) && isGlob(v.text))
-        || (v.type === 'concatenation' && v.namedChildren.some((c) => c?.type === 'word' && isGlob(c.text)))));
-      const v = loop.childForFieldName('variable')?.text;
+      const glob = fields(loop, 'value').find((v) => ((!!this.unquotedWord(v) && isGlob(v.text))
+        || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
+      const v = field(loop, 'variable')?.text;
       if (!glob || !v) continue;
-      const body = loop.childForFieldName('body')!.text;
+      const body = field(loop, 'body')!.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = this.shopt.nullglob !== 'unsupported';
       const fix = this.s(nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます', nullglob ? ', or turn on `shopt -s nullglob` before the loop' : '');
@@ -1642,13 +1715,13 @@ export class Analyzer {
    */
   private extglobPitfalls(root: SyntaxNode, line: number): string[] {
     if (this.shell && this.shell !== 'bash') return [];
-    const uses = root.descendantsOfType(['word', 'extglob_pattern'], { row: line, column: 0 }, { row: line + 1, column: 0 })
-      .filter((n): n is SyntaxNode => !!n && n.startPosition.row === line && hasExtglob(n.text) && !ancestorOf(n, (a) => a.type === 'test_command' && a.child(0)?.type === '[['));
+    const uses = onLine(root, ['word', 'extglob_pattern'], line)
+      .filter((n) => n.startPosition.row === line && hasExtglob(n.text) && !ancestorOf(n, (a) => a.type === 'extended_test'));
     if (!uses.length) return [];
     const use = uses[0];
     let top = use;
     while (top.parent && top.parent.type !== 'program') top = top.parent;
-    const inBlock = top !== use && top.descendantsOfType('command').some((c) => !!c && c.startIndex < use.startIndex && c.childForFieldName('name')?.text === 'shopt'
+    const inBlock = top !== use && descendants(top, ['command']).some((c) => c.startIndex < use.startIndex && field(c, 'name')?.text === 'shopt'
       && /(^|\s)-\w*s/.test(c.text) && /\bextglob\b/.test(c.text));
     if (inBlock) {
       return [this.s(
@@ -1862,8 +1935,8 @@ export class Analyzer {
   private readExample(n: SyntaxNode, args: SyntaxNode[]): void {
     let ifs = ' \t\n';
     for (const c of n.namedChildren) {
-      if (c.type !== 'variable_assignment' || c.childForFieldName('name')?.text !== 'IFS') continue;
-      const v = c.childForFieldName('value');
+      if (c.type !== 'variable_assignment' || field(c, 'name')?.text !== 'IFS') continue;
+      const v = field(c, 'value');
       const lit = v ? literalContent(v) : { text: '' };
       if (!lit) return;
       ifs = lit.text.replace(/\\t/g, '\t').replace(/\\n/g, '\n');
@@ -1890,16 +1963,16 @@ export class Analyzer {
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
   private testExample(n: SyntaxNode, bracket: BracketTest | undefined): void {
-    const kind = n.child(0)?.type as '[' | '[[' | '((';
+    const kind = n.children[0].type as '[' | '[[' | '((';
     let shape: TestShape | undefined;
     if (kind === '[') {
       shape = bracketShape(bracket);
     } else if (n.namedChildren.length === 1) {
       const expr = n.namedChildren[0];
       if (expr.type === 'unary_expression') {
-        shape = { op: expr.childForFieldName('operator')!.text, right: expr.namedChildren.find((c) => c.type !== 'test_operator')! };
-      } else if (expr.type === 'binary_expression' && expr.childrenForFieldName('right').length === 1) {
-        shape = { left: expr.childForFieldName('left')!, op: expr.childForFieldName('operator')!.text, right: expr.childForFieldName('right')! };
+        shape = { op: field(expr, 'operator')!.text, right: expr.namedChildren.find((c) => c.type !== 'test_operator')! };
+      } else if (expr.type === 'binary_expression' && fields(expr, 'right').length === 1) {
+        shape = { left: field(expr, 'left')!, op: field(expr, 'operator')!.text, right: field(expr, 'right')! };
       }
     }
     if (!shape) return;
@@ -2175,9 +2248,9 @@ export class Analyzer {
   private test(n: SyntaxNode): Token {
     const before = this.examples.length;
     // A test over several lines is explained whole (see sub), so it is always where the line starts.
-    const bracket = n.child(0)?.type === '[' ? bracketTest(n) : undefined;
+    const open = n.children[0].type;
+    const bracket = open === '[' ? bracketTest(n) : undefined;
     this.testExample(n, bracket);
-    const open = n.child(0)?.type;
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
         'Extended test `[[ ]]`: evaluates a condition (bash-only; safe without quoting, supports `&&`, `||`, `=~`)')
@@ -2202,10 +2275,10 @@ export class Analyzer {
       span: { start: spanOf(words[first].nodes[0]).start, end: spanOf(words[last].nodes[words[last].nodes.length - 1]).end },
     });
     // Operators and parentheses are not nodes to explain; they get no token of their own, but a word that is one does.
-    const wordTokens = (i: number) => words[i].nodes.flatMap((x) => (x.isNamed && x.type !== 'test_operator'
+    const wordTokens = (i: number) => words[i].nodes.flatMap((x) => (x.named && x.type !== 'test_operator'
       ? this.sub(x)
       : [this.tok(x, 'argument', this.s(`文字列 \`${x.text}\``, `Word \`${x.text}\``))]));
-    const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => this.subs(words[i].nodes.filter((x) => x.isNamed && x.type !== 'test_operator' && !plain(x)));
+    const operandTokens = (i: number, plain: (x: SyntaxNode) => boolean) => this.subs(words[i].nodes.filter((x) => x.named && x.type !== 'test_operator' && !plain(x)));
     switch (e.type) {
       case 'word': return wordTokens(e.at);
       case 'not': {
@@ -2243,7 +2316,8 @@ export class Analyzer {
   private inArithmetic(n: SyntaxNode): boolean {
     for (let p = n.parent; p; p = p.parent) {
       if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
-      if (p.type === 'test_command' || p.type === 'compound_statement') return p.child(0)?.type === '((';
+      if (p.type === 'arithmetic_command') return true;
+      if (p.type === 'test_command' || p.type === 'extended_test' || p.type === 'compound_statement') return false;
     }
     // Unary and binary expressions are always inside a test or arithmetic.
     /* c8 ignore next */
@@ -2252,7 +2326,7 @@ export class Analyzer {
 
   private unary(n: SyntaxNode): Token {
     // `!` is not an operator field.
-    const opNode = n.childForFieldName('operator')!;
+    const opNode = field(n, 'operator')!;
     const op = opNode.text;
     const operand = n.namedChildren.find((c) => !same(c, opNode))!;
     if (op === '!' && !this.inArithmetic(n)) {
@@ -2266,16 +2340,16 @@ export class Analyzer {
   }
 
   private binary(n: SyntaxNode): Token {
-    const left = n.childForFieldName('left');
+    const left = field(n, 'left');
     // The right side of `=`, `==` and `!=` in `[[ ]]` can be several fields: `*"$y"*z` is a pattern, a string and a pattern.
     // (The binary expression in `${s:$i+1}` has no fields at all.)
-    const fields = n.childrenForFieldName('right') as SyntaxNode[];
-    const rights = fields.length ? fields : [n.lastNamedChild!];
+    const rightFields = fields(n, 'right');
+    const rights = rightFields.length ? rightFields : [n.namedChildren[n.namedChildren.length - 1]];
     const rightText = n.text.slice(rights[0].startIndex - n.startIndex, rights[rights.length - 1].endIndex - n.startIndex);
-    const op = n.childForFieldName('operator')!.text;
+    const op = field(n, 'operator')!.text;
     // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
     const plain = (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && rights.length === 1
-      && (!hasGlob(x.text) || ancestorOf(n, (a) => a.type === 'test_command' && a.child(0)?.type === '[')));
+      && (!hasGlob(x.text) || ancestorOf(n, (a) => a.type === 'test_command')));
     const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
@@ -2303,7 +2377,7 @@ export class Analyzer {
 
   private string(n: SyntaxNode): Token {
     // `$"…"`: tree-sitter-bash reads it as `$` and a string.
-    const dollar = n.previousSibling;
+    const dollar = sibling(n, -1);
     if (dollar?.type === '$' && dollar.endIndex === n.startIndex) {
       const t = this.tok(n, 'string', this.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列（翻訳がなければそのまま。中の変数は展開される）', '`$"…"` string: translated according to the locale (as it is when there is no translation; variables inside expand)'), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
       t.span = { start: spanOf(dollar).start, end: t.span.end };
@@ -2349,8 +2423,8 @@ export class Analyzer {
     const p = n.parent!;
     if (['string', 'heredoc_body', 'variable_assignment', 'case_statement'].includes(p.type)) return true;
     for (let a: SyntaxNode | null = p; a; a = a.parent) {
-      if (a.type === 'test_command') return a.child(0)?.type === '[[' || a.child(0)?.type === '((';
-      if (a.type === 'compound_statement' && a.child(0)?.type === '((') return true;
+      if (a.type === 'test_command') return false;
+      if (a.type === 'extended_test' || a.type === 'arithmetic_command') return true;
       if (a.type === 'arithmetic_expansion') return true;
       if (a.type === 'command' || a.type === 'string') return false;
     }
@@ -2358,8 +2432,8 @@ export class Analyzer {
   }
 
   private subscript(n: SyntaxNode): Token {
-    const name = n.childForFieldName('name')!.text;
-    const idx = n.childForFieldName('index')!.text;
+    const name = field(n, 'name')!.text;
+    const idx = field(n, 'index')!.text;
     if (idx === '@' || idx === '*') return this.tok(n, 'variable', this.s(`配列 \`${name}\` の全要素`, `All elements of array \`${name}\``));
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``));
   }
@@ -2536,7 +2610,7 @@ export class Analyzer {
     const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
     const targetText = target?.text ?? inner;
     const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);
-    const prefixOp = kids[1] && !kids[1].isNamed ? kids[1].type : '';
+    const prefixOp = kids[1] && !kids[1].named ? kids[1].type : '';
 
     if (prefixOp === '#' && target) {
       return this.tok(n, 'expansion', isArrayAll
@@ -2549,7 +2623,7 @@ export class Analyzer {
         : this.s(`間接参照: 変数 \`${targetText}\` の値を変数名とみなし、その変数の値を取り出す`, `Indirection: use the value of \`${targetText}\` as a variable name`));
     }
 
-    const opIdx = kids.findIndex((c, i) => i > 0 && n.fieldNameForChild(i) === 'operator');
+    const opIdx = kids.findIndex((c, i) => i > 0 && c.field === 'operator');
     const base = target?.type === 'subscript' ? this.t(isArrayAll
       ? { ja: `配列 \`${targetText.replace(/\[.*/, '')}\` の全要素`, en: `all elements of array \`${targetText.replace(/\[.*/, '')}\`` }
       : { ja: `配列要素 \`${targetText}\``, en: `array element \`${targetText}\`` }) : undefined;
@@ -2566,7 +2640,7 @@ export class Analyzer {
         ));
       }
       if (make) {
-        const argNodes = kids.slice(opIdx + 1).filter((c) => c.isNamed && !isPlainWord(c) && c.type !== 'regex');
+        const argNodes = kids.slice(opIdx + 1).filter((c) => c.named && !isPlainWord(c) && c.type !== 'regex');
         // Positional parameters read better as `$2` than as a bare `2`.
         const shownName = /^[1-9]\d*$/.test(targetText) ? `$${targetText}` : targetText;
         return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(shownName, arg)), this.subs(argNodes));
@@ -2626,9 +2700,9 @@ function bracketTest(n: SyntaxNode): BracketTest | undefined {
     }
   };
   walk(n);
-  // `[` and `]`.
+  // `[`, and `]` unless the test is not closed.
   leaves.shift();
-  leaves.pop();
+  if (leaves[leaves.length - 1]?.type === ']') leaves.pop();
   const words: BracketWord[] = [];
   for (const x of leaves) {
     const last = words[words.length - 1];
@@ -2636,7 +2710,7 @@ function bracketTest(n: SyntaxNode): BracketTest | undefined {
     else words.push({ nodes: [x], text: null });
   }
   for (const w of words) {
-    const parts = w.nodes.map((x) => (!x.isNamed || x.type === 'test_operator' || x.type === 'number' || x.type === 'extglob_pattern' ? x.text : literalContent(x)?.text));
+    const parts = w.nodes.map((x) => (!x.named || x.type === 'test_operator' || x.type === 'number' || x.type === 'extglob_pattern' ? x.text : literalContent(x)?.text));
     w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
   }
   const expr = parseTest(words.map((w) => w.text));
@@ -2784,7 +2858,7 @@ function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
  * a descriptor) as one operator: they are `>&` and `<&` to `-`.
  */
 function redirectParts(n: SyntaxNode): { op: string; dest: string } {
-  const op = n.children.find((c) => !c.isNamed)!.type;
+  const op = n.children.find((c) => !c.named)!.type;
   if (op === '>&-' || op === '<&-') return { op: op.slice(0, 2), dest: '-' };
-  return { op, dest: fieldChildren(n, 'destination').map((d) => d.text).join(' ') };
+  return { op, dest: fields(n, 'destination').map((d) => d.text).join(' ') };
 }

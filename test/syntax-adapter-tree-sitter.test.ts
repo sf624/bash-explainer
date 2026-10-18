@@ -1,20 +1,19 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createBashParser } from '../src/parser';
 import { extractShell, hostKind } from '../src/hosts';
 import { descendants, field, fields, hasError, token } from '../src/syntax/tree';
 import type { BashParser, SyntaxNode } from '../src/syntax/tree';
-import { createTreeSitterParser, FIELD_NAMES, NODE_TYPES } from '../src/syntax/adapters/tree-sitter';
+import { createRawParser, createTreeSitterParser, FIELD_NAMES, NODE_TYPES } from '../src/syntax/adapters/tree-sitter';
 import type { Node } from 'web-tree-sitter';
 
 const root = path.join(__dirname, '..');
 const wasm = { runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') };
 let parser: BashParser;
-let legacy: Awaited<ReturnType<typeof createBashParser>>;
+let legacy: Awaited<ReturnType<typeof createRawParser>>;
 before(async () => {
   parser = await createTreeSitterParser(wasm);
-  legacy = await createBashParser(wasm);
+  legacy = await createRawParser(wasm);
 });
 
 const types = (n: SyntaxNode, t: string): SyntaxNode[] => descendants(n, [t]);

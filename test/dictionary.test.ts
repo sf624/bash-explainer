@@ -1,17 +1,17 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { builtins } from '../src/dict/builtins';
 import { commands } from '../src/dict/commands';
 import { CommandDoc } from '../src/dict/types';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -19,14 +19,10 @@ before(async () => {
 
 function tokens(src: string, lang: 'en' | 'ja' = 'en'): Token[] {
   const tree = parser.parse(src);
-  try {
-    const out: Token[] = [];
-    const walk = (t: Token) => (out.push(t), t.children.forEach(walk));
-    new Analyzer(lang).explainLine(tree, 0).items.forEach(walk);
-    return out;
-  } finally {
-    tree.delete();
-  }
+  const out: Token[] = [];
+  const walk = (t: Token) => (out.push(t), t.children.forEach(walk));
+  new Analyzer(lang).explainLine(tree, 0).items.forEach(walk);
+  return out;
 }
 
 const unknown = (src: string) => tokens(src).filter((t) => /not in the dictionary/.test(t.explanation)).map((t) => t.label);

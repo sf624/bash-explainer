@@ -1,7 +1,8 @@
-import type { Node as SyntaxNode } from 'web-tree-sitter';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
+import { ancestor, descendants, field, timedBy } from './syntax/tree';
+import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 
 /** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
@@ -166,14 +167,14 @@ export function collectBehaviours(root: SyntaxNode, from: number, to: number): F
   const found: Found[] = [];
   walk(root, from, to, (n) => {
     const add = (id: string) => found.push({ id, node: n });
-    if (n.type === 'command' && n.childForFieldName('name')?.text === 'echo'
+    // The command after `time` has never been looked at: it used to be an argument of the command `time`.
+    if (n.type === 'command' && !timedBy(n) && field(n, 'name')?.text === 'echo'
       && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
     // An unquoted `$var` used as a word of a command.
     if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
-    if (n.type === 'declaration_command' && n.child(0)?.text === 'typeset') {
-      let f: SyntaxNode | null = n.parent;
-      while (f && f.type !== 'function_definition') f = f.parent;
-      if (f && f.child(0)?.type !== 'function') add('typesetScope');
+    if (n.type === 'declaration_command' && n.children[0].text === 'typeset') {
+      const f = ancestor(n, (a) => a.type === 'function_definition');
+      if (f && f.children[0].type !== 'function') add('typesetScope');
     }
     if (n.type === 'expansion') {
       const p = parseExpansion(n.text.trimStart());
@@ -199,7 +200,8 @@ function works(f: Feature, shell: RealShell): boolean {
 /** Features used by the constructs starting on lines [from, to]. */
 export function collectFeatures(root: SyntaxNode, from: number, to: number): Found[] {
   const found: Found[] = [];
-  walk(root, from, to, (n) => classify(n, n.children.map((c) => c.type), (id) => found.push({ id, node: n })));
+  // `time a |& b` is a pipeline starting at `time`, as far as its features go.
+  walk(root, from, to, (n) => classify(n, n.children.map((c) => c.type), (id) => found.push({ id, node: n.type === 'pipeline' && n.parent?.type === 'time_statement' ? n.parent : n })));
   return found;
 }
 
@@ -210,33 +212,29 @@ export function featuresOnLine(root: SyntaxNode, line: number): string[] {
 
 function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): void {
   switch (n.type) {
-    // tree-sitter-bash 0.25 parses a standalone `(( expr ))` as a compound statement opened by `((`.
-    case 'compound_statement':
-      if (n.child(0)?.type === '((') add('arithCommand');
+    case 'arithmetic_command': add('arithCommand'); return;
+    case 'extended_test':
+      add('dbracket');
+      if (descendants(n, ['=~']).length) add('regex');
       return;
-    case 'test_command': {
-      const open = n.child(0)?.type;
-      if (open === '[[') {
-        add('dbracket');
-        if (n.descendantsOfType('=~').length) add('regex');
-      } else if (open === '[' && n.descendantsOfType('==').length) add('eqeqTest');
+    case 'test_command':
+      if (descendants(n, ['==']).length) add('eqeqTest');
       return;
-    }
     case 'command': {
-      const name = n.childForFieldName('name')!;
-      const words = n.namedChildren.filter((c) => c.id !== name.id).map((c) => c.text);
+      if (timedBy(n)) return;
+      const name = field(n, 'name')!;
+      const words = n.namedChildren.filter((c) => c !== name).map((c) => c.text);
       commandFeatures(name.text, words, add);
       return;
     }
     case 'declaration_command': {
       const words = n.children.slice(1).map((c) => c.text);
-      commandFeatures(n.child(0)!.text, words, add);
+      commandFeatures(n.children[0].text, words, add);
       return;
     }
     case 'brace_expression': add('braceRange'); return;
     case 'c_style_for_statement': add('cFor'); return;
-    // tree-sitter-bash reads `select x in …` as a for statement opened by `select`.
-    case 'for_statement': if (n.child(0)!.type === 'select') add('select'); return;
+    case 'select_statement': add('select'); return;
     case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
     case 'herestring_redirect': add('herestring'); return;
     case 'ansi_c_string': add('ansiC'); return;
@@ -252,7 +250,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       return;
     case 'extglob_pattern': if (/[@!?*+]\(/.test(n.text)) add('extglob'); return;
     case 'variable_assignment': {
-      const value = n.childForFieldName('value');
+      const value = field(n, 'value');
       if (value?.type === 'array') add('array');
       if (kids.includes('+=')) add('plusAssign');
       return;
@@ -369,11 +367,27 @@ function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefi
   return differ.length ? 'ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
 }
 
-/** The first node of each line in [from, to] holding a syntax error (or a missing token). */
-function errorNodes(n: SyntaxNode, from: number, to: number, out: SyntaxNode[] = []): SyntaxNode[] {
-  if (!n.hasError || n.startPosition.row > to || n.endPosition.row < from) return out;
-  if ((n.type === 'ERROR' || n.isMissing) && n.startPosition.row >= from && !out.some((e) => e.startPosition.row === n.startPosition.row)) out.push(n);
-  n.children.forEach((c) => errorNodes(c, from, to, out));
+/** A node of no width at `index`, where the parser left out a token it expected. */
+function missingAt(tree: SyntaxTree, index: number): SyntaxNode {
+  const before = tree.text.slice(0, index);
+  const row = before.split('\n').length - 1;
+  const at = { row, column: index - (before.lastIndexOf('\n') + 1) };
+  return { type: 'missing', named: false, text: '', startIndex: index, endIndex: index, startPosition: at, endPosition: at, parent: null, children: [], namedChildren: [], field: null, incomplete: true };
+}
+
+/**
+ * The first place on each line in [from, to] with a syntax error: an `error` node, or where a token is
+ * missing. (A leaf `error` of no width, which the parser puts after a trailing `\` and the like, is no place.)
+ */
+function errorNodes(tree: SyntaxTree, from: number, to: number): SyntaxNode[] {
+  const places = [
+    ...tree.errors.filter((e) => e.message.startsWith('Missing')).map((e) => missingAt(tree, e.startIndex)),
+    ...descendants(tree.root, ['error'], { from, to }).filter((e) => e.endIndex > e.startIndex || e.children.length),
+  ].sort((a, b) => a.startIndex - b.startIndex);
+  const out: SyntaxNode[] = [];
+  for (const n of places) {
+    if (n.startPosition.row >= from && n.startPosition.row <= to && !out.some((e) => e.startPosition.row === n.startPosition.row)) out.push(n);
+  }
   return out;
 }
 
@@ -381,10 +395,10 @@ function errorNodes(n: SyntaxNode, from: number, to: number, out: SyntaxNode[] =
  * Where zsh-only syntax may be: syntax errors, and words with `*(…)` and the like, which the parser
  * reads as ksh's extended globs but zsh takes as glob qualifiers (`*(.)`, `*(/om)`).
  */
-function zshSyntaxNodes(root: SyntaxNode, from: number, to: number): SyntaxNode[] {
-  const out = errorNodes(root, from, to);
-  for (const w of root.descendantsOfType('word', { row: from, column: 0 }, { row: to + 1, column: 0 })) {
-    if (w && w.startPosition.row >= from && w.startPosition.row <= to && /(^|[^\\])[?*+@!]\(/.test(w.text) && !out.some((e) => e.startPosition.row === w.startPosition.row)) out.push(w);
+function zshSyntaxNodes(tree: SyntaxTree, from: number, to: number): SyntaxNode[] {
+  const out = errorNodes(tree, from, to);
+  for (const w of descendants(tree.root, ['word'], { from, to })) {
+    if (w.startPosition.row >= from && w.startPosition.row <= to && /(^|[^\\])[?*+@!]\(/.test(w.text) && !out.some((e) => e.startPosition.row === w.startPosition.row)) out.push(w);
   }
   return out;
 }
@@ -395,21 +409,21 @@ const ZSH_SYNTAX: [string, string] = [
 ];
 
 /** Problems on lines [from, to] of a script written for `shell`. */
-export function dialectIssues(root: SyntaxNode, shell: Shell, lang: Lang, from = 0, to = root.endPosition.row): Issue[] {
+export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row): Issue[] {
   if (shell === 'bash') return [];
   const issues: Issue[] = [];
   if (shell === 'zsh') {
-    for (const node of zshSyntaxNodes(root, from, to)) {
+    for (const node of zshSyntaxNodes(tree, from, to)) {
       issues.push({
         id: 'zshSyntax', kind: 'parse', node, message: ZSH_SYNTAX[lang === 'ja' ? 0 : 1],
       });
     }
   }
-  for (const f of collectBehaviours(root, from, to)) {
+  for (const f of collectBehaviours(tree.root, from, to)) {
     const message = behaviourMessage(f.id, shell, lang);
     if (message) issues.push({ id: f.id, kind: 'behaviour', message, node: f.node });
   }
-  for (const f of collectFeatures(root, from, to)) {
+  for (const f of collectFeatures(tree.root, from, to)) {
     const message = featureMessage(f.id, shell, lang);
     if (message) issues.push({ id: f.id, kind: 'unsupported', message, node: f.node });
   }
@@ -417,10 +431,10 @@ export function dialectIssues(root: SyntaxNode, shell: Shell, lang: Lang, from =
 }
 
 /** Notes for the line: features the target shell lacks, and behaviour that differs. */
-export function dialectNotes(root: SyntaxNode, line: number, shell: Shell, lang: Lang): string[] {
-  const issues = dialectIssues(root, shell, lang, line, line).filter((i) => i.kind !== 'parse');
+export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang: Lang): string[] {
+  const issues = dialectIssues(tree, shell, lang, line, line).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
-  const parse = shell === 'zsh' && zshSyntaxNodes(root, 0, root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
+  const parse = shell === 'zsh' && zshSyntaxNodes(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
     ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];
   return [...new Set([...parse, ...issues.map((i) => i.message)])];
 }

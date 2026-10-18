@@ -1,5 +1,6 @@
 import { Lang } from './i18n';
-import type { SyntaxNode } from './parser';
+import { descendants, field, fields } from './syntax/tree';
+import type { SyntaxNode } from './syntax/tree';
 
 // Common mistakes in shell scripts, explained where they appear: what goes wrong and how to write
 // it instead. Each is found from the syntax tree, and only on the line where its node starts.
@@ -18,16 +19,16 @@ function alwaysNumber(n: SyntaxNode): boolean {
 
 /** The variable an expansion reads (`DIR` for `$DIR` or `${DIR}`), when it is a plain one. */
 function varName(n: SyntaxNode): string | undefined {
-  const v = n.namedChildren.find((c) => c?.type === 'variable_name');
+  const v = n.namedChildren.find((c) => c.type === 'variable_name');
   return v?.text;
 }
 
 function commandName(n: SyntaxNode): string | undefined {
-  return n.childForFieldName('name')?.text.split('/').pop();
+  return field(n, 'name')?.text.split('/').pop();
 }
 
 function args(n: SyntaxNode): SyntaxNode[] {
-  return n.childrenForFieldName('argument').filter((c): c is SyntaxNode => !!c);
+  return fields(n, 'argument');
 }
 
 /** Notes for the pitfalls whose node starts on `line`. */
@@ -37,7 +38,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
   const add = (ja: string, en: string) => notes.push(s(`⚠ 落とし穴: ${ja}`, `⚠ Pitfall: ${en}`));
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row === line) check(n);
-    if (n.startPosition.row <= line && n.endPosition.row >= line) for (const c of n.namedChildren) if (c) visit(c);
+    if (n.startPosition.row <= line && n.endPosition.row >= line) for (const c of n.namedChildren) visit(c);
   };
 
   const check = (n: SyntaxNode) => {
@@ -73,7 +74,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         }
         // Unquoted variables as paths of file commands.
         if (name && ['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.'].includes(name)) {
-          const bare = a.find((w) => unquotedExpansion(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => c && unquotedExpansion(c))));
+          const bare = a.find((w) => unquotedExpansion(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => unquotedExpansion(c))));
           if (bare) {
             add(`\`${bare.text}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします。\`"${bare.text}"\` と書きます`,
               `\`${bare.text}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names. Write \`"${bare.text}"\``);
@@ -83,18 +84,18 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       }
       case 'redirected_statement': {
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
-        const body = n.childForFieldName('body');
+        const body = field(n, 'body');
         // Only for files that need root: system directories, not your logs or /dev/null.
-        const toFile = n.namedChildren.some((c) => c?.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
-          && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(c.childForFieldName('destination')?.text.replace(/^["']/, '') ?? ''));
+        const toFile = n.namedChildren.some((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
+          && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(field(c, 'destination')?.text.replace(/^["']/, '') ?? ''));
         if (body?.type === 'command' && commandName(body) === 'sudo' && toFile) {
           add('リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
             'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`');
         }
         break;
       }
-      case 'for_statement': {
-        const value = n.childForFieldName('value');
+      case 'for_statement': case 'select_statement': {
+        const value = field(n, 'value');
         if (!value) break;
         // `for f in $(ls …)`
         const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
@@ -111,10 +112,9 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       }
       case 'test_command': {
         // `[ $x = y ]`: an empty or spaced value breaks the test.
-        if (n.child(0)?.type !== '[') break;
         // Operands of the test itself, not variables inside a `$(…)` in it.
         const operand = (e: SyntaxNode) => ['test_command', 'binary_expression', 'unary_expression', 'parenthesized_expression', 'negated_expression'].includes(e.parent!.type);
-        const bare = n.descendantsOfType(['simple_expansion', 'expansion']).find((e) => e && unquotedExpansion(e) && operand(e) && !alwaysNumber(e));
+        const bare = descendants(n, ['simple_expansion', 'expansion']).find((e) => unquotedExpansion(e) && operand(e) && !alwaysNumber(e));
         if (bare) {
           add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` など）。\`"${bare.text}"\` と書きます`,
             `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces ("unary operator expected"). Write \`"${bare.text}"\``);
@@ -124,10 +124,10 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       case 'declaration_command': {
         // `local x=$(cmd)`: the status of local hides the status of cmd.
         // The keyword: local, export, declare, readonly or typeset.
-        const kw = n.child(0)!.text;
-        const assign = n.namedChildren.find((c) => c?.type === 'variable_assignment' && c.childForFieldName('value')?.type === 'command_substitution');
+        const kw = n.children[0].text;
+        const assign = n.namedChildren.find((c) => c.type === 'variable_assignment' && field(c, 'value')?.type === 'command_substitution');
         if (assign) {
-          const v = assign.childForFieldName('name')!.text;
+          const v = field(assign, 'name')!.text;
           add(`\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
             `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``);
         }

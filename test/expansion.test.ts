@@ -1,16 +1,16 @@
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -19,7 +19,6 @@ before(async () => {
 function expansionToken(src: string, lang: 'ja' | 'en' = 'en'): Token {
   const tree = parser.parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 0);
-  tree.delete();
   const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   const t = all(ex.items).find((x) => x.label.startsWith('${') && x.children.some((c) => c.label !== x.label));
   assert.ok(t, `no expansion token in ${src}`);
@@ -91,7 +90,6 @@ describe('examples match bash', () => {
 function examples(src: string, lang: 'ja' | 'en' = 'en'): string[] {
   const tree = parser.parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 0);
-  tree.delete();
   return ex.examples.flatMap((e) => e.sections.map((sec) => `${sec.label} → ${sec.lines.join(' ') || sec.empty}`));
 }
 

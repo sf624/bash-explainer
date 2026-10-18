@@ -1,15 +1,16 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import { descendants, hasError } from '../src/syntax/tree';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
 import { rerun } from '../src/examples/rerun';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -17,11 +18,7 @@ before(async () => {
 
 function explain(src: string, line = 0, lang: 'ja' | 'en' = 'en'): LineExplanation {
   const tree = parser.parse(src);
-  try {
-    return new Analyzer(lang).explainLine(tree, line);
-  } finally {
-    tree.delete();
-  }
+  return new Analyzer(lang).explainLine(tree, line);
 }
 
 function all(tokens: Token[]): Token[] {
@@ -101,10 +98,76 @@ describe('time keyword', () => {
     assert.ok(find(p, '-p', 'option'));
     assert.ok(find(explain('time ls 2>&1'), '2>&1'));
   });
+  it('explains a timed pipeline as a pipeline whose first stage is the timed command', () => {
+    const e = explain('time -p cat f | sort -u | uniq -c');
+    assert.strictEqual(e.items.length, 1);
+    const [pipe] = e.items;
+    assert.strictEqual(pipe.kind, 'operator');
+    assert.strictEqual(pipe.label, 'time -p cat f | sort -u | uniq -c');
+    assert.deepStrictEqual(pipe.children.map((c) => c.label), ['time -p cat f', '|', 'sort -u', '|', 'uniq -c']);
+    assert.match(pipe.children[0].explanation, /^Time `cat f`: run it and report how long/);
+    assert.deepStrictEqual(pipe.children[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 13 } });
+    assert.deepStrictEqual(pipe.children[0].children.map((c) => c.label), ['time', '-p', 'f']);
+    // A pipeline example is made of the commands it is made of, and `time` is not one.
+    assert.ok(!e.examples.some((x) => x.kind === 'pipeline'));
+    assert.ok(find(explain('time cat f | sort 2>&1'), 'time cat f | sort 2>&1'));
+    assert.strictEqual(explain('time a >f | b').items[0].children[0].label, 'time a >f');
+  });
+  it('explains each line of a timed pipeline that spans lines', () => {
+    const src = 'time ls | while read x; do\n  echo $x\ndone\necho after';
+    const first = explain(src, 0);
+    assert.deepStrictEqual(first.items[0].children.map((c) => c.label), ['time ls', '|', 'while read x; do …']);
+    assert.match(first.items[0].children[0].explanation, /^Time `ls`/);
+    assert.deepStrictEqual(explain(src, 1).context.map((c) => c.label), ['while loop']);
+    assert.strictEqual(explain(src, 2).items[0].label, 'done');
+    const wrapped = explain('time ls |\n  grep x', 1);
+    assert.strictEqual(wrapped.items[0].children[0].label, 'time ls');
+    assert.match(wrapped.notes[0], /starts on line 1/);
+  });
+  it('counts the timed command once when it names the command of an example', () => {
+    const titles = (src: string) => explain(src).examples.map((x) => x.title);
+    assert.deepStrictEqual(titles('time sort -u f'), ['Example']);
+    assert.deepStrictEqual(titles('time sort -u f | uniq'), ['Example for `time sort -u f`', 'Example for `uniq`']);
+    assert.deepStrictEqual(titles('time ls | sort -u'), ['Example for `sort -u`']);
+    assert.deepStrictEqual(titles('time; sort -u f'), ['Example for `sort -u f`']);
+    assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `time sort -u f`']);
+  });
+  it('makes no example of the whole pipeline when `time` leads it', () => {
+    assert.deepStrictEqual(explain('cat f | grep x').examples.map((x) => x.title), ['Example (the whole pipeline)']);
+    assert.deepStrictEqual(explain('time cat f | grep x').examples.map((x) => x.title), ['Example for `grep x`']);
+  });
+  it('explains the keyword alone when nothing follows it in a pipeline', () => {
+    assert.strictEqual(explain('time | wc').items[0].children[0].kind, 'keyword');
+    const p = explain('time -p | wc').items[0].children[0];
+    assert.deepStrictEqual(p.children.map((c) => c.label), ['time', '-p']);
+  });
   it('leaves other things named time as commands', () => {
     assert.match(explain('/usr/bin/time ls').items[0].explanation, /Run the program or script at `\/usr\/bin\/time`/);
     assert.match(explain('"time" ls').items[0].explanation, /Run the expanded value as a command/);
     assert.match(explain('FOO=1 time ls').items[0].explanation, /Run the external command `time`/);
+  });
+});
+
+describe('input that is not finished', () => {
+  it('explains a pipeline with nothing after the pipe', () => {
+    const e = explain('echo a |');
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['echo a', '|', '']);
+  });
+  it('reads a `[ ]` without its `]` word by word', () => {
+    const e = explain('[ a = *"$a"*z');
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['a = *"$a"*z']);
+    assert.match(e.items[0].children[0].explanation, /^Condition: `a` vs `\*"\$a"\*z`/);
+  });
+  it('leaves out a redirection the parser could not read at all', () => {
+    const e = explain('[range(200000)] | map(. + 1)');
+    assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'redirect'), []);
+    assert.strictEqual(e.items[0].children[0].kind, 'test');
+  });
+  it('explains a construct without its closing keyword', () => {
+    for (const src of ['if true; then', 'for f in *.sh; do\n  echo $f', 'case $x in', '{ echo', 'x=(1', 'echo "abc', 'echo $(foo', 'select x in a; do']) {
+      for (let line = 0; line < src.split('\n').length; line++) assert.doesNotThrow(() => explain(src, line), src);
+    }
+    assert.strictEqual(explain('if true; then').items[0].label, 'if true; then');
   });
 });
 
@@ -227,7 +290,6 @@ describe('robustness', () => {
     const tree = parser.parse(src);
     const a = new Analyzer('ja');
     src.split('\n').forEach((_, i) => a.explainLine(tree, i));
-    tree.delete();
   });
 
   it('explains every line of the coverage script, in both languages, without throwing', async () => {
@@ -239,7 +301,6 @@ describe('robustness', () => {
       const a = new Analyzer(lang);
       src.split('\n').forEach((_, i) => a.explainLine(tree, i));
     }
-    tree.delete();
   });
 });
 
@@ -312,16 +373,11 @@ describe('globstar', () => {
 describe('extglob', () => {
   it('reads an extended glob in an argument as one word, keeping its text', () => {
     const tree = parser.parse('rm -- !(*.txt) x; ls *.@(jpg|png)');
-    try {
-      assert.deepStrictEqual(tree.rootNode.descendantsOfType('word').map((w) => w?.text), ['rm', '--', '!(*.txt)', 'x', 'ls', '*.@(jpg|png)']);
-      assert.ok(!tree.rootNode.hasError);
-    } finally {
-      tree.delete();
-    }
+    assert.deepStrictEqual(descendants(tree.root, ['word']).map((w) => w.text), ['rm', '--', '!(*.txt)', 'x', 'ls', '*.@(jpg|png)']);
+    assert.ok(!hasError(tree.root));
     for (const src of ['if !(false); then :; fi', 'echo $((x*(2+3)))']) {
       const t = parser.parse(src);
-      assert.ok(t.rootNode.descendantsOfType(['subshell', 'parenthesized_expression']).length, src);
-      t.delete();
+      assert.ok(descendants(t.root, ['subshell', 'parenthesized_expression']).length, src);
     }
   });
   it('explains it, with a pitfall until shopt -s extglob is seen', () => {
@@ -362,11 +418,7 @@ describe('pipelines and aliases', () => {
     assert.ok(!lost(explain('cat f | while read -r l; do echo "$l"; done')));
     assert.ok(!lost(explain('cat f | while read -r l; do n=$l; done\nn=0; echo "$n"')));
     const tree = parser.parse('cat f | while read -r l; do n=$l; done\necho "$n"');
-    try {
-      assert.ok(!new Analyzer('en').explainLine(tree, 0, 'zsh').notes.some((n) => /pipeline/.test(n)));
-    } finally {
-      tree.delete();
-    }
+    assert.ok(!new Analyzer('en').explainLine(tree, 0, 'zsh').notes.some((n) => /pipeline/.test(n)));
   });
   it('explains an alias defined in the script, with a pitfall without expand_aliases', () => {
     const e = explain('alias ll="ls -l"\nll /tmp', 1);
@@ -404,11 +456,7 @@ describe('syntax the other tests do not reach', () => {
 describe('pitfalls for other shells and settings', () => {
   const notes = (src: string, line: number, shell?: Parameters<Analyzer['explainLine']>[2]) => {
     const tree = parser.parse(src);
-    try {
-      return new Analyzer('en').explainLine(tree, line, shell).notes.join('\n');
-    } finally {
-      tree.delete();
-    }
+    return new Analyzer('en').explainLine(tree, line, shell).notes.join('\n');
   };
   it('in dash, suggests what dash has', () => {
     assert.match(notes('cat f | while read -r l; do n=$l; done\necho "$n"', 0, 'dash'), /Feed the loop with a redirection, `done < file`, or use a temporary file/);

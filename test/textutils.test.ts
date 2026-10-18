@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/parser';
+import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainGetopts } from '../src/embedded/getopts';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from '../src/embedded/textutils';
-import { createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
 describe('sort keys', () => {
   it('reads a single-field numeric reverse key', () => {
@@ -62,7 +62,7 @@ describe('in command lines', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createBashParser({
+    parser = await createTreeSitterParser({
       runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
       bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
     });
@@ -70,7 +70,6 @@ describe('in command lines', () => {
   const tokens = (src: string): Token[] => {
     const tree = parser.parse(src);
     const ex = new Analyzer('en').explainLine(tree, 0);
-    tree.delete();
     const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
     return all(ex.items);
   };

@@ -14,7 +14,8 @@ import { explainSortKey, explainTrSet, trSummary } from '../src/embedded/textuti
 import { GetoptUnsupported, runGetopt, sampleGetoptArgs } from '../src/examples/getopt';
 import { rerun } from '../src/examples/rerun';
 import { simulateRedirects } from '../src/idioms';
-import { BashParser, createBashParser } from '../src/parser';
+import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import type { BashParser } from '../src/syntax/tree';
 import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
 import { jqExample, runJq } from '../src/examples/jq';
@@ -46,7 +47,7 @@ import { examplesMarkdown, lineSegments, placeExamples, toPlainMarkdown } from '
 const root = path.join(__dirname, '..');
 let parser: BashParser;
 before(async () => {
-  parser = await createBashParser({
+  parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -54,11 +55,7 @@ before(async () => {
 
 const explain = (src: string, line = 0, lang: 'ja' | 'en' = 'en') => {
   const tree = parser.parse(src);
-  try {
-    return new Analyzer(lang).explainLine(tree, line);
-  } finally {
-    tree.delete();
-  }
+  return new Analyzer(lang).explainLine(tree, line);
 };
 const flat = (e: ReturnType<typeof explain>): string => {
   const all = (ts: typeof e.items): typeof e.items => ts.flatMap((t) => [t, ...all(t.children)]);
@@ -195,11 +192,7 @@ describe('branches no other test takes', () => {
   it('quick fixes: [[ ]] that [ ] cannot say', () => {
     const fix = (src: string) => {
       const tree = parser.parse(src);
-      try {
-        return dialectIssues(tree.rootNode, 'sh', 'en').map(fixFor).find(Boolean)?.edits[0].text;
-      } finally {
-        tree.delete();
-      }
+      return dialectIssues(tree, 'sh', 'en').map(fixFor).find(Boolean)?.edits[0].text;
     };
     for (const src of ['[[ a b ]]', '[[ a == ]]', '[[ ! -f a* ]]', '[[ -f a* ]]', '[[ $a -eq 1* ]]', '[[ $a == "a"b ]]', '[[ $a == x$b ]]', '[[ -f "a"$b ]]', '[[ -n a\\ b ]]', '[[ $x = a"$y" ]]', '[[ $x = *"$y"*z ]]']) {
       assert.strictEqual(fix(src), undefined, src);
@@ -464,11 +457,7 @@ describe('branches no other test takes', () => {
   it('dialects: features in case patterns and words, odd expansions, set without -o, zsh in Japanese', () => {
     const features = (src: string) => {
       const tree = parser.parse(src);
-      try {
-        return featuresOnLine(tree.rootNode, 0);
-      } finally {
-        tree.delete();
-      }
+      return featuresOnLine(tree.root, 0);
     };
     assert.deepStrictEqual(features('case $x in @(a|b)) :;; esac'), ['extglob']);
     assert.deepStrictEqual(features('echo ${}'), []);
@@ -476,12 +465,8 @@ describe('branches no other test takes', () => {
     assert.deepStrictEqual(features('echo $BASHPID'), ['bashVar']);
     assert.deepStrictEqual(features('set pipefail; set errtrace; set -o errtrace'), ['errtrace']);
     const tree = parser.parse('setopt extended_glob\nprint ${(j:,:)arr}');
-    try {
-      assert.ok(dialectIssues(tree.rootNode, 'zsh', 'ja').some((i) => i.kind === 'parse' && /zsh/.test(i.message)));
-      assert.ok(dialectNotes(tree.rootNode, 1, 'zsh', 'ja').length > 0);
-    } finally {
-      tree.delete();
-    }
+    assert.ok(dialectIssues(tree, 'zsh', 'ja').some((i) => i.kind === 'parse' && /zsh/.test(i.message)));
+    assert.ok(dialectNotes(tree, 1, 'zsh', 'ja').length > 0);
   });
 
   it('expansions: forms not parsed, examples not made, and the Japanese wording', () => {
@@ -515,11 +500,7 @@ describe('host files: branches no other test takes', () => {
   const explainHost = (kind: HostKind, text: string, line: number, lang: 'ja' | 'en' = 'en') => {
     const extracted = extractShell(kind, text);
     const tree = parser.parse(extracted.text);
-    try {
-      return explainHostedLine(new Analyzer(lang), tree, extracted, text.split('\n'), line, lang);
-    } finally {
-      tree.delete();
-    }
+    return explainHostedLine(new Analyzer(lang), tree, extracted, text.split('\n'), line, lang);
   };
 
   it('Dockerfile: odd exec forms, every SHELL, and scripts passed to each shell', () => {
@@ -665,11 +646,7 @@ describe('host files: branches no other test takes', () => {
     const issues = (kind: HostKind, text: string, lang: 'ja' | 'en' = 'en') => {
       const extracted = extractShell(kind, text);
       const tree = parser.parse(extracted.text);
-      try {
-        return hostIssues(tree, extracted, text.split('\n'), lang);
-      } finally {
-        tree.delete();
-      }
+      return hostIssues(tree, extracted, text.split('\n'), lang);
     };
     assert.deepStrictEqual(issues('markdown', '```bash\n[[ -f a ]]\n```'), []);
     const sh = issues('dockerfile', 'FROM alpine\nRUN echo -e "a\\tb" && [[ -f a &&\\\n  -f b ]] | cat', 'ja');
@@ -724,14 +701,10 @@ describe('jq runner: what it gives up on, and what newer jq releases do', () => 
 describe('the analyzer: branches no other test takes', () => {
   const both = (src: string, line = 0, shell?: Shell, opts: ExplainOptions = {}) => {
     const tree = parser.parse(src);
-    try {
-      const en = new Analyzer('en').explainLine(tree, line, shell, opts);
-      const ja = new Analyzer('ja').explainLine(tree, line, shell, opts);
-      const all = (ts: typeof en.items): typeof en.items => ts.flatMap((t) => [t, ...all(t.children)]);
-      return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
-    } finally {
-      tree.delete();
-    }
+    const en = new Analyzer('en').explainLine(tree, line, shell, opts);
+    const ja = new Analyzer('ja').explainLine(tree, line, shell, opts);
+    const all = (ts: typeof en.items): typeof en.items => ts.flatMap((t) => [t, ...all(t.children)]);
+    return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
   };
   const cases: [string, number?, Shell?, ExplainOptions?][] = [
     ['echo ${a[10]} ${a[11]} ${a[12]} ${a[13]} ${a[1]} ${a[2]} ${a[3]} ${a[-11]} ${a[-2]} ${s:10:1} ${s:11} ${s:21:1} ${s:22:1} ${s:23}'],
