@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-LOG_DIR="${1:-/var/log/myapp}"
-
-for f in "$LOG_DIR"/*.log; do
-  [[ -s $f ]] || continue
-  grep -n "ERROR" "$f" 2>/dev/null | tail -n 5 >> errors.txt
-done
-
-sed -E 's/^([a-z]+)=(.*)$/\2=\1/' config.ini
-jq -r '.items[] | select(.enabled) | .name' items.json
-echo "${file%.*}" "$(basename "$PWD")"
-find "$LOG_DIR" -name '*.log' -mtime +7 -exec rm -f {} \;
-tar -czf "backup-$(date +%F).tar.gz" -C "$LOG_DIR" .
 
 # --- Basics: redirections, expansions, control flow ---
+set -euo pipefail
 trap 'rm -rf "$workdir"' EXIT
 workdir=$(mktemp -d)
 make build > build.log 2>&1 || exit 1

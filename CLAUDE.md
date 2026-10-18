@@ -4,7 +4,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## Working tree
 
-- `test/fixtures/sample.sh` is a curated tour of every feature, in sections headed `# --- Title ---`; its opening (before the first header) is also the web page's first sample, and the whole file is its "all features" option. Keep every line explained correctly (`npx tsx test/dump.ts test/fixtures/sample.sh en`) and every example kind covered; a pipeline of 2+ stages before a line with `&&`/`||` makes tree-sitter-bash swallow the lines between, so check the dump after edits.
+- `test/fixtures/sample.sh` is a curated tour of every feature, in sections headed `# --- Title ---`; it is also the web page's shell sample. Keep every line explained correctly (`npx tsx test/dump.ts test/fixtures/sample.sh en`) and every example kind covered. A pipeline of 2+ stages before a line with `&&`/`||` makes tree-sitter-bash swallow the lines between (tree-sitter/tree-sitter-bash#347), unless a line ending in `;` or a compound statement comes between; check the dump after edits.
 - `test/fixtures/playground.sh` (gitignored, created from `sample.sh` by the F5 pre-launch task when missing) and `test/fixtures/hosts/*` are the maintainer's playground for trying explanations in VS Code; edits there are theirs.
 - Japanese strings in `src/`, and README.ja.md, follow [docs/japanese-style.md](docs/japanese-style.md); a test checks them.
 

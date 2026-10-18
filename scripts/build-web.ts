@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     external: ['fs', 'path', 'url', 'module'],
     define: {
       __VERSION__: JSON.stringify(version),
-      // The web page's samples come from the tour of every feature (web/samples.ts).
+      // The web page's shell sample is test/fixtures/sample.sh, the tour of every feature (web/samples.ts).
       __SAMPLE_SH__: JSON.stringify(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8')),
     },
     logLevel: 'warning',
