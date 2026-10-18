@@ -32,7 +32,10 @@ function shape(src: string): string {
     const walk = (n: Node): string => {
       if (n.type === 'binary_expression') {
         const op = n.childForFieldName('operator')?.text ?? '?';
-        return `(${walk(n.childForFieldName('left')!)} ${op} ${walk(n.childForFieldName('right')!)})`;
+        const rights = n.childrenForFieldName('right') as Node[];
+        // The several fields of a pattern right side are one operand: their source text.
+        const right = rights.length > 1 ? n.text.slice(rights[0].startIndex - n.startIndex, rights[rights.length - 1].endIndex - n.startIndex) : walk(rights[0]);
+        return `(${walk(n.childForFieldName('left')!)} ${op} ${right})`;
       }
       if (n.type === 'unary_expression' && n.childForFieldName('operator')?.text === '!') return `!${walk(n.namedChildren.find((c) => c.type !== 'test_operator' && c.id !== n.childForFieldName('operator')!.id)!)}`;
       if (n.type === 'ERROR' || n.isMissing) return 'ERROR';
@@ -101,6 +104,8 @@ describe('patched tree-sitter-bash grammar', () => {
     assert.equal(shape('[[ ! $x =~ re ]]'), 'program[test_command[!($x =~ re)]]');
     assert.equal(shape('[[ ! $x = y ]]'), 'program[test_command[!($x = y)]]');
     assert.equal(shape('[[ ! $x == y ]]'), 'program[test_command[!($x == y)]]');
+    assert.equal(shape('[[ ! $a -eq 1 ]]'), 'program[test_command[!($a -eq 1)]]');
+    assert.equal(shape('[[ ! $a < b ]]'), 'program[test_command[!($a < b)]]');
     assert.equal(shape('[ ! a = b ]'), 'program[test_command[!(a = b)]]');
     assert.equal(shape('[[ ! $x = y && -n z ]]'), 'program[test_command[(!($x = y) && -n z)]]');
     assert.equal(shape('[[ ! $x == y || ! $z = w ]]'), 'program[test_command[(!($x == y) || !($z = w))]]');
@@ -114,6 +119,42 @@ describe('patched tree-sitter-bash grammar', () => {
     assert.ok(e.examples.some((x) => x.kind === 'test'));
   });
 
+  it('reads a pattern of several parts on the right of = and ==', () => {
+    for (const op of ['=', '==', '!=']) {
+      for (const rhs of ['*"$y"*z', '*":$d:"*', '*"$ext"', '*"y"z*', '*$(c)*"a"*', '*"a"[ab]x', '@(*/|[.~])*']) {
+        const src = `[[ $x ${op} ${rhs} ]]`;
+        assert.ok(!/ERROR|MISSING/.test(sexp(src)), src);
+        assert.equal(shape(src), `program[test_command[($x ${op} ${rhs})]]`);
+        assert.equal(shape(`${src.slice(0, -3)} && -n z ]]`), `program[test_command[(($x ${op} ${rhs}) && -n z)]]`);
+      }
+    }
+    const e = explain('[[ ":$PATH:" = *":$d:"* ]]');
+    assert.match(find(e, '":$PATH:" = *":$d:"*').explanation, /^Condition: `":\$PATH:"` vs `\*":\$d:"\*` — /);
+    assert.match(find(explain('[[ $f = *"$ext" ]]'), '$f = *"$ext"').explanation, /vs `\*"\$ext"` — /);
+    assert.match(find(explain('[[ $x = *"$y"*z ]]'), '$x = *"$y"*z').explanation, /^Condition: `\$x` vs `\*"\$y"\*z` — strings are equal/);
+  });
+
+  it('reads a tilde on the right of = and ==', () => {
+    for (const rhs of ['~', '~/a*', '~user']) {
+      assert.equal(shape(`[[ $x = ${rhs} ]]`), `program[test_command[($x = ${rhs})]]`);
+      assert.equal(shape(`[[ $x == ${rhs} && -n z ]]`), `program[test_command[(($x == ${rhs}) && -n z)]]`);
+    }
+    assert.equal(shape('(( x = ~y ))'), 'program[compound_statement[(x = ~y)]]');
+  });
+
+  it('compares text with = and == in [ ], pattern or not', () => {
+    for (const src of ['[ "$x" = a* ]', '[ "$x" == a* ]', '[ "$x" = a ]']) {
+      const e = explain(src);
+      assert.ok(all(e.items).every((t) => t.kind !== 'pattern'), src);
+      assert.ok(e.examples.some((x) => x.kind === 'test'), src);
+    }
+    // The same plain word in [[ ]] with = and ==.
+    for (const op of ['=', '==']) {
+      assert.equal(find(explain(`[[ $x ${op} a ]]`), `$x ${op} a`).children.length, 1, op);
+      assert.equal(find(explain(`[[ $x ${op} a* ]]`), `$x ${op} a*`).children.length, 2, op);
+    }
+  });
+
   it('explains a glob match with = like the one with ==', () => {
     for (const op of ['=', '==']) {
       const e = explain(`[[ $x ${op} *.txt || $x ${op} *.sh ]]`);
@@ -124,12 +165,13 @@ describe('patched tree-sitter-bash grammar', () => {
 
   it('leaves assignments and the other test forms as they were', () => {
     assert.equal(shape('x=1'), 'program[x=1]');
-    assert.equal(shape('(( !a == b ))'), 'program[compound_statement[(!a == b)]]');
-    assert.equal(shape('case $x in a=b) ;; esac'), shape('case $x in a=b) ;; esac'));
+    assert.ok(!sexp('case $x in a=b) ;; esac').includes('MISSING'));
     assert.ok(!sexp('case $x in a=b) ;; esac').includes('ERROR'));
     assert.ok(!/ERROR|MISSING/.test(sexp('echo ${v:-$d}')));
     assert.match(sexp('echo ${v:-$d}'), /expansion \(variable_name\) \(simple_expansion/);
     assert.equal(shape('x+=1'), 'program[x+=1]');
+    // Guards for rules the patch does not touch: the arithmetic ones.
+    assert.equal(shape('(( !a == b ))'), 'program[compound_statement[(!a == b)]]');
     assert.equal(shape('(( x = y && z ))'), 'program[compound_statement[(x = (y && z))]]');
     assert.equal(shape('[[ ( $x =~ re ) ]]'), 'program[test_command[parenthesized_expression[($x =~ re)]]]');
     assert.equal(shape('[[ $x =~ ^(a|b)$ && -n $y ]]'), 'program[test_command[(($x =~ ^(a|b)$) && -n $y)]]');
