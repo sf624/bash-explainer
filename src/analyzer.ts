@@ -174,6 +174,15 @@ function isBlockLike(n: SyntaxNode): boolean {
   return false;
 }
 
+/** Whether the node is in double quotes (a string, or a here-document), not counting those outside a `$(…)` around it. */
+function inDoubleQuotes(n: SyntaxNode): boolean {
+  for (let p = n.parent; p; p = p.parent) {
+    if (p.type === 'string' || p.type === 'heredoc_body') return true;
+    if (p.type === 'command_substitution' || p.type === 'process_substitution') return false;
+  }
+  return false;
+}
+
 const same = (a: SyntaxNode | null | undefined, b: SyntaxNode | null | undefined) => !!a && a === b;
 /** The nodes of these types under `n` that overlap `line`; one that ends where the line starts does not. */
 const onLine = (n: SyntaxNode, types: string[], line: number): SyntaxNode[] =>
@@ -199,6 +208,8 @@ export class Analyzer {
   private functions = new Map<string, number>();
   /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
   private namerefs = new Map<string, { line: number; index: number }>();
+  /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
+  private integers = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
   /** Context of the current explainLine call. */
@@ -228,6 +239,14 @@ export class Analyzer {
       for (const c of d.namedChildren) {
         const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
         if (name && !this.namerefs.has(name)) this.namerefs.set(name, { line: d.startPosition.row, index: d.startIndex });
+      }
+    }
+    this.integers.clear();
+    for (const d of descendants(root, ['declaration_command'])) {
+      if (!d.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*i/.test(c.text))) continue;
+      for (const c of d.namedChildren) {
+        const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
+        if (name && !this.integers.has(name)) this.integers.set(name, d.startIndex);
       }
     }
     this.aliases.clear();
@@ -747,11 +766,26 @@ export class Analyzer {
       expl += this.s(`。ただし \`${nm}\` は行 ${refLine.line + 1} で nameref として宣言されているので、参照先の変数に代入される`,
         `. But \`${nm}\` is declared a nameref on line ${refLine.line + 1}, so this sets the variable it points to`);
     }
+    // An integer variable (`declare -i n`) takes the value of an arithmetic expression, and `+=` adds.
+    const intAt = this.integers.get(nm);
+    const integer = name.type !== 'subscript' && value && value.type !== 'array' && intAt !== undefined && intAt < n.startIndex;
+    let intValueText: string | undefined;
+    if (integer) {
+      const v = evalArith(value.text);
+      const calc = v === undefined || String(v) === value.text.trim() ? '' : ` = ${v}`;
+      intValueText = this.s(`算術式として計算される${calc}`, `Evaluated as an arithmetic expression${calc}`);
+      expl = op === '+='
+        ? this.s(`整数変数 \`${nm}\` に値を足す（\`-i\` が付いているので文字列の連結ではなく算術式の足し算になる。\`${nm}\` が 7 なら \`+=1\` で 8 であり、71 ではない）`,
+          `Add to the integer variable \`${nm}\` (it has \`-i\`, so this adds instead of appending text: if \`${nm}\` is 7, \`+=1\` makes 8, not 71)`)
+        : this.s(`整数変数 \`${nm}\` に値を代入する（\`-i\` が付いているので、値は算術式として計算される）`,
+          `Assign to the integer variable \`${nm}\` (it has \`-i\`, so the value is evaluated as arithmetic)`);
+    }
     if (name?.type === 'subscript') expl = this.s(`配列 \`${field(name, 'name')?.text}\` の要素 \`[${field(name, 'index')?.text}]\` に代入する`, `Assign to element \`[${field(name, 'index')?.text}]\` of array \`${field(name, 'name')?.text}\``);
     const children: Token[] = [];
     if (value) {
       for (const t of this.sub(value)) {
-        if (isPlainWord(value) && !this.arithNumber(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
+        if (intValueText && isPlainWord(value) && !this.arithNumber(value)) t.explanation = `\`${value.text}\`: ${intValueText}`;
+        else if (isPlainWord(value) && !this.arithNumber(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
         children.push(t);
       }
     }
@@ -2642,7 +2676,7 @@ export class Analyzer {
     const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
-    const cases = exampleFor(parsed, this.lang);
+    const cases = exampleFor(parsed, this.lang, inDoubleQuotes(n));
     // A `${…}` on one line is always on the line explained.
     if (cases) {
       this.examples.push({ kind: 'expansion',
