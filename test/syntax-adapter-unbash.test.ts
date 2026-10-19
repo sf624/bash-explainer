@@ -807,7 +807,9 @@ describe('unbash adapter: words, assignments and redirections', () => {
       '(program (case_statement "case" (word @value "x") "in" (case_item "(" (extglob_pattern @value "a") "|" (word @value "b") ")" (command (command_name @name (word ":"))) ";&") '
       + '(case_item (extglob_pattern @value "*") ")" ";;&") (case_item (word @value "c") ")" (command (command_name @name (word ":")))) "esac"))');
     assert.equal(o('case x in a|b*) :;; "q"|$v|?x) :;; esac').includes('(case_item (extglob_pattern @value "a") "|" (extglob_pattern @value "b*") ")"'), true);
-    assert.equal(o('case x in *"$a"*z) :;; esac').includes('(extglob_pattern @value "*") (string @value'), true);
+    assert.equal(o('case x in *"$a"*z) :;; esac').includes('(concatenation @value (extglob_pattern "*") (string'), true);
+    // The pieces of one pattern are one pattern; the `|` tells the patterns apart.
+    assert.equal(o(String.raw`case x in [\)]|"("*) :;; esac`).includes('(extglob_pattern @value "[\\\\)]") "|" (concatenation @value (string'), true);
     assert.equal(o('case x in esac').startsWith('(program (case_statement "case" (word @value "x") "in" "esac")'), true);
   });
   it('is about words that look like operators of [ and the like', () => {
