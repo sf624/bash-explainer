@@ -2,7 +2,7 @@
   "name": "bash-explainer",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "shun-fujioka",
   "license": "MIT",
   "icon": "media/icon.png",
