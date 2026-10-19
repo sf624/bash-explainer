@@ -156,9 +156,10 @@ export function explainArith(src: string, lang: Lang): { tokens: EmbeddedToken[]
     const kids = (...ns: Node[]): EmbeddedToken[] => ns.flatMap((x) => tokenOf(x) ?? []);
     switch (n.t) {
       case 'num': {
-        const lit = arithLiteral(text(n));
-        if (lit && lit.type === 'number' && lit.style === 'decimal') return undefined;
-        return { ...base, kind: 'number', children: [], explanation: lit ? describeArithLiteral(text(n), lit, lang) : s('数値', 'Number') };
+        // (Every number token is a constant that arithLiteral reads.)
+        const lit = arithLiteral(text(n))!;
+        if (lit.type === 'number' && lit.style === 'decimal') return undefined;
+        return { ...base, kind: 'number', children: [], explanation: describeArithLiteral(text(n), lit, lang) };
       }
       case 'var': {
         const m = /^(\$?\w+)\[(.*)\]$/s.exec(text(n));

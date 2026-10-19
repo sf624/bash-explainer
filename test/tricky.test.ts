@@ -554,6 +554,9 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.match(cond('[[ $x == *"$y"*z ]]'), /quoted parts of the right side are literal text, the rest is a pattern/);
       assert.match(cond('[[ $x == "$y" ]]'), /literal text/);
       assert.ok(!/literal/.test(cond('[[ $x == a* ]]')));
+      assert.match(cond('[[ $x != *"$y"*z ]]'), /strings differ \(the quoted parts/);
+      assert.match(tokens('[[ $x == *"$y"*z ]]', 'ja').find((t) => t.explanation.startsWith('条件'))!.explanation, /クォートされた部分は文字列そのもの、残りはパターン/);
+      assert.match(tokens('[[ $x != "$y" ]]', 'ja').find((t) => t.explanation.startsWith('条件'))!.explanation, /等しくない（右辺はクォートされている/);
       assert.strictEqual(bash('[[ x == "*" ]] || echo lit; [[ x == * ]] && echo glob; [[ x != "a*" ]] && echo ne; [[ ab == a\\* ]] || echo esc; y=b; [[ ab == *"$y" ]] && echo mix; [[ ab == a"*" ]] || echo mix2'), 'lit\nglob\nne\nesc\nmix\nmix2\n');
     });
 
@@ -574,6 +577,12 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       const decl = 'declare -A m=([a]=1 [b]=2 [c]=3)';
       assert.deepStrictEqual(examplesOf('declare -A m; echo ${#m[@]}').map((e) => e.sections[0].lines), [['3']]);
       assert.strictEqual(bash(`${decl}; echo -n \${#m[@]}`.replace('\\', '')), '3');
+      assert.deepStrictEqual(examplesOf('declare -A m; echo ${#m[*]}').map((e) => e.sections[0].lines), [['3']]);
+      assert.match(new Analyzer('ja').explainLine(parser.parse('declare -A m; echo ${#m[@]}'), 0).examples[0].sections[0].label, /declare -A m=\(\[a\]=1 \[b\]=2 \[c\]=3\)` のとき/);
+      assert.match(find('declare -A m; echo $(( m[k] ))', 'm[k]').explanation, /Element of associative array `m` with the key `k` \(a string\)/);
+      assert.match(find('declare -A m; echo $(( m[k] ))', 'm[k]', 'ja').explanation, /連想配列 `m` のキー `k`/);
+      assert.match(find('echo $(( m[k] ))', 'm[k]').explanation, /Element `\[k\]` of array `m`/);
+      assert.strictEqual(bash('declare -A m=([k]=5); echo $(( m[k] ))'), '5\n');
       assert.deepStrictEqual(examplesOf('declare -A m; echo ${!m[@]}'), []);
       assert.deepStrictEqual(examplesOf('declare -A m; echo ${m[@]} ${m[0]}'), []);
       assert.deepStrictEqual(examplesOf('i=(a b c); echo ${!i[@]}').map((e) => e.sections[0].lines), [['0 1 2']]);
@@ -597,6 +606,9 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.match(find(src, '{10..1..4}').explanation, /3 words: `10` `6` `2`$/);
       assert.match(find(src, '{-2..2..2}').explanation, /3 words: `-2` `0` `2`$/);
       assert.ok(!/pads/.test(find('echo {1..3}', '{1..3}').explanation));
+      // (Not a brace expansion: the word stays as it is.)
+      if (adapter === 'unbash') assert.match(find('echo {1..x}', '{1..x}').explanation, /^Word `\{1\.\.x\}`/);
+      assert.strictEqual(bash('echo {1..x}'), '{1..x}\n');
       assert.match(find('echo {1..03}', '{1..03}').explanation, /pads/);
       assert.match(find(src, '{01..10..3}', 'ja').explanation, /桁数をそろえて 0 で埋める/);
       assert.deepStrictEqual(examplesOf('echo {Z..a}')[0].sections[0].lines, ['Z', '[', "''", ']', '^', '_', '`', 'a']);
@@ -634,6 +646,11 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.strictEqual(explainArith('1, 2', 'en')!.tokens.length, 1);
       assert.strictEqual(explainArith('a[b[1]]+1', 'en')!.tokens.length, 1);
       assert.strictEqual(explainArith('a[1', 'en'), undefined);
+      // Text that is not an expression.
+      for (const bad of ['a @ b', '(1 2)', 'a?b c', '1 +', '+', '(', 'a b', '1=2', 'a++ ++', '1.5', ')']) assert.strictEqual(explainArith(bad, 'en'), undefined, bad);
+      assert.strictEqual(explainArith('a ? b : c ? d : e', 'en')!.tokens[0].kind, 'expansion');
+      assert.strictEqual(explainArith('2 ** 3 ** 2 + -1 * ~4 | 1 & 2 ^ 3 && 1 || !0', 'en')!.tokens.length, 1);
+      assert.strictEqual(explainArith('$x + $y[2]', 'en')!.tokens[0].children.length, 2);
     });
 
     it('computes the shift operators of constants as bash does', () => {

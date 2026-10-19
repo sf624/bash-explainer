@@ -485,7 +485,8 @@ export class Analyzer {
       case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
-      case 'brace_expression': return this.braceWord(n) ?? this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
+      // (`{1..x}` is not a brace expansion: it stays a word.)
+      case 'brace_expression': return this.braceWord(n) ?? this.word(n);
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
       case 'regex': return this.regexNode(n);
@@ -2574,8 +2575,7 @@ export class Analyzer {
   /** `[7]=z` in `( )`: an element with an index of its own. */
   private arrayElement(n: SyntaxNode): Token {
     const m = /^\[([^\]\s]*)\](\+?)=(.*)$/s.exec(n.text)!;
-    const owner = n.parent!.parent;
-    const assoc = owner?.type === 'variable_assignment' && this.isAssoc(field(owner, 'name')?.text ?? '', n.startIndex);
+    const assoc = this.isAssoc(field(n.parent!.parent!, 'name')!.text, n.startIndex);
     // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
     const v = evalArith(m[1]);
     const what = assoc ? this.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
