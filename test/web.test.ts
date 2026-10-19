@@ -103,6 +103,58 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('has a theme switch (Auto, Light, Dark) that is remembered and works without storage', async () => {
+    const LIGHT = 'rgb(255, 255, 255)';
+    const DARK = 'rgb(31, 31, 31)';
+    const bg = (p: Page | Frame) => p.evaluate('getComputedStyle(document.body).backgroundColor') as Promise<string>;
+    const ctx = await browser!.newContext({ colorScheme: 'dark' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await until('the panel', () => Promise.resolve(page.frames().find((f) => f.url().endsWith('/panel.html'))), (f) => !!f);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    // Auto follows the system, and the system changing.
+    assert.strictEqual(await bg(page), DARK);
+    await page.emulateMedia({ colorScheme: 'light' });
+    assert.strictEqual(await bg(page), LIGHT);
+    assert.strictEqual(await bg(panel()), LIGHT);
+    // Dark is dark whatever the system says, in the editor and the panel too, and survives a reload.
+    await page.locator('#theme').selectOption('dark');
+    assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), 'dark');
+    assert.strictEqual(await bg(page), DARK);
+    assert.strictEqual(await page.evaluate("getComputedStyle(document.querySelector('.cm-editor')).backgroundColor"), DARK);
+    await until('the dark panel', () => bg(panel()), (c) => c === DARK);
+    await page.reload();
+    assert.strictEqual(await page.locator('#theme').inputValue(), 'dark');
+    assert.strictEqual(await bg(page), DARK);
+    await until('the dark panel after the reload', async () => bg(panel()), (c) => c === DARK);
+    // Light, with the system dark.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.locator('#theme').selectOption('light');
+    assert.strictEqual(await bg(page), LIGHT);
+    await until('the light panel', () => bg(panel()), (c) => c === LIGHT);
+    // The Japanese label.
+    await page.locator('#lang').selectOption('ja');
+    assert.strictEqual(await page.locator('#theme-label').textContent(), 'テーマ');
+    // Auto again forgets the choice.
+    await page.locator('#theme').selectOption('auto');
+    assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), undefined);
+    assert.strictEqual(await bg(page), DARK);
+    await ctx.close();
+
+    // Storage that throws: the page works, as Auto, and the switch still changes the colours.
+    const blocked = await browser!.newContext({ colorScheme: 'dark' });
+    await blocked.addInitScript("Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } });");
+    const p2 = await blocked.newPage();
+    const errors: string[] = [];
+    p2.on('pageerror', (e) => errors.push(e.message));
+    await p2.goto(base);
+    assert.strictEqual(await bg(p2), DARK);
+    await p2.locator('#theme').selectOption('light');
+    assert.strictEqual(await bg(p2), LIGHT);
+    assert.deepStrictEqual(errors, []);
+    await blocked.close();
+  });
+
   it('explains, checks and shares scripts without any request to another site, and keeps working offline', async () => {
     const ctx = await browser!.newContext({ viewport: { width: 1400, height: 900 } });
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });

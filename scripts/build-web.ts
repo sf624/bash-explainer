@@ -32,6 +32,7 @@ const PANEL_HTML = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="theme-init.js"></script>
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="panel.css">
 <link rel="stylesheet" href="panel-page.css">
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
   copy('web/theme.css');
   copy('web/panel-page.css');
   copy('web/panel-host.js');
+  copy('web/theme-init.js');
   copy('media/panel.css');
   copy('media/panel.js');
   copy('media/icon.png');
