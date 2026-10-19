@@ -32,7 +32,11 @@ export function fuzzInputs(seed = 20250101): string[] {
   units.push(...snippets.map((s) => s.text));
   // Lines found by hand: a brace group as a loop body, array indexes, brace lists, nested backquotes, here-documents with more on their line.
   units.push('for ((;;)); { :; }', 'a+=([7]=z)', 'echo {1..3}{,}', 'echo `echo \\`echo x\\``', 'echo $"hi"', 'cat <<EOF | tr a-z A-Z && echo after\nhi\nEOF',
-    'cat <<EOF; rm -rf "$d"\nhi\nEOF', 'echo A && echo B > f', '! true | false', 'a | time b');
+    'cat <<EOF; rm -rf "$d"\nhi\nEOF', 'echo A && echo B > f', '! true | false', 'a | time b',
+    // printf as the first stage of a pipeline, with formats its simulation cannot show (raw bytes, bad escapes, bad numbers):
+    // the example is left out, nothing throws.
+    ...['\\231', '\\xff', '\\x', '\\u', '\\u00e9\\U0001F600', '\\uD800', '%q', '%d', '%', '%5', '%z', '%s %s %s'].flatMap((f) => [`printf '${f}' | cmp -s -n 1 - "$1"`, `printf '${f}' abc | tr a-z A-Z`, `printf '${f}' 1 2 | sort`]),
+    'seq 0 | sort', 'seq a | cat', 'seq 1 1000000 | wc -l');
   // The pattern or word of a `${…}` operator, cut inside an opener that is not closed, and a backslash at the very end:
   // unbash reads the opener to the end of the text, and may end a part past it.
   const ops = [':-', '#', '##', '%', '%%', '/', '//', '/#', '^', '^^', ',', ',,', '~', '~~', ':', '@'];
@@ -41,6 +45,8 @@ export function fuzzInputs(seed = 20250101): string[] {
   for (const op of ops) for (const o of openers) for (const t of tails) units.push(`echo \${s${op}${o}a${t}`);
   const out = new Set<string>();
   for (const u of units) {
+    // The whole text, too (the handwritten lines above are meant as they are).
+    out.add(u);
     // Prefixes: all of a short text, a sample of a long one.
     const cuts = u.length <= 10 ? Array.from({ length: u.length }, (_, i) => i) : Array.from({ length: 8 }, () => pick(u.length));
     for (const c of cuts) out.add(u.slice(0, c));

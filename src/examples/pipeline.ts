@@ -4,7 +4,7 @@ import { utf8Length } from './bytes';
 import { perlExample, perlOptions, runPerl } from './perlrun';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './regex';
 import { runSed, sedExample } from './sed';
-import { bashPrintf } from './shellwords';
+import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { FILTERS, parseOptions, runSeq, sampleInput, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
 
@@ -319,7 +319,8 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
     }
     return { input: src ? undefined : input, steps };
   } catch (e) {
-    if (e instanceof Unsupported) return undefined;
+    // (`printf '\231' | …`: bashPrintf has no raw bytes to show; it throws its own kind.)
+    if (e instanceof Unsupported || e instanceof ShellWordsUnsupported) return undefined;
     // A bug in a runner: let it show.
     /* c8 ignore next */
     throw e;
