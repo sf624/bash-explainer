@@ -1041,3 +1041,135 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
     });
   });
 }
+
+// The thirteen lines of the fifth round.
+const ROUND5 = [
+  'HOME=/h; echo ~ ~/x "~" x~ a=~ --o=~ b=x:~/y',
+  'shopt -s expand_aliases; alias e=\'echo A\'; e 2>/dev/null || echo noalias; eval e',
+  'f() for i; do echo -n "$i "; done; f a b; g() [[ $1 == y ]]; g y && echo yes',
+  'false || echo a && echo b; true || echo c && echo d; ! true || echo e',
+  's=abcde; echo ${s:-2} ${s: -2} ${s:(-2)} ${s:1-3} ${s:1:-1} ${s::2}',
+  '{ echo 1 2>/dev/null 3; echo a2>/dev/null b; echo c 2>&1 d; } 2>&1',
+  'set -- a b c; echo ${@/#/-} "${@/%/,}" ${*/b} ${#@} ${#*}',
+  'a=([2]=c [0]=a b); a[1]+=x; echo ${a[@]} ${#a[@]}; z[1]=q; echo "[$z]" ${#z[@]}',
+  'printf \'%s-%s;\' a b c; printf \'<%s>\'; echo; printf \'%d %s|\' 1 x 2; echo',
+  '{ echo }; }; echo { }; [ ] || echo empty; echo ]] [[ fi',
+  '(exit 3) & wait $!; echo $?; true & false; echo $?',
+  'x=\'$(echo no)\'; echo $x $(echo \'$x\'); eval echo $x; { echo e >&2; } |& tr e E',
+  'IFS=; set -- a b; echo "$*" "${*}x" $((x=2, x*=3, x---1)) $x; unset IFS; echo "$*"',
+];
+// What tree-sitter-bash reads wrongly: `f() for`, the word after a redirection, `echo { }` and `]] [[`.
+const ROUND5_TS_BROKEN = [2, 5, 9];
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 5, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND5_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND5.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    const outer = (script: string, label: string, lang: 'ja' | 'en' = 'en') => tokensAt(script, 0, lang).find((t) => t.label === label)!;
+    it('explains tilde expansion in ordinary arguments, and only there', () => {
+      const src = ROUND5[0];
+      const kidOf = (label: string, lang: 'ja' | 'en' = 'en') => tokensAt(src, 0, lang).find((t) => t.label === label)!.children.map((c) => c.explanation);
+      assert.deepStrictEqual(kidOf('~'), ['Tilde expansion: `~` becomes the home directory (`$HOME`)']);
+      assert.deepStrictEqual(kidOf('~/x'), ['Tilde expansion: `~` becomes the home directory (`$HOME`). The rest, `/x`, stays as it is']);
+      assert.deepStrictEqual(kidOf('~', 'ja'), ['チルダ展開: `~` はホームディレクトリ（`$HOME`）に置き換わる']);
+      // Not expanded: quoted, not at the start, after `--o=`, or after `=` / `:` in an ordinary argument.
+      for (const label of ['x~', '--o=~']) {
+        assert.ok(!findAt(src, 0, label).children.some((c) => c.kind === 'expansion'), label);
+        assert.ok(!/Tilde/.test(findAt(src, 0, label).explanation), label);
+      }
+      assert.deepStrictEqual(tokensAt(src, 0).find((t) => t.label === '"~"')!.children.map((c) => c.kind), ['string']);
+      assert.strictEqual(bash('HOME=/h; echo ~ ~/x "~" x~ --o=~'), '/h /h/x ~ x~ --o=~\n');
+      // Other commands, other forms.
+      assert.strictEqual(outer('ls ~/x', '~/x').children[0].kind, 'expansion');
+      assert.strictEqual(outer('cd ~', '~').children[0].kind, 'expansion');
+      assert.match(outer('cd ~+/x', '~+/x').children[0].explanation, /^Tilde expansion: `~\+` becomes the current directory \(`\$PWD`\)\. The rest, `\/x`/);
+      assert.match(outer('cd ~-', '~-').children[0].explanation, /previous directory \(`\$OLDPWD`\)/);
+      assert.match(outer('ls ~root/x', '~root/x').children[0].explanation, /`~root` becomes the home directory of the user `root` \(unchanged if there is no such user\)/);
+      assert.match(outer('ls ~root/x', '~root/x', 'ja').children[0].explanation, /`~root` はユーザー `root` のホームディレクトリ/);
+      assert.strictEqual(bash('cd /; cd /tmp; echo ~+ ~- ~root/x ~nosuch/x | sed "s|/tmp|T|"'), 'T / /root/x ~nosuch/x\n');
+      assert.strictEqual(bash('HOME=/h; echo ~foo~ ~ x'), '~foo~ /h x\n');
+      for (const s of ['ls "~/x"', "ls '~/x'", 'ls x~/y', 'ls --o=~/x', 'ls \\~/x']) {
+        assert.ok(!tokens(s).some((t) => t.kind === 'expansion' && /Tilde/.test(t.explanation)), s);
+      }
+      assert.strictEqual(bash("HOME=/h; echo '~/x' \\~/x x~/y"), '~/x ~/x x~/y\n');
+    });
+
+    it('uses an alias only on the lines read after the alias ran', () => {
+      const src = ROUND5[1];
+      const e = findAt(src, 0, 'e 2>/dev/null');
+      assert.strictEqual(e.kind, 'command');
+      assert.match(e.explanation, /^Run the external command `e`/);
+      assert.match(notesAt(src).join('\n'), /^ℹ `e` is defined as an alias on line 1, but bash reads a whole line \(and a whole compound command or function body\) before running it, so an alias defined on the same line is not in effect yet\. It is not an alias here: without a command named `e`, this is "command not found" \(a string given to `eval` is read again when it runs, so it can use the alias\)$/m);
+      assert.match(new Analyzer('ja').explainLine(parser.parse(src), 0).notes.join('\n'), /同じ行で定義したエイリアスはまだ使えません/);
+      assert.strictEqual(bash(src), 'noalias\nA\n');
+      // On a later line it applies.
+      const later = 'shopt -s expand_aliases\nalias e=\'echo A\'\ne x\nalias e=\'echo B\'\ne y';
+      assert.match(findAt(later, 2, 'e x').explanation, /^The alias `e` defined on line 2: replaced by `echo A`$/);
+      assert.match(findAt(later, 4, 'e y').explanation, /^The alias `e` defined on line 4: replaced by `echo B`$/);
+      assert.strictEqual(bash(later), 'A x\nB y\n');
+      // A body read before the alias ran does not see it; one read after does.
+      const body = 'shopt -s expand_aliases\nalias g=\'echo G\'\nf() { g; h; }\nalias h=\'echo H\'\nf\n{\nalias m=\'echo M\'\nm\n}\nif true; then alias k=\'echo K\'; k; fi\nk';
+      assert.match(findAt(body, 2, 'g').explanation, /^The alias `g` defined on line 2/);
+      assert.match(findAt(body, 2, 'h').explanation, /^Run the external command `h`/);
+      assert.match(notesAt(body, 2).join('\n'), /`h` is defined as an alias on line 4, but this is read before that/);
+      assert.match(findAt(body, 7, 'm').explanation, /^Run the external command `m`/);
+      assert.match(findAt(body, 9, 'k').explanation, /^Run the external command `k`/);
+      assert.match(findAt(body, 10, 'k').explanation, /^The alias `k` defined on line 10/);
+      assert.strictEqual(bash(`exec 2>&1\n${body}`).replace(/^.*line \d+: /gm, ''), 'G\nh: command not found\nm: command not found\nk: command not found\nK\n');
+      // A use before the definition is no alias either.
+      const early = 'e a\nalias e=\'echo A\'';
+      assert.match(findAt(early, 0, 'e a').explanation, /^Run the external command `e`/);
+      assert.match(notesAt(early).join('\n'), /this is read before that, and an alias works only on what is read after it ran/);
+    });
+
+    it('explains an element of an array that is appended to', () => {
+      const src = ROUND5[7];
+      const el = (s: string, label: string, lang: 'ja' | 'en' = 'en') => findAt(s, 0, label, lang).explanation;
+      assert.strictEqual(el(src, 'a[1]+=x'), 'Append to element `[1]` of array `a` (text is appended to the existing value: `b` plus `x` is `bx`)');
+      assert.strictEqual(el(src, 'a[1]+=x', 'ja'), '配列 `a` の要素 `[1]` に値を追記する（文字列の連結。`b` に `x` を足すと `bx`）');
+      assert.strictEqual(el('a[1]=x', 'a[1]=x'), 'Assign to element `[1]` of array `a`');
+      assert.match(el('a[1+1]+=x', 'a[1+1]+=x'), /^Append to element `\[1\+1\]` of array `a` \(an arithmetic expression: 2\) \(text is appended/);
+      assert.strictEqual(el('declare -A m; m[k]+=x', 'm[k]+=x'), 'Append to the element of associative array `m` with the key `k` (a string, not evaluated) (text is appended to the existing value)');
+      assert.strictEqual(el('declare -A m; m[k]=x', 'm[k]=x'), 'Assign to the element of associative array `m` with the key `k` (a string, not evaluated)');
+      assert.match(el('declare -A m; m[k]+=x', 'm[k]+=x', 'ja'), /^連想配列 `m` のキー `k`（文字列で、計算はされない）の要素に値を追記する/);
+      // With -i, `+=` on an element adds.
+      assert.match(el('declare -ai c=(1 2); c[0]+=5', 'c[0]+=5'), /^Add to element `\[0\]` of array `c` \(it has `-i`, so this adds numbers: 7 plus `\+=1` is 8\)$/);
+      assert.match(el('declare -i c; c[0]+=5', 'c[0]+=5', 'ja'), /^配列 `c` の要素 `\[0\]` に値を足す（`-i` が付いているので算術式の足し算/);
+      assert.match(el('declare -Ai m; m[k]+=5', 'm[k]+=5'), /^Add to the element of associative array `m`.*adds numbers/);
+      assert.match(el('declare -ai c; c[0]=5', 'c[0]=5'), /^Assign to element/);
+      assert.strictEqual(bash('declare -ai c=(1 2); c[0]+=5; echo ${c[@]}; declare -Ai m=([k]=2); m[k]+=3; echo ${m[k]}'), '6 2\n5\n');
+      assert.strictEqual(bash('declare -A m=([k]=a); m[k]+=b; echo ${m[k]}'), 'ab\n');
+      // Values, as bash gives them.
+      assert.strictEqual(bash(src), 'a bx c 3\n[] 1\n');
+      assert.strictEqual(bash('a=(x); a+=(y z); echo ${a[@]}'), 'x y z\n');
+      assert.match(el('a=(x); a+=(y z)', 'a+=(y z)'), /^Append to variable `a` \(adds elements for arrays\)$/);
+    });
+
+    it('does not claim more than bash does for the other lines', () => {
+      if (unbash) {
+        assert.strictEqual(bash(ROUND5[2]), 'a b yes\n');
+        assert.strictEqual(bash(ROUND5[5]), '1 3\nc d\n');
+      }
+      assert.strictEqual(bash(ROUND5[3]), 'a\nb\nd\ne\n');
+      assert.strictEqual(bash(ROUND5[4]), 'abcde de de de bcd ab\n');
+      assert.strictEqual(bash(ROUND5[6]), '-a -b -c a, b, c, a c 3 3\n');
+      assert.strictEqual(bash(ROUND5[8]), 'a-b;c-;<>\n1 x|2 |\n');
+      assert.strictEqual(bash(ROUND5[10]), '3\n1\n');
+      assert.strictEqual(bash(ROUND5[11]), '$(echo no) $x\nno\nE\n');
+      assert.strictEqual(bash(ROUND5[12]), 'ab abx 5 5\na b\n');
+    });
+  });
+}
