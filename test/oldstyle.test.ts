@@ -171,11 +171,11 @@ describe('old-style options: ps', () => {
 
   it('the letters ps accepts all have a description (and ps rejects the unknown N, C, y)', function () {
     if (!have('ps')) return this.skip();
-    for (const l of 'axujflvsXZwhrTgmHncSL') {
-      const r = spawnSync('ps', [l], { env: { ...process.env, COLUMNS: '200' } });
-      assert.strictEqual(r.status === 0 || r.stdout.length > 0, true, l);
-    }
-    for (const l of 'NCy') assert.strictEqual(spawnSync('ps', [l]).status !== 0, true, l);
+    // ps rejects an unknown letter with "error: unsupported option". An accepted one may still print
+    // nothing and fail: on CI there is no terminal, so `ps h` finds no process to list.
+    const rejected = (l: string) => /unsupported option/.test(spawnSync('ps', [l], { env: { ...process.env, COLUMNS: '200' } }).stderr.toString());
+    for (const l of 'axujflvsXZwhrTgmHncSL') assert.strictEqual(rejected(l), false, l);
+    for (const l of 'NCy') assert.strictEqual(rejected(l), true, l);
     for (const l of 'NCy') assert.strictEqual(top(`ps ${l}`)[0].explanation, `Word \`${l}\``);
   });
 });
