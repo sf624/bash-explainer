@@ -10,7 +10,7 @@ import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { applyExtras } from './extras';
-import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
+import { CommandDoc, cmd, lastIsDestination, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
 
@@ -318,7 +318,7 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
-  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'] }),
+  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], positionalBy: [{ count: 1, texts: [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')] }] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
@@ -418,13 +418,13 @@ export const core: Record<string, CommandDoc> = {
     ['-p', '権限・所有者・日時を保持', 'preserve mode, ownership, timestamps'],
     ['-v|--verbose', '処理内容を表示', 'explain what is being done'],
     ['-u|--update', 'コピー元の方が新しい場合のみコピー', 'copy only when source is newer'],
-  ], { positional: [pos('コピー元', 'source'), pos('コピー元またはコピー先（最後の引数がコピー先）', 'source or destination (last argument is the destination)')] }),
+  ], { positional: [pos('コピー元', 'source')], positionalBy: lastIsDestination(pos('コピー元', 'source'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory')) }),
   mv: cmd('ファイルを移動・名前変更する', 'Move or rename files', [
     ['-f|--force', '確認せず上書き', 'do not prompt before overwriting'],
     ['-i|--interactive', '上書き前に確認する', 'prompt before overwrite'],
     ['-n|--no-clobber', '既存ファイルを上書きしない', 'do not overwrite'],
     ['-v|--verbose', '処理内容を表示', 'explain what is being done'],
-  ], { positional: [pos('移動元', 'source'), pos('移動元または移動先（最後の引数が移動先）', 'source or destination (last argument is the destination)')] }),
+  ], { positional: [pos('移動元', 'source')], positionalBy: lastIsDestination(pos('移動元', 'source'), pos('移動先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('移動先のディレクトリ', 'destination directory')) }),
   rm: cmd('ファイルを削除する（ゴミ箱には入らない）', 'Remove files (no trash; permanent)', [
     ['-r|-R|--recursive', 'ディレクトリを中身ごと再帰的に削除', 'remove directories and their contents'],
     ['-f|--force', '存在しないファイルを無視し、確認もしない', 'ignore nonexistent files, never prompt'],
@@ -452,8 +452,15 @@ export const core: Record<string, CommandDoc> = {
     ['-s|--symbolic', 'シンボリックリンクを作成（なければハードリンク）', 'make a symbolic link (otherwise hard link)'],
     ['-f|--force', '既存のリンク先ファイルを置き換える', 'remove existing destination files'],
     ['-n|--no-dereference', 'リンク先がディレクトリへのシンボリックリンクでもその中に作らない', 'treat a symlinked destination directory as a file'],
-  ], { positional: [pos('リンク先（実体）', 'target'), pos('作るリンクの名前', 'link name')] }),
-  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')] }),
+  ], {
+    positional: [pos('リンク先（実体）', 'target')],
+    positionalBy: [
+      { count: 1, texts: [pos('リンク先（実体）。リンクは同じ名前でカレントディレクトリに作る', 'target (the link is made in the current directory, with the same name)')] },
+      { count: 2, unless: '-t|--target-directory', texts: [pos('リンク先（実体）', 'target'), pos('作るリンクの名前（既存のディレクトリならその中に作る）', 'link name (or an existing directory to make the link in)')] },
+      { count: 3, orMore: true, unless: '-t|--target-directory', texts: [pos('リンク先（実体）', 'target')], last: pos('リンクを作るディレクトリ', 'directory to make the links in') },
+    ],
+  }),
+  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path')], positionalBy: [{ count: 2, unless: '-a|--multiple|-s|--suffix', texts: [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')] }] }),
   dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', [], { positional: [pos('パス', 'path')] }),
   realpath: cmd('シンボリックリンクや `..` を解決した絶対パスを表示する', 'Print the resolved absolute path', [], { positional: [pos('パス', 'path')] }),
   readlink: cmd('シンボリックリンクのリンク先を表示する', 'Print the target of a symbolic link', [
@@ -485,7 +492,7 @@ export const core: Record<string, CommandDoc> = {
     ['-r', 'ディレクトリを再帰的にコピー', 'copy recursively'],
     ['-P', 'ポート番号', 'port', 'arg'],
     ['-i', '秘密鍵ファイル', 'identity file', 'arg'],
-  ]),
+  ], { positional: [pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)')], positionalBy: lastIsDestination(pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)'), pos('コピー先（`ホスト:パス` も可）', 'destination (or `host:path`)'), pos('コピー先のディレクトリ（`ホスト:パス` も可）', 'destination directory (or `host:path`)')) }),
   rsync: cmd('ファイルを差分転送で同期する（ローカル・リモート間）', 'Sync files efficiently (local or remote)', [
     ['-a|--archive', '属性を保ったまま再帰的に同期（`-rlptgoD` と同じ）', 'archive mode (recursive, preserve attributes)'],
     ['-v|--verbose', '詳細を表示', 'verbose'],
@@ -498,7 +505,7 @@ export const core: Record<string, CommandDoc> = {
     ['-h|--human-readable', 'サイズを読みやすい単位で表示', 'human-readable sizes'],
     ['-r|--recursive', 'ディレクトリを再帰的に', 'recurse into directories'],
     ['--progress', '進捗を表示', 'show progress'],
-  ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)'), pos('転送先', 'destination')] }),
+  ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], positionalBy: [{ count: 1, texts: [pos('一覧を表示するファイルまたはディレクトリ（転送先がないので転送はしない）', 'file or directory to list (with no destination, nothing is copied)')] }, { count: 2, orMore: true, texts: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], last: pos('転送先', 'destination') }] }),
   sudo: cmd('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
     ['-u|--user', '実行するユーザー', 'run as this user', 'arg'],
     ['-E|--preserve-env', '現在の環境変数を引き継ぐ', 'preserve the environment'],
@@ -601,7 +608,14 @@ export const core: Record<string, CommandDoc> = {
   seq: cmd('連続した数値を1行ずつ出力する', 'Print a sequence of numbers', [
     ['-w|--equal-width', '桁数をゼロ埋めで揃える', 'pad with leading zeros'],
     ['-s|--separator', '区切り文字', 'separator', 'arg'],
-  ], { positional: [pos('開始値（引数が1つなら終了値）', 'first (or last, if only one argument)'), pos('増分または終了値', 'increment or last')] }),
+  ], {
+    positional: [pos('開始値・増分・終了値', 'first, increment or last')],
+    positionalBy: [
+      { count: 1, texts: [pos('終了値（開始値は 1）', 'last (counting from 1)')] },
+      { count: 2, texts: [pos('開始値', 'first'), pos('終了値', 'last')] },
+      { count: 3, orMore: true, texts: [pos('開始値', 'first'), pos('増分', 'increment'), pos('終了値', 'last')] },
+    ],
+  }),
   mktemp: cmd('一意な名前の一時ファイルを作り、そのパスを表示する', 'Create a unique temporary file and print its path', [
     ['-d|--directory', 'ファイルではなく一時ディレクトリを作る', 'create a directory'],
     ['-t', 'TMPDIR 以下にテンプレートで作る', 'use TMPDIR with a template'],
@@ -625,7 +639,10 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--directory', 'ディレクトリを作成', 'create directories'],
     ['-D', 'コピー先の親ディレクトリも作る', 'create the leading directories of the destination'],
     ['-o|--owner', '所有者', 'owner', 'arg'], ['-g|--group', 'グループ', 'group', 'arg'],
-  ]),
+  ], {
+    positional: [pos('コピーするファイル（`-d` ではディレクトリ）', 'file to copy (a directory to create with `-d`)')],
+    positionalBy: lastIsDestination(pos('コピーするファイル', 'file to copy'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory'), '-t|--target-directory|-d|--directory'),
+  }),
   tac: cmd('ファイルを末尾の行から逆順に表示する', 'Print files in reverse line order'),
   rev: cmd('各行の文字を左右反転する', 'Reverse characters of each line'),
   nl: cmd('行番号を付けて表示する', 'Number lines of files'),

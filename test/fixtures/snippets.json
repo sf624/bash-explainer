@@ -350,6 +350,7 @@
  "coproc W { cat; }",
  "coproc cat",
  "cp $src \"$dst\"",
+ "cp *.txt d/",
  "crlf",
  "cut -d, -f2-4 f",
  "cut -f x f",

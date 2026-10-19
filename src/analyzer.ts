@@ -7,7 +7,7 @@ import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { BundleDoc, CommandDoc, OptDoc } from './dict/types';
+import { BundleDoc, CommandDoc, OptDoc, PositionalBy } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
@@ -1318,6 +1318,8 @@ export class Analyzer {
     // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
     let posIndex = fillsPositional(doc, args) ? 1 : 0;
     let endOfOpts = false;
+    // The positional arguments, to describe again once their number is known (`positionalBy`).
+    const operands: { index: number; token: Token; desc: string }[] = [];
     const savedCtx = this.argCtx;
     this.argCtx = { cmd: cmdName, args };
     try {
@@ -1361,13 +1363,30 @@ export class Analyzer {
       if (cmdName === 'trap' && posIndex === 0 && desc) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
       const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : doc?.positionalLang?.[posIndex];
+      const token = this.positional(a, desc, lang);
+      if (desc && doc?.positionalBy && !isFn) operands.push({ index: posIndex, token, desc });
       posIndex++;
-      out.push(this.positional(a, desc, lang));
+      out.push(token);
     }
     } finally {
       this.argCtx = savedCtx;
     }
+    if (doc?.positionalBy) this.describeByCount(doc.positionalBy, args, operands, posIndex);
     return out;
+  }
+
+  /** Describe the positional arguments by how many there are (`seq 5` has a last value, `seq 1 5` a first and a last). */
+  private describeByCount(rules: PositionalBy[], args: SyntaxNode[], operands: { index: number; token: Token; desc: string }[], count: number): void {
+    const words = args.map((a) => a.text);
+    const end = words.indexOf('--');
+    const given = (names: string): boolean => (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
+      n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
+    const rule = rules.find((r) => (r.orMore ? count >= r.count : count === r.count) && !(r.unless && given(r.unless)));
+    if (!rule) return;
+    for (const { index, token, desc } of operands) {
+      const now = this.t(index === count - 1 && rule.last ? rule.last : rule.texts[Math.min(index, rule.texts.length - 1)]);
+      token.explanation = now + token.explanation.slice(desc.length);
+    }
   }
 
   /**

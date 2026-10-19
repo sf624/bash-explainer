@@ -408,7 +408,7 @@ export const system: Record<string, CommandDoc> = {
     ['-t|--types', 'ファイルシステムの種類', 'file system type', 'arg'], ['-o|--options', 'マウントオプション（`ro`、`bind`…）', 'mount options (`ro`, `bind`…)', 'arg'],
     ['--bind', 'ディレクトリを別の場所にも見せる', 'make a directory visible elsewhere'], ['--make-rshared', '配下のマウントを共有にする（コンテナ向け）', 'make mounts below shared (for containers)'],
     ['-a|--all', '`/etc/fstab` のすべてをマウントする', 'mount everything in `/etc/fstab`'], ['-r|--read-only', '読み取り専用', 'read-only'],
-  ], { positional: [pos('デバイス', 'device'), pos('マウント先のディレクトリ', 'directory to mount on')] }),
+  ], { positional: [pos('デバイス', 'device'), pos('マウント先のディレクトリ', 'directory to mount on')], positionalBy: [{ count: 1, unless: '-a|--all', texts: [pos('デバイスまたはマウント先（もう一方は `/etc/fstab` から探す）', 'device or mount point (the other is looked up in `/etc/fstab`)')] }] }),
   mountpoint: cmd('ディレクトリがマウントポイントかを調べる', 'Check whether a directory is a mount point', [
     ['-q|--quiet', '何も表示せず終了ステータスで返す', 'print nothing; report via the exit status'],
   ], { positional: [pos('ディレクトリ', 'directory')] }),
@@ -488,7 +488,7 @@ export const system: Record<string, CommandDoc> = {
   sha512sum: checksum('SHA-512'),
   cmp: cmd('2つのファイルをバイト単位で比べる', 'Compare two files byte by byte', [
     ['-s|--silent|--quiet', '何も表示せず終了ステータスで返す（同じなら 0）', 'print nothing; exit 0 if the same'], ['-l|--verbose', '違うバイトをすべて表示', 'list every differing byte'], ['-n|--bytes', '先頭からこのバイト数だけ比べる', 'compare at most this many bytes', 'arg'],
-  ], { positional: [files] }),
+  ], { positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')] }),
   xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
     ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
     ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', 'このバイト数だけ', 'stop after this many bytes', 'arg'], ['-s|-seek', 'この位置から', 'start at this offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
