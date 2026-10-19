@@ -295,6 +295,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
     result,
     setup: positional ? undefined : `${name}=${sq(val)}`,
   });
+  // `coproc` fills these in with descriptor numbers and a process ID: no example holds on every run.
+  if (name === 'COPROC' || name === 'COPROC_PID') return undefined;
   const shellSet = Object.hasOwn(SET_BY_SHELL, name) ? SET_BY_SHELL[name] : undefined;
   const values = shellSet?.values ?? ['a', 'b', 'c'];
   const array = (result: string): ExpansionCase => shellSet

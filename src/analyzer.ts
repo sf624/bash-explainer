@@ -45,7 +45,7 @@ import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithW
 import { staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
-  binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
+  binaryTestOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 
@@ -503,6 +503,7 @@ export class Analyzer {
       case 'if_statement': return this.block(n, 'keyword', this.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + this.lineRef(n));
       case 'elif_clause': return this.block(n, 'keyword', this.t(keywords.elif));
       case 'else_clause': return this.block(n, 'keyword', this.t(keywords.else));
+      case 'coproc_statement': return this.coprocStatement(n);
       case 'case_statement': return this.caseStatement(n);
       case 'case_item': return this.caseItem(n);
       case 'error': return this.hashExpansionError(n) ?? this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
@@ -539,6 +540,17 @@ export class Analyzer {
 
   private block(n: SyntaxNode, kind: Kind, explanation: string): Token {
     return this.tok(n, kind, explanation, this.ordered(n));
+  }
+
+  /** `coproc [NAME] command`: runs the command in the background, with two pipes to it kept in an array. */
+  private coprocStatement(n: SyntaxNode): Token {
+    const nameNode = field(n, 'name');
+    const arr = nameNode?.text ?? 'COPROC';
+    const nameTok = nameNode ? [this.tok(nameNode, 'variable', this.s(`コプロセスの名前: 配列 \`${arr}\` と変数 \`${arr}_PID\` の名前になる`, `Name of the co-process: names the array \`${arr}\` and the variable \`${arr}_PID\``))] : [];
+    return this.tok(n, 'keyword', this.s(
+      `\`coproc\`: コマンドをバックグラウンドのコプロセスとして実行し、その出力と入力につながるファイルディスクリプタを配列 \`${arr}\` に入れる（\`\${${arr}[0]}\` はコプロセスの出力を読む側、\`\${${arr}[1]}\` はその入力に書く側）。プロセス ID は \`${arr}_PID\`${this.lineRef(n)}`,
+      `\`coproc\`: runs the command in the background as a co-process and puts the descriptors connected to its output and input in the array \`${arr}\` (\`\${${arr}[0]}\` reads its output, \`\${${arr}[1]}\` writes to its input). Its process ID is \`${arr}_PID\`${this.lineRef(n)}`,
+    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode))]));
   }
 
   private functionDef(n: SyntaxNode): Token {
@@ -709,6 +721,8 @@ export class Analyzer {
     let expl = this.t(redirects[op](fd, dest));
     const special = specialDestinations[dest];
     if (special) expl += this.s('。', '. ') + this.t(special);
+    // `>&$fd` and `<&$fd`: the word is expanded first, and what it gives decides whether this duplicates a descriptor.
+    if ((op === '>&' || op === '<&') && /[$`]/.test(dest)) expl = this.fdExpansion(op, fd, dest);
     if (fd === '2' && op === '>&' && dest === '1') {
       expl = this.s('標準エラー出力(fd 2)を標準出力(fd 1)と同じ出力先に向ける（エラーも一緒に出力・パイプする定番の書き方）',
         'Send stderr (fd 2) to wherever stdout (fd 1) goes (the classic way to capture errors too)');
@@ -719,6 +733,24 @@ export class Analyzer {
     }
     const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => this.sub(d));
     return this.tok(n, 'redirect', expl, children);
+  }
+
+  /** `>&${COPROC[1]}`, `<&$fd`: a word that expands to a number is a descriptor to duplicate, not a file. */
+  private fdExpansion(op: string, fd: string, dest: string): string {
+    const coproc = /\bCOPROC\b/.test(dest)
+      ? this.s('。`COPROC` は `coproc` が作る配列で、`[0]` がコプロセスの出力を読む側、`[1]` がコプロセスの入力に書く側のファイルディスクリプタ', '. `COPROC` is the array `coproc` fills in: `[0]` is the descriptor to read the co-process output from, `[1]` the one to write its input to')
+      : '';
+    if (op === '<&') {
+      return this.s(
+        `\`${dest}\` を展開した結果がファイルディスクリプタの番号なら、${fdName(fd, '0').ja}をそのディスクリプタの複製にする（入力元を共有）。数字でなければエラー（ambiguous redirect や Bad file descriptor）${coproc}`,
+        `If \`${dest}\` expands to a file descriptor number, make ${fdName(fd, '0').en} a copy of it (sharing the input); anything else is an error (ambiguous redirect or Bad file descriptor)${coproc}`);
+    }
+    const file = fd && fd !== '1'
+      ? this.s('数字でなければエラー（ambiguous redirect）', 'anything else is an error (ambiguous redirect)')
+      : this.s('数字でなければファイル名とみなし、標準出力と標準エラー出力の両方をそのファイルに書き込む', 'anything else is taken as a file name, and both stdout and stderr are written to that file');
+    return this.s(
+      `\`${dest}\` を展開した結果がファイルディスクリプタの番号なら、${fdName(fd, '1').ja}をそのディスクリプタと同じ出力先に向ける。${file}${coproc}`,
+      `If \`${dest}\` expands to a file descriptor number, send ${fdName(fd, '1').en} to the same place as that descriptor; ${file}${coproc}`);
   }
 
   private heredoc(n: SyntaxNode): Token {

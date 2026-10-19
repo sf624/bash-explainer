@@ -105,6 +105,8 @@ export const wellKnownVariables: Record<string, Text> = {
   FUNCNAME: tx('実行中の関数名の配列', 'Array of function names on the call stack'),
   BASH_REMATCH: tx('直前の `[[ =~ ]]` の結果の配列: 要素 0 が一致した全体、要素 1 以降が括弧のグループ', 'Result of the last `[[ =~ ]]`: element 0 is the whole match, elements 1 and up are the parenthesized groups'),
   PIPESTATUS: tx('直前のパイプライン各コマンドの終了ステータスの配列', 'Exit statuses of each command in the last pipeline'),
+  COPROC: tx('`coproc` が作る配列: `[0]` がコプロセスの出力を読むファイルディスクリプタ、`[1]` がその入力に書くファイルディスクリプタ', 'Array made by `coproc`: `[0]` is the descriptor that reads the co-process output, `[1]` the one that writes to its input'),
+  COPROC_PID: tx('`coproc` が起動したコプロセスのプロセス ID', 'Process ID of the co-process started by `coproc`'),
   REPLY: tx('`read` に変数名を渡さなかったときの格納先', 'Default variable set by `read`'),
   OPTARG: tx('`getopts` が処理中のオプションの引数', 'Argument of the option being processed by `getopts`'),
   OPTIND: tx('`getopts` が次に処理する引数の位置', 'Index of the next argument for `getopts`'),
