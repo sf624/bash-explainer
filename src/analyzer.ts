@@ -616,9 +616,22 @@ export class Analyzer {
     const v = field(n, 'variable');
     const values = fields(n, 'value');
     const list = values.map((c) => c.text).join(' ');
+    const select = n.type === 'select_statement';
+    // `for i in; …` has an empty list, and its body never runs; only with no `in` at all does the loop take `"$@"`.
+    const hasIn = n.children.some((c) => c.type === 'in');
+    const name = v?.text;
     const expl = values.length
-      ? this.s(`for ループ: \`${list}\` の各値を順に変数 \`${v?.text}\` に入れて本体を繰り返す`, `for loop: assign each of \`${list}\` to \`${v?.text}\` and run the body`)
-      : this.s(`for ループ: 位置パラメータ（"$@"）の各値を順に \`${v?.text}\` に入れて繰り返す`, `for loop over the positional parameters ("$@") as \`${v?.text}\``);
+      ? select
+        ? this.s(`select ループ: \`${list}\` を番号付きのメニューに出し、選ばれた値を変数 \`${name}\` に入れて本体を実行する（\`break\` するまで繰り返す）`,
+          `select loop: show \`${list}\` as a numbered menu, assign the chosen one to \`${name}\` and run the body (until \`break\`)`)
+        : this.s(`for ループ: \`${list}\` の各値を順に変数 \`${name}\` に入れて本体を繰り返す`, `for loop: assign each of \`${list}\` to \`${name}\` and run the body`)
+      : hasIn
+        ? this.s(`${select ? 'select' : 'for'} ループ: \`in\` のあとの一覧が空なので、本体は一度も実行されない（\`"$@"\` を回すのは \`in\` を省いたときだけ）`,
+          `${select ? 'select' : 'for'} loop: the list after \`in\` is empty, so the body never runs (only a loop with no \`in\` goes over \`"$@"\`)`)
+        : select
+          ? this.s(`select ループ: 位置パラメータ（"$@"）を番号付きのメニューに出し、選ばれた値を \`${name}\` に入れて本体を実行する（\`in\` を省略したとき）`,
+            `select loop over the positional parameters ("$@"; there is no \`in\`): show them as a numbered menu and assign the chosen one to \`${name}\``)
+          : this.s(`for ループ: 位置パラメータ（"$@"）の各値を順に \`${name}\` に入れて繰り返す（\`in\` を省略したとき）`, `for loop over the positional parameters ("$@") as \`${name}\` (what a loop with no \`in\` does)`);
     const children = this.ordered(n, (c) => same(c, v) || has(values, c));
     const extra: Token[] = [];
     if (v && (this.line === null || intersects(v, this.line))) extra.push(this.tok(v, 'variable', this.s('ループ変数: 繰り返しごとに次の値が入る', 'Loop variable: receives the next value on each iteration')));
@@ -3234,10 +3247,14 @@ export class Analyzer {
       }
       case 'pattern': {
         const glob = globParts(t);
-        const casePat = /^[\^,]/.test(p.op!);
+        const casePat = /^[\^,~]/.test(p.op!);
         const what = casePat ? s('変換する文字のパターン', 'Pattern of characters to convert') : s('パターン', 'Pattern');
+        // The pattern is matched against one character at a time.
+        const only = casePat ? (p.op!.length === 2
+          ? s('。文字を1つずつ調べ、一致した文字だけが変換される', '. Each character is tried on its own; only those that match are converted')
+          : s('。先頭の1文字がこれに一致したときだけ変換される', '. The first character is converted only if it matches')) : '';
         if (!glob) return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
-        return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}`];
+        return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}${only}`];
       }
       case 'replacement': {
         // The quotes and backslashes are removed: `\}` is `}`.

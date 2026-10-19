@@ -19,7 +19,7 @@ export interface ParsedExpansion {
   parts: ExpansionPart[];
 }
 
-const OPS = [':-', ':=', ':+', ':?', '##', '%%', '//', '/#', '/%', '^^', ',,', '-', '=', '+', '?', '#', '%', '/', '^', ','];
+const OPS = [':-', ':=', ':+', ':?', '##', '%%', '//', '/#', '/%', '^^', ',,', '~~', '-', '=', '+', '?', '#', '%', '/', '^', ',', '~'];
 
 /** Index of the first `stop` character at nesting depth 0 (outside quotes, `${…}`, `$(…)`, `[…]`). */
 function findTopLevel(s: string, from: number, stop: string, ternary = false): number {
@@ -126,7 +126,7 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
       add('op', slash, slash + 1);
       add('replacement', slash + 1, inner.length);
     }
-  } else if (/^[#%^,]/.test(op)) {
+  } else if (/^[#%^,~]/.test(op)) {
     if (argStart < inner.length) add('pattern', argStart, inner.length);
   } else {
     add('word', argStart, inner.length);
@@ -263,6 +263,37 @@ const SAMPLES = [
 
 function pickSample(test: (s: string) => boolean): string | undefined {
   return SAMPLES.find(test);
+}
+
+// ---------------------------------------------------------------- case modification
+
+/**
+ * `${v^pat}` `${v^^pat}` `${v,pat}` `${v,,pat}` `${v~pat}` `${v~~pat}`: the first character, or every one, goes
+ * to upper case, lower case, or the other case; with a pattern, only the characters it matches one by one.
+ */
+function convertCase(value: string, op: string, matches?: (c: string) => boolean): string {
+  const change = (c: string): string => (op[0] === '^' ? c.toUpperCase() : op[0] === ',' ? c.toLowerCase() : c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase());
+  return [...value].map((c, i) => ((op.length === 2 || i === 0) && (!matches || matches(c)) ? change(c) : c)).join('');
+}
+
+function caseExamples(p: ParsedExpansion, pattern: string | undefined, set: (val: string, result: string) => ExpansionCase): ExpansionCase[] | undefined {
+  const op = p.op!;
+  const glob = pattern === undefined ? undefined : globParts(pattern);
+  if (pattern !== undefined && !glob) return undefined;
+  const one = glob && new RegExp(`^(?:${globRegex(glob)})$`);
+  const matches = one ? (c: string) => one.test(c) : undefined;
+  const dflt = op[0] === '^' ? 'hello world' : op[0] === ',' ? 'HELLO World' : 'Hello World';
+  // (For a pattern such as `l`, a value that starts with that letter, in either case.)
+  const samples = [dflt, 'hello world', 'HELLO World', 'Hello World', 'HELLO', 'hello', 'report.tar.gz', 'ABC-123-xyz',
+    ...[...'abcdefghijklmnopqrstuvwxyz'].flatMap((c) => [`${c}ello world`, `${c.toUpperCase()}ELLO World`])];
+  const result = (v: string) => convertCase(v, op, matches);
+  if (!matches) return [set(dflt, result(dflt))];
+  // A value the pattern limits: it changes some characters but not all that the operator would.
+  const limited = samples.find((v) => result(v) !== v && result(v) !== convertCase(v, op)) ?? samples.find((v) => result(v) !== v) ?? dflt;
+  const cases = [set(limited, result(limited))];
+  // With one character only the first is tried, so show a value that the pattern turns away.
+  const refused = op.length === 1 ? samples.find((v) => result(v) === v && convertCase(v, op) !== v) : undefined;
+  return refused ? [...cases, set(refused, refused)] : cases;
 }
 
 // ---------------------------------------------------------------- examples
@@ -414,10 +445,7 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
       if (!value) return undefined;
       return [set(value, replace(value, glob, repText, p.op as '/'))];
     }
-    case '^': return [set('hello world', 'Hello world')];
-    case '^^': return [set('hello world', 'HELLO WORLD')];
-    case ',': return [set('HELLO World', 'hELLO World')];
-    case ',,': return [set('HELLO World', 'hello world')];
+    case '^': case '^^': case ',': case ',,': case '~': case '~~': return caseExamples(p, part('pattern'), set);
     case ':': {
       // Offset and length are arithmetic: `010` is 8, `0x2` is 2.
       const o = intValue(part('offset')!.trim());
@@ -489,6 +517,8 @@ export const opMeaning: Record<string, [string, string]> = {
   '//': ['一致した部分をすべて置換する', 'Replace every match'],
   '/#': ['先頭で一致した場合だけ置換する', 'Replace a match at the start'],
   '/%': ['末尾で一致した場合だけ置換する', 'Replace a match at the end'],
+  '~': ['先頭の1文字の大文字と小文字を入れ替える（あまり知られていない書き方）', 'Swap the case of the first character (a little-known form)'],
+  '~~': ['すべての文字の大文字と小文字を入れ替える（あまり知られていない書き方）', 'Swap the case of every character (a little-known form)'],
   '^': ['先頭の1文字を大文字にする', 'Uppercase the first character'],
   '^^': ['すべての文字を大文字にする', 'Uppercase every character'],
   ',': ['先頭の1文字を小文字にする', 'Lowercase the first character'],

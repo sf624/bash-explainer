@@ -770,8 +770,12 @@ class Converter {
           this.tok('@', o.pos, n, 'operator');
           this.tok(o.operand.text, o.operand.pos, n, 'operator');
           break;
-        default:
-          this.tok(o.operator, o.pos, n, 'operator');
+        default: {
+          // `${s~~}` and `${s~}` (swap the case) are unknown to unbash; the text after the operator is a pattern.
+          const swap = /^~~?/.exec(o.operator);
+          this.tok(swap ? swap[0] : o.operator, o.pos, n, 'operator');
+          if (swap && o.operatorEnd > o.pos + swap[0].length) this.caseOperand(n, o.pos + swap[0].length, o.operatorEnd);
+        }
       }
     }
     // The brace is there when the text ends with it and no part has taken it (`${x#"a}`).
@@ -779,6 +783,32 @@ class Converter {
     else this.missing(n, '}', p.end);
     this.fill(n);
     return n;
+  }
+
+  /** The pattern of `${a~~pat}`: unbash reads it as the pattern of `${a^^pat}`, in a text of its own; the nodes are moved to the place of the text. */
+  caseOperand(owner: Mut, start: number, end: number): void {
+    const shift = start - 4;
+    const src = '${x^' + this.text.slice(start, end) + '}';
+    const exp = (parse(src).commands[0].command as U.Command).name!.parts![0] as U.ParameterExpansionPart;
+    const operand = (exp.operation as U.ParameterCaseOperation | undefined)?.operand;
+    // (Text that unbash would not read as an operand, such as an unclosed quote, stays a pattern as it is.)
+    if (!operand) {
+      /* c8 ignore next */
+      this.node('regex', start, end, null, owner);
+      return;
+    }
+    const sub = new Converter(src);
+    const holder = sub.node('program', 0, src.length);
+    sub.pattern(operand, holder);
+    const move = (m: Mut): void => {
+      m.startIndex += shift;
+      m.endIndex += shift;
+      m.children.forEach(move);
+    };
+    for (const c of holder.children) {
+      move(c);
+      this.add(owner, c);
+    }
   }
 
   /** The offset or length of `${a:1:2}`, which the shell evaluates as arithmetic. */
