@@ -132,7 +132,8 @@ describe('branches no other test takes', () => {
     assert.deepStrictEqual(examplesMarkdown([{ title: 'T', sections: [{ label: 'L', lines: [] }] }]).slice(-3), ['```text', '', '```']);
     const md = toPlainMarkdown({ ...explain('echo `date`'), notes: ['a note'] }, 'echo `date`', 'a.sh:1');
     assert.match(md, /> a note/);
-    assert.match(md, /`` echo `date` ``/);
+    assert.match(md, /- `echo` — /);
+    assert.match(md, /`` `date` `` — /);
   });
 
   it('text utilities: key ranges, repeats, unknown escapes, an empty set, tr without a second set', () => {

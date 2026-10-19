@@ -127,6 +127,8 @@ describe('the Language Server', function () {
     assert.ok(d.some((x) => x.code === 'dockerPipefail'), JSON.stringify(d));
     const r = await client.request('textDocument/hover', { textDocument: { uri: dockerfile }, position: { line: 1, character: 5 } });
     assert.match(r.result.contents.value, /curl/);
+    // The command is named, not repeated with its arguments.
+    assert.match(r.result.contents.value, /^ {2}- `curl` — Transfer data/m);
   });
 
   it('switches to Japanese when configured', async () => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A simple command is labelled with its name, not its whole text: `grep -E 're' ids.txt` is shown as `grep` with `-E`, `'re'` and `ids.txt` under it (the same for builtins, functions, `declare`/`export`, `sudo`'s and `find -exec`'s command, and a name such as `/usr/bin/env`, `"$cmd"` or `$(CC)`). Clicking it or pointing at it still highlights the whole command. This shows in the hover, the panel, "copy as Markdown", the command-line tool, the Language Server and the web page. Before, the label repeated the whole command, which the description (of the program) did not describe. Pipelines, lists, loops, tests, assignments, `time` and the redirect token keep the text of what they describe; for `tr -d '\r' < a > b` the command under the redirect token is now `tr`.
+
 ## 0.5.0
 
 - The parser is now [unbash](https://github.com/webpro-nl/unbash), a small JavaScript parser, in the extension, the web page, the command-line tool and the Language Server. Before, it was tree-sitter-bash running as WebAssembly. The `.vsix` is a quarter smaller (703 KB, was 947 KB) and the web page downloads 1.5 MB less (no `.wasm` files); a large script is parsed about three times faster; nothing is loaded at start-up. Scripts that the old grammar misread are read as bash reads them: `cat <<EOF; cmd` (the delimiter is `EOF`, not `EOF;`), a pipeline followed by a later `&&` line (tree-sitter-bash#347), `for i do`, `<<-` with tabs, `coproc`, `[ ]` with escaped parentheses (`[ \( a = b \) -o c = d ]` is grouped), `[ ! = a ]`, and a here string after `}`. An unfinished script (`{ echo`, `case $x in`, `echo "abc`) is explained with the parts it has, not as a syntax error.

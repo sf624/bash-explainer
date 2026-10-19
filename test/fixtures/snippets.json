@@ -457,6 +457,7 @@
  "f()\n{ echo; }",
  "f() (echo)",
  "f() {\n  shopt -s extglob\n  rm !(keep).log\n}",
+ "f() { :; }\nf x y",
  "f() { echo hi; }",
  "f() { echo | while read -r l; do local q=1; done; echo $q; }",
  "f(1 2)",

@@ -59,7 +59,10 @@ export interface Span { start: Pos; end: Pos }
 
 export interface Token {
   kind: Kind;
-  /** Short label shown in lists (usually the source text, truncated). */
+  /**
+   * Short label shown in lists: usually the source text of the span, truncated. A command is labelled with its
+   * name (`grep`), since its explanation describes the program; its span stays the whole command.
+   */
   label: string;
   explanation: string;
   span: Span;
@@ -768,7 +771,7 @@ export class Analyzer {
     // command: it stays one token that carries its redirections as children.
     if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command', 'time_statement'].includes(body.type)) {
       const t = bodyToks[0];
-      return { ...t, span: spanOf(n), label: shorten(n.text), children: sortTokens([...t.children, ...redirToks]) };
+      return { ...t, span: spanOf(n), children: sortTokens([...t.children, ...redirToks]) };
     }
     // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
     if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) return bodyToks[0];
@@ -819,7 +822,6 @@ export class Analyzer {
     const before = this.examples.length;
     const inner = body.type === 'command' ? this.commandToken(body, true) : this.declaration(body, true);
     inner.span = layout.span;
-    inner.label = shorten(layout.text);
     this.tagExamples(before, body, layout);
     const redirToks = this.subs(layout.redirs);
     const fds = new Set<string>();
@@ -1024,7 +1026,7 @@ export class Analyzer {
         children.push(...this.sub(c));
       }
     }
-    const t = this.tok(n, 'builtin', this.t(base), children);
+    const t = this.tok(n, 'builtin', this.t(base), children, kw);
     t.summary = `${kw}: ${t.explanation}`;
     return t;
   }
@@ -1039,7 +1041,7 @@ export class Analyzer {
       }
       return this.explain(c);
     });
-    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), children);
+    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), children, 'unset');
     t.summary = `unset: ${t.explanation}`;
     return t;
   }
@@ -1173,7 +1175,7 @@ export class Analyzer {
     }
     const t = this.tok(n, head.kind, head.explanation, sortTokens([
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
-    ]));
+    ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
     const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'command' && !a.children.length);
     // Every subcommand in the dictionary has a summary.
@@ -2649,10 +2651,9 @@ export class Analyzer {
     const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     const children = this.args(doc, words.slice(1), name);
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
-    const text = words.map((w) => w.text).join(' ');
     return {
       kind: doc?.builtin ? 'builtin' : 'command',
-      label: shorten(text),
+      label: shorten(name),
       explanation: prefix + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
       span, children, summary: `${name}: ${explanation}`,
     };

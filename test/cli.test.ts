@@ -35,6 +35,21 @@ describe('the command-line tool', function () {
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 
+  it('labels a command with its name, and its arguments as before', () => {
+    const r = run(['-e', "grep -E '^[A-Z]{3}-[0-9]+$' ids.txt", '--no-color', '--no-examples']);
+    assert.strictEqual(r.code, 0, r.err);
+    const rows = r.out.split('\n');
+    const at = rows.findIndex((l) => /^ {2}grep {2}Print lines matching a pattern/.test(l));
+    assert.ok(at > 0, r.out);
+    assert.match(rows[at + 1], /^ {4}-E {2}use extended regex/);
+    assert.ok(rows.slice(at).some((l) => /^ {4}ids\.txt {2}file to search/.test(l)), r.out);
+    // The line itself is still shown whole in the header.
+    assert.match(r.out, /^\(command\):1 {2}grep -E '\^\[A-Z\]\{3\}-\[0-9\]\+\$' ids\.txt$/m);
+    const json = JSON.parse(run(['--format', 'json', '-e', 'grep -E x ids.txt']).out);
+    assert.strictEqual(json[0].explanation.items[0].label, 'grep');
+    assert.deepStrictEqual(json[0].explanation.items[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 17 } });
+  });
+
   it('explains a command line, in Japanese', () => {
     const r = run(['-e', 'tar -czf backup.tgz -C src .', '--no-examples'], { env: { LANG: 'ja_JP.UTF-8' } });
     assert.strictEqual(r.code, 0, r.err);
