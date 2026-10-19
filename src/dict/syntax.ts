@@ -78,6 +78,37 @@ function rep(a: string): string {
   return unquoteWord(raw) ?? raw;
 }
 
+/**
+ * `&` in the replacement of `${v/p/r}`: since bash 5.2 (`patsub_replacement`) an unquoted one stands for the matched text,
+ * and `\&` (or a quoted one) is the character. Undefined when the replacement has no `&`.
+ */
+function ampersandNote(a: string): Text | undefined {
+  const raw = a.indexOf('/') < 0 ? '' : a.slice(a.indexOf('/') + 1);
+  let special = false;
+  let quoted = false;
+  let quote = '';
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (c === '\\' && quote !== "'") { if (raw[i + 1] === '&') quoted = true; i++; }
+    else if (quote) { if (c === quote) quote = ''; else if (c === '&') quoted = true; }
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === '&') special = true;
+  }
+  if (special) {
+    return tx('。置換文字列の `&` は一致した部分そのものを表す（bash 5.2 の `patsub_replacement`。bash 5.1 以前や `shopt -u patsub_replacement` では文字 `&` のまま。文字として入れたいときは `\\&` と書く）',
+      '. A `&` in the replacement stands for the matched text (`patsub_replacement`, bash 5.2; in bash 5.1 and older, or after `shopt -u patsub_replacement`, it is just the character `&`; write `\\&` for the character)');
+  }
+  return quoted ? tx('。クォートされた `&`（`\\&` など）は文字 `&` そのもの。bash 5.2 では、クォートしない `&` が一致した部分を表すので、それと区別するための書き方', '. A quoted `&` (such as `\\&`) is the character itself; in bash 5.2 an unquoted `&` stands for the matched text, so quoting tells them apart') : undefined;
+}
+for (const op of ['/', '//', '/#', '/%']) {
+  const base = expansionOps[op];
+  expansionOps[op] = (v, a) => {
+    const t = base(v, a);
+    const n = ampersandNote(a);
+    return n ? tx(t.ja + n.ja, t.en + n.en) : t;
+  };
+}
+
 export const specialVariables: Record<string, Text> = {
   '?': tx('直前に実行したコマンドの終了ステータス（0 は成功）', 'Exit status of the last command (0 = success)'),
   '@': tx('全ての位置パラメータ。`"$@"` とすると各引数を別々の単語として展開', 'All positional parameters; `"$@"` expands each one as a separate word'),
