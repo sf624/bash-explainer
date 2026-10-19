@@ -204,7 +204,7 @@ export class Analyzer {
   private shopt: ShoptStates = shoptStates('', 0);
   private shell: Shell | undefined;
   /** Aliases defined in the script (`alias ll='ls -l'`): name → where, and what it stands for. */
-  private aliases = new Map<string, { line: number; value: string }>();
+  private aliases = new Map<string, { line: number; value: string; readAt: number }[]>();
   private context: ContextEntry[] = [];
   /** Function definitions in the script: name → where each starts and ends, in source order. */
   private functions = new Map<string, { line: number; start: number; end: number }[]>();
@@ -306,7 +306,7 @@ export class Analyzer {
       if (field(c, 'name')?.text !== 'alias') continue;
       for (const a of fields(c, 'argument')) {
         const m = /^([\w.:-]+)=(['"]?)([\s\S]*)\2$/.exec(a.text);
-        if (m && !this.aliases.has(m[1])) this.aliases.set(m[1], { line: c.startPosition.row, value: m[3] });
+        if (m) this.aliases.set(m[1], [...(this.aliases.get(m[1]) ?? []), { line: c.startPosition.row, value: m[3], readAt: unitOf(c).end }]);
       }
     }
     this.line = line;
@@ -874,12 +874,21 @@ export class Analyzer {
       const arr = field(name, 'name')!.text;
       const idx = field(name, 'index')!.text;
       const v = evalArith(idx);
+      const add = op === '+=';
+      // With `declare -i`, `+=` on an element adds numbers; otherwise it appends text to the element.
+      const intAtArr = this.integers.get(arr);
+      const toInt = add && intAtArr !== undefined && intAtArr < n.startIndex;
+      const verb = (set: string, plus: string, plusInt: string): string => (toInt ? plusInt : add ? plus : set);
       if (this.isAssoc(arr, n.startIndex)) {
-        expl = this.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素に代入する`, `Assign to the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
-      } else if (v !== undefined && String(v) !== idx) {
-        expl = this.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）に代入する`, `Assign to element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`);
+        const key = this.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素`, `the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
+        expl = this.s(`${key}${verb('に代入する', 'に値を追記する（文字列の連結）', 'に値を足す（`-i` が付いているので算術式の足し算）')}`,
+          `${verb('Assign to ', 'Append to ', 'Add to ')}${key}${add && !toInt ? ' (text is appended to the existing value)' : toInt ? ' (it has `-i`, so this adds numbers)' : ''}`);
       } else {
-        expl = this.s(`配列 \`${arr}\` の要素 \`[${idx}]\` に代入する`, `Assign to element \`[${idx}]\` of array \`${arr}\``);
+        const el = v !== undefined && String(v) !== idx
+          ? this.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）`, `element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`)
+          : this.s(`配列 \`${arr}\` の要素 \`[${idx}]\``, `element \`[${idx}]\` of array \`${arr}\``);
+        expl = this.s(`${el}${el.endsWith('`') ? ' ' : ''}${verb('に代入する', 'に値を追記する（文字列の連結。`b` に `x` を足すと `bx`）', 'に値を足す（`-i` が付いているので算術式の足し算。7 に `+=1` で 8）')}`,
+          `${verb('Assign to ', 'Append to ', 'Add to ')}${el}${add && !toInt ? ' (text is appended to the existing value: `b` plus `x` is `bx`)' : toInt ? ' (it has `-i`, so this adds numbers: 7 plus `+=1` is 8)' : ''}`);
       }
     }
     // `IFS` is the list of characters word splitting, `read` and `"${a[*]}"` use as separators.
@@ -1150,7 +1159,16 @@ export class Analyzer {
     }
     // An alias over a known command (`alias grep=ggrep`) is still explained as that command.
     // (A quoted name is never an alias.)
-    const alias = lookupCommand(name) || sv !== undefined ? undefined : this.aliases.get(name);
+    // bash reads a whole line (or compound command, or function body) before running it, so an alias
+    // counts only from the next line on; the last definition before this line wins.
+    const known = lookupCommand(name) || sv !== undefined ? undefined : this.aliases.get(name);
+    const alias = known?.filter((d) => d.readAt <= unitOf(nameNode).start).pop();
+    if (known && !alias) {
+      const same = known[0].line <= nameNode.startPosition.row;
+      this.extraNotes.push(this.s(
+        `ℹ \`${name}\` は行 ${known[0].line + 1} で \`alias\` として定義されますが、${same ? 'bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません' : 'これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます'}。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
+        `ℹ \`${name}\` is defined as an alias on line ${known[0].line + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
+    }
     if (alias) {
       // bash expands aliases in scripts only with expand_aliases (interactive shells always do);
       // a script that turns it on anywhere is taken to know.
@@ -1312,6 +1330,8 @@ export class Analyzer {
       const base = brace ?? this.word(a);
       if (!desc) return base;
       if (brace) return this.tok(a, 'argument', desc, [brace]);
+      const tilde = this.tilde(a);
+      if (tilde) return this.tok(a, 'argument', desc, [tilde]);
       const off = hasGlob(a.text) && this.globOff(a);
       if (off) return this.tok(a, 'argument', desc + this.noglobNote());
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
@@ -2761,9 +2781,24 @@ export class Analyzer {
     ));
   }
 
+  /**
+   * Tilde expansion of an unquoted word that starts with `~` (`~`, `~/x`, `~user/x`, `~+`, `~-`).
+   * Not `x~`, `--o=~` or a quoted `"~"` (those are not plain words starting with `~`).
+   */
+  private tilde(n: SyntaxNode): Token | undefined {
+    const m = /^~([+-]|[A-Za-z_][\w.-]*)?(?=\/|$)/.exec(n.text);
+    if (!m || !isPlainWord(n)) return undefined;
+    const what = m[1] === '+' ? this.s('`~+` はカレントディレクトリ（`$PWD`）', '`~+` becomes the current directory (`$PWD`)')
+      : m[1] === '-' ? this.s('`~-` は直前のディレクトリ（`$OLDPWD`）', '`~-` becomes the previous directory (`$OLDPWD`)')
+      : m[1] ? this.s(`\`~${m[1]}\` はユーザー \`${m[1]}\` のホームディレクトリ（そのユーザーがいなければそのまま）`, `\`~${m[1]}\` becomes the home directory of the user \`${m[1]}\` (unchanged if there is no such user)`)
+      : this.s('`~` はホームディレクトリ（`$HOME`）', '`~` becomes the home directory (`$HOME`)');
+    return this.tok(n, 'expansion', this.s(`チルダ展開: ${what}に置き換わる`, `Tilde expansion: ${what}`) + (m[0].length < n.text.length ? this.s(`。残りの \`${n.text.slice(m[0].length)}\` はそのまま続く`, `. The rest, \`${n.text.slice(m[0].length)}\`, stays as it is`) : ''));
+  }
+
   private word(n: SyntaxNode): Token {
     const text = n.text;
-    if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
+    const tilde = this.tilde(n);
+    if (tilde) return tilde;
     if (hasGlob(text) && this.globOff(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.noglobNote());
     if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
@@ -3469,6 +3504,24 @@ function sortTokens(ts: Token[]): Token[] {
 }
 
 /** Whether an ancestor of `n` satisfies `test`. */
+/**
+ * The text bash reads before it runs anything of `n`: the top-level command that holds it, together
+ * with the others that start on the line it ends on (`a; b` is read as one).
+ */
+function unitOf(n: SyntaxNode): { start: number; end: number } {
+  let top = n;
+  while (top.parent?.parent) top = top.parent;
+  const all = top.parent!.namedChildren;
+  let i = all.findIndex((x) => x.startIndex === top.startIndex && x.endIndex === top.endIndex);
+  /* c8 ignore next -- a top-level node is always among its parent's children */
+  if (i < 0) i = 0;
+  let a = i;
+  let b = i;
+  while (a > 0 && all[a - 1].endPosition.row === all[a].startPosition.row) a--;
+  while (b + 1 < all.length && all[b + 1].startPosition.row === all[b].endPosition.row) b++;
+  return { start: all[a].startIndex, end: all[b].endIndex };
+}
+
 function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
   return false;
