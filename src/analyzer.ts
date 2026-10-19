@@ -2650,6 +2650,19 @@ export class Analyzer {
     for (const raw of operands) {
       const m = /^([-+]?)(\d[0-9A-Za-z@_#]*)$/.exec(raw);
       const lit = m ? arithLiteral(m[2]) : undefined;
+      if (!lit && !double && /^[\w+\-/%.,:^]+$/.test(raw) && !/^[-+]?\d+$/.test(raw)) {
+        // A word written out in full that is no integer (`1+1`, `1.5`, `x`): `[` and `test` do not calculate.
+        const v = evalArith(raw);
+        notes.push(this.s(`\`[ ]\` の ${op} は整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める${v === undefined ? '' : `（${v}）`}`,
+          `\`[ ]\` reads only integers for ${op}, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic${v === undefined ? '' : ` (${v})`}`));
+        continue;
+      }
+      if (!lit && double && /^[\d\s+\-*/%()]+$/.test(raw) && !/^\s*[-+]?\d+\s*$/.test(raw)) {
+        // An arithmetic expression of constants (`1+1`): `[[ ]]` calculates it.
+        const v = evalArith(raw);
+        if (v !== undefined) notes.push(this.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${v}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${v}`));
+        continue;
+      }
       if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
       if (!double) {
         notes.push(lit.type === 'number' && lit.style === 'octal' && /^\d+$/.test(m![2])

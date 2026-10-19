@@ -3,6 +3,7 @@
 // web-tree-sitter or knows tree-sitter's node names; the normalizations the design lists happen here.
 import { Language, Parser } from 'web-tree-sitter';
 import type { Node, Tree } from 'web-tree-sitter';
+import { elementClose, splitElement } from '../../staticword';
 import type { BashParser, FieldName, NodeType, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 
 export interface WasmPaths {
@@ -209,6 +210,30 @@ class Converter {
     if (n.type === 'pipeline') this.negation(n);
     else if (n.type === 'redirected_statement') this.redirections(n);
     else if (n.type === 'case_item') this.patterns(n);
+    else if (n.type === 'array') this.elements(n);
+  }
+
+  /**
+   * `[1 + 1]=x`: bash reads the subscript of an array element up to its `]`, spaces included; tree-sitter
+   * cuts it into words there. The words from the `[` to the one that holds `]=` become one concatenation.
+   * (`[1 + 1] =x` is not an element: the `=` must follow the `]` directly.)
+   */
+  private elements(arr: Mut): void {
+    const kids: Mut[] = [];
+    for (let i = 0; i < arr.children.length; i++) {
+      const c = arr.children[i];
+      const e = c.named && c.text.startsWith('[') && !splitElement(c.text) ? elementClose(this.text.slice(c.startIndex, arr.endIndex)) : undefined;
+      let j = i;
+      if (e) while (j + 1 < arr.children.length && arr.children[j + 1].named && arr.children[j + 1].startIndex <= c.startIndex + e.close) j++;
+      if (!e || j === i || arr.children[j].endIndex <= c.startIndex + e.close + 1 + e.plus.length) { kids.push(c); continue; }
+      const run = arr.children.slice(i, j + 1);
+      const m = this.node('concatenation', true, c, null, null);
+      this.setChildren(m, run.flatMap((r) => (r.type === 'concatenation' ? r.children : [r])) as Mut[]);
+      this.fit(m);
+      kids.push(m);
+      i = j;
+    }
+    if (kids.length !== arr.children.length) this.setChildren(arr, kids);
   }
 
   /** `"("*`: tree-sitter lists the pieces of a case pattern as patterns of their own; the `|` between them tells the patterns apart. */

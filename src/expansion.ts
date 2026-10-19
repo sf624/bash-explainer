@@ -521,12 +521,12 @@ export const opMeaning: Record<string, [string, string]> = {
 
 export const transformMeaning: Record<string, [string, string]> = {
   Q: ['シェルに再入力できる形にクォートする', 'quote it so it can be reused as shell input'],
-  E: ['`\\n` や `\\t` などのバックスラッシュエスケープを展開する（`$\'…\'` と同じ）', 'expand backslash escapes like `\\n` (as in `$\'…\'`)'],
-  P: ['プロンプト文字列（PS1 と同じ書式）として展開する', 'expand it as a prompt string (like PS1)'],
-  A: ['同じ値を再現する代入文（`name=\'value\'`）にする', 'turn it into an assignment statement that recreates it'],
-  K: ['連想配列をキーと値の組として表示する', 'show an associative array as key/value pairs'],
-  k: ['連想配列をキーと値を交互に並べた単語に分ける', 'expand an associative array into alternating keys and values'],
-  a: ['変数の属性フラグ（`declare` のオプション文字）を返す', 'give the variable\'s attribute flags (as for `declare`)'],
+  E: ['バックスラッシュエスケープ（`\\n` など）を解釈済みの文字列にする（`$\'…\'` と同じ）', 'expand backslash escapes like `\\n` (as in `$\'…\'`)'],
+  P: ['プロンプト文字列（PS1 と同じ書式）として展開した文字列にする', 'expand it as a prompt string (like PS1)'],
+  A: ['再現用の代入文（`name=\'value\'`、配列や属性があれば `declare` の形）にする', 'turn it into an assignment statement that recreates it (a `declare` statement for an array or a variable with attributes)'],
+  K: ['キーと値の組（値は引用符付き、通常の配列では添字と値の組）の形にする', 'show it as key/value pairs with quoted values (index/value pairs for an indexed array)'],
+  k: ['キーと値を交互に並べた単語（通常の配列では添字と値）に分ける', 'expand it into alternating keys and values (indices and values for an indexed array)'],
+  a: ['変数の属性を表す文字（`declare` のオプション文字。`i` は整数、`r` は読み取り専用など）にする', 'give the variable\'s attribute flags (as for `declare`, such as `i` for integer, `r` for read-only)'],
   U: ['すべて大文字にする', 'uppercase every character'],
   u: ['先頭の1文字を大文字にする', 'uppercase the first character'],
   L: ['すべて小文字にする', 'lowercase every character'],
