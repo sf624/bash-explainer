@@ -67,11 +67,19 @@ describe('documents without VS Code', () => {
     // The warning is at the first CR, for every shell, in both languages.
     for (const lang of ['en', 'ja'] as const) {
       const issues = documentIssues(doc, lang, {});
-      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'warning', 0, 17, 18]]);
+      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'warning', 0, 13, 17]]);
       assert.match(issues[0].message, lang === 'en' ? /Windows line endings/ : /CRLF/);
     }
     assert.deepStrictEqual(documentIssues(doc, 'en', { forced: 'dash' }).map((i) => i.code), ['crlf']);
     assert.deepStrictEqual(documentIssues(doc, 'en', {}, ['crlf']), []);
+    // A file-level directive silences it, on any line (the warning itself is usually on line 1); and so does a comment after the code.
+    const withDirective = crlf + '# bash-explainer disable-file=crlf\r\n';
+    assert.deepStrictEqual(documentIssues({ lines: withDirective.split(/\r?\n/), tree: parser.parse(withDirective) }, 'en', {}), []);
+    assert.match(documentIssues(doc, 'ja', {})[0].message, /disable-file=crlf/);
+    // The range is the last word of the line, also with blanks before the CR; a line of nothing else has an empty range.
+    const range = (t: string) => documentIssues({ lines: t.split(/\r?\n/), tree: parser.parse(t) }, 'en', {}).map((i) => [i.startLine, i.startCol, i.endLine, i.endCol]);
+    assert.deepStrictEqual(range('echo a   \r\n'), [[0, 5, 0, 6]]);
+    assert.deepStrictEqual(range('\r\necho a\r\n'), [[0, 0, 0, 0]]);
     assert.deepStrictEqual(documentIssues(script(lf), 'en', {}), []);
     // Only a CR before a LF is a line end; the one in the middle of a line is a character like the others.
     assert.deepStrictEqual(documentIssues(script('echo a\rb\n'), 'en', {}), []);

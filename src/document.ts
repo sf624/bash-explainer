@@ -63,16 +63,18 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
 }
 
 const CRLF: [string, string] = [
-  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。',
-  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF.',
+  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。そのままにしてこの警告だけ出さないなら、独立した行に `# bash-explainer disable-file=crlf` と書く。',
+  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF. To keep the file as it is and silence this warning, write `# bash-explainer disable-file=crlf` on a line of its own.',
 ];
 
-/** A script with CRLF line ends fails in bash; the issue is shown once, at the first of them. */
+/** A script with CRLF line ends fails in bash; the issue is shown once, on the last word of the first line that has one (the CR itself lies past the end of the line). */
 function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
   const at = tree.carriageReturns?.[0];
   if (at === undefined) return [];
   const before = tree.text.slice(0, at);
   const line = before.split('\n').length - 1;
-  const col = at - (before.lastIndexOf('\n') + 1);
-  return [{ code: 'crlf', severity: 'warning', message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: col, endLine: line, endCol: col + 1 }];
+  // (In the tree the CR is a blank, so the last word is the one before it; a line of nothing else has no word.)
+  const text = before.slice(before.lastIndexOf('\n') + 1).trimEnd();
+  const word = /\S+$/.exec(text);
+  return [{ code: 'crlf', severity: 'warning', message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: word?.index ?? 0, endLine: line, endCol: word ? text.length : 0 }];
 }
