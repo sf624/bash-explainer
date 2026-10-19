@@ -22,8 +22,10 @@ export interface ParsedExpansion {
 const OPS = [':-', ':=', ':+', ':?', '##', '%%', '//', '/#', '/%', '^^', ',,', '-', '=', '+', '?', '#', '%', '/', '^', ','];
 
 /** Index of the first `stop` character at nesting depth 0 (outside quotes, `${…}`, `$(…)`, `[…]`). */
-function findTopLevel(s: string, from: number, stop: string): number {
+function findTopLevel(s: string, from: number, stop: string, ternary = false): number {
   let depth = 0;
+  // In an arithmetic expression, a `:` that closes a `?` belongs to the ternary (`${s:1?2:3}`: the offset is `1?2:3`).
+  let pending = 0;
   let quote: string | undefined;
   for (let i = from; i < s.length; i++) {
     const c = s[i];
@@ -33,9 +35,19 @@ function findTopLevel(s: string, from: number, stop: string): number {
     if (c === '$' && (s[i + 1] === '{' || s[i + 1] === '(')) { depth++; i++; continue; }
     if (c === '{' || c === '(' || c === '[') { depth++; continue; }
     if ((c === '}' || c === ')' || c === ']') && depth > 0) { depth--; continue; }
-    if (depth === 0 && c === stop) return i;
+    if (ternary && depth === 0 && c === '?') pending++;
+    else if (depth === 0 && c === stop) {
+      if (!ternary || pending === 0) return i;
+      pending--;
+    }
   }
   return -1;
+}
+
+/** The argument of `${v/pat/rep}` cut at its first slash that is not escaped, quoted or inside an expansion; no replacement part if there is none. */
+export function splitReplacement(arg: string): { pattern: string; replacement?: string } {
+  const slash = findTopLevel(arg, 0, '/');
+  return slash < 0 ? { pattern: arg } : { pattern: arg.slice(0, slash), replacement: arg.slice(slash + 1) };
 }
 
 /** Parse the text of a `${…}` expansion. Returns undefined for forms it does not understand. */
@@ -92,7 +104,7 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
     return { name, subscript, op: '@', parts };
   }
   if (rest[0] === ':' && !/^:[-=+?]/.test(rest)) {
-    const colon = findTopLevel(inner, i + 1, ':');
+    const colon = findTopLevel(inner, i + 1, ':', true);
     add('op', i, i + 1);
     if (colon < 0) add('offset', i + 1, inner.length);
     else {

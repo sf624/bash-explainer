@@ -3260,7 +3260,11 @@ export class Analyzer {
             ? s(`開始位置 ${v}: \`$${v}\` から（\`0\` なら \`$0\`）`, `Offset ${v}: from \`$${v}\` (\`0\` is \`$0\`)`)
             : s(`開始位置 ${v}: インデックス ${v} の要素から`, `Offset ${v}: from the element at index ${v}`)];
         }
-        if (num === undefined) return ['number', s(`開始位置 \`${v}\`（算術式として評価される）`, `Offset \`${v}\` (evaluated as arithmetic)`)];
+        if (num === undefined) {
+          // The `:` of a ternary is not the one before the length.
+          const ternary = v.includes('?') ? s('。`?` とペアの `:` は三項演算子の一部で、長さの区切りではない', '. The `:` that pairs with the `?` belongs to the ternary; it does not start the length') : '';
+          return ['number', s(`開始位置 \`${v}\`（算術式として評価される）${ternary}`, `Offset \`${v}\` (evaluated as arithmetic)${ternary}`)];
+        }
         const o = num;
         if (o < 0) {
           return ['number', s(

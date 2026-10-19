@@ -1,4 +1,5 @@
 import { Text, tx } from '../i18n';
+import { splitReplacement } from '../expansion';
 import { unquoteWord } from '../staticword';
 
 /** Redirection operators. `fd` is the explicit file descriptor (or the default), `dest` the target text. */
@@ -68,13 +69,11 @@ export const expansionOps: Record<string, (v: string, a: string) => Text> = {
 };
 
 function pat(a: string): string {
-  const i = a.indexOf('/');
-  return i < 0 ? a : a.slice(0, i);
+  return splitReplacement(a).pattern;
 }
 /** The replacement of `${v/pat/rep}` as the shell uses it: its quotes and backslashes are removed (`\}` is `}`). */
 function rep(a: string): string {
-  const i = a.indexOf('/');
-  const raw = i < 0 ? '' : a.slice(i + 1);
+  const raw = splitReplacement(a).replacement ?? '';
   return unquoteWord(raw) ?? raw;
 }
 
@@ -83,7 +82,7 @@ function rep(a: string): string {
  * and `\&` (or a quoted one) is the character. Undefined when the replacement has no `&`.
  */
 function ampersandNote(a: string): Text | undefined {
-  const raw = a.indexOf('/') < 0 ? '' : a.slice(a.indexOf('/') + 1);
+  const raw = splitReplacement(a).replacement ?? '';
   let special = false;
   let quoted = false;
   let quote = '';
