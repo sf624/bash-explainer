@@ -337,6 +337,8 @@ export class Analyzer {
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;
+    // The summary above was made with the full explanations; the tree drops what its labels already say.
+    for (const item of items) dropLabelEcho(item);
     return result;
   }
 
@@ -3667,6 +3669,23 @@ export function lookupCommand(name: string): CommandDoc | undefined {
   if (base === 'python') return commands.python3;
   if (base === 'zsh' || base === 'dash' || base === 'ksh') return commands.sh;
   return undefined;
+}
+
+/**
+ * Every renderer shows a token's label beside its explanation, so an explanation that opens with the label
+ * quoted (`` `%s`: value 1 as a string ``) says it twice: remove that opening. The text stays when it only
+ * mentions the label in a sentence. Done on the finished tree, since the same texts stand alone elsewhere
+ * (notes, summaries, examples).
+ */
+function dropLabelEcho(t: Token): void {
+  const label = t.label.trim();
+  const e = t.explanation;
+  if (e.startsWith('`' + label + '`')) {
+    const rest = e.slice(label.length + 2);
+    const m = /^(?::\s+|：\s*)(?=\S)/.exec(rest);
+    if (m) t.explanation = rest.slice(m[0].length);
+  }
+  for (const c of t.children) dropLabelEcho(c);
 }
 
 export function summaryOf(t: Token): string {

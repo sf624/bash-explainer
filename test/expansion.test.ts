@@ -126,6 +126,7 @@ describe('expansion tokens', () => {
     const t = expansionToken('echo ${s@Q}', 'ja');
     assert.match(t.explanation, /クォートする$/);
     assert.deepStrictEqual(examples('echo ${s@Q}', 'ja'), [`\`s="it's"\` のとき → 'it'\\''s'`]);
-    assert.match(t.children[2].explanation, /^`Q`: /);
+    assert.ok(!t.children[2].explanation.startsWith('`Q`'));
+    assert.match(t.children[2].explanation, /^[^`]/);
   });
 });

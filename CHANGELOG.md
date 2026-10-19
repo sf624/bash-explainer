@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A simple command is labelled with its name, not its whole text: `grep -E 're' ids.txt` is shown as `grep` with `-E`, `'re'` and `ids.txt` under it (the same for builtins, functions, `declare`/`export`, `sudo`'s and `find -exec`'s command, and a name such as `/usr/bin/env`, `"$cmd"` or `$(CC)`). Clicking it or pointing at it still highlights the whole command. This shows in the hover, the panel, "copy as Markdown", the command-line tool, the Language Server and the web page. Before, the label repeated the whole command, which the description (of the program) did not describe. Pipelines, lists, loops, tests, assignments, `time` and the redirect token keep the text of what they describe; for `tr -d '\r' < a > b` the command under the redirect token is now `tr`.
+- The explanation of a token no longer repeats its label. In `printf '\033[1;32m%s\033[0m\n'` the parts of the format read `\033` — the character with octal code 033, `%s` — value 1 as a string; the same in regexes, awk, sed, jq, `chmod` modes, `getopts`, `${x@Q}` and the like, in English and Japanese, in the hover, the panel, the command-line tool, the Language Server and the web page. Before, each began with its own text again (`\033`: `\033`: the character with octal code 033). An explanation that quotes something else or only mentions the label in a sentence is unchanged, and notes, summaries and examples keep their text.
 
 ## 0.5.0
 
