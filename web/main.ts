@@ -45,6 +45,8 @@ const TEXT = {
     bannerTail: 'It may differ from the released extension.',
     toRelease: 'Released version',
     dev: 'Development version',
+    theme: 'Theme',
+    themes: { auto: 'Auto', light: 'Light', dark: 'Dark' },
     version: 'Version',
     release: 'Release',
     development: 'Development (main',
@@ -68,6 +70,8 @@ const TEXT = {
     bannerTail: 'からビルドしています。リリース済みの拡張とは異なる場合があります。',
     toRelease: 'リリース版',
     dev: '開発版',
+    theme: 'テーマ',
+    themes: { auto: '自動', light: 'ライト', dark: 'ダーク' },
     version: 'バージョン',
     release: 'リリース版',
     development: '開発版（main',
@@ -76,6 +80,20 @@ const TEXT = {
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
   },
 };
+
+const THEMES = ['auto', 'light', 'dark'] as const;
+type Theme = (typeof THEMES)[number];
+const THEME_KEY = 'bash-explainer-theme';
+/** The saved choice, read by theme-init.js before the first paint too; Auto when storage is unavailable. */
+function savedTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'light' || v === 'dark' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+let theme: Theme = savedTheme();
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
@@ -146,7 +164,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: tags.meta, color: 'var(--vscode-descriptionForeground)' },
 ]);
 
-const theme = EditorView.theme({
+const editorTheme = EditorView.theme({
   '&': { height: '100%', color: 'var(--vscode-editor-foreground)', backgroundColor: 'var(--vscode-editor-background)', fontSize: 'var(--vscode-editor-font-size)' },
   '.cm-scroller': { fontFamily: 'var(--vscode-editor-font-family)', lineHeight: '1.5' },
   '.cm-content': { caretColor: 'var(--vscode-editor-foreground)' },
@@ -205,7 +223,7 @@ const view = new EditorView({
     extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      languageMode.of(modeFor(kind)), syntaxHighlighting(highlightStyle), theme,
+      languageMode.of(modeFor(kind)), syntaxHighlighting(highlightStyle), editorTheme,
       highlightField, problems, lintGutter(),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged && !u.selectionSet) return;
@@ -235,6 +253,7 @@ let panelReady = false;
 // The panel says 'ready' when it starts; it may have done so before this script ran.
 function panelLoaded(): void {
   panelReady = true;
+  toPanel({ type: 'theme', theme });
   updatePanel();
 }
 frame.addEventListener('load', panelLoaded);
@@ -336,6 +355,8 @@ function applyLanguage(): void {
   $('notices').textContent = t.notices;
   // The page is built from one version, so it knows its own label only: the release page the version it
   // shows, the development page its commit. The URL decides which is selected.
+  $('theme-label').textContent = t.theme;
+  $<HTMLSelectElement>('theme').replaceChildren(...THEMES.map((x) => new Option(t.themes[x], x, false, x === theme)));
   $('channel-label').textContent = t.version;
   $<HTMLSelectElement>('channel').replaceChildren(
     new Option(__CHANNEL__ === 'release' ? `${t.release} (v${__VERSION__})` : t.release, 'release', false, __CHANNEL__ === 'release'),
@@ -355,6 +376,20 @@ function applyLanguage(): void {
   $<HTMLSelectElement>('lang').value = lang;
   $<HTMLSelectElement>('kind').replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind, false, k.kind === kind)));
 }
+
+// The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow.
+$<HTMLSelectElement>('theme').addEventListener('change', (e) => {
+  theme = (e.target as HTMLSelectElement).value as Theme;
+  if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', theme);
+  try {
+    if (theme === 'auto') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // The choice then lasts until the page is closed.
+  }
+  toPanel({ type: 'theme', theme });
+});
 
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
   lang = (e.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en';
