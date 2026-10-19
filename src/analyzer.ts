@@ -2518,10 +2518,17 @@ export class Analyzer {
       kind, label, explanation: expl, children: [],
       span: { start: { line: row, character: col + from }, end: { line: row, character: col + to } },
     });
+    // `set -eou pipefail`: in `set`, every `o` of a bundle takes the next word as its name and the other letters still apply (unlike `tar -fv`).
+    const named: [string, OptDoc][] = [];
     for (let k = 0; k < letters.length; k++) {
       const flag = '-' + letters[k];
       const opt = opts[flag];
       const at = k + 1;
+      if (opt?.arg && cmdName === 'set') {
+        parts.push(sub(at, at + 1, 'option', inv(flag, this.t(opt.text)), flag));
+        named.push([flag, opt]);
+        continue;
+      }
       if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
       parts.push(sub(at, at + 1, 'option', inv(flag, this.t(opt.text)), flag));
       if (opt.attachedOnly) {
@@ -2550,6 +2557,11 @@ export class Analyzer {
         }
         break;
       }
+    }
+    for (const [flag, opt] of named) {
+      if (last + 1 >= args.length) break;
+      last++;
+      parts.push(valueTok(opt, flag, args[last]));
     }
     const own = parts.filter((p) => p.span.start.line === row && p.span.end.character <= col + text.length);
     const tail = parts.filter((p) => !own.includes(p));
