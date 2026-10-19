@@ -499,8 +499,18 @@ export const FILTERS: Record<string, (words: (string | undefined)[], input: stri
 const WORDS = ['banana', 'apple', 'cherry', 'grape', 'melon', 'peach'];
 const COLUMNS = [WORDS, ['red', 'green', 'blue', 'yellow', 'pink', 'white'], ['tokyo', 'osaka', 'kyoto', 'nara', 'kobe', 'sendai']];
 
+const SORT_EXTRA: Record<string, string[]> = {
+  n: ['3', '47', '1000', '18', '250', '6', '81', '12'],
+  h: ['3K', '20M', '700', '4G', '15K', '90M', '2M', '8K'],
+  V: ['1.5', '3.0', '1.11', '2.1', '1.0', '2.10', '3.2', '1.3'],
+  f: ['Date', 'elder', 'Fig', 'grape', 'Honey', 'kiwi', 'Lime', 'mango'],
+  s: ['grape', 'melon', 'peach', 'lemon', 'plum', 'kiwi', 'mango', 'fig'],
+};
+const EXTRA_NAMES = ['dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy', 'kate', 'leo', 'mia', 'noah', 'olga'];
+const EXTRA_CITIES = ['nagoya', 'sapporo', 'kobe', 'nara', 'fukuoka', 'sendai', 'chiba', 'kawasaki', 'hiroshima', 'akita', 'saga', 'kochi'];
+
 /** Input lines that make the options of a filter visible. */
-export function sampleInput(cmd: string, words: (string | undefined)[]): string[] | undefined {
+export function sampleInput(cmd: string, words: (string | undefined)[], more = 0): string[] | undefined {
   try {
     switch (cmd) {
       case 'sort': {
@@ -521,6 +531,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[]): string[
         };
         if (!keys.length) {
           const vals = valuesFor(kindOf(global), 0);
+          if (more) return [...(unique ? vals : vals.slice(0, 4)), ...SORT_EXTRA[kindOf(global)].slice(0, more)];
           return unique ? vals : vals.slice(0, 4);
         }
         const cols = Math.max(...keys.map((k) => Math.max(k.sf, k.ef)), 2);
@@ -552,6 +563,8 @@ export function sampleInput(cmd: string, words: (string | undefined)[]): string[
             ['1', 'alice', 'tokyo', '30', 'admin', 'x', 'y', 'z'],
             ['2', 'bob', 'osaka', '25', 'user', 'x', 'y', 'z'],
             ['3', 'carol', 'kyoto', '41', 'user', 'x', 'y', 'z'],
+            ...Array.from({ length: Math.min(more, EXTRA_NAMES.length) }, (_, i) => [
+              String(i + 4), EXTRA_NAMES[i], EXTRA_CITIES[i], String(20 + ((i * 7) % 30)), i % 2 ? 'admin' : 'user', 'x', 'y', 'z']),
           ].map((r) => Array.from({ length: n }, (_, i) => r[i] ?? `f${i + 1}`).join(d));
           return has(p, 's') ? [...rows, 'no delimiter here'] : rows;
         }
@@ -577,7 +590,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[]): string[
         const p = parseOptions(normaliseCount(words), { flags: 'fFqvz', values: 'ncs', long: { lines: 'n', bytes: 'c', follow: 'f' } });
         if (value(p, 'c') !== undefined) return ['abcdefghij', 'klmnopqrst'];
         const n = Math.abs(Number(value(p, 'n') ?? '10'));
-        const count = Math.min(Math.max(n + 3, 6), 14);
+        const count = Math.min(Math.max(n + 3, 6), 14) + more;
         return Array.from({ length: count }, (_, i) => `line ${i + 1}`);
       }
     }
