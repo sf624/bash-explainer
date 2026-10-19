@@ -25,6 +25,7 @@ type ArithCtx = 'cmd' | 'for' | 'slice';
 type Part = Exclude<U.WordPart, U.LiteralPart | U.GlobPart | U.ExtendedGlobPart | U.BraceExpansionPart>;
 const PLAIN = new Set(['Literal', 'Glob', 'ExtendedGlob', 'BraceExpansion']);
 /** What the pattern of ${a#…} may hold and still be one regex. */
+const WORDS = new Set(['word', 'number', 'string', 'concatenation']);
 const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterExpansion']);
 const isPart = (p: U.WordPart): p is Part => !PLAIN.has(p.type);
 /** Blanks, line continuations and comments. */
@@ -870,10 +871,15 @@ class Converter {
     // A substitution inside this one starts at the backslash that escapes its backquote.
     const escaped = (i: number): boolean => this.text[origin[i]] === '`' && this.text[origin[i] - 1] === '\\' && origin[i] - 1 >= start && (i === 0 || origin[i - 1] < origin[i] - 1);
     const ends = origin.map((o, i) => (i ? origin[i - 1] + 1 : o));
+    // The backslash before the character at `i` was removed by the decoding.
+    const eaten = (i: number): boolean => (i ? origin[i - 1] < origin[i] - 1 : origin[0] > start);
     const move = (m: Mut): void => {
       const from = m.startIndex;
       m.startIndex = moveStart(from);
       if (m.type === 'command_substitution' && escaped(from)) m.startIndex--;
+      // A word that starts with a character whose backslash was removed includes that backslash, so that its
+      // text is whole: the explanation removes one level of backslashes from it (`decodedText`).
+      else if (WORDS.has(m.type) && eaten(from)) m.startIndex--;
       m.endIndex = Math.max(m.startIndex, ends[m.endIndex]);
       m.children.forEach(move);
     };

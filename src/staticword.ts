@@ -73,22 +73,41 @@ function emptySubstitution(n: SyntaxNode): boolean {
 }
 
 /**
+ * The text of a node as the shell reads it. Inside a backquote substitution the text is the source, which
+ * bash reads once before the command in it is parsed: a backslash before `$`, a backquote and a backslash
+ * (and a double quote, when the backquote itself is in double quotes) is removed, once for each
+ * backquote around the node, the outermost first.
+ */
+export function decodedText(n: SyntaxNode): string {
+  const levels: boolean[] = [];
+  for (let p = n.parent; p; p = p.parent) {
+    if (p.type !== 'command_substitution' || p.children[0]?.type !== '`') continue;
+    // Is the backquote itself in double quotes? (Up to the substitution around it, if any.)
+    let q = p.parent;
+    while (q && q.type !== 'string' && q.type !== 'command_substitution') q = q.parent;
+    levels.unshift(q?.type === 'string');
+  }
+  return levels.reduce((text, inDouble) => text.replace(inDouble ? /\\([$`\\"])/g : /\\([$`\\])/g, '$1'), n.text);
+}
+
+/**
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
  * depends on a variable, a command, a glob or a brace expansion.
  */
 export function staticWordValue(n: SyntaxNode): string | undefined {
+  const text = decodedText(n);
   switch (n.type) {
     case 'word': case 'number': {
       // An unescaped glob, brace or tilde is not text yet.
-      if (/(^|[^\\])(\\\\)*[*?[{]/.test(n.text) || /^~/.test(n.text)) return undefined;
-      return n.text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
+      if (/(^|[^\\])(\\\\)*[*?[{]/.test(text) || /^~/.test(text)) return undefined;
+      return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
     }
-    case 'raw_string': return n.text.slice(1, -1);
-    case 'ansi_c_string': return ansiCValue(n.text.slice(2, -1));
+    case 'raw_string': return text.slice(1, -1);
+    case 'ansi_c_string': return ansiCValue(text.slice(2, -1));
     case 'string':
       if (!n.namedChildren.every((c) => c.type === 'string_content')) return undefined;
-      return n.text.slice(1, -1).replace(/\\\n/g, '').replace(/\\([$`"\\])/g, '$1');
+      return text.slice(1, -1).replace(/\\\n/g, '').replace(/\\([$`"\\])/g, '$1');
     case 'command_substitution': return emptySubstitution(n) ? '' : undefined;
     case 'concatenation': {
       let out = '';
