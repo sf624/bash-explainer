@@ -3466,6 +3466,11 @@ function literalContent(a: SyntaxNode): Literal | undefined {
     return { text: a.text.slice(1, -1), base: 1 };
   }
   if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
+  // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
+  if (a.type === 'translated_string' && a.namedChildren.length === 1) {
+    const inner = literalContent(a.namedChildren[0]);
+    return inner && !inner.offsets ? { text: inner.text, base: inner.base! + 1 } : undefined;
+  }
   if (a.type === 'concatenation' && a.startPosition.row === a.endPosition.row) {
     let text = '';
     const offsets: number[] = [];
