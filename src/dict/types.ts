@@ -30,12 +30,30 @@ export interface BundleDoc {
   style?: Text;
 }
 
+/**
+ * What the positional arguments mean for a given number of them (`seq 5`, `seq 1 5`, `seq 1 2 10`; `cp a b` and
+ * `cp a b c dir/`). The first entry that fits replaces `positional`.
+ */
+export interface PositionalBy {
+  /** The number of positional arguments: exactly this many, or at least this many with `orMore`. */
+  count: number;
+  orMore?: boolean;
+  /** Does not apply when one of these options is given (`-t|--target-directory`, which names the destination). */
+  unless?: string;
+  /** Descriptions in order; the last repeats. */
+  texts: Text[];
+  /** Describes the final argument instead of `texts`. */
+  last?: Text;
+}
+
 export interface CommandDoc {
   summary: Text;
   builtin?: boolean;
   options?: Record<string, OptDoc>;
   /** Descriptions of positional arguments in order; the last one repeats. */
   positional?: Text[];
+  /** Descriptions that depend on how many positional arguments there are; the first that fits wins over `positional`. */
+  positionalBy?: PositionalBy[];
   /** Embedded language of positional arguments, by index (does not repeat). */
   positionalLang?: (EmbeddedLang | undefined)[];
   /** After its own options, the remaining words form another command (sudo, xargs, env…). */
@@ -77,3 +95,11 @@ export function letters(opts: OptSpec[]): Record<string, OptDoc> {
 }
 
 export const pos = (ja: string, en: string): Text => tx(ja, en);
+
+/** `cp a b` copies to `b`, `cp a b c dir` into `dir`: the last argument is the destination, unless an option names it. */
+export function lastIsDestination(source: Text, one: Text, several: Text, unless = '-t|--target-directory'): PositionalBy[] {
+  return [
+    { count: 2, unless, texts: [source], last: one },
+    { count: 3, orMore: true, unless, texts: [source], last: several },
+  ];
+}

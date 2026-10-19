@@ -87,7 +87,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-v', '対応のない行だけ出力する（ファイル番号 1 または 2）', 'print only unpairable lines of file 1 or 2', 'arg'],
     ['-o', '出力する欄の書式（`1.1,2.2`…）', 'output field list (`1.1,2.2`…)', 'arg'],
     ['-e', '空の欄の代わりに使う文字列', 'string to use for empty fields', 'arg'],
-  ], { positional: [pos('結合するファイル（2 つ）', 'files to join (two)')] }),
+  ], { positional: [pos('1 つ目のソート済みファイル（`-` で標準入力）', 'first sorted file (`-` for stdin)'), pos('2 つ目のソート済みファイル（`-` で標準入力）', 'second sorted file (`-` for stdin)')] }),
   chgrp: cmd('ファイルのグループを変える', 'Change the group of files', [
     recurse(),
     ['-h|--no-dereference', 'シンボリックリンク自体を変える', 'change symlinks themselves'],
