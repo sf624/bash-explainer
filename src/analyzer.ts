@@ -209,6 +209,8 @@ export class Analyzer {
   /** Function definitions in the script: name → where each starts and ends, in source order. */
   private functions = new Map<string, { line: number; start: number; end: number }[]>();
   /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
+  /** Where `set -f` / `set -o noglob` (off: true) and `set +f` / `set +o noglob` (off: false) end, in source order. */
+  private noglob: { end: number; off: boolean }[] = [];
   private namerefs = new Map<string, { line: number; index: number }>();
   /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
   private integers = new Map<string, number>();
@@ -236,6 +238,17 @@ export class Analyzer {
     for (const f of descendants(root, ['function_definition'])) {
       const name = field(f, 'name')?.text;
       if (name) this.functions.set(name, [...(this.functions.get(name) ?? []), { line: f.startPosition.row, start: f.startIndex, end: f.endIndex }]);
+    }
+    this.noglob = [];
+    for (const c of descendants(root, ['command'])) {
+      if (field(c, 'name')?.text !== 'set') continue;
+      const words = fields(c, 'argument').map((a) => a.text);
+      for (let i = 0; i < words.length && words[i] !== '--'; i++) {
+        const m = /^([-+])([a-zA-Z]+)$/.exec(words[i]);
+        if (!m) break;
+        if (m[2].includes('f')) this.noglob.push({ end: c.endIndex, off: m[1] === '-' });
+        if (m[2].includes('o') && words[i + 1] === 'noglob') this.noglob.push({ end: c.endIndex, off: m[1] === '-' });
+      }
     }
     this.namerefs.clear();
     for (const d of descendants(root, ['declaration_command'])) {
@@ -1251,6 +1264,8 @@ export class Analyzer {
       const base = brace ?? this.word(a);
       if (!desc) return base;
       if (brace) return this.tok(a, 'argument', desc, [brace]);
+      const off = hasGlob(a.text) && this.globOff(a);
+      if (off) return this.tok(a, 'argument', desc + this.noglobNote());
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
       return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text));
     }
@@ -1832,7 +1847,7 @@ export class Analyzer {
       return;
     }
     /* c8 ignore stop */
-    if (isGlob(text)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
+    if (isGlob(text) && !this.globOff(a)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
   /**
@@ -1918,7 +1933,7 @@ export class Analyzer {
       const glob = fields(loop, 'value').find((v) => ((!!this.unquotedWord(v) && isGlob(v.text))
         || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
       const v = field(loop, 'variable')?.text;
-      if (!glob || !v) continue;
+      if (!glob || !v || this.globOff(glob)) continue;
       const body = field(loop, 'body')!.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = this.shopt.nullglob !== 'unsupported';
@@ -2315,13 +2330,21 @@ export class Analyzer {
     const unknown = this.s(`オプション（辞書に未登録。\`man ${cmdName.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${cmdName.split(' ')[0]}\`)`);
     let disable = false;
     if (cmdName === 'set' && text.startsWith('+')) { disable = true; text = '-' + text.slice(1); }
-    const pre = disable ? this.s('無効化: ', 'Disable: ') : '';
+    // `set +f` is the opposite of `set -f`: it turns the option off again.
+    const inv = (flag: string, what: string, value = false): string => {
+      if (!disable) return what;
+      const on = flag === '-f' || flag === 'noglob'
+        ? this.s('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again')
+        : flag === '-o' ? this.s('名前で指定したオプションを無効にする', 'disable an option by name')
+          : this.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
+      return value ? on : this.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
+    };
 
     const valueTok = (opt: OptDoc, flag: string, v: SyntaxNode): Token => {
       if (opt.lang) return this.positional(v, this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) + ': ' + this.t(opt.text), opt.lang);
       const known = opt.values?.[v.text];
       return this.tok(v, 'argument', known
-        ? `${v.text}: ${this.t(known)}`
+        ? `${v.text}: ${inv(v.text, this.t(known), true)}`
         : this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``), isPlainWord(v) ? [] : this.sub(v));
     };
 
@@ -2392,7 +2415,7 @@ export class Analyzer {
         last = i + 1;
         children.push(valueTok(opt, text, args[last]));
       }
-      out.push(this.tok(a, 'option', pre + (opt ? this.t(opt.text) : unknown), []));
+      out.push(this.tok(a, 'option', opt ? inv(text, this.t(opt.text)) : unknown, []));
       out.push(...children);
       return last;
     }
@@ -2412,7 +2435,7 @@ export class Analyzer {
       const opt = opts[flag];
       const at = k + 1;
       if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
-      parts.push(sub(at, at + 1, 'option', pre + this.t(opt.text), flag));
+      parts.push(sub(at, at + 1, 'option', inv(flag, this.t(opt.text)), flag));
       if (opt.attachedOnly) {
         // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
         if (k + 1 < letters.length) {
@@ -2691,6 +2714,7 @@ export class Analyzer {
   private word(n: SyntaxNode): Token {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
+    if (hasGlob(text) && this.globOff(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.noglobNote());
     if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
   }
@@ -2707,6 +2731,16 @@ export class Analyzer {
     return this.s(
       `。\`${m[0]}\` は連番ではない: ブレース展開は変数の展開より先に行われるので、\`${m[0]}\` のまま変数だけが置き換わる（例: \`{1..3}\` という文字列）。連番にするには \`eval\` を使うか、\`seq\` や \`for ((…))\` を使う`,
       `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
+  }
+
+  /** Whether file-name globbing is off where `n` is (after `set -f` and before any `set +f`). */
+  private globOff(n: SyntaxNode): boolean {
+    return this.noglob.filter((g) => g.end <= n.startIndex).pop()?.off ?? false;
+  }
+
+  /** What to say of a word with `*` or `?` while `set -f` is on: it stays as it is. */
+  private noglobNote(): string {
+    return this.s('。ただし `set -f`（`set -o noglob`）でグロブが無効になっているので、展開されずこの文字のまま渡される', '. But `set -f` (`set -o noglob`) has turned globbing off, so it is not expanded and stays as written');
   }
 
   /** How a value is shown in an explanation: control characters as pictures, a newline as `\n`. */
