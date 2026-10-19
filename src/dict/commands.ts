@@ -5,6 +5,7 @@ import { system } from './system';
 import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
+import { admin } from './admin';
 import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -757,5 +758,6 @@ export const commands: Record<string, CommandDoc> = {
   ...system,
   ...basic,
   ...storage,
+  ...admin,
   ...ops,
 };
