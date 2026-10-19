@@ -257,6 +257,19 @@ describe('statements as bash reads them', () => {
     // A translated string with an expansion in it is not literal: no example.
     assert.deepStrictEqual(explain('printf $"Copyright %s $y" 2024').examples, []);
   });
+  it('gives a pattern token to any glob or extglob on the right of ==, = and != in [[ ]]', () => {
+    for (const [src, label, note] of [
+      ['[[ $x == --?(a)b ]]', '--?(a)b', /Extended glob: `\?\(a\)`/],
+      ['[[ $x == -@(!(-*)e*|-edit) ]]', '-@(!(-*)e*|-edit)', /Extended glob/],
+      ['[[ $x == *.txt ]]', '*.txt', /^Pattern$/],
+      ['[[ $x != *.txt ]]', '*.txt', /^Pattern$/],
+      ['[[ $x = [ab]*.c ]]', '[ab]*.c', /^Pattern$/],
+    ] as const) assert.match(find(explain(src), label, 'pattern').explanation, note, src);
+    // Plain words, and `[ ]` (which compares text), have none; an arithmetic `==` has none either.
+    assert.ok(!all(explain('[[ $x == abc ]]').items).some((t) => t.kind === 'pattern'));
+    assert.ok(!all(explain('[ "$x" = *.txt ]').items).some((t) => t.kind === 'pattern'));
+    assert.ok(!all(explain('echo $((x == y*2))').items).some((t) => t.kind === 'pattern'));
+  });
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
   });

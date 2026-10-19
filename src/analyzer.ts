@@ -2726,7 +2726,12 @@ export class Analyzer {
     // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
     // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
     const plain = (x: SyntaxNode) => (isPlainWord(x) && !(this.inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
-    const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
+    // The grammar leaves some patterns as words (`*.txt`, `--?(a)b`, `-@(!(-*)e*|-edit)`); on the right of `==` in `[[ ]]` they are patterns all the same.
+    const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
+    const operands = sortTokens([
+      ...this.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
+      ...rights.filter(pattern).map((x) => this.tok(x, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(x.text))),
+    ]);
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       const num = this.numericTestNote(op, [n.namedChildren[0].text, rightText], true);
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
