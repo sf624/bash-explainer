@@ -249,7 +249,7 @@ export class Analyzer {
     const addArray = (name: string | undefined, index: number, assoc: boolean): void => { if (name && !this.arrays.has(name)) this.arrays.set(name, { index, assoc }); };
     for (const a of descendants(root, ['variable_assignment'])) {
       const nameNode = field(a, 'name');
-      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && /^-[a-zA-Z]*A/.test(a.parent.namedChildren.find((c) => c.type === 'word' && c.text.startsWith('-'))?.text ?? ''));
+      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && /^\w+\s+-[a-zA-Z]*A/.test(a.parent.text));
       else if (nameNode?.type === 'subscript') addArray(nameNode.text.replace(/\[.*/s, ''), a.startIndex, false);
     }
     for (const d of descendants(root, ['declaration_command'])) {
@@ -267,7 +267,7 @@ export class Analyzer {
     for (const a of descendants(root, ['variable_assignment'])) {
       if (field(a, 'name')?.text !== 'IFS' || (a.parent?.type === 'command' && field(a.parent, 'name')?.text) || a.parent?.type === 'declaration_command') continue;
       const v = field(a, 'value');
-      const value = v ? staticWordValue(v) ?? (isPlainWord(v) ? v.text : undefined) : '';
+      const value = v ? staticWordValue(v) : '';
       if (value === undefined) continue;
       this.ifsAssigns.push({ node: a, value, scope: ancestor(a, (x) => ['subshell', 'command_substitution', 'process_substitution', 'function_definition'].includes(x.type)) });
     }
@@ -884,7 +884,7 @@ export class Analyzer {
     }
     // `IFS` is the list of characters word splitting, `read` and `"${a[*]}"` use as separators.
     if (nm === 'IFS' && name?.type !== 'subscript' && !(n.parent?.type === 'command' && field(n.parent, 'name')?.text)) {
-      const v = value ? staticWordValue(value) ?? (isPlainWord(value) ? value.text : undefined) : '';
+      const v = value ? staticWordValue(value) : '';
       expl += v === undefined
         ? this.s('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧で、`"${a[*]}"` と `"$*"` が要素をつなぐ文字（先頭の1文字）でもある', '. `IFS` lists the characters word splitting and `read` split on, and its first character joins the elements in `"${a[*]}"` and `"$*"`')
         : v === ''
@@ -1836,11 +1836,13 @@ export class Analyzer {
   private braceWords(text: string): string[] | undefined {
     try {
       return braceExpand(text);
+      /* c8 ignore start */
     } catch (e) {
-      /* c8 ignore next */
+      // Too many words to list. (braceExpand throws nothing else.)
       if (!(e instanceof ShellWordsUnsupported)) throw e;
       return undefined;
     }
+    /* c8 ignore stop */
   }
 
   /** A word that tree-sitter-bash splits at its braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is. */
@@ -2686,7 +2688,7 @@ export class Analyzer {
     const plain = (x: SyntaxNode) => (isPlainWord(x) && !(this.inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
     const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
-      const num = this.numericTestNote(op, [left?.text ?? '', rightText], true);
+      const num = this.numericTestNote(op, [n.namedChildren[0].text, rightText], true);
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
       }
@@ -2836,7 +2838,7 @@ export class Analyzer {
     for (const a of descendants(this.rootNode, ['variable_assignment'])) {
       if (a.endIndex > n.startIndex || field(a, 'name')?.text !== name || a.parent?.type === 'declaration_command') continue;
       const v = field(a, 'value');
-      value = v ? staticWordValue(v) ?? (isPlainWord(v) ? v.text : undefined) : '';
+      value = v ? staticWordValue(v) : '';
     }
     return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
   }
