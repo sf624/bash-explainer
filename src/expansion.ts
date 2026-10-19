@@ -278,9 +278,9 @@ const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /**
  * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
- * rules as bash. Undefined when the expansion depends on values we cannot know.
+ * rules as bash. Undefined when the expansion depends on values we cannot know. `quoted`: the expansion is in double quotes.
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang, quoted = false): ExpansionCase[] | undefined {
   const ja = lang === 'ja';
   const name = p.name;
   // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
@@ -337,7 +337,9 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
     return undefined;
   }
   const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
-  const word = part('word') ?? '';
+  // The word of `${u-'x'}` after quote removal. Inside double quotes the single quotes stay (`"${u-'x'}"` is `'x'`).
+  const rawWord = part('word') ?? '';
+  const word = unquoteWord(rawWord, quoted) ?? rawWord;
   // A plausible value for "when it has a value", chosen to look like the default.
   const sample = /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
   const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;

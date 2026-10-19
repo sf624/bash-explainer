@@ -32,12 +32,17 @@ export function ansiCValue(body: string): string | undefined {
  * The text of a pattern replacement or similar piece of a word after quote removal, from its source text
  * (`\}` is `}`, `"a b"` is `a b`). Undefined if it holds an expansion (`$x`, `$(…)`, backticks).
  */
-export function unquoteWord(text: string): string | undefined {
+export function unquoteWord(text: string, inDouble = false): string | undefined {
   let out = '';
+  // Inside a double-quoted `${u-…}`, a backslash only escapes `$`, a backtick, `"`, `\` and `}`, a single quote is plain text,
+  // and a double quote opens a string of its own.
+  const escapes = inDouble ? '$`"\\}' : '';
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === '\\' && i + 1 < text.length) out += text[++i];
-    else if (c === "'") {
+    if (c === '\\' && i + 1 < text.length) {
+      if (inDouble && !escapes.includes(text[i + 1])) out += c;
+      else out += text[++i];
+    } else if (c === "'" && !inDouble) {
       const end = text.indexOf("'", i + 1);
       if (end < 0) return undefined;
       out += text.slice(i + 1, end);
