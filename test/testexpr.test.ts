@@ -5,17 +5,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import type { BashParser as Parser } from '../src/syntax/tree';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { parseTest, TestExpr, testRange } from '../src/testexpr';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 let dir: string;
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
   // Files for the tests: `f` and `a` are files, `d` is a directory, `file` is a file; `c` does not exist.
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testexpr-'));
   for (const f of ['f', 'a', 'b', 'file']) fs.writeFileSync(path.join(dir, f), 'x');
@@ -266,13 +263,10 @@ describe('[ ] in the analyzer groups as bash does', () => {
     ['[ x = x -a ! d = f ]', '([x = x] & ![d = f])'],
     ['[ ! x = y ]', '![x = y]'],
     ['[ a = *"$a"*z ]', '[a = *"$a"*z]'],
+    // Groups are written \( \): bash rejects bare parentheses in `[ ]` as a syntax error.
+    ['[ \\( a = b \\) -o c = d ]', '(([a = b]) | [c = d])'],
+    ['[ \\( a -o b \\) -a c ]', '((([a] | [b])) & [c])'],
   ];
-  // Unescaped parentheses are a syntax error in bash, but the grammar reads them: they are explained as the group they mean.
-  const grouped: [string, string][] = [
-    ['[ ( a = b ) -o c = d ]', '(([a = b]) | [c = d])'],
-    ['[ ( a -o b ) -a c ]', '((([a] | [b])) & [c])'],
-  ];
-  for (const [src, expected] of grouped) it(src, () => assert.strictEqual(groups(analyze(src)), expected));
   const sets: Record<string, string>[] = [
     { a: '1', b: '2', x: '' }, { a: '1', b: '3', x: 'y' }, { a: '2', b: '2', x: 'y' }, { a: '3', b: '1', x: '1' }, { a: '2', b: '1', x: 'f' },
   ];

@@ -3,17 +3,14 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, parseFind } from '../src/embedded/find';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-type', '-mtime', '-newer', '-maxdepth'].includes(w) ? 1 : 0);
 
 let parser: Parser;
 before(async () => {
   const root = path.join(__dirname, '..');
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 function tokens(src: string, lang: 'ja' | 'en' = 'en'): Token[] {

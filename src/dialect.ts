@@ -230,6 +230,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       return;
     }
     case 'brace_expression': add('braceRange'); return;
+    case 'coproc_statement': add('coproc'); return;
     case 'c_style_for_statement': add('cFor'); return;
     case 'select_statement': add('select'); return;
     case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
@@ -300,7 +301,6 @@ function commandFeatures(name: string, words: string[], add: (id: string) => voi
     case 'let': add('let'); break;
     case 'shopt': add('shopt'); break;
     case 'pushd': case 'popd': case 'dirs': add('pushd'); break;
-    case 'coproc': add('coproc'); break;
     case 'print': add('print'); break;
     case 'whence': add('whence'); break;
     case 'export': if (/f/.test(flags)) add('exportF'); break;
@@ -390,6 +390,8 @@ function zshSyntaxPlaces(tree: SyntaxTree, from: number, to: number): Place[] {
   };
   places.forEach(add);
   for (const w of descendants(tree.root, ['word'], { from, to })) if (/(^|[^\\])[?*+@!]\(/.test(w.text)) add(w);
+  // Parameter flags, `${(f)var}`: bash reads them as an expansion and reports "bad substitution" only when it runs.
+  for (const e of descendants(tree.root, ['expansion'], { from, to })) if (e.text.startsWith('${(')) add(e);
   return out;
 }
 

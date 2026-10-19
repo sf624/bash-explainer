@@ -5,15 +5,12 @@ import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 (async () => {
   const [file, lang = 'ja', only] = process.argv.slice(2);
-  const parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  const parser = createUnbashParser();
   const src = fs.readFileSync(file, 'utf8');
   // Dockerfiles, Makefiles, YAML, package.json and Markdown: explain only their shell parts.
   const kind = hostKind('', file);

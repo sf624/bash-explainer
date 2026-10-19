@@ -2,17 +2,14 @@ import * as assert from 'assert';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { examplesMarkdown, lineSegments, placeExamples, toMarkdown } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 function hover(src: string, line = 0, placement: 'first' | 'last' | 'bottom' = 'first') {

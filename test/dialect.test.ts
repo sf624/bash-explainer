@@ -5,15 +5,12 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { fixFor } from '../src/fixes';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 // A snippet per feature that prints "ok" only where the feature works.
@@ -178,15 +175,15 @@ describe('dialect notes', () => {
   it('shows where zsh syntax or a missing token is, once on each line', () => {
     const at = (src: string) => dialectIssues(parser.parse(src), 'zsh', 'en').filter((i) => i.kind === 'parse')
       .map((i) => [i.place.startPosition.row, i.place.startPosition.column, i.place.endPosition.column - (i.place.endPosition.row === i.place.startPosition.row ? i.place.startPosition.column : 0)]);
-    // Where the closing `)` should be: a place of no width.
-    assert.deepStrictEqual(at('x=('), [[0, 3, 0]]);
-    // An error node covers what it could not read; a glob qualifier is a word.
-    assert.deepStrictEqual(at("ls @(a'b"), [[0, 0, 8]]);
+    // `x=(` is read as an unfinished extended glob, from `=`; a missing token is a place of no width.
+    assert.deepStrictEqual(at('x=('), [[0, 1, 2]]);
+    assert.deepStrictEqual(at("ls @(a'b"), [[0, 3, 5]]);
     assert.deepStrictEqual(at('ls *(.)\nls ok'), [[0, 3, 4]]);
-    // The empty error the parser adds after a trailing backslash is not a place.
-    assert.deepStrictEqual(at('%*d|\\\n').map((p) => p.slice(0, 2)), [[0, 0]]);
+    assert.deepStrictEqual(at('%*d|\\\n'), [[0, 4, 0]]);
+    // A parameter flag is an expansion to the parser; bash says "bad substitution" when it runs.
+    assert.deepStrictEqual(at('print ${(f)var}'), [[0, 6, 9]]);
     // The first place on a line only, and one on each line.
-    assert.deepStrictEqual(at('echo ok\nx=(\ny=(1').map((p) => p[0]), [0]);
+    assert.deepStrictEqual(at('echo ok\nx=(\ny=(1').map((p) => p[0]), [1, 2]);
     assert.deepStrictEqual(at('ls *(.)\nls *(/)').map((p) => p[0]), [0, 1]);
   });
   it('words the note for POSIX sh and for a specific shell', () => {

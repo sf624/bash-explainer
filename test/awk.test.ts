@@ -4,7 +4,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainAwk } from '../src/embedded/awk';
 import { EmbeddedToken } from '../src/embedded/types';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 function all(ts: EmbeddedToken[]): EmbeddedToken[] {
   return ts.flatMap((t) => [t, ...all(t.children)]);
@@ -69,10 +69,7 @@ describe('awk in a command line', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createTreeSitterParser({
-      runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-      bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-    });
+    parser = createUnbashParser();
   });
 
   it('maps a multi-line program onto the right lines', () => {

@@ -21,8 +21,14 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+/** The packages of node_modules that an esbuild metafile lists among a bundle's inputs. */
+function packagesOf(meta: { inputs: Record<string, unknown> }): string[] {
+  const names = Object.keys(meta.inputs).map((p) => p.replace(/\\/g, '/').match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//)?.[1]);
+  return [...new Set(names.filter((n): n is string => !!n))].sort();
+}
+
 describe('offline by design', () => {
-  it('the source imports only vscode, web-tree-sitter and, in an adapter nothing uses yet, unbash', () => {
+  it('the source imports only vscode, unbash and, in an adapter no bundle includes any more, web-tree-sitter', () => {
     const modules = new Set<string>();
     for (const file of sourceFiles('src')) {
       for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
@@ -30,7 +36,8 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name);
       }
     }
-    // unbash is imported by src/syntax/adapters/unbash.ts only, which no bundle includes until the extension switches to it.
+    // unbash is imported by src/syntax/adapters/unbash.ts only; web-tree-sitter by src/syntax/adapters/tree-sitter.ts only,
+    // which no bundle includes (the next test checks it) and which goes with the next step of the switch.
     assert.deepStrictEqual([...modules].sort(), ['unbash', 'vscode', 'web-tree-sitter']);
   });
 
@@ -42,7 +49,7 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name.replace(/^(@codemirror\/[^/]+).*/, '$1'));
       }
     }
-    for (const name of modules) assert.match(name, /^(@codemirror\/(commands|language|legacy-modes|lint|state|view)|@lezer\/highlight|web-tree-sitter)$/, name);
+    for (const name of modules) assert.match(name, /^(@codemirror\/(commands|language|legacy-modes|lint|state|view)|@lezer\/highlight)$/, name);
   });
 
   it('the source, the panel script, the web page and the command-line tool use no browser network APIs', () => {
@@ -52,19 +59,25 @@ describe('offline by design', () => {
     }
   });
 
-  it('the shipped bundles (desktop and web) require only vscode and file modules, all by name', function () {
+  it('the shipped bundles (desktop and web) require only vscode, all by name, and include no parser but unbash and no wasm', function () {
     this.timeout(60000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-'));
     try {
       const out = path.join(dir, 'extension.js');
       // The same build as `npm run package`.
-      execFileSync(process.execPath, ['esbuild.mjs', '--production', `--outfile=${out}`], { cwd: root, stdio: 'pipe' });
-      // fs, path and url: web-tree-sitter's code for Node.js, which reads the wasm files only when given paths.
+      const metafile = path.join(dir, 'meta.json');
+      execFileSync(process.execPath, ['esbuild.mjs', '--production', `--outfile=${out}`, `--metafile=${metafile}`], { cwd: root, stdio: 'pipe' });
+      // The only package from node_modules in either bundle is unbash (no web-tree-sitter, no grammar).
+      const meta = JSON.parse(fs.readFileSync(metafile, 'utf8'));
+      for (const target of ['node', 'web']) assert.deepStrictEqual(packagesOf(meta[target]), ['unbash'], target);
+      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.wasm')), []);
       for (const file of [out, path.join(dir, 'web', 'extension.js')]) {
         const bundle = fs.readFileSync(file, 'utf8');
         const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
         assert.ok(required.has('vscode'), file);
-        for (const name of required) assert.ok(['fs', 'path', 'url', 'vscode'].includes(name), `${file} requires ${name}`);
+        assert.deepStrictEqual([...required], ['vscode'], file);
+        // Nothing is compiled or fetched at run time.
+        assert.doesNotMatch(bundle, /WebAssembly|\.wasm/, file);
         // A name built at run time could load anything.
         assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/, file);
         assert.doesNotMatch(bundle, /telemetry/i, file);
@@ -74,7 +87,7 @@ describe('offline by design', () => {
     }
   });
 
-  it('the command-line tool imports only fs and path, and its bundle requires nothing else', function () {
+  it('the command-line tool imports only fs, and its bundle requires nothing else', function () {
     this.timeout(60000);
     const modules = new Set<string>();
     for (const file of sourceFiles('cli')) {
@@ -83,15 +96,18 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name);
       }
     }
-    assert.deepStrictEqual([...modules].sort(), ['fs', 'path']);
+    assert.deepStrictEqual([...modules].sort(), ['fs']);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-cli-'));
     try {
-      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+      const metafile = path.join(dir, 'meta.json');
+      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`, `--metafile=${metafile}`], { cwd: root, stdio: 'pipe' });
+      assert.deepStrictEqual(packagesOf(JSON.parse(fs.readFileSync(metafile, 'utf8'))), ['unbash']);
+      assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'dist')), ['cli.js']);
       const bundle = fs.readFileSync(path.join(dir, 'dist', 'cli.js'), 'utf8');
       const required = new Set([...bundle.matchAll(/\brequire\s*\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1]));
-      assert.deepStrictEqual([...required].sort(), ['fs', 'path']);
+      assert.deepStrictEqual([...required].sort(), ['fs']);
       assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/);
-      assert.doesNotMatch(bundle, /telemetry/i);
+      assert.doesNotMatch(bundle, /telemetry|WebAssembly/i);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -110,7 +126,10 @@ describe('offline by design', () => {
     this.timeout(60000);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-site-'));
     try {
-      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+      const metafile = path.join(dir, 'meta.json');
+      execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`, `--metafile=${metafile}`], { cwd: root, stdio: 'pipe' });
+      // The page is its files and nothing else: no wasm, no other bundle.
+      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'panel-host.js', 'panel.js']);
       for (const page of ['index.html', 'panel.html']) {
         const html = fs.readFileSync(path.join(dir, page), 'utf8');
         const csp = html.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
@@ -118,7 +137,7 @@ describe('offline by design', () => {
         const directives = new Map(csp.split(';').map((d) => d.trim()).filter(Boolean).map((d) => [d.split(/\s+/)[0], d.split(/\s+/).slice(1)]));
         // Nothing from other sites, and no requests but to the page's own files.
         for (const [name, sources] of directives) {
-          for (const src of sources) assert.match(src, /^('(self|none|wasm-unsafe-eval|unsafe-inline)'|data:)$/, `${page}: ${name} ${src}`);
+          for (const src of sources) assert.match(src, /^('(self|none|unsafe-inline)'|data:)$/, `${page}: ${name} ${src}`);
         }
         assert.ok(['default-src', 'connect-src'].every((d) => !directives.get(d) || directives.get(d)!.every((s) => s === "'self'" || s === "'none'")));
         assert.ok(directives.has('default-src'), `${page}: no default-src`);
@@ -126,18 +145,19 @@ describe('offline by design', () => {
         for (const m of html.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)="([^"]*)"/g)) assert.doesNotMatch(m[1], /:/, `${page}: ${m[0]}`);
       }
       const app = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
-      // Node.js modules appear only in web-tree-sitter's code for Node.js, never run in a browser.
+      // The page requires no Node.js module (esbuild would have bundled or failed on it), and has no wasm.
       const builtins = /\b[\w$]+\(\s*"((?:node:)?(?:fs|path|url|module|http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster))"\s*\)/g;
-      for (const name of new Set([...app.matchAll(builtins)].map((m) => m[1]))) assert.ok(['fs', 'path', 'url', 'module'].includes(name), `the page requires ${name}`);
-      assert.doesNotMatch(app, /telemetry|sendBeacon|WebSocket|EventSource/i);
+      assert.deepStrictEqual([...new Set([...app.matchAll(builtins)].map((m) => m[1]))], [], 'the page requires a Node.js module');
+      assert.doesNotMatch(app, /telemetry|sendBeacon|WebSocket|EventSource|WebAssembly/i);
+      assert.ok(!packagesOf(JSON.parse(fs.readFileSync(metafile, 'utf8'))).some((n) => n.includes('tree-sitter')), 'the page includes tree-sitter');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('depends at run time on tree-sitter only', () => {
+  it('depends at run time on unbash only, and on the tree-sitter packages until the switch is finished', () => {
     const pkg = JSON.parse(read('package.json'));
-    assert.deepStrictEqual(Object.keys(pkg.dependencies).sort(), ['tree-sitter-bash', 'web-tree-sitter']);
+    assert.deepStrictEqual(Object.keys(pkg.dependencies).sort(), ['tree-sitter-bash', 'unbash', 'web-tree-sitter']);
   });
 
   it('parses and explains scripts with the network and processes blocked', function () {

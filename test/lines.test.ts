@@ -28,7 +28,7 @@ import { yamlLines } from '../src/examples/yaml';
 import { extractShell } from '../src/hosts';
 import { resolveLang } from '../src/i18n';
 import { simulateRedirects } from '../src/idioms';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TreeCache } from '../src/syntax/cache';
 import type { BashParser } from '../src/syntax/tree';
 import { panelUpdate } from '../src/ui/panelView';
@@ -38,13 +38,9 @@ import { toMarkdown } from '../src/ui/render';
 // helper gives up. Every line of src/ is to run in some test (see scripts/coverage-check.mjs).
 
 const root = path.join(__dirname, '..');
-const wasm = {
-  runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-  bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-};
 let parser: BashParser;
 before(async () => {
-  parser = await createTreeSitterParser(wasm);
+  parser = createUnbashParser();
 });
 
 const explain = (src: string, line = 0) => {
@@ -57,13 +53,6 @@ const flat = (e: ReturnType<typeof explain>): string => {
 };
 
 describe('lines no other test reaches', () => {
-  it('parser: made from the wasm files themselves, as in VS Code', async () => {
-    const binaries = { runtime: fs.readFileSync(path.join(wasm.runtimeDir, 'web-tree-sitter.wasm')), bash: fs.readFileSync(wasm.bashWasm) };
-    const p = await createTreeSitterParser(binaries);
-    const tree = p.parse('echo hi');
-    assert.strictEqual(tree.root.type, 'program');
-  });
-
   it('parser: one tree per document, parsed again only for a new version', () => {
     const cache = new TreeCache(parser);
     let parses = 0;
@@ -282,7 +271,7 @@ describe('lines no other test reaches', () => {
       ['if then fi\necho ok )\n  more (\nx', 1, /syntax error region|./],
       ['( cd /tmp && ls )', 0, /Subshell: runs `\( \)` in a child process/],
       ['declare -i n', 0, /n: Variable `n`/],
-      ['FOO=1 2>/dev/null', 0, /Variable assignment/],
+      ['FOO=1 2>/dev/null', 0, /Redirection applied to `FOO=1` as a whole/],
       ['(( n > 1 )) 2>/dev/null', 0, /test \(\( n > 1 \)\)|Arithmetic/],
       ["grep -v 'foo[0-9]' f", 0, /Printed \(lines that do not match\)/],
       ["jq --argjson n '{bad' '.a' f", 0, /./],
