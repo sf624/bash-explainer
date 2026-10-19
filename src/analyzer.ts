@@ -882,6 +882,16 @@ export class Analyzer {
         expl = this.s(`配列 \`${arr}\` の要素 \`[${idx}]\` に代入する`, `Assign to element \`[${idx}]\` of array \`${arr}\``);
       }
     }
+    // `IFS` is the list of characters word splitting, `read` and `"${a[*]}"` use as separators.
+    if (nm === 'IFS' && name?.type !== 'subscript' && !(n.parent?.type === 'command' && field(n.parent, 'name')?.text)) {
+      const v = value ? staticWordValue(value) ?? (isPlainWord(value) ? value.text : undefined) : '';
+      expl += v === undefined
+        ? this.s('。`IFS` は単語分割（と `read`）が区切りに使う文字の一覧で、`"${a[*]}"` と `"$*"` が要素をつなぐ文字（先頭の1文字）でもある', '. `IFS` lists the characters word splitting and `read` split on, and its first character joins the elements in `"${a[*]}"` and `"$*"`')
+        : v === ''
+          ? this.s('。`IFS` が空だと単語分割がされなくなる（`"${a[*]}"` と `"$*"` の要素は区切りなしでつながる）', '. An empty `IFS` turns word splitting off (the elements of `"${a[*]}"` and `"$*"` are joined with nothing between them)')
+          : this.s(`。\`IFS\` は単語分割（と \`read\`）が区切りに使う文字の一覧: これ以降、クォートしない展開は \`${this.shown(v)}\` で分割される。\`"\${a[*]}"\` と \`"$*"\` は先頭の文字 \`${this.shown(v[0])}\` で要素をつなぐ`,
+            `. \`IFS\` lists the characters word splitting (and \`read\`) split on: from here, unquoted expansions are split on \`${this.shown(v)}\`. \`"\${a[*]}"\` and \`"$*"\` join their elements with the first character, \`${this.shown(v[0])}\``);
+    }
     const children: Token[] = [];
     if (value) {
       for (const t of this.sub(value)) {
@@ -3128,7 +3138,7 @@ export class Analyzer {
         const idx = p.subscript!;
         if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
         if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
-        if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string)')];
+        if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると、`IFS` の先頭の文字で区切った1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string, separated by the first character of `IFS`)')];
         if (p.name === 'BASH_REMATCH' && /^\d+$/.test(idx)) {
           return ['variable', idx === '0'
             ? s('インデックス 0: `=~` で一致した全体', 'Index 0: the whole text the `=~` matched')
