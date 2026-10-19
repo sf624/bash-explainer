@@ -11,7 +11,7 @@ import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { evalArithWrapping } from '../src/arith';
 import { explainArith } from '../src/embedded/arith';
-import { braceExpand } from '../src/examples/shellwords';
+import { braceExpand, globMatches, isGlob } from '../src/examples/shellwords';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -1476,6 +1476,25 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.strictEqual(describeGlob(globParts('[a-c0-9]')!, 'en'), 'one character from a-c0-9');
       assert.strictEqual(describeGlob(globParts('[[:punct:]]')!, 'en'), 'one character from [:punct:]');
       assert.strictEqual(describeGlob(globParts('[a')!, 'en'), '"[a"');
+      assert.strictEqual(describeGlob(globParts('[[:alpha:]_]')!, 'en'), 'one character from letters, _');
+      // Odd ones: out-of-order and class-ended ranges, collating and equivalence elements, a `[` that is no bracket expression.
+      const chars = ['a', 'b', 'c', ']', '^', '\\', '-', '!', '1', 'A', '_', '.', 'x', 'z', '[', '+', ',', '5'];
+      for (const pattern of ['[z-a]', '[a-[:digit:]]', '[+-[:digit:]]', '[a[', '[[]', '[[a]', '[a-[.z.]]', '[[=a=]-c]', '[[:foo:]]', '[[:alpha:]', '[!a]', '[\\^a]', '[]-a]', '[a-]', '[]]', '[^]]', '[!]a]', '[a\\]b]', '[[.a.]]', '[\\a]', '[\\-a]', '[[:digit:][:alpha:]_]', '[[:punct:]]', '[[:space:]x]', '[[:xdigit:]]', '[[:cntrl:]]']) {
+        for (const c of chars) assert.strictEqual(globMatches(pattern, c, 'value'), caseMatches(pattern, c), `${pattern} on ${c}`);
+      }
+      assert.ok(isGlob('[]]') && isGlob('[[:alpha:]]') && isGlob('a?') && isGlob('+(a)') && !isGlob('[a') && !isGlob('\\[a]') && !isGlob('a\\*'));
+      // An extended glob the matcher cannot say (`!(…)` followed by a `*`) is no match, not an error.
+      assert.strictEqual(globMatches('!(a)*', 'bx', 'value'), false);
+      // The example of an uppercase with a pattern that can change nothing has the value as it is.
+      assert.deepStrictEqual(examplesOf('echo ${s^^[!a-z]}')[0].sections[0].lines, ['hello world']);
+      assert.strictEqual(bash('s="hello world"; echo "${s^^[!a-z]}"'), 'hello world\n');
+    });
+
+    it('does not fail on a case pattern that is not closed', () => {
+      if (!unbash) return;
+      for (const src of ['echo ${s~~"a}', "echo ${s~~'a}", 'echo ${s~~$(}', 'echo ${s~~', 'echo ${s~~a', 'echo ${s~~${x}}']) {
+        assert.ok(tokens(src).some((t) => t.kind === 'expansion'), src);
+      }
     });
 
     it('does not claim more than bash does for the other lines', () => {

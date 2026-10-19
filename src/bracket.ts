@@ -23,7 +23,7 @@ export function bracketEnd(pattern: string, open: number, to = pattern.length): 
   for (; j < to; j++) {
     const c = pattern[j];
     if (c === '\\') j++;
-    else if (c === '[' && ':.='.includes(pattern[j + 1] ?? '')) {
+    else if (c === '[' && /^[:.=]$/.test(pattern[j + 1])) {
       const close = pattern.indexOf(`${pattern[j + 1]}]`, j + 2);
       if (close > 0 && close < to) j = close + 1;
     } else if (c === ']') return j;
@@ -35,29 +35,28 @@ export function bracketEnd(pattern: string, open: number, to = pattern.length): 
 export function bracketItems(body: string): { negated: boolean; items: BracketItem[] } {
   const negated = body[0] === '!' || body[0] === '^';
   let i = negated ? 1 : 0;
-  /** One character (an escaped one, or a `[.x.]` / `[=x=]` element) or one class. */
-  const read = (): BracketItem => {
-    if (body[i] === '[' && ':.='.includes(body[i + 1] ?? '')) {
+  /** One character (an escaped one, or a `[.x.]` / `[=x=]` element) or one class; an equivalence class `[=x=]` cannot start a range. */
+  const read = (): { item: BracketItem; rangeable: boolean } => {
+    if (body[i] === '[' && /^[:.=]$/.test(body[i + 1])) {
       const close = body.indexOf(`${body[i + 1]}]`, i + 2);
       if (close > 0) {
         const name = body.slice(i + 2, close);
         const kind = body[i + 1];
         i = close + 2;
-        return kind === ':' ? { type: 'class', name } : { type: 'char', ch: name };
+        return { item: kind === ':' ? { type: 'class', name } : { type: 'char', ch: name }, rangeable: kind !== '=' };
       }
     }
     if (body[i] === '\\' && i + 1 < body.length) i++;
-    return { type: 'char', ch: body[i++] };
+    return { item: { type: 'char', ch: body[i++] }, rangeable: true };
   };
   const items: BracketItem[] = [];
   while (i < body.length) {
-    const item = read();
-    // A `-` that is not last makes a range with the next character.
-    if (item.type === 'char' && body[i] === '-' && i + 1 < body.length) {
+    const { item, rangeable } = read();
+    // A `-` that is not last makes a range with the next character (a range that ends in a class matches nothing).
+    if (item.type === 'char' && rangeable && body[i] === '-' && i + 1 < body.length) {
       i++;
-      const hi = read();
+      const hi = read().item;
       if (hi.type === 'char') items.push({ type: 'range', from: item.ch, to: hi.ch });
-      else items.push(item, { type: 'char', ch: '-' }, hi);
     } else items.push(item);
   }
   return { negated, items };

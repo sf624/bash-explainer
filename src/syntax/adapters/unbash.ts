@@ -790,19 +790,15 @@ class Converter {
     const shift = start - 4;
     const src = '${x^' + this.text.slice(start, end) + '}';
     const exp = (parse(src).commands[0].command as U.Command).name!.parts![0] as U.ParameterExpansionPart;
-    const operand = (exp.operation as U.ParameterCaseOperation | undefined)?.operand;
-    // (Text that unbash would not read as an operand, such as an unclosed quote, stays a pattern as it is.)
-    if (!operand) {
-      /* c8 ignore next */
-      this.node('regex', start, end, null, owner);
-      return;
-    }
+    // (unbash reads `${x^` and any text after it as the pattern of a case modification, also when it is not closed.)
+    const operand = (exp.operation as U.ParameterCaseOperation).operand!;
     const sub = new Converter(src);
     const holder = sub.node('program', 0, src.length);
     sub.pattern(operand, holder);
+    // (The `}` of the wrapper is not in the text: an operand that is not closed takes it.)
     const move = (m: Mut): void => {
       m.startIndex += shift;
-      m.endIndex += shift;
+      m.endIndex = Math.min(m.endIndex + shift, end);
       m.children.forEach(move);
     };
     for (const c of holder.children) {
