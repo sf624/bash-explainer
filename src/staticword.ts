@@ -121,3 +121,25 @@ export function staticWordValue(n: SyntaxNode): string | undefined {
     default: return undefined;
   }
 }
+
+/**
+ * `["a b"]=1`, `[']']+=2`: the key, `+` if it appends, and the value of an array element written with a subscript.
+ * The closing `]` is the first one outside quotes, expansions and nested `[ ]`, as bash finds it (the text may be
+ * a word that a parser has cut into pieces at the quotes).
+ */
+export function splitElement(text: string): { key: string; plus: string; value: string } | undefined {
+  const skip = /\\.|'[^']*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\$\{[^}]*\}|\$\([^)]*\)/y;
+  if (text[0] !== '[') return undefined;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    skip.lastIndex = i;
+    const m = skip.exec(text);
+    if (m) i += m[0].length - 1;
+    else if (text[i] === '[') depth++;
+    else if (text[i] === ']' && --depth === 0) {
+      const rest = /^(\+?)=(.*)$/s.exec(text.slice(i + 1));
+      return rest ? { key: text.slice(1, i), plus: rest[1], value: rest[2] } : undefined;
+    }
+  }
+  return undefined;
+}

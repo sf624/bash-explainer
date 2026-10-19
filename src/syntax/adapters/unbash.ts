@@ -6,6 +6,7 @@ import { forEachChild, parse } from 'unbash';
 import type * as U from 'unbash';
 import type { BashParser, FieldName, Point, SyntaxError, SyntaxNode, SyntaxTree } from '../tree';
 import { scanGap } from './tokens';
+import { splitElement } from '../../staticword';
 
 type Mut = {
   -readonly [K in keyof SyntaxNode]: K extends 'children' | 'namedChildren' ? Mut[] : K extends 'parent' ? Mut | null : SyntaxNode[K];
@@ -532,14 +533,14 @@ class Converter {
    * index, `]` and `=z`, as tree-sitter reads it (there is no node for it in the model).
    */
   element(e: U.Word): Mut {
-    const m = !e.parts ? /^\[([^\]\s]*)\](\+?=)/.exec(e.text) : null;
+    const m = !e.parts ? splitElement(e.text) : null;
     if (!m) return this.word(e, 'element');
     const c = this.node('concatenation', e.pos, e.end);
     const at = e.pos + 1;
     this.node('word', e.pos, at, null, c);
-    this.node(NUMBER.test(m[1]) ? 'number' : 'word', at, at + m[1].length, null, c);
-    this.node('word', at + m[1].length, at + m[1].length + 1, null, c);
-    this.node('word', at + m[1].length + 1, e.end, null, c);
+    this.node(NUMBER.test(m.key) ? 'number' : 'word', at, at + m.key.length, null, c);
+    this.node('word', at + m.key.length, at + m.key.length + 1, null, c);
+    this.node('word', at + m.key.length + 1, e.end, null, c);
     return c;
   }
 
