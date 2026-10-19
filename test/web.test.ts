@@ -91,6 +91,9 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await page.locator('meta[name=robots]').getAttribute('content'), 'noindex');
     // A link copied here points to this page.
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+    // The clipboard is shared by the browser's contexts: empty it, so that the wait below sees this
+    // page's link and not one an earlier test copied.
+    await page.evaluate('navigator.clipboard.writeText("")');
     await page.locator('#share').click();
     const link = await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
     assert.ok(link.startsWith(`${base}next/#`), link);
@@ -150,6 +153,9 @@ describe('the web page in a browser', function () {
     await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));
 
     // A link to the script, opened online in a new page: the script travels after '#' only.
+    // The clipboard is shared by the browser's contexts: empty it, so that the wait below sees this
+    // page's link and not one an earlier test copied.
+    await page.evaluate('navigator.clipboard.writeText("")');
     await page.locator('#share').click();
     const link = await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
     await ctx.setOffline(false);
