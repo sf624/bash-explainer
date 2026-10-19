@@ -248,6 +248,15 @@ describe('statements as bash reads them', () => {
     assert.ok(find(explain('echo "PV " x'), '"PV "'));
     assert.deepStrictEqual(explain('echo a  \\\nb').items.map((t) => t.label), ['echo a  \\ …']);
   });
+  it('reads the format of printf in $"…" like one in double quotes, with its example', () => {
+    for (const q of ['"', '$"']) {
+      const e = explain(`printf ${q}Copyright %s Inc.${'"'} 2024`);
+      assert.ok(find(e, '%s', 'variable'), q);
+      assert.deepStrictEqual(e.examples.map((x) => x.kind), ['printf'], q);
+    }
+    // A translated string with an expansion in it is not literal: no example.
+    assert.deepStrictEqual(explain('printf $"Copyright %s $y" 2024').examples, []);
+  });
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
   });
