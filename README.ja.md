@@ -278,6 +278,7 @@ npm run build      # dist/ にバンドル
 npm test           # 型チェック + 単体テスト
 npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
 npm run package    # .vsix を作成
+npx tsx scripts/extract-snippets.ts   # テスト内のスクリプトを変えたあとに test/fixtures/snippets.json（構文テストとファズの入力）を書き直す（CI は --check で確かめる）
 npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Code は .vscode-test/ にダウンロード）
 npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
 ```
