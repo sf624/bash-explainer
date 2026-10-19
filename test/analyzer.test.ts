@@ -235,6 +235,16 @@ describe('statements as bash reads them', () => {
     const zsh = new Analyzer('en').explainLine(parser.parse('echo ${(f)var}'), 0, 'zsh');
     assert.ok(!all(zsh.items).some((t) => /bad substitution/.test(t.explanation)));
   });
+  it('explains the later lines of a case pattern list that goes on after a backslash as patterns', () => {
+    const src = 'case $x in\n  a|b|\\\n  c)\n    echo hi ;;\n  d|\\\n  e) echo d ;;\nesac';
+    assert.strictEqual(spawnSync('bash', ['-n'], { input: src }).status, 0);
+    const c = explain(src, 2);
+    assert.deepStrictEqual(all(c.items).map((t) => [t.kind, t.label]), [['pattern', 'c']]);
+    assert.match(c.context.map((x) => x.label).join(), /case branch/);
+    // The body after `)` on the same line is still explained, and the first line has the whole branch.
+    assert.deepStrictEqual(explain(src, 5).items.map((t) => t.label), ['e', 'echo d', ';;']);
+    assert.match(explain(src, 1).items[0].explanation, /matches `a \| b \| c`/);
+  });
   it('explains array elements with an index of their own', () => {
     const e = explain('a+=([7]=z [k]=v x$y)');
     assert.strictEqual(find(e, '[7]=z').explanation, 'Element with index `7`: set it to `z`');
