@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- An array element with spaces in its subscript, `a=([1 + 1]=x)` or `declare -A m=([a b]=1)`, is explained as one element with an index (2) or a key (`a b`), as bash reads it up to the `]`. Before, the tree-sitter path split it into three words (`[1`, `+`, `1]=x`) and said three elements. `[1 + 1] =x`, `[1 + 1] = x` and `x[1 + 1]=x` are still separate words, as in bash.
+- `${a[@]@K}` and `${a[@]@k}` say that an indexed array gives index and value pairs too, not only an associative one. The Japanese for `@E`, `@A`, `@K`, `@a` and `@k` is smoother (it had 「値を…を…する」).
+- `[ 1+1 -eq 2 ]`, `[ x -eq 2 ]` and `[ 1.5 -eq 1 ]` say that `[ ]` reads only integers for `-eq` and the like, so the operand is an error (integer expression expected), and `[[ ]]` would calculate it. `[[ 1+1 -eq 2 ]]` says that it is read as arithmetic (2). Before, they said "numbers are equal" only.
 - An array element whose key is quoted, such as `["a b"]=1`, `[']']=3` or `['q r']=z` in `h=( … )`, is explained as an element with a key and a value, like `[c]=2`; the key is shown without its quotes (`a b`). Before, it was a "concatenation" of `[`, the string and `]=1`. The closing `]` is the first one outside quotes, expansions and nested `[ ]`, as in bash, so `['a=b']=c` and `[a\]]=c` work too.
 - `${!prefix@}` and `${!prefix*}` are explained as the list of the names of the variables that start with the prefix (`@`: separate words, `*`: one word inside double quotes), with the `@` and `*` described as such. Before, they were an "indirection" through a variable named like the prefix, the `@` was called a transform, and `${!zq_*}` made the explanation fail. `${!x@Q}` says indirection first, then the transform.
 - `=` and `==` in `[ ]` and `test` are explained as comparing plain strings (`[ a = a* ]` is false). The note that the right side is a glob pattern is shown in `[[ ]]` only; before, `[ ]` had it too.

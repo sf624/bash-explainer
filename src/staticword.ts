@@ -123,11 +123,12 @@ export function staticWordValue(n: SyntaxNode): string | undefined {
 }
 
 /**
- * `["a b"]=1`, `[']']+=2`: the key, `+` if it appends, and the value of an array element written with a subscript.
- * The closing `]` is the first one outside quotes, expansions and nested `[ ]`, as bash finds it (the text may be
- * a word that a parser has cut into pieces at the quotes).
+ * Where the key of an array element written with a subscript ends: the index of its closing `]` in `text`,
+ * which starts with `[`, and `+` if the `=` after it appends. The `]` is the first one outside quotes,
+ * expansions and nested `[ ]`, as bash finds it, and must be followed by `=` or `+=`. White space inside
+ * the brackets belongs to the key (`[1 + 1]=x`).
  */
-export function splitElement(text: string): { key: string; plus: string; value: string } | undefined {
+export function elementClose(text: string): { close: number; plus: string } | undefined {
   const skip = /\\.|'[^']*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\$\{[^}]*\}|\$\([^)]*\)/y;
   if (text[0] !== '[') return undefined;
   let depth = 0;
@@ -137,9 +138,18 @@ export function splitElement(text: string): { key: string; plus: string; value: 
     if (m) i += m[0].length - 1;
     else if (text[i] === '[') depth++;
     else if (text[i] === ']' && --depth === 0) {
-      const rest = /^(\+?)=(.*)$/s.exec(text.slice(i + 1));
-      return rest ? { key: text.slice(1, i), plus: rest[1], value: rest[2] } : undefined;
+      const rest = /^(\+?)=/.exec(text.slice(i + 1));
+      return rest ? { close: i, plus: rest[1] } : undefined;
     }
   }
   return undefined;
+}
+
+/**
+ * `["a b"]=1`, `[']']+=2`: the key, `+` if it appends, and the value of an array element written with a subscript
+ * (the text may be a word that a parser has cut into pieces at the quotes).
+ */
+export function splitElement(text: string): { key: string; plus: string; value: string } | undefined {
+  const e = elementClose(text);
+  return e && { key: text.slice(1, e.close), plus: e.plus, value: text.slice(e.close + 2 + e.plus.length) };
 }

@@ -861,7 +861,7 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.match(bashErr('[[ 08 -eq 8 ]]'), /value too great for base/);
       assert.strictEqual(bash('[ 08 -eq 8 ] && echo b'), 'b\n');
       // Plain decimals, strings and other operators get no note.
-      for (const src of ['[[ 10 -eq 8 ]]', '[ 10 -eq 8 ]', '[[ 010 == 8 ]]', '[ 010 = 8 ]', '[ a -eq b ]', '[[ 0 -eq 0 ]]', '[[ 010 < 9 ]]']) {
+      for (const src of ['[[ 10 -eq 8 ]]', '[ 10 -eq 8 ]', '[[ 010 == 8 ]]', '[ 010 = 8 ]', '[[ a -eq b ]]', '[[ 0 -eq 0 ]]', '[[ 010 < 9 ]]']) {
         assert.ok(!/reads/.test(tokens(src).map((t) => t.explanation).join('\n')), src);
       }
       // One argument is a string: true when it is not empty, even if it looks like an operator.
@@ -1748,6 +1748,131 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
         'm\nq\n11\n',
       ];
       ROUND8.forEach((src, i) => assert.strictEqual(bash(src), out[i], src));
+    });
+  });
+}
+
+// The twelve lines of the ninth round.
+const ROUND9 = [
+  'x=y y=3; [[ 1+1 -eq 2 && x -eq 3 ]] && echo arith; [ 1+1 -eq 2 ] 2>/dev/null || echo int-only',
+  '[[ \'a b\' =~ a( )b && \'a]\' =~ [ab]] && x =~ ^(x|y)$ ]] && echo regex',
+  'echo {a,{b},c} {{a,b}} {"a,b"} x={a,b}; y={a,b}; z=(p{1,2}); echo $y ${z[@]}',
+  'a=(1 2 3); unset \'a[1]\'; echo ${#a[@]} ${a[@]:1:1} ${!a[@]}; a=c; echo ${a[@]} $a[2] ${a}2',
+  'if { true; } then echo y; fi; if (false) then :; else echo n; fi; case x in esac; echo empty-case',
+  'if=1 then=2; fi=3; echo $if$then$fi; done=x eval \'echo $done\'',
+  'p=\'*\'; case abc in "$p") echo lit;; $p) echo glob;; esac; case \'*\' in "$p") echo lit2;; esac',
+  'echo -e \'a\\cb\'; echo c; printf %s\\\\n x \'\\t\'; echo \'\\\'\\\'',
+  'y=5; y= eval \'echo "[$y]"\'; echo $y; x=1 eval \'echo $x\'',
+  'x=\'a\\tb\'; declare -ri r=1; a=(p q); echo "${x@E}" ${x@A} ${a[@]@K} ${r@a}',
+  'select s in a b; do echo $s; break; done <<< 2 2>/dev/null',
+  '{ (echo a) }; f() (( $1 > 2 )); f 3 && echo big; ! f 1 && echo small',
+];
+// What tree-sitter-bash reads wrongly: `[ab]]` in a regex, the reserved words as names (`if=1`) and `{ (echo a) }`.
+const ROUND9_TS_BROKEN = [1, 4, 11];
+
+/** The output of bash for `script`, run in an empty directory. */
+const bashEmpty = (script: string): string => bash(`cd "$(mktemp -d)" && ${script}`);
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 9, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND9_TS_BROKEN.includes(i);
+    const elem = (src: string, label: string, lang: 'ja' | 'en' = 'en') => findAt(src, 0, label, lang).explanation;
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND9.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    it('does not claim more than bash does for the lines', () => {
+      const out = [
+        'arith\nint-only\n',
+        'regex\n',
+        'a {b} c {a} {b} {a,b} x=a x=b\n{a,b} p1 p2\n',
+        '2 3 0 2\nc 3 c[2] c2\n',
+        'y\nn\nempty-case\n',
+        '123\nx\n',
+        'glob\nlit2\n',
+        'ac\nx\n\\t\n\\\'\n',
+        '[]\n5\n1\n',
+        'a\tb x=\'a\\tb\' 0 "p" 1 "q" ir\n',
+        'b\n',
+        'a\nbig\nsmall\n',
+      ];
+      ROUND9.forEach((src, i) => assert.strictEqual(bashEmpty(src), out[i], src));
+    });
+
+    it('explains a subscript with spaces in a compound assignment as one keyed element', () => {
+      // bash reads the subscript up to its `]`, spaces included (`declare -p`).
+      for (const [s, label, what, op, value, shown] of [
+        ['a=([1 + 1]=x); declare -p a', '[1 + 1]=x', 'index `1 + 1` (an arithmetic expression: 2)', 'set it to', 'x', 'declare -a a=([2]="x")\n'],
+        ['a=([1 +1]=x [ 3 ]=y); declare -p a', '[1 +1]=x', 'index `1 +1` (an arithmetic expression: 2)', 'set it to', 'x', 'declare -a a=([2]="x" [3]="y")\n'],
+        ['a=(p q r s); a=([1 + 1]+=x); declare -p a', '[1 + 1]+=x', 'index `1 + 1` (an arithmetic expression: 2)', 'append', 'x', 'declare -a a=([2]="x")\n'],
+        ['a=( [1 + $((1))]=x y); declare -p a', '[1 + $((1))]=x', 'index `1 + $((1))`', 'set it to', 'x', 'declare -a a=([2]="x" [3]="y")\n'],
+        ['declare -A m=([a b]=1); declare -p m', '[a b]=1', 'key `a b` (a string, not evaluated)', 'set it to', '1', 'declare -A m=(["a b"]="1" )\n'],
+        ['declare -A m=([c  d]+=2); declare -p m', '[c  d]+=2', 'key `c  d` (a string, not evaluated)', 'append', '2', 'declare -A m=(["c  d"]="2" )\n'],
+      ] as const) {
+        assert.strictEqual(elem(s.split('; declare -p')[0], label), `Element with ${what}: ${op} \`${value}\``, s);
+        assert.strictEqual(bash(s), shown, s);
+      }
+      assert.strictEqual(elem('declare -A m=([a b]=1)', '[a b]=1', 'ja'), 'キー `a b`（文字列で、計算はされない）の要素に `1` を代入する');
+      // The elements after it are not swallowed.
+      const kids = tokens('a=([1 + 1]=x y [5]=z)').filter((t) => t.label.startsWith('[') || t.label === 'y').map((t) => t.label);
+      assert.deepStrictEqual(kids, ['[1 + 1]=x', 'y', '[5]=z']);
+      assert.strictEqual(bash('a=([1 + 1]=x y [5]=z); declare -p a'), 'declare -a a=([2]="x" [3]="y" [5]="z")\n');
+    });
+
+    it('does not join words that bash keeps apart', () => {
+      for (const s of ['a=([1 + 1] =x)', 'a=([1 + 1] = x)', 'a=([1 + 1]x)', 'a=(x[1 + 1]=x)', 'a=([1 + 1 =x)']) {
+        assert.ok(!tokens(s).some((t) => t.explanation.startsWith('Element with')), s);
+      }
+      assert.strictEqual(bash('a=([1 + 1] =x); declare -p a'), 'declare -a a=([0]="[1 + 1]" [1]="=x")\n');
+      assert.strictEqual(bash('a=([1 + 1] = x); declare -p a'), 'declare -a a=([0]="[1 + 1]" [1]="=" [2]="x")\n');
+      assert.strictEqual(bash('a=(x[1 + 1]=x); declare -p a'), 'declare -a a=([0]="x[1" [1]="+" [2]="1]=x")\n');
+    });
+
+    it('says that ${a[@]@K} gives index and value pairs for an indexed array too', () => {
+      const k = find('echo "${a[@]@K}"', '${a[@]@K}').explanation;
+      assert.match(k, /show it as key\/value pairs with quoted values \(index\/value pairs for an indexed array\)$/);
+      assert.ok(!/associative/.test(k));
+      assert.strictEqual(bash('a=(p "q r"); echo "${a[@]@K}"'), '0 "p" 1 "q r"\n');
+      assert.strictEqual(bash('declare -A h=([x]=1); echo "${h[@]@K}"'), 'x "1" \n');
+      assert.match(find('echo ${a[@]@k}', '${a[@]@k}').explanation, /alternating keys and values \(indices and values for an indexed array\)$/);
+      assert.strictEqual(bash('a=(p "q r"); echo ${a[@]@k}'), '0 p 1 q r\n');
+      assert.match(find('echo "${a[@]@K}"', '${a[@]@K}', 'ja').explanation, /^パラメータ展開: `a` の値をキーと値の組（値は引用符付き、通常の配列では添字と値の組）の形にする$/);
+    });
+
+    it('words @E, @A, @K and @a in Japanese without a doubled を', () => {
+      for (const t of ['E', 'A', 'K', 'a', 'k', 'Q', 'P']) {
+        const ex = find(`echo \${x@${t}}`, `\${x@${t}}`, 'ja').explanation;
+        assert.ok(ex.startsWith('パラメータ展開: `x` の値を') && !/を.*を/.test(ex.slice('パラメータ展開: `x` の値を'.length)), ex);
+      }
+    });
+
+    it('says why [ 1+1 -eq 2 ] fails, and that [[ ]] calculates it', () => {
+      const single = (src: string) => find(src, src.slice(2, -2).trim()).explanation;
+      assert.match(single('[ 1+1 -eq 2 ]'), /`\[ \]` reads only integers for -eq, so `1\+1` is an error \(integer expression expected\); `\[\[ \]\]` would read it as arithmetic \(2\)$/);
+      assert.match(find('[ 1+1 -eq 2 ]', '1+1 -eq 2', 'ja').explanation, /`\[ \]` の -eq は整数しか読めないので `1\+1` はエラー（integer expression expected）。`\[\[ \]\]` なら算術として読める（2）$/);
+      assert.match(find('[[ 1+1 -eq 2 ]]', '1+1 -eq 2').explanation, /`\[\[ \]\]` reads -eq operands as arithmetic, so `1\+1` is 2$/);
+      assert.match(find('[ x -eq 2 ]', 'x -eq 2').explanation, /so `x` is an error \(integer expression expected\); `\[\[ \]\]` would read it as arithmetic$/);
+      assert.match(find('[ 1.5 -ne 1 ]', '1.5 -ne 1').explanation, /so `1\.5` is an error/);
+      // Plain integers, and operands that are not known, get no such note.
+      for (const s of ['[ 2 -eq 2 ]', '[ -5 -lt +3 ]', '[ "$x" -eq 1 ]', '[ $x -eq 1 ]', '[[ x -eq 3 ]]', '[[ 2 -eq 2 ]]', '[ a = b ]']) {
+        assert.ok(!/integer expression|as arithmetic/.test(tokens(s).map((t) => t.explanation).join('\n')), s);
+      }
+      assert.match(bashErr('[ 1+1 -eq 2 ]'), /integer expression expected/);
+      assert.match(bashErr('[ x -eq 2 ]'), /integer expression expected/);
+      assert.match(bashErr('[ 1.5 -ne 1 ]'), /integer expression expected/);
+      assert.strictEqual(bash('[ -5 -lt +3 ] && echo y'), 'y\n');
+      assert.strictEqual(bash('[[ 1+1 -eq 2 ]] && echo y'), 'y\n');
+      assert.strictEqual(bash('[[ 2*3 -eq 6 ]] && echo y'), 'y\n');
     });
   });
 }
