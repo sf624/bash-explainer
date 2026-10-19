@@ -8,6 +8,9 @@ import type { BashParser, SyntaxTree } from '../src/syntax/tree';
 import { hasError } from '../src/syntax/tree';
 import { fuzzInputs, soundness, uncovered } from './support/fuzz';
 import { corpus } from './support/oracle';
+import { Analyzer } from '../src/analyzer';
+import { documentIssues } from '../src/document';
+import type { Shell } from '../src/dialect';
 
 // Fuzzing the adapters with unfinished and damaged input. The inputs come from the fixtures and the
 // snippets of the tests: prefixes (what the user has typed so far), a word removed, a random cut.
@@ -56,6 +59,62 @@ describe('syntax adapters: fuzzing', () => {
       else if (t.text !== text) bad.push(`${JSON.stringify(text)}: text`);
       else if (unbashComplains(text) && !t.errors.length && !hasError(t.root)) bad.push(`${JSON.stringify(text)}: unbash reports an error, the tree has none`);
       else if (uncovered(t).length) bad.push(`${JSON.stringify(text)}: text no node covers: ${uncovered(t)[0]}`);
+    }
+    assert.deepEqual(bad.slice(0, 30), []);
+  });
+
+  // The analyzer and the checks must not throw on any tree, whatever is typed: the extension explains the line the user is typing.
+  const analyzers = { en: new Analyzer('en'), ja: new Analyzer('ja') };
+  const shells: Shell[] = ['sh', 'bash', 'zsh'];
+  const exercise = (text: string): string | undefined => {
+    let t: SyntaxTree;
+    try {
+      t = ub.parse(text);
+    } catch {
+      return undefined; // the parser's own test reports it
+    }
+    const lines = text.split(/\r?\n/);
+    try {
+      for (const lang of ['en', 'ja'] as const) {
+        for (let i = 0; i < lines.length; i++) for (const shell of [undefined, 'zsh'] as const) analyzers[lang].explainLine(t, i, shell);
+        for (const forced of shells) documentIssues({ lines, tree: t }, lang, { forced });
+      }
+    } catch (e) {
+      return `${JSON.stringify(text)}: throws ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ')}`;
+    }
+    return undefined;
+  };
+
+  it('analyzer and document checks: the unfinished lines that threw', () => {
+    for (const text of ['for f in *', 'for f in *.txt; d', '[[ -f', 'if [[ -z', '[[ $a && -n', '[[ x || -z ', 'cat <<', 'cat <<-', 'tr a-z A-Z <<', '#!/bin/sh\nmake build &>', '#!/bin/sh\nif [[ -f ]]; then :; fi']) {
+      assert.strictEqual(exercise(text), undefined, text);
+    }
+  });
+
+  it('analyzer and document checks: no throw on any fuzzed tree', function () {
+    this.timeout(60000);
+    const bad: string[] = [];
+    for (const text of inputs) {
+      const r = exercise(text);
+      if (r) bad.push(r);
+    }
+    assert.deepEqual(bad.slice(0, 30), []);
+  });
+
+  it('analyzer and document checks: no throw on any prefix of any line of the fixtures', function () {
+    this.timeout(60000);
+    const bad: string[] = [];
+    const seen = new Set<string>();
+    for (const f of corpus().files) {
+      for (const line of f.text.split('\n')) {
+        for (let n = 1; n <= line.length; n++) {
+          const prefix = line.slice(0, n);
+          if (seen.has(prefix)) continue;
+          seen.add(prefix);
+          const r = exercise(prefix);
+          if (r) bad.push(r);
+        }
+      }
     }
     assert.deepEqual(bad.slice(0, 30), []);
   });
