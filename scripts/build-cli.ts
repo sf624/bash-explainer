@@ -1,4 +1,4 @@
-// Builds the command-line tool (the npm package in cli/): one bundled script, the wasm files, the
+// Builds the command-line tool (the npm package in cli/): one bundled script, the
 // license and the notices. Usage: npx tsx scripts/build-cli.ts [--outdir=cli] [--metafile=<path>]
 import * as esbuild from 'esbuild';
 import * as fs from 'fs';
@@ -19,8 +19,6 @@ async function main(): Promise<void> {
     outfile: path.join(dist, 'cli.js'),
     bundle: true,
     platform: 'node',
-    // web-tree-sitter's CommonJS build: its ES module build needs import.meta, which CommonJS lacks.
-    alias: { 'web-tree-sitter': path.join(root, 'node_modules/web-tree-sitter/web-tree-sitter.cjs') },
     format: 'cjs',
     target: 'node18',
     minify: true,
@@ -32,8 +30,6 @@ async function main(): Promise<void> {
   if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   fs.chmodSync(path.join(dist, 'cli.js'), 0o755);
   const copy = (from: string, to: string) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
-  copy('node_modules/web-tree-sitter/web-tree-sitter.wasm', 'dist/web-tree-sitter.wasm');
-  copy('grammar/tree-sitter-bash.wasm', 'dist/tree-sitter-bash.wasm');
   copy('LICENSE', 'LICENSE');
   copy('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md');
   if (outdir !== path.join(root, 'cli')) copy('cli/package.json', 'package.json');

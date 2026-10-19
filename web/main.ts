@@ -12,14 +12,13 @@ import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
 import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
 import { extractShell } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
@@ -40,8 +39,6 @@ const TEXT = {
     problems: 'Problems',
     privacy: 'Your script stays in this browser: it is parsed and explained here, with no server and no AI.',
     notices: 'Third-party notices',
-    loading: 'Loading the parser…',
-    failed: 'Could not load the parser:',
     replace: 'Replace your script with the sample?',
     line: (n: number) => `Ln ${n}`,
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
@@ -58,8 +55,6 @@ const TEXT = {
     problems: '問題',
     privacy: 'スクリプトはこのブラウザから出ません。構文解析も解説もこのページの中で行い、サーバーも AI も使いません。',
     notices: 'サードパーティのライセンス',
-    loading: '構文解析器を読み込んでいます…',
-    failed: '構文解析器を読み込めませんでした:',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
     line: (n: number) => `${n} 行目`,
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
@@ -76,7 +71,7 @@ let lang: Lang = shared.lang ?? (navigator.language.toLowerCase().startsWith('ja
 let kind: Kind = shared.kind ?? 'shell';
 /** The shell and yq chosen in the panel ('auto' when unset). */
 const choice: { shell?: Shell; yq?: string } = {};
-let parser: Parser | undefined;
+const parser = createUnbashParser();
 const analyzers = new Map<Lang, Analyzer>();
 let parsed: { text: string; kind: Kind; doc: ShellDocument } | undefined;
 let shown: { explanation: LineExplanation; line: number } | undefined;
@@ -85,7 +80,6 @@ const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(l
 
 /** The script as the explainers see it, parsed once per change. */
 function shellDocument(): ShellDocument | undefined {
-  if (!parser) return undefined;
   const text = view.state.doc.toString();
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
   const lines = text.split('\n');
@@ -422,14 +416,6 @@ async function start(): Promise<void> {
     const text = await inflate(shared.deflated);
     if (text !== undefined) setText(text, 1);
   }
-  status(TEXT[lang].loading, true);
-  try {
-    parser = await createTreeSitterParser({ runtimeDir: '.', bashWasm: 'tree-sitter-bash.wasm' });
-  } catch (e) {
-    status(`${TEXT[lang].failed} ${e instanceof Error ? e.message : String(e)}`, true);
-    return;
-  }
-  status('');
   updatePanel();
   recheck();
 }

@@ -274,7 +274,7 @@ Issues and pull requests are welcome at [github.com/sf624/bash-explainer](https:
 
 ```sh
 npm install
-npm run build      # bundle into dist/ (also copies the wasm files)
+npm run build      # bundle into dist/
 npm test           # type check + unit tests
 npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
