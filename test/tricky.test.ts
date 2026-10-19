@@ -1646,3 +1646,108 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
     });
   });
 }
+
+// The thirteen lines of the eighth round.
+const ROUND8 = [
+  'function if { echo "kw $1"; }; \\if x; \'if\' y; i\\f z; if :; then echo real; fi',
+  'for do in done; do echo $do; done; echo do done then',
+  'a=AB; echo ${a,A} {$a,A} ${a,,} ${a~}',
+  'p=a/a; echo ${p/a/b/c} ${p//\\//:} ${p/\\/a} ${p/#a/^}',
+  'echo "$\'\\x41\'" $\'\\x41\'"$\'"\'$\' "\\$\'"',
+  'x=\'#a#\'; echo ${x#\\#} ${x%\'#\'} ${x/#\'#\'/!} ${x//#/-} ${x/#/-} ${x/%/-}',
+  'echo a\\ #b c#d \\#e #f',
+  'declare -A h=(["a b"]=1 [c]=2 [\']\']=3); echo "${h["a b"]}" ${h[c]} ${h[\']\']} ${#h[@]}',
+  '((echo a); echo b)',
+  'a[1 + 1]=x; ((b[1+1]=5, b[2]++)); echo ${!a[@]} ${a[2]} ${b[2]} ${!b[@]}',
+  'x=\'1 2\'; declare y=$x; echo "$y"; x=0; x=1 echo $x; x=2 >/dev/null; echo $x',
+  '[[ -a /dev/null && -z "" && ! ( a > b || -n "" ) ]] && echo t; ! ! true; echo $?',
+  'case $(echo a) in $(echo a)) echo m;; esac; case \'a)\' in "a)") echo q;; esac; echo $(( ((1)) ))$((1))',
+];
+// What tree-sitter-bash reads wrongly: `${a~}`, `((echo a); echo b)` and `x=2 >/dev/null`.
+const ROUND8_TS_BROKEN = [2, 8, 10];
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 8, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND8_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND8.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    it('explains an element with a quoted key as a keyed element, with the key bash gives it', () => {
+      const elem = (src: string, label: string, lang: 'ja' | 'en' = 'en') => findAt(src, 0, label, lang).explanation;
+      const src = ROUND8[7];
+      assert.strictEqual(bash(src), '1 2 3 3\n');
+      assert.strictEqual(elem(src, '["a b"]=1'), 'Element with key `a b` (a string, not evaluated): set it to `1`');
+      assert.strictEqual(elem(src, '[\']\']=3'), 'Element with key `]` (a string, not evaluated): set it to `3`');
+      assert.strictEqual(elem(src, '[c]=2'), 'Element with key `c` (a string, not evaluated): set it to `2`');
+      assert.strictEqual(elem(src, '["a b"]=1', 'ja'), 'キー `a b`（文字列で、計算はされない）の要素に `1` を代入する');
+      // Each element gives the key and the value shown (bash: `declare -p`).
+      assert.strictEqual(bash('declare -A h=(["a b"]=1 [c]=2 [\']\']=3); echo "${h["a b"]}" ${h[c]} ${h[\']\']} ${#h[@]}'), '1 2 3 3\n');
+      for (const [s, label, key, op, value] of [
+        ['declare -A h=(["a b"]=1 [a]=2 [a]+=x); declare -p h', '[a]+=x', 'a', 'append', 'x'],
+        ['declare -A h=([\'q r\']=z); declare -p h', '[\'q r\']=z', 'q r', 'set it to', 'z'],
+        ['declare -A h=([\'a=b\']=c); declare -p h', '[\'a=b\']=c', 'a=b', 'set it to', 'c'],
+        ['declare -A h=([a\\]]=c); declare -p h', '[a\\]]=c', 'a]', 'set it to', 'c'],
+        ['declare -A h=([a[1]]=c); declare -p h', '[a[1]]=c', 'a[1]', 'set it to', 'c'],
+        ['declare -A h=([\'a]\']+=c); declare -p h', '[\'a]\']+=c', 'a]', 'append', 'c'],
+      ] as const) {
+        assert.strictEqual(elem(s, label), `Element with key \`${key}\` (a string, not evaluated): ${op} \`${value}\``, s);
+        assert.ok(bash(s).includes(`["${key}"]="${value}"`) || bash(s).includes(`[${key}]="${value}"`), s);
+      }
+    });
+
+    it('keeps an expansion in the key as written, and reads an indexed key as arithmetic after the quotes', () => {
+      for (const s of ['declare -A h=(["$k"]=v); k=a', 'declare -A h=([${k}]=v)', 'declare -A h=([$k]=v)']) {
+        const key = /\[(.*?)\]=/.exec(s)![1];
+        assert.strictEqual(findAt(s, 0, `[${key}]=v`).explanation, `Element with key \`${key}\` (a string, not evaluated): set it to \`v\``, s);
+      }
+      assert.strictEqual(bash('k="x y"; declare -A h=(["$k"]=v [${k}]=w [$k]=z); declare -p h'), 'declare -A h=(["x y"]="z" )\n');
+      assert.strictEqual(bash('k=3; a=(["$k"]=v [${k}]=w); declare -p a'), 'declare -a a=([3]="w")\n');
+      for (const [s, label, shown, n] of [
+        ['a=(["1"+1]=x)', '["1"+1]=x', '1+1', 2],
+        ['a=([\'1\'+1]=x)', '[\'1\'+1]=x', '1+1', 2],
+      ] as const) {
+        assert.strictEqual(findAt(s, 0, label).explanation, `Element with index \`${shown}\` (an arithmetic expression: ${n}): set it to \`x\``, s);
+        assert.strictEqual(bash(`${s}; declare -p a`), 'declare -a a=([2]="x")\n', s);
+      }
+      assert.strictEqual(findAt('a=(["k"]+=v)', 0, '["k"]+=v').explanation, 'Element with index `k`: append `v`');
+      assert.strictEqual(bash('a=(["k"]+=v); declare -p a'), 'declare -a a=([0]="v")\n');
+    });
+
+    it('takes a word that only starts like an element for a plain word', () => {
+      for (const s of ['a=([k]v [ab x)', 'a=([k]v)']) {
+        assert.ok(!tokens(s).some((t) => t.explanation.startsWith('Element with')), s);
+      }
+      assert.strictEqual(bash('a=([k]v); declare -p a'), 'declare -a a=([0]="[k]v")\n');
+    });
+
+    it('does not claim more than bash does for the other lines', () => {
+      const out = [
+        'kw x\nkw y\nkw z\nreal\n',
+        'done\ndo done then\n',
+        'aB AB A ab aB\n',
+        'b/c/a a:a a ^/a\n',
+        '$\'\\x41\' A$\'$ $\'\n',
+        'a# #a !a# -a- -#a# #a#-\n',
+        'a #b c#d #e\n',
+        '1 2 3 3\n',
+        'a\nb\n',
+        '2 x 6 2\n',
+        '1 2\n0\n2\n',
+        't\n0\n',
+        'm\nq\n11\n',
+      ];
+      ROUND8.forEach((src, i) => assert.strictEqual(bash(src), out[i], src));
+    });
+  });
+}

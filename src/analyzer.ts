@@ -42,7 +42,7 @@ import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
-import { decodedText, staticWordValue, unquoteWord } from './staticword';
+import { decodedText, splitElement, staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
   binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
@@ -528,7 +528,7 @@ export class Analyzer {
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
-      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
+      case 'concatenation': if (n.parent!.type === 'array' && splitElement(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.braceWord(n) ?? this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
       // (`{1..x}` is not a brace expansion: it stays a word.)
@@ -2804,7 +2804,10 @@ export class Analyzer {
 
   /** `[7]=z` in `( )`: an element with an index of its own. */
   private arrayElement(n: SyntaxNode): Token {
-    const m = /^\[([^\]\s]*)\](\+?)=(.*)$/s.exec(n.text)!;
+    const e = splitElement(n.text)!;
+    // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
+    const key = unquoteWord(e.key) ?? e.key;
+    const m = ['', key, e.plus, e.value];
     const assoc = this.isAssoc(field(n.parent!.parent!, 'name')!.text, n.startIndex);
     // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
     const v = evalArith(m[1]);
