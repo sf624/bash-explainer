@@ -202,6 +202,7 @@ export function examplesMarkdown(examples: Example[], indent?: string): string[]
   for (const e of examples) {
     if (indent === undefined) out.push('', '---', '', `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
+    if (e.note) out.push(...(indent === undefined ? ['', `> ${e.note}`] : [`${indent}> ${e.note}`]));
     for (const sec of e.sections) {
       const lines = sec.lines.length ? sec.lines : [sec.empty ?? ''];
       // The fence must be longer than any run of backticks inside.

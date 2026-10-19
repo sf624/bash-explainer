@@ -134,6 +134,12 @@
     const h = document.createElement('h3');
     h.append(...inline(ex.title));
     box.append(h);
+    if (ex.note) {
+      const note = document.createElement('p');
+      note.className = 'example-note';
+      note.append(...inline(ex.note));
+      box.append(note);
+    }
     if (ex.interactive) {
       box.append(...editable(ex.interactive));
       return box;
