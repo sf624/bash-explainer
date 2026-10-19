@@ -208,6 +208,29 @@ class Converter {
     for (const c of [...n.children]) this.normalize(c);
     if (n.type === 'pipeline') this.negation(n);
     else if (n.type === 'redirected_statement') this.redirections(n);
+    else if (n.type === 'case_item') this.patterns(n);
+  }
+
+  /** `"("*`: tree-sitter lists the pieces of a case pattern as patterns of their own; the `|` between them tells the patterns apart. */
+  private patterns(item: Mut): void {
+    const kids: Mut[] = [];
+    let run: Mut[] = [];
+    const flush = (): void => {
+      if (run.length > 1) {
+        const c = this.node('concatenation', true, run[0], null, 'value');
+        this.setChildren(c, run);
+        for (const r of run) r.field = null;
+        this.fit(c);
+        kids.push(c);
+      } else kids.push(...run);
+      run = [];
+    };
+    for (const k of item.children) {
+      if (k.field === 'value') run.push(k);
+      else { flush(); kids.push(k); }
+    }
+    flush();
+    if (kids.length !== item.children.length) this.setChildren(item, kids);
   }
 
   /** Gives `n` these children, in this order. */

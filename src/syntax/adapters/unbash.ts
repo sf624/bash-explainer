@@ -636,7 +636,7 @@ class Converter {
    */
   addWord(owner: Mut, w: U.Word, role: string, field: FieldName | null): void {
     const pieces = this.pieces(w, role);
-    const flat = (role === 'pattern' || role === 'case' || role === 'casealt') && pieces.length > 1 && pieces.some((x) => x.type === 'extglob_pattern');
+    const flat = role === 'pattern' && pieces.length > 1 && pieces.some((x) => x.type === 'extglob_pattern');
     if (flat) for (const p of pieces) this.add(owner, p, field);
     else this.add(owner, this.word(w, role), field);
   }
