@@ -396,9 +396,14 @@ export class Analyzer {
     const label = this.contextLabel(n);
     if (label) this.context.push({ label, line: n.startPosition.row });
     const out: Token[] = [];
+    // The patterns of a case branch go on after a `\` at the end of a line (`a|\` then `b)`): the later lines have
+    // patterns, `|` and `)` of the branch, which are not words, pipes and the end of a subshell.
+    const patterns = n.type === 'case_item' ? fields(n, 'value') : [];
     for (const c of n.children) {
       if (this.line !== null && !intersects(c, this.line)) continue;
-      if (c.named) out.push(...this.sub(c));
+      if (has(patterns, c)) out.push(this.casePattern(c));
+      else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;
+      else if (c.named) out.push(...this.sub(c));
       else {
         const k = this.anon(c);
         if (k) out.push(k);
@@ -673,6 +678,13 @@ export class Analyzer {
     ) + fall + this.lineRef(n), sortTokens([...children, ...vt]));
   }
 
+  private casePattern(p: SyntaxNode): Token {
+    return this.tok(p, 'pattern', hasExtglob(p.text) && !hasGlob(p.text.replace(/[?*+@!]\(/g, '(')) ? this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``) + this.extglobNote(p.text)
+      : hasGlob(p.text)
+      ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`) + this.extglobNote(p.text)
+      : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``));
+  }
+
   private caseItem(n: SyntaxNode): Token {
     const pats = fields(n, 'value');
     const ptext = pats.map((p) => p.text).join(' | ');
@@ -690,10 +702,7 @@ export class Analyzer {
       : this.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
     const patToks = pats
       .filter((p) => this.line === null || intersects(p, this.line))
-      .map((p) => this.tok(p, 'pattern', hasExtglob(p.text) && !hasGlob(p.text.replace(/[?*+@!]\(/g, '(')) ? this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``) + this.extglobNote(p.text)
-        : hasGlob(p.text)
-        ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`) + this.extglobNote(p.text)
-        : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``)));
+      .map((p) => this.casePattern(p));
     const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
     if (!isDefault && (this.line === null || pats.some((p) => intersects(p, this.line!)))) {
       const before = this.examples.length;
