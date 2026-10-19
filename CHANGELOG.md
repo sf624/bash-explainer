@@ -6,7 +6,7 @@
 - A script with Windows line endings (CRLF) is explained as if it had LF, and a warning (`crlf`) says that bash reads the CR as part of the last word of each line (`fi` becomes `fi\r`), so the script fails. Before, the extension said nothing, and the unbash path read `fi` as a command.
 - `${x@Z}` and `${#a-b}` are explained as a bad substitution, as bash reports them; `${x@Z}` made the explanation fail. `${(f)var}` is marked as zsh syntax that is not parsed, as the grammar did.
 - `declare a[1]` and `declare a[@]` explain the element or all elements of the array.
-- Words that start with a digit in arithmetic (`0b11`, `1e3`, `08`) are flagged as numbers bash rejects, and an empty `$()` in a command name (`$()echo hi`) is removed, with the unbash parser too. `$((64#@))` is read as one word (a limit of unbash).
+- Words that start with a digit in arithmetic (`0b11`, `1e3`, `08`) are flagged as numbers bash rejects, and an empty `$()` in a command name (`$()echo hi`) is removed, with the unbash parser too. The base-64 digit `@` in arithmetic is a limit of unbash: `$((64#@))` alone is read as 62, but next to other terms (`$((64#@ + 1))`) the whole expression becomes one word.
 
 - An array element with spaces in its subscript, `a=([1 + 1]=x)` or `declare -A m=([a b]=1)`, is explained as one element with an index (2) or a key (`a b`), as bash reads it up to the `]`. Before, the tree-sitter path split it into three words (`[1`, `+`, `1]=x`) and said three elements. `[1 + 1] =x`, `[1 + 1] = x` and `x[1 + 1]=x` are still separate words, as in bash.
 - `${a[@]@K}` and `${a[@]@k}` say that an indexed array gives index and value pairs too, not only an associative one. The Japanese for `@E`, `@A`, `@K`, `@a` and `@k` is smoother (it had 「値を…を…する」).
