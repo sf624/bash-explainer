@@ -180,6 +180,10 @@ describe('old-style options: ps', () => {
 describe('old-style options: ar', () => {
   it('rcs lib.a x.o is the dashed -rcs', function () {
     if (!have('ar')) return this.skip();
+    // Every run of GNU ar loads the BFD plugins in /usr/lib/bfd-plugins. Where LLVM is installed (the
+    // GitHub runners), LLVMgold pulls in libLLVM, over 100 MB. Read from a cold disk cache, after the
+    // CI job's package installs, the first run can take more than the default 10 s.
+    this.timeout(60000);
     assert.deepStrictEqual(run('ar', ['rcs', 'lib.a', 'src/a.txt']), run('ar', ['-r', '-c', '-s', 'lib.a', 'src/a.txt']));
     assert.deepStrictEqual(run('ar', ['rcs', 'lib.a', 'src/a.txt', 'src/sub/b.txt']), run('ar', ['-rcs', 'lib.a', 'src/a.txt', 'src/sub/b.txt']));
     assert.strictEqual(run('ar', ['rcs', 'lib.a', 'src/a.txt', 'src/sub/b.txt']).list, 'a.txt\nb.txt\n');
