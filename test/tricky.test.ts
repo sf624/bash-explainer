@@ -1084,7 +1084,7 @@ describe('tricky lines (round 5)', () => {
 
   it('uses an alias only on the lines read after the alias ran', () => {
     const src = ROUND5[1];
-    const e = findAt(src, 0, 'e 2>/dev/null');
+    const e = tokensAt(src, 0, 'en').find((x) => x.label === 'e')!;
     assert.strictEqual(e.kind, 'command');
     assert.match(e.explanation, /^Run the external command `e`/);
     assert.match(notesAt(src).join('\n'), /^ℹ `e` is defined as an alias on line 1, but bash reads a whole line \(and a whole compound command or function body\) before running it, so an alias defined on the same line is not in effect yet\. It is not an alias here: without a command named `e`, this is "command not found" \(a string given to `eval` is read again when it runs, so it can use the alias\)$/m);

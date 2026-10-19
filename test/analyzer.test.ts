@@ -166,13 +166,15 @@ describe('statements as bash reads them', () => {
     assert.strictEqual(e.items.length, 1);
     assert.match(e.items[0].explanation, /^Command list/);
     assert.deepStrictEqual(labels(e.items[0]), ['echo A', '&&', 'echo B > f']);
-    assert.deepStrictEqual(labels(e.items[0].children[2]), ['B', '> f']);
+    // The command and the redirection are siblings under the redirect token.
+    assert.deepStrictEqual(labels(e.items[0].children[2]), ['echo B', '> f']);
+    assert.deepStrictEqual(labels(e.items[0].children[2].children[0]), ['B']);
     assert.deepStrictEqual(labels(e.items[0].children[0]), ['A']);
     assert.ok(!all(e.items).some((t) => /as a whole/.test(t.explanation)));
     const p = explain('echo a | cat 2>/dev/null');
     assert.match(p.items[0].explanation, /^Pipeline/);
     assert.deepStrictEqual(labels(p.items[0]), ['echo a', '|', 'cat 2>/dev/null']);
-    assert.deepStrictEqual(labels(p.items[0].children[2]), ['2>/dev/null']);
+    assert.deepStrictEqual(labels(p.items[0].children[2]), ['cat', '2>/dev/null']);
     // A compound command takes its own, also last in a list.
     const g = explain('echo a && { echo b; } > f');
     assert.deepStrictEqual(labels(g.items[0]), ['echo a', '&&', '{ echo b; } > f']);
@@ -209,7 +211,7 @@ describe('statements as bash reads them', () => {
     assert.match(explain('cat <<EOF | tr a-z A-Z && echo after\nhello\nEOF', 1).notes[0], /part of the here-document/);
     // Redirections after the delimiter sit beside it.
     const r = explain('cat <<EOF > out.txt\nhello\nEOF');
-    assert.deepStrictEqual(labels(r.items[0]), ['<<EOF', '> out.txt']);
+    assert.deepStrictEqual(labels(r.items[0]), ['cat', '<<EOF', '> out.txt']);
     assert.strictEqual(find(r, '<<EOF').children.length, 0);
     // The arguments after it are the command's.
     assert.deepStrictEqual(labels(explain('cat <<EOF out.txt\nhello\nEOF').items[0]), ['<<EOF', 'out.txt']);
@@ -669,5 +671,136 @@ describe('aliases of distributions', () => {
   it('lets a function or alias of the script win', () => {
     assert.ok(!explain('ll() { ls -l "$@"; }\nll', 1).notes.some((n) => /System-dependent/.test(n)));
     assert.ok(!explain("alias ll='ls -lh'\nll", 1).notes.some((n) => /System-dependent/.test(n)));
+  });
+});
+
+describe('a command with redirections', () => {
+  const labels = (t: Token): string[] => t.children.map((c) => c.label);
+  const spanText = (src: string, t: Token): string => {
+    const line = src.split('\n')[t.span.start.line];
+    return line.slice(t.span.start.character, t.span.end.character);
+  };
+  it('is the command and its redirections, side by side, under a redirect token', () => {
+    const src = "tr -d '\\r' < windows.txt > unix.txt";
+    const e = explain(src);
+    const [outer] = e.items;
+    assert.strictEqual(e.items.length, 1);
+    assert.strictEqual(outer.kind, 'redirect');
+    assert.match(outer.explanation, /^Redirection applied to `tr -d '\\r'`: its stdin \(fd 0\) and stdout \(fd 1\) are redirected\. The shell sets this up before the command starts/);
+    assert.deepStrictEqual(labels(outer), ["tr -d '\\r'", '< windows.txt', '> unix.txt']);
+    const [cmd] = outer.children;
+    assert.strictEqual(cmd.kind, 'command');
+    assert.strictEqual(cmd.explanation, 'Translate or delete characters (stdin only)');
+    assert.deepStrictEqual(labels(cmd), ['-d', "'\\r'"]);
+    // The words only: no space after them, and the redirections are outside.
+    assert.strictEqual(spanText(src, cmd), "tr -d '\\r'");
+    assert.strictEqual(spanText(src, outer), src);
+    // The summary line stays the command's.
+    assert.strictEqual(e.summary, 'tr: Translate or delete characters (stdin only)');
+    // The example belongs to the command.
+    assert.strictEqual(e.examples.length, 1);
+    assert.deepStrictEqual(e.examples[0].anchor, cmd.span);
+    assert.strictEqual(e.examples[0].target, "tr -d '\\r'");
+  });
+  it('explains it in Japanese', () => {
+    const e = explain('sort < in.txt > out.txt 2>&1', 0, 'ja');
+    assert.strictEqual(e.items[0].explanation, '入出力のリダイレクト: `sort` の標準入力(fd 0)・標準出力(fd 1)・標準エラー出力(fd 2)を切り替える。シェルがコマンドの起動前に設定するので、コマンド自身にはリダイレクトは見えない');
+    assert.strictEqual(e.items[0].children[0].kind, 'command');
+    assert.match(e.items[0].children[0].explanation, /行を並べ替え/);
+    assert.match(explain('ls &> o', 0, 'ja').items[0].explanation, /`ls` の標準出力\(fd 1\)・標準エラー出力\(fd 2\)を切り替える/);
+    assert.match(explain('ls &> o').items[0].explanation, /its stdout \(fd 1\) and stderr \(fd 2\) are redirected/);
+    assert.match(explain('ls 3>o 2>e >f').items[0].explanation, /its stdout \(fd 1\), stderr \(fd 2\) and file descriptor 3 are redirected/);
+  });
+  it('is a command with the redirections before its words', () => {
+    const src = ">f echo x";
+    const e = explain(src);
+    assert.strictEqual(e.items[0].kind, 'redirect');
+    assert.deepStrictEqual(labels(e.items[0]), ['>f', 'echo x']);
+    const cmd = e.items[0].children[1];
+    assert.strictEqual(cmd.kind, 'builtin');
+    assert.strictEqual(spanText(src, cmd), 'echo x');
+    const r = explain("<<<'1 2' read -r a b");
+    assert.deepStrictEqual(labels(r.items[0]), ["<<<'1 2'", 'read -r a b']);
+    assert.strictEqual(r.items[0].children[1].kind, 'builtin');
+    assert.match(r.items[0].explanation, /^Redirection applied to `read -r a b`: its stdin \(fd 0\) is redirected/);
+    // The example of `read` is the command's.
+    assert.deepStrictEqual(r.examples[0].anchor, r.items[0].children[1].span);
+  });
+  it('keeps the assignments before the command in the command, and takes redirections on both sides', () => {
+    const src = 'FOO=1 BAR=2 cat -n <in >out 2>&1';
+    const e = explain(src);
+    assert.deepStrictEqual(labels(e.items[0]), ['FOO=1 BAR=2 cat -n', '<in', '>out', '2>&1']);
+    const cmd = e.items[0].children[0];
+    assert.deepStrictEqual(labels(cmd), ['FOO=1', 'BAR=2', '-n']);
+    assert.strictEqual(spanText(src, cmd), 'FOO=1 BAR=2 cat -n');
+    const both = explain('<in cat -n >out');
+    assert.deepStrictEqual(labels(both.items[0]), ['<in', 'cat -n', '>out']);
+    assert.strictEqual(both.items[0].children[1].kind, 'command');
+    // The order matters for `2>&1`: the note is still given.
+    assert.ok(e.notes.some((n) => /left to right/.test(n)));
+    assert.ok(explain('2>&1 >f echo x').notes.some((n) => /left to right/.test(n)));
+  });
+  it('stays one token when a redirection is among the words', () => {
+    const e = explain('echo a > f b');
+    assert.strictEqual(e.items[0].kind, 'builtin');
+    assert.deepStrictEqual(labels(e.items[0]), ['a', '> f', 'b']);
+    assert.strictEqual(e.items[0].label, 'echo a > f b');
+    // …also when there is another after the words.
+    const f = explain('echo a > f b > g');
+    assert.strictEqual(f.items[0].kind, 'builtin');
+    assert.deepStrictEqual(labels(f.items[0]), ['a', '> f', 'b', '> g']);
+    const d = explain('declare -i >f x=1 >g');
+    assert.strictEqual(d.items[0].kind, 'builtin');
+    assert.strictEqual(explain('export A=1 > f >g').items[0].children[0].kind, 'builtin');
+    assert.strictEqual(explain('export A >f B').items[0].kind, 'builtin');
+    // A here-string stays inside the declaration for the parser; it is still beside it.
+    assert.deepStrictEqual(labels(explain('export A <<< x').items[0]), ['export A', '<<< x']);
+  });
+  it('keeps the stage of a pipeline, and its pipeline example', () => {
+    const e = explain('grep x f 2>/dev/null | sort');
+    assert.strictEqual(e.items[0].kind, 'operator');
+    assert.deepStrictEqual(labels(e.items[0]), ['grep x f 2>/dev/null', '|', 'sort']);
+    const [stage] = e.items[0].children;
+    assert.strictEqual(stage.kind, 'redirect');
+    assert.deepStrictEqual(labels(stage), ['grep x f', '2>/dev/null']);
+    assert.match(stage.explanation, /its stderr \(fd 2\) is redirected/);
+    assert.strictEqual(e.examples.length, 1);
+    assert.strictEqual(e.examples[0].kind, 'pipeline');
+    assert.deepStrictEqual(e.examples[0].anchor, e.items[0].span);
+    assert.strictEqual(e.summary, 'grep: Print lines matching a pattern (regex) | sort: Sort lines');
+    const l = explain('cat < in | sort > out');
+    assert.deepStrictEqual(labels(l.items[0]), ['cat < in', '|', 'sort > out']);
+    assert.strictEqual(l.examples[0].kind, 'pipeline');
+  });
+  it('is the command with the here-string or here-document beside it', () => {
+    const h = explain("cat <<< 'hi' > out");
+    assert.deepStrictEqual(labels(h.items[0]), ['cat', "<<< 'hi'", '> out']);
+    const src = 'cat <<EOF > out\nhello $USER\nEOF';
+    for (const line of [0, 1, 2]) {
+      const e = explain(src, line);
+      assert.strictEqual(e.items[0].kind, 'redirect', String(line));
+      assert.deepStrictEqual(labels(e.items[0]), ['cat', '<<EOF', '> out'], String(line));
+      assert.strictEqual(e.items[0].children[0].kind, 'command');
+      assert.deepStrictEqual(e.items[0].children[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } });
+      assert.strictEqual(e.summary, 'cat: Concatenate files and print to stdout');
+    }
+    assert.ok(all(explain(src).items).some((t) => t.label === '$USER'));
+  });
+  it('is the command with 2>&1 alone', () => {
+    const e = explain('make 2>&1');
+    assert.deepStrictEqual(labels(e.items[0]), ['make', '2>&1']);
+    assert.match(e.items[0].explanation, /^Redirection applied to `make`: its stderr \(fd 2\) is redirected/);
+    assert.match(e.items[0].children[1].explanation, /classic way/);
+  });
+  it('says only what is redirected when a descriptor is opened on a variable', () => {
+    const e = explain('echo hi {fd}>f');
+    assert.strictEqual(e.items[0].explanation, 'Redirection applied to `echo hi`. The shell sets this up before the command starts, so the command does not see the redirections');
+    assert.match(explain('echo hi {fd}>f', 0, 'ja').items[0].explanation, /^入出力のリダイレクト: `echo hi` の入出力を切り替える。/);
+  });
+  it('puts the examples of the command and of its words on the command', () => {
+    const e = explain("sed -n 's/a/b/p' < in.txt > out.txt");
+    assert.ok(e.examples.length > 0);
+    const cmd = e.items[0].children[0];
+    for (const x of e.examples) assert.ok(x.anchor && x.anchor.start.character >= cmd.span.start.character && x.anchor.end.character <= cmd.span.end.character);
   });
 });

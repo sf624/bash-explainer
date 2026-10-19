@@ -506,7 +506,7 @@ export class Analyzer {
       case 'comment': return this.comment(n);
       case 'command': return this.command(n);
       case 'time_statement': return this.timeStatement(n);
-      case 'declaration_command': return this.declaration(n);
+      case 'declaration_command': return this.redirectLayoutOf(n) ?? this.declaration(n);
       case 'unset_command': return this.unset(n);
       case 'variable_assignment': return this.assignment(n);
       case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
@@ -759,9 +759,13 @@ export class Analyzer {
     const redirs = n.namedChildren.filter((c) => !same(c, body) && c.children.length);
     const effect = simulateRedirects(redirs.map((r) => this.redirectInfo(r)), this.lang);
     if (effect) this.extraNotes.push(effect);
+    // A command with redirections: the command is one token and the redirections are its siblings (see `splitCommand`).
+    const layout = body && this.redirectLayout(body, redirs);
+    if (layout) return this.splitCommand(n, body!, layout);
     const bodyToks = this.sub(body);
     const redirToks = this.subs(redirs);
-    // Simple commands carry their redirections as children so they read as one unit.
+    // Redirections in the middle of the words (`echo a > f b`, or `time cmd > f`) leave no single range for the
+    // command: it stays one token that carries its redirections as children.
     if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command', 'time_statement'].includes(body.type)) {
       const t = bodyToks[0];
       return { ...t, span: spanOf(n), label: shorten(n.text), children: sortTokens([...t.children, ...redirToks]) };
@@ -775,6 +779,62 @@ export class Analyzer {
       `Redirection applied to ${body ? `\`${shorten(body.text, 30)}\` as a whole` : 'the command'}${ofFunction ? '. A redirection on a function is stored with it and applied each time the function is called' : ''}`,
     ), sortTokens([...bodyToks, ...redirToks]));
     w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
+    return w;
+  }
+
+  /**
+   * The words of a simple command and its redirections, when the words are one range with no redirection
+   * among them: the redirections are all before or after them (`tr -d x < a > b`, `>f echo x`). `redirs` are
+   * those outside `body`; the ones inside it (before its words, or between them) are added. Undefined when
+   * there are none, or one stands in the middle (`echo a > f b`).
+   */
+  private redirectLayout(body: SyntaxNode, outer: SyntaxNode[]): Layout | undefined {
+    if (body.type !== 'command' && body.type !== 'declaration_command') return undefined;
+    const redirs = sortNodes([...body.children.filter((c) => c.type.endsWith('redirect')), ...outer]);
+    const words = body.children.filter((c) => !c.type.endsWith('redirect'));
+    const first = words[0];
+    const last = words[words.length - 1];
+    if (!redirs.length || redirs.some((r) => r.startIndex > first.startIndex && r.startIndex < last.endIndex)) return undefined;
+    const text = body.text.slice(first.startIndex - body.startIndex, last.endIndex - body.startIndex);
+    return {
+      redirs, text,
+      span: { start: { line: first.startPosition.row, character: first.startPosition.column }, end: { line: last.endPosition.row, character: last.endPosition.column } },
+    };
+  }
+
+  /** `splitCommand` of a command whose redirections are inside its node (before its words, or a here-string after them), if there are any. */
+  private redirectLayoutOf(n: SyntaxNode): Token | undefined {
+    const layout = this.redirectLayout(n, []);
+    return layout && this.splitCommand(n, n, layout);
+  }
+
+  /**
+   * A command with redirections, as the shell runs it: it sets the redirections up, then starts the command, which
+   * never sees them. So the redirections are one token (`whole`) with two kinds of children: the command (the
+   * words only, with its description and examples) and each redirection.
+   */
+  private splitCommand(whole: SyntaxNode, body: SyntaxNode, layout: Layout): Token {
+    const effect = simulateRedirects(layout.redirs.map((r) => this.redirectInfo(r)), this.lang);
+    if (effect) this.extraNotes.push(effect);
+    const before = this.examples.length;
+    const inner = body.type === 'command' ? this.commandToken(body, true) : this.declaration(body, true);
+    inner.span = layout.span;
+    inner.label = shorten(layout.text);
+    this.tagExamples(before, body, layout);
+    const redirToks = this.subs(layout.redirs);
+    const fds = new Set<string>();
+    for (const r of layout.redirs) {
+      const { op } = r.type === 'file_redirect' ? redirectParts(r) : { op: r.type === 'heredoc_redirect' ? '<<' : '<<<' };
+      const fd = field(r, 'descriptor')?.text ?? '';
+      if (op === '&>' || op === '&>>') { fds.add('1'); fds.add('2'); } else if (!/^\{/.test(fd)) fds.add(fd || (op.startsWith('<') ? '0' : '1'));
+    }
+    const names = [...fds].sort().map((fd) => fdName(fd, fd));
+    const cmd = shorten(layout.text, 30);
+    const w = this.tok(whole, 'redirect', this.s(
+      `入出力のリダイレクト: \`${cmd}\` の${names.length ? names.map((x) => x.ja).join('・') + 'を' : '入出力を'}切り替える。シェルがコマンドの起動前に設定するので、コマンド自身にはリダイレクトは見えない`,
+      `Redirection applied to \`${cmd}\`${names.length ? `: its ${names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0].en} ${names.length > 1 ? 'are' : 'is'} redirected` : ''}. The shell sets this up before the command starts, so the command does not see the redirections`,
+    ), sortTokens([inner, ...redirToks]));
+    w.summary = summaryOf(inner);
     return w;
   }
 
@@ -943,7 +1003,7 @@ export class Analyzer {
     return this.tok(n, 'assignment', expl, children);
   }
 
-  private declaration(n: SyntaxNode): Token {
+  private declaration(n: SyntaxNode, redirsOut = false): Token {
     // declare, typeset, export, readonly or local, all in the dictionary.
     const kw = n.children[0].type;
     const base = declarationCommands[kw];
@@ -951,6 +1011,7 @@ export class Analyzer {
     // A declaration over several lines is explained whole (see sub), so every part counts.
     let named = false;
     for (const c of n.namedChildren) {
+      if (redirsOut && c.type.endsWith('redirect')) continue;
       // Options end at the first name: `declare x -i` is an error for the name `-i`.
       if (c.type === 'word' && c.text.startsWith('-') && !named) {
         const flags = c.text.slice(1).split('').map((ch) => declarationFlags['-' + ch]).filter(Boolean);
@@ -1008,6 +1069,9 @@ export class Analyzer {
   // ---------------------------------------------------------------- commands
 
   private command(n: SyntaxNode): Token {
+    // `>f echo x`, `<<<'1 2' read a b`: redirections before the words.
+    const split = this.redirectLayoutOf(n);
+    if (split) return split;
     const before = this.examples.length;
     const t = this.commandToken(n);
     this.tagExamples(before, n);
@@ -1015,10 +1079,11 @@ export class Analyzer {
   }
 
   /** Records which command the examples added since `before` belong to (inner commands tag theirs first). */
-  private tagExamples(before: number, n: SyntaxNode): void {
-    const target = shorten(n.text.replace(/\s*\\\n\s*/g, ' '), 40);
+  private tagExamples(before: number, n: SyntaxNode, words?: Layout): void {
+    const target = shorten((words?.text ?? n.text).replace(/\s*\\\n\s*/g, ' '), 40);
     for (const e of this.examples.slice(before)) e.target ??= target;
-    this.anchorExamples(before, n);
+    if (words) for (const e of this.examples.slice(before)) e.anchor ??= words.span;
+    else this.anchorExamples(before, n);
   }
 
   /** Attaches the examples added since `before` to `n`, unless a more specific node already took them. */
@@ -1057,12 +1122,12 @@ export class Analyzer {
     return t;
   }
 
-  private commandToken(n: SyntaxNode): Token {
+  private commandToken(n: SyntaxNode, redirsOut = false): Token {
     // (An assignment with no command, `FOO=1 2>/dev/null`, is a `redirected_statement` of the assignment.)
     const nameNode = field(n, 'name')!;
     const { prefix, args, redirs } = this.commandParts(n, nameNode);
     // `time` is a keyword at the start of a pipeline (a `time_statement`); `FOO=1 time x` and `a | time x` run the program.
-    return this.commandTail(n, nameNode, args, prefix, redirs);
+    return this.commandTail(n, nameNode, args, prefix, redirsOut ? [] : redirs);
   }
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
@@ -3605,6 +3670,13 @@ export function lookupCommand(name: string): CommandDoc | undefined {
 
 export function summaryOf(t: Token): string {
   return t.summary ?? t.explanation;
+}
+
+/** What `redirectLayout` found: the redirections in source order, and the range and text of the command's words. */
+interface Layout { redirs: SyntaxNode[]; span: Span; text: string }
+
+function sortNodes(ns: SyntaxNode[]): SyntaxNode[] {
+  return ns.sort((a, b) => a.startIndex - b.startIndex);
 }
 
 function sortTokens(ts: Token[]): Token[] {
