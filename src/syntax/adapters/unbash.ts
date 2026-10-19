@@ -470,11 +470,24 @@ class Converter {
     this.add(node, this.node(c.name!.value, c.name!.pos, c.name!.end), null).named = false;
     for (const a of args) {
       if (a.type === 'Assignment') this.add(node, this.assignment(a));
-      else if (a.type === 'Word') this.add(node, IDENTIFIER.test(a.text) ? this.node('variable_name', a.pos, a.end) : this.word(a, 'declaration'));
+      else if (a.type === 'Word') this.add(node, IDENTIFIER.test(a.text) ? this.node('variable_name', a.pos, a.end) : this.subscriptName(a) ?? this.word(a, 'declaration'));
       else this.add(node, this.redirect(a), 'redirect');
     }
     this.fill(node);
     return node;
+  }
+
+  /** `a[1]` or `a[@]` as a name to declare: a subscript (unbash gives a word with a glob in it). Undefined for anything else. */
+  subscriptName(w: U.Word): Mut | undefined {
+    const m = /^([A-Za-z_]\w*)\[([^\]$"'`\\\s]+)\]$/.exec(w.text);
+    if (!m) return undefined;
+    const n = this.node('subscript', w.pos, w.end);
+    this.node('variable_name', w.pos, w.pos + m[1].length, 'name', n);
+    this.tok('[', w.pos + m[1].length, n);
+    const at = w.pos + m[1].length + 1;
+    this.node(NUMBER.test(m[2]) ? 'number' : 'word', at, at + m[2].length, 'index', n);
+    this.tok(']', w.end - 1, n);
+    return n;
   }
 
   unset(c: U.Command, args: readonly (U.Assignment | U.Word | U.Redirection)[]): Mut {

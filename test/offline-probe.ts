@@ -36,12 +36,9 @@ try {
 if (used.shift() !== 'require("http")') throw new Error('the module hook is not active');
 
 async function main(): Promise<void> {
-  const { createTreeSitterParser } = require('../src/syntax/adapters/tree-sitter') as typeof import('../src/syntax/adapters/tree-sitter');
+  const { createUnbashParser } = require('../src/syntax/adapters/unbash') as typeof import('../src/syntax/adapters/unbash');
   const { Analyzer } = require('../src/analyzer') as typeof import('../src/analyzer');
-  const parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  const parser = createUnbashParser();
   let lines = 0;
   for (const file of ['sample.sh', 'posix.sh', 'ksh.ksh']) {
     const tree = parser.parse(fs.readFileSync(path.join(root, 'test/fixtures', file), 'utf8'));

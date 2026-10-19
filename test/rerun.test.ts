@@ -4,17 +4,14 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { matchMarks, rerun } from '../src/examples/rerun';
 import { toJsRegex } from '../src/examples/regex';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 const explain = (src: string) => {
   const tree = parser.parse(src);

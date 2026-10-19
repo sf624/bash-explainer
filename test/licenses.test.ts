@@ -47,7 +47,7 @@ describe('licenses', function () {
     const extension = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     assert.strictEqual(cli.license, 'MIT');
     assert.strictEqual(cli.version, extension.version, 'cli/package.json and package.json must have the same version');
-    for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'dist/*.wasm']) assert.ok(cli.files.includes(file), `cli/package.json leaves out ${file}`);
+    for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'dist/cli.js']) assert.ok(cli.files.includes(file), `cli/package.json leaves out ${file}`);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-cli-'));
     try {
       execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });

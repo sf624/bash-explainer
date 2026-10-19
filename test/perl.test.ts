@@ -4,7 +4,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainPerl, perlLoopNote } from '../src/embedded/perl';
 import { EmbeddedToken } from '../src/embedded/types';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const all = (ts: EmbeddedToken[]): EmbeddedToken[] => ts.flatMap((t) => [t, ...all(t.children)]);
 const text = (src: string, t: EmbeddedToken) => src.slice(t.start, t.end);
@@ -53,10 +53,7 @@ describe('perl in a command line', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createTreeSitterParser({
-      runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-      bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-    });
+    parser = createUnbashParser();
   });
   const tokens = (src: string): Token[] => {
     const tree = parser.parse(src);

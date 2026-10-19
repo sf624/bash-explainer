@@ -90,11 +90,11 @@ const dir = process.env.BASH_EXPLAINER_YQ;
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { Analyzer } = require('../src/analyzer');
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createTreeSitterParser } = require('../src/syntax/adapters/tree-sitter');
+  const { createUnbashParser } = require('../src/syntax/adapters/unbash');
   let parser: { parse(s: string): { root: unknown } };
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createTreeSitterParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
+    parser = createUnbashParser();
   });
   const cmds = [
     "yq '.items[] | select(.kind == \"Pod\") | .metadata.name' pods.yml", "yq e '.spec.replicas = 3' d.yml", "yq -i '.version = \"1.2\"' chart.yaml",

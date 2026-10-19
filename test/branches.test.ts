@@ -14,7 +14,7 @@ import { explainSortKey, explainTrSet, trSummary } from '../src/embedded/textuti
 import { GetoptUnsupported, runGetopt, sampleGetoptArgs } from '../src/examples/getopt';
 import { rerun } from '../src/examples/rerun';
 import { simulateRedirects } from '../src/idioms';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { BashParser } from '../src/syntax/tree';
 import { dialectIssues, dialectNotes, featuresOnLine } from '../src/dialect';
 import { explainRegex } from '../src/embedded/regex';
@@ -47,10 +47,7 @@ import { examplesMarkdown, lineSegments, placeExamples, toPlainMarkdown } from '
 const root = path.join(__dirname, '..');
 let parser: BashParser;
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 const explain = (src: string, line = 0, lang: 'ja' | 'en' = 'en') => {

@@ -4,16 +4,13 @@ import { descendants, hasError } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
 import { rerun } from '../src/examples/rerun';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 function explain(src: string, line = 0, lang: 'ja' | 'en' = 'en'): LineExplanation {
@@ -135,9 +132,14 @@ describe('time keyword', () => {
     assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `sort -u f`']);
   });
   it('explains the keyword alone when nothing follows it in a pipeline', () => {
-    assert.strictEqual(explain('time | wc').items[0].children[0].kind, 'keyword');
-    const p = explain('time -p | wc').items[0].children[0];
+    const p = explain('time -p').items[0];
     assert.deepStrictEqual(p.children.map((c) => c.label), ['time', '-p']);
+    // bash: `time | wc` is a syntax error (near `|`); the keyword is explained, the rest is an error.
+    for (const src of ['time | wc', 'time -p | wc']) {
+      const items = explain(src).items;
+      assert.strictEqual(items[0].kind, 'keyword', src);
+      assert.deepStrictEqual(items.slice(1).map((t) => [t.kind, t.label]), [['error', '|'], ['error', 'wc']], src);
+    }
   });
   it('leaves other things named time as commands', () => {
     assert.match(explain('/usr/bin/time ls').items[0].explanation, /Measure the run time and resource use/);
@@ -228,8 +230,11 @@ describe('statements as bash reads them', () => {
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
   });
-  it('time at the start of a pipeline, with a redirection, is the keyword that times nothing', () => {
-    assert.strictEqual(explain('time 2>/dev/null | wc').items[0].children[0].children[0].kind, 'keyword');
+  it('time at the start of a pipeline, with a redirection, is the keyword that times the pipeline', () => {
+    // bash accepts it: the redirection is the first stage of the pipeline.
+    const t = explain('time 2>/dev/null | wc').items[0];
+    assert.strictEqual(t.children[0].kind, 'keyword');
+    assert.deepStrictEqual(t.children[1].children.map((c) => c.kind), ['redirect', 'operator', 'command']);
   });
   it('a pipeline that ends in a redirection with no command is not a pitfall', () => {
     assert.deepStrictEqual(explain('echo a | >f').notes, []);
@@ -244,7 +249,7 @@ describe('statements as bash reads them', () => {
 describe('input that is not finished', () => {
   it('explains a pipeline with nothing after the pipe', () => {
     const e = explain('echo a |');
-    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['echo a', '|', '']);
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['echo a', '|']);
   });
   it('reads a `[ ]` without its `]` word by word', () => {
     const e = explain('[ a = *"$a"*z');
@@ -254,7 +259,9 @@ describe('input that is not finished', () => {
   it('leaves out a redirection the parser could not read at all', () => {
     const e = explain('[range(200000)] | map(. + 1)');
     assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'redirect'), []);
-    assert.strictEqual(e.items[0].children[0].kind, 'test');
+    // bash: a syntax error near `200000`; `[range` is read as a command name.
+    assert.strictEqual(e.items[0].kind, 'command');
+    assert.strictEqual(e.items[0].label, '[range(200000');
   });
   it('explains a construct without its closing keyword, with the parts it has', () => {
     const shape = (src: string, line = 0) => explain(src, line).items.map((t) => [t.kind, t.label, t.children.map((c) => c.label)]);
@@ -262,15 +269,15 @@ describe('input that is not finished', () => {
     assert.deepStrictEqual(shape('select x in a; do'), [['keyword', 'select x in a; do', ['select', 'x', 'in', 'a', 'do']]]);
     assert.deepStrictEqual(shape('x=(1'), [['assignment', 'x=(1', ['(1']]]);
     assert.deepStrictEqual(shape('echo $(foo'), [['builtin', 'echo $(foo', ['$(foo']]]);
-    // What the parser could not close it takes for a syntax error, line by line.
-    assert.deepStrictEqual(shape('{ echo'), [['error', '{ echo', ['echo']]]);
-    assert.deepStrictEqual(shape('case $x in'), [['error', 'case $x in', ['$x']]]);
-    assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo', []], ['error', '"abc', ['abc']]]);
+    // The other constructs are explained with the parts they have, too.
+    assert.deepStrictEqual(shape('{ echo'), [['block', '{ echo', ['{', 'echo']]]);
+    assert.deepStrictEqual(shape('case $x in'), [['keyword', 'case $x in', ['case', '$x', 'in']]]);
+    assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo "abc', ['"abc']]]);
     const loop = 'for f in *.sh; do\n  echo $f';
-    assert.deepStrictEqual(shape(loop), [['error', 'for f in *.sh; do …', ['f', '*.sh']]]);
+    assert.deepStrictEqual(shape(loop), [['keyword', 'for f in *.sh; do …', ['for', 'f', 'in', '*.sh', 'do …']]]);
     assert.deepStrictEqual(shape(loop, 1), [['builtin', 'echo $f', ['$f']]]);
     assert.match(explain('if true; then').summary, /^if statement: runs the `then` branch/);
-    assert.match(explain('{ echo').summary, /^Syntax error/);
+    assert.match(explain('{ echo').summary, /^Command group/);
   });
 });
 

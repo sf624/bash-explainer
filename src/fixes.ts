@@ -21,7 +21,8 @@ export function fixFor(issue: Issue): Fix | undefined {
   if (!n) return undefined;
   switch (issue.id) {
     case 'dbracket': {
-      const expr = n.namedChildren.length === 1 ? n.namedChildren[0] : undefined;
+      // (A `[[ ]]` that is not complete, `[[ a b ]]`, is a syntax error: nothing to rewrite.)
+      const expr = n.namedChildren.length === 1 && !n.incomplete ? n.namedChildren[0] : undefined;
       const text = expr && testChain(expr);
       return text ? { title: ['`[[ ]]` を `[ ]` に書き換える', 'Rewrite `[[ ]]` as `[ ]`'], edits: [replace(n, text)] } : undefined;
     }

@@ -1,17 +1,14 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pitfallNotes } from '../src/pitfalls';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 function notes(src: string, line = 0, lang: 'en' | 'ja' = 'en'): string[] {

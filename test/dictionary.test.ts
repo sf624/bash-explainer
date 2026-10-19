@@ -17,16 +17,13 @@ import { extraFiles } from '../src/dict/extrasFiles';
 import { extraAdmin } from '../src/dict/extrasAdmin';
 import { extraSubcommands } from '../src/dict/extras';
 import { CommandDoc } from '../src/dict/types';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 function tokens(src: string, lang: 'en' | 'ja' = 'en'): Token[] {

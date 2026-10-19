@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainGitDate, explainGitFormat } from '../src/embedded/gitformat';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 describe('git formats', () => {
   it('explains placeholders, colours and alignment', () => {
@@ -34,10 +34,7 @@ describe('quoted option values', () => {
   let parser: Parser;
   before(async () => {
     const root = path.join(__dirname, '..');
-    parser = await createTreeSitterParser({
-      runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-      bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-    });
+    parser = createUnbashParser();
   });
 
   it('maps placeholders across the quote in --pretty=format:\'…\'', () => {

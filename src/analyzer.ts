@@ -3117,6 +3117,7 @@ export class Analyzer {
     }
     const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
+    else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
     const cases = exampleFor(parsed, this.lang, { quoted: inDoubleQuotes(n), assoc: this.isAssoc(parsed.name, n.startIndex) });
     // A `${…}` on one line is always on the line explained.
@@ -3323,8 +3324,9 @@ export class Analyzer {
       // `transform`
       default: {
         const m = transformMeaning[t];
-        // The grammar reads only the letters bash has, all in the table.
-        return ['operator', `\`${t}\`: ${m![this.lang === 'ja' ? 0 : 1]}`];
+        // Any letter can come after `@`; bash reports the ones it does not have as a bad substitution.
+        if (!m) return ['error', this.s(`\`${t}\`: bash にない変換（bad substitution になる）`, `\`${t}\`: not a transform bash has (bash reports "bad substitution")`)];
+        return ['operator', `\`${t}\`: ${m[this.lang === 'ja' ? 0 : 1]}`];
       }
     }
   }
@@ -3451,7 +3453,8 @@ function bracketTest(n: SyntaxNode): BracketTest | undefined {
     else words.push({ nodes: [x], text: null });
   }
   for (const w of words) {
-    const parts = w.nodes.map((x) => (x.type === 'number' || x.type === 'extglob_pattern' ? x.text : literalContent(x)?.text));
+    // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
+    const parts = w.nodes.map((x) => (x.type === 'number' || x.type === 'extglob_pattern' ? x.text : x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
     w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
   }
   const expr = parseTest(words.map((w) => w.text));

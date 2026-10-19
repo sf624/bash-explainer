@@ -5,15 +5,12 @@ import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
 before(async () => {
-  parser = await createTreeSitterParser({
-    runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
-    bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
-  });
+  parser = createUnbashParser();
 });
 
 const script = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: parser.parse(text) });
