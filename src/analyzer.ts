@@ -443,7 +443,7 @@ export class Analyzer {
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted'));
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
-      case 'concatenation': if (n.parent?.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
+      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.tok(n, 'number', this.s('数値', 'Number'));
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
@@ -846,10 +846,9 @@ export class Analyzer {
     return this.commandTail(n, nameNode, args, prefix, redirs);
   }
 
-  /** Whether `n` (or the statement it is the command of) is the first part of a pipeline: where bash reads `time` as a keyword. */
+  /** Whether `n` is the first part of a pipeline: where bash reads `time` as a keyword. */
   private startsPipeline(n: SyntaxNode): boolean {
-    const stage = n.parent?.type === 'redirected_statement' ? n.parent : n;
-    return stage.parent?.type === 'pipeline' && stage.parent.namedChildren[0] === stage;
+    return n.parent?.type === 'pipeline' && n.parent.namedChildren[0] === n;
   }
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */

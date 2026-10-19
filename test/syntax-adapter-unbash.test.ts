@@ -976,6 +976,11 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     const r = new Analyzer('en').explainLine(tree('cat <<EOF > out.txt\nhi\nEOF'), 0);
     assert.deepEqual(r.items[0].children.map((c) => c.label), ['<<EOF', '> out.txt']);
   });
+  it('explains the redirections of a compound command with a here string', () => {
+    const e = new Analyzer('en').explainLine(tree('{ cat; } <<< x > f'), 0);
+    assert.match(e.items[0].explanation, /as a whole/);
+    assert.deepEqual(e.items[0].children.slice(-2).map((c) => c.label), ['<<< x', '> f']);
+  });
   it('explains a redirection after the last command, and ! over a pipeline, as tree-sitter does now', () => {
     const e = new Analyzer('en').explainLine(tree('echo A && echo B > f'), 0);
     assert.deepEqual(e.items[0].children.map((c) => c.label), ['echo A', '&&', 'echo B > f']);
@@ -1016,5 +1021,25 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
   it('$"…" is one explanation, not two', () => {
     const e = new Analyzer('en').explainLine(tree('echo $"hi"'), 0);
     assert.equal(e.items[0].children[0].children.length, 1);
+  });
+});
+
+describe('unbash adapter: branches of the shapes', () => {
+  it('a subscript that is not closed is not one', () => {
+    for (const text of ['echo ${a[1}', 'echo ${a[1', 'echo ${a[']) assert.deepEqual(invariants(tree(text)), [], text);
+    assert.equal(types(tree('echo ${a[1]}').root, 'subscript').length, 1);
+  });
+  it('${| cmd; } is a substitution of its own', () => {
+    const n = types(tree('echo ${| a; }').root, 'command_substitution')[0];
+    assert.deepEqual(toks(n).map((x) => x.split('@')[0]), ['${|', ';', '}']);
+    assert.equal(types(tree('echo ${ a; }').root, 'command_substitution')[0].children[0].type, '${');
+  });
+  it('items of a list next to a range, with escapes and nested braces', () => {
+    const w = first('echo {1..2}{a,b{c,d},\\,e}').namedChildren[1];
+    assert.deepEqual(w.namedChildren[1].namedChildren.map((c) => c.text), ['a', 'b{c,d}', '\\,e']);
+  });
+  it('an elif without then, whether or not it has commands', () => {
+    assert.equal(errorsOf('if a; then b\nelif c; then\nelse d\nfi').includes('missing'), false);
+    assert.equal(errorsOf('if a; then b\nelif c\nelse d\nfi'), 'missing@19-19');
   });
 });
