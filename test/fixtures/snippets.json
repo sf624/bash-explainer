@@ -692,6 +692,7 @@
  "sed -n 's/a/b/p' < in.txt > out.txt",
  "sed -n -e '# note' -e '2,~4p' -e 'T end' -e 's/a/b/2w out.txt' -e 's/a/\\x/' -e 's/b/c' -e 's/b' f",
  "select",
+ "seq 13 | sort -n",
  "seq 3 |\n  sort -r",
  "seq 3 | for i in 1; do s=1; done; echo $s",
  "seq 3 | read v; echo \"$v\"",
