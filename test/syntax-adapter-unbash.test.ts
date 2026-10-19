@@ -885,7 +885,7 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     assert.equal(e.items[0].children.length, 3);
     assert.ok(flat(e.items).some((t) => t.label === 'tr a-z A-Z'));
     const r = new Analyzer('en').explainLine(tree('cat <<EOF > out.txt\nhi\nEOF'), 0);
-    assert.deepEqual(r.items[0].children.map((c) => c.label), ['<<EOF', '> out.txt']);
+    assert.deepEqual(r.items[0].children.map((c) => c.label), ['cat', '<<EOF', '> out.txt']);
   });
   it('explains the redirections of a compound command with a here string', () => {
     const e = new Analyzer('en').explainLine(tree('{ cat; } <<< x > f'), 0);
