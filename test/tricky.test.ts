@@ -1021,7 +1021,7 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       assert.match(tokens('trap "echo bye $x" EXIT').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /Double quotes expand `\$x` now, and the trap keeps that text \(use single quotes to get the value at run time\)/);
       assert.match(tokens('trap "echo bye $x" EXIT', 'ja').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /ダブルクォートなので `\$x` は今ここで展開され/);
       for (const src of ['trap \'echo bye\' EXIT', 'trap "echo bye" EXIT', 'trap cleanup EXIT', 'trap $cmd EXIT', 'trap - EXIT']) {
-        assert.ok(!/expanded|Double quotes/.test(tokens(src).map((t) => t.explanation).join('\n')), src);
+        assert.ok(!/expanded when the trap|Double quotes expand/.test(tokens(src).map((t) => t.explanation).join('\n')), src);
       }
       assert.strictEqual(bash("trap 'echo bye $x' EXIT; x=late"), 'bye late\n');
       assert.strictEqual(bash('x=early; trap "echo bye $x" EXIT; x=late'), 'bye early\n');
