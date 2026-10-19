@@ -6,6 +6,7 @@ import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
 import { admin } from './admin';
+import { netadmin } from './netadmin';
 import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -759,5 +760,6 @@ export const commands: Record<string, CommandDoc> = {
   ...basic,
   ...storage,
   ...admin,
+  ...netadmin,
   ...ops,
 };
