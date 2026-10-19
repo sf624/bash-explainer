@@ -43,8 +43,8 @@ export const macos: Record<string, CommandDoc> = {
     ['-m', 'ディスクのスリープを防ぐ', 'prevent the disk from sleeping'],
     ['-s', '電源につないでいる間、システムのスリープを防ぐ', 'prevent system sleep while on AC power'],
     ['-u', 'ユーザーが操作したことにしてディスプレイを起こす', 'declare the user active and wake the display'],
-    ['-t', 'この秒数だけ防ぐ', 'prevent sleep for this many seconds', 'arg'],
-    ['-w', 'この PID のプロセスが終わるまで防ぐ', 'prevent sleep until this PID exits', 'arg'],
+    ['-t', '指定した秒数だけ防ぐ', 'prevent sleep for the given number of seconds', 'arg'],
+    ['-w', '指定した PID のプロセスが終わるまで防ぐ', 'prevent sleep until the given PID exits', 'arg'],
   ], { wraps: true }),
   diskutil: cmd('ディスク・パーティション・ボリュームを管理する（macOS）', 'Manage disks, partitions and volumes (macOS)', [], {
     subcommands: {
@@ -113,7 +113,7 @@ export const macos: Record<string, CommandDoc> = {
   ]),
   mdfind: cmd('Spotlight のインデックスからファイルを検索する', 'Search files through the Spotlight index', [
     ['-name', 'ファイル名で探す', 'search by file name', 'arg'],
-    ['-onlyin', 'このディレクトリ以下だけ探す', 'search only below this directory', 'arg'],
+    ['-onlyin', '指定したディレクトリ以下だけ探す', 'search only below the given directory', 'arg'],
     ['-live', '結果を更新し続ける', 'keep the query running and print updates'],
     ['-count', '一致した数だけ表示', 'print only the number of matches'],
     ['-0', '結果を NUL で区切る', 'separate results with NUL'],
@@ -141,7 +141,7 @@ export const macos: Record<string, CommandDoc> = {
   ], { positional: [pos('コピー元', 'source'), pos('コピー先', 'destination')] }),
   xattr: cmd('ファイルの拡張属性を表示・変更する', 'Show or change extended attributes of files', [
     ['-l', '値も表示（長い形式）', 'long format, with values'],
-    ['-d', '指定した属性を削除する', 'delete this attribute', 'arg'],
+    ['-d', '指定した属性を削除する', 'delete the given attribute', 'arg'],
     ['-c', 'すべての属性を削除する', 'clear all attributes'],
     ['-r', 'ディレクトリの中も再帰的に処理', 'recurse into directories'],
     ['-w', '属性を書き込む（`属性名 値`）', 'write an attribute (`name value`)', 'arg'],
@@ -184,7 +184,7 @@ export const macos: Record<string, CommandDoc> = {
     ['-g|--getProperty', '属性を表示（`pixelWidth`、`all`…）', 'show a property (`pixelWidth`, `all`…)', 'arg'],
     ['-s|--setProperty', '属性を設定（`format png`）', 'set a property (`format png`)', 'arg'],
     ['-z|--resampleHeightWidth', '高さと幅を指定してリサイズ', 'resize to a height and width', 'arg'],
-    ['-Z|--resampleHeightWidthMax', '長辺をこのピクセルに合わせてリサイズ', 'resize so the longer side fits', 'arg'],
+    ['-Z|--resampleHeightWidthMax', '長辺を指定したピクセルに合わせてリサイズ', 'resize so the longer side fits', 'arg'],
     ['--resampleWidth', '幅を指定してリサイズ', 'resize to a width', 'arg'],
     ['--resampleHeight', '高さを指定してリサイズ', 'resize to a height', 'arg'],
     ['-r|--rotate', '回転させる角度', 'rotate by degrees', 'arg'],
@@ -200,7 +200,7 @@ export const macos: Record<string, CommandDoc> = {
   ], { longSingleDash: true, positional: [pos('項目の種類（`SPHardwareDataType`、`SPNetworkDataType`…）', 'data type (`SPHardwareDataType`, `SPNetworkDataType`…)')] }),
   dscl: cmd('ディレクトリサービス（ユーザー・グループ）を読み書きする（macOS）', 'Read and write directory service data: users and groups (macOS)', [
     ['-q', '表示を減らす', 'quiet'],
-    ['-u', '認証に使うユーザー', 'authenticate as this user', 'arg'],
+    ['-u', '認証に使うユーザー', 'authenticate as the given user', 'arg'],
     ['-P', '認証のパスワード', 'authentication password', 'arg'],
     ['-plist', 'plist 形式で出力', 'output as a plist'],
     ['-list', '子の項目を一覧表示', 'list the child entries'],
@@ -231,8 +231,8 @@ export const macos: Record<string, CommandDoc> = {
     ['-l', 'プロパティも表示', 'show properties'],
     ['-w', '出力の幅（`0` で折り返さない）', 'output width (`0`: no wrapping)', 'arg'],
     ['-r', '指定した項目を根に表示', 'show the subtree from the matching root'],
-    ['-c', '指定したクラスだけ', 'show only this class', 'arg'],
-    ['-n', '指定した名前だけ', 'show only this name', 'arg'],
+    ['-c', '指定したクラスだけ', 'show only the given class', 'arg'],
+    ['-n', '指定した名前だけ', 'show only the given name', 'arg'],
     ['-p', '表示する平面（`IOService`、`IODeviceTree`）', 'plane to show (`IOService`, `IODeviceTree`)', 'arg'],
     ['-a', 'XML で出力', 'archive output (XML)'],
   ]),
@@ -273,7 +273,7 @@ export const macos: Record<string, CommandDoc> = {
   ], { positional: [pos('音声ファイル', 'audio file')] }),
   textutil: cmd('テキスト文書（txt、html、rtf、docx など）を変換する', 'Convert text documents (txt, html, rtf, docx…)', [
     ['-convert', '変換後の形式（`txt`、`html`、`rtf`、`docx`）', 'target format (`txt`, `html`, `rtf`, `docx`)', 'arg'],
-    ['-cat', '複数の文書を連結して出力する形式', 'concatenate files into this format', 'arg'],
+    ['-cat', '複数の文書を連結して出力する形式', 'concatenate files into the given format', 'arg'],
     ['-info', '文書の情報を表示', 'show document information'],
     ['-output', '出力ファイル', 'output file', 'arg'],
     ['-stdin', '標準入力から読む', 'read from stdin'],

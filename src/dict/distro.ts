@@ -22,7 +22,7 @@ export const distro: Record<string, CommandDoc> = {
   // ---- coreutils and util-linux -------------------------------------------------------------
   flock: cmd('ロックを取ってからコマンドを実行する（同時実行を防ぐ）', 'Run a command while holding a lock (prevents concurrent runs)', [
     ['-n|--nonblock', 'ロックが取れなければ待たずに失敗する', 'fail instead of waiting if the lock is taken'],
-    ['-w|--timeout', 'ロックを待つ秒数の上限', 'give up waiting after this many seconds', 'arg'],
+    ['-w|--timeout', 'ロックを待つ秒数の上限', 'give up waiting after the given number of seconds', 'arg'],
     ['-x|--exclusive', '排他ロックを取る（既定）', 'take an exclusive lock (default)'],
     ['-s|--shared', '共有ロックを取る', 'take a shared lock'],
     ['-u|--unlock', 'ロックを解放する', 'release the lock'],
@@ -40,7 +40,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-x|--hex', '16 進数だけで出力する', 'print as plain hex'],
   ]),
   shuf: cmd('行をランダムに並べ替える・選ぶ', 'Shuffle lines or pick random ones', [
-    ['-n|--head-count', '出力する行数の上限', 'output at most this many lines', 'arg'],
+    ['-n|--head-count', '出力する行数の上限', 'output at most the given number of lines', 'arg'],
     ['-i|--input-range', '範囲 `LO-HI` の整数を並べ替える', 'shuffle the integers in the range `LO-HI`', 'arg'],
     ['-e|--echo', '引数を入力の行として扱う', 'treat the arguments as input lines'],
     ['-r|--repeat', '同じ行を繰り返し選べるようにする', 'allow lines to be picked more than once'],
@@ -55,7 +55,7 @@ export const distro: Record<string, CommandDoc> = {
   truncate: cmd('ファイルのサイズを変える（足りない分は 0 で埋める）', 'Make a file shorter or longer (new bytes are zeros)', [
     ['-s|--size', '新しいサイズ（`+` で増やす、`-` で減らす、`K` `M` `G` の単位）', 'new size (`+` grows, `-` shrinks; units `K` `M` `G`)', 'arg'],
     ['-c|--no-create', 'ファイルがなければ作らない', 'do not create the file'],
-    ['-r|--reference', 'このファイルと同じサイズにする', 'use the size of this file', 'arg'],
+    ['-r|--reference', '指定したファイルと同じサイズにする', 'use the size of the given file', 'arg'],
   ], { positional: [files] }),
   yes: cmd('同じ文字列（既定は `y`）を延々と出力する', 'Output a string (default `y`) over and over', [], { positional: [pos('繰り返す文字列', 'string to repeat')] }),
   printenv: cmd('環境変数の値を表示する', 'Print environment variables', [
@@ -93,7 +93,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-h|--no-dereference', 'シンボリックリンク自体を変える', 'change symlinks themselves'],
     ['-c|--changes', '変更があったものだけ報告する', 'report only changes'],
     ['-v|--verbose', '処理したファイルを報告する', 'report every file processed'],
-    ['--reference', 'このファイルと同じグループにする', 'use the group of this file', 'arg'],
+    ['--reference', '指定したファイルと同じグループにする', 'use the group of the given file', 'arg'],
   ], { positional: [pos('グループ', 'group'), files] }),
   mkfifo: cmd('名前付きパイプ(FIFO)を作る', 'Make named pipes (FIFOs)', [
     ['-m|--mode', '権限（`0600`…）', 'permissions (`0600`…)', 'arg'],
@@ -144,15 +144,15 @@ export const distro: Record<string, CommandDoc> = {
     ['-g|--gibi', 'GiB 単位で表示', 'show in gibibytes'],
     ['-b|--bytes', 'バイト単位で表示', 'show in bytes'],
     ['-t|--total', '合計の行も表示', 'show a total line'],
-    ['-s|--seconds', 'この秒数ごとに繰り返し表示', 'repeat at this interval in seconds', 'arg'],
+    ['-s|--seconds', '指定した秒数ごとに繰り返し表示', 'repeat at the given interval in seconds', 'arg'],
     ['-w|--wide', 'バッファとキャッシュを分けて表示', 'show buffers and cache separately'],
   ]),
   top: cmd('プロセスの状況を実時間で表示する', 'Display running processes in real time', [
     ['-b', 'バッチモード（端末の操作なしで出力し続ける。ログ向け）', 'batch mode (plain output, for logs)'],
-    ['-n', 'この回数で終了する', 'exit after this many iterations', 'arg'],
+    ['-n', '指定した回数で終了する', 'exit after the given number of iterations', 'arg'],
     ['-d', '更新間隔（秒）', 'refresh interval in seconds', 'arg'],
     ['-p', '見るプロセスの PID（カンマ区切り）', 'only these PIDs (comma separated)', 'arg'],
-    ['-u', 'このユーザーのプロセスだけ', 'only this user', 'arg'],
+    ['-u', '指定したユーザーのプロセスだけ', 'only the given user', 'arg'],
     ['-o', '並べ替えのフィールド（`%MEM`、`%CPU`…）', 'sort field (`%MEM`, `%CPU`…)', 'arg'],
     ['-H', 'スレッドごとに表示', 'show threads'],
   ]),
@@ -160,16 +160,16 @@ export const distro: Record<string, CommandDoc> = {
     ['-s', '最初の 1 つだけ表示', 'return a single PID'],
     ['-q', '何も出力せず、見つかったかどうかを終了ステータスで返す', 'print nothing; report via the exit status'],
     ['-x', 'スクリプトとして動いているものも含める', 'also match scripts running the program'],
-    ['-o', 'このプロセス ID を除く', 'omit these PIDs', 'arg'],
+    ['-o', '指定したプロセス ID を除く', 'omit these PIDs', 'arg'],
   ], { positional: [pos('プログラム名', 'program name')] }),
   lsof: cmd('開いているファイルやソケットを一覧表示する', 'List open files and sockets', [
     ['-i', 'ネットワーク接続だけ（`:8080` や `tcp` で絞れる）', 'network connections only (a filter such as `:8080` or `tcp` can follow)'],
-    ['-p', 'このプロセス ID だけ', 'only this PID', 'arg'],
-    ['-u', 'このユーザーだけ', 'only this user', 'arg'],
+    ['-p', '指定したプロセス ID だけ', 'only the given PID', 'arg'],
+    ['-u', '指定したユーザーだけ', 'only the given user', 'arg'],
     ['-t', 'プロセス ID だけを出力する', 'print only PIDs'],
     ['-n', 'ホスト名を解決しない', 'do not resolve host names'],
     ['-P', 'ポート番号をサービス名にしない', 'do not convert port numbers to names'],
-    ['-c', 'このコマンド名で始まるプロセスだけ', 'only processes whose command starts with this', 'arg'],
+    ['-c', '指定したコマンド名で始まるプロセスだけ', 'only processes whose command starts with the given name', 'arg'],
   ], { positional: [pos('ファイル名（`-i` の絞り込み `:8080` なども）', 'file name (or the filter of `-i`, such as `:8080`)')] }),
   fuser: cmd('ファイルやポートを使っているプロセスを表示する', 'Show which processes use files or ports', [
     ['-k|--kill', '使っているプロセスにシグナルを送る（注意）', 'kill the processes using them (careful)'],
@@ -230,14 +230,14 @@ export const distro: Record<string, CommandDoc> = {
   script: cmd('端末での操作と出力をファイルに記録する', 'Record everything shown in the terminal to a file', [
     ['-q|--quiet', '開始・終了のメッセージを出さない', 'do not print start and done messages'],
     ['-a|--append', 'ファイルに追記する', 'append to the file'],
-    ['-c|--command', '対話シェルではなくこのコマンドを実行する', 'run this command instead of an interactive shell', 'arg'],
+    ['-c|--command', '対話シェルではなく指定したコマンドを実行する', 'run the given command instead of an interactive shell', 'arg'],
     ['-e|--return', '実行したコマンドの終了ステータスを返す', 'exit with the status the command exited with'],
     ['-f|--flush', '書くたびにフラッシュする', 'flush after each write'],
   ], { positional: [pos('記録するファイル（既定 `typescript`）', 'output file (default `typescript`)')] }),
 
   // ---- network ------------------------------------------------------------------------------
   ping: cmd('ICMP echo でホストへの到達性を確かめる', 'Check if a host is reachable with ICMP echo', [
-    ['-c', 'この回数送って終了する', 'stop after this many packets', 'arg'],
+    ['-c', '指定した回数送って終了する', 'stop after the given number of packets', 'arg'],
     ['-W', '応答を待つ秒数', 'seconds to wait for a reply', 'arg'],
     ['-w', '全体の制限時間（秒）', 'overall deadline in seconds', 'arg'],
     ['-i', '送信間隔（秒）', 'interval between packets in seconds', 'arg'],
@@ -326,13 +326,13 @@ export const distro: Record<string, CommandDoc> = {
     ['-i', '削除の前に確認する', 'ask before removing'],
   ], { positional: [pos('登録する crontab ファイル（`-` で標準入力）', 'crontab file to install (`-` for stdin)')] }),
   journalctl: cmd('systemd のジャーナル（ログ）を表示する', 'Query the systemd journal (logs)', [
-    ['-u|--unit', 'このユニットのログだけ', 'only this unit', 'arg'],
+    ['-u|--unit', '指定したユニットのログだけ', 'only the given unit', 'arg'],
     ['-f|--follow', '新しいログを追い続ける', 'follow new entries'],
     ['-n|--lines', '表示する末尾の行数', 'number of recent lines', 'arg'],
     ['-b|--boot', '今回（または指定した）起動のログだけ', 'only this (or the given) boot'],
-    ['-p|--priority', 'この重要度以上のログだけ（`err`、`warning`…）', 'only this priority or higher (`err`, `warning`…)', 'arg'],
-    ['--since', 'この時刻以降（`"1 hour ago"`、`today`…）', 'since this time (`"1 hour ago"`, `today`…)', 'arg'],
-    ['--until', 'この時刻まで', 'until this time', 'arg'],
+    ['-p|--priority', '指定した重要度以上のログだけ（`err`、`warning`…）', 'only the given priority or higher (`err`, `warning`…)', 'arg'],
+    ['--since', '指定した時刻以降（`"1 hour ago"`、`today`…）', 'since the given time (`"1 hour ago"`, `today`…)', 'arg'],
+    ['--until', '指定した時刻まで', 'until the given time', 'arg'],
     ['-o|--output', '出力形式（`json`、`short-iso`、`cat`…）', 'output format (`json`, `short-iso`, `cat`…)', 'arg'],
     noPager(),
     ['-r|--reverse', '新しい順に表示', 'newest first'],
@@ -462,7 +462,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-a|--all', 'すべてのループデバイスを表示', 'list all loop devices'],
     ['-r|--read-only', '読み取り専用にする', 'read-only'],
     ['--show', 'ループデバイスの名前を出力する', 'print the device name'],
-    ['-j|--associated', 'このファイルに割り当てたデバイスを表示', 'show devices associated with this file', 'arg'],
+    ['-j|--associated', '指定したファイルに割り当てたデバイスを表示', 'show devices associated with the given file', 'arg'],
   ], { positional: [pos('ループデバイス、ファイル', 'loop device, file')] }),
   swapon: cmd('スワップ領域を有効にする', 'Enable swap areas', [
     ['-a|--all', '`/etc/fstab` のスワップをすべて有効にする', 'enable all swaps in `/etc/fstab`'],

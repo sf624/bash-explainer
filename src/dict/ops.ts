@@ -18,7 +18,7 @@ const kube: OptSpec[] = [
   ['-o|--output', '出力形式（`yaml`、`json`、`wide`、`name`、`jsonpath=…`）', 'output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'arg'],
   ['-l|--selector', 'ラベルで絞る（`app=web`）', 'filter by label (`app=web`)', 'arg'],
   ['-f|--filename', 'マニフェストのファイルやディレクトリ（`-` で標準入力）', 'manifest file or directory (`-`: stdin)', 'arg'],
-  ['-k|--kustomize', 'この kustomization のディレクトリ', 'this kustomization directory', 'arg'],
+  ['-k|--kustomize', '指定した kustomization のディレクトリ', 'the given kustomization directory', 'arg'],
   ['-w|--watch', '変化を見張り続ける', 'keep watching for changes'],
   ['--dry-run', '実際には変更しない（`client`、`server`）', 'do not change anything (`client`, `server`)', 'arg'],
   ['--timeout', '待つ時間の上限（`60s`）', 'how long to wait (`60s`)', 'arg'],
@@ -67,8 +67,8 @@ const tfCommon: OptSpec[] = [
   ['-var', '変数を1つ渡す（`-var "名前=値"`）', 'set one variable (`-var "name=value"`)', 'arg'],
   ['-var-file', '変数のファイル（`.tfvars`）', 'variables file (`.tfvars`)', 'arg'],
   ['-out', '計画を保存するファイル', 'file to save the plan in', 'arg'],
-  ['-target', 'このリソースだけを対象にする', 'only this resource', 'arg'],
-  ['-chdir', 'このディレクトリで実行する', 'run in this directory', 'arg'],
+  ['-target', '指定したリソースだけを対象にする', 'only the given resource', 'arg'],
+  ['-chdir', '指定したディレクトリで実行する', 'run in the given directory', 'arg'],
   ['-backend-config', 'バックエンドの設定（`init`）', 'backend configuration (`init`)', 'arg'],
   ['-upgrade', 'プロバイダやモジュールを更新する（`init`）', 'upgrade providers and modules (`init`)'],
   ['-check', '整形が必要なら失敗する（`fmt`）', 'fail if formatting is needed (`fmt`)'],
@@ -95,7 +95,7 @@ const gcloudCommon: OptSpec[] = [
 // ---- System administration ------------------------------------------------------------------------
 
 const iptables: OptSpec[] = [
-  ['-A|--append', '規則をこのチェーンの末尾に足す', 'append a rule to this chain', 'arg'], ['-I|--insert', '規則をチェーンの先頭に入れる', 'insert a rule at the top', 'arg'],
+  ['-A|--append', '規則を指定したチェーンの末尾に足す', 'append a rule to the given chain', 'arg'], ['-I|--insert', '規則をチェーンの先頭に入れる', 'insert a rule at the top', 'arg'],
   ['-D|--delete', '規則を削除する', 'delete a rule', 'arg'], ['-L|--list', '規則を一覧表示する', 'list rules'], ['-S|--list-rules', '規則をコマンドの形で表示する', 'print rules as commands'],
   ['-F|--flush', '規則をすべて削除する', 'delete all rules'], ['-t|--table', '表（`filter`、`nat`、`mangle`）', 'table (`filter`, `nat`, `mangle`)', 'arg'],
   ['-p|--protocol', 'プロトコル', 'protocol', 'arg'], ['-s|--source', '送信元', 'source', 'arg'], ['-d|--destination', '宛先', 'destination', 'arg'],
@@ -246,7 +246,7 @@ export const ops: Record<string, CommandDoc> = {
   'ssh-keygen': cmd('SSH の鍵を作る・管理する', 'Create and manage SSH keys', [
     ['-t', '鍵の種類（`ed25519`、`rsa`…）', 'key type (`ed25519`, `rsa`…)', 'arg'], ['-b', '鍵の長さ（ビット）', 'key size in bits', 'arg'], ['-f', '鍵のファイル', 'key file', 'arg'],
     ['-N', '新しいパスフレーズ（`""` でなし）', 'new passphrase (`""`: none)', 'arg'], ['-C', 'コメント（メールアドレスなど）', 'comment (e-mail…)', 'arg'], ['-q', '表示しない', 'quiet'],
-    ['-A', 'ホスト鍵をすべての種類で作る', 'generate all missing host keys'], ['-l', '鍵の指紋を表示する', "show a key's fingerprint"], ['-R', 'known_hosts からこのホストを消す', 'remove this host from known_hosts', 'arg'], ['-y', '秘密鍵から公開鍵を出力する', 'print the public key of a private key'],
+    ['-A', 'ホスト鍵をすべての種類で作る', 'generate all missing host keys'], ['-l', '鍵の指紋を表示する', "show a key's fingerprint"], ['-R', 'known_hosts から指定したホストを消す', 'remove the given host from known_hosts', 'arg'], ['-y', '秘密鍵から公開鍵を出力する', 'print the public key of a private key'],
   ]),
   'ssh-keyscan': cmd('ホストの公開鍵を取得する（known_hosts に足すため）', "Fetch hosts' public keys (to add to known_hosts)", [['-t', '鍵の種類', 'key type', 'arg'], ['-p', 'ポート', 'port', 'arg'], ['-H', 'ホスト名をハッシュにする', 'hash the host names']], { positional: [pos('ホスト', 'host')] }),
 
@@ -255,12 +255,12 @@ export const ops: Record<string, CommandDoc> = {
     positional: [pos('`if=入力` `of=出力` `bs=ブロックの大きさ` `count=ブロック数` `status=progress` などの指定', 'settings such as `if=input`, `of=output`, `bs=block size`, `count=blocks`, `status=progress`')],
   }),
   lsblk: cmd('ブロックデバイス（ディスクとパーティション）を一覧表示する', 'List block devices (disks and partitions)', [['-f|--fs', 'ファイルシステムも表示', 'show file systems'], ['-o|--output', '表示する列', 'columns to show', 'arg'], ['-n|--noheadings', '見出しを出さない', 'no header'], ['-d|--nodeps', 'パーティションを出さない', 'no partitions'], ['-J|--json', 'JSON で出力', 'JSON output'], ['-p|--paths', '完全なパス', 'full paths']], { positional: [device] }),
-  blkid: cmd('ブロックデバイスの種類や UUID を表示する', 'Show the type and UUID of block devices', [['-s', 'この項目だけ（`UUID`、`TYPE`）', 'only this tag (`UUID`, `TYPE`)', 'arg'], ['-o', '出力形式（`value` で値だけ）', 'output format (`value`: values only)', 'arg']], { positional: [device] }),
+  blkid: cmd('ブロックデバイスの種類や UUID を表示する', 'Show the type and UUID of block devices', [['-s', '指定した項目だけ（`UUID`、`TYPE`）', 'only the given tag (`UUID`, `TYPE`)', 'arg'], ['-o', '出力形式（`value` で値だけ）', 'output format (`value`: values only)', 'arg']], { positional: [device] }),
   findmnt: cmd('マウントされているファイルシステムを表示する', 'Show mounted file systems', [['-t|--types', '種類で絞る', 'filter by type', 'arg'], ['-o|--output', '表示する列', 'columns to show', 'arg'], ['-n|--noheadings', '見出しを出さない', 'no header'], ['-l|--list', '木でなく一覧で', 'list instead of a tree'], ['-u|--notruncate', '切り詰めない', 'do not truncate']], { positional: [pos('マウント先またはデバイス', 'mount point or device')] }),
   umount: cmd('ファイルシステムのマウントを外す', 'Unmount file systems', [['-l|--lazy', '使われなくなってから外す', 'detach now, clean up when no longer busy'], ['-f|--force', '強制する', 'force'], ['-a|--all', 'すべて', 'all']], { positional: [pos('マウント先またはデバイス', 'mount point or device')] }),
   sync: cmd('書き込み待ちのデータをディスクに書き出す', 'Write cached data to disk'),
   modprobe: cmd('カーネルモジュールを読み込む・外す', 'Load or remove kernel modules', [['-r|--remove', '外す', 'remove'], ['-n|--dry-run', '実際には行わない', 'do not actually do it'], ['-v|--verbose', '詳しく表示', 'verbose']], { positional: [pos('モジュール名', 'module name')] }),
-  dmesg: cmd('カーネルのメッセージを表示する', 'Show kernel messages', [['-T|--ctime', '人が読める時刻で', 'human-readable timestamps'], ['-w|--follow', '新しいメッセージを待ち続ける', 'wait for new messages'], ['-l|--level', 'この重要度だけ', 'only these levels', 'arg']]),
+  dmesg: cmd('カーネルのメッセージを表示する', 'Show kernel messages', [['-T|--ctime', '人が読める時刻で', 'human-readable timestamps'], ['-w|--follow', '新しいメッセージを待ち続ける', 'wait for new messages'], ['-l|--level', '指定した重要度だけ', 'only these levels', 'arg']]),
   uptime: cmd('起動からの時間と負荷を表示する', 'Show how long the system has been up, and the load', [['-p|--pretty', '読みやすい形で', 'pretty format'], ['-s|--since', '起動した日時', 'boot time']]),
   service: cmd('サービスを操作する（SysV init。systemd では `systemctl` に渡される）', 'Control services (SysV init; with systemd it calls `systemctl`)', [['--status-all', 'すべてのサービスの状態', 'status of all services']], { positional: [pos('サービス名', 'service name'), pos('操作（`start`、`stop`、`restart`、`status`）', 'action (`start`, `stop`, `restart`, `status`)')] }),
   killall: cmd('名前でプロセスにシグナルを送る（既定は終了）', 'Send a signal to processes by name (terminate by default)', [['-s|--signal', '送るシグナル', 'signal to send', 'arg'], ['-q|--quiet', '見つからなくても何も言わない', 'say nothing if none were found'], ['-w|--wait', '終わるまで待つ', 'wait for them to end']], { positional: [pos('プロセス名', 'process name')] }),
@@ -268,7 +268,7 @@ export const ops: Record<string, CommandDoc> = {
   getenforce: cmd('SELinux のモード（Enforcing / Permissive / Disabled）を表示する', 'Show the SELinux mode (Enforcing, Permissive or Disabled)'),
   iptables: cmd('Linux のパケットフィルタ（ファイアウォール）の規則を操作する', 'Manage Linux packet filter (firewall) rules', iptables),
   ip6tables: cmd('IPv6 のパケットフィルタの規則を操作する', 'Manage IPv6 packet filter rules', iptables),
-  'iptables-save': cmd('パケットフィルタの規則をすべて出力する（`iptables-restore` で戻せる形）', 'Print all packet filter rules (in a form `iptables-restore` reads)', [['-t|--table', 'この表だけ', 'only this table', 'arg'], ['-c|--counters', 'カウンタも', 'include counters']]),
+  'iptables-save': cmd('パケットフィルタの規則をすべて出力する（`iptables-restore` で戻せる形）', 'Print all packet filter rules (in a form `iptables-restore` reads)', [['-t|--table', '指定した表だけ', 'only the given table', 'arg'], ['-c|--counters', 'カウンタも', 'include counters']]),
   'iptables-restore': cmd('`iptables-save` の出力から規則を読み込む', 'Load rules saved by `iptables-save`', [['-n|--noflush', '今の規則を削除せずに足す', 'add to the current rules instead of replacing them'], ['-w|--wait', 'ロックが空くまで待つ', 'wait for the lock']], { positional: [files] }),
 
   // ---- Text and numbers ----

@@ -19,7 +19,7 @@ export const basic: Record<string, CommandDoc> = {
   ], { positional: [pos('セクション番号やコマンド名', 'section number or command name')] }),
   info: cmd('GNU の Info 形式のドキュメントを表示する', 'Show documentation in GNU Info format', [
     ['-f|--file', '読む Info ファイル', 'Info file to read', 'arg'],
-    ['-o|--output', '内容をこのファイルに書き出す', 'write the text to this file', 'arg'],
+    ['-o|--output', '内容を指定したファイルに書き出す', 'write the text to the given file', 'arg'],
     ['-w|--where', 'ファイルの場所を表示するだけ', 'only print where the file is'],
     ['--subnodes', '下位の節も含めて出力する', 'include subnodes in the output'],
   ], { positional: [pos('調べる項目', 'topic to look up')] }),
@@ -75,7 +75,7 @@ export const basic: Record<string, CommandDoc> = {
   locate: cmd('ファイル名のデータベースからファイルをすばやく探す', 'Find files quickly in a database of file names', [
     ['-i|--ignore-case', '大文字と小文字を区別しない', 'ignore case'],
     ['-c|--count', '一致した数だけ表示', 'only print the number of matches'],
-    ['-l|-n|--limit', '表示する件数の上限', 'stop after this many matches', 'arg'],
+    ['-l|-n|--limit', '表示する件数の上限', 'stop after the given number of matches', 'arg'],
     ['-b|--basename', 'ファイル名の部分だけで照合する', 'match the base name only'],
     ['-r|--regex', '正規表現(BRE)で照合する', 'match with a basic regular expression'],
     ['--regex', '拡張正規表現(ERE)で照合する', 'match with an extended regular expression'],
@@ -85,7 +85,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-0|--null', '結果を NUL で区切る', 'separate results with NUL'],
   ], { positional: [pos('探すパターン', 'pattern to search for')] }),
   updatedb: cmd('`locate` が使うファイル名のデータベースを更新する（root で実行）', 'Rebuild the file name database that `locate` uses (run as root)', [
-    ['-U|--database-root', 'この場所以下だけをデータベースにする', 'index only below this path', 'arg'],
+    ['-U|--database-root', '指定した場所以下だけをデータベースにする', 'index only below the given path', 'arg'],
     ['-o|--output', '出力するデータベースのファイル', 'database file to write', 'arg'],
     ['-v|--verbose', '見つけたファイルを表示する', 'print the files found'],
     ['--prunepaths', '調べないパス（空白区切り）', 'paths to skip (space-separated)', 'arg'],
@@ -107,8 +107,8 @@ export const basic: Record<string, CommandDoc> = {
     ['-x|--system', 'シャットダウンとランレベルの変更も表示', 'also show shutdowns and runlevel changes'],
     ['-F|--fulltimes', '日時を完全な形式で表示', 'print full login and logout times'],
     ['-f|--file', '読むファイル（`/var/log/wtmp` 以外）', 'file to read instead of `/var/log/wtmp`', 'arg'],
-    ['-s|--since', 'この日時以降だけ表示', 'show entries since this time', 'arg'],
-    ['-t|--until', 'この日時以前だけ表示', 'show entries until this time', 'arg'],
+    ['-s|--since', '指定した日時以降だけ表示', 'show entries since the given time', 'arg'],
+    ['-t|--until', '指定した日時以前だけ表示', 'show entries until the given time', 'arg'],
     ['-w|--fullnames', 'ユーザー名とホスト名を省略せず表示', 'show full user and host names'],
   ], { positional: [pos('ユーザー名または端末', 'user name or terminal')] }),
   lastb: cmd('ログインに失敗した履歴を表示する（`/var/log/btmp`、root のみ）', 'Show failed login attempts (`/var/log/btmp`, root only)', [
@@ -118,9 +118,9 @@ export const basic: Record<string, CommandDoc> = {
     ['-F|--fulltimes', '日時を完全な形式で表示', 'print full times'],
   ]),
   lastlog: cmd('各ユーザーが最後にログインした日時を表示する', "Show each user's most recent login", [
-    ['-u|--user', 'このユーザーだけ表示', 'show only this user', 'arg'],
-    ['-t|--time', 'この日数以内にログインした人だけ', 'only those who logged in within this many days', 'arg'],
-    ['-b|--before', 'この日数より前のログインだけ', 'only logins older than this many days', 'arg'],
+    ['-u|--user', '指定したユーザーだけ表示', 'show only the given user', 'arg'],
+    ['-t|--time', '指定した日数以内にログインした人だけ', 'only those who logged in within the given number of days', 'arg'],
+    ['-b|--before', '指定した日数より前のログインだけ', 'only logins older than the given number of days', 'arg'],
     ['-C|--clear', '記録を削除する（`-u` と併用、root のみ）', 'clear a record (with `-u`, root only)'],
     ['-S|--set', '記録を現在時刻にする（`-u` と併用、root のみ）', 'set a record to now (with `-u`, root only)'],
   ]),
@@ -128,9 +128,9 @@ export const basic: Record<string, CommandDoc> = {
   lslogins: cmd('ユーザーアカウントの情報を一覧表示する', 'List information about user accounts', [
     ['-u|--user-accs', '一般のユーザーだけ', 'only user accounts'],
     ['-s|--system-accs', 'システムアカウントだけ', 'only system accounts'],
-    ['-g|--groups', 'このグループのメンバーだけ', 'only members of this group', 'arg'],
+    ['-g|--groups', '指定したグループのメンバーだけ', 'only members of the given group', 'arg'],
     ['-o|--output', '表示する列', 'columns to show', 'arg'],
-    ['-l|--logins', 'このログイン名だけ', 'only these login names', 'arg'],
+    ['-l|--logins', '指定したログイン名だけ', 'only these login names', 'arg'],
   ]),
   finger: cmd('ユーザーの情報を表示する', 'Show information about users', [
     ['-l', '詳しい形式で表示', 'long format'],
@@ -200,8 +200,8 @@ export const basic: Record<string, CommandDoc> = {
     ['-3', '前月・今月・翌月の3か月分', 'show the previous, current and next month'],
     ['-y', '1年分を表示', 'show the whole year'],
     ['-j', '元日からの通算日で表示', 'show day numbers of the year'],
-    ['-A', '指定の月数だけ後ろも表示', 'also show this many months after', 'arg'],
-    ['-B', '指定の月数だけ前も表示', 'also show this many months before', 'arg'],
+    ['-A', '指定の月数だけ後ろも表示', 'also show the given number of months after', 'arg'],
+    ['-B', '指定の月数だけ前も表示', 'also show the given number of months before', 'arg'],
     ['-m', '月を指定する（BSD 版）。util-linux 版では週の始まりを月曜にする', 'month to show (BSD version); starts the week on Monday in the util-linux version'],
     ['-s', '週の始まりを日曜にする（util-linux 版）', 'start the week on Sunday (util-linux version)'],
     ['-w', '週番号も表示（util-linux 版）', 'show week numbers (util-linux version)'],
@@ -224,7 +224,7 @@ export const basic: Record<string, CommandDoc> = {
   time: cmd('コマンドの実行時間と資源の使用量を測る（`/usr/bin/time`）', 'Measure the run time and resource use of a command (`/usr/bin/time`)', [
     ['-v|--verbose', '詳しく表示（最大メモリ量など）', 'verbose output (maximum memory use and more)'],
     ['-p|--portability', 'POSIX の書式で表示', 'print in the POSIX format'],
-    ['-o|--output', '結果をこのファイルに書く', 'write the result to this file', 'arg'],
+    ['-o|--output', '結果を指定したファイルに書く', 'write the result to the given file', 'arg'],
     ['-a|--append', '`-o` のファイルに追記する', 'append to the `-o` file'],
     ['-f|--format', '出力の書式（`%e` 経過秒、`%M` 最大メモリ KB…）', 'output format (`%e` elapsed seconds, `%M` max memory in KB…)', 'arg'],
   ], { wraps: true }),
@@ -281,7 +281,7 @@ export const basic: Record<string, CommandDoc> = {
   sdiff: cmd('2つのファイルを左右に並べて比べる', 'Compare two files side by side', [
     ['-s|--suppress-common-lines', '共通の行は表示しない', 'do not print common lines'],
     ['-w|--width', '出力の幅', 'output width', 'arg'],
-    ['-o|--output', '対話的に統合した結果をこのファイルに書く', 'merge interactively into this file', 'arg'],
+    ['-o|--output', '対話的に統合した結果を指定したファイルに書く', 'merge interactively into the given file', 'arg'],
   ], { positional: [files] }),
   diff3: cmd('3つのファイルを比べる（3-way マージの下準備）', 'Compare three files (for a three-way merge)', [
     ['-m|--merge', '統合した結果を出力する', 'output the merged file'],

@@ -47,7 +47,7 @@ const apkCommon: OptSpec[] = [
   ['-q|--quiet', '表示を減らす', 'less output'],
   ['-v|--verbose', '詳しく表示する', 'more output'],
   ['--print-arch', 'このシステムのアーキテクチャ（`x86_64`、`aarch64`…）を表示する', "print the system's architecture (`x86_64`, `aarch64`…)"],
-  ['-X|--repository', '使うリポジトリを追加する', 'use this repository too', 'arg'],
+  ['-X|--repository', '使うリポジトリを追加する', 'use the given repository too', 'arg'],
 ];
 
 const rpmCommon: OptSpec[] = [
@@ -55,8 +55,8 @@ const rpmCommon: OptSpec[] = [
   ['-q|--quiet', '表示を減らす', 'less output'],
   ['--nodocs', 'ドキュメントを入れない（イメージを小さく保つ）', 'do not install documentation (keeps images small)'],
   ['--setopt', '設定を1つ上書きする（`--setopt=名前=値`）', 'set one configuration option (`--setopt=name=value`)', 'arg'],
-  ['--enablerepo', 'このリポジトリを有効にする', 'enable this repository', 'arg'],
-  ['--disablerepo', 'このリポジトリを無効にする', 'disable this repository', 'arg'],
+  ['--enablerepo', '指定したリポジトリを有効にする', 'enable the given repository', 'arg'],
+  ['--disablerepo', '指定したリポジトリを無効にする', 'disable the given repository', 'arg'],
   ['--allowerasing', '依存の衝突を解くためにパッケージの削除も許す', 'allow removing packages to resolve conflicts'],
 ];
 
@@ -70,15 +70,15 @@ const rpmSubs = (): Record<string, CommandDoc> => ({
 });
 
 const pipInstall: OptSpec[] = [
-  ['-r|--requirement', 'このファイル（`requirements.txt`）に並んだパッケージを入れる', 'install the packages listed in this file (`requirements.txt`)', 'arg'],
+  ['-r|--requirement', '指定したファイル（`requirements.txt`）に並んだパッケージを入れる', 'install the packages listed in the given file (`requirements.txt`)', 'arg'],
   ['-U|--upgrade', '入っていても最新版に更新する', 'upgrade if already installed'],
   ['--no-cache-dir', 'ダウンロードをキャッシュしない（イメージを小さく保つ）', 'do not cache downloads (keeps images small)'],
   ['--user', 'ユーザーのホームに入れる（管理者権限が不要）', "install into the user's home (no admin rights needed)"],
   ['-e|--editable', 'ソースのディレクトリを編集可能なまま入れる（開発用）', 'install a source directory in editable mode (for development)', 'arg'],
   ['-q|--quiet', '表示を減らす', 'less output'],
   ['--break-system-packages', 'OS が管理する Python にも入れる（PEP 668 の保護を外す。注意）', 'install into the OS-managed Python (overrides PEP 668; careful)'],
-  ['-c|--constraint', '版の上限・下限をこのファイルで制約する', 'constrain versions with this file', 'arg'],
-  ['--index-url|-i', 'パッケージの取得元を PyPI 以外にする', 'download packages from this index instead of PyPI', 'arg'],
+  ['-c|--constraint', '版の上限・下限を指定したファイルで制約する', 'constrain versions with the given file', 'arg'],
+  ['--index-url|-i', 'パッケージの取得元を PyPI 以外にする', 'download packages from the given index instead of PyPI', 'arg'],
 ];
 
 const pip = cmd('Python のパッケージマネージャ', 'Python package manager', [['-q|--quiet', '表示を減らす', 'less output'], ['--version|-V', '版を表示する', 'show the version']], {
@@ -148,7 +148,7 @@ export const system: Record<string, CommandDoc> = {
     ['-P|--purge', '設定ファイルごと削除する', 'remove with configuration files'],
     ['-l|--list', 'パッケージを一覧表示する', 'list packages'],
     ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
-    ['-S|--search', 'このファイルを入れたパッケージを探す', 'find the package that installed a file'],
+    ['-S|--search', '指定したファイルを入れたパッケージを探す', 'find the package that installed a file'],
     ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
     ['--print-architecture', 'このシステムのアーキテクチャ（`amd64`、`arm64`…）を表示する', "print the system's architecture (`amd64`, `arm64`…)"],
     ['--add-architecture', '別のアーキテクチャのパッケージも入れられるようにする', "allow another architecture's packages", 'arg'],
@@ -159,12 +159,12 @@ export const system: Record<string, CommandDoc> = {
     ['-f|--showformat', '`-W` の出力形式（`${Package} ${Version}\\n` など）', 'output format for `-W` (`${Package} ${Version}\\n`…)', 'arg'],
     ['-l|--list', 'パッケージを一覧表示する', 'list packages'],
     ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
-    ['-S|--search', 'このファイルを入れたパッケージを探す', 'find the package that installed a file'],
+    ['-S|--search', '指定したファイルを入れたパッケージを探す', 'find the package that installed a file'],
     ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
   ], { positional: [pkg] }),
   'dpkg-architecture': cmd('Debian のビルド用アーキテクチャの値を表示する', 'Print Debian build architecture values', [
-    ['-q|--query', 'この変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only this variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
-    ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use this Debian host architecture', 'arg'],
+    ['-q|--query', '指定した変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only the given variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
+    ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use the given Debian host architecture', 'arg'],
   ]),
   apk: cmd('Alpine Linux のパッケージ管理', 'Alpine Linux package manager', apkCommon, {
     subcommands: {
@@ -212,10 +212,10 @@ export const system: Record<string, CommandDoc> = {
 
   // ---- Language toolchains ----
   node: cmd('JavaScript を実行する（Node.js）', 'Run JavaScript (Node.js)', [
-    ['-e|--eval', 'この JavaScript を実行する', 'run this JavaScript', 'arg'],
-    ['-p|--print', 'この JavaScript を実行して結果を表示する', 'run this JavaScript and print the result', 'arg'],
+    ['-e|--eval', '指定した JavaScript を実行する', 'run the given JavaScript', 'arg'],
+    ['-p|--print', '指定した JavaScript を実行して結果を表示する', 'run the given JavaScript and print the result', 'arg'],
     ['-v|--version', '版を表示する', 'print the version'],
-    ['-r|--require', '先にこのモジュールを読み込む', 'load this module first', 'arg'],
+    ['-r|--require', '先に指定したモジュールを読み込む', 'load the given module first', 'arg'],
   ], { positional: [pos('実行するスクリプト', 'script to run'), pos('スクリプトへの引数', 'argument to the script')] }),
   go: cmd('Go のツール（ビルド・テスト・依存管理）', 'Go toolchain (build, test, modules)', [], {
     subcommands: {
@@ -226,7 +226,7 @@ export const system: Record<string, CommandDoc> = {
         ['-tags', 'ビルドタグ', 'build tags', 'arg'],
       ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], longSingleDash: true }),
       test: cmd('テストを実行する', 'Run tests', [
-        ['-v', '各テストの結果を表示', 'verbose'], ['-run', 'この正規表現に合うテストだけ', 'only tests matching this regex', 'arg'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
+        ['-v', '各テストの結果を表示', 'verbose'], ['-run', '指定した正規表現に合うテストだけ', 'only tests matching the given regex', 'arg'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
         ['-count', '実行回数（`-count=1` でキャッシュを使わない）', 'run count (`-count=1` skips the cache)', 'arg'], ['-cover', 'カバレッジを表示', 'show coverage'], ['-timeout', '時間切れ', 'timeout', 'arg'],
         ['-json', '結果を JSON で出力', 'JSON output'], ['-c', 'テストのバイナリを作るだけで実行しない', 'compile the test binary, do not run it'], ['-o', 'テストのバイナリの出力先', 'test binary output', 'arg'],
         ['-tags', 'ビルドタグ', 'build tags', 'arg'], ['-ldflags', 'リンカに渡すフラグ', 'linker flags', 'arg'], ['-short', '時間のかかるテストを省く', 'skip long tests'],
@@ -278,7 +278,7 @@ export const system: Record<string, CommandDoc> = {
     ['-o', '出力するファイル名', 'output file', 'arg'], ['--edition', 'Rust のエディション', 'Rust edition', 'arg'],
   ], { positional: [files] }),
   php: cmd('PHP を実行する', 'Run PHP', [
-    ['-r', 'この PHP のコードを実行する（`<?php` は不要）', 'run this PHP code (no `<?php`)', 'arg'], ['-v|--version', '版を表示する', 'print the version'],
+    ['-r', '指定した PHP のコードを実行する（`<?php` は不要）', 'run the given PHP code (no `<?php`)', 'arg'], ['-v|--version', '版を表示する', 'print the version'],
     ['-m', '入っている拡張を一覧表示する', 'list loaded extensions'], ['-i', '設定の情報（phpinfo）を表示する', 'show configuration (phpinfo)'],
     ['-d', 'php.ini の設定を1つ上書きする（`-d 名前=値`）', 'set one php.ini setting (`-d name=value`)', 'arg'],
   ], { positional: [pos('実行するスクリプト', 'script to run'), pos('スクリプトへの引数', 'argument to the script')] }),
@@ -295,7 +295,7 @@ export const system: Record<string, CommandDoc> = {
   gh: cmd('GitHub CLI', 'GitHub CLI', ghRepo, {
     subcommands: {
       api: cmd('GitHub の API を呼び出す', 'Call the GitHub API', [
-        ['--jq|-q', '結果をこの jq の式で絞る', 'filter the result with this jq expression', 'arg lang:jq'],
+        ['--jq|-q', '結果を指定した jq の式で絞る', 'filter the result with the given jq expression', 'arg lang:jq'],
         ['-X|--method', 'HTTP メソッド（既定は GET、値があれば POST）', 'HTTP method (GET; POST when fields are given)', 'arg'],
         ['-f|--raw-field', '文字列の値を送る（`名前=値`）', 'send a string field (`name=value`)', 'arg'],
         ['-F|--field', '型を推測して値を送る（数値・真偽値・`@ファイル`）', 'send a typed field (numbers, booleans, `@file`)', 'arg'],
@@ -307,7 +307,7 @@ export const system: Record<string, CommandDoc> = {
         ['-t|--title', 'タイトル', 'title', 'arg'], ['-b|--body', '本文', 'body', 'arg'], ['-F|--body-file', '本文のファイル', 'body file', 'arg'],
         ['-H|--head', 'PR の元のブランチ', 'branch the changes come from', 'arg'], ['-B|--base', 'マージ先のブランチ', 'branch to merge into', 'arg'],
         ['-l|--label', 'ラベル', 'label', 'arg'], ['-d|--draft', '下書きにする', 'as a draft'], ['-f|--fill', 'コミットからタイトルと本文を埋める', 'fill title and body from the commits'],
-        ['--json', '出力する項目を JSON で（`number,title`…）', 'JSON output with these fields (`number,title`…)', 'arg'], ['-q|--jq', 'JSON をこの jq の式で絞る', 'filter the JSON with this jq expression', 'arg lang:jq'],
+        ['--json', '出力する項目を JSON で（`number,title`…）', 'JSON output with these fields (`number,title`…)', 'arg'], ['-q|--jq', 'JSON を指定した jq の式で絞る', 'filter the JSON with the given jq expression', 'arg lang:jq'],
       ]),
       issue: cmd('Issue を操作する（`create`、`view`、`list`…）', 'Work with issues (`create`, `view`, `list`…)', ghRepo),
       release: cmd('リリースを操作する（`create`、`download`、`view`…）', 'Work with releases (`create`, `download`, `view`…)', ghRepo),
@@ -350,7 +350,7 @@ export const system: Record<string, CommandDoc> = {
     ['--system|-S', 'システムグループとして作る', 'create a system group'], ['--gid|-g', 'グループ ID', 'group ID', 'arg'],
   ], { positional: [group] }),
   su: cmd('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
-    ['-c|--command', 'シェルでこのコマンドを実行する', 'run this command with the shell', 'arg'], ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
+    ['-c|--command', 'シェルで指定したコマンドを実行する', 'run the given command with the shell', 'arg'], ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
     ['-s|--shell', '使うシェル', 'shell to use', 'arg'], ['-m|-p|--preserve-environment', '今の環境変数を引き継ぐ', 'keep the environment'],
   ], { positional: [user] }),
   gosu: cmd('別のユーザーでコマンドを実行する（コンテナの入口向け。sudo と違い PID 1 を引き継ぐ）', "Run a command as another user (for container entrypoints; unlike sudo it keeps PID 1)", [], {
@@ -369,7 +369,7 @@ export const system: Record<string, CommandDoc> = {
     ['-I|--all-ip-addresses', 'すべての IP アドレス（Linux）', 'all IP addresses (Linux)'], ['-i|--ip-address', 'ホスト名の IP アドレス', "the host name's IP address"],
   ]),
   nproc: cmd('使える CPU の数を表示する（`make -j$(nproc)` の定番）', 'Print the number of usable CPUs (as in `make -j$(nproc)`)', [
-    ['--all', '制限を無視して全 CPU 数', 'all CPUs, ignoring limits'], ['--ignore', 'この数だけ引いて表示', 'subtract this many', 'arg'],
+    ['--all', '制限を無視して全 CPU 数', 'all CPUs, ignoring limits'], ['--ignore', '指定した数だけ引いて表示', 'subtract the given number of', 'arg'],
   ]),
   getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [], {
     positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)')],
@@ -446,12 +446,12 @@ export const system: Record<string, CommandDoc> = {
     ['--import', '鍵を取り込む', 'import keys'], ['--export', '鍵を書き出す', 'export keys'], ['--fingerprint', '鍵の指紋を表示する', 'show key fingerprints'],
     ['-k|--list-keys', '鍵を一覧表示する', 'list keys'], ['--no-default-keyring', '既定の鍵束を使わない', 'do not use the default keyring'], ['--keyring', '使う鍵束のファイル', 'keyring file to use', 'arg'],
     ['--homedir', 'GnuPG の設定ディレクトリ（既定は `~/.gnupg`）', 'GnuPG home directory (default `~/.gnupg`)', 'arg'], ['-d|--decrypt', '復号する', 'decrypt'],
-    ['-e|--encrypt', '暗号化する', 'encrypt'], ['-r|--recipient', '暗号化の宛先', 'encrypt for this recipient', 'arg'], ['-s|--sign', '署名する', 'sign'],
+    ['-e|--encrypt', '暗号化する', 'encrypt'], ['-r|--recipient', '暗号化の宛先', 'encrypt for the given recipient', 'arg'], ['-s|--sign', '署名する', 'sign'],
     ['-b|--detach-sign', '別ファイルの署名を作る', 'make a detached signature'], ['-q|--quiet', '表示を減らす', 'less output'],
   ], { positional: [pos('ファイルまたは鍵 ID', 'file or key ID')] }),
   gpgconf: cmd('GnuPG の部品を管理する', 'Manage GnuPG components', [
-    ['--kill', 'この部品（`gpg-agent`、`all`）を止める（一時ディレクトリを削除する前に）', 'stop this component (`gpg-agent`, `all`; before deleting a temporary home)', 'arg'],
-    ['--list-dirs', '使うディレクトリを表示する', 'list the directories used'], ['--reload', 'この部品に設定を読み直させる', 'reload this component', 'arg'],
+    ['--kill', '指定した部品（`gpg-agent`、`all`）を止める（一時ディレクトリを削除する前に）', 'stop the given component (`gpg-agent`, `all`; before deleting a temporary home)', 'arg'],
+    ['--list-dirs', '使うディレクトリを表示する', 'list the directories used'], ['--reload', '指定した部品に設定を読み直させる', 'reload the given component', 'arg'],
   ]),
   openssl: cmd('OpenSSL: 暗号・証明書のツール', 'OpenSSL: cryptography and certificate tool', [], {
     subcommands: {
@@ -461,7 +461,7 @@ export const system: Record<string, CommandDoc> = {
       x509: cmd('証明書を表示・変換する', 'Show or convert certificates', [
         ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-noout', '証明書そのものは出力しない', 'do not print the certificate itself'],
         ['-text', '内容を読める形で表示', 'print the contents as text'], ['-enddate', '有効期限を表示', 'print the expiry date'], ['-subject', 'サブジェクトを表示', 'print the subject'],
-        ['-fingerprint', '指紋を表示', 'print the fingerprint'], ['-checkend', 'この秒数以内に期限切れなら失敗する', 'fail if it expires within this many seconds', 'arg'],
+        ['-fingerprint', '指紋を表示', 'print the fingerprint'], ['-checkend', '指定した秒数以内に期限切れなら失敗する', 'fail if it expires within the given number of seconds', 'arg'],
       ], { longSingleDash: true }),
       req: cmd('証明書署名要求（CSR）や自己署名証明書を作る', 'Create certificate requests (CSR) or self-signed certificates', [
         ['-new', '新しい要求を作る', 'new request'], ['-x509', '要求の代わりに自己署名証明書を作る', 'make a self-signed certificate instead'], ['-nodes|-noenc', '秘密鍵を暗号化しない', 'do not encrypt the private key'],
@@ -472,7 +472,7 @@ export const system: Record<string, CommandDoc> = {
         ['-connect', '接続先（`ホスト:ポート`）', 'where to connect (`host:port`)', 'arg'], ['-servername', 'SNI で名乗るホスト名', 'host name to send in SNI', 'arg'], ['-showcerts', '証明書チェーンをすべて表示', 'show the whole chain'],
       ], { longSingleDash: true }),
       dgst: cmd('ハッシュ値の計算や署名の検証をする', 'Hash, sign or verify', [
-        ['-sha256', 'SHA-256', 'SHA-256'], ['-verify', 'この公開鍵で署名を検証する', 'verify with this public key', 'arg'], ['-signature', '署名のファイル', 'signature file', 'arg'], ['-sign', 'この秘密鍵で署名する', 'sign with this private key', 'arg'],
+        ['-sha256', 'SHA-256', 'SHA-256'], ['-verify', '指定した公開鍵で署名を検証する', 'verify with the given public key', 'arg'], ['-signature', '署名のファイル', 'signature file', 'arg'], ['-sign', '指定した秘密鍵で署名する', 'sign with the given private key', 'arg'],
       ], { positional: [files], longSingleDash: true }),
       genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], longSingleDash: true }),
       version: cmd('OpenSSL の版を表示する', 'Print the OpenSSL version'),
@@ -487,21 +487,21 @@ export const system: Record<string, CommandDoc> = {
   sha384sum: checksum('SHA-384'),
   sha512sum: checksum('SHA-512'),
   cmp: cmd('2つのファイルをバイト単位で比べる', 'Compare two files byte by byte', [
-    ['-s|--silent|--quiet', '何も表示せず終了ステータスで返す（同じなら 0）', 'print nothing; exit 0 if the same'], ['-l|--verbose', '違うバイトをすべて表示', 'list every differing byte'], ['-n|--bytes', '先頭からこのバイト数だけ比べる', 'compare at most this many bytes', 'arg'],
+    ['-s|--silent|--quiet', '何も表示せず終了ステータスで返す（同じなら 0）', 'print nothing; exit 0 if the same'], ['-l|--verbose', '違うバイトをすべて表示', 'list every differing byte'], ['-n|--bytes', '先頭から指定したバイト数だけ比べる', 'compare at most the given number of bytes', 'arg'],
   ], { positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')] }),
   xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
     ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
-    ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', 'このバイト数だけ', 'stop after this many bytes', 'arg'], ['-s|-seek', 'この位置から', 'start at this offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
+    ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', '指定したバイト数だけ', 'stop after the given number of bytes', 'arg'], ['-s|-seek', '指定した位置から', 'start at the given offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
   ], { positional: [files], longSingleDash: true }),
   od: cmd('ファイルを8進数・16進数などでダンプする', 'Dump files in octal, hex and other formats', [
     ['-A|--address-radix', '位置の表示形式（`n` で表示しない、`x` 16進…）', 'offset format (`n`: none, `x`: hex…)', 'arg'],
     ['-t|--format', '出力形式（`x1`: 1バイトずつ16進、`c`: 文字…）', 'output format (`x1`: hex bytes, `c`: characters…)', 'arg'],
     ['-v|--output-duplicates', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'], ['-c', '文字で表示（`-t c` と同じ）', 'characters (same as `-t c`)'],
-    ['-x', '2バイトずつ16進で表示', 'hex, two bytes at a time'], ['-N|--read-bytes', 'このバイト数だけ', 'read only this many bytes', 'arg'], ['-j|--skip-bytes', '先頭からこのバイト数を飛ばす', 'skip this many bytes first', 'arg'],
+    ['-x', '2バイトずつ16進で表示', 'hex, two bytes at a time'], ['-N|--read-bytes', '指定したバイト数だけ', 'read only the given number of bytes', 'arg'], ['-j|--skip-bytes', '先頭から指定したバイト数を飛ばす', 'skip the given number of bytes first', 'arg'],
   ], { positional: [files] }),
   hexdump: cmd('ファイルを16進数でダンプする', 'Dump files in hex', [
     ['-C', '16進数と文字を並べた定番の形式', 'canonical hex + ASCII display'], ['-v', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'],
-    ['-e', '出力の書式', 'output format string', 'arg'], ['-n', 'このバイト数だけ', 'only this many bytes', 'arg'], ['-s', '先頭からこのバイト数を飛ばす', 'skip this many bytes first', 'arg'],
+    ['-e', '出力の書式', 'output format string', 'arg'], ['-n', '指定したバイト数だけ', 'only the given number of bytes', 'arg'], ['-s', '先頭から指定したバイト数を飛ばす', 'skip the given number of bytes first', 'arg'],
   ], { positional: [files] }),
   readelf: cmd('ELF 形式の実行ファイルの中身を表示する', 'Show the contents of ELF binaries', [
     ['-h|--file-header', 'ファイルヘッダー', 'file header'], ['-l|--program-headers', 'プログラムヘッダー', 'program headers'], ['-S|--section-headers', 'セクションヘッダー', 'section headers'],
@@ -527,7 +527,7 @@ export const system: Record<string, CommandDoc> = {
   bzcat: decompressToStdout('bzip2 形式を展開して標準出力に出す', 'Decompress bzip2 files to stdout'),
   zcat: decompressToStdout('gzip 形式を展開して標準出力に出す', 'Decompress gzip files to stdout'),
   patch: cmd('差分（diff）をファイルに当てる', 'Apply a diff to files', [
-    ['-p|--strip', 'パスの先頭からこの数の階層を取り除く（`-p1` で `a/` `b/` を除く。git の差分の定番）', 'strip this many leading path parts (`-p1` drops `a/` and `b/`, as git diffs need)', 'arg'],
+    ['-p|--strip', 'パスの先頭から指定した数の階層を取り除く（`-p1` で `a/` `b/` を除く。git の差分の定番）', 'strip the given number of leading path parts (`-p1` drops `a/` and `b/`, as git diffs need)', 'arg'],
     ['-i|--input', '差分のファイル（省略時は標準入力）', 'diff file (default: stdin)', 'arg'], ['-R|--reverse', '逆向きに当てる（元に戻す）', 'apply in reverse (undo)'],
     ['-N|--forward', 'すでに当たっている差分は無視する', 'skip patches that seem applied'], ['--dry-run', '実際には変更せず、当たるかを確かめる', 'check without changing files'],
     ['-s|--silent|--quiet', '表示を減らす', 'less output'], ['-b|--backup', '元のファイルのバックアップを残す', 'keep backups of the originals'],
@@ -558,7 +558,7 @@ export const system: Record<string, CommandDoc> = {
   // ---- Linters and downloaders ----
   shellcheck: cmd('シェルスクリプトの静的解析（リンター）', 'Static analysis (lint) for shell scripts', [
     ['-x|--external-sources', '`source` されるファイルも追う', 'follow `source`d files'], ['-s|--shell', 'シェルの種類（`sh`、`bash`…）', 'shell dialect (`sh`, `bash`…)', 'arg'],
-    ['-e|--exclude', '無視する警告（`SC2086` など）', 'warnings to ignore (`SC2086`…)', 'arg'], ['-S|--severity', 'この重さ以上だけ（`error`、`warning`、`info`、`style`）', 'minimum severity (`error`, `warning`, `info`, `style`)', 'arg'],
+    ['-e|--exclude', '無視する警告（`SC2086` など）', 'warnings to ignore (`SC2086`…)', 'arg'], ['-S|--severity', '指定した重さ以上だけ（`error`、`warning`、`info`、`style`）', 'minimum severity (`error`, `warning`, `info`, `style`)', 'arg'],
     ['-f|--format', '出力形式（`gcc`、`json`、`diff`…）', 'output format (`gcc`, `json`, `diff`…)', 'arg'], ['-V|--version', '版を表示する', 'print the version'], ['-a|--check-sourced', '`source` されるファイルの警告も出す', 'also report on sourced files'],
   ], { positional: [files] }),
   shfmt: cmd('シェルスクリプトを整形する', 'Format shell scripts', [

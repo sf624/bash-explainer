@@ -32,7 +32,7 @@ export const admin: Record<string, CommandDoc> = {
   modinfo: cmd('カーネルモジュールの情報（説明・パラメータ・依存関係）を表示する', 'Show information about a kernel module (description, parameters, dependencies)', [
     ['-d|--description', '説明だけ表示', 'only the description'],
     ['-p|--parameters', 'パラメータだけ表示', 'only the parameters'],
-    ['-F|--field', '指定した項目だけ表示（`filename`、`depends`…）', 'only this field (`filename`, `depends`…)', 'arg'],
+    ['-F|--field', '指定した項目だけ表示（`filename`、`depends`…）', 'only the given field (`filename`, `depends`…)', 'arg'],
     ['-n|--filename', 'ファイルの場所だけ表示', 'only the file name'],
   ], { positional: [module] }),
   depmod: cmd('カーネルモジュールの依存関係の一覧を作り直す', 'Rebuild the kernel module dependency list', [
@@ -126,8 +126,8 @@ export const admin: Record<string, CommandDoc> = {
   'systemd-run': cmd('コマンドを一時的な systemd のユニットとして実行する', 'Run a command as a transient systemd unit', [
     ['--unit', 'ユニット名', 'unit name', 'arg'],
     ['--scope', 'サービスでなくスコープとして実行（前面で）', 'run as a scope instead of a service'],
-    ['--on-calendar', 'この日時の書式で繰り返す（タイマー）', 'repeat on this calendar spec (timer)', 'arg'],
-    ['--on-active', 'この時間が過ぎたら1回実行（タイマー）', 'run once after this delay (timer)', 'arg'],
+    ['--on-calendar', '指定した日時の書式で繰り返す（タイマー）', 'repeat on the given calendar spec (timer)', 'arg'],
+    ['--on-active', '指定した時間が過ぎたら1回実行（タイマー）', 'run once after the given delay (timer)', 'arg'],
     ['-p|--property', 'ユニットの設定を指定（`MemoryMax=1G`…）', 'set a unit property (`MemoryMax=1G`…)', 'arg'],
     ['--user', 'ユーザーのサービスマネージャーを使う', 'use the user service manager'],
     ['-t|--pty', '疑似端末をつなぐ', 'connect a pseudo-terminal'],
@@ -184,7 +184,7 @@ export const admin: Record<string, CommandDoc> = {
   ], { positional: [pos('リポジトリ（`ppa:名前/ppa`…）', 'repository (`ppa:name/ppa`…)')] }),
   'dpkg-reconfigure': cmd('インストール済みパッケージの設定をやり直す', 'Reconfigure an installed package', [
     ['-f|--frontend', '質問の画面（`noninteractive`、`readline`、`dialog`）', 'frontend (`noninteractive`, `readline`, `dialog`)', 'arg'],
-    ['-p|--priority', 'この優先度以上の質問だけ', 'only ask questions of this priority or higher', 'arg'],
+    ['-p|--priority', '指定した優先度以上の質問だけ', 'only ask questions of the given priority or higher', 'arg'],
     ['-a|--all', 'すべてのパッケージを再設定する', 'reconfigure all packages'],
   ], { positional: [pkg] }),
   'dpkg-deb': cmd('.deb パッケージの中身を調べる・作る・取り出す', 'Inspect, build and unpack .deb packages', [
@@ -233,7 +233,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-q|--query', 'インストール済みのパッケージを問い合わせる', 'query installed packages'],
     ['-a|--all', 'すべてのパッケージ（`-qa`）', 'all packages (`-qa`)'],
     ['-l|--list', '含まれるファイルを一覧表示（`-ql`）', 'list the files (`-ql`)'],
-    ['-f|--file', 'このファイルを持つパッケージを調べる（`-qf`）', 'which package owns this file (`-qf`)'],
+    ['-f|--file', '指定したファイルを持つパッケージを調べる（`-qf`）', 'which package owns the given file (`-qf`)'],
     ['-p|--package', 'インストールせず、パッケージのファイルを対象にする（`-qp`）', 'use a package file instead of the database (`-qp`)'],
     ['-i', 'パッケージの情報を表示（`-qi`）', 'show package information (`-qi`)'],
     ['-V|--verify', '入れた後に変更されていないか検証する', 'verify files against the database'],
@@ -263,7 +263,7 @@ export const admin: Record<string, CommandDoc> = {
   repoquery: cmd('リポジトリのパッケージ情報を問い合わせる', 'Query package information from repositories', [
     ['-l|--list', '含まれるファイルを一覧表示', 'list the files'],
     ['--requires', '必要とするものを表示', 'show requirements'],
-    ['--whatprovides', 'これを提供するパッケージを調べる', 'find packages that provide this', 'arg'],
+    ['--whatprovides', '指定したファイルや機能を提供するパッケージを調べる', 'find packages that provide the given file or capability', 'arg'],
     ['-i|--info', 'パッケージの情報を表示', 'show package info'],
   ], { positional: [pkg] }),
   createrepo: cmd('RPM を置いたディレクトリから yum のリポジトリの情報を作る', 'Build yum repository metadata for a directory of RPMs', [
@@ -407,7 +407,7 @@ export const admin: Record<string, CommandDoc> = {
   ]),
   // ---- scheduling ---------------------------------------------------------------------------
   at: cmd('指定した時刻に1回だけコマンドを実行する', 'Run commands once at a given time', [
-    ['-f', 'コマンドを読み込むファイル', 'read commands from this file', 'arg'],
+    ['-f', 'コマンドを読み込むファイル', 'read commands from the given file', 'arg'],
     ['-m', '出力がなくても実行後にメールを送る', 'send mail when the job finishes, even without output'],
     ['-l', '予約の一覧を表示（`atq` と同じ）', 'list pending jobs (same as `atq`)'],
     ['-d', '予約を削除する（`atrm` と同じ）', 'delete a job (same as `atrm`)'],
@@ -417,7 +417,7 @@ export const admin: Record<string, CommandDoc> = {
   ], { positional: [pos('時刻（`now + 5 minutes`、`23:00`、`tomorrow`）', 'time (`now + 5 minutes`, `23:00`, `tomorrow`)')] }),
   atq: cmd('`at` の予約を一覧表示する', 'List pending `at` jobs', [['-q', '表示するキュー', 'queue to show', 'arg']]),
   atrm: cmd('`at` の予約を削除する', 'Remove `at` jobs', [], { positional: [pos('ジョブ番号', 'job number')] }),
-  batch: cmd('システムの負荷が低くなったらコマンドを実行する', 'Run commands when the system load is low', [['-f', 'コマンドを読み込むファイル', 'read commands from this file', 'arg']]),
+  batch: cmd('システムの負荷が低くなったらコマンドを実行する', 'Run commands when the system load is low', [['-f', 'コマンドを読み込むファイル', 'read commands from the given file', 'arg']]),
   // ---- locale and time ----------------------------------------------------------------------
   locale: cmd('ロケール（言語・地域の設定）を表示する', 'Show locale (language and region) settings', [
     ['-a|--all-locales', '使えるロケールを一覧表示', 'list available locales'],
@@ -475,7 +475,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-c', 'Cc の宛先', 'Cc address', 'arg'],
     ['-b', 'Bcc の宛先', 'Bcc address', 'arg'],
     ['-f', '読むメールボックスのファイル', 'mailbox file to read', 'arg'],
-    ['-u', '読む相手のユーザーのメールボックス', "read this user's mailbox", 'arg'],
+    ['-u', '読む相手のユーザーのメールボックス', "read the given user's mailbox", 'arg'],
     ['-v', '詳しく表示する', 'verbose'],
     ['-r', '送信者のアドレス', 'sender address', 'arg'],
     ['-S', '変数を設定する（s-nail。bsd-mailx にはない）', 'set a variable (s-nail; not in bsd-mailx)', 'arg'],
@@ -564,7 +564,7 @@ export const admin: Record<string, CommandDoc> = {
   ], { positional: [pos('ジョブ番号', 'job number')] }),
   cancel: cmd('印刷ジョブをキャンセルする', 'Cancel print jobs', [
     ['-a', 'プリンタのジョブをすべてキャンセルする', 'cancel all jobs on the printer'],
-    ['-u', 'このユーザーのジョブだけ', "only this user's jobs", 'arg'],
+    ['-u', '指定したユーザーのジョブだけ', "only the given user's jobs", 'arg'],
   ], { positional: [pos('ジョブ番号またはプリンタ', 'job ID or printer')] }),
   lpstat: cmd('CUPS のプリンタとジョブの状態を表示する', 'Show the status of CUPS printers and jobs', [
     ['-p', 'プリンタの状態', 'printer status'],
@@ -632,7 +632,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-u|--user', 'ユーザー', 'user', 'arg'],
     ['-r|--role', 'ロール', 'role', 'arg'],
     ['-R|--recursive', '再帰的に処理する', 'recurse'],
-    ['--reference', '同じコンテキストにするファイル', 'copy the context of this file', 'arg'],
+    ['--reference', '同じコンテキストにするファイル', 'copy the context of the given file', 'arg'],
   ], { positional: [files] }),
   runcon: cmd('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
     ['-t|--type', 'タイプ', 'type', 'arg'],

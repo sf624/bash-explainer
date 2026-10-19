@@ -44,10 +44,10 @@ export const builtins: Record<string, CommandDoc> = {
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],
     ['-s', '入力を画面に表示しない（パスワード入力用）', 'silent mode (for passwords)'],
     ['-a', '単語に分割して配列に代入する', 'read words into an array', 'arg'],
-    ['-n', '指定した文字数だけ読む', 'read only this many characters', 'arg'],
+    ['-n', '指定した文字数だけ読む', 'read only the given number of characters', 'arg'],
     ['-t', 'タイムアウト秒数', 'timeout in seconds', 'arg'],
-    ['-d', '改行の代わりにこの文字まで読む', 'read up to this delimiter instead of newline', 'arg'],
-    ['-u', '指定したファイルディスクリプタから読む', 'read from this file descriptor', 'arg'],
+    ['-d', '改行の代わりに指定した文字まで読む', 'read up to the given delimiter instead of newline', 'arg'],
+    ['-u', '指定したファイルディスクリプタから読む', 'read from the given file descriptor', 'arg'],
   ], { positional: [pos('読み込んだ値を入れる変数名', 'variable to store the input')] }),
   cd: b('カレントディレクトリを移動する', 'Change the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
@@ -121,14 +121,14 @@ export const builtins: Record<string, CommandDoc> = {
     ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
   ], { longSingleDash: true }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
-    ['-G', 'このグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching this glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
-    ['-W', 'この単語の一覧から候補を作る', 'candidates from this word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
+    ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
+    ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
     ['-f', 'ファイル名', 'file names'], ['-d', 'ディレクトリ名', 'directory names'], ['-c', 'コマンド名', 'command names'], ['-v', '変数名', 'variable names'],
     ['-o', '補完の動作オプション', 'completion option', 'arg'],
   ], { positional: [pos('補完中の単語（これで始まる候補だけ）', 'word being completed (only candidates starting with it)')] }),
   complete: b('コマンドの引数の補完方法を登録する', "Register how a command's arguments are completed", [
-    ['-F', 'この関数で候補を作る', 'use this function to generate candidates', 'arg'], ['-W', 'この単語の一覧から候補を作る', 'candidates from this word list', 'arg'],
-    ['-C', 'このコマンドの出力を候補にする', "use this command's output as candidates", 'arg'], ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
+    ['-F', '指定した関数で候補を作る', 'use the given function to generate candidates', 'arg'], ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'],
+    ['-C', '指定したコマンドの出力を候補にする', "use the given command's output as candidates", 'arg'], ['-o', '補完の動作オプション（`nospace`、`default`…）', 'completion option (`nospace`, `default`…)', 'arg'],
     ['-r', '登録を削除する', 'remove the registration'], ['-p', '登録を表示する', 'print the registrations'],
   ], { positional: [pos('対象のコマンド名', 'command name')] }),
   compopt: b('補完中に補完の動作オプションを変える', 'Change completion options while completing', [
