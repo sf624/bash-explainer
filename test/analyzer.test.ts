@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import * as path from 'path';
 import { descendants, hasError } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
@@ -225,6 +226,15 @@ describe('statements as bash reads them', () => {
     assert.match(find(explain('echo ${x@Z}', 0, 'ja'), 'Z').explanation, /bad substitution/);
     // The letters bash has are explained as before.
     assert.match(find(explain('echo ${x@Q}'), '${x@Q}', 'expansion').explanation, /quote it/);
+  });
+  it('says zsh parameter flags are a bad substitution in bash (checked with bash), and leaves zsh alone', () => {
+    assert.strictEqual(spawnSync('bash', ['-c', 'echo ${(f)var}'], { encoding: 'utf8' }).status, 1);
+    const e = explain('echo ${(f)var}');
+    assert.strictEqual(find(e, '${(f)var}').kind, 'error');
+    assert.match(find(e, '${(f)var}').explanation, /bad substitution/);
+    assert.match(find(explain('echo ${(f)var}', 0, 'ja'), '${(f)var}').explanation, /bad substitution/);
+    const zsh = new Analyzer('en').explainLine(parser.parse('echo ${(f)var}'), 0, 'zsh');
+    assert.ok(!all(zsh.items).some((t) => /bad substitution/.test(t.explanation)));
   });
   it('explains array elements with an index of their own', () => {
     const e = explain('a+=([7]=z [k]=v x$y)');

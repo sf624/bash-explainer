@@ -3099,6 +3099,10 @@ export class Analyzer {
     if (n.type === 'expansion' && hash?.type === 'special_variable_name' && hash.text === '#' && op && /^[\w[]/.test(op.text)) {
       return this.tok(n, 'error', this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${#` の後ろに変数名を書いたら、演算子は付けられない）', 'Parameter expansion: bash reports "bad substitution" (a `${#name}` length takes no operator)'));
     }
+    // `${(f)var}`: parameter flags are zsh's; bash reads `(f)var` as a name and says "bad substitution" (with zsh as the shell, the dialect check marks the line as not parsed).
+    if (n.type === 'expansion' && n.text.startsWith('${(') && this.shell !== 'zsh') {
+      return this.tok(n, 'error', this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${(` のパラメータフラグは zsh の書き方）', 'Parameter expansion: bash reports "bad substitution" (`${(f)var}` parameter flags are zsh syntax)'));
+    }
     const summary = this.expansionSummary(n);
     const text = n.text;
     const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
