@@ -52,8 +52,8 @@ describe('pipeline examples agree with bash', () => {
       return pipelineExample(stages, false)!;
     };
     for (const text of [
-      'grep -i error | sort | uniq -c | sort -rn | head -n 3', 'grep -v debug | tail -n 2', 'grep -w cat | sort | uniq -c | sort -rn | head',
-      'grep -m 2 a | sort -r', 'cut -d, -f1 | sort | uniq -c | sort -rn | head', 'sort -rn | head -n 5',
+      'grep -i error | sort | uniq -c | sort -rn | head -n 3', 'grep -v debug | tail -n 2', 'grep -w cat | sort | uniq -c | sort -rn | head -n 3',
+      'grep -m 2 a | sort -r', 'cut -d, -f1 | sort | uniq -c | sort -rn | head -n 3', 'sort -rn | head -n 5',
     ]) {
       const ex = run(text);
       let before = ex.input!;
@@ -61,6 +61,12 @@ describe('pipeline examples agree with bash', () => {
         assert.notDeepStrictEqual(step.output, before, `${text}: ${step.stage.text} changes nothing`);
         before = step.output;
       }
+    }
+    // A grown sample is shown whole: no section has more than 12 lines. Default `head` (10 lines)
+    // after `uniq -c` would need more, so it stays as it was.
+    for (const text of ['grep -i error | sort | uniq -c | sort -rn | head -n 3', 'cut -d, -f1 | sort | uniq -c | sort -rn | head', 'sort -rn | head -n 5']) {
+      const ex = run(text);
+      for (const lines of [ex.input!, ...ex.steps.map((x) => x.output)]) assert.ok(lines.length <= 12, text);
     }
     // -i: a line that matches only because of -i
     assert.ok(run('grep -i error | sort').input!.includes('ERROR'));

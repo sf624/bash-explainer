@@ -143,6 +143,12 @@ describe('time keyword', () => {
     assert.deepStrictEqual(titles('time; sort -u f'), ['Example']);
     assert.deepStrictEqual(titles('time ls && time sort -u f'), ['Example for `sort -u f`']);
   });
+  it('shows up to 12 lines of a whole-pipeline example, and cuts longer ones to 11 and a mark', () => {
+    const sections = (src: string) => explain(src).examples[0].sections.map((x) => x.lines.length);
+    assert.deepStrictEqual(sections('seq 12 | sort -n'), [12, 12]);
+    assert.deepStrictEqual(sections('seq 13 | sort -n'), [12, 12]);
+    assert.deepStrictEqual(explain('seq 13 | sort -n').examples[0].sections[1].lines.slice(10), ['11', '…']);
+  });
   it('explains the keyword alone when nothing follows it in a pipeline', () => {
     const p = explain('time -p').items[0];
     assert.deepStrictEqual(p.children.map((c) => c.label), ['time', '-p']);

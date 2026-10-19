@@ -305,18 +305,26 @@ export function readsFileOperand(stage: Stage): boolean {
 /** The most lines added to a sample to make the stages change the data. */
 const MAX_MORE = 24;
 
-/** How many stages hand on exactly what they got (cat and tee are meant to). */
-function inertStages(stages: Stage[], input: string[]): number {
+/** The most lines the whole-pipeline example shows in a section; a grown sample must fit in it. */
+export const MAX_SHOWN_LINES = 12;
+
+/**
+ * How many stages hand on exactly what they got (cat and tee are meant to); Infinity when the
+ * input or a stage's output is too long to be shown whole.
+ */
+function inertStages(stages: Stage[], input: string[], limit = Infinity): number {
   let data = input;
   let n = 0;
+  let longest = input.length;
   for (const stage of stages) {
     const run = runner(stage);
     if (!run) return 0;
     const out = run(data);
+    longest = Math.max(longest, out.length);
     if (stage.cmd !== 'cat' && stage.cmd !== 'tee' && out.length === data.length && out.every((l, i) => l === data[i])) n++;
     data = out;
   }
-  return n;
+  return longest > limit ? Infinity : n;
 }
 
 export interface PipelineStep {
@@ -368,7 +376,7 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
         let best = inertStages(rest, input);
         for (let more = 1; best > 0 && more <= MAX_MORE; more++) {
           const grown = build(more)!;
-          const score = inertStages(rest, grown);
+          const score = inertStages(rest, grown, MAX_SHOWN_LINES);
           if (score < best) {
             best = score;
             input = grown;

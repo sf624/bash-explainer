@@ -13,7 +13,7 @@ import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
 import { perlExample, perlOptions } from './examples/perlrun';
-import { pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
+import { MAX_SHOWN_LINES, pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { Interactive, jqStepSections, rerun, RerunSpec } from './examples/rerun';
@@ -1921,7 +1921,7 @@ export class Analyzer {
     }
     const ex = pipelineExample(stages, readsFile);
     if (!ex) return undefined;
-    const cap = (lines: string[]) => (lines.length > 8 ? [...lines.slice(0, 7), '…'] : lines).map(visible);
+    const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.slice(0, MAX_SHOWN_LINES - 1), '…'] : lines).map(visible);
     const sections: ExampleSection[] = [];
     const fromFile = readsFile || readsFileOperand(stages[0]);
     if (ex.input) sections.push({ label: fromFile ? this.s('入力（ファイルの中身の例）', 'Input (sample file contents)') : this.s('入力', 'Input'), lines: cap(ex.input) });
