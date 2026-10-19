@@ -15,7 +15,7 @@ export interface EmbeddedToken {
   group?: number;
 }
 
-export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path';
+export type EmbeddedLang = 'regex' | 'sed' | 'awk' | 'jq' | 'printf' | 'date' | 'glob' | 'mode' | 'umask' | 'sortkey' | 'cutfields' | 'cutchars' | 'trset' | 'getopts' | 'getoptshort' | 'getoptlong' | 'perl' | 'gitformat' | 'gitdate' | 'yq4' | 'yq3path' | 'arith';
 
 /** Pick the string for the current language. */
 export function pick(lang: Lang) {

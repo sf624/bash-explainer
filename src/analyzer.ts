@@ -22,6 +22,7 @@ import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode,
 import { explainAwk } from './embedded/awk';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
+import { explainArith } from './embedded/arith';
 import { explainGetopts } from './embedded/getopts';
 import { parseTest, TestExpr, testRange } from './testexpr';
 import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
@@ -40,7 +41,7 @@ import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embed
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
-import { ArithLiteral, arithLiteral, evalArith, intValue } from './arith';
+import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
 import { staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
@@ -475,7 +476,7 @@ export class Analyzer {
       case 'command_substitution': return this.commandSubstitution(n);
       case 'process_substitution': return this.processSubstitution(n);
       case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression')
-        + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + this.commaNote(n), this.arithChildren(n));
+        + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + this.commaNote(n) + this.wrapNote(n), this.arithChildren(n));
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
@@ -484,7 +485,7 @@ export class Analyzer {
       case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
-      case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
+      case 'brace_expression': return this.braceWord(n) ?? this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
       case 'regex': return this.regexNode(n);
@@ -1135,7 +1136,8 @@ export class Analyzer {
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
-      const lang = isFn ? undefined : doc?.positionalLang?.[posIndex];
+      // (Every argument of `let` is an arithmetic expression.)
+      const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : doc?.positionalLang?.[posIndex];
       posIndex++;
       out.push(this.positional(a, desc, lang));
     }
@@ -1358,6 +1360,13 @@ export class Analyzer {
           this.globExample(lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
             opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
         }
+        break;
+      }
+      case 'arith': {
+        const r = explainArith(lit.text, this.lang);
+        if (!r) return undefined;
+        tokens = r.tokens;
+        note = r.note;
         break;
       }
       case 'date': {
@@ -1710,11 +1719,14 @@ export class Analyzer {
       return this.tok(n, 'expansion', this.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
     }
     if (!words) return undefined;
-    const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : `\`${w}\``)).join(' ');
+    // (An empty word that stays is shown as `''`: a lone backslash, as `{Z..a}` makes, is gone after quote removal.)
+    const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : `\`${w || "''"}\``)).join(' ');
     const comma = /\\,/.test(text);
+    // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
+    const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);
     return this.tok(n, 'expansion', words.length
-      ? this.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}`,
-        `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}`)
+      ? this.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
+        `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
       : this.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`));
   }
 
@@ -1734,7 +1746,7 @@ export class Analyzer {
       if (words) {
         this.examples.push({ kind: 'glob',
           title: this.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
-          sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: words.length > 12 ? [...words.slice(0, 11), '…'] : words }],
+          sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => w || "''") }],
         });
         return;
       }
@@ -2086,8 +2098,18 @@ export class Analyzer {
     const array = p.opts.find(([o]) => o === 'a')?.[1];
     const names = (p.operands as string[]).length ? (p.operands as string[]) : array ? [] : ['REPLY'];
     const raw = p.opts.some(([o]) => o === 'r');
-    const line = readSampleLine(names.length, ifs, !!array);
+    // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
+    const here = n.namedChildren.find((c) => c.type === 'herestring_redirect')?.namedChildren[0];
+    const given = here && literalContent(here)?.text;
+    const line = given ?? readSampleLine(names.length, ifs, !!array);
     const r = runRead(line, names, { ifs, raw, array });
+    // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
+    if (/[^ \t\n]/.test(ifs)) {
+      const seps = [...ifs].filter((c) => !/[ \t\n]/.test(c)).map((c) => `\`${c}\``).join(this.s('、', ', '));
+      this.extraNotes.push(this.s(
+        `\`IFS=${ifs}\` の \`read\`: 空白以外の区切り文字（${seps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
+        `\`read\` with \`IFS=${ifs}\`: a separator that is not whitespace (${seps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`));
+    }
     const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
     this.examples.push({ kind: 'read',
       title: this.s('例', 'Example'),
@@ -2560,7 +2582,7 @@ export class Analyzer {
       : v !== undefined && String(v) !== m[1] ? this.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
       : this.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``);
     return this.tok(n, 'argument', this.s(
-      `${what}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
+      `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
       `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
     ));
   }
@@ -2600,6 +2622,15 @@ export class Analyzer {
       : this.s(`。\`,\` で区切られた式は左から順に評価され、全体の値は最後の式 \`${last}\` の値になる`, `. The expressions separated by \`,\` are evaluated from left to right, and the value is that of the last one, \`${last}\``);
   }
 
+  /** `$((1<<63))`: bash's integers are 64-bit, and a result beyond them wraps around instead of failing. */
+  private wrapNote(n: SyntaxNode): string {
+    const r = evalArithWrapping(n.text.replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, ''));
+    return r?.wrapped
+      ? this.s(`。bash の整数は符号付き 64 ビットで、範囲を超えるとエラーにならず一周して戻るので、この値は ${r.value} になる`,
+        `. Bash integers are signed 64-bit, and a result beyond that wraps around instead of failing, so this is ${r.value}`)
+      : '';
+  }
+
   /** The expressions of an arithmetic command or expansion, with its commas. */
   private arithChildren(n: SyntaxNode): Token[] {
     const commas = n.children.filter((c) => c.type === ',').map((c) => this.tok(c, 'operator', this.s('`,` コンマ演算子: 左の式を評価して値を捨て、右の式に進む', '`,` comma operator: evaluate the left expression, drop its value, go on to the right one')));
@@ -2614,25 +2645,7 @@ export class Analyzer {
   }
 
   private arithLiteralText(text: string, lit: ArithLiteral): string {
-    if (lit.type === 'invalid') {
-      const octal = lit.base === 8 && !text.includes('#');
-      const why = lit.reason === 'base'
-        ? this.s(`基数 ${lit.base} は使えない（2〜64）`, `${lit.base} is not a base bash has (2 to 64)`)
-        // (The grammar does not read `2#` as a number, so only the unit tests of arithLiteral get here.)
-        /* c8 ignore next */
-        : lit.reason === 'empty' ? this.s('\`#\` の後に数字がない', 'no digits follow the `#`')
-        : lit.reason === 'zero-base' ? this.s('基数が 0 で始まっている', 'the base starts with 0')
-        : octal ? this.s(`先頭が 0 の数は 8 進数として読まれ、数字 \`${lit.digit}\` は使えない`, `a number starting with 0 is read as octal, and \`${lit.digit}\` is not an octal digit`)
-        : this.s(`基数 ${lit.base} では数字 \`${lit.digit}\` は使えない`, `\`${lit.digit}\` is not a digit in base ${lit.base}`);
-      return this.s(`⚠ 不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`, `⚠ Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`);
-    }
-    const name: Record<number, [string, string]> = { 2: ['2進数', 'binary'], 8: ['8進数', 'octal'], 16: ['16進数', 'hexadecimal'] };
-    const [ja, en] = name[lit.base] ?? [`${lit.base}進数`, `base ${lit.base}`];
-    const how = lit.style === 'octal' ? this.s('先頭が 0 の数は 8 進数として読まれる', 'a number starting with 0 is read as octal')
-      : lit.style === 'hex' ? this.s('`0x` で始まる数は 16 進数', 'a number starting with `0x` is hexadecimal')
-      : this.s(`\`基数#数字\` の形（基数は 2〜64）`, 'written as `base#digits` (base 2 to 64)');
-    const high = lit.base > 36 ? this.s('。基数 36 より大きいと、数字は 0-9, a-z（10〜35）, A-Z（36〜61）, `@`（62）, `_`（63）', '. Above base 36, the digits are 0-9, a-z (10-35), A-Z (36-61), `@` (62) and `_` (63)') : '';
-    return this.s(`${ja}の \`${text}\`（${how}）= 10 進数で ${lit.value}${high}`, `${en[0].toUpperCase()}${en.slice(1)} number \`${text}\` (${how}) = ${lit.value} in decimal${high}`);
+    return describeArithLiteral(text, lit, this.lang);
   }
 
   private string(n: SyntaxNode): Token {

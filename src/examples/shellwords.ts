@@ -58,7 +58,8 @@ function sequence(body: string): string[] | undefined {
 export function braceExpand(word: string): string[] | undefined {
   const words = expand(word);
   // Words that end up empty are dropped, as bash drops empty unquoted words.
-  return words?.map((w) => w.replace(/\\(.)/g, '$1')).filter((w) => w !== '');
+  // (A backslash left at the end of a word, as the one `{Z..a}` makes, is removed with quote removal: an empty argument that stays.)
+  return words?.filter((w) => w !== '').map((w) => w.replace(/\\(.|$)/g, '$1'));
 }
 
 function expand(word: string): string[] | undefined {

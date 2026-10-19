@@ -173,7 +173,10 @@ export const builtins: Record<string, CommandDoc> = {
   readarray: b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', [
     ['-t', '各行末の改行を取り除く', 'strip trailing newlines'],
   ], { positional: [pos('格納する配列名', 'array name')] }),
-  let: b('算術式を評価する（例: `let i++`）', 'Evaluate arithmetic expressions (e.g. `let i++`)'),
+  let: b('算術式を評価する（例: `let i++`）', 'Evaluate arithmetic expressions (e.g. `let i++`)', [], {
+    positional: [pos('算術式（引数ごとに1つ。左から順に評価され、前の結果が後ろの式から見える）',
+      'arithmetic expression (one per argument, evaluated left to right, so later ones see earlier results)')],
+  }),
   pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it'),
   popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it'),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack'),
