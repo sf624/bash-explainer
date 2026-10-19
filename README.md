@@ -243,7 +243,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
 - A few constructs are not read as bash reads them: zsh-only syntax such as `*(.)` and `${(f)var}` (with the shell set to zsh, such a line is marked as not parsed), and the base-64 digit `@` in arithmetic next to other terms (`$((64#@))` alone is read as 62, but in `$((64#@ + 1))` the whole expression becomes one word). In a `[ ]`, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the parser says.
-- A script with Windows line endings (CRLF) is explained as if it had LF, and a warning says that bash reads the CR as part of the last word of each line. A here-document in such a script has no closing line, as in bash.
+- A script with Windows line endings (CRLF) is explained as if it had LF, and a warning (`crlf`, on the last word of the first such line) says that bash reads the CR as part of the last word of each line. To keep the file as it is, write `# bash-explainer disable-file=crlf` on a line of its own (the first line is the shebang, so `disable=` before it is not possible). A here-document in such a script has no closing line, as in bash.
 
 ## Privacy
 
