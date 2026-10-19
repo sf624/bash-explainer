@@ -26,6 +26,17 @@
 - Constant array indexes are evaluated: `${a[1+1]}` is "an arithmetic expression: 2", `${a[010]}` is 8, and `${a[-1]}` is "the last element".
 - `z=2 echo $z` says `$z` is expanded before the assignment applies (it is empty if unset), and `x=1 y=$x` says `$x` is already set because assignments run left to right.
 - Brace expansions that the parser splits into words (`{a,b\,c}`, `{,}`, `{a..e..2}`, `project/{src,test}`) are one "Brace expansion" with the words they give: `{a,b\,c}` is `a` `b,c`, and `{,}` is nothing. Before, they were a "Concatenation" of the pieces `{`, `a,b\,c` and `}`.
+- A `case` pattern made of several pieces is one pattern: in `[\)]|"("*)` the second pattern is `"("*` (a literal `(` and anything after it), and the `|` tells the patterns apart; before, it was split into `"("` and `*`, as if the line had three patterns.
+- The default word in `${u-'x'}` is shown after quote removal: unquoted it gives `x` (and `${u-'}'}` gives `}`), and only in double quotes (`"${u-'x'}"`) do the single quotes stay; before, both examples showed `'x'`. The same holds for `+`, `=`, `:?` and in a here-document.
+- A variable declared with `declare -i` (or `local -i`) is explained as taking arithmetic: `n=3+4` is evaluated (7), and `n+=1` adds (8) instead of appending text (`71`); before, it was "append to variable".
+- Words after the format of `printf` are values, as in bash: `printf '%d|' 1 -0` prints `1|0|`; before, `-0` was called an option. Builtins read options only up to the first operand (`echo a -n` prints `a -n`, `declare x -i` is an error for the name `-i`), and `echo` knows only `-n`, `-e` and `-E` (`echo -x`, `echo -nx` and `echo -- a` print their words).
+- A quoted right side of `==`, `=` and `!=` in `[[ ]]` is explained as literal text (`[[ x == "*" ]]` is false); before, it was "a glob pattern". For `*"$y"*z` the quoted part is literal and the rest is a pattern.
+- In `declare -A m=([1+1]=v)` and `m[1+1]=v` the key is the string `1+1`; in an indexed array `i=([1+1]=v)` the index is evaluated (2), as `${!m[@]}` and `${!i[@]}` show in bash (`1+1 2`). `${m[k]}` says "key" for an associative array. Examples for an associative array no longer list `0 1 2` for `${!m[@]}` (the keys come in no fixed order); `${#m[@]}` is 3 for `([a]=1 [b]=2 [c]=3)`.
+- `"$@"x` and `p"${a[@]}"q` are explained as one word per element, with the text before glued to the first one and the text after to the last (`[a]`, `[b cx]`); before, "the parts are joined into one word".
+- `{Z..a}` is listed with its eight words (the lone backslash is gone after quote removal and stays as an empty word, shown as `''`), also on the unbash adapter, and `{01..10..3}` says that a leading 0 pads every number.
+- The arguments of `let` are explained as arithmetic expressions, one each, left to right: `let "y = x << 1" z=y%3` shows the assignments, the shift and the modulo; before, they were a string and a plain word. The value of a constant one is shown (`let 0x10+1` is 17).
+- `IFS=, read -ra p <<< "a,b,,c,"` shows the line it reads (`"a,b,,c,"`) and what is stored (`a`, `b`, an empty field, `c`), and a note says that a separator that is not whitespace keeps empty fields and a trailing one adds none; before, the example used a made-up line.
+- An arithmetic expansion of constants that overflows says the result wraps around (`$((1<<63))` is `-9223372036854775808`: bash integers are 64-bit); the shift operators of constants are computed.
 
 ## 0.4.0
 
