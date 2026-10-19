@@ -2480,14 +2480,29 @@ export class Analyzer {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
       }
       return this.tok(n, 'test', this.s(
-        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.t(binaryTestOps[op])}`,
-        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.t(binaryTestOps[op])}`,
+        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}`,
+        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}`,
       ), operands);
     }
     const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
     return this.tok(n, 'operator', assignOps.includes(op)
       ? this.s(`算術代入: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic assignment: \`${left?.text}\` ${op} \`${rightText}\``)
       : this.s(`算術演算: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic: \`${left?.text}\` ${op} \`${rightText}\``), operands);
+  }
+
+  /** In `[[ x == "*" ]]`, a quoted right side is plain text: quoting turns the pattern off. Undefined when nothing is quoted. */
+  private quotedPatternNote(n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
+    if (!['=', '==', '!='].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
+    const quoted = (x: SyntaxNode): boolean[] => (x.type === 'concatenation' ? x.namedChildren.flatMap(quoted)
+      : [['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type) || x.text.includes('\\')]);
+    const kinds = rights.flatMap(quoted);
+    if (!kinds.some((q) => q)) return undefined;
+    const equal = op !== '!=';
+    return kinds.every((q) => q)
+      ? this.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺はクォートされているので文字列そのもの。パターンとしては扱われない）`,
+        `strings ${equal ? 'are equal' : 'differ'} (the right side is quoted, so it is literal text, not a pattern)`)
+      : this.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺のうちクォートされた部分は文字列そのもの、残りはパターン）`,
+        `strings ${equal ? 'are equal' : 'differ'} (the quoted parts of the right side are literal text, the rest is a pattern)`);
   }
 
   // ---------------------------------------------------------------- words & expansions
