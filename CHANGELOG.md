@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An unclosed backquote, `$(` or `$((` in the pattern of `${s^^…}`, `${s#…}`, `${s:-…}` and the like, followed by a backslash at the end of the text, no longer makes the unbash path throw. Before, unbash ended such a part past the text, and the explanation failed.
 - A backquote substitution inside double quotes is read as bash reads it: the backslash before `$`, a backquote, `\` and `"` is removed before the command is parsed, so `` echo "`echo \"x\" y`" `` shows the string `x` (the unbash path mapped the positions, but the text still had the stray backslash). `\\\\` in a backquote is now `\` (one backslash), not `\\`, in both parsers. Before, the explanation of such words removed only the quotes.
 - `[[ x =~ "$re" ]]`, `=~ 'a.c'` and `=~ a"."c` say that the quoted part is literal text, not a regex (a variable that holds a regex is written `$re`, not `"$re"`). Before, they were explained as a regex, as the unquoted form is.
 - `${p//\//_}`, `${p/#\/a/X}` and the like: the header splits the pattern and the replacement at the first slash that is not escaped, quoted or inside an expansion. Before, it split at the `/` of `\/` (`p` 内で `\` に一致する部分を `/_` に置換).

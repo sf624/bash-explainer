@@ -33,6 +33,12 @@ export function fuzzInputs(seed = 20250101): string[] {
   // Lines found by hand: a brace group as a loop body, array indexes, brace lists, nested backquotes, here-documents with more on their line.
   units.push('for ((;;)); { :; }', 'a+=([7]=z)', 'echo {1..3}{,}', 'echo `echo \\`echo x\\``', 'echo $"hi"', 'cat <<EOF | tr a-z A-Z && echo after\nhi\nEOF',
     'cat <<EOF; rm -rf "$d"\nhi\nEOF', 'echo A && echo B > f', '! true | false', 'a | time b');
+  // The pattern or word of a `${…}` operator, cut inside an opener that is not closed, and a backslash at the very end:
+  // unbash reads the opener to the end of the text, and may end a part past it.
+  const ops = [':-', '#', '##', '%', '%%', '/', '//', '/#', '^', '^^', ',', ',,', '~', '~~', ':', '@'];
+  const openers = ['`', '$(', '$((', '${', '"', "'", '$"', "$'", '<(', '`;'];
+  const tails = ['', '\\', ' ;\\', '}', '\n'];
+  for (const op of ops) for (const o of openers) for (const t of tails) units.push(`echo \${s${op}${o}a${t}`);
   const out = new Set<string>();
   for (const u of units) {
     // Prefixes: all of a short text, a sample of a long one.
