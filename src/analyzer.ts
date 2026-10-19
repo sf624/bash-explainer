@@ -7,7 +7,7 @@ import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { CommandDoc, OptDoc } from './dict/types';
+import { BundleDoc, CommandDoc, OptDoc } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
@@ -1000,6 +1000,10 @@ export class Analyzer {
       }
       // `--pretty=format:'%h %s'` is one word made of a plain part and a quoted part.
       const quotedLongOpt = a.type === 'concatenation' && /^--[\w-]+=/.test(a.namedChildren[0]!.text);
+      if (i === 0 && doc?.bundle && isPlainWord(a)) {
+        const end = this.bundle(doc, doc.bundle, args, out);
+        if (end >= 0) { i = end; continue; }
+      }
       const optLike = !endOfOpts && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
         i = this.option(doc, args, i, cmdName, out);
@@ -1028,6 +1032,38 @@ export class Analyzer {
       this.argCtx = savedCtx;
     }
     return out;
+  }
+
+  /**
+   * `tar xzf a.tgz`, `ps aux`: the first argument as options without a dash. Each letter is explained,
+   * and those that take a value (`f`, `C`) use the words after the bundle in order. Returns the index of
+   * the last word used, or -1 when the word is not such a bundle.
+   */
+  private bundle(doc: CommandDoc, b: BundleDoc, args: SyntaxNode[], out: Token[]): number {
+    const a = args[0];
+    const text = a.text;
+    const look = (ch: string): OptDoc | undefined => (b.options ? b.options[ch] : doc.options?.['-' + ch]);
+    if (!/^[A-Za-z0-9]+$/.test(text) || ![...text].every((ch) => look(ch))) return -1;
+    if (b.needs && ![...text].some((ch) => b.needs!.includes(ch))) return -1;
+    const col = a.startPosition.column;
+    const row = a.startPosition.row;
+    const parts: Token[] = [];
+    const values: Token[] = [];
+    let last = 0;
+    [...text].forEach((ch, k) => {
+      const opt = look(ch)!;
+      parts.push({
+        kind: 'option', label: ch, explanation: this.t(opt.text), children: [],
+        span: { start: { line: row, character: col + k }, end: { line: row, character: col + k + 1 } },
+      });
+      if (opt.arg && last + 1 < args.length) {
+        last++;
+        values.push(this.tok(args[last], 'argument', this.s(`\`${ch}\` の値`, `Value for \`${ch}\``), isPlainWord(args[last]) ? [] : this.sub(args[last])));
+      }
+    });
+    const style = b.style ? this.t(b.style) : this.s('旧式のオプション（ハイフンなし）', 'Old-style options (no dash)');
+    out.push(this.tok(a, 'option', `${style}: ${parts.map((p) => `\`${p.label}\``).join(' ')}`, parts), ...values);
+    return last;
   }
 
   private positional(a: SyntaxNode, desc: string | undefined, lang?: EmbeddedLang): Token {
