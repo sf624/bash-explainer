@@ -141,7 +141,7 @@ describe('time keyword', () => {
   });
   it('leaves other things named time as commands', () => {
     assert.match(explain('/usr/bin/time ls').items[0].explanation, /Run the program or script at `\/usr\/bin\/time`/);
-    assert.match(explain('"time" ls').items[0].explanation, /Run the expanded value as a command/);
+    assert.match(explain('"time" ls').items[0].explanation, /becomes `time`/);
     assert.match(explain('FOO=1 time ls').items[0].explanation, /Run the external command `time`/);
   });
   it('runs the program time after a pipe, where bash has no keyword', () => {

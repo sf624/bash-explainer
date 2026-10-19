@@ -40,6 +40,8 @@ import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embed
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
+import { ArithLiteral, arithLiteral, intValue } from './arith';
+import { staticWordValue } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
@@ -437,21 +439,21 @@ export class Analyzer {
       case 'simple_expansion': return this.simpleExpansion(n);
       case 'command_substitution': return this.commandSubstitution(n);
       case 'process_substitution': return this.processSubstitution(n);
-      case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression'), this.subs(n.namedChildren));
+      case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression') + this.commaNote(n), this.arithChildren(n));
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
-      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted'));
+      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
-      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
+      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word') + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.word(n);
-      case 'number': return this.tok(n, 'number', this.s('数値', 'Number'));
+      case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
       case 'regex': return this.regexNode(n);
       case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
-      case 'variable_name': return this.variable(n.text, n);
+      case 'variable_name': return this.arithNumber(n) ?? this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
       case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
       case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
@@ -464,7 +466,7 @@ export class Analyzer {
       case 'else_clause': return this.block(n, 'keyword', this.t(keywords.else));
       case 'case_statement': return this.caseStatement(n);
       case 'case_item': return this.caseItem(n);
-      case 'error': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
+      case 'error': return this.hashExpansionError(n) ?? this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
       default:
         // Callers explain keywords and operators themselves; any other punctuation is shown as itself.
         /* c8 ignore next */
@@ -714,7 +716,7 @@ export class Analyzer {
     const children: Token[] = [];
     if (value) {
       for (const t of this.sub(value)) {
-        if (isPlainWord(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
+        if (isPlainWord(value) && !this.arithNumber(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
         children.push(t);
       }
     }
@@ -908,17 +910,34 @@ export class Analyzer {
     return t;
   }
 
-  private commandHead(nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] } {
+  private commandHead(nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {
+    const head = this.commandHeadFor(nameNode, word);
+    const spelled = staticWordValue(word);
+    if (spelled && spelled !== word.text) {
+      head.explanation = this.s(
+        `コマンド名 \`${word.text}\` は、クォートやバックスラッシュ、空の \`$(…)\` を取り除くと \`${this.shown(spelled)}\` になる。${head.explanation}`,
+        `The command name \`${word.text}\` becomes \`${this.shown(spelled)}\` once the quotes, backslashes and empty \`$(…)\` are removed. ${head.explanation}`,
+      );
+      if (!isPlainWord(word) && !head.nameTokens.length) head.nameTokens = this.sub(word);
+    }
+    return head;
+  }
+
+  private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode): CommandHead {
     // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
-    const name = isPlainWord(word) ? word.text : nameNode.text;
-    if (!isPlainWord(word) && word.type !== 'raw_string') {
+    // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
+    const spelled = staticWordValue(word);
+    const sv = spelled && spelled !== word.text ? spelled : undefined;
+    const name = sv ?? (isPlainWord(word) ? word.text : nameNode.text);
+    if (sv === undefined && !isPlainWord(word) && word.type !== 'raw_string') {
       return {
         name, kind: 'command', nameTokens: this.sub(word),
         explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
       };
     }
     // An alias over a known command (`alias grep=ggrep`) is still explained as that command.
-    const alias = lookupCommand(name) ? undefined : this.aliases.get(name);
+    // (A quoted name is never an alias.)
+    const alias = lookupCommand(name) || sv !== undefined ? undefined : this.aliases.get(name);
     if (alias) {
       // bash expands aliases in scripts only with expand_aliases (interactive shells always do);
       // a script that turns it on anywhere is taken to know.
@@ -1075,7 +1094,7 @@ export class Analyzer {
       const base = this.word(a);
       if (!desc) return base;
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
-      return this.tok(a, 'argument', desc + glob);
+      return this.tok(a, 'argument', desc + glob + this.valueNote(a));
     }
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
@@ -2256,10 +2275,10 @@ export class Analyzer {
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
         'Extended test `[[ ]]`: evaluates a condition (bash-only; safe without quoting, supports `&&`, `||`, `=~`)')
       : open === '(('
-        ? this.arithTestExplanation()
+        ? this.arithTestExplanation() + this.commaNote(n)
         : this.s('条件式 `[ ]`: 条件を評価し、真なら成功(0)を返す（`test` コマンドと同じ。`[` の後と `]` の前には空白が必要）',
           'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
-    const t = this.tok(n, 'test', expl, bracket ? this.testTokens(n, bracket, bracket.expr) : this.subs(n.namedChildren));
+    const t = this.tok(n, 'test', expl, bracket ? this.testTokens(n, bracket, bracket.expr) : open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren));
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     // Includes examples from inside the test, such as the regex of `=~`.
     this.tagExamples(before, n);
@@ -2304,6 +2323,14 @@ export class Analyzer {
   }
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
+  /** An error node that is one `${#…}` expansion on `$#` (`${##x}`, `${#-x}`): tree-sitter-bash gives up on these. */
+  private hashExpansionError(n: SyntaxNode): Token | undefined {
+    const text = n.text;
+    if (n.startPosition.row !== n.endPosition.row || !text.startsWith('${#') || text.indexOf('}') !== text.length - 1 || text.indexOf('${', 1) >= 0) return undefined;
+    const p = parseExpansion(text);
+    return p && p.name === '#' && !p.prefix ? this.expansion(n) : undefined;
+  }
+
   private regexNode(n: SyntaxNode): Token {
     // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (quotes and expansions make other nodes).
     const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
@@ -2347,7 +2374,8 @@ export class Analyzer {
     const rightText = n.text.slice(rights[0].startIndex - n.startIndex, rights[rights.length - 1].endIndex - n.startIndex);
     const op = field(n, 'operator')!.text;
     // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
-    const plain = (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
+    // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
+    const plain = (x: SyntaxNode) => (isPlainWord(x) && !(this.inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
     const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
@@ -2379,7 +2407,70 @@ export class Analyzer {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
     if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
-    return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``));
+    return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n));
+  }
+
+  /** How a value is shown in an explanation: control characters as pictures, a newline as `\n`. */
+  private shown(v: string): string {
+    return visible(v).replace(/\n/g, '\\n');
+  }
+
+  /**
+   * What quote removal makes of a word (`h\i` is `hi`, `\$HOME` is the text `$HOME`), if it changes the text
+   * and the result is known without running anything. Empty or unchanged: nothing to say.
+   */
+  private valueNote(n: SyntaxNode): string {
+    const v = staticWordValue(n);
+    if (!v || v === n.text) return '';
+    const literal = v.includes('$');
+    return this.s(
+      `。クォートやバックスラッシュを取り除くと \`${this.shown(v)}\` という文字列になる${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
+      `. After quote removal it is the string \`${this.shown(v)}\`${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
+    );
+  }
+
+  /** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */
+  private commaNote(n: SyntaxNode): string {
+    if (!n.children.some((c) => c.type === ',')) return '';
+    const last = n.namedChildren[n.namedChildren.length - 1].text;
+    return n.type === 'arithmetic_command'
+      ? this.s(`。\`,\` で区切られた式は左から順に評価され、結果は最後の式 \`${last}\` の値で決まる`, `. The expressions separated by \`,\` run from left to right, and the result is that of the last one, \`${last}\``)
+      : this.s(`。\`,\` で区切られた式は左から順に評価され、全体の値は最後の式 \`${last}\` の値になる`, `. The expressions separated by \`,\` are evaluated from left to right, and the value is that of the last one, \`${last}\``);
+  }
+
+  /** The expressions of an arithmetic command or expansion, with its commas. */
+  private arithChildren(n: SyntaxNode): Token[] {
+    const commas = n.children.filter((c) => c.type === ',').map((c) => this.tok(c, 'operator', this.s('`,` コンマ演算子: 左の式を評価して値を捨て、右の式に進む', '`,` comma operator: evaluate the left expression, drop its value, go on to the right one')));
+    return sortTokens([...this.subs(n.namedChildren), ...commas]);
+  }
+
+  /** A constant of an arithmetic expression that is not plain decimal (`0x1F`, `010`, `2#1010`), with its value; undefined for anything else. */
+  private arithNumber(n: SyntaxNode): Token | undefined {
+    const lit = arithLiteral(n.text);
+    if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !this.inArithmetic(n)) return undefined;
+    return this.tok(n, 'number', this.arithLiteralText(n.text, lit));
+  }
+
+  private arithLiteralText(text: string, lit: ArithLiteral): string {
+    if (lit.type === 'invalid') {
+      const octal = lit.base === 8 && !text.includes('#');
+      const why = lit.reason === 'base'
+        ? this.s(`基数 ${lit.base} は使えない（2〜64）`, `${lit.base} is not a base bash has (2 to 64)`)
+        // (The grammar does not read `2#` as a number, so only the unit tests of arithLiteral get here.)
+        /* c8 ignore next */
+        : lit.reason === 'empty' ? this.s('\`#\` の後に数字がない', 'no digits follow the `#`')
+        : lit.reason === 'zero-base' ? this.s('基数が 0 で始まっている', 'the base starts with 0')
+        : octal ? this.s(`先頭が 0 の数は 8 進数として読まれ、数字 \`${lit.digit}\` は使えない`, `a number starting with 0 is read as octal, and \`${lit.digit}\` is not an octal digit`)
+        : this.s(`基数 ${lit.base} では数字 \`${lit.digit}\` は使えない`, `\`${lit.digit}\` is not a digit in base ${lit.base}`);
+      return this.s(`⚠ 不正な数 \`${text}\`: ${why}。bash は算術エラーで止まる`, `⚠ Invalid number \`${text}\`: ${why}. bash stops with an arithmetic error`);
+    }
+    const name: Record<number, [string, string]> = { 2: ['2進数', 'binary'], 8: ['8進数', 'octal'], 16: ['16進数', 'hexadecimal'] };
+    const [ja, en] = name[lit.base] ?? [`${lit.base}進数`, `base ${lit.base}`];
+    const how = lit.style === 'octal' ? this.s('先頭が 0 の数は 8 進数として読まれる', 'a number starting with 0 is read as octal')
+      : lit.style === 'hex' ? this.s('`0x` で始まる数は 16 進数', 'a number starting with `0x` is hexadecimal')
+      : this.s(`\`基数#数字\` の形（基数は 2〜64）`, 'written as `base#digits` (base 2 to 64)');
+    const high = lit.base > 36 ? this.s('。基数 36 より大きいと、数字は 0-9, a-z（10〜35）, A-Z（36〜61）, `@`（62）, `_`（63）', '. Above base 36, the digits are 0-9, a-z (10-35), A-Z (36-61), `@` (62) and `_` (63)') : '';
+    return this.s(`${ja}の \`${text}\`（${how}）= 10 進数で ${lit.value}${high}`, `${en[0].toUpperCase()}${en.slice(1)} number \`${text}\` (${how}) = ${lit.value} in decimal${high}`);
   }
 
   private string(n: SyntaxNode): Token {
@@ -2393,7 +2484,7 @@ export class Analyzer {
     return this.tok(n, 'string', this.s(
       'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
       'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
-    ), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
+    ) + (/\\/.test(n.text) ? this.valueNote(n) : ''), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
   }
 
   private varDesc(name: string): string | undefined {
@@ -2442,12 +2533,18 @@ export class Analyzer {
     const name = field(n, 'name')!.text;
     const idx = field(n, 'index')!.text;
     if (idx === '@' || idx === '*') return this.tok(n, 'variable', this.s(`配列 \`${name}\` の全要素`, `All elements of array \`${name}\``));
-    return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``));
+    // The index is arithmetic (`a[0x1]` is element 1).
+    const index = field(n, 'index')!;
+    const num = this.arithNumber(index);
+    return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
   }
 
   /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
   private expansion(n: SyntaxNode): Token {
-    const summary = this.expansionSummary(n);
+    // tree-sitter-bash cannot read `${##x}` or `${#-x}` (`$#` with an operator): the text still can.
+    const summary = n.type === 'error'
+      ? this.tok(n, 'expansion', this.s('パラメータ展開', 'Parameter expansion'))
+      : this.expansionSummary(n);
     // Inside a string, tree-sitter-bash starts a `${…}` after a space at the space.
     const text = n.text.trimStart();
     const lead = n.text.length - text.length;
@@ -2457,6 +2554,11 @@ export class Analyzer {
     }
     const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
     if (!parsed) return summary;
+    const special = this.specialExpansion(parsed, text);
+    if (special) {
+      summary.explanation = special;
+      if (!parsed.prefix && !parsed.op) summary.kind = 'variable';
+    }
     const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
@@ -2482,6 +2584,25 @@ export class Analyzer {
       return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: nested }];
     });
     return summary;
+  }
+
+  /** `${#}`, `${##}`, `${#@}`, `${#-x}`…: the special parameters with a `#` or an operator, which are easy to misread. Undefined for the other expansions. */
+  private specialExpansion(p: ParsedExpansion, text: string): string | undefined {
+    const shownName = `$${p.name}`;
+    if (p.prefix === '#' && !p.subscript && (p.name === '@' || p.name === '*')) {
+      return this.s(`位置パラメータの個数（\`$#\` と同じ。文字数ではない）`, 'Number of positional parameters (the same as `$#`, not a length in characters)');
+    }
+    if (p.prefix === '#' && !p.subscript && /^[#?$!0-]$/.test(p.name)) {
+      return p.name === '#'
+        ? this.s('`$#`（引数の個数）の文字数。引数が 10 個以上なら 2 になる', 'Length of `$#` (the number of arguments) in characters: 2 from ten arguments on')
+        : this.s(`\`${shownName}\` の文字数（長さ）`, `Length of \`${shownName}\` in characters`);
+    }
+    if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;
+    if (!p.op) return `\`\${${p.name}}\`: ${this.varDesc(p.name)}`;
+    const mainOp = p.parts.find((x) => x.role === 'op')!;
+    // `${@:2}` and `${@@Q}` have their own wording.
+    if (p.op === ':' || p.op === '@') return undefined;
+    return this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(expansionOps[p.op](shownName, text.slice(mainOp.end, -1)));
   }
 
   private substringSummary(p: ParsedExpansion): string {
@@ -2526,6 +2647,7 @@ export class Analyzer {
     const s = this.s.bind(this);
     switch (part.role) {
       case 'prefix':
+        if (t === '#' && !p.subscript && (p.name === '@' || p.name === '*')) return ['operator', s('`#`: 位置パラメータの個数を返す', '`#`: gives the number of positional parameters')];
         if (t === '#') return ['operator', s('`#`: 値の長さ（文字数、配列なら要素数）を返す', '`#`: gives the length (characters, or elements for an array)')];
         if (p.op === '*' || p.op === '@') return ['operator', s('`!`: この名前で始まる変数名の一覧を返す', '`!`: lists variable names starting with this prefix')];
         if (p.subscript === '@' || p.subscript === '*') return ['operator', s('`!`: 配列の値ではなくインデックス（キー）を返す', '`!`: gives the indices (keys) instead of the values')];
@@ -2676,6 +2798,8 @@ export class Analyzer {
     this.subs(n.namedChildren));
   }
 }
+
+interface CommandHead { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] }
 
 /**
  * The text a command receives for a word, and where each of its characters sits in the word's
