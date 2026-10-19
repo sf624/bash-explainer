@@ -886,7 +886,7 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     // (tree-sitter reads the delimiter of `cat <<EOF; …` as `EOF;`, so this is for the unbash adapter.)
     const src = 'cat <<EOF; rm -rf $dir\nhello\nEOF\necho after';
     const e = new Analyzer('en').explainLine(tree(src), 0);
-    assert.deepEqual(e.items.map((i) => i.label), ['cat <<EOF; rm -rf $dir …', ';', 'rm']);
+    assert.deepEqual(e.items.map((i) => i.label), ['cat <<EOF', ';', 'rm']);
     assert.match(flat(e.items).find((t) => t.label === 'rm' && t.kind === 'command')!.explanation, /Remove files/);
     assert.ok(e.notes.some((n) => /\$dir` is not quoted/.test(n)), e.notes.join('|'));
     // Its body lines are the here-document's; the line after is a statement of its own.
@@ -907,7 +907,7 @@ describe('unbash adapter: what the explanations make of its trees', () => {
   });
   it('explains a redirection after the last command, and ! over a pipeline, as tree-sitter does now', () => {
     const e = new Analyzer('en').explainLine(tree('echo A && echo B > f'), 0);
-    assert.deepEqual(e.items[0].children.map((c) => c.label), ['echo', '&&', 'echo B > f']);
+    assert.deepEqual(e.items[0].children.map((c) => c.label), ['echo', '&&', 'echo > f']);
     const n = new Analyzer('en').explainLine(tree('! true | false'), 0);
     assert.match(n.items[0].explanation, /whole pipeline/);
     assert.equal(new Analyzer('en').explainLine(tree('a | time b'), 0).items[0].children[2].kind, 'command');

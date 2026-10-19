@@ -50,6 +50,7 @@ import {
   binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
+import { LabelPart, labelText, skeleton } from './label';
 
 export type Kind =
   | 'command' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -63,9 +64,15 @@ export interface Token {
   kind: Kind;
   /**
    * Short label shown in lists: usually the source text of the span, truncated. A command is labelled with its
-   * name (`grep`), since its explanation describes the program; its span stays the whole command.
+   * name (`grep`), since its explanation describes the program; a construct, with its skeleton (see `labelParts`).
+   * The span stays the whole command or construct.
    */
   label: string;
+  /**
+   * The label as a skeleton, for a construct (`if` *condition* `then` *commands* `fi`): code and placeholders. Absent when
+   * the label is one plain text. `label` is always its plain-text form (placeholders as ‹name›).
+   */
+  labelParts?: LabelPart[];
   explanation: string;
   span: Span;
   children: Token[];
@@ -521,7 +528,7 @@ export class Analyzer {
       case 'time_statement': return this.timeStatement(n);
       case 'declaration_command': return this.redirectLayoutOf(n) ?? this.declaration(n);
       case 'unset_command': return this.unset(n);
-      case 'variable_assignment': return this.assignment(n);
+      case 'variable_assignment': return skeletal(this.assignment(n), n, true);
       case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
       case 'pipeline': return this.pipeline(n);
       case 'list': return this.list(n);
@@ -529,7 +536,7 @@ export class Analyzer {
       case 'file_redirect': return this.fileRedirect(n);
       case 'heredoc_redirect': return this.heredoc(n);
       case 'herestring_redirect': return this.herestring(n);
-      case 'negated_command': return this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren));
+      case 'negated_command': return skeletal(this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren)), n);
       case 'test_command': case 'extended_test': case 'arithmetic_command': return this.test(n);
       case 'unary_expression': return this.unary(n);
       case 'binary_expression': return this.binary(n);
@@ -605,7 +612,7 @@ export class Analyzer {
   }
 
   private block(n: SyntaxNode, kind: Kind, explanation: string): Token {
-    return this.tok(n, kind, explanation, this.ordered(n));
+    return skeletal(this.tok(n, kind, explanation, this.ordered(n)), n);
   }
 
   /** `coproc [NAME] command`: runs the command in the background, with two pipes to it kept in an array. */
@@ -613,10 +620,10 @@ export class Analyzer {
     const nameNode = field(n, 'name');
     const arr = nameNode?.text ?? 'COPROC';
     const nameTok = nameNode ? [this.tok(nameNode, 'variable', this.s(`コプロセスの名前: 配列 \`${arr}\` と変数 \`${arr}_PID\` の名前になる`, `Name of the co-process: names the array \`${arr}\` and the variable \`${arr}_PID\``))] : [];
-    return this.tok(n, 'keyword', this.s(
+    return skeletal(this.tok(n, 'keyword', this.s(
       `\`coproc\`: コマンドをバックグラウンドのコプロセスとして実行し、その出力と入力につながるファイルディスクリプタを配列 \`${arr}\` に入れる（\`\${${arr}[0]}\` はコプロセスの出力を読む側、\`\${${arr}[1]}\` はその入力に書く側）。プロセス ID は \`${arr}_PID\`${this.lineRef(n)}`,
       `\`coproc\`: runs the command in the background as a co-process and puts the descriptors connected to its output and input in the array \`${arr}\` (\`\${${arr}[0]}\` reads its output, \`\${${arr}[1]}\` writes to its input). Its process ID is \`${arr}_PID\`${this.lineRef(n)}`,
-    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode))]));
+    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode))])), n);
   }
 
   private functionDef(n: SyntaxNode): Token {
@@ -627,10 +634,10 @@ export class Analyzer {
     // A redirection after the body is part of the function: it is applied on every call.
     const redirected = n.namedChildren.some((c) => c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect' || c.type === 'redirected_statement');
     const stored = redirected ? this.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
-    return this.tok(n, 'function', this.s(
+    return skeletal(this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${this.lineRef(n)}`,
       `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${stored}${this.lineRef(n)}`,
-    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')]));
+    ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')])), n);
   }
 
   private forStatement(n: SyntaxNode): Token {
@@ -662,7 +669,7 @@ export class Analyzer {
         extra.push(t);
       }
     }
-    return this.tok(n, 'keyword', expl + this.lineRef(n), sortTokens([...children, ...extra]));
+    return skeletal(this.tok(n, 'keyword', expl + this.lineRef(n), sortTokens([...children, ...extra])), n);
   }
 
   private whileStatement(n: SyntaxNode): Token {
@@ -670,7 +677,7 @@ export class Analyzer {
     const expl = until
       ? this.s('until ループ: 条件コマンドが成功（終了ステータス 0）するまで本体を繰り返す', 'until loop: repeat the body until the condition succeeds')
       : this.s('while ループ: 条件コマンドが成功（終了ステータス 0）する間、本体を繰り返す', 'while loop: repeat the body while the condition succeeds');
-    return this.tok(n, 'keyword', expl + this.lineRef(n), this.ordered(n));
+    return skeletal(this.tok(n, 'keyword', expl + this.lineRef(n), this.ordered(n)), n);
   }
 
   private caseStatement(n: SyntaxNode): Token {
@@ -685,10 +692,10 @@ export class Analyzer {
     const fall = !enders.length ? '' : this.s(
       `。ただしこの文には \`${[...new Set(enders)].join('\` と \`')}\` があり、分岐の終わりが \`;;\` なら終了、\`;&\` なら次の分岐の中身をパターンを調べずに実行、\`;;&\` なら次以降のパターンの照合を続ける`,
       `. This one has \`${[...new Set(enders)].join('\` and \`')}\`: a branch ending in \`;;\` stops the \`case\`, \`;&\` runs the next branch's commands without testing its pattern, and \`;;&\` goes on testing the patterns after it`);
-    return this.tok(n, 'keyword', this.s(
+    return skeletal(this.tok(n, 'keyword', this.s(
       `case 文: \`${v?.text}\` を各パターンと上から順に照合し、最初に一致した分岐を実行`,
       `case statement: match \`${v?.text}\` against each pattern in order and run the first match`,
-    ) + fall + this.lineRef(n), sortTokens([...children, ...vt]));
+    ) + fall + this.lineRef(n), sortTokens([...children, ...vt])), n);
   }
 
   private casePattern(p: SyntaxNode): Token {
@@ -733,7 +740,7 @@ export class Analyzer {
       this.caseExample(pats);
       this.anchorExamples(before, n);
     }
-    return this.tok(n, 'pattern', expl + (prev && !isDefault ? this.s('。', '. ') + viaPrev : '') + this.lineRef(n), sortTokens([...patToks, ...rest]));
+    return skeletal(this.tok(n, 'pattern', expl + (prev && !isDefault ? this.s('。', '. ') + viaPrev : '') + this.lineRef(n), sortTokens([...patToks, ...rest])), n);
   }
 
   private pipeline(n: SyntaxNode): Token {
@@ -751,7 +758,7 @@ export class Analyzer {
       `Pipeline: each command's stdout feeds the next command's stdin; they run concurrently`,
     ), children);
     t.summary = cmds.map(summaryOf).join(' | ');
-    return t;
+    return skeletal(t, n);
   }
 
   private list(n: SyntaxNode): Token {
@@ -774,7 +781,7 @@ export class Analyzer {
       'Command list joined by `&&` (run next on success) or `||` (run next on failure)',
     ), children);
     t.summary = children.map((c) => (c.kind === 'operator' && !c.children.length ? c.label : summaryOf(c))).join(' ');
-    return t;
+    return skeletal(t, n);
   }
 
   private redirected(n: SyntaxNode): Token {
@@ -795,7 +802,11 @@ export class Analyzer {
       return { ...t, span: spanOf(n), children: sortTokens([...t.children, ...redirToks]) };
     }
     // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
-    if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) return bodyToks[0];
+    // The label still shows them: `while` *condition* `do` *commands* `done` `< input.txt`.
+    if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) {
+      const only = bodyToks[0];
+      return only.labelParts ? skeletal({ ...only }, n) : only;
+    }
     // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
     const ofFunction = n.parent?.type === 'function_definition';
     const w = this.tok(n, 'redirect', this.s(
@@ -803,7 +814,7 @@ export class Analyzer {
       `Redirection applied to ${body ? `\`${shorten(body.text, 30)}\` as a whole` : 'the command'}${ofFunction ? '. A redirection on a function is stored with it and applied each time the function is called' : ''}`,
     ), sortTokens([...bodyToks, ...redirToks]));
     w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
-    return w;
+    return skeletal(w, n);
   }
 
   /**
@@ -858,7 +869,7 @@ export class Analyzer {
       `Redirection applied to \`${cmd}\`${names.length ? `: its ${names.length > 1 ? `${names.slice(0, -1).map((x) => x.en).join(', ')} and ${names[names.length - 1].en}` : names[0].en} ${names.length > 1 ? 'are' : 'is'} redirected` : ''}. The shell sets this up before the command starts, so the command does not see the redirections`,
     ), sortTokens([inner, ...redirToks]));
     w.summary = summaryOf(inner);
-    return w;
+    return skeletal(w, whole);
   }
 
   /** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
@@ -1163,7 +1174,7 @@ export class Analyzer {
   private timed(n: SyntaxNode): Token {
     const lead = this.timeLead(token(n, 'time')!, field(n, 'option'));
     const cmd = field(n, 'body');
-    if (!cmd) return this.tok(n, 'keyword', lead[0].explanation, lead);
+    if (!cmd) return skeletal(this.tok(n, 'keyword', lead[0].explanation, lead), n);
     // What `time` times, a command or a whole pipeline, is explained as it would be on its own.
     const inner = this.sub(cmd);
     const text = shorten(n.text.slice(cmd.startIndex - n.startIndex).replace(/\s*\\\n\s*/g, ' '), 40);
@@ -1173,7 +1184,7 @@ export class Analyzer {
     );
     const t = this.tok(n, 'keyword', explanation, sortTokens([...lead, ...inner]));
     t.summary = `time ${inner.map(summaryOf).join(' ')}`;
-    return t;
+    return skeletal(t, n);
   }
 
   private commandTail(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], word?: SyntaxNode): Token {
@@ -2736,6 +2747,7 @@ export class Analyzer {
           'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
     const t = this.tok(n, 'test', expl, bracket ? this.testTokens(n, bracket, bracket.expr) : open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren));
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
+    skeletal(t, n, true);
     // Includes examples from inside the test, such as the regex of `=~`.
     this.tagExamples(before, n);
     return t;
@@ -3762,6 +3774,15 @@ function dropLabelEcho(t: Token): void {
     if (m) t.explanation = rest.slice(m[0].length);
   }
   for (const c of t.children) dropLabelEcho(c);
+}
+
+/** Gives `t` the skeleton of `n` as its label; with `onlyIfCut`, only when it has a placeholder (else the label is the text). */
+function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {
+  const parts = skeleton(n);
+  if (onlyIfCut && !parts.some((p) => p.placeholder)) return t;
+  t.labelParts = parts;
+  t.label = labelText(parts);
+  return t;
 }
 
 export function summaryOf(t: Token): string {
