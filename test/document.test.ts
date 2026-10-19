@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
+import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
@@ -60,6 +61,9 @@ describe('documents without VS Code', () => {
       assert.deepStrictEqual(explainDocumentLine(en, doc, line, 'en', {}, {}), explainDocumentLine(en, script(lf), line, 'en', {}, {}), `line ${line}`);
     }
     assert.strictEqual(doc.tree.root.endPosition.row, 3);
+    // The blank that stands for a CR is no part of a comment (the shebang), a word or a string.
+    const cr = parser.parse('#!/bin/sh\r\n# a\r\necho "PV " x\r\n');
+    assert.deepStrictEqual(descendants(cr.root, ['comment']).map((n) => [n.text, n.endPosition.column]), [['#!/bin/sh', 9], ['# a', 3]]);
     // The warning is at the first CR, for every shell, in both languages.
     for (const lang of ['en', 'ja'] as const) {
       const issues = documentIssues(doc, lang, {});
