@@ -126,6 +126,97 @@ export const ciVariables: Record<string, CiVariable> = {
   ...Object.fromEntries(Object.entries(azureVariables).map(([name, meaning]) => [name.replace(/\./g, '_').toUpperCase(), { ci: 'Azure Pipelines', meaning }])),
 };
 
+const ev = (ja: string, en: string): Text => tx(ja, en);
+
+/** Fields of the webhook payload `github.event`, by their path after it (`labels.*` stands for every element). */
+const eventFields: Record<string, Text> = {
+  action: ev('イベントの種類を細かく表す値（`opened`、`synchronize`、`created` など。イベントによって異なる）', 'the activity of the event (`opened`, `synchronize`, `created`…; the values depend on the event)'),
+  number: ev('プルリクエスト・Issue の番号（`pull_request` など）', 'the number of the pull request or issue (`pull_request` events…)'),
+  // pull_request, pull_request_target
+  'pull_request.title': ev('プルリクエストのタイトル（`pull_request`・`pull_request_target`）', 'the title of the pull request (`pull_request`, `pull_request_target`)'),
+  'pull_request.body': ev('プルリクエストの本文（空なら `null`）', 'the description of the pull request (`null` when empty)'),
+  'pull_request.number': ev('プルリクエストの番号', 'the pull request number'),
+  'pull_request.html_url': ev('プルリクエストのページの URL', 'the URL of the pull request\'s page'),
+  'pull_request.state': ev('プルリクエストの状態（`open` か `closed`）', 'the state of the pull request (`open` or `closed`)'),
+  'pull_request.draft': ev('プルリクエストがドラフトか', 'whether the pull request is a draft'),
+  'pull_request.merged': ev('プルリクエストがマージ済みか（`closed` のとき `true` ならマージされた）', 'whether the pull request has been merged (on `closed`, `true` means it was merged, not just closed)'),
+  'pull_request.head.ref': ev('プルリクエストの元ブランチ名（フォークの作者が決められる）', 'the name of the pull request\'s head branch (chosen by whoever opened it)'),
+  'pull_request.head.sha': ev('プルリクエストの元ブランチの先頭コミットの SHA', 'the SHA of the head commit of the pull request'),
+  'pull_request.head.repo.full_name': ev('プルリクエストの元リポジトリの `所有者/リポジトリ名`（フォークならフォーク側）', 'the `owner/repository` the pull request comes from (the fork, for a fork)'),
+  'pull_request.base.ref': ev('プルリクエストのマージ先ブランチ名', 'the name of the branch the pull request targets'),
+  'pull_request.base.sha': ev('マージ先ブランチの先頭コミットの SHA', 'the SHA of the target branch\'s head commit'),
+  'pull_request.user.login': ev('プルリクエストを作ったユーザー名', 'the user who opened the pull request'),
+  'pull_request.labels': ev('プルリクエストに付いたラベルの一覧', 'the list of labels on the pull request'),
+  'pull_request.labels.*.name': ev('プルリクエストに付いたすべてのラベルの名前（`contains()` などで使う）', 'the names of all labels on the pull request (for `contains()`…)'),
+  // issues, issue_comment
+  'issue.title': ev('Issue（またはプルリクエスト）のタイトル（`issues`・`issue_comment`）', 'the title of the issue or pull request (`issues`, `issue_comment`)'),
+  'issue.body': ev('Issue（またはプルリクエスト）の本文', 'the description of the issue or pull request'),
+  'issue.number': ev('Issue（またはプルリクエスト）の番号', 'the number of the issue or pull request'),
+  'issue.user.login': ev('Issue を作ったユーザー名', 'the user who opened the issue'),
+  'issue.labels': ev('Issue に付いたラベルの一覧', 'the list of labels on the issue'),
+  'issue.labels.*.name': ev('Issue に付いたすべてのラベルの名前', 'the names of all labels on the issue'),
+  'comment.body': ev('コメントの本文（`issue_comment` など）', 'the text of the comment (`issue_comment`…)'),
+  'comment.user.login': ev('コメントを書いたユーザー名', 'the user who wrote the comment'),
+  // push
+  before: ev('プッシュ前のブランチの先頭コミットの SHA（`push`）', 'the SHA of the branch head before the push (`push`)'),
+  after: ev('プッシュ後のブランチの先頭コミットの SHA（`push`）', 'the SHA of the branch head after the push (`push`)'),
+  ref: ev('プッシュされた完全な ref（`refs/heads/main` など。`push`）', 'the full ref that was pushed (`refs/heads/main`…; `push`)'),
+  forced: ev('強制プッシュだったか（`push`）', 'whether the push was a force push (`push`)'),
+  'head_commit.message': ev('プッシュの先頭コミットのメッセージ（`push`）', 'the message of the head commit of the push (`push`)'),
+  'head_commit.id': ev('プッシュの先頭コミットの SHA', 'the SHA of the head commit of the push'),
+  'head_commit.author.name': ev('プッシュの先頭コミットの作者名（コミットに書かれた名前で、誰でも決められる）', 'the author name of the head commit of the push (written in the commit, so anyone can choose it)'),
+  commits: ev('プッシュに含まれるコミットの一覧（`push`。最大 20 件）', 'the commits in the push (`push`; at most 20)'),
+  'pusher.name': ev('プッシュしたユーザー名（`push`）', 'the name of the user who pushed (`push`)'),
+  // release
+  'release.tag_name': ev('リリースのタグ名（`release`）', 'the tag name of the release (`release`)'),
+  'release.name': ev('リリースの名前', 'the name of the release'),
+  'release.body': ev('リリースの説明文', 'the description text of the release'),
+  'release.prerelease': ev('リリースがプレリリースか', 'whether the release is a pre-release'),
+  'release.draft': ev('リリースが下書きか', 'whether the release is a draft'),
+  // workflow_run
+  'workflow_run.conclusion': ev('起動元のワークフロー実行の結果（`success`、`failure`、`cancelled` など。`workflow_run`）', 'the result of the workflow run that triggered this one (`success`, `failure`, `cancelled`…; `workflow_run`)'),
+  'workflow_run.head_branch': ev('起動元の実行のブランチ名', 'the branch of the run that triggered this one'),
+  'workflow_run.head_sha': ev('起動元の実行のコミットの SHA', 'the SHA of the commit of the run that triggered this one'),
+  'workflow_run.id': ev('起動元の実行の ID', 'the ID of the run that triggered this one'),
+  // schedule
+  schedule: ev('起動した `schedule` の cron 式（`schedule`）', 'the cron expression of the `schedule` that fired (`schedule`)'),
+  // every event
+  'repository.full_name': ev('`所有者/リポジトリ名`', '`owner/repository`'),
+  'repository.name': ev('リポジトリ名（所有者を除く）', 'the name of the repository (without the owner)'),
+  'repository.default_branch': ev('リポジトリの既定のブランチ名', 'the default branch of the repository'),
+  'repository.html_url': ev('リポジトリのページの URL', 'the URL of the repository\'s page'),
+  'sender.login': ev('イベントを起こしたユーザー名', 'the user who caused the event'),
+};
+
+/** The events a first segment of the payload belongs to, to name them for a field that is not listed. */
+const eventOfPayload: Record<string, string> = {
+  pull_request: 'pull_request',
+  issue: 'issues',
+  comment: 'issue_comment',
+  release: 'release',
+  workflow_run: 'workflow_run',
+  workflow_job: 'workflow_job',
+  review: 'pull_request_review',
+  discussion: 'discussion',
+  head_commit: 'push',
+  commits: 'push',
+  pusher: 'push',
+  label: 'label',
+  milestone: 'milestone',
+  check_run: 'check_run',
+  deployment: 'deployment',
+  deployment_status: 'deployment_status',
+};
+
+/** `github.event.…` that is not listed: the payload of the event that triggered the workflow. */
+function eventField(path: string): Text {
+  const seg = /^\w+/.exec(path)![0];
+  const event = Object.hasOwn(eventOfPayload, seg) ? eventOfPayload[seg] : undefined;
+  return event
+    ? tx(`\`${event}\` イベントなどのウェブフックのペイロードの項目（GitHub Docs の「Webhook events and payloads」を参照）`, `a field of the webhook payload of the \`${event}\` event (see "Webhook events and payloads" in GitHub's docs)`)
+    : tx('ワークフローを起動したイベントのウェブフックのペイロードの項目（GitHub Docs の「Webhook events and payloads」を参照）', 'a field of the webhook payload of the event that triggered the workflow (see "Webhook events and payloads" in GitHub\'s docs)');
+}
+
 /**
  * What a context of a GitHub Actions expression stands for: `github.head_ref`, `secrets.TOKEN`,
  * `steps.build.outputs.path`… Undefined for other expressions (`a == b`, functions…).
@@ -148,19 +239,32 @@ export function githubContext(expr: string): Text | undefined {
     'github.server_url': tx('GitHub の URL', 'the URL of GitHub'),
     'github.job': tx('実行中のジョブの ID', 'the ID of the current job'),
     'github.token': tx('ワークフロー用に自動で発行されるトークン（`secrets.GITHUB_TOKEN` と同じ）', 'the token issued for the workflow (the same as `secrets.GITHUB_TOKEN`)'),
-    'github.event.number': tx('プルリクエストの番号', 'the pull request number'),
-    'github.event.pull_request.number': tx('プルリクエストの番号', 'the pull request number'),
-    'github.event.pull_request.head.sha': tx('プルリクエストの元ブランチの先頭コミットの SHA', 'the SHA of the head commit of the pull request'),
     'runner.os': tx('ランナーの OS（`Linux`、`Windows`、`macOS`）', 'the runner\'s OS (`Linux`, `Windows`, `macOS`)'),
     'runner.arch': tx('ランナーの CPU アーキテクチャ（`X64`、`ARM64` など）', 'the runner\'s CPU architecture (`X64`, `ARM64`…)'),
     'runner.temp': tx('ジョブごとに空にされる一時ディレクトリ', 'a temporary directory emptied for each job'),
     'runner.tool_cache': tx('ツールのキャッシュディレクトリ', 'the tool cache directory'),
+    'runner.name': tx('ランナーの名前', 'the name of the runner'),
+    'job.container.id': tx('ジョブのコンテナの ID（ジョブが `container:` で動くときだけ）', 'the ID of the job\'s container (only when the job runs in a `container:`)'),
+    'job.services': tx('ジョブのサービスコンテナの情報（ID とポートの対応）', 'the job\'s service containers (their IDs and ports)'),
+    'strategy.fail-fast': tx('`fail-fast` が有効か（マトリックスのジョブが 1 つ失敗したとき残りを中止するか）', 'whether `fail-fast` is on (cancel the rest of the matrix when one job fails)'),
+    'github.workflow': tx('ワークフローの名前（`name:`。無ければファイルのパス）', 'the name of the workflow (`name:`, or the file path when there is none)'),
+    'github.workflow_ref': tx('ワークフローファイルの参照（`所有者/リポジトリ/.github/workflows/ファイル@ref`）', 'the reference of the workflow file (`owner/repo/.github/workflows/file@ref`)'),
+    'github.triggering_actor': tx('実行を起動したユーザー名（再実行では、再実行した人）', 'the user who started this run (on a re-run, the person who re-ran it)'),
+    'github.ref_type': tx('起動した ref の種類（`branch` か `tag`）', 'the type of the ref that triggered the workflow (`branch` or `tag`)'),
+    'github.ref_protected': tx('起動した ref にブランチ保護があるか', 'whether the ref that triggered the workflow is protected'),
+    'github.event': tx('起動したイベントのウェブフックのペイロード全体（オブジェクト）', 'the whole webhook payload of the event that triggered the workflow (an object)'),
+    'github.event_path': tx('起動したイベントの内容（JSON）が書かれたファイルのパス', 'the path of a file holding the triggering event (JSON)'),
+    'github.action_path': tx('実行中のアクションのディレクトリ（複合アクションの中で使う）', 'the directory of the running action (for use inside a composite action)'),
     'job.status': tx('ジョブの現在の状態（`success`、`failure`、`cancelled`）', 'the current status of the job (`success`, `failure`, `cancelled`)'),
     'secrets.GITHUB_TOKEN': tx('ワークフロー用に自動で発行されるトークン', 'the token issued for the workflow'),
     'strategy.job-index': tx('マトリックスの中で何番目のジョブか（0 から）', 'which job of the matrix this is (from 0)'),
     'strategy.job-total': tx('マトリックスのジョブ数', 'the number of jobs in the matrix'),
   };
   if (exact[expr]) return exact[expr];
+  if (/^github\.event\.\w/.test(expr) && !expr.startsWith('github.event.inputs.')) {
+    const path = expr.slice(13);
+    return Object.hasOwn(eventFields, path) ? eventFields[path] : eventField(path);
+  }
   let m: RegExpExecArray | null;
   if ((m = /^secrets\.(\w+)$/.exec(expr))) return tx(`シークレット \`${m[1]}\`（ログには \`***\` と伏せて表示される）`, `the secret \`${m[1]}\` (masked as \`***\` in logs)`);
   if ((m = /^vars\.(\w+)$/.exec(expr))) return tx(`リポジトリなどに設定した変数 \`${m[1]}\``, `the configuration variable \`${m[1]}\` (set on the repository or organization)`);
