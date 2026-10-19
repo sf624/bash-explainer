@@ -18,7 +18,8 @@ let parser: Parser;
 let treeSitter: Parser;
 
 before(async () => {
-  treeSitter = parser = await createTreeSitterParser({
+  parser = createUnbashParser();
+  treeSitter = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -121,7 +122,7 @@ describe('numbers in arithmetic', () => {
     assert.match(lines.find((t) => t.label === '2#1010')!.explanation, /Binary number `2#1010`.* = 10 in decimal/);
     assert.match(lines.find((t) => t.label === '0x1F')!.explanation, /Hexadecimal number `0x1F`.* = 31 in decimal/);
     assert.match(lines.find((t) => t.label === '010')!.explanation, /Octal number `010`.* = 8 in decimal/);
-    assert.match(find('echo $((16#ff + 64#@ + 36#z + 0X1f))', '16#ff').explanation, /Hexadecimal number.* = 255/);
+    assert.match(find('echo $((16#ff + 64#_ + 36#z + 0X1f))', '16#ff').explanation, /Hexadecimal number.* = 255/);
     assert.match(find('echo $((64#@))', '64#@').explanation, /Base 64 number.* = 62 in decimal.*A-Z \(36-61\)/);
     assert.match(find('echo $((36#z))', '36#z').explanation, /Base 36 number.* = 35/);
     assert.match(find('echo $((0X1f))', '0X1f').explanation, /= 31/);
@@ -203,7 +204,7 @@ describe('quote removal', () => {
     assert.ok(!/quote removal/.test(find('echo "abc"', '"abc"').explanation));
     assert.ok(!/quote removal/.test(find("echo $'abc'", "$'abc'").explanation));
     assert.ok(!/quote removal/.test(find('echo "a\\$b$c"', '"a\\$b$c"').explanation));
-    assert.ok(!/quote removal/.test(find('echo a$x\\b', 'a$x').explanation));
+    assert.ok(!/quote removal/.test(find('echo a$x\\b', 'a$x\\b').explanation));
     assert.match(find('echo \\*', '\\*').explanation, /string `\*`/);
   });
 

@@ -433,8 +433,6 @@ export class Analyzer {
         return this.s('{ } グループ', '{ } group');
       case 'subshell':
         return this.s('( ) サブシェル', '( ) subshell');
-      case 'error':
-        return this.s('構文エラーの範囲', 'syntax error region');
       default:
         return undefined;
     }
@@ -551,12 +549,14 @@ export class Analyzer {
       case 'coproc_statement': return this.coprocStatement(n);
       case 'case_statement': return this.caseStatement(n);
       case 'case_item': return this.caseItem(n);
-      case 'error': return this.hashExpansionError(n) ?? this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
+      case 'error': return this.tok(n, 'error', this.s('構文エラー: この部分は正しく解析できませんでした（クォートや括弧の閉じ忘れなど）', 'Syntax error: this part could not be parsed (unclosed quote or bracket?)'), this.subs(n.namedChildren));
+      // Every type the adapters build is explained above or by its parent. This is for a type added to the model
+      // before the analyzer learns it: callers explain keywords and operators themselves, and any other node is shown as itself.
+      /* c8 ignore start */
       default:
-        // Callers explain keywords and operators themselves; any other punctuation is shown as itself.
-        /* c8 ignore next */
         if (!n.named) return this.anon(n) ?? this.tok(n, 'operator', n.type);
         return this.tok(n, 'argument', n.type, this.subs(n.namedChildren));
+      /* c8 ignore stop */
     }
   }
 
@@ -1009,7 +1009,7 @@ export class Analyzer {
   }
 
   /** The assignments before the command name (as tokens), the arguments, and the redirections of a command. */
-  private commandParts(n: SyntaxNode, nameNode: SyntaxNode | null): { prefix: Token[]; args: SyntaxNode[]; redirs: SyntaxNode[] } {
+  private commandParts(n: SyntaxNode, nameNode: SyntaxNode): { prefix: Token[]; args: SyntaxNode[]; redirs: SyntaxNode[] } {
     const prefix: Token[] = [];
     const args: SyntaxNode[] = [];
     const redirs: SyntaxNode[] = [];
@@ -1018,8 +1018,6 @@ export class Analyzer {
       if (same(c, nameNode)) { seenName = true; continue; }
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
-        // Without a command, the assignment stays in the shell.
-        if (!nameNode) { prefix.push(...this.sub(c)); continue; }
         for (const t of this.sub(c)) {
           t.explanation = this.s(
             `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
@@ -1042,33 +1040,17 @@ export class Analyzer {
   }
 
   private commandToken(n: SyntaxNode): Token {
-    // `FOO=1 2>/dev/null`: tree-sitter-bash gives it a command name of zero width.
-    const named = field(n, 'name');
-    const nameNode = named?.text ? named : null;
+    // (An assignment with no command, `FOO=1 2>/dev/null`, is a `redirected_statement` of the assignment.)
+    const nameNode = field(n, 'name')!;
     const { prefix, args, redirs } = this.commandParts(n, nameNode);
-    if (!nameNode) {
-      return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
-    }
-    // `time` is a reserved word at the start of a pipeline; `FOO=1 time x` and `a | time x` run the program instead. What remains a command is `time | wc`, which times nothing.
-    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time' && this.startsPipeline(n)) return this.timeAlone(n, nameNode, args, redirs);
+    // `time` is a keyword at the start of a pipeline (a `time_statement`); `FOO=1 time x` and `a | time x` run the program.
     return this.commandTail(n, nameNode, args, prefix, redirs);
-  }
-
-  /** Whether `n` is the first part of a pipeline: where bash reads `time` as a keyword. */
-  private startsPipeline(n: SyntaxNode): boolean {
-    return n.parent?.type === 'pipeline' && n.parent.namedChildren[0] === n;
   }
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
   private timeLead(time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
     const kw = this.tok(time, 'keyword', this.t(keywords.time));
     return posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
-  }
-
-  /** `time` with nothing to time: the keyword alone. */
-  private timeAlone(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], redirs: SyntaxNode[]): Token {
-    const lead = this.timeLead(nameNode, args[0]?.type === 'word' && args[0].text === '-p' ? args[0] : undefined);
-    return this.tok(n, 'keyword', lead[0].explanation, sortTokens([...lead, ...this.subs(redirs)]));
   }
 
   /** `time [-p] command …`: the keyword, and the rest explained as the command it times. */
@@ -2679,14 +2661,6 @@ export class Analyzer {
   }
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
-  /** An error node that is one `${#…}` expansion on `$#` (`${##x}`, `${#-x}`): tree-sitter-bash gives up on these. */
-  private hashExpansionError(n: SyntaxNode): Token | undefined {
-    const text = n.text;
-    if (n.startPosition.row !== n.endPosition.row || !text.startsWith('${#') || text.indexOf('}') !== text.length - 1 || text.indexOf('${', 1) >= 0) return undefined;
-    const p = parseExpansion(text);
-    return p && p.name === '#' && !p.prefix ? this.expansion(n) : undefined;
-  }
-
   private regexNode(n: SyntaxNode): Token {
     // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (expansions make other nodes), and quotes stay in its text:
     // the quoted parts are literal text, which the breakdown of a regex cannot show.
@@ -3096,17 +3070,14 @@ export class Analyzer {
 
   /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
   private expansion(n: SyntaxNode): Token {
-    // tree-sitter-bash cannot read `${##x}` or `${#-x}` (`$#` with an operator): the text still can.
-    const summary = n.type === 'error'
-      ? this.tok(n, 'expansion', this.s('パラメータ展開', 'Parameter expansion'))
-      : this.expansionSummary(n);
-    // Inside a string, tree-sitter-bash starts a `${…}` after a space at the space.
-    const text = n.text.trimStart();
-    const lead = n.text.length - text.length;
-    if (lead && n.startPosition.row === n.endPosition.row) {
-      summary.label = shorten(text);
-      summary.span = { ...summary.span, start: { ...summary.span.start, character: summary.span.start.character + lead } };
+    // `${#a-b}` and `${#a[1]b}`: the length of a name takes no operator. The parser reads `$#` with an operator; bash says "bad substitution".
+    const hash = n.children[1];
+    const op = field(n, 'operator');
+    if (n.type === 'expansion' && hash?.type === 'special_variable_name' && hash.text === '#' && op && /^[\w[]/.test(op.text)) {
+      return this.tok(n, 'error', this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${#` の後ろに変数名を書いたら、演算子は付けられない）', 'Parameter expansion: bash reports "bad substitution" (a `${#name}` length takes no operator)'));
     }
+    const summary = this.expansionSummary(n);
+    const text = n.text;
     const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
     if (!parsed) return summary;
     summary.explanation += this.orderNote(n, parsed.name);
@@ -3131,7 +3102,7 @@ export class Analyzer {
       });
     }
     const row = n.startPosition.row;
-    const col = n.startPosition.column + lead;
+    const col = n.startPosition.column;
     const mainOp = parsed.parts.find((p) => p.role === 'op');
     summary.children = parsed.parts.flatMap((part) => {
       const expl = this.expansionPart(parsed, part, part === mainOp, this.isAssoc(parsed.name, n.startIndex));
@@ -3333,7 +3304,7 @@ export class Analyzer {
 
   private expansionSummary(n: SyntaxNode): Token {
     const kids = n.children;
-    const inner = n.text.trimStart().slice(2, -1);
+    const inner = n.text.slice(2, -1);
     const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
     const targetText = target?.text ?? inner;
     const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);

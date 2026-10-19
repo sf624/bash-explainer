@@ -217,6 +217,15 @@ describe('statements as bash reads them', () => {
     const notes = explain('cat f | while read -r l; do n=$l; done > out\necho "$n"').notes.join('\n');
     assert.match(notes, /run in subshells/);
   });
+  it('says a transform letter bash does not have is a bad substitution', () => {
+    const e = explain('echo ${x@Z}');
+    assert.match(find(e, '${x@Z}', 'expansion').explanation, /bad substitution/);
+    assert.match(find(e, 'Z').explanation, /not a transform bash has/);
+    assert.strictEqual(find(e, 'Z').kind, 'error');
+    assert.match(find(explain('echo ${x@Z}', 0, 'ja'), 'Z').explanation, /bad substitution/);
+    // The letters bash has are explained as before.
+    assert.match(find(explain('echo ${x@Q}'), '${x@Q}', 'expansion').explanation, /quote it/);
+  });
   it('explains array elements with an index of their own', () => {
     const e = explain('a+=([7]=z [k]=v x$y)');
     assert.strictEqual(find(e, '[7]=z').explanation, 'Element with index `7`: set it to `z`');
@@ -226,6 +235,12 @@ describe('statements as bash reads them', () => {
     assert.match(find(explain('a=([2]=x)', 0, 'ja'), '[2]=x').explanation, /を代入する/);
     // Other concatenations in an array are not elements with an index.
     assert.match(find(e, 'x$y').explanation, /^Concatenation/);
+  });
+  it('ends the delimiter of a here-document at the `;`, and goes on with the next command', () => {
+    // bash: the delimiter is `EOF`, and `echo after` runs once the body has been read.
+    const e = explain('cat <<EOF; echo after\nbody\nEOF');
+    assert.deepStrictEqual(e.items.map((t) => t.label), ['cat <<EOF; echo after …', ';', 'echo after']);
+    assert.match(find(e, '<<EOF').explanation, /up to a line containing only `EOF`/);
   });
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));

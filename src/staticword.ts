@@ -65,11 +65,12 @@ export function unquoteWord(text: string, inDouble = false): string | undefined 
 /** A `$(…)` or backtick substitution that cannot print anything: empty, or a bare `:` / `true` / `false`. */
 function emptySubstitution(n: SyntaxNode): boolean {
   const cmds = n.namedChildren;
+  if (cmds.length === 0) return true;
   if (cmds.length !== 1 || cmds[0].type !== 'command') return false;
   const cmd = cmds[0];
   // No arguments or redirections: only the name.
   return cmd.namedChildren.length === 1 && cmd.namedChildren[0].type === 'command_name'
-    && cmd.text === cmd.namedChildren[0].text && [':', 'true', 'false', ''].includes(cmd.text);
+    && cmd.text === cmd.namedChildren[0].text && [':', 'true', 'false'].includes(cmd.text);
 }
 
 /**
