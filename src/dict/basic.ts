@@ -44,7 +44,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-f', '名前の一覧の始まり（`-B` `-M` `-S` の終わり）', 'end of the directory list; names follow'],
   ], { positional: [pos('コマンド名', 'command name')] }),
   clear: cmd('端末の画面を消去する', 'Clear the terminal screen', [
-    ['-x', 'スクロールバックは消さない', 'do not clear the scrollback buffer'],
+    ['-x', 'スクロールバックは削除しない', 'do not clear the scrollback buffer'],
     ['-T', '端末の種類を指定する', 'terminal type', 'arg'],
   ]),
   reset: cmd('端末の状態を初期化する（表示が崩れたときに使う）', 'Reinitialize the terminal (for a garbled display)', [
@@ -120,7 +120,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-u|--user', 'このユーザーだけ表示', 'show only this user', 'arg'],
     ['-t|--time', 'この日数以内にログインした人だけ', 'only those who logged in within this many days', 'arg'],
     ['-b|--before', 'この日数より前のログインだけ', 'only logins older than this many days', 'arg'],
-    ['-C|--clear', '記録を消す（`-u` と併用、root のみ）', 'clear a record (with `-u`, root only)'],
+    ['-C|--clear', '記録を削除する（`-u` と併用、root のみ）', 'clear a record (with `-u`, root only)'],
     ['-S|--set', '記録を現在時刻にする（`-u` と併用、root のみ）', 'set a record to now (with `-u`, root only)'],
   ]),
   logname: cmd('ログイン時のユーザー名を表示する', 'Print the name the user logged in with'),
@@ -158,7 +158,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-H|--halt', '停止するだけ（電源は切らない）', 'halt without powering off'],
     ['-r|--reboot', '再起動する', 'reboot'],
     ['-k', '実際には停止せず、警告だけ送る', 'only send the warning; do not shut down'],
-    ['-c', '予約した停止を取り消す', 'cancel a scheduled shutdown'],
+    ['-c', '予約した停止をやめる', 'cancel a scheduled shutdown'],
     ['-t', '停止までの秒数（古い構文）', 'seconds to wait (old syntax)', 'arg'],
     ['--no-wall', '警告を送らない', 'do not send the wall message'],
     ['-F', '次の起動で必ず `fsck` を実行する', 'force `fsck` at the next boot'],
