@@ -28,7 +28,7 @@ function packagesOf(meta: { inputs: Record<string, unknown> }): string[] {
 }
 
 describe('offline by design', () => {
-  it('the source imports only vscode, unbash and, in an adapter no bundle includes any more, web-tree-sitter', () => {
+  it('the source imports only vscode and unbash', () => {
     const modules = new Set<string>();
     for (const file of sourceFiles('src')) {
       for (const m of read(file).matchAll(/\bfrom\s+'([^']+)'|\b(?:require|import)\s*\(\s*'([^']+)'\s*\)/g)) {
@@ -36,9 +36,8 @@ describe('offline by design', () => {
         if (!name.startsWith('.')) modules.add(name);
       }
     }
-    // unbash is imported by src/syntax/adapters/unbash.ts only; web-tree-sitter by src/syntax/adapters/tree-sitter.ts only,
-    // which no bundle includes (the next test checks it) and which goes with the next step of the switch.
-    assert.deepStrictEqual([...modules].sort(), ['unbash', 'vscode', 'web-tree-sitter']);
+    // unbash is imported by src/syntax/adapters/unbash.ts only (test/syntax-boundary.test.ts).
+    assert.deepStrictEqual([...modules].sort(), ['unbash', 'vscode']);
   });
 
   it('the web page imports only the editor, the parser and the source', () => {
@@ -162,9 +161,9 @@ describe('offline by design', () => {
     }
   });
 
-  it('depends at run time on unbash only, and on the tree-sitter packages until the switch is finished', () => {
+  it('depends at run time on unbash only', () => {
     const pkg = JSON.parse(read('package.json'));
-    assert.deepStrictEqual(Object.keys(pkg.dependencies).sort(), ['tree-sitter-bash', 'unbash', 'web-tree-sitter']);
+    assert.deepStrictEqual(Object.keys(pkg.dependencies).sort(), ['unbash']);
   });
 
   it('parses and explains scripts with the network and processes blocked', function () {

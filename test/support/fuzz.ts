@@ -1,6 +1,6 @@
 // Helpers of the fuzz test (test/syntax-fuzz.test.ts): the inputs, from a fixed seed, and the checks of a tree.
 import type { SyntaxNode, SyntaxTree } from '../../src/syntax/tree';
-import { corpus, invariants } from './oracle';
+import { corpus, invariants } from './corpus';
 
 /** A small, fast generator with a fixed seed (mulberry32). */
 function random(seed: number): () => number {

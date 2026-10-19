@@ -1,7 +1,7 @@
 /**
  * How `[ … ]` and `test` read their arguments, as bash's test.c does.
- * tree-sitter-bash cannot tell the unary `-a file` / `-o option` from the binary AND / OR (it reads every `-x` as an operator in the middle),
- * so the analyzer takes the words of a `[ ]` and parses them here.
+ * The model keeps the arguments of a `[ ]` as flat words, because the unary `-a file` / `-o option` cannot be told from the binary
+ * AND / OR without bash's rules; the analyzer takes the words of a `[ ]` and parses them here.
  */
 
 /** A parsed test. Numbers are indexes into the words; `first` / `last` of a node are the words it covers. */

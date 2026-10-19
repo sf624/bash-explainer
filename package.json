@@ -434,9 +434,7 @@
     "images": "node scripts/capture-readme-images.mjs"
   },
   "dependencies": {
-    "tree-sitter-bash": "0.25.1",
-    "unbash": "6.0.0",
-    "web-tree-sitter": "0.27.0"
+    "unbash": "6.0.0"
   },
   "devDependencies": {
     "@codemirror/commands": "6.11.1",

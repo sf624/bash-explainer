@@ -1,6 +1,6 @@
 // Collects the bash snippets in the tests: the string literals passed to the helpers that parse or
-// explain a script (`explain('…')`, `parser.parse('…')`…). The syntax adapters' oracle
-// (test/syntax-adapter-unbash.test.ts) compares both parsers on them.
+// explain a script (`explain('…')`, `parser.parse('…')`…). The syntax tests and the fuzz
+// (test/syntax-fuzz.test.ts) take them as inputs.
 //
 //   npx tsx scripts/extract-snippets.ts           rewrite test/fixtures/snippets.json
 //   npx tsx scripts/extract-snippets.ts --check   fail if the file is out of date
@@ -17,7 +17,7 @@ const PARSER_OBJECTS = new Set(['parser', 'p', 'tsParser']);
 
 /** The tests whose tables (`[['script', expected], …]`, `for (const src of ['script', …])`) hold scripts. */
 const TABLE_FILES = new Set([
-  'analyzer', 'branches', 'dialect', 'dictionary', 'fixes', 'grammar-patch', 'lines', 'pitfalls', 'expansion', 'settings', 'testexpr', 'rerun', 'render', 'document', 'find',
+  'analyzer', 'branches', 'dialect', 'dictionary', 'fixes', 'lines', 'pitfalls', 'expansion', 'settings', 'testexpr', 'rerun', 'render', 'document', 'find',
 ].map((f) => `${f}.test.ts`));
 const isText = (n: ts.Node): n is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral => ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n);
 

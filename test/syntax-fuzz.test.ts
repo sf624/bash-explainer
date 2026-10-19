@@ -1,18 +1,16 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
 import { forEachChild, parse } from 'unbash';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import type { BashParser, SyntaxTree } from '../src/syntax/tree';
+import type { SyntaxTree } from '../src/syntax/tree';
 import { hasError } from '../src/syntax/tree';
 import { fuzzInputs, soundness, uncovered } from './support/fuzz';
-import { corpus } from './support/oracle';
+import { corpus } from './support/corpus';
 import { Analyzer } from '../src/analyzer';
 import { documentIssues } from '../src/document';
 import type { Shell } from '../src/dialect';
 
-// Fuzzing the adapters with unfinished and damaged input. The inputs come from the fixtures and the
+// Fuzzing the adapter with unfinished and damaged input. The inputs come from the fixtures and the
 // snippets of the tests: prefixes (what the user has typed so far), a word removed, a random cut.
 // A fixed seed makes the run the same every time. Every tree must be sound, whatever the text:
 // no throw, every child inside its parent and in order, texts and types of tokens true to the source,
@@ -30,13 +28,8 @@ function unbashComplains(text: string): boolean {
   return found;
 }
 
-describe('syntax adapters: fuzzing', () => {
-  const root = path.join(__dirname, '..');
-  let ts: BashParser;
+describe('unbash adapter: fuzzing', () => {
   const ub = createUnbashParser();
-  before(async () => {
-    ts = await createTreeSitterParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
-  });
   const inputs = fuzzInputs();
 
   it('is deterministic and large enough', () => {
@@ -115,23 +108,6 @@ describe('syntax adapters: fuzzing', () => {
           if (r) bad.push(r);
         }
       }
-    }
-    assert.deepEqual(bad.slice(0, 30), []);
-  });
-
-  it('tree-sitter adapter: no throw, and a tree that has the model\'s shape', () => {
-    const bad: string[] = [];
-    for (const text of inputs) {
-      let t: SyntaxTree;
-      try {
-        t = ts.parse(text);
-      } catch (e) {
-        bad.push(`${JSON.stringify(text)}: throws ${(e as Error).message}`);
-        continue;
-      }
-      // (tree-sitter starts an expansion in a string at the blank before it: the token `${` has a blank in its text.)
-      const broken = soundness(t).filter((b) => !/token (\S+) has text\s+\1$/.test(b));
-      if (broken.length) bad.push(`${JSON.stringify(text)}: ${broken[0]}`);
     }
     assert.deepEqual(bad.slice(0, 30), []);
   });

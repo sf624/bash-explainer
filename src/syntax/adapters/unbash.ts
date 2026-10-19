@@ -36,9 +36,10 @@ const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Whether tree-sitter-bash reads a plain run of text as an `extglob_pattern` rather than a word: the
- * choice is made by its scanner, which takes a run that starts with a letter or a glob character, whose
- * second character goes on as a word, and that has something besides letters, dots and backslashes in it.
+ * Whether a plain run of text is an `extglob_pattern` rather than a word in the model. The choice follows
+ * the scanner of the grammar used before (tree-sitter-bash), so that the explanations stay the same: it takes a
+ * run that starts with a letter or a glob character, whose second character goes on as a word, and that has
+ * something besides letters, dots and backslashes in it.
  * `alone` is a run that is a whole pattern. A run before a `|` is always one.
  */
 function extglobLike(t: string, alone: boolean, alternative: boolean, closedByParen: boolean): boolean {
@@ -546,7 +547,7 @@ class Converter {
 
   /**
    * An element of an array: `[7]=z` sets the element with index 7, and is a concatenation of `[`, the
-   * index, `]` and `=z`, as tree-sitter reads it (there is no node for it in the model).
+   * index, `]` and `=z`, (there is no node for it in the model).
    */
   element(e: U.Word): Mut {
     const m = !e.parts ? splitElement(e.text) : null;

@@ -532,7 +532,7 @@ export class Analyzer {
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
-      // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
+      // (The model has the `$` and the string in one node; the string takes the `$` in.)
       case 'translated_string': return this.string(n.namedChildren[0]);
       case 'concatenation': if (n.parent!.type === 'array' && splitElement(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.braceWord(n) ?? this.word(n);
@@ -1878,7 +1878,7 @@ export class Analyzer {
     /* c8 ignore stop */
   }
 
-  /** A word that tree-sitter-bash splits at its braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is. */
+  /** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is. */
   private braceWord(n: SyntaxNode): Token | undefined {
     const text = this.unquotedWord(n);
     if (text === undefined) return undefined;
@@ -2685,9 +2685,7 @@ export class Analyzer {
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
   private regexNode(n: SyntaxNode): Token {
-    // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (expansions make other nodes), and quotes stay in its text:
-    // the quoted parts are literal text, which the breakdown of a regex cannot show.
-    if (/(^|[^\\])(\\\\)*["']/.test(n.text)) return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）。クォートした部分は文字列そのまま', 'Regular expression (extended, ERE); the quoted parts are literal text'));
+    // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
     const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
     const js = toJsRegex(n.text, 'ere');
     if (js) this.regexExample(js, 'values');
@@ -2790,13 +2788,11 @@ export class Analyzer {
   private quotedPatternNote(n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
     const regex = op === '=~';
     if (!['=', '==', '!=', '=~'].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
-    // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`. tree-sitter-bash gives a plain right side with quotes in it as one `regex`.)
+    // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`.)
     const quoted = (x: SyntaxNode): boolean[] => {
       if (x.type === 'concatenation') return x.namedChildren.flatMap(quoted);
       if (['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type)) return [true];
-      if (!regex) return [x.text.includes('\\')];
-      // The `regex` of tree-sitter-bash with quotes in it: all quoted, or only a part.
-      return !/(^|[^\\])(\\\\)*["']/.test(x.text) || x.type !== 'regex' ? [false] : /^(?:"[^"]*"|'[^']*')+$/.test(x.text) ? [true] : [true, false];
+      return [!regex && x.text.includes('\\')];
     };
     const kinds = rights.flatMap(quoted);
     if (!kinds.some((q) => q)) return undefined;
@@ -3627,12 +3623,8 @@ function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   return false;
 }
 
-/**
- * The operator and destination of a file redirection. tree-sitter-bash reads `>&-` and `<&-` (close
- * a descriptor) as one operator: they are `>&` and `<&` to `-`.
- */
+/** The operator and destination of a file redirection (`>&-` and `<&-`, which close a descriptor, are `>&` and `<&` to `-`). */
 function redirectParts(n: SyntaxNode): { op: string; dest: string } {
   const op = n.children.find((c) => !c.named)!.type;
-  if (op === '>&-' || op === '<&-') return { op: op.slice(0, 2), dest: '-' };
   return { op, dest: fields(n, 'destination').map((d) => d.text).join(' ') };
 }
