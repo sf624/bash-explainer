@@ -528,9 +528,11 @@ describe('the web page in a browser', function () {
     await until('the while line', text('#line'), (t) => t.startsWith('while read'));
     const label = panel().locator('#tree .label').first();
     assert.strictEqual(await label.innerText(), 'while condition do commands done < input.txt');
-    const style = 'el => { const c = getComputedStyle(el); return { style: c.fontStyle, color: c.color, family: c.fontFamily }; }';
-    const ph = (await label.locator('.ph').first().evaluate(style)) as { style: string; color: string; family: string };
-    const parent = (await label.evaluate(style)) as { style: string; color: string; family: string };
+    // A function, not a string: `evaluate` runs a string as an expression and does not call it. The tests
+    // have no DOM types, hence `any`.
+    const style = (el: any) => { const c = (globalThis as any).getComputedStyle(el); return { style: c.fontStyle as string, color: c.color as string, family: c.fontFamily as string }; };
+    const ph = await label.locator('.ph').first().evaluate(style);
+    const parent = await label.evaluate(style);
     assert.strictEqual(ph.style, 'italic');
     assert.notStrictEqual(ph.family, parent.family);
     assert.notStrictEqual(ph.color, parent.color);
