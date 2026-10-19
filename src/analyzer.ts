@@ -211,6 +211,10 @@ export class Analyzer {
   /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
   /** Where `set -f` / `set -o noglob` (off: true) and `set +f` / `set +o noglob` (off: false) end, in source order. */
   private noglob: { end: number; off: boolean }[] = [];
+  /** Arrays assigned in the script (`y=(a b)`, `declare -A m`, `read -a r`): name → where, and whether it is associative. */
+  private arrays = new Map<string, { index: number; assoc: boolean }>();
+  /** Standalone assignments to IFS with a known value: where each ends, its value, and the part of the script it is local to. */
+  private ifsAssigns: { node: SyntaxNode; value: string; scope: SyntaxNode | undefined }[] = [];
   private namerefs = new Map<string, { line: number; index: number }>();
   /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
   private integers = new Map<string, number>();
@@ -222,6 +226,7 @@ export class Analyzer {
   private opts: ExplainOptions = {};
   /** The whole text being explained (for hints such as how yq was installed). */
   private source = '';
+  private rootNode!: SyntaxNode;
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   private examples: Example[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
@@ -234,10 +239,37 @@ export class Analyzer {
     const root = tree.root;
     this.opts = opts;
     this.source = root.text;
+    this.rootNode = root;
     this.functions.clear();
     for (const f of descendants(root, ['function_definition'])) {
       const name = field(f, 'name')?.text;
       if (name) this.functions.set(name, [...(this.functions.get(name) ?? []), { line: f.startPosition.row, start: f.startIndex, end: f.endIndex }]);
+    }
+    this.arrays.clear();
+    const addArray = (name: string | undefined, index: number, assoc: boolean): void => { if (name && !this.arrays.has(name)) this.arrays.set(name, { index, assoc }); };
+    for (const a of descendants(root, ['variable_assignment'])) {
+      const nameNode = field(a, 'name');
+      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && /^-[a-zA-Z]*A/.test(a.parent.namedChildren.find((c) => c.type === 'word' && c.text.startsWith('-'))?.text ?? ''));
+      else if (nameNode?.type === 'subscript') addArray(nameNode.text.replace(/\[.*/s, ''), a.startIndex, false);
+    }
+    for (const d of descendants(root, ['declaration_command'])) {
+      const flags = d.namedChildren.find((c) => c.type === 'word' && /^-[a-zA-Z]+$/.test(c.text))?.text ?? '';
+      if (!/[aA]/.test(flags)) continue;
+      for (const c of d.namedChildren) addArray(c.type === 'variable_name' ? c.text : undefined, d.startIndex, flags.includes('A'));
+    }
+    for (const c of descendants(root, ['command'])) {
+      const cmd = field(c, 'name')?.text;
+      const args = fields(c, 'argument').map((a) => a.text);
+      if (cmd === 'read' && args.includes('-a')) addArray(args[args.indexOf('-a') + 1], c.startIndex, false);
+      if (cmd === 'mapfile' || cmd === 'readarray') addArray(args.filter((a) => !a.startsWith('-')).pop(), c.startIndex, false);
+    }
+    this.ifsAssigns = [];
+    for (const a of descendants(root, ['variable_assignment'])) {
+      if (field(a, 'name')?.text !== 'IFS' || (a.parent?.type === 'command' && field(a.parent, 'name')?.text) || a.parent?.type === 'declaration_command') continue;
+      const v = field(a, 'value');
+      const value = v ? staticWordValue(v) ?? (isPlainWord(v) ? v.text : undefined) : '';
+      if (value === undefined) continue;
+      this.ifsAssigns.push({ node: a, value, scope: ancestor(a, (x) => ['subshell', 'command_substitution', 'process_substitution', 'function_definition'].includes(x.type)) });
     }
     this.noglob = [];
     for (const c of descendants(root, ['command'])) {
@@ -571,9 +603,12 @@ export class Analyzer {
     const name = nameNode.text;
     // A definition is explained on the line it starts on, where its name is.
     const nameTok = [this.tok(nameNode, 'function', this.s('関数名', 'Function name'))];
+    // A redirection after the body is part of the function: it is applied on every call.
+    const redirected = n.namedChildren.some((c) => c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect' || c.type === 'redirected_statement');
+    const stored = redirected ? this.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
     return this.tok(n, 'function', this.s(
-      `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${this.lineRef(n)}`,
-      `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${this.lineRef(n)}`,
+      `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${this.lineRef(n)}`,
+      `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${stored}${this.lineRef(n)}`,
     ), sortTokens([...nameTok, ...this.ordered(n, (c) => same(c, nameNode) || c.type === '(' || c.type === ')')]));
   }
 
@@ -708,9 +743,11 @@ export class Analyzer {
     }
     // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
     if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) return bodyToks[0];
+    // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
+    const ofFunction = n.parent?.type === 'function_definition';
     const w = this.tok(n, 'redirect', this.s(
-      `入出力のリダイレクト: ${body ? `\`${shorten(body.text, 30)}\` 全体` : 'コマンド'}の入出力を切り替える`,
-      `Redirection applied to ${body ? `\`${shorten(body.text, 30)}\` as a whole` : 'the command'}`,
+      `入出力のリダイレクト: ${body ? `\`${shorten(body.text, 30)}\` 全体` : 'コマンド'}の入出力を切り替える${ofFunction ? '。関数に付けたリダイレクトは関数と一緒に保存され、関数を呼ぶたびに適用される' : ''}`,
+      `Redirection applied to ${body ? `\`${shorten(body.text, 30)}\` as a whole` : 'the command'}${ofFunction ? '. A redirection on a function is stored with it and applied each time the function is called' : ''}`,
     ), sortTokens([...bodyToks, ...redirToks]));
     w.summary = [...bodyToks.map(summaryOf), ...redirToks.map((r) => r.label)].join(' ');
     return w;
@@ -1211,6 +1248,7 @@ export class Analyzer {
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
+      if (cmdName === 'trap' && posIndex === 0 && desc) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
       const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : doc?.positionalLang?.[posIndex];
       posIndex++;
@@ -2733,6 +2771,77 @@ export class Analyzer {
       `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
   }
 
+  /** The IFS in effect at `n` when the script assigns it a known value before (`IFS=-`): its text, and the line. */
+  private ifsAt(n: SyntaxNode): { value: string; line: number } | undefined {
+    const a = this.ifsAssigns.filter((x) => x.node.endIndex <= n.startIndex && (!x.scope || ancestor(n, (p) => p === x.scope))).pop();
+    return a && { value: a.value, line: a.node.startPosition.row };
+  }
+
+  /** What the splitting of an unquoted expansion at `n` splits on. */
+  private splitNote(n: SyntaxNode): string {
+    const ifs = this.ifsAt(n);
+    if (!ifs) return this.s('空白で分割され、グロブ展開もされる', 'it is word-split and globbed');
+    if (ifs.value === '') return this.s(`\`IFS\` が空（行 ${ifs.line + 1}）なので単語分割はされないが、グロブ展開はされる`, `\`IFS\` is empty (line ${ifs.line + 1}), so it is not word-split, but it is globbed`);
+    const noSpace = !/[ \t\n]/.test(ifs.value);
+    return this.s(`\`IFS\`（行 ${ifs.line + 1} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}。グロブ展開もされる`,
+      `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${ifs.line + 1})${noSpace ? ', not on spaces' : ''}, and globbed`);
+  }
+
+  /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
+  private trapNote(a: SyntaxNode): string {
+    const vars = [...new Set(a.text.match(/\$\{?[A-Za-z_]\w*\}?|\$\(|`/g) ?? [])].map((v) => (v === '$(' || v === '`' ? '$(…)' : v));
+    if (!vars.length) return '';
+    const shown = [...new Set(vars)].map((v) => `\`${v}\``).join(this.s('、', ', '));
+    if (a.type === 'raw_string') {
+      return this.s(`。シングルクォートなので ${shown} はここでは展開されず、トラップが実行されるときに展開される（そのときの値が使われる）`,
+        `. Single quotes keep ${shown} from being expanded here: it is expanded when the trap runs, with the value it has then`);
+    }
+    return a.type === 'string'
+      ? this.s(`。ダブルクォートなので ${shown} は今ここで展開され、そのときの内容がトラップに固定される（実行時の値にしたいならシングルクォートにする）`,
+        `. Double quotes expand ${shown} now, and the trap keeps that text (use single quotes to get the value at run time)`)
+      : '';
+  }
+
+  /** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */
+  private variableNote(n: SyntaxNode, name: string): string {
+    const arr = this.arrays.get(name);
+    if (arr && arr.index < n.startIndex) {
+      const first = `\${${name}[0]}`;
+      return this.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
+    }
+    if (name === '_' && this.afterAssignment(n)) {
+      return this.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty');
+    }
+    if (this.inArithmetic(n) && this.pastedValue(n, name) !== undefined) {
+      const v = this.shown(this.pastedValue(n, name)!);
+      return this.s(`。算術式の中の \`$${name}\` は、値（ここでは \`${v}\`）が文字のまま貼り付けられてから式として読まれる。\`${name}\` と名前だけで書くと、値が 1 つの式として計算されてから使われる（\`${name}='1+2'\` なら \`$${name}*2\` は \`1+2*2\` で 5、\`${name}*2\` は 3*2 で 6）`,
+        `. Inside arithmetic, \`$${name}\` is pasted as text (here \`${v}\`) and then read as an expression. Written as the bare name \`${name}\`, its value is evaluated as one expression first (with \`${name}='1+2'\`, \`$${name}*2\` is \`1+2*2\`, which is 5, and \`${name}*2\` is 3*2, which is 6)`);
+    }
+    return '';
+  }
+
+  /** The text assigned to `name` by the last plain assignment before `n`, when it is not a plain integer (it has operators or names in it). */
+  private pastedValue(n: SyntaxNode, name: string): string | undefined {
+    let value: string | undefined;
+    for (const a of descendants(this.rootNode, ['variable_assignment'])) {
+      if (a.endIndex > n.startIndex || field(a, 'name')?.text !== name || a.parent?.type === 'declaration_command') continue;
+      const v = field(a, 'value');
+      value = v ? staticWordValue(v) ?? (isPlainWord(v) ? v.text : undefined) : '';
+    }
+    return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
+  }
+
+  /** Whether the simple command before `n` is only an assignment (it sets `$_` to nothing). */
+  private afterAssignment(n: SyntaxNode): boolean {
+    let prev: SyntaxNode | undefined;
+    for (const c of descendants(this.rootNode, ['command', 'variable_assignment', 'declaration_command'])) {
+      if (c.endIndex > n.startIndex || (c.parent?.type === 'command' && c.type === 'variable_assignment')) continue;
+      if (ancestor(c, (x) => ['command_substitution', 'process_substitution', 'subshell', 'function_definition'].includes(x.type))) continue;
+      if (!prev || c.endIndex >= prev.endIndex) prev = c;
+    }
+    return !!prev && (prev.type === 'variable_assignment' || (prev.type === 'command' && !field(prev, 'name')?.text));
+  }
+
   /** Whether file-name globbing is off where `n` is (after `set -f` and before any `set +f`). */
   private globOff(n: SyntaxNode): boolean {
     return this.noglob.filter((g) => g.end <= n.startIndex).pop()?.off ?? false;
@@ -2833,11 +2942,11 @@ export class Analyzer {
     const d = this.varDesc(name);
     const t = this.tok(n, 'variable', d
       ? `${d}`
-      : this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと空白で分割され、グロブ展開もされる）`, `Expands to the value of \`${name}\` (unquoted, it is word-split and globbed)`));
+      : this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${this.splitNote(n)}）`, `Expands to the value of \`${name}\` (unquoted, ${this.splitNote(n)})`));
     if (this.noSplit(n)) {
       t.explanation = d ?? this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``);
     }
-    t.explanation += this.orderNote(n, name);
+    t.explanation += this.orderNote(n, name) + this.variableNote(n, name);
     return t;
   }
 
@@ -3152,9 +3261,10 @@ export class Analyzer {
       }
     }
     const d = base ?? this.varDesc(targetText);
+    const note = base ? '' : this.variableNote(n, targetText);
     return this.tok(n, 'variable', d
-      ? this.s(`\`\${${targetText}}\`: ${d}`, `\`\${${targetText}}\`: ${d}`)
-      : this.s(`変数 \`${targetText}\` の値に置き換わる（\`{}\` は変数名の範囲を明示する）`, `Value of \`${targetText}\` (braces delimit the name)`));
+      ? this.s(`\`\${${targetText}}\`: ${d}${note}`, `\`\${${targetText}}\`: ${d}${note}`)
+      : this.s(`変数 \`${targetText}\` の値に置き換わる（\`{}\` は変数名の範囲を明示する）${note}`, `Value of \`${targetText}\` (braces delimit the name)${note}`));
   }
 
   private commandSubstitution(n: SyntaxNode): Token {
