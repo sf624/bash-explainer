@@ -798,13 +798,17 @@ export class Analyzer {
     const base = declarationCommands[kw];
     const children: Token[] = [];
     // A declaration over several lines is explained whole (see sub), so every part counts.
+    let named = false;
     for (const c of n.namedChildren) {
-      if (c.type === 'word' && c.text.startsWith('-')) {
+      // Options end at the first name: `declare x -i` is an error for the name `-i`.
+      if (c.type === 'word' && c.text.startsWith('-') && !named) {
         const flags = c.text.slice(1).split('').map((ch) => declarationFlags['-' + ch]).filter(Boolean);
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
       } else if (c.type === 'variable_name' || c.type === 'word') {
+        named = true;
         children.push(this.tok(c, 'variable', this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
       } else {
+        named = true;
         children.push(...this.sub(c));
       }
     }
@@ -1081,7 +1085,7 @@ export class Analyzer {
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
       const text = a.text;
-      if (!endOfOpts && isPlainWord(a) && text === '--') {
+      if (!endOfOpts && isPlainWord(a) && text === '--' && cmdName !== 'echo') {
         out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
         endOfOpts = true;
         continue;
@@ -1092,7 +1096,10 @@ export class Analyzer {
         const end = this.bundle(doc, doc.bundle, args, out);
         if (end >= 0) { i = end; continue; }
       }
-      const optLike = !endOfOpts && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
+      // A builtin reads options up to its first operand: `printf '%d' -0` and `echo a -n` take `-0` and `-n` as values.
+      // `echo` only knows `-n`, `-e` and `-E` (alone or joined); any other word, `-x` or `-nx`, is text to print.
+      const echoText = cmdName === 'echo' && !/^-[neE]+$/.test(text);
+      const optLike = !endOfOpts && !(doc?.builtin && posIndex > 0) && !echoText && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
         i = this.option(doc, args, i, cmdName, out);
         continue;
