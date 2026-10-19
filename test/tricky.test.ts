@@ -8,12 +8,17 @@ import { arithLiteral, evalArith, intValue } from '../src/arith';
 import { ansiCValue, staticWordValue, unquoteWord } from '../src/staticword';
 import { exampleFor, parseExpansion } from '../src/expansion';
 import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { evalArithWrapping } from '../src/arith';
+import { explainArith } from '../src/embedded/arith';
+import { braceExpand } from '../src/examples/shellwords';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
+let treeSitter: Parser;
 
 before(async () => {
-  parser = await createTreeSitterParser({
+  treeSitter = parser = await createTreeSitterParser({
     runtimeDir: path.join(root, 'node_modules/web-tree-sitter'),
     bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm'),
   });
@@ -408,3 +413,255 @@ describe('tricky lines (round 2)', () => {
     assert.strictEqual(evalArith(''), undefined);
   });
 });
+
+// The thirteen lines of the third round.
+const ROUND3 = [
+  'echo {Z..a} {01..10..3} {10..1..4} {-2..2..2}',
+  'echo "\\$ \\` \\" \\\\ \\a \\\'" \'\\\' $\'\\101\\x42\\u0043\\\'\' "${u-\'x\'}" ${u-\'x\'} "${u-\'}\'}" ${u-\'}\'}',
+  'declare -i n=3+4; n+=1; a=b=c; r=a; echo $n $a ${!r} $((2**3**2)) $((-7/2)) $((-7%3)) $((64#_ + 36#Z)) $((1<<63))',
+  'set -- a \'b c\'; for x do printf \'<%s>\' "$x"; done; for x in "$@"x; do printf \'[%s]\' $x; done; echo',
+  'case esac in (esac) echo esac;; (in) ;; esac; case in in in) echo in;; esac; case \')\' in [\\)]|"("*) echo paren; esac',
+  'printf \'%d|\' "\'A" "\'a" 0x10 010 -0; printf -v v \'%05.1f\' 3.14159; echo $v',
+  'echo $((echo hi) | tr h H)',
+  'IFS=, read -ra p <<< "a,b,,c,"; echo ${#p[@]} "${p[2]}|${p[3]}"',
+  '[[ x == "*" ]] || echo lit; [[ x == * ]] && echo glob; [[ abc == @(a|b)?c ]] && echo ext',
+  'f() ( x=in; echo $x ); x=out; f; echo $x',
+  'declare -A m=([1+1]=v); i=([1+1]=v); echo ${!m[@]} ${!i[@]}',
+  'x=5; let "y = x << 1" z=y%3; echo $y $z $(( x[0] )) ${x[0]} ${#x[@]}',
+  'exec 3>&1 1>/dev/null; echo hidden; cat <(echo a) - <<< b >&3',
+];
+// What tree-sitter-bash reads wrongly in these lines (the unbash adapter reads them right).
+const ROUND3_TS_BROKEN = [3, 4, 6]; // indexes of lines 4 (`for x do`), 5 (`case esac in`) and 7 (`$((` that is a subshell)
+
+/** The worked examples of a one-line script. */
+function examplesOf(src: string): { title: string; sections: { label: string; lines: string[] }[] }[] {
+  return new Analyzer('en').explainLine(parser.parse(src), 0).examples;
+}
+/** The notes of the explanation of a one-line script. */
+function notesOf(src: string): string[] {
+  return new Analyzer('en').explainLine(parser.parse(src), 0).notes;
+}
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 3, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const readable = (i: number) => adapter === 'unbash' || !ROUND3_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND3.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    it('keeps `"("*` in a case pattern as one pattern', () => {
+      const src = 'case \')\' in a|"("*) echo paren; esac';
+      const item = tokens(src).find((t) => t.label.startsWith('a|'))!;
+      assert.match(item.explanation, /matches `a \| "\("\*`/);
+      assert.deepStrictEqual(item.children.filter((c) => c.kind === 'pattern').map((c) => c.label), ['a', '"("*']);
+      assert.match(item.children.find((c) => c.label === '"("*')!.explanation, /glob/);
+      // (tree-sitter-bash cannot read `[\)]|"("*)`, a bracket expression holding a parenthesis.)
+      if (adapter === 'unbash') {
+        const line = tokens(ROUND3[4]).find((t) => t.label.startsWith('[\\)]|'))!;
+        assert.match(line.explanation, /matches `\[\\\)\] \| "\("\*`/);
+        assert.deepStrictEqual(line.children.filter((c) => c.kind === 'pattern').map((c) => c.label), ['[\\)]', '"("*']);
+      }
+      // More pieces in one pattern, and a plain alternative.
+      const more = tokens('case x in *"$a"*z|b) :;; esac').find((t) => t.label.startsWith('*"$a"'))!;
+      assert.deepStrictEqual(more.children.filter((c) => c.kind === 'pattern').map((c) => c.label), ['*"$a"*z', 'b']);
+      // bash: the pattern is a literal `(` and anything after it.
+      assert.strictEqual(bash('case "(x" in "("*) echo A;; esac; case "(abc" in "(") echo D;; *) echo E;; esac; case ")" in [\\)]|"("*) echo P;; esac'), 'A\nE\nP\n');
+    });
+
+    it('shows the default word of ${u-…} after quote removal, as bash does', () => {
+      const lines = (src: string) => examplesOf(src).map((e) => e.sections[0].lines[0]);
+      assert.deepStrictEqual(lines(ROUND3[1].slice(ROUND3[1].indexOf('"${u'))), ["'x'", 'x', "'}'", '}']);
+      assert.strictEqual(bash("unset u; printf '<%s>' \"${u-'x'}\" ${u-'x'} \"${u-'}'}\" ${u-'}'}"), "<'x'><x><'}'><}>");
+      // Other words: a backslash, double quotes inside double quotes, and the `+`, `=` and `:-` forms.
+      const cases: [string, string][] = [['${u-\\a\\ b}', 'a b'], ['"${u-\\a}"', '\\a'], ['"${u-\\}}"', '}'], ['"${u-"x y"}"', 'x y'], ['${u-a"b"c}', 'abc'],
+        ["\"${u:-'a b'}\"", "'a b'"], ["${u:-'a b'}", 'a b'], ["\"${t+'x'}\"", "'x'"], ["${t+'x'}", 'x']];
+      for (const [word, want] of cases) {
+        const got = lines(`echo ${word}`)[0];
+        assert.strictEqual(got, want, word);
+        // (The example for `+` is the "when t is set" case.)
+        const setup = word.includes('${t') ? 't=v; ' : 'unset u; ';
+        const real = bash(`${setup}printf %s ${word}`);
+        assert.strictEqual(word.includes('${t') ? real : real, want, word);
+      }
+      // Quoting in a here-document is that of double quotes; inside `$(…)` it is not.
+      const doc = new Analyzer('en').explainLine(parser.parse('cat <<EOF\n${u-\'x\'}\nEOF'), 1).examples;
+      assert.strictEqual(doc[0].sections[0].lines[0], "'x'");
+      assert.strictEqual(lines('echo "$(echo ${u-\'x\'})"')[0], 'x');
+      assert.strictEqual(unquoteWord('\\a', true), '\\a');
+      assert.strictEqual(unquoteWord("'x'", true), "'x'");
+    });
+
+    it('explains the value of an integer variable as arithmetic, and += as adding', () => {
+      const src = ROUND3[2];
+      assert.match(find(src, 'n=3+4').explanation, /Assign to the integer variable `n` \(it has `-i`, so the value is evaluated as arithmetic\)/);
+      assert.match(find(src, '3+4').explanation, /Evaluated as an arithmetic expression = 7/);
+      assert.match(find(src, 'n+=1').explanation, /Add to the integer variable `n`.*8, not 71/);
+      assert.match(find(src, 'n+=1', 'ja').explanation, /整数変数 `n` に値を足す.*71 ではない/);
+      assert.match(find(src, 'a=b=c').explanation, /^Assign a value to variable `a`/);
+      // Only after the declaration, and only for that name.
+      assert.match(find('n+=1; declare -i n', 'n+=1').explanation, /^Append to variable/);
+      assert.match(find('declare -i n; m+=1', 'm+=1').explanation, /^Append to variable/);
+      assert.match(find('declare -i n; n=2*3', 'n=2*3').explanation, /integer variable/);
+      assert.match(find('local -i n=1+1', 'n=1+1').explanation, /integer variable/);
+      assert.match(find('declare -i n; n[1]=2', 'n[1]=2').explanation, /^Assign to element/);
+      assert.strictEqual(bash('declare -i n=3+4; n+=1; echo $n; m=3+4; m+=1; echo $m'), '8\n3+41\n');
+    });
+
+    it('wraps the 64-bit result of $((1<<63)) as bash does', () => {
+      assert.match(find(ROUND3[2], '$((1<<63))').explanation, /wraps around.*so this is -9223372036854775808/);
+      assert.match(find(ROUND3[2], '$((1<<63))', 'ja').explanation, /符号付き 64 ビット.*-9223372036854775808/);
+      assert.ok(!/wraps/.test(find('echo $((1<<62))', '$((1<<62))').explanation));
+      assert.match(find('echo $((9223372036854775807+1))', '$((9223372036854775807+1))').explanation, /wraps around/);
+      assert.strictEqual(bash('echo $((1<<63)) $((1<<62)) $((2**63)) $((9223372036854775807+1))'), '-9223372036854775808 4611686018427387904 -9223372036854775808 -9223372036854775808\n');
+    });
+
+    it('reads the words after the format of printf as values, and echo words by its own rules', () => {
+      const src = ROUND3[5];
+      assert.strictEqual(find(src, '-0').kind, 'argument');
+      assert.strictEqual(find(src, '-0').explanation, 'value for the format');
+      assert.strictEqual(bash("printf '%d|' 1 -0"), '1|0|');
+      assert.strictEqual(find('echo a -n', '-n').kind, 'argument');
+      assert.strictEqual(find('echo -n a', '-n').kind, 'option');
+      assert.strictEqual(find('echo -x', '-x').kind, 'argument');
+      assert.strictEqual(find('echo -nx', '-nx').kind, 'argument');
+      assert.strictEqual(find('echo -- a', '--').kind, 'argument');
+      assert.strictEqual(find('echo -neE a', '-neE').kind, 'option');
+      assert.strictEqual(bash('echo a -n; echo -x; echo -nx; echo -- a; echo -neE a'), 'a -n\n-x\n-nx\n-- a\na');
+      // The same for the other builtins: `read a -r` has `-r` as a name, `declare x -i` as a name.
+      assert.strictEqual(find('read a -r', '-r').kind, 'argument');
+      assert.strictEqual(find('declare -i x -r', '-r').kind, 'variable');
+      assert.strictEqual(find('declare -i x=1 -r', '-i').kind, 'option');
+      assert.strictEqual(find('printf -v v %s -v', '-v', 'en').kind, 'argument');
+      assert.match(bash('declare x -i 2>&1; read a -r <<< hi 2>&1; true'), /not a valid identifier/);
+    });
+
+    it('takes a quoted right side of == in [[ ]] as literal text', () => {
+      const cond = (src: string) => tokens(src).find((t) => t.explanation.startsWith('Condition'))!.explanation;
+      assert.match(find(ROUND3[8], 'x == "*"').explanation, /strings are equal \(the right side is quoted, so it is literal text, not a pattern\)/);
+      assert.match(find(ROUND3[8], 'x == *').explanation, /right side is a glob pattern/);
+      assert.match(find(ROUND3[8], 'x == "*"', 'ja').explanation, /クォートされているので文字列そのもの/);
+      assert.match(find("[[ x != 'a*' ]]", "x != 'a*'").explanation, /strings differ \(the right side is quoted/);
+      assert.match(find('[[ x == a\\*b ]]', 'x == a\\*b').explanation, /literal text/);
+      assert.match(cond('[[ $x == *"$y"*z ]]'), /quoted parts of the right side are literal text, the rest is a pattern/);
+      assert.match(cond('[[ $x == "$y" ]]'), /literal text/);
+      assert.ok(!/literal/.test(cond('[[ $x == a* ]]')));
+      assert.strictEqual(bash('[[ x == "*" ]] || echo lit; [[ x == * ]] && echo glob; [[ x != "a*" ]] && echo ne; [[ ab == a\\* ]] || echo esc; y=b; [[ ab == *"$y" ]] && echo mix; [[ ab == a"*" ]] || echo mix2'), 'lit\nglob\nne\nesc\nmix\nmix2\n');
+    });
+
+    it('tells the key of an associative array from the index of an indexed one', () => {
+      const src = ROUND3[10];
+      assert.match(tokens(src).filter((t) => t.label === '[1+1]=v')[0].explanation, /^Element with key `1\+1` \(a string, not evaluated\)/);
+      const indexed = tokens(src).filter((t) => t.label === '[1+1]=v');
+      assert.match(indexed[1].explanation, /^Element with index `1\+1` \(an arithmetic expression: 2\)/);
+      assert.match(tokens(src, 'ja').filter((t) => t.label === '[1+1]=v')[0].explanation, /キー `1\+1`（文字列で、計算はされない）/);
+      assert.match(find('declare -A m; m[ab]=1', 'm[ab]=1').explanation, /associative array `m` with the key `ab`/);
+      assert.match(find('i[1+1]=1', 'i[1+1]=1').explanation, /\(an arithmetic expression: 2\)/);
+      assert.match(find('declare -A m; echo ${m[1+1]}', '[1+1]').explanation, /Key `1\+1` \(the keys of an associative array are strings/);
+      assert.match(find('echo ${m[1+1]}', '[1+1]').explanation, /Index 1\+1 \(an arithmetic expression: 2\)/);
+      assert.match(find('declare -A m; echo "${m[k]}"', '[k]').explanation, /^Key `k`/);
+      // Declared later, it is not yet associative.
+      assert.match(find('echo ${m[1+1]}; declare -A m', '[1+1]').explanation, /Index 1\+1/);
+      // The examples: the keys of an associative array come in no fixed order, so only the count is one.
+      const decl = 'declare -A m=([a]=1 [b]=2 [c]=3)';
+      assert.deepStrictEqual(examplesOf('declare -A m; echo ${#m[@]}').map((e) => e.sections[0].lines), [['3']]);
+      assert.strictEqual(bash(`${decl}; echo -n \${#m[@]}`.replace('\\', '')), '3');
+      assert.deepStrictEqual(examplesOf('declare -A m; echo ${!m[@]}'), []);
+      assert.deepStrictEqual(examplesOf('declare -A m; echo ${m[@]} ${m[0]}'), []);
+      assert.deepStrictEqual(examplesOf('i=(a b c); echo ${!i[@]}').map((e) => e.sections[0].lines), [['0 1 2']]);
+      assert.strictEqual(bash('declare -A m=([1+1]=v); i=([1+1]=v); echo ${!m[@]} ${!i[@]}'), '1+1 2\n');
+    });
+
+    it('says "$@"x is one word per element, with x glued to the last', () => {
+      const src = 'for x in "$@"x; do :; done';
+      assert.match(find(src, '"$@"x').explanation, /`"\$@"` gives one word per element, so this is not one word\. `x` is glued to the end of the last one/);
+      assert.match(find('for x in p"${a[@]}"q; do :; done', 'p"${a[@]}"q').explanation, /`p` is glued to the start of the first element and `q` is glued to the end of the last one/);
+      assert.match(find(src, '"$@"x', 'ja').explanation, /最後の要素の後ろにくっつく/);
+      assert.match(find('echo a"$x"b', 'a"$x"b').explanation, /^Concatenation: the parts below are joined into one word/);
+      assert.match(find('echo "$*"x', '"$*"x').explanation, /^Concatenation: the parts below are joined into one word/);
+      assert.strictEqual(bash('set -- a "b c"; for x in "$@"x; do echo "[$x]"; done; a=(1 2); for x in p"${a[@]}"q; do echo "[$x]"; done; set --; for x in "$@"x; do echo "[$x]"; done'), '[a]\n[b cx]\n[p1]\n[2q]\n[x]\n');
+    });
+
+    it('lists the words of a brace expansion, with the lone backslash gone', () => {
+      const src = ROUND3[0];
+      assert.match(find(src, '{Z..a}').explanation, /expands to 8 words: `Z` `\[` `''` `\]` `\^` `_` .* `a`$/);
+      assert.match(find(src, '{01..10..3}').explanation, /4 words: `01` `04` `07` `10` \(a number with a leading 0 pads/);
+      assert.match(find(src, '{10..1..4}').explanation, /3 words: `10` `6` `2`$/);
+      assert.match(find(src, '{-2..2..2}').explanation, /3 words: `-2` `0` `2`$/);
+      assert.ok(!/pads/.test(find('echo {1..3}', '{1..3}').explanation));
+      assert.match(find('echo {1..03}', '{1..03}').explanation, /pads/);
+      assert.match(find(src, '{01..10..3}', 'ja').explanation, /桁数をそろえて 0 で埋める/);
+      assert.deepStrictEqual(examplesOf('echo {Z..a}')[0].sections[0].lines, ['Z', '[', "''", ']', '^', '_', '`', 'a']);
+      assert.strictEqual(bash("printf '<%s>' {Z..a} {01..10..3} {10..1..4} {-2..2..2}"), '<Z><[><><]><^><_><`><a><01><04><07><10><10><6><2><-2><0><2>');
+      assert.deepStrictEqual(braceExpand('{Z..a}'), ['Z', '[', '', ']', '^', '_', '`', 'a']);
+      assert.deepStrictEqual(braceExpand('x{a,\\\\}'), ['xa', 'x\\']);
+      assert.deepStrictEqual(braceExpand('x{Z..a}')!.slice(1, 4), ['x[', 'x', 'x]']);
+      assert.deepStrictEqual(braceExpand('{,}'), []);
+    });
+
+    it('explains the arguments of let as arithmetic expressions', () => {
+      const src = ROUND3[11];
+      assert.match(find(src, 'y = x << 1').explanation, /^Arithmetic assignment: `y` = `x << 1`/);
+      assert.match(find(src, 'x << 1').explanation, /^Arithmetic: `x` << `1`/);
+      assert.match(find(src, 'z=y%3').explanation, /^Arithmetic assignment: `z` = `y%3`/);
+      assert.match(find(src, 'y%3').explanation, /^Arithmetic: `y` % `3`/);
+      assert.match(tokens(src).find((t) => t.label === '"y = x << 1"' && t.kind === 'argument')!.explanation, /^arithmetic expression \(one per argument, evaluated left to right, so later ones see earlier results\)/);
+      assert.match(find(src, 'y = x << 1', 'ja').explanation, /^算術代入: `y` = `x << 1`/);
+      assert.match(find('let 0x10+1', '0x10').explanation, /Hexadecimal number.* = 16 in decimal/);
+      assert.match(find('let 0x10+1', '0x10+1').explanation, /^Arithmetic: `0x10` \+ `1`/);
+      assert.match(find('let i++', 'i++').explanation, /\(increment\)/);
+      assert.match(find('let "a=b?c:(d+1)"', 'b?c:(d+1)').explanation, /^Ternary/);
+      assert.match(find('let "x[1]*=2, y--"', 'x[1]*=2').explanation, /^Arithmetic assignment: `x\[1\]` \*= `2`/);
+      assert.match(find('let "x[1]*=2, y--"', ',').explanation, /comma operator/);
+      assert.match(find('let "-a ** 2" "!b" "c<<=1"', '-a ** 2').explanation, /^Arithmetic unary operator `-`|^Arithmetic: /);
+      assert.match(tokens('let 1+2').find((t) => t.label === '1+2' && t.kind === 'argument')!.explanation, /value 3/);
+      // Not an expression, or not known until run time: the argument stays a plain word.
+      for (const bad of ['let "1 +"', 'let "a b"', 'let "a=="', 'let "(1"', 'let "1)"', 'let ""', 'let "a[1"', 'let "a?b"', 'let "1=2"', 'let "$x+1"', 'let "?"']) {
+        assert.ok(!tokens(bad).some((t) => t.kind === 'operator' && /Arithmetic/.test(t.explanation)), bad);
+      }
+      assert.strictEqual(bash('x=5; let "y = x << 1" z=y%3; echo $y $z'), '10 1\n');
+      assert.strictEqual(bash('let 0x10+1 "a=3, b=a*2"; let i++; let "c = 2 ? 7 : 8"; echo $i $a $b $c'), '1 3 6 7\n');
+      assert.strictEqual(explainArith('', 'en'), undefined);
+      assert.strictEqual(explainArith('5', 'en')!.tokens[0].kind, 'number');
+      assert.strictEqual(explainArith('1, 2', 'en')!.tokens.length, 1);
+      assert.strictEqual(explainArith('a[b[1]]+1', 'en')!.tokens.length, 1);
+      assert.strictEqual(explainArith('a[1', 'en'), undefined);
+    });
+
+    it('computes the shift operators of constants as bash does', () => {
+      const exprs = ['1<<4', '1<<62', '1<<63', '1<<64', '1<<-1', '256>>4', '-8>>1', '1+1<<2', '1<<1+1', '(1<<2)*3', '3>>1', '1<<63>>63', '2**63', '2**64', '9223372036854775807*2', '-9223372036854775807-2', '- (1<<63)'];
+      for (const e of exprs) {
+        const r = evalArithWrapping(e);
+        const out = bash(`echo $(( ${e} ))`);
+        if (r) assert.strictEqual(String(r.value) + '\n', out, e);
+        else assert.ok(out === 'ERROR' || /^-?\d+\n$/.test(out), e);
+      }
+      assert.strictEqual(evalArithWrapping('1<<63')!.wrapped, true);
+      assert.strictEqual(evalArithWrapping('1<<62')!.wrapped, false);
+      assert.strictEqual(evalArithWrapping('1<<64'), undefined);
+      assert.strictEqual(evalArith('1<<4'), 16);
+      assert.strictEqual(evalArith('1<<63'), undefined);
+    });
+
+    it('shows the line a here-string gives to read, and the effect of a separator', () => {
+      const src = ROUND3[7];
+      const ex = examplesOf(src)[0];
+      assert.deepStrictEqual(ex.sections.map((s) => s.lines), [['"a,b,,c,"'], ['p=("a" "b" "" "c")']]);
+      assert.match(notesOf(src).join('\n'), /`read` with `IFS=,`: a separator that is not whitespace \(`,`\) keeps the empty field/);
+      assert.strictEqual(bash('IFS=, read -ra p <<< "a,b,,c,"; declare -p p'), 'declare -a p=([0]="a" [1]="b" [2]="" [3]="c")\n');
+      // Whitespace only: no note. Without a literal here-string: the sample line.
+      assert.ok(!notesOf('read -ra p <<< "a b"').some((n) => /IFS/.test(n)));
+      assert.deepStrictEqual(examplesOf('read -r a b <<< "x  y z"')[0].sections.map((s) => s.lines), [['"x  y z"'], ['a="x"', 'b="y z"']]);
+      assert.strictEqual(bash('read -r a b <<< "x  y z"; echo "[$a][$b]"'), '[x][y z]\n');
+      assert.deepStrictEqual(examplesOf('IFS=: read -r a b <<< "$x"')[0].sections[0].lines.length, 1);
+    });
+  });
+}
