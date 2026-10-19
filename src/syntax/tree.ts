@@ -131,6 +131,12 @@ export interface SyntaxTree {
   readonly root: SyntaxNode;
   /** What the parser could not read. Each one also has an `error` node, or an `incomplete` node, in the tree. */
   readonly errors: readonly SyntaxError[];
+  /**
+   * Where the text had a CR before a LF (Windows line ends), as indexes into the text the tree was built from.
+   * An adapter that reads such text masks each of these CRs as a space of the same length, so `text` has a space there
+   * and every position stays. Undefined when there were none (or the adapter does not mask).
+   */
+  readonly carriageReturns?: readonly number[];
 }
 
 /** What every adapter provides. Parsing is synchronous; loading the library (a wasm file…) happens before. */

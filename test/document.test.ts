@@ -52,6 +52,29 @@ describe('documents without VS Code', () => {
     assert.deepStrictEqual(documentIssues(script(disabled), 'en', { detected }).map((i) => i.code), ['echoE']);
   });
 
+  it('reads a script with CRLF line ends as one with LF, and warns about it once', () => {
+    const lf = 'if [ -f a ]; then\n  echo yes\nfi\n';
+    const crlf = lf.replace(/\n/g, '\r\n');
+    const doc = { lines: crlf.split(/\r?\n/), tree: parser.parse(crlf) };
+    for (let line = 0; line < 3; line++) {
+      assert.deepStrictEqual(explainDocumentLine(en, doc, line, 'en', {}, {}), explainDocumentLine(en, script(lf), line, 'en', {}, {}), `line ${line}`);
+    }
+    assert.strictEqual(doc.tree.root.endPosition.row, 3);
+    // The warning is at the first CR, for every shell, in both languages.
+    for (const lang of ['en', 'ja'] as const) {
+      const issues = documentIssues(doc, lang, {});
+      assert.deepStrictEqual(issues.map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]), [['crlf', 'warning', 0, 17, 18]]);
+      assert.match(issues[0].message, lang === 'en' ? /Windows line endings/ : /CRLF/);
+    }
+    assert.deepStrictEqual(documentIssues(doc, 'en', { forced: 'dash' }).map((i) => i.code), ['crlf']);
+    assert.deepStrictEqual(documentIssues(doc, 'en', {}, ['crlf']), []);
+    assert.deepStrictEqual(documentIssues(script(lf), 'en', {}), []);
+    // Only a CR before a LF is a line end; the one in the middle of a line is a character like the others.
+    assert.deepStrictEqual(documentIssues(script('echo a\rb\n'), 'en', {}), []);
+    // bash itself fails on such a script: `fi\r` is no `fi`.
+    assert.ok(documentIssues(script('echo hi\r\nsleep 1\r\nfoo\r\n'), 'en', {}).length === 1);
+  });
+
   it('finds the problems of a host file', () => {
     const codes = documentIssues(dockerfile('FROM alpine\nRUN curl -s x | sh'), 'en', {}).map((i) => i.code);
     assert.ok(codes.includes('dockerPipefail'), codes.join());

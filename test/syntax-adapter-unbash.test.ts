@@ -929,9 +929,30 @@ describe('unbash adapter: more shapes', () => {
     for (const text of ['', ' ', '\n', ';', ';;', '&', '|', '||', '&&', '(', ')', '{', '}', '((', '))', '[[', ']]', '$', '${', '$(', '$((', '`', '"', "'", '\\', '<<', '<<<', '>', '#', '#!', 'a\r\nb\r\n',
       'if', 'fi', 'then', 'case', 'esac', 'function', 'coproc', 'select', 'time', '!', '! !', 'x=', 'x=(', '=', '[', ']', '[ ]', '$[', '${#', '${!', '${a[', '${a:', '${a/', '<(', '>(', 'echo \u0000 x', '\u{1F600}']) {
       const t = tree(text);
-      assert.equal(t.text, text);
+      assert.equal(t.text, text.replace(/\r(?=\n)/g, ' '));
       assert.deepEqual(invariants(t), [], JSON.stringify(text));
     }
+  });
+
+  it('reads a CR before a LF as a blank of the same width, and says where they were', () => {
+    const lf = 'if [ -f a ]; then\n  echo yes # c\nfi\ncat <<< x\n';
+    const crlf = lf.replace(/\n/g, '\r\n');
+    const a = tree(lf), b = tree(crlf);
+    assert.equal(b.text.length, crlf.length);
+    assert.equal(b.text, lf.replace(/\n/g, ' \n'));
+    assert.deepEqual(b.carriageReturns, [...crlf.matchAll(/\r/g)].map((m) => m.index));
+    assert.equal(a.carriageReturns, undefined);
+    assert.deepEqual(b.errors, []);
+    // The same nodes, starting at the same rows and columns.
+    const shape = (n: SyntaxNode): unknown[] => [n.type, n.startPosition.row, n.startPosition.column, ...n.children.map(shape)];
+    assert.deepEqual(shape(b.root), shape(a.root));
+    assert.deepEqual(invariants(b), []);
+    // As in bash, a heredoc of a CRLF script has no closing line: `EOF\r` is not `EOF`.
+    assert.deepEqual(tree('cat <<EOF\r\nx\r\nEOF\r\n').errors.map((e) => e.kind), ['missing']);
+    // A CR that is not before a LF stays: it is a character of the word, as in bash.
+    const lone = tree('echo a\rb\r');
+    assert.equal(lone.text, 'echo a\rb\r');
+    assert.equal(lone.carriageReturns, undefined);
   });
 });
 

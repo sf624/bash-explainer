@@ -48,9 +48,10 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
   if (doc.extracted) {
     return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced) : [];
   }
+  const crlf = crlfIssue(doc.tree, lang);
   const shell = shells.forced ?? shells.detected;
-  if (!shell || shell === 'bash') return [];
-  return dialectIssues(doc.tree, shell, lang).map((i) => {
+  if (!shell || shell === 'bash') return crlf;
+  return [...crlf, ...dialectIssues(doc.tree, shell, lang).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
@@ -58,5 +59,20 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
-  });
+  })];
+}
+
+const CRLF: [string, string] = [
+  'この行の改行は CRLF（Windows 形式）で、bash は行末の CR を最後の単語の一部として読む。`fi` が `fi\\r` になって「command not found」や構文エラーになるので、LF に変換する。',
+  'This file has Windows line endings (CRLF). bash reads the CR at the end of a line as part of its last word, so `fi` becomes `fi\\r` and the script fails with "command not found" or a syntax error. Convert it to LF.',
+];
+
+/** A script with CRLF line ends fails in bash; the issue is shown once, at the first of them. */
+function crlfIssue(tree: SyntaxTree, lang: Lang): DocumentIssue[] {
+  const at = tree.carriageReturns?.[0];
+  if (at === undefined) return [];
+  const before = tree.text.slice(0, at);
+  const line = before.split('\n').length - 1;
+  const col = at - (before.lastIndexOf('\n') + 1);
+  return [{ code: 'crlf', severity: 'warning', message: CRLF[lang === 'ja' ? 0 : 1], startLine: line, startCol: col, endLine: line, endCol: col + 1 }];
 }
