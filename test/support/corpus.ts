@@ -1,61 +1,10 @@
-// The oracle of the syntax adapters: compares two trees of the model node for node. The tree-sitter
-// adapter is the reference; the unbash adapter must give the same tree wherever tree-sitter reads the
-// script correctly (test/syntax-adapter-unbash.test.ts).
+// The shell code the syntax tests work on (fixtures and snippets of the tests), and the invariants of the model's trees.
 import * as fs from 'fs';
 import * as path from 'path';
 import { extractShell, hostKind } from '../../src/hosts';
 import type { SyntaxNode, SyntaxTree } from '../../src/syntax/tree';
 
 const root = path.join(__dirname, '../..');
-
-/** Where the two nodes first differ, or undefined if the trees under them are the same. */
-export function diffNodes(a: SyntaxNode, b: SyntaxNode, where = ''): string | undefined {
-  const here = `${where}/${a.named ? a.type : JSON.stringify(a.type)}@${a.startIndex}`;
-  const props = ['type', 'named', 'text', 'startIndex', 'endIndex', 'field', 'incomplete'] as const;
-  for (const p of props) if (a[p] !== b[p]) return `${here}: ${p} ${JSON.stringify(a[p])} != ${JSON.stringify(b[p])}`;
-  for (const p of ['startPosition', 'endPosition'] as const) {
-    if (a[p].row !== b[p].row || a[p].column !== b[p].column) return `${here}: ${p} ${JSON.stringify(a[p])} != ${JSON.stringify(b[p])}`;
-  }
-  const n = Math.min(a.children.length, b.children.length);
-  for (let i = 0; i < n; i++) {
-    const d = diffNodes(a.children[i], b.children[i], here);
-    if (d) return d;
-  }
-  if (a.children.length !== b.children.length) {
-    const show = (c: SyntaxNode | undefined): string => (c ? `${c.type}[${c.startIndex},${c.endIndex}]` : 'none');
-    return `${here}: ${a.children.length} children != ${b.children.length} (next: ${show(a.children[n])} != ${show(b.children[n])})`;
-  }
-  return undefined;
-}
-
-/** Compares the trees' errors as well as the nodes. */
-export function diffTrees(a: SyntaxTree, b: SyntaxTree): string | undefined {
-  const d = diffNodes(a.root, b.root);
-  if (d) return d;
-  const errs = (t: SyntaxTree): string => JSON.stringify(t.errors.map((e) => [e.kind, e.startIndex, e.endIndex]));
-  return errs(a) === errs(b) ? undefined : `errors ${errs(a)} != ${errs(b)}`;
-}
-
-/** The top-level statements (the named children of the program, comments left out) that are the same in both trees. */
-export function topLevel(a: SyntaxTree, b: SyntaxTree): { identical: number; total: number; first?: string } {
-  const named = (t: SyntaxTree): SyntaxNode[] => t.root.namedChildren.filter((c) => c.type !== 'comment');
-  const others = new Map(named(b).map((c) => [`${c.type}@${c.startIndex}`, c]));
-  let identical = 0;
-  let first: string | undefined;
-  for (const c of named(a)) {
-    const o = others.get(`${c.type}@${c.startIndex}`);
-    const d = o ? diffNodes(c, o) : `${c.type}@${c.startIndex}: no such statement`;
-    if (d) first ??= d;
-    else identical++;
-  }
-  return { identical, total: named(a).length, first };
-}
-
-/** A model tree as indented lines: type, field, range and, for a leaf, its text. */
-export function dumpModel(n: SyntaxNode, depth = 0): string {
-  const head = `${'  '.repeat(depth)}${n.named ? n.type : JSON.stringify(n.type)}${n.field ? ' @' + n.field : ''}${n.incomplete ? ' INCOMPLETE' : ''} [${n.startIndex},${n.endIndex}]`;
-  return head + (n.children.length ? '' : ' ' + JSON.stringify(n.text)) + '\n' + n.children.map((c) => dumpModel(c, depth + 1)).join('');
-}
 
 export interface Input { name: string; text: string }
 

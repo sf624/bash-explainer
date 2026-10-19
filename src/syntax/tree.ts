@@ -139,7 +139,7 @@ export interface SyntaxTree {
   readonly carriageReturns?: readonly number[];
 }
 
-/** What every adapter provides. Parsing is synchronous; loading the library (a wasm file…) happens before. */
+/** What every adapter provides. Parsing is synchronous. */
 export interface BashParser {
   parse(text: string): SyntaxTree;
 }

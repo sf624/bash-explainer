@@ -1,25 +1,18 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as path from 'path';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, hasError, token } from '../src/syntax/tree';
-import type { BashParser, SyntaxNode } from '../src/syntax/tree';
+import type { SyntaxNode } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer';
-import { corpus, diffNodes, diffTrees, invariants, topLevel } from './support/oracle';
+import { corpus, invariants } from './support/corpus';
 
-// The oracle: both adapters build the model of the same script, and the trees are compared node for node
-// (type, named, text, indexes, positions, field, incomplete, children). Where tree-sitter reads the script
-// correctly, the unbash adapter must give the same tree. The inputs where the trees differ are listed
-// below, each with its reason: the ones where tree-sitter is wrong come with the tree unbash must give.
+// The unbash adapter builds the model of a script. The first part holds the expected trees of the inputs
+// that tree-sitter (the parser used before) read wrongly, the invariants of the trees of the fixtures and
+// of the snippets of the tests; the rest, the shapes of each construct.
 
-const root = path.join(__dirname, '..');
-let ts: BashParser;
 const ub = createUnbashParser();
-before(async () => {
-  ts = await createTreeSitterParser({ runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') });
-});
+
 
 /** A tree as one line: named nodes in parentheses with their field, tokens quoted, the text of the leaves. */
 const outline = (n: SyntaxNode): string => (n.named
@@ -27,56 +20,8 @@ const outline = (n: SyntaxNode): string => (n.named
   : JSON.stringify(n.type));
 const types = (n: SyntaxNode, t: string): SyntaxNode[] => descendants(n, [t]);
 
-// Where tree-sitter reads the script correctly, as far as it goes, but not like the model wants it, or
-// like unbash does. The trees differ and stay different; a test checks that each one still does.
-const SPLIT = 'tree-sitter cuts a word at { } [ ] into several words; the adapter keeps one word';
-const SPACE = 'tree-sitter starts an expansion in a string at the blank before it (the analyzer trims it)';
-const NOT_BASH = 'not bash (a jq filter…): tree-sitter and unbash read it in their own ways';
-const BRACKET_WORD = 'tree-sitter reads a word that starts with [ as a test command';
-const TEST_GROUPS = 'tree-sitter misreads ( ) and && in [ ] (README, Limitations)';
-const NEWLINE = 'bash does not allow a newline there; tree-sitter does, unbash reports an error';
-const TIME = 'time before a pipe, or with a redirection, is bound differently by tree-sitter';
-const QUIRKS: Record<string, string> = {
-  '! ! ! ! !': 'tree-sitter reads the second ! as a word',
-  '! ! a -o b': 'tree-sitter reads the second ! as a word',
-  '(.[1:]) |= .': SPLIT, '(.[[0]]) |= 1': SPLIT, '(?:[é])': SPLIT, '*"a"[ab]x': SPLIT, '.[1:] = [1]': SPLIT, '.[] |= empty': SPLIT,
-  '.[input:]?': SPLIT, '@(*/|[.~])*': SPLIT, "ls @(a')'b|c)": SPLIT, 'reduce .[] as $x 0': SPLIT, 's{a}': SPLIT, 's{a} ': SPLIT,
-  "find . -name '*.log' -exec rm {} \\;": SPLIT, 'find . -name x -exec rm {} ;': SPLIT,
-  '([é])': BRACKET_WORD, '[ab]': BRACKET_WORD,
-  '(map(.)) |= 1': NOT_BASH, 'del(.[1:])': NOT_BASH, 'f(1 2)': NOT_BASH, 'ltrimstr("a", "b")': NOT_BASH,
-  'getpath([{"start": 1, "end": null}])': NOT_BASH, 'setpath([{"start": 1, "end": null}]; 1)': NOT_BASH, 'test("a"; "q")': NOT_BASH,
-  '[ ( a ) ]': TEST_GROUPS, '[ ( a -o b ) -a c ]': TEST_GROUPS, '[ ( a = b ) -o c = d ]': TEST_GROUPS, '[ a && b ]': TEST_GROUPS,
-  'coproc cat': 'tree-sitter reads coproc as a command named coproc (the model has coproc_statement)',
-  'coproc ls': 'tree-sitter reads coproc as a command named coproc (the model has coproc_statement)',
-  'echo $"hello $USER"': 'the model has translated_string; tree-sitter gives a $ and a string',
-  'exec 3<&-': 'tree-sitter reads <&- as one operator; unbash gives <& and -',
-  'exec 3>&-': 'tree-sitter reads >&- as one operator; unbash gives >& and -',
-  'for f in $(2>/dev/null); do :; done': 'tree-sitter leaves the redirection alone in a substitution',
-  'then': 'a keyword where there is none to read',
-  'case $x in\n  (\n  a) :;;\nesac': NEWLINE,
-  'case $x in\n  a |\n  b) :;;\nesac': NEWLINE,
-  'x=$(case $y in @(a|b)) echo;; *.c) :;; plain) :;; esac; declare -x z; find . -name "*.c" -print; seq 3 | sort -r; { echo a; } > out; echo {a,b} *.txt; …': SPLIT,
-  'time -p | wc': TIME, 'time | wc': TIME, 'time a >f | b': TIME,
-};
-// Whole statements of the fixtures that differ, by the start of their text.
-const FILE_QUIRKS: Record<string, Record<string, string>> = {
-  'sample.sh': {
-    'echo "${file%.*}': SPACE, 'echo "${#file}': SPACE, 'echo "${#items[@]}': SPACE,
-    'mkdir -p project/{src': SPLIT, 'cp config.yml{,.bak}': SPLIT, 'echo {1..10..3}': 'tree-sitter does not read the step of a brace range',
-    'ls *.[ch]': SPLIT, 'rm -f log-202[0-4]': SPLIT,
-  },
-  'coverage.sh': {
-    'files=$(find': SPLIT, 'echo "${file%.*}': SPACE, 'echo "${path##*/}': SPACE, 'echo "${name^^}': SPACE, 'echo "${#items[@]}': SPACE,
-    'echo "${DEBUG-off}': SPACE, 'cd "${TARGET_DIR:?': 'tree-sitter splits the words of the message after ${x:?',
-    'find /var/backups': SPLIT, ': "${API_TOKEN:?': 'tree-sitter splits the words of the message after ${x:?',
-    'mkdir -p project/{src': SPLIT, 'cp config.yml{,.bak}': SPLIT, 'echo {1..10..3}': 'tree-sitter does not read the step of a brace range',
-    'ls *.[ch]': SPLIT, 'rm -f log-202[0-4]': SPLIT, 'ls *.txt | xargs -I{}': SPLIT,
-  },
-};
-
-// Where tree-sitter is wrong: it fails to read the script, or reads it in a way that is not bash's. The
-// trees must differ, and the unbash adapter's must be the one below (README, Limitations, and
-// docs/design/syntax-tree.md, "Known tree-sitter residue").
+// Inputs that tree-sitter read wrongly (it failed to read the script, or read it in a way that is not bash's): the tree
+// the unbash adapter must give (README, Limitations).
 interface Wrong { name: string; text: string; why: string; expected: string }
 const WRONG: Wrong[] = [
   {
@@ -167,96 +112,37 @@ const WRONG: Wrong[] = [
   },
 ];
 
-describe('unbash adapter: the oracle', () => {
+
+describe('unbash adapter: the fixtures and the snippets', () => {
   const { files, snippets } = corpus();
-  // A listed text that ends with … stands for the snippets that start with it.
-  const quirkOf = (text: string): string | undefined => Object.keys(QUIRKS).find((k) => k === text || (k.endsWith('…') && text.startsWith(k.slice(0, -1))));
-  const wrongTexts = new Set(WRONG.map((w) => w.text));
 
   describe('the shell code of the fixtures', () => {
     for (const f of files) {
-      it(`${f.name}: the trees are the same, except for the statements listed`, () => {
-        const a = ts.parse(f.text);
+      it(`${f.name}: a sound tree without errors`, () => {
         const b = ub.parse(f.text);
-        const quirks = FILE_QUIRKS[f.name] ?? {};
-        const others = new Map(b.root.namedChildren.map((c) => [`${c.type}@${c.startIndex}`, c]));
-        const differing: string[] = [];
-        for (const c of a.root.namedChildren) {
-          const o = others.get(`${c.type}@${c.startIndex}`);
-          if (!o || diffNodes(c, o)) differing.push(c.text);
-        }
-        const explained = Object.keys(quirks);
-        // Every difference is listed, and every listed one is still there.
-        assert.deepEqual(differing.filter((t) => !explained.some((q) => t.startsWith(q))), []);
-        assert.deepEqual(explained.filter((q) => !differing.some((t) => t.startsWith(q))), []);
-        // The comments, the tokens between the statements and the error entries are the same.
-        const outside = (t: typeof a): string[] => t.root.children.filter((c) => !c.named || c.type === 'comment').map((c) => `${c.type}@${c.startIndex}`);
-        assert.deepEqual(outside(b), outside(a));
-        assert.deepEqual(b.errors, a.errors);
+        assert.deepEqual(b.errors, []);
         assert.deepEqual(invariants(b), []);
         assert.equal(b.text, f.text);
       });
     }
   });
 
-  describe('the snippets of the tests', () => {
-    it('are the same wherever tree-sitter reads them without an error, except for the listed ones', () => {
-      let compared = 0;
-      const unexplained: string[] = [];
-      const gone: string[] = [];
-      for (const { text } of snippets) {
-        const a = ts.parse(text);
-        if (a.errors.length || hasError(a.root) || wrongTexts.has(text)) continue;
-        compared++;
-        const d = diffTrees(a, ub.parse(text));
-        if (d && !quirkOf(text)) unexplained.push(`${JSON.stringify(text)}: ${d}`);
-        if (!d && quirkOf(text)) gone.push(text);
-      }
-      assert.deepEqual(unexplained, []);
-      assert.deepEqual(gone, []);
-      assert.ok(compared > 500, `${compared} snippets compared`);
-      // Every listed text is one of the snippets.
-      assert.deepEqual(Object.keys(QUIRKS).filter((k) => !snippets.some((s) => quirkOf(s.text) === k)), []);
-    });
-
-    it('give sound trees, also where they are not bash', () => {
-      const bad: string[] = [];
-      for (const { text } of snippets) {
-        const b = ub.parse(text);
-        const broken = invariants(b);
-        if (broken.length) bad.push(`${JSON.stringify(text)}: ${broken[0]}`);
-        if (b.root.text !== text.slice(b.root.startIndex)) bad.push(`${JSON.stringify(text)}: the text`);
-      }
-      assert.deepEqual(bad, []);
-    });
-  });
-
-  it('reports the agreement: top-level statements that are the same', () => {
-    let identical = 0;
-    let total = 0;
-    let whole = 0;
-    let inputs = 0;
-    for (const { text } of [...files, ...snippets]) {
-      const a = ts.parse(text);
+  it('the snippets of the tests give sound trees, also where they are not bash', () => {
+    const bad: string[] = [];
+    for (const { text } of snippets) {
       const b = ub.parse(text);
-      const t = topLevel(a, b);
-      identical += t.identical;
-      total += t.total;
-      inputs++;
-      if (!diffTrees(a, b)) whole++;
+      const broken = invariants(b);
+      if (broken.length) bad.push(`${JSON.stringify(text)}: ${broken[0]}`);
+      if (b.root.text !== text.slice(b.root.startIndex)) bad.push(`${JSON.stringify(text)}: the text`);
     }
-    console.log(`      statements identical: ${identical} of ${total} (${((100 * identical) / total).toFixed(1)}%); whole inputs identical: ${whole} of ${inputs}`);
-    assert.ok(identical / total > 0.85);
+    assert.deepEqual(bad, []);
+    assert.ok(snippets.length > 500, `${snippets.length} snippets`);
   });
 
-  describe('where tree-sitter is wrong', () => {
+  describe('inputs tree-sitter read wrongly', () => {
     for (const w of WRONG) {
       it(`${w.name}`, () => {
-        const a = ts.parse(w.text);
         const b = ub.parse(w.text);
-        // tree-sitter's tree is not the one unbash gives (and this is why: w.why)
-        assert.ok(w.why);
-        assert.notEqual(outline(a.root), outline(b.root));
         assert.equal(outline(b.root), w.expected);
         assert.deepEqual(invariants(b), []);
       });
@@ -268,7 +154,7 @@ describe('unbash adapter: the oracle', () => {
   });
 });
 
-// What the adapter makes of each construct, apart from tree-sitter.
+// What the adapter makes of each construct.
 const tree = (text: string) => ub.parse(text);
 const first = (text: string): SyntaxNode => tree(text).root.namedChildren.find((c) => c.type !== 'comment')!;
 /** The tokens (keywords and operators) that are direct children of the node, as `text@start`. */
@@ -971,8 +857,7 @@ describe('unbash adapter: speed', () => {
       return min;
     };
     const unbash = best(() => ub.parse(text));
-    const treeSitter = best(() => ts.parse(text));
-    console.log(`      bash_completion (${text.split('\n').length} lines): unbash ${unbash.toFixed(1)} ms; tree-sitter, parse + convert ${treeSitter.toFixed(1)} ms`);
+    console.log(`      bash_completion (${text.split('\n').length} lines): unbash ${unbash.toFixed(1)} ms`);
     const result = ub.parse(text);
     assert.ok(result.root.children.length > 100);
     assert.deepEqual(invariants(result), []);
@@ -1025,9 +910,11 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
     assert.equal(errorsOf('for x in a; { :'), 'missing@15-15');
     assert.equal(tree('while a; { b; }').root.namedChildren[0].incomplete, true);
   });
-  it('[7]=z in an array is the index, the way tree-sitter reads it', () => {
+  it('[7]=z in an array is the index (a concatenation of four pieces, as the model has it)', () => {
     assert.equal(o('a+=([7]=z)'), '(program (variable_assignment (variable_name @name "a") "+=" (array @value "(" (concatenation (word "[") (number "7") (word "]") (word "=z")) ")")))');
     assert.equal(o('a=([k]+=v)').includes('(word "k")'), true);
+    // A `]` not followed by `=` (or by `+=`) does not make an index: the element is a plain word.
+    assert.equal(o('a=([]x)'), '(program (variable_assignment (variable_name @name "a") "=" (array @value "(" (word "[]x") ")")))');
   });
   it('a list of braces next to a range is a brace expression too', () => {
     const w = first('echo {1..3}{,} x{,}').namedChildren[1];

@@ -4,7 +4,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## Working tree
 
-- `test/fixtures/sample.sh` is a curated tour of every feature, in sections headed `# --- Title ---`; it is also the web page's shell sample. Keep every line explained correctly (`npx tsx test/dump.ts test/fixtures/sample.sh en`) and every example kind covered. A pipeline of 2+ stages before a line with `&&`/`||` makes tree-sitter-bash swallow the lines between (tree-sitter/tree-sitter-bash#347), unless a line ending in `;` or a compound statement comes between; check the dump after edits.
+- `test/fixtures/sample.sh` is a curated tour of every feature, in sections headed `# --- Title ---`; it is also the web page's shell sample. Keep every line explained correctly (`npx tsx test/dump.ts test/fixtures/sample.sh en`) and every example kind covered. Check the dump after edits.
 - `test/fixtures/playground.sh` (gitignored, created from `sample.sh` by the F5 pre-launch task when missing) and `test/fixtures/hosts/*` are the maintainer's playground for trying explanations in VS Code; edits there are theirs.
 - Japanese strings in `src/`, and README.ja.md, follow [docs/japanese-style.md](docs/japanese-style.md); a test checks them.
 
@@ -17,7 +17,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## The parser
 
-- Every product parses with the unbash adapter (`src/syntax/adapters/unbash.ts`); the tree-sitter adapter, `grammar/` and `patches/` stay only for the oracle and parity tests until they are removed (docs/design/syntax-tree.md, step 6). Tests that explain scripts build the parser with `createUnbashParser()`; only the tree-sitter tests and the two-adapter tricky tests build the other.
+- Every product parses with the unbash adapter (`src/syntax/adapters/unbash.ts`), and only that file may import unbash (test/syntax-boundary.test.ts); everything else reads the model of `src/syntax/tree.ts`. Tests that explain scripts build the parser with `createUnbashParser()`. tree-sitter was removed (docs/design/syntax-tree.md, step 6).
 - No bundle may load or contain wasm; test/offline.test.ts checks it.
 - unbash reads `time cmd` as a `time_statement`, `select` as a `select_statement`, `coproc` as a `coproc_statement`, and `(( ))` alone as an `arithmetic_command`. It accepts what bash rejects only at run time (`${x@Z}`, `${#a-b}`, `${(f)var}`: bad substitution), so the analyzer says so itself (`${(f)var}` only when the shell is not zsh; with zsh, the dialect check marks the line as not parsed). It also accepts a bare `echo (`, which bash rejects (a limit, listed in README Limitations).
 - A script with CRLF line ends is read with each CR before a LF masked as a space (same length); `SyntaxTree.carriageReturns` lists them and `documentIssues` warns once (`crlf`).
