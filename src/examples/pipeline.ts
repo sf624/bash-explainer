@@ -30,7 +30,7 @@ const GREP = {
   },
 };
 
-function grepRegexes(words: (string | undefined)[]): { res: JsRegex[]; p: ReturnType<typeof parseOptions> } {
+function grepRegexes(words: (string | undefined)[], relax = false): { res: JsRegex[]; p: ReturnType<typeof parseOptions> } {
   const p = parseOptions(words, GREP);
   const has = (c: string) => p.opts.some(([n]) => n === c);
   if (has('z') || has('H')) throw new Unsupported('grep option');
@@ -42,9 +42,11 @@ function grepRegexes(words: (string | undefined)[]): { res: JsRegex[]; p: Return
   }
   const flavor = has('P') ? 'pcre' : has('E') ? 'ere' : 'bre';
   const res = patterns.flatMap((pat) => pat.split('\n')).map((pat) => {
-    const js = has('F') ? literalRegex(pat, has('i')) : toJsRegex(pat, flavor, { ignoreCase: has('i') });
+    // `relax` leaves out what -i, -w and -x change, to find lines that show their effect.
+    const ic = has('i') && !relax;
+    const js = has('F') ? literalRegex(pat, ic) : toJsRegex(pat, flavor, { ignoreCase: ic });
     if (!js) throw new Unsupported('regex');
-    return grepWrap(js, has('x'), has('w'));
+    return relax ? js : grepWrap(js, has('x'), has('w'));
   });
   return { res, p };
 }
@@ -72,15 +74,48 @@ export function runGrep(words: (string | undefined)[], input: string[]): string[
   return has('c') ? [String(count)] : out;
 }
 
-function grepSample(words: (string | undefined)[]): string[] | undefined {
+const PREFIXES = ['disk ', 'net ', 'db ', 'cache '];
+const SUFFIXES = [' failed', ' timeout', ' retry', ' again'];
+
+/** Whether any of the regexes matches the line. */
+function matchesAny(res: JsRegex[], line: string): boolean {
+  return res.some((r) => new RegExp(r.source, r.flags).test(line));
+}
+
+/**
+ * Sample lines for grep: matching and non-matching ones, a line that shows what -i, -w or -x
+ * changes, and `more` extra matching lines (for the limits and counts further down a pipeline).
+ */
+function grepSample(words: (string | undefined)[], more = 0): string[] | undefined {
   const { res, p } = grepRegexes(words);
+  const inverted = p.opts.some(([n]) => n === 'v');
   const ex = regexExamples(res[0], 3);
   if (!ex) return undefined;
   const yes = ex.matching.filter((x) => !/^abc |\sxyz$/.test(x)).concat(ex.matching.filter((x) => /^abc |\sxyz$/.test(x)));
   const no = ex.nonMatching.length ? ex.nonMatching : ['other line'];
   const lines = [no[0], yes[0], yes[1] ?? yes[0], no[1] ?? no[0], yes[2] ?? yes[0]];
-  void p;
-  return [...new Set(lines)];
+  // A line the plain pattern and the real one disagree about.
+  const plain = grepRegexes(words, true).res;
+  const base = yes[0];
+  const swapped = base.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  const contrast = [swapped, 'x' + base, base + 'x', `abc ${base} xyz`, base + base.slice(-1)]
+    .find((c) => matchesAny(plain, c) !== matchesAny(res, c));
+  if (contrast !== undefined) lines.splice(3, 0, contrast);
+  // Extra lines grep selects (for -v, those that do not match), in a fixed order; case variants last.
+  const extras: string[] = [];
+  const seed = inverted ? no[0] : base;
+  for (const b of [seed, seed.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))]) {
+    for (const pre of PREFIXES) extras.push(pre + b);
+    for (const suf of SUFFIXES) extras.push(b + suf);
+    for (const pre of PREFIXES) for (const suf of SUFFIXES) extras.push(pre + b + suf);
+  }
+  const out = [...new Set(lines)];
+  let added = 0;
+  for (const e of extras) {
+    if (added >= more) break;
+    if (!out.includes(e) && matchesAny(res, e) !== inverted) { out.push(e); added++; }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- other runners
@@ -226,11 +261,11 @@ function sourceOutput(stage: Stage): string[] | undefined {
 }
 
 /** Sample input for the first stage that reads input. */
-function sampleFor(stage: Stage): string[] | undefined {
+function sampleFor(stage: Stage, more = 0): string[] | undefined {
   const w = stage.words;
   switch (stage.cmd) {
     case 'grep': case 'egrep': case 'fgrep':
-      return grepSample(stage.cmd === 'egrep' ? ['-E', ...w] : stage.cmd === 'fgrep' ? ['-F', ...w] : w);
+      return grepSample(stage.cmd === 'egrep' ? ['-E', ...w] : stage.cmd === 'fgrep' ? ['-F', ...w] : w, more);
     case 'sed': {
       const a = sedArgs(w);
       return sedExample(a.script, { quiet: a.quiet, extended: a.extended })?.input;
@@ -244,7 +279,7 @@ function sampleFor(stage: Stage): string[] | undefined {
       return parsed ? perlExample(parsed.code, parsed.opts)?.input : undefined;
     }
   }
-  return sampleInput(stage.cmd, w) ?? ['banana', 'apple', 'cherry', 'apple'];
+  return sampleInput(stage.cmd, w, more) ?? ['banana', 'apple', 'cherry', 'apple'];
 }
 
 /** Whether the first stage names a file to read (grep PATTERN FILE, sort FILE, cat FILE…). */
@@ -265,6 +300,23 @@ export function readsFileOperand(stage: Stage): boolean {
     case 'tr': case 'echo': case 'printf': case 'seq': case 'xargs': return false;
     default: return operands.length > 0;
   }
+}
+
+/** The most lines added to a sample to make the stages change the data. */
+const MAX_MORE = 24;
+
+/** How many stages hand on exactly what they got (cat and tee are meant to). */
+function inertStages(stages: Stage[], input: string[]): number {
+  let data = input;
+  let n = 0;
+  for (const stage of stages) {
+    const run = runner(stage);
+    if (!run) return 0;
+    const out = run(data);
+    if (stage.cmd !== 'cat' && stage.cmd !== 'tee' && out.length === data.length && out.every((l, i) => l === data[i])) n++;
+    data = out;
+  }
+  return n;
 }
 
 export interface PipelineStep {
@@ -297,17 +349,33 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
     } else {
       // The data comes from a file: invent it for the first stage that processes it.
       const consumer = firstIsCatFile ? stages[1] : first;
-      input = given ?? sampleFor(consumer);
+      const wantsDuplicates = stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && s.words.some((x) => /^-[a-zA-Z]*u/.test(x ?? ''))));
+      const build = (more: number): string[] | undefined => {
+        let lines = given ?? sampleFor(consumer, more);
+        // Duplicates make uniq, sort -u and counting visible further down.
+        if (lines && !given && wantsDuplicates) {
+          const keep = consumer.cmd.endsWith('grep') ? runGrep(consumer.words, lines) : lines;
+          if (keep.length) lines = [...lines, keep[0], keep[keep.length - 1], keep[0]];
+        }
+        return lines;
+      };
+      input = build(0);
       if (!input) return undefined;
-      // Duplicates make uniq, sort -u and counting visible further down.
-      if (!given && stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && s.words.some((x) => /^-[a-zA-Z]*u/.test(x ?? ''))))) {
-        const keep = consumer.cmd.endsWith('grep') ? runGrep(consumer.words, input) : input;
-        if (keep.length) input = [...input, keep[0], keep[keep.length - 1], keep[0]];
+      if (firstIsCatFile) rest = stages.slice(1);
+      // A stage that leaves its data as it is (head -n 3 of 2 lines) teaches nothing: add lines
+      // to the sample until every stage changes something, if a few more lines do it.
+      if (!given) {
+        let best = inertStages(rest, input);
+        for (let more = 1; best > 0 && more <= MAX_MORE; more++) {
+          const grown = build(more)!;
+          const score = inertStages(rest, grown);
+          if (score < best) {
+            best = score;
+            input = grown;
+          }
+        }
       }
-      if (firstIsCatFile) {
-        steps.push({ stage: first, output: input });
-        rest = stages.slice(1);
-      }
+      if (firstIsCatFile) steps.push({ stage: first, output: input });
     }
     let data = src ?? input!;
     for (const [i, stage] of rest.entries()) {

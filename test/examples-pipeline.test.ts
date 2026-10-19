@@ -20,6 +20,9 @@ describe('pipeline examples agree with bash', () => {
     [['grep', '-o', '[0-9]\\+'], ['sort', '-n'], ['uniq']],
     [['seq', '3'], ['rev'], ['wc', '-c']],
     [['perl', '-ne', 'print if /e/'], ['sort', '-r']],
+    [['grep', '-i', 'error'], ['sort'], ['uniq', '-c'], ['sort', '-rn'], ['head', '-n', '3']],
+    [['grep', '-v', 'debug'], ['tail', '-n', '2']], [['grep', '-w', 'cat'], ['sort'], ['uniq', '-c'], ['sort', '-rn'], ['head']],
+    [['grep', '-x', 'ok'], ['uniq', '-c'], ['tail', '-n', '1']], [['grep', '-m', '2', 'a'], ['sort', '-r']],
     [['grep', '-c', 'a'], ['cat']], [['grep', '-n', '-m', '2', 'a'], ['cat']], [['grep', '-x', '-i', 'APPLE'], ['cat']], [['grep', '-w', '-e', 'an', '-e', 'ch'], ['cat']],
     [['grep', '-F', 'a.'], ['cat']], [['grep', '-P', '\\d+'], ['cat']], [['grep', '-ov', 'zzz'], ['cat']], [['grep', '-q', 'a'], ['cat']],
     [['grep', '-E', 'a|e'], ['uniq']],
@@ -40,6 +43,35 @@ describe('pipeline examples agree with bash', () => {
       assert.deepStrictEqual(ex.steps[ex.steps.length - 1].output, lines(real.stdout.toString()));
     });
   }
+  it('gives a stage that limits lines more lines than it keeps, and shows what -i, -w and -x change', () => {
+    const run = (text: string) => {
+      const stages: Stage[] = text.split(' | ').map((t) => {
+        const [cmd, ...w] = t.split(' ');
+        return { cmd, words: w, text: t };
+      });
+      return pipelineExample(stages, false)!;
+    };
+    for (const text of [
+      'grep -i error | sort | uniq -c | sort -rn | head -n 3', 'grep -v debug | tail -n 2', 'grep -w cat | sort | uniq -c | sort -rn | head',
+      'grep -m 2 a | sort -r', 'cut -d, -f1 | sort | uniq -c | sort -rn | head', 'sort -rn | head -n 5',
+    ]) {
+      const ex = run(text);
+      let before = ex.input!;
+      for (const step of ex.steps) {
+        assert.notDeepStrictEqual(step.output, before, `${text}: ${step.stage.text} changes nothing`);
+        before = step.output;
+      }
+    }
+    // -i: a line that matches only because of -i
+    assert.ok(run('grep -i error | sort').input!.includes('ERROR'));
+    // A stage nothing can change keeps the first sample.
+    const ex = run('grep a | sed s/zzz/y/');
+    assert.deepStrictEqual(ex.steps[0].output, ex.steps[1].output);
+    // The file's lines are the same ones the first stage prints.
+    const file = pipelineExample([{ cmd: 'cat', words: ['f'], text: 'cat f' }, { cmd: 'head', words: ['-n', '2'], text: 'head -n 2' }], false)!;
+    assert.deepStrictEqual(file.steps[0].output, file.input);
+    assert.ok(file.input!.length > 2);
+  });
   it('shows the commands xargs would run', () => {
     const ex = pipelineExample([{ cmd: 'grep', words: ['e'], text: 'grep e' }, { cmd: 'xargs', words: ['-n', '1', 'rm'], text: 'xargs -n 1 rm' }], false)!;
     const real = spawnSync('bash', ['-c', "grep e | xargs -n 1 echo rm"], { input: ex.input!.join('\n') + '\n' });
