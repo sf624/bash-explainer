@@ -700,7 +700,10 @@ function tokensAt(script: string, line: number, lang: 'ja' | 'en' = 'en'): Token
   return all(ex.items);
 }
 const findAt = (script: string, line: number, label: string, lang: 'ja' | 'en' = 'en') => {
-  const t = tokensAt(script, line, lang).filter((x) => x.label === label).pop();
+  const toks = tokensAt(script, line, lang);
+  // A command is labelled with its name and spans the whole command: find it by the text of its range.
+  const text = (x: Token) => (x.span.start.line === x.span.end.line ? script.split('\n')[x.span.start.line].slice(x.span.start.character, x.span.end.character) : undefined);
+  const t = toks.filter((x) => text(x) === label).pop() ?? toks.filter((x) => x.label === label).pop();
   assert.ok(t, `no token ${label} in ${script}`);
   return t;
 };

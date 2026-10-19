@@ -873,17 +873,17 @@ describe('unbash adapter: what the explanations make of its trees', () => {
     // (tree-sitter reads the delimiter of `cat <<EOF; …` as `EOF;`, so this is for the unbash adapter.)
     const src = 'cat <<EOF; rm -rf $dir\nhello\nEOF\necho after';
     const e = new Analyzer('en').explainLine(tree(src), 0);
-    assert.deepEqual(e.items.map((i) => i.label), ['cat <<EOF; rm -rf $dir …', ';', 'rm -rf $dir']);
-    assert.match(flat(e.items).find((t) => t.label === 'rm -rf $dir')!.explanation, /Remove files/);
+    assert.deepEqual(e.items.map((i) => i.label), ['cat <<EOF; rm -rf $dir …', ';', 'rm']);
+    assert.match(flat(e.items).find((t) => t.label === 'rm' && t.kind === 'command')!.explanation, /Remove files/);
     assert.ok(e.notes.some((n) => /\$dir` is not quoted/.test(n)), e.notes.join('|'));
     // Its body lines are the here-document's; the line after is a statement of its own.
     assert.match(new Analyzer('en').explainLine(tree(src), 1).notes[0], /part of the here-document/);
-    assert.equal(new Analyzer('en').explainLine(tree(src), 3).items[0].label, 'echo after');
+    assert.equal(new Analyzer('en').explainLine(tree(src), 3).items[0].label, 'echo');
   });
   it('explains the later stages of a heredoc line, and the redirections beside it', () => {
     const e = new Analyzer('en').explainLine(tree('cat <<EOF | tr a-z A-Z && echo after\nhi\nEOF'), 0);
     assert.equal(e.items[0].children.length, 3);
-    assert.ok(flat(e.items).some((t) => t.label === 'tr a-z A-Z'));
+    assert.ok(flat(e.items).some((t) => t.label === 'tr'));
     const r = new Analyzer('en').explainLine(tree('cat <<EOF > out.txt\nhi\nEOF'), 0);
     assert.deepEqual(r.items[0].children.map((c) => c.label), ['cat', '<<EOF', '> out.txt']);
   });
@@ -894,7 +894,7 @@ describe('unbash adapter: what the explanations make of its trees', () => {
   });
   it('explains a redirection after the last command, and ! over a pipeline, as tree-sitter does now', () => {
     const e = new Analyzer('en').explainLine(tree('echo A && echo B > f'), 0);
-    assert.deepEqual(e.items[0].children.map((c) => c.label), ['echo A', '&&', 'echo B > f']);
+    assert.deepEqual(e.items[0].children.map((c) => c.label), ['echo', '&&', 'echo B > f']);
     const n = new Analyzer('en').explainLine(tree('! true | false'), 0);
     assert.match(n.items[0].explanation, /whole pipeline/);
     assert.equal(new Analyzer('en').explainLine(tree('a | time b'), 0).items[0].children[2].kind, 'command');

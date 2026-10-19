@@ -26,7 +26,8 @@ describe('documents without VS Code', () => {
 
   it('explains a line of a shell script', () => {
     const ex = explainDocumentLine(en, script('#!/bin/bash\ngrep -rn TODO src'), 1, 'en', {}, {});
-    assert.deepStrictEqual(ex.items.map((i) => i.label), ['grep -rn TODO src']);
+    assert.deepStrictEqual(ex.items.map((i) => i.label), ['grep']);
+    assert.deepStrictEqual(ex.items[0].span, { start: { line: 1, character: 0 }, end: { line: 1, character: 17 } });
   });
 
   it('explains a line of a host file at its own columns', () => {

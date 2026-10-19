@@ -55,7 +55,7 @@ describe('copy as Markdown', () => {
   it('writes the tree and examples without HTML', () => {
     const md = toPlainMarkdown(explain('sort -u names.txt'), 'sort -u names.txt', 'a.sh:3');
     assert.match(md, /^\*\*a\.sh:3\*\*\n\n```bash\nsort -u names\.txt\n```/);
-    assert.match(md, /\n- `sort -u names\.txt` — Sort lines/);
+    assert.match(md, /\n- `sort` — Sort lines/);
     assert.match(md, /\n  - `-u` — /);
     assert.ok(!/<span|<code/.test(md));
   });

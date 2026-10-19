@@ -56,7 +56,7 @@ describe('custom commands', () => {
   it('explains a command described in the setting', () => {
     const ex = explain('deploy -n -e prod web', { customCommands });
     const toks = all(ex.items).map((t) => `${t.label}: ${t.explanation}`);
-    assert.match(toks[0], /^deploy -n -e prod web: Deploy to production \(from the customCommands setting\)/);
+    assert.match(toks[0], /^deploy: Deploy to production \(from the customCommands setting\)/);
     assert.ok(toks.includes('-n: only show what would happen'));
     assert.ok(toks.includes('-e: environment') && toks.includes('prod: Value for `-e`'), toks.join('\n'));
     assert.ok(toks.includes('web: service name'));

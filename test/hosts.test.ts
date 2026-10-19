@@ -37,8 +37,8 @@ describe('hostKind', () => {
 
 describe('Dockerfile', () => {
   it('explains RUN with its columns, across a comment in the continuation', () => {
-    assert.ok(labels('Dockerfile', 3).includes('apk add --no-cache curl jq@4'));
-    assert.ok(labels('Dockerfile', 5).includes('rm -rf /var/cache/apk/*@7'));
+    assert.ok(labels('Dockerfile', 3).includes('apk@4'));
+    assert.ok(labels('Dockerfile', 5).includes('rm@7'));
     assert.ok(!labels('Dockerfile', 5).some((l) => l.startsWith('&&@') === false && /error/.test(l)));
     assert.ok(!all(explain('Dockerfile', 5)!.items).some((t) => t.kind === 'error'));
   });
@@ -50,7 +50,7 @@ describe('Dockerfile', () => {
   it('explains the exec form as a command run without a shell', () => {
     const ex = explain('Dockerfile', 7)!;
     assert.match(ex.notes[0], /runs the command directly, without a shell/);
-    assert.deepStrictEqual(all(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo", "exec form is not a shell"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
+    assert.deepStrictEqual(all(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
     const multi = labels('Dockerfile', 17);
     assert.ok(multi.includes('"--config"@24') && multi.includes('"--name"@12') && multi.includes('"$HOME/app.conf"@36'), multi.join());
   });
@@ -60,7 +60,7 @@ describe('Dockerfile', () => {
     assert.ok(labels('Dockerfile', 12).includes('"pipefail"@26'));
     const script = explain('Dockerfile', 15)!;
     assert.strictEqual(script.context[0].label, 'Dockerfile CMD (a script passed to `sh -c` in exec form)');
-    assert.ok(labels('Dockerfile', 15).includes('tee /var/log/app.log@64'));
+    assert.ok(labels('Dockerfile', 15).includes('tee@64'));
   });
   it('warns about pipes in RUN until SHELL sets pipefail', () => {
     assert.match(explain('Dockerfile', 10)!.notes.join(), /If a command in the middle of the pipe fails/);
@@ -81,9 +81,9 @@ describe('Makefile', () => {
       '`$@` is make\'s automatic variable (the target name), expanded by make before the shell runs.',
       '`$^` is make\'s automatic variable (all prerequisites), expanded by make before the shell runs.',
     ]);
-    assert.ok(labels('Makefile', 7).includes('$(CC) -o $@ $^@1'));
+    assert.ok(labels('Makefile', 7).includes('$(CC)@1'));
     assert.ok(labels('Makefile', 7).includes('$$(date +%F)@37'), labels('Makefile', 7).join());
-    assert.ok(labels('Makefile', 6).includes('mkdir -p $(dir $@)@2'), 'the @ prefix is not part of the command');
+    assert.ok(labels('Makefile', 6).includes('mkdir@2'), 'the @ prefix is not part of the command');
   });
   it('checks recipes for /bin/sh', () => {
     assert.match(explain('Makefile', 9)!.notes.join(), /`\[\[ \]\]` is not POSIX sh/);
@@ -94,7 +94,7 @@ describe('Makefile', () => {
 describe('YAML', () => {
   it('explains run: blocks, GitHub expressions and the shell of each step', () => {
     assert.match(explain('ci.yml', 12)!.notes[0], /`\$\{\{ matrix\.node \}\}` is the GitHub Actions expression `matrix\.node`: the matrix value `node`/);
-    assert.ok(labels('ci.yml', 10).includes('set -euo pipefail@10'));
+    assert.ok(labels('ci.yml', 10).includes('set@10'));
     assert.ok(!explain('ci.yml', 10)!.notes.some((n) => /POSIX/.test(n)), 'run: defaults to bash');
     assert.match(explain('ci.yml', 15)!.notes.join(), /not POSIX sh/);
     assert.ok(labels('ci.yml', 15)[0].endsWith('@14'), 'inside the quotes');
@@ -138,12 +138,12 @@ describe('code that is not shell', () => {
 
 describe('package.json and Markdown', () => {
   it('reads npm scripts, undoing JSON escapes', () => {
-    assert.ok(labels('package.json', 4).includes('cp -r \\"static/\\" dist/@41'), labels('package.json', 4).join());
+    assert.ok(labels('package.json', 4).includes('cp@41'), labels('package.json', 4).join());
     assert.match(explain('package.json', 4)!.context[0].label, /npm script `build`/);
     assert.strictEqual(explain('package.json', 2), undefined);
   });
   it('reads shell code blocks, and only the commands of console blocks', () => {
-    assert.ok(labels('README.md', 8).includes('grep -c error app.log@2'));
+    assert.ok(labels('README.md', 8).includes('grep@2'));
     assert.strictEqual(explain('README.md', 9)!.items.length, 0);
     assert.strictEqual(explain('README.md', 15), undefined);
   });
@@ -159,7 +159,7 @@ describe('other CI systems', () => {
     assert.strictEqual(hostKind('groovy', '/p/Jenkinsfile'), 'jenkinsfile');
     assert.strictEqual(hostKind('plaintext', 'deploy.jenkinsfile'), 'jenkinsfile');
     assert.deepStrictEqual(shellLines('Jenkinsfile'), [6, 7, 9, 10, 13, 16]);
-    assert.deepStrictEqual(labels('Jenkinsfile', 6).slice(0, 2), ['make -j"$(nproc)" build@12', '-j"$(nproc)"@17']);
+    assert.deepStrictEqual(labels('Jenkinsfile', 6).slice(0, 2), ['make@12', '-j"$(nproc)"@17']);
   });
 
   it('marks Groovy interpolation in double quotes, and undoes \\$', () => {
@@ -210,8 +210,8 @@ describe('Python', () => {
   it('explains a shell=True string as a /bin/sh script', () => {
     const ex = explain('deploy.py', 6)!;
     assert.strictEqual(ex.context[0].label, 'Python `sp.run` (a string the shell (/bin/sh) runs)');
-    assert.ok(labels('deploy.py', 6).includes('tar -czf backup.tgz data/@8'));
-    assert.ok(labels('deploy.py', 9).includes('ls *.log@11'), 'os.system');
+    assert.ok(labels('deploy.py', 6).includes('tar@8'));
+    assert.ok(labels('deploy.py', 9).includes('ls@11'), 'os.system');
   });
   it('explains a list as arguments run without a shell', () => {
     assert.match(explain('deploy.py', 7)!.notes[0], /run directly, without a shell/);
@@ -224,7 +224,7 @@ describe('Python', () => {
     assert.match(explain('deploy.py', 10)!.notes[0], /^⚠ Without shell=True the whole string is taken as one program name/);
   });
   it('joins adjacent literals across lines, and skips comments and other strings', () => {
-    assert.ok(labels('deploy.py', 12).includes('wc -l@10'));
+    assert.ok(labels('deploy.py', 12).includes('wc@10'));
     assert.ok(!all(explain('deploy.py', 12)!.items).some((t) => t.kind === 'error'));
     assert.strictEqual(explain('deploy.py', 17), undefined);
     assert.strictEqual(explain('deploy.py', 15), undefined);
@@ -286,7 +286,7 @@ describe('host files the other tests do not reach', () => {
   it('YAML: a script: list of commands', () => {
     const src = 'build:\n  script:\n    - make\n    - |\n      echo done\n';
     assert.match(text('.gitlab-ci.yml', src, 2), /YAML `script:`/);
-    assert.match(text('.gitlab-ci.yml', src, 4), /echo done: Print arguments/);
+    assert.match(text('.gitlab-ci.yml', src, 4), /echo: Print arguments/);
   });
   it('Azure Pipelines: template expressions', () => {
     const src = 'trigger: none\npool:\n  vmImage: ubuntu-latest\nsteps:\n  - bash: echo ${{ parameters.env }}\n';

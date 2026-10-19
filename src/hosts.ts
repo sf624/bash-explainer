@@ -1057,7 +1057,14 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   const token = (t: Token): Token => {
     const sp = span(t.span);
     let label = t.label;
-    if (sp.start.line === sp.end.line) {
+    const at = t.span.start;
+    const head = extracted.text.split('\n')[at.line].slice(at.character);
+    const one = t.span.start.line === t.span.end.line;
+    const spanLength = one ? t.span.end.character - at.character : Infinity;
+    if (head.startsWith(t.label) && !t.label.endsWith('…') && spanLength > t.label.length) {
+      // A command is labelled with its name, the start of its span: take the name from the original too.
+      label = original[sp.start.line].slice(sp.start.character, extracted.maps[at.line][at.character + t.label.length]);
+    } else if (one) {
       const text = original[sp.start.line]?.slice(sp.start.character, sp.end.character);
       if (text) label = text.length > 60 ? text.slice(0, 59) + '…' : text;
     }

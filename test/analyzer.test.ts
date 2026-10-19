@@ -29,6 +29,14 @@ function find(e: LineExplanation, label: string, kind?: Token['kind']): Token {
   return t;
 }
 
+/** The source text a token's span covers (its range, which stays the whole command when its label is the name). */
+function spanText(src: string, t: Token): string {
+  const lines = src.split('\n');
+  const { start, end } = t.span;
+  if (start.line === end.line) return lines[start.line].slice(start.character, end.character);
+  return [lines[start.line].slice(start.character), ...lines.slice(start.line + 1, end.line), lines[end.line].slice(0, end.character)].join('\n');
+}
+
 describe('commands and options', () => {
   it('splits combined short options and consumes option values', () => {
     const e = explain('set -euo pipefail');
@@ -51,7 +59,8 @@ describe('commands and options', () => {
 
   it('explains wrapped commands and subcommands', () => {
     const e = explain('sudo -u bob rm -rf /tmp/x');
-    assert.match(find(e, 'rm -rf /tmp/x').explanation, /Remove files/);
+    assert.match(find(e, 'rm').explanation, /Remove files/);
+    assert.strictEqual(spanText('sudo -u bob rm -rf /tmp/x', find(e, 'rm')), 'rm -rf /tmp/x');
     assert.match(find(e, '-r').explanation, /directories/);
     const g = explain('git commit -m "msg"');
     assert.match(g.summary, /^git commit: Record staged changes/);
@@ -60,7 +69,8 @@ describe('commands and options', () => {
 
   it('explains find -exec up to its terminator', () => {
     const e = explain("find . -name '*.log' -exec rm {} \\;");
-    assert.match(find(e, 'rm {}').explanation, /Command to run/);
+    assert.match(find(e, 'rm').explanation, /Command to run/);
+    assert.strictEqual(spanText("find . -name '*.log' -exec rm {} \\;", find(e, 'rm')), 'rm {}');
     assert.match(find(e, '\\;').explanation, /once per match/);
   });
 
@@ -104,10 +114,10 @@ describe('time keyword', () => {
     assert.match(t.explanation, /^Time `cat f \| sort -u \| uniq -c`: run it and report how long/);
     assert.deepStrictEqual(t.children.map((c) => c.label), ['time', '-p', 'time -p cat f | sort -u | uniq -c'].slice(0, 2).concat(t.children[2].label));
     const pipe = t.children[2];
-    assert.deepStrictEqual(pipe.children.map((c) => c.label), ['cat f', '|', 'sort -u', '|', 'uniq -c']);
+    assert.deepStrictEqual(pipe.children.map((c) => c.label), ['cat', '|', 'sort', '|', 'uniq']);
     assert.match(e.summary, /^time /);
     // The commands after `time` are commands like the others.
-    assert.match(find(explain('time cat f | sort -u'), 'sort -u').explanation, /Sort/);
+    assert.match(find(explain('time cat f | sort -u'), 'sort').explanation, /Sort/);
     assert.ok(find(explain('time a >f | b'), '>f'));
   });
   it('explains each line of a timed pipeline that spans lines', () => {
@@ -121,7 +131,8 @@ describe('time keyword', () => {
   });
   it('explains the timed command as it would be on its own', () => {
     const t = explain('time ls -a').items[0];
-    assert.deepStrictEqual(t.children.map((c) => [c.kind, c.label]), [['keyword', 'time'], ['command', 'ls -a']]);
+    assert.deepStrictEqual(t.children.map((c) => [c.kind, c.label]), [['keyword', 'time'], ['command', 'ls']]);
+    assert.strictEqual(spanText('time ls -a', t.children[1]), 'ls -a');
     assert.match(t.children[1].explanation, /List directory contents/);
     assert.deepStrictEqual(t.children[1].children.map((c) => c.label), ['-a']);
   });
@@ -151,7 +162,8 @@ describe('time keyword', () => {
     for (const src of ['a | time b', 'a |& time b']) {
       const e = explain(src);
       assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'keyword'), [], src);
-      assert.match(find(e, src.slice(src.indexOf('time'))).explanation, /Measure the run time and resource use/, src);
+      assert.match(find(e, 'time').explanation, /Measure the run time and resource use/, src);
+      assert.strictEqual(spanText(src, find(e, 'time')), 'time b', src);
     }
     // At the start of a pipeline, and after `&&`, it is the keyword.
     assert.strictEqual(find(explain('a && time b'), 'time', 'keyword').kind, 'keyword');
@@ -165,19 +177,20 @@ describe('statements as bash reads them', () => {
     const e = explain('echo A && echo B > f');
     assert.strictEqual(e.items.length, 1);
     assert.match(e.items[0].explanation, /^Command list/);
-    assert.deepStrictEqual(labels(e.items[0]), ['echo A', '&&', 'echo B > f']);
+    assert.deepStrictEqual(labels(e.items[0]), ['echo', '&&', 'echo B > f']);
+    assert.strictEqual(spanText('echo A && echo B > f', e.items[0].children[0]), 'echo A');
     // The command and the redirection are siblings under the redirect token.
-    assert.deepStrictEqual(labels(e.items[0].children[2]), ['echo B', '> f']);
+    assert.deepStrictEqual(labels(e.items[0].children[2]), ['echo', '> f']);
     assert.deepStrictEqual(labels(e.items[0].children[2].children[0]), ['B']);
     assert.deepStrictEqual(labels(e.items[0].children[0]), ['A']);
     assert.ok(!all(e.items).some((t) => /as a whole/.test(t.explanation)));
     const p = explain('echo a | cat 2>/dev/null');
     assert.match(p.items[0].explanation, /^Pipeline/);
-    assert.deepStrictEqual(labels(p.items[0]), ['echo a', '|', 'cat 2>/dev/null']);
+    assert.deepStrictEqual(labels(p.items[0]), ['echo', '|', 'cat 2>/dev/null']);
     assert.deepStrictEqual(labels(p.items[0].children[2]), ['cat', '2>/dev/null']);
     // A compound command takes its own, also last in a list.
     const g = explain('echo a && { echo b; } > f');
-    assert.deepStrictEqual(labels(g.items[0]), ['echo a', '&&', '{ echo b; } > f']);
+    assert.deepStrictEqual(labels(g.items[0]), ['echo', '&&', '{ echo b; } > f']);
     assert.match(g.items[0].children[2].explanation, /^Redirection applied to `\{ echo b; \}` as a whole/);
     assert.match(explain('{ echo a; } > f').items[0].explanation, /as a whole/);
     // The pitfall of sudo looks at the command that is redirected.
@@ -202,9 +215,9 @@ describe('statements as bash reads them', () => {
     const e = explain('cat <<EOF | tr a-z A-Z && echo after\nhello\nEOF');
     const list = e.items[0];
     assert.match(list.explanation, /^Command list/);
-    assert.deepStrictEqual(labels(list).filter((l) => l !== '&&'), ['cat <<EOF | tr a-z A-Z && echo after …', 'echo after']);
-    assert.ok(find(e, 'tr a-z A-Z'));
-    assert.match(find(e, 'tr a-z A-Z').explanation, /Translate or delete/);
+    assert.deepStrictEqual(labels(list).filter((l) => l !== '&&'), ['cat <<EOF | tr a-z A-Z && echo after …', 'echo']);
+    assert.ok(find(e, 'tr'));
+    assert.match(find(e, 'tr').explanation, /Translate or delete/);
     assert.ok(e.examples.length > 0);
     assert.match(find(e, '<<EOF', 'redirect').explanation, /^Here-document/);
     // The lines of the body are still the here-document's.
@@ -244,7 +257,7 @@ describe('statements as bash reads them', () => {
     assert.deepStrictEqual(all(c.items).map((t) => [t.kind, t.label]), [['pattern', 'c']]);
     assert.match(c.context.map((x) => x.label).join(), /case branch/);
     // The body after `)` on the same line is still explained, and the first line has the whole branch.
-    assert.deepStrictEqual(explain(src, 5).items.map((t) => t.label), ['e', 'echo d', ';;']);
+    assert.deepStrictEqual(explain(src, 5).items.map((t) => t.label), ['e', 'echo', ';;']);
     assert.match(explain(src, 1).items[0].explanation, /matches `a \| b \| c`/);
   });
   it('explains array elements with an index of their own', () => {
@@ -260,14 +273,15 @@ describe('statements as bash reads them', () => {
   it('ends the delimiter of a here-document at the `;`, and goes on with the next command', () => {
     // bash: the delimiter is `EOF`, and `echo after` runs once the body has been read.
     const e = explain('cat <<EOF; echo after\nbody\nEOF');
-    assert.deepStrictEqual(e.items.map((t) => t.label), ['cat <<EOF; echo after …', ';', 'echo after']);
+    assert.deepStrictEqual(e.items.map((t) => t.label), ['cat <<EOF; echo after …', ';', 'echo']);
     assert.match(find(e, '<<EOF').explanation, /up to a line containing only `EOF`/);
   });
   it('adds " …" to a label only when the text goes on in a later line, not for blanks at its end', () => {
-    assert.deepStrictEqual(explain("tr -d ' '").items.map((t) => t.label), ["tr -d ' '"]);
+    assert.deepStrictEqual(explain("tr -d ' '").items.map((t) => t.label), ['tr']);
+    assert.strictEqual(spanText("tr -d ' '", explain("tr -d ' '").items[0]), "tr -d ' '");
     assert.ok(find(explain("tr -d ' '"), "' '"));
     assert.ok(find(explain('echo "PV " x'), '"PV "'));
-    assert.deepStrictEqual(explain('echo a  \\\nb').items.map((t) => t.label), ['echo a  \\ …']);
+    assert.deepStrictEqual(explain('echo a  \\\nb').items.map((t) => t.label), ['echo']);
   });
   it('reads the format of printf in $"…" like one in double quotes, with its example', () => {
     for (const q of ['"', '$"']) {
@@ -313,7 +327,7 @@ describe('statements as bash reads them', () => {
 describe('input that is not finished', () => {
   it('explains a pipeline with nothing after the pipe', () => {
     const e = explain('echo a |');
-    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['echo a', '|']);
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['echo', '|']);
   });
   it('reads a `[ ]` without its `]` word by word', () => {
     const e = explain('[ a = *"$a"*z');
@@ -325,21 +339,21 @@ describe('input that is not finished', () => {
     assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'redirect'), []);
     // bash: a syntax error near `200000`; `[range` is read as a command name.
     assert.strictEqual(e.items[0].kind, 'command');
-    assert.strictEqual(e.items[0].label, '[range(200000');
+    assert.strictEqual(e.items[0].label, '[range');
   });
   it('explains a construct without its closing keyword, with the parts it has', () => {
     const shape = (src: string, line = 0) => explain(src, line).items.map((t) => [t.kind, t.label, t.children.map((c) => c.label)]);
     assert.deepStrictEqual(shape('if true; then'), [['keyword', 'if true; then', ['if', 'true', 'then']]]);
     assert.deepStrictEqual(shape('select x in a; do'), [['keyword', 'select x in a; do', ['select', 'x', 'in', 'a', 'do']]]);
     assert.deepStrictEqual(shape('x=(1'), [['assignment', 'x=(1', ['(1']]]);
-    assert.deepStrictEqual(shape('echo $(foo'), [['builtin', 'echo $(foo', ['$(foo']]]);
+    assert.deepStrictEqual(shape('echo $(foo'), [['builtin', 'echo', ['$(foo']]]);
     // The other constructs are explained with the parts they have, too.
     assert.deepStrictEqual(shape('{ echo'), [['block', '{ echo', ['{', 'echo']]]);
     assert.deepStrictEqual(shape('case $x in'), [['keyword', 'case $x in', ['case', '$x', 'in']]]);
-    assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo "abc', ['"abc']]]);
+    assert.deepStrictEqual(shape('echo "abc'), [['builtin', 'echo', ['"abc']]]);
     const loop = 'for f in *.sh; do\n  echo $f';
     assert.deepStrictEqual(shape(loop), [['keyword', 'for f in *.sh; do …', ['for', 'f', 'in', '*.sh', 'do …']]]);
-    assert.deepStrictEqual(shape(loop, 1), [['builtin', 'echo $f', ['$f']]]);
+    assert.deepStrictEqual(shape(loop, 1), [['builtin', 'echo', ['$f']]]);
     assert.match(explain('if true; then').summary, /^if statement: runs the `then` branch/);
     assert.match(explain('{ echo').summary, /^Command group/);
   });
@@ -596,7 +610,7 @@ describe('pipelines and aliases', () => {
   });
   it('explains an alias defined in the script, with a pitfall without expand_aliases', () => {
     const e = explain('alias ll="ls -l"\nll /tmp', 1);
-    assert.match(find(e, 'll /tmp').explanation, /alias `ll` defined on line 1: replaced by `ls -l`/);
+    assert.match(find(e, 'll').explanation, /alias `ll` defined on line 1: replaced by `ls -l`/);
     assert.ok(e.notes.some((n) => /bash does not expand aliases in scripts/.test(n)));
     assert.ok(!explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2).notes.some((n) => /aliases/.test(n)));
     assert.ok(!explain('alias grep=ggrep\ngrep x f', 1).notes.some((n) => /aliases/.test(n)));
@@ -646,7 +660,7 @@ describe('pitfalls for other shells and settings', () => {
 describe('aliases of distributions', () => {
   it('explains ll as an alias, its arguments as ls ones, and warns that it depends on the system', () => {
     const e = explain('ll /tmp');
-    assert.match(find(e, 'll /tmp').explanation, /^Alias `ll`: list files in long format .*Ubuntu: `ls -alF`/);
+    assert.match(find(e, 'll').explanation, /^Alias `ll`: list files in long format .*Ubuntu: `ls -alF`/);
     assert.match(find(e, '/tmp').explanation, /file or directory/);
     assert.ok(e.notes.some((n) => /^⚠ System-dependent: `ll` is an alias Ubuntu, Fedora \/ RHEL, openSUSE, Git for Windows define for interactive shells/.test(n)));
   });
@@ -687,7 +701,10 @@ describe('a command with redirections', () => {
     assert.strictEqual(e.items.length, 1);
     assert.strictEqual(outer.kind, 'redirect');
     assert.match(outer.explanation, /^Redirection applied to `tr -d '\\r'`: its stdin \(fd 0\) and stdout \(fd 1\) are redirected\. The shell sets this up before the command starts/);
-    assert.deepStrictEqual(labels(outer), ["tr -d '\\r'", '< windows.txt', '> unix.txt']);
+    assert.deepStrictEqual(labels(outer), ['tr', '< windows.txt', '> unix.txt']);
+    // The label names the program; the range is still the whole command, without the redirections.
+    assert.strictEqual(spanText(src, outer.children[0]), "tr -d '\\r'");
+    assert.strictEqual(outer.label, src);
     const [cmd] = outer.children;
     assert.strictEqual(cmd.kind, 'command');
     assert.strictEqual(cmd.explanation, 'Translate or delete characters (stdin only)');
@@ -715,12 +732,13 @@ describe('a command with redirections', () => {
     const src = ">f echo x";
     const e = explain(src);
     assert.strictEqual(e.items[0].kind, 'redirect');
-    assert.deepStrictEqual(labels(e.items[0]), ['>f', 'echo x']);
+    assert.deepStrictEqual(labels(e.items[0]), ['>f', 'echo']);
+    assert.strictEqual(spanText(src, e.items[0].children[1]), 'echo x');
     const cmd = e.items[0].children[1];
     assert.strictEqual(cmd.kind, 'builtin');
     assert.strictEqual(spanText(src, cmd), 'echo x');
     const r = explain("<<<'1 2' read -r a b");
-    assert.deepStrictEqual(labels(r.items[0]), ["<<<'1 2'", 'read -r a b']);
+    assert.deepStrictEqual(labels(r.items[0]), ["<<<'1 2'", 'read']);
     assert.strictEqual(r.items[0].children[1].kind, 'builtin');
     assert.match(r.items[0].explanation, /^Redirection applied to `read -r a b`: its stdin \(fd 0\) is redirected/);
     // The example of `read` is the command's.
@@ -729,12 +747,15 @@ describe('a command with redirections', () => {
   it('keeps the assignments before the command in the command, and takes redirections on both sides', () => {
     const src = 'FOO=1 BAR=2 cat -n <in >out 2>&1';
     const e = explain(src);
-    assert.deepStrictEqual(labels(e.items[0]), ['FOO=1 BAR=2 cat -n', '<in', '>out', '2>&1']);
+    assert.deepStrictEqual(labels(e.items[0]), ['cat', '<in', '>out', '2>&1']);
+    assert.strictEqual(spanText(src, e.items[0].children[0]), 'FOO=1 BAR=2 cat -n');
+    // The assignments stay children of the command token.
+    assert.deepStrictEqual(labels(e.items[0].children[0]).slice(0, 2), ['FOO=1', 'BAR=2']);
     const cmd = e.items[0].children[0];
     assert.deepStrictEqual(labels(cmd), ['FOO=1', 'BAR=2', '-n']);
     assert.strictEqual(spanText(src, cmd), 'FOO=1 BAR=2 cat -n');
     const both = explain('<in cat -n >out');
-    assert.deepStrictEqual(labels(both.items[0]), ['<in', 'cat -n', '>out']);
+    assert.deepStrictEqual(labels(both.items[0]), ['<in', 'cat', '>out']);
     assert.strictEqual(both.items[0].children[1].kind, 'command');
     // The order matters for `2>&1`: the note is still given.
     assert.ok(e.notes.some((n) => /left to right/.test(n)));
@@ -744,7 +765,8 @@ describe('a command with redirections', () => {
     const e = explain('echo a > f b');
     assert.strictEqual(e.items[0].kind, 'builtin');
     assert.deepStrictEqual(labels(e.items[0]), ['a', '> f', 'b']);
-    assert.strictEqual(e.items[0].label, 'echo a > f b');
+    assert.strictEqual(e.items[0].label, 'echo');
+    assert.strictEqual(spanText('echo a > f b', e.items[0]), 'echo a > f b');
     // …also when there is another after the words.
     const f = explain('echo a > f b > g');
     assert.strictEqual(f.items[0].kind, 'builtin');
@@ -754,7 +776,7 @@ describe('a command with redirections', () => {
     assert.strictEqual(explain('export A=1 > f >g').items[0].children[0].kind, 'builtin');
     assert.strictEqual(explain('export A >f B').items[0].kind, 'builtin');
     // A here-string stays inside the declaration for the parser; it is still beside it.
-    assert.deepStrictEqual(labels(explain('export A <<< x').items[0]), ['export A', '<<< x']);
+    assert.deepStrictEqual(labels(explain('export A <<< x').items[0]), ['export', '<<< x']);
   });
   it('keeps the stage of a pipeline, and its pipeline example', () => {
     const e = explain('grep x f 2>/dev/null | sort');
@@ -762,7 +784,7 @@ describe('a command with redirections', () => {
     assert.deepStrictEqual(labels(e.items[0]), ['grep x f 2>/dev/null', '|', 'sort']);
     const [stage] = e.items[0].children;
     assert.strictEqual(stage.kind, 'redirect');
-    assert.deepStrictEqual(labels(stage), ['grep x f', '2>/dev/null']);
+    assert.deepStrictEqual(labels(stage), ['grep', '2>/dev/null']);
     assert.match(stage.explanation, /its stderr \(fd 2\) is redirected/);
     assert.strictEqual(e.examples.length, 1);
     assert.strictEqual(e.examples[0].kind, 'pipeline');

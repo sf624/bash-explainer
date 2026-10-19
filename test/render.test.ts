@@ -31,7 +31,7 @@ describe('hover markdown', () => {
 
   it('colours labels by kind', () => {
     const { md } = hover('ls -l');
-    assert.match(md, /<code><span style="color:var\(--vscode-charts-blue\);">ls&nbsp;-l<\/span><\/code> — List directory/);
+    assert.match(md, /<code><span style="color:var\(--vscode-charts-blue\);">ls<\/span><\/code> — List directory/);
     assert.match(md, /<code><span style="color:var\(--vscode-charts-orange\);">-l<\/span><\/code>/);
   });
 
