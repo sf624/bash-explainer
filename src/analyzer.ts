@@ -16,7 +16,7 @@ import { perlExample, perlOptions } from './examples/perlrun';
 import { pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
-import { Interactive, rerun, RerunSpec } from './examples/rerun';
+import { Interactive, jqStepSections, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
 import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
@@ -1833,7 +1833,8 @@ export class Analyzer {
           title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
           sections: [
             { label: this.s('入力（YAML）', 'Input (YAML)'), lines: input },
-            r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`), lines: output, empty: this.s('（出力なし）', '(no output)') },
+            ...(r.steps && i === 0 ? jqStepSections(r.steps, output, this.lang, (vs) => (json ? vs.map(toJson) : yqYamlOutput(vs, style)))
+              : [r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`), lines: output, empty: this.s('（出力なし）', '(no output)') }]),
           ],
         });
       });
@@ -1854,9 +1855,10 @@ export class Analyzer {
         title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
         sections: [
           { label: this.s('入力', 'Input'), lines: input },
-          r.error
-            ? { label: this.s('エラー', 'Error'), lines: [r.error] }
-            : { label: this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') },
+          ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.map(toJson))
+            : [r.error
+              ? { label: this.s('エラー', 'Error'), lines: [r.error] }
+              : { label: this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
         ],
         // Only the first example can be edited; the second shows the missing-value case.
         ...(spec && i === 0 && r.input !== null ? { interactive: this.interactive(spec, JSON.stringify(r.input, null, 2).split('\n'), this.s('入力（JSON）', 'Input (JSON)')) } : {}),

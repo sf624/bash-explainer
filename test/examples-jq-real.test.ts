@@ -126,6 +126,27 @@ describe('jq examples agree with jq', function () {
   }
 });
 
+(hasJq ? describe : describe.skip)('jq steps agree with jq', () => {
+  const filters: [string, string[]?][] = [
+    ['.items[] | select(.price > 10) | .name'], ['.users | map(.age) | add / length', ['-r']], ['.[] | select(.ok) | .name', ['-r']],
+    ['.items | map(.name) | sort | unique | length'], ['to_entries | map(.key) | join(",")'], ['.tags | length | . * 2'],
+    ['.[] | {name, n: (.tags | length)} | .n'], ['keys | .[] | ascii_upcase'], ['.data[2:5] | map(. * 2) | add'],
+  ];
+  for (const [filter, args = []] of filters) {
+    it(filter, () => {
+      const [r] = jqExample(filter, { raw: args.includes('-r') })!;
+      assert.ok(r.steps, 'has steps');
+      let values = [r.input];
+      for (const step of r.steps!) {
+        const real = values.map((v) => realJq(step.text, v));
+        assert.ok(real.every((x) => x !== 'error'));
+        values = step.values;
+        assert.deepStrictEqual(values.map(toJson), (real as string[][]).flat(), step.text);
+      }
+    });
+  }
+});
+
 describe('jq is available', () => {
   it('runs (otherwise the comparisons above are skipped)', function () {
     if (!hasJq) this.skip();

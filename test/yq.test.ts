@@ -103,7 +103,8 @@ const dir = process.env.BASH_EXPLAINER_YQ;
     "yq '.items[] | select(.enabled)' f.yml", "yq '.a | has(\"b\")' f.yml", "yq '.items | sort_by(.name) | .[0]' f.yml", "yq '.name | test(\"^web\")' f.yml",
     "yq '.users[] | select(.age > 30) | .name' f.yml", "yq '[.items[].name]' f.yml", "yq '.a | split(\"-\")' f.yml", "yq '.items | group_by(.kind)' f.yml",
     "yq -y '.spec | add' x.yml", "yq -y '.users | map(.name)' u.yml", "yq -r '.users[].name' u.yml", "yq -y 'del(.a)' f.yml", "yq -y '.config.timeout // 30' f.yml",
-    "yq '.users[] | .name' u.yml",
+    "yq '.users[] | .name' u.yml", "yq '.spec.containers[] | .image' deploy.yaml", "yq -y '.spec.containers[] | .image' deploy.yaml",
+    "yq '.users | map(.age) | add / length' u.yml", "yq -r '.items[] | select(.price > 10) | .name' f.yml", "yq -y '.items | map(.name) | sort' f.yml",
   ];
   for (const cmd of cmds) {
     it(cmd, () => {
@@ -114,8 +115,17 @@ const dir = process.env.BASH_EXPLAINER_YQ;
       const kislyuk = /explained as kislyuk/.test(ex.notes[0]);
       const ws = words(cmd).slice(1).filter((w) => !/\.ya?ml$/.test(w) && w !== '-i');
       const args = kislyuk && !ws.includes('-y') ? ['-c', ...ws] : ws;
-      const r = spawnSync(path.join(dir!, kislyuk ? 'yq-kislyuk' : `yq-${fs.readdirSync(dir!).filter((f) => /^yq-4\./.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop()!.slice(3)}`), args, { input: e.sections[0].lines.join('\n') + '\n' });
-      assert.strictEqual(e.sections[1].lines.join('\n'), r.stdout.toString().replace(/\n$/, ''));
+      const exe = path.join(dir!, kislyuk ? 'yq-kislyuk' : `yq-${fs.readdirSync(dir!).filter((f) => /^yq-4\./.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop()!.slice(3)}`);
+      const filter = ws.find((w) => /[.[]/.test(w))!;
+      const input = e.sections[0].lines.join('\n') + '\n';
+      // Every section after the input is what yq prints for the stages up to there.
+      const texts = e.sections.slice(1).map((sec: { label: string }) => /`(.*)`/.exec(sec.label)?.[1]);
+      e.sections.slice(1).forEach((sec: { lines: string[] }, i: number) => {
+        const expr = e.sections.length > 2 ? texts.slice(0, i + 1).join(' | ') : filter;
+        assert.ok(!expr.includes('…'), expr);
+        const r = spawnSync(exe, args.map((w) => (w === filter ? expr : w)), { input });
+        assert.strictEqual(sec.lines.join('\n'), r.stdout.toString().replace(/\n$/, ''), expr);
+      });
     });
   }
 });

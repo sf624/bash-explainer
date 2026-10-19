@@ -1,5 +1,7 @@
 import * as assert from 'assert';
-import { Json, jqExample, runJq } from '../src/examples/jq';
+import { Analyzer } from '../src/analyzer';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { Json, jqExample, jqSteps, runJq } from '../src/examples/jq';
 
 /** Expected outputs follow the jq 1.7 manual (examples-jq-real.test.ts also compares with jq when it is installed). */
 function run(filter: string, input: Json, vars?: Record<string, Json>): Json[] | string {
@@ -123,5 +125,32 @@ describe('jq example input', () => {
 
   it('respects -n and --arg', () => {
     assert.deepStrictEqual(ex('{name: $n}', { nullInput: true, vars: { n: 'bob' } })[0], { input: null, outputs: ['{"name":"bob"}'], values: [{ name: 'bob' }] });
+  });
+});
+
+describe('jq steps', () => {
+  it('keeps the values after each top-level pipe', () => {
+    const [r] = jqExample('.items[] | select(.price > 100) | .name')!;
+    assert.deepStrictEqual(r.steps!.map((s) => s.text), ['.items[]', 'select(.price > 100)', '.name']);
+    assert.deepStrictEqual(r.steps!.map((s) => s.values.length), [3, 2, 2]);
+    assert.deepStrictEqual(jqSteps('.a | (.b | .c) | [.[] | . + 1]', { a: { b: { c: [1] } } })!.map((s) => s.text), ['.a', '(.b | .c)', '[.[] | . + 1]']);
+    assert.strictEqual(jqSteps('if .a then .b | .c else 1 end | tostring', { a: true, b: { c: 1 } })!.length, 2);
+    assert.strictEqual(jqSteps('"a|b" | length', null)!.length, 2);
+  });
+
+  it('leaves out filters without a top-level pipe and stages it cannot run alone', () => {
+    for (const f of ['.a', '[.[] | .a]', 'select(.a | . > 1)', '.a as $x | $x | .', 'def f: .; f | f', 'error("x") | .', '.a | error("x")']) {
+      assert.strictEqual(jqSteps(f, { a: 2 }), undefined, f);
+    }
+    assert.strictEqual(jqExample('.a')![0].steps, undefined);
+  });
+
+  it('shows the stages in the example and when it is run again', () => {
+    const e = new Analyzer('en').explainLine(createUnbashParser().parse("jq '.users | map(.age) | add' u.json"), 0);
+    assert.deepStrictEqual(e.examples[0].sections.map((s) => s.label), ['Input', 'After `.users`', 'After `map(.age)`', 'Output (after `add`)']);
+    assert.deepStrictEqual(e.examples[0].interactive!.result.sections.map((s) => s.label), ['After `.users`', 'After `map(.age)`', 'Output (after `add`)']);
+    const long = new Analyzer('ja').explainLine(createUnbashParser().parse(`jq 'range(10) | tostring | . + "${'x'.repeat(40)}"' u.json`), 0);
+    assert.deepStrictEqual(long.examples[0].sections[1].lines.length, 5);
+    assert.match(long.examples[0].sections[3].label, /…` の後）$/);
   });
 });
