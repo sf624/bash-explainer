@@ -66,8 +66,9 @@ class Converter {
   // Nodes
 
   node(type: string, start: number, end: number, field: FieldName | null = null, parent?: Mut): Mut {
+    // (unbash can end a part past the text: a backquote that is not closed skips a backslash at the very end, and the one after it.)
     const m: Mut = {
-      type, named: true, text: '', startIndex: start, endIndex: end, startPosition: { row: 0, column: 0 }, endPosition: { row: 0, column: 0 },
+      type, named: true, text: '', startIndex: Math.min(start, this.text.length), endIndex: Math.min(end, this.text.length), startPosition: { row: 0, column: 0 }, endPosition: { row: 0, column: 0 },
       parent: null, children: [], namedChildren: [], field, incomplete: false,
     };
     if (parent) parent.children.push(m);
@@ -297,7 +298,9 @@ class Converter {
   /** Marks `n` incomplete: it lacks the `what` that should be at `at`. */
   missing(n: Mut, what: string, at: number): void {
     n.incomplete = true;
-    this.errors.push({ kind: 'missing', message: `Missing "${what}"`, startIndex: at, endIndex: at });
+    // (`at` can be past the text, where unbash ends a part past it: see `node`.)
+    const place = Math.min(at, this.text.length);
+    this.errors.push({ kind: 'missing', message: `Missing "${what}"`, startIndex: place, endIndex: place });
   }
 
   /** How far an open construct in `parts[i]` may reach: up to the operator (`&&`, `|`…) before the next part, or up to `limit` for the last. */
@@ -795,12 +798,14 @@ class Converter {
     const sub = new Converter(src);
     const holder = sub.node('program', 0, src.length);
     sub.pattern(operand, holder);
-    // (The `}` of the wrapper is not in the text: an operand that is not closed takes it.)
+    // The `}` of the wrapper is not in the text: an operand that is not closed takes it, and what it adds is cut off.
     const move = (m: Mut): void => {
       m.startIndex += shift;
       m.endIndex = Math.min(m.endIndex + shift, end);
+      m.children = m.children.filter((c) => c.startIndex + shift < end);
       m.children.forEach(move);
     };
+    holder.children = holder.children.filter((c) => c.startIndex + shift < end);
     for (const c of holder.children) {
       move(c);
       this.add(owner, c);
