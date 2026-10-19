@@ -11,6 +11,10 @@
   let segments = [];
   /** The last rendered update; an identical one is ignored so a text selection survives. */
   let lastUpdate = '';
+  /** Paths of the collapsed tree items of the line shown; kept when the same line is drawn again. */
+  let collapsedKeys = new Set();
+  /** The file and line `collapsedKeys` belongs to. */
+  let shownLine = '';
   /** UI strings from the extension. */
   let labels = /** @type {any} */ ({});
   /** Editable examples by id: where to show the result of a rerun. */
@@ -75,8 +79,11 @@
 
     flat = [];
     editors.clear();
+    const where = `${msg.file}\n${ex.line}`;
+    if (where !== shownLine) collapsedKeys = new Set();
+    shownLine = where;
     const tree = $('tree');
-    tree.replaceChildren(...ex.items.map((t) => item(t, 0)));
+    tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
 
     renderLine(msg.lineText, ex.line, ex.items);
 
@@ -225,8 +232,9 @@
   // ---------------------------------------------------------------- tree
 
   /** Tree item for a token and its children. */
-  function item(token, depth) {
+  function item(token, path) {
     const li = document.createElement('li');
+    li.dataset.path = path;
     const row = document.createElement('div');
     row.className = `row kind-${token.kind}`;
     const twisty = document.createElement('span');
@@ -235,8 +243,7 @@
       twisty.textContent = '▾';
       twisty.addEventListener('click', (e) => {
         e.stopPropagation();
-        li.classList.toggle('collapsed');
-        twisty.textContent = li.classList.contains('collapsed') ? '▸' : '▾';
+        toggle(li);
       });
     }
     const label = document.createElement('code');
@@ -247,6 +254,7 @@
     text.append(...inline(token.explanation));
     row.append(twisty, label, text);
     li.append(row);
+    if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (token.examples ?? []).map((e) => example(e, true));
     if (examplesFirst) li.append(...examples);
@@ -254,16 +262,34 @@
     flat.push({ token, el: row });
     row.addEventListener('mouseenter', () => focus(index));
     row.addEventListener('mouseleave', () => focus(-1));
-    row.addEventListener('click', () => {
-      if (!selecting()) vscode.postMessage({ type: 'reveal', span: token.span });
+    // As in VS Code's trees: a click on a row with parts folds or unfolds it, and still selects it.
+    row.addEventListener('click', (e) => {
+      if (selecting()) return;
+      if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select'))) {
+        if (token.children.length) toggle(li);
+      }
+      vscode.postMessage({ type: 'reveal', span: token.span });
     });
     if (token.children.length) {
       const ul = document.createElement('ul');
-      ul.append(...token.children.map((c) => item(c, depth + 1)));
+      ul.append(...token.children.map((c, i) => item(c, `${path}.${i}`)));
       li.append(ul);
     }
     if (!examplesFirst) li.append(...examples);
     return li;
+  }
+
+  function setCollapsed(/** @type {HTMLElement} */ li, /** @type {boolean} */ want) {
+    li.classList.toggle('collapsed', want);
+    const path = String(li.dataset.path);
+    if (want) collapsedKeys.add(path);
+    else collapsedKeys.delete(path);
+    const tw = li.querySelector(':scope > .row > .twisty');
+    if (tw) tw.textContent = want ? '▸' : '▾';
+  }
+
+  function toggle(/** @type {HTMLElement} */ li) {
+    setCollapsed(li, !li.classList.contains('collapsed'));
   }
 
   $('toggle').addEventListener('click', () => {
@@ -273,9 +299,7 @@
     for (const li of items) {
       const top = li.parentElement === $('tree');
       const want = collapse && !top;
-      li.classList.toggle('collapsed', want);
-      const tw = li.querySelector(':scope > .row > .twisty');
-      if (tw) tw.textContent = want ? '▸' : '▾';
+      setCollapsed(li, want);
     }
     $('toggle').textContent = collapse ? labels.expandAll : labels.collapseAll;
   });

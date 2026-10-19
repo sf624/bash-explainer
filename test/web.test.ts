@@ -103,6 +103,75 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('folds a tree row on a click anywhere in it, and still selects its text in the editor', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello | tr a-z A-Z');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
+    const selected = () => page.locator('.cm-selectionBackground').count();
+    // The first row with parts, and a row without.
+    const parent = () => panel().locator('#tree li:has(> ul)').first();
+    const folded = async () => parent().evaluate((li) => li.classList.contains('collapsed'));
+    const twisty = async () => (await parent().locator('> .row > .twisty').textContent()) ?? '';
+    const leaf = () => panel().locator('#tree li:not(:has(> ul)) > .row').first();
+
+    // A click on the text of the row folds it, and again unfolds it.
+    await page.keyboard.press('Home');
+    assert.strictEqual(await folded(), false);
+    await parent().locator('> .row > .text').click();
+    assert.strictEqual(await folded(), true);
+    assert.strictEqual(await twisty(), '▸');
+    await until('the token selected', selected, (n) => n > 0);
+    await parent().locator('> .row > .label').click();
+    assert.strictEqual(await folded(), false);
+    assert.strictEqual(await twisty(), '▾');
+
+    // The twisty folds once, not twice.
+    await parent().locator('> .row > .twisty').click();
+    assert.strictEqual(await folded(), true);
+    await parent().locator('> .row > .twisty').click();
+    assert.strictEqual(await folded(), false);
+
+    // Dragging over the text to select it does not fold.
+    const text = parent().locator('> .row > .text');
+    const box = (await text.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 200, box.y + 8, { steps: 5 });
+    await page.mouse.up();
+    assert.strictEqual(await folded(), false);
+
+    // A row without parts only selects.
+    await page.keyboard.press('Home');
+    await panel().locator('body').click({ position: { x: 1, y: 1 } });
+    const before = await panel().locator('#tree .collapsed').count();
+    await leaf().click();
+    assert.strictEqual(await panel().locator('#tree .collapsed').count(), before);
+    await until('the leaf selected', selected, (n) => n > 0);
+
+    // A fold survives the panel being drawn again for the same line (here by another shell being chosen).
+    await panel().evaluate('getSelection().removeAllRanges()');
+    await parent().locator('> .row > .text').click();
+    assert.strictEqual(await folded(), true);
+    await parent().evaluate((li) => ((li as any).mark = 1));
+    await panel().locator('#shell').selectOption('dash');
+    await until('the panel drawn again', () => parent().evaluate((li) => !(li as any).mark), (redrawn) => redrawn);
+    assert.strictEqual(await folded(), true);
+    assert.strictEqual(await twisty(), '▸');
+    // "Expand all" and "Collapse all" still work.
+    await panel().locator('#toggle').click();
+    assert.strictEqual(await panel().locator('#tree .collapsed').count(), 0);
+    await panel().locator('#toggle').click();
+    assert.strictEqual(await folded(), false);
+    assert.strictEqual(await panel().locator('#tree .collapsed').count() > 0, true);
+    await ctx.close();
+  });
+
   it('has a theme switch (Auto, Light, Dark) that is remembered and works without storage', async () => {
     const LIGHT = 'rgb(255, 255, 255)';
     const DARK = 'rgb(31, 31, 31)';
