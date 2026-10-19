@@ -51,10 +51,13 @@ describe('the web page in a browser', function () {
     }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-web-'));
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
+    // The development version, under /next/ as on GitHub Pages.
+    execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${path.join(dir, 'next')}`, '--channel=next'], { cwd: root, stdio: 'pipe' });
     server = http.createServer((req, res) => {
       const name = path.normalize(decodeURIComponent((req.url ?? '/').split('?')[0])).replace(/^(\.\.[/\\])+/, '');
-      const file = path.join(dir, name === '/' ? 'index.html' : name);
-      if (!file.startsWith(dir) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      let file = path.join(dir, name);
+      if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
+      if (!file.startsWith(dir) || !fs.existsSync(file)) {
         res.writeHead(404).end();
         return;
       }
@@ -68,6 +71,33 @@ describe('the web page in a browser', function () {
     await browser?.close();
     await new Promise((r) => (server ? server.close(r) : r(undefined)));
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('switches between the release page and the development page, keeping the script and the language', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    assert.strictEqual(await page.locator('#channel-banner').isHidden(), true);
+    assert.strictEqual(await page.locator('#dev-link').isVisible(), true);
+    await page.locator('#lang').selectOption('ja');
+    await page.locator('.cm-content').click();
+    await page.keyboard.type('\necho NEXTMARK');
+    await page.locator('#channel').selectOption('next');
+    await page.waitForURL(`${base}next/**`);
+    await until('the typed script', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
+    assert.strictEqual(await page.locator('#channel-banner').isVisible(), true);
+    assert.match(await page.locator('#banner-text').innerText(), /開発版/);
+    assert.strictEqual(await page.locator('#channel').inputValue(), 'next');
+    assert.strictEqual(await page.locator('meta[name=robots]').getAttribute('content'), 'noindex');
+    // A link copied here points to this page.
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+    await page.locator('#share').click();
+    const link = await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
+    assert.ok(link.startsWith(`${base}next/#`), link);
+    await page.locator('#channel').selectOption('release');
+    await page.waitForURL(new RegExp(`^${base}#`));
+    await until('the script back', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
+    await ctx.close();
   });
 
   it('explains, checks and shares scripts without any request to another site, and keeps working offline', async () => {

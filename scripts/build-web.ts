@@ -1,14 +1,28 @@
 // Builds the web page (GitHub Pages) into site/, or the directory given with --outdir=.
-// Usage: npx tsx scripts/build-web.ts [--outdir=site]
+// Usage: npx tsx scripts/build-web.ts [--outdir=site] [--channel=release|next]
+// The channel is `release` (the page of a released version, the default) or `next` (the development
+// version built from main: a banner says so and the page asks search engines not to index it).
+// It can also be set with BASH_EXPLAINER_CHANNEL; the flag wins.
 import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { PANEL_BODY } from '../src/ui/panelView';
 
 const root = path.join(__dirname, '..');
 const outdir = path.resolve(root, process.argv.find((a) => a.startsWith('--outdir='))?.slice('--outdir='.length) ?? 'site');
 /** Where to write what went into the bundle, for scripts/notices.ts. */
 const metafile = process.argv.find((a) => a.startsWith('--metafile='))?.slice('--metafile='.length);
+const channel = process.argv.find((a) => a.startsWith('--channel='))?.slice('--channel='.length) ?? process.env.BASH_EXPLAINER_CHANNEL ?? 'release';
+if (channel !== 'release' && channel !== 'next') throw new Error(`Unknown channel "${channel}": use release or next`);
+/** The commit the page is built from, for the banner of the development version. */
+function commit(): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
 const version: string = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 /** The panel page shown in the frame: the extension's panel markup and script, as they are. */
@@ -43,6 +57,8 @@ async function main(): Promise<void> {
     minify: true,
     define: {
       __VERSION__: JSON.stringify(version),
+      __CHANNEL__: JSON.stringify(channel),
+      __COMMIT__: JSON.stringify(channel === 'next' ? commit() : ''),
       // The web page's shell sample is test/fixtures/sample.sh, the tour of every feature (web/samples.ts).
       __SAMPLE_SH__: JSON.stringify(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8')),
     },
@@ -51,7 +67,9 @@ async function main(): Promise<void> {
   });
   if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   const copy = (from: string, to = path.basename(from)) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
-  copy('web/index.html');
+  // The development version asks search engines to leave it out, so that the released page is the one they find.
+  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel === 'next' ? '<meta name="robots" content="noindex">' : '');
+  fs.writeFileSync(path.join(outdir, 'index.html'), index);
   copy('web/page.css');
   copy('web/theme.css');
   copy('web/panel-page.css');
@@ -65,7 +83,7 @@ async function main(): Promise<void> {
   fs.writeFileSync(path.join(outdir, 'panel.html'), PANEL_HTML);
   // GitHub Pages: serve the files as they are, without Jekyll.
   fs.writeFileSync(path.join(outdir, '.nojekyll'), '');
-  console.log(`Built the web page ${version} into ${path.relative(root, outdir) || '.'}`);
+  console.log(`Built the web page ${version} (${channel}) into ${path.relative(root, outdir) || '.'}`);
 }
 
 main().catch((e) => {

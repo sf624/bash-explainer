@@ -161,6 +161,37 @@ describe('offline by design', () => {
     }
   });
 
+  it('builds the development channel with a banner, noindex and the same CSP', function () {
+    this.timeout(60000);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-next-'));
+    try {
+      const build = (outdir: string, args: string[]) => execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${outdir}`, ...args], { cwd: root, stdio: 'pipe' });
+      build(path.join(dir, 'next'), ['--channel=next']);
+      build(path.join(dir, 'release'), []);
+      const html = (c: string) => fs.readFileSync(path.join(dir, c, 'index.html'), 'utf8');
+      const csp = (c: string) => html(c).match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
+      assert.match(html('next'), /<meta name="robots" content="noindex">/);
+      assert.doesNotMatch(html('release'), /noindex/);
+      assert.ok(csp('next'));
+      assert.strictEqual(csp('next'), csp('release'));
+      // The banner and its links are relative or to GitHub (links, not requests: connect-src stays 'none').
+      assert.match(html('next'), /id="channel-banner"[^>]*hidden/);
+      assert.match(html('next'), /id="banner-release" href="\.\.\/"/);
+      assert.match(html('next'), /id="dev-link"[^>]*href="next\/"/);
+      const next = fs.readFileSync(path.join(dir, 'next', 'app.js'), 'utf8');
+      const release = fs.readFileSync(path.join(dir, 'release', 'app.js'), 'utf8');
+      assert.match(next, /"next"/);
+      assert.match(next, /Development version, unreleased: built from main at/);
+      assert.match(next, /[0-9a-f]{7}|unknown/);
+      assert.doesNotMatch(release, /[^\w]"next"\s*===/);
+      assert.throws(() => build(path.join(dir, 'x'), ['--channel=other']));
+      // Both channels run only from their own files.
+      for (const c of ['next', 'release']) assert.deepStrictEqual(fs.readdirSync(path.join(dir, c)).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'panel-host.js', 'panel.js']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('depends at run time on unbash only', () => {
     const pkg = JSON.parse(read('package.json'));
     assert.deepStrictEqual(Object.keys(pkg.dependencies).sort(), ['unbash']);

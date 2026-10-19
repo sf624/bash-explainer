@@ -218,3 +218,21 @@ footer p {
     height: 75vh;
   }
 }
+
+/* The banner of the development version (/next/). */
+.banner {
+  padding: 0.5rem 1rem;
+  background: var(--vscode-textBlockQuote-background);
+  border-bottom: 2px solid var(--vscode-focusBorder);
+  color: var(--vscode-foreground);
+  font-size: 0.9rem;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+/* The small link from the released page to the development version. */
+.dev-link {
+  color: var(--vscode-descriptionForeground);
+}

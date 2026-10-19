@@ -73,3 +73,13 @@ The README images are re-recorded by a workflow run by hand, which opens a pull 
 3. For the first deployment, run the [Web page](../.github/workflows/pages.yml) workflow by hand (*Actions → Web page → Run workflow* on `main`). The page is at <https://sf624.github.io/bash-explainer/>.
 
 After this, pushing a version tag is all a release needs.
+
+#### The two pages
+
+One Pages deployment holds two builds of the page ([pages.yml](../.github/workflows/pages.yml)):
+
+- **The root** (<https://sf624.github.io/bash-explainer/>) is the **latest release**: the highest tag `vX.Y.Z` (found with `git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname`; the moving major tag `v0` is not one). It is built in a separate worktree of that tag, with the tag's own `npm ci` and `scripts/build-web.ts`, so an old release builds as it did.
+- **`/next/`** is the **development version**, built from `main` (`npm run build:web -- --channel=next`). Its page has a banner with the commit, `<meta name="robots" content="noindex">`, and a "Version" switch back to the root.
+
+Each deployment rebuilds both. It runs: after a release (the Release workflow calls it; the new tag is the highest, so it becomes the root), on every push to `main` that changes `web/`, `src/`, `media/`, `package.json`, `package-lock.json`, `scripts/build-web.ts` or the workflow (so `/next/` follows `main`), and by hand. To redeploy, run *Actions → Web page → Run workflow* on `main`. Pages from tags older than the "Version" switch have no link to `/next/` until the next release.
+
