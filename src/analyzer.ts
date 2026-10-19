@@ -2491,14 +2491,40 @@ export class Analyzer {
         const op = words[e.op].text!;
         // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; in `[ ]` any text is a word.
         const plain = (w: BracketWord) => (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && w.nodes.length === 1);
+        const num = this.numericTestNote(op, [slice(e.left, e.left), slice(e.right, e.right)], false);
         return [make('test', this.s(
-          `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${this.t(binaryTestOps[op])}`,
-          `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${this.t(binaryTestOps[op])}`,
+          `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${this.t(binaryTestOps[op])}${num}`,
+          `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${this.t(binaryTestOps[op])}${num}`,
         ), [...operandTokens(e.left, plain(words[e.left])), ...operandTokens(e.right, plain(words[e.right]))])];
       }
       default:
         return [make('test', this.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...this.testTokens(n, b, e.left), ...this.testTokens(n, b, e.right)])];
     }
+  }
+
+  /**
+   * How `-eq`, `-lt`… read their operands: `[ ]` takes decimal integers (`010` is ten; `0x10` is an error),
+   * `[[ ]]` evaluates them as arithmetic (`010` is octal 8, `0x10` is 16, `08` is an error).
+   */
+  private numericTestNote(op: string, operands: string[], double: boolean): string {
+    if (!/^-(?:eq|ne|lt|le|gt|ge)$/.test(op)) return '';
+    const notes: string[] = [];
+    for (const raw of operands) {
+      const m = /^([-+]?)(\d[0-9A-Za-z@_#]*)$/.exec(raw);
+      const lit = m ? arithLiteral(m[2]) : undefined;
+      if (!lit || (lit.type === 'number' && lit.style === 'decimal' && !/^0\d/.test(m![2]))) continue;
+      if (!double) {
+        notes.push(lit.type === 'number' && lit.style === 'octal' && /^\d+$/.test(m![2])
+          ? this.s(`\`[ ]\` は 10 進の整数として読むので \`${raw}\` は ${Number(m![2])}（8 進数ではない）`, `\`[ ]\` reads decimal integers, so \`${raw}\` is ${Number(m![2])} (not octal)`)
+          : this.s(`\`[ ]\` は 10 進の整数しか読めないので \`${raw}\` はエラー（integer expression expected）。\`[[ ]]\` なら算術として読める`, `\`[ ]\` reads only decimal integers, so \`${raw}\` is an error (integer expression expected); \`[[ ]]\` would read it as arithmetic`));
+      } else if (lit.type === 'invalid') {
+        notes.push(this.s(`\`[[ ]]\` は算術として読むので、先頭が 0 の \`${raw}\` は 8 進数で、\`${lit.digit}\` は使えずエラー（value too great for base）`, `\`[[ ]]\` reads arithmetic, where \`${raw}\` with a leading 0 is octal and \`${lit.digit}\` is not a digit: an error (value too great for base)`));
+      } else {
+        const kind = { octal: this.s('8 進数', 'octal'), hex: this.s('16 進数', 'hexadecimal'), based: this.s(`${lit.base} 進数`, `base ${lit.base}`), decimal: '' }[lit.style];
+        notes.push(this.s(`\`[[ ]]\` の ${op} は算術として読むので \`${raw}\` は ${kind}で ${m![1] === '-' ? '-' : ''}${lit.value}`, `\`[[ ]]\` reads ${op} operands as arithmetic, so \`${raw}\` is ${kind} ${m![1] === '-' ? '-' : ''}${lit.value}`));
+      }
+    }
+    return notes.length ? this.s('。', '. ') + notes.join(this.s('。', '. ')) : '';
   }
 
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
@@ -2557,12 +2583,13 @@ export class Analyzer {
     const plain = (x: SyntaxNode) => (isPlainWord(x) && !(this.inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
     const operands = this.subs([left, ...rights].filter((x) => x && !plain(x)));
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
+      const num = this.numericTestNote(op, [left?.text ?? '', rightText], true);
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
       }
       return this.tok(n, 'test', this.s(
-        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}`,
-        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}`,
+        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}${num}`,
+        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}${num}`,
       ), operands);
     }
     const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
