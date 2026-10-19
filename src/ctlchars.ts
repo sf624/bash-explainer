@@ -64,3 +64,43 @@ export function pictureNote(lines: string[], s: S): string | undefined {
   }).join(s('、', ', '));
   return s(`制御文字は目に見えないので、例では記号で表している: ${list}`, `Control characters are invisible, so the example shows them as symbols: ${list}`);
 }
+
+/** The character a code stands for, when it is a visible ASCII one: ` ("A")` or `（「A」）`, else the control name. */
+export function codeSuffix(code: number, s: S): string {
+  const c = controlSuffix(code, s);
+  if (c || code < 0x20 || code > 0x7e) return c;
+  return s(`（「${String.fromCharCode(code)}」）`, ` ("${String.fromCharCode(code)}")`);
+}
+
+/** A GNU sed escape that stands for one character. */
+export interface SedEscape {
+  length: number;
+  /** The byte it stands for. */
+  code: number;
+  /** The explanation, without the leading `\esc`: . */
+  text: (s: S) => string;
+}
+
+const SED_LETTERS: Record<string, [number, string, string]> = {
+  a: [0x07, 'ベル', 'a bell'], f: [0x0c, '改ページ', 'a form feed'], n: [0x0a, '改行', 'a newline'],
+  r: [0x0d, '復帰文字', 'a carriage return'], t: [0x09, 'タブ', 'a tab'], v: [0x0b, '垂直タブ', 'a vertical tab'],
+};
+
+/**
+ * The GNU sed escape at `i` (`\a \f \n \r \t \v`, `\xHH`, `\oNNN`, `\dNNN`, `\cX`), or undefined.
+ * GNU sed turns these into the character before it reads the regex or the replacement.
+ */
+export function sedEscapeAt(src: string, i: number): SedEscape | undefined {
+  if (src[i] !== '\\') return undefined;
+  const l = SED_LETTERS[src[i + 1]];
+  if (l) return { length: 2, code: l[0], text: (s) => `${s(l[1], l[2])}${s(`（${controlAbbr(l[0])}）`, ` (${controlAbbr(l[0])})`)}` };
+  const m = /^\\(?:x([0-9a-fA-F]{1,2})|o([0-7]{1,3})|d([0-9]{1,3})|c([^\\]))/.exec(src.slice(i));
+  if (!m) return undefined;
+  const code = (m[1] !== undefined ? parseInt(m[1], 16) : m[2] !== undefined ? parseInt(m[2], 8) : m[3] !== undefined ? parseInt(m[3], 10) : m[4].toUpperCase().charCodeAt(0) ^ 0x40) & 0xff;
+  const suffix = (s: S) => codeSuffix(code, s);
+  const text = (s: S) => m[1] !== undefined ? s(`16進数 ${m[1]} の文字${suffix(s)}`, `the character with hex code ${m[1]}${suffix(s)}`)
+    : m[2] !== undefined ? s(`8進数 ${m[2]} の文字${suffix(s)}`, `the character with octal code ${m[2]}${suffix(s)}`)
+      : m[3] !== undefined ? s(`10進数 ${m[3]} の文字${suffix(s)}`, `the character with decimal code ${m[3]}${suffix(s)}`)
+        : s(`Control-${m[4].toUpperCase()} の文字${suffix(s)}`, `Control-${m[4].toUpperCase()}: the character with code ${code}${suffix(s)}`);
+  return { length: m[0].length, code, text };
+}

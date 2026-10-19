@@ -1,3 +1,4 @@
+import { sedEscapeAt } from '../ctlchars';
 import type { Lang } from '../i18n';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
@@ -331,7 +332,7 @@ class SedParser {
       } else if (c === '\\' && i + 1 < end) {
         const n = src[i + 1];
         const special: Record<string, [string, string]> = {
-          n: ['改行', 'a newline'], t: ['タブ', 'a tab'], '&': ['文字「&」そのもの', 'a literal "&"'],
+          '&': ['文字「&」そのもの', 'a literal "&"'],
           L: ['以降を小文字にする', 'lowercase what follows'], U: ['以降を大文字にする', 'uppercase what follows'],
           l: ['次の1文字を小文字にする', 'lowercase the next character'], u: ['次の1文字を大文字にする', 'uppercase the next character'],
           E: ['`\\L` / `\\U` を終える', 'end `\\L` / `\\U`'],
@@ -346,6 +347,11 @@ class SedParser {
           flush(i);
           out.push({ ...this.tok(i, i + 2, 'variable', n === '0' ? s('`\\0`: 一致した部分全体', '`\\0`: the whole match') : s(`\`\\${n}\`: グループ ${n} に一致した部分`, `\`\\${n}\`: what group ${n} matched`)), ...(n !== '0' ? { group: Number(n) } : {}) });
           i++;
+        } else if (sedEscapeAt(src, i)) {
+          const se = sedEscapeAt(src, i)!;
+          flush(i);
+          out.push(this.tok(i, i + se.length, 'string', `\`${src.slice(i, i + se.length)}\`: ${se.text(s)}`));
+          i += se.length - 1;
         } else if (special[n]) {
           flush(i);
           out.push(this.tok(i, i + 2, /[LUluE]/.test(n) ? 'operator' : 'string', `\`\\${n}\`: ${s(special[n][0], special[n][1])}`));

@@ -1,3 +1,4 @@
+import { sedEscapeAt } from '../ctlchars';
 import type { Flavor } from '../embedded/regex';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
@@ -11,7 +12,7 @@ const CLASS_TO_JS: Record<string, string> = {
   xdigit: '0-9A-Fa-f', punct: '!-\\/:-@\\[-`{-~', word: 'A-Za-z0-9_', cntrl: '\\x00-\\x1f', print: ' -~', graph: '!-~',
 };
 
-const SED_ESCAPES: Record<string, string> = { t: '\\t', n: '\\n', r: '\\r', f: '\\f', v: '\\v' };
+const SED_ESCAPES: Record<string, string> = { t: '\\t', n: '\\n', r: '\\r', f: '\\f', v: '\\v', a: '\\x07' };
 
 /** Copy a POSIX bracket expression starting at `i` as a JS character class; returns [class, end]. */
 function posixBracket(src: string, i: number, sedEscapes: boolean): [string, number] | undefined {
@@ -44,10 +45,37 @@ function posixBracket(src: string, i: number, sedEscapes: boolean): [string, num
 }
 
 /**
+ * GNU sed turns `\xHH`, `\oNNN`, `\dNNN` and `\cX` into the character before it compiles the
+ * regex. When that character is special in a regex, what it means differs between sed releases
+ * (a literal in some, an operator in 4.9), so no example is made (undefined).
+ */
+function sedCharacters(src: string): string | undefined {
+  let out = '';
+  for (let i = 0; i < src.length;) {
+    const e = src[i] === '\\' && /[xodc]/.test(src[i + 1] ?? '') ? sedEscapeAt(src, i) : undefined;
+    if (!e) {
+      out += src[i] === '\\' ? src.slice(i, i + 2) : src[i];
+      i += src[i] === '\\' ? 2 : 1;
+      continue;
+    }
+    const ch = String.fromCharCode(e.code);
+    if ('\\^$.*+?()[]{}|'.includes(ch)) return undefined;
+    out += ch;
+    i += e.length;
+  }
+  return out;
+}
+
+/**
  * Translate a regex to JavaScript syntax. Returns undefined for constructs JavaScript cannot
  * express (possessive quantifiers, atomic groups, equivalence classes…), so no example is made.
  */
 export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean } = {}): JsRegex | undefined {
+  if (opts.sedEscapes) {
+    const plain = sedCharacters(src);
+    if (plain === undefined) return undefined;
+    src = plain;
+  }
   let flags = opts.ignoreCase ? 'i' : '';
   let out = '';
   let i = 0;

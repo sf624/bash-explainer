@@ -22,7 +22,7 @@ import { Operand, readSampleLine, runRead, testCases, xargsExample } from './exa
 import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
 import { pictureNote } from './ctlchars';
-import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
+import { explainDate, explainEscapes, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainArith } from './embedded/arith';
 import { explainGetopts } from './embedded/getopts';
@@ -544,7 +544,7 @@ export class Analyzer {
         + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + this.commaNote(n) + this.wrapNote(n), this.arithChildren(n));
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
-      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
+      case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''), this.ansiCChildren(n));
       // (The model has the `$` and the string in one node; the string takes the `$` in.)
       case 'translated_string': return this.string(n.namedChildren[0]);
       case 'concatenation': if (n.parent!.type === 'array' && splitElement(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
@@ -1381,7 +1381,7 @@ export class Analyzer {
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
       if (cmdName === 'trap' && posIndex === 0 && desc) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
-      const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : doc?.positionalLang?.[posIndex];
+      const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : cmdName === 'echo' && echoEscapes(args) ? 'echo' : doc?.positionalLang?.[posIndex];
       const token = this.positional(a, desc, lang);
       if (desc && doc?.positionalBy && !isFn) operands.push({ index: posIndex, token, desc });
       posIndex++;
@@ -1471,7 +1471,7 @@ export class Analyzer {
    * the text before the command sees it, so offsets would not line up.
    */
   private embedded(a: SyntaxNode, lang: EmbeddedLang): { tokens: Token[]; note?: string } | undefined {
-    const lit = literalContent(a);
+    const lit = literalContent(a, lang);
     return lit && this.embeddedText(lit, lang, a);
   }
 
@@ -1544,6 +1544,9 @@ export class Analyzer {
       case 'printf':
         tokens = explainPrintf(lit.text, this.lang);
         note = printfNote(lit.text, this.lang);
+        break;
+      case 'echo':
+        tokens = explainEscapes(lit.text, this.lang, 'echo');
         break;
       case 'mode':
       case 'umask': {
@@ -1645,6 +1648,12 @@ export class Analyzer {
       }
     }
     return { tokens: tokens.map((t) => this.fromEmbedded(t, a, lit)), note };
+  }
+
+  /** The escapes inside `$'…'`, each with its meaning. */
+  private ansiCChildren(n: SyntaxNode): Token[] {
+    const lit: Literal = { text: n.text.slice(2, -1), base: 2 };
+    return explainEscapes(lit.text, this.lang, 'ansic').map((t) => this.fromEmbedded(t, n, lit));
   }
 
   private fromEmbedded(t: EmbeddedToken, node: SyntaxNode, lit: Literal): Token {
@@ -3607,8 +3616,12 @@ function bracketShape(b: BracketTest | undefined): TestShape | undefined {
   return undefined;
 }
 
-function literalContent(a: SyntaxNode): Literal | undefined {
+function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined {
   if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
+  // `echo -e "\e[1m"`: the shell keeps a backslash before any character but `$`, a backtick, `"` and `\`.
+  if (lang === 'echo') {
+    return a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[$`]|\\[\\"\n]/.test(a.text) ? { text: a.text.slice(1, -1), base: 1 } : undefined;
+  }
   if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
     return { text: a.text.slice(1, -1), base: 1 };
   }
@@ -3631,6 +3644,16 @@ function literalContent(a: SyntaxNode): Literal | undefined {
     return { text, offsets };
   }
   return undefined;
+}
+
+/** Whether `echo` reads backslash escapes: its last `-e` or `-E` among the leading options decides. */
+function echoEscapes(args: SyntaxNode[]): boolean {
+  let on = false;
+  for (const a of args) {
+    if (!isPlainWord(a) || !/^-[neE]+$/.test(a.text)) break;
+    for (const ch of a.text) if (ch === 'e' || ch === 'E') on = ch === 'e';
+  }
+  return on;
 }
 
 /** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */

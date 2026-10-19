@@ -7,8 +7,13 @@ type S = (ja: string, en: string) => string;
 const ESCAPES: Record<string, [string, string]> = {
   n: ['改行', 'newline'], t: ['タブ', 'tab'], r: ['復帰文字(CR)', 'carriage return'], '\\': ['バックスラッシュ', 'backslash'],
   a: ['ベル', 'bell'], b: ['バックスペース', 'backspace'], e: ['ESC（エスケープ文字。色付けなどの制御に使う）', 'ESC, the escape character (used for colours)'], E: ['ESC（エスケープ文字。色付けなどの制御に使う）', 'ESC, the escape character (used for colours)'],
-  f: ['改ページ', 'form feed'], v: ['垂直タブ', 'vertical tab'], '"': ['「"」', '"'], "'": ["「'」", "'"],
+  f: ['改ページ', 'form feed'], v: ['垂直タブ', 'vertical tab'],
 };
+/** What else printf formats and `$'…'` take: a quote, a question mark. */
+const QUOTE_ESCAPES: Record<string, [string, string]> = { '"': ['「"」', '"'], "'": ["「'」", "'"], '?': ['「?」', '?'] };
+
+/** Where the escapes are read: a printf format, `echo -e` (octal is `\0NNN`, `\c` stops), `$'…'` (`\cX`). */
+type Mode = 'printf' | 'echo' | 'ansic';
 
 /** Runs of plain text between specifiers become one token each. */
 function pushText(out: EmbeddedToken[], src: string, start: number, end: number, s: S): void {
@@ -16,11 +21,11 @@ function pushText(out: EmbeddedToken[], src: string, start: number, end: number,
 }
 
 /** Backslash escape at `i`; returns [token, length, code of the character it stands for] or undefined. */
-function escapeAt(src: string, i: number, s: S): [EmbeddedToken, number, number?] | undefined {
+function escapeAt(src: string, i: number, s: S, mode: Mode = 'printf'): [EmbeddedToken, number, number?] | undefined {
   const c = src[i + 1];
   if (c === undefined) return undefined;
   let m: RegExpExecArray | null;
-  if ((m = /^\\(0[0-7]{0,3}|[0-7]{1,3})/.exec(src.slice(i)))) {
+  if ((m = (mode === 'echo' ? /^\\(0[0-7]{0,3})/ : /^\\([0-7]{1,3})/).exec(src.slice(i)))) {
     const code = parseInt(m[1], 8);
     return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: 8進数 ${m[1]} の文字${controlSuffix(code, s)}`, `\`${m[0]}\`: the character with octal code ${m[1]}${controlSuffix(code, s)}`), children: [] }, m[0].length, code];
   }
@@ -32,9 +37,47 @@ function escapeAt(src: string, i: number, s: S): [EmbeddedToken, number, number?
     const code = parseInt(m[1].slice(1), 16);
     return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: Unicode 文字 U+${m[1].slice(1).toUpperCase()}${controlSuffix(code, s)}`, `\`${m[0]}\`: Unicode character U+${m[1].slice(1).toUpperCase()}${controlSuffix(code, s)}`), children: [] }, m[0].length, code];
   }
-  const d = ESCAPES[c];
+  if (mode === 'echo' && c === 'c') {
+    return [{ start: i, end: i + 2, kind: 'operator', explanation: s('`\\c`: ここで出力を打ち切る（以降の文字と、末尾の改行も出力しない）', '`\\c`: stop the output here (nothing after it is printed, not even the final newline)'), children: [] }, 2];
+  }
+  if (mode === 'ansic' && c === 'c' && src[i + 2] !== undefined && (src[i + 2] !== '\\' || src[i + 3] === '\\')) {
+    const x = src[i + 2];
+    const len = x === '\\' ? 4 : 3;
+    const code = x === '?' ? 0x7f : x.charCodeAt(0) & 0x1f;
+    return [{ start: i, end: i + len, kind: 'operator', explanation: s(`\`${src.slice(i, i + len)}\`: Control-${x.toUpperCase()} の文字${controlSuffix(code, s)}`, `\`${src.slice(i, i + len)}\`: Control-${x.toUpperCase()}, the character with code ${code}${controlSuffix(code, s)}`), children: [] }, len, code];
+  }
+  const d = ESCAPES[c] ?? (mode === 'echo' ? undefined : QUOTE_ESCAPES[c]);
   if (!d) return undefined;
   return [{ start: i, end: i + 2, kind: 'operator', explanation: `\`\\${c}\`: ${s(d[0], d[1])}`, children: [] }, 2, c === 'e' || c === 'E' ? 0x1b : undefined];
+}
+
+/**
+ * The escapes of an `echo -e` argument or of a `$'…'` string (`src` is the text between the quotes):
+ * a token for each escape, an ANSI sequence over `ESC [ … m`, and each run of other text. Empty when
+ * there is no escape, since then there is nothing to break down.
+ */
+export function explainEscapes(src: string, lang: Lang, mode: 'echo' | 'ansic'): EmbeddedToken[] {
+  const s = pick(lang);
+  const out: EmbeddedToken[] = [];
+  let text = 0;
+  let i = 0;
+  while (i < src.length) {
+    const e = src[i] === '\\' ? escapeAt(src, i, s, mode) : undefined;
+    if (!e) { i++; continue; }
+    pushText(out, src, text, i, s);
+    const ansi = e[2] === 0x1b ? ansiSequence(src, i, i + e[1], [e[0]], s) : undefined;
+    out.push(ansi ?? e[0]);
+    i = ansi ? ansi.end : i + e[1];
+    text = i;
+    // `echo -e` prints nothing after `\c`.
+    if (mode === 'echo' && src[i - 1] === 'c' && src[i - 2] === '\\') {
+      if (i < src.length) out.push({ start: i, end: src.length, kind: 'string', explanation: s('`\\c` で出力が止まるので、ここから先は出力されない', 'Not printed: the output stopped at `\\c`'), children: [] });
+      return out;
+    }
+  }
+  if (!out.length) return out;
+  pushText(out, src, text, src.length, s);
+  return out;
 }
 
 /** Names of the SGR parameters that stand alone: `ESC [ 1 m` is bold. */
