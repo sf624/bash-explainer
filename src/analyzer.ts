@@ -206,7 +206,8 @@ export class Analyzer {
   /** Aliases defined in the script (`alias ll='ls -l'`): name → where, and what it stands for. */
   private aliases = new Map<string, { line: number; value: string }>();
   private context: ContextEntry[] = [];
-  private functions = new Map<string, number>();
+  /** Function definitions in the script: name → where each starts and ends, in source order. */
+  private functions = new Map<string, { line: number; start: number; end: number }[]>();
   /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
   private namerefs = new Map<string, { line: number; index: number }>();
   /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
@@ -234,7 +235,7 @@ export class Analyzer {
     this.functions.clear();
     for (const f of descendants(root, ['function_definition'])) {
       const name = field(f, 'name')?.text;
-      if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
+      if (name) this.functions.set(name, [...(this.functions.get(name) ?? []), { line: f.startPosition.row, start: f.startIndex, end: f.endIndex }]);
     }
     this.namerefs.clear();
     for (const d of descendants(root, ['declaration_command'])) {
@@ -983,7 +984,7 @@ export class Analyzer {
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    const argToks = this.args(head.doc, args, head.name);
+    const argToks = this.args(head.doc, args, head.name, head.fn);
     this.commandExampleFor(head.name, args);
     if (head.name === 'read') this.readExample(n, args);
     for (const a of args) {
@@ -1012,6 +1013,25 @@ export class Analyzer {
       if (!isPlainWord(word) && !head.nameTokens.length) head.nameTokens = this.sub(word);
     }
     return head;
+  }
+
+  /**
+   * The line of the function `name` that exists when `at` runs. A function exists once its definition
+   * has run, so a call before it is the builtin or program of that name; a call inside a function body
+   * runs later, whenever the function is called, so any definition in the script counts there.
+   */
+  private functionAt(name: string, at: SyntaxNode): number | undefined {
+    const defs = this.functions.get(name);
+    if (!defs) return undefined;
+    const deferred = ancestor(at, (a) => a.type === 'function_definition') !== undefined;
+    const def = defs.find((d) => deferred || d.end <= at.startIndex);
+    if (!def) {
+      // The call comes first: say that the name is not yet the function.
+      this.extraNotes.push(this.s(
+        `ℹ \`${name}\` は行 ${defs[0].line + 1} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（組み込みコマンドや外部コマンドの \`${name}\` が動きます）`,
+        `ℹ \`${name}\` is defined as a function on line ${defs[0].line + 1}, but this runs before that, so it is not the function yet (the builtin or program \`${name}\` runs)`));
+    }
+    return def?.line;
   }
 
   private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode): CommandHead {
@@ -1043,10 +1063,10 @@ export class Analyzer {
         doc: { summary: { ja: '', en: '' }, positional: [] },
       };
     }
-    const fnLine = this.functions.get(name);
+    const fnLine = this.functionAt(name, nameNode);
     if (fnLine !== undefined) {
       return {
-        name, kind: 'function', nameTokens: [],
+        name, kind: 'function', fn: true, nameTokens: [],
         explanation: this.s(`このスクリプトの行 ${fnLine + 1} で定義された関数 \`${name}\` を呼び出す`, `Call the function \`${name}\` defined on line ${fnLine + 1}`),
         doc: { summary: { ja: '', en: '' }, positional: [] },
       };
@@ -1087,7 +1107,7 @@ export class Analyzer {
   }
 
   /** Explain the argument words of a command according to its dictionary entry. */
-  private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string): Token[] {
+  private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string, isFn = false): Token[] {
     if (doc && cmdName.split('/').pop() === 'find') {
       const found = this.findArgs(doc, args);
       if (found) return found;
@@ -1096,7 +1116,6 @@ export class Analyzer {
     // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
     let posIndex = fillsPositional(doc, args) ? 1 : 0;
     let endOfOpts = false;
-    const isFn = this.functions.has(cmdName);
     const savedCtx = this.argCtx;
     this.argCtx = { cmd: cmdName, args };
     try {
@@ -3026,7 +3045,7 @@ export class Analyzer {
   }
 }
 
-interface CommandHead { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[] }
+interface CommandHead { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[]; /** A call of a function defined in the script. */ fn?: boolean }
 
 /**
  * The text a command receives for a word, and where each of its characters sits in the word's
