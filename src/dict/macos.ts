@@ -66,7 +66,7 @@ export const macos: Record<string, CommandDoc> = {
     subcommands: {
       load: cmd('plist のジョブを読み込む（古い書き方）', 'Load a job from a plist (old style)', [['-w', '無効化の記録を上書きして有効にする', 'override the disabled flag and enable']], { positional: [plist] }),
       unload: cmd('ジョブを読み込みから外す（古い書き方）', 'Unload a job (old style)', [['-w', '無効化の記録を残す', 'record the job as disabled']], { positional: [plist] }),
-      bootstrap: cmd('サービスを登録して始める（`gui/501 plist`、`system plist`）', 'Register and start a service (`gui/501 plist`, `system plist`)', [], { positional: [pos('ドメイン（`system`、`gui/UID`）', 'domain (`system`, `gui/UID`)'), plist] }),
+      bootstrap: cmd('サービスをドメインに読み込む（起動は plist の設定による。`gui/501 plist`、`system plist`）', 'Load a service into a domain (whether it starts depends on the plist; `gui/501 plist`, `system plist`)', [], { positional: [pos('ドメイン（`system`、`gui/UID`）', 'domain (`system`, `gui/UID`)'), plist] }),
       bootout: cmd('サービスを止めて登録から外す', 'Stop and unregister a service', [], { positional: [pos('ドメイン（`system`、`gui/UID`）', 'domain (`system`, `gui/UID`)'), plist] }),
       enable: cmd('サービスを有効にする', 'Enable a service', [], { positional: [pos('サービス（`system/ラベル`）', 'service (`system/label`)')] }),
       disable: cmd('サービスを無効にする', 'Disable a service', [], { positional: [pos('サービス（`system/ラベル`）', 'service (`system/label`)')] }),
@@ -267,7 +267,7 @@ export const macos: Record<string, CommandDoc> = {
     ['-v', '動画を撮る', 'record video'],
   ], { positional: [pos('保存先のファイル', 'file to save to')] }),
   afplay: cmd('音声ファイルを再生する', 'Play an audio file', [
-    ['-v', '音量（0〜1 以上）', 'volume (0 to 1 or more)', 'arg'],
+    ['-v', '音量（1 が通常。1 より大きくもできる）', 'volume (1 is normal; it can be higher)', 'arg'],
     ['-t', '再生する秒数', 'seconds to play', 'arg'],
     ['-r', '再生の速さ', 'playback rate', 'arg'],
   ], { positional: [pos('音声ファイル', 'audio file')] }),

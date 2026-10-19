@@ -26,15 +26,15 @@ const traceCommon = (): OptSpec[] => [
 ];
 const ncCommon: OptSpec[] = [
   ['-l', '待ち受け（サーバー）モード', 'listen for incoming connections'],
-  ['-k', '接続が終わっても待ち受けを続ける', 'keep listening after a connection ends'],
   ['-v', '詳しく表示する', 'verbose'],
-  ['-z', 'データを送らず、ポートが開いているかだけ調べる（スキャン）', 'send no data; only check whether the port is open (scan)'],
   ['-u', 'TCP でなく UDP を使う', 'use UDP instead of TCP'],
   ['-p', '送信元のポート', 'source port', 'arg'],
   ['-w', '接続を待つ秒数', 'timeout in seconds', 'arg'],
   ['-n', '名前を引かず数値のまま扱う', 'do not resolve names'],
-  ['-e', '接続されたら実行するコマンド', 'command to run after connecting', 'arg'],
 ];
+const ncKeep: OptSpec = ['-k', '接続が終わっても待ち受けを続ける（OpenBSD 版と Ncat。traditional 版にはない）', 'keep listening after a connection ends (OpenBSD netcat and Ncat; not in traditional netcat)'];
+const ncScan: OptSpec = ['-z', 'データを送らず、ポートが開いているかだけ調べる（スキャン。OpenBSD 版と traditional 版。Ncat にはない）', 'send no data; only check whether the port is open (scan; OpenBSD and traditional netcat, not Ncat)'];
+const ncExec: OptSpec = ['-e', '接続されたら実行するコマンド（traditional 版と Ncat のみ。OpenBSD 版にはない）', 'command to run after connecting (traditional netcat and Ncat only; not in OpenBSD netcat)', 'arg'];
 const smbCommon: OptSpec[] = [
   ['-U|--user', 'ユーザー名（`ユーザー%パスワード`）', 'user name (`user%password`)', 'arg'],
   ['-N|--no-pass', 'パスワードを尋ねない', 'do not ask for a password'],
@@ -67,15 +67,15 @@ export const netadmin: Record<string, CommandDoc> = {
     },
   }),
   nmtui: cmd('NetworkManager を端末のメニューで設定する', 'Configure NetworkManager with a terminal menu'),
-  ifup: cmd('ネットワークインターフェースを有効にする（`/etc/network/interfaces`）', 'Bring a network interface up (`/etc/network/interfaces`)', [
+  ifup: cmd('ネットワークインターフェースを有効にする（ifupdown 版。`/etc/network/interfaces`。RHEL 8 の network-scripts 版は名前だけを取る）', 'Bring a network interface up (ifupdown version, `/etc/network/interfaces`; the network-scripts one in RHEL 8 takes only a name)', [
     ['-a', '`auto` 指定のインターフェースをすべて', 'all interfaces marked `auto`'],
-    ['-v', '詳しく表示する', 'verbose'],
+    ['-v', '実行するコマンドを表示する', 'show the commands as they run'],
     ['-n|--no-act', '実際には何もしない', 'print what would be done'],
     ['--force', '状態に関係なく実行する', 'force the operation'],
   ], { positional: [iface] }),
-  ifdown: cmd('ネットワークインターフェースを無効にする', 'Take a network interface down', [
-    ['-a', '`auto` 指定のインターフェースをすべて', 'all interfaces marked `auto`'],
-    ['-v', '詳しく表示する', 'verbose'],
+  ifdown: cmd('ネットワークインターフェースを無効にする（ifupdown 版。RHEL 8 の network-scripts 版は名前だけを取る）', 'Bring a network interface down (ifupdown version; the network-scripts one in RHEL 8 takes only a name)', [
+    ['-a', '定義されたインターフェースをすべて', 'all defined interfaces'],
+    ['-v', '実行するコマンドを表示する', 'show the commands as they run'],
     ['-n|--no-act', '実際には何もしない', 'print what would be done'],
     ['--force', '状態に関係なく実行する', 'force the operation'],
   ], { positional: [iface] }),
@@ -167,11 +167,12 @@ export const netadmin: Record<string, CommandDoc> = {
   ], { positional: [host] }),
   ncat: cmd('TCP/UDP で接続・待ち受けする万能ツール（Nmap 版）', 'Versatile TCP/UDP connect and listen tool (Nmap version)', [
     ...ncCommon,
+    ncKeep,
     ['--ssl', 'TLS で暗号化する', 'use TLS'],
     ['--send-only', 'データを送るだけで受け取らない', 'send only; ignore received data'],
-    ['--exec', '接続されたら実行するコマンド', 'command to run after connecting', 'arg'],
+    ['-e|--exec', '接続されたら実行するコマンド', 'command to run after connecting', 'arg'],
   ], { positional: [host, pos('ポート番号', 'port number')] }),
-  netcat: cmd('TCP/UDP で接続・待ち受けする万能ツール（`nc` と同じ）', 'Versatile TCP/UDP connect and listen tool (same as `nc`)', ncCommon, { positional: [host, pos('ポート番号', 'port number')] }),
+  netcat: cmd('TCP/UDP で接続・待ち受けする万能ツール（`nc` と同じ）', 'Versatile TCP/UDP connect and listen tool (same as `nc`)', [...ncCommon, ncKeep, ncScan, ncExec], { positional: [host, pos('ポート番号', 'port number')] }),
   telnet: cmd('TCP でホストに接続する対話的なクライアント（暗号化なし。ポートの確認に使う）', 'Interactive TCP client (no encryption; used to test ports)', [
     ['-l', 'ログインに使うユーザー名', 'user name for the login', 'arg'],
     ['-e', 'エスケープ文字', 'escape character', 'arg'],
