@@ -42,7 +42,7 @@ import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
-import { staticWordValue, unquoteWord } from './staticword';
+import { decodedText, staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
@@ -2662,7 +2662,9 @@ export class Analyzer {
   }
 
   private regexNode(n: SyntaxNode): Token {
-    // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (quotes and expansions make other nodes).
+    // tree-sitter-bash makes a `regex` only of the plain right side of `=~` (expansions make other nodes), and quotes stay in its text:
+    // the quoted parts are literal text, which the breakdown of a regex cannot show.
+    if (/(^|[^\\])(\\\\)*["']/.test(n.text)) return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）。クォートした部分は文字列そのまま', 'Regular expression (extended, ERE); the quoted parts are literal text'));
     const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
     const js = toJsRegex(n.text, 'ere');
     if (js) this.regexExample(js, 'values');
@@ -2749,13 +2751,34 @@ export class Analyzer {
     return d !== undefined && d < at;
   }
 
-  /** In `[[ x == "*" ]]`, a quoted right side is plain text: quoting turns the pattern off. Undefined when nothing is quoted. */
+  /**
+   * In `[[ x == "*" ]]` and `[[ x =~ "a.c" ]]`, a quoted right side is plain text: quoting turns the pattern or the
+   * regex off. Undefined when nothing is quoted.
+   */
   private quotedPatternNote(n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
-    if (!['=', '==', '!='].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
-    const quoted = (x: SyntaxNode): boolean[] => (x.type === 'concatenation' ? x.namedChildren.flatMap(quoted)
-      : [['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type) || x.text.includes('\\')]);
+    const regex = op === '=~';
+    if (!['=', '==', '!=', '=~'].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
+    // (In a regex a backslash is no quoting: `a\.c` is the same regex as `a[.]c`. tree-sitter-bash gives a plain right side with quotes in it as one `regex`.)
+    const quoted = (x: SyntaxNode): boolean[] => {
+      if (x.type === 'concatenation') return x.namedChildren.flatMap(quoted);
+      if (['string', 'raw_string', 'ansi_c_string', 'translated_string'].includes(x.type)) return [true];
+      if (!regex) return [x.text.includes('\\')];
+      // The `regex` of tree-sitter-bash with quotes in it: all quoted, or only a part.
+      return !/(^|[^\\])(\\\\)*["']/.test(x.text) || x.type !== 'regex' ? [false] : /^(?:"[^"]*"|'[^']*')+$/.test(x.text) ? [true] : [true, false];
+    };
     const kinds = rights.flatMap(quoted);
     if (!kinds.some((q) => q)) return undefined;
+    if (regex) {
+      const pitfall = rights.some((x) => x.type === 'string' && descendants(x, ['simple_expansion', 'expansion']).length)
+        ? this.s('。正規表現を入れた変数は `"$re"` でなく `$re` とクォートせずに書く', '. A variable that holds a regex is written `$re`, not `"$re"`')
+        : '';
+      return (kinds.every((q) => q)
+        ? this.s('左辺が右辺の文字列をそのまま含めば真（右辺はクォートされているので正規表現ではなく文字列そのもの。`.` や `*` も普通の文字）',
+          'true if the left side contains the right side as it is (the right side is quoted, so it is literal text, not a regex: `.` and `*` are plain characters)')
+        : this.s('左辺が右辺の正規表現(ERE)に一致すれば真（右辺のうちクォートされた部分は文字列そのまま、残りは正規表現）',
+          'true if the left side matches the regex (ERE) on the right (the quoted parts of the right side are literal text, the rest is regex)'))
+        + pitfall + this.s('。一致結果は `BASH_REMATCH` に入る', '; captures go to `BASH_REMATCH`');
+    }
     const equal = op !== '!=';
     return kinds.every((q) => q)
       ? this.s(`文字列が${equal ? '等しい' : '等しくない'}（右辺はクォートされているので文字列そのもの。パターンとしては扱われない）`,
@@ -2910,7 +2933,7 @@ export class Analyzer {
    */
   private valueNote(n: SyntaxNode): string {
     const v = staticWordValue(n);
-    if (!v || v === n.text) return '';
+    if (!v || v === decodedText(n)) return '';
     const literal = v.includes('$');
     return this.s(
       `。クォートやバックスラッシュを取り除くと \`${this.shown(v)}\` という文字列になる${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,

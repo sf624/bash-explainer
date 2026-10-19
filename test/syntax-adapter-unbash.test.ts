@@ -835,7 +835,7 @@ describe('unbash adapter: backquotes with escapes', () => {
     assert.deepEqual(invariants(t), []);
     assert.deepEqual(types(t.root, 'simple_expansion').map((e) => e.text), ['$x']);
     assert.deepEqual(types(t.root, 'comment').map((e) => e.text), ['# c']);
-    assert.equal(types(t.root, 'word').map((w) => w.text).join('|'), 'echo|a|\\\\ y|z|w'.replace('\\\\ y', '\\ y'));
+    assert.equal(types(t.root, 'word').map((w) => w.text).join('|'), 'echo|a|\\\\ y|z|w');
   });
   it('in double quotes, also \\"', () => {
     const t = tree('x="`echo \\"q\\"`"');
