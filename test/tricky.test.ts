@@ -1344,8 +1344,8 @@ describe('tricky lines (round 6)', () => {
     assert.strictEqual(e('${s~}', 'ja'), 'パラメータ展開: `s` の先頭文字の大文字と小文字を入れ替える');
     assert.strictEqual(e('${s~~[a-l]}'), 'Parameter expansion: Swap the case of the characters of `s` that match `[a-l]`');
     assert.strictEqual(e('${s~H}'), 'Parameter expansion: Swap the case of the first character of `s` if it matches `H`');
-    assert.strictEqual(find('echo ${s~~}', '~~').explanation, '`~~`: Swap the case of every character (a little-known form)');
-    assert.strictEqual(find('echo ${s~}', '~').explanation, '`~`: Swap the case of the first character (a little-known form)');
+    assert.strictEqual(find('echo ${s~~}', '~~').explanation, 'Swap the case of every character (a little-known form)');
+    assert.strictEqual(find('echo ${s~}', '~').explanation, 'Swap the case of the first character (a little-known form)');
     assert.match(find('echo ${s~~[a-l]}', '[a-l]').explanation, /^Pattern of characters to convert `\[a-l\]`: one character from a-l\. Each character is tried on its own; only those that match are converted$/);
     // A pattern with an expansion in it has its parts explained.
     assert.ok(tokens('echo ${s~~$x}').some((t) => t.kind === 'pattern' && /decided at run time/.test(t.explanation)));
@@ -1497,7 +1497,7 @@ describe('tricky lines (round 7)', () => {
     assert.doesNotMatch(expl(src, '${!zq_@}'), /Indirection/);
     const parts = findAt(src, 0, '${!zq_@}').children;
     assert.deepStrictEqual(parts.map((t) => t.label), ['!', 'zq_', '@']);
-    assert.match(parts[2].explanation, /^`@`: one word per name .*not the `@` transform/);
+    assert.match(parts[2].explanation, /^one word per name .*not the `@` transform/);
     assert.match(findAt(src, 0, '${!zq_@}', 'ja').children[2].explanation, /変換の `@` ではない/);
     // Quoted: `@` keeps the names apart, `*` joins them with the first character of IFS.
     assert.strictEqual(bash('zq_1=x zq_2=y; set -- "${!zq_@}"; echo $#'), '2\n');
@@ -1507,8 +1507,8 @@ describe('tricky lines (round 7)', () => {
     assert.match(expl('echo "${!zq_*}"', '${!zq_*}'), /inside double quotes they form one word, joined with the first character of `IFS`$/);
     assert.match(expl('echo ${!zq_*}', '${!zq_*}'), /quoted, they form one word joined with the first character of `IFS` \(unquoted they are separate words\)$/);
     assert.match(expl('echo "${!zq_*}"', '${!zq_*}', 'ja'), /ダブルクォートの中なので、`IFS` の先頭の文字で区切った1つの単語になる$/);
-    assert.match(findAt('echo ${!zq_*}', 0, '*').explanation, /^`\*`: join the names/);
-    assert.match(findAt('echo ${!zq_*}', 0, '*', 'ja').explanation, /^`\*`: 見つかった名前を1つにつなげる/);
+    assert.match(findAt('echo ${!zq_*}', 0, '*').explanation, /^join the names/);
+    assert.match(findAt('echo ${!zq_*}', 0, '*', 'ja').explanation, /^見つかった名前を1つにつなげる/);
     assert.match(findAt('echo ${!zq_*}', 0, '${!zq_*}').explanation, /^Names of all variables/);
     // Its example does not double the underscore.
     assert.strictEqual(new Analyzer('en').explainLine(parser.parse('echo ${!zq_@}'), 0).examples[0].sections[0].lines[0], 'zq_A zq_B');
