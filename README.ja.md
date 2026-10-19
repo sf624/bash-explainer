@@ -25,7 +25,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて行にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
 | VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
-| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けて、カーソルを動かします。 |
+| **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けて、カーソルを動かします。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
 | **ターミナル** | `npx bash-explainer deploy.sh:12`、または `npm install --global bash-explainer`。詳しくは [cli/README.md](cli/README.md#installation) を参照してください。 |
 | **Neovim、Helix、Emacs** など LSP に対応したエディタ | `bash-explainer --lsp` が Language Server として、同じホバー、警告、クイックフィックスを提供します。設定例は [In your editor](cli/README.md#in-your-editor-language-server) を参照してください。 |
 | **CI** | GitHub Actions で `uses: sf624/bash-explainer@v0` とすると、警告が PR の差分に表示されます。他の CI では `npx bash-explainer --check` を使います。詳しくは [In CI](cli/README.md#in-ci-github-actions) を参照してください。 |
@@ -284,7 +284,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 ```
 
 - VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/playground.sh` を開いた拡張機能開発ホストが起動します。これは Git に入れない `sample.sh`（全機能ツアー）のコピーで、無ければ自動で作られます。自由に書き換えてください。右側には解説のパネルも開きます（`.vscode/playground.code-workspace` で `bashExplainer.panel.autoOpen` を有効にしています）。F5 は最初に `npm install` を実行するので、pull した後も `node_modules` が `package-lock.json` に合った状態になります。
-- `npm run build:web` でブラウザ版を `site/` にビルドします。`python3 -m http.server -d site` で <http://localhost:8000/> から確認できます。
+- `npm run build:web` でブラウザ版を `site/` にビルドします（`-- --channel=next` を付けると、`/next/` で公開する開発版を、バナー付きでビルドします）。`python3 -m http.server -d site` で <http://localhost:8000/> から確認できます。
 - `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
 - このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
 - 実物と照合するテストは、`PATH` または `$BASH_EXPLAINER_SHELLS` にあるシェルと、`$BASH_EXPLAINER_YQ` にある yq を使います。無いものはスキップされます。ブラウザ版のテストには Chromium が必要です（`npx playwright-core install --with-deps chromium-headless-shell`）。

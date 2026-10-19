@@ -25,6 +25,8 @@ import { toPlainMarkdown } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 
 declare const __VERSION__: string;
+declare const __CHANNEL__: 'release' | 'next';
+declare const __COMMIT__: string;
 
 const TEXT = {
   en: {
@@ -39,6 +41,13 @@ const TEXT = {
     problems: 'Problems',
     privacy: 'Your script stays in this browser: it is parsed and explained here, with no server and no AI.',
     notices: 'Third-party notices',
+    banner: 'Development version, unreleased: built from main at',
+    bannerTail: 'It may differ from the released extension.',
+    toRelease: 'Released version',
+    dev: 'Development version',
+    version: 'Version',
+    release: 'Release',
+    development: 'Development (main',
     replace: 'Replace your script with the sample?',
     line: (n: number) => `Ln ${n}`,
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
@@ -55,6 +64,13 @@ const TEXT = {
     problems: '問題',
     privacy: 'スクリプトはこのブラウザから出ません。構文解析も解説もこのページの中で行い、サーバーも AI も使いません。',
     notices: 'サードパーティのライセンス',
+    banner: '開発版（未リリース）: main の',
+    bannerTail: 'からビルドしています。リリース済みの拡張とは異なる場合があります。',
+    toRelease: 'リリース版',
+    dev: '開発版',
+    version: 'バージョン',
+    release: 'リリース版',
+    development: '開発版（main',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
     line: (n: number) => `${n} 行目`,
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
@@ -318,6 +334,24 @@ function applyLanguage(): void {
   $('share').textContent = t.share;
   $('privacy').textContent = t.privacy;
   $('notices').textContent = t.notices;
+  // The page is built from one version, so it knows its own label only: the release page the version it
+  // shows, the development page its commit. The URL decides which is selected.
+  $('channel-label').textContent = t.version;
+  $<HTMLSelectElement>('channel').replaceChildren(
+    new Option(__CHANNEL__ === 'release' ? `${t.release} (v${__VERSION__})` : t.release, 'release', false, __CHANNEL__ === 'release'),
+    new Option(__CHANNEL__ === 'next' ? `${t.development}, ${__COMMIT__})` : `${t.development})`, 'next', false, __CHANNEL__ === 'next'),
+  );
+  if (__CHANNEL__ === 'next') {
+    // Ja reads "main の abc1234 からビルドしています。": the commit sits in the middle of the sentence.
+    $('banner-text').replaceChildren(t.banner + ' ', Object.assign(document.createElement('code'), { textContent: __COMMIT__ }), ' ' + t.bannerTail);
+    $('banner-release').textContent = t.toRelease;
+    $('banner-commit').textContent = __COMMIT__;
+    $('channel-banner').hidden = false;
+  } else {
+    $('dev-link').textContent = t.dev;
+    $('dev-link').hidden = false;
+    $('dev-sep').hidden = false;
+  }
   $<HTMLSelectElement>('lang').value = lang;
   $<HTMLSelectElement>('kind').replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind, false, k.kind === kind)));
 }
@@ -350,6 +384,14 @@ $('sample').addEventListener('click', () => {
   const text = view.state.doc.toString();
   if (text.trim() && text !== info.sample && !KINDS.some((k) => k.sample === text) && !confirm(TEXT[lang].replace)) return;
   setText(info.sample, info.cursorLine);
+});
+
+// The other version is another page: go there with the script in the hash, in the same language.
+$<HTMLSelectElement>('channel').addEventListener('change', async (e) => {
+  const to = (e.target as HTMLSelectElement).value;
+  if (to === __CHANNEL__) return;
+  const params = new URLSearchParams({ lang, kind, ...(await encodeText(view.state.doc.toString())) });
+  location.href = `${to === 'next' ? 'next/' : '../'}#${params}`;
 });
 
 $('share').addEventListener('click', async () => {

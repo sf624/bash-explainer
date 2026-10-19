@@ -25,7 +25,7 @@ Bash Explainer is a VS Code extension, and more: the same explanations and warni
 | **VS Code** | Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Marketplace, open a shell script and hover a line. See [In VS Code](#in-vs-code). |
 | VSCodium and other editors using Open VSX | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev and github.dev | The same extension works in VS Code for the Web (press `.` in a GitHub repository). |
-| **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script and move the cursor. |
+| **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script and move the cursor. The [development version](https://sf624.github.io/bash-explainer/next/) is built from `main` and may differ from the release. |
 | **Terminal** | `npx bash-explainer deploy.sh:12`, or `npm install --global bash-explainer`. See [cli/README.md](cli/README.md#installation). |
 | **Neovim, Helix, Emacs** and other LSP editors | `bash-explainer --lsp`, a Language Server with the same hovers, warnings and quick fixes. See [In your editor](cli/README.md#in-your-editor-language-server). |
 | **CI** | `uses: sf624/bash-explainer@v0` in GitHub Actions puts the warnings on the pull request's diff; elsewhere, `npx bash-explainer --check`. See [In CI](cli/README.md#in-ci-github-actions). |
@@ -284,7 +284,7 @@ npm run test:integration:web   # …and in VS Code for the Web (needs `npx playw
 ```
 
 - Press `F5` in VS Code to launch an Extension Development Host with `test/fixtures/playground.sh` open (a gitignored copy of `sample.sh`, the tour of every feature, made when it is missing; edit it freely), with the panel beside it (`.vscode/playground.code-workspace` turns on `bashExplainer.panel.autoOpen`). F5 first runs `npm install`, so `node_modules` follows `package-lock.json` after a pull.
-- `npm run build:web` builds the web version into `site/`; `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
+- `npm run build:web` builds the web version into `site/` (`-- --channel=next` builds the development version shown at `/next/`, with its banner); `python3 -m http.server -d site` serves it at <http://localhost:8000/>.
 - `npx tsx test/dump.ts <file> [en|ja] [line]` prints the explanation of every line of a file.
 - To try the command-line tool from this repository, `npm run build:cli`, then `node cli/dist/cli.js <file>` (or `npx --package=./cli bash-explainer <file>`). A bare `npx bash-explainer` does not work here: the extension's own `package.json` is also named `bash-explainer`, so npx takes this project for the package.
 - Tests that compare with real tools use the shells on `PATH` or in `$BASH_EXPLAINER_SHELLS`, and the yq releases in `$BASH_EXPLAINER_YQ`; missing ones are skipped. The web page test needs Chromium (`npx playwright-core install --with-deps chromium-headless-shell`).

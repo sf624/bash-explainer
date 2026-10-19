@@ -6,12 +6,14 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Explains shell scripts line by line, like regex101 for bash. Runs in your browser; your script is sent nowhere.">
+<!--robots-->
 <title>Bash Explainer</title>
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="page.css">
 </head>
 <body>
+<div id="channel-banner" class="banner" role="note" hidden><span id="banner-text"></span> <a id="banner-release" href="../"></a> · <a id="banner-commit" href="https://github.com/sf624/bash-explainer/commit/"></a></div>
 <header class="top">
   <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"><span>Bash Explainer</span></a>
   <p class="tagline" id="tagline">Explains shell scripts line by line. Move the cursor to a line to see what it does.</p>
@@ -23,6 +25,7 @@
 <div class="toolbar">
   <label><span id="kind-label">File</span> <select id="kind"></select></label>
   <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
+  <label><span id="channel-label">Version</span> <select id="channel"></select></label>
   <button id="sample" type="button">Load the sample</button>
   <button id="share" type="button">Copy a link to this script</button>
   <span id="status" role="status"></span>
@@ -39,7 +42,7 @@
 </main>
 <footer>
   <p id="privacy">Your script stays in this browser: it is parsed and explained here, with no server and no AI.</p>
-  <p><span id="version"></span> · <a href="LICENSE.txt">MIT License</a> · <a id="notices" href="THIRD_PARTY_NOTICES.txt">Third-party notices</a></p>
+  <p><span id="version"></span> · <a id="dev-link" class="dev-link" href="next/" hidden></a><span id="dev-sep" hidden> · </span><a href="LICENSE.txt">MIT License</a> · <a id="notices" href="THIRD_PARTY_NOTICES.txt">Third-party notices</a></p>
 </footer>
 <noscript><p class="noscript">Bash Explainer needs JavaScript to run in the browser.</p></noscript>
 <script src="app.js"></script>

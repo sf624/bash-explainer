@@ -1,11 +1,25 @@
 name: Web page
 
-# Builds the web page (web/) and publishes it on GitHub Pages. The Release workflow calls this
-# after publishing a version, so the page matches the Marketplace; run it by hand for the first
-# deployment or a fix. One-time setup: docs/publishing.md.
+# Builds the web page (web/) twice and publishes both in one GitHub Pages deployment: the latest
+# release tag at the root, and main under /next/ (the development version). The Release workflow
+# calls this after publishing a version; a push to main that changes the page redeploys both; run it
+# by hand for the first deployment or a fix. One-time setup: docs/publishing.md.
 on:
   workflow_call:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - web/**
+      - src/**
+      - media/**
+      - test/fixtures/sample.sh
+      - package.json
+      - package-lock.json
+      - scripts/build-web.ts
+      - LICENSE
+      - THIRD_PARTY_NOTICES.md
+      - .github/workflows/pages.yml
 
 permissions:
   contents: read
@@ -19,19 +33,37 @@ jobs:
     name: Build the web page
     runs-on: ubuntu-24.04
     steps:
+      # Always main, even when the Release workflow calls this on a tag; all tags are needed below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
 
-      - run: npm ci
-
-      - name: Type check and build
+      # The root is the latest release (the highest vX.Y.Z tag; the moving major tag v0 is not one).
+      # It is built with the tag's own scripts and dependencies, as that release would have been.
+      - name: Build the latest release into site/
         run: |
+          git fetch --tags --force origin
+          tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          test -n "$tag" || { echo "No release tag found" >&2; exit 1; }
+          echo "Latest release: $tag"
+          git worktree add --detach "$RUNNER_TEMP/release" "$tag"
+          cd "$RUNNER_TEMP/release"
+          npm ci
           npx tsc --noEmit -p web
-          npm run build:web
+          BASH_EXPLAINER_CHANNEL=release npm run build:web -- --outdir="$GITHUB_WORKSPACE/site"
+
+      # main goes under /next/, after the root, which clears site/ when it is built.
+      - name: Build main into site/next/
+        run: |
+          npm ci
+          npx tsc --noEmit -p web
+          BASH_EXPLAINER_CHANNEL=next npm run build:web -- --outdir="$GITHUB_WORKSPACE/site/next"
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
