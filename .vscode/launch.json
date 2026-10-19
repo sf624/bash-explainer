@@ -5,7 +5,7 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/test/fixtures", "${workspaceFolder}/test/fixtures/playground.sh"],
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/.vscode/playground.code-workspace", "${workspaceFolder}/test/fixtures/playground.sh"],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "build and playground"
     }
