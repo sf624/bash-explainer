@@ -521,6 +521,8 @@ describe('the web page in a browser', function () {
 
     // A skeleton label (the `while` line of the sample): code in monospace, placeholders apart in muted italics.
     const whileLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('while read'));
+    // The keys must reach the editor again: hovering the panel left the focus there.
+    await page.locator('.cm-content').click();
     await page.keyboard.press('Control+Home');
     for (let i = 0; i < whileLine; i++) await page.keyboard.press('ArrowDown');
     await until('the while line', text('#line'), (t) => t.startsWith('while read'));
