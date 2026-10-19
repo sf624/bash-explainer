@@ -117,12 +117,30 @@ describe('tricky lines (round 1)', () => {
 });
 
 describe('numbers in arithmetic', () => {
+  // A known difference from bash: unbash ends a number at the `@` of base 64, so `64#@` next to other terms turns the
+  // whole expression into one word (alone, `$((64#@))` is read right). bash prints 383 for the expression below.
+  // tree-sitter-bash reads it right; this documents what the unbash adapter does today.
+  it('known difference: 64#@ next to other terms makes unbash read the expression as one word', () => {
+    const src = 'echo $((16#ff + 64#@ + 36#z + 0X1f))';
+    assert.strictEqual(bash(src), '383\n');
+    parser = treeSitter;
+    try {
+      assert.match(find(src, '16#ff').explanation, /Hexadecimal number.* = 255/);
+    } finally {
+      parser = createUnbashParser();
+    }
+    const labels = tokens(src).map((t) => t.label);
+    assert.ok(!labels.includes('16#ff'), labels.join(' | '));
+    assert.ok(labels.includes('16#ff + 64#@ + 36#z + 0X1f'), labels.join(' | '));
+    // Alone, the digit is read: 62.
+    assert.match(find('echo $((64#@))', '64#@').explanation, /= 62 in decimal/);
+  });
   it('explains each constant with its base and value', () => {
     const lines = tokens(ROUND1[0]);
     assert.match(lines.find((t) => t.label === '2#1010')!.explanation, /Binary number `2#1010`.* = 10 in decimal/);
     assert.match(lines.find((t) => t.label === '0x1F')!.explanation, /Hexadecimal number `0x1F`.* = 31 in decimal/);
     assert.match(lines.find((t) => t.label === '010')!.explanation, /Octal number `010`.* = 8 in decimal/);
-    assert.match(find('echo $((16#ff + 64#_ + 36#z + 0X1f))', '16#ff').explanation, /Hexadecimal number.* = 255/);
+    assert.match(find('echo $((16#ff + 36#z + 0X1f))', '16#ff').explanation, /Hexadecimal number.* = 255/);
     assert.match(find('echo $((64#@))', '64#@').explanation, /Base 64 number.* = 62 in decimal.*A-Z \(36-61\)/);
     assert.match(find('echo $((36#z))', '36#z').explanation, /Base 36 number.* = 35/);
     assert.match(find('echo $((0X1f))', '0X1f').explanation, /= 31/);
