@@ -1,3 +1,4 @@
+import { intValue } from './arith';
 import { Lang } from './i18n';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
@@ -37,7 +38,7 @@ function findTopLevel(s: string, from: number, stop: string): number {
 }
 
 /** Parse the text of a `${…}` expansion. Returns undefined for forms it does not understand. */
-export function parseExpansion(text: string): ParsedExpansion | undefined {
+export function parseExpansion(text: string, hashIsName = false): ParsedExpansion | undefined {
   if (!text.startsWith('${') || !text.endsWith('}')) return undefined;
   const inner = text.slice(2, -1);
   const base = 2;
@@ -53,7 +54,8 @@ export function parseExpansion(text: string): ParsedExpansion | undefined {
   let i = 0;
   let prefix: ParsedExpansion['prefix'];
   // `${#x}` (length) and `${!x}` (indirection); a lone `${#}` / `${!}` is the special variable itself.
-  if (/^[#!][A-Za-z_0-9@*#?$!]/.test(inner)) {
+  // (With more after the name, `${#-x}` and `${##x}` are `$#` with an operator: see `hashIsName`.)
+  if (!hashIsName && /^(?:#[A-Za-z_0-9@*#?$!-]|![A-Za-z_0-9@*#?$!])/.test(inner)) {
     prefix = inner[0] as '#' | '!';
     add('prefix', 0, 1);
     i = 1;
@@ -79,6 +81,8 @@ export function parseExpansion(text: string): ParsedExpansion | undefined {
     add('op', i, i + 1);
     return { prefix, name, subscript, op: rest, parts };
   }
+  // `${#?x}`, `${##x}`, `${#-x}`: not the length of `$?`, but `$#` with an operator.
+  if (prefix === '#') return parseExpansion(text, true);
   if (prefix) return undefined;
 
   if (rest[0] === '@' && rest.length === 2) {
@@ -293,10 +297,18 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
     setup: positional ? undefined : `unset ${name}`,
   });
 
+  // The special parameters cannot be assigned (`#=hello` is not bash), and their values are not ours to choose.
+  const special = /^[#?$!-]$/.test(name);
   if (p.prefix === '#') {
     if (p.subscript === '@' || p.subscript === '*') return [array('3')];
+    // `${#@}` and `${#*}` count the positional parameters; they are not the length of a string.
+    if (name === '@' || name === '*') return [{ when: ja ? '引数が `a b c` のとき' : 'When the arguments are `a b c`', result: '3', setup: 'set -- a b c' }];
+    // `${##}` is the length of `$#`, so `set -- a b c` gives 1; the others have no fixed value.
+    if (name === '#') return [{ when: ja ? '引数が `a b c` のとき' : 'When the arguments are `a b c`', result: '1', setup: 'set -- a b c' }];
+    if (special) return undefined;
     return [set('hello', '5')];
   }
+  if (special && !p.prefix) return undefined;
   if (p.prefix === '!') {
     if (p.op === '*' || p.op === '@') {
       return [{ when: ja ? `${name}_A と ${name}_B があるとき` : `When ${name}_A and ${name}_B are set`, result: `${name}_A ${name}_B`, setup: `${name}_A=1 ${name}_B=2` }];
@@ -368,26 +380,26 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
     case ',': return [set('HELLO World', 'hELLO World')];
     case ',,': return [set('HELLO World', 'hello world')];
     case ':': {
-      const off = part('offset')?.trim();
-      const len = part('length')?.trim();
-      if (!off || !/^-?\d+$/.test(off) || (len !== undefined && !/^-?\d+$/.test(len))) return undefined;
+      // Offset and length are arithmetic: `010` is 8, `0x2` is 2.
+      const o = intValue(part('offset')!.trim());
+      const lenText = part('length')?.trim();
+      const l = lenText === undefined ? undefined : intValue(lenText);
+      if (o === undefined || (lenText !== undefined && l === undefined)) return undefined;
       if (slicesElements(p)) {
         // Elements, not characters: `${a[@]:1:2}`, `${@:2}` (which counts from $1; $0 is the script).
         const items = ['a', 'b', 'c', 'd', 'e'];
         const args = name === '@' || name === '*';
-        const o = Number(off);
-        if ((args && o === 0) || (len !== undefined && Number(len) < 0)) return undefined;
+        if ((args && o === 0) || (l !== undefined && l < 0)) return undefined;
         const start = o < 0 ? Math.max(0, items.length + o) : args ? o - 1 : o;
-        const result = items.slice(start, len === undefined ? undefined : start + Number(len)).join(' ');
+        const result = items.slice(start, l === undefined ? undefined : start + l).join(' ');
         return [args
           ? { when: ja ? '引数が `a b c d e` のとき' : 'When the arguments are `a b c d e`', result, setup: 'set -- a b c d e' }
           : { when: ja ? `\`${name}=(a b c d e)\` のとき` : `When \`${name}=(a b c d e)\``, result, setup: `${name}=(a b c d e)` }];
       }
       const s = 'abcdefgh';
-      const o = Number(off);
       const start = o < 0 ? Math.max(0, s.length + o) : o;
       let end = s.length;
-      if (len !== undefined) end = Number(len) < 0 ? s.length + Number(len) : start + Number(len);
+      if (l !== undefined) end = l < 0 ? s.length + l : start + l;
       return [set(s, s.slice(start, Math.max(start, end)))];
     }
     // `@`: a transformation.
