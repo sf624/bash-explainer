@@ -21,6 +21,7 @@ import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
 import { Operand, readSampleLine, runRead, testCases, xargsExample } from './examples/runtime';
 import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { explainAwk } from './embedded/awk';
+import { pictureNote } from './ctlchars';
 import { explainDate, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
 import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
 import { explainArith } from './embedded/arith';
@@ -128,6 +129,8 @@ export interface Example {
   /** The source range the example belongs to; the example is shown under the token that covers it. */
   anchor?: Span;
   sections: ExampleSection[];
+  /** Said once under the title: what the control pictures (␛ ⇥) in the lines stand for. */
+  note?: string;
   /** For the panel: input the user can edit, and how to run the example again on it. */
   interactive?: Interactive;
 }
@@ -334,7 +337,11 @@ export class Analyzer {
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
-        .filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i),
+        .filter((e, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(e)) === i)
+        .map((e) => {
+          const note = pictureNote(e.sections.flatMap((sec) => sec.lines), (ja, en) => this.s(ja, en));
+          return note ? { ...e, note } : e;
+        }),
       summary: items.filter((t) => t.kind !== 'comment' || items.length === 1).map(summaryOf).join(' ; '),
     };
     this.line = null;

@@ -22,7 +22,7 @@ describe('printf formats', () => {
     assert.match(explainPrintf('%.3s', 'en')[0].explanation, /at most 3 characters/);
     assert.match(explainPrintf('%(%F)T', 'en')[0].explanation, /formatted with `%F`/);
     assert.strictEqual(explainPrintf('%y', 'en')[0].kind, 'error');
-    assert.match(explainPrintf('\\033[1m', 'en')[0].explanation, /octal code 033/);
+    assert.match(explainPrintf('\\033[1m', 'en')[0].children[0].explanation, /octal code 033/);
   });
 
   it('notes how many values one use of the format takes', () => {

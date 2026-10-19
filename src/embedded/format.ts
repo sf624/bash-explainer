@@ -1,11 +1,12 @@
 import type { Lang } from '../i18n';
+import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick } from './types';
 
 type S = (ja: string, en: string) => string;
 
 const ESCAPES: Record<string, [string, string]> = {
   n: ['改行', 'newline'], t: ['タブ', 'tab'], r: ['復帰文字(CR)', 'carriage return'], '\\': ['バックスラッシュ', 'backslash'],
-  a: ['ベル', 'bell'], b: ['バックスペース', 'backspace'], e: ['エスケープ文字（色付けなどの制御に使う）', 'escape character (used for colours)'],
+  a: ['ベル', 'bell'], b: ['バックスペース', 'backspace'], e: ['ESC（エスケープ文字。色付けなどの制御に使う）', 'ESC, the escape character (used for colours)'], E: ['ESC（エスケープ文字。色付けなどの制御に使う）', 'ESC, the escape character (used for colours)'],
   f: ['改ページ', 'form feed'], v: ['垂直タブ', 'vertical tab'], '"': ['「"」', '"'], "'": ["「'」", "'"],
 };
 
@@ -14,23 +15,76 @@ function pushText(out: EmbeddedToken[], src: string, start: number, end: number,
   if (end > start) out.push({ start, end, kind: 'string', explanation: s(`そのまま出力する文字列「${src.slice(start, end)}」`, `Literal text "${src.slice(start, end)}"`), children: [] });
 }
 
-/** Backslash escape at `i`; returns [token, length] or undefined. */
-function escapeAt(src: string, i: number, s: S): [EmbeddedToken, number] | undefined {
+/** Backslash escape at `i`; returns [token, length, code of the character it stands for] or undefined. */
+function escapeAt(src: string, i: number, s: S): [EmbeddedToken, number, number?] | undefined {
   const c = src[i + 1];
   if (c === undefined) return undefined;
   let m: RegExpExecArray | null;
   if ((m = /^\\(0[0-7]{0,3}|[0-7]{1,3})/.exec(src.slice(i)))) {
-    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: 8進数 ${m[1]} の文字`, `\`${m[0]}\`: the character with octal code ${m[1]}`), children: [] }, m[0].length];
+    const code = parseInt(m[1], 8);
+    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: 8進数 ${m[1]} の文字${controlSuffix(code, s)}`, `\`${m[0]}\`: the character with octal code ${m[1]}${controlSuffix(code, s)}`), children: [] }, m[0].length, code];
   }
   if ((m = /^\\x[0-9a-fA-F]{1,2}/.exec(src.slice(i)))) {
-    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: 16進数 ${m[0].slice(2)} の文字`, `\`${m[0]}\`: the character with hex code ${m[0].slice(2)}`), children: [] }, m[0].length];
+    const code = parseInt(m[0].slice(2), 16);
+    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: 16進数 ${m[0].slice(2)} の文字${controlSuffix(code, s)}`, `\`${m[0]}\`: the character with hex code ${m[0].slice(2)}${controlSuffix(code, s)}`), children: [] }, m[0].length, code];
   }
   if ((m = /^\\(u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8})/.exec(src.slice(i)))) {
-    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: Unicode 文字 U+${m[1].slice(1).toUpperCase()}`, `\`${m[0]}\`: Unicode character U+${m[1].slice(1).toUpperCase()}`), children: [] }, m[0].length];
+    const code = parseInt(m[1].slice(1), 16);
+    return [{ start: i, end: i + m[0].length, kind: 'operator', explanation: s(`\`${m[0]}\`: Unicode 文字 U+${m[1].slice(1).toUpperCase()}${controlSuffix(code, s)}`, `\`${m[0]}\`: Unicode character U+${m[1].slice(1).toUpperCase()}${controlSuffix(code, s)}`), children: [] }, m[0].length, code];
   }
   const d = ESCAPES[c];
   if (!d) return undefined;
-  return [{ start: i, end: i + 2, kind: 'operator', explanation: `\`\\${c}\`: ${s(d[0], d[1])}`, children: [] }, 2];
+  return [{ start: i, end: i + 2, kind: 'operator', explanation: `\`\\${c}\`: ${s(d[0], d[1])}`, children: [] }, 2, c === 'e' || c === 'E' ? 0x1b : undefined];
+}
+
+/** Names of the SGR parameters that stand alone: `ESC [ 1 m` is bold. */
+const SGR: Record<number, [string, string]> = {
+  0: ['全属性をリセット', 'reset all'], 1: ['太字', 'bold'], 2: ['薄く表示', 'dim'], 3: ['斜体', 'italic'], 4: ['下線', 'underline'],
+  5: ['点滅', 'blink'], 7: ['前景色と背景色を入れ替え', 'reverse video'], 22: ['太字・薄くを解除', 'normal intensity'], 23: ['斜体を解除', 'not italic'],
+  24: ['下線を解除', 'not underlined'], 25: ['点滅を解除', 'not blinking'], 27: ['反転を解除', 'not reversed'],
+  39: ['文字色を既定に戻す', 'default foreground'], 49: ['背景色を既定に戻す', 'default background'],
+};
+const COLOR_NAMES: [string, string][] = [['黒', 'black'], ['赤', 'red'], ['緑', 'green'], ['黄', 'yellow'], ['青', 'blue'], ['マゼンタ', 'magenta'], ['シアン', 'cyan'], ['白', 'white']];
+
+/** What the parameters of `ESC [ … m` do, in order; undefined when one is not understood. */
+function sgrParts(params: string, s: S): string[] | undefined {
+  const nums = params === '' ? [0] : params.split(';').map((p) => (p === '' ? 0 : Number(p)));
+  const out: string[] = [];
+  for (let k = 0; k < nums.length; k++) {
+    const n = nums[k];
+    const std = SGR[n];
+    if (std) { out.push(s(std[0], std[1])); continue; }
+    const base = n >= 30 && n <= 37 ? 30 : n >= 90 && n <= 97 ? 90 : n >= 40 && n <= 47 ? 40 : n >= 100 && n <= 107 ? 100 : 0;
+    if (base) {
+      const [ja, en] = COLOR_NAMES[n - base];
+      const bright = base === 90 || base === 100;
+      const fg = base < 40 || base === 90;
+      out.push(fg ? s(`文字色を${bright ? '明るい' : ''}${ja}に`, `${bright ? 'bright ' : ''}${en} foreground`) : s(`背景色を${bright ? '明るい' : ''}${ja}に`, `${bright ? 'bright ' : ''}${en} background`));
+      continue;
+    }
+    if (n !== 38 && n !== 48) return undefined;
+    const fg = n === 38;
+    if (nums[k + 1] === 5 && nums[k + 2] <= 255) {
+      out.push(fg ? s(`文字色を 256 色パレットの ${nums[k + 2]} 番に`, `foreground colour ${nums[k + 2]} of the 256-colour palette`) : s(`背景色を 256 色パレットの ${nums[k + 2]} 番に`, `background colour ${nums[k + 2]} of the 256-colour palette`));
+      k += 2;
+    } else if (nums[k + 1] === 2 && nums.slice(k + 2, k + 5).length === 3 && nums.slice(k + 2, k + 5).every((v) => v <= 255)) {
+      const rgb = nums.slice(k + 2, k + 5).join(',');
+      out.push(fg ? s(`文字色を RGB(${rgb}) に`, `foreground RGB(${rgb})`) : s(`背景色を RGB(${rgb}) に`, `background RGB(${rgb})`));
+      k += 4;
+    } else return undefined;
+  }
+  return out;
+}
+
+/** The ANSI escape sequence (`ESC [ params final`) starting at `at`, as a token over [from, end) holding `kids`; undefined when none. */
+function ansiSequence(src: string, from: number, at: number, kids: EmbeddedToken[], s: S): EmbeddedToken | undefined {
+  const m = /^\[([0-9;?]*)([@-~])/.exec(src.slice(at));
+  if (!m) return undefined;
+  const end = at + m[0].length;
+  const parts = m[2] === 'm' && /^[0-9;]*$/.test(m[1]) ? sgrParts(m[1], s) : undefined;
+  const what = parts ? parts.join(s('、', ', ')) : s(`CSI \`${m[0]}\`（カーソルや画面の制御など）`, `CSI \`${m[0]}\` (cursor or screen control, for example)`);
+  const text = { start: at, end, kind: 'string' as const, explanation: s(`そのまま出力する文字列「${m[0]}」`, `Literal text "${m[0]}"`), children: [] };
+  return { start: from, end, kind: 'operator', explanation: `\`${src.slice(from, end)}\`: ${s('ANSI エスケープシーケンス', 'ANSI escape sequence')}: ${what}`, children: [...kids, text] };
 }
 
 // ---------------------------------------------------------------- printf
@@ -61,8 +115,9 @@ export function explainPrintf(src: string, lang: Lang): EmbeddedToken[] {
       const e = escapeAt(src, i, s);
       if (e) {
         pushText(out, src, text, i, s);
-        out.push(e[0]);
-        i += e[1];
+        const ansi = e[2] === 0x1b ? ansiSequence(src, i, i + e[1], [e[0]], s) : undefined;
+        out.push(ansi ?? e[0]);
+        i = ansi ? ansi.end : i + e[1];
         text = i;
         continue;
       }

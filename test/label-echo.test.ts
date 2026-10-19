@@ -17,7 +17,7 @@ const find = (src: string, lang: 'en' | 'ja', label: string): Token => tokens(sr
 describe('an explanation does not repeat its label', () => {
   const printf = String.raw`printf '\033[1;32m%s\033[0m\n' "OK"`;
   it('drops the label from the parts of a printf format, in en and ja', () => {
-    assert.strictEqual(find(printf, 'en', '\\033').explanation, 'the character with octal code 033');
+    assert.strictEqual(find(printf, 'en', '\\033').explanation, 'the character with octal code 033 (ESC, escape)');
     assert.strictEqual(find(printf, 'en', '%s').explanation, 'value 1 as a string');
     assert.strictEqual(find(printf, 'en', '\\n').explanation, 'newline');
     for (const label of ['\\033', '%s', '\\n']) assert.ok(!find(printf, 'ja', label).explanation.startsWith('`'), label);

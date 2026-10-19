@@ -132,6 +132,12 @@ code {
   margin: 0.4rem 0 0.15rem;
 }
 
+.example-note {
+  color: var(--c-muted);
+  font-size: 0.9em;
+  margin: 0.2rem 0 0.4rem;
+}
+
 .example pre {
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);

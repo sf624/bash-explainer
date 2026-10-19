@@ -1,4 +1,5 @@
 import type { Lang } from '../i18n';
+import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick } from './types';
 
 export interface Explained {
@@ -101,7 +102,7 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
       text = m[2] ? s(`「${m[1]}」を ${m[2]} 個`, `"${m[1]}" ${m[2]} times`) : s(`「${m[1]}」を必要なだけ繰り返す`, `"${m[1]}" repeated as needed`);
     } else if ((m = /^\\([0-7]{1,3})/.exec(rest))) {
       len = m[0].length;
-      text = s(`8進数 ${m[1]} の文字`, `the character with octal code ${m[1]}`);
+      text = s(`8進数 ${m[1]} の文字${controlSuffix(parseInt(m[1], 8), s)}`, `the character with octal code ${m[1]}${controlSuffix(parseInt(m[1], 8), s)}`);
     } else if (rest[0] === '\\' && TR_ESCAPES[rest[1]]) {
       len = 2;
       text = s(TR_ESCAPES[rest[1]][0], TR_ESCAPES[rest[1]][1]);

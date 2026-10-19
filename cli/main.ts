@@ -195,6 +195,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
 
 function exampleText(e: Example, paint: (code: string | undefined, s: string) => string): string[] {
   const out = [`  ${paint('1', e.title)}`];
+  if (e.note) out.push(`    ${paint('90', e.note)}`);
   for (const s of e.sections) {
     out.push(`    ${paint('90', s.label)}`);
     for (const l of s.lines.length ? s.lines : [s.empty ?? '']) out.push(`      ${l}`);

@@ -1,5 +1,6 @@
 import type { Lang } from '../i18n';
 import { explainDate } from './format';
+import { controlSuffix } from '../ctlchars';
 import { EmbeddedToken, pick, shift } from './types';
 
 const NAMED: Record<string, [string, string]> = {
@@ -76,7 +77,7 @@ export function explainGitFormat(src: string, lang: Lang): { tokens: EmbeddedTok
     } else if ((m = /^x([0-9a-fA-F]{2})/.exec(rest))) {
       len = m[0].length;
       kind = 'operator';
-      expl = s(`16進数 ${m[1]} の文字`, `the byte 0x${m[1]}`);
+      expl = s(`16進数 ${m[1]} の文字${controlSuffix(parseInt(m[1], 16), s)}`, `the byte 0x${m[1]}${controlSuffix(parseInt(m[1], 16), s)}`);
     } else if ((m = /^(GG|GS|an|ae|al|ad|ar|at|ai|aI|as|cn|ce|cd|cr|ct|ci|cI|cs|[HhTtPpsfbBdDNeGn%])/.exec(rest))) {
       len = m[0].length;
       expl = s(PLACEHOLDERS[m[1]][0], PLACEHOLDERS[m[1]][1]);
