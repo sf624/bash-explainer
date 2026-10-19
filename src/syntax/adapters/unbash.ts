@@ -1407,7 +1407,11 @@ class Converter {
 export function createUnbashParser(): BashParser {
   return {
     parse(text: string): SyntaxTree {
-      return new Converter(text).run();
+      // bash would read the CR of a CRLF as part of the last word of the line (`fi\r` is no `fi`). That is not what the
+      // author meant, and the document issues say so; the tree is built as if the CR were a blank.
+      const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
+      if (!carriageReturns.length) return new Converter(text).run();
+      return { ...new Converter(text.replace(/\r(?=\n)/g, ' ')).run(), carriageReturns };
     },
   };
 }

@@ -164,7 +164,7 @@ function spanOf(n: SyntaxNode): Span {
 }
 
 function shorten(text: string, max = 60): string {
-  const first = text.split('\n')[0];
+  const first = text.split('\n')[0].trimEnd();
   const s = first.length > max ? first.slice(0, max - 1) + '…' : first;
   return first.length < text.length && s === first ? s + ' …' : s;
 }
