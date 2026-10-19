@@ -165,7 +165,6 @@ export const netadmin: Record<string, CommandDoc> = {
     ['-u|--udp', 'UDP を使う', 'use UDP'],
     ['-i|--interval', '送る間隔（秒）', 'interval in seconds', 'arg'],
   ], { positional: [host] }),
-  nc: cmd('TCP/UDP で接続・待ち受けする万能ツール', 'Versatile TCP/UDP connect and listen tool', ncCommon, { positional: [host, pos('ポート番号', 'port number')] }),
   ncat: cmd('TCP/UDP で接続・待ち受けする万能ツール（Nmap 版）', 'Versatile TCP/UDP connect and listen tool (Nmap version)', [
     ...ncCommon,
     ['--ssl', 'TLS で暗号化する', 'use TLS'],

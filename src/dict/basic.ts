@@ -308,13 +308,6 @@ export const basic: Record<string, CommandDoc> = {
     ['-u|--unconditional', '既存のファイルを無条件に上書きする', 'overwrite existing files without asking'],
     ['-F|--file', 'アーカイブのファイル', 'archive file', 'arg'],
   ]),
-  ar: cmd('静的ライブラリなどのアーカイブを作る・取り出す', 'Create or extract archives such as static libraries', [
-    ['-t', '内容を一覧表示', 'list the contents'],
-    ['-x', '取り出す', 'extract members'],
-    ['-r', '追加する（あれば置き換える）', 'insert, replacing existing members'],
-    ['-c', '新しく作るときの警告を出さない', 'do not warn when creating'],
-    ['-s', 'シンボルの索引を作る', 'write an index of symbols'],
-  ]),
   // ---- terminals and editors ----------------------------------------------------------------
   tmux: cmd('端末マルチプレクサ。1つの端末で複数のセッションやウィンドウを使う', 'Terminal multiplexer: many sessions and windows in one terminal', [], {
     subcommands: {

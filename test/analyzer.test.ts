@@ -148,7 +148,7 @@ describe('time keyword', () => {
     for (const src of ['a | time b', 'a |& time b']) {
       const e = explain(src);
       assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'keyword'), [], src);
-      assert.match(find(e, src.slice(src.indexOf('time'))).explanation, /Run the external command `time`/, src);
+      assert.match(find(e, src.slice(src.indexOf('time'))).explanation, /Measure the run time and resource use/, src);
     }
     // At the start of a pipeline, and after `&&`, it is the keyword.
     assert.strictEqual(find(explain('a && time b'), 'time', 'keyword').kind, 'keyword');
