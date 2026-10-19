@@ -1061,7 +1061,9 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     const head = extracted.text.split('\n')[at.line].slice(at.character);
     const one = t.span.start.line === t.span.end.line;
     const spanLength = one ? t.span.end.character - at.character : Infinity;
-    if (head.startsWith(t.label) && !t.label.endsWith('…') && spanLength > t.label.length) {
+    if (t.labelParts) {
+      // A skeleton is not the text of the span: keep it.
+    } else if (head.startsWith(t.label) && !t.label.endsWith('…') && spanLength > t.label.length) {
       // A command is labelled with its name, the start of its span: take the name from the original too.
       label = original[sp.start.line].slice(sp.start.character, extracted.maps[at.line][at.character + t.label.length]);
     } else if (one) {

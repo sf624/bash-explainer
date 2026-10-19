@@ -994,7 +994,7 @@ describe('tricky lines (round 4)', () => {
     const def = tokens(src).find((t) => t.kind === 'function' && t.label.startsWith('f()'))!;
     assert.match(def.explanation, /^Defines function `f`; call it like a command \(arguments become \$1, \$2…\)\. The redirection after the body is applied each time the function is called, not when it is defined/);
     assert.match(tokens(src, 'ja').find((t) => t.kind === 'function' && t.label.startsWith('f()'))!.explanation, /本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される/);
-    assert.match(tokens(src).find((t) => t.kind === 'redirect' && t.label.startsWith('{ echo hi; }'))!.explanation, /^Redirection applied to `\{ echo hi; \}` as a whole\. A redirection on a function is stored with it and applied each time the function is called$/);
+    assert.match(tokens(src).find((t) => t.kind === 'redirect' && t.label.startsWith('{ ‹commands› }'))!.explanation, /^Redirection applied to `\{ echo hi; \}` as a whole\. A redirection on a function is stored with it and applied each time the function is called$/);
     assert.ok(!/applied each time/.test(tokens('f() { echo hi; }').find((t) => t.kind === 'function')!.explanation));
     assert.ok(!/stored with it/.test(tokens('{ echo hi; } >&2').map((t) => t.explanation).join('\n')));
     assert.strictEqual(bash('f() { echo hi; } >&2; f 2>&1 | tr h H'), 'Hi\n');

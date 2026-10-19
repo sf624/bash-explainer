@@ -79,16 +79,16 @@ describe('the label of a command', () => {
   it('names the stages of a pipeline and the commands of a list, but not the pipeline', () => {
     const src = 'cat f | sort -u | uniq -c';
     const pipe = explain(src).items[0];
-    assert.strictEqual(pipe.label, src);
+    assert.strictEqual(pipe.label, 'cat | sort | uniq');
     assert.deepStrictEqual(pipe.children.map((c) => c.label), ['cat', '|', 'sort', '|', 'uniq']);
     assert.deepStrictEqual(pipe.children.filter((c) => c.kind === 'command').map((c) => covered(src, c)), ['cat f', 'sort -u', 'uniq -c']);
   });
 
-  it('names the command under a redirect wrapper, which keeps the whole text', () => {
+  it('names the command under a redirect wrapper, which keeps the redirections', () => {
     const src = "tr -d '\\r' < a > b";
     const w = explain(src).items[0];
     assert.strictEqual(w.kind, 'redirect');
-    assert.strictEqual(w.label, src);
+    assert.strictEqual(w.label, 'tr < a > b');
     const [cmd] = w.children;
     assert.strictEqual(cmd.label, 'tr');
     assert.strictEqual(covered(src, cmd), "tr -d '\\r'");
@@ -102,12 +102,10 @@ describe('the label of a command', () => {
     assert.strictEqual(covered(src, wrapped), 'rm -rf /tmp/x');
   });
 
-  it('leaves the labels of constructs as they are', () => {
-    for (const src of ['for i in 1 2; do echo $i; done', 'if true; then :; fi', '[ -f x ]', '[[ -n $a ]]', '(( x++ ))', 'x=1', '{ echo a; }', '( echo a )', 'f() { :; }', 'time ls -a']) {
-      const t = explain(src).items[0];
-      assert.strictEqual(t.label, src, src);
+  it('leaves the labels of constructs to their skeletons (see skeleton-label.test.ts)', () => {
+    for (const [src, label] of [['[ -f x ]', '[ -f x ]'], ['x=1', 'x=1'], ['time ls -a', 'time ls'], ['a && b', 'a && b']]) {
+      assert.strictEqual(explain(src).items[0].label, label, src);
     }
-    assert.strictEqual(explain('a && b').items[0].label, 'a && b');
   });
 
   it('is shown by a line of a host file, with the range at the original columns', () => {

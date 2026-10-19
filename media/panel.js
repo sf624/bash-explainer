@@ -254,7 +254,17 @@
     }
     const label = document.createElement('code');
     label.className = token.group ? `label grp-label grp-${((token.group - 1) % 6) + 1}` : 'label';
-    label.textContent = token.label;
+    // A skeleton: code parts as they are (the label is monospace), placeholders apart in italics.
+    const parts = token.labelParts ?? [{ text: token.label }];
+    parts.forEach((p, i) => {
+      if (i) label.append(' ');
+      if (p.placeholder) {
+        const ph = document.createElement('span');
+        ph.className = 'ph';
+        ph.textContent = p.text;
+        label.append(ph);
+      } else label.append(p.text);
+    });
     const text = document.createElement('span');
     text.className = 'text';
     text.append(...inline(token.explanation));

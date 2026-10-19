@@ -115,6 +115,13 @@ ul#tree {
   text-overflow: ellipsis;
 }
 
+/* A placeholder in a label (what a skeleton leaves out): proportional, italic and muted, unlike the code around it. */
+.label .ph {
+  font-family: var(--vscode-font-family);
+  font-style: italic;
+  color: var(--c-muted);
+}
+
 code {
   font-family: var(--vscode-editor-font-family);
 }

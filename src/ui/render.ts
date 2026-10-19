@@ -1,6 +1,7 @@
 import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
+import { LabelPart, labelParts } from '../label';
 
 export const ui = {
   ja: {
@@ -179,8 +180,10 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     return out.join('\n');
   }
   const walk = (tok: Token, depth: number) => {
-    const flat = tok.label.replace(/\s*\n\s*/g, ' ⏎ ');
-    const label = `<code>${colored(flat, tok.kind)}</code>`;
+    // A code part in `<code>`, a placeholder in italics and the muted colour; the parts are a space apart.
+    const label = labelParts(tok).map((p) => (p.placeholder
+      ? `<i>${colored(p.text, 'comment')}</i>`
+      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind)}</code>`)).join(' ');
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
     out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
@@ -216,14 +219,24 @@ export function examplesMarkdown(examples: Example[], indent?: string): string[]
   return out;
 }
 
+/** Text as a Markdown code span: the fence is longer than any run of backticks inside, and a backtick at either end is set off by a space. */
+export function codeSpan(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((m) => m.length));
+  const fence = '`'.repeat(longest + 1);
+  return text.startsWith('`') || text.endsWith('`') ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
+}
+
+/** A label as Markdown: code parts as code spans, placeholders in italics (`if` *condition* `then`). */
+export function labelMarkdown(parts: readonly LabelPart[]): string {
+  return parts.map((p) => (p.placeholder ? `*${p.text}*` : codeSpan(p.text.replace(/\s*\n\s*/g, ' ⏎ ')))).join(' ');
+}
+
 /** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
   for (const n of ex.notes) out.push(`> ${n}`, '');
-  // A label containing a backtick needs a double-backtick code span.
-  const code = (text: string) => (text.includes('`') ? `\`\` ${text} \`\`` : `\`${text}\``);
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${code(tok.label.replace(/\s*\n\s*/g, ' ⏎ '))} — ${tok.explanation}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${tok.explanation}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
