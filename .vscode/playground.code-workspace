@@ -1,0 +1,8 @@
+{
+  // The workspace F5 opens (see launch.json): the test/fixtures folder, with the panel opened beside
+  // the script. The integration tests open the folder itself, without these settings.
+  "folders": [{ "path": "../test/fixtures" }],
+  "settings": {
+    "bashExplainer.panel.autoOpen": true
+  }
+}
