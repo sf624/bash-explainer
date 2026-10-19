@@ -16,6 +16,16 @@
 - Numbers in arithmetic are explained with their base and decimal value: `2#1010` is binary 10, `0x1F` is hexadecimal 31, `010` is octal 8, `64#@` is 62. Numbers bash rejects (`08`, `2#2`, `1#0`, `0b11`) are flagged. Before, `0x1F` was "variable `0x1F`" and the others were just "number". The same rules read the offset and length of `${s:0x1:010}`.
 - The comma operator in `$((x=3,y=x++*2,x+y))` and `(( a=1, b=2 ))` is explained: the expressions run left to right and the last one gives the value.
 - A word with quotes or backslashes shows the string it becomes: `h\i` is `hi`, `\$HOME` and `$'\x24HOME'` are the text `$HOME` (nothing is expanded). A command name made of such parts is explained as the command it spells when that is known: `$(:)e\c'h'"o"` is `echo`, `'echo'` and `e\cho` too. Before, it was "Run the expanded value as a command", or an unknown command named `'echo'`.
+- `${*: -1}` and `${@: -2}` count from the last argument ("the last argument; it is not `$-1`"); before, they said "from `$-1`". For arrays, a negative offset counts from one past the highest index, which on a sparse array is not the last element; the length is "1 element" and "1 character" in the singular. The offset and length can be written `0x1` or `010`, as bash reads them.
+- `${!#}` is explained as the last argument (with a checked example, `r` for `p q r`); before, "When `#=HOME`" with the value of `$HOME`.
+- The replacement in `${s/#h/\}}` is shown after quote removal (`}`, with the example `}ello world`); before, it showed `\}` and `\}ello world`. A replacement with `&` (the match, in bash 5.2) gets no example.
+- In a `case` with `;&` or `;;&`, the statement says what the three endings do, and the branch after one says it is run without its pattern (`;&`) or tested again (`;;&`); a `*)` after them is no longer "runs when nothing else matched".
+- `local -n r=$1` is explained as making `r` another name for the variable named by `$1`, and a later `r=7` says it sets that variable; before, both were plain assignments to `r`.
+- `PIPESTATUS` and `BASH_REMATCH` are described as what they are, with examples that run (`false | true` gives `1 0`; `[1]` is the text of group 1, `${#BASH_REMATCH[@]}` is the number of groups + 1); before, the examples were `PIPESTATUS=(a b c)`.
+- `$[1+2]` is marked as the obsolete form of `$((…))`.
+- Constant array indexes are evaluated: `${a[1+1]}` is "an arithmetic expression: 2", `${a[010]}` is 8, and `${a[-1]}` is "the last element".
+- `z=2 echo $z` says `$z` is expanded before the assignment applies (it is empty if unset), and `x=1 y=$x` says `$x` is already set because assignments run left to right.
+- Brace expansions that the parser splits into words (`{a,b\,c}`, `{,}`, `{a..e..2}`, `project/{src,test}`) are one "Brace expansion" with the words they give: `{a,b\,c}` is `a` `b,c`, and `{,}` is nothing. Before, they were a "Concatenation" of the pieces `{`, `a,b\,c` and `}`.
 
 ## 0.4.0
 
