@@ -215,9 +215,15 @@ export const unaryTestOps: Record<string, Text> = {
   '-o': tx('有効になっているシェルオプション名である', 'is an enabled shell option'),
 };
 
+/** `=` and `==` inside `[[ ]]`, where the right side is a pattern (in `[ ]` and `test` it is plain text: see `binaryTestOps`). */
+export const extendedEqualOps: Record<string, Text> = {
+  '=': tx('文字列が等しい（右辺はグロブパターン）', 'strings are equal (the right side is a glob pattern)'),
+  '==': tx('文字列が等しい（右辺はグロブパターン）', 'strings are equal (the right side is a glob pattern)'),
+};
+
 export const binaryTestOps: Record<string, Text> = {
-  '=': tx('文字列が等しい（`[[ ]]` では右辺はグロブパターン）', 'strings are equal (right side is a glob pattern in `[[ ]]`)'),
-  '==': tx('文字列が等しい（`[[ ]]` では右辺はグロブパターン）', 'strings are equal (right side is a glob pattern in `[[ ]]`)'),
+  '=': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),
+  '==': tx('文字列が等しい（右辺もただの文字列で、パターンではない）', 'strings are equal (the right side is plain text, not a pattern)'),
   '!=': tx('文字列が等しくない', 'strings differ'),
   '=~': tx('左辺が右辺の正規表現(ERE)に一致する。一致結果は `BASH_REMATCH` に入る', 'left side matches the regex (ERE) on the right; captures go to `BASH_REMATCH`'),
   '<': tx('辞書順で左が小さい', 'sorts before (lexicographically)'),

@@ -360,7 +360,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
     // `${!#}` is the last argument: `$#` is the number of the last one.
     if (name === '#') return [{ when: ja ? '引数が `p q r` のとき' : 'When the arguments are `p q r`', result: 'r', setup: 'set -- p q r' }];
     if (p.op === '*' || p.op === '@') {
-      return [{ when: ja ? `${name}_A と ${name}_B があるとき` : `When ${name}_A and ${name}_B are set`, result: `${name}_A ${name}_B`, setup: `${name}_A=1 ${name}_B=2` }];
+      const [a, b] = [`${name}${name.endsWith('_') ? '' : '_'}A`, `${name}${name.endsWith('_') ? '' : '_'}B`];
+      return [{ when: ja ? `${a} と ${b} があるとき` : `When ${a} and ${b} are set`, result: `${a} ${b}`, setup: `${a}=1 ${b}=2` }];
     }
     if (p.subscript === '@' || p.subscript === '*') return [array(values.map((_, i) => i).join(' '))];
     return [{ when: ja ? `\`${name}=HOME\` のとき` : `When \`${name}=HOME\``, result: ja ? '$HOME の値' : 'the value of $HOME' }];

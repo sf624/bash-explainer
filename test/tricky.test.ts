@@ -1507,3 +1507,142 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
     });
   });
 }
+
+// The fifteen lines of the seventh round.
+const ROUND7 = [
+  'case x in(x)echo y;;esac;if(true)then(echo a)fi;for i in 1;do echo $i;done;{ echo b;}',
+  'echo $#a ${#a} a;#b; echo never',
+  '[[ 1 = 1 || 1 = 2 && 1 = 3 ]] && echo dbl; true || false && false || echo list; [ 1 = 1 -o 1 = 2 -a 1 = 3 ] && echo single',
+  'x=1 y=2; echo $((x+++y)) $x $((x---y)) $x $((- -x)) $((!!y)) $((~-1))',
+  'x=0; echo $(( 0 && (x=5) )) $(( 1 || (x=6) )) $x $(( 1 ? 7 : (x=8) )) $x; for ((i=3;i--;)); do echo -n $i; done; echo',
+  'f(){ echo $x; }; g(){ local x=in; f; }; x=out; g; f',
+  'shopt -s extglob; s=aaabxb; echo ${s##+(a)} ${s//@(a|x)/-} ${s%%*(b)}',
+  'a=(p q); r=\'a[1]\'; zq_1=x zq_2=y; echo ${!r} ${!zq_@} ${!a[@]}',
+  'unset x; echo x${x-u}${x+s}x; x=; echo x${x-u}${x:-e}${x+s}${x:+n}x; s=\'*ab\'; echo ${s#"*"} ${s#*} ${s##*a}',
+  'echo $\'a\\0b\'c \'\'"\'"\'\' "\'"\'"\' $\'\\x41\\0x\'',
+  '((3>2)) && echo $((2>1))$[3>=3] && [ 10 \\< 9 ] && echo lexical',
+  'printf \'%c|%.2s|%5s|%-3s|%x|%o|%i\\n\' hello world r l 255 8 0x1f',
+  'a=([0]=x [0]+=y); mapfile -t l <<< $\'p\\nq\'; printf -v \'b[2]\' %s z; echo $a ${#l[@]} ${b[2]} ${!b[@]}',
+  'function a-b.c { echo dash; }; function @ () ( echo at ); a-b.c; @',
+  'IFS=\' ,\'; x=\' a , b,,c \'; set -- $x; echo $#; printf \'[%s]\' "$@"; echo',
+];
+// What tree-sitter-bash reads wrongly: `in(x)echo`, `if(true)then` and `$[3>=3]`.
+const ROUND7_TS_BROKEN = [0, 10];
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 7, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND7_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND7.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    const expl = (src: string, label: string, lang: 'ja' | 'en' = 'en') => findAt(src, 0, label, lang).explanation;
+
+    it('lists the variable names of ${!prefix@} and ${!prefix*}, not an indirection', () => {
+      const src = ROUND7[7];
+      assert.strictEqual(bash(src), 'q zq_1 zq_2 0 1\n');
+      assert.match(expl(src, '${!zq_@}'), /^Names of all variables starting with `zq_` \(the value of a variable `zq_` is not used\); each name is a separate word/);
+      assert.match(expl(src, '${!zq_@}', 'ja'), /^変数名の一覧: `zq_` で始まる名前の変数をすべて挙げる/);
+      assert.doesNotMatch(expl(src, '${!zq_@}'), /Indirection/);
+      const parts = findAt(src, 0, '${!zq_@}').children;
+      assert.deepStrictEqual(parts.map((t) => t.label), ['!', 'zq_', '@']);
+      assert.match(parts[2].explanation, /^`@`: one word per name .*not the `@` transform/);
+      assert.match(findAt(src, 0, '${!zq_@}', 'ja').children[2].explanation, /変換の `@` ではない/);
+      // Quoted: `@` keeps the names apart, `*` joins them with the first character of IFS.
+      assert.strictEqual(bash('zq_1=x zq_2=y; set -- "${!zq_@}"; echo $#'), '2\n');
+      assert.strictEqual(bash('zq_1=x zq_2=y; set -- "${!zq_*}"; echo $#'), '1\n');
+      assert.strictEqual(bash('zq_1=x zq_2=y; IFS=,; echo "${!zq_*}"'), 'zq_1,zq_2\n');
+      assert.match(expl('echo "${!zq_@}"', '${!zq_@}'), /each name is a separate word, also inside double quotes$/);
+      assert.match(expl('echo "${!zq_*}"', '${!zq_*}'), /inside double quotes they form one word, joined with the first character of `IFS`$/);
+      assert.match(expl('echo ${!zq_*}', '${!zq_*}'), /quoted, they form one word joined with the first character of `IFS` \(unquoted they are separate words\)$/);
+      assert.match(expl('echo "${!zq_*}"', '${!zq_*}', 'ja'), /ダブルクォートの中なので、`IFS` の先頭の文字で区切った1つの単語になる$/);
+      assert.match(findAt('echo ${!zq_*}', 0, '*').explanation, /^`\*`: join the names/);
+      assert.match(findAt('echo ${!zq_*}', 0, '*', 'ja').explanation, /^`\*`: 見つかった名前を1つにつなげる/);
+      assert.match(findAt('echo ${!zq_*}', 0, '${!zq_*}').explanation, /^Names of all variables/);
+      // Its example does not double the underscore.
+      assert.strictEqual(new Analyzer('en').explainLine(parser.parse('echo ${!zq_@}'), 0).examples[0].sections[0].lines[0], 'zq_A zq_B');
+      assert.strictEqual(new Analyzer('en').explainLine(parser.parse('echo ${!zq@}'), 0).examples[0].sections[0].lines[0], 'zq_A zq_B');
+      // The siblings stay right: the keys of an array, an indirection (also to an element), indirection with a transform.
+      assert.match(expl(src, '${!r}'), /^Indirection: use the value of `r` as a variable name$/);
+      assert.match(expl(src, '${!a[@]}'), /^Indices \(keys\) of array `a`$/);
+      assert.strictEqual(bash("a=(p q); r='a[1]'; echo ${!r} ${!a[@]} ${!a[*]}"), 'q 0 1 0 1\n');
+      assert.match(expl('echo ${!x@Q}', '${!x@Q}'), /^Indirection: use the value of `x` as a variable name, then take that variable's value and quote it so it can be reused as shell input$/);
+      assert.match(expl('echo ${!x@U}', '${!x@U}', 'ja'), /^間接参照: 変数 `x` の値を変数名とみなし、その変数の値をすべて大文字にする$/);
+      assert.strictEqual(bash("r1=val; x=r1; echo ${!x@Q} ${!x@U}"), "'val' VAL\n");
+    });
+
+    it('says that = and == compare strings in [ ] and test, and patterns only in [[ ]]', () => {
+      const src = ROUND7[2];
+      assert.strictEqual(bash('[ a = a* ]; echo $?; [[ a = a* ]]; echo $?'), '1\n0\n');
+      assert.strictEqual(bash('cd "$(mktemp -d)"; [ a = "a*" ]; echo $?; [ "a*" == "a*" ]; echo $?'), '1\n0\n');
+      assert.strictEqual(bash('[ a == a? ]; echo $?; [[ a == a? ]]; echo $?'), '1\n1\n');
+      assert.strictEqual(bash('[ a = [a] ]; echo $?; [[ a = [a] ]]; echo $?'), '1\n0\n');
+      // The single test: no glob remark. The double test of the same line has it.
+      assert.match(expl(src, '1 = 1'), /strings are equal \(the right side is plain text, not a pattern\)$/);
+      assert.match(expl(src, '1 = 1', 'ja'), /文字列が等しい（右辺もただの文字列で、パターンではない）$/);
+      assert.doesNotMatch(tokens(src).filter((t) => t.kind === 'test').map((t) => t.explanation).join('\n'), /glob pattern in `\[\[ \]\]`/);
+      for (const s of ['[ a = a* ]', '[ a == a* ]', '[ "$x" = +(a) ]', '[ a = [ab] ]']) {
+        const e = tokens(s).filter((t) => t.kind === 'test').pop()!.explanation;
+        assert.match(e, /plain text, not a pattern/, s);
+        assert.doesNotMatch(e, /glob/, s);
+      }
+      for (const s of ['[[ a = a* ]]', '[[ a == a* ]]']) {
+        const e = tokens(s).filter((t) => t.kind === 'test').pop()!.explanation;
+        assert.match(e, /strings are equal \(the right side is a glob pattern\)/, s);
+      }
+      assert.match(tokens('[[ a = a* ]]', 'ja').filter((t) => t.kind === 'test').pop()!.explanation, /文字列が等しい（右辺はグロブパターン）/);
+      // `!=` and the numeric tests say nothing about patterns in either.
+      assert.doesNotMatch(tokens('[ a != a* ]').filter((t) => t.kind === 'test').pop()!.explanation, /pattern/);
+    });
+
+    it('calls an extended glob in ${…} an extended glob, and decides at run time only for expansions', () => {
+      const src = ROUND7[6];
+      assert.strictEqual(bash(src), 'bxb ---b-b aaabx\n');
+      assert.strictEqual(bash('s=aaabxb; echo ${s##+(a)}'), 'aaabxb\n');
+      for (const [pat, label] of [['+(a)', '##'], ['@(a|x)', '//'], ['*(b)', '%%'], ['?(a)', '/'], ['!(a)b', '#'], ['!(b)', '//']] as const) {
+        const line = label === '//' || label === '/' ? `echo \${s${label}${pat}/-}` : `echo \${s${label}${pat}}`;
+        const e = findAt(line, 0, pat).explanation;
+        assert.match(e, /^Pattern `.*` \(an extended glob: needs `shopt -s extglob`, or it is taken as literal text\)$/, line);
+        assert.doesNotMatch(e, /expansions/, line);
+        assert.match(findAt(line, 0, pat, 'ja').explanation, /拡張グロブ。`shopt -s extglob` が必要/, line);
+      }
+      // A real expansion in the pattern is still decided at run time, extended glob or not.
+      for (const pat of ['+($x)', '$x*', '$(echo a)', '`echo a`']) {
+        assert.match(tokensAt(`echo \${s##${pat}}`, 0, 'en').find((t) => t.kind === 'pattern')!.explanation, /^Pattern `.*` \(contains expansions, so it is decided at run time\)$/, pat);
+      }
+      assert.match(findAt('echo ${s##+($x)}', 0, '+($x)', 'ja').explanation, /変数などを含むため、内容は実行時に決まる/);
+      assert.strictEqual(bash('shopt -s extglob; s=aaabxb; x=a; echo ${s##+($x)}'), 'bxb\n');
+    });
+
+    it('does not claim more than bash does for the other lines', () => {
+      const out = [
+        'y\na\n1\nb\n',
+        '0a 0 a\n',
+        'dbl\nlist\nsingle\n',
+        '3 2 0 1 1 1 0\n',
+        '0 1 0 7 0\n210\n',
+        'in\nout\n',
+        'bxb ---b-b aaabx\n',
+        'q zq_1 zq_2 0 1\n',
+        'xux\nxesx\nab *ab b\n',
+        'ac \' \'" A\n',
+        '11\nlexical\n',
+        'h|wo|    r|l  |ff|10|31\n',
+        'xy 2 z 2\n',
+        'dash\nat\n',
+        '4\n[a][b][][c]\n',
+      ];
+      ROUND7.forEach((src, i) => assert.strictEqual(bash(src), out[i], src));
+    });
+  });
+}

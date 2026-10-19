@@ -45,7 +45,7 @@ import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithW
 import { decodedText, staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
-  binaryTestOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
+  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 
@@ -2728,8 +2728,8 @@ export class Analyzer {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
       }
       return this.tok(n, 'test', this.s(
-        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}${num}`,
-        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(binaryTestOps[op])}${num}`,
+        `条件: \`${left?.text}\` と \`${rightText}\` を比較 — ${this.quotedPatternNote(n, op, rights) ?? this.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
+        `Condition: \`${left?.text}\` vs \`${rightText}\` — ${this.quotedPatternNote(n, op, rights) ?? this.t(extendedEqualOps[op] ?? binaryTestOps[op])}${num}`,
       ), operands);
     }
     const assignOps = ['=', '+=', '-=', '*=', '/=', '%='];
@@ -3237,6 +3237,7 @@ export class Analyzer {
               : s('`/` の後ろ（置換後の文字列）が空なので、一致した部分は削除される', 'Nothing follows this `/`, so the replacement is empty and matches are deleted')];
         }
         if (t === ':' && slicesElements(p)) return ['operator', s('`:`: 要素の一部を取り出す（`:開始位置:個数`）', '`:`: Take some of the elements (`:offset:count`)')];
+        if (p.prefix === '!') return ['operator', t === '@' ? s('`@`: 見つかった名前を別々の単語にする（`"$@"` と同じ形。変換の `@` ではない）', '`@`: one word per name (like `"$@"`; not the `@` transform)') : s('`*`: 見つかった名前を1つにつなげる（クォート内では `IFS` の先頭の文字で区切る）', '`*`: join the names (inside double quotes, with the first character of `IFS`)')];
         return ['operator', `\`${t}\`: ` + opMeaning[t][this.lang === 'ja' ? 0 : 1]];
       case 'word': {
         const op = p.op!;
@@ -3253,7 +3254,11 @@ export class Analyzer {
         const only = casePat ? (p.op!.length === 2
           ? s('。文字を1つずつ調べ、一致した文字だけが変換される', '. Each character is tried on its own; only those that match are converted')
           : s('。先頭の1文字がこれに一致したときだけ変換される', '. The first character is converted only if it matches')) : '';
-        if (!glob) return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
+        if (!glob) {
+          // An extended glob (`+(a)`, `@(a|x)`) is a pattern of its own; only `$…` and backquotes are decided at run time.
+          if (!/\$|`/.test(t)) return ['pattern', s(`${what} \`${t}\`（拡張グロブ。\`shopt -s extglob\` が必要で、これがないと文字どおりの文字列として扱われる）`, `${what} \`${t}\` (an extended glob: needs \`shopt -s extglob\`, or it is taken as literal text)`)];
+          return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
+        }
         return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}${only}`];
       }
       case 'replacement': {
@@ -3321,6 +3326,26 @@ export class Analyzer {
         ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` の要素数`, `Number of elements in array \`${targetText.replace(/\[.*/, '')}\``)
           + (targetText.startsWith('BASH_REMATCH[') ? this.s('（正規表現の括弧のグループの数 + 1。要素 0 が一致した全体）', ' (the number of groups in the regex + 1: element 0 is the whole match)') : '')
         : this.s(`変数 \`${targetText}\` の文字数（長さ）`, `Length of \`${targetText}\` in characters`));
+    }
+    // `${!prefix@}` / `${!prefix*}`: the names of the variables that start with the prefix (no indirection, no transform).
+    const names = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)([@*])$/.exec(inner) : null;
+    if (names) {
+      const [, pre, sign] = names;
+      const form = sign === '@'
+        ? this.s('各名前が別々の単語になる（ダブルクォートの中でも別々）', 'each name is a separate word, also inside double quotes')
+        : inDoubleQuotes(n)
+          ? this.s('ダブルクォートの中なので、`IFS` の先頭の文字で区切った1つの単語になる', 'inside double quotes they form one word, joined with the first character of `IFS`')
+          : this.s('クォートすると、`IFS` の先頭の文字で区切った1つの単語になる（クォートなしなら別々の単語）', 'quoted, they form one word joined with the first character of `IFS` (unquoted they are separate words)');
+      return this.tok(n, 'expansion', this.s(`変数名の一覧: \`${pre}\` で始まる名前の変数をすべて挙げる（\`${pre}\` という変数の値は使わない）。${form}`,
+        `Names of all variables starting with \`${pre}\` (the value of a variable \`${pre}\` is not used); ${form}`));
+    }
+    // `${!x@Q}`: indirection first, then the transform of the value found.
+    const indirectTransform = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)@([QEPAKaULuk])$/.exec(inner) : null;
+    if (indirectTransform) {
+      const [, v, letter] = indirectTransform;
+      const tf = transformMeaning[letter];
+      return this.tok(n, 'expansion', this.s(`間接参照: 変数 \`${v}\` の値を変数名とみなし、その変数の値を${tf[0]}`,
+        `Indirection: use the value of \`${v}\` as a variable name, then take that variable's value and ${tf[1]}`));
     }
     if (prefixOp === '!' && target) {
       return this.tok(n, 'expansion', isArrayAll
