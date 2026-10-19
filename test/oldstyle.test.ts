@@ -47,7 +47,9 @@ function run(cmd: string, argv: string[]): { out: string; status: number | null;
   }
 }
 
-describe('old-style options: tar', () => {
+describe('old-style options: tar', function () {
+  // Runs the real tool several times, each in a fresh directory: give a slow CI runner time.
+  this.timeout(60000);
   // [dashless words, the same with dashes]
   const pairs: [string[], string[]][] = [
     [['cf', 'a.tar', 'src'], ['-c', '-f', 'a.tar', 'src']],
@@ -134,7 +136,9 @@ describe('old-style options: tar', () => {
   });
 });
 
-describe('old-style options: ps', () => {
+describe('old-style options: ps', function () {
+  // Runs the real tool several times, each in a fresh directory: give a slow CI runner time.
+  this.timeout(60000);
   it('reads aux and axjf as BSD options', () => {
     const t = top('ps axjf');
     assert.match(t[0].explanation, /^BSD-style options/);
@@ -177,7 +181,9 @@ describe('old-style options: ps', () => {
   });
 });
 
-describe('old-style options: ar', () => {
+describe('old-style options: ar', function () {
+  // Runs the real tool several times, each in a fresh directory: give a slow CI runner time.
+  this.timeout(60000);
   it('rcs lib.a x.o is the dashed -rcs', function () {
     if (!have('ar')) return this.skip();
     assert.deepStrictEqual(run('ar', ['rcs', 'lib.a', 'src/a.txt']), run('ar', ['-r', '-c', '-s', 'lib.a', 'src/a.txt']));
