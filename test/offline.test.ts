@@ -81,6 +81,8 @@ describe('offline by design', () => {
         // A name built at run time could load anything.
         assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/, file);
         assert.doesNotMatch(bundle, /telemetry/i, file);
+        // unbash is in the bundle now, so the network APIs are checked in it as well: it has none.
+        assert.doesNotMatch(bundle, NETWORK_APIS, file);
       }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -108,6 +110,7 @@ describe('offline by design', () => {
       assert.deepStrictEqual([...required].sort(), ['fs']);
       assert.doesNotMatch(bundle, /\brequire\s*\(\s*[^"\s]/);
       assert.doesNotMatch(bundle, /telemetry|WebAssembly/i);
+      assert.doesNotMatch(bundle, NETWORK_APIS);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -140,6 +143,8 @@ describe('offline by design', () => {
           for (const src of sources) assert.match(src, /^('(self|none|unsafe-inline)'|data:)$/, `${page}: ${name} ${src}`);
         }
         assert.ok(['default-src', 'connect-src'].every((d) => !directives.get(d) || directives.get(d)!.every((s) => s === "'self'" || s === "'none'")));
+        // The page fetches nothing, so it may not even ask its own server.
+        if (page === 'index.html') assert.deepStrictEqual(directives.get('connect-src'), ["'none'"]);
         assert.ok(directives.has('default-src'), `${page}: no default-src`);
         // Scripts, styles and images come from the page's own files (links to other sites may be followed by the reader).
         for (const m of html.matchAll(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)="([^"]*)"/g)) assert.doesNotMatch(m[1], /:/, `${page}: ${m[0]}`);
@@ -149,6 +154,8 @@ describe('offline by design', () => {
       const builtins = /\b[\w$]+\(\s*"((?:node:)?(?:fs|path|url|module|http|https|http2|net|tls|dgram|dns|child_process|worker_threads|cluster))"\s*\)/g;
       assert.deepStrictEqual([...new Set([...app.matchAll(builtins)].map((m) => m[1]))], [], 'the page requires a Node.js module');
       assert.doesNotMatch(app, /telemetry|sendBeacon|WebSocket|EventSource|WebAssembly/i);
+      assert.doesNotMatch(app, NETWORK_APIS);
+      assert.doesNotMatch(app, /\bfetch\s*\(|XMLHttpRequest/);
       assert.ok(!packagesOf(JSON.parse(fs.readFileSync(metafile, 'utf8'))).some((n) => n.includes('tree-sitter')), 'the page includes tree-sitter');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
