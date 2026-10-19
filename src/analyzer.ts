@@ -164,9 +164,11 @@ function spanOf(n: SyntaxNode): Span {
 }
 
 function shorten(text: string, max = 60): string {
-  const first = text.split('\n')[0].trimEnd();
+  const [head, ...rest] = text.split('\n');
+  const first = head.trimEnd();
   const s = first.length > max ? first.slice(0, max - 1) + '…' : first;
-  return first.length < text.length && s === first ? s + ' …' : s;
+  // " …" says that the text goes on in a later line; trailing blanks (`tr -d ' '`, `"PV "`) are not that.
+  return rest.some((l) => l.trim()) && s === first ? s + ' …' : s;
 }
 
 function isBlockLike(n: SyntaxNode): boolean {

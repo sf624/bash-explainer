@@ -60,7 +60,8 @@ class Converter {
   /** Ranges that are not code: heredoc bodies and their closing lines. */
   private readonly skip: (readonly [number, number])[] = [];
 
-  constructor(private readonly text: string) {
+  /** `cr`: where the text has a CR of a CRLF that was turned into a blank; no node ends with it. */
+  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set()) {
     for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) this.lineStarts.push(i + 1);
   }
 
@@ -102,6 +103,8 @@ class Converter {
   /** Sorts the children, links the parents and fills in the texts and positions, all the way down. */
   seal(m: Mut, parent: Mut | null): void {
     delete m.lineEnd;
+    // The blank that was a CR at the end of a line is not part of a comment, a word or any other node.
+    if (m.endIndex - m.startIndex > 1 && this.cr.has(m.endIndex - 1)) m.endIndex--;
     m.parent = parent;
     m.children.sort((a, b) => a.startIndex - b.startIndex || a.endIndex - b.endIndex);
     m.namedChildren = m.children.filter((c) => c.named);
@@ -1412,7 +1415,7 @@ export function createUnbashParser(): BashParser {
       // author meant, and the document issues say so; the tree is built as if the CR were a blank.
       const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
       if (!carriageReturns.length) return new Converter(text).run();
-      return { ...new Converter(text.replace(/\r(?=\n)/g, ' ')).run(), carriageReturns };
+      return { ...new Converter(text.replace(/\r(?=\n)/g, ' '), new Set(carriageReturns)).run(), carriageReturns };
     },
   };
 }

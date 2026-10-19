@@ -242,6 +242,12 @@ describe('statements as bash reads them', () => {
     assert.deepStrictEqual(e.items.map((t) => t.label), ['cat <<EOF; echo after …', ';', 'echo after']);
     assert.match(find(e, '<<EOF').explanation, /up to a line containing only `EOF`/);
   });
+  it('adds " …" to a label only when the text goes on in a later line, not for blanks at its end', () => {
+    assert.deepStrictEqual(explain("tr -d ' '").items.map((t) => t.label), ["tr -d ' '"]);
+    assert.ok(find(explain("tr -d ' '"), "' '"));
+    assert.ok(find(explain('echo "PV " x'), '"PV "'));
+    assert.deepStrictEqual(explain('echo a  \\\nb').items.map((t) => t.label), ['echo a  \\ …']);
+  });
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
   });
