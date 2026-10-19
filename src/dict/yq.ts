@@ -21,7 +21,7 @@ const V4_OPTIONS: OptSpec[] = [
   ['-f|--front-matter', 'Markdown などの先頭の YAML（フロントマター）だけを処理する（`extract`・`process`）', 'process only the YAML front matter (`extract` or `process`)', 'arg'],
   ['-0|--nul-output', '結果を NUL 文字区切りで出力する（`xargs -0` 向け）', 'separate results with NUL (for `xargs -0`)'],
   ['-N|--no-doc', 'ドキュメント区切り `---` を出力しない', 'do not print the `---` document separators'],
-  ['-s|--split-exp', '結果ごとに、この式の名前のファイルに書き出す', 'write each result to a file named by this expression', 'arg'],
+  ['-s|--split-exp', '結果ごとに、指定した式の名前のファイルに書き出す', 'write each result to a file named by the given expression', 'arg'],
   ['-C|--colors', '色付きで出力する', 'force colours'],
   ['-M|--no-colors', '色を付けない', 'no colours'],
   ['-v|--verbose', '詳しいログを出す', 'verbose logging'],

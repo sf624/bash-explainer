@@ -171,7 +171,7 @@ describe('the dictionary', () => {
     assert.match(flock.find((t) => t.label === '-n')!.explanation, /fail instead of waiting/);
     assert.match(flock.find((t) => t.label === '/tmp/l')!.explanation, /lock file/);
     const journal = tokens('journalctl -u nginx -f');
-    assert.match(journal.find((t) => t.label === '-u')!.explanation, /only this unit/);
+    assert.match(journal.find((t) => t.label === '-u')!.explanation, /only the given unit/);
     assert.match(journal.find((t) => t.label === 'nginx')!.explanation, /Value for `-u`/);
     assert.match(journal.find((t) => t.label === '-f')!.explanation, /follow new entries/);
     const ping = tokens('ping -c 3 example.com');
@@ -245,5 +245,18 @@ describe('the dictionary', () => {
     assert.deepStrictEqual(twice, [], 'commands defined in more than one table');
     const orphans = [...Object.keys(extraFiles), ...Object.keys(extraAdmin), ...Object.keys(extraSubcommands)].filter((n) => !where.has(n) && !Object.hasOwn(builtins, n));
     assert.deepStrictEqual(orphans, [], 'extras for commands with no base entry');
+  });
+
+  it('does not point at the value of an option with "この" or "this" (it reads as the current one)', () => {
+    const bad: string[] = [];
+    const visit = (path: string, doc: CommandDoc): void => {
+      for (const [name, opt] of Object.entries(doc.options ?? {})) {
+        if (!opt.arg) continue;
+        if (/この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${name}: ${opt.text.ja} / ${opt.text.en}`);
+      }
+      for (const [name, sub] of Object.entries(doc.subcommands ?? {})) visit(`${path} ${name}`, sub);
+    };
+    for (const [name, doc] of [...Object.entries(commands), ...Object.entries(builtins)]) visit(name, doc);
+    assert.deepStrictEqual(bad, [], 'say "指定した…" / "the given …" for the value');
   });
 });

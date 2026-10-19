@@ -119,7 +119,7 @@ describe('old-style options: tar', () => {
   });
 
   it('options after the bundle are ordinary options', () => {
-    assert.deepStrictEqual(shape('tar xf a.tar -C out').slice(-2), ['-C: change to this directory first', 'out: Value for `-C`']);
+    assert.deepStrictEqual(shape('tar xf a.tar -C out').slice(-2), ['-C: change to the given directory first', 'out: Value for `-C`']);
   });
 
   it('leaves other first words alone', () => {
