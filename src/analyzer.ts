@@ -804,8 +804,7 @@ export class Analyzer {
     // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
     // The label still shows them: `while` *condition* `do` *commands* `done` `< input.txt`.
     if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) {
-      const only = bodyToks[0];
-      return only.labelParts ? skeletal({ ...only }, n) : only;
+      return skeletal({ ...bodyToks[0] }, n);
     }
     // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
     const ofFunction = n.parent?.type === 'function_definition';

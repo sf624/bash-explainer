@@ -519,6 +519,20 @@ describe('the web page in a browser', function () {
     await panel().locator('#tree li').first().hover();
     await until('the highlight', () => page.locator('.cm-bx-highlight').count(), (n) => n > 0);
 
+    // A skeleton label (the `while` line of the sample): code in monospace, placeholders apart in muted italics.
+    const whileLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('while read'));
+    await page.keyboard.press('Control+Home');
+    for (let i = 0; i < whileLine; i++) await page.keyboard.press('ArrowDown');
+    await until('the while line', text('#line'), (t) => t.startsWith('while read'));
+    const label = panel().locator('#tree .label').first();
+    assert.strictEqual(await label.innerText(), 'while condition do commands done < input.txt');
+    const style = 'el => { const c = getComputedStyle(el); return { style: c.fontStyle, color: c.color, family: c.fontFamily }; }';
+    const ph = (await label.locator('.ph').first().evaluate(style)) as { style: string; color: string; family: string };
+    const parent = (await label.evaluate(style)) as { style: string; color: string; family: string };
+    assert.strictEqual(ph.style, 'italic');
+    assert.notStrictEqual(ph.family, parent.family);
+    assert.notStrictEqual(ph.color, parent.color);
+
     // Another shell: the problems and their quick fixes.
     await panel().locator('#shell').selectOption('dash');
     await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));

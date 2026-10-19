@@ -123,7 +123,7 @@ export function redirectParts(r: SyntaxNode): LabelPart[] {
   const text = flat(r.text);
   if (r.type === 'heredoc_redirect') {
     const start = r.namedChildren.find((c) => c.type === 'heredoc_start');
-    const head = start ? flat(r.text.slice(0, start.endIndex - r.startIndex)) : (r.children.find((c) => !c.named)?.type ?? '<<');
+    const head = start ? flat(r.text.slice(0, start.endIndex - r.startIndex)) : r.children.find((c) => !c.named)!.type;
     return [head.length <= LABEL_LIMIT ? code(head) : code(r.children.find((c) => !c.named)!.type), ...(head.length <= LABEL_LIMIT ? [] : [placeholder('delimiter')])];
   }
   if (text.length <= LABEL_LIMIT && !r.text.includes('\n')) return [code(text)];
