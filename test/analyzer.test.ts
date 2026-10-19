@@ -140,9 +140,9 @@ describe('time keyword', () => {
     assert.deepStrictEqual(p.children.map((c) => c.label), ['time', '-p']);
   });
   it('leaves other things named time as commands', () => {
-    assert.match(explain('/usr/bin/time ls').items[0].explanation, /Run the program or script at `\/usr\/bin\/time`/);
+    assert.match(explain('/usr/bin/time ls').items[0].explanation, /Measure the run time and resource use/);
     assert.match(explain('"time" ls').items[0].explanation, /becomes `time`/);
-    assert.match(explain('FOO=1 time ls').items[0].explanation, /Run the external command `time`/);
+    assert.match(explain('FOO=1 time ls').items[0].explanation, /Measure the run time and resource use/);
   });
   it('runs the program time after a pipe, where bash has no keyword', () => {
     for (const src of ['a | time b', 'a |& time b']) {
