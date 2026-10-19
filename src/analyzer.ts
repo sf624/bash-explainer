@@ -484,7 +484,7 @@ export class Analyzer {
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
       case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
-      case 'word': return this.word(n);
+      case 'word': return this.braceWord(n) ?? this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
       // (`{1..x}` is not a brace expansion: it stays a word.)
       case 'brace_expression': return this.braceWord(n) ?? this.word(n);
@@ -1003,6 +1003,16 @@ export class Analyzer {
   }
 
   private commandHead(nameNode: SyntaxNode, word = nameNode.namedChildren[0]!): CommandHead {
+    // `{echo,hi}` is a brace expansion first: the command is the first word it gives (`echo`), with the others as arguments.
+    const braced = isPlainWord(word) ? this.braceWords(word.text) : undefined;
+    if (braced?.length) {
+      const head = this.commandHeadFor(nameNode, word, braced[0]);
+      head.explanation = this.s(
+        `ブレース展開で \`${word.text}\` は \`${braced.join(' ')}\` になるので、コマンド \`${braced[0]}\` を実行する（\`{ }\` のグループではない）。${head.explanation}`,
+        `Brace expansion turns \`${word.text}\` into \`${braced.join(' ')}\`, so this runs the command \`${braced[0]}\` (it is not a \`{ }\` group). ${head.explanation}`);
+      head.nameTokens = [this.braceWord(word)!];
+      return head;
+    }
     const head = this.commandHeadFor(nameNode, word);
     const spelled = staticWordValue(word);
     if (spelled && spelled !== word.text) {
@@ -1034,12 +1044,12 @@ export class Analyzer {
     return def?.line;
   }
 
-  private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode): CommandHead {
+  private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
     // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
     // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
     const spelled = staticWordValue(word);
     const sv = spelled && spelled !== word.text ? spelled : undefined;
-    const name = sv ?? (isPlainWord(word) ? word.text : nameNode.text);
+    const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
     if (sv === undefined && !isPlainWord(word) && word.type !== 'raw_string') {
       return {
         name, kind: 'command', nameTokens: this.sub(word),
@@ -1205,10 +1215,12 @@ export class Analyzer {
     if (isPlainWord(a)) {
       // Arguments in another language are positional ones the dictionary describes.
       if (emb) return this.tok(a, 'argument', desc!, emb.tokens);
-      const base = this.word(a);
+      const brace = this.braceWord(a);
+      const base = brace ?? this.word(a);
       if (!desc) return base;
+      if (brace) return this.tok(a, 'argument', desc, [brace]);
       const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
-      return this.tok(a, 'argument', desc + glob + this.valueNote(a));
+      return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text));
     }
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
@@ -1723,6 +1735,17 @@ export class Analyzer {
     // Only the filters take input.
     if (ex.input) this.ioExample(ex.input, ex.output, false, { kind: 'filter', cmd, words });
     else this.examples.push({ kind: 'textFilters', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
+  }
+
+  /** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
+  private braceWords(text: string): string[] | undefined {
+    try {
+      return braceExpand(text);
+    } catch (e) {
+      /* c8 ignore next */
+      if (!(e instanceof ShellWordsUnsupported)) throw e;
+      return undefined;
+    }
   }
 
   /** A word that tree-sitter-bash splits at its braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is. */
@@ -2610,7 +2633,21 @@ export class Analyzer {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
     if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
-    return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n));
+    return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
+  }
+
+  /** `{1..$n}`: braces are expanded before variables, so a range whose end is a variable is not a range. */
+  private braceVarNote(text: string): string {
+    const m = /\{[^{},]*\.\.[^{},]*\}/.exec(text);
+    if (!m || !m[0].includes('$')) return '';
+    if (this.argCtx?.cmd === 'eval') {
+      return this.s(
+        `。シェルは先に変数を置き換えるので、\`eval\` に渡る文字列は \`{1..3}\` のような形になり、\`eval\` がそれを読み直すときにはじめてブレース展開が連番になる`,
+        `. The shell replaces the variable first, so \`eval\` gets a string like \`{1..3}\`, and only when \`eval\` reads it again is the brace expanded to a range`);
+    }
+    return this.s(
+      `。\`${m[0]}\` は連番ではない: ブレース展開は変数の展開より先に行われるので、\`${m[0]}\` のまま変数だけが置き換わる（例: \`{1..3}\` という文字列）。連番にするには \`eval\` を使うか、\`seq\` や \`for ((…))\` を使う`,
+      `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
   }
 
   /** How a value is shown in an explanation: control characters as pictures, a newline as `\n`. */
