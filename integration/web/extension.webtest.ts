@@ -1,5 +1,5 @@
 // The extension in VS Code for the Web (as on vscode.dev and github.dev): it starts in the
-// browser's extension host, reads the wasm files through VS Code, explains on hover and warns.
+// browser's extension host, explains on hover and warns.
 import * as vscode from 'vscode';
 
 const extension = () => vscode.extensions.getExtension('shun-fujioka.bash-explainer')!;

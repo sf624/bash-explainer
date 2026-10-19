@@ -274,7 +274,7 @@ VS Code for the Web では、拡張はお使いのブラウザの中で動きま
 
 ```sh
 npm install
-npm run build      # dist/ にバンドル（wasm もコピー）
+npm run build      # dist/ にバンドル
 npm test           # 型チェック + 単体テスト
 npm run coverage   # カバレッジ付きの単体テスト（レポートは coverage/index.html）
 npm run package    # .vsix を作成

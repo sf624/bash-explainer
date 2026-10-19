@@ -1,17 +1,14 @@
 // A Language Server (LSP over standard input and output) for editors other than VS Code: hover
 // explanations, the problems as diagnostics and their quick fixes. Hand-written JSON-RPC, so the
-// tool still needs nothing but fs and path (the usual libraries also bring sockets).
-import * as path from 'path';
+// tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
 import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
-import type { BashParser } from '../src/syntax/tree';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { toPlainMarkdown } from '../src/ui/render';
 
-type Parser = BashParser;
 type Message = { id?: number | string; method?: string; params?: any; result?: unknown; error?: unknown };
 
 /** Language IDs editors use for shell scripts (VS Code, Neovim, Helix, Emacs, Zed…). */
@@ -47,8 +44,7 @@ export function startLanguageServer(io: Io): void {
   const settings: Settings = { language: locale.toLowerCase().startsWith('ja') ? 'ja' : 'en', examples: true };
   const docs = new Map<string, Doc>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  let parser: Parser | undefined;
-  const ready = createTreeSitterParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') }).then((p) => (parser = p));
+  const parser = createUnbashParser();
   let shuttingDown = false;
 
   const send = (msg: Message) => {
@@ -63,7 +59,7 @@ export function startLanguageServer(io: Io): void {
   }
 
   function parse(doc: Doc): ShellDocument | undefined {
-    if (doc.parsed || !parser) return doc.parsed;
+    if (doc.parsed) return doc.parsed;
     const kind = kindOf(doc);
     if (!kind) return undefined;
     const lines = doc.text.split(/\r?\n/);
@@ -108,7 +104,7 @@ export function startLanguageServer(io: Io): void {
 
   function schedule(uri: string): void {
     clearTimeout(timers.get(uri));
-    timers.set(uri, setTimeout(() => void ready.then(() => publish(uri)), 200));
+    timers.set(uri, setTimeout(() => publish(uri), 200));
   }
 
   function hover(doc: Doc, line: number) {
@@ -192,12 +188,10 @@ export function startLanguageServer(io: Io): void {
         return send({ method: 'textDocument/publishDiagnostics', params: { uri, diagnostics: [] } });
       }
       case 'textDocument/hover': {
-        await ready;
         const doc = docs.get(m.params.textDocument.uri);
         return void reply(doc ? hover(doc, m.params.position.line) : null);
       }
       case 'textDocument/codeAction': {
-        await ready;
         const doc = docs.get(m.params.textDocument.uri);
         return void reply(doc ? codeActions(doc, m.params.range) : []);
       }

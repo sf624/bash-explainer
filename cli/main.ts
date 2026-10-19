@@ -1,13 +1,12 @@
 // bash-explainer: explains shell scripts line by line in the terminal, and checks them for
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
-import * as path from 'path';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
 import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 
@@ -269,7 +268,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     return 2;
   }
 
-  const parser = await createTreeSitterParser({ runtimeDir: __dirname, bashWasm: path.join(__dirname, 'tree-sitter-bash.wasm') });
+  const parser = createUnbashParser();
   const analyzer = new Analyzer(o.lang);
   const json: unknown[] = [];
   const chunks: string[] = [];
