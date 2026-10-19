@@ -230,9 +230,8 @@ describe('statements as bash reads them', () => {
   it('says zsh parameter flags are a bad substitution in bash (checked with bash), and leaves zsh alone', () => {
     assert.strictEqual(spawnSync('bash', ['-c', 'echo ${(f)var}'], { encoding: 'utf8' }).status, 1);
     const e = explain('echo ${(f)var}');
-    assert.strictEqual(find(e, '${(f)var}').kind, 'error');
-    assert.match(find(e, '${(f)var}').explanation, /bad substitution/);
-    assert.match(find(explain('echo ${(f)var}', 0, 'ja'), '${(f)var}').explanation, /bad substitution/);
+    assert.match(find(e, '${(f)var}', 'error').explanation, /bad substitution/);
+    assert.match(find(explain('echo ${(f)var}', 0, 'ja'), '${(f)var}', 'error').explanation, /bad substitution/);
     const zsh = new Analyzer('en').explainLine(parser.parse('echo ${(f)var}'), 0, 'zsh');
     assert.ok(!all(zsh.items).some((t) => /bad substitution/.test(t.explanation)));
   });
