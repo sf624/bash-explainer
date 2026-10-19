@@ -1,6 +1,13 @@
 {
   "version": "2.0.0",
   "tasks": [
+    {
+      "label": "install",
+      "detail": "Bring node_modules in line with package-lock.json (quick when it already is), so a merged dependency change does not break the build",
+      "type": "shell",
+      "command": "npm install --prefer-offline --no-audit --no-fund",
+      "problemMatcher": []
+    },
     { "type": "npm", "script": "build", "group": "build", "problemMatcher": [] },
     {
       "label": "playground",
@@ -10,6 +17,6 @@
       "windows": { "command": "if not exist test\\fixtures\\playground.sh copy test\\fixtures\\sample.sh test\\fixtures\\playground.sh" },
       "problemMatcher": []
     },
-    { "label": "build and playground", "dependsOn": ["npm: build", "playground"], "dependsOrder": "sequence", "problemMatcher": [] }
+    { "label": "build and playground", "dependsOn": ["install", "npm: build", "playground"], "dependsOrder": "sequence", "problemMatcher": [] }
   ]
 }

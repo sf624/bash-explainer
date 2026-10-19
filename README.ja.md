@@ -283,7 +283,7 @@ npm run test:integration   # 拡張を VS Code で動かしてテスト（VS Cod
 npm run test:integration:web   # VS Code for the Web でも同様に（`npx playwright install chromium` が必要）
 ```
 
-- VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/playground.sh` を開いた拡張機能開発ホストが起動します。これは Git に入れない `sample.sh`（全機能ツアー）のコピーで、無ければ自動で作られます。自由に書き換えてください。
+- VS Code でこのフォルダを開いて `F5` を押すと、`test/fixtures/playground.sh` を開いた拡張機能開発ホストが起動します。これは Git に入れない `sample.sh`（全機能ツアー）のコピーで、無ければ自動で作られます。自由に書き換えてください。F5 は最初に `npm install` を実行するので、pull した後も `node_modules` が `package-lock.json` に合った状態になります。
 - `npm run build:web` でブラウザ版を `site/` にビルドします。`python3 -m http.server -d site` で <http://localhost:8000/> から確認できます。
 - `npx tsx test/dump.ts <file> [ja|en] [line]` で、ファイルの各行の解説をテキストで確認できます。
 - このリポジトリの中でコマンドラインツールを試すには、`npm run build:cli` のあと `node cli/dist/cli.js <file>`（または `npx --package=./cli bash-explainer <file>`）を使います。単に `npx bash-explainer` と打っても、ここでは動きません。拡張自身の `package.json` も名前が `bash-explainer` なので、npx がこのプロジェクトをパッケージだと解釈するためです。
