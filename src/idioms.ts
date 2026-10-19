@@ -24,11 +24,18 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
   };
   let pitfall = false;
   redirs.forEach((r, idx) => {
+    // `{name}>…` takes a free descriptor of its own (10 or higher), which this table of the first ones leaves out.
+    if (/^\{.*\}$/.test(r.fd)) return;
     const fd = r.fd !== '' ? Number(r.fd) : r.op.startsWith('<') ? 0 : 1;
     switch (r.op) {
       case '>&': case '<&':
         if (r.dest === '-') set(fd, s('閉じた状態', 'closed'));
-        else if (/^\d+$/.test(r.dest)) {
+        else if (/^\d+-$/.test(r.dest)) {
+          // `n>&m-` moves m to n: a copy, then m is closed.
+          const from = Number(r.dest.slice(0, -1));
+          set(fd, table.get(from) ?? orig(from));
+          set(from, s('閉じた状態', 'closed'));
+        } else if (/^\d+$/.test(r.dest)) {
           set(fd, table.get(Number(r.dest)) ?? orig(Number(r.dest)));
           // `2>&1 >file`: stderr copied stdout before stdout was redirected.
           if (fd === 2 && r.dest === '1' && redirs.slice(idx + 1).some((later) => (later.fd === '' || later.fd === '1') && /^>>?$|^>\|$/.test(later.op))) pitfall = true;
@@ -48,6 +55,7 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
         set(fd, r.dest);
     }
   });
+  if (!touched.length) return undefined;
   const name = (fd: number) => [s('標準入力', 'stdin'), s('標準出力', 'stdout'), s('標準エラー出力', 'stderr')][fd] ?? `fd ${fd}`;
   const result = touched.sort((a, b) => a - b).map((fd) => `${name(fd)} → ${table.get(fd)}`).join(s('、', ', '));
   let text = s(`リダイレクトは左から順に適用される。最終的に: ${result}`, `Redirections apply left to right. In the end: ${result}`);

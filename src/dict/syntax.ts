@@ -2,23 +2,58 @@ import { Text, tx } from '../i18n';
 import { splitReplacement } from '../expansion';
 import { unquoteWord } from '../staticword';
 
+/** The name of `{name}` in `{name}>file`: bash picks a free descriptor (10 or higher) and stores its number in that variable. */
+function namedFd(fd: string): string | undefined {
+  return /^\{(.+)\}$/.exec(fd)?.[1];
+}
+
+/** `{name}>file`, `{name}<file`…: open the file on a new descriptor and keep its number in the variable. */
+function openNamed(name: string, d: string, how: Text): Text {
+  return tx(
+    `ファイル \`${d}\` を${how.ja}で開き、空いているファイルディスクリプタ（10 以上）の番号を変数 \`${name}\` に入れる`,
+    `Open file \`${d}\` ${how.en} on a free file descriptor (10 or higher) and store its number in variable \`${name}\``,
+  );
+}
+
 /** Redirection operators. `fd` is the explicit file descriptor (or the default), `dest` the target text. */
 export const redirects: Record<string, (fd: string, dest: string) => Text> = {
-  '>': (fd, d) => tx(`${fdName(fd, '1').ja}をファイル \`${d}\` に書き込む（既存の内容は上書き）`, `Write ${fdName(fd, '1').en} to file \`${d}\` (overwrite)`),
-  '>>': (fd, d) => tx(`${fdName(fd, '1').ja}をファイル \`${d}\` の末尾に追記する`, `Append ${fdName(fd, '1').en} to the end of file \`${d}\``),
-  '<': (fd, d) => tx(`ファイル \`${d}\` の内容を${fdName(fd, '0').ja}として読み込む`, `Read file \`${d}\` as ${fdName(fd, '0').en}`),
-  '>|': (fd, d) => tx(`${fdName(fd, '1').ja}をファイル \`${d}\` に書き込む（\`set -o noclobber\` でも強制的に上書き）`, `Write ${fdName(fd, '1').en} to \`${d}\`, overwriting even with \`noclobber\` set`),
-  '<>': (fd, d) => tx(`ファイル \`${d}\` を読み書き両用で${fdName(fd, '0').ja}として開く`, `Open \`${d}\` for reading and writing as ${fdName(fd, '0').en}`),
+  '>': (fd, d) => namedFd(fd) ? openNamed(namedFd(fd)!, d, tx('書き込み用（既存の内容は上書き）', 'for writing (overwrite)')) : tx(`${fdName(fd, '1').ja}をファイル \`${d}\` に書き込む（既存の内容は上書き）`, `Write ${fdName(fd, '1').en} to file \`${d}\` (overwrite)`),
+  '>>': (fd, d) => namedFd(fd) ? openNamed(namedFd(fd)!, d, tx('追記用', 'for appending')) : tx(`${fdName(fd, '1').ja}をファイル \`${d}\` の末尾に追記する`, `Append ${fdName(fd, '1').en} to the end of file \`${d}\``),
+  '<': (fd, d) => namedFd(fd) ? openNamed(namedFd(fd)!, d, tx('読み込み用', 'for reading')) : tx(`ファイル \`${d}\` の内容を${fdName(fd, '0').ja}として読み込む`, `Read file \`${d}\` as ${fdName(fd, '0').en}`),
+  '>|': (fd, d) => namedFd(fd) ? openNamed(namedFd(fd)!, d, tx('書き込み用（`noclobber` でも強制的に上書き）', 'for writing (overwrite even with `noclobber`)')) : tx(`${fdName(fd, '1').ja}をファイル \`${d}\` に書き込む（\`set -o noclobber\` でも強制的に上書き）`, `Write ${fdName(fd, '1').en} to \`${d}\`, overwriting even with \`noclobber\` set`),
+  '<>': (fd, d) => namedFd(fd) ? openNamed(namedFd(fd)!, d, tx('読み書き両用', 'for reading and writing')) : tx(`ファイル \`${d}\` を読み書き両用で${fdName(fd, '0').ja}として開く`, `Open \`${d}\` for reading and writing as ${fdName(fd, '0').en}`),
   '&>': (_fd, d) => tx(`標準出力と標準エラー出力の両方をファイル \`${d}\` に書き込む（上書き）`, `Write both stdout and stderr to \`${d}\` (overwrite)`),
   '&>>': (_fd, d) => tx(`標準出力と標準エラー出力の両方をファイル \`${d}\` に追記する`, `Append both stdout and stderr to \`${d}\``),
   '>&': (fd, d) => dupOut(fd, d),
-  '<&': (fd, d) => d === '-'
-    ? tx(`${fdName(fd, '0').ja}を閉じる`, `Close ${fdName(fd, '0').en}`)
-    : tx(`${fdName(fd, '0').ja}を ${fdName(d, d).ja} の複製にする（入力元を共有）`, `Make ${fdName(fd, '0').en} a copy of ${fdName(d, d).en}`),
+  '<&': (fd, d) => dup(fd, d, '0', tx('入力元を共有', 'sharing the input')),
 };
 
+/**
+ * `n>&m`, `n<&m` (duplicate m), `n>&-` (close), `n>&m-` (move: duplicate m, then close m), and the same with
+ * `{name}` for n: a new descriptor whose number goes into the variable, or, with `-`, the descriptor the variable holds.
+ */
+function dup(fd: string, d: string, dflt: string, shared: Text): Text {
+  const name = namedFd(fd);
+  const move = /^(\d+)-$/.exec(d)?.[1];
+  if (name) {
+    if (d === '-') return tx(`変数 \`${name}\` に入っている番号のファイルディスクリプタを閉じる`, `Close the file descriptor whose number is in variable \`${name}\``);
+    if (move) {
+      return tx(`${fdName(move, move).ja}を、空いているファイルディスクリプタ（10 以上）に移し（${move} は閉じる）、その番号を変数 \`${name}\` に入れる`,
+        `Move ${fdName(move, move).en} to a free file descriptor (10 or higher), closing ${move}, and store the new number in variable \`${name}\``);
+    }
+    return tx(`${fdName(d, d).ja}の複製を、空いているファイルディスクリプタ（10 以上）に作り、その番号を変数 \`${name}\` に入れる（${shared.ja}）`,
+      `Copy ${fdName(d, d).en} to a free file descriptor (10 or higher) and store its number in variable \`${name}\` (${shared.en})`);
+  }
+  if (d === '-') return tx(`${fdName(fd, dflt).ja}を閉じる`, `Close ${fdName(fd, dflt).en}`);
+  if (move) {
+    return tx(`${fdName(move, move).ja}を ${fdName(fd, dflt).ja} に移す（複製したあと ${move} は閉じる）`,
+      `Move ${fdName(move, move).en} to ${fdName(fd, dflt).en} (copy it, then close ${move})`);
+  }
+  return tx(`${fdName(fd, dflt).ja}を ${fdName(d, d).ja} の複製にする（${shared.ja}）`, `Make ${fdName(fd, dflt).en} a copy of ${fdName(d, d).en}`);
+}
+
 function dupOut(fd: string, d: string): Text {
-  if (d === '-') return tx(`${fdName(fd, '1').ja}を閉じる`, `Close ${fdName(fd, '1').en}`);
+  if (namedFd(fd) || d === '-' || /^\d+-$/.test(d)) return dup(fd, d, '1', tx('出力先を共有', 'sharing the output'));
   if (/^\d+$/.test(d)) {
     return tx(
       `${fdName(fd, '1').ja}を ${fdName(d, d).ja} と同じ出力先に向ける`,
