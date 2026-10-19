@@ -3,7 +3,19 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { builtins } from '../src/dict/builtins';
-import { commands } from '../src/dict/commands';
+import { commands, core } from '../src/dict/commands';
+import { distro } from '../src/dict/distro';
+import { system } from '../src/dict/system';
+import { basic } from '../src/dict/basic';
+import { storage } from '../src/dict/storage';
+import { admin } from '../src/dict/admin';
+import { netadmin } from '../src/dict/netadmin';
+import { monitor } from '../src/dict/monitor';
+import { macos } from '../src/dict/macos';
+import { ops } from '../src/dict/ops';
+import { extraFiles } from '../src/dict/extrasFiles';
+import { extraAdmin } from '../src/dict/extrasAdmin';
+import { extraSubcommands } from '../src/dict/extras';
 import { CommandDoc } from '../src/dict/types';
 import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
@@ -224,5 +236,17 @@ describe('the dictionary', () => {
       for (const [sub, sd] of Object.entries(d.subcommands ?? {})) check(`${name} ${sub}`, sd);
     };
     for (const [name, d] of [...Object.entries(commands), ...Object.entries(builtins)]) check(name, d);
+  });
+
+  it('defines each command in one base table only, and extras only for commands that exist', () => {
+    const tables = { core, distro, system, basic, storage, admin, netadmin, monitor, macos, ops };
+    const where = new Map<string, string[]>();
+    for (const [table, entries] of Object.entries(tables)) {
+      for (const name of Object.keys(entries)) where.set(name, [...(where.get(name) ?? []), table]);
+    }
+    const twice = [...where].filter(([, t]) => t.length > 1).map(([n, t]) => `${n} (${t.join(', ')})`);
+    assert.deepStrictEqual(twice, [], 'commands defined in more than one table');
+    const orphans = [...Object.keys(extraFiles), ...Object.keys(extraAdmin), ...Object.keys(extraSubcommands)].filter((n) => !where.has(n) && !Object.hasOwn(builtins, n));
+    assert.deepStrictEqual(orphans, [], 'extras for commands with no base entry');
   });
 });

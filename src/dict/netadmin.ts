@@ -343,7 +343,7 @@ export const netadmin: Record<string, CommandDoc> = {
   smbstatus: cmd('Samba の接続とロックの状況を表示する', 'Show Samba connections and locks', [
     ['-b|--brief', '簡潔に表示', 'brief output'],
     ['-S|--shares', '共有だけ', 'shares only'],
-    ['-L|--locked', 'ロックされたファイルだけ', 'locked files only'],
+    ['-L|--locks', 'ロックされたファイルだけ', 'locked files only'],
     ['-p|--processes', 'プロセスだけ', 'processes only'],
   ]),
   smbpasswd: cmd('Samba のユーザーのパスワードを設定・管理する', 'Set and manage Samba user passwords', [

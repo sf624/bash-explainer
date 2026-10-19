@@ -257,7 +257,7 @@ export const extraFiles: Record<string, OptSpec[]> = {
     ['-u|--unbuffered', '入力と出力のバッファリングを最小にする', 'minimal input and output buffering'],
     ['-l|--line-length', '`l` コマンドの折り返し幅', 'line-wrap length for the `l` command', 'arg'],
     ['--posix', 'GNU 拡張を無効にする', 'disable GNU extensions'],
-    ['-b|--binary', 'バイナリモードで読み書きする', 'open files in binary mode'],
+    ['-b', 'バイナリモードで読み書きする（Linux では効果なし）', 'binary mode (no effect on Linux)'],
     ['--follow-symlinks', '`-i` でシンボリックリンクの先を編集する', 'follow symlinks when editing in place'],
     ['--debug', '解釈した内容と実行の様子を表示する', 'annotate the program and show how it runs'],
     ['--sandbox', 'ファイルの読み書きとコマンド実行を禁止する', 'reject commands that read, write or run programs'],
