@@ -210,6 +210,8 @@ export class Analyzer {
   private namerefs = new Map<string, { line: number; index: number }>();
   /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
   private integers = new Map<string, number>();
+  /** Associative arrays (`declare -A m`): name → where the declaration starts. */
+  private assocs = new Map<string, number>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
   /** Context of the current explainLine call. */
@@ -242,11 +244,14 @@ export class Analyzer {
       }
     }
     this.integers.clear();
+    this.assocs.clear();
     for (const d of descendants(root, ['declaration_command'])) {
-      if (!d.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*i/.test(c.text))) continue;
-      for (const c of d.namedChildren) {
-        const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
-        if (name && !this.integers.has(name)) this.integers.set(name, d.startIndex);
+      for (const [flag, into] of [['i', this.integers], ['A', this.assocs]] as const) {
+        if (!d.namedChildren.some((c) => c.type === 'word' && new RegExp(`^-[a-zA-Z]*${flag}`).test(c.text))) continue;
+        for (const c of d.namedChildren) {
+          const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
+          if (name && !into.has(name)) into.set(name, d.startIndex);
+        }
       }
     }
     this.aliases.clear();
@@ -476,7 +481,7 @@ export class Analyzer {
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
-      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word') + this.valueNote(n), this.subs(n.namedChildren));
+      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.concatenationNote(n) + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
@@ -780,7 +785,18 @@ export class Analyzer {
         : this.s(`整数変数 \`${nm}\` に値を代入する（\`-i\` が付いているので、値は算術式として計算される）`,
           `Assign to the integer variable \`${nm}\` (it has \`-i\`, so the value is evaluated as arithmetic)`);
     }
-    if (name?.type === 'subscript') expl = this.s(`配列 \`${field(name, 'name')?.text}\` の要素 \`[${field(name, 'index')?.text}]\` に代入する`, `Assign to element \`[${field(name, 'index')?.text}]\` of array \`${field(name, 'name')?.text}\``);
+    if (name?.type === 'subscript') {
+      const arr = field(name, 'name')!.text;
+      const idx = field(name, 'index')!.text;
+      const v = evalArith(idx);
+      if (this.isAssoc(arr, n.startIndex)) {
+        expl = this.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素に代入する`, `Assign to the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
+      } else if (v !== undefined && String(v) !== idx) {
+        expl = this.s(`配列 \`${arr}\` の要素 \`[${idx}]\`（算術式として計算すると ${v}）に代入する`, `Assign to element \`[${idx}]\` of array \`${arr}\` (an arithmetic expression: ${v})`);
+      } else {
+        expl = this.s(`配列 \`${arr}\` の要素 \`[${idx}]\` に代入する`, `Assign to element \`[${idx}]\` of array \`${arr}\``);
+      }
+    }
     const children: Token[] = [];
     if (value) {
       for (const t of this.sub(value)) {
@@ -2490,6 +2506,32 @@ export class Analyzer {
       : this.s(`算術演算: \`${left?.text}\` ${op} \`${rightText}\``, `Arithmetic: \`${left?.text}\` ${op} \`${rightText}\``), operands);
   }
 
+  /**
+   * "Concatenation": the parts are glued into one word, except around `"$@"` and `"${a[@]}"`, which are one word per element:
+   * the text before them joins the first element, and the text after them the last.
+   */
+  private concatenationNote(n: SyntaxNode): string {
+    const parts = n.namedChildren;
+    const each = parts.findIndex((c) => c.type === 'string' && /^"(?:\$@|\$\{(?:!?[A-Za-z_]\w*\[@\]|@)[^}]*\})"$/.test(c.text));
+    if (each < 0) return this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
+    const text = (from: number, to: number): string => (from >= to ? '' : n.text.slice(parts[from].startIndex - n.startIndex, parts[to - 1].endIndex - n.startIndex));
+    const before = text(0, each);
+    const after = text(each + 1, parts.length);
+    const glue = [
+      before && this.s(`前の \`${before}\` は最初の要素の前に`, `\`${before}\` is glued to the start of the first element`),
+      after && this.s(`後ろの \`${after}\` は最後の要素の後ろに`, `\`${after}\` is glued to the end of the last one`),
+    ].filter(Boolean);
+    return this.s(
+      `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる）`,
+      `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
+  }
+
+  /** Whether `name` is declared an associative array (`declare -A`) before `at`: its subscripts are strings, not arithmetic. */
+  private isAssoc(name: string, at: number): boolean {
+    const d = this.assocs.get(name);
+    return d !== undefined && d < at;
+  }
+
   /** In `[[ x == "*" ]]`, a quoted right side is plain text: quoting turns the pattern off. Undefined when nothing is quoted. */
   private quotedPatternNote(n: SyntaxNode, op: string, rights: SyntaxNode[]): string | undefined {
     if (!['=', '==', '!='].includes(op) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
@@ -2510,9 +2552,16 @@ export class Analyzer {
   /** `[7]=z` in `( )`: an element with an index of its own. */
   private arrayElement(n: SyntaxNode): Token {
     const m = /^\[([^\]\s]*)\](\+?)=(.*)$/s.exec(n.text)!;
+    const owner = n.parent!.parent;
+    const assoc = owner?.type === 'variable_assignment' && this.isAssoc(field(owner, 'name')?.text ?? '', n.startIndex);
+    // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
+    const v = evalArith(m[1]);
+    const what = assoc ? this.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
+      : v !== undefined && String(v) !== m[1] ? this.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
+      : this.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``);
     return this.tok(n, 'argument', this.s(
-      `添字 \`${m[1]}\` の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
-      `Element with index \`${m[1]}\`: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
+      `${what}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
+      `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
     ));
   }
 
@@ -2671,6 +2720,7 @@ export class Analyzer {
     // The index is arithmetic (`a[0x1]` is element 1).
     const index = field(n, 'index')!;
     const num = this.arithNumber(index);
+    if (this.isAssoc(name, n.startIndex)) return this.tok(n, 'variable', this.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
   }
 
@@ -2698,7 +2748,7 @@ export class Analyzer {
     const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
-    const cases = exampleFor(parsed, this.lang, inDoubleQuotes(n));
+    const cases = exampleFor(parsed, this.lang, { quoted: inDoubleQuotes(n), assoc: this.isAssoc(parsed.name, n.startIndex) });
     // A `${…}` on one line is always on the line explained.
     if (cases) {
       this.examples.push({ kind: 'expansion',
@@ -2713,7 +2763,7 @@ export class Analyzer {
     const col = n.startPosition.column + lead;
     const mainOp = parsed.parts.find((p) => p.role === 'op');
     summary.children = parsed.parts.flatMap((part) => {
-      const expl = this.expansionPart(parsed, part, part === mainOp);
+      const expl = this.expansionPart(parsed, part, part === mainOp, this.isAssoc(parsed.name, n.startIndex));
       if (!expl || !part.text) return [];
       const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
       const nested = this.nestedIn(n, col + part.start, col + part.end);
@@ -2787,7 +2837,7 @@ export class Analyzer {
     return found.map((c) => this.full(c));
   }
 
-  private expansionPart(p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean): [Kind, string] | undefined {
+  private expansionPart(p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc = false): [Kind, string] | undefined {
     const t = part.text;
     const s = this.s.bind(this);
     switch (part.role) {
@@ -2813,6 +2863,7 @@ export class Analyzer {
             ? s('インデックス 0: `=~` で一致した全体', 'Index 0: the whole text the `=~` matched')
             : s(`インデックス ${idx}: 正規表現の ${idx} 番目の括弧 \`( )\` に一致した部分`, `Index ${idx}: the text matched by group ${idx}, the ${ordinal(Number(idx))} \`( )\` of the regex`)];
         }
+        if (assoc) return ['variable', s(`キー \`${idx}\`（連想配列のキーは文字列で、計算されない）`, `Key \`${idx}\` (the keys of an associative array are strings, not evaluated)`)];
         const i = evalArith(idx);
         if (i !== undefined) {
           // The index is an arithmetic expression: `1+1` is 2, `010` is 8.

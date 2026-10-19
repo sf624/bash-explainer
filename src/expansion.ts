@@ -278,9 +278,10 @@ const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /**
  * Worked examples such as `file=report.tar.gz` → `report.tar`, computed with the same matching
- * rules as bash. Undefined when the expansion depends on values we cannot know. `quoted`: the expansion is in double quotes.
+ * rules as bash. Undefined when the expansion depends on values we cannot know. `ctx.quoted`: the expansion is in double quotes; `ctx.assoc`: the array is associative (its keys are strings, in no fixed order).
  */
-export function exampleFor(p: ParsedExpansion, lang: Lang, quoted = false): ExpansionCase[] | undefined {
+export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boolean; assoc?: boolean } = {}): ExpansionCase[] | undefined {
+  const quoted = ctx.quoted ?? false;
   const ja = lang === 'ja';
   const name = p.name;
   // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
@@ -310,6 +311,14 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, quoted = false): Expa
 
   // The special parameters cannot be assigned (`#=hello` is not bash), and their values are not ours to choose.
   const special = /^[#?$!-]$/.test(name);
+  if (ctx.assoc && p.subscript !== undefined && !shellSet) {
+    // The keys of an associative array are strings, and bash lists them in an order of its own: only the count is fixed.
+    if (p.prefix === '#' && (p.subscript === '@' || p.subscript === '*')) {
+      const decl = `declare -A ${name}=([a]=1 [b]=2 [c]=3)`;
+      return [{ when: ja ? `\`${decl}\` のとき` : `When \`${decl}\``, result: '3', setup: decl }];
+    }
+    return undefined;
+  }
   if (p.prefix === '#') {
     if (p.subscript === '@' || p.subscript === '*') return [array(String(values.length))];
     // `${#@}` and `${#*}` count the positional parameters; they are not the length of a string.
