@@ -1,5 +1,6 @@
 /** Brace expansion, glob matching examples and printf, as bash does them. */
 import { sprintf } from './awk';
+import { bracketEnd, bracketRegex } from '../bracket';
 
 class Unsupported extends Error {}
 
@@ -111,7 +112,12 @@ export interface GlobOpts {
 
 /** Whether a word contains unquoted glob characters, extended globs (`!(…)`, `@(…)`…) included. */
 export function isGlob(word: string): boolean {
-  return /(^|[^\\])([*?]|\[[^\]]+\]|[+@!]\()/.test(word);
+  for (let i = 0; i < word.length; i++) {
+    const c = word[i];
+    if (c === '\\') i++;
+    else if (c === '*' || c === '?' || (c === '[' && bracketEnd(word, i) > 0) || ('+@!'.includes(c) && word[i + 1] === '(')) return true;
+  }
+  return false;
 }
 
 /** Whether a word contains an extended glob: `?(…)`, `*(…)`, `+(…)`, `@(…)` or `!(…)`. */
@@ -218,14 +224,12 @@ export function globToRegex(pattern: string, mode: GlobMode, opts: GlobOpts = {}
       }
       if (c === '?') { out += noDot(i) + any; continue; }
       if (c === '[') {
-        const end = pattern.indexOf(']', i + 2);
-        if (end > 0 && end < to) {
-          let set = pattern.slice(i + 1, end);
-          const neg = set[0] === '!' || set[0] === '^';
-          if (neg) set = set.slice(1);
-          set = set.replace(/\[:(\w+):\]/g, (_, n: string) => ({ digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s' } as Record<string, string>)[n] ?? '').replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
-          if (ci(i)) set += set.toUpperCase() + set.toLowerCase();
-          out += `${noDot(i)}[${neg ? '^' : ''}${set}]`;
+        const end = bracketEnd(pattern, i, to);
+        if (end > 0) {
+          let set = bracketRegex(pattern.slice(i + 1, end));
+          // (`nocaseglob`: both cases of every letter in the set.)
+          if (ci(i)) set = set.replace(/\]$/, `${set.slice(1, -1).toUpperCase()}${set.slice(1, -1).toLowerCase()}]`);
+          out += `${noDot(i)}${set}`;
           i = end;
           continue;
         }
@@ -288,10 +292,10 @@ export function globExamples(pattern: string, mode: GlobMode, opts: GlobOpts = {
       }
       if (c === '?') { out += 'abc1'[v % 4]; continue; }
       if (c === '[') {
-        const end = pattern.indexOf(']', i + 2);
-        if (end > 0 && end < to) {
-          const re = new RegExp(`^${globToRegex(pattern.slice(i, end + 1), 'value')!.source.slice(1, -1)}$`);
-          const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~';
+        const end = bracketEnd(pattern, i, to);
+        if (end > 0) {
+          const re = new RegExp(`^${bracketRegex(pattern.slice(i + 1, end))}$`);
+          const pool = 'abcxyz0123456789ABC-_defghijklmnopqrstuvwDEFGHIJKLMNOPQRSTUVWXYZ.+@%,=~]!^\\';
           const ok = pool.split('').filter((ch) => re.test(ch));
           out += ok[v % Math.max(ok.length, 1)] ?? 'a';
           i = end;

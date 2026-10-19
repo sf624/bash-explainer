@@ -1,5 +1,6 @@
 import { intValue } from './arith';
 import { Lang } from './i18n';
+import { bracketEnd, bracketItems, bracketRegex } from './bracket';
 import { unquoteWord } from './staticword';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
@@ -136,7 +137,7 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
 
 // ---------------------------------------------------------------- glob patterns
 
-type GlobPart = { type: 'any' } | { type: 'one' } | { type: 'class'; set: string; negated: boolean } | { type: 'text'; text: string };
+type GlobPart = { type: 'any' } | { type: 'one' } | { type: 'class'; body: string } | { type: 'text'; text: string };
 
 /** Split a glob into parts. Returns undefined if it contains expansions or extglobs we cannot evaluate. */
 export function globParts(pattern: string): GlobPart[] | undefined {
@@ -158,48 +159,21 @@ export function globParts(pattern: string): GlobPart[] | undefined {
     } else if (c === '*') out.push({ type: 'any' });
     else if (c === '?') out.push({ type: 'one' });
     else if (c === '[') {
-      const end = classEnd(pattern, i);
+      const end = bracketEnd(pattern, i);
       if (end < 0) { text(c); continue; }
-      let set = pattern.slice(i + 1, end);
-      const negated = set[0] === '!' || set[0] === '^';
-      if (negated) set = set.slice(1);
-      out.push({ type: 'class', set, negated });
+      out.push({ type: 'class', body: pattern.slice(i + 1, end) });
       i = end;
     } else text(c);
   }
   return out;
 }
 
-/** The `]` closing the bracket expression at `open` (a `]` first, and `[:digit:]` inside, do not close it); -1 if none. */
-function classEnd(pattern: string, open: number): number {
-  let j = open + 1;
-  if (pattern[j] === '!' || pattern[j] === '^') j++;
-  if (pattern[j] === ']') j++;
-  for (; j < pattern.length; j++) {
-    const named = /^\[:\w+:\]/.exec(pattern.slice(j));
-    if (named) j += named[0].length - 1;
-    else if (pattern[j] === ']') return j;
-  }
-  return -1;
-}
-
-const POSIX_CLASSES: Record<string, string> = {
-  digit: '0-9', alpha: 'A-Za-z', alnum: 'A-Za-z0-9', upper: 'A-Z', lower: 'a-z', space: '\\s', xdigit: '0-9A-Fa-f', punct: '!-/:-@[-`{-~',
-};
-
 function globRegex(parts: GlobPart[]): string {
   return parts.map((p) => {
     switch (p.type) {
       case 'any': return '[\\s\\S]*';
       case 'one': return '[\\s\\S]';
-      case 'class': {
-        // Named classes become ranges; other characters are taken literally.
-        const body = p.set.split(/(\[:\w+:\])/).map((x) => {
-          const named = /^\[:(\w+):\]$/.exec(x);
-          return named ? POSIX_CLASSES[named[1]] ?? '' : x.replace(/[\\\]\[^-]/g, (ch, k: number) => (ch === '-' && k > 0 && k < x.length - 1 ? ch : `\\${ch}`));
-        }).join('');
-        return `[${p.negated ? '^' : ''}${body}]`;
-      }
+      case 'class': return bracketRegex(p.body);
       case 'text': return p.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
   }).join('');
@@ -213,21 +187,29 @@ export function describeGlob(parts: GlobPart[], lang: Lang): string {
       case 'any': return ja ? '任意の文字列' : 'any string';
       case 'one': return ja ? '任意の1文字' : 'any one character';
       case 'class': {
-        const set = describeSet(p.set, lang);
-        return ja ? `${set}${p.negated ? '以外の' : 'のどれか'}1文字` : `one character ${p.negated ? 'other than' : 'from'} ${set}`;
+        const { negated } = bracketItems(p.body);
+        const set = describeSet(p.body, lang);
+        return ja ? `${set}${negated ? '以外の' : 'のどれか'}1文字` : `one character ${negated ? 'other than' : 'from'} ${set}`;
       }
       case 'text': return ja ? `「${p.text}」` : `"${p.text}"`;
     }
   }).join(' + ');
 }
 
-function describeSet(set: string, lang: Lang): string {
+function describeSet(body: string, lang: Lang): string {
+  const ja = lang === 'ja';
   const named: Record<string, [string, string]> = {
-    '[:digit:]': ['数字', 'digits'], '[:alpha:]': ['英字', 'letters'], '[:alnum:]': ['英数字', 'letters/digits'],
-    '[:space:]': ['空白', 'whitespace'], '[:upper:]': ['大文字', 'uppercase letters'], '[:lower:]': ['小文字', 'lowercase letters'],
+    digit: ['数字', 'digits'], alpha: ['英字', 'letters'], alnum: ['英数字', 'letters/digits'],
+    space: ['空白', 'whitespace'], upper: ['大文字', 'uppercase letters'], lower: ['小文字', 'lowercase letters'],
   };
-  if (named[set]) return named[set][lang === 'ja' ? 0 : 1];
-  return set.replace(/(.)-(.)/g, (_, a, b) => (lang === 'ja' ? `${a}〜${b}` : `${a}-${b}`));
+  const { items } = bracketItems(body);
+  const words = items.map((item) => {
+    if (item.type === 'range') return `${item.from}${ja ? '〜' : '-'}${item.to}`;
+    if (item.type === 'char') return item.ch;
+    return named[item.name]?.[ja ? 0 : 1] ?? `[:${item.name}:]`;
+  });
+  // Characters and ranges run together (`HL`, `a〜cx`); classes are told apart.
+  return words.join(items.some((item) => item.type === 'class') && items.length > 1 ? (ja ? '、' : ', ') : '');
 }
 
 /** The prefix (`#`) or suffix (`%`) of `value` removed by a pattern, shortest or longest. */
@@ -482,15 +464,24 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   }
 }
 
+/** A character that the bracket expression `[body]` matches. */
+function classSample(body: string): string {
+  const { negated, items } = bracketItems(body);
+  const first = items[0];
+  const re = new RegExp(`^${bracketRegex(body)}$`);
+  const candidates = [negated ? '_' : first.type === 'char' ? first.ch : first.type === 'range' ? first.from : '', ...'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-.]^\\!'];
+  return candidates.find((c) => c && re.test(c)) ?? 'x';
+}
+
 /** Build a sample that the pattern clearly matches at the given end. */
 function synthesize(glob: GlobPart[], from: 'start' | 'end'): string | undefined {
-  const lit = glob.map((g) => (g.type === 'text' ? g.text : g.type === 'any' ? 'xx' : g.type === 'one' ? 'x' : g.negated ? '_' : g.set[0])).join('');
+  const lit = glob.map((g) => (g.type === 'text' ? g.text : g.type === 'any' ? 'xx' : g.type === 'one' ? 'x' : classSample(g.body))).join('');
   if (!lit) return undefined;
   return from === 'start' ? `${lit}name` : `name${lit}`;
 }
 
 function synthesizeReplace(glob: GlobPart[], op: string): string | undefined {
-  const lit = glob.map((g) => (g.type === 'text' ? g.text : g.type === 'any' ? 'xx' : g.type === 'one' ? 'x' : g.negated ? '_' : g.set[0])).join('');
+  const lit = glob.map((g) => (g.type === 'text' ? g.text : g.type === 'any' ? 'xx' : g.type === 'one' ? 'x' : classSample(g.body))).join('');
   if (!lit) return undefined;
   if (op === '/#') return `${lit}-abc`;
   if (op === '/%') return `abc-${lit}`;
