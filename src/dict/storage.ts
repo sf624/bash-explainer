@@ -219,20 +219,6 @@ export const storage: Record<string, CommandDoc> = {
     ['-i', '対話的に選んで復元', 'restore interactively'],
     ['-r', '累積復元（全体＋増分）', 'cumulative restore (full plus incrementals)'],
   ], { positional: [pos('復元先のディレクトリ', 'destination directory')] }),
-  dump: cmd('ext2/3/4 ファイルシステムをバックアップする', 'Back up an ext2/3/4 file system', [
-    ['-0|-1|-2|-3|-4|-5|-6|-7|-8|-9', 'ダンプのレベル（0 が全体、大きい数は前のレベルからの差分）', 'dump level (0 is full; higher levels save changes since the lower level)'],
-    ['-f', '書き出す先', 'output file or device', 'arg'],
-    ['-u', 'ダンプの記録（`/etc/dumpdates`）を更新する', 'record the dump in `/etc/dumpdates`'],
-    ['-a', 'サイズの見積もりを自動にする', 'auto-size: bypass tape length calculations'],
-    ['-z', '圧縮する（レベル指定可）', 'compress the data'],
-  ], { positional: [pos('ファイルシステムまたはデバイス', 'file system or device')] }),
-  restore: cmd('`dump` のバックアップから復元する', 'Restore from a `dump` backup', [
-    ['-r', '全体を復元する（空のファイルシステムに）', 'rebuild a whole file system'],
-    ['-x', '指定したファイルだけ取り出す', 'extract the named files'],
-    ['-i', '対話的に選んで復元', 'restore interactively'],
-    ['-t', '内容を一覧表示するだけ', 'only list the contents'],
-    ['-f', '読み込む元', 'archive to read', 'arg'],
-  ]),
   btrfs: cmd('Btrfs ファイルシステムを管理する（`subvolume`、`filesystem`、`scrub`）', 'Manage Btrfs file systems (`subvolume`, `filesystem`, `scrub`)', [], {
     subcommands: {
       subvolume: cmd('サブボリュームを操作する（`create`、`delete`、`list`、`snapshot`）', 'Manage subvolumes (`create`, `delete`, `list`, `snapshot`)', [['-r', 'スナップショットを読み取り専用にする', 'make a snapshot read-only']]),
