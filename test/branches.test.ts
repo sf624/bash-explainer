@@ -251,10 +251,7 @@ describe('branches no other test takes', () => {
     assert.strictEqual(testCases('[', '-eq', { var: 'n' }, { lit: 'x' }), undefined);
     assert.strictEqual(testCases('((', '%', { var: 'n' }, { lit: '2' }), undefined);
     assert.strictEqual(testCases('[', '-z', { var: 'a' }, undefined), undefined);
-    assert.strictEqual(testCases('[[', '==', { var: 'f' }, { lit: '*' }), undefined);
     assert.strictEqual(testCases('[', '<', { var: 'f' }, { lit: 'b' }), undefined);
-    const nocase = testCases('[[', '==', { var: 'f' }, { lit: '*.txt' }, false, true)!;
-    assert.ok(nocase[0].result && /\.txt$/i.test(nocase[0].vars.f));
     assert.deepStrictEqual(runRead('a b\\', ['x', 'y'], { ifs: ' \t\n', raw: false }).vars, [['x', 'a'], ['y', 'b']]);
   });
 

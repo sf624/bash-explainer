@@ -75,7 +75,7 @@ describe('positional arguments described by their number', () => {
   });
 
   it('keeps what follows the description (glob notes) and leaves quoted words described', () => {
-    assert.match(new Analyzer('en').explainLine(parser.parse('cp *.txt d/'), 0).items[0].children[0].explanation, /^source \(glob: expands/);
+    assert.match(new Analyzer('en').explainLine(parser.parse('cp *.txt d/'), 0).items[0].children[0].explanation, /^source — Glob pattern \(shell wildcards\): expands to the matching file names/);
     assert.deepStrictEqual(operands('cp "$a" "$b"').map((o) => o[1]), ['source', 'destination (the new name, or an existing directory)']);
   });
 });

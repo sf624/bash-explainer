@@ -109,7 +109,8 @@ describe('expansion tokens', () => {
   });
 
   it('reads patterns and numbers', () => {
-    assert.match(expansionToken('echo ${file%%.*}').children[2].explanation, /Pattern `\.\*`: "\." \+ any string/);
+    assert.match(expansionToken('echo ${file%%.*}').children[2].explanation, /Pattern `\.\*`: Glob pattern \(shell wildcards\): matched against a string/);
+    assert.deepStrictEqual(expansionToken('echo ${file%%.*}').children[2].children.map((c) => [c.label, c.span.start.character, c.span.end.character]), [['.', 13, 14], ['*', 14, 15]]);
     const sub = expansionToken('echo ${s: -2}');
     assert.match(sub.explanation, /last 2 characters/);
     assert.deepStrictEqual(sub.children.map((c) => c.label), ['s', ':', '-2']);

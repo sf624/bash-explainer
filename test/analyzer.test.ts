@@ -296,9 +296,9 @@ describe('statements as bash reads them', () => {
     for (const [src, label, note] of [
       ['[[ $x == --?(a)b ]]', '--?(a)b', /Extended glob: `\?\(a\)`/],
       ['[[ $x == -@(!(-*)e*|-edit) ]]', '-@(!(-*)e*|-edit)', /Extended glob/],
-      ['[[ $x == *.txt ]]', '*.txt', /^Pattern$/],
-      ['[[ $x != *.txt ]]', '*.txt', /^Pattern$/],
-      ['[[ $x = [ab]*.c ]]', '[ab]*.c', /^Pattern$/],
+      ['[[ $x == *.txt ]]', '*.txt', /^Glob pattern \(shell wildcards\): matched against a string$/],
+      ['[[ $x != *.txt ]]', '*.txt', /^Glob pattern/],
+      ['[[ $x = [ab]*.c ]]', '[ab]*.c', /^Glob pattern/],
     ] as const) assert.match(find(explain(src), label, 'pattern').explanation, note, src);
     // Plain words, and `[ ]` (which compares text), have none; an arithmetic `==` has none either.
     assert.ok(!all(explain('[[ $x == abc ]]').items).some((t) => t.kind === 'pattern'));

@@ -23,9 +23,9 @@ function tokens(src: string, lang: 'ja' | 'en' = 'en'): Token[] {
   const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   return all(ex.items);
 }
-const find = (src: string, label: string, lang: 'ja' | 'en' = 'en') => {
-  // The innermost one: an argument and its only child can have the same label.
-  const t = tokens(src, lang).filter((x) => x.label === label).pop();
+const find = (src: string, label: string, lang: 'ja' | 'en' = 'en', outer = false) => {
+  // The innermost one (the outermost with `outer`): an argument and its only child can have the same label.
+  const t = outer ? tokens(src, lang).find((x) => x.label === label) : tokens(src, lang).filter((x) => x.label === label).pop();
   assert.ok(t, `no token ${label} in ${src}`);
   return t;
 };
@@ -461,7 +461,7 @@ describe('tricky lines (round 3)', () => {
     const item = tokens(src).find((t) => t.label.startsWith('a|'))!;
     assert.match(item.explanation, /matches `a \| "\("\*`/);
     assert.deepStrictEqual(item.children.filter((c) => c.kind === 'pattern').map((c) => c.label), ['a', '"("*']);
-    assert.match(item.children.find((c) => c.label === '"("*')!.explanation, /glob/);
+    assert.match(item.children.find((c) => c.label === '"("*')!.explanation, /Glob pattern/);
       const line = tokens(ROUND3[4]).find((t) => t.label.startsWith('[\\)]|'))!;
     assert.match(line.explanation, /matches `\[\\\)\] \| "\("\*`/);
     assert.deepStrictEqual(line.children.filter((c) => c.kind === 'pattern').map((c) => c.label), ['[\\)]', '"("*']);
@@ -699,11 +699,11 @@ function tokensAt(script: string, line: number, lang: 'ja' | 'en' = 'en'): Token
   const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   return all(ex.items);
 }
-const findAt = (script: string, line: number, label: string, lang: 'ja' | 'en' = 'en') => {
+const findAt = (script: string, line: number, label: string, lang: 'ja' | 'en' = 'en', outer = false) => {
   const toks = tokensAt(script, line, lang);
   // A command is labelled with its name and spans the whole command: find it by the text of its range.
   const text = (x: Token) => (x.span.start.line === x.span.end.line ? script.split('\n')[x.span.start.line].slice(x.span.start.character, x.span.end.character) : undefined);
-  const t = toks.filter((x) => text(x) === label).pop() ?? toks.filter((x) => x.label === label).pop();
+  const t = outer ? toks.find((x) => text(x) === label) : toks.filter((x) => text(x) === label).pop() ?? toks.filter((x) => x.label === label).pop();
   assert.ok(t, `no token ${label} in ${script}`);
   return t;
 };
@@ -863,9 +863,9 @@ describe('tricky lines (round 4)', () => {
     // After `set +f`, `set +o noglob`, and in both forms of switching it off.
     for (const [on, off] of [['set -f', 'set +f'], ['set -o noglob', 'set +o noglob'], ['set -euf', 'set +f'], ['set -f', 'set +fu'], ['set -- -f; set -o noglob', 'set +o noglob']] as const) {
       const script = `${on}; echo *; ${off}; echo *`;
-      const stars = tokensAt(script, 0).filter((t) => t.label === '*');
+      const stars = tokensAt(script, 0).filter((t) => t.label === '*' && !t.explanation.startsWith('`*`'));
       assert.match(stars[0].explanation, /set -f/, script);
-      assert.match(stars[1].explanation, /glob: expands to matching file names/, script);
+      assert.match(stars[1].explanation, /Glob pattern .*expands to the matching file names/, script);
       assert.strictEqual(examplesOf(script).length, 1, script);
     }
     // `set -- -f` sets the arguments, and `-f` after other words is not an option.
@@ -881,7 +881,7 @@ describe('tricky lines (round 4)', () => {
     // Globbing off in a different line of a longer script.
     const long = 'set -f\necho *\nset +f\necho *\n';
     assert.match(findAt(long, 1, '*').explanation, /has turned globbing off/);
-    assert.match(findAt(long, 3, '*').explanation, /glob: expands/);
+    assert.match(findAt(long, 3, '*', 'en', true).explanation, /expands to the matching file names/);
     assert.strictEqual(bashIn('set -f; echo * ?; set +f; echo * ?'), '* ?\na b a b\n');
     assert.strictEqual(bashIn('set -o noglob; echo *; set +o noglob; echo *'), '*\na b\n');
     // Brace expansion is not affected.
@@ -1346,7 +1346,7 @@ describe('tricky lines (round 6)', () => {
     assert.strictEqual(e('${s~H}'), 'Parameter expansion: Swap the case of the first character of `s` if it matches `H`');
     assert.strictEqual(find('echo ${s~~}', '~~').explanation, 'Swap the case of every character (a little-known form)');
     assert.strictEqual(find('echo ${s~}', '~').explanation, 'Swap the case of the first character (a little-known form)');
-    assert.match(find('echo ${s~~[a-l]}', '[a-l]').explanation, /^Pattern of characters to convert `\[a-l\]`: one character from a-l\. Each character is tried on its own; only those that match are converted$/);
+    assert.match(find('echo ${s~~[a-l]}', '[a-l]', 'en', true).explanation, /^Pattern of characters to convert `\[a-l\]`: Glob pattern \(shell wildcards\): matched against a string\. Each character is tried on its own; only those that match are converted$/);
     // A pattern with an expansion in it has its parts explained.
     assert.ok(tokens('echo ${s~~$x}').some((t) => t.kind === 'pattern' && /decided at run time/.test(t.explanation)));
     assert.ok(tokens('echo "${a[@]~~}" "${@~}"').filter((t) => t.kind === 'expansion').length === 2);
@@ -1382,9 +1382,9 @@ describe('tricky lines (round 6)', () => {
     assert.strictEqual(bash('s="lello world"; t="hello world"; echo "${s^l}" "${t^l}"'), 'Lello world hello world\n');
     assert.deepStrictEqual(examplesOf('echo ${s,,[HL]}').map((e) => e.sections.length), [1]);
     assert.strictEqual(bash('s="HELLO World"; echo ${s,,[HL]}'), 'hEllO World\n');
-    assert.match(find('echo ${s,,[HL]}', '[HL]').explanation, /^Pattern of characters to convert `\[HL\]`: one character from HL\. Each character is tried on its own; only those that match are converted$/);
-    assert.match(find('echo ${s^l}', 'l').explanation, /The first character is converted only if it matches$/);
-    assert.match(find('echo ${s,,[HL]}', '[HL]', 'ja').explanation, /^変換する文字のパターン `\[HL\]`: HLのどれか1文字。文字を1つずつ調べ、一致した文字だけが変換される$/);
+    assert.match(find('echo ${s,,[HL]}', '[HL]', 'en', true).explanation, /^Pattern of characters to convert `\[HL\]`: Glob pattern \(shell wildcards\): matched against a string\. Each character is tried on its own; only those that match are converted$/);
+    assert.match(find('echo ${s^l}', 'l', 'en', true).explanation, /The first character is converted only if it matches$/);
+    assert.match(find('echo ${s,,[HL]}', '[HL]', 'ja', true).explanation, /^変換する文字のパターン `\[HL\]`: グロブパターン（シェルのワイルドカード）: 文字列と照合される。文字を1つずつ調べ、一致した文字だけが変換される$/);
     assert.strictEqual(expl('echo ${s,,[HL]}', '${s,,[HL]}'), 'Parameter expansion: Lowercase the characters of `s` that match `[HL]`');
     assert.strictEqual(expl('echo ${s^h}', '${s^h}'), 'Parameter expansion: Uppercase the first character of `s` if it matches `h`');
     assert.strictEqual(expl('echo ${s^^[lo]}', '${s^^[lo]}', 'ja'), 'パラメータ展開: `s` の文字のうち `[lo]` に一致するものだけを大文字にする');
@@ -1552,10 +1552,10 @@ describe('tricky lines (round 7)', () => {
     assert.strictEqual(bash('s=aaabxb; echo ${s##+(a)}'), 'aaabxb\n');
     for (const [pat, label] of [['+(a)', '##'], ['@(a|x)', '//'], ['*(b)', '%%'], ['?(a)', '/'], ['!(a)b', '#'], ['!(b)', '//']] as const) {
       const line = label === '//' || label === '/' ? `echo \${s${label}${pat}/-}` : `echo \${s${label}${pat}}`;
-      const e = findAt(line, 0, pat).explanation;
-      assert.match(e, /^Pattern `.*` \(an extended glob: needs `shopt -s extglob`, or it is taken as literal text\)$/, line);
+      const e = findAt(line, 0, pat, 'en', true).explanation;
+      assert.match(e, /^Pattern `.*`: Glob pattern .*\. An extended glob needs `shopt -s extglob`, or it is taken as literal text$/, line);
       assert.doesNotMatch(e, /expansions/, line);
-      assert.match(findAt(line, 0, pat, 'ja').explanation, /拡張グロブ。`shopt -s extglob` が必要/, line);
+      assert.match(findAt(line, 0, pat, 'ja', true).explanation, /拡張グロブは `shopt -s extglob` が必要/, line);
     }
     // A real expansion in the pattern is still decided at run time, extended glob or not.
     for (const pat of ['+($x)', '$x*', '$(echo a)', '`echo a`']) {

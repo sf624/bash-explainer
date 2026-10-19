@@ -9,6 +9,7 @@ import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
 import { BundleDoc, CommandDoc, OptDoc, PositionalBy } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
+import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample } from './examples/awk';
 import { perlExample, perlOptions } from './examples/perlrun';
@@ -547,7 +548,7 @@ export class Analyzer {
       case 'array': return this.tok(n, 'expansion', this.s('配列: `( )` 内の要素から配列を作る', 'Array: built from the elements inside `( )`'), this.subs(n.namedChildren));
       case 'subscript': return this.subscript(n);
       case 'regex': return this.regexNode(n);
-      case 'extglob_pattern': return this.tok(n, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(n.text));
+      case 'extglob_pattern': return this.globToken(n, 'value');
       case 'variable_name': return this.arithNumber(n) ?? this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
       case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
@@ -684,10 +685,21 @@ export class Analyzer {
   }
 
   private casePattern(p: SyntaxNode): Token {
-    return this.tok(p, 'pattern', hasExtglob(p.text) && !hasGlob(p.text.replace(/[?*+@!]\(/g, '(')) ? this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``) + this.extglobNote(p.text)
-      : hasGlob(p.text)
-      ? this.s(`パターン \`${p.text}\`（グロブ: \`*\` は任意の文字列, \`?\` は任意の1文字）`, `Pattern \`${p.text}\` (glob: \`*\` any string, \`?\` any char)`) + this.extglobNote(p.text)
-      : this.s(`パターン \`${p.text}\``, `Pattern \`${p.text}\``));
+    return this.globToken(p, 'value', p.text, 0);
+  }
+
+  /**
+   * A glob pattern as a token: what a glob is, then its parts as children. A text without glob characters is just
+   * a pattern that matches itself. `text` starts `base` characters into the node.
+   */
+  private globToken(n: SyntaxNode, target: GlobTarget, text = n.text, base = 0, kind: Kind = 'pattern'): Token {
+    if (!hasGlob(text)) return this.tok(n, kind, this.s(`パターン \`${text}\`（ワイルドカードを含まないので、この文字列そのものに一致）`, `Pattern \`${text}\` (no wildcards, so it matches exactly this text)`));
+    return this.tok(n, kind, globIntro(this.lang, target) + this.extglobNote(text), this.globChildren(n, text, base));
+  }
+
+  /** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`). */
+  private globChildren(n: SyntaxNode, text: string, base: number): Token[] {
+    return explainGlob(text, this.lang).map((t) => this.fromEmbedded(t, n, { text, base }));
   }
 
   private caseItem(n: SyntaxNode): Token {
@@ -1435,8 +1447,8 @@ export class Analyzer {
       if (tilde) return this.tok(a, 'argument', desc, [tilde]);
       const off = hasGlob(a.text) && this.globOff(a);
       if (off) return this.tok(a, 'argument', desc + this.noglobNote());
-      const glob = hasGlob(a.text) ? this.s('（グロブ: 一致するファイル名の一覧に展開される）', ' (glob: expands to matching file names)') + this.globNotes(a.text) : '';
-      return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text));
+      const glob = hasGlob(a.text) ? ` — ${globIntro(this.lang, 'file')}` + this.globNotes(a.text) : '';
+      return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
     }
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
@@ -1598,9 +1610,9 @@ export class Analyzer {
         break;
       }
       case 'glob': {
-        tokens = [];
         note = describeFindPattern(lit.text, this.lang);
         if (!note) return undefined;
+        tokens = explainGlob(lit.text, this.lang);
         // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
         // The test before the pattern: -name, -path…
         const opt = this.previousNamed(a).text;
@@ -2204,6 +2216,11 @@ export class Analyzer {
 
   /** Values that select a case branch (any of its patterns) and values that do not. */
   private caseExample(pats: SyntaxNode[]): void {
+    this.patternExample(pats, [this.s('この分岐に入る値', 'Values that take this branch'), this.s('入らない値', 'Values that do not')]);
+  }
+
+  /** Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not: found with the matcher of `case`. */
+  private patternExample(pats: SyntaxNode[], labels: [string, string]): void {
     const texts = pats.map((p) => this.unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
     if (texts.some((t) => t === undefined)) return;
     const all = texts as string[];
@@ -2219,7 +2236,7 @@ export class Analyzer {
     const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value', opts))).slice(0, 2);
     this.examples.push({ kind: 'glob',
       title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
-      sections: [{ label: this.s('この分岐に入る値', 'Values that take this branch'), lines: [...new Set(matching)] }, { label: this.s('入らない値', 'Values that do not'), lines: nonMatching }].filter((s) => s.lines.length),
+      sections: [{ label: labels[0], lines: [...new Set(matching)] }, { label: labels[1], lines: nonMatching }].filter((s) => s.lines.length),
     });
   }
 
@@ -2409,7 +2426,7 @@ export class Analyzer {
     };
     const { left, op, right } = shape;
     const cases = left
-      ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string', !!this.globOpts('pattern').nocase)
+      ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string')
       : testCases(kind, op, undefined, operand(right));
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
@@ -2836,8 +2853,14 @@ export class Analyzer {
     const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
     const operands = sortTokens([
       ...this.subs([left, ...rights].filter((x) => x && !plain(x) && !pattern(x))),
-      ...rights.filter(pattern).map((x) => this.tok(x, 'pattern', this.s('パターン', 'Pattern') + this.extglobNote(x.text))),
+      ...rights.filter(pattern).map((x) => this.globToken(x, 'value')),
     ]);
+    // `[[ $x = *.txt ]]`: the values that match, as for a `case` pattern (a pattern with a quoted part is not tried).
+    if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
+      const before = this.examples.length;
+      this.patternExample(rights, [this.s('一致する値', 'Values that match'), this.s('一致しない値', 'Values that do not match')]);
+      this.anchorExamples(before, n);
+    }
     if (!this.inArithmetic(n) && binaryTestOps[op]) {
       const num = this.numericTestNote(op, [n.namedChildren[0].text, rightText], true);
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
@@ -2953,7 +2976,7 @@ export class Analyzer {
     const tilde = this.tilde(n);
     if (tilde) return tilde;
     if (hasGlob(text) && this.globOff(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.noglobNote());
-    if (hasGlob(text)) return this.tok(n, 'pattern', this.s(`グロブ \`${text}\`: 一致するファイル名の一覧に展開される（\`*\` は任意の文字列, \`?\` は任意の1文字）`, `Glob \`${text}\`: expands to matching file names (\`*\` any string, \`?\` any char)`) + this.globNotes(text));
+    if (hasGlob(text)) return this.tok(n, 'pattern', globIntro(this.lang, 'file') + this.globNotes(text), this.globChildren(n, text, 0));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
   }
 
@@ -3240,7 +3263,9 @@ export class Analyzer {
       if (!expl || !part.text) return [];
       const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
       const nested = this.nestedIn(n, col + part.start, col + part.end);
-      return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: nested }];
+      // The parts of a glob pattern (those with an expansion in them have only the expansions).
+      const globbed = part.role === 'pattern' && !nested.length ? this.globChildren(n, part.text, part.start) : [];
+      return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed] }];
     });
     return summary;
   }
@@ -3375,10 +3400,10 @@ export class Analyzer {
           : s('。先頭の1文字がこれに一致したときだけ変換される', '. The first character is converted only if it matches')) : '';
         if (!glob) {
           // An extended glob (`+(a)`, `@(a|x)`) is a pattern of its own; only `$…` and backquotes are decided at run time.
-          if (!/\$|`/.test(t)) return ['pattern', s(`${what} \`${t}\`（拡張グロブ。\`shopt -s extglob\` が必要で、これがないと文字どおりの文字列として扱われる）`, `${what} \`${t}\` (an extended glob: needs \`shopt -s extglob\`, or it is taken as literal text)`)];
+          if (!/\$|`/.test(t)) return ['pattern', `${what} \`${t}\`: ${globIntro(this.lang, 'value')}` + s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text') + only]
           return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
         }
-        return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}${only}`];
+        return ['pattern', hasGlob(t) ? `${what} \`${t}\`: ${globIntro(this.lang, 'value')}${only}` : s(`${what} \`${t}\`（ワイルドカードを含まないので、この文字列そのものに一致）${only}`, `${what} \`${t}\` (no wildcards, so it matches exactly this text)${only}`)];
       }
       case 'replacement': {
         // The quotes and backslashes are removed: `\}` is `}`.
