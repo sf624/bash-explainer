@@ -473,7 +473,7 @@ describe('branches no other test takes', () => {
   });
 
   it('expansions: forms not parsed, examples not made, and the Japanese wording', () => {
-    for (const text of ['$x', '${%x}', '${#x:-a}', '${x~y}', '${a[1}']) assert.strictEqual(parseExpansion(text), undefined, text);
+    for (const text of ['$x', '${%x}', '${#x:-a}', '${x$y}', '${a[1}']) assert.strictEqual(parseExpansion(text), undefined, text);
     assert.deepStrictEqual(parseExpansion('${x#}')!.parts.map((p) => p.role), ['name', 'op']);
     assert.ok(parseExpansion('${a[${i}]/$(echo "x")/y}'));
     const ex = (text: string, lang: 'ja' | 'en' = 'en') => exampleFor(parseExpansion(text)!, lang);
