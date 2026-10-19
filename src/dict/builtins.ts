@@ -56,6 +56,7 @@ export const builtins: Record<string, CommandDoc> = {
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
   ]),
+  logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], { positional: [pos('終了ステータス', 'exit status')] }),
   exit: b('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { positional: [pos('終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)')] }),
   return: b('関数から戻る', 'Return from a function', [], { positional: [pos('戻り値となる終了ステータス', 'exit status to return')] }),
   set: b('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [

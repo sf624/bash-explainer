@@ -354,4 +354,21 @@ export const basic: Record<string, CommandDoc> = {
     ['-p|--prompt', 'コマンド入力のプロンプト', 'prompt string', 'arg'],
   ], { positional: [files] }),
   view: cmd('読み取り専用で `vi` を開く', 'Open `vi` read-only', [], { positional: [files] }),
+  rename: cmd('ファイル名の一部を一括で置き換える', 'Rename many files by replacing part of the name', [
+    ['-n|--no-act|--dry-run', '実際には変えず、行う内容を表示する', 'show what would be renamed; do nothing'],
+    ['-v|--verbose', '変えた名前を表示する', 'show the renames done'],
+    ['-f|--force', '既存のファイルを上書きする（注意）', 'overwrite existing files (careful)'],
+    ['-s|--symlink', 'シンボリックリンクの名前を変える', 'rename symlink targets'],
+  ], { positional: [pos('置き換える文字列と置き換え後の文字列（util-linux）、または Perl の式', 'the string to replace and its replacement (util-linux), or a Perl expression'), files] }),
+  dos2unix: cmd('改行を CRLF から LF に変換する', 'Convert line endings from CRLF to LF', [
+    ['-n|--newfile', '変換結果を別のファイルに書く（`入力 出力`）', 'write the result to another file (`in out`)'],
+    ['-k|--keepdate', '更新時刻を保つ', 'keep the modification time'],
+    ['-q|--quiet', '表示を減らす', 'quiet'],
+    ['-b|--keep-bom', 'BOM を残す', 'keep the BOM'],
+  ], { positional: [files] }),
+  unix2dos: cmd('改行を LF から CRLF に変換する', 'Convert line endings from LF to CRLF', [
+    ['-n|--newfile', '変換結果を別のファイルに書く（`入力 出力`）', 'write the result to another file (`in out`)'],
+    ['-k|--keepdate', '更新時刻を保つ', 'keep the modification time'],
+    ['-q|--quiet', '表示を減らす', 'quiet'],
+  ], { positional: [files] }),
 };

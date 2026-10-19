@@ -174,6 +174,49 @@ describe('the dictionary', () => {
     assert.deepStrictEqual(unknown('flock -n /tmp/l ls; ping -c 1 h; dig +short a.com; chattr +i f'), []);
   });
 
+  it('knows the commands the LPIC and LinuC objectives and everyday use name', () => {
+    const lines = [
+      // help, files, who, power
+      'man -k copy; whatis ls; apropos disk; info coreutils; whereis -b ls; tree -L 2 -a; more -d f',
+      'locate -i foo; updatedb; w -h; last -n 5 -x; lastlog -u root; shutdown -r +10; reboot; halt -p; poweroff; init 3; telinit q; runlevel',
+      'traceroute -n h; tracepath -n h; cal -3; clear; reset; chroot /mnt /bin/sh; factor 12; dc -e "2 3 + p"; /usr/bin/time -v ls',
+      // disks, file systems, LVM, RAID
+      'fdisk -l; gdisk -l /dev/sda; parted -s /dev/sdb mklabel gpt; e2fsck -f /dev/sdb1; tune2fs -l /dev/sdb1; xfs_repair -n /dev/sdb1; mke2fs -t ext4 /dev/sdb1',
+      'pvcreate /dev/sdb1; vgcreate vg0 /dev/sdb1; lvcreate -L 10G -n data vg0; lvextend -r -L +5G /dev/vg0/data; lvs; vgs; pvs; mdadm --create /dev/md0 -l 1 -n 2 /dev/sdb /dev/sdc',
+      'cryptsetup open /dev/sdb1 c; smartctl -H /dev/sda; hdparm -I /dev/sda; lsblk -f; lspci -k; lsusb -t; exportfs -ra; showmount -e srv; nfsstat -s; mount.cifs //s/x /mnt',
+      // boot, kernel, packages
+      'grub-install /dev/sda; grub-mkconfig -o /boot/grub/grub.cfg; update-grub; efibootmgr -v; dracut -f; mkinitramfs -o /boot/i; depmod -a; insmod x.ko; rmmod x; modinfo -d x',
+      'udevadm info -a -n /dev/sda; systemctl list-units --type=service; systemctl set-default multi-user.target; systemd-run --scope ls; chkconfig --list; update-rc.d x defaults',
+      'apt-cache search foo; apt-file search x; dpkg-reconfigure tzdata; dpkg -c a.deb; rpm -qa; rpm -ivh a.rpm; rpm2cpio a.rpm | cpio -idv; zypper in x; yum provides x; dnf history; yumdownloader x',
+      // accounts, scheduling, time, logs, mail, printing
+      'groupdel g; groupmod -n n o; chage -l u; newgrp g; htpasswd -c f u; ldapsearch -x -b dc=x; at now + 5 minutes; atq; atrm 1; hwclock --systohc; tzselect; chronyc tracking',
+      'logrotate -f /etc/logrotate.conf; systemd-cat ls; mail -s s a@b; mailq; newaliases; postfix reload; postconf -n; doveadm user "*"; lpr -P p f; lpq; lprm 1; lpstat -p',
+      // network and servers
+      'nmcli device status; ifup eth0; ifdown eth0; route -n; arp -a; ping6 -c1 h; ethtool eth0; nc -zv h 22; nmap -sV h; tcpdump -i any -nn port 80; mtr -r h; telnet h 25',
+      'apachectl configtest; nginx -t; rndc reload; named-checkconf; named-checkzone x.com f; dnssec-keygen -a RSASHA256 x.com; smbclient -L h; testparm -s; smbstatus; openvpn --config c; sshd -t; ufw allow 22/tcp; firewall-cmd --list-all',
+      'xhost +local:; xauth list; startx; setenforce 0; sestatus; restorecon -Rv /x; semanage port -l; auditctl -l; ausearch -k k; fail2ban-client status',
+      // monitoring, virtualization, build
+      'iostat -x 1; vmstat 1; sar -u 1 3; mpstat -P ALL; pidstat -p 1; htop -u u; strace -f -p 1; ltrace ls; lshw -short; dmidecode -t memory; ipcs -m',
+      'virsh list --all; virt-install --name x; qemu-img create -f qcow2 a 1G; ansible all -m ping; ansible-playbook -C p.yml; ./configure --prefix=/opt; cmake -S . -B b; pkg-config --cflags x; objdump -d a; nm -D a',
+      // macOS
+      'open -a Safari x; pbcopy < f; pbpaste; say -v Kyoko hi; caffeinate -dimsu; diskutil list; hdiutil attach x.dmg; launchctl bootout gui/501 x.plist; scutil --get HostName; networksetup -listallnetworkservices',
+      'softwareupdate -l; mdfind -name x; mdls f; ditto a b; xattr -d com.apple.quarantine f; codesign -dv a; spctl -a a; plutil -p f; sips -Z 800 a.png; pmset -g; system_profiler SPHardwareDataType; sw_vers',
+      'dscl . -list /Users; dscacheutil -flushcache; defaults read com.apple.dock; otool -L a; lipo -info a; tmutil listbackups; security find-generic-password -s s; csrutil status; screencapture -x a.png; xcodebuild -list',
+    ];
+    for (const line of lines) assert.deepStrictEqual(unknown(line), [], line);
+  });
+
+  it('explains options added to older commands, also after a subcommand', () => {
+    assert.match(tokens('ls -i --group-directories-first').find((t) => t.label === '-i')!.explanation, /inode/);
+    assert.match(tokens('systemctl status -l nginx').find((t) => t.label === '-l')!.explanation, /ellipsize/);
+    assert.match(tokens('systemctl list-unit-files --state=enabled')[0].explanation, /Control systemd/);
+    assert.match(tokens('ip addr show -s').find((t) => t.label === '-s')!.explanation, /statistics/);
+    assert.match(tokens('ulimit -Hn 4096').find((t) => t.label === '-H')!.explanation, /hard limit/);
+    assert.match(tokens('tar --zstd -cf a.tar.zst d').find((t) => t.label === '--zstd')!.explanation, /zstd/);
+    assert.match(tokens('pkill -HUP -u root nginx').find((t) => t.label === '-HUP')!.explanation, /SIGHUP/);
+    assert.match(tokens('screen -dmS web').find((t) => t.label === '-dmS')!.explanation, /detached/);
+  });
+
   it('describes every command and option in both languages', () => {
     const check = (name: string, d: CommandDoc) => {
       assert.ok(d.summary.ja.trim() && d.summary.en.trim(), `${name}: summary`);
