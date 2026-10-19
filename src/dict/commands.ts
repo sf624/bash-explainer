@@ -2,9 +2,86 @@ import { shellOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { tx } from '../i18n';
+import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
+
+/** `ar` operations and modifiers (written without a dash, or with one). */
+const arLetters: OptSpec[] = [
+  ['r', 'ファイルを追加する（同名のメンバーがあれば置き換える）', 'add files, replacing members of the same name'],
+  ['q', 'ファイルを末尾にそのまま追加する（同名の確認をしない）', 'append files at the end without checking for the same name'],
+  ['d', 'メンバーを削除する', 'delete members'],
+  ['t', 'メンバーの一覧を表示する', 'list the members'],
+  ['x', 'メンバーをファイルとして取り出す', 'extract members as files'],
+  ['p', 'メンバーの中身を標準出力に出す', 'print members to standard output'],
+  ['m', 'メンバーを移動する（並び順を変える）', 'move members (change the order)'],
+  ['s', 'シンボルの索引を作る・更新する（`ranlib` と同じ）', 'write or update the symbol index (what `ranlib` does)'],
+  ['S', 'シンボルの索引を作らない', 'do not write a symbol index'],
+  ['c', 'アーカイブを新しく作るときの警告を出さない', 'do not warn when the archive is created'],
+  ['u', '日付が新しいファイルだけ置き換える（`r` と併用）', 'replace only files that are newer (with `r`)'],
+  ['v', '処理の内容を詳しく表示', 'verbose'],
+  ['o', '取り出すときメンバーの元の日時を保つ', 'keep the original dates when extracting'],
+  ['D', '日時や所有者を 0 にして、毎回同じアーカイブになるようにする', 'zero dates and owners so the archive is reproducible'],
+  ['U', '日時や所有者を実際の値で保存する（`D` の逆）', 'store real dates and owners (opposite of `D`)'],
+  ['T', '中身を持たない薄いアーカイブを作る', 'make a thin archive that points to the files'],
+  ['a', '指定したメンバーの後ろに入れる（メンバー名を次の語に書く）', 'place after the named member (the name is the next word)', 'arg'],
+  ['b', '指定したメンバーの前に入れる（メンバー名を次の語に書く）', 'place before the named member (the name is the next word)', 'arg'],
+  ['i', '指定したメンバーの前に入れる（`b` と同じ）', 'place before the named member (same as `b`)', 'arg'],
+  ['N', '同名のメンバーが複数あるとき、何番目かを指定（次の語に書く）', 'which of several members of the same name (the number is the next word)', 'arg'],
+];
+
+/** `jar` operations and modifiers. */
+const jarLetters: OptSpec[] = [
+  ['c', 'jar を新しく作る', 'create a jar'],
+  ['t', '中身を一覧表示する', 'list the contents'],
+  ['x', '中身を取り出す', 'extract'],
+  ['u', '既存の jar を更新する', 'update an existing jar'],
+  ['i', '索引を作る', 'generate an index'],
+  ['v', '処理の内容を詳しく表示', 'verbose'],
+  ['f', 'jar ファイルの名前（次の語に書く）', 'the jar file (the next word)', 'arg'],
+  ['m', 'マニフェストにするファイル（次の語に書く）', 'file to take the manifest from (the next word)', 'arg'],
+  ['e', 'アプリケーションの開始クラス（次の語に書く）', 'entry-point class of the application (the next word)', 'arg'],
+  ['0', '圧縮せずに格納する', 'store without compression'],
+  ['M', 'マニフェストを作らない', 'do not create a manifest'],
+];
+
+/** `dump` letters. */
+const dumpLetters: OptSpec[] = [
+  ...['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d): OptSpec => [d, d === '0' ? 'レベル 0（全体のバックアップ）' : `レベル ${d}（前のレベルより小さい番号のバックアップ以降の変更分）`, d === '0' ? 'level 0 (a full backup)' : `level ${d} (changes since the last backup of a lower level)`]),
+  ['u', '成功したら、バックアップの日時を `/etc/dumpdates` に記録する', 'on success, record the date in `/etc/dumpdates`'],
+  ['f', '書き出し先のファイルまたはデバイス（次の語に書く。`-` で標準出力）', 'where to write (the next word; `-` is standard output)', 'arg'],
+  ['b', '1回に書くブロックの大きさ（次の語に書く）', 'block size to write (the next word)', 'arg'],
+  ['B', '1巻に入れるブロックの数（次の語に書く）', 'blocks per volume (the next word)', 'arg'],
+  ['s', 'テープの長さ（フィート。次の語に書く）', 'tape length in feet (the next word)', 'arg'],
+  ['L', 'ラベル（次の語に書く）', 'label (the next word)', 'arg'],
+  ['T', '基準にする日時（次の語に書く）', 'date to dump changes since (the next word)', 'arg'],
+  ['h', 'この階層以上の、除外の印が付いたファイルを省く（次の語に書く）', 'skip files marked nodump at or above this level (the next word)', 'arg'],
+  ['S', 'バックアップの大きさを見積もって表示するだけにする', 'only print the estimated size of the backup'],
+  ['W', '各ファイルシステムの最後のバックアップを表示', 'show when each file system was last dumped'],
+  ['w', 'バックアップが必要なファイルシステムだけ表示', 'show only the file systems that need a backup'],
+  ['n', '終わったら operator グループに知らせる', 'notify the operator group when done'],
+  ['a', 'テープの長さを自動で決める', 'work out the tape length automatically'],
+];
+
+/** `restore` letters. */
+const restoreLetters: OptSpec[] = [
+  ['r', 'ファイルシステム全体を復元する（空のファイルシステムで使う）', 'restore a whole file system (into an empty one)'],
+  ['R', '複数巻のバックアップを、途中の巻から復元し直す', 'resume restoring from a later volume'],
+  ['x', '指定したファイルだけ取り出す', 'extract the named files'],
+  ['t', 'バックアップの中身を一覧表示', 'list the contents of the backup'],
+  ['i', '対話的に、取り出すものを選ぶ', 'choose what to extract interactively'],
+  ['C', 'バックアップとファイルシステムを比べる', 'compare the backup with the file system'],
+  ['f', '読み込むファイルまたはデバイス（次の語に書く。`-` で標準入力）', 'where to read from (the next word; `-` is standard input)', 'arg'],
+  ['b', '1回に読むブロックの大きさ（次の語に書く）', 'block size to read (the next word)', 'arg'],
+  ['s', '複数巻のうち、何番目から読むか（次の語に書く）', 'which file on the tape to read (the next word)', 'arg'],
+  ['T', '一時ファイルを置くディレクトリ（次の語に書く）', 'directory for temporary files (the next word)', 'arg'],
+  ['v', '処理の内容を詳しく表示', 'verbose'],
+  ['y', '確認せず、エラーがあっても続ける', 'do not ask, go on after errors'],
+  ['h', 'ディレクトリの中身でなく、ディレクトリそのものだけ取り出す', 'extract the directory itself, not its contents'],
+  ['m', 'ファイルを名前でなく i-node 番号で取り出す', 'extract by i-node number, not by name'],
+  ['N', '取り出さず、名前だけ表示', 'only print the names, extract nothing'],
+];
 
 /** Options of `docker run` (and `docker container run`, `podman run`). */
 const dockerRun: OptSpec[] = [
@@ -297,7 +374,21 @@ export const commands: Record<string, CommandDoc> = {
     ['--transform|--xform', 'アーカイブ内のパスを sed の置換で書き換える（`s,^,prefix/,`）', 'rewrite member paths with a sed substitution (`s,^,prefix/,`)', 'arg'],
     ['--strip-components', '展開するとき、パスの先頭からこの数の階層を取り除く（`--strip-components=1` で最上位のフォルダを外す）', 'strip this many leading path parts when extracting (`--strip-components=1` drops the top folder)', 'arg'],
     ['--exclude', '除外するパターン', 'exclude pattern', 'arg'],
-  ]),
+    ['-r|--append', '既存のアーカイブの末尾にファイルを追加する', 'append files to the end of an archive'],
+    ['-u|--update', '新しいファイルだけをアーカイブの末尾に追加する', 'append only files newer than the archived ones'],
+    ['-A|--catenate|--concatenate', 'ほかの tar アーカイブをこのアーカイブの末尾につなぐ', 'append the contents of other tar archives to this one'],
+    ['-d|--diff|--compare', 'アーカイブの中身とファイルシステムの違いを表示', 'show how the archive differs from the file system'],
+    ['-p|--preserve-permissions', '展開するとき、保存されたパーミッションをそのまま使う', 'keep the stored permissions when extracting'],
+    ['-k|--keep-old-files', '展開するとき、既にあるファイルを上書きしない', 'do not overwrite existing files when extracting'],
+    ['-m|--touch', '展開したファイルの更新日時を、展開した時刻にする', 'set the modification time of extracted files to now'],
+    ['-O|--to-stdout', '展開した中身をファイルにせず標準出力に出す', 'write extracted contents to standard output'],
+    ['-h|--dereference', 'シンボリックリンクそのものでなく、指す先を保存する', 'store the file a symbolic link points to, not the link'],
+    ['-P|--absolute-names', 'パスの先頭の `/` を取り除かない', 'keep the leading `/` of paths'],
+    ['-a|--auto-compress', 'アーカイブの拡張子から圧縮方式を決める', 'choose the compression from the archive suffix'],
+    ['-b|--blocking-factor', '1ブロックの大きさ（512 バイトの倍数）', 'block size, in units of 512 bytes', 'arg'],
+    ['-T|--files-from', '対象のファイル名を書いたファイル', 'file that lists the names to process', 'arg'],
+    ['-X|--exclude-from', '除外するパターンを書いたファイル', 'file that lists patterns to exclude', 'arg'],
+  ], { bundle: { needs: 'cxtrudA' } }),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
     ['-d|--decompress', '展開する', 'decompress'],
     ['-c|--stdout', '結果を標準出力に出す（元ファイルを残す）', 'write to stdout, keep originals'],
@@ -437,7 +528,66 @@ export const commands: Record<string, CommandDoc> = {
     ['-f', '詳細形式で表示', 'full format'],
     ['-p', '指定した PID のみ', 'only these PIDs', 'arg'],
     ['-o', '表示する列を指定', 'output columns', 'arg'],
-  ]),
+  ], {
+    bundle: {
+      style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
+      options: letters([
+        ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],
+        ['x', '端末につながっていないプロセスも表示', 'also show processes that have no terminal'],
+        ['u', 'ユーザー名・CPU・メモリの使用率などを並べたユーザー向けの形式で表示', 'user-oriented format (user, CPU and memory share…)'],
+        ['j', 'ジョブ制御の形式（PPID・PGID・SID など）で表示', 'job-control format (PPID, PGID, SID…)'],
+        ['f', 'プロセスの親子関係を、枝分かれの罫線で表示', 'draw the parent and child processes as an ASCII-art tree'],
+        ['l', '長い形式（UID・PPID・優先度・サイズなど）で表示', 'long format (UID, PPID, priority, size…)'],
+        ['v', '仮想メモリの形式で表示', 'virtual-memory format'],
+        ['s', 'シグナルの形式（保留・遮断・無視・捕捉）で表示', 'signal format (pending, blocked, ignored, caught)'],
+        ['X', 'レジスタの形式で表示', 'register format'],
+        ['Z', 'セキュリティコンテキストの列を加える', 'add a column with the security context'],
+        ['w', '幅広く表示（2回付けると幅を制限しない）', 'wide output (twice: no width limit)'],
+        ['h', 'ヘッダー行を付けない', 'no header line'],
+        ['r', '実行中のプロセスだけ表示', 'only running processes'],
+        ['T', 'この端末のプロセスをすべて表示', 'all processes on this terminal'],
+        ['g', '（古い指定）セッションリーダーも含めて表示', '(obsolete) include session leaders too'],
+        ['m', 'スレッドをプロセスの後ろに表示', 'show threads after their processes'],
+        ['H', 'スレッドをプロセスのように1行ずつ表示', 'show threads as if they were processes'],
+        ['n', 'ユーザーと待機先を名前でなく数値で表示', 'numbers instead of names for the user and the wait channel'],
+        ['c', 'コマンド名を実行ファイルの名前だけで表示', 'show the executable name only as the command'],
+        ['e', 'コマンドの後ろに環境変数を表示', 'show the environment after the command'],
+        ['S', '終了した子プロセスの CPU 時間なども合計する', "add up the CPU time of dead children"],
+        ['L', '指定できる出力列の名前を一覧表示', 'list the output column names'],
+        ['V', 'バージョンを表示', 'print the version'],
+        ['o', '表示する列を指定（`o pid,comm`）', 'output columns (`o pid,comm`)', 'arg'],
+        ['O', '標準の列に続けて表示する列を指定', 'extra columns after the default ones', 'arg'],
+        ['k', '並べ替えの指定（`k -rss`）', 'sort order (`k -rss`)', 'arg'],
+        ['p', '指定した PID だけ表示', 'only these PIDs', 'arg'],
+        ['t', '指定した端末のプロセスだけ表示', 'only processes on these terminals', 'arg'],
+        ['U', '指定したユーザーのプロセスだけ表示', 'only processes of these users', 'arg'],
+      ]),
+    },
+  }),
+  ar: cmd('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
+    ...arLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  ], {
+    bundle: { options: letters(arLetters), needs: 'dmpqrstx' },
+    positional: [pos('アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), pos('対象のメンバー（ファイル）', 'member file')],
+  }),
+  jar: cmd('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
+    ...jarLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  ], {
+    bundle: { options: letters(jarLetters), needs: 'ctxui' },
+    positional: [pos('アーカイブに入れる（または取り出す）ファイル', 'files to put in (or take out of) the archive')],
+  }),
+  dump: cmd('ファイルシステムをバックアップする', 'Back up a file system', [
+    ...dumpLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  ], {
+    bundle: { options: letters(dumpLetters), needs: '0123456789SWw' },
+    positional: [pos('バックアップするファイルシステムまたはディレクトリ', 'file system or directory to back up')],
+  }),
+  restore: cmd('dump で取ったバックアップから復元する', 'Restore from a backup made by dump', [
+    ...restoreLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  ], {
+    bundle: { options: letters(restoreLetters), needs: 'CrRxti' },
+    positional: [pos('復元するファイル', 'files to restore')],
+  }),
   pgrep: cmd('名前に一致するプロセスの PID を表示する', 'Find PIDs by process name', [['-f', 'コマンドライン全体で照合', 'match the full command line']]),
   pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [['-f', 'コマンドライン全体で照合', 'match the full command line']]),
   seq: cmd('連続した数値を1行ずつ出力する', 'Print a sequence of numbers', [

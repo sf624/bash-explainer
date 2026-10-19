@@ -17,6 +17,19 @@ export interface OptDoc {
   attachedOnly?: boolean;
 }
 
+/**
+ * The first argument may be options bundled without a dash (`tar xzf a.tgz`, `ps aux`, `ar rcs lib.a x.o`).
+ * It is read that way only when it is made of nothing but known letters (and digits).
+ */
+export interface BundleDoc {
+  /** Meaning of each letter as written without a dash. Default: the command's `-x` options. */
+  options?: Record<string, OptDoc>;
+  /** The word must hold at least one of these letters (the operation), which keeps ordinary words out. */
+  needs?: string;
+  /** What the bundle is called (default: old-style options). */
+  style?: Text;
+}
+
 export interface CommandDoc {
   summary: Text;
   builtin?: boolean;
@@ -30,6 +43,8 @@ export interface CommandDoc {
   subcommands?: Record<string, CommandDoc>;
   /** Options are single words that never combine (find, java-style `-name`). */
   longSingleDash?: boolean;
+  /** The first argument may be dashless bundled options. A letter with `arg` takes the following words in order. */
+  bundle?: BundleDoc;
 }
 
 /** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `lang:<name>`. */
@@ -54,6 +69,11 @@ export function cmd(
     for (const n of names.split('|')) options[n] = doc;
   }
   return { summary: tx(ja, en), options, ...extra };
+}
+
+/** The meanings of dashless letters, written like options but without the dash: `['c', 'ja', 'en']`. */
+export function letters(opts: OptSpec[]): Record<string, OptDoc> {
+  return cmd('', '', opts).options!;
 }
 
 export const pos = (ja: string, en: string): Text => tx(ja, en);

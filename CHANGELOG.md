@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Options written without a dash in the first argument are explained letter by letter: `tar cvzf a.tgz dir`, `ps aux` and `ps axjf` (BSD options, whose letters mean something else than `-a -x -u`), `ar rcs lib.a x.o`, `jar cvf`, `dump 0uf` and `restore rf`. Letters that take a value (`f`, `C`, `o`…) use the following words in order (`tar cfC a.tar dir`). Only a first argument made of known letters is read this way (`tar --create`, `ps 1234` and `ps -ef` are not); before, it was "Word `cvzf`". `ar`, `jar`, `dump` and `restore` are in the dictionary, and `tar` knows more options (`-r`, `-u`, `-A`, `-d`, `-p`, `-k`, `-m`, `-O`, `-h`, `-P`, `-a`, `-b`, `-T`, `-X`).
 - `time ls -a` explains `ls` itself ("List directory contents") under `time`, as it does after `time` in a pipeline; before, only its options were shown, and the command was left out.
 - `time` is explained as timing the whole pipeline after it, as bash does: `time cat f | sort` is one timed pipeline, with an example for the whole pipeline; it was `time cat f` piped into `sort`. The commands after `time` are checked like any other, for dialects (`time echo -e x` under dash) and pitfalls (`time read x`, `time rm $f`); they were left out.
 - A redirection after the last command of a pipeline or list belongs to that command, as in bash: in `echo A && echo B > f` only `echo B` is redirected, and `echo a | cat 2>/dev/null` redirects `cat`; both were explained as redirecting the whole pipeline or list.
