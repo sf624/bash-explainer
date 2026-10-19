@@ -680,4 +680,32 @@ export const admin: Record<string, CommandDoc> = {
   apparmor_status: cmd('AppArmor の状態（読み込まれたプロファイル）を表示する', 'Show the AppArmor status (loaded profiles)', [
     ['--json', 'JSON で出力する', 'output as JSON'],
   ]),
+  chronyd: cmd('chrony の時刻同期デーモン', 'The chrony time synchronization daemon', [
+    ['-q', '1回だけ時刻を合わせて終わる', 'set the clock once and exit'],
+    ['-Q', '1回だけ測って表示し、時刻は変えない', 'measure once and print, without changing the clock'],
+    ['-d', '前面で動かし、デバッグ表示', 'run in the foreground with debug output'],
+    ['-f', '設定ファイル', 'configuration file', 'arg'],
+    ['-n', '前面で動かす', 'do not fork; stay in the foreground'],
+    ['-s', '保存した時刻の情報で時計を初期化する', 'set the clock from the saved RTC information'],
+    ['-4', 'IPv4 だけ', 'IPv4 only'],
+    ['-6', 'IPv6 だけ', 'IPv6 only'],
+  ]),
+  ntpd: cmd('NTP の時刻同期デーモン', 'The NTP time synchronization daemon', [
+    ['-q', '1回だけ時刻を合わせて終わる', 'set the time once and exit'],
+    ['-g', '大きなずれでも最初の1回は時刻を直接合わせる', 'allow a large first correction'],
+    ['-n', '前面で動かす', 'do not fork; stay in the foreground'],
+    ['-c', '設定ファイル', 'configuration file', 'arg'],
+    ['-u', '実行するユーザー', 'user to run as', 'arg'],
+    ['-p', 'PID を書くファイル', 'PID file', 'arg'],
+    ['-x', '時刻を急に変えず、ゆっくり合わせる', 'slew the clock instead of stepping'],
+  ]),
+  kexec: cmd('再起動せずに別のカーネルを直接起動する', 'Boot another kernel directly, without a firmware reboot', [
+    ['-l|--load', '起動するカーネルを読み込む', 'load a kernel to boot'],
+    ['-e|--exec', '読み込んだカーネルを実行する（注意）', 'execute the loaded kernel now (careful)'],
+    ['-u|--unload', '読み込んだカーネルを破棄する', 'unload the loaded kernel'],
+    ['-p|--load-panic', 'クラッシュ時に動かすカーネルを読み込む（kdump 用）', 'load a kernel to run on a crash (for kdump)'],
+    ['--initrd', 'initrd のファイル', 'initrd file', 'arg'],
+    ['--append', 'カーネルのコマンドライン', 'kernel command line', 'arg'],
+    ['--reuse-cmdline', '現在のカーネルのコマンドラインを使う', 'reuse the current kernel command line'],
+  ]),
 };
