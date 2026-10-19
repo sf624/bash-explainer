@@ -997,6 +997,7 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
         assert.ok(!/pasted as text/.test(find(src, '$x').explanation), src);
       }
       assert.match(find('x=$y; echo $(($x*2))', '$x').explanation, /^Expands to the value of `x`$/);
+      assert.match(find('x=; echo $(($x+1))', '$x').explanation, /pasted as text \(here ``\)/);
       assert.match(find('x=1+2; declare x; echo $(($x*2))', '$x').explanation, /pasted as text/);
       assert.match(find('x=1; x=2+3; echo $(($x*2))', '$x').explanation, /here `2\+3`/);
     });
