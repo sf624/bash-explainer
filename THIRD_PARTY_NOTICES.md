@@ -15,11 +15,12 @@ Bash Explainer includes the following third-party software (ISC, MIT). Their lic
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
 | [@codemirror/commands](https://code.haverbeke.berlin/codemirror/commands) | 6.11.1 | MIT | bundled into `app.js` |
-| [@codemirror/language](https://code.haverbeke.berlin/codemirror/language) | 6.12.4 | MIT | bundled into `app.js` |
-| [@codemirror/legacy-modes](https://code.haverbeke.berlin/codemirror/legacy-modes) | 6.5.4 | MIT | bundled into `app.js` |
+| [@codemirror/language](https://code.haverbeke.berlin/codemirror/language) | 6.13.1 | MIT | bundled into `app.js` |
+| [@codemirror/legacy-modes](https://code.haverbeke.berlin/codemirror/legacy-modes) | 6.5.5 | MIT | bundled into `app.js` |
 | [@codemirror/lint](https://code.haverbeke.berlin/codemirror/lint) | 6.9.7 | MIT | bundled into `app.js` |
 | [@codemirror/state](https://code.haverbeke.berlin/codemirror/state) | 6.7.6 | MIT | bundled into `app.js` |
-| [@codemirror/view](https://code.haverbeke.berlin/codemirror/view) | 6.43.13 | MIT | bundled into `app.js` |
+| [@codemirror/streamparser](https://code.haverbeke.berlin/codemirror/streamparser) | 6.0.0 | MIT | bundled into `app.js` |
+| [@codemirror/view](https://code.haverbeke.berlin/codemirror/view) | 6.43.14 | MIT | bundled into `app.js` |
 | [@lezer/common](https://code.haverbeke.berlin/lezer/common) | 1.5.3 | MIT | bundled into `app.js` |
 | [@lezer/highlight](https://code.haverbeke.berlin/lezer/highlight) | 1.2.5 | MIT | bundled into `app.js` |
 | [@marijn/find-cluster-break](https://code.haverbeke.berlin/marijn/find-cluster-break) | 1.0.4 | MIT | bundled into `app.js` |
@@ -36,7 +37,7 @@ Bash Explainer includes the following third-party software (ISC, MIT). Their lic
 
 ## License texts
 
-### @codemirror/commands, @codemirror/language, @codemirror/legacy-modes, @codemirror/lint, @codemirror/state, @codemirror/view
+### @codemirror/commands, @codemirror/language, @codemirror/legacy-modes, @codemirror/lint, @codemirror/state, @codemirror/streamparser, @codemirror/view
 
 ```text
 MIT License
