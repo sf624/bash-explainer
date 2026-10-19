@@ -215,6 +215,25 @@ describe('statements as bash reads them', () => {
     const notes = explain('cat f | while read -r l; do n=$l; done > out\necho "$n"').notes.join('\n');
     assert.match(notes, /run in subshells/);
   });
+  it('explains array elements with an index of their own', () => {
+    const e = explain('a+=([7]=z [k]=v x$y)');
+    assert.strictEqual(find(e, '[7]=z').explanation, 'Element with index `7`: set it to `z`');
+    assert.match(find(e, '[k]=v').explanation, /^Element with index `k`/);
+    assert.match(find(explain('a=([2]+=x)'), '[2]+=x').explanation, /append `x`/);
+    assert.match(find(explain('a=([2]+=x)', 0, 'ja'), '[2]+=x').explanation, /添字 `2` の要素に `x` を追記/);
+    assert.match(find(explain('a=([2]=x)', 0, 'ja'), '[2]=x').explanation, /を代入する/);
+    // Other concatenations in an array are not elements with an index.
+    assert.match(find(e, 'x$y').explanation, /^Concatenation/);
+  });
+  it('explains the redirections of a compound command and of a here-document', () => {
+    assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
+  });
+  it('time at the start of a pipeline, with a redirection, is the keyword that times nothing', () => {
+    assert.strictEqual(explain('time 2>/dev/null | wc').items[0].children[0].children[0].kind, 'keyword');
+  });
+  it('a pipeline that ends in a redirection with no command is not a pitfall', () => {
+    assert.deepStrictEqual(explain('echo a | >f').notes, []);
+  });
   it('a pipeline still gets its example when its last stage is redirected', () => {
     assert.deepStrictEqual(explain('sort -u f | uniq -c > out').examples.map((x) => x.title), explain('sort -u f | uniq -c').examples.map((x) => x.title));
     assert.ok(explain('sort -u f | uniq -c > out').examples.length > 0);

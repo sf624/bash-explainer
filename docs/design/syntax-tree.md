@@ -113,7 +113,9 @@ These come from a survey of unbash 6.0.0. The adapter fills them; most are small
 What the adapter does beyond a change of names:
 
 - **Positions of tokens.** A node's gaps (the stretches between its children) are scanned for tokens and comments. A heredoc body is skipped. For a `` `…` `` with escapes in it, unbash parses the text without the escapes; the adapter parses that with a converter of its own and maps the positions back.
-- **Where tree-sitter's grammar puts things, it does too**: the redirections after the last command of a pipeline or list go to the whole; what follows `<<EOF` on its line (redirections, `| cmd`, `&& cmd`, `; cmd`) is inside the heredoc node, which ends with the body; `!` negates the first command; an `else`, an `elif` or a `case` item ends with the newline of its last statement; a string is cut into lines.
+- **Statements as bash reads them, not as tree-sitter's grammar nests them.** The redirections after the last command of a pipeline or list belong to that command (`echo A && echo B > f` redirects only `echo B`); `!` negates the whole pipeline (`negated_command` over the `pipeline`); `time` is a keyword only at the start of a pipeline (`a | time b` runs the program). A redirection after a compound command belongs to it (`{ …; } > f`). What follows `<<EOF` on its line is parsed as usual: more redirections and arguments belong to the command, and `| cmd`, `&& cmd`, `; cmd` go on as stages and statements. The tree-sitter adapter rebuilds its tree to this shape (`createTreeSitterParser(wasm, { reshape: false })` keeps tree-sitter's own, for tests).
+- **A `heredoc_redirect` ends with its body**, which comes after the rest of its line, so the nodes of that line lie inside its range without being its children. It is the only overlap the model allows: the leaves outside bodies are in text order, and no leaf but a body's lies in a body (test/support/oracle.ts, `invariants`). An `else`, an `elif` or a `case` item still ends with the newline of its last statement, and a string is cut into lines.
+- **Errors.** Every error of unbash reaches `errors`: text it dropped (`a | | b`, a stray `)`) is an `error` node and an `unreadable` entry; what it found missing (`a >` has no target, `{ }` no command, `if a; fi` no `then`) is a `missing` entry with the construct `incomplete`. A test fuzzes both adapters with prefixes, cuts and words removed from the fixtures (test/support/fuzz.ts): no throw, sound trees, no text left out, and linear time.
 - **Unfinished input.** An open construct gets `incomplete` and an error of kind `missing`, and ends where its content ends. For `echo a |` and `echo a &&` the adapter puts the operator back, in a `pipeline` or `list` with `incomplete` and no right side, since unbash drops it. A heredoc with no closing line is `incomplete`, an array with no `)` too. A token unbash drops (`unexpected token ')'`) becomes an `error` node and an error of kind `unreadable`.
 - **`[k]=v` in an array, `~/x`, and `$"…"`** are a `word` and a `translated_string` (a `$` and a `string`): the explanations do not need more.
 
@@ -124,9 +126,21 @@ Not reproduced, because tree-sitter's shape is an accident of its scanner, and t
 - **`{1..10..3}`**: a `brace_expression` with the step (tree-sitter does not read it).
 - **A space before an expansion in a string** (see the residue above), **`>&-` as one operator**, **a redirection alone in a substitution**, and **`time` before a pipe with a redirection** (`time a >f | b`).
 
-What unbash does not give, which the adapter does not repair: `echo (` is accepted without an error, `a | time b` reads `time` as a command, and `x=(a b` reports an "unterminated extended glob".
+What unbash does not give, which the adapter does not repair: `echo (` is accepted without an error, and `x=(a b` reports an "unterminated extended glob".
 
 ### Risks
 
 - **unbash's AST changes with each major version.** Pin the version. An upgrade touches only the adapter, and the differential run and the tests check it.
 - **Converting tree-sitter's tree into objects costs time on each parse.** It only matters until the switch.
+
+### To do at the switch
+
+Found in the review of the unbash adapter; they need the analyzer or the build, not the adapter, and wait for step 6.
+
+- **`echo ${x@Z}` makes the analyzer throw** (analyzer.ts, `transformMeaning[t]!`): unbash accepts any operator letter. Explain unknown operators gracefully, or treat them as errors.
+- **web/tsconfig.json overrides `moduleResolution: "node"`**: with an unbash import, `tsc -p web` fails with TS2307, since unbash has only `exports`.
+- **CRLF.** VS Code's `getText()` keeps CRLF. Under unbash, `if [ -f a ]; then\r\n  echo yes\r\nfi\r\n` reads `fi` as an external command and the `if` as incomplete. Decide whether to normalize (for example, mask `\r` before `\n` as a space of the same length) and/or to warn.
+- **dialect.ts does not know `coproc_statement`**, so `coproc cat </dev/null && echo ok` loses the coproc feature.
+- **`declare a[1]` and `declare a[@]` lose their subscript**, and with it the "Element [1] of array a" explanation.
+- **Tests with `[ ( a = b ) -o c = d ]`** (unescaped parentheses) expect what bash rejects as a syntax error. Review them.
+- **`cat <<EOF; cmd`**: tree-sitter reads the delimiter as `EOF;`, so the rest is misread; unbash is right. Nothing to do but switch.

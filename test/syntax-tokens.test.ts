@@ -94,3 +94,9 @@ describe('token scanner: ranges', () => {
     assert.deepEqual(scanGap(text, 5, 5), []);
   });
 });
+
+describe('token scanner: escapes inside groups', () => {
+  it('skips an escaped parenthesis inside $( )', () => {
+    assert.deepEqual(scan('a $(b \\) ; c) ; d'), [';:14']);
+  });
+});

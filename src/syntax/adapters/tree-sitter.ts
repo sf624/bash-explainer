@@ -219,7 +219,7 @@ class Converter {
 
   /** Makes the range of `n` the one its children cover. */
   private fit(n: Mut): void {
-    const first = n.children.reduce((a, c) => (c.startIndex < a.startIndex ? c : a));
+    const first = n.children[0];
     const last = n.children.reduce((a, c) => (c.endIndex > a.endIndex ? c : a));
     n.startIndex = first.startIndex;
     n.startPosition = first.startPosition;
@@ -309,11 +309,6 @@ class Converter {
   /** `leaf` with these redirections (and the words that came after a heredoc): the leaf itself if they go inside it. */
   private wrap(leaf: Mut, redirects: Mut[], words: Mut[]): Mut {
     let outside = redirects;
-    if (leaf.type === 'redirected_statement') {
-      this.setChildren(leaf, [...leaf.children, ...redirects].sort((a, b) => a.startIndex - b.startIndex));
-      this.fit(leaf);
-      return leaf;
-    }
     if (words.length && leaf.type === 'command') {
       // Redirections before the last word are among the words of the command.
       const lastWord = Math.max(...words.map((w) => w.startIndex));
@@ -356,11 +351,13 @@ class Converter {
     let logical: Mut | undefined;
     let group: Mut[] = [];
     const close = (): void => {
-      // (An operator with nothing after it stays in the list as it is.)
+      // (An operator with nothing after it stays in the list as it is; the grammar has not been seen to give one.)
+      /* c8 ignore start */
       if (!group.length) {
         if (left && logical) left = this.container('list', [left, logical]);
         return;
       }
+      /* c8 ignore stop */
       const unit = group.length === 1 ? group[0] : this.container('pipeline', group);
       group = [];
       left = left ? this.container('list', [left, logical!, unit]) : unit;

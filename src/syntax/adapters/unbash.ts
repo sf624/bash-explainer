@@ -110,7 +110,7 @@ class Converter {
 
   /** Adds the tokens and comments in the text of `owner` that its children do not cover, up to `end`. */
   fill(owner: Mut, end = owner.lineEnd ?? owner.endIndex): void {
-    const kids = [...owner.children].sort((a, b) => a.startIndex - b.startIndex || a.endIndex - b.endIndex);
+    const kids = [...owner.children].sort((a, b) => a.startIndex - b.startIndex);
     // A node covers its children, whatever range its parser gave it.
     for (const k of kids) owner.endIndex = Math.max(owner.endIndex, k.endIndex);
     // A node whose last line ends before a heredoc body that one of its parts holds.
@@ -271,6 +271,8 @@ class Converter {
     const at = n.endIndex + HORIZONTAL.exec(this.text)![0].length;
     if (at >= limit || (this.text[at] !== '|' && this.text[at] !== '&')) return n;
     const next = scanGap(this.text, at, limit, this.skip, () => true)[0];
+    // (A `&` that is not a background statement, such as `&>`, is not ours either.)
+    /* c8 ignore next */
     if (!['|', '|&', '&&', '||'].includes(next.text)) return n;
     // Something follows the operator: it is not dangling (the statement ends there for another reason).
     BLANKS.lastIndex = next.end;
@@ -302,6 +304,8 @@ class Converter {
     if (i + 1 >= parts.length) return limit;
     const next = Math.min(limit, parts[i + 1].pos);
     const last = scanGap(this.text, parts[i].pos, next, this.skip).filter((x) => x.kind === 'token').pop();
+    // (The operator is always there between two parts.)
+    /* c8 ignore next */
     return last && ['&&', '||', '|', '|&'].includes(last.text) ? last.start : next;
   }
 
@@ -720,9 +724,8 @@ class Converter {
     else if (p.parameterEnd > p.parameterPos) {
       const name = this.node(/^[A-Za-z_]\w*$|^\d+$/.test(p.parameter) ? 'variable_name' : 'special_variable_name', p.parameterPos, p.parameterEnd);
       if (p.index) {
-        // (A subscript that is not closed ends with its index.)
-        const close = this.text.indexOf(']', p.index.end);
-        const sub = this.node('subscript', p.parameterPos, close < 0 || close >= p.end ? p.index.end : close + 1, null, n);
+        // (unbash gives an index only when the `]` is there.)
+        const sub = this.node('subscript', p.parameterPos, this.text.indexOf(']', p.index.end) + 1, null, n);
         this.add(sub, name, 'name');
         this.tok('[', p.parameterEnd, sub);
         if (/^-\d+$/.test(p.index.text)) {
@@ -730,8 +733,7 @@ class Converter {
           this.tok('-', p.index.pos, neg, 'operator');
           this.node('number', p.index.pos + 1, p.index.end, null, neg);
         } else this.add(sub, this.word(p.index, 'index'), 'index');
-        if (sub.endIndex > p.index.end) this.tok(']', sub.endIndex - 1, sub);
-        else this.missing(sub, ']', sub.endIndex);
+        this.tok(']', sub.endIndex - 1, sub);
       } else this.add(n, name);
     }
     const o = p.operation;
@@ -800,6 +802,8 @@ class Converter {
         move(c);
         this.add(owner, c);
       }
+      // (The converter of an operand has been seen to report nothing; unbash drops what it cannot read.)
+      /* c8 ignore next */
       for (const e of sub.errors) this.errors.push({ ...e, startIndex: e.startIndex + shift, endIndex: e.endIndex + shift });
     } else if (exp) this.add(owner, this.word(w, 'operand'));
   }
