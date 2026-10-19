@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `${!prefix@}` and `${!prefix*}` are explained as the list of the names of the variables that start with the prefix (`@`: separate words, `*`: one word inside double quotes), with the `@` and `*` described as such. Before, they were an "indirection" through a variable named like the prefix, the `@` was called a transform, and `${!zq_*}` made the explanation fail. `${!x@Q}` says indirection first, then the transform.
+- `=` and `==` in `[ ]` and `test` are explained as comparing plain strings (`[ a = a* ]` is false). The note that the right side is a glob pattern is shown in `[[ ]]` only; before, `[ ]` had it too.
+- Extended globs (`+(a)`, `@(a|x)`, `*(b)`, `?(a)`, `!(a)`) in `${s#…}`, `${s//…/…}` and the like are explained as extended globs that need `shopt -s extglob`. Before, they said "contains expansions, so it is decided at run time"; that is said now only when the pattern has a `$…` or a backquote.
 - An unclosed backquote, `$(` or `$((` in the pattern of `${s^^…}`, `${s#…}`, `${s:-…}` and the like, followed by a backslash at the end of the text, no longer makes the unbash path throw. Before, unbash ended such a part past the text, and the explanation failed.
 - A backquote substitution inside double quotes is read as bash reads it: the backslash before `$`, a backquote, `\` and `"` is removed before the command is parsed, so `` echo "`echo \"x\" y`" `` shows the string `x` (the unbash path mapped the positions, but the text still had the stray backslash). `\\\\` in a backquote is now `\` (one backslash), not `\\`, in both parsers. Before, the explanation of such words removed only the quotes.
 - `[[ x =~ "$re" ]]`, `=~ 'a.c'` and `=~ a"."c` say that the quoted part is literal text, not a regex (a variable that holds a regex is written `$re`, not `"$re"`). Before, they were explained as a regex, as the unquoted form is.
