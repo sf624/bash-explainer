@@ -62,3 +62,64 @@ export function intValue(text: string): number | undefined {
   const lit = m && arithLiteral(m[2]);
   return lit && lit.type === 'number' ? Number(m![1] === '-' ? '-' + lit.value : lit.value) : undefined;
 }
+
+/**
+ * The value of an arithmetic expression made only of constants, `+ - * / % **`, unary `+ -` and parentheses
+ * (`1+1`, `2**3`, `-2**2`), as bash computes it. Undefined for anything else (variables, other operators,
+ * errors such as a division by zero).
+ */
+export function evalArith(text: string): number | undefined {
+  const tokens = text.match(/\s*(\*\*|[0-9][0-9A-Za-z@_#]*|[-+*/%()]|\S)/g)?.map((t) => t.trim());
+  if (!tokens) return undefined;
+  let pos = 0;
+  const fail = Symbol('fail');
+  const peek = () => tokens[pos];
+  const unary = (): bigint => {
+    const t = tokens[pos++];
+    if (t === '-') return -unary();
+    if (t === '+') return unary();
+    if (t === '(') {
+      const v = additive();
+      if (tokens[pos++] !== ')') throw fail;
+      return v;
+    }
+    const lit = t === undefined ? undefined : arithLiteral(t);
+    if (!lit || lit.type !== 'number') throw fail;
+    return BigInt(lit.value);
+  };
+  // `**` binds less tightly than a unary minus (`-2**2` is 4) and groups to the right.
+  const power = (): bigint => {
+    const base = unary();
+    if (peek() !== '**') return base;
+    pos++;
+    const exp = power();
+    // (Too large to compute; bash wraps around at 64 bits, so no one writes this.)
+    if (exp < 0n || (exp > 128n && (base > 1n || base < -1n))) throw fail;
+    return BigInt.asIntN(64, base ** exp);
+  };
+  const multiplicative = (): bigint => {
+    let v = power();
+    while (peek() === '*' || peek() === '/' || peek() === '%') {
+      const op = tokens[pos++];
+      const r = power();
+      if (op === '*') v = BigInt.asIntN(64, v * r);
+      else if (r === 0n) throw fail;
+      else v = op === '/' ? v / r : v % r;
+    }
+    return v;
+  };
+  const additive = (): bigint => {
+    let v = multiplicative();
+    while (peek() === '+' || peek() === '-') v = BigInt.asIntN(64, tokens[pos++] === '+' ? v + multiplicative() : v - multiplicative());
+    return v;
+  };
+  try {
+    const v = additive();
+    if (pos < tokens.length) return undefined;
+    return Number.isSafeInteger(Number(v)) ? Number(v) : undefined;
+  } catch (e) {
+    if (e === fail) return undefined;
+    /* c8 ignore next */
+    throw e;
+  }
+}

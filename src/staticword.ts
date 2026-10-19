@@ -28,6 +28,35 @@ export function ansiCValue(body: string): string | undefined {
   return out;
 }
 
+/**
+ * The text of a pattern replacement or similar piece of a word after quote removal, from its source text
+ * (`\}` is `}`, `"a b"` is `a b`). Undefined if it holds an expansion (`$x`, `$(…)`, backticks).
+ */
+export function unquoteWord(text: string): string | undefined {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\' && i + 1 < text.length) out += text[++i];
+    else if (c === "'") {
+      const end = text.indexOf("'", i + 1);
+      if (end < 0) return undefined;
+      out += text.slice(i + 1, end);
+      i = end;
+    } else if (c === '"') {
+      let j = i + 1;
+      for (; j < text.length && text[j] !== '"'; j++) {
+        if (text[j] === '\\' && /[$`\\"]/.test(text[j + 1] ?? '')) j++;
+        else if (text[j] === '$' || text[j] === '`') return undefined;
+        out += text[j];
+      }
+      if (j >= text.length) return undefined;
+      i = j;
+    } else if (c === '$' || c === '`') return undefined;
+    else out += c;
+  }
+  return out;
+}
+
 /** A `$(…)` or backtick substitution that cannot print anything: empty, or a bare `:` / `true` / `false`. */
 function emptySubstitution(n: SyntaxNode): boolean {
   const cmds = n.namedChildren;

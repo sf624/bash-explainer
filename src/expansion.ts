@@ -1,5 +1,6 @@
 import { intValue } from './arith';
 import { Lang } from './i18n';
+import { unquoteWord } from './staticword';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
 export interface ExpansionPart {
@@ -267,6 +268,12 @@ export interface ExpansionCase {
   setup?: string;
 }
 
+/** Arrays the shell fills in itself: bash code that sets them, and what they then hold. */
+const SET_BY_SHELL: Record<string, { setup: string; values: string[]; ja: string; en: string }> = {
+  PIPESTATUS: { setup: 'false | true', values: ['1', '0'], ja: '`false | true` の後', en: 'After `false | true`' },
+  BASH_REMATCH: { setup: '[[ abc =~ (b)(c) ]]', values: ['bc', 'b', 'c'], ja: '`[[ abc =~ (b)(c) ]]` の後', en: 'After `[[ abc =~ (b)(c) ]]`' },
+};
+
 const sq = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /**
@@ -287,7 +294,11 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
     result,
     setup: positional ? undefined : `${name}=${sq(val)}`,
   });
-  const array = (result: string): ExpansionCase => ({ when: ja ? `\`${name}=(a b c)\` のとき` : `When \`${name}=(a b c)\``, result, setup: `${name}=(a b c)` });
+  const shellSet = Object.hasOwn(SET_BY_SHELL, name) ? SET_BY_SHELL[name] : undefined;
+  const values = shellSet?.values ?? ['a', 'b', 'c'];
+  const array = (result: string): ExpansionCase => shellSet
+    ? { when: ja ? shellSet.ja : shellSet.en, result, setup: shellSet.setup }
+    : { when: ja ? `\`${name}=(a b c)\` のとき` : `When \`${name}=(a b c)\``, result, setup: `${name}=(a b c)` };
   /** "unset or empty" (with `:`) or just "unset", phrased for a variable or an argument. */
   const missing = (orEmpty: boolean, result: string): ExpansionCase => ({
     when: positional
@@ -300,7 +311,7 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
   // The special parameters cannot be assigned (`#=hello` is not bash), and their values are not ours to choose.
   const special = /^[#?$!-]$/.test(name);
   if (p.prefix === '#') {
-    if (p.subscript === '@' || p.subscript === '*') return [array('3')];
+    if (p.subscript === '@' || p.subscript === '*') return [array(String(values.length))];
     // `${#@}` and `${#*}` count the positional parameters; they are not the length of a string.
     if (name === '@' || name === '*') return [{ when: ja ? '引数が `a b c` のとき' : 'When the arguments are `a b c`', result: '3', setup: 'set -- a b c' }];
     // `${##}` is the length of `$#`, so `set -- a b c` gives 1; the others have no fixed value.
@@ -310,16 +321,18 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
   }
   if (special && !p.prefix) return undefined;
   if (p.prefix === '!') {
+    // `${!#}` is the last argument: `$#` is the number of the last one.
+    if (name === '#') return [{ when: ja ? '引数が `p q r` のとき' : 'When the arguments are `p q r`', result: 'r', setup: 'set -- p q r' }];
     if (p.op === '*' || p.op === '@') {
       return [{ when: ja ? `${name}_A と ${name}_B があるとき` : `When ${name}_A and ${name}_B are set`, result: `${name}_A ${name}_B`, setup: `${name}_A=1 ${name}_B=2` }];
     }
-    if (p.subscript === '@' || p.subscript === '*') return [array('0 1 2')];
+    if (p.subscript === '@' || p.subscript === '*') return [array(values.map((_, i) => i).join(' '))];
     return [{ when: ja ? `\`${name}=HOME\` のとき` : `When \`${name}=HOME\``, result: ja ? '$HOME の値' : 'the value of $HOME' }];
   }
   if (!p.op) {
-    if (p.subscript === '@' || p.subscript === '*') return [array('a b c')];
+    if (p.subscript === '@' || p.subscript === '*') return [array(values.join(' '))];
     if (p.subscript && /^\d+$/.test(p.subscript)) {
-      return [array(['a', 'b', 'c'][Number(p.subscript)] ?? '')];
+      return [array(values[Number(p.subscript)] ?? '')];
     }
     return undefined;
   }
@@ -364,8 +377,9 @@ export function exampleFor(p: ParsedExpansion, lang: Lang): ExpansionCase[] | un
       // The pattern is always there, if empty (`${v/}`).
       const glob = globParts(part('pattern')!);
       const rep = part('replacement') ?? '';
-      if (!glob || /[$`]/.test(rep)) return undefined;
-      const repText = rep.replace(/^["']|["']$/g, '');
+      // The quotes and backslashes of the replacement are removed (`\}` is `}`); `&` stands for the match in bash 5.2.
+      const repText = unquoteWord(rep);
+      if (!glob || repText === undefined || /&/.test(rep)) return undefined;
       const test = new RegExp(globRegex(glob));
       // For `/` and `//` show a value with two matches, so "first" vs "every" is visible.
       const twice = p.op === '/' || p.op === '//';

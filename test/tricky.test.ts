@@ -4,8 +4,8 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { descendants, field, hasError } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
-import { arithLiteral, intValue } from '../src/arith';
-import { ansiCValue, staticWordValue } from '../src/staticword';
+import { arithLiteral, evalArith, intValue } from '../src/arith';
+import { ansiCValue, staticWordValue, unquoteWord } from '../src/staticword';
 import { exampleFor, parseExpansion } from '../src/expansion';
 import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 
@@ -241,5 +241,170 @@ describe('quote removal', () => {
     assert.strictEqual(ansiCValue('\\U00110000'), undefined);
     assert.strictEqual(ansiCValue('a\\'), 'a\\');
     assert.strictEqual(ansiCValue('\\c'), '\\c');
+  });
+});
+
+const ROUND2 = [
+  'echo ${u:-${v:-$\'\\x7d\'}}} ${w-$( echo \'}\' )} "${x:+"$x"}"end',
+  'a=(1 2 3); a+=([7]=z); echo ${a[1+1]} ${a[-1]} ${a[@]: -2:1} ${#a[@]} ${!a[*]}',
+  'echo $((1?2:3)) $(( (1) )) $( (echo sub) ) $[1+2] $(( 0x10 >> 1 | 1 << 2 ))',
+  'case a in a|b) echo ab ;& c) echo fall ;;& *) echo star; esac',
+  'x=1 y=$x; z=2 echo $z$y; echo',
+  "[[ 'x y' =~ ^x\\ (y)$ && ab =~ (a|c)b ]] && echo ${BASH_REMATCH[1]} ${#BASH_REMATCH[@]}",
+  'f(){ local -n r=$1; r=7; set -- p q r; echo ${@:2} ${!#} ${*: -1}; }; f v; echo $v',
+  'echo $? ${PIPESTATUS[*]}',
+  ': ${z:=dflt}; s=hello; echo $z ${z:0:2}${z: -2} ${s@U} ${s@Q} ${s/#h/\\}} ${s:1:-1}',
+];
+
+describe('tricky lines (round 2)', () => {
+  for (const lang of ['en', 'ja'] as const) {
+    it(`explains the lines without errors (${lang})`, () => {
+      for (const src of ROUND2) {
+        assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+      }
+    });
+  }
+
+  it('counts a negative offset from the end for arguments and arrays', () => {
+    assert.match(find('echo ${*: -1}', '-1').explanation, /from the last argument.*not `\$-1`/);
+    assert.match(find('echo ${@: -2}', '-2').explanation, /2nd argument from the end/);
+    assert.match(find('echo ${*: -1}', '${*: -1}').explanation, /starting at the last one/);
+    assert.match(find('echo ${@: -2:1}', '${@: -2:1}').explanation, /take `1` of the positional parameters starting at the 2nd from the end/);
+    assert.match(find('echo ${a[@]: -2:1}', '-2').explanation, /one past the highest index.*sparse/);
+    assert.match(find('echo ${a[@]: -2:1}', '${a[@]: -2:1}').explanation, /2 before one past the highest index/);
+    assert.match(find('echo ${a[@]:1:1}', '${a[@]:1:1}').explanation, /take `1` of the elements/);
+    assert.match(find('echo ${a[@]:1:1}', '1').explanation, /Offset 1|Length 1: 1 element /);
+    assert.match(find('echo ${s:1:1}', '1').explanation, /Offset 1|Length 1: 1 character\b/);
+    assert.match(find('echo ${s:1:-1}', '-1').explanation, /1 character before/);
+    assert.match(find('echo ${s: -1}', '${s: -1}').explanation, /last 1 character of/);
+    assert.match(find('echo ${s: -2:1}', '${s: -2:1}').explanation, /take 1 character of `s` starting at 2 characters from the end/);
+    assert.match(find('echo ${s: -2}', '${s: -2}').explanation, /last 2 characters/);
+    assert.match(find('echo ${*: -1}', '-1', 'ja').explanation, /最後から 1 番目の引数/);
+    assert.match(find('echo ${a[@]: -2}', '-2', 'ja').explanation, /最大のインデックス \+ 1/);
+    assert.match(find('echo ${s:0x1:010}', '${s:0x1:010}').explanation, /take 8 characters of `s` starting at the 2nd character/);
+    // The values, from bash.
+    for (const src of ['${*: -1}', '${@: -2}', '${@:2:1}', '${a[@]:1:2}']) {
+      const c = exampleFor(parseExpansion(src)!, 'en')![0];
+      assert.strictEqual(bash(`${c.setup}; echo -n "${src}"`), c.result, src);
+    }
+    assert.strictEqual(bash('a=(1 2 3); a+=([7]=z); printf %s "${a[@]: -2:1}"'), 'z');
+  });
+
+  it('explains ${!#} as the last argument', () => {
+    assert.match(find('echo ${!#}', '${!#}').explanation, /Indirection through `\$#`.*last argument/);
+    assert.match(find('echo ${!#}', '${!#}', 'ja').explanation, /最後の引数/);
+    const c = exampleFor(parseExpansion('${!#}')!, 'en')![0];
+    assert.strictEqual(bash(`${c.setup}; printf %s "\${!#}"`), c.result);
+  });
+
+  it('shows the replacement after quote removal', () => {
+    assert.match(find('echo ${s/#h/\\}}', '${s/#h/\\}}').explanation, /Replace `h` at the start of `s` with `}`/);
+    assert.match(find('echo ${s/#h/\\}}', '\\}').explanation, /Replacement `}`/);
+    const c = exampleFor(parseExpansion('${s/#h/\\}}')!, 'en')![0];
+    assert.strictEqual(c.result, '}ello world');
+    assert.strictEqual(bash("s='hello world'; printf %s \"${s/#h/\\}}\""), c.result);
+    // An expansion in the replacement, or `&` (the match, in bash 5.2), has no fixed example.
+    assert.strictEqual(exampleFor(parseExpansion('${s/l/$x}')!, 'en'), undefined);
+    assert.strictEqual(exampleFor(parseExpansion('${s/l/&&}')!, 'en'), undefined);
+    for (const w of ['a', '\\}', '"a b"', "'a b'", '"a\\"b"', '"a\\$b"', 'a\\\\b', '"a\\nb"', 'x"y"\'z\'']) {
+      assert.strictEqual(execFileSync('bash', ['-c', `printf %s ${w}`], { encoding: 'utf8' }), unquoteWord(w), w);
+    }
+    for (const w of ['$x', '"$x"', '`x`', '"`x`"', "'abc", '"abc', '"abc\\']) assert.strictEqual(unquoteWord(w), undefined, w);
+  });
+
+  it('says what case does with ;& and ;;&', () => {
+    const src = ROUND2[3];
+    const top = tokens(src).find((t) => t.label.startsWith('case a'))!.explanation;
+    assert.match(top, /`;&` and `;;&`: a branch ending in `;;` stops/);
+    assert.match(tokens(src).find((t) => t.label.startsWith('c)'))!.explanation, /ends in `;&`.*without its pattern being tested/);
+    assert.match(tokens(src).find((t) => t.label.startsWith('*)'))!.explanation, /`\*` matches anything\. The branch above ends in `;;&`.*tested too/);
+    assert.match(tokens(src, 'ja').find((t) => t.label.startsWith('c)'))!.explanation, /;&/);
+    assert.match(tokens('case a in a) echo 1 ;;& b) echo 2 ;; esac').find((t) => t.label.startsWith('b)'))!.explanation, /ends in `;;&`.*tested too/);
+    assert.match(tokens('case a in a) echo 1 ;& *) echo 2 ;; esac').find((t) => t.label.startsWith('*)'))!.explanation, /ends in `;&`/);
+    assert.match(tokens('case a in a) echo 1 ;; *) echo 2 ;; esac').find((t) => t.label.startsWith('*)'))!.explanation, /Default branch/);
+    assert.ok(!/`;&`/.test(tokens('case a in a) echo 1 ;; esac').find((t) => t.label.startsWith('case'))!.explanation));
+    assert.strictEqual(bash('case a in a|b) echo ab ;& c) echo fall ;;& *) echo star; esac'), 'ab\nfall\nstar\n');
+  });
+
+  it('points out namerefs', () => {
+    const src = ROUND2[6];
+    assert.match(find(src, 'r=$1').explanation, /`r` becomes a nameref: another name for the variable whose name is the value `\$1`/);
+    assert.match(find(src, 'r=7').explanation, /`r` is declared a nameref on line 1, so this sets the variable it points to/);
+    assert.ok(!/nameref/.test(find('r=7; local -n r=$1', 'r=7').explanation));
+    assert.ok(!/nameref/.test(find('declare -n r=a; r+=7', 'r+=7').explanation));
+    assert.match(find('declare -n r; r=7', 'r=7').explanation, /nameref/);
+    assert.ok(!/nameref/.test(find('declare -a r=(a); echo', 'r=(a)').explanation));
+    assert.strictEqual(bash('f(){ local -n r=$1; r=7; }; f vv; echo $vv'), '7\n');
+  });
+
+  it('describes the arrays the shell fills in', () => {
+    assert.match(find('echo ${PIPESTATUS[*]}', 'PIPESTATUS').explanation, /Exit statuses of each command in the last pipeline/);
+    assert.match(find('echo ${BASH_REMATCH[1]}', '[1]').explanation, /group 1, the 1st `\( \)` of the regex/);
+    assert.match(find('echo ${BASH_REMATCH[0]}', '[0]').explanation, /whole text/);
+    assert.match(find('echo ${BASH_REMATCH[1]}', '[1]', 'ja').explanation, /1 番目の括弧/);
+    assert.match(find('echo ${#BASH_REMATCH[@]}', '${#BASH_REMATCH[@]}').explanation, /groups in the regex \+ 1/);
+    assert.ok(!/groups/.test(find('echo ${#a[@]}', '${#a[@]}').explanation));
+    for (const src of ['${PIPESTATUS[*]}', '${PIPESTATUS[0]}', '${PIPESTATUS[5]}', '${#PIPESTATUS[@]}', '${!PIPESTATUS[@]}', '${BASH_REMATCH[1]}', '${BASH_REMATCH[0]}', '${BASH_REMATCH[@]}', '${#BASH_REMATCH[@]}']) {
+      const c = exampleFor(parseExpansion(src)!, 'en')![0];
+      assert.strictEqual(bash(`${c.setup}; echo -n "${src}"`), c.result, src);
+    }
+  });
+
+  it('notes the order of assignments and their use', () => {
+    assert.match(find('z=2 echo $z', '$z').explanation, /only applies while the command runs.*from before the assignment/);
+    assert.match(find('z=2 echo ${z}', '${z}').explanation, /only applies while the command runs/);
+    assert.match(find('x=1 y=$x', '$x').explanation, /`x=…` comes earlier on this line.*left to right/);
+    assert.match(find('x=1 y=$x', '$x', 'ja').explanation, /左から順に/);
+    assert.match(find('z=2 echo $z', '$z', 'ja').explanation, /実行中だけ有効/);
+    assert.ok(!/earlier|only applies/.test(find('y=$x x=1', '$x').explanation));
+    assert.ok(!/earlier|only applies/.test(find('z=2 echo $y', '$y').explanation));
+    assert.ok(!/earlier|only applies/.test(find('echo $z', '$z').explanation));
+    assert.ok(!/earlier|only applies/.test(find('z=2 y=$z cmd', '$z').explanation));
+    assert.ok(!/earlier|only applies/.test(find('z=2 echo $(echo $q)', '$q').explanation));
+    assert.strictEqual(bash('x=1 y=$x; z=2 echo $z$y'), '1\n');
+  });
+
+  it('explains brace words that tree-sitter-bash splits', () => {
+    assert.match(find('echo {a,b\\,c}', '{a,b\\,c}').explanation, /expands to 2 words: `a` `b,c` \(an escaped comma/);
+    assert.match(find('echo {,}', '{,}').explanation, /empty words, which are dropped/);
+    assert.match(find('echo {a,}', '{a,}').explanation, /expands to 1 word: `a`/);
+    assert.match(find('echo ${s/l/$x}', '${s/l/$x}').explanation, /with `\$x`/);
+    assert.match(find('echo ${s/l/$x}', '$x').explanation, /Replacement `\$x`|Expands to/);
+    assert.match(find('echo {a..e..2}', '{a..e..2}').explanation, /3 words: `a` `c` `e`/);
+    assert.match(find('echo {1..3}{,}', '{1..3}{,}').explanation, /6 words/);
+    assert.match(find('echo {1..20}{a,b}', '{1..20}{a,b}').explanation, /40 words: .* …$/);
+    assert.match(find('echo {1..300}{a,b}', '{1..300}{a,b}').explanation, /expands to many words/);
+    assert.match(find('echo {a,b}', '{a,b}', 'ja').explanation, /2 個の単語/);
+    assert.match(find('echo {a,b\\,c}', '{a,b\\,c}', 'ja').explanation, /コンマそのもの/);
+    assert.match(find('echo {,}', '{,}', 'ja').explanation, /取り除かれる/);
+    assert.ok(!/Brace expansion/.test(find('echo a$x{b}', 'a$x{b}').explanation));
+    assert.strictEqual(bash("printf '<%s>' {a,b\\,c} {,} {a..e..2} {1..3}{,}"), '<a><b,c><a><c><e><1><1><2><2><3><3>');
+  });
+
+  it('marks $[ ] as obsolete', () => {
+    assert.match(find('echo $[1+2]', '$[1+2]').explanation, /obsolete form of `\$\(\(…\)\)`/);
+    assert.match(find('echo $[1+2]', '$[1+2]', 'ja').explanation, /古い書き方/);
+    assert.ok(!/obsolete/.test(find('echo $((1+2))', '$((1+2))').explanation));
+  });
+
+  it('computes constant array indexes', () => {
+    assert.match(find('echo ${a[1+1]}', '[1+1]').explanation, /Index 1\+1 \(an arithmetic expression: 2\): the 3rd element/);
+    assert.match(find('echo ${a[010]}', '[010]').explanation, /\(an arithmetic expression: 8\)/);
+    assert.match(find('echo ${a[-1]}', '[-1]').explanation, /Index -1: the last element/);
+    assert.match(find('echo ${a[-2]}', '[-2]').explanation, /Index -2: the 2nd element from the end/);
+    assert.match(find('echo ${a[2]}', '[2]').explanation, /Index 2: the 3rd element \(0-based\)/);
+    assert.match(find('echo ${a[i]}', '[i]').explanation, /Index \(or key/);
+    assert.match(find('echo ${a[1+1]}', '[1+1]', 'ja').explanation, /算術式として計算すると 2/);
+    const exprs = ['1+1', '2*3+4', '7/2', '-7/2', '-7%3', '2**3**2', '-2**2', '(1+2)*3', '010+1', '0x10-1', '2#101', '1 + 2', '5/0', '5%0', '2**-1', '1+', '(1', '1)', 'x+1', '', '1 2', '9223372036854775807+1', '2**64', '3**4', '2**200', '(-2)**200', '0**200', '1**200', '-1**201', '08'];
+    for (const e of exprs) {
+      const out = bash(`echo $(( ${e} ))`);
+      const v = evalArith(e);
+      if (v === undefined) assert.ok(out === 'ERROR' || e === '' || /^-?\d+\n$/.test(out), e);
+      else assert.strictEqual(String(v) + '\n', out, e);
+    }
+    assert.strictEqual(evalArith('2**200'), undefined);
+    assert.strictEqual(evalArith('1**200'), 1);
+    assert.strictEqual(evalArith('+5'), 5);
+    assert.strictEqual(evalArith(''), undefined);
   });
 });

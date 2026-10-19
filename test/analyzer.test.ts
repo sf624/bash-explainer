@@ -546,7 +546,7 @@ describe('syntax the other tests do not reach', () => {
     ['(( i++ ))', /i\+\+: Arithmetic: `i\+\+` \(increment\)/],
     ['[[ ! -f x ]]', /! -f x: Negation: true if `-f x` is false/],
     ['(( n += 2 ))', /Arithmetic assignment: `n` \+= `2`/],
-    ['echo ${a[-1]}', /Index -1: the 1st element from the end/],
+    ['echo ${a[-1]}', /Index -1: the last element/],
     ['echo ${s:1:-2}', /up to 2 characters before the end/],
     ['tee >(gzip > f.gz)', /Process substitution `>\(…\)`: a file name whose writes go to the command's stdin/],
     ['# shellcheck disable=SC2086', /ShellCheck directive/],

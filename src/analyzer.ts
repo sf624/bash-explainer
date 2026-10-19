@@ -40,8 +40,8 @@ import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embed
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
-import { ArithLiteral, arithLiteral, intValue } from './arith';
-import { staticWordValue } from './staticword';
+import { ArithLiteral, arithLiteral, evalArith, intValue } from './arith';
+import { staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
   binaryTestOps, declarationCommands, declarationFlags, expansionOps, keywords, listOps,
@@ -145,6 +145,7 @@ const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_comm
 /** Nodes inside an expansion's argument that get their own explanation. */
 const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
 
+const plural = (n: number, word: string) => `${word}${n === 1 ? '' : 's'}`;
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 const TERMINATORS = new Set(['\\;', ';', "';'", '"\\;"', '"; "', '+']);
@@ -196,6 +197,8 @@ export class Analyzer {
   private aliases = new Map<string, { line: number; value: string }>();
   private context: ContextEntry[] = [];
   private functions = new Map<string, number>();
+  /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
+  private namerefs = new Map<string, { line: number; index: number }>();
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
   /** Context of the current explainLine call. */
@@ -218,6 +221,14 @@ export class Analyzer {
     for (const f of descendants(root, ['function_definition'])) {
       const name = field(f, 'name')?.text;
       if (name && !this.functions.has(name)) this.functions.set(name, f.startPosition.row);
+    }
+    this.namerefs.clear();
+    for (const d of descendants(root, ['declaration_command'])) {
+      if (!d.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*n/.test(c.text))) continue;
+      for (const c of d.namedChildren) {
+        const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
+        if (name && !this.namerefs.has(name)) this.namerefs.set(name, { line: d.startPosition.row, index: d.startIndex });
+      }
     }
     this.aliases.clear();
     for (const c of descendants(root, ['command'])) {
@@ -439,13 +450,14 @@ export class Analyzer {
       case 'simple_expansion': return this.simpleExpansion(n);
       case 'command_substitution': return this.commandSubstitution(n);
       case 'process_substitution': return this.processSubstitution(n);
-      case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression') + this.commaNote(n), this.arithChildren(n));
+      case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression')
+        + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + this.commaNote(n), this.arithChildren(n));
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted') + (/\\/.test(n.text) ? this.valueNote(n) : ''));
       // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
       case 'translated_string': return this.string(n.namedChildren[0]);
-      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word') + this.valueNote(n), this.subs(n.namedChildren));
+      case 'concatenation': if (n.parent!.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.braceWord(n) ?? this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word') + this.valueNote(n), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.arithNumber(n) ?? this.tok(n, 'number', this.s('数値', 'Number'));
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
@@ -547,17 +559,30 @@ export class Analyzer {
     for (const c of children) {
       if (c.kind === 'keyword' && c.label === 'in') c.explanation = this.s('値の後に、パターンごとの分岐を並べる', 'Introduces the list of pattern branches');
     }
+    // `;&` and `;;&` change what happens after a match.
+    const enders = n.namedChildren.flatMap((c) => c.children.filter((t) => t.type === ';&' || t.type === ';;&')).map((t) => t.type);
+    const fall = !enders.length ? '' : this.s(
+      `。ただしこの文には \`${[...new Set(enders)].join('\` と \`')}\` があり、分岐の終わりが \`;;\` なら終了、\`;&\` なら次の分岐の中身をパターンを調べずに実行、\`;;&\` なら次以降のパターンの照合を続ける`,
+      `. This one has \`${[...new Set(enders)].join('\` and \`')}\`: a branch ending in \`;;\` stops the \`case\`, \`;&\` runs the next branch's commands without testing its pattern, and \`;;&\` goes on testing the patterns after it`);
     return this.tok(n, 'keyword', this.s(
       `case 文: \`${v?.text}\` を各パターンと上から順に照合し、最初に一致した分岐を実行`,
       `case statement: match \`${v?.text}\` against each pattern in order and run the first match`,
-    ) + this.lineRef(n), sortTokens([...children, ...vt]));
+    ) + fall + this.lineRef(n), sortTokens([...children, ...vt]));
   }
 
   private caseItem(n: SyntaxNode): Token {
     const pats = fields(n, 'value');
     const ptext = pats.map((p) => p.text).join(' | ');
     const isDefault = pats.length === 1 && pats[0].text === '*';
-    const expl = isDefault
+    // The branch before it may have sent the flow here (`;&` runs this body, `;;&` tests this pattern too).
+    const siblings = n.parent!.namedChildren;
+    const before = siblings[siblings.findIndex((x) => same(x, n)) - 1];
+    const prev = before?.type === 'case_item' ? before.children.find((t) => t.type === ';&' || t.type === ';;&')?.type : undefined;
+    const viaPrev = prev === ';&'
+      ? this.s('前の分岐が `;&` で終わっているので、パターンを調べずにここも実行される', 'The branch above ends in `;&`, so this one runs without its pattern being tested')
+      : this.s('前の分岐が `;;&` で終わっているので、一致した後でもこのパターンも照合される', 'The branch above ends in `;;&`, so this pattern is tested too after that match');
+    const expl = prev && isDefault ? this.s('分岐: `*` は何にでも一致する。', 'Branch: `*` matches anything. ') + viaPrev
+      : isDefault
       ? this.s('既定の分岐: どのパターンにも一致しなかった場合に実行（`*` は何にでも一致）', 'Default branch: runs when nothing else matched (`*` matches anything)')
       : this.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
     const patToks = pats
@@ -572,7 +597,7 @@ export class Analyzer {
       this.caseExample(pats);
       this.anchorExamples(before, n);
     }
-    return this.tok(n, 'pattern', expl + this.lineRef(n), sortTokens([...patToks, ...rest]));
+    return this.tok(n, 'pattern', expl + (prev && !isDefault ? this.s('。', '. ') + viaPrev : '') + this.lineRef(n), sortTokens([...patToks, ...rest]));
   }
 
   private pipeline(n: SyntaxNode): Token {
@@ -712,6 +737,16 @@ export class Analyzer {
       : value
         ? this.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`)
         : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
+    // `local -n r=$1` makes `r` another name for the variable named by `$1`; every later `r=…` then sets that variable.
+    const decl = n.parent?.type === 'declaration_command' && n.parent.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*n/.test(c.text));
+    const refLine = this.namerefs.get(nm);
+    if (decl && value) {
+      expl = this.s(`\`${nm}\` は参照（nameref）になる: 値 \`${value.text}\` を名前とする変数の別名で、\`${nm}\` への代入や参照は、その変数に対して行われる`,
+        `\`${nm}\` becomes a nameref: another name for the variable whose name is the value \`${value.text}\`; assigning to or reading \`${nm}\` then acts on that variable`);
+    } else if (!decl && refLine !== undefined && refLine.index < n.startIndex && op === '=') {
+      expl += this.s(`。ただし \`${nm}\` は行 ${refLine.line + 1} で nameref として宣言されているので、参照先の変数に代入される`,
+        `. But \`${nm}\` is declared a nameref on line ${refLine.line + 1}, so this sets the variable it points to`);
+    }
     if (name?.type === 'subscript') expl = this.s(`配列 \`${field(name, 'name')?.text}\` の要素 \`[${field(name, 'index')?.text}]\` に代入する`, `Assign to element \`[${field(name, 'index')?.text}]\` of array \`${field(name, 'name')?.text}\``);
     const children: Token[] = [];
     if (value) {
@@ -1602,6 +1637,28 @@ export class Analyzer {
     // Only the filters take input.
     if (ex.input) this.ioExample(ex.input, ex.output, false, { kind: 'filter', cmd, words });
     else this.examples.push({ kind: 'textFilters', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible) }] });
+  }
+
+  /** A word that tree-sitter-bash splits at its braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is. */
+  private braceWord(n: SyntaxNode): Token | undefined {
+    const text = this.unquotedWord(n);
+    if (text === undefined) return undefined;
+    let words: string[] | undefined;
+    try {
+      words = braceExpand(text);
+    } catch (e) {
+      // Too many words to list. (braceExpand throws nothing else.)
+      /* c8 ignore next */
+      if (!(e instanceof ShellWordsUnsupported)) throw e;
+      return this.tok(n, 'expansion', this.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
+    }
+    if (!words) return undefined;
+    const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : `\`${w}\``)).join(' ');
+    const comma = /\\,/.test(text);
+    return this.tok(n, 'expansion', words.length
+      ? this.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}`,
+        `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}`)
+      : this.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`));
   }
 
   /** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
@@ -2513,7 +2570,29 @@ export class Analyzer {
     if (this.noSplit(n)) {
       t.explanation = d ?? this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``);
     }
+    t.explanation += this.orderNote(n, name);
     return t;
+  }
+
+  /**
+   * `z=2 echo $z` expands `$z` before the assignment takes effect; `x=1 y=$x` sets `x` first. A note on a
+   * use of a variable that an assignment of the same command sets.
+   */
+  private orderNote(n: SyntaxNode, name: string): string {
+    const top = (parent: SyntaxNode) => { let c = n; while (c.parent && !same(c.parent, parent)) c = c.parent; return c; };
+    const sets = (a: SyntaxNode) => a.type === 'variable_assignment' && field(a, 'name')?.text === name;
+    const cmd = ancestor(n, (a) => a.type === 'command' || a.type === 'variable_assignments');
+    if (!cmd) return '';
+    const mine = top(cmd);
+    if (cmd.type === 'variable_assignments') {
+      return cmd.namedChildren.some((a) => sets(a) && a.endIndex <= mine.startIndex)
+        ? this.s(`。同じ行で先に \`${name}=…\` と代入しているので、代入は左から順に実行され、ここではその値になる`, `. \`${name}=…\` comes earlier on this line, and assignments run from left to right, so it already has that value here`)
+        : '';
+    }
+    // In the arguments (not in an assignment) of a command that is run with the variable set for it only.
+    return field(cmd, 'name') && mine.type !== 'variable_assignment' && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
+      ? this.s(`。\`${name}=…\` はこのコマンドの実行中だけ有効で、引数の展開が先に行われるので、ここでは代入前の値（未設定なら空）になる`, `. \`${name}=…\` only applies while the command runs, and the arguments are expanded first, so this is the value from before the assignment (empty if unset)`)
+      : '';
   }
 
   /** Contexts where an unquoted expansion is not word-split (quotes, `[[ ]]`, assignments, heredocs, case). */
@@ -2554,6 +2633,7 @@ export class Analyzer {
     }
     const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
     if (!parsed) return summary;
+    summary.explanation += this.orderNote(n, parsed.name);
     const special = this.specialExpansion(parsed, text);
     if (special) {
       summary.explanation = special;
@@ -2597,6 +2677,9 @@ export class Analyzer {
         ? this.s('`$#`（引数の個数）の文字数。引数が 10 個以上なら 2 になる', 'Length of `$#` (the number of arguments) in characters: 2 from ten arguments on')
         : this.s(`\`${shownName}\` の文字数（長さ）`, `Length of \`${shownName}\` in characters`);
     }
+    if (p.prefix === '!' && p.name === '#' && !p.subscript && !p.op) {
+      return this.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3)');
+    }
     if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;
     if (!p.op) return `\`\${${p.name}}\`: ${this.varDesc(p.name)}`;
     const mainOp = p.parts.find((x) => x.role === 'op')!;
@@ -2606,26 +2689,32 @@ export class Analyzer {
   }
 
   private substringSummary(p: ParsedExpansion): string {
-    const off = p.parts.find((x) => x.role === 'offset')!.text;
-    const len = p.parts.find((x) => x.role === 'length')?.text;
+    const off = p.parts.find((x) => x.role === 'offset')!.text.trim();
+    const len = p.parts.find((x) => x.role === 'length')?.text.trim();
     const name = p.name;
+    const o = intValue(off);
+    const l = len === undefined ? undefined : intValue(len);
     if (slicesElements(p)) {
-      const what = p.name === '@' || p.name === '*' ? this.s('位置パラメータ', 'the positional parameters') : this.s(`配列 \`${name}\` の要素`, `the elements of array \`${name}\``);
-      return this.s(`${what}を、${p.name === '@' || p.name === '*' ? `\`$${off}\`` : `インデックス \`${off}\``} から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
-        `take ${len === undefined ? '' : `\`${len}\` of `}${what} from ${p.name === '@' || p.name === '*' ? `\`$${off}\`` : `index \`${off}\``}${len === undefined ? ' on' : ''}`);
+      const args = p.name === '@' || p.name === '*';
+      const what = args ? this.s('位置パラメータ', 'the positional parameters') : this.s(`配列 \`${name}\` の要素`, `the elements of array \`${name}\``);
+      if (o !== undefined && o < 0) {
+        const from = args ? this.s(`最後から ${-o} 番目`, `the ${-o === 1 ? 'last one' : `${ordinal(-o)} from the end`}`) : this.s(`最大のインデックス + 1 から ${-o} 戻った位置`, `${-o} before one past the highest index`);
+        return this.s(`${what}を、${from}から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
+          `take ${len === undefined ? '' : `\`${len}\` of `}${what} starting at ${from}`);
+      }
+      return this.s(`${what}を、${args ? `\`$${off}\`` : `インデックス \`${off}\``} から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
+        `take ${len === undefined ? '' : `\`${len}\` of `}${what} from ${args ? `\`$${off}\`` : `index \`${off}\``}${len === undefined ? ' on' : ''}`);
     }
-    if (!/^-?\d+$/.test(off) || (len !== undefined && !/^-?\d+$/.test(len))) {
+    if (o === undefined || (len !== undefined && l === undefined)) {
       return this.s(`\`${name}\` の部分文字列を取り出す（開始位置 \`${off}\`${len !== undefined ? `、長さ \`${len}\`` : ''}）`,
         `take a substring of \`${name}\` (offset \`${off}\`${len !== undefined ? `, length \`${len}\`` : ''})`);
     }
-    const o = Number(off);
     const fromJa = o < 0 ? `末尾から ${-o} 文字目` : ` ${o + 1} 文字目`;
-    const fromEn = o < 0 ? `${-o} characters from the end` : `the ${ordinal(o + 1)} character`;
-    if (len === undefined && o < 0) return this.s(`\`${name}\` の末尾 ${-o} 文字を取り出す`, `take the last ${-o} characters of \`${name}\``);
-    if (len === undefined) return this.s(`\`${name}\` の${fromJa}から最後までを取り出す`, `take \`${name}\` from ${fromEn} to the end`);
-    const l = Number(len);
-    if (l < 0) return this.s(`\`${name}\` の${fromJa}から、末尾の ${-l} 文字を除いた位置までを取り出す`, `take \`${name}\` from ${fromEn} up to ${-l} characters before the end`);
-    return this.s(`\`${name}\` の${fromJa}から ${l} 文字を取り出す`, `take ${l} characters of \`${name}\` starting at ${fromEn}`);
+    const fromEn = o < 0 ? `${-o} ${plural(-o, 'character')} from the end` : `the ${ordinal(o + 1)} character`;
+    if (l === undefined && o < 0) return this.s(`\`${name}\` の末尾 ${-o} 文字を取り出す`, `take the last ${-o} ${plural(-o, 'character')} of \`${name}\``);
+    if (l === undefined) return this.s(`\`${name}\` の${fromJa}から最後までを取り出す`, `take \`${name}\` from ${fromEn} to the end`);
+    if (l! < 0) return this.s(`\`${name}\` の${fromJa}から、末尾の ${-l!} 文字を除いた位置までを取り出す`, `take \`${name}\` from ${fromEn} up to ${-l!} ${plural(-l!, 'character')} before the end`);
+    return this.s(`\`${name}\` の${fromJa}から ${l} 文字を取り出す`, `take ${l} ${plural(l!, 'character')} of \`${name}\` starting at ${fromEn}`);
   }
 
   /** Expansions, substitutions and strings inside a column range of a single-line node. */
@@ -2655,7 +2744,7 @@ export class Analyzer {
       case 'name': {
         const d = this.varDesc(t);
         if (p.prefix === '!' && (p.op === '*' || p.op === '@')) return ['variable', s(`変数名の接頭辞 \`${t}\``, `Variable name prefix \`${t}\``)];
-        if (p.subscript !== undefined) return ['variable', s(`配列 \`${t}\``, `Array \`${t}\``)];
+        if (p.subscript !== undefined) return ['variable', d ? s(`配列 \`${t}\`: ${d}`, `Array \`${t}\`: ${d}`) : s(`配列 \`${t}\``, `Array \`${t}\``)];
         return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
       }
       case 'subscript': {
@@ -2663,11 +2752,18 @@ export class Analyzer {
         if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
         if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
         if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string)')];
-        if (/^-?\d+$/.test(idx)) {
-          const i = Number(idx);
+        if (p.name === 'BASH_REMATCH' && /^\d+$/.test(idx)) {
+          return ['variable', idx === '0'
+            ? s('インデックス 0: `=~` で一致した全体', 'Index 0: the whole text the `=~` matched')
+            : s(`インデックス ${idx}: 正規表現の ${idx} 番目の括弧 \`( )\` に一致した部分`, `Index ${idx}: the text matched by group ${idx}, the ${ordinal(Number(idx))} \`( )\` of the regex`)];
+        }
+        const i = evalArith(idx);
+        if (i !== undefined) {
+          // The index is an arithmetic expression: `1+1` is 2, `010` is 8.
+          const calc = String(i) === idx ? '' : s(`（算術式として計算すると ${i}）`, ` (an arithmetic expression: ${i})`);
           return ['variable', i < 0
-            ? s(`インデックス ${i}: 末尾から ${-i} 番目の要素`, `Index ${i}: the ${ordinal(-i)} element from the end`)
-            : s(`インデックス ${i}: ${i + 1} 番目の要素（0 始まり）`, `Index ${i}: the ${ordinal(i + 1)} element (0-based)`)];
+            ? s(`インデックス ${idx}${calc}: 末尾から ${-i} 番目の要素`, `Index ${idx}${calc}: ${i === -1 ? 'the last element' : `the ${ordinal(-i)} element from the end`}`)
+            : s(`インデックス ${idx}${calc}: ${i + 1} 番目の要素（0 始まり）`, `Index ${idx}${calc}: the ${ordinal(i + 1)} element (0-based)`)];
         }
         return ['variable', s(`インデックス（連想配列ならキー） \`${idx}\``, `Index (or key, for associative arrays) \`${idx}\``)];
       }
@@ -2695,19 +2791,29 @@ export class Analyzer {
         if (!glob) return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
         return ['pattern', `${what} \`${t}\`: ${describeGlob(glob, this.lang)}`];
       }
-      case 'replacement':
+      case 'replacement': {
+        // The quotes and backslashes are removed: `\}` is `}`.
+        const shown = unquoteWord(t) ?? t;
         return ['string', t
-          ? s(`置換後の文字列 \`${t}\``, `Replacement \`${t}\``)
+          ? s(`置換後の文字列 \`${shown}\``, `Replacement \`${shown}\``)
           : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (the match is deleted)')];
+      }
       case 'offset': {
         const v = t.trim();
+        const num = intValue(v);
         if (slicesElements(p)) {
-          return ['number', p.name === '@' || p.name === '*'
-            ? s(`開始位置 ${v}: \`$${v}\` から（\`0\` なら \`$0\`、負の値は最後の引数から数える）`, `Offset ${v}: from \`$${v}\` (\`0\` is \`$0\`; a negative value counts from the last argument)`)
-            : s(`開始位置 ${v}: インデックス ${v} の要素から（負の値は末尾から数える）`, `Offset ${v}: from the element at index ${v} (a negative value counts from the end)`)];
+          const args = p.name === '@' || p.name === '*';
+          if (num !== undefined && num < 0) {
+            return ['number', args
+              ? s(`開始位置 ${v}: 最後から ${-num} 番目の引数から（負の値は最後から数える。\`$${v}\` という引数ではない）`, `Offset ${v}: from the ${-num === 1 ? 'last argument' : `${ordinal(-num)} argument from the end`} (a negative value counts from the end; it is not \`$${v}\`)`)
+              : s(`開始位置 ${v}: 最大のインデックス + 1 から ${-num} 戻った位置の要素から（要素数ではなくインデックスで数えるので、歯抜けの配列では最後から ${-num} 番目とは限らない）`, `Offset ${v}: from the element ${-num} before one past the highest index (counted by index, not by number of elements, so on a sparse array it is not always the ${ordinal(-num)} from the end)`)];
+          }
+          return ['number', args
+            ? s(`開始位置 ${v}: \`$${v}\` から（\`0\` なら \`$0\`）`, `Offset ${v}: from \`$${v}\` (\`0\` is \`$0\`)`)
+            : s(`開始位置 ${v}: インデックス ${v} の要素から`, `Offset ${v}: from the element at index ${v}`)];
         }
-        if (!/^-?\d+$/.test(v)) return ['number', s(`開始位置 \`${v}\`（算術式として評価される）`, `Offset \`${v}\` (evaluated as arithmetic)`)];
-        const o = Number(v);
+        if (num === undefined) return ['number', s(`開始位置 \`${v}\`（算術式として評価される）`, `Offset \`${v}\` (evaluated as arithmetic)`)];
+        const o = num;
         if (o < 0) {
           return ['number', s(
             `開始位置 ${o}: 末尾から ${-o} 文字目から（負の値は \`:-\` と区別するため、前に空白か括弧が必要）`,
@@ -2717,12 +2823,12 @@ export class Analyzer {
       }
       case 'length': {
         const v = t.trim();
-        if (slicesElements(p)) return ['number', s(`長さ ${v}: ${v} 個の要素（負の値はエラー）`, `Length ${v}: ${v} elements (a negative value is an error)`)];
-        if (!/^-?\d+$/.test(v)) return ['number', s(`長さ \`${v}\`（算術式として評価される）`, `Length \`${v}\` (evaluated as arithmetic)`)];
-        const l = Number(v);
+        const l = intValue(v);
+        if (slicesElements(p)) return ['number', s(`長さ ${v}: ${v} 個の要素（負の値はエラー）`, `Length ${v}: ${v} ${v === '1' ? 'element' : 'elements'} (a negative value is an error)`)];
+        if (l === undefined) return ['number', s(`長さ \`${v}\`（算術式として評価される）`, `Length \`${v}\` (evaluated as arithmetic)`)];
         return ['number', l < 0
-          ? s(`長さ ${l}: 末尾の ${-l} 文字を除いた位置まで`, `Length ${l}: up to ${-l} characters before the end`)
-          : s(`長さ ${l}: ${l} 文字分`, `Length ${l}: ${l} characters`)];
+          ? s(`長さ ${l}: 末尾の ${-l} 文字を除いた位置まで`, `Length ${l}: up to ${-l} ${plural(-l, 'character')} before the end`)
+          : s(`長さ ${l}: ${l} 文字分`, `Length ${l}: ${l} ${plural(l, 'character')}`)];
       }
       // `transform`
       default: {
@@ -2744,6 +2850,7 @@ export class Analyzer {
     if (prefixOp === '#' && target) {
       return this.tok(n, 'expansion', isArrayAll
         ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` の要素数`, `Number of elements in array \`${targetText.replace(/\[.*/, '')}\``)
+          + (targetText.startsWith('BASH_REMATCH[') ? this.s('（正規表現の括弧のグループの数 + 1。要素 0 が一致した全体）', ' (the number of groups in the regex + 1: element 0 is the whole match)') : '')
         : this.s(`変数 \`${targetText}\` の文字数（長さ）`, `Length of \`${targetText}\` in characters`));
     }
     if (prefixOp === '!' && target) {

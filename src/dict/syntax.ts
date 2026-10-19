@@ -1,4 +1,5 @@
 import { Text, tx } from '../i18n';
+import { unquoteWord } from '../staticword';
 
 /** Redirection operators. `fd` is the explicit file descriptor (or the default), `dest` the target text. */
 export const redirects: Record<string, (fd: string, dest: string) => Text> = {
@@ -70,9 +71,11 @@ function pat(a: string): string {
   const i = a.indexOf('/');
   return i < 0 ? a : a.slice(0, i);
 }
+/** The replacement of `${v/pat/rep}` as the shell uses it: its quotes and backslashes are removed (`\}` is `}`). */
 function rep(a: string): string {
   const i = a.indexOf('/');
-  return i < 0 ? '' : a.slice(i + 1);
+  const raw = i < 0 ? '' : a.slice(i + 1);
+  return unquoteWord(raw) ?? raw;
 }
 
 export const specialVariables: Record<string, Text> = {
@@ -100,6 +103,7 @@ export const wellKnownVariables: Record<string, Text> = {
   SECONDS: tx('シェル起動からの経過秒数', 'Seconds since the shell started'),
   BASH_SOURCE: tx('ソースファイル名の配列（`${BASH_SOURCE[0]}` は現在のスクリプト）', 'Array of source file names; `${BASH_SOURCE[0]}` is the current script'),
   FUNCNAME: tx('実行中の関数名の配列', 'Array of function names on the call stack'),
+  BASH_REMATCH: tx('直前の `[[ =~ ]]` の結果の配列: 要素 0 が一致した全体、要素 1 以降が括弧のグループ', 'Result of the last `[[ =~ ]]`: element 0 is the whole match, elements 1 and up are the parenthesized groups'),
   PIPESTATUS: tx('直前のパイプライン各コマンドの終了ステータスの配列', 'Exit statuses of each command in the last pipeline'),
   REPLY: tx('`read` に変数名を渡さなかったときの格納先', 'Default variable set by `read`'),
   OPTARG: tx('`getopts` が処理中のオプションの引数', 'Argument of the option being processed by `getopts`'),
