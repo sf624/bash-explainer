@@ -176,7 +176,7 @@ export function collectBehaviours(root: SyntaxNode, from: number, to: number): F
       if (f && f.children[0].type !== 'function') add('typesetScope');
     }
     if (n.type === 'expansion') {
-      const p = parseExpansion(n.text.trimStart());
+      const p = parseExpansion(n.text);
       if (p?.subscript && /^\d+$/.test(p.subscript)) add('arrayBase');
     }
   });
@@ -254,7 +254,7 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       return;
     }
     case 'expansion': {
-      const p = parseExpansion(n.text.trimStart());
+      const p = parseExpansion(n.text);
       if (!p) return;
       if (p.subscript !== undefined) add(/^-\d/.test(p.subscript) ? 'negIndex' : 'array');
       if (p.prefix === '!') add(p.op === '*' || p.op === '@' ? 'prefixNames' : p.subscript === '@' || p.subscript === '*' ? 'arrayKeys' : 'indirect');
@@ -270,9 +270,9 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'word': case 'concatenation': {
       // Only unquoted words brace-expand; `{` in a quoted string is plain text.
       if (n.parent?.type === 'string' || n.parent?.type === 'concatenation') return;
-      const t = n.type === 'word' ? n.text : n.children.filter((c) => c.type === 'word' || c.type === '{' || c.type === '}' || c.type === ',').map((c) => c.text).join('');
-      if (/\{-?\w+\.\.-?\w+(\.\.-?\d+)?\}/.test(t)) add('braceRange');
-      else if (/\{[^{}\s'"]*,[^{}\s'"]*\}/.test(t)) add('braceList');
+      const t = n.type === 'word' ? n.text : n.children.filter((c) => c.type === 'word').map((c) => c.text).join('');
+      // (A range, `{1..3}`, is a `brace_expression`.)
+      if (/\{[^{}\s'"]*,[^{}\s'"]*\}/.test(t)) add('braceList');
       if (/[@!?+]\([^)]*\)/.test(t)) add('extglob');
       return;
     }

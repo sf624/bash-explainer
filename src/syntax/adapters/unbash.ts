@@ -1396,7 +1396,8 @@ class Converter {
       this.tok(']', e.end - 1, n);
       return n;
     }
-    if (NUMBER.test(t) || /^(0[xX][0-9a-fA-F]+|\d+#[0-9a-zA-Z@_]+)$/.test(t)) return this.node('number', e.pos, e.end);
+    // A word that starts with a digit is a constant, also when bash rejects it (`08`, `0b11`, `1e3`, `2#2`): the explanation says why.
+    if (/^\d[0-9A-Za-z#@_]*$/.test(t)) return this.node('number', e.pos, e.end);
     return this.node(IDENTIFIER.test(t) && ctx !== 'for' ? 'variable_name' : 'word', e.pos, e.end);
   }
 }

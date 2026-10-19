@@ -363,6 +363,8 @@ describe('branches no other test takes', () => {
     assert.strictEqual(globExamples('[z-a]', 'value'), undefined);
     assert.strictEqual(globExamples('[é]', 'file'), undefined);
     assert.deepStrictEqual(extglobs('a\\*!(x)').map((e) => e.text), ['!(x)']);
+    // No closing parenthesis: not an extglob (the parser reports it as unterminated).
+    assert.deepStrictEqual(extglobs('a@(b|c'), []);
     // Nothing is left for `!(*)`.
     assert.strictEqual(globExamples('!(*)x', 'file'), undefined);
     assert.ok(globExamples('@(*).log', 'file'));
