@@ -1,4 +1,4 @@
-import { shellOptions } from './builtins';
+import { builtins, shellOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
@@ -9,6 +9,7 @@ import { admin } from './admin';
 import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
+import { applyExtras } from './extras';
 import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -767,3 +768,5 @@ export const commands: Record<string, CommandDoc> = {
   ...macos,
   ...ops,
 };
+
+applyExtras(commands, builtins);
