@@ -2,7 +2,7 @@
 import type { Lang } from '../i18n';
 import { formatDate, parseSampleDate } from '../embedded/format';
 import { runAwk } from './awk';
-import { Json, runJq, toJson } from './jq';
+import { Json, JqStep, jqSteps, runJq, toJson } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
 import { pipelineExample, Stage } from './pipeline';
 import { JsRegex } from './regex';
@@ -69,6 +69,20 @@ function groupLines(regex: JsRegex, input: string[], lang: Lang): string[] {
   return out;
 }
 
+/**
+ * The sections of a filter with top-level pipes: the values after each stage, worded as for a
+ * shell pipeline. `show` prints values; `last` is the output as the example shows it.
+ */
+export function jqStepSections(steps: JqStep[], last: string[], lang: Lang, show: (values: Json[]) => string[]): RerunSection[] {
+  const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  return steps.map((st, i) => {
+    const text = st.text.length > 40 ? `${st.text.slice(0, 39)}…` : st.text;
+    if (i === steps.length - 1) return { label: s(`出力（\`${text}\` の後）`, `Output (after \`${text}\`)`), lines: last, empty: s('（出力なし）', '(no output)') };
+    const many = st.values.length > 5;
+    return { label: s(`\`${text}\` の後`, `After \`${text}\``), lines: [...show(many ? st.values.slice(0, 4) : st.values), ...(many ? ['…'] : [])], empty: s('（なし）', '(nothing)') };
+  });
+}
+
 /** Run an example again on the given input lines. */
 export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
@@ -116,7 +130,9 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
       const res = runJq(spec.filter, value, spec.vars);
       if (!res) return out(undefined);
       if ('error' in res) return { sections: [{ label: s('エラー', 'Error'), lines: [res.error] }] };
-      return out(res.outputs.map((v) => (spec.raw && typeof v === 'string' ? v : toJson(v))));
+      const lines = res.outputs.map((v) => (spec.raw && typeof v === 'string' ? v : toJson(v)));
+      const steps = jqSteps(spec.filter, value, spec.vars);
+      return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.map(toJson)) } : out(lines);
     }
     case 'pipeline': {
       const ex = pipelineExample(spec.stages, true, input);

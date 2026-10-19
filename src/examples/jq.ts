@@ -1388,8 +1388,58 @@ function materializeOnce(s: Shape, i: number, depth: number, omit: boolean): Jso
   }
 }
 
+/** One stage of a top-level pipe chain: its text, and every value it leaves. */
+export interface JqStep {
+  text: string;
+  values: Json[];
+}
+
+/**
+ * Split a filter at its top-level pipes and run the stages one after another, keeping the
+ * values after each. Undefined when there is no top-level pipe, when a piece is not a filter on
+ * its own (`. as $x | …`, `def f: …; …`), when a stage cannot be run here, or when the pieces
+ * together do not give what the whole filter gives.
+ */
+export function jqSteps(filter: string, input: Json, vars: Record<string, Json> = {}): JqStep[] | undefined {
+  // (Callers have run the filter, so it lexes.)
+  const toks = lex(filter);
+  const pieces: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (const t of toks) {
+    if (t.type === 'str') continue;
+    if (['(', '[', '{', 'if'].includes(t.text)) depth++;
+    else if ([')', ']', '}', 'end'].includes(t.text)) depth--;
+    else if (t.text === '|' && t.type === 'op' && depth === 0) {
+      pieces.push(filter.slice(from, t.start).trim());
+      from = t.end;
+    }
+  }
+  if (!pieces.length) return undefined;
+  pieces.push(filter.slice(from).trim());
+  let values: Json[] = [input];
+  const steps: JqStep[] = [];
+  for (const text of pieces) {
+    const next: Json[] = [];
+    for (const v of values) {
+      const res = runJq(text, v, vars);
+      if (!res || 'error' in res) return undefined;
+      next.push(...res.outputs);
+    }
+    values = next;
+    steps.push({ text, values });
+  }
+  // A guard against a split that changes the meaning: no filter known gives a different result.
+  const whole = runJq(filter, input, vars);
+  /* c8 ignore next */
+  if (!whole || 'error' in whole || toJson(whole.outputs) !== toJson(values)) return undefined;
+  return steps;
+}
+
 export interface JqRun {
   input: Json;
+  /** The values after each stage of a top-level pipe chain (see jqSteps). */
+  steps?: JqStep[];
   outputs: string[];
   /** The results as values (up to five). */
   values: Json[];
@@ -1408,7 +1458,8 @@ export function jqExample(filter: string, opts: { raw?: boolean; vars?: Record<s
     if (!res) return undefined;
     if ('error' in res) return { input, outputs: [], values: [], error: res.error };
     const shown = res.outputs.map((v) => (opts.raw && typeof v === 'string' ? v : toJson(v)));
-    return { input, outputs: shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown, values: res.outputs.slice(0, 5) };
+    const steps = jqSteps(filter, input, opts.vars);
+    return { input, ...(steps ? { steps } : {}), outputs: shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown, values: res.outputs.slice(0, 5) };
   };
   if (opts.nullInput) {
     const r = run(null);
