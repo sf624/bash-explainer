@@ -4,8 +4,8 @@
 // a token of the stretch: quotes, `$( )`, `${ }`, backquotes, line continuations and heredoc bodies.
 
 export interface Piece {
-  /** `token`: a keyword or an operator, with its own text; `comment`: `# …` up to the end of the line. */
-  readonly kind: 'token' | 'comment';
+  /** `token`: a keyword or an operator, with its own text; `comment`: `# …` up to the end of the line; `word`: any other word, which only a scan with `words` gives. */
+  readonly kind: 'token' | 'comment' | 'word';
   readonly text: string;
   readonly start: number;
   readonly end: number;
@@ -57,10 +57,11 @@ function skipGroup(text: string, i: number, to: number): number {
 /**
  * The comments, keywords and operators in `text[from, to)`, in order. `skip` lists ranges to jump over,
  * such as heredoc bodies, which lie in the text between two statements but are not code. With `stop`,
- * the scan ends after the first piece it accepts.
+ * the scan ends after the first piece it accepts. With `words`, the words that are not keywords come too
+ * (in a stretch between the children of a node there should be none: it is text the parser dropped).
  */
 export function scanGap(
-  text: string, from: number, to: number, skip: readonly (readonly [number, number])[] = [], stop?: (piece: Piece) => boolean,
+  text: string, from: number, to: number, skip: readonly (readonly [number, number])[] = [], stop?: (piece: Piece) => boolean, words = false,
 ): Piece[] {
   const out: Piece[] = [];
   let i = from;
@@ -104,6 +105,7 @@ export function scanGap(
     // `i` may have gone past `to` over an escape at its end.
     i = Math.min(i, to);
     if (KEYWORDS.has(word)) out.push({ kind: 'token', text: word, start, end: i });
+    else if (words) out.push({ kind: 'word', text: text.slice(start, i), start, end: i });
   }
   return out;
 }

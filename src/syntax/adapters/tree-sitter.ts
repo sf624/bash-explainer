@@ -200,6 +200,191 @@ class Converter {
     });
   }
 
+  // Shapes where tree-sitter's tree nests what bash does not: `!` in front of a pipeline, redirections after
+  // the last command of a pipeline or list, and what follows `<<EOF` on its line. They are rebuilt after
+  // the conversion, from the finished nodes.
+
+  normalize(n: Mut): void {
+    for (const c of [...n.children]) this.normalize(c);
+    if (n.type === 'pipeline') this.negation(n);
+    else if (n.type === 'redirected_statement') this.redirections(n);
+  }
+
+  /** Gives `n` these children, in this order. */
+  private setChildren(n: Mut, kids: Mut[]): void {
+    n.children = kids;
+    n.namedChildren = kids.filter((c) => c.named);
+    for (const k of kids) k.parent = n;
+  }
+
+  /** Makes the range of `n` the one its children cover. */
+  private fit(n: Mut): void {
+    const first = n.children.reduce((a, c) => (c.startIndex < a.startIndex ? c : a));
+    const last = n.children.reduce((a, c) => (c.endIndex > a.endIndex ? c : a));
+    n.startIndex = first.startIndex;
+    n.startPosition = first.startPosition;
+    n.endIndex = last.endIndex;
+    n.endPosition = last.endPosition;
+    n.text = this.text.slice(n.startIndex, n.endIndex);
+  }
+
+  /** Puts `by` in the place of `old` among the children of `parent`, with the field `old` had. */
+  private put(parent: Mut, old: Mut, by: Mut, field: FieldName | null): void {
+    parent.children[parent.children.indexOf(old)] = by;
+    parent.namedChildren = parent.children.filter((c) => c.named);
+    by.parent = parent;
+    by.field = field;
+  }
+
+  /** `! a | b`: tree-sitter negates `a`; bash negates the pipeline. */
+  private negation(p: Mut): void {
+    const neg = p.children[0];
+    const operand = neg.type === 'negated_command' ? neg.namedChildren[0] : undefined;
+    if (!operand) return;
+    const bang = neg.children.find((c) => !c.named)!;
+    this.put(p.parent!, p, neg, p.field);
+    p.field = null;
+    operand.field = null;
+    this.setChildren(p, [operand, ...p.children.slice(1)]);
+    this.fit(p);
+    this.setChildren(neg, [bang, p]);
+    this.fit(neg);
+  }
+
+  /** The command a chain of pipelines, lists, `!` and `time` ends with. */
+  private lastLeaf(n: Mut): Mut {
+    if (n.type === 'pipeline' || n.type === 'list') return this.lastLeaf(n.namedChildren[n.namedChildren.length - 1]);
+    // (`time` and `!` with nothing after them are the command themselves.)
+    const operand = n.type === 'time_statement' ? n.children.find((c) => c.field === 'body') : n.type === 'negated_command' ? n.namedChildren[0] : undefined;
+    return operand ? this.lastLeaf(operand) : n;
+  }
+
+  /**
+   * A `redirected_statement`: the grammar puts the redirections after the last command of a pipeline or list
+   * on the whole of it (`echo A && echo B > f`); in bash they belong to that command. And everything after
+   * `<<EOF` on its line is nested in the heredoc node: arguments and more redirections belong to the
+   * command, and `| cmd`, `&& cmd` go on with the pipeline or list.
+   */
+  private redirections(r: Mut): void {
+    const body = r.children.find((c) => c.field === 'body');
+    if (!body) return;
+    const redirects = r.children.filter((c) => c.field === 'redirect');
+    const words: Mut[] = [];
+    const tail: Mut[] = [];
+    for (const h of redirects.filter((c) => c.type === 'heredoc_redirect')) {
+      const own = ['<<', '<<-', 'heredoc_start', 'heredoc_body', 'heredoc_end'];
+      for (const c of h.children) {
+        if (own.includes(c.type)) continue;
+        if (c.field === 'redirect') redirects.push(c);
+        else if (c.field === 'argument') words.push(c);
+        else tail.push(c);
+      }
+      this.setChildren(h, h.children.filter((c) => own.includes(c.type)));
+    }
+    redirects.sort((a, b) => a.startIndex - b.startIndex);
+    let top: Mut;
+    if (body.type === 'pipeline' || body.type === 'list' || body.type === 'negated_command' || body.type === 'time_statement') {
+      const leaf = this.lastLeaf(body);
+      const holder = leaf.parent!;
+      const as = leaf.field;
+      const wrapped = this.wrap(leaf, redirects, words);
+      if (leaf === body) top = wrapped;
+      else {
+        if (wrapped !== leaf) this.put(holder, leaf, wrapped, as);
+        for (let a = wrapped.parent; a && a !== r; a = a.parent) this.fit(a);
+        top = body;
+      }
+      this.put(r.parent!, r, top, r.field);
+    } else if (words.length && body.type === 'command') {
+      top = this.wrap(body, redirects, words);
+      this.put(r.parent!, r, top, r.field);
+    } else {
+      this.setChildren(r, [body, ...redirects]);
+      this.fit(r);
+      top = r;
+    }
+    if (tail.length) this.continueChain(top, tail);
+  }
+
+  /** `leaf` with these redirections (and the words that came after a heredoc): the leaf itself if they go inside it. */
+  private wrap(leaf: Mut, redirects: Mut[], words: Mut[]): Mut {
+    let outside = redirects;
+    if (leaf.type === 'redirected_statement') {
+      this.setChildren(leaf, [...leaf.children, ...redirects].sort((a, b) => a.startIndex - b.startIndex));
+      this.fit(leaf);
+      return leaf;
+    }
+    if (words.length && leaf.type === 'command') {
+      // Redirections before the last word are among the words of the command.
+      const lastWord = Math.max(...words.map((w) => w.startIndex));
+      const inside = redirects.filter((c) => c.startIndex < lastWord);
+      outside = redirects.filter((c) => c.startIndex > lastWord);
+      this.setChildren(leaf, [...leaf.children, ...inside, ...words].sort((a, b) => a.startIndex - b.startIndex));
+      this.fit(leaf);
+      if (!outside.length) return leaf;
+    }
+    const r = this.node('redirected_statement', true, leaf, null, null);
+    leaf.field = 'body';
+    this.setChildren(r, [leaf, ...outside]);
+    this.fit(r);
+    return r;
+  }
+
+  /** The operators and operands of a pipeline or list, flattened in text order. */
+  private flatten(n: Mut, out: { op?: Mut; operand?: Mut }[] = []): { op?: Mut; operand?: Mut }[] {
+    for (const c of n.children) {
+      if (!c.named) out.push({ op: c });
+      else if (c.type === 'pipeline' || c.type === 'list') this.flatten(c, out);
+      else out.push({ operand: c });
+    }
+    return out;
+  }
+
+  /** What follows a heredoc on its line, `| cmd && cmd`, goes on with the chain that ends in the command that has the heredoc. */
+  private continueChain(top: Mut, tail: Mut[]): void {
+    // (The new chain takes the place of `top` in its parent; `top` is part of the chain by then.)
+    const parent = top.parent!;
+    const field = top.field;
+    const items = top.type === 'pipeline' || top.type === 'list' ? this.flatten(top) : [{ operand: top }];
+    for (const c of tail) {
+      if (!c.named) items.push({ op: c });
+      else if (c.type === 'pipeline' || c.type === 'list') this.flatten(c, items);
+      else items.push({ operand: c });
+    }
+    // `|` binds tighter than `&&` and `||`, which group to the left.
+    let left: Mut | undefined;
+    let logical: Mut | undefined;
+    let group: Mut[] = [];
+    const close = (): void => {
+      // (An operator with nothing after it stays in the list as it is.)
+      if (!group.length) {
+        if (left && logical) left = this.container('list', [left, logical]);
+        return;
+      }
+      const unit = group.length === 1 ? group[0] : this.container('pipeline', group);
+      group = [];
+      left = left ? this.container('list', [left, logical!, unit]) : unit;
+    };
+    for (const item of items) {
+      const m = (item.op ?? item.operand)!;
+      m.field = null;
+      if (item.op && (item.op.type === '&&' || item.op.type === '||')) {
+        close();
+        logical = item.op;
+      } else group.push(m);
+    }
+    close();
+    this.put(parent, top, left!, field);
+  }
+
+  /** A new `pipeline` or `list` over these children. */
+  private container(type: string, kids: Mut[]): Mut {
+    const m = this.node(type, true, kids[0], null, null);
+    this.setChildren(m, kids);
+    this.fit(m);
+    return m;
+  }
+
   /** `time [-p] …` is a command named `time` to tree-sitter; the first command of a pipeline times all of it. */
   time(n: Node, parent: Mut | null, field: FieldName | null): Mut | undefined {
     const cmd = n.type === 'pipeline' ? n.child(0)! : n;
@@ -234,8 +419,8 @@ class Converter {
     const parts = this.parts(cmd).slice(1);
     const option = parts[0] && parts[0].n.type === 'word' && this.text.slice(parts[0].n.startIndex, parts[0].n.endIndex) === '-p' ? parts[0] : undefined;
     const rest = option ? parts.slice(1) : parts;
-    // In a pipeline, `time | wc` has nothing to time; it stays a command.
-    if (cmd.parent?.type === 'pipeline' && cmd.parent.child(0)!.id === cmd.id && !rest.length) return undefined;
+    // In a pipeline, `time` is a keyword only at its start (`a | time b` runs the program), and `time | wc` has nothing to time: it stays a command.
+    if (cmd.parent?.type === 'pipeline' && (cmd.parent.child(0)!.id !== cmd.id || !rest.length)) return undefined;
     return { option, rest };
   }
 
@@ -255,8 +440,13 @@ const span = (from: Span, to: Span): Span => ({
   startIndex: from.startIndex, endIndex: to.endIndex, startPosition: from.startPosition, endPosition: to.endPosition,
 });
 
-/** The adapter's parser: parses with tree-sitter, copies the tree into plain objects, and frees the wasm tree. */
-export async function createTreeSitterParser(wasm: WasmPaths | WasmBinaries): Promise<BashParser> {
+/**
+ * The adapter's parser: parses with tree-sitter, copies the tree into plain objects, and frees the wasm tree.
+ * The shapes where tree-sitter nests what bash does not (`!`, redirections at the end of a pipeline or
+ * list, the rest of a heredoc line) are rebuilt; with `reshape: false` they stay as tree-sitter gives them,
+ * so that a test can compare the conversion with tree-sitter's own tree.
+ */
+export async function createTreeSitterParser(wasm: WasmPaths | WasmBinaries, options: { reshape?: boolean } = {}): Promise<BashParser> {
   const bash = await createRawParser(wasm);
   return {
     parse(text: string): SyntaxTree {
@@ -264,6 +454,7 @@ export async function createTreeSitterParser(wasm: WasmPaths | WasmBinaries): Pr
       const conv = new Converter(text);
       const root = conv.convert(tree.rootNode, null, null);
       tree.delete();
+      if (options.reshape !== false) conv.normalize(root);
       return { text, root, errors: conv.errors };
     },
   };

@@ -197,6 +197,8 @@ export const keywords: Record<string, Text> = {
   '(': tx('サブシェルの開始（別プロセスで実行され、変数の変更は外に影響しない）', 'Start of a subshell (changes do not affect the parent shell)'),
   ')': tx('サブシェルの終わり', 'End of the subshell'),
   '!': tx('続くコマンドの終了ステータスを反転する', 'Negate the exit status of the following command'),
+  // `! a | b` negates the status of the whole pipeline, not of `a`.
+  '! pipeline': tx('続くパイプライン全体の終了ステータスを反転する', 'Negate the exit status of the whole pipeline that follows'),
   time: tx('続くパイプラインの実行時間を計測して表示', 'Measure and report the run time of the pipeline'),
   coproc: tx('コプロセス（双方向パイプ付きのバックグラウンド処理）を開始', 'Start a coprocess with a two-way pipe'),
 };

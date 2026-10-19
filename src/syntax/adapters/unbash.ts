@@ -29,6 +29,8 @@ const PATTERN_PARTS = new Set(['Literal', 'Glob', 'SimpleExpansion', 'ParameterE
 const isPart = (p: U.WordPart): p is Part => !PLAIN.has(p.type);
 /** Blanks, line continuations and comments. */
 const BLANKS = /(?:\s|\\\n|#[^\n]*)*/y;
+/** Blanks that do not end a line, and line continuations. */
+const HORIZONTAL = /(?:[ \t]|\\\n)*/y;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -121,7 +123,13 @@ class Converter {
     }
     if (end > at) gaps.push([at, end]);
     for (const [a, b] of gaps) {
-      for (const p of scanGap(this.text, a, b, this.skip)) {
+      for (const p of scanGap(this.text, a, b, this.skip, undefined, true)) {
+        if (p.kind === 'word') {
+          // Text between the parts of a node that no part holds: unbash dropped it.
+          this.node('error', p.start, p.end, null, owner);
+          this.unreadableAt(`unexpected '${p.text}'`, p.start, p.end);
+          continue;
+        }
         const m = this.node(p.kind === 'comment' ? 'comment' : p.text, p.start, p.end, null, owner);
         m.named = p.kind === 'comment';
       }
@@ -129,6 +137,17 @@ class Converter {
   }
 
   // Positions of tokens that unbash does not give
+
+  /**
+   * Adds the token `text` to `parent` where it is in `[from, to)` and returns where it ends, or returns
+   * `from` if it is not there: input that stops early (`(( x ? 1`) lacks its separators.
+   */
+  tokenIn(text: string, from: number, to: number, parent: Mut, field: FieldName | null = null): number {
+    const at = this.text.indexOf(text, from);
+    if (at < 0 || at + text.length > to) return from;
+    this.tok(text, at, parent, field);
+    return at + text.length;
+  }
 
   /** The range of the first word-like chunk in `[from, to)` that is `text`, or undefined. */
   find(text: string, from: number, to = this.text.length): number {
@@ -147,29 +166,42 @@ class Converter {
     // The program starts at its first token: leading blanks are not part of it.
     root.startIndex = Math.min(...root.children.map((c) => c.startIndex), this.text.length);
     this.seal(root, null);
+    this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
     return { text: this.text, root, errors: this.errors };
   }
 
   /**
-   * The text unbash could not read: it drops a token it did not expect and records an error at its
-   * start. It becomes an `error` node (the other errors, of constructs left open, are marked
-   * `incomplete` where the construct is built).
+   * What unbash reports and the tree does not say yet. It drops a token it did not expect and records an
+   * error at its start: that becomes an `error` node and an error of kind `unreadable` (the other errors,
+   * of constructs left open, are marked `incomplete` where the construct is built). An error the tree
+   * has not told by itself (`a >` has no target) becomes an error of kind `missing` at its place, and
+   * the construct there is `incomplete`.
    */
   unreadable(root: Mut, script: U.ParsedScript): void {
     const errors: U.ParseError[] = [];
-    // The errors of the script and of the scripts of the substitutions in it.
+    // The errors of the script and of the scripts of the substitutions in it (a backquote with escapes
+    // is parsed apart, by `decoded`, and its errors are in the text without the escapes).
     const walk = (n: U.SyntaxNode): void => {
-      if (n.type === 'Script') errors.push(...((n as U.ParsedScript).errors ?? []));
+      if (n.type === 'Script') {
+        if (n !== script && (n as U.ParsedScript).source !== undefined) return;
+        errors.push(...((n as U.ParsedScript).errors ?? []));
+      }
       forEachChild(n, walk);
     };
     walk(script);
-    for (const e of errors) {
-      const m = /^unexpected token '(.*)'$/.exec(e.message);
-      // The input stops where a command was expected: the construct is open, which `incomplete` says.
-      if (!m && /^expected command after/.test(e.message) && !/\S/.test(this.text.slice(e.pos))) continue;
-      if (!m && !/^unterminated extended glob|^expected command after '(if|then|elif|else|while|until|do|for|in)'/.test(e.message)) continue;
+    const unexpected = (e: U.ParseError): RegExpExecArray | null => /^unexpected token '(.*)'$/.exec(e.message);
+    // The tokens first: an error after one may be about the same place.
+    for (const e of [...errors.filter((x) => unexpected(x)), ...errors.filter((x) => !unexpected(x))]) {
+      const m = unexpected(e);
+      // Where the input just stops, the construct is open, which `incomplete` says.
+      const stops = /^expected command after/.test(e.message) && !/\S/.test(this.text.slice(e.pos));
+      const unreadable = m || (!stops && /^unterminated extended glob|^expected command after '(if|then|elif|else|while|until|do|for|in)'/.test(e.message));
+      if (!unreadable) {
+        if (!this.told(e)) this.untold(root, e);
+        continue;
+      }
       const len = m ? (m[1] === 'newline' ? 1 : m[1].length) : (/^\S*/.exec(this.text.slice(e.pos))![0].length);
-      this.errors.push({ kind: 'unreadable', message: e.message, startIndex: e.pos, endIndex: e.pos + len });
+      this.unreadableAt(e.message, e.pos, e.pos + len);
       let holder = root;
       for (let down = true; down;) {
         const inner = holder.children.find((c) => c.named && c.startIndex <= e.pos && c.endIndex >= e.pos + len && c.children.length);
@@ -185,107 +217,47 @@ class Converter {
     }
   }
 
+  /** Whether the tree already tells of an error unbash reports: an error entry at its place (also just before it, past blanks, or just after, past the next word), or for the keyword it expects. */
+  told(e: U.ParseError): boolean {
+    // The place, and the word after it.
+    const reach = e.pos + /^\s*\S*/.exec(this.text.slice(e.pos))![0].length;
+    // (Before it, up to the end of the last thing that is not a blank or a comment.)
+    const before = scanGap(this.text, 0, e.pos, this.skip, undefined, true).filter((p) => p.kind !== 'comment').pop();
+    const from = before ? before.end : 0;
+    if (this.errors.some((x) => x.startIndex <= reach && x.endIndex >= from)) return true;
+    const keyword = /^expected '(\w+)'/.exec(e.message);
+    if (keyword !== null && this.errors.some((x) => x.message === `Missing "${keyword[1]}"`)) return true;
+    // `unterminated …` is at the start of the construct, which says where it stops.
+    return e.message.startsWith('unterminated ') && this.errors.some((x) => x.kind === 'missing' && x.startIndex >= e.pos);
+  }
+
+  /** An error of unbash that is nowhere in the tree: a `missing` error, and the innermost node at its place is `incomplete`. */
+  untold(root: Mut, e: U.ParseError): void {
+    // A group with nothing in it: the command is missing after the opener.
+    const at = /^expected command in /.test(e.message) ? e.pos + 1 : e.pos;
+    let holder = root;
+    for (let down = true; down;) {
+      const inner = holder.children.filter((c) => c.named && c.type !== 'comment' && c.type !== 'error' && c.startIndex <= at && c.endIndex >= at).pop();
+      down = inner !== undefined;
+      if (inner) holder = inner;
+    }
+    this.missing(holder, /^expected redirect target/.test(e.message) ? 'word' : /^expected command in /.test(e.message) ? 'command' : e.message, at);
+  }
+
+  /** An error of kind `unreadable`, once for each place. */
+  unreadableAt(message: string, start: number, end: number): void {
+    if (!this.errors.some((x) => x.kind === 'unreadable' && x.startIndex === start && x.endIndex === end)) this.errors.push({ kind: 'unreadable', message, startIndex: start, endIndex: end });
+  }
+
   statements(parent: Mut, list: readonly U.Statement[], limit: number): void {
-    // The heredoc whose line the previous statement is on: what follows on that line belongs to it.
-    let open: Mut | undefined;
-    for (const s of list) {
-      const n = this.captureLine(this.dangling(this.pipelineNode(s.command, limit), s, limit));
-      const target = open && n.startIndex < this.bodyStart(open) ? open : parent;
-      this.add(target, n);
-      if (s.background) this.tok('&', s.end - 1, target);
-      if (target === open) open.endIndex = Math.max(open.endIndex, n.endIndex);
-      else {
-        if (open) this.closeHeredoc(parent, open);
-        open = this.heredocOf(n);
-      }
-    }
-    if (open) this.closeHeredoc(parent, open);
-  }
-
-  /** What the heredoc took from the line after it: its gaps are scanned (the `&` of the statements it took is found there; the one the statements had is dropped). */
-  closeHeredoc(parent: Mut, h: Mut): void {
-    const body = this.bodyStart(h);
-    for (const c of [...parent.children]) {
-      if (c.type === '&' && !c.named && c.startIndex > h.startIndex && c.startIndex < body) {
-        parent.children.splice(parent.children.indexOf(c), 1);
-      }
-    }
-    this.fill(h);
-  }
-
-  heredocOf(n: Mut): Mut | undefined {
-    return n.type === 'redirected_statement' ? n.children.find((c) => c.type === 'heredoc_redirect') : undefined;
-  }
-
-  bodyStart(h: Mut): number {
-    return h.children.find((c) => c.type === 'heredoc_body')!.startIndex;
-  }
-
-  /**
-   * What follows `<<EOF` on its line, as the grammar has it: redirections, the rest of a pipeline, and
-   * `&&`/`||` with their right side go inside the heredoc node, which ends with the body.
-   */
-  captureLine(n: Mut): Mut {
-    const out = this.capture(n);
-    const h = this.heredocOf(out);
-    if (h) this.fill(h);
-    return out;
-  }
-
-  capture(n: Mut): Mut {
-    const take = (x: Mut, h: Mut, field: FieldName | null): void => {
-      h.children.push(x);
-      x.field = field;
-    };
-    const grow = (x: Mut, h: Mut): Mut => {
-      h.endIndex = Math.max(h.endIndex, ...h.children.map((c) => c.endIndex));
-      x.endIndex = Math.max(x.endIndex, h.endIndex);
-      delete x.lineEnd;
-      delete h.lineEnd;
-      return x;
-    };
-    if (n.type === 'redirected_statement') {
-      const h = this.heredocOf(n);
-      if (!h) return n;
-      const body = this.bodyStart(h);
-      for (const c of [...n.children]) {
-        // (A second heredoc on the line has a body of its own, after this one's, so it stays beside it.)
-        if (c !== h && c.type !== 'heredoc_redirect' && c.startIndex > h.startIndex && c.startIndex < body) {
-          n.children.splice(n.children.indexOf(c), 1);
-          take(c, h, c.field);
-        }
-      }
-      return grow(n, h);
-    }
-    if (n.type === 'pipeline') {
-      n.children.sort((a, b) => a.startIndex - b.startIndex);
-      const k = n.children.findIndex((c) => this.heredocOf(c));
-      if (k < 0) return n;
-      const x = n.children[k];
-      const h = this.heredocOf(x)!;
-      const tail = n.children.splice(k + 1);
-      if (tail.length) {
-        const rest = this.node('pipeline', tail[0].startIndex, tail[tail.length - 1].endIndex);
-        rest.children = tail;
-        take(rest, h, null);
-      }
-      grow(x, h);
-      if (k === 0) return x;
-      delete n.lineEnd;
-      n.endIndex = x.endIndex;
-      return n;
-    }
-    if (n.type === 'list') {
-      n.children.sort((a, b) => a.startIndex - b.startIndex);
-      const left = this.capture(n.children[0]);
-      const h = this.heredocOf(left);
-      if (!h) return n;
-      take(n.children[1], h, 'operator');
-      take(n.children[2], h, 'right');
-      delete n.lineEnd;
-      return grow(left, h);
-    }
-    return n;
+    list.forEach((s, i) => {
+      // What an open construct in this statement may reach: up to the next statement.
+      const room = i + 1 < list.length ? Math.min(limit, list[i + 1].pos) : limit;
+      const n = this.dangling(this.pipelineNode(s.command, room), s, room);
+      this.add(parent, n);
+      // (An open construct has taken the `&` into its own text.)
+      if (s.background && (n.lineEnd ?? n.endIndex) < s.end) this.tok('&', s.end - 1, parent);
+    });
   }
 
   /**
@@ -294,8 +266,12 @@ class Converter {
    */
   dangling(n: Mut, s: U.Statement, limit: number): Mut {
     if (s.background) return n;
-    const next = scanGap(this.text, n.endIndex, limit, this.skip, () => true)[0];
-    if (!next || !['|', '|&', '&&', '||'].includes(next.text) || next.kind !== 'token') return n;
+    // The operator follows on the same line (after blanks and line continuations), or it is not ours.
+    HORIZONTAL.lastIndex = n.endIndex;
+    const at = n.endIndex + HORIZONTAL.exec(this.text)![0].length;
+    if (at >= limit || (this.text[at] !== '|' && this.text[at] !== '&')) return n;
+    const next = scanGap(this.text, at, limit, this.skip, () => true)[0];
+    if (!['|', '|&', '&&', '||'].includes(next.text)) return n;
     // Something follows the operator: it is not dangling (the statement ends there for another reason).
     BLANKS.lastIndex = next.end;
     if (next.end + BLANKS.exec(this.text)![0].length < limit) return n;
@@ -321,85 +297,48 @@ class Converter {
     this.errors.push({ kind: 'missing', message: `Missing "${what}"`, startIndex: at, endIndex: at });
   }
 
+  /** How far an open construct in `parts[i]` may reach: up to the operator (`&&`, `|`…) before the next part, or up to `limit` for the last. */
+  beforeOperator(parts: readonly Range[], i: number, limit: number): number {
+    if (i + 1 >= parts.length) return limit;
+    const next = Math.min(limit, parts[i + 1].pos);
+    const last = scanGap(this.text, parts[i].pos, next, this.skip).filter((x) => x.kind === 'token').pop();
+    return last && ['&&', '||', '|', '|&'].includes(last.text) ? last.start : next;
+  }
+
   pipelineNode(c: U.PipelineNode | U.AndOr, limit: number): Mut {
     if (c.type === 'AndOr') return this.andOr(c, limit);
     return this.pipeline(c, limit);
   }
 
   andOr(a: U.AndOr, limit: number): Mut {
-    let left = this.pipeline(a.commands[0], limit);
+    let left = this.pipeline(a.commands[0], this.beforeOperator(a.commands, 0, limit));
     for (let i = 1; i < a.commands.length; i++) {
-      const right = this.pipeline(a.commands[i], limit);
+      const right = this.pipeline(a.commands[i], this.beforeOperator(a.commands, i, limit));
       const list = this.node('list', left.startIndex, right.endIndex);
       this.add(list, left);
       this.add(list, right);
       this.fill(list);
-      left = this.hoistable(right) ? this.hoist(list, right) : list;
+      left = list;
     }
     return left;
   }
 
-  /** A command with redirections after its last word: the redirections of the last part of a list or pipeline belong to the whole, as the grammar has it. */
-  hoistable(n: Mut): boolean {
-    return n.type === 'redirected_statement' && n.children[0]?.field === 'body' && !this.heredocOf(n);
-  }
-
-  /** `whole` holds the body of `last` as its last part; `last` takes `whole` as its body instead. */
-  hoist(whole: Mut, last: Mut): Mut {
-    const body = last.children[0];
-    // `whole` was built with `last` as its last part: put the body of `last` there.
-    const at = whole.children.indexOf(last);
-    if (at >= 0) whole.children[at] = body;
-    body.field = null;
-    whole.endIndex = body.endIndex;
-    last.children[0] = whole;
-    whole.field = 'body';
-    last.startIndex = whole.startIndex;
-    return last;
-  }
-
   pipeline(p: U.PipelineNode, limit: number): Mut {
     if (p.type !== 'Pipeline') return this.commandNode(p, limit);
-    const cmds = p.commands.map((c) => this.commandNode(c, limit));
+    const cmds = p.commands.map((c, i) => this.commandNode(c, this.beforeOperator(p.commands, i, limit)));
     let out: Mut | undefined;
-    if (!cmds.length) out = undefined;
-    else if (cmds.length > 1) {
+    if (cmds.length > 1) {
       out = this.node('pipeline', cmds[0].startIndex, cmds[cmds.length - 1].endIndex);
-      // The grammar binds the redirections of the last command to the whole pipeline.
-      const last = cmds[cmds.length - 1];
-      const hoisted = this.hoistable(last) ? last : undefined;
-      cmds.forEach((c, i) => this.add(out!, hoisted && i === cmds.length - 1 ? hoisted.children[0] : c, null));
-      out.endIndex = (hoisted ? hoisted.children[0] : last).endIndex;
+      for (const c of cmds) this.add(out, c, null);
       this.fill(out);
-      if (hoisted) out = this.hoist(out, hoisted);
     } else out = cmds[0];
-    // The prefixes act from the last to the first. `!` negates the first command only, as the grammar has it
-    // (inside the redirections of a lone command); a `time` it comes before is negated whole.
-    for (const prefix of [...p.prefixes].reverse()) {
-      if (prefix.type === 'Time') {
-        out = this.time(prefix, out);
-        continue;
-      }
-      if (out && (out.type === 'time_statement' || out.children[0]?.type === 'time_statement')) {
-        const neg = this.node('negated_command', prefix.pos, out.endIndex);
-        this.tok('!', prefix.pos, neg);
-        this.add(neg, out, null);
-        out = neg;
-        continue;
-      }
-      out = this.negate(prefix, out);
-    }
+    // The prefixes act from the last to the first: `! time a | b` negates the timed pipeline, and `time ! a | b` times the negated one.
+    for (const prefix of [...p.prefixes].reverse()) out = prefix.type === 'Time' ? this.time(prefix, out) : this.negate(prefix, out);
     return out!;
   }
 
-  /** `!` before `node`: it negates the first command of a pipeline, inside the redirections of a lone command. */
+  /** `!` before `node`: it negates the whole pipeline. */
   negate(prefix: U.Negation, node: Mut | undefined): Mut {
-    if (node && (node.type === 'pipeline' || this.hoistable(node))) {
-      node.children[0] = this.negate(prefix, node.children[0]);
-      node.children[0].field = node.type === 'pipeline' ? null : 'body';
-      node.startIndex = prefix.pos;
-      return node;
-    }
     const neg = this.node('negated_command', prefix.pos, node ? node.endIndex : prefix.end);
     this.tok('!', prefix.pos, neg);
     if (node) this.add(neg, node, null);
@@ -408,7 +347,7 @@ class Converter {
     return neg;
   }
 
-  /** `time [-p] pipeline`: the timed command or pipeline is the body; redirections of a lone command wrap the whole. */
+  /** `time [-p] pipeline`: the timed command or pipeline is the body. */
   time(t: U.Time, body: Mut | undefined): Mut {
     const n = this.node('time_statement', t.pos, t.keywordEnd);
     this.tok('time', t.pos, n);
@@ -426,17 +365,9 @@ class Converter {
       body.startIndex = t.pos;
       return body;
     }
-    if (body.type === 'redirected_statement' && body.children[0]?.field === 'body') {
-      const inner = body.children[0];
-      this.add(n, inner, 'body');
-      n.endIndex = inner.endIndex;
-      body.children[0] = n;
-      n.field = 'body';
-      body.startIndex = t.pos;
-      return body;
-    }
     this.add(n, body, 'body');
     n.endIndex = body.endIndex;
+    this.fill(n);
     return n;
   }
 
@@ -575,7 +506,7 @@ class Converter {
     this.tok(a.append ? '+=' : '=', opStart, node);
     if (a.value.type === 'ArrayValue') {
       const arr = this.node('array', a.value.pos, a.value.end, 'value', node);
-      for (const e of a.value.elements) this.add(arr, this.word(e, 'element'));
+      for (const e of a.value.elements) this.add(arr, this.element(e));
       this.fill(arr);
     } else if (a.value.text.startsWith('(') && a.value.parts === undefined) {
       // `a=(1 2` with no `)`: unbash gives the rest as one word.
@@ -586,6 +517,22 @@ class Converter {
     } else if (a.value.end > a.value.pos) this.add(node, this.word(a.value, 'value'), 'value');
     this.fill(node);
     return node;
+  }
+
+  /**
+   * An element of an array: `[7]=z` sets the element with index 7, and is a concatenation of `[`, the
+   * index, `]` and `=z`, as tree-sitter reads it (there is no node for it in the model).
+   */
+  element(e: U.Word): Mut {
+    const m = !e.parts ? /^\[([^\]\s]*)\](\+?=)/.exec(e.text) : null;
+    if (!m) return this.word(e, 'element');
+    const c = this.node('concatenation', e.pos, e.end);
+    const at = e.pos + 1;
+    this.node('word', e.pos, at, null, c);
+    this.node(NUMBER.test(m[1]) ? 'number' : 'word', at, at + m[1].length, null, c);
+    this.node('word', at + m[1].length, at + m[1].length + 1, null, c);
+    this.node('word', at + m[1].length + 1, e.end, null, c);
+    return c;
   }
 
   /** An assignment where the grammar has an ordinary word (`alias ll='ls -l'`). */
@@ -609,10 +556,12 @@ class Converter {
       if (plainStart >= 0) out.push(this.plain(plainStart, plainEnd, role, alone));
       plainStart = -1;
     };
+    // Beside a range, a list `{a,b}` is a brace expression too; alone, it stays part of the word.
+    const ranged = parts.some((x) => x.type === 'BraceExpansion' && BRACE_RANGE.test(x.text));
     for (const p of parts) {
-      if (p.type === 'BraceExpansion' && BRACE_RANGE.test(p.text)) {
+      if (p.type === 'BraceExpansion' && (BRACE_RANGE.test(p.text) || (ranged && /^\{.*,.*\}$/s.test(p.text)))) {
         flush();
-        out.push(this.braceRange(p));
+        out.push(BRACE_RANGE.test(p.text) ? this.braceRange(p) : this.braceList(p));
       } else if (!isPart(p)) {
         if (plainStart < 0) plainStart = p.pos;
         plainEnd = p.end;
@@ -638,6 +587,31 @@ class Converter {
       this.tok('..', p.pos + second, n);
       num(p.pos + second + 2, p.end - 1);
     }
+    this.tok('}', p.end - 1, n);
+    return n;
+  }
+
+  /** `{a,b}` next to a range: the items are words, between `,` tokens. */
+  braceList(p: U.BraceExpansionPart): Mut {
+    const n = this.node('brace_expression', p.pos, p.end);
+    this.tok('{', p.pos, n);
+    let start = p.pos + 1;
+    let depth = 0;
+    const item = (end: number): void => {
+      if (end > start) this.node('word', start, end, null, n);
+    };
+    for (let i = p.pos + 1; i < p.end - 1; i++) {
+      const c = this.text[i];
+      if (c === '\\') i++;
+      else if (c === '{') depth++;
+      else if (c === '}') depth--;
+      else if (c === ',' && depth === 0) {
+        item(i);
+        this.tok(',', i, n);
+        start = i + 1;
+      }
+    }
+    item(p.end - 1);
     this.tok('}', p.end - 1, n);
     return n;
   }
@@ -714,7 +688,8 @@ class Converter {
   string(p: { pos: number; end: number; parts: readonly U.DoubleQuotedChild[] }): Mut {
     const s = this.node('string', p.pos, p.end);
     this.tok('"', p.pos, s);
-    const closed = this.text[p.end - 1] === '"' && p.end - 1 > p.pos;
+    // (The quote is there if no part has taken it: `"${a: -"` ends in the quote of an inner string.)
+    const closed = this.text[p.end - 1] === '"' && p.end - 1 > p.pos && !p.parts.some((c) => c.end > p.end - 1);
     if (closed) this.tok('"', p.end - 1, s);
     else this.missing(s, '"', p.end);
     let at = p.pos + 1;
@@ -745,7 +720,9 @@ class Converter {
     else if (p.parameterEnd > p.parameterPos) {
       const name = this.node(/^[A-Za-z_]\w*$|^\d+$/.test(p.parameter) ? 'variable_name' : 'special_variable_name', p.parameterPos, p.parameterEnd);
       if (p.index) {
-        const sub = this.node('subscript', p.parameterPos, this.text.indexOf(']', p.index.end) + 1, null, n);
+        // (A subscript that is not closed ends with its index.)
+        const close = this.text.indexOf(']', p.index.end);
+        const sub = this.node('subscript', p.parameterPos, close < 0 || close >= p.end ? p.index.end : close + 1, null, n);
         this.add(sub, name, 'name');
         this.tok('[', p.parameterEnd, sub);
         if (/^-\d+$/.test(p.index.text)) {
@@ -753,7 +730,8 @@ class Converter {
           this.tok('-', p.index.pos, neg, 'operator');
           this.node('number', p.index.pos + 1, p.index.end, null, neg);
         } else this.add(sub, this.word(p.index, 'index'), 'index');
-        this.tok(']', sub.endIndex - 1, sub);
+        if (sub.endIndex > p.index.end) this.tok(']', sub.endIndex - 1, sub);
+        else this.missing(sub, ']', sub.endIndex);
       } else this.add(n, name);
     }
     const o = p.operation;
@@ -803,11 +781,27 @@ class Converter {
   /** The offset or length of `${a:1:2}`, which the shell evaluates as arithmetic. */
   sliceOperand(owner: Mut, w: U.Word): void {
     if (w.end <= w.pos) return;
-    // unbash parses arithmetic in `$(( ))`: put the text there, at the same offset, to get the same positions.
-    const src = ' '.repeat(w.pos - 3) + '$((' + this.text.slice(w.pos, w.end) + '))';
+    // unbash parses arithmetic in `$(( ))`: the text goes there, read by a converter of its own, and the nodes are moved to the place of the text.
+    const shift = w.pos - 3;
+    const src = '$((' + this.text.slice(w.pos, w.end) + '))';
     const word = (parse(src).commands[0].command as U.Command).name!;
     const exp = (word.parts![0] as U.ArithmeticExpansionPart).expression;
-    if (exp) this.arithInto(owner, exp, 'slice');
+    // (An operand that is not closed, `${a:${b`, takes the `))` of the wrapper: it is a word then.)
+    if (exp && exp.end <= w.end - shift) {
+      const sub = new Converter(src);
+      const holder = sub.node('program', 0, src.length);
+      sub.arithInto(holder, exp, 'slice');
+      const move = (m: Mut): void => {
+        m.startIndex += shift;
+        m.endIndex += shift;
+        m.children.forEach(move);
+      };
+      for (const c of holder.children) {
+        move(c);
+        this.add(owner, c);
+      }
+      for (const e of sub.errors) this.errors.push({ ...e, startIndex: e.startIndex + shift, endIndex: e.endIndex + shift });
+    } else if (exp) this.add(owner, this.word(w, 'operand'));
   }
 
   /** The pattern of `${a#…}` and `${a/…}`: a regex leaf, or a word if it holds expansions. */
@@ -818,17 +812,21 @@ class Converter {
   }
 
   substitution(p: U.CommandExpansionPart | U.ProcessSubstitutionPart): Mut {
-    const open = p.type === 'ProcessSubstitution' ? p.operator + '(' : p.text.startsWith('`') ? '`' : '$(';
+    // `${ cmd; }` and `${| cmd; }` (bash 5.3) are substitutions that run in the current shell.
+    const funsub = p.type === 'CommandExpansion' && p.text.startsWith('${');
+    const open = p.type === 'ProcessSubstitution' ? p.operator + '(' : funsub ? (p.text[2] === '|' ? '${|' : '${') : p.text.startsWith('`') ? '`' : '$(';
     const type = p.type === 'CommandExpansion' ? 'command_substitution' : 'process_substitution';
     const n = this.node(type, p.pos, p.end);
     this.tok(open, p.pos, n);
-    const close = open === '`' ? '`' : ')';
-    if (this.text[p.end - 1] === close && p.end - p.pos > open.length) this.tok(close, p.end - 1, n);
-    else this.missing(n, close, p.end);
+    const close = open === '`' ? '`' : funsub ? '}' : ')';
+    const ends = this.text[p.end - 1] === close && p.end - p.pos > open.length;
     if (p.script) {
-      if (p.script.source === undefined) this.statements(n, p.script.commands, p.end - 1);
+      if (p.script.source === undefined) this.statements(n, p.script.commands, ends ? p.end - 1 : p.end);
       else this.decoded(n, p, p.script);
     }
+    // The closer is there when the text ends with it and no command has taken it: `$((1 + 2)` ends in the `)` of a subshell.
+    if (ends && !n.children.some((c) => c.endIndex > p.end - 1)) this.tok(close, p.end - 1, n);
+    else this.missing(n, close, p.end);
     this.fill(n);
     return n;
   }
@@ -863,10 +861,15 @@ class Converter {
     const holder = sub.node('program', 0, decoded.length);
     sub.statements(holder, script.commands, decoded.length);
     sub.fill(holder);
+    sub.unreadable(holder, script);
     const moveStart = (i: number): number => origin[i];
+    // A substitution inside this one starts at the backslash that escapes its backquote.
+    const escaped = (i: number): boolean => this.text[origin[i]] === '`' && this.text[origin[i] - 1] === '\\' && origin[i] - 1 >= start && (i === 0 || origin[i - 1] < origin[i] - 1);
     const ends = origin.map((o, i) => (i ? origin[i - 1] + 1 : o));
     const move = (m: Mut): void => {
-      m.startIndex = moveStart(m.startIndex);
+      const from = m.startIndex;
+      m.startIndex = moveStart(from);
+      if (m.type === 'command_substitution' && escaped(from)) m.startIndex--;
       m.endIndex = Math.max(m.startIndex, ends[m.endIndex]);
       m.children.forEach(move);
     };
@@ -1001,20 +1004,26 @@ class Converter {
     this.list(n, c.then, inner);
     const clauseEnd = c.clause.end;
     const thenKw = this.find('then', clauseEnd, c.then.commands.length ? c.then.pos : inner);
-    // Where each clause may reach: up to where the next one starts.
+    // (An input that stops after the condition is told by the `fi` that is missing.)
+    const stopsAfter = (from: number): boolean => !closed && !/\S/.test(this.text.slice(from, limit));
+    if (thenKw < 0 && !stopsAfter(clauseEnd)) this.missing(n, 'then', clauseEnd);
+    // Where each clause may reach: up to where the next one starts. (For a part with no commands, unbash's
+    // ends are after the keyword that follows, so the end of the part before it is used instead.)
     const starts = [...c.elif.map((e) => e.pos)];
-    let lastEnd = Math.max(c.then.end, c.then.commands.length ? c.then.commands[c.then.commands.length - 1].end : 0);
-    const elseKw = c.else ? this.lastKeyword('else', c.elif.length ? c.elif[c.elif.length - 1].end : lastEnd, c.else.commands.length ? c.else.pos : inner) : -1;
+    const last = c.elif[c.elif.length - 1];
+    const lastEnd = last ? (last.then.commands.length ? last.then.end : last.clause.end)
+      : c.then.commands.length ? Math.max(c.then.end, c.then.commands[c.then.commands.length - 1].end) : clauseEnd;
+    const elseKw = c.else ? this.lastKeyword('else', lastEnd, c.else.commands.length ? c.else.pos : inner) : -1;
     if (c.else) starts.push(elseKw);
     c.elif.forEach((e, i) => {
       const next = starts[i + 1] ?? (closed ? c.end - 2 : inner);
-      const en = this.node('elif_clause', e.pos, e.end, null, n);
+      const en = this.node('elif_clause', e.pos, Math.min(e.end, next), null, n);
       this.list(en, e.clause, inner);
       this.list(en, e.then, inner);
       this.fill(en);
+      if (this.find('then', e.clause.end, e.then.commands.length ? e.then.pos : next) < 0 && !stopsAfter(e.clause.end)) this.missing(en, 'then', e.clause.end);
       this.terminate(en, next);
       this.newline(en);
-      lastEnd = en.endIndex;
     });
     if (c.else) {
       const en = this.node('else_clause', elseKw, c.else.commands.length ? c.else.end : elseKw + 4, null, n);
@@ -1031,22 +1040,44 @@ class Converter {
   /** The last `kw` token in `[from, to)`. */
   lastKeyword(kw: string, from: number, to: number): number {
     const found = scanGap(this.text, from, to, this.skip).filter((p) => p.text === kw);
-    return found[found.length - 1].start;
+    // (The keyword is there whenever unbash gives an else part.)
+    /* c8 ignore next */
+    return found.length ? found[found.length - 1].start : to;
+  }
+
+  /**
+   * Ends a loop whose head ends at `headEnd`: it is open when its `do` is missing. unbash then ends it at
+   * its head, and what follows is for other statements: the loop takes only the `;` and the comments
+   * after its head.
+   */
+  finish(n: Mut, headEnd: number, limit: number): void {
+    if (!n.incomplete) {
+      this.fill(n);
+      return;
+    }
+    const pieces = scanGap(this.text, headEnd, limit, this.skip, (p) => p.text !== ';' && p.kind !== 'comment', true);
+    const last = pieces[pieces.length - 1];
+    this.fill(n, last && last.text !== ';' && last.kind !== 'comment' ? last.start : limit);
+    this.truncate(n);
   }
 
   /** The `do … done` of a loop; `from` is where the loop's head ends. */
   doGroup(owner: Mut, c: Range, body: U.CompoundList, from: number, limit: number): void {
-    const closed = this.closed(c, 'done');
-    const inner = this.inner(c, 'done', limit);
-    const doKw = this.find('do', from, body.commands.length ? body.commands[0].pos : inner);
-    if (doKw < 0) {
+    const first = body.commands.length ? body.commands[0].pos : limit;
+    const doKw = this.find('do', from, first);
+    // `for x in a; { …; }`: bash takes a brace group as the body of a `for` loop too.
+    const brace = doKw < 0 ? this.find('{', from, first) : -1;
+    if (doKw < 0 && brace < 0) {
       owner.incomplete = true;
       this.errors.push({ kind: 'missing', message: 'Missing "do"', startIndex: from, endIndex: from });
       return;
     }
-    const g = this.node('do_group', doKw, closed ? c.end : inner, 'body', owner);
+    const kw = doKw >= 0 ? 'done' : '}';
+    const closed = this.closed(c, kw);
+    const inner = this.inner(c, kw, limit);
+    const g = this.node(doKw >= 0 ? 'do_group' : 'compound_statement', doKw >= 0 ? doKw : brace, closed ? c.end : inner, 'body', owner);
     this.list(g, body, inner);
-    this.close(g, closed, 'done', limit);
+    this.close(g, closed, kw, limit);
   }
 
   loop(c: U.While, limit: number): Mut {
@@ -1054,8 +1085,7 @@ class Converter {
     const inner = this.inner(c, 'done', limit);
     this.list(n, c.clause, inner);
     this.doGroup(n, c, c.body, c.clause.end, limit);
-    this.fill(n, n.incomplete ? limit : undefined);
-    if (n.incomplete) this.truncate(n);
+    this.finish(n, c.clause.end, limit);
     const doGroup = n.children.find((x) => x.type === 'do_group');
     this.mark(n, c.pos + c.kind.length, doGroup ? doGroup.startIndex : n.endIndex, 'condition');
     return n;
@@ -1070,8 +1100,7 @@ class Converter {
       headEnd = w.end;
     }
     this.doGroup(n, c, c.body, headEnd, limit);
-    this.fill(n, n.incomplete ? limit : undefined);
-    if (n.incomplete) this.truncate(n);
+    this.finish(n, headEnd, limit);
     return n;
   }
 
@@ -1138,8 +1167,10 @@ class Converter {
   extendedTest(c: U.TestCommand): Mut {
     const n = this.node('extended_test', c.pos, c.end);
     this.tok('[[', c.pos, n);
-    this.add(n, this.testExpression(c.expression));
-    this.close(n, this.closed(c, ']]'), ']]', this.text.length);
+    const expression = this.testExpression(c.expression);
+    this.add(n, expression);
+    // An open test ends with its expression: what follows is for other commands.
+    this.close(n, this.closed(c, ']]'), ']]', expression.endIndex);
     return n;
   }
 
@@ -1208,32 +1239,35 @@ class Converter {
   cFor(c: U.ArithmeticFor, limit: number): Mut {
     const n = this.node('c_style_for_statement', c.pos, c.end);
     this.tok('for', c.pos, n);
-    const open = this.text.indexOf('((', c.pos + 3);
-    this.tok('((', open, n);
-    let at = open + 2;
+    let at = this.tokenIn('((', c.pos + 3, limit, n);
+    // The header ends where its body starts; a header that stops early has some of its separators missing.
+    let complete = at > c.pos + 3;
+    if (!complete) this.missing(n, '((', c.pos + 3);
     const part = (e: U.ArithmeticExpression | undefined, field: FieldName): void => {
       if (e) {
         if (field === 'initializer' && e.type === 'ArithmeticBinary' && e.operator === '=') this.add(n, this.forAssignment(e), field);
         else this.arithInto(n, e, 'for', field);
         at = e.end;
       }
-      at = this.text.indexOf(field === 'update' ? '))' : ';', at);
-      if (field !== 'update') { this.tok(';', at, n); at++; }
+      if (!complete) return;
+      const sep = field === 'update' ? '))' : ';';
+      const next = this.tokenIn(sep, at, c.body.pos, n);
+      complete = next > at;
+      if (complete) at = next;
+      else this.missing(n, sep, at);
     };
     part(c.initialize, 'initializer');
     part(c.test, 'condition');
     part(c.update, 'update');
-    this.tok('))', at, n);
-    this.doGroup(n, c, c.body, at + 2, limit);
-    this.fill(n, n.incomplete ? limit : undefined);
-    if (n.incomplete) this.truncate(n);
+    if (complete) this.doGroup(n, c, c.body, at, limit);
+    this.finish(n, at, limit);
     return n;
   }
 
   forAssignment(e: U.ArithmeticBinary): Mut {
     const n = this.node('variable_assignment', e.pos, e.end);
     this.add(n, this.arith(e.left, 'for'), 'name').type = 'variable_name';
-    this.tok('=', this.text.indexOf('=', e.left.end), n);
+    this.tokenIn('=', e.left.end, e.end, n);
     this.add(n, this.arith(e.right, 'for'), 'value');
     return n;
   }
@@ -1242,7 +1276,7 @@ class Converter {
   arithInto(owner: Mut, e: U.ArithmeticExpression, ctx: ArithCtx, field?: FieldName): void {
     if (e.type === 'ArithmeticBinary' && e.operator === ',') {
       this.arithInto(owner, e.left, ctx, field);
-      this.tok(',', this.text.indexOf(',', e.left.end), owner);
+      this.tokenIn(',', e.left.end, e.end, owner);
       this.arithInto(owner, e.right, ctx, field);
     } else this.add(owner, this.arith(e, ctx), field);
   }
@@ -1254,7 +1288,7 @@ class Converter {
         const n = this.node('binary_expression', e.pos, e.end);
         const f = (name: FieldName): FieldName | null => (ctx === 'slice' ? null : name);
         this.add(n, this.arith(e.left, ctx), f('left'));
-        this.tok(e.operator, this.text.indexOf(e.operator, e.left.end), n, 'operator');
+        this.tokenIn(e.operator, e.left.end, e.end, n, 'operator');
         if (e.right.end > e.right.pos) this.add(n, this.arith(e.right, ctx), f('right'));
         return n;
       }
@@ -1273,17 +1307,19 @@ class Converter {
       case 'ArithmeticTernary': {
         const n = this.node('ternary_expression', e.pos, e.end);
         this.add(n, this.arith(e.test, ctx), 'condition');
-        this.tok('?', this.text.indexOf('?', e.test.end), n);
-        this.add(n, this.arith(e.consequent, ctx), 'consequence');
-        this.tok(':', this.text.indexOf(':', e.consequent.end), n);
-        this.add(n, this.arith(e.alternate, ctx), 'alternative');
+        this.tokenIn('?', e.test.end, e.end, n);
+        // (An expression that stops early has no part where the text ends.)
+        if (e.consequent.end > e.consequent.pos) this.add(n, this.arith(e.consequent, ctx), 'consequence');
+        this.tokenIn(':', e.consequent.end, e.end, n);
+        if (e.alternate.end > e.alternate.pos) this.add(n, this.arith(e.alternate, ctx), 'alternative');
         return n;
       }
       case 'ArithmeticGroup': {
         const n = this.node('parenthesized_expression', e.pos, e.end);
         this.tok('(', e.pos, n);
         this.arithInto(n, e.expression, ctx);
-        this.tok(')', e.end - 1, n);
+        if (e.expression.end < e.end && this.text[e.end - 1] === ')') this.tok(')', e.end - 1, n);
+        else this.missing(n, ')', e.end);
         return n;
       }
       case 'ArithmeticCommandExpansion': return this.substitution({ type: 'CommandExpansion', pos: e.pos, end: e.end, text: e.text, script: e.script });

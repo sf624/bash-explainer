@@ -426,7 +426,7 @@ export class Analyzer {
       case 'file_redirect': return this.fileRedirect(n);
       case 'heredoc_redirect': return this.heredoc(n);
       case 'herestring_redirect': return this.herestring(n);
-      case 'negated_command': return this.tok(n, 'operator', this.t(keywords['!']), this.subs(n.namedChildren));
+      case 'negated_command': return this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren));
       case 'test_command': case 'extended_test': case 'arithmetic_command': return this.test(n);
       case 'unary_expression': return this.unary(n);
       case 'binary_expression': return this.binary(n);
@@ -441,8 +441,9 @@ export class Analyzer {
       case 'string': return this.string(n);
       case 'raw_string': return this.tok(n, 'string', this.s('シングルクォート文字列: 中身は一切展開されず、そのままの文字列になる', 'Single-quoted string: taken literally, nothing is expanded'));
       case 'ansi_c_string': return this.tok(n, 'string', this.s('`$\'…\'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる', '`$\'…\'` string: backslash escapes such as `\\n` are interpreted'));
-      case 'translated_string': return this.tok(n, 'string', this.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列', '`$"…"` string: translated according to the locale'), this.subs(n.namedChildren));
-      case 'concatenation': return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
+      // (The model has the `$` and the string in one node; the string takes the `$` in, as when tree-sitter gives them apart.)
+      case 'translated_string': return this.string(n.namedChildren[0]);
+      case 'concatenation': if (n.parent?.type === 'array' && /^\[[^\]\s]*\]\+?=/.test(n.text)) return this.arrayElement(n); return this.tok(n, 'argument', this.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word'), this.subs(n.namedChildren));
       case 'word': return this.word(n);
       case 'number': return this.tok(n, 'number', this.s('数値', 'Number'));
       case 'brace_expression': return this.tok(n, 'expansion', this.s(`ブレース展開: \`${n.text}\` は連続した値（連番など）に展開される`, `Brace expansion: \`${n.text}\` expands to a sequence`));
@@ -617,7 +618,7 @@ export class Analyzer {
     const body = field(n, 'body');
     // (A redirection the parser left without its operator and target is nothing to explain.)
     const redirs = n.namedChildren.filter((c) => !same(c, body) && c.children.length);
-    const effect = simulateRedirects(redirs.flatMap((r) => this.redirectInfo(r)), this.lang);
+    const effect = simulateRedirects(redirs.map((r) => this.redirectInfo(r)), this.lang);
     if (effect) this.extraNotes.push(effect);
     const bodyToks = this.sub(body);
     const redirToks = this.subs(redirs);
@@ -637,17 +638,13 @@ export class Analyzer {
   }
 
   /** Operator, descriptor and target of a redirection node, for `simulateRedirects`. */
-  private redirectInfo(r: SyntaxNode): Redirect[] {
+  private redirectInfo(r: SyntaxNode): Redirect {
     if (r.type === 'file_redirect') {
       const { op, dest } = redirectParts(r);
-      return [{ op, fd: field(r, 'descriptor')?.text ?? '', dest }];
+      return { op, fd: field(r, 'descriptor')?.text ?? '', dest };
     }
-    if (r.type === 'heredoc_redirect') {
-      // Redirections written after `<<EOF` on the same line are nested in the heredoc node.
-      return [{ op: '<<', fd: '', dest: '' }, ...r.namedChildren.filter((c) => c.type === 'file_redirect').flatMap((c) => this.redirectInfo(c))];
-    }
-    // The only other redirection: herestring_redirect.
-    return [{ op: '<<<', fd: '', dest: '' }];
+    // The only others: heredoc_redirect and herestring_redirect.
+    return { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', fd: '', dest: '' };
   }
 
   private fileRedirect(n: SyntaxNode): Token {
@@ -687,12 +684,8 @@ export class Analyzer {
       : this.s('。本文中の `$変数` や `$(…)` は展開される', '. `$vars` and `$(…)` in the body are expanded');
     expl += this.lineRef(n);
     const label = `${op}${start}`;
-    const children = [
-      // An empty here-document still has a (empty) body.
-      ...this.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content')),
-      // The grammar nests redirections that follow `<<EOF` on the same line inside the heredoc node.
-      ...this.subs(n.namedChildren.filter((c) => c.type.endsWith('redirect'))),
-    ];
+    // An empty here-document still has a (empty) body.
+    const children = this.subs(body!.namedChildren.filter((c) => c.type !== 'heredoc_content'));
     // Keep the token span on the operator so highlighting does not swallow the whole body.
     return {
       kind: 'redirect', label, explanation: expl, children,
@@ -848,9 +841,15 @@ export class Analyzer {
     if (!nameNode) {
       return this.tok(n, 'assignment', this.s('変数への代入', 'Variable assignment'), [...prefix, ...this.subs(redirs)]);
     }
-    // `time` is a reserved word; `FOO=1 time x` runs the program instead. What remains a command is `time | wc`, which times nothing.
-    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time') return this.timeAlone(n, nameNode, args, redirs);
+    // `time` is a reserved word at the start of a pipeline; `FOO=1 time x` and `a | time x` run the program instead. What remains a command is `time | wc`, which times nothing.
+    if (!prefix.length && isPlainWord(nameNode.namedChildren[0]!) && nameNode.text === 'time' && this.startsPipeline(n)) return this.timeAlone(n, nameNode, args, redirs);
     return this.commandTail(n, nameNode, args, prefix, redirs);
+  }
+
+  /** Whether `n` (or the statement it is the command of) is the first part of a pipeline: where bash reads `time` as a keyword. */
+  private startsPipeline(n: SyntaxNode): boolean {
+    const stage = n.parent?.type === 'redirected_statement' ? n.parent : n;
+    return stage.parent?.type === 'pipeline' && stage.parent.namedChildren[0] === stage;
   }
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
@@ -1488,7 +1487,8 @@ export class Analyzer {
         const body = field(c, 'body');
         if (!body || body.type !== 'command') return undefined;
         // `grep x < file` reads a file; output redirections other than 2>/dev/null change where data goes.
-        for (const r of c.namedChildren.filter((x) => !same(x, body))) {
+        // (Those of the last stage change where the result goes; the example still shows what the stages make.)
+        for (const r of i === n.namedChildren.length - 1 ? [] : c.namedChildren.filter((x) => !same(x, body))) {
           const op = r.children.find((x) => !x.named)?.type;
           if (r.type === 'file_redirect' && op === '<' && i === 0) readsFile = true;
           else if (!(r.type === 'file_redirect' && field(r, 'descriptor')?.text === '2')) return undefined;
@@ -1609,7 +1609,9 @@ export class Analyzer {
     if (this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on') return [];
     for (const p of onLine(root, ['pipeline'], line)) {
       if (p.startPosition.row !== line) continue;
-      const last = p.namedChildren[p.namedChildren.length - 1];
+      let last = p.namedChildren[p.namedChildren.length - 1];
+      // The redirections after the last stage (`… | while …; done > log`) are its own.
+      if (last?.type === 'redirected_statement') last = field(last, 'body') ?? last;
       if (!last || !LAST_STAGES.has(last.type)) continue;
       const names = new Set<string>();
       for (const a of descendants(last, ['variable_assignment'])) {
@@ -2329,6 +2331,15 @@ export class Analyzer {
 
   // ---------------------------------------------------------------- words & expansions
 
+  /** `[7]=z` in `( )`: an element with an index of its own. */
+  private arrayElement(n: SyntaxNode): Token {
+    const m = /^\[([^\]\s]*)\](\+?)=(.*)$/s.exec(n.text)!;
+    return this.tok(n, 'argument', this.s(
+      `添字 \`${m[1]}\` の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
+      `Element with index \`${m[1]}\`: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
+    ));
+  }
+
   private word(n: SyntaxNode): Token {
     const text = n.text;
     if (text.startsWith('~')) return this.tok(n, 'expansion', this.s('チルダ展開: `~` はホームディレクトリに置き換わる', 'Tilde expansion: `~` becomes the home directory'));
@@ -2337,7 +2348,7 @@ export class Analyzer {
   }
 
   private string(n: SyntaxNode): Token {
-    // `$"…"`: tree-sitter-bash reads it as `$` and a string.
+    // `$"…"`: a `$` and a string, in the same node or beside each other.
     const dollar = sibling(n, -1);
     if (dollar?.type === '$' && dollar.endIndex === n.startIndex) {
       const t = this.tok(n, 'string', this.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列（翻訳がなければそのまま。中の変数は展開される）', '`$"…"` string: translated according to the locale (as it is when there is no translation; variables inside expand)'), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
