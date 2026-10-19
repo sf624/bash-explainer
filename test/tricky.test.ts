@@ -6,7 +6,7 @@ import { descendants, field, hasError } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { arithLiteral, evalArith, intValue } from '../src/arith';
 import { ansiCValue, staticWordValue, unquoteWord } from '../src/staticword';
-import { exampleFor, parseExpansion } from '../src/expansion';
+import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { createTreeSitterParser } from '../src/syntax/adapters/tree-sitter';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { evalArithWrapping } from '../src/arith';
@@ -1241,6 +1241,250 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
       // A double quote that was escaped is a quote of the substitution's own text.
       assert.match(expl('echo "`echo \\"a b\\"`"', '\\"a b\\"'), /After quote removal it is the string `a b`$/);
       assert.strictEqual(bash('echo "`echo \\"a  b\\"`"'), 'a  b\n');
+    });
+
+    const sq = (v: string): string => `'${v.replace(/'/g, "'\\''")}'`;
+    /** Whether bash's `case` takes the branch of `pattern` for `value`. */
+    const caseMatches = (pattern: string, value: string): boolean => bash(`case ${sq(value)} in ${pattern}) echo y;; esac`) === 'y\n';
+
+    it('says that a quoted right side of =~ is no regex', () => {
+      const src = ROUND6[4];
+      assert.strictEqual(bash(src), 'lex\nnum\nquoted-literal\n');
+      const quoted = expl(src, 'abc =~ "$re"');
+      assert.match(quoted, /^Condition: `abc` vs `"\$re"` — true if the left side contains the right side as it is \(the right side is quoted, so it is literal text, not a regex: `\.` and `\*` are plain characters\)\. A variable that holds a regex is written `\$re`, not `"\$re"`; captures go to `BASH_REMATCH`$/);
+      assert.match(expl(src, 'abc =~ "$re"', 'ja'), /左辺が右辺の文字列をそのまま含めば真（右辺はクォートされているので正規表現ではなく文字列そのもの/);
+      assert.match(expl(src, 'abc =~ $re'), /^Condition: `abc` vs `\$re` — left side matches the regex \(ERE\) on the right/);
+      // Only a part of it quoted: the quoted part is text, the rest is a regex.
+      for (const [rhs, part] of [['a"."c', 'the quoted parts'], ["'a.c'", 'literal text, not a regex'], ['^a"."c$', 'the quoted parts'], ['"a"$re', 'the quoted parts']] as const) {
+        const e = expl(`[[ abc =~ ${rhs} ]]`, `abc =~ ${rhs}`);
+        assert.match(e, new RegExp(part.replace('.', '\\.')), rhs);
+      }
+      assert.doesNotMatch(expl('[[ abc =~ a\\.c ]]', 'abc =~ a\\.c'), /quoted/);
+      assert.doesNotMatch(expl('[[ abc =~ ^a.c$ ]]', 'abc =~ ^a.c$'), /quoted/);
+      // What bash does with them.
+      assert.strictEqual(bash('re=a.c; [[ abc =~ "$re" ]] || echo nomatch'), 'nomatch\n');
+      assert.strictEqual(bash('[[ abc =~ "b" ]] && echo contains'), 'contains\n');
+      assert.strictEqual(bash('[[ abc =~ a"."c ]] || echo no; [[ a.c =~ ^a"."c$ ]] && echo yes; [[ abc =~ "a"b. ]] && echo mixed'), 'no\nyes\nmixed\n');
+      assert.strictEqual(bash("[[ abc =~ 'a.c' ]] || echo no; [[ abc =~ a\\.c ]] || echo no2"), 'no\nno2\n');
+      // `==` does the same with patterns.
+      assert.match(expl('[[ abc == "a*" ]]', 'abc == "a*"'), /literal text, not a pattern/);
+    });
+
+    it('splits ${v/pattern/replacement} at the first slash that is not escaped', () => {
+      const src = ROUND6[6];
+      const head = (e: string, label: string, lang: 'ja' | 'en' = 'en') => expl(`echo ${e}`, label, lang);
+      assert.strictEqual(head('${p//\\//_}', '${p//\\//_}'), 'Parameter expansion: Replace every match of `\\/` in `p` with `_`');
+      assert.strictEqual(head('${p//\\//_}', '${p//\\//_}', 'ja'), 'パラメータ展開: `p` 内で `\\/` に一致する部分をすべて `_` に置換');
+      assert.strictEqual(head('${p/#\\/a/X}', '${p/#\\/a/X}'), 'Parameter expansion: Replace `\\/a` at the start of `p` with `X`');
+      assert.strictEqual(head('${p/%b\\//Y}', '${p/%b\\//Y}'), 'Parameter expansion: Replace `b\\/` at the end of `p` with `Y`');
+      assert.strictEqual(head('${p/a\\/b}', '${p/a\\/b}'), 'Parameter expansion: Delete the first match of `a\\/b` in `p`');
+      assert.strictEqual(head('${p/"/"/Z}', '${p/"/"/Z}'), 'Parameter expansion: Replace the first match of `"/"` in `p` with `Z`');
+      assert.strictEqual(head('${p/$(echo /)/Z}', '${p/$(echo /)/Z}'), 'Parameter expansion: Replace the first match of `$(echo /)` in `p` with `Z`');
+      assert.strictEqual(head('${p/a/\\/}', '${p/a/\\/}'), 'Parameter expansion: Replace the first match of `a` in `p` with `/`');
+      // The children and the example were right already.
+      assert.deepStrictEqual(tokens('echo ${p//\\//_}').filter((t) => t.kind === 'pattern').map((t) => t.label), ['\\/']);
+      assert.strictEqual(bash('p=/a/b; echo ${p//\\//_} ${p/#\\/a/X} ${p/%b\\//Y} ${p/"/"/Z} ${p/a\\/b} ${p/a/\\/}'), '_a_b X/b /a/b Za/b / ///b\n');
+      assert.strictEqual(bash(src.split(';')[0] + '; echo ${p//\\//_} ${p/#\\/a/X}'), '_a_b X/b\n');
+      assert.deepStrictEqual(examplesOf('echo ${p//\\//_}').map((e) => e.sections[0].lines), [[bash('p=/usr/local/bin/app.sh; echo ${p//\\//_}').trim()]]);
+    });
+
+    it('does not start the length at the colon of a ternary in the offset', () => {
+      if (unbash) {
+        const src = ROUND6[7];
+        const e = (label: string) => expl(`echo ${label}`, label);
+        assert.strictEqual(e('${s:1?2:3}'), 'Parameter expansion: take a substring of `s` (offset `1?2:3`)');
+        assert.strictEqual(e('${s:(1?2:3)}'), 'Parameter expansion: take a substring of `s` (offset `(1?2:3)`)');
+        assert.strictEqual(e('${s: a?1:2 :1}'), 'Parameter expansion: take a substring of `s` (offset `a?1:2`, length `1`)');
+        assert.strictEqual(e('${s:1?2:3:1}'), 'Parameter expansion: take a substring of `s` (offset `1?2:3`, length `1`)');
+        assert.match(expl('echo ${s:1?2:3}', '1?2:3'), /^Offset `1\?2:3` \(evaluated as arithmetic\)\. The `:` that pairs with the `\?` belongs to the ternary; it does not start the length$/);
+        assert.match(expl('echo ${s:1?2:3}', '1?2:3', 'ja'), /三項演算子の一部で、長さの区切りではない$/);
+        assert.strictEqual(tokens('echo ${s:1?2:3}').filter((t) => t.label === ':').length, 1);
+        assert.strictEqual(e('${s: -3:+2}'), 'Parameter expansion: take 2 characters of `s` starting at 3 characters from the end');
+      }
+      // What bash does, also for the forms the line does not have.
+      assert.strictEqual(bash(ROUND6[7]), 'cdef cdef de\n');
+      assert.strictEqual(bash('s=abcdef; a=1; echo "${s: a?1:2 :1}" ${s:1?2:3:1} ${s:a?(1):2} ${s: 0?1:2}'), 'b c bcdef cdef\n');
+      assert.deepStrictEqual(parseExpansion('${s:1?2:3}')!.parts.map((p) => [p.role, p.text]), [['name', 's'], ['op', ':'], ['offset', '1?2:3']]);
+      assert.deepStrictEqual(parseExpansion('${s:a?(1:2):3:4}')!.parts.map((p) => [p.role, p.text]), [['name', 's'], ['op', ':'], ['offset', 'a?(1:2):3'], ['op', ':'], ['length', '4']]);
+      // A `:` with no `?` before it still starts the length; so does one after the ternary is closed.
+      assert.deepStrictEqual(parseExpansion('${s:1:2}')!.parts.map((p) => p.text), ['s', ':', '1', ':', '2']);
+      assert.strictEqual(bash('s=abcdef; echo ${s:1:2} ${s:0?2:3:1}'), 'bc d\n');
+    });
+
+    it('explains n>&m- as a move and {name}>… as a new descriptor kept in a variable', () => {
+      const src = ROUND6[8];
+      assert.strictEqual(bash(src), 'named\nmoved\nb\n');
+      // `n>&m-` and `n<&m-`: copy m to n, then close m.
+      assert.strictEqual(expl(src, '4>&3-'), 'Move file descriptor 3 to file descriptor 4 (copy it, then close 3)');
+      assert.strictEqual(expl(src, '4>&3-', 'ja'), 'ファイルディスクリプタ 3を ファイルディスクリプタ 4 に移す（複製したあと 3 は閉じる）');
+      assert.strictEqual(expl('echo a 5<&3-', '5<&3-'), 'Move file descriptor 3 to file descriptor 5 (copy it, then close 3)');
+      assert.strictEqual(expl('echo a >&3-', '>&3-'), 'Move file descriptor 3 to stdout (fd 1) (copy it, then close 3)');
+      assert.strictEqual(expl('echo a <&3-', '<&3-'), 'Move file descriptor 3 to stdin (fd 0) (copy it, then close 3)');
+      assert.strictEqual(expl('echo a 3>&-', '3>&-'), 'Close file descriptor 3');
+      assert.strictEqual(expl('echo a 2>&-', '2>&-'), 'Close stderr (fd 2)');
+      assert.strictEqual(expl('echo a <&-', '<&-'), 'Close stdin (fd 0)');
+      assert.strictEqual(expl('echo a 2>&1', '2>&1'), 'Send stderr (fd 2) to wherever stdout (fd 1) goes (the classic way to capture errors too)');
+      // The note does not take `3-` for a file name: 3 is closed, and 4 is the original 3.
+      const note = notesAt(src).join('\n');
+      assert.match(note, /^Redirections apply left to right\. In the end: fd 3 → closed, fd 4 → the original stdout$/m);
+      assert.match(notesAt('echo a 5>&6- 2>&1').join('\n'), /fd 5 → the original fd 6, fd 6 → closed/);
+      assert.doesNotMatch(notesAt('echo a 5>&6-').join('\n'), /5>&6-|`6-`/);
+      assert.strictEqual(bash('{ echo moved >&4; } 3>&1 4>&3-'), 'moved\n');
+      assert.match(bash('echo a 4>&3-'), /Bad file descriptor|ERROR/);
+      assert.strictEqual(bash('exec 5>&1; exec 6<&5-; echo y >&6; echo x >&5 2>/dev/null || echo closed'), 'y\nclosed\n');
+      if (!unbash) return;
+      // `{name}`: bash picks a free descriptor from 10 up and stores the number in the variable.
+      assert.strictEqual(expl(src, '{fd}>&1'), 'Copy stdout (fd 1) to a free file descriptor (10 or higher) and store its number in variable `fd` (sharing the output)');
+      assert.strictEqual(expl(src, '{fd}>&1', 'ja'), '標準出力(fd 1)の複製を、空いているファイルディスクリプタ（10 以上）に作り、その番号を変数 `fd` に入れる（出力先を共有）');
+      assert.strictEqual(expl('echo a {v}<file', '{v}<file'), 'Open file `file` for reading on a free file descriptor (10 or higher) and store its number in variable `v`');
+      assert.strictEqual(expl('echo a {v}<file', '{v}<file', 'ja'), 'ファイル `file` を読み込み用で開き、空いているファイルディスクリプタ（10 以上）の番号を変数 `v` に入れる');
+      assert.match(expl('echo a {v}>file', '{v}>file'), /^Open file `file` for writing \(overwrite\) on a free file descriptor \(10 or higher\) and store its number in variable `v`$/);
+      assert.match(expl('echo a {v}>>file', '{v}>>file'), /^Open file `file` for appending on a free/);
+      assert.match(expl('echo a {v}<>file', '{v}<>file'), /^Open file `file` for reading and writing on a free/);
+      assert.match(expl('echo a {v}>|file', '{v}>|file'), /^Open file `file` for writing \(overwrite even with `noclobber`\) on a free/);
+      assert.strictEqual(expl('echo a {v}>&-', '{v}>&-'), 'Close the file descriptor whose number is in variable `v`');
+      assert.strictEqual(expl('echo a {v}<&-', '{v}<&-'), 'Close the file descriptor whose number is in variable `v`');
+      assert.strictEqual(expl('echo a {v}<&0', '{v}<&0'), 'Copy stdin (fd 0) to a free file descriptor (10 or higher) and store its number in variable `v` (sharing the input)');
+      assert.strictEqual(expl('echo a {v}>&3-', '{v}>&3-'), 'Move file descriptor 3 to a free file descriptor (10 or higher), closing 3, and store the new number in variable `v`');
+      assert.match(notesAt('echo a {v}>&3- 2>&1').join('\n'), /^Redirections apply left to right\. In the end: stderr → the original stdout$/m);
+      assert.strictEqual(notesAt('echo a {v}>f {w}>&1').length, 0);
+      assert.strictEqual(bash('exec {fd}>&1; echo $fd; echo hi >&$fd; exec {fd}>&-; echo closed'), '10\nhi\nclosed\n');
+      assert.strictEqual(bash('exec {g}</dev/null; echo $g; exec {h}>/dev/null; echo $h; exec {g}<&-; exec {i}<&0; echo $i'), '10\n11\n10\n');
+      assert.strictEqual(bash('exec 5>/dev/null; exec {v}<&5-; echo $v; echo x >&5 2>/dev/null || echo closed'), '10\nclosed\n');
+    });
+
+    it('says that a for loop over an empty list after in never runs', () => {
+      // Only a loop with no `in` goes over "$@".
+      // (tree-sitter-bash cannot read `for i do`.)
+      for (const src of ['for i; do echo $i; done', ...(unbash ? ['for i do echo $i; done'] : [])]) {
+        assert.strictEqual(expl(src, src), 'for loop over the positional parameters ("$@") as `i` (what a loop with no `in` does)');
+        assert.strictEqual(expl(src, src, 'ja'), 'for ループ: 位置パラメータ（"$@"）の各値を順に `i` に入れて繰り返す（`in` を省略したとき）');
+      }
+      assert.strictEqual(bash('set -- a b; for i; do echo $i; done; for i do echo $i; done'), 'a\nb\na\nb\n');
+      assert.strictEqual(bash('set -- a b; for i in; do echo never; done; echo end'), 'end\n');
+      assert.strictEqual(expl('for i in a b; do :; done', 'for i in a b; do :; done'), 'for loop: assign each of `a b` to `i` and run the body');
+      if (!unbash) return;
+      const empty = 'for i in; do echo never; done';
+      assert.strictEqual(expl(empty, empty), 'for loop: the list after `in` is empty, so the body never runs (only a loop with no `in` goes over `"$@"`)');
+      assert.strictEqual(expl(empty, empty, 'ja'), 'for ループ: `in` のあとの一覧が空なので、本体は一度も実行されない（`"$@"` を回すのは `in` を省いたときだけ）');
+      assert.match(expl('for i in ; do :; done', 'for i in ; do :; done'), /^for loop: the list after `in` is empty/);
+      assert.match(expl(ROUND6[9], 'for i in; do echo never; done'), /^for loop: the list after `in` is empty/);
+      assert.strictEqual(bash(ROUND6[9]), '05 24 end\n');
+      // `select` has a menu instead.
+      assert.strictEqual(expl('select i in; do break; done', 'select i in; do break; done'), 'select loop: the list after `in` is empty, so the body never runs (only a loop with no `in` goes over `"$@"`)');
+      assert.match(expl('select i; do break; done', 'select i; do break; done'), /^select loop over the positional parameters \("\$@"; there is no `in`\): show them as a numbered menu/);
+      assert.match(expl('select i in a b; do break; done', 'select i in a b; do break; done'), /^select loop: show `a b` as a numbered menu, assign the chosen one to `i` and run the body \(until `break`\)$/);
+      assert.strictEqual(bash('select i in; do echo never; break; done </dev/null 2>&1; echo end'), 'end\n');
+      assert.match(bash('set -- a; echo 1 | { select i; do echo got $i; break; done; } 2>&1'), /1\) a[\s\S]*got a/);
+    });
+
+    it('explains ${s~~} and ${s~} as swapping the case', () => {
+      if (!unbash) {
+        // tree-sitter-bash cannot read these, but the text can.
+        assert.ok(parseExpansion('${s~~}'));
+        return;
+      }
+      const e = (x: string, lang: 'ja' | 'en' = 'en') => expl(`echo ${x}`, x, lang);
+      assert.strictEqual(e('${s~~}'), 'Parameter expansion: Swap the case of every character of `s`');
+      assert.strictEqual(e('${s~}'), 'Parameter expansion: Swap the case of the first character of `s`');
+      assert.strictEqual(e('${s~~}', 'ja'), 'パラメータ展開: `s` の大文字と小文字をすべて入れ替える');
+      assert.strictEqual(e('${s~}', 'ja'), 'パラメータ展開: `s` の先頭文字の大文字と小文字を入れ替える');
+      assert.strictEqual(e('${s~~[a-l]}'), 'Parameter expansion: Swap the case of the characters of `s` that match `[a-l]`');
+      assert.strictEqual(e('${s~H}'), 'Parameter expansion: Swap the case of the first character of `s` if it matches `H`');
+      assert.strictEqual(find('echo ${s~~}', '~~').explanation, '`~~`: Swap the case of every character (a little-known form)');
+      assert.strictEqual(find('echo ${s~}', '~').explanation, '`~`: Swap the case of the first character (a little-known form)');
+      assert.match(find('echo ${s~~[a-l]}', '[a-l]').explanation, /^Pattern of characters to convert `\[a-l\]`: one character from a-l\. Each character is tried on its own; only those that match are converted$/);
+      // A pattern with an expansion in it has its parts explained.
+      assert.ok(tokens('echo ${s~~$x}').some((t) => t.kind === 'pattern' && /decided at run time/.test(t.explanation)));
+      assert.ok(tokens('echo "${a[@]~~}" "${@~}"').filter((t) => t.kind === 'expansion').length === 2);
+      // The examples are what bash gives.
+      const ex = (x: string) => examplesOf(`echo ${x}`)[0].sections[0].lines[0];
+      assert.strictEqual(ex('${s~~}'), bash('s="Hello World"; echo "${s~~}"').trim());
+      assert.strictEqual(ex('${s~}'), bash('s="Hello World"; echo "${s~}"').trim());
+      assert.strictEqual(ex('${s~~[a-l]}'), bash('s="Hello World"; echo "${s~~[a-l]}"').trim());
+      assert.strictEqual(bash(ROUND6[11]), '8 ABCDEF hello hELLO hello\n');
+      assert.strictEqual(bash('s="Hello World"; echo "${s~~}|${s~}|${s~~[a-l]}|${s~[a-l]}|${s~H}|${s~~o}"; a=(aB Cd); echo "${a[@]~~}" "${a[@]~}"'), 'hELLO wORLD|hello World|HELLo WorLD|Hello World|hello World|HellO WOrld\nAb cD AB cd\n');
+    });
+
+    it('computes the example of a case conversion with its pattern', () => {
+      // The pattern limits the characters that change; bash decides, one character at a time.
+      const cases: [string, string][] = [
+        ['${s,,[HL]}', 'hEllO World'], ['${s^^[lo]}', 'heLLO wOrLd'], ['${s^l}', 'Lello world'], ['${s,H}', 'hELLO World'],
+        ['${s^^e}', 'hEllo world'], ['${s,,[A-Z]}', 'hello world'], ['${s^^}', 'HELLO WORLD'], ['${s^}', 'Hello world'], ['${s,}', 'hELLO World'], ['${s,,}', 'hello world'],
+        ['${s^^[[:lower:]]}', 'HELLO WORLD'], ['${s,,?}', 'hello world'], ['${s^[a-g]}', 'Aello world'],
+      ];
+      for (const [x, result] of cases) {
+        const ex = examplesOf(`echo ${x}`)[0].sections[0].lines[0];
+        assert.strictEqual(ex, result, x);
+      }
+      // ... and each is the value bash gives for the value the example sets.
+      for (const [x] of cases) {
+        const e = new Analyzer('en').explainLine(parser.parse(`echo ${x}`), 0).examples[0];
+        const when = /s=("([^"]*)"|\S+)/.exec(e.sections[0].label)!;
+        const value = when[2] ?? when[1];
+        assert.strictEqual(bash(`s=${sq(value)}; echo "${x}"`).trim(), e.sections[0].lines[0], x);
+      }
+      // A single `^` or `,` also shows a value the pattern turns away.
+      assert.deepStrictEqual(examplesOf('echo ${s^l}')[0].sections.map((sec) => sec.lines[0]), ['Lello world', 'hello world']);
+      assert.strictEqual(bash('s="lello world"; t="hello world"; echo "${s^l}" "${t^l}"'), 'Lello world hello world\n');
+      assert.deepStrictEqual(examplesOf('echo ${s,,[HL]}').map((e) => e.sections.length), [1]);
+      assert.strictEqual(bash('s="HELLO World"; echo ${s,,[HL]}'), 'hEllO World\n');
+      assert.match(find('echo ${s,,[HL]}', '[HL]').explanation, /^Pattern of characters to convert `\[HL\]`: one character from HL\. Each character is tried on its own; only those that match are converted$/);
+      assert.match(find('echo ${s^l}', 'l').explanation, /The first character is converted only if it matches$/);
+      assert.match(find('echo ${s,,[HL]}', '[HL]', 'ja').explanation, /^変換する文字のパターン `\[HL\]`: HLのどれか1文字。文字を1つずつ調べ、一致した文字だけが変換される$/);
+      assert.strictEqual(expl('echo ${s,,[HL]}', '${s,,[HL]}'), 'Parameter expansion: Lowercase the characters of `s` that match `[HL]`');
+      assert.strictEqual(expl('echo ${s^h}', '${s^h}'), 'Parameter expansion: Uppercase the first character of `s` if it matches `h`');
+      assert.strictEqual(expl('echo ${s^^[lo]}', '${s^^[lo]}', 'ja'), 'パラメータ展開: `s` の文字のうち `[lo]` に一致するものだけを大文字にする');
+      assert.strictEqual(expl('echo ${s,H}', '${s,H}', 'ja'), 'パラメータ展開: `s` の先頭文字が `H` に一致すれば小文字にする');
+      // With an expansion in the pattern, no example (its value is not known).
+      assert.deepStrictEqual(examplesOf('echo ${s^^$x}'), []);
+    });
+
+    it('reads bracket expressions in case patterns as bash does', () => {
+      const lineOf = (i: number) => new Analyzer('en').explainLine(parser.parse(ROUND6[13]), 0).examples[i];
+      assert.strictEqual(bash(ROUND6[13]), 'bang\ncaret\nclass\nbracket\n');
+      const patterns = ['[!a]', '[\\^a]', '[[:alpha:]]', '[]]', '[[:alpha:]_]', '[a\\]b]', '[!]a]', '[^]]', '[a-]', '[]-a]', '[[:digit:][:alpha:]]', '[[.a.]]', '[a-c]', '[^a-c]', '[\\\\]', '[[:upper:]x]'];
+      for (const pattern of patterns) {
+        // (tree-sitter-bash splits a pattern at a `]` that is the first or escaped.)
+        if (!unbash && /\]/.test(pattern.slice(1, -1).replace('[:', '').replace(':]', ''))) continue;
+        const ex = examplesOf(`case x in ${pattern}) :;; esac`)[0];
+        assert.ok(ex, pattern);
+        const [yes, no] = [ex.sections[0], ex.sections[1]];
+        assert.ok(yes.lines.length > 0, pattern);
+        for (const v of yes.lines) assert.ok(caseMatches(pattern, v), `${pattern} should take ${v}`);
+        for (const v of no?.lines ?? []) assert.ok(!caseMatches(pattern, v), `${pattern} should not take ${v}`);
+      }
+      // The ones of the line: `[[:alpha:]]` is one letter, not a letter and `]`.
+      const alpha = examplesOf('case b in [[:alpha:]]) :;; esac')[0].sections;
+      assert.deepStrictEqual(alpha[0].lines, ['a', 'b', 'c']);
+      assert.ok(!alpha[0].lines.some((v) => v.includes(']')));
+      assert.ok(!alpha[1].lines.includes('A'));
+      assert.deepStrictEqual(examplesOf('case x in [!a]) :;; esac')[0].sections[0].lines, ['b', 'c', 'x']);
+      assert.deepStrictEqual(examplesOf('case x in [\\^a]) :;; esac')[0].sections[0].lines, ['a', '^']);
+      assert.strictEqual(bash('for c in a ^ b; do case $c in [\\^a]) echo -n "$c ";; esac; done'), 'a ^ ');
+      if (unbash) assert.deepStrictEqual(examplesOf('case x in []]) :;; esac')[0].sections[0].lines, [']']);
+      assert.strictEqual(lineOf(0).title, 'Example (pattern `[!a]`)');
+      // The same patterns in a glob over file names, a `${v#pattern}` and a description.
+      assert.strictEqual(bashIn('echo [[:alpha:]]'), 'a b\n');
+      assert.strictEqual(bashIn('echo [!a] [\\^a] []a]'), 'b a a\n');
+      assert.strictEqual(bash('v=a]; echo ${v#[[:alpha:]]} ${v%[]]}'), '] a\n');
+      assert.strictEqual(describeGlob(globParts('[[:alpha:]]')!, 'en'), 'one character from letters');
+      assert.strictEqual(describeGlob(globParts('[[:alpha:]_]')!, 'ja'), '英字、_のどれか1文字');
+      assert.strictEqual(describeGlob(globParts('[\\^a]')!, 'en'), 'one character from ^a');
+      assert.strictEqual(describeGlob(globParts('[]]')!, 'en'), 'one character from ]');
+      assert.strictEqual(describeGlob(globParts('[!]a]')!, 'en'), 'one character other than ]a');
+      assert.strictEqual(describeGlob(globParts('[a-c0-9]')!, 'en'), 'one character from a-c0-9');
+      assert.strictEqual(describeGlob(globParts('[[:punct:]]')!, 'en'), 'one character from [:punct:]');
+      assert.strictEqual(describeGlob(globParts('[a')!, 'en'), '"[a"');
+    });
+
+    it('does not claim more than bash does for the other lines', () => {
+      const out = [
+        ':x\ndot 2\n', 'a0 j k 1 11\n', '1\n0\nafter\n', '6 3 7 6\n', 'lex\nnum\nquoted-literal\n', 'x $v \\ V $v\n',
+        '_a_b X/b b {a,b} {a,b}\n', 'cdef cdef de\n', 'named\nmoved\nb\n', '05 24 end\n', "a\\ b\\'c '' $'\\t' \nab c\n",
+        '8 ABCDEF hello hELLO hello\n', '[] a|\n', 'bang\ncaret\nclass\nbracket\n',
+      ];
+      ROUND6.forEach((src, i) => assert.strictEqual(bash(src), out[i], src));
     });
   });
 }
