@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
+import { githubContext } from '../src/dict/ciVariables';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -203,6 +204,144 @@ describe('GitHub Actions', () => {
     assert.match(explain('workflow-defaults.yml', 10)!.notes.join(), /`\$RANDOM` is not POSIX sh/);
     assert.strictEqual(explain('workflow-defaults.yml', 4), undefined);
     assert.match(explain('workflow-defaults.yml', 11)!.notes[0], /injection/);
+  });
+});
+
+describe('GitHub Actions expression contexts', () => {
+  const wf = (...exprs: string[]) => `on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${exprs.map((e) => `"\${{ ${e} }}"`).join(' ')}\n`;
+  const explainSrc = (src: string, lang: 'ja' | 'en' = 'en') => {
+    const kind = hostKind('', 'x.yml')!;
+    const extracted = extractShell(kind, src);
+    return explainHostedLine(new Analyzer(lang), parser.parse(extracted.text), extracted, src.split('\n'), 5, lang)!;
+  };
+  const en = (expr: string) => githubContext(expr)?.en;
+  const ja = (expr: string) => githubContext(expr)?.ja;
+
+  it('describes the payload fields of each event', () => {
+    const table: [string, RegExp][] = [
+      ['github.event.pull_request.title', /^the title of the pull request/],
+      ['github.event.pull_request.body', /description of the pull request/],
+      ['github.event.pull_request.html_url', /URL of the pull request/],
+      ['github.event.pull_request.state', /`open` or `closed`/],
+      ['github.event.pull_request.draft', /is a draft/],
+      ['github.event.pull_request.merged', /has been merged/],
+      ['github.event.pull_request.head.ref', /head branch/],
+      ['github.event.pull_request.head.repo.full_name', /fork/],
+      ['github.event.pull_request.base.ref', /target/],
+      ['github.event.pull_request.base.sha', /target branch's head commit/],
+      ['github.event.pull_request.user.login', /opened the pull request/],
+      ['github.event.pull_request.labels', /list of labels/],
+      ['github.event.pull_request.labels.*.name', /names of all labels/],
+      ['github.event.number', /number of the pull request or issue/],
+      ['github.event.action', /activity of the event/],
+      ['github.event.issue.title', /`issues`, `issue_comment`/],
+      ['github.event.issue.body', /issue or pull request/],
+      ['github.event.issue.number', /number of the issue/],
+      ['github.event.issue.user.login', /opened the issue/],
+      ['github.event.issue.labels', /labels on the issue/],
+      ['github.event.issue.labels.*.name', /names of all labels on the issue/],
+      ['github.event.comment.body', /text of the comment/],
+      ['github.event.comment.user.login', /wrote the comment/],
+      ['github.event.before', /before the push/],
+      ['github.event.after', /after the push/],
+      ['github.event.ref', /full ref that was pushed/],
+      ['github.event.forced', /force push/],
+      ['github.event.head_commit.message', /message of the head commit/],
+      ['github.event.head_commit.id', /SHA of the head commit/],
+      ['github.event.head_commit.author.name', /anyone can choose/],
+      ['github.event.commits', /commits in the push/],
+      ['github.event.pusher.name', /who pushed/],
+      ['github.event.release.tag_name', /tag name of the release/],
+      ['github.event.release.name', /name of the release/],
+      ['github.event.release.body', /description text of the release/],
+      ['github.event.release.prerelease', /pre-release/],
+      ['github.event.release.draft', /release is a draft/],
+      ['github.event.workflow_run.conclusion', /result of the workflow run/],
+      ['github.event.workflow_run.head_branch', /branch of the run/],
+      ['github.event.workflow_run.head_sha', /SHA of the commit of the run/],
+      ['github.event.workflow_run.id', /ID of the run/],
+      ['github.event.schedule', /cron expression/],
+      ['github.event.repository.full_name', /owner\/repository/],
+      ['github.event.repository.name', /without the owner/],
+      ['github.event.repository.default_branch', /default branch/],
+      ['github.event.repository.html_url', /URL of the repository/],
+      ['github.event.sender.login', /caused the event/],
+      ['github.event', /whole webhook payload/],
+      ['github.event.inputs.env', /the input `env`/],
+      ['github.event.pull_request.head.sha', /SHA of the head commit of the pull request/],
+    ];
+    for (const [expr, re] of table) {
+      assert.match(en(expr) ?? '', re, expr);
+      assert.ok(ja(expr), expr);
+    }
+  });
+
+  it('names the event of an unlisted payload field', () => {
+    assert.match(en('github.event.pull_request.merge_commit_sha')!, /payload of the `pull_request` event/);
+    assert.match(en('github.event.release.assets')!, /payload of the `release` event/);
+    assert.match(en('github.event.x.y')!, /payload of the event that triggered the workflow/);
+    assert.match(ja('github.event.x.y')!, /ペイロードの項目/);
+    assert.strictEqual(githubContext('github.event.'), undefined);
+  });
+
+  it('describes the other contexts', () => {
+    const table: [string, RegExp][] = [
+      ['needs.build.outputs.tag', /output `tag` of the job `build`/],
+      ['needs.build.result', /result of the job `build`/],
+      ['steps.s1.outputs.v', /output `v` of the step with ID `s1`/],
+      ['steps.s1.outcome', /result of the step/],
+      ['steps.s1.conclusion', /result of the step/],
+      ['env.X', /environment variable `X`/],
+      ['vars.X', /configuration variable `X`/],
+      ['inputs.X', /input `X`/],
+      ['runner.os', /runner's OS/],
+      ['runner.arch', /CPU architecture/],
+      ['runner.temp', /temporary directory/],
+      ['runner.tool_cache', /tool cache/],
+      ['runner.name', /name of the runner/],
+      ['job.status', /status of the job/],
+      ['job.container.id', /job's container/],
+      ['job.services', /service containers/],
+      ['strategy.job-index', /from 0/],
+      ['strategy.job-total', /number of jobs/],
+      ['strategy.fail-fast', /fail-fast/],
+      ['github.token', /token issued/],
+      ['github.workflow', /name of the workflow/],
+      ['github.workflow_ref', /reference of the workflow file/],
+      ['github.triggering_actor', /re-ran it/],
+      ['github.ref_type', /`branch` or `tag`/],
+      ['github.event_path', /holding the triggering event/],
+      ['github.action_path', /directory of the running action/],
+      ['github.ref_protected', /protected/],
+    ];
+    for (const [expr, re] of table) {
+      assert.match(en(expr) ?? '', re, expr);
+      assert.ok(ja(expr), expr);
+    }
+  });
+
+  it('shows the description in the note and on the token', () => {
+    const ex = explainSrc(wf('github.event.pull_request.number', 'github.event.x.y'));
+    assert.ok(ex.notes.some((n) => /^`\$\{\{ github\.event\.pull_request\.number \}\}` is the GitHub Actions expression .*: the pull request number; replaced/.test(n)), ex.notes.join('\n'));
+    assert.ok(ex.notes.some((n) => /webhook payload of the event that triggered the workflow/.test(n)));
+    assert.ok(all(ex.items).some((t) => t.label === '${{ github.event.pull_request.number }}' && /the pull request number/.test(t.explanation)));
+  });
+
+  it('warns about the user-controlled fields, in English and Japanese', () => {
+    const risky = [
+      'github.event.pull_request.title', 'github.event.pull_request.body', 'github.event.pull_request.head.ref',
+      'github.event.pull_request.labels.*.name', 'github.event.issue.title', 'github.event.issue.body',
+      'github.event.issue.labels.*.name', 'github.event.comment.body', 'github.event.release.name', 'github.event.release.body',
+      'github.event.head_commit.message', 'github.event.head_commit.author.name', 'github.event.head_commit.committer.email',
+      'github.event.commits.*.message', 'github.event.commits[0].author.name', 'github.event.commits.0.committer.name',
+      'github.event.workflow_run.head_branch', 'github.event.workflow_run.head_commit.committer.name', 'github.head_ref',
+    ];
+    const safe = ['github.event.pull_request.number', 'github.event.pull_request.head.sha', 'github.event.pull_request.user.login', 'github.event.release.tag_name', 'github.event.inputs.x', 'github.sha'];
+    for (const expr of risky) {
+      assert.match(explainSrc(wf(expr)).notes[0], /^⚠ Script injection risk/, expr);
+      assert.match(explainSrc(wf(expr), 'ja').notes[0], /^⚠ スクリプトインジェクションの危険/, expr);
+    }
+    for (const expr of safe) assert.ok(!explainSrc(wf(expr)).notes.some((n) => /injection/.test(n)), expr);
   });
 });
 

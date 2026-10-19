@@ -695,7 +695,7 @@ function githubMeaning(expr: string): [string, string] {
 }
 
 /** Contexts an outside contributor controls (GitHub's security hardening guide). */
-const UNTRUSTED = /^github\.(head_ref|event\.(issue\.(title|body)|pull_request\.(title|body|head\.(ref|label|repo\.default_branch))|comment\.body|review\.body|review_comment\.body|discussion\.(title|body)|pages\.[^.]+\.page_name|commits\.[^.]+\.(message|author\.(email|name))|head_commit\.(message|author\.(email|name))|workflow_run\.(head_branch|display_title|head_commit\.(message|author\.(email|name)))))$/;
+const UNTRUSTED = /^github\.(head_ref|event\.(issue\.(title|body|labels\.\*\.name)|pull_request\.(title|body|labels\.\*\.name|head\.(ref|label|repo\.default_branch))|comment\.body|review\.body|review_comment\.body|discussion\.(title|body)|release\.(name|body)|pages\.[^.]+\.page_name|commits(\.\*|\.\d+|\[\d+\])\.(message|(author|committer)\.(email|name))|head_commit\.(message|(author|committer)\.(email|name))|workflow_run\.(head_branch|display_title|head_commit\.(message|(author|committer)\.(email|name)))))$/;
 
 /** Files GitHub Actions provides to steps, by environment variable. */
 const GITHUB_FILES: Record<string, [string, string]> = {
