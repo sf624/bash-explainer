@@ -1173,3 +1173,74 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
     });
   });
 }
+
+// The fourteen lines of the sixth round.
+const ROUND6 = [
+  ':(){ echo ":$1"; }; : x; .(){ echo "dot $#"; }; . a b',
+  'set -- {a..k}; echo $10 ${10} ${11} ${#10} $#',
+  'x=$(false); echo $?; f(){ local y=$(false); echo $?; }; f; (set -e; g(){ false; echo after; }; g || echo fail)',
+  'x=y; y=\'z*2\'; z=3; echo $((x)) $(( "1" + 2 )) $((x+1)) $(( y ))',
+  '[[ 10 < 9 ]] && echo lex; (( 10 < 9 )) || echo num; re=\'a.c\'; [[ abc =~ $re ]] && ! [[ abc =~ "$re" ]] && echo quoted-literal',
+  'v=V; echo "`echo \\"x\\" \'\\$v\' \\\\\\\\`" `echo \\$v \\\\$v`',
+  'p=/a/b; echo ${p//\\//_} ${p/#\\/a/X} ${p##*/} "${x:-{a,b}}" $q{a,b} ${q:-{a,b}}',
+  's=abcdef; echo ${s:1?2:3} ${s:(1?2:3)} ${s: -3:+2}',
+  'exec {fd}>&1; echo named >&$fd; { echo moved >&4; } 3>&1 4>&3-; cat <<<a <<<b',
+  'for ((i=0,j=5; i<j; i+=2,j--)); do echo -n "$i$j "; done; for i in; do echo never; done; echo end',
+  'printf \'%q \' "a b\'c" \'\' $\'\\t\'; echo; read x <<< \'a\\b c\'; echo "$x"',
+  'z=4*2; declare -i n; n=z; declare -u U=abc; U+=def; s=Hello; echo $n $U ${s,,[HL]} ${s~~} ${s~}',
+  'echo "[$(</dev/null)]" $( : ) "$(printf \'a\\n\\n\\n\')|"',
+  'case x in [!a]) echo bang;; esac; case ^ in [\\^a]) echo caret;; esac; case b in [[:alpha:]]) echo class;; esac; case \']\' in []]) echo bracket;; esac',
+];
+// What tree-sitter-bash reads wrongly: `$10`, `$q{a,b}`, `${s:1?2:3}`, `{fd}>&1`, `for i in;`, `${s~~}` and `[]]`.
+const ROUND6_TS_BROKEN = [1, 6, 7, 8, 9, 11, 13];
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 6, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND6_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND6.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    const expl = (src: string, label: string, lang: 'ja' | 'en' = 'en') => findAt(src, 0, label, lang).explanation;
+
+    it('reads a backquote in double quotes after bash removes the backslashes', () => {
+      const src = ROUND6[5];
+      assert.strictEqual(bash(src), 'x $v \\ V $v\n');
+      if (unbash) {
+        assert.match(expl(src, '\\"x\\"'), /After quote removal it is the string `x`$/);
+        assert.strictEqual(findAt(src, 0, '\\"x\\"').kind, 'string');
+        assert.deepStrictEqual(tokens(src).filter((t) => t.kind === 'variable').map((t) => t.label), ['$v']);
+        assert.match(expl(src, '\\"x\\"', 'ja'), /クォートやバックスラッシュを取り除くと `x` という文字列になる$/);
+      }
+      // Four backslashes become two, which are one: with and without double quotes.
+      for (const s of ['echo "`echo \\\\\\\\`"', 'echo `echo \\\\\\\\`']) {
+        assert.strictEqual(bash(s), '\\\n', s);
+        assert.match(expl(s, '\\\\\\\\'), /After quote removal it is the string `\\`$/, s);
+        assert.match(expl(s, '\\\\\\\\', 'ja'), /取り除くと `\\` という文字列になる$/, s);
+      }
+      // tree-sitter-bash reads the text as it is, without the first reading of bash: only unbash decodes the rest.
+      if (!unbash) return;
+      // `\\$v` becomes `\$v`, a plain dollar sign: the text `$v`.
+      assert.strictEqual(bash('v=V; echo "`echo \\$v`" `echo \\\\$v`'), 'V $v\n');
+      assert.match(expl('echo `echo \\\\$v`', '\\\\$v'), /After quote removal it is the string `\$v`/);
+      // Two levels of backquotes: the backslashes are removed twice, and the inner substitution is a backquote one.
+      const nested = 'echo `echo \\`echo a\\\\\\\\b\\``';
+      assert.strictEqual(bash(nested), 'ab\n');
+      assert.match(expl(nested, 'a\\\\\\\\b'), /After quote removal it is the string `ab`$/);
+      assert.match(expl(nested, '\\`echo a\\\\\\\\b\\`'), /^Command substitution `` `…` `` \(legacy/);
+      // A double quote that was escaped is a quote of the substitution's own text.
+      assert.match(expl('echo "`echo \\"a b\\"`"', '\\"a b\\"'), /After quote removal it is the string `a b`$/);
+      assert.strictEqual(bash('echo "`echo \\"a  b\\"`"'), 'a  b\n');
+    });
+  });
+}
