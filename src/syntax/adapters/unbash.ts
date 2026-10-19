@@ -61,8 +61,11 @@ class Converter {
   /** Ranges that are not code: heredoc bodies and their closing lines. */
   private readonly skip: (readonly [number, number])[] = [];
 
-  /** `cr`: where the text has a CR of a CRLF that was turned into a blank; no node ends with it. */
-  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set()) {
+  /**
+   * `text` is what is parsed and scanned: the CR of a CRLF is a blank in it. `original` is what the tree reports (the node texts and
+   * `tree.text`); it is the same text with the CRs back. `cr`: where those CRs are; no node ends with one.
+   */
+  constructor(private readonly text: string, private readonly cr: ReadonlySet<number> = new Set(), private readonly original: string = text) {
     for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) this.lineStarts.push(i + 1);
   }
 
@@ -109,7 +112,7 @@ class Converter {
     m.parent = parent;
     m.children.sort((a, b) => a.startIndex - b.startIndex || a.endIndex - b.endIndex);
     m.namedChildren = m.children.filter((c) => c.named);
-    m.text = this.text.slice(m.startIndex, m.endIndex);
+    m.text = this.original.slice(m.startIndex, m.endIndex);
     m.startPosition = this.point(m.startIndex);
     m.endPosition = this.point(m.endIndex);
     for (const c of m.children) this.seal(c, m);
@@ -174,7 +177,7 @@ class Converter {
     root.startIndex = Math.min(...root.children.map((c) => c.startIndex), this.text.length);
     this.seal(root, null);
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
-    return { text: this.text, root, errors: this.errors };
+    return { text: this.original, root, errors: this.errors };
   }
 
   /**
@@ -703,7 +706,8 @@ class Converter {
         this.tok(bracket ? '$[' : '$((', p.pos, n);
         if (p.expression) this.arithInto(n, p.expression, 'cmd');
         const close = bracket ? ']' : '))';
-        if (this.text.startsWith(close, p.end - close.length) && p.end - p.pos >= (bracket ? 3 : 5)) this.tok(close, p.end - close.length, n);
+        // (An expression that reaches the end has taken the closer: `$(( x $(( (1) ))` is not closed.)
+        if (this.text.startsWith(close, p.end - close.length) && p.end - p.pos >= (bracket ? 3 : 5) && !(p.expression && p.expression.end > p.end - close.length)) this.tok(close, p.end - close.length, n);
         else this.missing(n, close, p.end);
         this.fill(n);
         return n;
@@ -1291,7 +1295,8 @@ class Converter {
     const n = this.node('arithmetic_command', c.pos, c.end);
     this.tok('((', c.pos, n);
     if (c.expression) this.arithInto(n, c.expression, 'cmd');
-    this.close(n, this.closed(c, '))'), '))', this.text.length);
+    // (An unclosed `((` has an expression that reaches the end: a `))` there is the expression's, as in `(( x (( (1) ))`.)
+    this.close(n, this.closed(c, '))') && !(c.expression && c.expression.end > c.end - 2), '))', this.text.length);
     return n;
   }
 
@@ -1413,10 +1418,10 @@ export function createUnbashParser(): BashParser {
   return {
     parse(text: string): SyntaxTree {
       // bash would read the CR of a CRLF as part of the last word of the line (`fi\r` is no `fi`). That is not what the
-      // author meant, and the document issues say so; the tree is built as if the CR were a blank.
+      // author meant, and the document issues say so; the tree is built as if the CR were a blank (its texts are the original ones).
       const carriageReturns = [...text.matchAll(/\r(?=\n)/g)].map((m) => m.index!);
       if (!carriageReturns.length) return new Converter(text).run();
-      return { ...new Converter(text.replace(/\r(?=\n)/g, ' '), new Set(carriageReturns)).run(), carriageReturns };
+      return { ...new Converter(text.replace(/\r(?=\n)/g, ' '), new Set(carriageReturns), text).run(), carriageReturns };
     },
   };
 }

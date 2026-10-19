@@ -278,6 +278,7 @@ npm run build      # bundle into dist/
 npm test           # type check + unit tests
 npm run coverage   # unit tests with coverage (report in coverage/index.html)
 npm run package    # build a .vsix
+npx tsx scripts/extract-snippets.ts   # after changing the scripts in the tests: rewrite test/fixtures/snippets.json, the inputs of the syntax tests and the fuzz (CI runs it with --check)
 npm run test:integration   # run the extension in VS Code (downloaded into .vscode-test/)
 npm run test:integration:web   # …and in VS Code for the Web (needs `npx playwright install chromium`)
 ```

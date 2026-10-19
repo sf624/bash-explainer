@@ -815,17 +815,20 @@ describe('unbash adapter: more shapes', () => {
     for (const text of ['', ' ', '\n', ';', ';;', '&', '|', '||', '&&', '(', ')', '{', '}', '((', '))', '[[', ']]', '$', '${', '$(', '$((', '`', '"', "'", '\\', '<<', '<<<', '>', '#', '#!', 'a\r\nb\r\n',
       'if', 'fi', 'then', 'case', 'esac', 'function', 'coproc', 'select', 'time', '!', '! !', 'x=', 'x=(', '=', '[', ']', '[ ]', '$[', '${#', '${!', '${a[', '${a:', '${a/', '<(', '>(', 'echo \u0000 x', '\u{1F600}']) {
       const t = tree(text);
-      assert.equal(t.text, text.replace(/\r(?=\n)/g, ' '));
+      assert.equal(t.text, text);
       assert.deepEqual(invariants(t), [], JSON.stringify(text));
     }
   });
 
-  it('reads a CR before a LF as a blank of the same width, and says where they were', () => {
+  it('reads a CR before a LF as a blank of the same width, keeps the original text, and says where the CRs were', () => {
     const lf = 'if [ -f a ]; then\n  echo yes # c\nfi\ncat <<< x\n';
     const crlf = lf.replace(/\n/g, '\r\n');
     const a = tree(lf), b = tree(crlf);
     assert.equal(b.text.length, crlf.length);
-    assert.equal(b.text, lf.replace(/\n/g, ' \n'));
+    assert.equal(b.text, crlf);
+    // The nodes' texts are the original ones too, and none ends with the CR.
+    assert.equal(first(crlf).text, first(lf).text.replace(/\n/g, '\r\n'));
+    assert.equal(types(b.root, 'comment')[0].text, '# c');
     assert.deepEqual(b.carriageReturns, [...crlf.matchAll(/\r/g)].map((m) => m.index));
     assert.equal(a.carriageReturns, undefined);
     assert.deepEqual(b.errors, []);
@@ -915,6 +918,15 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
     assert.equal(o('a=([k]+=v)').includes('(word "k")'), true);
     // A `]` not followed by `=` (or by `+=`) does not make an index: the element is a plain word.
     assert.equal(o('a=([]x)'), '(program (variable_assignment (variable_name @name "a") "=" (array @value "(" (word "[]x") ")")))');
+  });
+  it('a `))` that ends the expression of an unclosed `((` or `$((` is not the closer', () => {
+    for (const text of ['(( x--  (( (1 + 2) ))', 'echo $(( x  $(( (1) ))']) {
+      const t = tree(text);
+      assert.deepEqual(invariants(t), [], text);
+      assert.deepEqual(t.errors.map((e) => e.kind), ['missing'], text);
+      assert.ok(descendants(t.root, ['arithmetic_command', 'arithmetic_expansion'])[0].incomplete || hasError(t.root), text);
+    }
+    assert.deepEqual(toks(first('(( (1 + 2) ))')), ['((@0', '))@11']);
   });
   it('a list of braces next to a range is a brace expression too', () => {
     const w = first('echo {1..3}{,} x{,}').namedChildren[1];
