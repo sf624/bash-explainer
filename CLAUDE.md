@@ -15,7 +15,10 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - Behaviour that differs between tool releases (jq 1.7 vs 1.7.1, mawk vs gawk) is left out of the comparisons and tested on its own.
 - A branch no input can reach is removed (or becomes a non-null assertion when the grammar guarantees the node); a guard against a bug elsewhere gets `/* c8 ignore … */` with a comment. Put `/* c8 ignore start */` before `} catch`, so the catch's own branch is left out too.
 
-## tree-sitter-bash quirks
+## The parser
 
-- `time cmd` is a command named `time`; `select` loops are `for_statement`s; `(( ))` alone is a `compound_statement`.
+- Every product parses with the unbash adapter (`src/syntax/adapters/unbash.ts`); the tree-sitter adapter, `grammar/` and `patches/` stay only for the oracle and parity tests until they are removed (docs/design/syntax-tree.md, step 6). Tests that explain scripts build the parser with `createUnbashParser()`; only the tree-sitter tests and the two-adapter tricky tests build the other.
+- No bundle may load or contain wasm; test/offline.test.ts checks it.
+- unbash reads `time cmd` as a `time_statement`, `select` as a `select_statement`, `coproc` as a `coproc_statement`, and `(( ))` alone as an `arithmetic_command`. It accepts what bash rejects only at run time (`${x@Z}`, `${#a-b}`, `${(f)var}`: bad substitution), so the analyzer says so itself.
+- A script with CRLF line ends is read with each CR before a LF masked as a space (same length); `SyntaxTree.carriageReturns` lists them and `documentIssues` warns once (`crlf`).
 - A statement over several lines that is not a block is explained whole, with no current line (see `sub` in `src/analyzer.ts`).

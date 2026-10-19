@@ -162,7 +162,8 @@ function readInputs(o: Options): Input[] {
       throw new UsageError(`cannot read ${input.spec}: ${(e as NodeJS.ErrnoException).code ?? e}`);
     }
     const kind = o.kind ?? (input.spec === '-' ? 'shell' : hostKind('', input.spec) ?? 'shell');
-    out.push({ name: input.spec, text: text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
+    // A shell script keeps its CRs: the parser reads them as blanks and the check warns about them.
+    out.push({ name: input.spec, text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
   }
   return out;
 }
@@ -275,7 +276,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   let warnings = 0;
 
   for (const input of inputs) {
-    const lines = input.text.split('\n');
+    const lines = input.text.split(/\r?\n/);
     let doc: ShellDocument;
     if (input.kind === 'shell') {
       doc = { lines, tree: parser.parse(input.text) };
