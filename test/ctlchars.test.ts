@@ -3,9 +3,11 @@ import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import { controlAbbr, controlSuffix, pictureCode, pictureNote } from '../src/ctlchars';
-import { explainPrintf } from '../src/embedded/format';
+import { explainEscapes, explainPrintf } from '../src/embedded/format';
 import { explainTrSet } from '../src/embedded/textutils';
 import { explainGitFormat } from '../src/embedded/gitformat';
+import { toJsRegex } from '../src/examples/regex';
+import { explainSed } from '../src/embedded/sed';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { examplesMarkdown, toMarkdown } from '../src/ui/render';
 import type { BashParser as Parser } from '../src/syntax/tree';
@@ -52,7 +54,9 @@ describe('names of control characters', () => {
       assert.ok(explainPrintf(esc, 'en')[0].explanation.includes(en), `${esc}: ${explainPrintf(esc, 'en')[0].explanation}`);
       assert.ok(explainPrintf(esc, 'ja')[0].explanation.includes(ja), `${esc}: ${explainPrintf(esc, 'ja')[0].explanation}`);
     }
-    assert.match(explainPrintf('\\0033', 'en')[0].explanation, /octal code 0033 \(ESC, escape\)/);
+    // A printf format takes up to three octal digits (`\0033` is `\003` and a 3); `echo -e` takes `\0` and three more.
+    assert.match(explainPrintf('\\0033', 'en')[0].explanation, /octal code 003 \(ETX\)/);
+    assert.match(explainEscapes('\\0033', 'en', 'echo')[0].explanation, /octal code 0033 \(ESC, escape\)/);
     assert.match(explainPrintf('\\u0041', 'en')[0].explanation, /U\+0041$/);
   });
 
@@ -208,5 +212,149 @@ describe('Token type', () => {
     const walk = (ts: Token[]): Token | undefined => find2(ts) ?? ts.map((t) => walk(t.children)).find(Boolean);
     const t = walk(items)!;
     assert.strictEqual(t.children.length, 2);
+  });
+});
+
+
+const od = (cmd: string, ...args: string[]) => execFileSync('bash', ['-c', `${cmd} | od -An -tu1`, '_', ...args]).toString().trim().split(/\s+/).filter(Boolean).map(Number);
+
+describe('escapes of echo -e and $\'…\'', () => {
+  const echoCases: [string, number[]][] = [
+    ['\\e', [27]], ['\\E', [27]], ['\\033', [27]], ['\\0033', [27]], ['\\0', [0]], ['\\x1b', [27]], ['\\x1B', [27]], ['\\x4', [4]], ['\\u0041', [65]], ['\\U00000041', [65]],
+    ['\\a', [7]], ['\\b', [8]], ['\\f', [12]], ['\\n', [10]], ['\\r', [13]], ['\\t', [9]], ['\\v', [11]], ['\\\\', [92]],
+    ['\\33', [92, 51, 51]], ['\\"', [92, 34]], ['\\?', [92, 63]], ['\\q', [92, 113]], ['a\\cb', [97]],
+  ];
+  const ansiCases: [string, number[]][] = [
+    ['\\e', [27]], ['\\E', [27]], ['\\033', [27]], ['\\33', [27]], ['\\0033', [3, 51]], ['\\x1b', [27]], ['\\x4', [4]], ['\\u0041', [65]], ['\\U00000041', [65]],
+    ['\\a', [7]], ['\\t', [9]], ['\\\\', [92]], ['\\\'', [39]], ['\\"', [34]], ['\\?', [63]], ['\\q', [92, 113]],
+    ['\\cA', [1]], ['\\ca', [1]], ['\\c[', [27]], ['\\c?', [127]], ['\\c\\\\', [28]],
+  ];
+
+  it('are read as bash reads them', function () {
+    if (!hasBash()) this.skip();
+    for (const [esc, bytes] of echoCases) assert.deepStrictEqual(od('echo -ne "$1"', esc), bytes, `echo -e ${esc}`);
+    for (const [esc, bytes] of ansiCases) assert.deepStrictEqual(od(`printf %s $'${esc}'`), bytes, `$'${esc}'`);
+  });
+
+  it('are named like the printf ones, token for token', () => {
+    const lens = (src: string, mode: 'echo' | 'ansic') => explainEscapes(src, 'en', mode).map((x) => src.slice(x.start, x.end));
+    for (const [esc, bytes] of echoCases) {
+      if (bytes.length > 1 || esc === 'a\\cb') continue;
+      const toks = explainEscapes(esc, 'en', 'echo');
+      assert.strictEqual(toks.length, 1, esc);
+      assert.strictEqual(toks[0].end, esc.length, esc);
+    }
+    for (const [esc, bytes] of ansiCases) {
+      if (esc === '\\0033' || esc === '\\q') continue;
+      const toks = explainEscapes(esc, 'en', 'ansic');
+      assert.strictEqual(toks.length, 1, esc);
+      assert.strictEqual(toks[0].end, esc.length, esc);
+      void bytes;
+    }
+    assert.deepStrictEqual(lens('\\0033', 'ansic'), ['\\003', '3']);
+    assert.deepStrictEqual(lens('\\0033', 'echo'), ['\\0033']);
+    assert.deepStrictEqual(lens('\\33', 'echo'), []);
+    assert.deepStrictEqual(lens('plain', 'echo'), []);
+  });
+
+  it('name the control characters, in en and ja', () => {
+    assert.match(explainEscapes('\\e', 'en', 'echo')[0].explanation, /^`\\e`: ESC, the escape character/);
+    assert.match(explainEscapes('\\x1b', 'ja', 'echo')[0].explanation, /16進数 1b の文字（ESC、エスケープ文字）/);
+    assert.match(explainEscapes('\\x07', 'en', 'ansic')[0].explanation, /hex code 07 \(BEL, bell\)/);
+    assert.match(explainEscapes('\\cA', 'en', 'ansic')[0].explanation, /Control-A, the character with code 1 \(SOH\)/);
+    assert.match(explainEscapes('\\c[', 'ja', 'ansic')[0].explanation, /Control-\[ の文字（ESC、エスケープ文字）/);
+    assert.match(explainEscapes('\\c?', 'en', 'ansic')[0].explanation, /code 127 \(DEL, delete\)/);
+    assert.strictEqual(explainEscapes('\\c\\\\', 'en', 'ansic')[0].end, 4);
+    assert.deepStrictEqual(explainEscapes('\\c', 'en', 'ansic'), []);
+    assert.deepStrictEqual(explainEscapes('\\c\\x', 'en', 'ansic'), []);
+  });
+
+  it('stop echo -e at \\c', () => {
+    const toks = explainEscapes('a\\cb', 'en', 'echo');
+    assert.deepStrictEqual(toks.map((x) => [x.start, x.end]), [[0, 1], [1, 3], [3, 4]]);
+    assert.match(toks[1].explanation, /stop the output here/);
+    assert.match(toks[2].explanation, /Not printed/);
+    assert.strictEqual(explainEscapes('a\\c', 'ja', 'echo').length, 2);
+    assert.match(explainEscapes('\\c', 'ja', 'echo')[0].explanation, /打ち切る/);
+  });
+});
+
+describe('echo -e and $\'…\' in the tree', () => {
+  const tree = (src: string, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0).items;
+  const flat = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...flat(t.children)]);
+  const texts = (src: string, lang: 'en' | 'ja' = 'en') => flat(tree(src, lang)).map((t) => `${t.label}|${t.explanation}`);
+
+  it('gives echo -e a child for each escape and an ANSI parent', () => {
+    const all = texts("echo -e '\\e[31mred\\e[0m'");
+    assert.ok(all.some((x) => x.startsWith('\\e[31m|ANSI escape sequence: red foreground')));
+    assert.ok(all.some((x) => x.startsWith('\\e|ESC, the escape character')));
+    assert.ok(all.some((x) => x.startsWith('red|Literal text "red"')));
+    assert.ok(texts("echo -e '\\e[31mred\\e[0m'", 'ja').some((x) => x.startsWith('\\e[31m|ANSI エスケープシーケンス: 文字色を赤に')));
+    assert.ok(texts('echo -en "a\\tb" x').some((x) => x.startsWith('\\t|tab')));
+    assert.ok(texts("echo -e '\\0033[1m'").some((x) => x.startsWith('\\0033[1m|ANSI escape sequence: bold')));
+  });
+
+  it('gives $\'…\' children and keeps its summary', () => {
+    const all = texts("echo $'\\e[1m'", 'ja');
+    assert.ok(all.some((x) => x.startsWith("$'\\e[1m'|`$'…'` 文字列: `\\n` `\\t` などのエスケープを解釈した文字列になる")));
+    assert.ok(all.some((x) => x.startsWith('\\e[1m|ANSI エスケープシーケンス: 太字')));
+    assert.ok(texts("x=$'a\\tb'").some((x) => x.startsWith('\\t|tab')));
+    assert.ok(texts("x=$'\\cA'").some((x) => x.startsWith('\\cA|Control-A')));
+  });
+
+  it('leaves echo alone when it does not read escapes', () => {
+    for (const src of ["echo '\\e[1m'", "echo -E '\\e[1m'", "echo -e -E '\\e[1m'", "echo -e hello", "echo -e 'hello'", 'echo -e "\\\\e"', 'echo -e "\\e$x"', "echo -x '\\e[1m'", "echo -e $'\\e'"]) {
+      const all = texts(src).filter((x) => x.startsWith('\\e|') || x.startsWith('\\\\e|'));
+      assert.strictEqual(all.length, src.includes("$'") ? 1 : 0, src);
+    }
+    assert.ok(texts("echo -E -e '\\e[1m'").some((x) => x.startsWith('\\e|')));
+  });
+});
+
+describe('GNU sed escapes', () => {
+  const sedTok = (script: string, lang: 'en' | 'ja' = 'en') => explainSed(script, 'bre', lang);
+  const all = (ts: { start: number; end: number; explanation: string; children: unknown[] }[]): string[] => ts.flatMap((x) => [`${x.start}-${x.end}|${x.explanation}`, ...all(x.children as typeof ts)]);
+
+  it('are explained in the regex, the replacement, brackets and addresses, in en and ja', () => {
+    const e = (script: string, lang: 'en' | 'ja' = 'en') => all(sedTok(script, lang)).join('\n');
+    assert.match(e('s/\\x1b\\[[0-9;]*m//g'), /\\x1b`: the character with hex code 1b \(ESC, escape\)/);
+    assert.match(e('s/\\x1b\\[[0-9;]*m//g', 'ja'), /16進数 1b の文字（ESC、エスケープ文字）/);
+    assert.match(e('s/a/\\x1b[0m/'), /\\x1b`: the character with hex code 1b \(ESC, escape\)/);
+    assert.match(e('s/\\o33/x/'), /octal code 33 \(ESC, escape\)/);
+    assert.match(e('s/\\d27/x/'), /decimal code 27 \(ESC, escape\)/);
+    assert.match(e('s/\\d27/x/', 'ja'), /10進数 27 の文字（ESC、エスケープ文字）/);
+    assert.match(e('s/\\cA/x/'), /Control-A: the character with code 1 \(SOH\)/);
+    assert.match(e('s/\\cz/x/', 'ja'), /Control-Z の文字（SUB）/);
+    assert.match(e('s/\\x41/x/'), /hex code 41 \("A"\)/);
+    assert.match(e('s/\\x41/x/', 'ja'), /（「A」）/);
+    assert.match(e('s/[\\x1b\\t]/x/'), /one of ESC \(escape\)|one of the character with hex code 1b \(ESC, escape\), a tab \(HT\)/);
+    assert.match(e('/\\x1b/d'), /hex code 1b \(ESC, escape\)/);
+    assert.match(e('s/a/\\a\\f\\n\\r\\t\\v/'), /a bell \(BEL\).*a form feed \(FF\).*a newline \(LF\).*a carriage return \(CR\).*a tab \(HT\).*a vertical tab \(VT\)/s);
+    assert.match(e('s/\\t/x/', 'ja'), /タブ（HT）/);
+    assert.match(e('s/\\x7f/x/'), /\(DEL, delete\)/);
+  });
+
+  it('leave the other escapes of the replacement alone', () => {
+    assert.match(all(sedTok('s/a/\\&/')).join('\n'), /a literal "&"/);
+    assert.strictEqual(toJsRegex('a\\', 'bre', { sedEscapes: true }), undefined);
+    assert.deepStrictEqual(toJsRegex('\\x41\\\\x41', 'bre', { sedEscapes: true }), { source: 'A\\\\x41', flags: '' });
+  });
+
+  it('are not escapes without their digits', () => {
+    assert.ok(!all(sedTok('s/\\xg/x/')).join('\n').includes('hex code'));
+    assert.ok(!all(sedTok('s/a/\\d/')).join('\n').includes('decimal code'));
+  });
+
+  it('agree with GNU sed on the character they stand for', function () {
+    if (!hasBash()) this.skip();
+    const run = (script: string, input: string) => execFileSync('sed', [script], { input }).toString();
+    const cases: [string, number][] = [['\\x1b', 27], ['\\x1B', 27], ['\\o033', 27], ['\\d027', 27], ['\\cA', 1], ['\\ca', 1], ['\\x7f', 127], ['\\d27', 27], ['\\x4', 4], ['\\o7', 7], ['\\a', 7], ['\\f', 12], ['\\v', 11], ['\\r', 13], ['\\t', 9]];
+    for (const [esc, code] of cases) {
+      const ch = String.fromCharCode(code);
+      assert.strictEqual(run(`s/${esc}/-/`, `a${ch}b\n`), 'a-b\n', `regex ${esc}`);
+      assert.strictEqual(run(`s/[${esc}]/-/`, `a${ch}b\n`), 'a-b\n', `bracket ${esc}`);
+      assert.strictEqual(run(`s/b/${esc}/`, 'ab\n'), `a${ch}\n`, `replacement ${esc}`);
+      assert.strictEqual(run(`/${esc}/s/a/X/`, `a${ch}b\n`), 'X' + ch + 'b\n', `address ${esc}`);
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { sedEscapeAt } from '../ctlchars';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
 
 type Addr =
@@ -193,7 +194,14 @@ class Parser {
 
 function unescape(s: string): string {
   // `\/` (the delimiter) and other escaped characters stand for themselves.
-  return s.replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c === 't' ? '\t' : c));
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== '\\' || i + 1 >= s.length) { out += s[i]; continue; }
+    const e = sedEscapeAt(s, i);
+    if (e) { out += String.fromCharCode(e.code); i += e.length - 1; continue; }
+    out += s[++i];
+  }
+  return out;
 }
 
 /** Build the replacement for one match, handling &, \1…\9, \n and GNU case conversion (\U \L \u \l \E). */
@@ -215,10 +223,10 @@ function replacement(rep: string, m: RegExpExecArray): string {
     const c = rep[i];
     if (c === '&') { add(m[0]); continue; }
     if (c !== '\\' || i + 1 >= rep.length) { add(c); continue; }
+    const e = sedEscapeAt(rep, i);
     const n = rep[++i];
     if (/[0-9]/.test(n)) add(m[Number(n)] ?? '');
-    else if (n === 'n') add('\n');
-    else if (n === 't') add('\t');
+    else if (e) { add(String.fromCharCode(e.code)); i += e.length - 2; }
     // A case conversion cancels a pending \u or \l, as in GNU sed (`\u\L&` is all lower case).
     else if (n === 'U' || n === 'L') { mode = n; once = ''; }
     else if (n === 'E') { mode = ''; once = ''; }

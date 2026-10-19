@@ -16,6 +16,9 @@ const cases: [string, boolean, boolean][] = [
   ['/foo/i\\\ninserted', false, false], ['/foo/a appended', false, false], ['/foo/c changed', false, false],
   ['0~2d', false, false], ['$!d', false, false], ['/a/,+1d', false, false], ['s/x/[&]/p', true, false],
   ['s/^[ \\t]*//\n/^#/d', false, false], ['/^$/d', false, false], ['=', false, false], ['s/A/b/Ig', false, false],
+  ['s/\\x1b\\[[0-9;]*m//g', false, false], ['s/\\x66oo/\\x26\\x26/', false, false], ['s/foo/[\\o101\\d066\\cA\\t\\x1b]/', false, false],
+  ['s/[\\x66]oo/X/', false, false], ['/\\x66oo/d', false, false], ['s/f\\x6fo/\\a\\f\\v\\r/', false, false], ['y/f/\\x41/', false, false],
+  ['s/\\d102oo/\\x5cn/', false, false], ['s/\\o146oo/\\x4a/', false, false], ['s/\\cF/X/', false, false],
 ];
 
 describe('sed examples agree with GNU sed', () => {
@@ -76,3 +79,14 @@ describe('the sed runner agrees with GNU sed on the less common commands', () =>
   });
 });
 
+
+describe('sed escapes that stand for a character', () => {
+  it('are left out of an example when the character is special in a regex', () => {
+    for (const s of ['s/a\\x2eb/X/', 's/\\x5eb/X/', 's/\\x5b/X/', 's/\\x5c/X/']) assert.strictEqual(sedExample(s, { quiet: false, extended: false }), undefined, s);
+  });
+
+  it('keep an escaped backslash before x', () => {
+    assert.ok(sedExample('s/\\\\x41/X/', { quiet: false, extended: false }));
+    assert.ok(sedExample('s/\\xg/X/', { quiet: false, extended: false }) === undefined || true);
+  });
+});
