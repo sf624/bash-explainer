@@ -51,6 +51,8 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--lsp` | run as a Language Server on standard input and output (see [In your editor](#in-your-editor-language-server)) |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
+In the text output, a construct is labelled with its keywords and a placeholder for what is left out (`while` *condition* `do` *commands* `done`): the placeholder is in italics and dim with colour, and shown as `‹condition›` without. With `--format json`, `label` is that text and `labelParts` lists the parts (`{ "text": "while" }`, `{ "text": "condition", "placeholder": true }`…).
+
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.
 
 ## In CI (GitHub Actions)
