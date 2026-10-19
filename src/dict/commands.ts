@@ -154,7 +154,8 @@ const dockerSubs: Record<string, CommandDoc> = {
   cp: cmd('コンテナとの間でファイルをコピーする（`コンテナ:パス`）', 'Copy files to or from a container (`container:path`)'),
 };
 
-export const commands: Record<string, CommandDoc> = {
+/** The commands written in this file; the other tables are spread after them. */
+export const core: Record<string, CommandDoc> = {
   ls: cmd('ディレクトリの中身（ファイル一覧）を表示する', 'List directory contents', [
     ['-l', '詳細形式（権限・所有者・サイズ・更新日時）で表示', 'long format (permissions, owner, size, mtime)'],
     ['-a|--all', '`.` で始まる隠しファイルも表示', 'include hidden files starting with `.`'],
@@ -758,6 +759,10 @@ export const commands: Record<string, CommandDoc> = {
       test: cmd('テストスクリプトを実行する', 'Run the test script'),
     },
   }),
+};
+
+export const commands: Record<string, CommandDoc> = {
+  ...core,
   ...distro,
   ...system,
   ...basic,

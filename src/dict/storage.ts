@@ -95,7 +95,8 @@ export const storage: Record<string, CommandDoc> = {
   lsdev: cmd('使用中の I/O ポート・IRQ・DMA を一覧表示する', 'List I/O ports, IRQs and DMA channels in use'),
   // ---- creating file systems ----------------------------------------------------------------
   mke2fs: cmd('ext2/ext3/ext4 ファイルシステムを作る', 'Create an ext2/ext3/ext4 file system', [
-    ...mkfsCommon(),
+    ['-L', 'ラベル', 'volume label', 'arg'],
+    ['-F', '確認せずに作る（注意）', 'create without the safety checks (careful)'],
     ['-t', 'ファイルシステムの種類（`ext4`…）', 'file system type (`ext4`…)', 'arg'],
     ['-j', 'ジャーナルを付ける（ext3）', 'create a journal (ext3)'],
     ['-b', 'ブロックサイズ（バイト）', 'block size in bytes', 'arg'],
