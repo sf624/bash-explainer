@@ -3,6 +3,7 @@ import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
 import { tx } from '../i18n';
+import { basic } from './basic';
 import { CommandDoc, cmd, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
@@ -753,5 +754,6 @@ export const commands: Record<string, CommandDoc> = {
   }),
   ...distro,
   ...system,
+  ...basic,
   ...ops,
 };
