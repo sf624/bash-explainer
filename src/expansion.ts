@@ -137,7 +137,7 @@ export function parseExpansion(text: string, hashIsName = false): ParsedExpansio
 
 // ---------------------------------------------------------------- glob patterns
 
-type GlobPart = { type: 'any' } | { type: 'one' } | { type: 'class'; body: string } | { type: 'text'; text: string };
+export type GlobPart = { type: 'any' } | { type: 'one' } | { type: 'class'; body: string } | { type: 'text'; text: string };
 
 /** Split a glob into parts. Returns undefined if it contains expansions or extglobs we cannot evaluate. */
 export function globParts(pattern: string): GlobPart[] | undefined {

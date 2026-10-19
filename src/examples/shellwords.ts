@@ -131,7 +131,7 @@ export function hasGlobstar(pattern: string): boolean {
 }
 
 /** The index of the `)` closing the `(` at `open`, or -1. */
-function closingParen(pattern: string, open: number): number {
+export function closingParen(pattern: string, open: number): number {
   let depth = 0;
   for (let k = open; k < pattern.length; k++) {
     if (pattern[k] === '\\') k++;
@@ -142,7 +142,7 @@ function closingParen(pattern: string, open: number): number {
 }
 
 /** The alternatives of an extended glob, `a|b` between `from` and `to`, as [start, end] ranges. */
-function alternatives(pattern: string, from: number, to: number): [number, number][] {
+export function alternatives(pattern: string, from: number, to: number): [number, number][] {
   const out: [number, number][] = [];
   let depth = 0;
   let start = from;
