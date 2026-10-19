@@ -44,7 +44,8 @@ export function fixFor(issue: Issue): Fix | undefined {
     }
     case 'ampRedirect': case 'ampAppend': {
       const op = n.children.find((c) => c.type === '&>' || c.type === '&>>')!;
-      const dest = field(n, 'destination')!;
+      const dest = field(n, 'destination');
+      if (!dest) return undefined; // `cmd &>` while typing
       const to = op.type === '&>' ? '>' : '>>';
       return { title: [`\`${op.type}\` を \`${to}file 2>&1\` に書き換える`, `Rewrite \`${op.type}\` as \`${to}file 2>&1\``], edits: [replace(n, `${to} ${dest.text} 2>&1`)] };
     }
@@ -82,7 +83,8 @@ function testChain(e: SyntaxNode): string | undefined {
 function single(e: SyntaxNode): string | undefined {
   if (e.type === 'unary_expression') {
     const op = field(e, 'operator')!.text;
-    const operand = e.namedChildren.filter((c) => c.type !== 'test_operator').pop()!;
+    const operand = e.namedChildren.filter((c) => c.type !== 'test_operator').pop();
+    if (!operand) return undefined; // `[[ -f ]]` while typing
     if (op === '!') {
       const inner = single(operand);
       return inner === undefined ? undefined : `! ${inner}`;

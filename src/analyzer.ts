@@ -470,7 +470,8 @@ export class Analyzer {
     for (const h of onLine(root, ['heredoc_redirect'], line)) {
       const body = h.namedChildren.find((c) => c.type === 'heredoc_body');
       const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
-      const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')!.text;
+      const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text;
+      if (delim === undefined) continue; // `cat <<` while typing
       if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
         notes.push(this.s(
           `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`<<${delim}\`）の本文です。`,
@@ -818,7 +819,13 @@ export class Analyzer {
 
   private heredoc(n: SyntaxNode): Token {
     const op = n.children.find((c) => !c.named)!.type;
-    const startNode = n.namedChildren.find((c) => c.type === 'heredoc_start')!;
+    const startNode = n.namedChildren.find((c) => c.type === 'heredoc_start');
+    // `cat <<` while typing: the delimiter is not there yet.
+    if (!startNode) {
+      return this.tok(n, 'redirect', this.s(
+        `ヒアドキュメント \`${op}\`: 区切り語がまだない。次の行から区切り語だけの行までを標準入力として渡す`,
+        `Here-document \`${op}\`: the delimiter is not written yet. The following lines up to a line containing only the delimiter become stdin`));
+    }
     const start = startNode.text;
     const body = n.namedChildren.find((c) => c.type === 'heredoc_body');
     const delim = start.replace(/^['"\\]|['"]$/g, '');
@@ -1999,7 +2006,10 @@ export class Analyzer {
         || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
       const v = field(loop, 'variable')?.text;
       if (!glob || !v || this.globOff(glob)) continue;
-      const body = field(loop, 'body')!.text;
+      const bodyNode = field(loop, 'body');
+      // `for f in *` while typing: there is no body to look at yet.
+      if (!bodyNode) continue;
+      const body = bodyNode.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = this.shopt.nullglob !== 'unsupported';
       const fix = this.s(nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます', nullglob ? ', or turn on `shopt -s nullglob` before the loop' : '');
@@ -2281,7 +2291,9 @@ export class Analyzer {
     } else if (n.namedChildren.length === 1) {
       const expr = n.namedChildren[0];
       if (expr.type === 'unary_expression') {
-        shape = { op: field(expr, 'operator')!.text, right: expr.namedChildren.find((c) => c.type !== 'test_operator')! };
+        // `[[ -f` while typing: no operand yet.
+        const right = expr.namedChildren.find((c) => c.type !== 'test_operator');
+        if (right) shape = { op: field(expr, 'operator')!.text, right };
       } else if (expr.type === 'binary_expression' && fields(expr, 'right').length === 1) {
         shape = { left: field(expr, 'left')!, op: field(expr, 'operator')!.text, right: field(expr, 'right')! };
       }
@@ -2686,7 +2698,11 @@ export class Analyzer {
     // `!` is not an operator field.
     const opNode = field(n, 'operator')!;
     const op = opNode.text;
-    const operand = n.namedChildren.find((c) => !same(c, opNode))!;
+    const operand = n.namedChildren.find((c) => !same(c, opNode));
+    // `[[ $a && -n` while typing: the operand is not written yet.
+    if (!operand) {
+      return this.tok(n, 'test', this.s(`単項演算 \`${op}\`: 対象がまだ書かれていない`, `Unary operator \`${op}\`: the operand is not written yet`));
+    }
     if (op === '!' && !this.inArithmetic(n)) {
       return this.tok(n, 'test', this.s(`否定: \`${operand.text}\` が偽なら真`, `Negation: true if \`${operand.text}\` is false`), this.sub(operand));
     }
