@@ -3359,7 +3359,7 @@ export class Analyzer {
   }
 
   private commandSubstitution(n: SyntaxNode): Token {
-    const backtick = n.text.startsWith('`');
+    const backtick = n.children[0].type === '`';
     const t = this.tok(n, 'substitution', this.s(
       `コマンド置換 ${backtick ? '`` `…` ``（旧式。`$(…)` 推奨）' : '`$(…)`'}: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える`,
       `Command substitution ${backtick ? '`` `…` `` (legacy; prefer `$(…)`)' : '`$(…)`'}: runs the command and is replaced by its stdout (trailing newlines removed)`,
