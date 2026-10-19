@@ -449,7 +449,8 @@ export const admin: Record<string, CommandDoc> = {
   ]),
   chronyc: cmd('chrony（時刻同期）の状態を問い合わせ、操作する', 'Query and control chrony (time synchronization)', [
     ['-n', 'ホスト名を解決せず IP アドレスのまま表示', 'show addresses without resolving names'],
-    ['-a', '認証を自動で行う', 'authenticate automatically'],
+    ['-a', '何もしない（古い版との互換のため残っている）', 'ignored; kept for compatibility with old versions'],
+    ['-f', '何もしない（古い版との互換のため残っている）', 'ignored; kept for compatibility with old versions', 'arg'],
   ], {
     subcommands: {
       tracking: cmd('同期の状態（ずれ、精度）を表示する', 'Show the synchronization state (offset, accuracy)'),
@@ -470,17 +471,18 @@ export const admin: Record<string, CommandDoc> = {
   // ---- mail and printing --------------------------------------------------------------------
   mail: cmd('コマンドラインでメールを読み書きする', 'Read and send mail from the command line', [
     ['-s', '件名', 'subject', 'arg'],
-    ['-a', '添付するファイル（または追加のヘッダー）', 'file to attach (or an extra header)', 'arg'],
+    ['-a', '添付するファイル（s-nail。Debian の bsd-mailx では追加のヘッダー）', 'file to attach (s-nail; an extra header in Debian\'s bsd-mailx)', 'arg'],
     ['-c', 'Cc の宛先', 'Cc address', 'arg'],
     ['-b', 'Bcc の宛先', 'Bcc address', 'arg'],
     ['-f', '読むメールボックスのファイル', 'mailbox file to read', 'arg'],
     ['-u', '読む相手のユーザーのメールボックス', "read this user's mailbox", 'arg'],
     ['-v', '詳しく表示する', 'verbose'],
-    ['-r|-S', '送信者のアドレス（`-r`）、変数の設定（`-S`）', 'sender address (`-r`), set a variable (`-S`)', 'arg'],
+    ['-r', '送信者のアドレス', 'sender address', 'arg'],
+    ['-S', '変数を設定する（s-nail。bsd-mailx にはない）', 'set a variable (s-nail; not in bsd-mailx)', 'arg'],
   ], { positional: [pos('宛先のアドレス', 'recipient address')] }),
   mailx: cmd('コマンドラインでメールを読み書きする（`mail` と同じ）', 'Read and send mail from the command line (same as `mail`)', [
     ['-s', '件名', 'subject', 'arg'],
-    ['-a', '添付するファイル', 'file to attach', 'arg'],
+    ['-a', '添付するファイル（s-nail。Debian の bsd-mailx では追加のヘッダー）', 'file to attach (s-nail; an extra header in Debian\'s bsd-mailx)', 'arg'],
     ['-c', 'Cc の宛先', 'Cc address', 'arg'],
     ['-b', 'Bcc の宛先', 'Bcc address', 'arg'],
   ], { positional: [pos('宛先のアドレス', 'recipient address')] }),
@@ -543,6 +545,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-t', 'ジョブの名前', 'job title', 'arg'],
     ['-q', 'ジョブの優先度（1〜100）', 'job priority (1 to 100)', 'arg'],
     ['-m', '終わったらメールで知らせる', 'send mail when the job is done'],
+    ['-c', '何もしない（古い版との互換のため残っている。CUPS は常にスプールに写す）', 'no effect; kept for compatibility (CUPS always spools the file)'],
   ], { positional: [files] }),
   lpr: cmd('ファイルを印刷する（BSD 形式）', 'Print files (BSD style)', [
     ['-P', '出力先のプリンタ', 'destination printer', 'arg'],
@@ -561,7 +564,7 @@ export const admin: Record<string, CommandDoc> = {
   ], { positional: [pos('ジョブ番号', 'job number')] }),
   cancel: cmd('印刷ジョブをキャンセルする', 'Cancel print jobs', [
     ['-a', 'プリンタのジョブをすべてキャンセルする', 'cancel all jobs on the printer'],
-    ['-u', 'このユーザーのジョブだけ', 'only this user jobs', 'arg'],
+    ['-u', 'このユーザーのジョブだけ', "only this user's jobs", 'arg'],
   ], { positional: [pos('ジョブ番号またはプリンタ', 'job ID or printer')] }),
   lpstat: cmd('CUPS のプリンタとジョブの状態を表示する', 'Show the status of CUPS printers and jobs', [
     ['-p', 'プリンタの状態', 'printer status'],
@@ -683,10 +686,10 @@ export const admin: Record<string, CommandDoc> = {
   chronyd: cmd('chrony の時刻同期デーモン', 'The chrony time synchronization daemon', [
     ['-q', '1回だけ時刻を合わせて終わる', 'set the clock once and exit'],
     ['-Q', '1回だけ測って表示し、時刻は変えない', 'measure once and print, without changing the clock'],
-    ['-d', '前面で動かし、デバッグ表示', 'run in the foreground with debug output'],
+    ['-d', '前面で動かし、ログを syslog でなく端末に出す', 'run in the foreground and write messages to the terminal, not syslog'],
     ['-f', '設定ファイル', 'configuration file', 'arg'],
     ['-n', '前面で動かす', 'do not fork; stay in the foreground'],
-    ['-s', '保存した時刻の情報で時計を初期化する', 'set the clock from the saved RTC information'],
+    ['-s', 'RTC（なければドリフトファイルの更新時刻）から時計を設定する', 'set the clock from the RTC (or the drift file\'s modification time)'],
     ['-4', 'IPv4 だけ', 'IPv4 only'],
     ['-6', 'IPv6 だけ', 'IPv6 only'],
   ]),

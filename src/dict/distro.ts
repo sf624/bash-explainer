@@ -247,13 +247,13 @@ export const distro: Record<string, CommandDoc> = {
     ['-6', 'IPv6 を使う', 'use IPv6'],
   ], { positional: [host] }),
   nc: cmd('TCP/UDP で接続・待ち受けする（ポートの確認、データ転送）', 'Connect or listen over TCP/UDP (port checks, data transfer)', [
-    ['-z', 'データを送らず、待ち受けているかだけ調べる', 'scan for listeners without sending data'],
+    ['-z', 'データを送らず、待ち受けているかだけ調べる（Ncat にはない）', 'scan for listeners without sending data (not in Ncat)'],
     ['-v', '詳しく表示', 'verbose'],
     ['-w', '接続のタイムアウト（秒）', 'connection timeout in seconds', 'arg'],
     ['-l', '接続を待ち受ける', 'listen for a connection'],
     ['-p', '使うポート番号', 'source or listening port', 'arg'],
     ['-u', 'TCP ではなく UDP を使う', 'use UDP instead of TCP'],
-    ['-k', '接続が切れても待ち受け続ける', 'keep listening after a connection ends'],
+    ['-k', '接続が切れても待ち受け続ける（traditional 版にはない）', 'keep listening after a connection ends (not in traditional netcat)'],
     ['-n', '名前解決をしない', 'no DNS lookups'],
   ], { positional: [pos('ホスト', 'host'), pos('ポート', 'port')] }),
   dig: cmd('DNS に問い合わせる', 'Query DNS servers', [

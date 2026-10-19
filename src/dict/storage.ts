@@ -35,7 +35,7 @@ export const storage: Record<string, CommandDoc> = {
     ['-J|--json', 'JSON で出力する', 'output as JSON'],
     ['-N|--partno', '対象のパーティション番号', 'partition number to edit', 'arg'],
     ['--delete', 'パーティションを削除する（注意）', 'delete a partition (careful)'],
-    ['-n|--no-act', '実際には書き込まない', 'do everything except write'],
+    ['-n|--no-act', '実際には書き込まない', 'go through the steps but do not write to the disk'],
   ], { positional: [disk] }),
   cfdisk: cmd('メニュー形式でパーティションを編集する', 'Edit partitions with a menu interface', [
     ['-z|--zero', '空のパーティションテーブルから始める', 'start with an empty partition table'],
@@ -337,7 +337,7 @@ export const storage: Record<string, CommandDoc> = {
     ['-l|--extents', 'エクステント数や割合（`100%FREE`）', 'extents or a percentage (`100%FREE`)', 'arg'],
     ['-s|--snapshot', 'スナップショットを作る', 'create a snapshot'],
     ['-i|--stripes', 'ストライプ数', 'number of stripes', 'arg'],
-    ['-m|--mirrors', 'ミラーの数', 'number of mirrors', 'arg'],
+    ['-m|--mirrors', '元に加えるミラーの数（`1` で2重）', 'extra mirror copies (`1` means two copies)', 'arg'],
   ], { positional: [vg] }),
   lvdisplay: cmd('論理ボリュームの詳細を表示する', 'Show details of logical volumes', [['-v|--verbose', '詳しく表示する', 'more output'], ['-C|--columns', '1行ずつの表形式で表示', 'show a one-line-per-volume table']], { positional: [lv] }),
   lvs: cmd('論理ボリュームを1行ずつ表示する', 'List logical volumes, one per line', [['-o|--options', '表示する列', 'columns to show', 'arg'], ['-a|--all', '内部用のボリュームも表示', 'also show hidden volumes'], ['--units', '表示の単位', 'display units', 'arg'], ['--noheadings', '見出しを表示しない', 'do not print headings']], { positional: [lv] }),

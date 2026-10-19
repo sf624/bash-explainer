@@ -66,6 +66,7 @@ export const basic: Record<string, CommandDoc> = {
   ], { positional: [pos('起点のディレクトリ（省略時はカレント）', 'directory to start from (default: current)')] }),
   more: cmd('ファイルを1画面ずつ表示する（古い簡易ページャー）', 'View a file one screen at a time (the old, simple pager)', [
     ['-d', '操作のヒントを表示する', 'show prompts to help the user'],
+    ['-u', '何もしない（古い版との互換のため残っている）', 'no effect; kept for compatibility'],
     ['-s', '連続する空行を1行にまとめる', 'squeeze runs of blank lines'],
     ['-f', '折り返した行ではなく論理行で数える', 'count logical lines, not wrapped ones'],
     ['-n', '1画面の行数', 'number of lines per screen', 'arg'],
@@ -96,7 +97,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-s|--short', '短い形式（ログイン時刻と CPU 時間を省く）', 'short format (no login time or CPU times)'],
     ['-f|--from', '接続元の列を表示するかどうか切り替える', 'toggle the "from" column'],
     ['-i|--ip-addr', '接続元をホスト名でなく IP アドレスで表示', 'show the origin as an IP address'],
-    ['-u|--no-current', '現在のユーザー名を無視する', 'ignore the current user name'],
+    ['-u|--no-current', '実行中の処理と CPU 時間を、ユーザー名に関係なく求める（`su` 後に違いが出る）', 'pick the current process and CPU times regardless of user name (matters after `su`)'],
   ], { positional: [users] }),
   users: cmd('ログイン中のユーザー名を1行で表示する', 'Print the names of logged-in users on one line'),
   last: cmd('ログイン・ログアウトと再起動の履歴を表示する（`/var/log/wtmp`）', 'Show the history of logins, logouts and reboots (`/var/log/wtmp`)', [
@@ -153,19 +154,19 @@ export const basic: Record<string, CommandDoc> = {
   ], { positional: [pos('ドメインまたは IP アドレス', 'domain or IP address')] }),
   // ---- power and run levels -----------------------------------------------------------------
   shutdown: cmd('システムを停止・電源断・再起動する', 'Halt, power off or reboot the system', [
-    ['-h', '停止して電源を切る（`-P` の既定）', 'halt and power off'],
+    ['-h', '電源を切る（`-P` と同じ。`-H` と一緒なら停止だけ）', 'power off (as `-P`; with `-H`, halt only)'],
     ['-P|--poweroff', '電源を切る', 'power off'],
     ['-H|--halt', '停止するだけ（電源は切らない）', 'halt without powering off'],
     ['-r|--reboot', '再起動する', 'reboot'],
     ['-k', '実際には停止せず、警告だけ送る', 'only send the warning; do not shut down'],
     ['-c', '予約した停止をやめる', 'cancel a scheduled shutdown'],
-    ['-t', '停止までの秒数（古い構文）', 'seconds to wait (old syntax)', 'arg'],
+    ['-t', '（sysvinit）TERM と KILL のシグナルの間に待つ秒数。systemd では無視される', '(sysvinit) seconds between the TERM and KILL signals; ignored by systemd', 'arg'],
     ['--no-wall', '警告を送らない', 'do not send the wall message'],
-    ['-F', '次の起動で必ず `fsck` を実行する', 'force `fsck` at the next boot'],
+    ['-F', '次の起動で必ず `fsck` を実行する（sysvinit。systemd では無視される）', 'force `fsck` at the next boot (sysvinit; ignored by systemd)'],
   ], { positional: [pos('時刻（`now`、`+10`、`23:00`）', 'time (`now`, `+10`, `23:00`)'), pos('全員に送る警告メッセージ', 'warning message for all users')] }),
   reboot: cmd('システムを再起動する', 'Reboot the system', [
     ['-f|--force', 'systemd を通さず直ちに再起動（注意）', 'reboot at once without going through systemd (careful)'],
-    ['-p|--poweroff', '再起動せず電源を切る', 'power off instead'],
+    ['-p|--poweroff', '何もしない（`halt` と `poweroff` のための指定で、`reboot` では無視される）', 'no effect here (meant for `halt` and `poweroff`; `reboot` ignores it)'],
     ['-w|--wtmp-only', '実際には再起動せず、記録だけ残す', 'only write the wtmp record'],
     ['--no-wall', '警告を送らない', 'do not send the wall message'],
   ]),
@@ -183,7 +184,8 @@ export const basic: Record<string, CommandDoc> = {
   ]),
   init: cmd('システムの最初のプロセス。引数でランレベルを切り替える（`0` 停止、`6` 再起動）', 'The first process; an argument switches the run level (`0` halt, `6` reboot)', [], { positional: [pos('ランレベル（`0`〜`6`、`S`）', 'run level (`0` to `6`, `S`)')] }),
   telinit: cmd('実行中の init にランレベルの切り替えを指示する', 'Tell the running init to change the run level', [
-    ['-t', '切り替えまでの秒数', 'seconds before switching', 'arg'],
+    ['-t', '（sysvinit）TERM と KILL のシグナルの間に待つ秒数。systemd の `telinit` にはない', '(sysvinit) seconds between the TERM and KILL signals; not in the systemd `telinit`', 'arg'],
+    ['--no-wall', '警告を送らない（systemd）', 'do not send the wall message (systemd)'],
   ], { positional: [pos('ランレベル（`0`〜`6`）、`q`（設定の再読み込み）', 'run level (`0` to `6`), or `q` (reload the configuration)')] }),
   runlevel: cmd('直前と現在のランレベルを表示する', 'Print the previous and current run level'),
   chroot: cmd('ルートディレクトリを変えてコマンドを実行する', 'Run a command with a different root directory', [
