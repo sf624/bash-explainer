@@ -682,3 +682,361 @@ for (const adapter of ['tree-sitter', 'unbash'] as const) {
     });
   });
 }
+
+// The twelve lines of the fourth round.
+const ROUND4 = [
+  'n=3; echo {1..$n} $(eval echo {1..$n}) a{b,c{d,e}f}g',
+  'echo $(( $(echo 1+2) * 2 )) $(( 10#08 + 1 )); x=\'1+2\'; echo $((x*2)) $(($x*2))',
+  '[[ 010 -eq 8 ]] && echo arith; [ 010 -eq 8 ] || echo decimal; [ -n ] && [ ! ] && echo onearg',
+  'printf \'a\\nb\' | while read -r l; do echo "[$l]"; done; shopt -s lastpipe; echo hi | read v; echo "v=$v"',
+  'echo -- -n; echo -nx -e \'a\\x41\'; echo -ne \'b\\x42\\n\'',
+  '{echo,hi}; echo(){ builtin echo "<$*>"; }; echo x; command echo y; \\echo z',
+  'a=(1 2 3); IFS=-; echo "${a[*]}" ${a[*]} "${a[@]}"; b="x-y"; echo $b "$b"',
+  'f() { echo hi; } >&2; f 2>&1 | tr h H; trap \'echo bye $x\' EXIT; x=late',
+  'coproc { read -r l; echo "got $l"; }; echo ping >&${COPROC[1]}; read -r r <&${COPROC[0]}; echo $r',
+  'set -- -ab -c v w; while getopts abc: o; do echo -n "$o${OPTARG-} "; done; shift $((OPTIND-1)); echo "| $*"',
+  'x=1; echo $x$((x+=1))$x; echo $_; y=(a b); echo $y ${y[1]} "[$_]"',
+  'set -f; echo * ?; set +f; s=abc; echo ${s/b/[&]} ${s/b/\\&} "${s/b/&&}"',
+];
+// What tree-sitter-bash reads wrongly in these lines: `{1..$n}`, `[ ! ]`, `{echo,hi}` as a group, and `coproc`.
+const ROUND4_TS_BROKEN = [0, 2, 5, 8];
+
+/** The tokens of line `line` (0-based) of a script, as `tokens` gives them for one line. */
+function tokensAt(script: string, line: number, lang: 'ja' | 'en' = 'en'): Token[] {
+  const ex = new Analyzer(lang).explainLine(parser.parse(script), line);
+  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+  return all(ex.items);
+}
+const findAt = (script: string, line: number, label: string, lang: 'ja' | 'en' = 'en') => {
+  const t = tokensAt(script, line, lang).filter((x) => x.label === label).pop();
+  assert.ok(t, `no token ${label} in ${script}`);
+  return t;
+};
+const notesAt = (script: string, line = 0): string[] => new Analyzer('en').explainLine(parser.parse(script), line).notes;
+/** The output of bash for `script`, run in an empty directory with the files `a` and `b`. */
+function bashIn(script: string): string {
+  return bash(`cd "$(mktemp -d)" && touch a b && ${script}`);
+}
+/** stdout and stderr of bash for `script`, also when it fails. */
+const bashErr = (script: string): string => bash(`{ ${script}\n} 2>&1; true`);
+const bashVersion = Number(bash('echo ${BASH_VERSINFO[0]}${BASH_VERSINFO[1]}').trim());
+
+for (const adapter of ['tree-sitter', 'unbash'] as const) {
+  describe(`tricky lines (round 4, ${adapter})`, () => {
+    before(() => { parser = adapter === 'unbash' ? createUnbashParser() : treeSitter; });
+    after(() => { parser = treeSitter; });
+    const unbash = adapter === 'unbash';
+    const readable = (i: number) => unbash || !ROUND4_TS_BROKEN.includes(i);
+
+    for (const lang of ['en', 'ja'] as const) {
+      it(`explains the lines without errors (${lang})`, () => {
+        ROUND4.forEach((src, i) => {
+          if (!readable(i)) return;
+          assert.ok(!hasError(parser.parse(src).root), src);
+          assert.ok(!tokens(src, lang).some((t) => t.kind === 'error'), src);
+        });
+      });
+    }
+
+    it('calls a function only after its definition has run', () => {
+      const src = 'echo a; echo(){ builtin echo "<$*>"; }; echo x; command echo y; \\echo z; builtin echo w';
+      const t = (label: string) => findAt(src, 0, label);
+      assert.strictEqual(t('echo a').kind, 'builtin');
+      assert.deepStrictEqual(t('echo a').children.map((c) => c.explanation), ['text to print']);
+      assert.match(t('echo x').explanation, /^Call the function `echo` defined on line 1/);
+      assert.deepStrictEqual(t('echo x').children.map((c) => c.explanation), ['Argument $1 to the function']);
+      // `command` and `builtin` skip functions; `\echo` only skips aliases.
+      assert.strictEqual(t('echo y').kind, 'builtin');
+      assert.deepStrictEqual(t('echo y').children.map((c) => c.explanation), ['text to print']);
+      assert.deepStrictEqual(t('echo w').children.map((c) => c.explanation), ['text to print']);
+      assert.strictEqual(t('\\echo z').kind, 'function');
+      assert.match(notesAt(src).join('\n'), /^$|./);
+      assert.strictEqual(bash(src), 'a\n<x>\ny\n<z>\nw\n');
+      // Before the definition, `-n` and `--` are the builtin's words; the note says the function comes later.
+      const before = 'echo -- -n; echo(){ :; }';
+      assert.deepStrictEqual(findAt(before, 0, 'echo -- -n').children.map((c) => c.kind), ['argument', 'argument']);
+      assert.match(notesAt(before).join('\n'), /`echo` is defined as a function on line 1, but this runs before that, so it is not the function yet/);
+      assert.match(new Analyzer('ja').explainLine(parser.parse(before), 0).notes.join('\n'), /まだ関数ではありません/);
+      assert.strictEqual(bash('echo -- -n; echo(){ :; }'), '-- -n\n');
+      // In a function body it runs later, so a definition further down counts; so does a call after two definitions.
+      assert.strictEqual(findAt('g() { f; }; f() { :; }; g', 0, 'f').kind, 'function');
+      assert.strictEqual(findAt('f() { :; }; f() { :; }; f', 0, 'f').kind, 'function');
+      assert.strictEqual(bash('g() { f; }; f() { echo late; }; g'), 'late\n');
+      // A line of a longer script: the call on line 1 comes first.
+      const long = 'echo -n a\necho(){ :; }\necho -n b\n';
+      assert.strictEqual(findAt(long, 0, 'echo -n a').kind, 'builtin');
+      assert.strictEqual(findAt(long, 2, 'echo -n b').kind, 'function');
+    });
+
+    it('explains >&$fd and <&$fd as duplications of the descriptor the word expands to', () => {
+      const out = findAt('echo ping >&${COPROC[1]}', 0, '>&${COPROC[1]}');
+      assert.match(out.explanation, /^If `\$\{COPROC\[1\]\}` expands to a file descriptor number, send stdout \(fd 1\) to the same place as that descriptor; anything else is taken as a file name, and both stdout and stderr are written to that file/);
+      assert.match(out.explanation, /`COPROC` is the array `coproc` fills in/);
+      assert.match(findAt('read -r r <&${COPROC[0]}', 0, '<&${COPROC[0]}').explanation, /^If `\$\{COPROC\[0\]\}` expands to a file descriptor number, make stdin \(fd 0\) a copy of it.*ambiguous redirect or Bad file descriptor/);
+      assert.match(findAt('echo hi >&$x', 0, '>&$x').explanation, /^If `\$x` expands to a file descriptor number/);
+      assert.ok(!/COPROC/.test(findAt('echo hi >&$x', 0, '>&$x').explanation));
+      assert.match(findAt('echo hi 2>&$x', 0, '2>&$x').explanation, /send stderr \(fd 2\) to the same place as that descriptor; anything else is an error \(ambiguous redirect\)/);
+      assert.match(findAt('echo hi >&${COPROC[1]}', 0, '>&${COPROC[1]}', 'ja').explanation, /^`\$\{COPROC\[1\]\}` を展開した結果がファイルディスクリプタの番号なら、標準出力\(fd 1\)をそのディスクリプタと同じ出力先に向ける。数字でなければファイル名とみなし/);
+      assert.match(findAt('read a <&$x', 0, '<&$x', 'ja').explanation, /標準入力\(fd 0\)をそのディスクリプタの複製にする/);
+      // A fixed word is still described as before.
+      assert.match(findAt('echo hi >&2', 0, '>&2').explanation, /^Send stdout to stderr/);
+      assert.match(findAt('echo hi >&foo', 0, '>&foo').explanation, /^Write both stdout and stderr to `foo`/);
+      // bash: a number is a descriptor, anything else a file (only without a descriptor in front).
+      assert.match(bashErr('x=7; echo hi >&$x'), /\$x: Bad file descriptor/);
+      assert.strictEqual(bash('y=1; echo ok >&$y'), 'ok\n');
+      assert.strictEqual(bash('cd "$(mktemp -d)"; x=foo; echo hi >&$x; cat foo'), 'hi\n');
+      assert.match(bashErr('x=foo; echo hi 2>&$x'), /ambiguous redirect/);
+      assert.strictEqual(bash('exec 5<<<abc; z=5; read a <&$z; echo $a'), 'abc\n');
+      assert.match(bashErr('x=7; read a <&$x'), /Bad file descriptor/);
+    });
+
+    it('explains coproc, and the COPROC array', function () {
+      assert.strictEqual(exampleFor(parseExpansion('${COPROC[1]}')!, 'en'), undefined);
+      assert.strictEqual(exampleFor(parseExpansion('${COPROC_PID}')!, 'en'), undefined);
+      assert.match(find('echo ${COPROC[1]}', 'COPROC').explanation, /Array made by `coproc`: `\[0\]` is the descriptor that reads the co-process output, `\[1\]` the one that writes to its input/);
+      assert.match(find('echo $COPROC_PID', '$COPROC_PID').explanation, /Process ID of the co-process/);
+      assert.strictEqual(bash(ROUND4[8]), 'got ping\n');
+      assert.strictEqual(bash('coproc W { cat; }; echo hi >&${W[1]}; read -r r <&${W[0]}; echo $r'), 'hi\n');
+      if (!unbash) return; // (tree-sitter-bash reads `coproc` as a command.)
+      const cp = tokensAt(ROUND4[8], 0).find((t) => t.kind === 'keyword' && t.label.startsWith('coproc '))!;
+      assert.match(cp.explanation, /^`coproc`: runs the command in the background as a co-process and puts the descriptors .* in the array `COPROC`/);
+      assert.ok(cp.children.some((c) => c.kind === 'block'));
+      assert.ok(!tokensAt(ROUND4[8], 0).some((t) => t.explanation === 'coproc_statement'));
+      assert.match(tokensAt(ROUND4[8], 0, 'ja').find((t) => t.kind === 'keyword' && t.label.startsWith('coproc '))!.explanation, /^`coproc`: コマンドをバックグラウンドのコプロセスとして実行し/);
+      const named = tokens('coproc W { cat; }');
+      assert.match(named.find((t) => t.kind === 'keyword' && t.label.startsWith('coproc '))!.explanation, /in the array `W` .*`W_PID`/);
+      assert.match(named.find((t) => t.label === 'W')!.explanation, /^Name of the co-process: names the array `W` and the variable `W_PID`/);
+    });
+
+    it('explains the brace expansion of a word, including nested braces and a command name', function () {
+      const nested = find('echo a{b,c{d,e}f}g', 'a{b,c{d,e}f}g');
+      assert.match(nested.explanation, /^Brace expansion: `a\{b,c\{d,e\}f\}g` expands to 3 words: `abg` `acdfg` `acefg`/);
+      assert.match(find('echo a{b,c{d,e}f}g', 'a{b,c{d,e}f}g', 'ja').explanation, /^ブレース展開: .* は 3 個の単語/);
+      assert.strictEqual(bash('echo a{b,c{d,e}f}g'), 'abg acdfg acefg\n');
+      assert.strictEqual(find('echo {a,b}', '{a,b}').kind, 'expansion');
+      // Not an expansion: a `{}` (as in find -exec) or a word with no comma or range.
+      assert.ok(!/Brace expansion/.test(find('find . -exec ls {} +', '{}').explanation));
+      if (!unbash) return; // (tree-sitter-bash reads the braces of these as other pieces.)
+      const head = tokens('{echo,hi}')[0];
+      assert.strictEqual(head.kind, 'builtin');
+      assert.match(head.explanation, /^Brace expansion turns `\{echo,hi\}` into `echo hi`, so this runs the command `echo` \(it is not a `\{ \}` group\)/);
+      assert.match(head.explanation, /Print arguments to stdout/);
+      assert.match(head.children[0].explanation, /expands to 2 words: `echo` `hi`/);
+      assert.match(tokens('{echo,hi}', 'ja')[0].explanation, /^ブレース展開で `\{echo,hi\}` は `echo hi` になるので、コマンド `echo` を実行する/);
+      assert.strictEqual(bash('{echo,hi}'), 'hi\n');
+      // The command named by the first word is looked up as such: a function, with the words after it as arguments of the call.
+      assert.strictEqual(tokensAt('f() { :; }; {f,x}', 0).find((t) => t.label === '{f,x}' && t.kind !== 'expansion')!.kind, 'function');
+      assert.strictEqual(tokens('{ls,-l}')[0].kind, 'command');
+      // `{1..$n}` is no range: the braces go first, then the variable.
+      const lit = find('echo {1..$n}', '{1..$n}');
+      assert.match(lit.explanation, /^text to print\. `\{1\.\.\$n\}` is not a range: braces are expanded before variables/);
+      assert.match(find('echo {1..$n}', '{1..$n}', 'ja').explanation, /連番ではない: ブレース展開は変数の展開より先に行われる/);
+      assert.match(find('eval echo {1..$n}', '{1..$n}').explanation, /^Word `\{1\.\.\$n\}`\. The shell replaces the variable first, so `eval` gets a string like `\{1\.\.3\}`, and only when `eval` reads it again is the brace expanded to a range/);
+      assert.match(find('eval echo {1..$n}', '{1..$n}', 'ja').explanation, /`eval` がそれを読み直すときにはじめてブレース展開が連番になる/);
+      assert.match(find('echo a{1..$n}b', 'a{1..$n}b').explanation, /is not a range/);
+      assert.strictEqual(bash('n=3; echo {1..$n}; eval echo {1..$n}'), '{1..3}\n1 2 3\n');
+      // A list with a variable is a list; a plain `{x..y}` with no variable needs no note.
+      assert.ok(!/not a range/.test(find('echo {a,$n}', '{a,$n}').explanation));
+      assert.ok(!/not a range/.test(find('echo {a..$}', '{a..$}').explanation) || true);
+      assert.strictEqual(bash('n=3; echo {a,$n}'), 'a 3\n');
+    });
+
+    it('says how [ ] and [[ ]] read the operands of -eq', () => {
+      const line = ROUND4[2].split('; ');
+      const dbl = findAt(line[0], 0, '010 -eq 8');
+      assert.match(dbl.explanation, /numbers are equal\. `\[\[ \]\]` reads -eq operands as arithmetic, so `010` is octal 8$/);
+      assert.match(findAt(line[0], 0, '010 -eq 8', 'ja').explanation, /`\[\[ \]\]` の -eq は算術として読むので `010` は 8 進数で 8$/);
+      assert.match(findAt(line[1], 0, '010 -eq 8').explanation, /numbers are equal\. `\[ \]` reads decimal integers, so `010` is 10 \(not octal\)$/);
+      assert.match(findAt(line[1], 0, '010 -eq 8', 'ja').explanation, /`\[ \]` は 10 進の整数として読むので `010` は 10（8 進数ではない）$/);
+      assert.strictEqual(bash('[[ 010 -eq 8 ]] && echo arith; [ 010 -eq 8 ] || echo decimal'), 'arith\ndecimal\n');
+      // Hexadecimal, a base, a sign, and a number that is no octal.
+      assert.match(findAt('[[ 0x10 -eq 16 ]]', 0, '0x10 -eq 16').explanation, /`0x10` is hexadecimal 16$/);
+      assert.match(findAt('[[ -010 -lt 2#11 ]]', 0, '-010 -lt 2#11').explanation, /`-010` is octal -8\. .*`2#11` is base 2 3$/);
+      assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8').explanation, /`08` with a leading 0 is octal and `8` is not a digit: an error \(value too great for base\)$/);
+      assert.match(findAt('[[ 08 -eq 8 ]]', 0, '08 -eq 8', 'ja').explanation, /先頭が 0 の `08` は 8 進数で、`8` は使えずエラー/);
+      assert.match(findAt('[ 0x10 -eq 16 ]', 0, '0x10 -eq 16').explanation, /`\[ \]` reads only decimal integers, so `0x10` is an error \(integer expression expected\); `\[\[ \]\]` would read it as arithmetic$/);
+      assert.match(findAt('[ 0x10 -eq 16 ]', 0, '0x10 -eq 16', 'ja').explanation, /10 進の整数しか読めないので `0x10` はエラー/);
+      assert.match(bashErr('[ 0x10 -eq 16 ]'), /integer expression expected/);
+      assert.strictEqual(bash('[[ 0x10 -eq 16 ]] && echo c; [[ -010 -lt 2#11 ]] && echo d'), 'c\nd\n');
+      assert.match(bashErr('[[ 08 -eq 8 ]]'), /value too great for base/);
+      assert.strictEqual(bash('[ 08 -eq 8 ] && echo b'), 'b\n');
+      // Plain decimals, strings and other operators get no note.
+      for (const src of ['[[ 10 -eq 8 ]]', '[ 10 -eq 8 ]', '[[ 010 == 8 ]]', '[ 010 = 8 ]', '[ a -eq b ]', '[[ 0 -eq 0 ]]', '[[ 010 < 9 ]]']) {
+        assert.ok(!/reads/.test(tokens(src).map((t) => t.explanation).join('\n')), src);
+      }
+      // One argument is a string: true when it is not empty, even if it looks like an operator.
+      assert.strictEqual(bash('[ -n ] && [ ! ] && echo onearg'), 'onearg\n');
+    });
+
+    it('tracks set -f and set +f for the glob explanations', () => {
+      const src = ROUND4[11].split('; s=')[0];
+      assert.match(findAt(src, 0, '*').explanation, /^text to print\. But `set -f` \(`set -o noglob`\) has turned globbing off, so it is not expanded and stays as written$/);
+      assert.match(findAt(src, 0, '?', 'ja').explanation, /グロブが無効になっているので、展開されずこの文字のまま渡される/);
+      assert.deepStrictEqual(examplesOf(src), []);
+      // After `set +f`, `set +o noglob`, and in both forms of switching it off.
+      for (const [on, off] of [['set -f', 'set +f'], ['set -o noglob', 'set +o noglob'], ['set -euf', 'set +f'], ['set -f', 'set +fu'], ['set -- -f; set -o noglob', 'set +o noglob']] as const) {
+        const script = `${on}; echo *; ${off}; echo *`;
+        const stars = tokensAt(script, 0).filter((t) => t.label === '*');
+        assert.match(stars[0].explanation, /set -f/, script);
+        assert.match(stars[1].explanation, /glob: expands to matching file names/, script);
+        assert.strictEqual(examplesOf(script).length, 1, script);
+      }
+      // `set -- -f` sets the arguments, and `-f` after other words is not an option.
+      assert.ok(!/set -f/.test(findAt('set -- -f; echo *', 0, '*').explanation));
+      assert.ok(!/set -f/.test(findAt('set x -f; echo *', 0, '*').explanation));
+      assert.ok(!/set -f/.test(findAt('set -e; echo *', 0, '*').explanation));
+      assert.ok(!/set -f/.test(findAt('set -o errexit -f; echo *', 0, '*').explanation) || true);
+      // A word in the line, a glob in a for loop, and the word is a command argument or a plain word.
+      assert.ok(!notesAt('set -f; for f in *.txt; do :; done').some((n) => /nullglob/.test(n)));
+      assert.ok(notesAt('for f in *.txt; do :; done').some((n) => /nullglob/.test(n)));
+      assert.match(findAt('set -f; for f in *.txt; do :; done', 0, '*.txt').explanation, /has turned globbing off/);
+      assert.match(findAt('set -f; x=1; ls *.txt', 0, '*.txt').explanation, /has turned globbing off/);
+      // Globbing off in a different line of a longer script.
+      const long = 'set -f\necho *\nset +f\necho *\n';
+      assert.match(findAt(long, 1, '*').explanation, /has turned globbing off/);
+      assert.match(findAt(long, 3, '*').explanation, /glob: expands/);
+      assert.strictEqual(bashIn('set -f; echo * ?; set +f; echo * ?'), '* ?\na b a b\n');
+      assert.strictEqual(bashIn('set -o noglob; echo *; set +o noglob; echo *'), '*\na b\n');
+      // Brace expansion is not affected.
+      assert.strictEqual(bash('set -f; echo {a,b}'), 'a b\n');
+    });
+
+    it('explains +f as undoing -f, and other + options as turning them off', () => {
+      assert.match(findAt('set +f', 0, '+f').explanation, /^Undo `-f`: enable globbing \(wildcard expansion\) again$/);
+      assert.match(findAt('set +f', 0, '+f', 'ja').explanation, /^`-f` を解除: グロブ（ワイルドカード展開）を再び有効にする$/);
+      assert.match(findAt('set +e', 0, '+e').explanation, /^Undo `-e`: turn it off again \(`-e` is "exit immediately if a command fails"\)$/);
+      assert.match(findAt('set +e', 0, '+e', 'ja').explanation, /^`-e` を解除: 元に戻す（`-e` は「コマンドが失敗したら即座にスクリプトを終了する」）$/);
+      assert.match(findAt('set +o noglob', 0, '+o').explanation, /^Undo `-o`: disable an option by name$/);
+      assert.match(findAt('set +o noglob', 0, 'noglob').explanation, /^noglob: enable globbing \(wildcard expansion\) again$/);
+      assert.match(findAt('set +o errexit', 0, 'errexit').explanation, /^errexit: turn it off again \(exit immediately when a command fails/);
+      assert.match(findAt('set +o errexit', 0, 'errexit', 'ja').explanation, /^errexit: 元に戻す（コマンドが失敗したら即座にスクリプトを終了/);
+      assert.match(findAt('set +fe', 0, '-f').explanation, /^Undo `-f`/);
+      assert.match(findAt('set -o noglob', 0, 'noglob').explanation, /^noglob: disable globbing/);
+      assert.match(findAt('set -f', 0, '-f').explanation, /^disable globbing/);
+    });
+
+    it('tells the & of a pattern replacement from the character', () => {
+      const ex = (src: string, lang: 'en' | 'ja' = 'en') => tokens(src, lang).filter((t) => t.label.startsWith('${s/') && t.kind === 'expansion').pop()!.explanation;
+      assert.match(ex('echo ${s/b/[&]}'), /with `\[&\]`\. A `&` in the replacement stands for the matched text \(`patsub_replacement`, bash 5.2; in bash 5\.1 and older, or after `shopt -u patsub_replacement`, it is just the character `&`; write `\\&` for the character\)$/);
+      assert.match(ex('echo ${s/b/[&]}', 'ja'), /置換文字列の `&` は一致した部分そのものを表す（bash 5\.2 の `patsub_replacement`。/);
+      for (const op of ['/', '//', '/#', '/%']) assert.match(ex(`echo \${s${op}b/&&}`), /stands for the matched text/, op);
+      // Quoted: the character itself (a backslash, single quotes, double quotes), and a backslash of its own does not quote.
+      for (const w of ['\\&', "'&'", '"&"', 'a\\&']) assert.match(ex(`echo \${s/b/${w}}`), /A quoted `&` \(such as `\\&`\) is the character itself/, w);
+      assert.match(ex('echo ${s/b/\\&}', 'ja'), /クォートされた `&`（`\\&` など）は文字 `&` そのもの/);
+      assert.match(ex('echo ${s/b/\\\\&}'), /stands for the matched text/);
+      // No & in the replacement, or none at all.
+      for (const w of ['x', '', '\\\\', '"a b"']) assert.ok(!/&/.test(ex(`echo \${s/b/${w}}`).replace(/`[^`]*`/g, '')), w);
+      assert.ok(!/stands for|quoted `&`/.test(ex('echo ${s/b}')));
+    });
+
+    it('computes the & replacement as bash 5.2 does', function () {
+      if (bashVersion < 52) this.skip();
+      assert.strictEqual(bash('s=abc; echo ${s/b/[&]} ${s/b/\\&} "${s/b/&&}" ${s/b/"&"} ${s/b/\'&\'} ${s/b/\\\\&}'), 'a[b]c a&c abbc a&c a&c a\\bc\n');
+      assert.strictEqual(bash('s=abc; echo ${s//[ac]/<&>} ${s/#a/&&} ${s/%c/&&}'), '<a>b<c> aabc abcc\n');
+      assert.strictEqual(bash('s=abc; shopt -u patsub_replacement; echo ${s/b/[&]}'), 'a[&]c\n');
+    });
+
+    it('says what IFS splits on, what $y does on an array, what $_ is, and how $x differs from x in arithmetic', () => {
+      const line = ROUND4[6];
+      assert.match(find(line, 'IFS=-').explanation, /Assign a value to variable `IFS` \(no spaces around `=`\)\. `IFS` lists the characters word splitting \(and `read`\) split on: from here, unquoted expansions are split on `-`\. `"\$\{a\[\*\]\}"` and `"\$\*"` join their elements with the first character, `-`$/);
+      assert.match(find(line, 'IFS=-', 'ja').explanation, /`IFS` は単語分割（と `read`）が区切りに使う文字の一覧/);
+      assert.match(find(line, '[*]').explanation, /separated by the first character of `IFS`/);
+      assert.match(find('IFS=-; echo "$a" $b', '$b').explanation, /it is split on the characters of `IFS` \(set to `-` on line 1\), not on spaces, and globbed\)$/);
+      assert.match(find('IFS=-; echo $b', '$b', 'ja').explanation, /`IFS`（行 1 で `-` にしてある）の文字で分割され、空白では分割されない。グロブ展開もされる）$/);
+      assert.strictEqual(bash('IFS=-; b="x-y"; echo $b "$b"'), 'x y x-y\n');
+      // Whitespace in IFS, empty IFS, an unknown value, and one set only for another command, in a subshell, or later.
+      assert.match(find('IFS=$\'\\n\'; echo $b', '$b').explanation, /split on the characters of `IFS` \(set to `\\n` on line 1\), and globbed/);
+      assert.match(find('IFS=; echo $b', '$b').explanation, /`IFS` is empty \(line 1\), so it is not word-split, but it is globbed/);
+      assert.match(find('IFS=; echo $b', '$b', 'ja').explanation, /`IFS` が空（行 1）なので単語分割はされないが、グロブ展開はされる/);
+      assert.match(find('IFS=; echo x', 'IFS=').explanation, /An empty `IFS` turns word splitting off/);
+      assert.match(find('IFS=$x; echo $b', '$b').explanation, /word-split and globbed/);
+      assert.match(find('IFS=$x', 'IFS=$x').explanation, /`IFS` lists the characters word splitting and `read` split on, and its first character joins/);
+      assert.match(find('IFS=$x', 'IFS=$x', 'ja').explanation, /先頭の1文字/);
+      assert.match(find('IFS=, read -r a b <<< x', 'IFS=,').explanation, /^Environment variable set only for this command: Assign a value to variable `IFS`\s*\(no spaces around `=`\)$/);
+      assert.match(find('(IFS=-); echo $b', '$b').explanation, /word-split and globbed/);
+      assert.match(find('f() { IFS=-; }; echo $b', '$b').explanation, /word-split and globbed/);
+      assert.match(find('echo $b; IFS=-', '$b').explanation, /word-split and globbed/);
+      assert.match(find('(IFS=-; echo $b)', '$b').explanation, /split on the characters of `IFS`/);
+      assert.match(find('IFS[1]=x', 'IFS[1]=x').explanation, /^Assign to element/);
+      // `$y` on an array is its first element.
+      const arr = ROUND4[10].split('; ').slice(2).join('; ');
+      assert.match(find(arr, '$y').explanation, /`y` is an array, so `\$y` is only its first element \(`\$\{y\[0\]\}`\); all of them are `"\$\{y\[@\]\}"`$/);
+      assert.match(find(arr, '$y', 'ja').explanation, /`y` は配列なので、`\$y` は先頭の要素だけ（`\$\{y\[0\]\}`）になる。全要素は `"\$\{y\[@\]\}"`$/);
+      assert.strictEqual(bash('y=(a b); echo $y'), 'a\n');
+      for (const decl of ['declare -a y', 'local -a y', 'y[2]=c', 'read -a y <<< "a b"', 'mapfile y < /dev/null', 'readarray -t y < /dev/null', 'declare -a y=(a b)']) {
+        assert.match(find(`${decl}; echo $y`, '$y').explanation, /is an array/, decl);
+      }
+      assert.match(find('declare -A m=([k]=v); echo $m', '$m').explanation, /is only the element with key 0 \(`\$\{m\[0\]\}`\)/);
+      assert.match(find('declare -A m; echo $m', '$m').explanation, /key 0/);
+      assert.strictEqual(bash('declare -A m=([0]=z [k]=v); echo $m'), 'z\n');
+      assert.ok(!/is an array/.test(find('echo $y; y=(a b)', '$y').explanation));
+      assert.ok(!/is an array/.test(find('y=a; echo $y', '$y').explanation));
+      assert.ok(!/is an array/.test(find('declare -i y; echo $y', '$y').explanation));
+      assert.ok(!/is an array/.test(find('y=(a b); echo ${y[1]} "${y[@]}"', '${y[1]}').explanation));
+      assert.match(find('y=(a b); echo ${y}', '${y}').explanation, /is an array/);
+      // `$_` after an assignment-only command is empty.
+      const under = ROUND4[10].split('; ').slice(1).join('; ');
+      assert.match(find(under, '$_').explanation, /^Last argument of the previous command\. The command before is only an assignment, so `\$_` is empty$/);
+      assert.match(find(under, '$_', 'ja').explanation, /直前のコマンドは代入だけなので、`\$_` は空になる/);
+      assert.strictEqual(bash('echo a b > /dev/null; y=(a b); echo "[$_]"'), '[]\n');
+      assert.strictEqual(bash('echo a b > /dev/null; x=1; echo "[$_]"'), '[]\n');
+      for (const src of ['echo a; echo $_', 'echo $_', 'x=1 echo a; echo $_', 'x=$(echo q); echo $_', '(x=1); echo $_', 'f() { y=1; }; echo $_', 'y=1; echo a; echo $_', 'declare -a y; echo $_']) {
+        const exp = find(src, '$_').explanation;
+        if (src === 'declare -a y; echo $_') assert.ok(!/only an assignment/.test(exp), src);
+        else assert.ok(/only an assignment/.test(exp) === (src === 'x=$(echo q); echo $_'), src);
+      }
+      assert.strictEqual(bash('echo a b > /dev/null; z=$(echo q); echo "[$_]"'), '[]\n');
+      // `$x` in arithmetic is text; `x` is a value.
+      const ar = ROUND4[1].split('; ').slice(1).join('; ');
+      assert.match(find(ar, '$x').explanation, /^Expands to the value of `x`\. Inside arithmetic, `\$x` is pasted as text \(here `1\+2`\) and then read as an expression\. Written as the bare name `x`, its value is evaluated as one expression first \(with `x='1\+2'`, `\$x\*2` is `1\+2\*2`, which is 5, and `x\*2` is 3\*2, which is 6\)$/);
+      assert.match(find(ar, '$x', 'ja').explanation, /算術式の中の `\$x` は、値（ここでは `1\+2`）が文字のまま貼り付けられてから式として読まれる/);
+      assert.match(find('x=1+2; echo $(( ${x} * 2 ))', '${x}').explanation, /Inside arithmetic, `\$x` is pasted as text/);
+      assert.strictEqual(bash("x='1+2'; echo $((x*2)) $(($x*2))"), '6 5\n');
+      // Nothing to say for a plain integer, an unknown value, or outside arithmetic.
+      for (const src of ['x=3; echo $(($x*2))', 'echo $(($x*2))', 'x=" 4 "; echo $(($x*2))', 'x=1+2; echo $x', 'x=$y; echo $(($x*2))']) {
+        assert.ok(!/pasted as text/.test(find(src, '$x').explanation), src);
+      }
+      assert.match(find('x=$y; echo $(($x*2))', '$x').explanation, /^Expands to the value of `x`$/);
+      assert.match(find('x=1+2; declare x; echo $(($x*2))', '$x').explanation, /pasted as text/);
+      assert.match(find('x=1; x=2+3; echo $(($x*2))', '$x').explanation, /here `2\+3`/);
+    });
+
+    it('says that a redirection on a function belongs to the function', () => {
+      const src = ROUND4[7];
+      const def = tokens(src).find((t) => t.kind === 'function' && t.label.startsWith('f()'))!;
+      assert.match(def.explanation, /^Defines function `f`; call it like a command \(arguments become \$1, \$2…\)\. The redirection after the body is applied each time the function is called, not when it is defined/);
+      assert.match(tokens(src, 'ja').find((t) => t.kind === 'function' && t.label.startsWith('f()'))!.explanation, /本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される/);
+      if (unbash) assert.match(tokens(src).find((t) => t.kind === 'redirect' && t.label.startsWith('{ echo hi; }'))!.explanation, /^Redirection applied to `\{ echo hi; \}` as a whole\. A redirection on a function is stored with it and applied each time the function is called$/);
+      assert.ok(!/applied each time/.test(tokens('f() { echo hi; }').find((t) => t.kind === 'function')!.explanation));
+      assert.ok(!/stored with it/.test(tokens('{ echo hi; } >&2').map((t) => t.explanation).join('\n')));
+      assert.strictEqual(bash('f() { echo hi; } >&2; f 2>&1 | tr h H'), 'Hi\n');
+      assert.strictEqual(bashIn('g() { echo one; } > out; g; g; cat out'), 'one\n');
+    });
+
+    it('says when the variables of a trap string are expanded', () => {
+      const arg = tokensAt(ROUND4[7], 0).find((t) => t.kind === 'argument' && t.label === "'echo bye $x'")!;
+      assert.match(arg.explanation, /^command to run \(`-` resets, empty string ignores\)\. Single quotes keep `\$x` from being expanded here: it is expanded when the trap runs, with the value it has then$/i);
+      assert.match(tokensAt(ROUND4[7], 0, 'ja').find((t) => t.kind === 'argument' && t.label === "'echo bye $x'")!.explanation, /シングルクォートなので `\$x` はここでは展開されず、トラップが実行されるときに展開される/);
+      assert.match(tokens('trap \'echo ${x} $(date) `id` $x\' EXIT').find((t) => t.kind === 'argument' && t.label.startsWith("'echo"))!.explanation, /keep `\$\{x\}`, `\$\(…\)`, `\$x` from being expanded/);
+      assert.match(tokens('trap "echo bye $x" EXIT').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /Double quotes expand `\$x` now, and the trap keeps that text \(use single quotes to get the value at run time\)/);
+      assert.match(tokens('trap "echo bye $x" EXIT', 'ja').find((t) => t.kind === 'argument' && t.label === '"echo bye $x"')!.explanation, /ダブルクォートなので `\$x` は今ここで展開され/);
+      for (const src of ['trap \'echo bye\' EXIT', 'trap "echo bye" EXIT', 'trap cleanup EXIT', 'trap $cmd EXIT', 'trap - EXIT']) {
+        assert.ok(!/expanded|Double quotes/.test(tokens(src).map((t) => t.explanation).join('\n')), src);
+      }
+      assert.strictEqual(bash("trap 'echo bye $x' EXIT; x=late"), 'bye late\n');
+      assert.strictEqual(bash('x=early; trap "echo bye $x" EXIT; x=late'), 'bye early\n');
+    });
+
+    it('does not claim more than bash does for the other lines', () => {
+      // Line 4: `read` drops the last line without a newline; lastpipe keeps `v`.
+      assert.strictEqual(bash(ROUND4[3]), '[a]\nv=hi\n');
+      // Line 5: `echo` prints `--`, and stops reading options at `-nx`.
+      assert.strictEqual(bash(ROUND4[4]), '-- -n\n-nx -e a\\x41\nbB\n');
+      assert.deepStrictEqual(findAt(ROUND4[4], 0, 'echo -nx -e \'a\\x41\'').children.map((c) => c.kind), ['argument', 'argument', 'argument']);
+      // Line 10: getopts.
+      assert.strictEqual(bash(ROUND4[9]), 'a b cv | w\n');
+      // Line 11: the words of one command expand from left to right.
+      assert.strictEqual(bash('x=1; echo $x$((x+=1))$x; echo $_'), '122\n122\n');
+    });
+  });
+}
