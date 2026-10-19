@@ -139,7 +139,7 @@ For a side pane that follows the cursor, click **Open in panel** at the bottom o
 - **VSCodium and other editors using Open VSX:** [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
 - **VS Code for the Web:** the extension also works on [vscode.dev](https://vscode.dev) and [github.dev](https://github.dev) (press `.` in a GitHub repository).
 
-Requires VS Code 1.85 or later. There are no native dependencies (the parser is WebAssembly), so it runs wherever VS Code runs.
+Requires VS Code 1.85 or later. There are no native dependencies (the parser is plain JavaScript), so it runs wherever VS Code runs.
 
 ### Ways to show explanations
 
@@ -242,15 +242,15 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 ## Limitations
 
 - Explanations are rule-based. Commands that are not in the dictionary are shown as an *external command* without option details.
-- A few constructs are mis-parsed by the underlying grammar, e.g. zsh-only syntax such as `*(.)`, and `[ ]` with escaped parentheses (`[ \( a = b \) -o c ]`) or with `!` before a word that looks like an operator (`[ ! = a ]`), which it does not read as a test. In a `[ ]` it does read, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the tree says. The grammar is patched only for `=` and `=~` next to `&&` and `||` in `[[ ]]`, for a pattern of several parts after `=`/`==`/`!=` (`*"$y"*z`), for `!` negating the whole test after it (`[[ ! $x =~ re ]]`, `[[ ! $a -eq 1 ]]`, `[ ! a = b ]`), and for variables in `${s:$i+1}` offsets.
-- After a line with a pipeline of two or more commands (`a | b | c`), a later line with `&&` or `||` is misread by the grammar ([tree-sitter-bash#347](https://github.com/tree-sitter/tree-sitter-bash/issues/347)): it and the lines between are taken as arguments of the pipeline's last command. A line ending in `;`, or a compound command such as `if … fi`, in between avoids it.
+- A few constructs are not read as bash reads them: zsh-only syntax such as `*(.)` and `${(f)var}` (with the shell set to zsh, such a line is marked as not parsed), and a base-64 digit `@` in arithmetic (`$((64#@))` is read as one word). In a `[ ]`, the arguments are grouped by bash's own rules for `test` (`-o` below `-a` below `!`; `-a` and `-o` as unary operators where an operand is expected), whatever the parser says.
+- A script with Windows line endings (CRLF) is explained as if it had LF, and a warning says that bash reads the CR as part of the last word of each line. A here-document in such a script has no closing line, as in bash.
 
 ## Privacy
 
 Bash Explainer works entirely offline by design:
 
 - **No network access.** The extension contains no code that opens network connections, and the panel's Content Security Policy blocks external requests.
-- **No AI.** Scripts are parsed with [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) and explained from built-in dictionaries, so the same line always gets the same explanation.
+- **No AI.** Scripts are parsed with [unbash](https://github.com/webpro-nl/unbash), a JavaScript parser bundled into the extension, and explained from built-in dictionaries, so the same line always gets the same explanation.
 - **No telemetry.** The extension collects nothing.
 - **No external processes.** Examples are computed by built-in code; your tools are never run.
 

@@ -89,7 +89,7 @@ The move happens in steps, each a PR with the test suite as the safety net. Most
 3. **The consumers read the model.** These are dialect, fixes, pitfalls, hosts and document, then the analyzer, each in its own step where possible. Explanations do not change, and the tests stay as they are, except about 35 assertions that read nodes directly. The import boundary test is added at the end of this step.
 4. **An unbash adapter**, with the token scanner and the comment recovery. Pin unbash to an exact version.
 5. **A differential run.** Both adapters explain the same scripts: sample.sh, the test fixtures, and a sweep of real scripts. Every difference is either a fix (tree-sitter misread it) or an adapter bug, and gets fixed or recorded.
-6. **The switch.** The extension uses the unbash adapter. Then tree-sitter is removed: the tree-sitter adapter, web-tree-sitter, `patches/`, `grammar/`, `scripts/build-grammar.mjs` and their CI step. tree-sitter-bash's quirks no longer need workarounds; CLAUDE.md and the README limitations are updated.
+6. **The switch.** Part 1 is done: the extension, the language server, the command-line tool and the web page use the unbash adapter, no bundle loads wasm, and the tests that explain scripts build the unbash parser (the items under "To do at the switch" are done, below). Part 2 removes tree-sitter: the tree-sitter adapter, web-tree-sitter, `patches/`, `grammar/`, `scripts/build-grammar.mjs` and their CI step. tree-sitter-bash's quirks no longer need workarounds; CLAUDE.md and the README limitations are updated.
 
 ### Known gaps to cover in the unbash adapter
 
@@ -104,7 +104,7 @@ These come from a survey of unbash 6.0.0. The adapter fills them; most are small
 
 ### The unbash adapter
 
-`src/syntax/adapters/unbash.ts` builds the model from unbash's AST, and `src/syntax/adapters/tokens.ts` finds what unbash does not position (comments, keywords, operators) in the text between the nodes it does. unbash is a dev dependency until the switch, and no bundle imports the adapter yet. How it is checked:
+`src/syntax/adapters/unbash.ts` builds the model from unbash's AST, and `src/syntax/adapters/tokens.ts` finds what unbash does not position (comments, keywords, operators) in the text between the nodes it does. unbash is a dependency of every bundle since the switch (step 6, part 1). How it is checked:
 
 - **The oracle** (test/syntax-adapter-unbash.test.ts, with test/support/oracle.ts): both adapters build the model of the shell code of the fixtures and of the snippets the tests pass to the parser or the analyzer (test/fixtures/snippets.json, made by scripts/extract-snippets.ts), and the trees are compared node for node. `npx tsx scripts/syntax-oracle.ts` runs it by hand (`-v` for the first difference of each input, `--causes` to group them, `-e 'script'` or file names for other input).
 - **The differences are listed** in that test, with their reasons, and the test fails if one is no longer there. Where tree-sitter is wrong (#347, `for i do`, `coproc`, `<<-` with tabs, a here string after `}`, unfinished input…), the test holds the tree unbash must give.
@@ -133,14 +133,14 @@ What unbash does not give, which the adapter does not repair: `echo (` is accept
 - **unbash's AST changes with each major version.** Pin the version. An upgrade touches only the adapter, and the differential run and the tests check it.
 - **Converting tree-sitter's tree into objects costs time on each parse.** It only matters until the switch.
 
-### To do at the switch
+### To do at the switch (done in part 1)
 
-Found in the review of the unbash adapter; they need the analyzer or the build, not the adapter, and wait for step 6.
+Found in the review of the unbash adapter; they needed the analyzer or the build, not the adapter, and waited for step 6. What was done:
 
-- **`echo ${x@Z}` makes the analyzer throw** (analyzer.ts, `transformMeaning[t]!`): unbash accepts any operator letter. Explain unknown operators gracefully, or treat them as errors.
-- **web/tsconfig.json overrides `moduleResolution: "node"`**: with an unbash import, `tsc -p web` fails with TS2307, since unbash has only `exports`.
-- **CRLF.** VS Code's `getText()` keeps CRLF. Under unbash, `if [ -f a ]; then\r\n  echo yes\r\nfi\r\n` reads `fi` as an external command and the `if` as incomplete. Decide whether to normalize (for example, mask `\r` before `\n` as a space of the same length) and/or to warn.
-- **dialect.ts does not know `coproc_statement`**, so `coproc cat </dev/null && echo ok` loses the coproc feature.
-- **`declare a[1]` and `declare a[@]` lose their subscript**, and with it the "Element [1] of array a" explanation.
-- **Tests with `[ ( a = b ) -o c = d ]`** (unescaped parentheses) expect what bash rejects as a syntax error. Review them.
-- **`cat <<EOF; cmd`**: tree-sitter reads the delimiter as `EOF;`, so the rest is misread; unbash is right. Nothing to do but switch.
+- **`echo ${x@Z}`** is explained as a bad substitution, as bash reports it (the letter is an `error` token). `${#a-b}` too, which unbash reads as `$#` with an operator.
+- **web/tsconfig.json** no longer overrides `moduleResolution`, so `tsc -p web` finds unbash.
+- **CRLF.** The adapter masks each CR before a LF as a space of the same length (`SyntaxTree.carriageReturns` holds where), so a CRLF script is explained as an LF one, and `documentIssues` warns once (`crlf`): bash reads the CR as part of the last word of the line (`fi\r`). A here-document in such a script has no closing line, as in bash.
+- **`coproc_statement`** is a feature of dialect.ts.
+- **`declare a[1]` and `declare a[@]`** are `subscript` nodes in the adapter, so "Element `[1]` of array `a`" stays.
+- **`[ ( a = b ) -o c = d ]`** (a syntax error in bash) is no longer a test; the tests use `\( \)`, which the analyzer groups (and compares with bash).
+- **`cat <<EOF; cmd`** is covered in test/analyzer.test.ts as well as in the adapter test.

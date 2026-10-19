@@ -49,6 +49,17 @@ describe('the command-line tool', function () {
     assert.strictEqual(json[0].explanation.items[0].kind, 'command');
   });
 
+  it('warns about CRLF line ends in a script, and explains it as an LF one', () => {
+    const file = path.join(dir, 'crlf.sh');
+    fs.writeFileSync(file, 'if true; then\r\n  echo hi\r\nfi\r\n');
+    const r = run(['--check', '--no-color', file]);
+    assert.strictEqual(r.code, 1);
+    assert.match(r.out, /crlf\.sh:1:14: warning: This file has Windows line endings.*\[crlf\]$/m);
+    const e = run(['--no-color', '--no-examples', `${file}:3`]);
+    assert.match(e.out, /crlf\.sh:3 {2}fi\n/);
+    assert.match(e.out, /fi {2}End of the if statement/);
+  });
+
   it('reads the shell code in a Dockerfile', () => {
     const r = run([`${fixture('hosts', 'Dockerfile')}:3`, '--no-examples', '--no-color']);
     assert.match(r.out, /apk add --no-cache/);
