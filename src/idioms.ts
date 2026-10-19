@@ -74,8 +74,28 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
   return text;
 }
 
+/** Whether one `set` command turns errexit, nounset and pipefail all on, however the options are written (`-euo`, `-eou`, `-o pipefail -eu`, `-e -u -o pipefail`, `-o errexit -o nounset -o pipefail`…). */
+export function isStrictMode(text: string): boolean {
+  const words = text.split(/[;&|]/)[0].trim().split(' ');
+  if (words[0] !== 'set') return false;
+  const on = new Set<string>();
+  const short: Record<string, string> = { e: 'errexit', u: 'nounset' };
+  const set = (name: string, sign: string) => { if (sign === '-') on.add(name); else on.delete(name); };
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i];
+    if (!/^[-+][a-zA-Z]+$/.test(w)) break;
+    // As in bash, each `o` of a bundle takes the next word as an option name, and the other letters still apply.
+    for (const letter of w.slice(1)) {
+      if (letter === 'o') {
+        if (i + 1 < words.length) set(words[++i], w[0]);
+      } else if (short[letter]) set(short[letter], w[0]);
+    }
+  }
+  return on.has('errexit') && on.has('nounset') && on.has('pipefail');
+}
+
 interface Idiom {
-  test: RegExp;
+  test: RegExp | ((text: string) => boolean);
   ja: string;
   en: string;
   /** Not reported when this other idiom (by index) is found, e.g. a `cd` that is part of a larger idiom. */
@@ -111,7 +131,7 @@ const IDIOMS: Idiom[] = [
     en: 'checks whether the script is run directly rather than sourced (like Python\'s `if __name__ == "__main__"`)',
   },
   {
-    test: /^set -[a-zA-Z]*e[a-zA-Z]*u[a-zA-Z]*o pipefail\b|^set -[a-zA-Z]*u[a-zA-Z]*e[a-zA-Z]*o pipefail\b/,
+    test: isStrictMode,
     ja: '安全なスクリプトのための定番設定（strict mode）: エラーで止まる、未定義の変数をエラーにする、パイプの途中の失敗も見逃さない',
     en: 'the usual "strict mode": stop on errors, treat unset variables as errors, and catch failures inside pipelines',
   },
@@ -156,7 +176,7 @@ const IDIOMS: Idiom[] = [
 export function findIdioms(statements: string[], lang: Lang): string[] {
   const s = pick(lang);
   const texts = statements.map((stmt) => stmt.replace(/\\\n/g, ' ').replace(/\s+/g, ' ').trim());
-  const found = IDIOMS.map((idiom) => texts.some((t) => idiom.test.test(t)));
+  const found = IDIOMS.map((idiom) => texts.some((t) => (typeof idiom.test === 'function' ? idiom.test(t) : idiom.test.test(t))));
   return IDIOMS.filter((idiom, i) => found[i] && !(idiom.unless !== undefined && found[idiom.unless]))
     .map((idiom) => s(`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`));
 }
