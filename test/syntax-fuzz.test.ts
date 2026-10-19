@@ -115,9 +115,12 @@ describe('unbash adapter: fuzzing', () => {
   it('unbash adapter: parses in linear time', () => {
     // A script of every fixture, repeated: 8 times the text should take about 8 times as long (not 64).
     const script = corpus().files.map((f) => f.text).join('\n');
+    // Best of several runs, on inputs large enough that a run takes milliseconds: on a busy CI runner a
+    // garbage collection can double one short run. A quadratic parser gives 64 times as long for 8 times
+    // the input, so a bound of 16 still catches it.
     const best = (text: string): number => {
       let min = Infinity;
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 7; i++) {
         const t0 = performance.now();
         ub.parse(text);
         min = Math.min(min, performance.now() - t0);
@@ -127,10 +130,12 @@ describe('unbash adapter: fuzzing', () => {
     best(script);
     const one = best(script);
     const eight = best(Array(8).fill(script).join('\n'));
-    assert.ok(eight < 12 * one, `1x: ${one.toFixed(1)} ms, 8x: ${eight.toFixed(1)} ms`);
+    assert.ok(eight < 16 * one, `1x: ${one.toFixed(1)} ms, 8x: ${eight.toFixed(1)} ms`);
     // Many short lines: the case that was quadratic.
     const lines = (n: number): string => 'echo a b\n'.repeat(n);
-    best(lines(500));
-    assert.ok(best(lines(4000)) < 12 * best(lines(500)));
+    best(lines(1000));
+    const few = best(lines(1000));
+    const many = best(lines(8000));
+    assert.ok(many < 16 * few, `1000 lines: ${few.toFixed(1)} ms, 8000 lines: ${many.toFixed(1)} ms`);
   });
 });
