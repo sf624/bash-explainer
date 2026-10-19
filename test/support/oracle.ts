@@ -72,7 +72,17 @@ export function corpus(): { files: Input[]; snippets: Input[] } {
   return { files, snippets };
 }
 
-/** Breaks of the model's invariants in a tree (an empty list for a sound tree): the checks that do not need a second parser. */
+/** Whether a node is a here-document's body or its closing line: text that comes after the rest of its line. */
+const isHole = (n: SyntaxNode): boolean => n.type === 'heredoc_body' || n.type === 'heredoc_end';
+
+/**
+ * Breaks of the model's invariants in a tree (an empty list for a sound tree): the checks that do not need a
+ * second parser. Children lie inside their parent, in order and without overlaps, with one exception: a
+ * `heredoc_redirect` ends with its body, which comes after the rest of its line, so the nodes of that line
+ * (`| cmd`, `; cmd`, arguments, other redirections) lie inside its range without being its children. For
+ * those, the text each leaf covers is what counts: the leaves outside the bodies, in tree order, are in
+ * text order and do not overlap, and the bodies are in text order and hold no other leaf.
+ */
 export function invariants(tree: SyntaxTree): string[] {
   const bad: string[] = [];
   const text = tree.text;
@@ -81,7 +91,10 @@ export function invariants(tree: SyntaxTree): string[] {
     const row = before.split('\n').length - 1;
     return { row, column: i - (before.lastIndexOf('\n') + 1) };
   };
-  const visit = (n: SyntaxNode, parent: SyntaxNode | null, path: string): void => {
+  const hasHole = (n: SyntaxNode): boolean => isHole(n) || n.children.some(hasHole);
+  const visible: SyntaxNode[] = [];
+  const holes: SyntaxNode[] = [];
+  const visit = (n: SyntaxNode, parent: SyntaxNode | null, path: string, inHole: boolean): void => {
     const here = `${path}/${n.type}@${n.startIndex}`;
     if (n.parent !== parent) bad.push(`${here}: parent`);
     if (n.text !== text.slice(n.startIndex, n.endIndex)) bad.push(`${here}: text`);
@@ -92,16 +105,29 @@ export function invariants(tree: SyntaxTree): string[] {
     const named = n.children.filter((c) => c.named);
     if (named.length !== n.namedChildren.length || named.some((c, i) => c !== n.namedChildren[i])) bad.push(`${here}: namedChildren`);
     if (parent && (n.startIndex < parent.startIndex || n.endIndex > parent.endIndex)) bad.push(`${here}: outside its parent [${parent.startIndex},${parent.endIndex}]`);
+    const hole = inHole || isHole(n);
+    if (!n.children.length) (hole ? holes : visible).push(n);
     let at = n.startIndex;
+    let prevHole = false;
     for (const c of n.children) {
-      // (Two heredocs on a line: the second one's operator is before the first one's body, and its body after.)
-      const beside = c.type === 'heredoc_redirect' && n.children.some((d) => d !== c && d.type === 'heredoc_redirect');
-      if (c.startIndex < at && !beside) bad.push(`${here}: ${c.type}@${c.startIndex} overlaps or is out of order`);
-      at = Math.max(at, c.endIndex);
+      // (Where a here-document is involved, the leaves are checked as a whole, below.)
+      const involved = prevHole || hasHole(c);
+      if (c.startIndex < at && !involved) bad.push(`${here}: ${c.type}@${c.startIndex} overlaps or is out of order`);
+      if (!involved) at = Math.max(at, c.endIndex);
+      prevHole ||= hasHole(c);
       if (!c.named && c.type !== c.text) bad.push(`${here}: token ${c.type} has text ${c.text}`);
-      visit(c, n, here);
+      visit(c, n, here, hole);
     }
   };
-  visit(tree.root, null, '');
+  visit(tree.root, null, '', false);
+  for (const leaves of [visible, holes]) {
+    leaves.forEach((l, i) => {
+      if (i && l.startIndex < leaves[i - 1].endIndex) bad.push(`leaf ${l.type}@${l.startIndex} overlaps or is out of order`);
+    });
+  }
+  for (const h of holes) {
+    const hit = visible.find((v) => v.startIndex < h.endIndex && v.endIndex > h.startIndex && v.endIndex > v.startIndex && h.endIndex > h.startIndex);
+    if (hit) bad.push(`leaf ${hit.type}@${hit.startIndex} is in a here-document`);
+  }
   return bad;
 }

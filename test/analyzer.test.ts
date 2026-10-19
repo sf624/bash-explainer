@@ -144,6 +144,82 @@ describe('time keyword', () => {
     assert.match(explain('"time" ls').items[0].explanation, /Run the expanded value as a command/);
     assert.match(explain('FOO=1 time ls').items[0].explanation, /Run the external command `time`/);
   });
+  it('runs the program time after a pipe, where bash has no keyword', () => {
+    for (const src of ['a | time b', 'a |& time b']) {
+      const e = explain(src);
+      assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'keyword'), [], src);
+      assert.match(find(e, src.slice(src.indexOf('time'))).explanation, /Run the external command `time`/, src);
+    }
+    // At the start of a pipeline, and after `&&`, it is the keyword.
+    assert.strictEqual(find(explain('a && time b'), 'time', 'keyword').kind, 'keyword');
+    assert.strictEqual(explain('time a | b').items[0].kind, 'keyword');
+  });
+});
+
+describe('statements as bash reads them', () => {
+  const labels = (t: Token): string[] => t.children.map((c) => c.label);
+  it('a redirection after the last command of a list or pipeline belongs to that command', () => {
+    const e = explain('echo A && echo B > f');
+    assert.strictEqual(e.items.length, 1);
+    assert.match(e.items[0].explanation, /^Command list/);
+    assert.deepStrictEqual(labels(e.items[0]), ['echo A', '&&', 'echo B > f']);
+    assert.deepStrictEqual(labels(e.items[0].children[2]), ['B', '> f']);
+    assert.deepStrictEqual(labels(e.items[0].children[0]), ['A']);
+    assert.ok(!all(e.items).some((t) => /as a whole/.test(t.explanation)));
+    const p = explain('echo a | cat 2>/dev/null');
+    assert.match(p.items[0].explanation, /^Pipeline/);
+    assert.deepStrictEqual(labels(p.items[0]), ['echo a', '|', 'cat 2>/dev/null']);
+    assert.deepStrictEqual(labels(p.items[0].children[2]), ['2>/dev/null']);
+    // A compound command takes its own, also last in a list.
+    const g = explain('echo a && { echo b; } > f');
+    assert.deepStrictEqual(labels(g.items[0]), ['echo a', '&&', '{ echo b; } > f']);
+    assert.match(g.items[0].children[2].explanation, /^Redirection applied to `\{ echo b; \}` as a whole/);
+    assert.match(explain('{ echo a; } > f').items[0].explanation, /as a whole/);
+    // The pitfall of sudo looks at the command that is redirected.
+    assert.match(explain('echo x && sudo echo hi > /etc/motd').notes.join('\n'), /not by sudo/);
+  });
+  it('! negates the whole pipeline', () => {
+    const e = explain('! true | false');
+    assert.strictEqual(e.items.length, 1);
+    assert.match(e.items[0].explanation, /^Negate the exit status of the whole pipeline/);
+    assert.deepStrictEqual(labels(e.items[0]), ['true | false']);
+    assert.match(e.items[0].children[0].explanation, /^Pipeline/);
+    assert.match(explain('! true | false', 0, 'ja').items[0].explanation, /パイプライン全体の終了ステータス/);
+    // Alone, or in a list, it negates one command.
+    assert.match(explain('! grep -q x f').items[0].explanation, /following command/);
+    assert.deepStrictEqual(labels(explain('! a && b').items[0]), ['! a', '&&', 'b']);
+    assert.deepStrictEqual(labels(explain('! a && b').items[0].children[0]), ['a']);
+    // With a redirection: the command's.
+    const r = explain('! grep -q x f > /dev/null');
+    assert.deepStrictEqual(labels(r.items[0]), ['grep -q x f > /dev/null']);
+  });
+  it('the rest of a heredoc line is explained: later stages and commands', () => {
+    const e = explain('cat <<EOF | tr a-z A-Z && echo after\nhello\nEOF');
+    const list = e.items[0];
+    assert.match(list.explanation, /^Command list/);
+    assert.deepStrictEqual(labels(list).filter((l) => l !== '&&'), ['cat <<EOF | tr a-z A-Z && echo after …', 'echo after']);
+    assert.ok(find(e, 'tr a-z A-Z'));
+    assert.match(find(e, 'tr a-z A-Z').explanation, /Translate or delete/);
+    assert.ok(e.examples.length > 0);
+    assert.match(find(e, '<<EOF', 'redirect').explanation, /^Here-document/);
+    // The lines of the body are still the here-document's.
+    assert.match(explain('cat <<EOF | tr a-z A-Z && echo after\nhello\nEOF', 1).notes[0], /part of the here-document/);
+    // Redirections after the delimiter sit beside it.
+    const r = explain('cat <<EOF > out.txt\nhello\nEOF');
+    assert.deepStrictEqual(labels(r.items[0]), ['<<EOF', '> out.txt']);
+    assert.strictEqual(find(r, '<<EOF').children.length, 0);
+    // The arguments after it are the command's.
+    assert.deepStrictEqual(labels(explain('cat <<EOF out.txt\nhello\nEOF').items[0]), ['<<EOF', 'out.txt']);
+  });
+  it('a variable set on the right of a pipe is still pointed out when the last stage is redirected', () => {
+    const notes = explain('cat f | while read -r l; do n=$l; done > out\necho "$n"').notes.join('\n');
+    assert.match(notes, /run in subshells/);
+  });
+  it('a pipeline still gets its example when its last stage is redirected', () => {
+    assert.deepStrictEqual(explain('sort -u f | uniq -c > out').examples.map((x) => x.title), explain('sort -u f | uniq -c').examples.map((x) => x.title));
+    assert.ok(explain('sort -u f | uniq -c > out').examples.length > 0);
+    assert.strictEqual(explain('sort -u f | uniq -c > out').examples[0].kind, 'pipeline');
+  });
 });
 
 describe('input that is not finished', () => {

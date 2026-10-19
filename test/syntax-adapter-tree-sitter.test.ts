@@ -10,9 +10,12 @@ import type { Node } from 'web-tree-sitter';
 const root = path.join(__dirname, '..');
 const wasm = { runtimeDir: path.join(root, 'node_modules/web-tree-sitter'), bashWasm: path.join(root, 'grammar/tree-sitter-bash.wasm') };
 let parser: BashParser;
+/** The conversion without the rebuilding of shapes, to compare with tree-sitter's tree. */
+let plain: BashParser;
 let legacy: Awaited<ReturnType<typeof createRawParser>>;
 before(async () => {
   parser = await createTreeSitterParser(wasm);
+  plain = await createTreeSitterParser(wasm, { reshape: false });
   legacy = await createRawParser(wasm);
 });
 
@@ -86,7 +89,7 @@ describe('tree-sitter adapter: parity with web-tree-sitter', () => {
   const scripts = ['sample.sh', 'coverage.sh', 'posix.sh', 'ksh.ksh'].map((f) => ({ name: f, text: fs.readFileSync(path.join(root, 'test/fixtures', f), 'utf8') }));
   for (const { name, text } of [...scripts, ...hosts]) {
     it(`converts ${name} node for node`, () => {
-      const tree = parser.parse(text);
+      const tree = plain.parse(text);
       const ts = legacy.parse(text);
       try {
         assert.equal(tree.text, text);
@@ -102,7 +105,7 @@ describe('tree-sitter adapter: parity with web-tree-sitter', () => {
     const text = 'shopt -s extglob\nrm !(*.txt|a b) x\n';
     const ts = legacy.parse(text);
     try {
-      assert.ok(compare(parser.parse(text).root, ts.rootNode, text, '') > 5);
+      assert.ok(compare(plain.parse(text).root, ts.rootNode, text, '') > 5);
     } finally {
       ts.delete();
     }
@@ -182,18 +185,19 @@ describe('tree-sitter adapter: normalizations', () => {
   });
   it('time of one command, with arguments and a redirection', () => {
     const t = parser.parse('time ls -l /x >o');
-    const r = t.root.namedChildren[0];
-    assert.equal(r.type, 'redirected_statement');
-    const n = r.namedChildren[0];
+    const n = t.root.namedChildren[0];
     assert.equal(n.type, 'time_statement');
     assert.equal(field(n, 'option'), undefined);
-    assert.equal(n.text, 'time ls -l /x');
-    const body = field(n, 'body')!;
+    assert.equal(n.text, 'time ls -l /x >o');
+    // The redirection is the command's.
+    const r = field(n, 'body')!;
+    assert.equal(r.type, 'redirected_statement');
+    assert.equal(r.namedChildren[1].type, 'file_redirect');
+    const body = field(r, 'body')!;
     assert.equal(body.type, 'command');
     assert.equal(body.text, 'ls -l /x');
     assert.equal(field(body, 'name')?.text, 'ls');
     assert.deepEqual(fields(body, 'argument').map((a) => a.text), ['-l', '/x']);
-    assert.equal(r.namedChildren[1].type, 'file_redirect');
   });
   it('time alone, with only -p, or with only a redirection has no body', () => {
     for (const text of ['time', 'time -p', 'time >o']) {
@@ -204,13 +208,19 @@ describe('tree-sitter adapter: normalizations', () => {
     assert.equal(field(parser.parse('time -p').root.namedChildren[0], 'option')?.text, '-p');
     assert.equal(parser.parse('time -p').root.namedChildren[0].children.length, 2);
   });
-  it('time in a list times its command only, and after a pipe it is a time_statement too', () => {
+  it('time in a list times its command only; after a pipe it is the program', () => {
     const l = parser.parse('time a && b').root.namedChildren[0];
     assert.equal(l.type, 'list');
     assert.equal(l.namedChildren[0].type, 'time_statement');
-    const p = parser.parse('a | time b').root.namedChildren[0];
-    assert.equal(p.type, 'pipeline');
-    assert.equal(p.namedChildren[1].type, 'time_statement');
+    // `time` is a keyword only at the start of a pipeline: here, after `&&` but not after `|`.
+    assert.equal(parser.parse('a && time b').root.namedChildren[0].namedChildren[1].type, 'time_statement');
+    for (const text of ['a | time b', 'a |& time b']) {
+      const p = parser.parse(text).root.namedChildren[0];
+      assert.equal(p.type, 'pipeline', text);
+      assert.equal(p.namedChildren[1].type, 'command', text);
+      assert.equal(field(p.namedChildren[1], 'name')?.text, 'time', text);
+      assert.deepEqual(types(p, 'time_statement'), [], text);
+    }
   });
   it('time with nothing to time before a pipe stays a command', () => {
     const p = parser.parse('time | wc').root.namedChildren[0];
@@ -254,6 +264,89 @@ describe('tree-sitter adapter: normalizations', () => {
     assert.deepEqual(types(t.root, 'subshell'), []);
     const piped = parser.parse('rm @(a|b) x').root.namedChildren[0];
     assert.deepEqual(fields(piped, 'argument').map((a) => a.text), ['@(a|b)', 'x']);
+  });
+});
+
+/** Only the shape: the types of the nodes and their fields; commands and redirections as their text, a heredoc as its start. */
+function shape(n: SyntaxNode): string {
+  if (!n.named) return JSON.stringify(n.type);
+  if (['command', 'declaration_command', 'file_redirect', 'herestring_redirect', 'word'].includes(n.type)) return JSON.stringify(n.text) + (n.field ? '@' + n.field : '');
+  if (n.type === 'heredoc_redirect') return `<<${n.children.find((c) => c.type === 'heredoc_start')!.text}${n.field ? '@' + n.field : ''}`;
+  return `(${n.type}${n.field ? ' @' + n.field : ''}${n.children.length ? ' ' : ''}${n.children.map(shape).join(' ')})`;
+}
+const shapeOf = (text: string): string => shape(parser.parse(text).root.namedChildren[0]);
+const rawShapeOf = (text: string): string => shape(plain.parse(text).root.namedChildren[0]);
+
+describe('tree-sitter adapter: the shapes of bash', () => {
+  it('! negates the whole pipeline', () => {
+    assert.equal(shapeOf('! a | b'), '(negated_command "!" (pipeline "a" "|" "b"))');
+    assert.equal(shapeOf('! a | b | c'), '(negated_command "!" (pipeline "a" "|" "b" "|" "c"))');
+    assert.equal(shapeOf('a | b'), '(pipeline "a" "|" "b")');
+    // In a list, it negates the command after it only.
+    assert.equal(shapeOf('! a && b'), '(list (negated_command "!" "a") "&&" "b")');
+    const neg = parser.parse('! a | b').root.namedChildren[0];
+    assert.equal(neg.text, '! a | b');
+    assert.equal(neg.parent!.type, 'program');
+    assert.equal(neg.namedChildren[0].parent, neg);
+    assert.equal(neg.namedChildren[0].field, null);
+    assert.equal(neg.namedChildren[0].startIndex, 2);
+    // tree-sitter's own tree, for the record.
+    assert.equal(rawShapeOf('! a | b'), '(pipeline (negated_command "!" "a") "|" "b")');
+    // Nothing after the `!`: it stays where it is.
+    assert.equal(types(parser.parse('! | b').root, 'negated_command').length, 1);
+  });
+  it('the redirections after the last command of a pipeline or list belong to that command', () => {
+    assert.equal(shapeOf('echo A && echo B > f'), '(list "echo A" "&&" (redirected_statement "echo B"@body "> f"@redirect))');
+    assert.equal(shapeOf('echo a | cat 2>/dev/null'), '(pipeline "echo a" "|" (redirected_statement "cat"@body "2>/dev/null"@redirect))');
+    assert.equal(shapeOf('a | b && c 2>&1 > f'), '(list (pipeline "a" "|" "b") "&&" (redirected_statement "c"@body "2>&1"@redirect "> f"@redirect))');
+    assert.equal(rawShapeOf('echo A && echo B > f'), '(redirected_statement (list @body "echo A" "&&" "echo B") "> f"@redirect)');
+    // A compound command takes its own, alone or last in a list.
+    assert.equal(shapeOf('{ a; } > f'), '(redirected_statement (compound_statement @body "{" "a" ";" "}") "> f"@redirect)');
+    assert.equal(shapeOf('a && { b; } > f'), '(list "a" "&&" (redirected_statement (compound_statement @body "{" "b" ";" "}") "> f"@redirect))');
+    // Also through `!` and `time`.
+    assert.equal(shapeOf('! a | b > f'), '(negated_command "!" (pipeline "a" "|" (redirected_statement "b"@body "> f"@redirect)))');
+    assert.equal(shapeOf('a && ! b > f'), '(list "a" "&&" (negated_command "!" (redirected_statement "b"@body "> f"@redirect)))');
+    assert.equal(shapeOf('time a | b > f'), '(time_statement "time" (pipeline @body "a" "|" (redirected_statement "b"@body "> f"@redirect)))');
+    // Nothing to redirect but the redirections: they stay.
+    assert.equal(shapeOf('> f'), '(redirected_statement "> f"@redirect)');
+    // The ranges follow.
+    const t = parser.parse('echo A && echo B > f');
+    const list = t.root.namedChildren[0];
+    assert.deepEqual([list.startIndex, list.endIndex, list.namedChildren[1].startIndex, list.namedChildren[1].endIndex], [0, 20, 10, 20]);
+    assert.equal(list.namedChildren[1].text, 'echo B > f');
+  });
+  it('what follows <<EOF on its line is not in the heredoc', () => {
+    // More redirections stay among the redirections of the command.
+    assert.equal(shapeOf('cat <<A 2>&1 >f\n1\nA'), '(redirected_statement "cat"@body <<A@redirect "2>&1"@redirect ">f"@redirect)');
+    // Arguments go to the command, and the redirections before the last one with them.
+    assert.equal(shapeOf('cat <<A x y\n1\nA'), '"cat <<A x y\\n1\\nA"');
+    const cmd = parser.parse('cat <<A x\n1\nA').root.namedChildren[0];
+    assert.deepEqual(cmd.children.map((c) => c.type), ['command_name', 'heredoc_redirect', 'word']);
+    assert.equal(cmd.endIndex, 'cat <<A x\n1\nA'.length);
+  });
+  it('the rest of a heredoc line goes on with the pipeline or list', () => {
+    assert.equal(shapeOf('cat <<E | wc -l\nx\nE'), '(pipeline (redirected_statement "cat"@body <<E@redirect) "|" "wc -l")');
+    assert.equal(shapeOf('a <<E && b\nx\nE'), '(list (redirected_statement "a"@body <<E@redirect) "&&" "b")');
+    // `|` binds tighter than `&&` and `||`, which group to the left.
+    assert.equal(shapeOf('a <<E | b && c || d | e\nx\nE'), '(list (list (pipeline (redirected_statement "a"@body <<E@redirect) "|" "b") "&&" "c") "||" (pipeline "d" "|" "e"))');
+    assert.equal(shapeOf('a | cat <<E | wc && b\nx\nE'), '(list (pipeline "a" "|" (redirected_statement "cat"@body <<E@redirect) "|" "wc") "&&" "b")');
+    assert.equal(shapeOf('x && cat <<E | b\nx\nE'), '(list "x" "&&" (pipeline (redirected_statement "cat"@body <<E@redirect) "|" "b"))');
+    // The compound command with the heredoc, and a redirection after the heredoc on a pipeline's last command.
+    assert.equal(shapeOf('{ cat; } <<E | wc\nx\nE'), '(pipeline (redirected_statement (compound_statement @body "{" "cat" ";" "}") <<E@redirect) "|" "wc")');
+    const t = parser.parse('cat <<E | wc -l && echo after\nbody\nE\nnext');
+    const list = t.root.namedChildren[0];
+    assert.equal(list.type, 'list');
+    assert.equal(list.text, 'cat <<E | wc -l && echo after\nbody\nE');
+    // (The first part of the list ends with the body, which comes after the rest of the line.)
+    assert.deepEqual(list.namedChildren.map((c) => c.type), ['pipeline', 'command']);
+    assert.equal(list.namedChildren[0].text, 'cat <<E | wc -l && echo after\nbody\nE');
+    assert.equal(list.namedChildren[1].text, 'echo after');
+    assert.equal(t.root.namedChildren[1].text, 'next');
+    const h = types(t.root, 'heredoc_redirect')[0];
+    assert.deepEqual(h.children.map((c) => c.type), ['<<', 'heredoc_start', 'heredoc_body', 'heredoc_end']);
+    assert.equal(h.text, '<<E | wc -l && echo after\nbody\nE');
+    // tree-sitter nests all of it in the heredoc node.
+    assert.deepEqual(types(plain.parse('cat <<E | wc -l && echo after\nbody\nE').root, 'heredoc_redirect')[0].children.map((c) => c.type), ['<<', 'heredoc_start', 'pipeline', 'heredoc_body', 'heredoc_end']);
   });
 });
 
