@@ -304,7 +304,8 @@ describe('branches no other test takes', () => {
     assert.match(p('m{foo}'), /matches `foo`/);
     assert.match(p('print if /foo/i'), /case-insensitive/);
     assert.match(p('$x + 1'), /evaluate `\$x \+ 1`/);
-    assert.match(p('print $F[-1]'), /the 1th field from the end/);
+    assert.match(p('print $F[-1]'), /the last field/);
+    assert.match(p('print $F[-2]'), /the 2nd field from the end/);
     assert.match(perlLoopNote(new Set(['0']), 'en')!, /-0777/);
   });
 
@@ -446,7 +447,7 @@ describe('branches no other test takes', () => {
     assert.match(j('.a line_comment = "x"', 'yq'), /Set the line_comment/);
     assert.ok(j('.a tag == "!!str"', 'yq'));
     assert.match(j('. - 1'), /subtraction/);
-    assert.match(j('.[-1], .[-2], .[0]'), /the last element[^]*the 2th element from the end[^]*element 0/);
+    assert.match(j('.[-1], .[-2], .[0]'), /the last element[^]*the 2nd element from the end[^]*element 0/);
     assert.match(j('.[:2], .[1:]'), /from the start up to \(not including\) 2[^]*from 1 up to the end/);
     assert.match(j('.[.[0]], .[{"a": 1}["a"]:2]'), /index by the result/);
     assert.match(j('@foo "x", @base64'), /Format `@foo`/);

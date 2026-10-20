@@ -333,7 +333,7 @@ describe('lines no other test reaches', () => {
       [`grep -P 'a*+b??c{2,}+' f`, [/possessive, no backtracking/, /as few as possible/, /2 or more times \(possessive/]],
       [`grep -P 'a+?b{,3}c{2,3}d{x}[\\d_]' f`, [/at most 3 times/, /2 to 3 times/, /a digit/]],
       [`sed -n -e '# note' -e '2,~4p' -e 'T end' -e 's/a/b/2w out.txt' -e 's/a/\\x/' -e 's/b/c' -e 's/b' f`,
-        [/Comment/, /up to the next line that is a multiple of 4/, /if no `s` succeeded, branch to "end"/, /replace only the 2th match/, /write changed lines to "out.txt"/, /Unterminated `s` command/]],
+        [/Comment/, /up to the next line that is a multiple of 4/, /if no `s` succeeded, branch to "end"/, /replace only the 2nd match/, /write changed lines to "out.txt"/, /Unterminated `s` command/]],
     ];
     for (const [src, res] of cases) {
       it(src.slice(0, 60), () => {
