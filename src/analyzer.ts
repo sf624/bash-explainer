@@ -14,7 +14,7 @@ import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './exa
 import { awkExample } from './examples/awk';
 import { perlExample, perlOptions } from './examples/perlrun';
 import { MAX_SHOWN_LINES, pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
-import { jqExample, JqRun, Json, toJson } from './examples/jq';
+import { jqExample, JqRun, Json, slurpLines, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { Interactive, jqStepSections, rerun, RerunSpec } from './examples/rerun';
 import { commandExample, FILTERS, parseOptions } from './examples/textfilters';
@@ -1465,6 +1465,8 @@ export class Analyzer {
     // `kill -l 15`, `trap -p INT`: with this option the words mean something else.
     const withOpt = doc?.positionalWith && Object.keys(doc.positionalWith).find((o) => optionGiven(args, o));
     const positionalTexts = withOpt ? doc!.positionalWith![withOpt] : doc?.positional;
+    // After `jq --args`: the operands are values, not files.
+    let restDesc: Text | undefined;
     // The positional arguments, to describe again once their number is known (`positionalBy`).
     const operands: { index: number; token: Token; desc: string }[] = [];
     // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
@@ -1496,6 +1498,7 @@ export class Analyzer {
       const quotedShortOpt = a.type === 'concatenation' && glueOption(doc, a) !== undefined;
       const optLike = !endOfOpts && !(doc?.builtin && posIndex > 0) && !echoText && (isPlainWord(a) || quotedLongOpt || quotedShortOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
+        restDesc = doc?.options?.[text]?.restOperands ?? restDesc;
         i = this.option(doc, args, i, cmdName, out);
         continue;
       }
@@ -1536,6 +1539,7 @@ export class Analyzer {
         posIndex++;
         continue;
       }
+      if (restDesc && posIndex > 0) desc = this.t(restDesc);
       if (cmdName === 'trap' && posIndex === 0 && desc && !withOpt) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
       const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : cmdName === 'echo' && echoEscapes(args) ? 'echo' : doc?.positionalLang?.[posIndex];
@@ -1706,12 +1710,14 @@ export class Analyzer {
           break;
         }
         const flags = this.cmdFlags();
-        const runs = jqExample(lit.text, {
-          raw: flags.has('-r') || flags.has('--raw-output') || flags.has('-j') || flags.has('--join-output'),
-          nullInput: flags.has('-n') || flags.has('--null-input'),
-          vars: this.jqVars(),
-        });
-        if (runs) this.jqExamples(runs, { kind: 'jq', filter: lit.text, raw: flags.has('-r') || flags.has('--raw-output') || flags.has('-j') || flags.has('--join-output'), vars: this.jqVars() });
+        const nullInput = flags.has('-n') || flags.has('--null-input');
+        const jqFlags = {
+          raw: flags.has('-r') || flags.has('--raw-output'),
+          join: flags.has('-j') || flags.has('--join-output'),
+          slurp: (flags.has('-s') || flags.has('--slurp')) && !nullInput,
+        };
+        const runs = jqExample(lit.text, { ...jqFlags, nullInput, vars: this.jqVars() });
+        if (runs) this.jqExamples(runs, { kind: 'jq', filter: lit.text, ...jqFlags, vars: this.jqVars() });
         break;
       }
       case 'awk': {
@@ -2046,7 +2052,7 @@ export class Analyzer {
     runs.forEach((r, i) => {
       // Short JSON stays on one line; longer JSON is indented like jq prints it.
       const compact = toJson(r.input);
-      const input = compact.length <= 60 ? [compact] : JSON.stringify(r.input, null, 2).split('\n');
+      const input = r.slurp ? slurpLines(r.input) : compact.length <= 60 ? [compact] : JSON.stringify(r.input, null, 2).split('\n');
       this.examples.push({ kind: 'jq',
         title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
         sections: [
@@ -2054,10 +2060,10 @@ export class Analyzer {
           ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.map(toJson))
             : [r.error
               ? { label: this.s('エラー', 'Error'), lines: [r.error] }
-              : { label: this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
+              : { label: spec?.kind === 'jq' && spec.join ? this.s('出力（改行なし）', 'Output (no newlines)') : this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
         ],
         // Only the first example can be edited; the second shows the missing-value case.
-        ...(spec && i === 0 && r.input !== null ? { interactive: this.interactive(spec, JSON.stringify(r.input, null, 2).split('\n'), this.s('入力（JSON）', 'Input (JSON)')) } : {}),
+        ...(spec && i === 0 && r.input !== null ? { interactive: this.interactive(spec, r.slurp ? input : JSON.stringify(r.input, null, 2).split('\n'), r.slurp ? this.s('入力（JSON を1行に1つ）', 'Input (one JSON value per line)') : this.s('入力（JSON）', 'Input (JSON)')) } : {}),
       });
     });
   }
@@ -2817,8 +2823,14 @@ export class Analyzer {
         }
         last = Math.min(j, args.length - 1);
       } else if (opt?.arg && i + 1 < args.length) {
-        last = i + 1;
-        children.push(valueTok(opt, text, args[last]));
+        // `jq --arg NAME VALUE`: two words follow; the first is the name.
+        const names = [this.s('名前', 'name'), this.s('値', 'value')];
+        for (let n = 1; n <= (opt.argCount ?? 1) && i + n < args.length; n++) {
+          last = i + n;
+          const v = valueTok(opt, text, args[last]);
+          if (opt.argCount === 2) v.explanation = this.s(`\`${text}\` の${names[n - 1]}`, `${names[n - 1][0].toUpperCase()}${names[n - 1].slice(1)} for \`${text}\``) + (n === 1 ? this.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
+          children.push(v);
+        }
       } else if (opt?.nextIf && i + 1 < args.length && isPlainWord(args[i + 1]) && new RegExp(opt.nextIf).test(args[i + 1].text)) {
         last = i + 1;
         children.push(valueTok(opt, text, args[last]));

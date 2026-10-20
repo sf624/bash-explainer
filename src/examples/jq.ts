@@ -1444,22 +1444,41 @@ export interface JqRun {
   /** The results as values (up to five). */
   values: Json[];
   error?: string;
+  /** `-s`: the filter reads all the input values as one array, so `input` is that array and the file holds its elements. */
+  slurp?: boolean;
+}
+
+/** What the flags of jq change in an example. */
+export interface JqFlags {
+  raw?: boolean;
+  /** `-j`: raw strings, and no newline after any output. */
+  join?: boolean;
+  /** `-s` */
+  slurp?: boolean;
+}
+
+/** The sample file of a slurped example: the values the filter's array is made of, one per line. */
+export function slurpLines(input: Json): string[] {
+  return (Array.isArray(input) ? input : [input]).map(toJson);
 }
 
 /**
  * Infer an input that fits the filter, run the filter, and show the outputs (raw strings with -r).
  * With `//`, a second run leaves the optional value out so the default shows.
  */
-export function jqExample(filter: string, opts: { raw?: boolean; vars?: Record<string, Json>; nullInput?: boolean } = {}): JqRun[] | undefined {
+export function jqExample(filter: string, opts: JqFlags & { vars?: Record<string, Json>; nullInput?: boolean } = {}): JqRun[] | undefined {
   const node = parseJq(filter);
   if (!node) return undefined;
   const run = (input: Json): JqRun | undefined => {
     const res = runJq(filter, input, opts.vars);
     if (!res) return undefined;
     if ('error' in res) return { input, outputs: [], values: [], error: res.error };
-    const shown = res.outputs.map((v) => (opts.raw && typeof v === 'string' ? v : toJson(v)));
-    const steps = jqSteps(filter, input, opts.vars);
-    return { input, ...(steps ? { steps } : {}), outputs: shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown, values: res.outputs.slice(0, 5) };
+    const raw = opts.raw || opts.join;
+    const shown = res.outputs.map((v) => (raw && typeof v === 'string' ? v : toJson(v)));
+    // `-j` prints the outputs one right after another, with no newline at all.
+    const outputs = opts.join ? (shown.length ? [shown.join('')] : []) : shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown;
+    const steps = opts.join ? undefined : jqSteps(filter, input, opts.vars);
+    return { input, ...(steps ? { steps } : {}), ...(opts.slurp ? { slurp: true } : {}), outputs, values: res.outputs.slice(0, 5) };
   };
   if (opts.nullInput) {
     const r = run(null);
@@ -1474,9 +1493,11 @@ export function jqExample(filter: string, opts: { raw?: boolean; vars?: Record<s
     return undefined;
   }
   /* c8 ignore stop */
-  const first = run(materialize(shape, 0));
+  // With `-s` the filter sees an array of the values in the file.
+  const sample = (v: Json): Json => (opts.slurp && !Array.isArray(v) ? [v] : v);
+  const first = run(sample(materialize(shape, 0)));
   if (!first) return undefined;
-  const without = materialize(shape, 0, 0, true);
+  const without = sample(materialize(shape, 0, 0, true));
   const second = toJson(without) !== toJson(first.input) ? run(without) : undefined;
   return second && !second.error ? [first, second] : [first];
 }
