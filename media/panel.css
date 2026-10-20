@@ -345,3 +345,27 @@ li.collapsed > .body {
   padding: 0 0.25em;
   border-radius: 3px;
 }
+
+/* Narrow panels (a phone): a long label no longer squeezes the explanation to a few words. The
+   explanation goes under the label when less than 12em is left beside it, and a label too long for
+   the row is cut at the row's width. */
+@media (max-width: 520px) {
+  .row {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .row .text {
+    flex: 1 1 7em;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .label {
+    max-width: 100%;
+  }
+
+  .tools button {
+    padding: 0.4rem 0.5rem;
+  }
+}

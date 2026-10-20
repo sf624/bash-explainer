@@ -291,6 +291,11 @@ function updatePanel(): void {
   }));
 }
 
+/** Focusing the editor opens the soft keyboard on a phone: do it only with a mouse or a pen. */
+function focusUnlessTouch(): void {
+  if (window.matchMedia('(pointer: fine)').matches) view.focus();
+}
+
 function spanRange(span: Span): { from: number; to: number } {
   return { from: pos(view.state, span.start.line, span.start.character), to: pos(view.state, span.end.line, span.end.character) };
 }
@@ -315,7 +320,7 @@ window.addEventListener('message', (e) => {
     case 'reveal': {
       const r = spanRange(m.span);
       view.dispatch({ selection: { anchor: r.from, head: r.to }, scrollIntoView: true });
-      view.focus();
+      focusUnlessTouch();
       return;
     }
     case 'copy': {
@@ -339,7 +344,7 @@ function showProblems(list: DocumentIssue[]): void {
     li.append(span(`icon ${i.severity}`, i.severity === 'warning' ? '⚠' : 'ℹ'), span('where', t.line(i.startLine + 1)), span('message', plain(i.message)), span('code', i.code));
     li.addEventListener('click', () => {
       view.dispatch({ selection: { anchor: pos(view.state, i.startLine, i.startCol), head: pos(view.state, i.endLine, i.endCol) }, scrollIntoView: true });
-      view.focus();
+      focusUnlessTouch();
     });
     return li;
   }));
