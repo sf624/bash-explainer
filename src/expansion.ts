@@ -311,14 +311,22 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   const name = p.name;
   // `$1`, `$2`… cannot be assigned (`2=abc` is not bash), so they are described as arguments.
   const positional = /^[1-9]\d*$/.test(name);
+  // `$@` and `$*` cannot be assigned either; their values are the arguments.
+  const args = name === '@' || name === '*';
+  // `${a[1]:-x}`: one element of an array (the others are unset), not the scalar `a`.
+  const element = p.subscript !== undefined && p.subscript !== '@' && p.subscript !== '*';
+  if (element && !/^\d+$/.test(p.subscript!)) return undefined;
+  const ref = element ? `${name}[${p.subscript}]` : name;
   // Values are never empty here (an empty one is `emptyCase`).
   const shown = (val: string) => (/[\s']/.test(val) ? `"${val}"` : val);
   const set = (val: string, result: string): ExpansionCase => ({
-    when: positional
-      ? (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``)
-      : (ja ? `\`${name}=${shown(val)}\` のとき` : `When \`${name}=${shown(val)}\``),
+    when: args
+      ? (ja ? `引数が \`${shown(val)}\` のとき` : `When the arguments are \`${shown(val)}\``)
+      : positional
+        ? (ja ? `${name} 番目の引数が \`${shown(val)}\` のとき` : `When argument ${name} is \`${shown(val)}\``)
+        : (ja ? `\`${ref}=${shown(val)}\` のとき` : `When \`${ref}=${shown(val)}\``),
     result,
-    setup: positional ? undefined : `${name}=${sq(val)}`,
+    setup: args ? `set -- ${sq(val)}` : positional ? undefined : `${ref}=${sq(val)}`,
   });
   // `coproc` fills these in with descriptor numbers and a process ID: no example holds on every run.
   if (name === 'COPROC' || name === 'COPROC_PID') return undefined;
@@ -329,11 +337,13 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
     : { when: ja ? `\`${name}=(a b c)\` のとき` : `When \`${name}=(a b c)\``, result, setup: `${name}=(a b c)` };
   /** "unset or empty" (with `:`) or just "unset", phrased for a variable or an argument. */
   const missing = (orEmpty: boolean, result: string): ExpansionCase => ({
-    when: positional
-      ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空の' : ''}とき` : `When argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
-      : (ja ? `${name} が未設定${orEmpty ? 'か空' : ''}のとき` : `When ${name} is unset${orEmpty ? ' or empty' : ''}`),
+    when: args
+      ? (ja ? `引数が無い${orEmpty ? 'か、空の1つだけの' : ''}とき` : `When there are no arguments${orEmpty ? ' or only an empty one' : ''}`)
+      : positional
+        ? (ja ? `${name} 番目の引数が無い${orEmpty ? 'か空の' : ''}とき` : `When argument ${name} is missing${orEmpty ? ' or empty' : ''}`)
+        : (ja ? `${ref} が未設定${orEmpty ? 'か空' : ''}のとき` : `When ${ref} is unset${orEmpty ? ' or empty' : ''}`),
     result,
-    setup: positional ? undefined : `unset ${name}`,
+    setup: args ? 'set --' : positional ? undefined : `unset ${name}`,
   });
 
   // The special parameters cannot be assigned (`#=hello` is not bash), and their values are not ours to choose.
@@ -376,19 +386,31 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
   const part = (role: ExpansionPart['role']) => p.parts.find((x) => x.role === role)?.text;
   // The word of `${u-'x'}` after quote removal. Inside double quotes the single quotes stay (`"${u-'x'}"` is `'x'`).
   const rawWord = part('word') ?? '';
-  const word = unquoteWord(rawWord, quoted) ?? rawWord;
+  // An unquoted `~/d` in the word expands to the home directory (not inside double quotes: `"${x-~/d}"` stays `~/d`).
+  const homeWord = !quoted && /^~(\/|$)/.test(rawWord);
+  const word = homeWord ? `$HOME${rawWord.slice(1)}` : unquoteWord(rawWord, quoted) ?? rawWord;
   // A plausible value for "when it has a value", chosen to look like the default.
-  const sample = /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
+  const sample = homeWord || /^\/|^~/.test(word) ? '/data' : /^-?\d+$/.test(word) ? '42' : 'hello';
   const expanded = (w: string) => `${w}${/\$/.test(w) ? (ja ? '（展開結果）' : ' (expanded)') : ''}`;
   const emptyCase = (result: string): ExpansionCase => ({
-    when: positional ? (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`) : (ja ? `\`${name}=""\` のとき` : `When \`${name}=""\``),
+    when: args
+      ? (ja ? '引数が空の1つだけのとき' : 'When the only argument is empty')
+      : positional ? (ja ? `${name} 番目の引数が空のとき` : `When argument ${name} is empty`) : (ja ? `\`${ref}=""\` のとき` : `When \`${ref}=""\``),
     result,
-    setup: positional ? undefined : `${name}=`,
+    setup: args ? "set -- ''" : positional ? undefined : `${ref}=`,
   });
+  // The arguments cannot be assigned to: bash stops with "cannot assign in this way" when the default would be used.
+  const noAssign = ja ? 'エラー「cannot assign in this way」で止まる' : 'fails with "cannot assign in this way"';
   switch (p.op) {
-    case ':-': case ':=':
+    case ':=':
+      if (positional || args) return [missing(true, noAssign), set(sample, sample)];
       return [missing(true, expanded(word)), set(sample, sample)];
-    case '-': case '=':
+    case ':-':
+      return [missing(true, expanded(word)), set(sample, sample)];
+    case '=':
+      if (positional || args) return [missing(false, noAssign), emptyCase(''), set(sample, sample)];
+      return [missing(false, expanded(word)), emptyCase(''), set(sample, sample)];
+    case '-':
       return [missing(false, expanded(word)), emptyCase(''), set(sample, sample)];
     case ':+':
       return [set(sample, expanded(word)), missing(true, '')];
@@ -459,7 +481,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
         Q: ["it's", `'it'\\''s'`], E: ['a\\tb', ja ? 'a<タブ>b' : 'a<TAB>b'], U: ['hello', 'HELLO'], u: ['hello', 'Hello'],
         L: ['HELLO', 'hello'], A: ['abc', `${name}='abc'`], P: ['\\u@\\h', ja ? 'ユーザー名@ホスト名' : 'user@host'],
       };
-      const e = t && ex[t];
+      // (`${a[1]@A}` is a `declare` statement for the whole array: not shown.)
+      const e = t && !(element && t === 'A') && ex[t];
       return e ? [set(e[0], e[1])] : undefined;
     }
   }

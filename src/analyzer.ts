@@ -45,9 +45,10 @@ import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
 import { decodedText, splitElement, staticWordValue, unquoteWord } from './staticword';
+import { bracketEnd } from './bracket';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
-  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags, expansionOps, keywords, listOps,
+  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags, cannotAssign, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
@@ -218,7 +219,9 @@ const sibling = (n: SyntaxNode, by: number): SyntaxNode | undefined => {
 const has = (list: readonly SyntaxNode[], n: SyntaxNode) => list.some((x) => x === n);
 
 const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
-const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()|\[[^\]]+\]/.test(s);
+/** A bracket expression is there when a `[` closes (`[]a]` is one: a `]` first is a member). */
+const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
+const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
 
 export class Analyzer {
   private line: number | null = null;
@@ -236,7 +239,8 @@ export class Analyzer {
   /** Arrays assigned in the script (`y=(a b)`, `declare -A m`, `read -a r`): name → where, and whether it is associative. */
   private arrays = new Map<string, { index: number; assoc: boolean }>();
   /** Standalone assignments to IFS with a known value: where each ends, its value, and the part of the script it is local to. */
-  private ifsAssigns: { node: SyntaxNode; value: string; scope: SyntaxNode | undefined }[] = [];
+  /** `value`: undefined when the script gives IFS a value that is not known here; `unset`: `unset IFS` (back to the default). */
+  private ifsAssigns: { node: SyntaxNode; value: string | undefined; unset?: boolean; scope: SyntaxNode | undefined }[] = [];
   private namerefs = new Map<string, { line: number; index: number }>();
   /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
   private integers = new Map<string, number>();
@@ -290,9 +294,12 @@ export class Analyzer {
       if (field(a, 'name')?.text !== 'IFS' || (a.parent?.type === 'command' && field(a.parent, 'name')?.text) || a.parent?.type === 'declaration_command') continue;
       const v = field(a, 'value');
       const value = v ? staticWordValue(v) : '';
-      if (value === undefined) continue;
-      this.ifsAssigns.push({ node: a, value, scope: ancestor(a, (x) => ['subshell', 'command_substitution', 'process_substitution', 'function_definition'].includes(x.type)) });
+      this.ifsAssigns.push({ node: a, value, scope: ancestor(a, IFS_SCOPES) });
     }
+    for (const u of descendants(root, ['unset_command'])) {
+      if (u.namedChildren.some((c) => c.text === 'IFS') && !u.namedChildren.some((c) => /^-\w*f/.test(c.text))) this.ifsAssigns.push({ node: u, value: undefined, unset: true, scope: ancestor(u, IFS_SCOPES) });
+    }
+    this.ifsAssigns.sort((x, y) => x.node.startIndex - y.node.startIndex);
     this.noglob = [];
     for (const c of descendants(root, ['command'])) {
       if (field(c, 'name')?.text !== 'set') continue;
@@ -505,13 +512,16 @@ export class Analyzer {
       const end = h.namedChildren.find((c) => c.type === 'heredoc_end');
       const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text;
       if (delim === undefined) continue; // `cat <<` while typing
-      if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
+      // `<<-END` / `<<END` as written (the operator may have a tab-stripping `-`).
+      const operator = `${/<<-?/.exec(h.text)?.[0] ?? '<<'}${delim}`;
+      // The end line itself can be inside the range of the body (with `<<-` it is indented with tabs).
+      if (end && end.startPosition.row === line) {
+        notes.push(this.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${h.startPosition.row + 1} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${h.startPosition.row + 1}.`));
+      } else if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
         notes.push(this.s(
-          `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`<<${delim}\`）の本文です。`,
-          `This line is part of the here-document started by \`<<${delim}\` on line ${h.startPosition.row + 1}.`,
+          `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`${operator}\`）の本文です。`,
+          `This line is part of the here-document started by \`${operator}\` on line ${h.startPosition.row + 1}.`,
         ));
-      } else if (end && end.startPosition.row === line) {
-        notes.push(this.s(`\`${end.text}\` はヒアドキュメントの終わりを示す行です。`, `\`${end.text}\` marks the end of the here-document.`));
       }
     }
     for (const it of items) {
@@ -3211,15 +3221,16 @@ export class Analyzer {
   }
 
   /** The IFS in effect at `n` when the script assigns it a known value before (`IFS=-`): its text, and the line. */
-  private ifsAt(n: SyntaxNode): { value: string; line: number } | undefined {
+  private ifsAt(n: SyntaxNode): { value: string | undefined; line: number } | undefined {
     const a = this.ifsAssigns.filter((x) => x.node.endIndex <= n.startIndex && (!x.scope || ancestor(n, (p) => p === x.scope))).pop();
-    return a && { value: a.value, line: a.node.startPosition.row };
+    return a && !a.unset ? { value: a.value, line: a.node.startPosition.row } : undefined;
   }
 
   /** What the splitting of an unquoted expansion at `n` splits on. */
   private splitNote(n: SyntaxNode): string {
     const ifs = this.ifsAt(n);
     if (!ifs) return this.s('空白で分割され、グロブ展開もされる', 'it is word-split and globbed');
+    if (ifs.value === undefined) return this.s(`\`IFS\` は行 ${ifs.line + 1} で、ここでは分からない値にしてある。その文字で分割され、グロブ展開もされる`, `it is split on the characters of \`IFS\` (set on line ${ifs.line + 1} to a value not known here), and globbed`);
     if (ifs.value === '') return this.s(`\`IFS\` が空（行 ${ifs.line + 1}）なので単語分割はされないが、グロブ展開はされる`, `\`IFS\` is empty (line ${ifs.line + 1}), so it is not word-split, but it is globbed`);
     const noSpace = !/[ \t\n]/.test(ifs.value);
     return this.s(`\`IFS\`（行 ${ifs.line + 1} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}。グロブ展開もされる`,
@@ -3353,10 +3364,15 @@ export class Analyzer {
       t.span = { start: spanOf(dollar).start, end: t.span.end };
       return t;
     }
-    return this.tok(n, 'string', this.s(
+    // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes.
+    const perElement = /(?<!\\)\$@|\$\{@|\$\{[^}]*\[@\]|\$\{![\w]*@\}/.test(n.text);
+    return this.tok(n, 'string', (perElement ? this.s(
+      'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
+      'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
+    ) : this.s(
       'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
       'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
-    ) + (/\\/.test(n.text) ? this.valueNote(n) : ''), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
+    )) + (/\\/.test(n.text) ? this.valueNote(n) : ''), this.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
   }
 
   private varDesc(name: string): string | undefined {
@@ -3598,10 +3614,12 @@ export class Analyzer {
         }
         if (t === ':' && slicesElements(p)) return ['operator', s('`:`: 要素の一部を取り出す（`:開始位置:個数`）', '`:`: Take some of the elements (`:offset:count`)')];
         if (p.prefix === '!') return ['operator', t === '@' ? s('`@`: 見つかった名前を別々の単語にする（`"$@"` と同じ形。変換の `@` ではない）', '`@`: one word per name (like `"$@"`; not the `@` transform)') : s('`*`: 見つかった名前を1つにつなげる（クォート内では `IFS` の先頭の文字で区切る）', '`*`: join the names (inside double quotes, with the first character of `IFS`)')];
+        if ((t === ':=' || t === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['operator', s(`\`${t}\`: 位置パラメータには代入できないので、既定値が必要な場面では bash がエラー「cannot assign in this way」にする`, `\`${t}\`: the arguments cannot be assigned to, so where the default would be needed bash fails with "cannot assign in this way"`)];
         return ['operator', `\`${t}\`: ` + opMeaning[t][this.lang === 'ja' ? 0 : 1]];
       case 'word': {
         const op = p.op!;
         if (op === ':-' || op === '-') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` の代わりに使う値`, `Default \`${t}\`: used instead of \`${p.name}\``)];
+        if ((op === ':=' || op === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['argument', s(`\`${t}\`: 代入されない（bash はエラーにする）`, `\`${t}\`: never assigned (bash reports an error)`)];
         if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
         if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
         return ['string', s(`エラーメッセージ「${t}」`, `Error message "${t}"`)];
@@ -3707,6 +3725,18 @@ export class Analyzer {
       const tf = transformMeaning[letter];
       return this.tok(n, 'expansion', this.s(`間接参照: 変数 \`${v}\` の値を変数名とみなし、その変数の値を${tf[0]}`,
         `Indirection: use the value of \`${v}\` as a variable name, then take that variable's value and ${tf[1]}`));
+    }
+    // `${!v:-x}`: indirection first, then the operator on the variable found. With `[@]` there is no key list: the value of the whole `a[@]` is taken as a name.
+    const indirectOp = prefixOp === '!' && target ? kids.find((c, i) => i > 1 && c.field === 'operator') : undefined;
+    if (indirectOp) {
+      const arg = n.text.slice(indirectOp.endIndex - n.startIndex, -1);
+      const make = expansionOps[indirectOp.type];
+      const then = make ? this.t(make('<name>', arg)) : '';
+      return this.tok(n, 'expansion', isArrayAll
+        ? this.s(`間接参照: インデックスの一覧ではなく、\`${targetText}\` の値を変数名として使う。要素が2つ以上あると bash は「invalid variable name」のエラーにする。それから、\`<name>\` について: ${then}`,
+          `Indirection: not the list of indices; the value of \`${targetText}\` is used as a variable name (bash fails with "invalid variable name" when there is more than one element). Then, for \`<name>\`: ${then}`)
+        : this.s(`間接参照: 変数 \`${targetText}\` の値を変数名 \`<name>\` とみなす。それから: ${then}`,
+          `Indirection: use the value of \`${targetText}\` as a variable name \`<name>\`. Then: ${then}`));
     }
     if (prefixOp === '!' && target) {
       return this.tok(n, 'expansion', isArrayAll
@@ -3872,6 +3902,8 @@ function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
 
+const IFS_SCOPES = (x: SyntaxNode): boolean => ['subshell', 'command_substitution', 'process_substitution', 'function_definition'].includes(x.type);
+
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
 /** `unknown`: not set before the line, so the default (off) unless a file read with `source` sets it. */
@@ -3899,6 +3931,16 @@ export function shoptStates(source: string, line: number, shell?: Shell): ShoptS
     }
     if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) states.globstar = 'on';
     if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) states.globstar = 'off';
+  }
+  // The options work when the command runs: `shopt -s globstar; ls **/*.txt` on one line has globstar on (unless a glob comes before the shopt).
+  // (Not extglob, which the parser needs before the line is read, and not aliases.)
+  const code = (source.split('\n')[line] ?? '').replace(/(^|\s)#.*/, '');
+  if (bash) {
+    for (const m of code.matchAll(/\bshopt((?:\s+-[a-z]+)+)((?:\s+\w+)+)/g)) {
+      const flags = m[1].replace(/[\s-]/g, '');
+      if (!/[su]/.test(flags) || code.slice(0, m.index).includes('*')) continue;
+      for (const n of m[2].trim().split(/\s+/)) if (n in states && n !== 'extglob' && n !== 'expand_aliases') states[n as ShoptName] = flags.includes('s') ? 'on' : 'off';
+    }
   }
   return states;
 }
