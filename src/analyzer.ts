@@ -2740,13 +2740,23 @@ export class Analyzer {
     const bracket = open === '[' ? bracketTest(n) : undefined;
     this.testExample(n, bracket);
     const expl = open === '[['
-      ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。変数をクォートしなくても安全で、`&&` `||` `=~` が使える）',
-        'Extended test `[[ ]]`: evaluates a condition (bash-only; safe without quoting, supports `&&`, `||`, `=~`)')
+      ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず、変数をクォートしなくても安全。`&&` `||` `<` `=~` も使える）',
+        'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
       : open === '(('
         ? this.arithTestExplanation() + this.commaNote(n)
-        : this.s('条件式 `[ ]`: 条件を評価し、真なら成功(0)を返す（`test` コマンドと同じ。`[` の後と `]` の前には空白が必要）',
-          'Test `[ ]`: evaluates a condition (same as `test`; spaces after `[` and before `]` are required)');
-    const t = this.tok(n, 'test', expl, bracket ? this.testTokens(n, bracket, bracket.expr) : open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren));
+        : this.s('コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）',
+          'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)');
+    const inner = bracket ? this.testTokens(n, bracket, bracket.expr) : open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren);
+    // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
+    const close = n.children[n.children.length - 1];
+    const children = open !== '['
+      ? inner
+      : [
+        this.tok(n.children[0], 'builtin', this.s('コマンド `[`（`test` の別名）', 'Command `[` (an alias of `test`)')),
+        ...inner,
+        ...(close.type === ']' ? [this.tok(close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))] : []),
+      ];
+    const t = this.tok(n, 'test', expl, children);
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
     // Includes examples from inside the test, such as the regex of `=~`.

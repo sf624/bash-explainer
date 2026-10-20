@@ -338,8 +338,8 @@ describe('input that is not finished', () => {
   });
   it('reads a `[ ]` without its `]` word by word', () => {
     const e = explain('[ a = *"$a"*z');
-    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['a = *"$a"*z']);
-    assert.match(e.items[0].children[0].explanation, /^Condition: `a` vs `\*"\$a"\*z`/);
+    assert.deepStrictEqual(e.items[0].children.map((c) => c.label), ['[', 'a = *"$a"*z']);
+    assert.match(e.items[0].children[1].explanation, /^Condition: `a` vs `\*"\$a"\*z`/);
   });
   it('leaves out a redirection the parser could not read at all', () => {
     const e = explain('[range(200000)] | map(. + 1)');
@@ -849,5 +849,52 @@ describe('a subcommand', () => {
   });
   it('is not made for an argument that is not in the dictionary', () => {
     assert.deepStrictEqual(all(explain('git remote add origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
+  });
+});
+
+describe('[ ] shows its syntax', () => {
+  const cases: [string, string[]][] = [
+    ['[ -f "$f" ]', ['[', '-f "$f"', ']']],
+    ['[ -n "$x" -a -f y ]', ['[', '-n "$x" -a -f y', ']']],
+    ['[ a = b ]', ['[', 'a = b', ']']],
+  ];
+  for (const [src, labels] of cases) {
+    it(`gives [ and ] a token of their own: ${src}`, () => {
+      const t = explain(src).items[0];
+      assert.deepStrictEqual(t.children.map((c) => c.label), labels);
+      assert.deepStrictEqual([t.children[0].kind, t.children.at(-1)!.kind], ['builtin', 'argument']);
+      assert.strictEqual(spanText(src, t.children[0]), '[');
+      assert.strictEqual(spanText(src, t.children.at(-1)!), ']');
+      assert.strictEqual(t.children[0].span.start.character, 0);
+      assert.strictEqual(t.children.at(-1)!.span.end.character, src.length);
+    });
+  }
+  it('explains it as the command `[`, in en and ja', () => {
+    const en = explain('[ -f x ]').items[0];
+    assert.match(en.explanation, /^Command `\[` \(an alias of `test`\): .*ordinary command, not shell syntax.*word splitting and globbing \(`\[\[ \]\]` does not\)$/);
+    assert.strictEqual(en.children[0].explanation, 'Command `[` (an alias of `test`)');
+    assert.match(en.children[2].explanation, /^The last argument passed to `\[`\./);
+    const ja = explain('[ -f x ]', 0, 'ja').items[0];
+    assert.match(ja.explanation, /^コマンド `\[`（`test` の別名）: .*単語分割とグロブ展開がかかる（`\[\[ \]\]` ならかからない）$/);
+    assert.strictEqual(ja.children[2].explanation, '`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）');
+  });
+  it('spans a continuation over lines', () => {
+    const src = '[ \\\n  -f y ]';
+    const t = explain(src).items[0];
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['[', '-f y', ']']);
+    assert.deepStrictEqual([t.children[0].span.start, t.children[0].span.end], [{ line: 0, character: 0 }, { line: 0, character: 1 }]);
+    assert.deepStrictEqual([t.children[2].span.start, t.children[2].span.end], [{ line: 1, character: 7 }, { line: 1, character: 8 }]);
+  });
+  it('has no ] token when the test is not closed', () => {
+    assert.deepStrictEqual(explain('[ -f x').items[0].children.map((c) => c.label), ['[', '-f x']);
+  });
+  it('keeps `test -f x` as a builtin command', () => {
+    const t = explain('test -f x').items[0];
+    assert.strictEqual(t.kind, 'builtin');
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['-f', 'x']);
+  });
+  it('contrasts [[ ]] with it', () => {
+    assert.match(explain('[[ -f $f ]]').items[0].explanation, /shell syntax, not a command, so there is no word splitting or globbing inside/);
+    assert.match(explain('[[ -f $f ]]', 0, 'ja').items[0].explanation, /コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず/);
   });
 });

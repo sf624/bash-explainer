@@ -236,7 +236,7 @@ describe('[ ] in the analyzer groups as bash does', () => {
   const analyze = (src: string) => {
     const tree = parser.parse(src)!;
     assert.strictEqual(tree.root.children[0].type, 'test_command', src);
-    return new Analyzer('en').explainLine(tree, 0, 'bash')!.items[0].children[0];
+    return new Analyzer('en').explainLine(tree, 0, 'bash')!.items[0].children[1];
   };
   const cases: [string, string][] = [
     ['[ "$a" -eq 1 -a "$b" -eq 2 ]', '(["$a" -eq 1] & ["$b" -eq 2])'],
