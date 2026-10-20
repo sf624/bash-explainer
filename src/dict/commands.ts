@@ -13,6 +13,8 @@ import { applyExtras } from './extras';
 import { CommandDoc, cmd, lastIsDestination, letters, OptSpec, pos } from './types';
 
 const files = pos('対象のファイル', 'target file');
+/** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
+const NEWERXY = [...'acBm'].flatMap((x) => [...'acBmt'].map((y) => `-newer${x}${y}`)).join('|');
 
 /** `ar` operations and modifiers (written without a dash, or with one). */
 const arLetters: OptSpec[] = [
@@ -262,15 +264,20 @@ export const core: Record<string, CommandDoc> = {
     ['-type', '種類で絞る（f: ファイル, d: ディレクトリ, l: シンボリックリンク）', 'file type (f file, d directory, l symlink)', 'arg', {
       f: pos('通常ファイル', 'regular file'), d: pos('ディレクトリ', 'directory'), l: pos('シンボリックリンク', 'symbolic link'),
     }],
-    ['-maxdepth', '探索する階層の深さの上限', 'descend at most N levels', 'arg'],
+    ['-maxdepth', '探索する階層の深さの上限（検索全体に効く。`-type` などの条件より後に書くと find が警告するので先頭に書く）', 'descend at most N levels (global: applies to the whole search; put it before tests such as `-type`, or find warns)', 'arg'],
     ['-depth', 'ディレクトリの中身を先に処理する（削除するときに必要）', 'process directory contents before the directory itself (needed when deleting)'],
     ['-mindepth', '指定した深さ未満の階層は対象外', 'ignore levels shallower than N', 'arg'],
-    ['-mtime', '更新日時で絞る（`-7` は7日以内, `+7` は7日より前）', 'modified N days ago (`-7` within 7 days, `+7` older)', 'arg'],
+    ['-mtime', '更新日時で絞る（経過日数は24時間単位で端数を切り捨てる: `-7` は7日未満, `7` は7日以上8日未満, `+7` は8日以上前）', 'modified N days ago, counted in whole 24-hour days with the fraction dropped (`-7` under 7 days, `7` from 7 to 8 days, `+7` 8 days or more)', 'arg'],
     ['-mmin', '更新日時（分単位）で絞る', 'modified N minutes ago', 'arg'],
     ['-newer', '指定ファイルより新しい', 'newer than the given file', 'arg'],
-    ['-size', 'サイズで絞る（例: `+10M` は10MiB超）', 'file size (e.g. `+10M` larger than 10 MiB)', 'arg'],
+    [NEWERXY, '`-newerXY 基準`: X の時刻（a アクセス, c 状態変更, B 作成, m 更新）が、基準ファイルの Y の時刻、または Y が t なら日時の文字列より新しい（例: `-newermt 2024-01-01`）', '`-newerXY ref`: the X time (a access, c status change, B birth, m modification) is newer than the Y time of the reference file, or than the date string when Y is t (e.g. `-newermt 2024-01-01`)', 'arg'],
+    ['-anewer', '指定ファイルの更新時刻より後にアクセスされた', 'accessed after the given file was modified', 'arg'],
+    ['-cnewer', '指定ファイルの更新時刻より後に状態が変わった', 'status changed after the given file was modified', 'arg'],
+    ['-samefile', '指定ファイルと同じ inode のファイル（ハードリンクを探すのに使う）', 'same inode as the given file (finds its hard links)', 'arg'],
+    ['-links', 'ハードリンク数で絞る（`+N` はNより多い, `-N` は少ない）', 'number of hard links (`+N` more than N, `-N` fewer)', 'arg'],
+    ['-size', 'サイズで絞る。単位（b=512バイトのブロックが既定, c, k, M, G）に切り上げて比べる: `+10M` は10MiB超, `-1M` は空ファイルだけ', 'file size, rounded up to the unit (b = 512-byte blocks by default, c, k, M, G) before comparing: `+10M` over 10 MiB, `-1M` only empty files', 'arg'],
     ['-user', '所有ユーザーで絞る', 'owned by user', 'arg'],
-    ['-perm', 'パーミッションで絞る', 'permission bits', 'arg'],
+    ['-perm', 'パーミッションで絞る（`644` はちょうど, `-644` は指定したビットがすべて立っている, `/222` は指定したビットのどれか1つでも立っている）', 'permission bits (`644` exactly, `-644` all the given bits set, `/222` any of the given bits set)', 'arg'],
     ['-empty', '空のファイルまたはディレクトリ', 'empty file or directory'],
     ['-exec', '見つかった各ファイルに対してコマンドを実行（`{}` がファイル名に置き換わる。`\\;` で1件ずつ、`+` でまとめて）', 'run a command on each match (`{}` is the file; `\\;` one at a time, `+` batched)', 'until'],
     ['-execdir', 'ファイルのあるディレクトリでコマンドを実行', 'like -exec, run in the file\'s directory', 'until'],
