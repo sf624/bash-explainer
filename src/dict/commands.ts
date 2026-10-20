@@ -570,7 +570,7 @@ export const core: Record<string, CommandDoc> = {
     ['--jsonargs', '残りの引数を（ファイルでなく）JSON の値として `$ARGS.positional` に入れる', 'take the remaining arguments as JSON values in `$ARGS.positional`, not as files'],
     ['--indent', '出力のインデント幅（0〜7。0 は `-c` と同じ）', 'indentation width of the output (0 to 7; 0 is like `-c`)', 'arg'],
     ['--tab', 'インデントにタブを使う', 'indent with tabs'],
-    ['-f|--from-file', 'フィルタをファイルから読む（このとき最初の引数は入力ファイル）', 'read the filter from a file (then the first operand is an input file)', 'arg fills'],
+    ['-f|--from-file', 'フィルタをファイルから読む（その場合、最初の引数は入力ファイル）', 'read the filter from a file (the first operand is then an input file)', 'arg fills'],
     ['-S|--sort-keys', 'オブジェクトのキーを並べ替えて出力', 'sort the keys of objects in the output'],
     ['-a|--ascii-output', '非 ASCII 文字を `\\uXXXX` に直して出力', 'escape non-ASCII characters as `\\uXXXX`'],
     ['-j|--join-output', '`-r` と同じだが、出力ごとの改行も付けない', 'like `-r`, but print no newline after each output'],
