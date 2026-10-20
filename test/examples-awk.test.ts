@@ -77,6 +77,9 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
       assert.deepStrictEqual(out, real === '' ? [] : real.replace(/\n$/, '').split('\n'));
     });
   }
+  it('keeps a trailing backslash', () => {
+    assert.strictEqual(awkInvocation(['-v', 'x=a\\', 'BEGIN{}']).vars.x, 'a\\');
+  });
   it('refuses what it cannot follow', () => {
     for (const words of [['{print}', 'f', 'x=1'], ['-v', 'x=\\q', '{print}'], ['{print}', 'x=\\q'], ['-F', '\\d', '{print}'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x']]) {
       assert.ok(awkInvocation(words).unsupported !== undefined, JSON.stringify(words));
@@ -130,7 +133,10 @@ describe('the awk runner agrees with gawk on the less common parts', () => {
     '{ if (NR == 2) next; print }', 'function f() { return } BEGIN { print "[" f() "]" }', 'END { print "e"; exit }', 'BEGIN { printf("%s-%s\\n", "a", "b") }',
     'BEGIN { print !0, -"3", +"4", !"", 2^-1, 2^!0; x = 0; print $!x }', '{ print; exit 0 }', '{ print length }',
     '{ if ($2) print "t:" $1; if ("") print "never" }', '$2 <= 3', 'BEGIN { printf "%.f|%+f|% f|%.0g|%#.3g|%G|%E|%.62f\\n", 2.5, 1, 1, 0, 1, 1e-10, 12345, 0.1 }',
-    '{ NF = 7; print; print NF }', 'BEGIN { n = split("", a, ","); print n }', 'BEGIN { print match("abc", "z"), RSTART, RLENGTH }',
+    '{ NF = 7; print; print NF }', 'BEGIN { printf "%#x %#o %#X %x %o %u|%#5x|%#.3x|%.0d|%5.2d|%.3e|%.0e|%.0e|%.1e\\n", 255, 8, 255, -1, -8, -1, 255, 5, 0, 3, 12345, 2.5, 9.5, 0.25 }',
+    'BEGIN { printf "%.0x|%.0o|%#.0o|%.0x|%.62e|%.62g\\n", 0, 0, 0, 5, 0.1, 0.1 }',
+    'BEGIN { printf "%c%c|%5s|%-5s|%.2s\\n", 65, "hello", "ab", "cd", "xyz" }',
+    'BEGIN { n = split("", a, ","); print n }', 'BEGIN { print match("abc", "z"), RSTART, RLENGTH }',
     'function g(b) { return b[1] } function f(a) { a[1] = 2; return g(a) } BEGIN { print f(x) }',
     '{ if ($1 == "apple" &&\n $2 > 1) print; x = 0 ||\n 1; print x }', 'BEGIN { if (u) print "y"; else print "n" }', 'BEGIN { n = split("", a, /,/); print n }',
     'BEGIN { print match("abc", /b/), RSTART, RLENGTH }', 'BEGIN { n = split("a b", w); print n, w[2] }', 'BEGIN { s = "abc"; sub(/b/, "[\\\\&]", s); print s }',

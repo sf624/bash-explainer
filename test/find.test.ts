@@ -144,6 +144,7 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(t("find . -type f -maxdepth 1 -name '*.c'", 'ja'), /検索全体に効く/);
     assert.doesNotMatch(t("find . -maxdepth 1 -type f"), /global option/);
     assert.doesNotMatch(t("find . -type f"), /global option/);
+    assert.doesNotMatch(t("find . -maxdepth 1 -mindepth 1"), /global option/);
     assert.match(t("find . -maxdepth 2 -type f"), /at most 2 levels deep/);
     assert.match(t("find . -maxdepth 1 -type f"), /at most 1 level deep/);
   });
