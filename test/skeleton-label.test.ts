@@ -7,7 +7,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { main } from '../cli/main';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
-import { LABEL_LIMIT, LabelPart, labelParts, labelText } from '../src/label';
+import { joinParts, LABEL_LIMIT, LabelPart, labelParts, labelText } from '../src/label';
 import { codeSpan, labelMarkdown, toMarkdown, toPlainMarkdown } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -21,7 +21,7 @@ const first = (src: string, line = 0, lang: 'en' | 'ja' = 'en') => explain(src, 
 const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 
 /** The parts as a short string: `code` as it is, placeholders in *stars*. */
-const show = (parts: readonly LabelPart[] | undefined) => (parts ?? []).map((p) => (p.placeholder ? `*${p.text}*` : p.text)).join(' ');
+const show = (parts: readonly LabelPart[] | undefined) => joinParts(parts ?? [], (p) => (p.placeholder ? `*${p.text}*` : p.text));
 
 const long = 'x'.repeat(LABEL_LIMIT + 5);
 
@@ -77,8 +77,8 @@ const CASES: [string, string, string][] = [
   [`[ ${long} -a ${long} ]`, '[ ‹expression› ]', '[ *expression* ]'],
   [`[[ ${long} ]]`, '[[ ‹expression› ]]', '[[ *expression* ]]'],
   [`(( ${long} + 1 ))`, '(( ‹expression› ))', '(( *expression* ))'],
-  [`x=${long}`, 'x= ‹value›', 'x= *value*'],
-  [`x+=${long}`, 'x+= ‹value›', 'x+= *value*'],
+  [`x=${long}`, 'x=‹value›', 'x=*value*'],
+  [`x+=${long}`, 'x+=‹value›', 'x+=*value*'],
   ['[ -f x ] && echo y', '[ -f x ] && echo', '[ -f x ] && echo'],
 ];
 
@@ -130,7 +130,7 @@ describe('the label of a construct', () => {
 
   it('labels the branches of a case by their patterns', () => {
     const src = 'case x in\n  a|b) c ;;\n  *) ;&\n  d) e ;;&\n  ' + long + ') f ;;\nesac';
-    assert.deepStrictEqual([1, 2, 3, 4].map((i) => explain(src, i).items[0].label), ['a|b) ‹commands› ;;', '*) ;&', 'd) ‹commands› ;;&', '‹pattern› ) ‹commands› ;;']);
+    assert.deepStrictEqual([1, 2, 3, 4].map((i) => explain(src, i).items[0].label), ['a|b) ‹commands› ;;', '*) ;&', 'd) ‹commands› ;;&', '‹pattern›) ‹commands› ;;']);
     // An unfinished one has the parts it has.
     assert.strictEqual(explain('case x in\n  a)', 1).items[0].label, 'a)');
   });
@@ -188,6 +188,8 @@ describe('the label of a construct, shown', () => {
     assert.strictEqual(codeSpan('`a'), '`` `a ``');
     assert.strictEqual(codeSpan('a``b`'), '``` a``b` ```');
     assert.strictEqual(labelMarkdown([{ text: 'echo' }, { text: 'x', placeholder: true }, { text: 'a\nb' }]), '`echo` *x* `a ⏎ b`');
+    // A tight part follows the one before it with no space: `x=`*value*, *pattern*`)`.
+    assert.strictEqual(labelMarkdown([{ text: 'x=' }, { text: 'value', placeholder: true, tight: true }]), '`x=`*value*');
     // A label with a backtick in it, as in the md of a token the analyzer made.
     const tick = { ...first('echo x'), label: 'a`b', labelParts: undefined };
     assert.match(toPlainMarkdown({ ...explain('echo x'), items: [tick] }, 'echo x', 'a.sh:1'), /\n- ``a`b`` — /);
