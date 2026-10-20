@@ -123,10 +123,10 @@ const dockerBuild: OptSpec[] = [
 
 /** Subcommands shared by docker and podman. */
 const dockerSubs: Record<string, CommandDoc> = {
-  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { positional: [pos('イメージ', 'image'), pos('コンテナで実行するコマンド', 'command to run in the container')] }),
+  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { wraps: true, wrapSkip: 1, positional: [pos('イメージ', 'image')] }),
   build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
   login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY']]),
+  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { wraps: true, wrapSkip: 1, positional: [pos('コンテナ', 'container')] }),
   ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
   images: cmd('イメージ一覧を表示する', 'List images'),
   pull: cmd('イメージを取得する', 'Pull an image'),
@@ -134,7 +134,12 @@ const dockerSubs: Record<string, CommandDoc> = {
   logs: cmd('コンテナのログを表示する', 'Fetch container logs', [['-f|--follow', 'ログを追い続ける', 'follow log output']]),
   stop: cmd('コンテナを停止する', 'Stop containers'),
   rm: cmd('コンテナを削除する', 'Remove containers', [['-f|--force', '実行中でも強制削除', 'force removal']]),
-  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)'),
+  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)', [], {
+    subcommands: {
+      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...dockerRun], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
+      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY']], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
+    },
+  }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
     ['-a|--all', '使っていないイメージもすべて削除する', 'also remove all unused images'], ['-f|--force', '確認しない', 'do not ask for confirmation'], ['--volumes', 'ボリュームも削除する', 'remove volumes too'],
   ]),
@@ -511,16 +516,21 @@ export const core: Record<string, CommandDoc> = {
     ['-E|--preserve-env', '現在の環境変数を引き継ぐ', 'preserve the environment'],
     ['-i|--login', 'ログインシェルとして実行', 'run a login shell'],
     ['-n|--non-interactive', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
-  ], { wraps: true }),
+  ], { wraps: true, assigns: true }),
   env: cmd('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
     ['-i|--ignore-environment', '空の環境から始める', 'start with an empty environment'],
     ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg'],
-  ], { wraps: true }),
+  ], { wraps: true, assigns: true }),
+  doas: cmd('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
+    ['-u', '実行するユーザー', 'run as the given user', 'arg'],
+    ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
+    ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
+  ], { wraps: true, assigns: true }),
   nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { wraps: true }),
   timeout: cmd('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
-    ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL after the given long', 'arg'],
-  ], { wraps: true }),
+    ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
+  ], { wraps: true, wrapSkip: 1, positional: [pos('制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)')] }),
   nice: cmd('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [['-n', '優先度の調整値', 'niceness adjustment', 'arg']], { wraps: true }),
   watch: cmd('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
     ['-n|--interval', '実行間隔（秒）', 'interval in seconds', 'arg'],
@@ -681,14 +691,14 @@ export const core: Record<string, CommandDoc> = {
     ['-s', 'コマンドを標準入力から読む', 'read commands from stdin'],
     ['--norc', '~/.bashrc を読まない', 'do not read ~/.bashrc'],
     ['--noprofile', 'ログイン時の設定ファイルを読まない', 'do not read the login profile files'],
-  ], { positional: [pos('実行するスクリプト', 'script to run')] }),
+  ], { shellC: true }),
   sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
     ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg'],
     ['-e', 'エラーで即終了', 'exit on error'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを表示', 'trace commands'],
     ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
-  ], { positional: [pos('実行するスクリプト', 'script to run')] }),
+  ], { shellC: true }),
   perl: cmd('Perl を実行する（`-e` でその場のコードを実行。sed や awk の代わりのワンライナーによく使う）', 'Run Perl (`-e` runs code given on the command line; common for one-liners instead of sed/awk)', [
     ['-e', '実行する Perl のコード', 'Perl code to run', 'arg fills lang:perl'],
     ['-E', '実行する Perl のコード（say などの新機能を有効にして）', 'Perl code to run, with newer features like say', 'arg fills lang:perl'],

@@ -1,6 +1,6 @@
 import { Lang, Text } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
-import { pitfallNotes } from './pitfalls';
+import { pitfallNotes, usesVariable } from './pitfalls';
 import { ancestor, descendants, field, fields, token } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins, shoptOptions } from './dict/builtins';
@@ -155,6 +155,12 @@ const LAST_STAGES = types('while_statement', 'for_statement', 'select_statement'
 /** What holds a list of statements. */
 const BLOCK_OWNERS = types('program', 'compound_statement', 'do_group', 'subshell', 'if_statement', 'else_clause', 'elif_clause', 'case_item');
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
+/** Does the word hold a variable, command or arithmetic expansion (even inside double quotes)? */
+const hasExpansionNode = (w: SyntaxNode): boolean => descendants(w, ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']).length > 0;
+/** Programs that start another program from their arguments (not the builtins `command`, `exec` and `builtin`). */
+const WRAPPER_PROGRAMS = new Set(['sudo', 'doas', 'env', 'nohup', 'timeout', 'nice', 'xargs', 'find', 'time', 'chroot', 'flock', 'setsid', 'watch', 'strace', 'ltrace', 'stdbuf', 'ionice', 'unshare', 'nsenter', 'caffeinate', 'runcon', 'systemd-run', 'perf']);
+/** Builtins with no program of the same name: a wrapper cannot run them. (`echo`, `printf`, `test`, `[`, `kill`, `pwd`, `true` and `false` exist as programs too.) */
+const SHELL_ONLY = new Set(['cd', 'export', 'source', '.', 'alias', 'unalias', 'set', 'unset', 'shopt', 'read', 'ulimit', 'umask', 'exit', 'return', 'shift', 'declare', 'local', 'readonly', 'typeset', 'eval', 'trap', 'wait', 'jobs', 'fg', 'bg', 'history', 'pushd', 'popd', 'dirs', 'hash', 'type', 'let', 'getopts', 'mapfile', 'readarray', 'exec', 'command', 'builtin']);
 const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -1197,6 +1203,7 @@ export class Analyzer {
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
     const argToks = this.args(head.doc, args, head.name, head.fn);
+    if (!head.fn) this.remoteNotes(head.name, args);
     this.commandExampleFor(head.name, args);
     if (head.name === 'read') this.readExample(n, args);
     for (const a of args) {
@@ -1349,6 +1356,8 @@ export class Analyzer {
     let endOfOpts = false;
     // The positional arguments, to describe again once their number is known (`positionalBy`).
     const operands: { index: number; token: Token; desc: string }[] = [];
+    // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
+    const assigned: string[] = [];
     const savedCtx = this.argCtx;
     this.argCtx = { cmd: cmdName, args };
     try {
@@ -1358,6 +1367,9 @@ export class Analyzer {
       if (!endOfOpts && isPlainWord(a) && text === '--' && cmdName !== 'echo') {
         out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
         endOfOpts = true;
+        // `kubectl exec pod -- ls -la`: the rest is the command run in the container.
+        if (doc?.afterDashes && i + 1 < args.length) out.push(this.wrapped(args.slice(i + 1), '', cmdName, assigned));
+        if (doc?.afterDashes) break;
         continue;
       }
       // `--pretty=format:'%h %s'` is one word made of a plain part and a quoted part.
@@ -1374,8 +1386,20 @@ export class Analyzer {
         i = this.option(doc, args, i, cmdName, out);
         continue;
       }
-      if (posIndex === 0 && doc?.wraps) {
-        out.push(this.wrapped(args.slice(i)));
+      // `su - user`: a lone dash is the login option.
+      if (cmdName === 'su' && text === '-' && posIndex === 0 && isPlainWord(a)) {
+        out.push(this.tok(a, 'option', this.s('ログインシェルとして実行する（`-l` と同じ）', 'Run a login shell (same as `-l`)')));
+        continue;
+      }
+      // `env FOO=1 cmd`: an assignment for the command, not the command.
+      if (doc?.assigns && posIndex === 0 && /^[A-Za-z_]\w*=/.test(text)) {
+        const eq = text.indexOf('=');
+        assigned.push(text.slice(0, eq));
+        out.push(this.tok(a, 'argument', this.s(`環境変数 \`${text.slice(0, eq)}\` の設定（実行するコマンドの環境にだけ入る）`, `Sets the variable \`${text.slice(0, eq)}\` for the command to run`), isPlainWord(a) ? [] : this.sub(a)));
+        continue;
+      }
+      if (posIndex === (doc?.wrapSkip ?? 0) && doc?.wraps) {
+        out.push(this.wrapped(args.slice(i), '', cmdName, assigned));
         break;
       }
       if (posIndex === 0 && isPlainWord(a) && doc?.subcommands?.[text]) {
@@ -1390,6 +1414,7 @@ export class Analyzer {
       let desc: string | undefined;
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
+      else if (doc?.shellC) desc = this.shellArgument(args, posIndex);
       else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
       if (cmdName === 'trap' && posIndex === 0 && desc) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
@@ -1404,6 +1429,27 @@ export class Analyzer {
     }
     if (doc?.positionalBy) this.describeByCount(doc.positionalBy, args, operands, posIndex);
     return out;
+  }
+
+  /**
+   * The words after a shell's options: with `-c` the command string comes first, then `$0` and `$1`…;
+   * otherwise the script, then its arguments.
+   */
+  private shellArgument(args: SyntaxNode[], index: number): string {
+    let withC = false;
+    for (let i = 0; i < args.length; i++) {
+      const w = args[i].text;
+      if (/^-[A-Za-z]*c[A-Za-z]*$/.test(w)) { withC = true; break; }
+      if (w === '-o' || w === '-O' || w === '+o' || w === '+O') i++;
+      else if (!w.startsWith('-') || w === '--') break;
+    }
+    if (!withC) {
+      return index === 0 ? this.s('実行するスクリプト', 'Script to run')
+        : this.s(`スクリプトへの引数（\`$${index}\`）`, `Argument to the script (\`$${index}\`)`);
+    }
+    return index === 0
+      ? this.s('`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument')
+      : this.s(`コマンド文字列の位置パラメータ \`$${index}\``, `Positional parameter \`$${index}\` of the command string`);
   }
 
   /** Describe the positional arguments by how many there are (`seq 5` has a last value, `seq 1 5` a first and a last). */
@@ -2595,10 +2641,11 @@ export class Analyzer {
     // `head -5`, `tail -1`, `git log -3`: the old way to write `-n N`.
     const count = /^-(\d+)$/.exec(text)?.[1];
     const countCmd = cmdName.split(' ').map((w, k) => (k ? w : w.split('/').pop())).join(' ');
-    if (count && !opts[text] && ['head', 'tail', 'git log', 'git show'].includes(countCmd)) {
+    if (count && !opts[text] && ['head', 'tail', 'git log', 'git show', 'nice'].includes(countCmd)) {
       {
         out.push(this.tok(a, 'option', countCmd.startsWith('git')
           ? this.s(`${count} 件だけ（\`-n ${count}\` と同じ）`, `only ${count} (same as \`-n ${count}\`)`)
+          : countCmd === 'nice' ? this.s(`優先度の調整値 ${count}（\`-n ${count}\` の古い書き方。負の値は \`--${count}\` で、権限が必要）`, `niceness adjustment ${count} (old way to write \`-n ${count}\`; a negative value is \`--${count}\` and needs privileges)`)
           : this.s(`${count} 行（\`-n ${count}\` の古い書き方）`, `${count} line${count === '1' ? '' : 's'} (old way to write \`-n ${count}\`)`)));
       }
       return i;
@@ -2614,7 +2661,7 @@ export class Analyzer {
         while (j < args.length && !TERMINATORS.has(args[j].text)) j++;
         const inner = args.slice(i + 1, j);
         if (inner.length) {
-          const run = this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: '));
+          const run = this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: '), 'find -exec');
           // `{}` is replaced by find (and `xargs -I{}`) with each path.
           const mark = (ts: Token[]) => ts.forEach((t) => {
             if (t.label === '{}') {
@@ -2711,9 +2758,84 @@ export class Analyzer {
     return last;
   }
 
-  /** Words forming a command run by another command (sudo, xargs, find -exec…). */
-  private wrapped(words: SyntaxNode[], prefix = ''): Token {
+  /**
+   * Pitfalls of a command run by a wrapper (`sudo`, `xargs`…): the wrapper starts it as a separate program, so a
+   * function or a builtin that only changes the shell cannot run, and `$NAME` of its words is read before the wrapper sets it.
+   */
+  private wrapperNotes(via: string, words: SyntaxNode[], assigned: string[]): void {
+    if (this.opts.pitfalls === false) return;
+    const wrapper = via.split('/').pop()!;
+    if (!WRAPPER_PROGRAMS.has(wrapper.split(' ')[0])) return;
     const first = words[0];
+    const name = first.text;
+    const isFn = isPlainWord(first) && this.functions.has(name);
+    if (isPlainWord(first) && (isFn || SHELL_ONLY.has(name))) {
+      const fix = isFn
+        ? this.s(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
+        : name === 'cd'
+          ? this.s(`サブシェル \`(cd … && …)\` か、\`${wrapper} sh -c 'cd … && …'\` を使います`, `Use a subshell \`(cd … && …)\`, or \`${wrapper} sh -c 'cd … && …'\``)
+          : this.s(`\`${wrapper} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${wrapper} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: \`${wrapper}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix}`,
+        `⚠ Pitfall: \`${wrapper}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix}`));
+    }
+    for (const v of assigned) {
+      const use = words.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
+      if (use) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`${use.text}\` は、\`${wrapper}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${wrapper} ${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
+          `⚠ Pitfall: the current shell expands \`${use.text}\` before \`${wrapper}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${wrapper} ${v}=… sh -c '… "\$${v}"'\``));
+        break;
+      }
+    }
+  }
+
+  /**
+   * `ssh host cmd` and `su -c 'cmd'` hand a command to another shell: the script's functions are not there, and
+   * `ssh` words are expanded here, by the local shell, before they are sent.
+   */
+  private remoteNotes(name: string, args: SyntaxNode[]): void {
+    if (this.opts.pitfalls === false) return;
+    const base = name.split('/').pop();
+    let command: SyntaxNode[] = [];
+    if (base === 'ssh') {
+      const withValue = new Set(['-p', '-i', '-l', '-o', '-F', '-J', '-L', '-R', '-D', '-b', '-c', '-m', '-w', '-E', '-e', '-O', '-S', '-W', '-B', '-I', '-Q']);
+      let i = 0;
+      while (i < args.length && args[i].text.startsWith('-') && args[i].text !== '--') i += withValue.has(args[i].text) ? 2 : 1;
+      if (args[i]?.text === '--') i++;
+      command = args.slice(i + 1);
+      const risky = command.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
+      if (risky) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`ssh\` に渡すコマンドのうち \`${risky.text}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
+          `⚠ Pitfall: the local shell expands \`${risky.text}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``));
+      }
+    } else if (base === 'su') {
+      const k = args.findIndex((w) => w.text === '-c' || w.text === '--command');
+      const word = k >= 0 ? args[k + 1] : undefined;
+      const lit = word && literalContent(word)?.text;
+      if (lit) command = [word!];
+      const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
+      if (fn && !this.functions.has(fn)) return;
+      if (fn) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`su -c\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
+          `⚠ Pitfall: \`su -c\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`));
+      }
+      return;
+    }
+    const first = command[0];
+    if (first && isPlainWord(first) && this.functions.has(first.text)) {
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: リモートのシェルには、このスクリプトの関数 \`${first.text}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${first.text}); ${first.text}"\` のように定義ごと送ります`,
+        `⚠ Pitfall: the remote shell does not have this script's function \`${first.text}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${first.text}); ${first.text}"\``));
+    }
+  }
+
+  /** Words forming a command run by another command (sudo, xargs, find -exec…). */
+  private wrapped(words: SyntaxNode[], prefix = '', via?: string, assigned: string[] = []): Token {
+    const first = words[0];
+    if (via) this.wrapperNotes(via, words, assigned);
     const name = first.text;
     const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
     const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);

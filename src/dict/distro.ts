@@ -28,7 +28,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-u|--unlock', 'ロックを解放する', 'release the lock'],
     ['-c|--command', 'シェルで実行するコマンド文字列', 'command string to run with the shell', 'arg'],
     ['-E|--conflict-exit-code', 'ロックが取れなかったときの終了ステータス', 'exit status when the lock is taken', 'arg'],
-  ], { positional: [pos('ロックファイルまたはディレクトリ（番号ならファイルディスクリプタ）', 'lock file or directory (or a file descriptor number)'), pos('実行するコマンド', 'command to run')] }),
+  ], { wraps: true, wrapSkip: 1, positional: [pos('ロックファイルまたはディレクトリ（番号ならファイルディスクリプタ）', 'lock file or directory (or a file descriptor number)')] }),
   setsid: cmd('新しいセッションでコマンドを実行する（端末から切り離す）', 'Run a command in a new session (detached from the terminal)', [
     ['-f|--fork', '常に fork して実行する', 'always fork'],
     ['-w|--wait', '子プロセスの終了を待ち、その終了ステータスを返す', 'wait for the child and return its exit status'],
