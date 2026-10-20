@@ -318,14 +318,36 @@ function exec(cmds: Cmd[], ps: string, no: number, last: boolean, st: RunState, 
         const g = new RegExp(re.source, re.flags + 'g');
         let count = 0;
         let changed = false;
-        ps = ps.replace(g, (...args) => {
+        let out = '';
+        let pos = 0; // start of the text not yet copied
+        let at = 0; // where to search next
+        let prevEnd = -1; // end of the previous match
+        for (;;) {
+          g.lastIndex = at;
+          const m = g.exec(ps);
+          if (!m) break;
+          const end = m.index + m[0].length;
+          // GNU sed: an empty match right after the previous match is not a match.
+          if (m[0] === '' && m.index === prevEnd) {
+            if (m.index >= ps.length) break;
+            at = m.index + String.fromCodePoint(ps.codePointAt(m.index)!).length;
+            continue;
+          }
           count++;
           const take = cmd.nth ? (cmd.global ? count >= cmd.nth : count === cmd.nth) : cmd.global || count === 1;
-          if (!take) return args[0];
-          changed = true;
-          const groups = args.slice(0, -2).filter((x) => typeof x === 'string' || x === undefined) as string[];
-          return replacement(cmd.rep!, groups as unknown as RegExpExecArray);
-        });
+          if (take) {
+            changed = true;
+            out += ps.slice(pos, m.index) + replacement(cmd.rep!, m);
+            pos = end;
+          }
+          if (!cmd.global && take) break;
+          prevEnd = end;
+          if (m[0] === '') {
+            if (m.index >= ps.length) break;
+            at = m.index + String.fromCodePoint(ps.codePointAt(m.index)!).length;
+          } else at = end;
+        }
+        ps = out + ps.slice(pos);
         if (changed && cmd.print) st.out.push(ps);
         break;
       }
