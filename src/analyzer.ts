@@ -863,9 +863,10 @@ export class Analyzer {
     const redirToks = this.subs(layout.redirs);
     const fds = new Set<string>();
     for (const r of layout.redirs) {
-      const { op } = r.type === 'file_redirect' ? redirectParts(r) : { op: r.type === 'heredoc_redirect' ? '<<' : '<<<' };
+      const { op, dest } = r.type === 'file_redirect' ? redirectParts(r) : { op: r.type === 'heredoc_redirect' ? '<<' : '<<<', dest: '' };
       const fd = field(r, 'descriptor')?.text ?? '';
-      if (op === '&>' || op === '&>>') { fds.add('1'); fds.add('2'); } else if (!/^\{/.test(fd)) fds.add(fd || (op.startsWith('<') ? '0' : '1'));
+      // `>& file` (no number, no `$`) is the same as `&> file`.
+      if (op === '&>' || op === '&>>' || (op === '>&' && fd === '' && !/^\d*-?$|[$`]/.test(dest))) { fds.add('1'); fds.add('2'); } else if (!/^\{/.test(fd)) fds.add(fd || (op.startsWith('<') ? '0' : '1'));
     }
     const names = [...fds].sort().map((fd) => fdName(fd, fd));
     const cmd = shorten(layout.text, 30);
@@ -1049,6 +1050,7 @@ export class Analyzer {
     const children: Token[] = [];
     // A declaration over several lines is explained whole (see sub), so every part counts.
     let named = false;
+    const funcs = kw !== 'local' && n.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*[fF]/.test(c.text));
     for (const c of n.namedChildren) {
       if (redirsOut && c.type.endsWith('redirect')) continue;
       // Options end at the first name: `declare x -i` is an error for the name `-i`.
@@ -1060,13 +1062,16 @@ export class Analyzer {
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
       } else if (c.type === 'variable_name' || c.type === 'word') {
         named = true;
-        children.push(this.tok(c, 'variable', this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
+        // With `-f` or `-F` the names are functions.
+        children.push(this.tok(c, 'variable', funcs
+          ? this.s(`関数 \`${c.text}\` を対象にする`, `Function \`${c.text}\``)
+          : this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
       } else {
         named = true;
         children.push(...this.sub(c));
       }
     }
-    const t = this.tok(n, 'builtin', this.t(base), children, kw);
+    const t = this.tok(n, 'builtin', this.t(base) + this.s('（シェル組み込み）', ' (shell builtin)'), children, kw);
     t.summary = `${kw}: ${t.explanation}`;
     return t;
   }
@@ -1082,7 +1087,7 @@ export class Analyzer {
       }
       return this.explain(c);
     });
-    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary), children, 'unset');
+    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary) + this.s('（シェル組み込み）', ' (shell builtin)'), children, 'unset');
     t.summary = `unset: ${t.explanation}`;
     return t;
   }
@@ -1144,11 +1149,16 @@ export class Analyzer {
       if (same(c, nameNode)) { seenName = true; continue; }
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
+        // In POSIX mode (sh, dash, `set -o posix`) an assignment before a special builtin stays after it.
+        const stays = SPECIAL_BUILTINS.has(nameNode.text) && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
         for (const t of this.sub(c)) {
-          t.explanation = this.s(
-            `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
-            `Environment variable set only for this command: ${t.explanation}`,
-          );
+          t.explanation = stays
+            ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
+              `\`${nameNode.text}\` is a POSIX special builtin, so this assignment stays after the command (in bash's normal mode it would last only while the command runs): ${t.explanation}`)
+            : this.s(
+              `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
+              `Environment variable set only for this command: ${t.explanation}`,
+            );
           prefix.push(t);
         }
         continue;
@@ -1206,8 +1216,14 @@ export class Analyzer {
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    const argToks = this.args(head.doc, args, head.name, head.fn);
+    let argToks = this.args(head.doc, args, head.name, head.fn);
     if (!head.fn) this.remoteNotes(head.name, args);
+    // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
+    const asTest = head.name === 'test' && head.kind === 'builtin' && args.length ? testOfWords(args) : undefined;
+    if (asTest) {
+      this.testExample(n, bracketShape(asTest), '[');
+      argToks = this.testTokens(n, asTest, asTest.expr);
+    }
     this.commandExampleFor(head.name, args);
     if (head.name === 'read') this.readExample(n, args);
     for (const a of args) {
@@ -1294,14 +1310,18 @@ export class Analyzer {
     if (alias) {
       // bash expands aliases in scripts only with expand_aliases (interactive shells always do);
       // a script that turns it on anywhere is taken to know.
-      if ((!this.shell || this.shell === 'bash') && this.shopt.expand_aliases !== 'on' && !/\bshopt\s+-s\b[^\n;]*\bexpand_aliases\b/.test(this.source) && this.opts.pitfalls !== false) {
+      const unexpanded = (!this.shell || this.shell === 'bash') && this.shopt.expand_aliases !== 'on' && !/\bshopt\s+-s\b[^\n;]*\bexpand_aliases\b/.test(this.source);
+      if (unexpanded && this.opts.pitfalls !== false) {
         this.extraNotes.push(this.s(
           `⚠ 落とし穴: bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${alias.value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
           `⚠ Pitfall: bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${alias.value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`));
       }
       return {
         name, kind: 'function', nameTokens: [],
-        explanation: this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${alias.line + 1}: replaced by \`${alias.value}\``),
+        explanation: unexpanded
+          ? this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`（\`${alias.value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${alias.value}\` に置き換わる`,
+            `The alias \`${name}\` defined on line ${alias.line + 1} (\`${alias.value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${alias.value}\``)
+          : this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${alias.line + 1}: replaced by \`${alias.value}\``),
         doc: { summary: { ja: '', en: '' }, positional: [] },
       };
     }
@@ -2489,11 +2509,11 @@ export class Analyzer {
   }
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-  private testExample(n: SyntaxNode, bracket: BracketTest | undefined): void {
-    const kind = n.children[0].type as '[' | '[[' | '((';
+  private testExample(n: SyntaxNode, bracket: TestShape | undefined | BracketTest, asKind?: '['): void {
+    const kind = asKind ?? n.children[0].type as '[' | '[[' | '((';
     let shape: TestShape | undefined;
     if (kind === '[') {
-      shape = bracketShape(bracket);
+      shape = bracket && 'words' in bracket ? bracketShape(bracket) : bracket;
     } else if (n.namedChildren.length === 1) {
       const expr = n.namedChildren[0];
       if (expr.type === 'unary_expression') {
@@ -2519,7 +2539,11 @@ export class Analyzer {
       ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string')
       : testCases(kind, op, undefined, operand(right), right.type === 'string');
     if (!cases) return;
-    const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
+    // `$#` and `$?` cannot be assigned: say it in words.
+    const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (k === '#'
+      ? this.s(`引数が ${v} 個`, `${v} argument${v === '1' ? '' : 's'}`)
+      : k === '?' ? this.s(`直前のコマンドの終了ステータスが ${v}`, `the last command exits with ${v}`)
+        : /^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
     this.examples.push({ kind: 'test',
       title: this.s('例', 'Example'),
       sections: [
@@ -3765,6 +3789,11 @@ function bracketTest(n: SyntaxNode): BracketTest | undefined {
   // After the `[`, and before the `]` unless the test is not closed.
   const leaves = n.children.slice(1);
   if (leaves[leaves.length - 1]?.type === ']') leaves.pop();
+  return testOfWords(leaves);
+}
+
+/** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
+function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
   const words: BracketWord[] = [];
   for (const x of leaves) {
     const last = words[words.length - 1];
@@ -3909,6 +3938,9 @@ function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined 
   const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
   return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
 }
+
+/** POSIX special builtins: an assignment before them persists in POSIX mode. */
+const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
 
 /** Commands whose words may be job specs (`%1`). */
 const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);

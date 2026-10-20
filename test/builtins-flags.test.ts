@@ -143,3 +143,56 @@ describe('[ ] and [[ ]] examples', () => {
     assert.strictEqual(bash('[[ abc != a* ]]; echo $?').stdout, '1\n');
   });
 });
+
+describe('declaration builtins as plain commands, and related fixes', () => {
+  const one = (src: string, shell?: 'sh', lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0, shell).items[0];
+  it('stay builtins after a prefix assignment', () => {
+    for (const c of ['LC_ALL=C export X', 'V=1 declare -x Y', 'V=1 readonly Z', 'V=1 local W', 'V=1 typeset T']) {
+      const t = one(c);
+      assert.strictEqual(t.kind, 'builtin', c);
+      assert.match(t.explanation, /shell builtin/);
+    }
+    assert.match(one('V=1 declare -x Y').children.find((x) => x.label === '-x')!.explanation, /export/);
+  });
+  it('-f and -F make the names functions', () => {
+    for (const c of ['export -f myfunc', 'declare -F myfunc', 'declare -f myfunc', 'readonly -f myfunc', 'typeset -f myfunc']) {
+      assert.match(one(c).children.find((x) => x.label === 'myfunc')!.explanation, /^Function `myfunc`/, c);
+    }
+    assert.match(one('export myvar').children[0].explanation, /^Variable/);
+    assert.match(one('local -f x').children[1].explanation, /^Variable/);
+  });
+  it('every declaration builtin is tagged, including unset', () => {
+    for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.match(one(c).explanation, /\(shell builtin\)$/, c);
+  });
+  it('>& file redirects stdout and stderr', () => {
+    assert.match(one('cmd >& out').explanation, /stdout \(fd 1\) and stderr \(fd 2\)/);
+    assert.match(one('cmd >&2').explanation, /^Redirection applied to `cmd`: its stdout \(fd 1\) is redirected/);
+    assert.match(one('cmd >& $fd').explanation, /stdout \(fd 1\) is redirected/);
+  });
+  it('shows $# and $? examples in words', () => {
+    const ex = new Analyzer('en').explainLine(parser.parse('[ $# -eq 1 ]'), 0).examples[0];
+    assert.deepStrictEqual(ex.sections[0].lines, ['1 argument']);
+    const q = new Analyzer('ja').explainLine(parser.parse('[ $? -eq 0 ]'), 0).examples[0];
+    assert.match(q.sections[0].lines[0], /終了ステータスが 0/);
+  });
+  it('an assignment before a special builtin persists in sh and POSIX mode', () => {
+    assert.match(one('V=1 :', 'sh').children[0].explanation, /special builtin, so this assignment stays/);
+    assert.match(one('V=1 :').children[0].explanation, /only for this command/);
+    const posix = new Analyzer('en').explainLine(parser.parse('set -o posix\nV=1 :'), 1).items[0];
+    assert.match(posix.children[0].explanation, /stays/);
+    assert.match(one('V=1 echo', 'sh').children[0].explanation, /only for this command/);
+    assert.strictEqual(bash('f() { V=1 :; }; f; echo "[$V]"').stdout, '[]\n');
+    assert.strictEqual(spawnSync('sh', ['-c', 'V=1 :; echo "[$V]"'], { encoding: 'utf8' }).stdout, '[1]\n');
+  });
+  it('test parses its words like [ ]', () => {
+    const t = one('test "$a" = "$b" -a -f x');
+    assert.match(t.children[0].explanation, /AND/);
+    assert.match(one('test ! -e f').children[0].explanation, /^Negation/);
+    assert.match(one('test -f file').children[0].explanation, /regular file/);
+    assert.match(one('test').explanation, /shell builtin/);
+  });
+  it('test examples', () => {
+    const e = new Analyzer('en').explainLine(parser.parse('test -n "$x"'), 0);
+    assert.strictEqual(e.examples[0].sections.length, 2);
+  });
+});
