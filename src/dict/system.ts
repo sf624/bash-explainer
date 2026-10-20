@@ -123,6 +123,16 @@ const group = pos('グループ名', 'group name');
 
 // ---- The dictionary ---------------------------------------------------------------------------
 
+const ipVerbs = (what: string, whatJa: string): Record<string, CommandDoc> => ({
+  show: cmd(`${whatJa}を表示する（省略可。\`dev 名前\` で絞る）`, `Show ${what} (the default; \`dev NAME\` filters)`),
+  add: cmd(`${whatJa}を追加する`, `Add ${what}`),
+  del: cmd(`${whatJa}を削除する`, `Delete ${what}`),
+});
+const ipAddr = cmd('IP アドレスを表示・設定する', 'Show or set IP addresses', [], { subcommands: { ...ipVerbs('an address', 'アドレス'), flush: cmd('アドレスをまとめて削除する', 'Remove all matching addresses') } });
+const ipLink = cmd('ネットワークインターフェースを表示・設定する', 'Show or set network interfaces', [], { subcommands: { ...ipVerbs('an interface', 'インターフェース'), set: cmd('インターフェースの状態を変える（`up`、`down`、`mtu`…）', 'Change an interface (`up`, `down`, `mtu`…)') } });
+const ipRoute = cmd('ルーティングテーブルを表示・設定する', 'Show or set routes', [], { subcommands: ipVerbs('a route', '経路') });
+const ipNeigh = cmd('ARP / 近隣のテーブルを表示する', 'Show the neighbour (ARP) table', [], { subcommands: ipVerbs('a neighbour entry', '近隣エントリ') });
+
 export const system: Record<string, CommandDoc> = {
   'apt-get': cmd('Debian / Ubuntu のパッケージ管理（APT）', 'Debian/Ubuntu package manager (APT)', aptCommon, { subcommands: aptSubs() }),
   apt: cmd('Debian / Ubuntu のパッケージ管理（対話向けの APT。スクリプトでは `apt-get` が推奨）', 'Debian/Ubuntu package manager (interactive APT; scripts should use `apt-get`)', aptCommon, {
@@ -427,11 +437,10 @@ export const system: Record<string, CommandDoc> = {
   ], {
     longSingleDash: true,
     subcommands: {
-      addr: cmd('IP アドレスを表示・設定する', 'Show or set IP addresses'),
-      address: cmd('IP アドレスを表示・設定する', 'Show or set IP addresses'),
-      link: cmd('ネットワークインターフェースを表示・設定する', 'Show or set network interfaces'),
-      route: cmd('ルーティングテーブルを表示・設定する', 'Show or set routes'),
-      neigh: cmd('ARP / 近隣のテーブルを表示する', 'Show the neighbour (ARP) table'),
+      addr: ipAddr, address: ipAddr, a: ipAddr,
+      link: ipLink, l: ipLink,
+      route: ipRoute, r: ipRoute,
+      neigh: ipNeigh, neighbour: ipNeigh, n: ipNeigh,
     },
   }),
   ss: cmd('ソケット（通信の接続や待ち受け）を表示する', 'Show sockets (connections and listeners)', [

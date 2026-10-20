@@ -121,6 +121,12 @@ const dockerBuild: OptSpec[] = [
   ['--pull', 'ベースイメージを取り直す', 'pull newer base images'],
 ];
 
+/** Options before the subcommand of `docker compose`. */
+const composeOpts: OptSpec[] = [
+  ['-f|--file', 'compose ファイル', 'compose file', 'arg'],
+  ['-p|--project-name', 'プロジェクト名', 'project name', 'arg'],
+];
+
 /** Subcommands shared by docker and podman. */
 const dockerSubs: Record<string, CommandDoc> = {
   run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { wraps: true, wrapSkip: 1, positional: [pos('イメージ', 'image')] }),
@@ -134,10 +140,14 @@ const dockerSubs: Record<string, CommandDoc> = {
   logs: cmd('コンテナのログを表示する', 'Fetch container logs', [['-f|--follow', 'ログを追い続ける', 'follow log output']]),
   stop: cmd('コンテナを停止する', 'Stop containers'),
   rm: cmd('コンテナを削除する', 'Remove containers', [['-f|--force', '実行中でも強制削除', 'force removal']]),
-  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)', [], {
+  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)', composeOpts, {
     subcommands: {
-      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...dockerRun], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
-      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY']], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
+      up: cmd('コンテナを作って起動する', 'Create and start the containers', [...composeOpts, ['-d|--detach', 'バックグラウンドで動かす', 'run in the background'], ['--build', '起動前にイメージをビルドする', 'build images before starting'], ['--force-recreate', '設定が同じでも作り直す', 'recreate containers even if unchanged']]),
+      down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [...composeOpts, ['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
+      ps: cmd('コンテナの一覧を表示する', 'List the containers', [...composeOpts, ['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
+      logs: cmd('コンテナのログを表示する', 'Show the logs', [...composeOpts, ['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
+      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...composeOpts, ...dockerRun], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
+      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [...composeOpts, ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
     },
   }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
@@ -749,21 +759,27 @@ export const core: Record<string, CommandDoc> = {
       lfs: cmd('Git LFS（大きなファイル）を操作する（`install`、`pull`、`track`）', 'Git LFS for large files (`install`, `pull`, `track`)', [['--skip-repo', 'このリポジトリのフックは入れない', 'do not install hooks in this repository'], ['--system', 'システム全体の設定にする', 'configure system-wide']]),
       worktree: cmd('作業ツリーを追加・削除する（`add`、`remove`、`list`）', 'Add or remove working trees (`add`, `remove`, `list`)', [['-f|--force', '強制する', 'force'], ['-d|--detach', 'ブランチにしない（HEAD を切り離す）', 'detached HEAD']]),
       archive: cmd('リポジトリの中身を tar や zip に書き出す', 'Write the tree to a tar or zip archive', [['-o|--output', '書き出すファイル', 'output file', 'arg'], ['--format', '形式（`tar`、`zip`、`tar.gz`）', 'format (`tar`, `zip`, `tar.gz`)', 'arg'], ['--prefix', '中のパスの先頭に付ける', 'prefix for the paths inside', 'arg']]),
-      clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']]),
+      clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']], { positional: [pos('複製元のリポジトリ（URL かパス）', 'repository to clone (URL or path)'), pos('複製先のディレクトリ（省略するとリポジトリ名）', 'directory to clone into (default: the repository name)')] }),
       add: cmd('変更をステージする', 'Stage changes', [['-A|--all', '全ての変更をステージ', 'stage all changes'], ['-p|--patch', '変更を対話的に選んでステージ', 'stage hunks interactively']]),
       commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output'], ['-s|--signoff', '`Signed-off-by:` の行を付ける', 'add a `Signed-off-by:` line'], ['--allow-empty', '変更がなくてもコミットする', 'commit even with no changes'], ['--no-verify', 'フックを実行しない', 'skip the hooks']]),
       show: cmd('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']]),
       'ls-files': cmd('Git が知っているファイルを一覧表示する', 'List the files Git knows about', [['-c|--cached', '追跡中のファイル', 'tracked files'], ['-m|--modified', '変更されたファイル', 'modified files'], ['-o|--others', '追跡していないファイル', 'untracked files'], ['--exclude-standard', '`.gitignore` などで無視されるものを除く', 'leave out files ignored by `.gitignore` and the like'], ['-z', 'NUL で区切って出力（`xargs -0` 向け）', 'NUL-separated output (for `xargs -0`)']]),
-      push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']]),
-      pull: cmd('リモートから取得して統合する', 'Fetch and integrate from a remote', [['--rebase', 'マージではなくリベースで統合', 'rebase instead of merge']]),
-      fetch: cmd('リモートから取得する（統合はしない）', 'Download objects from a remote', [['--all', '全てのリモートから取得', 'fetch all remotes'], ['--prune', '削除されたリモートブランチを掃除', 'prune deleted branches'], ['--depth', '取得する履歴の深さ', 'history depth to fetch', 'arg'], ['--tags', 'タグもすべて取得', 'fetch all tags'], ['-q|--quiet', '表示を減らす', 'less output']]),
+      push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('送るブランチや参照（`HEAD`、`main`、`local:remote`）', 'branch or ref to push (`HEAD`, `main`, `local:remote`)')] }),
+      pull: cmd('リモートから取得して統合する', 'Fetch and integrate from a remote', [['--rebase', 'マージではなくリベースで統合', 'rebase instead of merge']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('取り込むブランチ', 'branch to pull')] }),
+      fetch: cmd('リモートから取得する（統合はしない）', 'Download objects from a remote', [['--all', '全てのリモートから取得', 'fetch all remotes'], ['--prune', '削除されたリモートブランチを掃除', 'prune deleted branches'], ['--depth', '取得する履歴の深さ', 'history depth to fetch', 'arg'], ['--tags', 'タグもすべて取得', 'fetch all tags'], ['-q|--quiet', '表示を減らす', 'less output']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('取得するブランチや参照', 'branch or ref to fetch')] }),
       init: cmd('リポジトリを作る', 'Create a repository', [['-b|--initial-branch', '最初のブランチ名', 'name of the first branch', 'arg'], ['-q|--quiet', '表示を減らす', 'less output'], ['--bare', '作業ツリーのないリポジトリ', 'repository without a working tree']]),
       rm: cmd('ファイルを削除して、その削除をステージする', 'Remove files and stage the removal', [['--cached', 'ファイルは残し、追跡だけやめる', 'stop tracking but keep the file'], ['-r', 'ディレクトリを再帰的に', 'recursively'], ['-q|--quiet', '表示を減らす', 'less output'], ['-f|--force', '変更があっても削除', 'remove even with changes']]),
       'rev-parse': cmd('参照をコミットの ID などに変換する（`--short HEAD`、`--show-toplevel`）', 'Turn references into commit IDs and more (`--short HEAD`, `--show-toplevel`)', [['--short', '短い ID', 'short ID'], ['--show-toplevel', 'リポジトリの最上位のディレクトリ', 'top-level directory'], ['--abbrev-ref', 'ブランチ名で表示（`--abbrev-ref HEAD` で今のブランチ）', 'branch name (`--abbrev-ref HEAD`: current branch)'], ['--verify', '有効な参照かを確かめる', 'check that it is a valid reference'], ['-q|--quiet', '表示を減らす', 'less output']]),
       describe: cmd('一番近いタグからの名前を表示する（`v1.2-3-gabc123`）', 'Name a commit after the nearest tag (`v1.2-3-gabc123`)', [['--tags', '注釈なしのタグも使う', 'use lightweight tags too'], ['--abbrev', 'ID の長さ（`0` でタグだけ）', 'ID length (`0`: tag only)', 'arg'], ['--always', 'タグがなくても ID を表示', 'show the ID if no tag'], ['--dirty', '変更があれば `-dirty` を付ける', 'append `-dirty` when there are changes']]),
       checkout: cmd('ブランチを切り替える・ファイルを復元する', 'Switch branches or restore files', [['-b', '新しいブランチを作って切り替える', 'create and switch to a new branch', 'arg']]),
       switch: cmd('ブランチを切り替える', 'Switch branches', [['-c|--create', '新しいブランチを作って切り替える', 'create a new branch', 'arg']]),
-      branch: cmd('ブランチを一覧・作成・削除する', 'List, create or delete branches', [['-d|--delete', 'ブランチを削除', 'delete a branch'], ['-D', '強制削除', 'force delete'], ['-a|--all', 'リモートブランチも表示', 'list remote branches too']]),
+      branch: cmd('ブランチを一覧・作成・削除する', 'List, create or delete branches', [['-d|--delete', 'ブランチを削除', 'delete a branch'], ['-D', '強制削除', 'force delete'], ['-a|--all', 'リモートブランチも表示', 'list remote branches too'], ['-m|--move', 'ブランチ名を変える', 'rename a branch'], ['-M', '強制的にブランチ名を変える', 'force-rename a branch']], {
+        positionalBy: [
+          { count: 1, orMore: true, when: '-m|-M|--move', texts: [pos('変更前のブランチ名（1つだけなら今のブランチを変更）', 'old branch name (a single name renames the current branch)'), pos('新しいブランチ名', 'new branch name')] },
+          { count: 1, orMore: true, when: '-d|-D|--delete', texts: [pos('削除するブランチ', 'branch to delete')] },
+        ],
+        positional: [pos('ブランチ名', 'branch name'), pos('起点（コミットやブランチ）', 'start point (commit or branch)')],
+      }),
       status: cmd('作業ツリーの状態を表示する', 'Show working tree status', [['-s|--short', '短い形式', 'short format'], ['--porcelain', 'スクリプト向けの安定した形式', 'stable machine-readable format']]),
       log: cmd('コミット履歴を表示する', 'Show commit logs', [
         ['--oneline', '1コミット1行で表示', 'one line per commit'], ['-n', '表示する件数', 'number of commits', 'arg'], ['--graph', 'ブランチをグラフ表示', 'draw a graph'],
@@ -784,9 +800,28 @@ export const core: Record<string, CommandDoc> = {
       merge: cmd('ブランチを統合する', 'Merge branches', [['--no-ff', '早送りせずマージコミットを作る', 'always create a merge commit']]),
       rebase: cmd('コミットを別の基点に付け替える', 'Reapply commits on another base', [['-i|--interactive', '対話的にリベース', 'interactive rebase']]),
       reset: cmd('HEAD やステージを指定状態に戻す', 'Reset HEAD or the index', [['--hard', '作業ツリーも含めて完全に戻す（変更は失われる）', 'discard all changes (destructive)'], ['--soft', 'コミットだけ戻し、変更はステージに残す', 'keep changes staged']]),
-      stash: cmd('変更を一時退避する', 'Stash changes away'),
+      stash: cmd('変更を一時退避する', 'Stash changes away', [['-u|--include-untracked', '未追跡のファイルも退避', 'also stash untracked files'], ['-m|--message', '退避のメモ', 'stash message', 'arg']], {
+        subcommands: {
+          push: cmd('変更を退避する（既定の動作）', 'Stash the changes (the default)', [['-m|--message', '退避のメモ', 'stash message', 'arg'], ['-u|--include-untracked', '未追跡のファイルも退避', 'also stash untracked files']]),
+          list: cmd('退避した一覧を表示する', 'List the stashes'),
+          show: cmd('退避した変更を表示する', 'Show a stash', [['-p|--patch', '差分を表示', 'show the diff']], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
+          pop: cmd('退避した変更を戻して、その退避を削除する', 'Apply a stash and drop it', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
+          apply: cmd('退避した変更を戻す（退避は残る）', 'Apply a stash and keep it', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
+          drop: cmd('退避を1つ削除する', 'Remove one stash', [], { positional: [pos('スタッシュ（`stash@{0}`。省略すると最新）', 'stash (`stash@{0}`; the latest if omitted)')] }),
+          clear: cmd('退避をすべて削除する', 'Remove all the stashes'),
+        },
+      }),
       tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a|--annotate', '注釈付きタグを作る', 'annotated tag'], ['-m', 'タグメッセージ', 'tag message', 'arg'], ['-l|--list', 'タグを一覧表示（パターンで絞れる）', 'list tags (a pattern filters them)'], ['-f|--force', '同じ名前のタグを付け直す', 'replace an existing tag'], ['-d|--delete', 'タグを削除', 'delete a tag'], ['--sort', '並べ方（`-v:refname` で版の新しい順）', 'sort order (`-v:refname`: newest version first)', 'arg']]),
-      remote: cmd('リモートを管理する', 'Manage remotes', [['-v', 'URL も表示', 'show URLs']]),
+      remote: cmd('リモートを管理する', 'Manage remotes', [['-v', 'URL も表示', 'show URLs']], {
+        subcommands: {
+          add: cmd('リモートを追加する', 'Add a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('リモートの URL', 'URL of the remote')] }),
+          remove: cmd('リモートを削除する', 'Remove a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)')] }),
+          rm: cmd('リモートを削除する', 'Remove a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)')] }),
+          rename: cmd('リモートの名前を変える', 'Rename a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('新しい名前', 'new name')] }),
+          'set-url': cmd('リモートの URL を変える', 'Change the URL of a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('新しい URL', 'new URL')] }),
+          'get-url': cmd('リモートの URL を表示する', 'Show the URL of a remote', [], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)')] }),
+        },
+      }),
       config: cmd('設定を取得・変更する', 'Get or set configuration', [['--global', 'ユーザー全体の設定', 'user-wide config'], ['--get', '値を取得', 'get a value']]),
     },
   }),
