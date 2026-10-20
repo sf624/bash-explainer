@@ -46,6 +46,11 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
       case 'command': {
         const name = commandName(n);
         const a = args(n);
+        // `[-f x]`: the name is one word, `[-f`.
+        if (name && /^\[[^\]]/.test(name) && a.at(-1)?.text.endsWith(']')) {
+          add(`\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。\`[ ${name.slice(1)} …\` のように書きます`,
+            `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write \`[ ${name.slice(1)} …\``);
+        }
         // `x = 1`: a command named x, not an assignment.
         if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text))) {
           add(`\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
@@ -117,6 +122,25 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         if (bare) {
           add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` など）。\`"${bare.text}"\` と書きます`,
             `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces ("unary operator expected"). Write \`"${bare.text}"\``);
+        }
+        // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`.
+        const redirect = n.namedChildren.find((e) => e.type === 'file_redirect');
+        if (redirect) {
+          add(`\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
+            `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
+        }
+        const last = n.namedChildren[n.namedChildren.length - 1];
+        const closed = n.children[n.children.length - 1].type === ']';
+        const next = n.parent?.children[n.parent.children.indexOf(n) + 2];
+        const sep = n.parent?.children[n.parent.children.indexOf(n) + 1];
+        if (!closed && last && /[^\s]\]$/.test(last.text)) {
+          // `[ -f x]`
+          add(`\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
+            `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
+        } else if (!closed && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {
+          // `[ a && b ]`
+          add(`\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
+            `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`[ … ] ${sep.type} [ … ]\`, or use \`[[ ]]\``);
         }
         break;
       }
