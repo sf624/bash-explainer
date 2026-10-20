@@ -99,6 +99,9 @@ class SedParser {
     }
     if ((m = /^\d+/.exec(src.slice(start)))) {
       this.i += m[0].length;
+      if (/^0+$/.test(m[0])) {
+        return { token: this.tok(start, this.i, 'pattern', s('`0`: 1行目より前。`0,/正規表現/` の形でだけ使え、1行目がその正規表現に一致すれば範囲は1行目で終わる（`1,/正規表現/` なら2行目以降で探す）', '`0`: before the first line. Only valid as `0,/regex/`: the range may already end on line 1 if it matches (with `1,/regex/` the end is looked for from line 2)')), text: s('先頭', 'the start') };
+      }
       return { token: this.tok(start, this.i, 'pattern', s(`\`${m[0]}\`: ${m[0]} 行目`, `\`${m[0]}\`: line ${m[0]}`)), text: s(`${m[0]} 行目`, `line ${m[0]}`) };
     }
     if (src[start] === '$') {
@@ -146,7 +149,7 @@ class SedParser {
     }
     if (!a2) return { tokens: [a1.token], text: a1.text };
     const commaTok = this.tok(comma, comma + 1, 'operator', s('`,`: 範囲。左のアドレスの行から右のアドレスの行まで', '`,`: range from the first address through the second'));
-    const from = a1.token.explanation.startsWith('`0`') ? s('先頭', 'the start') : a1.text;
+    const from = a1.text;
     return { tokens: [a1.token, commaTok, a2.token], text: s(`${from}から ${a2.text}まで`, `${from} through ${a2.text}`) };
   }
 
@@ -305,11 +308,12 @@ class SedParser {
       };
       parts.push(this.tok(fs, this.i, 'option', s(expl[f][0], expl[f][1])));
     }
-    const which = global ? s('すべて', 'every match') : nth ? s(`${nth}番目の一致`, `the ${nth}th match`) : s('最初の1つ', 'the first match');
+    const which = global && nth ? s(`${nth}番目以降のすべての一致`, `every match from the ${nth}th on`) : global ? s('すべて', 'every match') : nth ? s(`${nth}番目の一致`, `the ${nth}th match`) : s('最初の1つ', 'the first match');
     const shown = repText ? `\`${repText}\`` : s('空文字', 'nothing');
+    const shownPat = patText ? `\`${patText}\`` : s('直前に使った正規表現', 'the last regex');
     const summary = s(
-      `置換: \`${patText}\` に一致した部分（各行の${which}）を ${shown} に置き換える`,
-      `Substitute: replace ${which} of \`${patText}\` on each line with ${shown}`,
+      `置換: ${shownPat} に一致した部分（各行の${which}）を ${shown} に置き換える`,
+      `Substitute: replace ${which} of ${shownPat} on each line with ${shown}`,
     );
     const forWhom = target ? s(`${target}に対して: `, `For ${target}: `) : '';
     return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...parts]);

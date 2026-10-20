@@ -1690,7 +1690,8 @@ export class Analyzer {
         const flags = this.cmdFlags();
         // With several -e options sed runs them as one script, so the example does too.
         const scripts = this.sedScripts() ?? [lit.text];
-        const ex = sedExample(scripts.join('\n'), {
+        // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
+        const ex = flags.has('-z') || flags.has('--null-data') ? undefined : sedExample(scripts.join('\n'), {
           quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'),
           extended: flavor === 'ere',
         });
