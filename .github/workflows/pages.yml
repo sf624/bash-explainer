@@ -8,7 +8,9 @@ name: Web page
 # redeploys; a pull request that is opened, updated, reopened or closed redeploys (pull_request_target,
 # so that this file runs from main, the branch the github-pages environment allows); run it by hand
 # for the first deployment or a fix. Pull request code runs only in the build job, which can read
-# but not write, with no secrets. One-time setup: docs/publishing.md.
+# but not write, with no secrets. That code can still write anywhere in site/, so a pull request can
+# change any page of the site: only people who can push branches here get a preview.
+# One-time setup: docs/publishing.md.
 on:
   workflow_call:
   workflow_dispatch:
@@ -60,7 +62,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
+          # No `cache: npm`: its post step would save ~/.npm for main, and the pull request code below
+          # can write there. A later run on main (the Release workflow, with its secrets) would restore it.
 
       # The root is the latest release (the highest vX.Y.Z tag; the moving major tag v0 is not one).
       # It is built with the tag's own scripts and dependencies, as that release would have been.
@@ -85,10 +88,9 @@ jobs:
 
       # The head of each open pull request of this repository, built like main under /pr/<number>/. This
       # runs the pull request's code (npm ci, its build script), so: the job can only read, the token is
-      # given to the listing step alone, and npm uses its own cache directory, so that the cache the job
-      # saves for main cannot be written by that code. A pull request that does not build is left out.
+      # given to the listing step alone, and npm uses its own cache directory, as defence in depth (the job saves
+      # no cache at all: see setup-node above). A pull request that does not build is left out.
       - name: Build the open pull requests into site/pr/
-        id: previews
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -97,8 +99,6 @@ jobs:
           gh pr list --repo "$REPO" --state open --limit 200 \
             --json number,isCrossRepository --jq '.[] | select(.isCrossRepository | not) | .number' > "$list"
           unset GH_TOKEN
-          built="$RUNNER_TEMP/previews.txt"
-          : > "$built"
           export npm_config_cache="$RUNNER_TEMP/npm-pr"
           while read -r n; do
             test -n "$n" || continue
@@ -106,15 +106,30 @@ jobs:
             if sha="$(git fetch --quiet origin "refs/pull/$n/head" && git rev-parse FETCH_HEAD)" \
               && git worktree add --detach "$dir" "$sha" > /dev/null \
               && (cd "$dir" && npm ci --no-audit --no-fund && BASH_EXPLAINER_CHANNEL=pr BASH_EXPLAINER_PR="$n" npm run build:web -- --outdir="$GITHUB_WORKSPACE/site/pr/$n"); then
-              echo "$n $sha" >> "$built"
+              echo "Built the preview of pull request #$n at $sha"
             else
               echo "::warning::No preview for pull request #$n: it did not build"
               rm -rf "$GITHUB_WORKSPACE/site/pr/$n"
             fi
             git worktree remove --force "$dir" || true
           done < "$list"
-          cat "$built"
-          { echo 'previews<<EOF'; cat "$built"; echo EOF; } >> "$GITHUB_OUTPUT"
+
+      # The list for the comments is made here, after the pull request code has run, from what is in
+      # site/pr/ (the output of the step above could be written by that code). The comment job checks
+      # each line again against the API.
+      - name: List the previews
+        id: previews
+        run: |
+          {
+            echo 'previews<<EOF'
+            for d in site/pr/*/; do
+              n="$(basename "$d")"
+              [[ "$n" =~ ^[0-9]+$ ]] || continue
+              sha="$(git fetch --quiet origin "refs/pull/$n/head" && git rev-parse FETCH_HEAD)" || continue
+              echo "$n $sha"
+            done
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -178,8 +193,18 @@ jobs:
           Web preview removed: the pull request is closed."
             exit 0
           fi
+          # PREVIEWS comes from a job that ran pull request code: trust only lines that the API confirms.
           while read -r n sha; do
             test -n "$n" || continue
+            if ! [[ "$n $sha" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]; then
+              echo "::warning::Ignored a line of the preview list"
+              continue
+            fi
+            info="$(gh api "repos/$REPO/pulls/$n" --jq '[.state, .head.repo.full_name, .head.sha] | join(" ")' || true)"
+            if [ "$info" != "open $REPO $sha" ]; then
+              echo "::warning::Pull request #$n is not open, from this repository, at $sha: no comment"
+              continue
+            fi
             write_comment "$n" "$marker
           Web preview: ${PAGE_URL%/}/pr/$n/ (commit ${sha:0:7})"
           done <<< "$PREVIEWS"
