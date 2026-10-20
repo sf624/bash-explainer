@@ -124,6 +124,8 @@ export function testCases(kind: '[' | '[[' | '((', op: string, left: Operand | u
   // Unary string tests.
   if (left === undefined && right && 'var' in right) {
     const v = right.var;
+    // `[ -n $x ]` with an empty $x is `[ -n ]`: a one-word test of the text "-n", which is true.
+    if (op === '-n' && kind === '[' && !quotedRight) return [{ vars: { [v]: 'abc' }, result: true }, { vars: { [v]: '' }, result: true }];
     if (op === '-z') return [{ vars: { [v]: '' }, result: true }, { vars: { [v]: 'abc' }, result: false }];
     if (op === '-n') return [{ vars: { [v]: 'abc' }, result: true }, { vars: { [v]: '' }, result: false }];
     return undefined;

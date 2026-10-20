@@ -215,10 +215,11 @@ export const unaryTestOps: Record<string, Text> = {
   '-o': tx('有効になっているシェルオプション名である', 'is an enabled shell option'),
 };
 
-/** `=` and `==` inside `[[ ]]`, where the right side is a pattern (in `[ ]` and `test` it is plain text: see `binaryTestOps`). */
+/** `=`, `==` and `!=` inside `[[ ]]`, where the right side is a pattern (in `[ ]` and `test` it is plain text: see `binaryTestOps`). */
 export const extendedEqualOps: Record<string, Text> = {
   '=': tx('文字列が等しい（右辺はグロブパターン）', 'strings are equal (the right side is a glob pattern)'),
   '==': tx('文字列が等しい（右辺はグロブパターン）', 'strings are equal (the right side is a glob pattern)'),
+  '!=': tx('文字列が等しくない（右辺はグロブパターン。パターンに一致すれば偽）', 'strings differ (the right side is a glob pattern; a match makes it false)'),
 };
 
 export const binaryTestOps: Record<string, Text> = {
@@ -291,10 +292,39 @@ export const declarationFlags: Record<string, Text> = {
   '-l': tx('代入時に小文字へ変換', 'lowercase on assignment'),
   '-u': tx('代入時に大文字へ変換', 'uppercase on assignment'),
   '-n': tx('名前参照（nameref）にする', 'make a name reference'),
+  '-t': tx('trace 属性を付ける（関数では DEBUG・RETURN トラップを引き継ぐ）', 'give the trace attribute (a function inherits the DEBUG and RETURN traps)'),
   '-g': tx('関数内でもグローバル変数として宣言', 'declare global even inside a function'),
   '-f': tx('関数名を対象にする', 'operate on function names'),
   '-F': tx('関数名のみ表示', 'show function names only'),
   '-p': tx('属性と値を表示', 'print attributes and values'),
+};
+
+/** `+x` and the like turn the attribute off again (`declare`, `typeset` and `local` only). */
+export const declarationOffFlags: Record<string, Text> = {
+  '-i': tx('整数の属性を外す', 'remove the integer attribute'),
+  '-x': tx('エクスポートをやめる（環境変数でなくなる。値は残る）', 'stop exporting (no longer in the environment; the value stays)'),
+  '-l': tx('小文字への変換をやめる', 'stop lowercasing on assignment'),
+  '-u': tx('大文字への変換をやめる', 'stop uppercasing on assignment'),
+  '-n': tx('名前参照をやめて普通の変数にする', 'make it a plain variable again, not a name reference'),
+  '-t': tx('trace 属性を外す', 'remove the trace attribute'),
+  '-r': tx('読み取り専用は外せない（エラーになる）', 'read-only cannot be removed (an error)'),
+  '-a': tx('配列を普通の変数に戻すことはできない（エラーになる）', 'an array cannot be turned back into a plain variable (an error)'),
+  '-A': tx('連想配列を普通の変数に戻すことはできない（エラーになる）', 'an associative array cannot be turned back into a plain variable (an error)'),
+};
+
+/** `export` has its own options: `-n` means something else than in `declare`. */
+export const exportFlags: Record<string, Text> = {
+  '-n': tx('エクスポートをやめる（環境変数でなくなる。値は残る）', 'remove the export property (no longer in the environment; the value stays)'),
+  '-f': tx('変数ではなく関数をエクスポートする', 'export functions, not variables'),
+  '-p': tx('エクスポート中の変数を `declare -x` の形で表示する', 'list the exported variables as `declare -x` lines'),
+};
+
+/** `readonly` options. */
+export const readonlyFlags: Record<string, Text> = {
+  '-a': tx('インデックス配列を読み取り専用にする', 'make indexed arrays read-only'),
+  '-A': tx('連想配列を読み取り専用にする', 'make associative arrays read-only'),
+  '-f': tx('変数ではなく関数を読み取り専用にする', 'make functions read-only, not variables'),
+  '-p': tx('読み取り専用の変数を一覧表示する', 'list the read-only variables'),
 };
 
 export const declarationCommands: Record<string, Text> = {

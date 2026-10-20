@@ -1,5 +1,5 @@
 import { tx } from '../i18n';
-import { CommandDoc, cmd, pos } from './types';
+import { CommandDoc, OptSpec, cmd, pos } from './types';
 
 export const shellOptions = {
   errexit: tx('コマンドが失敗したら即座にスクリプトを終了（`-e` と同じ）', 'exit immediately when a command fails (same as `-e`)'),
@@ -11,6 +11,23 @@ export const shellOptions = {
   vi: tx('行編集を vi モードにする', 'use vi-style line editing'),
   emacs: tx('行編集を emacs モードにする', 'use emacs-style line editing'),
   posix: tx('POSIX 互換モードにする', 'POSIX compatibility mode'),
+  allexport: tx('代入した変数を自動でエクスポートする（`-a` と同じ）', 'export every variable that is set (same as `-a`)'),
+  errtrace: tx('`ERR` トラップを関数やサブシェルの中でも効かせる（`-E` と同じ）', 'make the `ERR` trap work in functions and subshells too (same as `-E`)'),
+  functrace: tx('`DEBUG` と `RETURN` のトラップを関数の中でも効かせる（`-T` と同じ）', 'make the `DEBUG` and `RETURN` traps work in functions too (same as `-T`)'),
+  noexec: tx('コマンドを読むだけで実行しない（`-n` と同じ）', 'read commands but do not run them (same as `-n`)'),
+  verbose: tx('読み込んだ行をそのまま表示する（`-v` と同じ）', 'print input lines as they are read (same as `-v`)'),
+  monitor: tx('ジョブ制御を有効にする（`-m` と同じ）', 'turn on job control (same as `-m`)'),
+  ignoreeof: tx('Ctrl-D（EOF）ではシェルを終了しない', 'do not exit the shell on end-of-file (Ctrl-D)'),
+  history: tx('コマンド履歴を有効にする', 'turn on command history'),
+  histexpand: tx('`!!` や `!$` の履歴展開を有効にする（`-H` と同じ）', 'turn on `!!` and `!$` history expansion (same as `-H`)'),
+  physical: tx('`cd` でシンボリックリンクをたどらず物理パスで移動する（`-P` と同じ）', 'do not follow symlinks in `cd` (same as `-P`)'),
+  privileged: tx('特権モード（`$ENV` を読まず、環境の関数を取り込まない。`-p` と同じ）', 'privileged mode (reads no `$ENV`, imports no functions; same as `-p`)'),
+  braceexpand: tx('波括弧展開 `{a,b}` を有効にする（既定。`-B` と同じ）', 'turn on brace expansion `{a,b}` (the default; same as `-B`)'),
+  notify: tx('バックグラウンドジョブの終了をすぐに知らせる（`-b` と同じ）', 'report the end of background jobs at once (same as `-b`)'),
+  hashall: tx('実行したコマンドのパスを記憶する（既定。`-h` と同じ）', 'remember the path of the commands run (the default; same as `-h`)'),
+  onecmd: tx('1つコマンドを読んで実行したら終了する（`-t` と同じ）', 'exit after reading and running one command (same as `-t`)'),
+  keyword: tx('コマンド名の前だけでなく、どこにある `name=value` も環境変数として渡す（`-k` と同じ）', 'put every `name=value` in the words into the command\'s environment, not only those before its name (same as `-k`)'),
+  'interactive-comments': tx('対話シェルでも `#` 以降をコメントとして扱う', 'treat `#` as a comment in an interactive shell too'),
 };
 
 /** Options of bash's `shopt`. */
@@ -26,6 +43,17 @@ export const shoptOptions = {
   lastpipe: tx('パイプラインの最後のコマンドを今のシェルで実行する（`… | read x` の `x` が残る）', 'run the last command of a pipeline in the current shell (so `… | read x` keeps `x`)'),
   expand_aliases: tx('スクリプトの中でもエイリアスを展開する', 'expand aliases in scripts too'),
 };
+
+const MAPFILE_OPTIONS: OptSpec[] = [
+    ['-t', '各行末の改行を取り除く', 'strip trailing newlines'],
+    ['-n', '読む行数の上限（0 なら全部）', 'max lines to read (0 = all)', 'arg'],
+    ['-d', '行区切り文字（空文字なら NUL）', 'line delimiter (an empty string means NUL)', 'arg'],
+    ['-s', '最初に読み飛ばす行数', 'number of lines to skip first', 'arg'],
+    ['-O', '代入を始める配列の添字（既定は 0）', 'index to start assigning at (default 0)', 'arg'],
+    ['-u', '標準入力の代わりに読むファイルディスクリプタ', 'file descriptor to read instead of stdin', 'arg'],
+    ['-C', '`-c` 行ごとに呼び出すコールバック（実行する式）', 'callback to run every `-c` lines', 'arg'],
+    ['-c', '`-C` を呼び出す間隔の行数', 'number of lines between callbacks', 'arg'],
+  ];
 
 const b = (ja: string, en: string, opts: Parameters<typeof cmd>[2] = [], extra: Parameters<typeof cmd>[3] = {}): CommandDoc =>
   cmd(ja, en, opts, { builtin: true, ...extra });
@@ -48,6 +76,9 @@ export const builtins: Record<string, CommandDoc> = {
     ['-t', 'タイムアウト秒数', 'timeout in seconds', 'arg'],
     ['-d', '改行の代わりに指定した文字まで読む', 'read up to the given delimiter instead of newline', 'arg'],
     ['-u', '指定したファイルディスクリプタから読む', 'read from the given file descriptor', 'arg'],
+    ['-N', '区切り文字に関係なく、ちょうど指定した文字数を読む', 'read exactly the given number of characters, whatever the delimiter', 'arg'],
+    ['-i', '`-e` の編集行に最初から入れておく文字列', 'text to put in the `-e` edit line to begin with', 'arg'],
+    ['-e', 'Readline で行編集しながら読む（対話シェル用）', 'read with Readline line editing (interactive shells)'],
   ], { positional: [pos('読み込んだ値を入れる変数名', 'variable to store the input')] }),
   cd: b('カレントディレクトリを移動する', 'Change the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
@@ -55,6 +86,7 @@ export const builtins: Record<string, CommandDoc> = {
   ], { positional: [pos('移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)')] }),
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
+    ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
   ]),
   logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], { positional: [pos('終了ステータス', 'exit status')] }),
   exit: b('シェル（スクリプト）を終了する', 'Exit the shell or script', [], { positional: [pos('終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)')] }),
@@ -71,12 +103,23 @@ export const builtins: Record<string, CommandDoc> = {
     ['-a', '以降に設定した変数を自動でエクスポートする', 'export all subsequently set variables'],
     ['-E', '`trap … ERR` を関数やサブシェルの中でも効かせる（`set -Eeuo pipefail` の定番）', 'make `trap … ERR` work inside functions and subshells too (as in `set -Eeuo pipefail`)'],
     ['-T', '`trap … DEBUG` と `RETURN` を関数の中でも効かせる', 'make `trap … DEBUG` and `RETURN` work inside functions too'],
+    ['-m', 'ジョブ制御を有効にする（対話シェルの既定）', 'turn on job control (the default in interactive shells)'],
+    ['-b', 'バックグラウンドジョブの終了をすぐに知らせる', 'report the end of background jobs at once'],
+    ['-h', '実行したコマンドのパスを記憶する（既定）', 'remember the path of the commands run (the default)'],
+    ['-k', 'コマンド名の前だけでなく、どこにある `name=value` も環境変数として渡す', 'put every `name=value` in the words into the command\'s environment'],
+    ['-B', '波括弧展開 `{a,b}` を有効にする（既定）', 'turn on brace expansion `{a,b}` (the default)'],
+    ['-H', '`!!` や `!$` の履歴展開を有効にする', 'turn on `!!` and `!$` history expansion'],
+    ['-P', '`cd` でシンボリックリンクをたどらず物理パスで移動する', 'do not follow symlinks in `cd`'],
+    ['-p', '特権モード（`$ENV` を読まず、環境の関数を取り込まない）', 'privileged mode (reads no `$ENV`, imports no functions)'],
+    ['-t', '1つコマンドを読んで実行したら終了する', 'exit after reading and running one command'],
     ['--', '以降の引数を位置パラメータ $1, $2... に設定する', 'set the remaining arguments as $1, $2…'],
   ]),
   shopt: b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
     ['-s', 'オプションを有効にする', 'enable the options'],
     ['-u', 'オプションを無効にする', 'disable the options'],
     ['-q', '何も表示せず、終了ステータスで状態を返す', 'quiet; report via exit status'],
+    ['-p', '再入力できる形（`shopt -s 名前`）で表示する', 'print in a reusable form (`shopt -s name`)'],
+    ['-o', '`shopt` のオプションではなく、`set -o` のオプション名を対象にする', 'work on the `set -o` option names instead of the `shopt` ones'],
   ], { positional: [pos('オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)')] }),
   print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
     ['-n', '最後に改行を出さない', 'do not print a trailing newline'],
@@ -95,22 +138,37 @@ export const builtins: Record<string, CommandDoc> = {
   trap: b('シグナルや終了時に実行するコマンドを登録する', 'Run a command when a signal or event occurs', [
     ['-l', 'シグナル名の一覧を表示', 'list signal names'],
     ['-p', '登録済みの trap を表示', 'show registered traps'],
-  ], { positional: [pos('実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)'), pos('対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')] }),
-  source: b('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], { positional: [pos('読み込むファイル', 'file to source'), pos('そのファイルに渡す引数', 'arguments passed to it')] }),
-  '.': b('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], { positional: [pos('読み込むファイル', 'file to source')] }),
+  ], {
+    positional: [pos('実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)'), pos('対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')],
+    // `trap INT` (one word) resets the signal; with -p and -l the words are signals only.
+    positionalBy: [{ count: 1, unless: '-p|-l', texts: [pos('既定の動作に戻すシグナル（コマンドを書かない `trap INT` は登録の解除）', 'signal to reset to its default (`trap INT`, with no command, removes the trap)')] }],
+    positionalWith: { '-p': [pos('表示するシグナル（EXIT, ERR, INT, TERM など）', 'signal to show (EXIT, ERR, INT, TERM…)')], '-l': [pos('名前か番号に直すシグナル', 'signal to translate between name and number')] },
+  }),
+  source: b('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], { positional: [pos('読み込むファイル', 'file to source'), pos('そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')] }),
+  '.': b('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], { positional: [pos('読み込むファイル', 'file to source'), pos('そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')] }),
   eval: b('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)'),
-  exec: b('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [], { wraps: true }),
+  exec: b('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
+    ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
+    ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
+    ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
+  ], { wraps: true }),
   shift: b('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], { positional: [pos('ずらす数（省略時は 1）', 'how many (default 1)')] }),
-  getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], { positional: [pos('受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)'), pos('見つけたオプションの文字を入れる変数名', 'variable that receives the option letter')], positionalLang: ['getopts'] }),
+  getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], { positional: [pos('受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)'), pos('見つけたオプションの文字を入れる変数名', 'variable that receives the option letter'), pos('解析する単語（省略時は位置パラメータ $@）', 'words to parse (default: the positional parameters `$@`)')], positionalLang: ['getopts'] }),
   wait: b('バックグラウンドジョブの終了を待つ', 'Wait for background jobs to finish', [
     ['-n', 'どれか1つの終了を待つ', 'wait for any single job'],
-  ], { positional: [pos('待つプロセスID（省略時は全て）', 'PID to wait for (default: all)')] }),
+    ['-f', 'ジョブが止まっただけでなく、終了するまで待つ', 'wait until the job has ended, not only changed state'],
+    ['-p', '終了したジョブの ID を入れる変数名（`-n` と使う）', 'name of the variable that receives the ID of the job that ended (use with `-n`)', 'arg'],
+  ], { positional: [pos('待つプロセス ID かジョブ指定（省略時は全て）', 'PID or job spec to wait for (default: all)')] }),
   kill: b('プロセスにシグナルを送る（既定は TERM で終了要求）', 'Send a signal to a process (default TERM)', [
     ['-9|-KILL', '強制終了（KILL シグナル）', 'force kill (SIGKILL)'],
     ['-s', '送るシグナル名', 'signal name to send', 'arg'],
-    ['-l', 'シグナル一覧を表示', 'list signals'],
+    ['-n', '送るシグナルの番号', 'signal number to send', 'arg'],
+    ['-l|-L', 'シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'],
     ['-0', 'プロセスが存在するか確認するだけ', 'only check whether the process exists'],
-  ], { positional: [pos('対象のプロセスID', 'target PID')] }),
+  ], {
+    positional: [pos('対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)')],
+    positionalWith: { '-l': [pos('名前か番号に直すシグナル', 'signal to translate between name and number')] },
+  }),
   test: b('条件式を評価し、真なら 0、偽なら 1 を返す（`[ ]` と同じ）', 'Evaluate a conditional expression; exit 0 if true (same as `[ ]`)', [
     ['-z', '文字列が空なら真', 'true if the string is empty'], ['-n', '文字列が空でなければ真', 'true if the string is not empty'],
     ['-e', 'ファイルが存在すれば真', 'true if the file exists'], ['-f', '通常のファイルなら真', 'true if it is a regular file'],
@@ -139,24 +197,47 @@ export const builtins: Record<string, CommandDoc> = {
   true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)'),
   false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)'),
   ':': b('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions'),
-  alias: b('コマンドの別名を定義する', 'Define a command alias'),
-  unalias: b('別名を削除する', 'Remove an alias'),
+  alias: b('コマンドの別名を定義する', 'Define a command alias', [
+    ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],
+  ]),
+  unalias: b('別名を削除する', 'Remove an alias', [
+    ['-a', 'すべての別名を削除する', 'remove all aliases'],
+  ]),
   type: b('コマンドの種類（ビルトイン・関数・外部コマンドなど）を表示する', 'Show how a name would be interpreted (builtin, function, file…)', [
     ['-t', '種類だけを1語で表示', 'print only the kind'],
     ['-a', '該当する全ての候補を表示', 'show all matches'],
-    ['-P', '外部コマンドのパスを表示', 'print the path of the executable'],
-  ]),
+    ['-P', '外部コマンドのパスを表示（同名のビルトインや関数があっても）', 'print the path of the executable (even if a builtin or function has the name)'],
+    ['-p', '外部コマンドのパスだけを表示（ビルトイン・関数・別名なら何も出さない）', 'print the path only when the name would run an executable (nothing for a builtin, function or alias)'],
+    ['-f', '関数を無視する', 'ignore functions'],
+  ], { positional: [pos('調べる名前', 'name to look up')] }),
   command: b('関数や別名を無視してコマンドを実行する。`-v` で存在確認によく使う', 'Run a command ignoring functions/aliases; `-v` is often used to check existence', [
     ['-v', 'コマンドのパスまたは名前を表示（存在確認に使う）', 'print the command path or name (existence check)'],
     ['-V', 'コマンドの詳しい説明を表示', 'print a verbose description'],
     ['-p', '標準の PATH で検索する', 'use a default PATH'],
   ], { wraps: true }),
   builtin: b('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { wraps: true }),
-  hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache'),
-  jobs: b('現在のジョブ一覧を表示する', 'List current jobs'),
-  fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground'),
-  bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background'),
-  disown: b('ジョブをシェルの管理から外す（シェル終了時に終了させない）', 'Remove jobs from the job table (they survive shell exit)'),
+  hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
+    ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
+    ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],
+    ['-l', '再入力できる形で表示する', 'print in a reusable form'],
+    ['-p', '名前に対応するパスを指定して覚えさせる', 'remember the given path for the name', 'arg'],
+    ['-t', '覚えているパスを表示する', 'print the remembered path of each name'],
+  ]),
+  jobs: b('現在のジョブ一覧を表示する', 'List current jobs', [
+    ['-l', 'プロセス ID も表示する', 'show process IDs too'],
+    ['-p', 'プロセス ID だけを表示する', 'show only the process IDs'],
+    ['-n', '前回の通知から状態が変わったジョブだけを表示する', 'show only jobs whose state changed since the last notice'],
+    ['-r', '実行中のジョブだけを表示する', 'show only running jobs'],
+    ['-s', '停止中のジョブだけを表示する', 'show only stopped jobs'],
+    ['-x', 'ジョブ指定をプロセス ID に置き換えてコマンドを実行する', 'replace job specs with process IDs and run the command'],
+  ], { positional: [pos('対象のジョブ指定（`%1`。省略時は全て）', 'job spec (`%1`; default: all)')] }),
+  fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground', [], { positional: [pos('ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)')] }),
+  bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background', [], { positional: [pos('ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)')] }),
+  disown: b('ジョブをシェルの管理から外す（シェル終了時に終了させない）', 'Remove jobs from the job table (they survive shell exit)', [
+    ['-h', 'ジョブ表には残すが、シェルが終了したときに `SIGHUP` を送らない', 'keep the job in the table, but do not send it `SIGHUP` when the shell exits'],
+    ['-a', 'すべてのジョブを対象にする', 'act on all jobs'],
+    ['-r', '実行中のジョブだけを対象にする', 'act on running jobs only'],
+  ], { positional: [pos('ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)')] }),
   umask: b('新規ファイルのパーミッションマスク（作成時に外す権限）を設定・表示する', 'Set or show the file creation mask (permissions removed from new files)', [
     ['-S', '記号形式（u=rwx,g=rx,o=rx など）で表示する', 'show in symbolic form (u=rwx,g=rx,…)'],
     ['-p', '再入力できる形で表示する', 'output in a reusable form'],
@@ -166,30 +247,80 @@ export const builtins: Record<string, CommandDoc> = {
     ['-c', 'コアダンプのサイズ', 'core dump size'],
     ['-a', '全ての上限を表示', 'show all limits'],
   ]),
-  mapfile: b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', [
-    ['-t', '各行末の改行を取り除く', 'strip trailing newlines'],
-    ['-n', '読む行数の上限', 'max lines to read', 'arg'],
-    ['-d', '行区切り文字', 'line delimiter', 'arg'],
-  ], { positional: [pos('格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)')] }),
-  readarray: b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', [
-    ['-t', '各行末の改行を取り除く', 'strip trailing newlines'],
-  ], { positional: [pos('格納する配列名', 'array name')] }),
+  mapfile: b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, { positional: [pos('格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)')] }),
+  readarray: b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, { positional: [pos('格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)')] }),
   let: b('算術式を評価する（例: `let i++`）', 'Evaluate arithmetic expressions (e.g. `let i++`)', [], {
     positional: [pos('算術式（引数ごとに1つ。左から順に評価され、前の結果が後ろの式から見える）',
       'arithmetic expression (one per argument, evaluated left to right, so later ones see earlier results)')],
   }),
-  pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it'),
-  popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it'),
-  dirs: b('ディレクトリスタックを表示する', 'Show the directory stack'),
+  pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
+    ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
+  ]),
+  popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
+    ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
+  ]),
+  dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
+    ['-c', 'スタックを空にする', 'clear the stack'],
+    ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
+    ['-p', '1行に1つずつ表示する', 'print one entry per line'],
+    ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
+  ]),
   break: b('ループを抜ける', 'Exit from a loop', [], { positional: [pos('抜けるループの段数', 'number of loop levels')] }),
   continue: b('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], { positional: [pos('対象のループの段数', 'number of loop levels')] }),
   unset: b('変数や関数を削除する', 'Unset variables or functions', [
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],
+    ['-n', '名前参照（`declare -n`）そのものを削除する（参照先の変数は残る）', 'unset the name reference itself, not the variable it points to'],
   ], { positional: [pos('削除する名前', 'name to unset')] }),
-  enable: b('ビルトインを有効・無効にする', 'Enable or disable builtins'),
-  help: b('ビルトインのヘルプを表示する', 'Show help for builtins'),
-  history: b('コマンド履歴を表示・操作する', 'Show or manipulate command history'),
+  enable: b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
+    ['-n', 'ビルトインを無効にする（同名の外部コマンドが使われる）', 'disable the builtin (an external command of that name runs)'],
+    ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],
+    ['-p', '再入力できる形で表示する', 'print in a reusable form'],
+    ['-s', 'POSIX の特殊ビルトインだけを対象にする', 'act on POSIX special builtins only'],
+    ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`', 'arg'],
+    ['-f', '共有オブジェクトからビルトインを読み込む', 'load a builtin from a shared object', 'arg'],
+  ]),
+  help: b('ビルトインのヘルプを表示する', 'Show help for builtins', [
+    ['-d', '1行の説明だけを表示する', 'print a one-line description'],
+    ['-m', 'man ページの形式で表示する', 'print in man page format'],
+    ['-s', '使い方だけを表示する', 'print only the usage'],
+  ]),
+  history: b('コマンド履歴を表示・操作する', 'Show or manipulate command history', [
+    ['-c', '履歴をすべて削除する', 'clear the history'],
+    ['-d', '指定した番号の履歴を1件削除する', 'delete the entry with the given number', 'arg'],
+    ['-a', '今回のセッションの履歴を履歴ファイルに追記する', 'append this session\'s history to the history file'],
+    ['-r', '履歴ファイルを読み込む', 'read the history file'],
+    ['-w', '履歴をファイルに書き出す', 'write the history to the file'],
+    ['-n', '履歴ファイルの未読分を読み込む', 'read the lines of the history file not yet read'],
+    ['-p', '履歴展開した結果を表示するだけで、履歴には入れない', 'print the result of history expansion without saving it'],
+    ['-s', '引数を履歴の最後の1件として追加する', 'add the arguments as one entry to the history'],
+  ]),
+  fc: b('履歴のコマンドを一覧したり、エディタで編集して再実行する', 'List history commands, or edit and re-run one in an editor', [
+    ['-l', '編集せずに一覧を表示する', 'list instead of editing'],
+    ['-n', '一覧に番号を付けない', 'omit the numbers in the list'],
+    ['-r', '新しいものから順に並べる', 'list in reverse order'],
+    ['-s', '編集せずにそのまま再実行する（`旧=新` で置換もできる）', 're-run at once without editing (`old=new` substitutes)'],
+    ['-e', '使うエディタ', 'editor to use', 'arg'],
+  ], { positional: [pos('履歴の番号か、コマンドの先頭の文字列', 'history number or the start of a command')] }),
+  bind: b('Readline のキー割り当てを表示・変更する', 'Show or change Readline key bindings', [
+    ['-l', '関数名の一覧を表示する', 'list the function names'],
+    ['-p', '割り当てを再入力できる形で表示する', 'print the bindings in a reusable form'],
+    ['-P', '割り当てを読みやすい形で表示する', 'print the bindings in a readable form'],
+    ['-s', 'マクロの割り当てを再入力できる形で表示する', 'print the macro bindings in a reusable form'],
+    ['-S', 'マクロの割り当てを読みやすい形で表示する', 'print the macro bindings in a readable form'],
+    ['-v', '変数を再入力できる形で表示する', 'print the variables in a reusable form'],
+    ['-V', '変数を読みやすい形で表示する', 'print the variables in a readable form'],
+    ['-q', '指定した関数に割り当てられているキーを表示する', 'print the keys that call the given function', 'arg'],
+    ['-u', '指定した関数のキー割り当てを外す', 'remove the bindings of the given function', 'arg'],
+    ['-r', '指定したキーの割り当てを外す', 'remove the binding of the given key sequence', 'arg'],
+    ['-f', 'キー割り当てをファイルから読み込む', 'read key bindings from the file', 'arg'],
+    ['-x', 'キーにシェルコマンドを割り当てる（`"キー":コマンド`）', 'bind a key to a shell command (`"keys":command`)', 'arg'],
+    ['-m', '使うキーマップ', 'keymap to use', 'arg'],
+    ['-X', '`-x` の割り当てを再入力できる形で表示する', 'print the `-x` bindings in a reusable form'],
+  ]),
+  suspend: b('シェルを一時停止する（`fg` で再開）', 'Suspend the shell (resume it with `fg`)', [
+    ['-f', 'ログインシェルでも停止する', 'suspend even a login shell'],
+  ]),
   times: b('シェルと子プロセスの累積CPU時間を表示する', 'Print accumulated CPU times'),
   caller: b('呼び出し元の行番号・関数名を表示する（デバッグ用）', 'Print the caller context (debugging)'),
 };

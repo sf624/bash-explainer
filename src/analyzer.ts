@@ -47,7 +47,7 @@ import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithW
 import { decodedText, splitElement, staticWordValue, unquoteWord } from './staticword';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
-  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, expansionOps, keywords, listOps,
+  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
@@ -1052,8 +1052,11 @@ export class Analyzer {
     for (const c of n.namedChildren) {
       if (redirsOut && c.type.endsWith('redirect')) continue;
       // Options end at the first name: `declare x -i` is an error for the name `-i`.
-      if (c.type === 'word' && c.text.startsWith('-') && !named) {
-        const flags = c.text.slice(1).split('').map((ch) => declarationFlags['-' + ch]).filter(Boolean);
+      // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
+      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && ['declare', 'typeset', 'local'].includes(kw);
+      if (c.type === 'word' && (c.text.startsWith('-') || off) && !named) {
+        const table = kw === 'export' ? exportFlags : kw === 'readonly' ? readonlyFlags : off ? declarationOffFlags : declarationFlags;
+        const flags = c.text.slice(1).split('').map((ch) => table['-' + ch]).filter(Boolean);
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
       } else if (c.type === 'variable_name' || c.type === 'word') {
         named = true;
@@ -1070,11 +1073,12 @@ export class Analyzer {
 
   private unset(n: SyntaxNode): Token {
     const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
+    const ref = !fn && n.namedChildren.some((c) => c?.type === 'word' && /^-\w*n/.test(c.text));
     const children = n.namedChildren.map((c) => {
       const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options?.[c.text] : undefined;
       if (opt) return this.tok(c, 'option', this.t(opt.text));
       if (c.type === 'variable_name' || isPlainWord(c)) {
-        return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
+        return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
       }
       return this.explain(c);
     });
@@ -1354,6 +1358,9 @@ export class Analyzer {
     // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
     let posIndex = fillsPositional(doc, args) ? 1 : 0;
     let endOfOpts = false;
+    // `kill -l 15`, `trap -p INT`: with this option the words mean something else.
+    const withOpt = doc?.positionalWith && Object.keys(doc.positionalWith).find((o) => optionGiven(args, o));
+    const positionalTexts = withOpt ? doc!.positionalWith![withOpt] : doc?.positional;
     // The positional arguments, to describe again once their number is known (`positionalBy`).
     const operands: { index: number; token: Token; desc: string }[] = [];
     // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
@@ -1415,8 +1422,15 @@ export class Analyzer {
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
       else if (doc?.shellC) desc = this.shellArgument(args, posIndex);
-      else if (doc?.positional?.length) desc = this.t(doc.positional[Math.min(posIndex, doc.positional.length - 1)]);
-      if (cmdName === 'trap' && posIndex === 0 && desc) desc += this.trapNote(a);
+      else if (positionalTexts?.length) desc = this.t(positionalTexts[Math.min(posIndex, positionalTexts.length - 1)]);
+      // `%1`, `%%`, `%name`: a job, not a file or a PID.
+      const job = JOB_COMMANDS.has(cmdName) && !withOpt && isPlainWord(a) ? jobSpec(text) : undefined;
+      if (job) {
+        out.push(this.tok(a, 'argument', this.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`)));
+        posIndex++;
+        continue;
+      }
+      if (cmdName === 'trap' && posIndex === 0 && desc && !withOpt) desc += this.trapNote(a);
       // (Every argument of `let` is an arithmetic expression.)
       const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : cmdName === 'echo' && echoEscapes(args) ? 'echo' : doc?.positionalLang?.[posIndex];
       const token = this.positional(a, desc, lang);
@@ -2503,7 +2517,7 @@ export class Analyzer {
     const { left, op, right } = shape;
     const cases = left
       ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string')
-      : testCases(kind, op, undefined, operand(right));
+      : testCases(kind, op, undefined, operand(right), right.type === 'string');
     if (!cases) return;
     const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (/^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
     this.examples.push({ kind: 'test',
@@ -2511,7 +2525,7 @@ export class Analyzer {
       sections: [
         { label: this.s('真になる値', 'True when'), lines: cases.filter((c) => c.result).map((c) => show(c.vars)) },
         { label: this.s('偽になる値', 'False when'), lines: cases.filter((c) => !c.result).map((c) => show(c.vars)) },
-      ],
+      ].filter((sec) => sec.lines.length),
     });
   }
 
@@ -2651,6 +2665,15 @@ export class Analyzer {
       return i;
     }
 
+    // `kill -TERM`, `-SIGTERM`, `-15`: one signal, not combined short options.
+    const signal = cmdName === 'kill' && !opts[text] ? killSignal(text) : undefined;
+    if (signal) {
+      out.push(this.tok(a, 'option', signal.number
+        ? this.s(`送るシグナルの番号 ${signal.number}（\`-n ${signal.number}\` と同じ。\`kill -l ${signal.number}\` で名前がわかる）`, `Send signal number ${signal.number} (same as \`-n ${signal.number}\`; \`kill -l ${signal.number}\` prints its name)`)
+        : this.s(`送るシグナル \`${signal.name}\`（\`-s ${signal.name}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${signal.name}\` (same as \`-s ${signal.name}\`; \`kill -l\` lists them)`)));
+      return i;
+    }
+
     const exact = opts[text];
     if (exact || text.startsWith('--') || doc?.longSingleDash) {
       const opt = exact;
@@ -2685,7 +2708,13 @@ export class Analyzer {
         last = i + 1;
         children.push(valueTok(opt, text, args[last]));
       }
-      out.push(this.tok(a, 'option', opt ? inv(text, this.t(opt.text)) : unknown, []));
+      // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
+      const listing = cmdName === 'set' && text === '-o' && opt?.arg && last === i;
+      out.push(this.tok(a, 'option', listing
+        ? (disable
+          ? this.s('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed')
+          : this.s('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'))
+        : opt ? inv(text, this.t(opt.text)) : unknown, []));
       out.push(...children);
       return last;
     }
@@ -3879,6 +3908,37 @@ function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined 
   }
   const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
   return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
+}
+
+/** Commands whose words may be job specs (`%1`). */
+const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);
+
+/** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
+function jobSpec(text: string): { ja: string; en: string } | undefined {
+  if (!text.startsWith('%') || text.length < 2) return undefined;
+  const rest = text.slice(1);
+  if (/^\d+$/.test(rest)) return { ja: `ジョブ番号 ${rest}（\`jobs\` の \`[${rest}]\`）`, en: `job number ${rest} (\`[${rest}]\` in \`jobs\`)` };
+  if (rest === '%' || rest === '+') return { ja: '現在のジョブ（最後にバックグラウンドへ送った、または停止したジョブ）', en: 'the current job (the last one sent to the background or stopped)' };
+  if (rest === '-') return { ja: '1つ前のジョブ', en: 'the previous job' };
+  if (rest.startsWith('?')) return { ja: `コマンドに \`${rest.slice(1)}\` を含むジョブ`, en: `the job whose command contains \`${rest.slice(1)}\`` };
+  return { ja: `コマンドが \`${rest}\` で始まるジョブ`, en: `the job whose command starts with \`${rest}\`` };
+}
+
+const SIGNALS = new Set(['HUP', 'INT', 'QUIT', 'ILL', 'TRAP', 'ABRT', 'BUS', 'FPE', 'KILL', 'USR1', 'SEGV', 'USR2', 'PIPE', 'ALRM', 'TERM', 'STKFLT', 'CHLD', 'CONT', 'STOP', 'TSTP', 'TTIN', 'TTOU', 'URG', 'XCPU', 'XFSZ', 'VTALRM', 'PROF', 'WINCH', 'IO', 'PWR', 'SYS', 'EMT', 'INFO', 'POLL', 'CLD', 'IOT']);
+
+/** `kill -TERM`, `-SIGTERM`, `-term` (a name) or `-15` (a number): the signal to send. */
+function killSignal(text: string): { name?: string; number?: string } | undefined {
+  const number = /^-(\d+)$/.exec(text)?.[1];
+  if (number) return { number };
+  const name = /^-(?:SIG)?([A-Za-z0-9]+)$/i.exec(text)?.[1].toUpperCase();
+  return name && SIGNALS.has(name) ? { name } : undefined;
+}
+
+/** Whether one of the options `names` (`-l|-p`) is among the words before `--`, alone or bundled (`-lp`). */
+function optionGiven(args: SyntaxNode[], names: string): boolean {
+  const words = args.map((a) => a.text).filter((w) => !killSignal(w));
+  const end = words.indexOf('--');
+  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) => new RegExp(`^-[^-]*${n[1]}`).test(w)));
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {

@@ -54,6 +54,8 @@ export interface CommandDoc {
   positional?: Text[];
   /** Descriptions that depend on how many positional arguments there are; the first that fits wins over `positional`. */
   positionalBy?: PositionalBy[];
+  /** Descriptions of the positional arguments when one of these options is given (`kill -l 15`: a signal, not a PID). */
+  positionalWith?: Record<string, Text[]>;
   /** Embedded language of positional arguments, by index (does not repeat). */
   positionalLang?: (EmbeddedLang | undefined)[];
   /** After its own options, the remaining words form another command (sudo, xargs, env…). */
