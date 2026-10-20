@@ -77,12 +77,17 @@ export const specialDestinations: Record<string, Text> = {
   '/dev/stdout': tx('`/dev/stdout` は標準出力を指す', '`/dev/stdout` refers to standard output'),
 };
 
+/** Whether a name as shown (`$1`, `$@`) is a positional parameter, which `${…:=…}` cannot assign to. */
+export function cannotAssign(shown: string): boolean {
+  return /^\$(?:[1-9]\d*|[@*])$/.test(shown);
+}
+
 /** `${var<op>arg}` operators. */
 export const expansionOps: Record<string, (v: string, a: string) => Text> = {
   ':-': (v, a) => tx(`\`${v}\` が未設定または空なら \`${a}\` を使う（変数自体は変更しない）`, `Use \`${a}\` if \`${v}\` is unset or empty (does not assign)`),
   '-': (v, a) => tx(`\`${v}\` が未設定なら \`${a}\` を使う（空文字はそのまま）`, `Use \`${a}\` if \`${v}\` is unset (empty is kept)`),
-  ':=': (v, a) => tx(`\`${v}\` が未設定または空なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset or empty, assign \`${a}\` to it and use that`),
-  '=': (v, a) => tx(`\`${v}\` が未設定なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset, assign \`${a}\` to it`),
+  ':=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定または空なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。\`${a}\` は使われない）`, `If \`${v}\` is unset or empty, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; \`${a}\` is not used)`) : tx(`\`${v}\` が未設定または空なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset or empty, assign \`${a}\` to it and use that`),
+  '=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。\`${a}\` は使われない）`, `If \`${v}\` is unset, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; \`${a}\` is not used)`) : tx(`\`${v}\` が未設定なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset, assign \`${a}\` to it`),
   ':+': (v, a) => tx(`\`${v}\` が設定済みかつ空でなければ \`${a}\` を使い、そうでなければ空`, `Use \`${a}\` if \`${v}\` is set and non-empty, otherwise nothing`),
   '+': (v, a) => tx(`\`${v}\` が設定済みなら \`${a}\` を使い、未設定なら空`, `Use \`${a}\` if \`${v}\` is set, otherwise nothing`),
   ':?': (v, a) => tx(`\`${v}\` が未設定または空ならエラーメッセージ「${a || 'parameter null or not set'}」を出してスクリプトを終了`, `Exit with error "${a || 'parameter null or not set'}" if \`${v}\` is unset or empty`),
