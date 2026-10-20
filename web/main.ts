@@ -319,7 +319,9 @@ window.addEventListener('message', (e) => {
       return;
     case 'reveal': {
       const r = spanRange(m.span);
-      view.dispatch({ selection: { anchor: r.from, head: r.to }, scrollIntoView: true });
+      // Bring the start of the token into view, and move sideways only as far as that needs (the
+      // end of a long span, as `scrollIntoView` does, could hide the start of every line).
+      view.dispatch({ selection: { anchor: r.from, head: r.to }, effects: EditorView.scrollIntoView(r.from, { x: 'nearest', y: 'nearest', xMargin: 40 }) });
       focusUnlessTouch();
       return;
     }

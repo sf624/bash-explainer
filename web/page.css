@@ -218,26 +218,36 @@ footer p {
     height: 75vh;
   }
 
-  /* The toolbar in two columns, each control as wide as its column and easy to tap (it was five
-     rows of small controls, taking half the screen above the script). */
+  /* The toolbar in three rows of two (File | Language, Version | Theme, Load | Copy), each
+     label on the line of its control, every control 44px high to tap (it was five rows of
+     small controls, taking half the screen above the script). */
   .toolbar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
-    gap: 0.5rem;
+    gap: 0.4rem 0.5rem;
   }
 
   .toolbar label {
     display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  .toolbar label select {
+    flex: 1 1 0;
     min-width: 0;
   }
 
   .toolbar select,
   .toolbar button {
-    width: 100%;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
+  }
+
+  .toolbar button {
+    padding-inline: 0.4rem;
+    line-height: 1.2;
   }
 
   .toolbar #status {

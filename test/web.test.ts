@@ -307,8 +307,14 @@ describe('the web page in a browser', function () {
     // In the narrow panel a long label may take the whole row (it was cut at 45% of it).
     const share = await panel.evaluate('(() => { const l = document.querySelector(".row .label"); return l.getBoundingClientRect().width / l.parentElement.getBoundingClientRect().width; })()') as number;
     assert.ok(share > 0.6, String(share));
+    // ...and its explanation then goes under it, not into a narrow column beside it.
+    const below = await panel.evaluate('(() => { const r = document.querySelector(".row"); return r.querySelector(".text").getBoundingClientRect().top >= r.querySelector(".label").getBoundingClientRect().bottom - 1; })()');
+    assert.strictEqual(below, true);
+    // The toolbar is three rows of two, no taller than it was (173px) when it had five rows of small controls.
+    const toolbar = await page.evaluate('document.querySelector(".toolbar").getBoundingClientRect().height') as number;
+    assert.ok(toolbar < 175, String(toolbar));
     // The controls of the toolbar are big enough to tap.
-    const small = await page.evaluate('[...document.querySelectorAll(".toolbar select, .toolbar button")].filter((e) => e.getBoundingClientRect().height < 40).length');
+    const small = await page.evaluate('[...document.querySelectorAll(".toolbar select, .toolbar button")].filter((e) => e.getBoundingClientRect().height < 43).length');
     assert.strictEqual(small, 0);
     await ctx.close();
   });
