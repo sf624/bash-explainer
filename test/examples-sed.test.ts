@@ -66,6 +66,7 @@ describe('the sed runner agrees with GNU sed on the less common commands', () =>
     ['\\%a%p', true], ['1 !d'], ['2! d'], ['y/a\\nb/x\\ty/'], ['2q0'], ['2q;p'], ['2,3c X'], ['2,4d'], ['2~0p', true],
     ['s/\\(a\\)\\?b/[\\1]/'], ['s/a/\\n\\t/'], ['s/\\(b\\)/\\2|\\1/'.replace('\\2', ''), false], ['s/.*/\\U&\\E!/'], ['s/.*/\\l&/'], ['s/A/\\u\\La/'],
     ['/a/s//X/'], ['s/b/B/;//p'], ['s/A/\\l\\UB/'], ['s/.*/\\L\\u&/'], ['/b/p;/x/!{//p}', true], ['y/a\\/b/x\\/\\q/'], ['2{q};p'], ['2{d};p'],
+    ['0,/abc/d'], ['0,/foo/d'], ['1,/abc/d'], ['0,/a/s//X/'], ['0,/line/p', true], ['s/o/0/2g'], ['s/o/0/2'],
   ];
   for (const [script, quiet = false] of scripts) {
     it(script, () => {
@@ -73,7 +74,7 @@ describe('the sed runner agrees with GNU sed on the less common commands', () =>
     });
   }
   it('gives up on what it does not run', () => {
-    for (const script of ['{p', '}', 's/a\nb/x/', 's/a', 's/[[:foo:]]/x/', '/a/Mp', 's/a/b\nc/', 's/a/b', 'y/ab/c/', 'y/ab/', 's/a/b/w out', 'n', 's/\\(b\\)/\\9/', '//p', 's//x/', '2{/a/p};//p']) {
+    for (const script of ['{p', '}', 's/a\nb/x/', 's/a', 's/[[:foo:]]/x/', '/a/Mp', 's/a/b\nc/', 's/a/b', 'y/ab/c/', 'y/ab/', 's/a/b/w out', 'n', 's/\\(b\\)/\\9/', '//p', 's//x/', '2{/a/p};//p', '0,5p', '0p', '0!d']) {
       assert.strictEqual(runSed(script, input, { quiet: false, extended: false }), undefined, script);
     }
   });

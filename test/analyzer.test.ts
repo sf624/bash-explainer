@@ -1025,3 +1025,18 @@ describe('the unquoted regex of [[ =~ ]] after quote removal', () => {
     assert.ok(ja.includes('クォート除去'), ja);
   });
 });
+
+describe('sed explanations (audit fixes)', () => {
+  it('gives no example for sed -z, whose records are NUL separated', () => {
+    assert.strictEqual(explain("sed -z 's/\\n/,/g' f").examples.length, 0);
+    assert.strictEqual(explain("sed --null-data 's/\\n/,/g' f").examples.length, 0);
+    assert.ok(explain("sed 's/a/b/g' f").examples.length > 0);
+  });
+  it('explains 0,/re/ and the 2g flags', () => {
+    const text = JSON.stringify(explain("sed '0,/foo/s//bar/' f"));
+    assert.ok(text.includes('before the first line'), text);
+    assert.ok(text.includes('the last regex'), text);
+    assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f")).includes('every match from the 2th on'));
+    assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f", 0, 'ja')).includes('2番目以降のすべての一致'));
+  });
+});

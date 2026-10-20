@@ -114,6 +114,10 @@ class Parser {
         cmd.a2 = this.address();
         if (!cmd.a2) throw new Unsupported();
       }
+      // GNU sed: line 0 is only valid with a regex as the end ("invalid usage of line address 0").
+      if (cmd.a1.kind === 'line' && cmd.a1.n === 0 && cmd.a2.kind !== 're') throw new Unsupported();
+    } else if (cmd.a1?.kind === 'line' && cmd.a1.n === 0) {
+      throw new Unsupported();
     }
     while (this.src[this.i] === ' ') this.i++;
     if (this.src[this.i] === '!') { cmd.neg = true; this.i++; }
@@ -268,6 +272,10 @@ function selected(cmd: Cmd, line: string, no: number, last: boolean, st: RunStat
     if (end.kind === 'plus') { if (no >= cmd.endLine!) cmd.active = false; }
     else if (end.kind === 'line') { if (no >= end.n) cmd.active = false; }
     else if (matches(end, line, no, last, st)) cmd.active = false;
+  } else if (cmd.a1.kind === 'line' && cmd.a1.n === 0) {
+    // `0,/re/`: the range starts before line 1, so the regex may end it on line 1.
+    hit = no === 1;
+    if (hit) cmd.active = !matches(cmd.a2, line, no, last, st);
   } else if (matches(cmd.a1, line, no, last, st)) {
     hit = true;
     const end = cmd.a2;
