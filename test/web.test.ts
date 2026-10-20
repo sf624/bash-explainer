@@ -106,6 +106,33 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('draws an indent guide from a tree item to its last sibling, and none below the last', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello | tr a-z A-Z');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
+    // The children of the first item with parts: a guide on each but the last.
+    const kids = panel().locator('#tree li:has(> ul) > ul > li');
+    const guide = (i: number) => kids.nth(i).evaluate((li) => {
+      const s = li.ownerDocument.defaultView!.getComputedStyle(li, '::before');
+      return { width: s.borderLeftWidth, style: s.borderLeftStyle, tall: s.height !== '0px' };
+    });
+    const n = await kids.count();
+    assert.ok(n >= 2, `${n} children`);
+    for (let i = 0; i < n - 1; i++) assert.deepStrictEqual(await guide(i), { width: '2px', style: 'solid', tall: true }, `child ${i}`);
+    // The last ends the line at its tick: a short one, not the item's whole height.
+    const last = await kids.nth(n - 1).evaluate((li) => li.ownerDocument.defaultView!.getComputedStyle(li, '::before').height);
+    const lastHeight = await kids.nth(n - 1).evaluate((li) => li.getBoundingClientRect().height);
+    assert.ok(parseFloat(last) <= lastHeight, `${last} of ${lastHeight}`);
+    assert.strictEqual(await kids.nth(0).evaluate((li) => li.ownerDocument.defaultView!.getComputedStyle(li, '::before').height === li.ownerDocument.defaultView!.getComputedStyle(li).height), true);
+    await ctx.close();
+  });
+
   it('folds a tree row on a click anywhere in it, and still selects its text in the editor', async () => {
     const ctx = await browser!.newContext();
     const page = await ctx.newPage();

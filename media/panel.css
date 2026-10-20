@@ -61,7 +61,48 @@ ul {
 }
 
 ul#tree {
-  padding-left: 0;
+  padding-left: 0.5rem;
+}
+
+/* Indent guides, as in VS Code's trees: a faint line in the column of the parent's twisty (the
+   children are indented by 1.1rem, so it lies 3px left of their rows), from an item down to its
+   last sibling, with a short tick to each row. The last sibling ends the line at its tick. */
+#tree li {
+  position: relative;
+  --guide: var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border, rgba(127, 127, 127, 0.3)));
+}
+
+#tree li::before,
+#tree li::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  pointer-events: none;
+}
+
+/* The line: through the whole item (its children and examples too) when a sibling follows. */
+#tree li::before {
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--guide);
+}
+
+#tree li:last-child::before {
+  height: 0.95rem;
+  bottom: auto;
+}
+
+/* The tick, to the row's border. */
+#tree li::after {
+  top: 0.95rem;
+  width: 4px;
+  border-top: 2px solid var(--guide);
+}
+
+/* A lone item has no line to join. */
+#tree li:only-child::before,
+#tree li:only-child::after {
+  display: none;
 }
 
 .row {
