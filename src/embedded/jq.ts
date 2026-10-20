@@ -1,4 +1,4 @@
-import type { Lang } from '../i18n';
+import { ordinal, type Lang } from '../i18n';
 import { EmbeddedToken, pick } from './types';
 import { JQ_ONLY, YQ_BUILTINS } from './yqfuncs';
 
@@ -525,7 +525,7 @@ class JqParser {
       const n = Number(neg ? b.text : a.text) * (neg ? -1 : 1);
       this.p += neg ? 2 : 1;
       const close = this.next();
-      const what = n < 0 ? s(n === -1 ? '最後の要素' : `後ろから ${-n} 番目の要素`, n === -1 ? 'the last element' : `the ${-n}th element from the end`)
+      const what = n < 0 ? s(n === -1 ? '最後の要素' : `後ろから ${-n} 番目の要素`, n === -1 ? 'the last element' : `the ${ordinal(-n)} element from the end`)
         : s(`${n + 1} 番目の要素（0 始まり）`, `element ${n} (0-based)`);
       return this.node(open.start, close.end, 'operator', `\`[${n}]\`: ${what}`, [], what);
     }

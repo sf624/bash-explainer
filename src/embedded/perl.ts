@@ -1,4 +1,4 @@
-import type { Lang } from '../i18n';
+import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
 
@@ -314,7 +314,7 @@ class PerlExplainer {
       const whole = m[0];
       if (m[1] !== undefined) {
         const n = Number(m[1]);
-        out.push(this.tok(a, a + whole.length, 'variable', n < 0 ? s(`\`${whole}\`: 後ろから ${-n} 番目の列`, `\`${whole}\`: the ${-n}th field from the end`) : s(`\`${whole}\`: ${n + 1} 列目（\`-a\` で分割した列。0始まり）`, `\`${whole}\`: field ${n + 1} (split by \`-a\`, 0-based index)`)));
+        out.push(this.tok(a, a + whole.length, 'variable', n < 0 ? (n === -1 ? s(`\`${whole}\`: 最後の列`, `\`${whole}\`: the last field`) : s(`\`${whole}\`: 後ろから ${-n} 番目の列`, `\`${whole}\`: the ${ordinal(-n)} field from the end`)) : s(`\`${whole}\`: ${n + 1} 列目（\`-a\` で分割した列。0始まり）`, `\`${whole}\`: field ${n + 1} (split by \`-a\`, 0-based index)`)));
       } else if (m[2] !== undefined) {
         out.push(this.tok(a, a + whole.length, 'variable', s(`\`${whole}\`: 直前の一致でグループ ${m[2]} に一致した部分`, `\`${whole}\`: what group ${m[2]} matched`)));
       } else if (whole === '<>' || whole === '<STDIN>') {

@@ -1,4 +1,4 @@
-import { Lang, Text } from './i18n';
+import { Lang, ordinal, Text } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, usesVariable } from './pitfalls';
 import { ancestor, descendants, field, fields, token } from './syntax/tree';
@@ -168,7 +168,6 @@ const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_comm
 const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
 
 const plural = (n: number, word: string) => `${word}${n === 1 ? '' : 's'}`;
-const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 const TERMINATORS = new Set(['\\;', ';', "';'", '"\\;"', '"; "', '+']);
 

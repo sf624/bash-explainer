@@ -1036,7 +1036,7 @@ describe('sed explanations (audit fixes)', () => {
     const text = JSON.stringify(explain("sed '0,/foo/s//bar/' f"));
     assert.ok(text.includes('before the first line'), text);
     assert.ok(text.includes('the last regex'), text);
-    assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f")).includes('every match from the 2th on'));
+    assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f")).includes('every match from the 2nd on'));
     assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f", 0, 'ja')).includes('2番目以降のすべての一致'));
   });
 });

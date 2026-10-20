@@ -1,5 +1,5 @@
 import { sedEscapeAt } from '../ctlchars';
-import type { Lang } from '../i18n';
+import { ordinal, type Lang } from '../i18n';
 import { explainRegex } from './regex';
 import { EmbeddedToken, pick, shift } from './types';
 
@@ -95,7 +95,7 @@ class SedParser {
     let m: RegExpExecArray | null;
     if ((m = /^(\d+)~(\d+)/.exec(src.slice(start)))) {
       this.i += m[0].length;
-      return { token: this.tok(start, this.i, 'pattern', s(`\`${m[0]}\`: ${m[1]} 行目から ${m[2]} 行おきの行`, `\`${m[0]}\`: every ${m[2]}th line starting at line ${m[1]}`)), text: s(`${m[1]} 行目から ${m[2]} 行おき`, `every ${m[2]}th line from ${m[1]}`) };
+      return { token: this.tok(start, this.i, 'pattern', s(`\`${m[0]}\`: ${m[1]} 行目から ${m[2]} 行おきの行`, `\`${m[0]}\`: every ${ordinal(Number(m[2]))} line starting at line ${m[1]}`)), text: s(`${m[1]} 行目から ${m[2]} 行おき`, `every ${ordinal(Number(m[2]))} line from ${m[1]}`) };
     }
     if ((m = /^\d+/.exec(src.slice(start)))) {
       this.i += m[0].length;
@@ -292,7 +292,7 @@ class SedParser {
         const m = /^\d+/.exec(src.slice(this.i))![0];
         this.i += m.length;
         nth = m;
-        parts.push(this.tok(fs, this.i, 'option', s(`\`${m}\`: ${m} 番目の一致だけを置換する`, `\`${m}\`: replace only the ${m}th match`)));
+        parts.push(this.tok(fs, this.i, 'option', s(`\`${m}\`: ${m} 番目の一致だけを置換する`, `\`${m}\`: replace only the ${ordinal(Number(m))} match`)));
         continue;
       }
       this.i++;
@@ -308,7 +308,7 @@ class SedParser {
       };
       parts.push(this.tok(fs, this.i, 'option', s(expl[f][0], expl[f][1])));
     }
-    const which = global && nth ? s(`${nth}番目以降のすべての一致`, `every match from the ${nth}th on`) : global ? s('すべて', 'every match') : nth ? s(`${nth}番目の一致`, `the ${nth}th match`) : s('最初の1つ', 'the first match');
+    const which = global && nth ? s(`${nth}番目以降のすべての一致`, `every match from the ${ordinal(Number(nth))} on`) : global ? s('すべて', 'every match') : nth ? s(`${nth}番目の一致`, `the ${ordinal(Number(nth))} match`) : s('最初の1つ', 'the first match');
     const shown = repText ? `\`${repText}\`` : s('空文字', 'nothing');
     const shownPat = patText ? `\`${patText}\`` : s('直前に使った正規表現', 'the last regex');
     const summary = s(
