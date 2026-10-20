@@ -106,7 +106,7 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
-  it('draws an indent guide from a tree item to its last sibling, and none below the last', async () => {
+  it('draws an indent guide in the column of the row border from a tree item to its next sibling, and none below the last', async () => {
     const ctx = await browser!.newContext();
     const page = await ctx.newPage();
     await page.goto(base);
@@ -116,20 +116,29 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo hello | tr a-z A-Z');
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
-    // The children of the first item with parts: a guide on each but the last.
-    const kids = panel().locator('#tree li:has(> ul) > ul > li');
-    const guide = (i: number) => kids.nth(i).evaluate((li) => {
-      const s = li.ownerDocument.defaultView!.getComputedStyle(li, '::before');
-      return { width: s.borderLeftWidth, style: s.borderLeftStyle, tall: s.height !== '0px' };
-    });
+    // The children of the first item with parts: a guide on each but the last, in the column of the
+    // row's own border and reaching the next sibling; no tick (::after).
+    const kids = panel().locator('#tree > li > ul > li');
     const n = await kids.count();
     assert.ok(n >= 2, `${n} children`);
-    for (let i = 0; i < n - 1; i++) assert.deepStrictEqual(await guide(i), { width: '2px', style: 'solid', tall: true }, `child ${i}`);
-    // The last ends the line at its tick: a short one, not the item's whole height.
-    const last = await kids.nth(n - 1).evaluate((li) => li.ownerDocument.defaultView!.getComputedStyle(li, '::before').height);
-    const lastHeight = await kids.nth(n - 1).evaluate((li) => li.getBoundingClientRect().height);
-    assert.ok(parseFloat(last) <= lastHeight, `${last} of ${lastHeight}`);
-    assert.strictEqual(await kids.nth(0).evaluate((li) => li.ownerDocument.defaultView!.getComputedStyle(li, '::before').height === li.ownerDocument.defaultView!.getComputedStyle(li).height), true);
+    const info = (i: number) => kids.nth(i).evaluate((li) => {
+      const w = li.ownerDocument.defaultView!;
+      const b = w.getComputedStyle(li, '::before');
+      const a = w.getComputedStyle(li, '::after');
+      const next = li.nextElementSibling;
+      return {
+        before: b.content !== 'none' && b.content !== 'normal', after: a.content !== 'none' && a.content !== 'normal',
+        left: b.left, width: b.borderLeftWidth, style: b.borderLeftStyle,
+        // The line's bottom reaches the next sibling's top (the content box is li's own height plus bottom).
+        reaches: !next || li.getBoundingClientRect().bottom - parseFloat(b.bottom) >= next.getBoundingClientRect().top,
+      };
+    });
+    for (let i = 0; i < n - 1; i++) {
+      assert.deepStrictEqual(await info(i), { before: true, after: false, left: '0px', width: '2px', style: 'solid', reaches: true }, `child ${i}`);
+    }
+    const last = await info(n - 1);
+    assert.strictEqual(last.before, false, 'no guide below the last sibling');
+    assert.strictEqual(last.after, false);
     await ctx.close();
   });
 
