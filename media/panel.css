@@ -61,48 +61,27 @@ ul {
 }
 
 ul#tree {
-  padding-left: 0.5rem;
+  padding-left: 0;
 }
 
-/* Indent guides, as in VS Code's trees: a faint line in the column of the parent's twisty (the
-   children are indented by 1.1rem, so it lies 3px left of their rows), from an item down to its
-   last sibling, with a short tick to each row. The last sibling ends the line at its tick. */
+/* Indent guides, as in VS Code's trees: a faint line in the column of the rows' own coloured
+   border, from an item down to the next sibling. It is drawn behind the rows, so it shows only
+   where no border is: beside an item's parts and examples, and in the gaps between rows. The last
+   sibling has none. */
 #tree li {
   position: relative;
-  --guide: var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border, rgba(127, 127, 127, 0.3)));
+  isolation: isolate;
 }
 
-#tree li::before,
-#tree li::after {
+#tree li:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: -4px;
-  pointer-events: none;
-}
-
-/* The line: through the whole item (its children and examples too) when a sibling follows. */
-#tree li::before {
+  z-index: -1;
+  left: 0;
   top: 0;
-  bottom: 0;
-  border-left: 2px solid var(--guide);
-}
-
-#tree li:last-child::before {
-  height: 0.95rem;
-  bottom: auto;
-}
-
-/* The tick, to the row's border. */
-#tree li::after {
-  top: 0.95rem;
-  width: 4px;
-  border-top: 2px solid var(--guide);
-}
-
-/* A lone item has no line to join. */
-#tree li:only-child::before,
-#tree li:only-child::after {
-  display: none;
+  bottom: -0.5rem;
+  border-left: 2px solid var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border, rgba(127, 127, 127, 0.3)));
+  pointer-events: none;
 }
 
 .row {
@@ -197,7 +176,7 @@ code {
 
 /* An example placed under its token: indented with the token's children, set off by a left rule. */
 .example.nested {
-  margin: 0.3rem 0 0.5rem 1.2rem;
+  margin: 0.3rem 0 0.5rem 1.1rem;
   padding: 0.1rem 0 0.1rem 0.7rem;
   border-top: none;
   border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
