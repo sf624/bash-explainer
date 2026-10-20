@@ -1374,6 +1374,8 @@ class Inferer {
         return b.arr();
       }
       case 'try': return this.run(n.body, s);
+      // `@csv` and `@tsv` format an array.
+      case 'fmt': if (n.name === '@csv' || n.name === '@tsv') s.arr(); return new Shape();
       case 'pipe': return this.run(n.r, this.run(n.l, s));
       case 'comma': this.run(n.l, s); return this.run(n.r, s);
       case 'alt': {
@@ -1398,7 +1400,11 @@ class Inferer {
           if (typeof other === 'string') { side.set('string'); side.strings.push(other); }
           if (typeof other === 'boolean') side.set('boolean');
         }
-        if (['-', '*', '/', '%'].includes(n.op)) { l.set('number'); r.set('number'); }
+        // `. + [1]`, `. - [1]`, `. + {"a": 1}`: the other side has the kind of the literal array or object.
+        for (const [side, other] of [[l, n.r], [r, n.l]] as const) {
+          if (n.op === '+' || n.op === '-') { if (other.t === 'array') side.arr(); else if (other.t === 'object' && n.op === '+') side.obj(); }
+        }
+        if (['-', '*', '/', '%'].includes(n.op) && n.l.t !== 'array' && n.r.t !== 'array') { l.set('number'); r.set('number'); }
         // `. + $x` with a numeric accumulator adds numbers.
         if (n.op === '+' && (l.kind === 'number' || r.kind === 'number')) { l.set('number'); r.set('number'); }
         if (n.op === 'and' || n.op === 'or') { l.set('boolean'); r.set('boolean'); }
@@ -1486,6 +1492,21 @@ class Inferer {
         s.set('string');
         if (n.name === 'tonumber') s.strings.push('42');
         return new Shape();
+      case 'index': case 'rindex': case 'indices': {
+        // `index(",")` finds a piece of text; `index(1)` an element of an array.
+        const arg = a[0];
+        if (arg.t === 'str' && arg.parts.length === 1 && typeof arg.parts[0] === 'string') { s.set('string'); s.strings.push(arg.parts[0]); }
+        else s.arr();
+        return new Shape();
+      }
+      case 'contains': case 'inside': {
+        // The input has the kind of the literal it is compared with, and holds it.
+        const arg = a[0];
+        if (arg.t === 'str' && arg.parts.length === 1 && typeof arg.parts[0] === 'string') { s.set('string'); s.strings.push(arg.parts[0]); }
+        else if (arg.t === 'array') { const el = s.arr(); const only = arg.e?.t === 'str' && arg.e.parts.length === 1 ? arg.e.parts[0] : undefined; if (typeof only === 'string') { el.set('string'); el.strings.push(only); } }
+        else if (arg.t === 'object') s.obj();
+        return new Shape();
+      }
       case 'del': this.run(a[0], s).deleted = true; return s;
       case 'not': return new Shape();
       case 'tostring': if (!a.length) s.set('number'); return new Shape();

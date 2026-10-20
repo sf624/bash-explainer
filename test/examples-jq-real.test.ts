@@ -124,6 +124,8 @@ describe('jq examples agree with jq', function () {
     ['paths'], ['.a.b.c'], ['def double: . * 2; .count | double'], ['.[0]'], ['length'], ['.items | first'], ['with_entries(.value |= tostring)'],
     ['.name // "anonymous"'], ['.users[] | select(.age >= 30) | {name, email}'], ['[.[] | select(.tags | index("sale"))] | length'],
     ['.[-2]'], ['{} | .[]'], ['map(select(.active == true))'], ['.total + 1, 1 + .total'], ['if .ok then .name end'], ['.[1:.n]'], ['(.[0] | .x), map_values(.)'],
+    ['.[] | @csv', ['-r']], ['.[] | @tsv', ['-r']], ['.[] | @sh', ['-r']], ['contains("a")'], ['contains(["a"])'], ['. + [1]'], ['. - [1]'], ['. + {"a": 1}'], ['inside("abc")'], ['index(",")'], ['indices(1)'],
+    ['. as [$a, $b] | $a'], ['.[] as {name: $n} | $n'], ['label $out | .[] | ., break $out'],
     ['map(select(.n > 0))'], ['.tags[] | ascii_upcase'], ['.foo | ascii_downcase'], ['select(.x == true) | .x'], ['.[7], .[0]'], ['.[0].items[0]'], ['.enabled'], ['ascii_downcase'],
   ];
   for (const [filter, args = []] of filters) {
