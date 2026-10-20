@@ -1080,12 +1080,22 @@ class Evaluator {
       case 'test/1': case 'test/2': {
         const flags = a.length > 1 ? str(one(1)) : '';
         if (/[^gix]/.test(flags)) throw new Unsupported('regex flags');
-        return [new RegExp(str(one(0)), flags.replace('g', '').replace('x', '')).test(str(x))];
+        const source = flags.includes('x') ? extendedRegex(str(one(0))) : str(one(0));
+        return [new RegExp(source, flags.replace(/[gx]/g, '')).test(str(x))];
       }
       case 'explode/0': return [[...str(x)].map((c) => c.codePointAt(0)!)];
       case 'implode/0': return [String.fromCodePoint(...(arr(x) as number[]))];
       case 'tojson/0': return [toJson(x)];
-      case 'fromjson/0': try { return [JSON.parse(str(x))]; } catch { throw new JqError(`${x} cannot be parsed as JSON`); }
+      case 'fromjson/0': {
+        if (typeof x !== 'string') throw new JqError(`${typeName(x)} (${toJson(x)}) only strings can be parsed`);
+        // jq reads `nan` as a number (printed as null).
+        if (x.trim() === 'nan') return [null];
+        try {
+          return [JSON.parse(x)];
+        } catch {
+          throw new JqError(/^[A-Za-z]+$/.test(x) ? `Invalid numeric literal at EOF at line 1, column ${x.length} (while parsing '${x}')` : `Invalid JSON text (while parsing '${x}')`);
+        }
+      }
       case 'indices/1': case 'index/1': case 'rindex/1': {
         const t = one(0);
         let pos: number[] = [];
@@ -1094,8 +1104,9 @@ class Evaluator {
         } else if (Array.isArray(x)) {
           const needle = Array.isArray(t) ? t : [t];
           for (let i = 0; i + needle.length <= x.length; i++) if (needle.every((v, j) => cmp(x[i + j], v) === 0)) pos.push(i);
-        } else if (x === null) return [null];
-        else throw new JqError('Cannot determine indices');
+        } else if (x === null || (isObj(x) && typeof t === 'string')) return [null];
+        else if (typeof x === 'string' && typeof t === 'string') return [n.name === 'indices' ? [] : null];
+        else throw new JqError(`Cannot index ${typeName(x)} with ${typeof t === 'string' ? `string ${JSON.stringify(t)}` : typeName(t)}`);
         if (n.name === 'indices') return [pos];
         pos = n.name === 'index' ? pos.slice(0, 1) : pos.slice(-1);
         return [pos.length ? pos[0] : null];
@@ -1446,6 +1457,22 @@ export interface JqRun {
   error?: string;
   /** `-s`: the filter reads all the input values as one array, so `input` is that array and the file holds its elements. */
   slurp?: boolean;
+}
+
+/** The pattern with the `x` flag removed: whitespace and `#` comments are not part of an extended regex (outside brackets and after a backslash). */
+function extendedRegex(src: string): string {
+  let out = '';
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') { out += c + (src[++i] ?? ''); continue; }
+    if (inClass) { out += c; if (c === ']') inClass = false; continue; }
+    if (c === '[') { inClass = true; out += c; continue; }
+    if (/\s/.test(c)) continue;
+    if (c === '#') { while (i < src.length && src[i] !== '\n') i++; continue; }
+    out += c;
+  }
+  return out;
 }
 
 /** What the flags of jq change in an example. */

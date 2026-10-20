@@ -925,3 +925,46 @@ describe('a short option with a quoted value glued on', () => {
     assert.ok(all(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
   });
 });
+
+describe('jq options with values', () => {
+  const roles = (src: string) => all(explain(src).items[0].children).filter((t) => t.span.start.line === 0).map((t) => `${t.label}: ${t.explanation}`);
+  it('--arg and its relatives take a name and a value, then the filter and the file', () => {
+    for (const o of ['--arg', '--argjson', '--slurpfile', '--rawfile']) {
+      const r = roles(`jq ${o} n 3 '.a = $n' in.json`);
+      assert.ok(r.some((x) => x.startsWith('n: Name for')), r.join('\n'));
+      assert.ok(r.some((x) => x.startsWith('3: Value for')), r.join('\n'));
+      assert.ok(r.some((x) => x.includes("'.a = $n': jq filter")), r.join('\n'));
+      assert.ok(r.some((x) => x.startsWith('in.json: input JSON file')), r.join('\n'));
+    }
+  });
+  it('yq (kislyuk) takes two values as well', () => {
+    const r = roles(`yq --arg n foo '.a = $n' in.yml`);
+    assert.ok(r.some((x) => x.startsWith('n: Name for')) && r.some((x) => x.includes('jq filter')), r.join('\n'));
+  });
+  it('--arg value is used in the example', () => {
+    assert.ok(explain(`jq --arg n foo '.name = $n' in.json`).examples[0].sections[1].lines[0].includes('"foo"'));
+  });
+  it('--indent takes a number; -f makes the first operand an input file; --args operands are strings', () => {
+    const a = roles(`jq --indent 4 . in.json`);
+    assert.ok(a.some((x) => x.startsWith('4: Value for `--indent`')) && a.some((x) => x.includes('.: jq filter')), a.join('\n'));
+    const f = roles(`jq -f prog.jq in.json`);
+    assert.ok(f.some((x) => x.startsWith('in.json: input JSON file')) && !f.some((x) => x.includes('jq filter')), f.join('\n'));
+    const g = roles(`jq '.[]' --args a b`);
+    assert.ok(g.some((x) => x.startsWith('a: positional string')) && g.some((x) => x.startsWith('b: positional string')), g.join('\n'));
+    assert.ok(roles(`jq '.[]' --jsonargs 1 2`).some((x) => x.startsWith('1: positional JSON value')));
+  });
+});
+
+describe('jq examples follow -s and -j', () => {
+  it('-s reads the values of the file as one array', () => {
+    const ex = explain(`jq -s length in.json`).examples[0];
+    assert.deepStrictEqual(ex.sections[1].lines, ['3']);
+    assert.ok(ex.sections[0].lines.length === 3);
+    assert.ok(ex.interactive);
+  });
+  it('-j prints the outputs with no newline', () => {
+    const ex = explain(`jq -j '.[]' in.json`).examples[0];
+    assert.strictEqual(ex.sections[1].label, 'Output (no newlines)');
+    assert.strictEqual(ex.sections[1].lines.length, 1);
+  });
+});

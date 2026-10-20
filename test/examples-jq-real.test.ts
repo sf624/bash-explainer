@@ -78,6 +78,10 @@ const pairs: [string, Json][] = [
   ['(if .x then .a else .b end) |= 1', { x: false }], ['getpath([0])', {}], ['del(.a.b)', { a: null }],
   ['del(.)', { a: 1 }],
   ['[.[] | tostring]', [{ a: 1 }]], ['tojson', 'a"b'], ['"\(1 + 2)"', null],
+  // The `x` flag ignores whitespace and comments in the pattern; index and indices on other types.
+  ['test("v a"; "x"), test("va"; "x"), test("v #c\\n a"; "x"), test("[ ]a"; "x"), test("a\\\\ b"; "x")', 'va'], ['test("v a"; "x"), test("[ ]a"; "x"), test("a\\\\ b"; "x")', 'v a'],
+  ['index("b"), indices("b")', { a: 'b' }], ['indices(1)', { a: 1 }], ['index(1)', true], ['indices("b")', true], ['indices("b")', 3], ['indices("")', 'abc'], ['index(""), rindex("")', 'abc'],
+  ['indices(1)', 'abc'], ['fromjson', 5], ['fromjson', { a: 1 }], ['fromjson', 'nan'], ['fromjson', 'abc'], ['fromjson', '[1,'],
   ['map(type)', [0, -0]], ['.[] | numbers', [1.5]], ['ltrimstr("x")', null],
 ];
 
@@ -122,6 +126,25 @@ describe('jq examples agree with jq', function () {
           continue;
         }
         assert.deepStrictEqual(r.outputs, real, `input ${JSON.stringify(r.input)}`);
+      }
+    });
+  }
+});
+
+(hasJq ? describe : describe.skip)('jq examples with -s and -j agree with jq', () => {
+  const filters: [string, string[]][] = [['length', ['-s']], ['map(.age)', ['-s']], ['.[0]', ['-s']], ['add', ['-s']], ['.[]', ['-j']], ['.name', ['-j']], ['.[] | .name', ['-s', '-j']]];
+  for (const [filter, args] of filters) {
+    it(`${args.join(' ')} ${filter}`, () => {
+      const slurp = args.includes('-s');
+      const join = args.includes('-j');
+      const runs = jqExample(filter, { slurp, join });
+      assert.ok(runs, 'has an example');
+      for (const r of runs) {
+        // The file holds the values of the array, one per line, when slurped.
+        const file = slurp ? (r.input as Json[]).map((v) => JSON.stringify(v)).join('\n') : JSON.stringify(r.input);
+        const real = spawnSync('jq', ['-c', ...args, filter], { input: file }).stdout.toString();
+        if (r.error) continue;
+        assert.strictEqual(join ? r.outputs.join('') : r.outputs.join('\n') + (r.outputs.length ? '\n' : ''), join ? real : real.replace(/\n(?=\n|$)/g, '\n'), `file ${file}`);
       }
     });
   }
