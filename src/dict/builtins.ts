@@ -1,5 +1,7 @@
 import { tx } from '../i18n';
-import { CommandDoc, OptSpec, cmd, pos } from './types';
+import { CommandDoc, OptDoc, OptSpec, cmd, pos } from './types';
+import { Text } from '../i18n';
+import { declarationCommands, declarationFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
   errexit: tx('コマンドが失敗したら即座にスクリプトを終了（`-e` と同じ）', 'exit immediately when a command fails (same as `-e`)'),
@@ -58,7 +60,19 @@ const MAPFILE_OPTIONS: OptSpec[] = [
 const b = (ja: string, en: string, opts: Parameters<typeof cmd>[2] = [], extra: Parameters<typeof cmd>[3] = {}): CommandDoc =>
   cmd(ja, en, opts, { builtin: true, ...extra });
 
+/** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
+function declarationDoc(name: string, flags: Record<string, Text>): CommandDoc {
+  const options: Record<string, OptDoc> = {};
+  for (const [flag, text] of Object.entries(flags)) options[flag] = { text };
+  return { summary: declarationCommands[name], builtin: true, options, positional: [pos('変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)')] };
+}
+
 export const builtins: Record<string, CommandDoc> = {
+  export: declarationDoc('export', exportFlags),
+  readonly: declarationDoc('readonly', readonlyFlags),
+  declare: declarationDoc('declare', declarationFlags),
+  typeset: declarationDoc('typeset', declarationFlags),
+  local: declarationDoc('local', declarationFlags),
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', [
     ['-n', '末尾の改行を出力しない', 'do not print the trailing newline'],
     ['-e', '`\\n` などのバックスラッシュエスケープを解釈する', 'interpret backslash escapes like `\\n`'],

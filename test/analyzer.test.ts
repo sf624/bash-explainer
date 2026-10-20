@@ -617,7 +617,8 @@ describe('pipelines and aliases', () => {
   });
   it('explains an alias defined in the script, with a pitfall without expand_aliases', () => {
     const e = explain('alias ll="ls -l"\nll /tmp', 1);
-    assert.match(find(e, 'll').explanation, /alias `ll` defined on line 1: replaced by `ls -l`/);
+    assert.match(find(e, 'll').explanation, /alias `ll` defined on line 1 \(`ls -l`\)\. But bash does not expand aliases in a script.*"command not found"/);
+    assert.match(find(explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2), 'll').explanation, /alias `ll` defined on line 2: replaced by `ls -l`/);
     assert.ok(e.notes.some((n) => /bash does not expand aliases in scripts/.test(n)));
     assert.ok(!explain('shopt -s expand_aliases\nalias ll="ls -l"\nll', 2).notes.some((n) => /aliases/.test(n)));
     assert.ok(!explain('alias grep=ggrep\ngrep x f', 1).notes.some((n) => /aliases/.test(n)));
