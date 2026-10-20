@@ -66,23 +66,26 @@ ul#tree {
 }
 
 /* Indent guides, as in VS Code's trees: a faint line in the column of the rows' own coloured
-   border, from an item down to the next sibling. It is drawn behind the rows, so it shows only
-   where no border is: beside an item's parts and examples, and in the gaps between rows. The last
-   sibling has none. */
-#tree li {
+   border, beside what lies under an item (its examples and parts), when a sibling follows. Like the
+   rule beside an example, it keeps clear of the rows: it starts below the item's row and ends above
+   the next sibling's. */
+#tree li:not(:last-child) > .body {
   position: relative;
-  isolation: isolate;
 }
 
-#tree li:not(:last-child)::before {
+#tree li:not(:last-child) > .body::before {
   content: "";
   position: absolute;
-  z-index: -1;
   left: 0;
   top: 0;
-  bottom: -0.5rem;
+  bottom: 0.35rem;
   border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
   pointer-events: none;
+}
+
+/* Parts come closer to the row than an example does: start the line as far below it. */
+#tree li:not(:last-child) > .body:has(> ul:first-child)::before {
+  top: 0.15rem;
 }
 
 .row {
@@ -245,8 +248,7 @@ header {
   cursor: pointer;
 }
 
-li.collapsed > ul,
-li.collapsed > .example {
+li.collapsed > .body {
   display: none;
 }
 
