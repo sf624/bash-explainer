@@ -900,3 +900,28 @@ describe('[ ] shows its syntax', () => {
     assert.match(explain('[[ -f $f ]]', 0, 'ja').items[0].explanation, /コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず/);
   });
 });
+
+describe('a short option with a quoted value glued on', () => {
+  const cases: [string, string, string][] = [
+    [`awk -F'|' '{print $2}' f`, `-F'|'`, 'field separator'],
+    [`cut -d',' -f2 f`, `-d','`, 'field delimiter'],
+    [`sed -e's/a/b/' f`, `-e's/a/b/'`, 'add a script'],
+    [`grep -e'x' f`, `-e'x'`, 'specify a pattern'],
+    [`tar -C'/tmp' -cf a.tar b`, `-C'/tmp'`, 'change to'],
+    [`awk -F' ' '{print $1}' f`, `-F' '`, 'field separator'],
+    [`awk -F"\\t" '{print $1}' f`, `-F"\\t"`, 'field separator'],
+  ];
+  for (const [src, label, text] of cases) {
+    it(src, () => {
+      const e = explain(src);
+      const opt = all(e.items).find((t) => t.kind === 'option' && t.label === label);
+      assert.ok(opt && opt.explanation.includes(text), `${label}: ${opt?.explanation}`);
+      assert.ok(opt.children.some((c) => c.kind === 'argument' && c.explanation.startsWith('Value for')));
+      // The command's own operands keep their roles.
+      assert.ok(!all(e.items).some((t) => t.explanation === 'target file' && t.label === label));
+    });
+  }
+  it('says what the value is after quote removal', () => {
+    assert.ok(all(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
+  });
+});
