@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import { run } from './support/run';
-import { awkExample, runAwk, sprintf } from '../src/examples/awk';
+import { awkExample, awkInvocation, runAwk, sprintf } from '../src/examples/awk';
 
 function realAwk(prog: string, input: string[], fs?: string, vars: Record<string, string> = {}): string[] {
   const args = [...(fs ? ['-F', fs] : []), ...Object.entries(vars).flatMap(([k, v]) => ['-v', `${k}=${v}`]), prog];
@@ -56,6 +56,38 @@ describe('awk examples agree with gawk', () => {
     const prog = '$2 > min { print $1 }';
     const input = ['a 1', 'b 5', 'c 9'];
     assert.deepStrictEqual(runAwk(prog, input, { vars: { min: '4' } }), realAwk(prog, input, undefined, { min: '4' }));
+  });
+});
+
+describe('awk command lines (options and name=value operands) agree with gawk', () => {
+  const input = ['a|b c|d', 'x|y z|w', 'tab\there'];
+  const lines: string[][] = [
+    ['{print $1,$2}', 'OFS=,'], ['{print $1,$2}', 'OFS=\\t'], ['-v', 'OFS=\\t', '{print $1,$2}'], ['-vOFS=-', '{$1=$1;print}'],
+    ['-F', '\\|', '{print $2}'], ['-F', '\\\\|', '{print $2}'], ['-F\\|', '{print $2}'], ['-F', '[|]', '{print $2}'], ['-F', '|', '{print $2}'], ['-F', '\\t', '{print $2}'],
+    ['-F', '\t', '{print $2}'], ['{print $2}', 'FS=|'], ['BEGIN{print x}', 'x=1'], ['{print x, $1}', 'x=a\\tb'], ['-v', 'x=a\\\\b', 'BEGIN{print x}'],
+    ['END{print x, NR}', 'x=5'], ['-v', 'n=\\101', 'BEGIN{print n}'], ['{print $1}', 'ORS=;'], ['-v', 'x=1', '{print x,y}', 'y=2', '-'],
+    ['-f', 'prog.awk'].slice(0, 0).concat(['{print NF}']),
+  ];
+  for (const words of lines) {
+    it(words.join(' '), () => {
+      const inv = awkInvocation(words);
+      assert.strictEqual(inv.unsupported, undefined);
+      const out = runAwk(inv.program!, input, inv);
+      const real = run('gawk', words, { input: input.join('\n') + '\n', check: true }).stdout.toString();
+      assert.deepStrictEqual(out, real === '' ? [] : real.replace(/\n$/, '').split('\n'));
+    });
+  }
+  it('refuses what it cannot follow', () => {
+    for (const words of [['{print}', 'f', 'x=1'], ['-v', 'x=\\q', '{print}'], ['{print}', 'x=\\q'], ['-F', '\\d', '{print}'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x']]) {
+      assert.ok(awkInvocation(words).unsupported !== undefined, JSON.stringify(words));
+    }
+    const f = awkInvocation(['-f', 'p.awk', 'x=1']);
+    assert.deepStrictEqual([f.program, f.assigns], [undefined, { x: '1' }]);
+    assert.strictEqual(awkInvocation(['--', '{print}']).program, '{print}');
+  });
+  it('makes up input that uses the separator', () => {
+    const ex = awkExample('{ print $2 }', { fs: '\\|' })!;
+    assert.ok(ex.input.every((l) => l.includes('|')), JSON.stringify(ex.input));
   });
 });
 

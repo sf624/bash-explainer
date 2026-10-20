@@ -1040,3 +1040,19 @@ describe('sed explanations (audit fixes)', () => {
     assert.ok(JSON.stringify(explain("sed 's/o/0/2g' f", 0, 'ja')).includes('2番目以降のすべての一致'));
   });
 });
+
+describe('awk explanations (audit fixes)', () => {
+  it('does not take the comma of a function call for a range', () => {
+    const t = JSON.stringify(explain("awk 'match($0,/[0-9]+/){print RSTART}' f"));
+    assert.ok(!t.includes('Range pattern'), t);
+    assert.ok(JSON.stringify(explain("awk '/a/,/b/' f")).includes('Range pattern'));
+    assert.ok(JSON.stringify(explain("awk 'substr($1, 1, 2) == \"ab\", $2 > 3' f")).includes('Range pattern'));
+  });
+  it('labels name=value operands and applies them in the example', () => {
+    const e = explain("awk '{print $1,$2}' OFS=, f");
+    const t = JSON.stringify(e);
+    assert.ok(t.includes('Variable assignment'), t);
+    assert.ok(e.examples[0].sections.some((s) => s.lines.some((l) => l.includes('apple,red'))), t);
+    assert.ok(JSON.stringify(explain("awk '{print $1,$2}' OFS=, f", 0, 'ja')).includes('変数の代入'));
+  });
+});

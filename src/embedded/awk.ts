@@ -213,7 +213,15 @@ class AwkExplainer {
       return { token: this.tok(start, end, 'keyword', s(d[text][0], d[text][1])), when: '' };
     }
     // Range pattern `p1, p2`.
-    const comma = toks.findIndex((t) => t.text === ',');
+    // Only a comma outside (), [] separates a range; those in `match($0, /re/)` belong to the call.
+    let depth = 0;
+    const comma = toks.findIndex((t) => {
+      if (t.type !== 'str' && t.type !== 'regex') {
+        if (t.text === '(' || t.text === '[') depth++;
+        else if (t.text === ')' || t.text === ']') depth--;
+      }
+      return depth === 0 && t.text === ',';
+    });
     if (comma > 0) {
       const a = this.pattern(toks.slice(0, comma));
       const b = this.pattern(toks.slice(comma + 1));

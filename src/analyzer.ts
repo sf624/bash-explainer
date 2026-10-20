@@ -11,7 +11,7 @@ import { BundleDoc, CommandDoc, OptDoc, PositionalBy } from './dict/types';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
-import { awkExample } from './examples/awk';
+import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { perlExample, perlOptions } from './examples/perlrun';
 import { MAX_SHOWN_LINES, pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, slurpLines, toJson } from './examples/jq';
@@ -1531,6 +1531,9 @@ export class Analyzer {
       if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
       else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
       else if (doc?.shellC) desc = this.shellArgument(args, posIndex);
+      else if (/^(g|m|n)?awk$/.test(cmdName.split('/').pop()!) && posIndex > 0 && /^[A-Za-z_]\w*=/.test(text)) {
+        desc = this.s('変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えない。`\\t` などのエスケープは解釈される）', 'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it; escapes such as `\\t` are processed)');
+      }
       else if (positionalTexts?.length) desc = this.t(positionalTexts[Math.min(posIndex, positionalTexts.length - 1)]);
       // `%1`, `%%`, `%name`: a job, not a file or a PID.
       const job = JOB_COMMANDS.has(cmdName) && !withOpt && isPlainWord(a) ? jobSpec(text) : undefined;
@@ -1724,8 +1727,8 @@ export class Analyzer {
       case 'awk': {
         tokens = explainAwk(lit.text, this.lang);
         const opts = this.awkOptions();
-        const ex = awkExample(lit.text, opts);
-        if (ex) this.ioExample(ex.input, ex.output, false, { kind: 'awk', program: lit.text, fs: opts.fs, vars: opts.vars });
+        const ex = opts && awkExample(lit.text, opts);
+        if (ex) this.ioExample(ex.input, ex.output, false, { kind: 'awk', program: lit.text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns });
         break;
       }
       case 'printf':
@@ -2069,31 +2072,13 @@ export class Analyzer {
     });
   }
 
-  /** -F and -v of the current awk command (literal values only). */
-  private awkOptions(): { fs?: string; vars: Record<string, string> } {
-    const args = this.argCtx!.args;
-    const opts: { fs?: string; vars: Record<string, string> } = { vars: {} };
-    const value = (i: number, prefix: number) => {
-      const lit = literalContent(args[i]);
-      return lit ? lit.text.slice(prefix) : undefined;
-    };
-    for (let i = 0; i < args.length; i++) {
-      const t = args[i].text;
-      let v: string | undefined;
-      if (t === '-F' || t === '-v') v = args[i + 1] && value(++i, 0);
-      else if (/^-[Fv]./.test(t)) v = value(i, 2);
-      else if (t.startsWith('--field-separator=')) v = value(i, '--field-separator='.length);
-      else continue;
-      if (v === undefined) continue;
-      if (t.startsWith('-v')) {
-        const eq = v.indexOf('=');
-        if (eq > 0) opts.vars[v.slice(0, eq)] = v.slice(eq + 1);
-      } else {
-        // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
-        opts.fs = v.replace(/\\t/g, '\t');
-      }
-    }
-    return opts;
+  /** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
+  private awkOptions(): (AwkRunOptions & { vars: Record<string, string> }) | undefined {
+    const words = this.argCtx!.args.map((a) => literalContent(a)?.text);
+    const inv = awkInvocation(words);
+    // Options awk has more of (`--posix`, `-W …`) do not change what the example shows.
+    if (inv.unsupported && !inv.unsupported.startsWith('awk -')) return undefined;
+    return { fs: inv.fs, vars: inv.vars, assigns: inv.assigns };
   }
 
   /** Sample data run through every stage of a pipeline, showing what each stage leaves. */
