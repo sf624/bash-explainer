@@ -31,6 +31,16 @@ describe('sed examples agree with GNU sed', () => {
   }
 });
 
+describe('the sed runner treats empty matches as GNU sed does', () => {
+  const input = ['x xx', 'b bb', 'x za', 'abc', '', 'aXbXX'];
+  const scripts = ['s/x*/-/g', 's/b*/X/2', 's/[^ ]*/[&]/2', 's/b*/X/g', 's/x*/-/', 's/x*/-/2', 's/b*/X/2g', 's/X*/_/3', 's/$/!/', 's/^/>/g', 's/\\b/|/g', 's/c*$/E/g', 's/ */#/g'];
+  for (const script of scripts) {
+    it(script, () => {
+      assert.deepStrictEqual(runSed(script, input, { quiet: false, extended: false }), realSed(script, input, false, false));
+    });
+  }
+});
+
 describe('sed example input', () => {
   it('puts two matches on a line so g makes a visible difference', () => {
     assert.deepStrictEqual(sedExample('s/foo/bar/', { quiet: false, extended: false }), { input: ['foo foo'], output: ['bar foo'] });
