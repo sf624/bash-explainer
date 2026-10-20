@@ -28,7 +28,9 @@ describe('test examples agree with bash', () => {
     ['[ "$n" -le 0 ]', ['[', '-le', { var: 'n' }, { lit: '0' }]], ['[[ $f == *.txt ]]', ['[[', '==', { var: 'f' }, { lit: '*.txt' }]],
     ['[[ $f != *.txt ]]', ['[[', '!=', { var: 'f' }, { lit: '*.txt' }]], ['[[ $f == "*.txt" ]]', ['[[', '==', { var: 'f' }, { lit: '*.txt' }, true]],
     ['[ "$x" = yes ]', ['[', '=', { var: 'x' }, { lit: 'yes' }]], ['[ "$x" != "" ]', ['[', '!=', { var: 'x' }, { lit: '' }]],
-    ['[ -z "$v" ]', ['[', '-z', undefined, { var: 'v' }]], ['[ -n "$v" ]', ['[', '-n', undefined, { var: 'v' }]],
+    ['[ -z "$v" ]', ['[', '-z', undefined, { var: 'v' }]], ['[ -n "$v" ]', ['[', '-n', undefined, { var: 'v' }, true]],
+    // Unquoted and empty, `[ -n $v ]` is `[ -n ]`: true.
+    ['[ -n $v ]', ['[', '-n', undefined, { var: 'v' }]],
     ['(( c >= 5 ))', ['((', '>=', { var: 'c' }, { lit: '5' }]], ['(( c == 0 ))', ['((', '==', { var: 'c' }, { lit: '0' }]],
     ['[ 0 -ne "$1" ]', ['[', '-ne', { lit: '0' }, { var: '1' }]],
   ];

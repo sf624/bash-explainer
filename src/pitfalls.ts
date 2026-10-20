@@ -146,8 +146,8 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         // The words of the test itself, not variables inside a `$(…)` in it.
         const bare = n.namedChildren.find((e) => unquotedExpansion(e) && !alwaysNumber(e));
         if (bare) {
-          add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` など）。\`"${bare.text}"\` と書きます`,
-            `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces ("unary operator expected"). Write \`"${bare.text}"\``);
+          add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare.text}"\` と書きます`,
+            `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare.text}"\``);
         }
         // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`.
         const redirect = n.namedChildren.find((e) => e.type === 'file_redirect');
