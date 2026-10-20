@@ -142,8 +142,8 @@ const IDIOMS: Idiom[] = [
   },
   {
     test: /^: "?\$\{\w+:?=/,
-    ja: '`: "${VAR:=…}"`: 変数が未設定なら既定値を代入する（`:` は何もしないコマンドで、展開だけを行わせる）',
-    en: '`: "${VAR:=…}"`: assigns a default if the variable is unset (`:` does nothing; only the expansion matters)',
+    ja: '`: "${VAR:=…}"`: 変数が未設定か空なら既定値を代入する（`:=` の場合。`=` だけなら未設定のときだけ。`:` は何もしないコマンドで、展開だけを行わせる）',
+    en: '`: "${VAR:=…}"`: assigns a default if the variable is unset or empty (with `:=`; plain `=` only when unset; `:` does nothing, only the expansion matters)',
   },
   {
     test: /\|\| (true|:)$/,

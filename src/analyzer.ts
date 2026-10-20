@@ -573,7 +573,9 @@ export class Analyzer {
       case 'heredoc_redirect': return this.heredoc(n);
       case 'herestring_redirect': return this.herestring(n);
       case 'negated_command': return skeletal(this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren)), n);
-      case 'test_command': case 'extended_test': case 'arithmetic_command': return this.test(n);
+      case 'test_command': case 'extended_test': case 'arithmetic_command':
+        if (n.type === 'arithmetic_command') this.postfixStatusNote(n);
+        return this.test(n);
       case 'unary_expression': return this.unary(n);
       case 'binary_expression': return this.binary(n);
       case 'ternary_expression': return this.tok(n, 'expansion', this.s('三項演算子: 条件 ? 真のときの値 : 偽のときの値', 'Ternary: cond ? if-true : if-false'), this.subs(n.namedChildren));
@@ -1078,7 +1080,34 @@ export class Analyzer {
     return this.tok(n, 'assignment', expl, children);
   }
 
+  /** `((i++))` is the old value of `i`: 0 makes the status 1, which `set -e` treats as a failure. */
+  private postfixStatusNote(n: SyntaxNode): void {
+    const m = /^\(\(\s*([A-Za-z_]\w*(?:\[[^\]]*\])?)(\+\+|--)\s*\)\)$/.exec(n.text);
+    if (!m || this.opts.pitfalls === false) return;
+    const [, v, op] = m;
+    this.extraNotes.push(op === '++'
+      ? this.s(`⚠ 落とし穴: \`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
+        `⚠ Pitfall: the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`)
+      : this.s(`⚠ 落とし穴: \`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
+        `⚠ Pitfall: the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`));
+  }
+
+  /** `exit 256` and `return 300`: the status is taken modulo 256. */
+  private statusRangeNote(n: SyntaxNode): void {
+    const name = field(n, 'name')?.text;
+    if (name !== 'exit' && name !== 'return') return;
+    const arg = fields(n, 'argument')[0];
+    if (!arg || !/^-?\d+$/.test(arg.text)) return;
+    const v = Number(arg.text);
+    if (v >= 0 && v <= 255) return;
+    const status = ((v % 256) + 256) % 256;
+    this.extraNotes.push(this.s(`ℹ 終了ステータスは 0〜255 なので、\`${v}\` は 256 で割った余りの ${status} になる`, `ℹ An exit status is 0–255, so \`${v}\` becomes ${status} (the value modulo 256)`));
+  }
+
   private declaration(n: SyntaxNode, redirsOut = false): Token {
+    if (n.children[0].type === 'local' && this.opts.pitfalls !== false && !ancestor(n, (a) => a.type === 'function_definition')) {
+      this.extraNotes.push(this.s('⚠ 落とし穴: `local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります', '⚠ Pitfall: `local` can be used only inside a function; outside one it fails with "can only be used in a function"'));
+    }
     // declare, typeset, export, readonly or local, all in the dictionary.
     const kw = n.children[0].type;
     const base = declarationCommands[kw];
@@ -1157,6 +1186,7 @@ export class Analyzer {
     if (split) return split;
     const before = this.examples.length;
     const t = this.commandToken(n);
+    this.statusRangeNote(n);
     this.tagExamples(before, n);
     return t;
   }
@@ -3254,12 +3284,13 @@ export class Analyzer {
   /** What the splitting of an unquoted expansion at `n` splits on. */
   private splitNote(n: SyntaxNode): string {
     const ifs = this.ifsAt(n);
-    if (!ifs) return this.s('空白で分割され、グロブ展開もされる', 'it is word-split and globbed');
-    if (ifs.value === undefined) return this.s(`\`IFS\` は行 ${ifs.line + 1} で、ここでは分からない値にしてある。その文字で分割され、グロブ展開もされる`, `it is split on the characters of \`IFS\` (set on line ${ifs.line + 1} to a value not known here), and globbed`);
-    if (ifs.value === '') return this.s(`\`IFS\` が空（行 ${ifs.line + 1}）なので単語分割はされないが、グロブ展開はされる`, `\`IFS\` is empty (line ${ifs.line + 1}), so it is not word-split, but it is globbed`);
+    const off = this.globOff(n);
+    if (!ifs) return this.s(`空白で分割され${off ? 'る（`set -f` でグロブ展開は無効）' : '、グロブ展開もされる'}`, `it is word-split${off ? ' (globbing is off after `set -f`)' : ' and globbed'}`);
+    if (ifs.value === undefined) return this.s(`\`IFS\` は行 ${ifs.line + 1} で、ここでは分からない値にしてある。その文字で分割され${off ? 'る（`set -f` でグロブ展開は無効）' : '、グロブ展開もされる'}`, `it is split on the characters of \`IFS\` (set on line ${ifs.line + 1} to a value not known here)${off ? '; globbing is off after `set -f`' : ', and globbed'}`);
+    if (ifs.value === '') return this.s(`\`IFS\` が空（行 ${ifs.line + 1}）なので単語分割はされない${off ? '（`set -f` でグロブ展開も無効）' : 'が、グロブ展開はされる'}`, `\`IFS\` is empty (line ${ifs.line + 1}), so it is not word-split${off ? ' (and globbing is off after `set -f`)' : ', but it is globbed'}`);
     const noSpace = !/[ \t\n]/.test(ifs.value);
-    return this.s(`\`IFS\`（行 ${ifs.line + 1} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}。グロブ展開もされる`,
-      `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${ifs.line + 1})${noSpace ? ', not on spaces' : ''}, and globbed`);
+    return this.s(`\`IFS\`（行 ${ifs.line + 1} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${off ? '。`set -f` でグロブ展開は無効' : '。グロブ展開もされる'}`,
+      `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${ifs.line + 1})${noSpace ? ', not on spaces' : ''}${off ? '; globbing is off after `set -f`' : ', and globbed'}`);
   }
 
   /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
