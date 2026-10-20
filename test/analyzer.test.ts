@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as path from 'path';
+import { run } from './support/run';
 import { descendants, hasError } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
@@ -258,7 +259,7 @@ describe('statements as bash reads them', () => {
   });
   it('explains the later lines of a case pattern list that goes on after a backslash as patterns', () => {
     const src = 'case $x in\n  a|b|\\\n  c)\n    echo hi ;;\n  d|\\\n  e) echo d ;;\nesac';
-    assert.strictEqual(spawnSync('bash', ['-n'], { input: src }).status, 0);
+    assert.strictEqual(run('bash', ['-n'], { input: src }).status, 0);
     const c = explain(src, 2);
     assert.deepStrictEqual(all(c.items).map((t) => [t.kind, t.label]), [['pattern', 'c']]);
     assert.match(c.context.map((x) => x.label).join(), /case branch/);

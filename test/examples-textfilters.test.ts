@@ -1,10 +1,10 @@
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
+import { run } from './support/run';
 import { commandExample, expandSet, FILTERS, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
 
 /** The real command's output (GNU coreutils, C locale). */
 function real(cmd: string, args: string[], input?: string[]): string[] {
-  const r = spawnSync(cmd, args, { input: input ? input.join('\n') + '\n' : undefined, env: { ...process.env, LC_ALL: 'C' } });
+  const r = run(cmd, args, { input: input ? input.join('\n') + '\n' : undefined, env: { ...process.env, LC_ALL: 'C' } });
   const out = r.stdout.toString();
   return out === '' ? [] : out.replace(/\n$/, '').split('\n');
 }

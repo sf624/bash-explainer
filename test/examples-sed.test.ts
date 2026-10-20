@@ -1,10 +1,10 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { run } from './support/run';
 import { runSed, sedExample } from '../src/examples/sed';
 
 function realSed(script: string, input: string[], quiet: boolean, extended: boolean): string[] {
   const args = [...(quiet ? ['-n'] : []), ...(extended ? ['-E'] : []), script];
-  return execFileSync('sed', args, { input: input.join('\n') + '\n' }).toString().split('\n').slice(0, -1);
+  return run('sed', args, { input: input.join('\n') + '\n', check: true }).stdout.toString().split('\n').slice(0, -1);
 }
 
 const cases: [string, boolean, boolean][] = [

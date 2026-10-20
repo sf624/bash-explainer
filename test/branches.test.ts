@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { run } from './support/run';
 import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
@@ -202,7 +203,7 @@ describe('branches no other test takes', () => {
     const values: Json[] = [null, true, 1.5, ' a', '- a', '#x', 'true', '123', 'yes', "it's: x", [], {}, [1, [2]], { a: [] }, { a: { b: 1 } }];
     let python: string[];
     try {
-      python = JSON.parse(execFileSync('python3', ['-c', 'import json,sys,yaml\nprint(json.dumps([yaml.safe_dump(v, default_flow_style=False, allow_unicode=True, sort_keys=False) for v in json.load(sys.stdin)]))'], { input: JSON.stringify(values) }).toString());
+      python = JSON.parse(run('python3', ['-c', 'import json,sys,yaml\nprint(json.dumps([yaml.safe_dump(v, default_flow_style=False, allow_unicode=True, sort_keys=False) for v in json.load(sys.stdin)]))'], { input: JSON.stringify(values), check: true }).stdout.toString());
     } catch {
       this.skip();
     }

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { run } from './support/run';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,7 +23,7 @@ after(() => fs.rmSync(dir, { recursive: true, force: true }));
 /** Exit statuses of bash's `[` for each script line (a command each), run in `dir` with the given variables. */
 function bashStatuses(lines: string[], vars: Record<string, string> = {}): number[] {
   const script = lines.map((l) => `${l}\necho $?`).join('\n');
-  const out = execFileSync('bash', ['-s'], { cwd: dir, input: script, env: { ...process.env, ...vars }, stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 1 << 28 }).toString();
+  const out = run('bash', ['-s'], { cwd: dir, input: script, env: { ...process.env, ...vars }, ignoreStderr: true, maxBuffer: 1 << 28, check: true }).stdout.toString();
   return out.split('\n').filter((l) => l !== '').map(Number);
 }
 
