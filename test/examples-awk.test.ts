@@ -1,10 +1,11 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { spawnSync } from 'child_process';
+import { run } from './support/run';
 import { awkExample, runAwk, sprintf } from '../src/examples/awk';
 
 function realAwk(prog: string, input: string[], fs?: string, vars: Record<string, string> = {}): string[] {
   const args = [...(fs ? ['-F', fs] : []), ...Object.entries(vars).flatMap(([k, v]) => ['-v', `${k}=${v}`]), prog];
-  const out = execFileSync('gawk', args, { input: input.join('\n') + '\n' }).toString();
+  const out = run('gawk', args, { input: input.join('\n') + '\n', check: true }).stdout.toString();
   return out === '' ? [] : out.replace(/\n$/, '').split('\n');
 }
 
@@ -120,5 +121,14 @@ describe('the awk runner agrees with gawk on the less common parts', () => {
       'END { next }', 'BEGIN { break }', 'BEGIN { x = (1, 2) }', 'BEGIN { continue }', 'BEGIN { return 1 }', 'BEGIN { print toupper() }', 'function f(a) { a[1] = 1; return a } BEGIN { print f(x) }']) {
       assert.strictEqual(runAwk(prog, input, {}), undefined, prog);
     }
+  });
+});
+
+describe('the run helper', () => {
+  it('does not fail with EPIPE when the tool never reads a large input', function () {
+    if (spawnSync('gawk', ['--version']).status !== 0) this.skip();
+    const input = 'x'.repeat(99) + '\n';
+    const r = run('gawk', ['BEGIN { print "done" }'], { input: input.repeat(10000), check: true });
+    assert.strictEqual(r.stdout.toString(), 'done\n');
   });
 });

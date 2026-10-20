@@ -1,10 +1,11 @@
 import * as assert from 'assert';
+import { run } from './support/run';
 import { execFileSync, spawnSync } from 'child_process';
 import { Json, jqExample, runJq, toJson } from '../src/examples/jq';
 
 /** Outputs of the real jq (compact), or an error marker. */
 function realJq(filter: string, input: Json, args: string[] = []): string[] | 'error' {
-  const r = spawnSync('jq', ['-c', ...args, filter], { input: JSON.stringify(input) });
+  const r = run('jq', ['-c', ...args, filter], { input: JSON.stringify(input) });
   if (r.status !== 0) return 'error';
   const out = r.stdout.toString();
   return out === '' ? [] : out.replace(/\n$/, '').split('\n');

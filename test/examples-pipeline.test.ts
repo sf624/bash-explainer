@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
+import { run } from './support/run';
 import { pipelineExample, readsFileOperand, Stage } from '../src/examples/pipeline';
 
 const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
@@ -39,7 +39,7 @@ describe('pipeline examples agree with bash', () => {
     it(script, () => {
       const ex = pipelineExample(stages, false);
       assert.ok(ex, 'has an example');
-      const real = spawnSync('bash', ['-c', script], { input: ex.input ? ex.input.join('\n') + '\n' : '', env: { ...process.env, LC_ALL: 'C' } });
+      const real = run('bash', ['-c', script], { input: ex.input ? ex.input.join('\n') + '\n' : '', env: { ...process.env, LC_ALL: 'C' } });
       assert.deepStrictEqual(ex.steps[ex.steps.length - 1].output, lines(real.stdout.toString()));
     });
   }
@@ -80,7 +80,7 @@ describe('pipeline examples agree with bash', () => {
   });
   it('shows the commands xargs would run', () => {
     const ex = pipelineExample([{ cmd: 'grep', words: ['e'], text: 'grep e' }, { cmd: 'xargs', words: ['-n', '1', 'rm'], text: 'xargs -n 1 rm' }], false)!;
-    const real = spawnSync('bash', ['-c', "grep e | xargs -n 1 echo rm"], { input: ex.input!.join('\n') + '\n' });
+    const real = run('bash', ['-c', "grep e | xargs -n 1 echo rm"], { input: ex.input!.join('\n') + '\n' });
     assert.deepStrictEqual(ex.steps[1].output, lines(real.stdout.toString()));
   });
   it('declines pipelines with unknown commands', () => {

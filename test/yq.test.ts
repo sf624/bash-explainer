@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { run } from './support/run';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -123,7 +124,7 @@ const dir = process.env.BASH_EXPLAINER_YQ;
       e.sections.slice(1).forEach((sec: { lines: string[] }, i: number) => {
         const expr = e.sections.length > 2 ? texts.slice(0, i + 1).join(' | ') : filter;
         assert.ok(!expr.includes('…'), expr);
-        const r = spawnSync(exe, args.map((w) => (w === filter ? expr : w)), { input });
+        const r = run(exe, args.map((w) => (w === filter ? expr : w)), { input });
         assert.strictEqual(sec.lines.join('\n'), r.stdout.toString().replace(/\n$/, ''), expr);
       });
     });

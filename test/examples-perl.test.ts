@@ -1,9 +1,9 @@
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
+import { run } from './support/run';
 import { perlExample, perlOptions, runPerl } from '../src/examples/perlrun';
 
 function realPerl(words: string[], input: string[]): string[] {
-  const out = spawnSync('perl', words.map((w) => (/^-[a-zA-Z]*i/.test(w) ? w.replace('i', '') || '-p' : w)), { input: input.length ? input.join('\n') + '\n' : '' }).stdout.toString();
+  const out = run('perl', words.map((w) => (/^-[a-zA-Z]*i/.test(w) ? w.replace('i', '') || '-p' : w)), { input: input.length ? input.join('\n') + '\n' : '' }).stdout.toString();
   return out === '' ? [] : out.replace(/\n$/, '').split('\n');
 }
 

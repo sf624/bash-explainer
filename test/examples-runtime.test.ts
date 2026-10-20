@@ -1,5 +1,6 @@
 import * as assert from 'assert';
-import { execFileSync, spawnSync } from 'child_process';
+import { run } from './support/run';
+import { execFileSync } from 'child_process';
 import { readSampleLine, runRead, runXargs, testCases, xargsExample } from '../src/examples/runtime';
 
 describe('xargs agrees with GNU xargs', () => {
@@ -12,7 +13,7 @@ describe('xargs agrees with GNU xargs', () => {
       const ex = xargsExample([...opts, ...cmd])!;
       assert.ok(ex, 'has an example');
       // Prefix the command with echo so xargs prints the command lines instead of running them.
-      const real = spawnSync('xargs', [...opts, 'echo', ...(cmd.length ? cmd : ['echo'])], { input: ex.input }).stdout.toString().trim().split('\n').filter(Boolean);
+      const real = run('xargs', [...opts, 'echo', ...(cmd.length ? cmd : ['echo'])], { input: ex.input }).stdout.toString().trim().split('\n').filter(Boolean);
       assert.deepStrictEqual(runXargs([...opts, ...cmd], ex.input).map((c) => c.join(' ')), real);
     });
   }

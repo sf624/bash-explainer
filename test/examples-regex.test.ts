@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { run } from './support/run';
 import { grepWrap, literalRegex, regexExamples, toJsRegex } from '../src/examples/regex';
 
 /** Lines of `input` that the real tool considers matching. */
@@ -8,13 +8,13 @@ function realMatches(pattern: string, flavor: 'bre' | 'ere' | 'pcre', input: str
   if (flavor === 'pcre') {
     // PCRE follows Perl's regex syntax, so perl itself is the reference.
     // -l: lines without their newline, as grep -P matches them.
-    return execFileSync('perl', ['-lne', 'print if /$ENV{RE}/'], { input: text, env: { ...process.env, RE: pattern } })
+    return run('perl', ['-lne', 'print if /$ENV{RE}/'], { input: text, env: { ...process.env, RE: pattern }, check: true }).stdout
       .toString().split('\n').filter(Boolean);
   }
   // GNU sed uses the same POSIX regex engine as grep; pick a delimiter that is not in the pattern.
   const delim = ['%', '#', '|', '@', '~'].find((d) => !pattern.includes(d))!;
   const args = ['-n', ...(flavor === 'ere' ? ['-E'] : []), `\\${delim}${pattern}${delim}p`];
-  return execFileSync('sed', args, { input: text }).toString().split('\n').filter(Boolean);
+  return run('sed', args, { input: text, check: true }).stdout.toString().split('\n').filter(Boolean);
 }
 
 const cases: [string, 'bre' | 'ere' | 'pcre'][] = [
