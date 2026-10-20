@@ -1643,7 +1643,7 @@ function extendedRegex(src: string): string {
   let inClass = false;
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
-    if (c === '\\') { out += c + (src[++i] ?? ''); continue; }
+    if (c === '\\') { out += src.slice(i, i + 2); i++; continue; }
     if (inClass) { out += c; if (c === ']') inClass = false; continue; }
     if (c === '[') { inClass = true; out += c; continue; }
     if (/\s/.test(c)) continue;
@@ -1664,7 +1664,7 @@ export interface JqFlags {
 
 /** The sample file of a slurped example: the values the filter's array is made of, one per line. */
 export function slurpLines(input: Json): string[] {
-  return (Array.isArray(input) ? input : [input]).map(toJson);
+  return (input as Json[]).map(toJson);
 }
 
 /**

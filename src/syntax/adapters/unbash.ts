@@ -434,7 +434,7 @@ class Converter {
     let node: Mut;
     if (DECLARATIONS.has(name) && !before.length) node = this.declaration(c, after);
     else if (name === 'unset' && !before.length) node = this.unset(c, after);
-    else if (name === '[' && !before.length) node = this.testCommand(c, after);
+    else if (name === '[' && !before.length && this.text.slice(c.name.pos, c.name.end) === '[') node = this.testCommand(c, after);
     else {
       const last = args.length ? args[args.length - 1] : c.name;
       node = this.node('command', c.pos, Math.max(last.end, c.name.end));
@@ -1067,7 +1067,8 @@ class Converter {
     const n = this.node('if_statement', c.pos, c.end);
     const closed = this.closed(c, 'fi');
     const inner = this.inner(c, 'fi', limit);
-    this.list(n, c.clause, inner);
+    // The condition does not reach into the part after it (a `(` that is never closed would read `then` and on).
+    this.list(n, c.clause, c.then.commands.length ? Math.min(inner, c.then.pos) : inner);
     this.list(n, c.then, inner);
     const clauseEnd = c.clause.end;
     const thenKw = this.find('then', clauseEnd, c.then.commands.length ? c.then.pos : inner);
@@ -1085,7 +1086,7 @@ class Converter {
     c.elif.forEach((e, i) => {
       const next = starts[i + 1] ?? (closed ? c.end - 2 : inner);
       const en = this.node('elif_clause', e.pos, Math.min(e.end, next), null, n);
-      this.list(en, e.clause, inner);
+      this.list(en, e.clause, e.then.commands.length ? Math.min(inner, e.then.pos) : inner);
       this.list(en, e.then, inner);
       this.fill(en);
       if (this.find('then', e.clause.end, e.then.commands.length ? e.then.pos : next) < 0 && !stopsAfter(e.clause.end)) this.missing(en, 'then', e.clause.end);
