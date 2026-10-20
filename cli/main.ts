@@ -172,7 +172,7 @@ function readInputs(o: Options): Input[] {
 // ---- Output -----------------------------------------------------------------------------------
 
 const ANSI: Partial<Record<Token['kind'], string>> = {
-  command: '34', builtin: '34', function: '34',
+  command: '34', subcommand: '34', builtin: '34', function: '34',
   option: '33', redirect: '33', pattern: '33',
   argument: '32', string: '32', number: '32',
   operator: '35', keyword: '35', block: '35', test: '35',

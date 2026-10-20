@@ -134,7 +134,7 @@ code {
   border-radius: 3px;
 }
 
-.kind-command, .kind-builtin, .kind-function { color: var(--c-command); }
+.kind-command, .kind-subcommand, .kind-builtin, .kind-function { color: var(--c-command); }
 .kind-option { color: var(--c-option); }
 .kind-argument, .kind-string, .kind-number { color: var(--c-argument); }
 .kind-operator, .kind-keyword, .kind-block, .kind-test { color: var(--c-operator); }

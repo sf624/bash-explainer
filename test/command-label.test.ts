@@ -63,7 +63,7 @@ describe('the label of a command', () => {
     const src = 'git commit -m x';
     const t = explain(src).items[0];
     assert.strictEqual(t.label, 'git');
-    assert.deepStrictEqual(t.children.map((c) => [c.kind, c.label]), [['command', 'commit'], ['option', '-m'], ['argument', 'x']]);
+    assert.deepStrictEqual(t.children.map((c) => [c.kind, c.label]), [['subcommand', 'commit'], ['option', '-m'], ['argument', 'x']]);
     assert.strictEqual(covered(src, t), src);
     assert.match(t.summary!, /^git commit: /);
   });
