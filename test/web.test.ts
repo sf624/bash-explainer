@@ -83,7 +83,8 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await page.locator('#dev-link').isVisible(), true);
     await page.locator('#lang').selectOption('ja');
     await page.locator('.cm-content').click();
-    await page.keyboard.type('\necho NEXTMARK');
+    await page.keyboard.press('Enter');
+    await page.keyboard.insertText('echo NEXTMARK');
     await page.locator('#channel').selectOption('next');
     await page.waitForURL(`${base}next/**`);
     await until('the typed script', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
@@ -277,7 +278,9 @@ describe('the web page in a browser', function () {
     const editor = page.locator('.cm-content');
     await editor.click();
     await page.keyboard.press('Control+End');
-    await page.keyboard.type(`\necho "${MARKER}" | tr a-z A-Z`);
+    // Typed key by key, the keys could arrive out of order in CI ("ecret…" with the "s" at the end).
+    await page.keyboard.press('Enter');
+    await page.keyboard.insertText(`echo "${MARKER}" | tr a-z A-Z`);
     await until('the typed line explained', text('#line'), (t) => t.includes(MARKER));
 
     // A worked example, edited: the sed line of the sample (test/fixtures/sample.sh).
