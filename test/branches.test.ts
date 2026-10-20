@@ -667,7 +667,7 @@ describe('host files: branches no other test takes', () => {
 
 describe('jq runner: what it gives up on, and what newer jq releases do', () => {
   it('gives up on syntax and functions it does not run', () => {
-    for (const f of ['1 )', '"\\q"', '.a ?// 1', 'f(1 2)', ')', '{"a\\(1)"}', '{(1)}', '{a: .b | .}', '{1: 2}', '{a b}', 'reduce .[] as [$a] (0; .)', '[range(200000)] | map(. + 1) | length', '@foo', '(1) |= 2',
+    for (const f of ['1 )', '"\\q"', '.a ?// 1', 'f(1 2)', ')', '{"a\\(1)"}', '{(1)}', '{a: .b | .}', '{1: 2}', '{a b}', 'reduce .[] as [$a] ?// $b (0; .)', 'label $a | try break $a', '[range(200000)] | map(. + 1) | length', '@foo', '(1) |= 2',
       '(.[[0]]) |= 1', '(.[1:]) |= .', 'del(.[1:])', '.[1:] = [1]', '.[] |= empty', '.[0] = (1, 2)', '.[0] += (1, 2)', 'test("a"; "q")', 'foo', 'def f($a): $a; f(1, 2)', 'ltrimstr("a", "b")',
       'input', '$__loc__ | .x | input', '.a |', '(1', '(map(.)) |= 1', 'getpath([{"start": 1, "end": null}])', '(.[0] | input)?', '.[input:]?', 'try input', 'reduce .[] as $x 0', 'setpath([{"start": 1, "end": null}]; 1)']) {
       assert.strictEqual(runJq(f, [1, 2]), undefined, f);

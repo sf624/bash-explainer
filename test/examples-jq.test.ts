@@ -90,7 +90,7 @@ describe('jq evaluator', () => {
   }
 
   it('declines what it cannot run', () => {
-    for (const f of ['input', 'now', '$ENV.HOME', 'tostream', '. as [$a, $b] | $a', 'label $out | 1']) {
+    for (const f of ['input', 'now', '$ENV.HOME', 'tostream', '. as [$a, $b] ?// $c | 1 | reduce . as [$x] ?// $y (0; .)', '$nothing']) {
       assert.strictEqual(runJq(f, null), undefined, f);
     }
   });

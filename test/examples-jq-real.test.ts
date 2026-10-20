@@ -82,6 +82,17 @@ const pairs: [string, Json][] = [
   ['test("v a"; "x"), test("va"; "x"), test("v #c\\n a"; "x"), test("[ ]a"; "x"), test("a\\\\ b"; "x")', 'va'], ['test("v a"; "x"), test("[ ]a"; "x"), test("a\\\\ b"; "x")', 'v a'],
   ['index("b"), indices("b")', { a: 'b' }], ['indices(1)', { a: 1 }], ['index(1)', true], ['indices("b")', true], ['indices("b")', 3], ['indices("")', 'abc'], ['index(""), rindex("")', 'abc'],
   ['indices(1)', 'abc'], ['fromjson', 5], ['fromjson', { a: 1 }], ['fromjson', 'nan'], ['fromjson', 'abc'], ['fromjson', '[1,'],
+  // Destructuring, `?//` and label/break.
+  ['.[] as [$a, $b] | $a + $b', [[1, 2], [3, 4]]], ['.[] as [$a, [$b]] | [$a, $b]', [[1, [2]], [3, [4]]]], ['. as [$a, $b] | [$b, $a]', [1]],
+  ['. as {a: $x, b: [$y]} | [$x, $y]', { a: 1, b: [2] }], ['. as {$a, $b} | [$a, $b]', { a: 1 }], ['. as {"a": $x} | $x', { a: 5 }],
+  ['. as {("a", "b"): $x} | $x', { a: 1, b: 2 }], ['. as {a: $x, $a} | [$x, $a]', { a: 1 }], ['. as [$a] | $a', null], ['. as {a: $x} | $x', null],
+  ['. as [$a] | $a', { a: 1 }], ['. as {a: $x} | $x', [1]], ['. as {$a: [$b]} | [$a, $b]', { a: [3] }],
+  ['reduce .[] as [$a, $b] (0; . + $a * $b)', [[1, 2], [3, 4]]], ['[foreach .[] as {n: $n} (0; . + $n; [., $n])]', [{ n: 1 }, { n: 2 }]],
+  ['.[] as [$a] ?// $a | [$a]', [[1], 2]], ['[.[] as [$a] ?// $a | $a]', [[3], 4]], ['. as [$a] ?// $b | [$a, $b]', [1]], ['. as {a: $a} ?// [$a] | $a', [7]],
+  ['label $out | .[] | if . > 2 then ., break $out else . end', [1, 2, 3, 4]], ['[label $f | .[] | ., (select(. == 2) | break $f)]', [1, 2, 3]],
+  ['[.[] | label $x | (., break $x)]', [1, 2]], ['label $a | label $b | 1, break $a, 2', null], ['try (label $a | break $a) catch "caught"', null],
+  ['[label $a | (1, 2) | ., (select(. == 1) | break $a)]', null],
+  ['break $x', null],
   ['map(type)', [0, -0]], ['.[] | numbers', [1.5]], ['ltrimstr("x")', null],
 ];
 

@@ -255,6 +255,52 @@ class JqParser {
     return { start, end, kind, explanation, children, short };
   }
 
+  /** A destructuring pattern after `as`: `$x`, `[$a, $b]`, `{k: $v}`, or alternatives joined by `?//`. */
+  private patterns(): Lex & { vars: string[]; plain: boolean } {
+    const vars: string[] = [];
+    const first = this.pattern(vars);
+    let end = first.end;
+    let alternatives = false;
+    while (this.peek('?//')) {
+      this.p++;
+      alternatives = true;
+      end = this.pattern(vars).end;
+    }
+    return { type: 'var', text: this.src.slice(first.start, end), start: first.start, end, vars: [...new Set(vars)], plain: first.plain && !alternatives };
+  }
+
+  private pattern(vars: string[]): { start: number; end: number; plain: boolean } {
+    const t = this.next();
+    if (t.type === 'var') {
+      vars.push(t.text);
+      return { start: t.start, end: t.end, plain: true };
+    }
+    if (t.text !== '[' && t.text !== '{') throw new ParseError(t.start, 'expected a variable or a pattern');
+    let depth = 1;
+    let parens = 0;
+    let end = t.end;
+    while (depth > 0) {
+      const u = this.next();
+      end = u.end;
+      if (u.type === 'var' && parens === 0) vars.push(u.text);
+      else if (u.text === '[' || u.text === '{') depth++;
+      else if (u.text === ']' || u.text === '}') depth--;
+      else if (u.text === '(') parens++;
+      else if (u.text === ')') parens--;
+    }
+    return { start: t.start, end, plain: false };
+  }
+
+  private patternNode(pat: Lex & { vars: string[]; plain: boolean }, each = false): Node {
+    const { s } = this;
+    const names = pat.vars.map((v) => `\`${v}\``).join(s('、', ', '));
+    if (pat.plain) return this.node(pat.start, pat.end, 'variable', each ? s(`各値が入る変数 \`${pat.text}\``, `Each value is bound to \`${pat.text}\``) : s(`変数 \`${pat.text}\``, `Variable \`${pat.text}\``));
+    const alt = pat.text.includes('?//');
+    return this.node(pat.start, pat.end, 'variable', s(
+      `${each ? '各値を' : ''}分解するパターン \`${pat.text}\`: 値の中身を取り出して ${names || '（変数なし）'} に入れる${alt ? '（`?//` で区切った形を順に試し、合うものを使う。使われなかった側の変数は null）' : ''}`,
+      `Destructuring pattern \`${pat.text}\`${each ? ' for each value' : ''}: takes the value apart into ${names || '(no variables)'}${alt ? ' (the forms joined by `?//` are tried in turn; variables of the others are null)' : ''}`));
+  }
+
   private opNode(t: Lex, explanation: string): Node {
     return this.node(t.start, t.end, 'operator', `\`${t.text}\`: ${explanation}`);
   }
@@ -275,7 +321,7 @@ class JqParser {
     const as = this.peek('as');
     if (as) {
       this.p++;
-      const pat = this.next();
+      const pat = this.patterns();
       // yq: `expr as $x ireduce (init; update)`.
       const ired = this.dialect === 'yq' ? this.peek('ireduce') : undefined;
       if (ired) {
@@ -289,7 +335,7 @@ class JqParser {
           `畳み込み: 初期値 \`${this.text(init)}\` から始めて、\`${this.text(left)}\` の各結果を \`${pat.text}\` に入れて \`${this.text(update)}\` で更新していく（jq の \`reduce\` に当たる）`,
           `Fold: start from \`${this.text(init)}\` and update it with \`${this.text(update)}\` for each result of \`${this.text(left)}\` as \`${pat.text}\` (jq's \`reduce\`)`,
         ), [left, this.opNode(as, s('左の結果を変数に入れる', 'binds the result to a variable')),
-          this.node(pat.start, pat.end, 'variable', s(`変数 \`${pat.text}\``, `Variable \`${pat.text}\``)),
+          this.patternNode(pat),
           this.node(ired.start, ired.end, 'keyword', s('`ireduce`: 畳み込み', '`ireduce`: fold')), init, update]);
       }
       const bar = this.expect('|');
@@ -298,7 +344,7 @@ class JqParser {
         `変数束縛: \`${this.text(left)}\` の各結果を \`${pat.text}\` に入れて、\`|\` 以降を実行する`,
         `Binding: run what follows \`|\` with each result of \`${this.text(left)}\` as \`${pat.text}\``,
       ), [left, this.opNode(as, s('左の結果を変数に入れる', 'binds the result to a variable')),
-        this.node(pat.start, pat.end, 'variable', s(`変数 \`${pat.text}\``, `Variable \`${pat.text}\``)),
+        this.patternNode(pat),
         this.opNode(bar, s('以降の式で変数を使える', 'the variable is available from here')), ...(body.isPipe ? body.children : [body])]);
     }
     const bar = this.peek('|');
@@ -589,6 +635,11 @@ class JqParser {
   private call(t: Lex): Node {
     const { s } = this;
     const name = t.text;
+    // `break $out` leaves the `label $out` it names.
+    if (name === 'break' && this.peek()?.type === 'var') {
+      const v = this.next();
+      return this.node(t.start, v.end, 'keyword', s(`\`break ${v.text}\`: \`label ${v.text}\` の範囲をここで抜ける（以降の出力は出ない）`, `\`break ${v.text}\`: leaves the \`label ${v.text}\` scope here (no more outputs from it)`));
+    }
     const lit: Record<string, [string, string]> = { true: ['真偽値 true', 'boolean true'], false: ['真偽値 false', 'boolean false'], null: ['null', 'null'] };
     if (lit[name]) return this.node(t.start, t.end, 'number', s(lit[name][0], lit[name][1]));
     const args: Node[] = [];
@@ -682,7 +733,7 @@ class JqParser {
       case 'foreach': {
         const source = this.postfix();
         this.expect('as');
-        const v = this.next();
+        const v = this.patterns();
         this.expect('(');
         const init = this.pipe();
         this.expect(';');
@@ -698,7 +749,7 @@ class JqParser {
           : s(`\`${this.text(source)}\` の各値を \`${v.text}\` として順に更新し、途中の結果を毎回出力する`, `Foreach: update an accumulator with each value of \`${this.text(source)}\` (as \`${v.text}\`), outputting each step`);
         const kids: Node[] = [
           { ...source, explanation: s('繰り返す値: ', 'Values: ') + source.explanation },
-          this.node(v.start, v.end, 'variable', s(`各値が入る変数 \`${v.text}\``, `Each value is bound to \`${v.text}\``)),
+          this.patternNode(v, true),
           { ...init, explanation: s('初期値（`.` が蓄積値）: ', 'Initial value (`.` is the accumulator): ') + init.explanation },
           { ...update, explanation: s('更新式: ', 'Update: ') + update.explanation },
         ];
@@ -719,6 +770,7 @@ class JqParser {
       }
       case 'label': {
         const name = this.next();
+        if (name.type !== 'var') throw new ParseError(name.start, 'expected a label like $out');
         this.expect('|');
         const body = this.pipe();
         return this.node(t.start, body.end, 'keyword', s(`ラベル \`${name.text}\`: \`break ${name.text}\` で抜けられる範囲`, `Label \`${name.text}\`: \`break ${name.text}\` exits here`), [body]);

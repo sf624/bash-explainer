@@ -29,10 +29,18 @@ type Node =
   | { t: 'object'; entries: { key: Node; value: Node }[] }
   | { t: 'call'; name: string; args: Node[] }
   | { t: 'if'; branches: [Node, Node][]; else?: Node }
-  | { t: 'reduce'; src: Node; v: string; init: Node; update: Node }
-  | { t: 'foreach'; src: Node; v: string; init: Node; update: Node; extract?: Node }
-  | { t: 'as'; src: Node; v: string; body: Node }
+  | { t: 'reduce'; src: Node; pats: Pat[]; init: Node; update: Node }
+  | { t: 'foreach'; src: Node; pats: Pat[]; init: Node; update: Node; extract?: Node }
+  | { t: 'as'; src: Node; pats: Pat[]; body: Node }
+  | { t: 'label'; name: string; body: Node }
+  | { t: 'break'; name: string }
   | { t: 'def'; name: string; params: string[]; body: Node; rest: Node };
+
+/** A destructuring pattern after `as`: `$x`, `[$a, $b]`, `{k: $v, $w}`. */
+type Pat =
+  | { k: 'var'; name: string }
+  | { k: 'arr'; items: Pat[] }
+  | { k: 'obj'; entries: { key: Node; bind?: string; pat?: Pat }[] };
 
 class Parser {
   private p = 0;
@@ -80,16 +88,66 @@ class Parser {
     const l = this.comma();
     if (this.peek('as')) {
       this.p++;
-      const v = this.next();
-      if (v.type !== 'var') throw new Unsupported('destructuring');
+      const pats = this.patterns();
       this.expect('|');
-      return { t: 'as', src: l, v: v.text, body: this.pipe() };
+      return { t: 'as', src: l, pats, body: this.pipe() };
     }
     if (this.peek('|')) {
       this.p++;
       return { t: 'pipe', l, r: this.pipe() };
     }
     return l;
+  }
+
+  /** Patterns joined by `?//`: the first that works is used. */
+  private patterns(): Pat[] {
+    const out = [this.pattern()];
+    while (this.peek('?//')) {
+      this.p++;
+      out.push(this.pattern());
+    }
+    return out;
+  }
+
+  private pattern(): Pat {
+    const t = this.next();
+    if (t.type === 'var') return { k: 'var', name: t.text };
+    if (t.text === '[') {
+      const items: Pat[] = [];
+      for (;;) {
+        items.push(this.pattern());
+        if (this.peek(',')) { this.p++; continue; }
+        this.expect(']');
+        return { k: 'arr', items };
+      }
+    }
+    if (t.text !== '{') throw new Unsupported('pattern');
+    const entries: { key: Node; bind?: string; pat?: Pat }[] = [];
+    for (;;) {
+      const k = this.next();
+      let key: Node;
+      let bind: string | undefined;
+      if (k.type === 'var') {
+        key = { t: 'lit', v: k.text.slice(1) };
+        bind = k.text;
+      } else if (k.type === 'str') {
+        key = { t: 'str', parts: this.stringParts(k) };
+      } else if (k.text === '(') {
+        key = this.pipe();
+        this.expect(')');
+      } else if (k.type === 'ident' || k.type === 'kw') {
+        key = { t: 'lit', v: k.text };
+      } else throw new Unsupported('pattern key');
+      let pat: Pat | undefined;
+      if (this.peek(':')) {
+        this.p++;
+        pat = this.pattern();
+      } else if (!bind) throw new Unsupported('pattern key');
+      entries.push({ key, bind, pat });
+      if (this.peek(',')) { this.p++; continue; }
+      this.expect('}');
+      return { k: 'obj', entries };
+    }
   }
 
   private comma(): Node {
@@ -233,6 +291,7 @@ class Parser {
       case 'ident': {
         if (t.text === 'true' || t.text === 'false') return { t: 'lit', v: t.text === 'true' };
         if (t.text === 'null') return { t: 'lit', v: null };
+        if (t.text === 'break' && this.peek()?.type === 'var') return { t: 'break', name: this.next().text };
         const args: Node[] = [];
         if (this.peek('(') && this.toks[this.p].start === t.end) {
           this.p++;
@@ -365,8 +424,7 @@ class Parser {
       case 'foreach': {
         const src = this.postfix();
         this.expect('as');
-        const v = this.next();
-        if (v.type !== 'var') throw new Unsupported('destructuring');
+        const pats = this.patterns();
         this.expect('(');
         const init = this.pipe();
         this.expect(';');
@@ -377,7 +435,13 @@ class Parser {
           extract = this.pipe();
         }
         this.expect(')');
-        return t.text === 'reduce' ? { t: 'reduce', src, v: v.text, init, update } : { t: 'foreach', src, v: v.text, init, update, extract };
+        return t.text === 'reduce' ? { t: 'reduce', src, pats, init, update } : { t: 'foreach', src, pats, init, update, extract };
+      }
+      case 'label': {
+        const name = this.next();
+        if (name.type !== 'var') throw new Unsupported('label');
+        this.expect('|');
+        return { t: 'label', name: name.text, body: this.pipe() };
       }
       case 'try': {
         const body = this.postfix();
@@ -418,6 +482,13 @@ class JqError extends Error {
   partial: Json[] = [];
   constructor(readonly value: Json) {
     super(typeof value === 'string' ? value : JSON.stringify(value));
+  }
+}
+
+/** `break $name`: leaves the `label $name` it belongs to (not caught by `try` or `?`). */
+class BreakSignal extends JqError {
+  constructor(readonly target: object | undefined) {
+    super('break');
   }
 }
 
@@ -542,8 +613,22 @@ type Path = (string | number | { start: number | null; end: number | null })[];
 interface Env {
   vars: Map<string, Json>;
   funcs: Map<string, { params: string[]; body: Node; env: Env }>;
+  /** The `label`s in scope, by name. */
+  labels?: Map<string, object>;
   /** Closure arguments of the user function being run. */
   closures?: Map<string, { node: Node; env: Env }>;
+}
+
+/** The variable names a list of patterns binds. */
+function patVars(pats: Pat[]): string[] {
+  const names = new Set<string>();
+  const walk = (p: Pat): void => {
+    if (p.k === 'var') names.add(p.name);
+    else if (p.k === 'arr') p.items.forEach(walk);
+    else for (const e of p.entries) { if (e.bind) names.add(e.bind); if (e.pat) walk(e.pat); }
+  };
+  pats.forEach(walk);
+  return [...names];
 }
 
 class Evaluator {
@@ -577,6 +662,7 @@ class Evaluator {
         try {
           return this.ev(n.body, x, env);
         } catch (e) {
+          if (e instanceof BreakSignal) throw new Unsupported('break through try');
           if (!(e instanceof JqError)) throw e;
           return [...e.partial, ...(n.catch ? this.ev(n.catch, e.value, env) : [])];
         }
@@ -652,8 +738,7 @@ class Evaluator {
       case 'reduce': {
         let accs = this.ev(n.init, x, env);
         for (const item of this.ev(n.src, x, env)) {
-          const inner = { ...env, vars: new Map(env.vars).set(n.v, item) };
-          accs = accs.flatMap((a) => this.ev(n.update, a, inner)).slice(-1);
+          for (const inner of this.bindAll(n.pats, item, x, env)) accs = accs.flatMap((a) => this.ev(n.update, a, inner)).slice(-1);
         }
         return accs;
       }
@@ -661,14 +746,25 @@ class Evaluator {
         let accs = this.ev(n.init, x, env);
         const out: Json[] = [];
         for (const item of this.ev(n.src, x, env)) {
-          const inner = { ...env, vars: new Map(env.vars).set(n.v, item) };
-          accs = accs.flatMap((a) => this.ev(n.update, a, inner));
-          for (const a of accs) out.push(...(n.extract ? this.ev(n.extract, a, inner) : [a]));
+          for (const inner of this.bindAll(n.pats, item, x, env)) {
+            accs = accs.flatMap((a) => this.ev(n.update, a, inner));
+            for (const a of accs) out.push(...(n.extract ? this.ev(n.extract, a, inner) : [a]));
+          }
         }
         return out;
       }
       case 'as':
-        return this.ev(n.src, x, env).flatMap((v) => this.ev(n.body, x, { ...env, vars: new Map(env.vars).set(n.v, v) }));
+        return each(this.ev(n.src, x, env), (v) => this.withPatterns(n.pats, v, x, env, (inner) => this.ev(n.body, x, inner)));
+      case 'label': {
+        const target = {};
+        try {
+          return this.ev(n.body, x, { ...env, labels: new Map(env.labels).set(n.name, target) });
+        } catch (e) {
+          if (e instanceof BreakSignal && e.target === target) return e.partial;
+          throw e;
+        }
+      }
+      case 'break': throw new BreakSignal(env.labels?.get(n.name));
       case 'def': {
         const inner: Env = { ...env, funcs: new Map(env.funcs) };
         inner.funcs.set(`${n.name}/${n.params.length}`, { params: n.params, body: n.body, env: inner });
@@ -679,12 +775,51 @@ class Evaluator {
     }
   }
 
+  /** The environments a pattern makes for a value (an object key may give several). */
+  private bind(p: Pat, v: Json, x: Json, env: Env): Env[] {
+    const set = (e: Env, name: string, val: Json): Env => ({ ...e, vars: new Map(e.vars).set(name, val) });
+    switch (p.k) {
+      case 'var': return [set(env, p.name, v)];
+      case 'arr': {
+        if (v !== null && !Array.isArray(v)) throw new JqError(`Cannot index ${typeName(v)} with number`);
+        return p.items.reduce<Env[]>((envs, item, i) => envs.flatMap((e) => this.bind(item, v === null ? null : v[i] ?? null, x, e)), [env]);
+      }
+      case 'obj':
+        return p.entries.reduce<Env[]>((envs, ent) => envs.flatMap((e) => this.ev(ent.key, x, e).flatMap((k) => {
+          if (typeof k !== 'string') throw new JqError(`Cannot index ${typeName(v)} with ${typeName(k)}`);
+          if (v !== null && !isObj(v)) throw new JqError(`Cannot index ${typeName(v)} with "${k}"`);
+          const val = v === null ? null : v[k] ?? null;
+          const bound = ent.bind ? set(e, ent.bind, val) : e;
+          return ent.pat ? this.bind(ent.pat, val, x, bound) : [bound];
+        })), [env]);
+    }
+  }
+
+  /** The environments for a value and a single pattern (`reduce` and `foreach` do not take `?//`). */
+  private bindAll(pats: Pat[], v: Json, x: Json, env: Env): Env[] {
+    if (pats.length > 1) throw new Unsupported('?// in reduce');
+    return this.bind(pats[0], v, x, env);
+  }
+
+  /** Run `f` for each binding of the value; with `?//`, an error in the pattern or in `f` moves on to the next form. */
+  private withPatterns(pats: Pat[], v: Json, x: Json, env: Env, f: (e: Env) => Json[]): Json[] {
+    // Every variable of every form exists; those the form used does not bind are null.
+    const base: Env = pats.length > 1 ? { ...env, vars: new Map([...env.vars, ...patVars(pats).map((n) => [n, null] as [string, Json])]) } : env;
+    for (let i = 0; ; i++) {
+      try {
+        return each(this.bind(pats[i], v, x, base), f);
+      } catch (e) {
+        if (i === pats.length - 1 || !(e instanceof JqError) || e instanceof BreakSignal) throw e;
+      }
+    }
+  }
+
   private opt(optional: boolean | undefined, f: () => Json[]): Json[] {
     if (!optional) return f();
     try {
       return f();
     } catch (e) {
-      if (e instanceof JqError) return [];
+      if (e instanceof JqError && !(e instanceof BreakSignal)) return [];
       throw e;
     }
   }
@@ -817,7 +952,7 @@ class Evaluator {
     try {
       return f();
     } catch (e) {
-      if (optional && e instanceof JqError) return [];
+      if (optional && e instanceof JqError && !(e instanceof BreakSignal)) return [];
       throw e;
     }
   }
@@ -1250,9 +1385,10 @@ class Inferer {
       case 'neg': this.run(n.e, s).set('number'); return new Shape();
       case 'var': return this.vars.get(n.name) ?? new Shape();
       case 'as': {
-        this.vars.set(n.v, this.run(n.src, s));
+        this.bindShapes(n.pats, this.run(n.src, s));
         return this.run(n.body, s);
       }
+      case 'label': return this.run(n.body, s);
       case 'bin': {
         const l = this.run(n.l, s);
         const r = this.run(n.r, s);
@@ -1288,7 +1424,7 @@ class Inferer {
         for (const [c, b] of n.branches) { this.cond(c, s); this.run(b, s); }
         return n.else ? this.run(n.else, s) : s;
       case 'reduce': case 'foreach': {
-        this.vars.set(n.v, this.run(n.src, s));
+        this.bindShapes(n.pats, this.run(n.src, s));
         const acc = new Shape();
         if (n.init.t === 'lit' && typeof n.init.v === 'number') acc.kind = 'number';
         this.run(n.update, acc);
@@ -1297,6 +1433,27 @@ class Inferer {
       case 'call': return this.call(n, s);
       default: return new Shape();
     }
+  }
+
+  /** `. as [$a, $b]` expects an array; `{k: $v}` an object with the field `k`; the variables get the shapes of their places. */
+  private bindShapes(pats: Pat[], s: Shape): void {
+    const walk = (p: Pat, at: Shape): void => {
+      if (p.k === 'var') { this.vars.set(p.name, at); return; }
+      if (p.k === 'arr') {
+        const el = at.arr();
+        at.minLength = Math.max(at.minLength, p.items.length);
+        p.items.forEach((item) => walk(item, el));
+        return;
+      }
+      for (const e of p.entries) {
+        const key = e.key.t === 'lit' && typeof e.key.v === 'string' ? e.key.v : e.key.t === 'str' && e.key.parts.length === 1 && typeof e.key.parts[0] === 'string' ? e.key.parts[0] : undefined;
+        const field = key === undefined ? new Shape() : at.field(key);
+        if (e.bind) this.vars.set(e.bind, field);
+        if (e.pat) walk(e.pat, field);
+      }
+    };
+    if (pats.length === 1) walk(pats[0], s);
+    else for (const name of patVars(pats)) this.vars.set(name, new Shape());
   }
 
   private cond(c: Node, s: Shape): void {
