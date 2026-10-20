@@ -935,6 +935,8 @@ class Converter {
       else if (WORDS.has(m.type) && eaten(from)) m.startIndex--;
       m.endIndex = Math.max(m.startIndex, ends[m.endIndex]);
       m.children.forEach(move);
+      // A parent starts where its first child does, also when that child took in a removed backslash.
+      for (const c of m.children) if (c.startIndex < m.startIndex) m.startIndex = c.startIndex;
     };
     holder.children.forEach((c) => { move(c); this.add(n, c); });
     for (const e of sub.errors) this.errors.push({ ...e, startIndex: moveStart(e.startIndex), endIndex: ends[e.endIndex] });
