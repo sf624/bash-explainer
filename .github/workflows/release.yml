@@ -141,4 +141,5 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      pull-requests: write # the called workflow's jobs ask for less each; this is the most any of them gets
     uses: ./.github/workflows/pages.yml

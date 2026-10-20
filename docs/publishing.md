@@ -69,17 +69,21 @@ The README images are re-recorded by a workflow run by hand, which opens a pull 
 ### 7. The web page (GitHub Pages)
 
 1. In *Settings → Pages → Build and deployment*, set **Source** to **GitHub Actions**. This creates the `github-pages` environment.
-2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy.
+2. In *Settings → Environments → github-pages → Deployment branches and tags*, add a **tag** rule `v*` (next to `main`), so the Release workflow can deploy. Check that `main` is allowed there too (the default): the previews of pull requests (below) deploy from `main`, because they run on `pull_request_target`.
 3. For the first deployment, run the [Web page](../.github/workflows/pages.yml) workflow by hand (*Actions → Web page → Run workflow* on `main`). The page is at <https://sf624.github.io/bash-explainer/>.
 
 After this, pushing a version tag is all a release needs.
 
-#### The two pages
+#### The pages
 
-One Pages deployment holds two builds of the page ([pages.yml](../.github/workflows/pages.yml)):
+One Pages deployment holds all the builds of the page ([pages.yml](../.github/workflows/pages.yml)):
 
 - **The root** (<https://sf624.github.io/bash-explainer/>) is the **latest release**: the highest tag `vX.Y.Z` (found with `git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname`; the moving major tag `v0` is not one). It is built in a separate worktree of that tag, with the tag's own `npm ci` and `scripts/build-web.ts`, so an old release builds as it did.
 - **`/next/`** is the **development version**, built from `main` (`npm run build:web -- --channel=next`). Its page has a banner with the commit, `<meta name="robots" content="noindex">`, and a "Version" switch back to the root.
+- **`/pr/<number>/`** is the **preview of an open pull request** of this repository, built from its head (`BASH_EXPLAINER_CHANNEL=pr BASH_EXPLAINER_PR=<number> npm run build:web`), so that it can be reviewed without checking it out. The page has a banner ("Preview of pull request #N (commit abc1234). Not released.") with links to the pull request and the commit, `noindex`, and a "Version" switch with the entries Release, Development and PR #N. Pull requests from forks, and pull requests to another branch than `main`, get no preview. A pull request that does not build is left out (a warning in the log); the others are deployed.
 
-Each deployment rebuilds both. It runs: after a release (the Release workflow calls it; the new tag is the highest, so it becomes the root), on every push to `main` that changes `web/`, `src/`, `media/`, `package.json`, `package-lock.json`, `scripts/build-web.ts` or the workflow (so `/next/` follows `main`), and by hand. To redeploy, run *Actions → Web page → Run workflow* on `main`. Pages from tags older than the "Version" switch have no link to `/next/` until the next release.
+A deployment replaces the whole site, so each one rebuilds all of them. It runs: after a release (the Release workflow calls it; the new tag is the highest, so it becomes the root), on every push to `main` that changes `web/`, `src/`, `media/`, `package.json`, `package-lock.json`, `scripts/build-web.ts` or the workflow (so `/next/` follows `main`), when a pull request to `main` is opened, updated, reopened or closed (a closed one disappears from the next deployment), and by hand. To redeploy, run *Actions → Web page → Run workflow* on `main`. Pages from tags older than the "Version" switch have no link to `/next/` until the next release.
 
+After a deployment, the `comment` job writes "Web preview: <url> (commit abc1234)" on each pull request that was deployed, in one comment marked `<!-- web-preview -->` that later runs update. When a pull request is closed, the comment says the preview was removed.
+
+Security: the workflow is triggered by `pull_request_target`, so it runs from `main`, never from the pull request, and the `github-pages` environment (which allows `main`) accepts it. The code of a pull request (`npm ci`, its `build:web`) runs only in the `build` job, which has `contents: read` and `pull-requests: read` and no secrets; the checkout does not keep the token, the token is unset before any pull request code runs, and npm uses a separate cache directory, so that code cannot poison the cache of `main`. The `deploy` job runs no pull request code, and the `comment` job (`pull-requests: write`) checks nothing out. Keep it so: anyone who can push a branch to this repository can publish a page under its Pages site.
