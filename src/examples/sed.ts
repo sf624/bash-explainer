@@ -275,7 +275,7 @@ function selected(cmd: Cmd, line: string, no: number, last: boolean, st: RunStat
   } else if (cmd.a1.kind === 'line' && cmd.a1.n === 0) {
     // `0,/re/`: the range starts before line 1, so the regex may end it on line 1.
     hit = no === 1;
-    if (hit) cmd.active = !matches(cmd.a2, line, no, last, st);
+    if (hit) cmd.active = !matches(cmd.a2 as Addr, line, no, last, st); // (the parser allows only a regex here)
   } else if (matches(cmd.a1, line, no, last, st)) {
     hit = true;
     const end = cmd.a2;

@@ -1002,13 +1002,95 @@ export function parseAwk(src: string): Program | undefined {
   }
 }
 
+/** FS (`-F`), `-v name=value` (set before BEGIN) and `name=value` operands (set when awk reaches them, after BEGIN). */
+export interface AwkRunOptions {
+  fs?: string;
+  vars?: Record<string, string>;
+  assigns?: Record<string, string>;
+}
+
+/**
+ * The value of `-v`, `-F` or a `name=value` operand, with its escape sequences processed as awk does
+ * (`\t` is a tab, `\\` a backslash). Undefined for a sequence whose meaning differs between awks.
+ * `regexFs`: other escaped punctuation stays escaped, so `-F '\|'` is a regex matching a bar.
+ */
+export function awkUnescape(s: string, regexFs = false): string | undefined {
+  const simple: Record<string, string> = { '\\': '\\', '"': '"', '/': '/', a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== '\\') { out += s[i]; continue; }
+    const n = s[++i];
+    if (n === undefined) { out += '\\'; break; }
+    const oct = /^[0-7]{1,3}/.exec(s.slice(i));
+    if (oct) { out += String.fromCharCode(parseInt(oct[0], 8)); i += oct[0].length - 1; continue; }
+    if (n in simple) { out += simple[n]; continue; }
+    if (regexFs && /[^A-Za-z0-9]/.test(n)) { out += '\\' + n; continue; }
+    return undefined;
+  }
+  return out;
+}
+
+export interface AwkInvocation extends AwkRunOptions {
+  vars: Record<string, string>;
+  assigns: Record<string, string>;
+  /** The program word (absent with -f). */
+  program?: string;
+  /** Why the example runner cannot follow this command line. */
+  unsupported?: string;
+}
+
+/** Read the options before the program and the `name=value` operands after it. A word that is not literal is undefined. */
+export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
+  const r: AwkInvocation = { vars: {}, assigns: {} };
+  const bad = (why: string) => { r.unsupported ??= why; };
+  let i = 0;
+  let fromFile = false;
+  for (; i < words.length; i++) {
+    const w = words[i];
+    if (w === undefined) { bad('non-literal'); continue; }
+    if (w === '--') { i++; break; }
+    if (w === '-F' || /^-F./.test(w)) {
+      const v = w === '-F' ? words[++i] : w.slice(2);
+      // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
+      const fs = v === undefined ? undefined : awkUnescape(v, true);
+      if (fs === undefined) bad('-F'); else r.fs = fs;
+      continue;
+    }
+    if (w === '-v' || /^-v./.test(w)) {
+      const v = w === '-v' ? words[++i] : w.slice(2);
+      const eq = v?.indexOf('=') ?? -1;
+      const value = v === undefined || eq < 1 ? undefined : awkUnescape(v.slice(eq + 1));
+      if (v === undefined || value === undefined) bad('-v'); else r.vars[v.slice(0, eq)] = value;
+      continue;
+    }
+    if (w === '-f') { fromFile = true; i++; continue; }
+    if (w.startsWith('-')) { bad(`awk ${w}`); continue; }
+    break;
+  }
+  if (!fromFile) r.program = words[i++];
+  let seenFile = false;
+  for (; i < words.length; i++) {
+    const w = words[i];
+    const m = w === undefined ? null : /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
+    if (w === undefined) bad('non-literal');
+    else if (!m) seenFile = true;
+    else if (seenFile) bad('assignment after a file');
+    else {
+      const value = awkUnescape(m[2]);
+      if (value === undefined) bad('assignment'); else r.assigns[m[1]] = value;
+    }
+  }
+  return r;
+}
+
 /** Run an awk program on input lines; undefined if it uses something the runner does not support. */
-export function runAwk(src: string, input: string[], opts: { fs?: string; vars?: Record<string, string> } = {}): string[] | undefined {
+export function runAwk(src: string, input: string[], opts: AwkRunOptions = {}): string[] | undefined {
   const prog = parseAwk(src);
   if (!prog) return undefined;
   const it = new Interp(prog);
   if (opts.fs !== undefined) it.vars.set('FS', opts.fs);
   for (const [k, v] of Object.entries(opts.vars ?? {})) it.vars.set(k, new StrNum(v));
+  const assign = () => { for (const [k, v] of Object.entries(opts.assigns ?? {})) it.vars.set(k, new StrNum(v)); };
   try {
     let exited = false;
     try {
@@ -1020,6 +1102,7 @@ export function runAwk(src: string, input: string[], opts: { fs?: string; vars?:
     const main = prog.rules.filter((r) => !r.begin && !r.end);
     const hasEnd = prog.rules.some((r) => r.end);
     if (!exited && (main.length || hasEnd)) {
+      assign();
       try {
         input.forEach((line, k) => {
           it.vars.set('NR', k + 1);
@@ -1205,13 +1288,13 @@ export interface AwkExample {
 }
 
 /** Make up input lines that fit the program (fields, numbers around thresholds, regex matches) and run it. */
-export function awkExample(src: string, opts: { fs?: string; vars?: Record<string, string> } = {}): AwkExample | undefined {
+export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | undefined {
   const prog = parseAwk(src);
   if (!prog) return undefined;
   const u = analyse(prog);
   const onlyBegin = prog.rules.every((r) => r.begin);
   const fs = opts.fs ?? u.fsAssigned ?? ' ';
-  const sep = fs === ' ' ? ' ' : fs === '\\t' || fs === '\t' ? '\t' : fs.length === 1 ? fs : /^\[(.)/.exec(fs)?.[1] ?? ' ';
+  const sep = fs === ' ' ? ' ' : fs === '\\t' || fs === '\t' ? '\t' : fs.length === 1 ? fs : /^\[(.)/.exec(fs)?.[1] ?? /^\\([^A-Za-z0-9])$/.exec(fs)?.[1] ?? ' ';
   let input: string[];
   if (onlyBegin) {
     input = [];
@@ -1251,7 +1334,7 @@ export function awkExample(src: string, opts: { fs?: string; vars?: Record<strin
     input = grid.map((row) => row.join(sep));
     if (u.counts) input.push(input[0]);
   }
-  const output = runAwk(src, input, { fs: opts.fs, vars: opts.vars });
+  const output = runAwk(src, input, opts);
   if (!output) return undefined;
   return { input, output: output.length > 6 ? [...output.slice(0, 5), '…'] : output };
 }

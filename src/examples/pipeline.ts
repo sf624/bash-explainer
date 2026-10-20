@@ -1,5 +1,5 @@
 /** Run a whole pipeline of supported commands on sample input, keeping every stage's output. */
-import { awkExample, runAwk } from './awk';
+import { awkExample, awkInvocation, runAwk } from './awk';
 import { utf8Length } from './bytes';
 import { perlExample, perlOptions, runPerl } from './perlrun';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './regex';
@@ -150,31 +150,11 @@ function sedArgs(words: (string | undefined)[]): { script: string; quiet: boolea
   return { script: scripts.join('\n'), quiet, extended };
 }
 
-function awkArgs(words: (string | undefined)[]): { program: string; fs?: string; vars: Record<string, string> } {
-  let fs: string | undefined;
-  const vars: Record<string, string> = {};
-  let i = 0;
-  for (; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined) throw new Unsupported('non-literal');
-    if (w === '-F') { fs = words[++i]; continue; }
-    if (/^-F./.test(w)) { fs = w.slice(2); continue; }
-    if (w === '-v' || /^-v./.test(w)) {
-      const v = w === '-v' ? words[++i] : w.slice(2);
-      const eq = v?.indexOf('=') ?? -1;
-      if (!v || eq < 1) throw new Unsupported('-v');
-      vars[v.slice(0, eq)] = v.slice(eq + 1);
-      continue;
-    }
-    if (w === '--') { i++; break; }
-    if (w.startsWith('-')) throw new Unsupported(`awk ${w}`);
-    break;
-  }
-  const program = words[i];
-  if (program === undefined) throw new Unsupported('program');
-  // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
-  if (fs !== undefined) fs = fs.replace(/\\t/g, '\t');
-  return { program, fs, vars };
+function awkArgs(words: (string | undefined)[]): { program: string; fs?: string; vars: Record<string, string>; assigns: Record<string, string> } {
+  const a = awkInvocation(words);
+  if (a.unsupported !== undefined) throw new Unsupported(a.unsupported);
+  if (a.program === undefined) throw new Unsupported('program');
+  return { program: a.program, fs: a.fs, vars: a.vars, assigns: a.assigns };
 }
 
 function runWc(words: (string | undefined)[], input: string[]): string[] {
@@ -213,7 +193,7 @@ export function runner(stage: Stage): Runner | undefined {
     case 'awk': case 'gawk': case 'mawk': {
       const a = awkArgs(w);
       return (input) => {
-        const out = runAwk(a.program, input, { fs: a.fs, vars: a.vars });
+        const out = runAwk(a.program, input, a);
         if (!out) throw new Unsupported('awk');
         return out;
       };
@@ -272,7 +252,7 @@ function sampleFor(stage: Stage, more = 0): string[] | undefined {
     }
     case 'awk': case 'gawk': case 'mawk': {
       const a = awkArgs(w);
-      return awkExample(a.program, { fs: a.fs, vars: a.vars })?.input;
+      return awkExample(a.program, a)?.input;
     }
     case 'perl': {
       const parsed = perlOptions(w);

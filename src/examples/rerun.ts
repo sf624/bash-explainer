@@ -16,7 +16,7 @@ export type RerunSpec =
   | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values' }
   | { kind: 'glob'; pattern: string; mode: GlobMode; opts?: GlobOpts }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
-  | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string> }
+  | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string>; assigns?: Record<string, string> }
   | { kind: 'jq'; filter: string; raw: boolean; join?: boolean; slurp?: boolean; vars: Record<string, Json> }
   | { kind: 'perl'; code: string; opts: PerlOptions }
   | { kind: 'filter'; cmd: string; words: (string | undefined)[] }
@@ -114,7 +114,7 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
       if (spec.highlight) r.marks = input.map((l) => matchMarks(spec.highlight!, l));
       return r;
     }
-    case 'awk': return out(runAwk(spec.program, input, { fs: spec.fs, vars: spec.vars }));
+    case 'awk': return out(runAwk(spec.program, input, spec));
     case 'perl': return out(runPerl(spec.code, spec.opts, input));
     case 'filter': {
       const run = FILTERS[spec.cmd];
