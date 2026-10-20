@@ -1048,6 +1048,14 @@ describe('awk explanations (audit fixes)', () => {
     assert.ok(JSON.stringify(explain("awk '/a/,/b/' f")).includes('Range pattern'));
     assert.ok(JSON.stringify(explain("awk 'substr($1, 1, 2) == \"ab\", $2 > 3' f")).includes('Range pattern'));
   });
+  it('explains $0 assignments, delete and RS=""', () => {
+    const t = JSON.stringify([
+      explain("awk '{ $0 = \"a b c\"; delete a; delete b[1] }' f"),
+      explain("awk 'BEGIN { RS = \"\" } { print $1 }' f"),
+    ]);
+    for (const part of ['splitting the new `$0` with FS again', 'delete every element of the array `a`', 'delete the array element `b[1]`', 'paragraph mode']) assert.ok(t.includes(part), part);
+    assert.ok(JSON.stringify(explain("awk '{ $0 = 1; delete a }' f", 0, 'ja')).includes('すべて削除'));
+  });
   it('labels name=value operands and applies them in the example', () => {
     const e = explain("awk '{print $1,$2}' OFS=, f");
     const t = JSON.stringify(e);

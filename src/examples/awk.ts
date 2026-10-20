@@ -538,7 +538,11 @@ function compare(a: Val, b: Val): number {
 /** C-style printf formatting for %d %i %o %x %X %u %c %s %e %E %f %F %g %G %%. */
 export function sprintf(fmt: string, args: Val[]): string {
   let ai = 0;
-  const nextArg = () => args[ai++];
+  // gawk stops with a fatal error when the format wants more arguments than it got.
+  const nextArg = () => {
+    if (ai >= args.length) throw new Unsupported('not enough arguments');
+    return args[ai++];
+  };
   return fmt.replace(/%([-+ #0]*)(\*|\d+)?(?:\.(\*|\d*))?([diouxXcseEfFgG%])/g, (whole, flags: string, w: string | undefined, p: string | undefined, conv: string) => {
     if (conv === '%') return '%';
     const width = w === '*' ? toNum(nextArg()) : w ? Number(w) : 0;
@@ -547,16 +551,26 @@ export function sprintf(fmt: string, args: Val[]): string {
     let body: string;
     let sign = '';
     switch (conv) {
-      case 'd': case 'i': case 'u': {
+      case 'd': case 'i': {
         const n = Math.trunc(toNum(v));
         sign = n < 0 ? '-' : flags.includes('+') ? '+' : flags.includes(' ') ? ' ' : '';
-        body = String(Math.abs(n));
+        body = prec === 0 && n === 0 ? '' : String(Math.abs(n)); // (a zero precision prints no digits for 0)
         if (prec !== undefined) body = body.padStart(prec, '0');
         break;
       }
-      case 'o': body = Math.trunc(Math.abs(toNum(v))).toString(8); break;
-      case 'x': body = Math.trunc(Math.abs(toNum(v))).toString(16); break;
-      case 'X': body = Math.trunc(Math.abs(toNum(v))).toString(16).toUpperCase(); break;
+      case 'o': case 'x': case 'X': case 'u': {
+        // Unsigned: a negative number prints as its 64-bit two's complement, as in C.
+        const n = Math.trunc(toNum(v));
+        const u = n < 0 ? BigInt.asUintN(64, BigInt(n)) : BigInt(n);
+        body = u.toString(conv === 'u' ? 10 : conv === 'o' ? 8 : 16);
+        if (prec === 0 && u === 0n) body = '';
+        if (conv === 'X') body = body.toUpperCase();
+        if (prec !== undefined) body = body.padStart(prec, '0');
+        // `#`: a leading 0 for octal, 0x for a non-zero hexadecimal number.
+        if (flags.includes('#') && conv === 'o' && body[0] !== '0') body = '0' + body;
+        if (flags.includes('#') && (conv === 'x' || conv === 'X') && u !== 0n) sign = '0' + conv;
+        break;
+      }
       case 'c': body = typeof v === 'number' ? String.fromCharCode(v) : toStr(v).slice(0, 1); break;
       case 's': body = toStr(v); if (prec !== undefined) body = body.slice(0, prec); break;
       default: {
@@ -598,16 +612,29 @@ function toFixedC(n: number, prec: number): string {
   return truncated;
 }
 
+/** toExponential with C's rounding of an exact tie (12345 to 3 digits is 1.234e+04, not 1.235e+4). */
+function toExponentialC(n: number, prec: number): string {
+  const s = n.toExponential(prec);
+  if (prec > 60) return s;
+  const exact = n.toExponential(Math.min(100, prec + 40));
+  const [mant, exp] = exact.split('e');
+  if (s.split('e')[1] !== exp) return s; // the carry made the last digit 0
+  const digits = mant.replace('.', '');
+  if (!/^50*$/.test(digits.slice(prec + 1))) return s;
+  if (Number(digits[prec]) % 2 === 1) return s;
+  return digits.slice(0, 1) + (prec ? '.' + digits.slice(1, prec + 1) : '') + 'e' + exp;
+}
+
 function formatFloat(n: number, conv: string, prec: number, alt: boolean): string {
   const upper = conv === conv.toUpperCase();
   let s: string;
   if (conv === 'f' || conv === 'F') s = toFixedC(n, prec);
-  else if (conv === 'e' || conv === 'E') s = expFix(n.toExponential(prec));
+  else if (conv === 'e' || conv === 'E') s = expFix(toExponentialC(n, prec));
   else {
     const p = prec === 0 ? 1 : prec;
     const e = n === 0 ? 0 : Math.floor(Math.log10(n));
     if (e < -4 || e >= p) {
-      s = expFix(n.toExponential(p - 1));
+      s = expFix(toExponentialC(n, p - 1));
       if (!alt) s = s.replace(/\.?0+e/, 'e');
     } else {
       s = toFixedC(n, Math.max(0, p - 1 - e));
@@ -675,6 +702,8 @@ class Interp {
       this.rebuild();
       return;
     }
+    // The runner reads lines: another record separator, or a number-to-string format, would change what it shows.
+    if ((name === 'RS' && toStr(v) !== '\n') || name === 'CONVFMT') throw new Unsupported(name);
     this.vars.set(name, v);
   }
 
@@ -845,7 +874,8 @@ class Interp {
       }
       case 'index': return toStr(v(0)).indexOf(toStr(v(1))) + 1;
       case 'split': {
-        if (args[1]?.k !== 'var') throw new Unsupported('split target');
+        // (The 4th argument, an array for the separators, is GNU awk only.)
+        if (args[1]?.k !== 'var' || args.length > 3) throw new Unsupported('split target');
         const sep = args.length > 2 ? (args[2].k === 're' ? this.regexOf(args[2]) : toStr(v(2))) : toStr(this.vars.get('FS'));
         const parts = this.split(toStr(v(0)), sep);
         const arr = this.array(args[1].name);
@@ -1090,6 +1120,8 @@ export function runAwk(src: string, input: string[], opts: AwkRunOptions = {}): 
   const it = new Interp(prog);
   if (opts.fs !== undefined) it.vars.set('FS', opts.fs);
   for (const [k, v] of Object.entries(opts.vars ?? {})) it.vars.set(k, new StrNum(v));
+  // (-v RS=… and RS=… operands are set directly, without setVar.)
+  for (const o of [opts.vars, opts.assigns]) if (o && ('CONVFMT' in o || ('RS' in o && o.RS !== '\n'))) return undefined;
   const assign = () => { for (const [k, v] of Object.entries(opts.assigns ?? {})) it.vars.set(k, new StrNum(v)); };
   try {
     let exited = false;

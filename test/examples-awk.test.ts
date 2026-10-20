@@ -108,6 +108,16 @@ describe('awk example input', () => {
     }
   });
 
+  it('gives up where gawk stops or differs', () => {
+    for (const p of ['BEGIN { printf "%s %s\\n", "a" }', 'BEGIN { n = split("a,b", x, ",", seps); print n }', 'BEGIN { RS = "" } { print $1 }', 'BEGIN { RS = "[ae]" } { print }', 'BEGIN { CONVFMT = "%.2g"; print 3.14159 "" }']) {
+      assert.strictEqual(awkExample(p), undefined, p);
+    }
+    assert.strictEqual(runAwk('{ print }', ['a'], { vars: { RS: '' } }), undefined);
+    assert.strictEqual(runAwk('{ print }', ['a'], { assigns: { CONVFMT: '%d' } }), undefined);
+    assert.deepStrictEqual(runAwk('{ print }', ['a'], { vars: { RS: '\n' } }), ['a']);
+    assert.deepStrictEqual(runAwk('BEGIN { RS = "\\n" } { print }', ['a']), ['a']);
+  });
+
   it('formats like C printf', () => {
     assert.strictEqual(sprintf('%5.2f|%-4d|%03d|%x|%c|%.3s|%e|%g|%g', [3.14159, 7, 5, 255, 65, 'abcdef', 1234.5, 0.0001234, 1e7]), ' 3.14|7   |005|ff|A|abc|1.234500e+03|0.0001234|1e+07');
   });
