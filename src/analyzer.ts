@@ -1492,7 +1492,9 @@ export class Analyzer {
       // A builtin reads options up to its first operand: `printf '%d' -0` and `echo a -n` take `-0` and `-n` as values.
       // `echo` only knows `-n`, `-e` and `-E` (alone or joined); any other word, `-x` or `-nx`, is text to print.
       const echoText = cmdName === 'echo' && !/^-[neE]+$/.test(text);
-      const optLike = !endOfOpts && !(doc?.builtin && posIndex > 0) && !echoText && (isPlainWord(a) || quotedLongOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
+      // `-F'|'`, `-d','`, `-e's/a/b/'`: a short option with its value glued on, partly quoted.
+      const quotedShortOpt = a.type === 'concatenation' && glueOption(doc, a) !== undefined;
+      const optLike = !endOfOpts && !(doc?.builtin && posIndex > 0) && !echoText && (isPlainWord(a) || quotedLongOpt || quotedShortOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
       if (optLike) {
         i = this.option(doc, args, i, cmdName, out);
         continue;
@@ -2832,8 +2834,10 @@ export class Analyzer {
       return last;
     }
 
-    // Combined short options: `-rn`, `-euo pipefail`, `-n5`.
-    const letters = text.slice(1);
+    // Combined short options: `-rn`, `-euo pipefail`, `-n5`. In `-F'|'` only the plain part before the quote holds letters;
+    // the value is the rest of the word, and its text is what is left after quote removal.
+    const glued = a.type === 'concatenation' ? literalContent(a) : undefined;
+    const letters = a.type === 'concatenation' ? a.namedChildren[0].text.slice(1) : text.slice(1);
     const parts: Token[] = [];
     let last = i;
     const col = a.startPosition.column;
@@ -2855,21 +2859,24 @@ export class Analyzer {
       }
       if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
       parts.push(sub(at, at + 1, 'option', inv(flag, this.optText(opt)), flag));
+      const attached = k + 1 < letters.length || a.type === 'concatenation';
       if (opt.attachedOnly) {
         // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
-        if (k + 1 < letters.length) {
-          const val = letters.slice(k + 1);
+        if (attached) {
+          const val = text.slice(k + 2);
           const trap = /^[a-zA-Z]/.test(val) && opts['-' + val[0]] && this.s(`。注意: \`${val}\` は別のオプションではなく \`${flag}\` の値として扱われる`, `. Note: \`${val}\` is taken as the value of \`${flag}\`, not as more options`);
           parts.push(sub(at + 1, text.length, 'argument', this.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || ''), val));
         }
         break;
       }
       if (opt.arg) {
-        if (k + 1 < letters.length) {
-          const val = letters.slice(k + 1);
-          const valTok = sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``), val);
+        if (attached) {
+          const raw = text.slice(k + 2);
+          const val = glued ? glued.text.slice(k + 2) : raw;
+          const valTok = sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : ''), raw);
           // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
-          const emb = opt.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: at + 1 }, opt.lang, a) : undefined;
+          const emb = opt.lang && glued ? this.embeddedText({ text: val, offsets: glued.offsets!.slice(k + 2) }, opt.lang, a)
+            : opt.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: at + 1 }, opt.lang, a) : undefined;
           if (emb) {
             valTok.children = emb.tokens;
             if (emb.note) valTok.explanation += ` — ${emb.note}`;
@@ -3957,6 +3964,18 @@ function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined
     return { text, offsets };
   }
   return undefined;
+}
+
+/**
+ * `-F'|'`: a word made of a plain `-X` part and quoted parts, where the option `-X` of the command
+ * takes a value. Returns the option's letter, or undefined when the word is not such an option.
+ */
+function glueOption(doc: CommandDoc | undefined, a: SyntaxNode): string | undefined {
+  const first = a.namedChildren[0];
+  if (!doc?.options || first.type !== 'word' || !/^-[A-Za-z0-9]+$/.test(first.text)) return undefined;
+  const flag = '-' + first.text.slice(-1);
+  const opt = doc.options[flag];
+  return opt && (opt.arg || opt.attachedOnly) ? flag : undefined;
 }
 
 /** Whether `echo` reads backslash escapes: its last `-e` or `-E` among the leading options decides. */
