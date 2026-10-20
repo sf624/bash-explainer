@@ -6,6 +6,7 @@ import type { SyntaxNode } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer';
 import { corpus, invariants } from './support/corpus';
+import { soundness } from './support/fuzz';
 
 // The unbash adapter builds the model of a script. The first part holds the expected trees of the inputs
 // that tree-sitter (the parser used before) read wrongly, the invariants of the trees of the fixtures and
@@ -727,6 +728,18 @@ describe('unbash adapter: backquotes with escapes', () => {
     const t = tree('x="`echo \\"q\\"`"');
     assert.deepEqual(invariants(t), []);
     assert.deepEqual(types(t.root, 'string_content').map((c) => c.text), ['q']);
+  });
+  it('an escaped backslash at the start of the script stays inside the substitution', () => {
+    // bash: `\\` runs the command `\`; the backslash pair is one word, and the parents start with it.
+    for (const src of ['echo `\\\\`echo x\\\\``', 'echo `a\\\\`b`', 'x=`\\\\``']) {
+      const t = tree(src);
+      assert.deepEqual(soundness(t), [], src);
+      const sub = types(t.root, 'command_substitution')[0];
+      const cmd = sub.children.find((c) => c.type === 'command')!;
+      assert.ok(cmd.startIndex >= sub.startIndex + 1 && cmd.endIndex <= sub.endIndex - 1, src);
+    }
+    const t = tree('echo `\\\\`echo x\\\\``');
+    assert.deepEqual(types(t.root, 'command_name').filter((c) => c.startIndex === 6).map((c) => c.text), ['\\\\']);
   });
   it('an unclosed one, with escapes', () => {
     const t = tree('echo `a \\`b');
