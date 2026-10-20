@@ -88,7 +88,8 @@ ul#tree {
   display: flex;
   gap: 0.6rem;
   align-items: baseline;
-  padding: 0.15rem 0.4rem;
+  /* The same space after the line as beside an example (0.7rem). */
+  padding: 0.15rem 0.4rem 0.15rem 0.7rem;
   border-left: 3px solid currentColor;
   margin: 0.15rem 0;
   border-radius: 2px;
