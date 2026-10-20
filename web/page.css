@@ -300,3 +300,123 @@ footer p {
 .dev-link {
   color: var(--vscode-descriptionForeground);
 }
+
+/* ?view=panel: the explanation panel only, the whole window (the compare page puts it in a frame). */
+html.view-panel,
+html.view-panel body {
+  height: 100%;
+}
+
+html.view-panel .top,
+html.view-panel .toolbar,
+html.view-panel .banner,
+html.view-panel footer,
+html.view-panel .noscript,
+html.view-panel .source {
+  display: none;
+}
+
+html.view-panel .split {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html.view-panel #panel {
+  height: 100%;
+}
+
+/* compare.html: the script, then the two copies' panels, each under the name of its version. */
+.compare {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-height: 0;
+}
+
+.compare > section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.compare > section + section {
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+.compare .source {
+  border-right: 0;
+}
+
+.copy-head {
+  margin: 0;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--page-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.copy iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--vscode-editor-background);
+}
+
+.copy iframe[hidden],
+.copy-note[hidden] {
+  display: none;
+}
+
+.copy-note {
+  margin: 0;
+  padding: 1rem;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Narrower than 1000px: the script on top, the two panels side by side below it; on a phone, one under the other. */
+@media (max-width: 1000px) {
+  html:has(.compare),
+  html:has(.compare) body {
+    height: auto;
+  }
+
+  .compare {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .compare .source {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--vscode-panel-border);
+  }
+
+  .compare > section + section {
+    border-left: 0;
+  }
+
+  .compare .copy + .copy {
+    border-left: 1px solid var(--vscode-panel-border);
+  }
+
+  .compare #editor {
+    height: 40vh;
+    flex: none;
+  }
+
+  .compare .copy iframe {
+    flex: none;
+    height: 75vh;
+  }
+}
+
+@media (max-width: 760px) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compare .copy + .copy {
+    border-left: 0;
+    border-top: 1px solid var(--vscode-panel-border);
+  }
+}

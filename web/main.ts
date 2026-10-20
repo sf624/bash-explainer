@@ -1,4 +1,7 @@
 // The web page: a script editor on the left, the extension's explanation panel on the right.
+// The same script also runs two other pages of the site:
+//  - `?view=panel` (panel mode): only the explanation panel, filled by the page around it (the compare page);
+//  - compare.html (compare mode): the editor and two such frames, this copy's and another copy's.
 // Everything runs here, in the browser; the script is never sent anywhere.
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, StreamParser, syntaxHighlighting } from '@codemirror/language';
@@ -60,6 +63,13 @@ const TEXT = {
     pr: 'PR',
     replace: 'Replace your script with the sample?',
     line: (n: number) => `Ln ${n}`,
+    compareLink: { pr: 'Compare with main', next: 'Compare with release' },
+    compareTagline: 'Compares this version with another, side by side. Type or move the cursor on the left: both panels follow.',
+    editor: 'Script',
+    back: 'Back to the editor',
+    loading: 'Loading…',
+    cannot: 'This version cannot be compared (it has no panel-only view).',
+    otherNames: { release: 'Release', next: 'main' },
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
   },
   ja: {
@@ -89,9 +99,36 @@ const TEXT = {
     pr: 'PR',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
     line: (n: number) => `${n} 行目`,
+    compareLink: { pr: 'main と比較', next: 'リリース版と比較' },
+    compareTagline: 'このバージョンを別のバージョンと並べて比べます。左で入力やカーソル移動をすると、2つのパネルが追従します。',
+    editor: 'スクリプト',
+    back: 'エディタに戻る',
+    loading: '読み込み中…',
+    cannot: 'このバージョンは比較できません（パネルだけの表示がありません）。',
+    otherNames: { release: 'リリース版', next: 'main' },
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
   },
 };
+
+/** compare.html: the editor and two frames, each holding a copy of this page in panel mode. */
+const compare = document.body.dataset.page === 'compare';
+/** `?view=panel`: the explanation panel only. The script, the cursor and the rest come from the page around it. */
+const panelOnly = !compare && new URLSearchParams(location.search).get('view') === 'panel';
+
+/** What a copy of the page in panel mode says about itself when it is ready. */
+interface CopyInfo { channel: 'release' | 'next' | 'pr'; version: string; pr: string; commit: string }
+/** What the compare page sends to a copy in panel mode: everything the page would have read from its own editor. */
+interface CopyState {
+  text: string; kind: Kind; line: number; col: number; lang: Lang; theme: Theme; choice: { shell?: Shell; yq?: string };
+}
+/** From the compare page to a copy. */
+type ToCopy = { type: 'bx-state' } & CopyState;
+/** From a copy to the compare page: the handshake, then what a click in its panel asks of the editor. */
+type FromCopy =
+  | ({ type: 'bx-ready' } & CopyInfo)
+  | { type: 'bx-reveal'; span: Span }
+  | { type: 'bx-highlight'; span: Span | null }
+  | { type: 'bx-choice'; key: 'shell' | 'yq'; value: string };
 
 const THEMES = ['auto', 'light', 'dark'] as const;
 type Theme = (typeof THEMES)[number];
@@ -238,9 +275,10 @@ const view = new EditorView({
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       languageMode.of(modeFor(kind)), syntaxHighlighting(highlightStyle), editorTheme,
-      highlightField, problems, lintGutter(),
+      highlightField, ...(panelOnly ? [] : [problems, lintGutter()]),
       EditorView.updateListener.of((u) => {
-        if (!u.docChanged && !u.selectionSet) return;
+        // In panel mode the page around sends every change as a message, which is handled at once.
+        if (panelOnly || (!u.docChanged && !u.selectionSet)) return;
         clearTimeout(timer);
         timer = setTimeout(updatePanel, u.docChanged ? 150 : 60);
       }),
@@ -261,8 +299,11 @@ function setText(text: string, cursorLine: number): void {
 
 // ---- Panel ----------------------------------------------------------------------------------
 
-const frame = $<HTMLIFrameElement>('panel');
+/** The panel's own frame: none on the compare page, whose frames hold copies of this page. */
+const frame = document.getElementById('panel') as HTMLIFrameElement | null;
 let panelReady = false;
+/** In panel mode: whether the page around has sent the script yet (until then there is nothing to explain). */
+let stateReceived = false;
 
 // The panel says 'ready' when it starts; it may have done so before this script ran.
 function panelLoaded(): void {
@@ -270,14 +311,33 @@ function panelLoaded(): void {
   toPanel({ type: 'theme', theme });
   updatePanel();
 }
-frame.addEventListener('load', panelLoaded);
-if (frame.contentDocument?.readyState === 'complete' && frame.contentWindow?.location.href.endsWith('panel.html')) panelReady = true;
+frame?.addEventListener('load', panelLoaded);
+if (frame?.contentDocument?.readyState === 'complete' && frame.contentWindow?.location.href.endsWith('panel.html')) panelReady = true;
 
 function toPanel(message: unknown): void {
-  if (panelReady) frame.contentWindow?.postMessage(message, location.origin);
+  if (panelReady) frame?.contentWindow?.postMessage(message, location.origin);
 }
 
+/** Starts the panel again (it keeps its quick reference once loaded: needed when the language changes). */
+function reloadPanel(): void {
+  panelReady = false;
+  if (frame) frame.src = 'panel.html';
+}
+
+function toParent(message: FromCopy): void {
+  if (window.parent !== window) window.parent.postMessage(message, location.origin);
+}
+
+/** Shows the theme in the panel, and in the copies on the compare page. */
+function pushTheme(): void {
+  toPanel({ type: 'theme', theme });
+  if (compare) sendState();
+}
+
+/** The line of the cursor changed, or the text, or the settings: the panel (or, on the compare page, both copies) follow. */
 function updatePanel(): void {
+  if (compare) return sendState();
+  if (panelOnly && !stateReceived) return;
   const doc = shellDocument();
   if (!doc) return;
   const line = view.state.doc.lineAt(view.state.selection.main.head).number - 1;
@@ -298,12 +358,20 @@ function focusUnlessTouch(): void {
   if (window.matchMedia('(pointer: fine)').matches) view.focus();
 }
 
+function selectSpan(span: Span): void {
+  const r = spanRange(span);
+  // Bring the start of the token into view, and move sideways only as far as that needs (the
+  // end of a long span, as `scrollIntoView` does, could hide the start of every line).
+  view.dispatch({ selection: { anchor: r.from, head: r.to }, effects: EditorView.scrollIntoView(r.from, { x: 'nearest', y: 'nearest', xMargin: 40 }) });
+  focusUnlessTouch();
+}
+
 function spanRange(span: Span): { from: number; to: number } {
   return { from: pos(view.state, span.start.line, span.start.character), to: pos(view.state, span.end.line, span.end.character) };
 }
 
 window.addEventListener('message', (e) => {
-  if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
+  if (!frame || e.source !== frame.contentWindow || e.origin !== location.origin) return;
   const m = e.data as FromPanel;
   switch (m.type) {
     case 'ready':
@@ -313,20 +381,18 @@ window.addEventListener('message', (e) => {
     case 'reference':
       return toPanel({ type: 'reference', entries: quickReference(lang) });
     case 'override':
+      // The compare page keeps the choice for both copies.
+      if (panelOnly) return toParent({ type: 'bx-choice', key: m.key, value: m.value });
       choice[m.key] = m.value === 'auto' ? undefined : (m.value as Shell);
       updatePanel();
       return recheck();
     case 'highlight':
+      if (panelOnly) return toParent({ type: 'bx-highlight', span: m.span });
       view.dispatch({ effects: setHighlight.of(m.span ? spanRange(m.span) : null) });
       return;
-    case 'reveal': {
-      const r = spanRange(m.span);
-      // Bring the start of the token into view, and move sideways only as far as that needs (the
-      // end of a long span, as `scrollIntoView` does, could hide the start of every line).
-      view.dispatch({ selection: { anchor: r.from, head: r.to }, effects: EditorView.scrollIntoView(r.from, { x: 'nearest', y: 'nearest', xMargin: 40 }) });
-      focusUnlessTouch();
-      return;
-    }
+    case 'reveal':
+      if (panelOnly) return toParent({ type: 'bx-reveal', span: m.span });
+      return selectSpan(m.span);
     case 'copy': {
       if (!shown) return;
       const md = toPlainMarkdown(shown.explanation, view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`);
@@ -335,6 +401,107 @@ window.addEventListener('message', (e) => {
     }
   }
 });
+
+// ---- Panel mode: the page around sends the script ---------------------------------------------
+
+/** Takes the script, the cursor and the settings the compare page sent, and explains the line. */
+function applyState(m: CopyState): void {
+  const newLang: Lang = m.lang === 'ja' ? 'ja' : 'en';
+  const langChanged = newLang !== lang;
+  lang = newLang;
+  kind = KINDS.some((k) => k.kind === m.kind) ? m.kind : 'shell';
+  choice.shell = m.choice?.shell;
+  choice.yq = m.choice?.yq;
+  if (m.text !== view.state.doc.toString()) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: m.text } });
+  view.dispatch({ selection: { anchor: pos(view.state, m.line, m.col) } });
+  stateReceived = true;
+  if (langChanged) return reloadPanel(); // panelLoaded sends the theme and explains the line
+  if (m.theme !== theme) {
+    theme = m.theme;
+    toPanel({ type: 'theme', theme });
+  }
+  updatePanel();
+}
+
+if (panelOnly) {
+  window.addEventListener('message', (e) => {
+    const m = e.data as ToCopy | undefined;
+    if (window.parent === window || e.source !== window.parent || e.origin !== location.origin || m?.type !== 'bx-state') return;
+    if (THEMES.includes(m.theme)) applyState(m);
+  });
+}
+
+// ---- Compare mode: two copies of this page, each showing its explanation ---------------------
+
+/** Which copy to compare with: main from a preview, the release from main, main from the release; `?with=` decides. */
+const withParam = new URLSearchParams(location.search).get('with');
+const otherTarget: 'release' | 'next' = withParam === 'release' || withParam === 'next' ? withParam : __CHANNEL__ === 'next' ? 'release' : 'next';
+/** How long a copy has to answer the handshake. */
+const HANDSHAKE_MS = 4000;
+
+interface Copy { column: HTMLElement; head: HTMLElement; frame: HTMLIFrameElement; note: HTMLElement; info?: CopyInfo; own: boolean }
+const copies: Copy[] = compare ? [true, false].map((own) => {
+  const id = own ? 'this' : 'other';
+  return { own, column: $(`col-${id}`), head: $(`head-${id}`), frame: $<HTMLIFrameElement>(`frame-${id}`), note: $(`note-${id}`) };
+}) : [];
+
+function copyName(c: CopyInfo): string {
+  const t = TEXT[lang];
+  return c.channel === 'pr' ? `PR #${c.pr} (${c.commit})` : c.channel === 'next' ? `main (${c.commit})` : `${t.otherNames.release} v${c.version}`;
+}
+
+function showCopyHeads(): void {
+  const t = TEXT[lang];
+  for (const c of copies) {
+    c.head.textContent = c.info ? copyName(c.info) : c.own ? t.loading : `${t.otherNames[otherTarget]}…`;
+    c.note.textContent = t.cannot;
+  }
+}
+
+function sendState(): void {
+  const head = view.state.selection.main.head;
+  const l = view.state.doc.lineAt(head);
+  const m: ToCopy = {
+    type: 'bx-state', text: view.state.doc.toString(), kind, line: l.number - 1, col: head - l.from, lang, theme,
+    choice: { shell: choice.shell, yq: choice.yq },
+  };
+  for (const c of copies) if (c.info) c.frame.contentWindow?.postMessage(m, location.origin);
+}
+
+if (compare) {
+  window.addEventListener('message', (e) => {
+    const c = copies.find((x) => x.frame.contentWindow === e.source);
+    if (!c || e.origin !== location.origin) return;
+    const m = e.data as FromCopy;
+    switch (m?.type) {
+      case 'bx-ready': {
+        c.info = { channel: m.channel, version: m.version, pr: m.pr, commit: m.commit };
+        c.frame.hidden = false;
+        c.note.hidden = true;
+        showCopyHeads();
+        return sendState();
+      }
+      case 'bx-reveal':
+        return selectSpan(m.span);
+      case 'bx-highlight':
+        view.dispatch({ effects: setHighlight.of(m.span ? spanRange(m.span) : null) });
+        return;
+      case 'bx-choice':
+        choice[m.key] = m.value === 'auto' ? undefined : (m.value as Shell);
+        sendState();
+        return recheck();
+    }
+  });
+  for (const c of copies) {
+    c.frame.hidden = true;
+    c.frame.src = c.own ? './?view=panel' : `${UP}${otherTarget === 'next' ? 'next/' : ''}?view=panel`;
+  }
+  showCopyHeads();
+  // A copy built before panel mode existed (or a page that is not there) never answers: say so.
+  setTimeout(() => {
+    for (const c of copies) if (!c.info) c.note.hidden = false;
+  }, HANDSHAKE_MS);
+}
 
 // ---- Problems list --------------------------------------------------------------------------
 
@@ -363,34 +530,58 @@ function status(text: string, sticky = false): void {
   if (!sticky) statusTimer = setTimeout(() => ($('status').textContent = ''), 6000);
 }
 
+/** Sets the text of an element the page has (the compare page has fewer than the main page). */
+function put(id: string, text: string): void {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+/** Adds a listener to an element the page has. */
+function on(id: string, type: string, fn: (e: Event) => void): void {
+  document.getElementById(id)?.addEventListener(type, fn);
+}
+
+/** Goes to another page of the site with the script in the hash, in the same language and file kind. */
+async function goWithScript(href: string): Promise<void> {
+  const params = new URLSearchParams({ lang, kind, ...(await encodeText(view.state.doc.toString())) });
+  location.href = `${href}#${params}`;
+}
+
 function applyLanguage(): void {
   const t = TEXT[lang];
   document.documentElement.lang = lang;
-  $('tagline').textContent = t.tagline;
-  $('install').textContent = t.install;
-  $('kind-label').textContent = t.kind;
-  $('lang-label').textContent = t.lang;
-  $('sample').textContent = t.sample;
-  $('share').textContent = t.share;
-  $('privacy').textContent = t.privacy;
-  $('notices').textContent = t.notices;
+  put('tagline', compare ? t.compareTagline : t.tagline);
+  put('install', t.install);
+  put('kind-label', t.kind);
+  put('lang-label', t.lang);
+  put('sample', t.sample);
+  put('share', t.share);
+  put('privacy', t.privacy);
+  put('notices', t.notices);
+  put('editor-head', t.editor);
+  put('back', t.back);
+  if (compare) showCopyHeads();
   // The page is built from one version, so it knows its own label only: the release page the version it
   // shows, the development page its commit. The URL decides which is selected.
-  $('theme-label').textContent = t.theme;
+  put('theme-label', t.theme);
   $<HTMLSelectElement>('theme').replaceChildren(...THEMES.map((x) => new Option(t.themes[x], x, false, x === theme)));
-  $('channel-label').textContent = t.version;
-  $<HTMLSelectElement>('channel').replaceChildren(
+  put('channel-label', t.version);
+  $<HTMLSelectElement>('channel')?.replaceChildren(
     new Option(__CHANNEL__ === 'release' ? `${t.release} (v${__VERSION__})` : t.release, 'release', false, __CHANNEL__ === 'release'),
     new Option(__CHANNEL__ === 'next' ? `${t.development}, ${__COMMIT__})` : `${t.development})`, 'next', false, __CHANNEL__ === 'next'),
     // A preview has its own entry, the current one; the other pages do not list previews.
     ...(__CHANNEL__ === 'pr' ? [new Option(`${t.pr} #${__PR__}, ${__COMMIT__}`, 'pr', false, true)] : []),
   );
-  if (__CHANNEL__ !== 'release') {
+  if (!document.getElementById('channel-banner')) {
+    // The compare page has no banner.
+  } else if (__CHANNEL__ !== 'release') {
     const code = Object.assign(document.createElement('code'), { textContent: __COMMIT__ });
     const release = $<HTMLAnchorElement>('banner-release');
     // The pages sit at /, /next/ and /pr/N/.
     release.href = UP;
     release.textContent = t.toRelease;
+    // From a preview, main is the other copy; from main, the release.
+    $('banner-compare').textContent = t.compareLink[__CHANNEL__];
     if (__CHANNEL__ === 'next') {
       // Ja reads "main の abc1234 からビルドしています。": the commit sits in the middle of the sentence.
       $('banner-text').replaceChildren(t.banner + ' ', code, ' ' + t.bannerTail);
@@ -427,15 +618,15 @@ $<HTMLSelectElement>('theme').addEventListener('change', (e) => {
   } catch {
     // The choice then lasts until the page is closed.
   }
-  toPanel({ type: 'theme', theme });
+  pushTheme();
 });
 
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
   lang = (e.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en';
   applyLanguage();
   // The panel keeps its quick reference once loaded: start it again in the new language.
-  panelReady = false;
-  frame.src = 'panel.html';
+  reloadPanel();
+  if (compare) updatePanel();
   recheck();
 });
 
@@ -453,7 +644,7 @@ $<HTMLSelectElement>('kind').addEventListener('change', (e) => {
   recheck();
 });
 
-$('sample').addEventListener('click', () => {
+on('sample', 'click', () => {
   const info = kindInfo(kind);
   const text = view.state.doc.toString();
   if (text.trim() && text !== info.sample && !KINDS.some((k) => k.sample === text) && !confirm(TEXT[lang].replace)) return;
@@ -461,14 +652,23 @@ $('sample').addEventListener('click', () => {
 });
 
 // The other version is another page: go there with the script in the hash, in the same language.
-$<HTMLSelectElement>('channel').addEventListener('change', async (e) => {
+on('channel', 'change', async (e) => {
   const to = (e.target as HTMLSelectElement).value;
   if (to === __CHANNEL__) return;
-  const params = new URLSearchParams({ lang, kind, ...(await encodeText(view.state.doc.toString())) });
-  location.href = `${UP}${to === 'next' ? 'next/' : ''}#${params}`;
+  await goWithScript(`${UP}${to === 'next' ? 'next/' : ''}`);
 });
 
-$('share').addEventListener('click', async () => {
+// The banner's link to the compare page, and the compare page's way back, take the script along too.
+for (const [id, href] of [['banner-compare', 'compare.html'], ['back', './']]) {
+  on(id, 'click', (e) => {
+    const m = e as MouseEvent;
+    if (m.ctrlKey || m.metaKey || m.shiftKey || m.altKey) return;
+    e.preventDefault();
+    void goWithScript(href);
+  });
+}
+
+on('share', 'click', async () => {
   const params = new URLSearchParams({ lang, kind, ...(await encodeText(view.state.doc.toString())) });
   const url = `${location.origin}${location.pathname}#${params}`;
   window.history.replaceState(null, '', url);
@@ -527,13 +727,15 @@ async function inflate(bytes: Uint8Array): Promise<string | undefined> {
 
 async function start(): Promise<void> {
   applyLanguage();
-  $('version').textContent = `Bash Explainer ${__VERSION__}`;
+  put('version', `Bash Explainer ${__VERSION__}`);
   if (shared.deflated) {
     const text = await inflate(shared.deflated);
     if (text !== undefined) setText(text, 1);
   }
   updatePanel();
   recheck();
+  // In panel mode: tell the page around that this copy is ready for a script.
+  if (panelOnly) toParent({ type: 'bx-ready', channel: __CHANNEL__, version: __VERSION__, pr: __PR__, commit: __COMMIT__ });
 }
 
 void start();

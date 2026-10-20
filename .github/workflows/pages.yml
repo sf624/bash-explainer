@@ -206,5 +206,6 @@ jobs:
               continue
             fi
             write_comment "$n" "$marker
-          Web preview: ${PAGE_URL%/}/pr/$n/ (commit ${sha:0:7})"
+          Web preview: ${PAGE_URL%/}/pr/$n/ (commit ${sha:0:7})
+          Compare with main: ${PAGE_URL%/}/pr/$n/compare.html"
           done <<< "$PREVIEWS"

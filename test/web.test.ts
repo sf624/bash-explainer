@@ -236,6 +236,118 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('shows only the explanation panel with ?view=panel, and explains a script posted to it', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    // The page around: a stub that posts a script to the frame and keeps what the frame says.
+    await page.goto(`${base}stub`); // a 404 page of the same origin, with no content security policy
+    await page.evaluate(`window.got = []; window.addEventListener('message', (e) => window.got.push(e.data));
+      document.body.insertAdjacentHTML('beforeend', '<iframe id="f" src="${base}pr/123/?view=panel" style="width:700px;height:500px"></iframe>');`);
+    const ready = await until('the handshake', () => page.evaluate('window.got.find((m) => m.type === "bx-ready") || null') as Promise<Record<string, string> | null>, (m) => !!m);
+    assert.strictEqual(ready!.channel, 'pr');
+    assert.strictEqual(ready!.pr, '123');
+    const f = page.frames().find((x) => x.url().includes('view=panel'))!;
+    assert.strictEqual(await f.locator('.top').isHidden(), true);
+    assert.strictEqual(await f.locator('.toolbar').isHidden(), true);
+    assert.strictEqual(await f.locator('#channel-banner').isHidden(), true);
+    assert.strictEqual(await f.locator('#editor').isHidden(), true);
+    await page.evaluate(`document.getElementById('f').contentWindow.postMessage({ type: 'bx-state', text: 'echo one\\nsort -u a.txt\\n', kind: 'shell', line: 1, col: 0, lang: 'en', theme: 'auto', choice: {} }, location.origin)`);
+    const inner = () => page.frames().find((x) => x.url().endsWith('/pr/123/panel.html') && x !== page.mainFrame())!;
+    await until('the line explained', async () => (await inner()?.locator('#line').textContent().catch(() => '')) ?? '', (t) => t.includes('sort -u'));
+    // The panel fills the frame.
+    const box = await f.locator('#panel').boundingBox();
+    assert.ok(box && box.width >= 699 && box.height >= 499, JSON.stringify(box));
+    // A click on a row asks the page around to select.
+    await inner().locator('.row .label').nth(1).click();
+    const reveal = await until('the reveal', () => page.evaluate('window.got.find((m) => m.type === "bx-reveal") || null') as Promise<{ span: { start: { line: number } } } | null>, (m) => !!m);
+    assert.strictEqual(reveal!.span.start.line, 1);
+    await ctx.close();
+  });
+
+  it('compares a pull request with main: typing goes to both panels, and a click in either selects in the editor', async () => {
+    const ctx = await browser!.newContext({ viewport: { width: 1400, height: 900 } });
+    const page = await ctx.newPage();
+    await page.goto(`${base}pr/123/`);
+    assert.strictEqual(await page.locator('#banner-compare').textContent(), 'Compare with main');
+    await page.locator('#banner-compare').click();
+    await page.waitForURL(`${base}pr/123/compare.html**`);
+    await page.locator('.cm-content').waitFor();
+    const mine = () => page.frames().find((f) => f.url().endsWith('/pr/123/panel.html'));
+    const main = () => page.frames().find((f) => f.url().endsWith('/next/panel.html'));
+    await until('both panels', () => Promise.resolve([mine(), main()]), (fs) => fs.every(Boolean));
+    // Three columns of about the same width.
+    const cols = await page.locator('.compare > section').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+    assert.strictEqual(cols.length, 3);
+    assert.ok(Math.max(...cols) - Math.min(...cols) <= 2, cols.join());
+    await until('the headers', () => page.locator('.copy-head').allInnerTexts(), (t) => /^PR #123 \([0-9a-f]{7}\)$/.test(t[1]) && /^main \([0-9a-f]{7}\)$/.test(t[2]));
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello | tr a-z A-Z');
+    for (const f of [mine, main]) await until('the line explained', async () => (await f()!.locator('#line').textContent().catch(() => '')) ?? '', (t) => t.includes('tr a-z'));
+    // A click on a tree row in either panel selects its token in the editor.
+    for (const [f, text] of [[mine, 'echo'], [main, 'tr']] as const) {
+      await page.keyboard.press('Control+Home');
+      await page.evaluate('window.getSelection().removeAllRanges()');
+      const before = await page.locator('.cm-selectionBackground').count();
+      await f()!.locator('.row .label', { hasText: new RegExp(`^${text}$`) }).first().click();
+      await until(`${text} selected`, () => page.evaluate('document.querySelector(".cm-content").ownerDocument.defaultView.getSelection().toString()') as Promise<string>, (t) => t.trim().startsWith(text) && t.length < 20);
+      void before;
+    }
+    // The editor's own choice of language reaches both.
+    await page.locator('#lang').selectOption('ja');
+    for (const f of [mine, main]) await until('Japanese', async () => (await f()!.locator('#tree').textContent().catch(() => '')) ?? '', (t) => /[ぁ-ん]/.test(t));
+    await ctx.close();
+  });
+
+  it('says so when the other copy of the comparison does not answer, and carries the script over from the page', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    // The release page of the stub has no panel-only view: it is a page that never answers.
+    await page.route(`${base}?view=panel`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>old page</p>' }));
+    await page.goto(`${base}next/`);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo CARRIED');
+    assert.strictEqual(await page.locator('#banner-compare').textContent(), 'Compare with release');
+    await page.locator('#banner-compare').click();
+    await page.waitForURL(`${base}next/compare.html**`);
+    await until('the script', () => page.locator('.cm-content').innerText(), (t) => t.includes('CARRIED'));
+    assert.strictEqual(await page.locator('#note-other').isVisible(), false);
+    await until('the message', () => page.locator('#note-other').isVisible(), (v) => v, 15000);
+    assert.match(await page.locator('#note-other').innerText(), /^This version cannot be compared/);
+    assert.strictEqual(await page.locator('#note-this').isHidden(), true);
+    assert.strictEqual(await page.locator('#frame-other').isHidden(), true);
+    // The same for a page that is not there.
+    await page.unroute(`${base}?view=panel`);
+    await page.route(`${base}?view=panel`, (route) => route.fulfill({ status: 404, body: '' }));
+    await page.reload();
+    await until('the message', () => page.locator('#note-other').isVisible(), (v) => v, 15000);
+    assert.strictEqual(await page.locator('#frame-this').isVisible(), true);
+    await ctx.close();
+  });
+
+  it('draws the compare page without sideways scrolling on a phone, and stacks it below 1000px', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'] });
+    const page = await ctx.newPage();
+    await page.goto(`${base}pr/123/compare.html`);
+    await page.locator('.cm-line').first().waitFor();
+    await until('the headers', () => page.locator('.copy-head').allInnerTexts(), (t) => /^PR #123/.test(t[1]) && /^main/.test(t[2]));
+    assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
+    const tops = await page.locator('.compare > section').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+    assert.ok(tops[0] < tops[1] && tops[1] < tops[2], tops.join());
+    await ctx.close();
+    const wide = await browser!.newContext({ viewport: { width: 900, height: 800 } });
+    const p2 = await wide.newPage();
+    await p2.goto(`${base}pr/123/compare.html`);
+    await p2.locator('.cm-line').first().waitFor();
+    const rects = await p2.locator('.compare > section').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; }));
+    assert.strictEqual(rects[1].top, rects[2].top);
+    assert.ok(rects[0].top < rects[1].top && rects[1].left < rects[2].left, JSON.stringify(rects));
+    assert.strictEqual(await p2.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
+    await wide.close();
+  });
+
   it('shows a selection made with Shift and the arrow keys on the line of the cursor', async () => {
     const ctx = await browser!.newContext();
     const page = await ctx.newPage();

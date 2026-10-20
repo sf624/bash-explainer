@@ -76,6 +76,8 @@ async function main(): Promise<void> {
   // The development version and the previews ask search engines to leave them out, so that the released page is the one they find.
   const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '');
   fs.writeFileSync(path.join(outdir, 'index.html'), index);
+  // The compare page: the editor and two copies of the page in panel mode (`?view=panel`).
+  fs.writeFileSync(path.join(outdir, 'compare.html'), fs.readFileSync(path.join(root, 'web/compare.html'), 'utf8').replace('<!--robots-->', '<meta name="robots" content="noindex">'));
   copy('web/page.css');
   copy('web/theme.css');
   copy('web/panel-page.css');
