@@ -288,6 +288,31 @@ describe('the web page in a browser', function () {
     await blocked.close();
   });
 
+  it('on a phone, tapping a row of the explanation selects its token without focusing the editor, and the page does not scroll sideways', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'] });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('#sample').tap();
+    await page.locator('.cm-line').nth(3).waitFor();
+    assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
+    assert.strictEqual(await page.evaluate('window.matchMedia("(pointer: fine)").matches'), false);
+    const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the tree', () => panel.locator('.row .label').count(), (n) => n > 1);
+    // The editor was not focused by the tap on "Load the sample" either; make sure of the start.
+    await page.evaluate('document.activeElement && document.activeElement.blur()');
+    await panel.locator('.row .label').nth(1).tap();
+    await until('the selection', () => page.locator('.cm-selectionBackground').count(), (n) => n > 0);
+    assert.strictEqual(await page.evaluate('!!document.activeElement && !!document.activeElement.closest(".cm-content")'), false);
+    // In the narrow panel a long label may take the whole row (it was cut at 45% of it).
+    const share = await panel.evaluate('(() => { const l = document.querySelector(".row .label"); return l.getBoundingClientRect().width / l.parentElement.getBoundingClientRect().width; })()') as number;
+    assert.ok(share > 0.6, String(share));
+    // The controls of the toolbar are big enough to tap.
+    const small = await page.evaluate('[...document.querySelectorAll(".toolbar select, .toolbar button")].filter((e) => e.getBoundingClientRect().height < 40).length');
+    assert.strictEqual(small, 0);
+    await ctx.close();
+  });
+
   it('explains, checks and shares scripts without any request to another site, and keeps working offline', async () => {
     const ctx = await browser!.newContext({ viewport: { width: 1400, height: 900 } });
     await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });

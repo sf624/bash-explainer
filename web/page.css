@@ -217,6 +217,45 @@ footer p {
   #panel {
     height: 75vh;
   }
+
+  /* The toolbar in two columns, each control as wide as its column and easy to tap (it was five
+     rows of small controls, taking half the screen above the script). */
+  .toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .toolbar label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  .toolbar select,
+  .toolbar button {
+    width: 100%;
+    min-height: 2.5rem;
+  }
+
+  .toolbar #status {
+    grid-column: 1 / -1;
+  }
+
+  .toolbar #status:empty {
+    display: none;
+  }
+
+  .install,
+  .links a {
+    padding-block: 0.5rem;
+  }
+
+  #problem-list li {
+    padding-block: 0.4rem;
+  }
 }
 
 /* The banner of the development version (/next/). */
