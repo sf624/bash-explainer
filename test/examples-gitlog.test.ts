@@ -31,7 +31,7 @@ describe('git log formats agree with git', () => {
     ['format:%h %an %ar %s'], ['format:%C(yellow)%h%Creset %<(20)%an %s%d'], ['tformat:%H%n%b'], ['%h %ad %s', 'short'],
     ['format:%h %ad', 'format:%Y-%m-%d %H:%M'], ['format:%ad|%cd', 'iso'], ['format:%ad', 'iso-strict'], ['format:%ad', 'rfc'], ['format:%ad', 'raw'], ['format:%ad', 'unix'],
     ['format:%ad', 'relative'], ['format:%ai %aI %as %at %ae %al %p %t %f %D'], ['format:%>(10)%h|%<(8,trunc)%an|%><(12)%s|%<(9,ltrunc)%s|%<(9,mtrunc)%s'],
-    ['format:%B--'], ['medium', 'format:%a %d %b'], ['format:%ad', 'format:%A %B %e %I:%M %p %j %u %y %C %z'], ['format:%ad', 'default'], ['format:%ad', 'local'],
+    ['format:%B--'], ['%B'], ['tformat:%B'], ['format:%B'], ['format:%b|'], ['%b|'], ['format:%s%n%b'], ['tformat:[%B]'], ['medium', 'format:%a %d %b'], ['format:%ad', 'format:%A %B %e %I:%M %p %j %u %y %C %z'], ['format:%ad', 'default'], ['format:%ad', 'local'],
     ['format:%T %P %%|%<(1,trunc)%an|%><(30)%h'], ['format:%ad', 'format:%^a %-d %e'],
   ];
   for (const [pretty, date] of cases) {

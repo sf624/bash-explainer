@@ -137,7 +137,9 @@ export function runGitLog(commits: SampleCommit[], pretty: string | undefined, d
   if (!m && !style.includes('%')) throw new GitFormatUnsupported(style);
   const template = m ? m[2] : style;
   // `format:` separates commits with a newline; `tformat:` (and a bare template) ends each with one.
-  return commits.map((c) => expand(template, c, date, now)).join('\n').split('\n');
+  const text = commits.map((c) => expand(template, c, date, now)).join('\n');
+  // With `format:` nothing follows the last commit, so a newline that ends it (`%B` ends with one) is the last of the output.
+  return (m && m[1] === 'format' ? text.replace(/\n$/, '') : text).split('\n');
 }
 
 /** Expand the placeholders of a `format:` template for one commit. */
