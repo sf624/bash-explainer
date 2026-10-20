@@ -362,8 +362,11 @@ li.collapsed > .body {
     overflow-wrap: anywhere;
   }
 
+  /* The label stays on the twisty's line, cut with "…" at what is left of it. */
   .label {
-    max-width: 100%;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 0.8em - 0.6rem);
   }
 
   .tools button {

@@ -218,26 +218,29 @@ footer p {
     height: 75vh;
   }
 
-  /* The toolbar in three rows of two (File | Language, Version | Theme, Load | Copy), each
-     label on the line of its control, every control 44px high to tap (it was five rows of
-     small controls, taking half the screen above the script). */
+  /* The toolbar in three rows (File | Language, Version | Theme, Load | Copy), every control 44px
+     high to tap. Each control is as wide as its longest option, so that nothing is cut ("Release
+     (v0.5.0)", "GitHub Actions / GitLab CI"), and the row breaks only when two do not fit; they
+     then share the rest of the row. It was five rows of small controls, half the screen above the
+     script. */
   .toolbar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
     gap: 0.4rem 0.5rem;
   }
 
   .toolbar label {
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
-    gap: 0.4rem;
     min-width: 0;
   }
 
-  .toolbar label select {
-    flex: 1 1 0;
-    min-width: 0;
+  .toolbar button {
+    flex: 1 1 8rem;
+    padding-inline: 0.4rem;
+    line-height: 1.2;
   }
 
   .toolbar select,
@@ -245,13 +248,25 @@ footer p {
     min-height: 2.75rem;
   }
 
-  .toolbar button {
-    padding-inline: 0.4rem;
-    line-height: 1.2;
+  /* The labels are read by screen readers but not drawn: the selects show what they are (a name
+     beside each took the room the values need). */
+  .toolbar label > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .toolbar label select {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.9rem;
   }
 
   .toolbar #status {
-    grid-column: 1 / -1;
+    flex: 1 0 100%;
   }
 
   .toolbar #status:empty {
