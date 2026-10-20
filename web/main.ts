@@ -388,7 +388,7 @@ function applyLanguage(): void {
     } else {
       // En reads "Preview of pull request #12 (commit abc1234). Not released."; ja "プルリクエスト #12（コミット abc1234）のプレビュー。未リリース。"
       const open = lang === 'ja' ? '（コミット ' : ' (commit ';
-      const close = lang === 'ja' ? '）' : ')';
+      const close = lang === 'ja' ? '）' : '). ';
       $('banner-text').replaceChildren(`${t.prBanner} #${__PR__}${open}`, code, close + t.prBannerTail);
       $<HTMLAnchorElement>('banner-pr').href = `https://github.com/sf624/bash-explainer/pull/${__PR__}`;
       $('banner-pr').textContent = `${t.toPr} #${__PR__}`;
