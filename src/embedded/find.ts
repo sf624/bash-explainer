@@ -107,8 +107,17 @@ function hasAction(n: FindNode): boolean {
 function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
   const s = pick(lang);
   const a = p.args[0] ?? '';
-  const age = (unitJa: string, unitEn: string, what: [string, string]) => {
+  const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false) => {
     const n = a.replace(/^[+-]/, '');
+    const k = Number(n);
+    if (wholeDays && /^\d+$/.test(n)) {
+      // find counts the age in whole days (24 hours each), dropping the fraction.
+      if (a.startsWith('+')) return s(`${k + 1}日以上前に${what[0]}（日数は端数を切り捨てて数えるので \`+${k}\` は ${k + 1} 日以上前）`, `${what[1]} at least ${k + 1} days ago (age is counted in whole days, fraction dropped: \`+${k}\` means more than ${k} whole days)`);
+      if (a.startsWith('-')) return s(`${k}日（${k * 24}時間）未満の間に${what[0]}`, `${what[1]} less than ${k} days (${k * 24} hours) ago`);
+      return k === 0
+        ? s(`直近24時間以内に${what[0]}`, `${what[1]} within the last 24 hours`)
+        : s(`${k}日以上${k + 1}日未満前に${what[0]}`, `${what[1]} between ${k} and ${k + 1} days ago`);
+    }
     if (a.startsWith('+')) return s(`${n}${unitJa}より前に${what[0]}`, `${what[1]} more than ${n} ${unitEn} ago`);
     if (a.startsWith('-')) return s(`${n}${unitJa}以内に${what[0]}`, `${what[1]} less than ${n} ${unitEn} ago`);
     return s(`ちょうど${n}${unitJa}前に${what[0]}`, `${what[1]} exactly ${n} ${unitEn} ago`);
@@ -121,22 +130,48 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
     case '-ipath': return s(`パスが ${a} に一致（大小文字区別なし）`, `path matches ${a} (any case)`);
     case '-regex': return s(`パス全体が正規表現 ${a} に一致`, `the whole path matches the regex ${a}`);
     case '-type': return a.split(',').map((t) => (types[t] ? s(types[t][0], types[t][1]) : t)).join(s('か', ' or '));
-    case '-mtime': return age('日', 'days', ['更新', 'modified']);
+    case '-mtime': return age('日', 'days', ['更新', 'modified'], true);
     case '-mmin': return age('分', 'minutes', ['更新', 'modified']);
-    case '-atime': return age('日', 'days', ['アクセス', 'accessed']);
+    case '-atime': return age('日', 'days', ['アクセス', 'accessed'], true);
     case '-amin': return age('分', 'minutes', ['アクセス', 'accessed']);
-    case '-ctime': return age('日', 'days', ['状態変更', 'changed']);
+    case '-ctime': return age('日', 'days', ['状態変更', 'changed'], true);
     case '-cmin': return age('分', 'minutes', ['状態変更', 'changed']);
     case '-newer': return s(`${a} より新しい`, `newer than ${a}`);
+    case '-anewer': return s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`);
+    case '-cnewer': return s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`);
     case '-size': {
-      const n = a.replace(/^[+-]/, '');
-      return a.startsWith('+') ? s(`サイズが ${n} より大きい`, `larger than ${n}`) : a.startsWith('-') ? s(`サイズが ${n} より小さい`, `smaller than ${n}`) : s(`サイズがちょうど ${n}`, `exactly ${n}`);
+      const m = /^([+-]?)(\d+)([bcwkMGTP]?)$/.exec(a);
+      if (!m) return s(`サイズが ${a}`, `size ${a}`);
+      const [, sign, num, u] = m;
+      const k = Number(num);
+      const unit: Record<string, [string, string]> = {
+        '': ['512バイトのブロック', '512-byte blocks'], b: ['512バイトのブロック', '512-byte blocks'], c: ['バイト', 'bytes'], w: ['2バイトの単位', '2-byte words'],
+        k: ['KiB', 'KiB'], M: ['MiB', 'MiB'], G: ['GiB', 'GiB'], T: ['TiB', 'TiB'], P: ['PiB', 'PiB'],
+      };
+      const [uj, ue] = unit[u];
+      // find rounds the size UP to whole units before comparing.
+      if (sign === '+') return s(`サイズが ${k} ${uj}を超える（単位に切り上げて比べる）`, `size over ${k} ${ue} (rounded up to whole units before comparing)`);
+      if (sign === '-') {
+        return k === 1
+          ? s(`サイズが 0（空）のものだけ（\`-1${u}\` は単位に切り上げて 1 未満、つまり空ファイルだけ）`, `empty files only (\`-1${u}\`: size rounded up to ${ue} is less than 1, so only size 0)`)
+          : s(`サイズが ${Math.max(k - 1, 0)} ${uj}以下（単位に切り上げて ${k} 未満）`, `size at most ${Math.max(k - 1, 0)} ${ue} (rounded up to whole units, less than ${k})`);
+      }
+      return s(`サイズが切り上げて ${k} ${uj}ちょうど`, `size of exactly ${k} ${ue} after rounding up to whole units`);
     }
     case '-empty': return s('空', 'empty');
     case '-user': return s(`所有者が ${a}`, `owned by ${a}`);
     case '-group': return s(`グループが ${a}`, `group ${a}`);
-    case '-perm': return s(`権限が ${a}`, `permissions ${a}`);
-    case '-maxdepth': return s(`深さ ${a} まで`, `at most ${a} levels deep`);
+    case '-perm': {
+      if (a.startsWith('-')) return s(`権限に ${a.slice(1)} のビットがすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${a.slice(1)} (other bits do not matter)`);
+      if (a.startsWith('/') || a.startsWith('+')) return s(`権限に ${a.slice(1)} のビットが1つでも立っている`, `permissions have at least one of the bits of ${a.slice(1)}`);
+      return s(`権限がちょうど ${a}`, `permissions exactly ${a}`);
+    }
+    case '-links': {
+      const k = a.replace(/^[+-]/, '');
+      return a.startsWith('+') ? s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`) : a.startsWith('-') ? s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`) : s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`);
+    }
+    case '-samefile': return s(`${a} と同じファイル（同じ inode）`, `the same file as ${a} (same inode)`);
+    case '-maxdepth': return s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`);
     case '-mindepth': return s(`深さ ${a} 以上`, `at least ${a} levels deep`);
     case '-readable': return s('読み取り可能', 'readable');
     case '-writable': return s('書き込み可能', 'writable');
@@ -155,7 +190,17 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
       const batch = p.args[p.args.length - 1] === '+';
       return s(`「${cmd}」を${batch ? 'まとめて' : '1件ずつ'}実行`, `run "${cmd}"${batch ? ' on all at once' : ' for each'}`);
     }
-    default: return p.name + (a ? ` ${a}` : '');
+    default: {
+      // -newerXY REF: the X time of the file is newer than the Y time of REF (or than the date, with t).
+      const nm = /^-newer([acBm])([acBmt])$/.exec(p.name);
+      if (nm) {
+        const x: Record<string, [string, string]> = { a: ['アクセス', 'accessed'], c: ['状態変更', 'status changed'], B: ['作成', 'created'], m: ['更新', 'modified'] };
+        return nm[2] === 't'
+          ? s(`${x[nm[1]][0]}が ${a} より後`, `${x[nm[1]][1]} after ${a}`)
+          : s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`);
+      }
+      return p.name + (a ? ` ${a}` : '');
+    }
   }
 }
 
@@ -179,6 +224,21 @@ function describe(n: FindNode, lang: Lang): string {
   }
 }
 
+const GLOBAL_OPTIONS = new Set(['-maxdepth', '-mindepth', '-depth', '-xdev', '-mount', '-noleaf']);
+
+/** A global option (`-maxdepth`) written after a test, which find warns about; undefined if none. */
+function lateGlobalOption(n: FindNode): string | undefined {
+  const flat: string[] = [];
+  const walk = (x: FindNode) => {
+    if (x.type === 'primary') flat.push(x.name);
+    else if (x.type === 'not' || x.type === 'group') walk(x.child);
+    else x.children.forEach(walk);
+  };
+  walk(n);
+  const firstTest = flat.findIndex((x) => !GLOBAL_OPTIONS.has(x));
+  return firstTest < 0 ? undefined : flat.slice(firstTest).find((x) => GLOBAL_OPTIONS.has(x));
+}
+
 /** One sentence for the whole expression, including find's implicit -print. */
 export function describeFind(n: FindNode, lang: Lang): string {
   const s = pick(lang);
@@ -186,8 +246,10 @@ export function describeFind(n: FindNode, lang: Lang): string {
   const pruneIdiom = n.type === 'or' && n.children[0].type === 'and'
     && n.children[0].children.some((c) => c.type === 'primary' && c.name === '-prune');
   const idiom = pruneIdiom ? s('（`-prune -o` は、特定のディレクトリを探索から除外する定番の書き方）', ' (`-prune -o` is the usual way to exclude a directory)') : '';
-  if (hasAction(n)) return s(`検索条件と処理: ${body}${idiom}`, `Conditions and actions: ${body}${idiom}`);
-  return s(`「${body}」に当てはまるものを表示する（処理の指定が無いので \`-print\` が補われる）${idiom}`, `Print what matches: ${body} (no action is given, so \`-print\` is implied)${idiom}`);
+  const late = lateGlobalOption(n);
+  const pitfall = late ? s(`（\`${late}\` は検索全体に効くオプションで、書いた位置より後の条件にだけ効くわけではない。条件より後に書くと find が警告する。先頭に書く）`, ` (\`${late}\` is a global option: it limits the whole search, not only the tests after it; find warns when it follows a test, so put it first)`) : '';
+  if (hasAction(n)) return s(`検索条件と処理: ${body}${idiom}${pitfall}`, `Conditions and actions: ${body}${idiom}${pitfall}`);
+  return s(`「${body}」に当てはまるものを表示する（処理の指定が無いので \`-print\` が補われる）${idiom}${pitfall}`, `Print what matches: ${body} (no action is given, so \`-print\` is implied)${idiom}${pitfall}`);
 }
 
 /** For `-name`-style patterns: what the glob means. */
