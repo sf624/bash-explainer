@@ -356,7 +356,8 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo hello world');
     for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowLeft');
-    assert.strictEqual(await page.locator('.cm-selectionBackground').count() > 0, true);
+    // CodeMirror draws the selection layer on the next frame.
+    await until('the selection drawn', () => page.locator('.cm-selectionBackground').count(), (n) => n > 0);
     // The active line lies over the selection layer: its background must let the selection show through.
     const alpha = await page.locator('.cm-activeLine').evaluate((el) => {
       const c = (globalThis as any).getComputedStyle(el).backgroundColor as string;
