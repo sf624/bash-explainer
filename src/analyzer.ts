@@ -478,8 +478,28 @@ export class Analyzer {
     }
   }
 
+  /**
+   * Why a `{ }` group runs in a subshell: it is a stage of a pipeline (the last one too, unless lastpipe is on), a
+   * background job (`&`) or a coproc. Undefined when it runs in the current shell.
+   */
+  private groupSubshell(n: SyntaxNode): { ja: string; en: string } | undefined {
+    let x = n;
+    for (let p = x.parent; p; p = x.parent) {
+      if (p.type === 'coproc_statement') return { ja: 'コプロセスはサブシェルで動く', en: 'A coprocess runs in a subshell' };
+      if (p.type === 'pipeline') {
+        const last = p.namedChildren[p.namedChildren.length - 1];
+        if (!same(last, x) || !(this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on')) return { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' };
+      } else if (!['list', 'redirected_statement', 'negated_command'].includes(p.type)) break;
+      x = p;
+    }
+    return sibling(x, 1)?.type === '&' ? { ja: '`&` でバックグラウンドの仕事にする', en: 'It is started in the background with `&`' } : undefined;
+  }
+
   /** Token for an anonymous node (keyword or operator), or undefined for plain punctuation. */
   private anon(n: SyntaxNode): Token | undefined {
+    if (n.type === '{' && n.parent?.type === 'compound_statement' && this.groupSubshell(n.parent)) {
+      return this.tok(n, 'keyword', this.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)'));
+    }
     const k = keywords[n.type];
     if (k) return this.tok(n, 'keyword', this.t(k));
     const op = listOps[n.type];
@@ -581,7 +601,12 @@ export class Analyzer {
       case 'extglob_pattern': return this.globToken(n, 'value');
       case 'variable_name': return this.arithNumber(n) ?? this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
-      case 'compound_statement': return this.block(n, 'block', this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+      case 'compound_statement': {
+        const why = this.groupSubshell(n);
+        return this.block(n, 'block', why
+          ? this.s(`コマンドグループ: \`{ }\` 内のコマンドをまとめて実行する。${why.ja}ので、グループはサブシェルで実行され、中で変えた変数は外に残らない`, `Command group: runs the commands in \`{ }\` together. ${why.en}, so the group is a subshell: variables set inside are gone afterwards`)
+          : this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
+      }
       case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
       case 'function_definition': return this.functionDef(n);
       case 'for_statement': case 'select_statement': return this.forStatement(n);
