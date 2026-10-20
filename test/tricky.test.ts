@@ -936,7 +936,7 @@ describe('tricky lines (round 4)', () => {
     assert.match(find('IFS=; echo $b', '$b').explanation, /`IFS` is empty \(line 1\), so it is not word-split, but it is globbed/);
     assert.match(find('IFS=; echo $b', '$b', 'ja').explanation, /`IFS` が空（行 1）なので単語分割はされないが、グロブ展開はされる/);
     assert.match(find('IFS=; echo x', 'IFS=').explanation, /An empty `IFS` turns word splitting off/);
-    assert.match(find('IFS=$x; echo $b', '$b').explanation, /word-split and globbed/);
+    assert.match(find('IFS=$x; echo $b', '$b').explanation, /split on the characters of `IFS` \(set on line 1 to a value not known here\), and globbed/);
     assert.match(find('IFS=$x', 'IFS=$x').explanation, /`IFS` lists the characters word splitting and `read` split on, and its first character joins/);
     assert.match(find('IFS=$x', 'IFS=$x', 'ja').explanation, /先頭の1文字/);
     assert.match(find('IFS=, read -r a b <<< x', 'IFS=,').explanation, /^Environment variable set only for this command: Assign a value to variable `IFS`\s*\(no spaces around `=`\)$/);
