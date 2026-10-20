@@ -53,7 +53,7 @@ import {
 import { LabelPart, labelText, skeleton } from './label';
 
 export type Kind =
-  | 'command' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
+  | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
   | 'redirect' | 'variable' | 'expansion' | 'substitution' | 'string' | 'number'
   | 'comment' | 'assignment' | 'test' | 'pattern' | 'block' | 'error';
 
@@ -1208,7 +1208,7 @@ export class Analyzer {
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
-    const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'command' && !a.children.length);
+    const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'subcommand' && !a.children.length);
     // Every subcommand in the dictionary has a summary.
     if (subTok) t.summary = `${head.name} ${subTok.label}: ${this.t(head.doc!.subcommands![subTok.label].summary)}`;
     return t;
@@ -1381,7 +1381,9 @@ export class Analyzer {
       if (posIndex === 0 && isPlainWord(a) && doc?.subcommands?.[text]) {
         const sd = doc.subcommands[text];
         const rest = this.args(sd, args.slice(i + 1), `${cmdName} ${text}`);
-        out.push({ ...this.tok(a, 'command', this.s(`サブコマンド \`${cmdName} ${text}\`: `, `Subcommand \`${cmdName} ${text}\`: `) + this.t(sd.summary)), children: [] }, ...rest);
+        // The convention first (it reads as a command), then a note on the syntax: to the shell it is a plain argument.
+        const note = this.s(`（シェルから見れば \`${cmdName}\` への引数で、\`${cmdName}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${cmdName}\`, which interprets it itself)`);
+        out.push({ ...this.tok(a, 'subcommand', this.s(`サブコマンド \`${cmdName} ${text}\`: `, `Subcommand \`${cmdName} ${text}\`: `) + this.t(sd.summary) + note), children: [] }, ...rest);
         break;
       }
       // Positional argument.

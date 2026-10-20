@@ -833,3 +833,21 @@ describe('a command with redirections', () => {
     for (const x of e.examples) assert.ok(x.anchor && x.anchor.start.character >= cmd.span.start.character && x.anchor.end.character <= cmd.span.end.character);
   });
 });
+
+describe('a subcommand', () => {
+  it('is a subcommand token in the colour of a command, with a note on the syntax (en)', () => {
+    for (const [src, label, parent] of [['git log --oneline -5', 'log', 'git'], ['docker run -it alpine', 'run', 'docker'], ['kubectl get pods', 'get', 'kubectl'], ['npm run build', 'run', 'npm']]) {
+      const t = find(explain(src), label, 'subcommand');
+      assert.match(t.explanation, new RegExp(`^Subcommand \`${parent} ${label}\`: .* \\(to the shell it is an argument to \`${parent}\`, which interprets it itself\\)$`), src);
+      assert.strictEqual(all(explain(src).items).filter((x) => x.kind === 'subcommand').length, 1, src);
+    }
+  });
+  it('has the note in Japanese, once', () => {
+    const t = find(explain('git log --oneline -5', 0, 'ja'), 'log', 'subcommand');
+    assert.strictEqual(t.explanation, 'サブコマンド `git log`: コミット履歴を表示する（シェルから見れば `git` への引数で、`git` 自身が解釈する）');
+    assert.strictEqual((t.explanation.match(/シェルから見れば/g) ?? []).length, 1);
+  });
+  it('is not made for an argument that is not in the dictionary', () => {
+    assert.deepStrictEqual(all(explain('git remote add origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
+  });
+});

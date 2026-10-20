@@ -96,7 +96,7 @@ export function placeExamples(ex: LineExplanation): LineExplanation {
 
 /** Theme colours per token kind; the same palette as the panel (media/panel.css). */
 const KIND_COLOR: Record<Kind, string> = {
-  command: '--vscode-charts-blue', builtin: '--vscode-charts-blue', function: '--vscode-charts-blue',
+  command: '--vscode-charts-blue', subcommand: '--vscode-charts-blue', builtin: '--vscode-charts-blue', function: '--vscode-charts-blue',
   option: '--vscode-charts-orange',
   argument: '--vscode-charts-green', string: '--vscode-charts-green', number: '--vscode-charts-green',
   operator: '--vscode-charts-purple', keyword: '--vscode-charts-purple', block: '--vscode-charts-purple', test: '--vscode-charts-purple',
