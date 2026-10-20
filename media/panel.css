@@ -120,6 +120,8 @@ ul#tree {
   font-family: var(--vscode-font-family);
   font-style: italic;
   color: var(--c-muted);
+  /* An italic letter leans out of its box; the label clips what overflows, so give the last one room. */
+  padding-right: 0.15em;
 }
 
 code {
