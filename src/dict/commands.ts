@@ -562,10 +562,24 @@ export const core: Record<string, CommandDoc> = {
     ['-e|--exit-status', '結果が null/false なら失敗の終了ステータス', 'set exit status from the output'],
     ['-n|--null-input', '入力を読まない', 'do not read input'],
     ['-s|--slurp', '全入力を1つの配列として読む', 'read all inputs into one array'],
-    ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg'],
-    ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg'],
-    ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg'],
-    ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg'],
+    ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg2'],
+    ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg2'],
+    ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2'],
+    ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2'],
+    ['--args', '残りの引数を（ファイルでなく）文字列として `$ARGS.positional` に入れる', 'take the remaining arguments as strings in `$ARGS.positional`, not as files'],
+    ['--jsonargs', '残りの引数を（ファイルでなく）JSON の値として `$ARGS.positional` に入れる', 'take the remaining arguments as JSON values in `$ARGS.positional`, not as files'],
+    ['--indent', '出力のインデント幅（0〜7。0 は `-c` と同じ）', 'indentation width of the output (0 to 7; 0 is like `-c`)', 'arg'],
+    ['--tab', 'インデントにタブを使う', 'indent with tabs'],
+    ['-f|--from-file', 'フィルタをファイルから読む（このとき最初の引数は入力ファイル）', 'read the filter from a file (then the first operand is an input file)', 'arg fills'],
+    ['-S|--sort-keys', 'オブジェクトのキーを並べ替えて出力', 'sort the keys of objects in the output'],
+    ['-a|--ascii-output', '非 ASCII 文字を `\\uXXXX` に直して出力', 'escape non-ASCII characters as `\\uXXXX`'],
+    ['-j|--join-output', '`-r` と同じだが、出力ごとの改行も付けない', 'like `-r`, but print no newline after each output'],
+    ['--raw-output0', '`-r` と同じだが、出力ごとに改行でなく NUL を付ける', 'like `-r`, but end each output with a NUL instead of a newline'],
+    ['--seq', '出力の前に RS 文字（`application/json-seq`）を付ける', 'put an RS character before each output (`application/json-seq`)'],
+    ['--stream', '入力を [パス, 値] の列に分けて逐次読む', 'read the input as a stream of [path, value] events'],
+    ['-C|--color-output', '色を付けて出力', 'colour the output'],
+    ['-M|--monochrome-output', '色を付けない', 'no colours'],
+    ['-L', 'モジュールを探すディレクトリ', 'directory to search for modules', 'arg'],
   ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'] }),
   ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
@@ -836,6 +850,10 @@ export const core: Record<string, CommandDoc> = {
     },
   }),
 };
+
+// After `--args` or `--jsonargs`, the operands after the filter are values for `$ARGS.positional`, not input files.
+core.jq.options!['--args'] = { ...core.jq.options!['--args'], restOperands: pos('位置引数の文字列（`$ARGS.positional` に入る。ファイルではない）', 'positional string (goes to `$ARGS.positional`; not a file)') };
+core.jq.options!['--jsonargs'] = { ...core.jq.options!['--jsonargs'], restOperands: pos('位置引数の JSON 値（`$ARGS.positional` に入る。ファイルではない）', 'positional JSON value (goes to `$ARGS.positional`; not a file)') };
 
 export const commands: Record<string, CommandDoc> = {
   ...core,

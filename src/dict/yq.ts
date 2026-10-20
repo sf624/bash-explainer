@@ -56,8 +56,10 @@ const kislyuk: CommandDoc = cmd('YAML を JSON に変換して jq で処理す�
   ['-n|--null-input', '入力を読まない', 'do not read input'],
   ['-s|--slurp', '全入力を1つの配列として読む', 'read all inputs into one array'],
   ['-S|--sort-keys', 'キーをソートして出力する', 'sort keys'],
-  ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg'],
-  ['--argjson', 'jq の変数に JSON の値を渡す', 'pass a JSON variable', 'arg'],
+  ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg2'],
+  ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg2'],
+  ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2'],
+  ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2'],
 ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 YAML ファイル', 'input YAML file')], positionalLang: ['jq'] });
 
 const V3_GLOBAL: OptSpec[] = [

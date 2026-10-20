@@ -17,7 +17,7 @@ export type RerunSpec =
   | { kind: 'glob'; pattern: string; mode: GlobMode; opts?: GlobOpts }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
   | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string> }
-  | { kind: 'jq'; filter: string; raw: boolean; vars: Record<string, Json> }
+  | { kind: 'jq'; filter: string; raw: boolean; join?: boolean; slurp?: boolean; vars: Record<string, Json> }
   | { kind: 'perl'; code: string; opts: PerlOptions }
   | { kind: 'filter'; cmd: string; words: (string | undefined)[] }
   | { kind: 'pipeline'; stages: Stage[] }
@@ -123,15 +123,17 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
     case 'jq': {
       let value: Json;
       try {
-        value = JSON.parse(input.join('\n')) as Json;
+        // `-s`: each line is one value of the file, and the filter reads them as an array.
+        value = spec.slurp ? input.filter((l) => l.trim()).map((l) => JSON.parse(l) as Json) : JSON.parse(input.join('\n')) as Json;
       } catch (e) {
         return { sections: [{ label: s('エラー', 'Error'), lines: [s('入力が JSON として読めません', 'The input is not valid JSON') + `: ${(e as Error).message}`] }] };
       }
       const res = runJq(spec.filter, value, spec.vars);
       if (!res) return out(undefined);
       if ('error' in res) return { sections: [{ label: s('エラー', 'Error'), lines: [res.error] }] };
-      const lines = res.outputs.map((v) => (spec.raw && typeof v === 'string' ? v : toJson(v)));
-      const steps = jqSteps(spec.filter, value, spec.vars);
+      const shown = res.outputs.map((v) => ((spec.raw || spec.join) && typeof v === 'string' ? v : toJson(v)));
+      const lines = spec.join ? (shown.length ? [shown.join('')] : []) : shown;
+      const steps = spec.join ? undefined : jqSteps(spec.filter, value, spec.vars);
       return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.map(toJson)) } : out(lines);
     }
     case 'pipeline': {

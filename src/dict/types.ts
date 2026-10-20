@@ -5,6 +5,10 @@ export interface OptDoc {
   text: Text;
   /** The option consumes the next word (or the rest of a combined word) as its value. */
   arg?: boolean;
+  /** The number of words the option consumes when it is not 1 (`jq --arg NAME VALUE`: 2). */
+  argCount?: number;
+  /** After this option the remaining operands are described by this text (`jq --args`: positional strings, not files). */
+  restOperands?: Text;
   /** Explanations for specific option values (e.g. `set -o pipefail`). */
   values?: Record<string, Text>;
   /** The option consumes words up to a terminator such as `;` or `+` (e.g. `find -exec`). */
@@ -94,6 +98,8 @@ export function cmd(
   for (const [names, oja, oen, flags = '', values] of opts) {
     const doc: OptDoc = { text: tx(oja, oen) };
     if (flags.includes('arg')) doc.arg = true;
+    const count = /arg(\d)/.exec(flags)?.[1];
+    if (count) doc.argCount = Number(count);
     if (flags.includes('until')) doc.untilTerminator = true;
     if (flags.includes('fills')) doc.fillsPositional = true;
     if (flags.includes('attached')) doc.attachedOnly = true;
