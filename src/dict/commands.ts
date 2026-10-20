@@ -282,6 +282,7 @@ export const core: Record<string, CommandDoc> = {
     ['-r|--no-run-if-empty', '入力が空ならコマンドを実行しない', 'do not run if input is empty'],
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
     ['-d|--delimiter', '入力の区切り文字', 'input delimiter', 'arg'],
+    ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
     ['-L|--max-lines', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
   ], { wraps: true }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
@@ -306,7 +307,7 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--repeated', '重複している行だけ表示', 'only print duplicated lines'],
     ['-u|--unique', '重複していない行だけ表示', 'only print unique lines'],
     ['-i|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
-  ]),
+  ], { positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')] }),
   getopt: cmd('コマンドライン引数を解析して、オプションを先・それ以外を `--` の後ろに並べ直した形で出力する（`eval set -- "$(getopt …)"` で使う。長いオプションも扱える）',
     'Parse command-line arguments and print them normalised: options first, other arguments after `--` (used as `eval set -- "$(getopt …)"`; supports long options)', [
       ['-o|--options', '受け付ける短いオプションの一覧', 'the short options to accept', 'arg fills lang:getoptshort'],
@@ -408,12 +409,13 @@ export const core: Record<string, CommandDoc> = {
     ['-k|--keep', '元ファイルを残す', 'keep the original'],
   ]),
   gunzip: cmd('gzip ファイルを展開する', 'Decompress gzip files', [['-c|--stdout', '展開した内容を標準出力に書く（元のファイルは残す）', 'write to stdout (keep the file)'], ['-k|--keep', '元のファイルを削除しない', 'keep the input file'], ['-f|--force', '既存のファイルを上書きする', 'overwrite existing files']], { positional: [files] }),
-  zip: cmd('ZIP アーカイブを作る', 'Create ZIP archives', [['-r', 'ディレクトリを再帰的に追加', 'recurse into directories']]),
+  zip: cmd('ZIP アーカイブを作る', 'Create ZIP archives', [['-r', 'ディレクトリを再帰的に追加', 'recurse into directories']], { positional: [pos('作る ZIP ファイル', 'ZIP file to create or update'), pos('追加するファイル', 'file to add')] }),
   unzip: cmd('ZIP アーカイブを展開する', 'Extract ZIP archives', [
     ['-d', '展開先ディレクトリ', 'destination directory', 'arg'],
     ['-o', '確認せず上書き', 'overwrite without asking'],
     ['-q', '何も表示しない', 'quiet'],
-  ]),
+    ['-l', '展開せず中身を一覧表示', 'list the contents without extracting'],
+], { positional: [pos('ZIP ファイル', 'ZIP file'), pos('取り出すファイル', 'file to extract')] }),
   cp: cmd('ファイルやディレクトリをコピーする', 'Copy files and directories', [
     ['-r|-R|--recursive', 'ディレクトリを再帰的にコピー', 'copy directories recursively'],
     ['-a|--archive', '属性（権限・日時・リンク）を保ったまま再帰的にコピー', 'archive mode: recursive, preserve attributes'],
@@ -449,10 +451,12 @@ export const core: Record<string, CommandDoc> = {
   ], { positional: [files] }),
   chmod: cmd('ファイルの権限（パーミッション）を変更する', 'Change file permissions', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
-  ], { positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
+    ['--reference', '指定したファイルと同じ権限にする', 'use the mode of the given file', 'arg'],
+  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
   chown: cmd('ファイルの所有者・グループを変更する', 'Change file owner and group', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
-  ], { positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
+    ['--reference', '指定したファイルと同じ所有者・グループにする', 'use the owner and group of the given file', 'arg'],
+  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
   ln: cmd('ファイルへのリンクを作る', 'Create links between files', [
     ['-s|--symbolic', 'シンボリックリンクを作成（なければハードリンク）', 'make a symbolic link (otherwise hard link)'],
     ['-f|--force', '既存のリンク先ファイルを置き換える', 'remove existing destination files'],
@@ -474,7 +478,7 @@ export const core: Record<string, CommandDoc> = {
   date: cmd('日時を表示・設定する', 'Print or set the date and time', [
     ['-d|--date', '現在時刻の代わりに指定した日時を使う（例: `yesterday`）', 'use the given date instead of now (e.g. `yesterday`)', 'arg'],
     ['-u|--utc', 'UTC で表示', 'use UTC'],
-    ['-I|--iso-8601', 'ISO 8601 形式で表示', 'ISO 8601 format'],
+    ['-I|--iso-8601', 'ISO 8601 形式で表示（`-Iseconds` のように精度を直後に付けられる: `date` `hours` `minutes` `seconds` `ns`）', 'ISO 8601 format (a precision may follow directly, as in `-Iseconds`: `date`, `hours`, `minutes`, `seconds`, `ns`)', 'attached'],
     ['-r|--reference', '指定したファイルの更新日時を表示する（BSD / macOS では UNIX 時刻を指定）', "show the given file's modification time (BSD/macOS: a Unix timestamp)", 'arg'],
     ['-R|--rfc-email', 'メールの形式（RFC 5322）で表示', 'RFC 5322 (e-mail) format'],
   ], { positional: [pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)')], positionalLang: ['date'] }),
@@ -484,6 +488,11 @@ export const core: Record<string, CommandDoc> = {
     ['-r|--recursive', 'ディレクトリを再帰的に比較', 'compare directories recursively'],
     ['-q|--brief', '違いがあるかどうかだけ表示', 'only report whether files differ'],
     ['-y|--side-by-side', '左右に並べて表示', 'side-by-side output'],
+    ['-c|--context', 'context 形式で表示', 'context format'],
+    ['-N|--new-file', '存在しないファイルを空として扱う', 'treat absent files as empty'],
+    ['-w|--ignore-all-space', '空白の違いをすべて無視', 'ignore all white space'],
+    ['-i|--ignore-case', '大文字・小文字の違いを無視', 'ignore case differences'],
+    ['-B|--ignore-blank-lines', '空行の増減を無視', 'ignore changes that are only blank lines'],
   ], { positional: [pos('比較元', 'first file'), pos('比較先', 'second file')] }),
   ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
@@ -613,11 +622,12 @@ export const core: Record<string, CommandDoc> = {
     bundle: { options: letters(restoreLetters), needs: 'CrRxti' },
     positional: [pos('復元するファイル', 'files to restore')],
   }),
-  pgrep: cmd('名前に一致するプロセスの PID を表示する', 'Find PIDs by process name', [['-f', 'コマンドライン全体で照合', 'match the full command line']]),
-  pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [['-f', 'コマンドライン全体で照合', 'match the full command line']]),
+  pgrep: cmd('名前に一致するプロセスの PID を表示する', 'Find PIDs by process name', [['-f', 'コマンドライン全体で照合', 'match the full command line']], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')] }),
+  pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [['-f', 'コマンドライン全体で照合', 'match the full command line']], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')] }),
   seq: cmd('連続した数値を1行ずつ出力する', 'Print a sequence of numbers', [
     ['-w|--equal-width', '桁数をゼロ埋めで揃える', 'pad with leading zeros'],
     ['-s|--separator', '区切り文字', 'separator', 'arg'],
+    ['-f|--format', 'printf 形式の書式（`%03g`…）', 'printf-style format (`%03g`…)', 'arg'],
   ], {
     positional: [pos('開始値・増分・終了値', 'first, increment or last')],
     positionalBy: [
@@ -629,7 +639,11 @@ export const core: Record<string, CommandDoc> = {
   mktemp: cmd('一意な名前の一時ファイルを作り、そのパスを表示する', 'Create a unique temporary file and print its path', [
     ['-d|--directory', 'ファイルではなく一時ディレクトリを作る', 'create a directory'],
     ['-t', 'TMPDIR 以下にテンプレートで作る', 'use TMPDIR with a template'],
-  ]),
+    ['-p|--tmpdir', '一時ファイルを作るディレクトリ', 'directory to create the file in', 'arg'],
+    ['--suffix', '名前の末尾に付ける文字列', 'suffix to append to the name', 'arg'],
+    ['-u|--dry-run', '名前だけ決めて作らない（非推奨）', 'only print a name; create nothing (unsafe)'],
+    ['-q|--quiet', '作れなくてもエラーを表示しない', 'do not report errors'],
+  ], { positional: [pos('テンプレート（末尾に `XXXXXX`。例: `tmp.XXXXXX`）', 'template ending in `XXXXXX` (e.g. `tmp.XXXXXX`)')] }),
   stat: cmd('ファイルの詳細情報（サイズ・権限・日時など）を表示する', 'Display file status (size, permissions, times…)', [
     ['-c|--format', '表示書式（例: `%s` はサイズ）', 'output format (e.g. `%s` = size)', 'arg'],
     ['-f|--file-system', 'ファイルでなく、それがあるファイルシステムの情報（Linux。macOS の `-f` は書式の指定）', 'the file system instead of the file (Linux; on macOS `-f` gives the format)'],
@@ -771,7 +785,7 @@ export const core: Record<string, CommandDoc> = {
       rebase: cmd('コミットを別の基点に付け替える', 'Reapply commits on another base', [['-i|--interactive', '対話的にリベース', 'interactive rebase']]),
       reset: cmd('HEAD やステージを指定状態に戻す', 'Reset HEAD or the index', [['--hard', '作業ツリーも含めて完全に戻す（変更は失われる）', 'discard all changes (destructive)'], ['--soft', 'コミットだけ戻し、変更はステージに残す', 'keep changes staged']]),
       stash: cmd('変更を一時退避する', 'Stash changes away'),
-      tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a', '注釈付きタグを作る', 'annotated tag', 'arg'], ['-m', 'タグメッセージ', 'tag message', 'arg'], ['-l|--list', 'タグを一覧表示（パターンで絞れる）', 'list tags (a pattern filters them)'], ['-f|--force', '同じ名前のタグを付け直す', 'replace an existing tag'], ['-d|--delete', 'タグを削除', 'delete a tag'], ['--sort', '並べ方（`-v:refname` で版の新しい順）', 'sort order (`-v:refname`: newest version first)', 'arg']]),
+      tag: cmd('タグを作成・一覧表示する', 'Create or list tags', [['-a|--annotate', '注釈付きタグを作る', 'annotated tag'], ['-m', 'タグメッセージ', 'tag message', 'arg'], ['-l|--list', 'タグを一覧表示（パターンで絞れる）', 'list tags (a pattern filters them)'], ['-f|--force', '同じ名前のタグを付け直す', 'replace an existing tag'], ['-d|--delete', 'タグを削除', 'delete a tag'], ['--sort', '並べ方（`-v:refname` で版の新しい順）', 'sort order (`-v:refname`: newest version first)', 'arg']]),
       remote: cmd('リモートを管理する', 'Manage remotes', [['-v', 'URL も表示', 'show URLs']]),
       config: cmd('設定を取得・変更する', 'Get or set configuration', [['--global', 'ユーザー全体の設定', 'user-wide config'], ['--get', '値を取得', 'get a value']]),
     },

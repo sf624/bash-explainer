@@ -81,13 +81,15 @@ const pipInstall: OptSpec[] = [
   ['--index-url|-i', 'パッケージの取得元を PyPI 以外にする', 'download packages from the given index instead of PyPI', 'arg'],
 ];
 
+const pipName = pos('パッケージ名', 'package name');
+
 const pip = cmd('Python のパッケージマネージャ', 'Python package manager', [['-q|--quiet', '表示を減らす', 'less output'], ['--version|-V', '版を表示する', 'show the version']], {
   subcommands: {
     install: cmd('パッケージをインストールする', 'Install packages', pipInstall, { positional: [pos('パッケージ（`名前==版` で版を指定）', 'package (`name==version` pins a version)')] }),
-    uninstall: cmd('パッケージを削除する', 'Uninstall packages', [['-y|--yes', '確認しない', 'do not ask for confirmation']], { positional: [pkg] }),
+    uninstall: cmd('パッケージを削除する', 'Uninstall packages', [['-y|--yes', '確認しない', 'do not ask for confirmation']], { positional: [pipName] }),
     list: cmd('入っているパッケージを一覧表示する', 'List installed packages', [['--outdated|-o', '更新があるものだけ', 'only outdated ones']]),
     freeze: cmd('入っているパッケージを requirements 形式で出力する', 'Print installed packages in requirements format'),
-    show: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
+    show: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pipName] }),
   },
 });
 

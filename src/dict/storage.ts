@@ -24,9 +24,10 @@ export const storage: Record<string, CommandDoc> = {
   // ---- partitions ---------------------------------------------------------------------------
   fdisk: cmd('MBR/GPT のパーティションテーブルを対話的に編集する', 'Edit an MBR/GPT partition table interactively', [
     ['-l|--list', 'パーティションテーブルを表示するだけ', 'only list the partition tables'],
-    ['-u|--units', '表示の単位（`sectors` / `cylinders`）', 'display units (`sectors` / `cylinders`)', 'arg'],
+    ['-u|--units', '表示の単位（`-u=sectors` / `-u=cylinders`。値は `=` でつなぐ）', 'display units (`-u=sectors` / `-u=cylinders`; the value is attached with `=`)', 'attached'],
     ['-s|--getsz', 'デバイスのサイズをセクタ数で表示', 'print the device size in sectors'],
-    ['-o|--wipe', '既存の署名を削除するかどうか（`auto`、`always`、`never`）', 'whether to wipe signatures (`auto`, `always`, `never`)', 'arg'],
+    ['-o|--output', '表示する列のリスト', 'columns to print (a list)', 'arg'],
+    ['-w|--wipe', '既存の署名を削除するかどうか（`auto`、`always`、`never`）', 'whether to wipe signatures (`auto`, `always`, `never`)', 'arg'],
     ['-x|--list-details', '詳しく表示する', 'show more details'],
   ], { positional: [disk] }),
   sfdisk: cmd('スクリプトでパーティションテーブルを操作する', 'Script-friendly partition table editor', [

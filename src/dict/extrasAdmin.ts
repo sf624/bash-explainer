@@ -303,7 +303,7 @@ export const extraAdmin: Record<string, OptSpec[]> = {
     ['--root', '代わりのルートディレクトリ', 'use the given root directory', 'arg'],
     ['-n|--lines', '`status` で表示するログの行数', 'number of journal lines shown by `status`', 'arg'],
     ['-o|--output', '`status` のログの形式', 'journal output format for `status`', 'arg'],
-    ['-r|--recursive', '`list-dependencies` で再帰的に表示', 'show dependencies recursively'],
+    ['-r|--recursive', 'ホストとローカルコンテナーのユニットを表示する（`list-units` など）', 'show units of the host and local containers (`list-units`…)'],
     ['--reverse', '`list-dependencies` で逆向きに表示', 'show reverse dependencies'],
     ['--before', '`list-dependencies` で先に起動するもの', 'show units ordered before'],
     ['--after', '`list-dependencies` で後に起動するもの', 'show units ordered after'],

@@ -1576,7 +1576,7 @@ export class Analyzer {
     const end = words.indexOf('--');
     const given = (names: string): boolean => (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
       n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
-    const rule = rules.find((r) => (r.orMore ? count >= r.count : count === r.count) && !(r.unless && given(r.unless)));
+    const rule = rules.find((r) => (r.orMore ? count >= r.count : count === r.count) && !(r.unless && given(r.unless)) && (!r.when || given(r.when)));
     if (!rule) return;
     for (const { index, token, desc } of operands) {
       const now = this.t(index === count - 1 && rule.last ? rule.last : rule.texts[Math.min(index, rule.texts.length - 1)]);
@@ -2813,6 +2813,9 @@ export class Analyzer {
         }
         last = Math.min(j, args.length - 1);
       } else if (opt?.arg && i + 1 < args.length) {
+        last = i + 1;
+        children.push(valueTok(opt, text, args[last]));
+      } else if (opt?.nextIf && i + 1 < args.length && isPlainWord(args[i + 1]) && new RegExp(opt.nextIf).test(args[i + 1].text)) {
         last = i + 1;
         children.push(valueTok(opt, text, args[last]));
       }

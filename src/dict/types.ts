@@ -13,6 +13,8 @@ export interface OptDoc {
   lang?: EmbeddedLang;
   /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
   fillsPositional?: boolean;
+  /** The option takes the next word as its value only when that word matches this pattern (`journalctl -b -1`). */
+  nextIf?: string;
   /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */
   attachedOnly?: boolean;
 }
@@ -38,6 +40,8 @@ export interface PositionalBy {
   /** The number of positional arguments: exactly this many, or at least this many with `orMore`. */
   count: number;
   orMore?: boolean;
+  /** Applies only when one of these options is given (`--reference=RFILE`, after which every operand is a file). */
+  when?: string;
   /** Does not apply when one of these options is given (`-t|--target-directory`, which names the destination). */
   unless?: string;
   /** Descriptions in order; the last repeats. */
@@ -75,7 +79,7 @@ export interface CommandDoc {
   bundle?: BundleDoc;
 }
 
-/** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `lang:<name>`. */
+/** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `attached`, `next:<regexp>`, `lang:<name>`. */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
 export function cmd(
@@ -91,6 +95,8 @@ export function cmd(
     if (flags.includes('until')) doc.untilTerminator = true;
     if (flags.includes('fills')) doc.fillsPositional = true;
     if (flags.includes('attached')) doc.attachedOnly = true;
+    const nextIf = /next:(\S+)/.exec(flags)?.[1];
+    if (nextIf) doc.nextIf = nextIf;
     const lang = /lang:(\w+)/.exec(flags)?.[1];
     if (lang) doc.lang = lang as EmbeddedLang;
     if (values) doc.values = values;
