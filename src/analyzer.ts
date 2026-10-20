@@ -4088,11 +4088,15 @@ function killSignal(text: string): { name?: string; number?: string } | undefine
   return name && SIGNALS.has(name) ? { name } : undefined;
 }
 
-/** Whether one of the options `names` (`-l|-p`) is among the words before `--`, alone or bundled (`-lp`). */
+/**
+ * Whether one of the options `names` (`-l|-p`, `-q|--query`) is among the words before `--`: a long one as
+ * itself or with `=value`, a short one alone or bundled (`-lp`, `-qi`). Signal options of `kill` (`-TERM`) do not count.
+ */
 function optionGiven(args: SyntaxNode[], names: string): boolean {
   const words = args.map((a) => a.text).filter((w) => !killSignal(w));
   const end = words.indexOf('--');
-  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) => new RegExp(`^-[^-]*${n[1]}`).test(w)));
+  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
+    n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {
@@ -4175,12 +4179,4 @@ function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
 function redirectParts(n: SyntaxNode): { op: string; dest: string } {
   const op = n.children.find((c) => !c.named)!.type;
   return { op, dest: fields(n, 'destination').map((d) => d.text).join(' ') };
-}
-
-/** Is one of the options `names` (`-q|--query`) among the words before `--`? Short ones count inside a bundle (`-qi`). */
-function optionGiven(args: SyntaxNode[], names: string): boolean {
-  const words = args.map((a) => a.text);
-  const end = words.indexOf('--');
-  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
-    n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
 }

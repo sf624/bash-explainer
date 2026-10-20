@@ -185,6 +185,12 @@ export function applyExtras(commands: Record<string, CommandDoc>, builtins: Reco
   // `ip addr -s`), but a subcommand's own table is what the analyzer reads after it.
   for (const key of ['systemctl', 'ip']) {
     const doc = commands[key];
-    for (const sub of Object.values(doc.subcommands!)) sub.options = { ...doc.options, ...sub.options };
+    const inherit = (parent: CommandDoc): void => {
+      for (const sub of Object.values(parent.subcommands ?? {})) {
+        sub.options = { ...parent.options, ...sub.options };
+        inherit(sub);
+      }
+    };
+    inherit(doc);
   }
 }
