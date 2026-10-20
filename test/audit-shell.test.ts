@@ -26,6 +26,8 @@ describe('shell audit fixes', () => {
       assert.match(find(`echo ${w}`, w, 'ja').explanation, /要素ごとに別々の単語/, w);
     }
     assert.match(find('echo "$*"', '"$*"').explanation, /stays one argument/);
+    assert.match(find('echo "${#a[@]}"', '"${#a[@]}"').explanation, /stays one argument/);
+    assert.match(find('echo "${!a[@]}"', '"${!a[@]}"').explanation, /one word per element/);
     assert.match(find('echo "x$y"', '"x$y"').explanation, /stays one argument/);
     assert.strictEqual(bash('set -- a b; printf "[%s]" "$@"'), '[a][b]');
   });
