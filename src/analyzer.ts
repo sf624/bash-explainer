@@ -3440,7 +3440,7 @@ export class Analyzer {
       return t;
     }
     // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes.
-    const perElement = /(?<!\\)\$@|\$\{@|\$\{[^}]*\[@\]|\$\{![\w]*@\}/.test(n.text);
+    const perElement = /(?<!\\)\$@|\$\{@|\$\{(?!#)[^}]*\[@\]|\$\{![\w]*@\}/.test(n.text);
     return this.tok(n, 'string', (perElement ? this.s(
       'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
       'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
