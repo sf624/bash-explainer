@@ -80,7 +80,7 @@ ul#tree {
   left: 0;
   top: 0;
   bottom: -0.5rem;
-  border-left: 2px solid var(--vscode-tree-indentGuidesStroke, var(--vscode-panel-border, rgba(127, 127, 127, 0.3)));
+  border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
   pointer-events: none;
 }
 
