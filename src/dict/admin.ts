@@ -104,7 +104,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-l|--loader', 'ローダーのパス', 'loader path', 'arg'],
   ]),
   syslinux: cmd('FAT ファイルシステムに SYSLINUX ブートローダーを入れる', 'Install the SYSLINUX boot loader on a FAT file system', [
-    ['-i|--install', 'インストールする', 'install'],
+    ['-i|--install', 'インストールする（`-q` と一緒の `-qi` ではパッケージの情報を表示）', 'install (in a query, `-qi`, it shows package information)'],
     ['-d|--directory', '入れるサブディレクトリ', 'subdirectory to install in', 'arg'],
     ['-f|--force', '強制的に入れる', 'force installation'],
   ], { positional: [device()] }),
@@ -235,7 +235,6 @@ export const admin: Record<string, CommandDoc> = {
     ['-l|--list', '含まれるファイルを一覧表示（`-ql`）', 'list the files (`-ql`)'],
     ['-f|--file', '指定したファイルを持つパッケージを調べる（`-qf`）', 'which package owns the given file (`-qf`)'],
     ['-p|--package', 'インストールせず、パッケージのファイルを対象にする（`-qp`）', 'use a package file instead of the database (`-qp`)'],
-    ['-i', 'パッケージの情報を表示（`-qi`）', 'show package information (`-qi`)'],
     ['-V|--verify', '入れた後に変更されていないか検証する', 'verify files against the database'],
     ['-K|--checksig', '署名とダイジェストを検証する', 'check signatures and digests'],
     ['--import', '署名用の公開鍵を取り込む', 'import a public key'],

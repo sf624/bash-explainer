@@ -94,7 +94,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-c|--changes', '変更があったものだけ報告する', 'report only changes'],
     ['-v|--verbose', '処理したファイルを報告する', 'report every file processed'],
     ['--reference', '指定したファイルと同じグループにする', 'use the group of the given file', 'arg'],
-  ], { positional: [pos('グループ', 'group'), files] }),
+  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('グループ', 'group'), files] }),
   mkfifo: cmd('名前付きパイプ(FIFO)を作る', 'Make named pipes (FIFOs)', [
     ['-m|--mode', '権限（`0600`…）', 'permissions (`0600`…)', 'arg'],
   ], { positional: [pos('作る FIFO のパス', 'FIFO path to create')] }),
@@ -329,7 +329,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-u|--unit', '指定したユニットのログだけ', 'only the given unit', 'arg'],
     ['-f|--follow', '新しいログを追い続ける', 'follow new entries'],
     ['-n|--lines', '表示する末尾の行数', 'number of recent lines', 'arg'],
-    ['-b|--boot', '今回（または指定した）起動のログだけ', 'only this (or the given) boot'],
+    ['-b|--boot', '今回（または指定した）起動のログだけ（`-b -1` は 1 つ前の起動、32 桁の起動 ID も可）', 'only this (or the given) boot (`-b -1`: the previous boot; a 32-digit boot ID also works)', 'next:^([-+]?\\d+|[0-9a-f]{32})$'],
     ['-p|--priority', '指定した重要度以上のログだけ（`err`、`warning`…）', 'only the given priority or higher (`err`, `warning`…)', 'arg'],
     ['--since', '指定した時刻以降（`"1 hour ago"`、`today`…）', 'since the given time (`"1 hour ago"`, `today`…)', 'arg'],
     ['--until', '指定した時刻まで', 'until the given time', 'arg'],
