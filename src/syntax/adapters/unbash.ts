@@ -421,9 +421,11 @@ class Converter {
         this.fill(body);
       }
       if (!outside.length) return body!;
-      const r = this.node('redirected_statement', body?.startIndex ?? c.pos, c.end);
+      const r = this.node('redirected_statement', Math.min(body?.startIndex ?? c.pos, outside[0].pos), c.end);
+      // `>f x=1 >g`: a redirection written before the assignments comes first.
+      for (const x of outside) if (body && x.pos < body.startIndex) this.add(r, this.redirect(x), 'redirect');
       if (body) this.add(r, body, 'body');
-      for (const x of outside) this.add(r, this.redirect(x), 'redirect');
+      for (const x of outside) if (!body || x.pos >= body.startIndex) this.add(r, this.redirect(x), 'redirect');
       this.fill(r);
       return r;
     }
