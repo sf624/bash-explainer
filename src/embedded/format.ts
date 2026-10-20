@@ -269,6 +269,16 @@ export function explainDate(src: string, lang: Lang): EmbeddedToken[] {
       ? [s(`UTC からの時差（例: +09${':00'.repeat(conv.length - 1)}）`, `UTC offset with colons (+09${':00'.repeat(conv.length - 1)})`)]
       : DATE[conv] ? [s(DATE[conv][0], DATE[conv][1])] : undefined;
     const extra: string[] = [];
+    if (conv === 'N' && width && +width > 0) {
+      const w = +width;
+      out.push({
+        start: i, end: i + whole.length, kind: 'variable', children: [],
+        explanation: s(`\`${whole}\`: 秒の小数部の最初の ${w} 桁${w === 3 ? '（ミリ秒）' : w === 6 ? '（マイクロ秒）' : w === 9 ? '（ナノ秒）' : ''}`, `\`${whole}\`: the first ${w} digits of the fractional second${w === 3 ? ' (milliseconds)' : w === 6 ? ' (microseconds)' : w === 9 ? ' (nanoseconds)' : ''}; it is not a field width`),
+      });
+      i += whole.length;
+      text = i;
+      continue;
+    }
     if (flag === '-') extra.push(s('ゼロ埋めしない', 'no padding'));
     if (flag === '_') extra.push(s('空白で埋める', 'space-padded'));
     if (flag === '0') extra.push(s('0 で埋める', 'zero-padded'));
@@ -331,12 +341,12 @@ export function formatDate(src: string, when: Date): string | undefined {
     u: [String(wday || 7), ''], w: [String(wday), ''],
     U: [pad(Math.floor((yday + 7 - wday) / 7)), '0'], W: [pad(Math.floor((yday + 7 - ((wday + 6) % 7)) / 7)), '0'],
     V: [pad(isoWeek), '0'], G: [String(isoYear), ''], g: [pad(isoYear % 100), '0'],
-    Z: ['UTC', ''], z: ['+0000', ''], ':z': ['+00:00', ''], '::z': ['+00:00:00', ''],
+    Z: ['UTC', ''], z: ['+0000', ''], ':z': ['+00:00', ''], '::z': ['+00:00:00', ''], ':::z': ['+00', ''],
     n: ['\n', ''], t: ['\t', ''], '%': ['%', ''],
   };
   const composite: Record<string, string> = { F: '%Y-%m-%d', T: '%H:%M:%S', D: '%m/%d/%y', R: '%H:%M', r: '%I:%M:%S %p', c: '%a %b %e %H:%M:%S %Y', x: '%m/%d/%y', X: '%H:%M:%S' };
   let unknown = false;
-  const out = fmt.replace(/%([-_0^#]?)(\d*)(:{1,2}z|[a-zA-Z%])/g, (whole, flag: string, width: string, c: string) => {
+  const out = fmt.replace(/%([-_0^#]?)(\d*)(:{1,3}z|[a-zA-Z%])/g, (whole, flag: string, width: string, c: string) => {
     if (composite[c]) {
       if (flag || width) { unknown = true; return whole; }
       return formatDate(composite[c], when)!;
@@ -344,6 +354,9 @@ export function formatDate(src: string, when: Date): string | undefined {
     const entry = v[c];
     if (!entry) { unknown = true; return whole; }
     let [r, padWith] = entry;
+    // A width on %N is the number of digits: the first ones, or zeros added on the right (`%3N` is milliseconds).
+    if (c === 'N' && flag) { unknown = true; return whole; } // (`-` and `_` strip the zeros of the sample)
+    if (c === 'N') return width && +width > 0 ? r.padEnd(+width, '0').slice(0, +width) : r;
     if (flag === '^') r = r.toUpperCase();
     // `#` swaps case: names become upper case, AM/PM and the zone lower case.
     if (flag === '#') r = /[pZ]/.test(c) ? r.toLowerCase() : r.toUpperCase();

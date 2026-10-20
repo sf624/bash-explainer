@@ -38,6 +38,11 @@ describe('date formats', () => {
     assert.deepStrictEqual(parts(src, ts), ['+', '%Y', '-', '%m', '-', '%d', 'T', '%H', ':', '%M', ':', '%S']);
     assert.match(explainDate('+%-d', 'en')[1].explanation, /day of month .*\(no padding\)/);
     assert.match(explainDate('+%:z', 'en')[1].explanation, /\+09:00/);
+    assert.match(explainDate('+%3N', 'en')[1].explanation, /first 3 digits of the fractional second \(milliseconds\); it is not a field width/);
+    assert.match(explainDate('+%6N', 'ja')[1].explanation, /最初の 6 桁（マイクロ秒）/);
+    assert.match(explainDate('+%9N', 'en')[1].explanation, /\(nanoseconds\)/);
+    assert.match(explainDate('+%5N', 'en')[1].explanation, /first 5 digits of the fractional second;/);
+    assert.match(explainDate('+%N', 'en')[1].explanation, /nanoseconds/);
     assert.strictEqual(explainDate('+%Q', 'en')[1].kind, 'error');
   });
 
@@ -48,7 +53,7 @@ describe('date formats', () => {
       return this.skip();
     }
     const formats = ['%Y-%m-%dT%H:%M:%S', '%F %T', '%-d %B %Y (%a)', '%D %R', '%j %u %w %e', '%^a %b %y %%', '%c', '%x', '%X', '%r', '%Z %z %:z %::z',
-      '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d', '%_H %_10Y %05H %08s %-p %_Z %10Z %10a'];
+      '%U %W %V %G %g', '%s', '%N', '%C', '%I %l %k %p %P', '%h', '%-d %_m %0e', '%#p %#a %#Z', '%10Y %5d %-5d %_5e %3S', '%A, %B %-d', '%_H %_10Y %05H %08s %-p %_Z %10Z %10a', '%:::z %::z', '%3N|%6N|%9N|%12N|%1N|%10N', '%s%3N', '%s.%6N'];
     // Week numbers and ISO years change around the turn of the year.
     for (const when of ['2024-03-05 07:08:09', '2025-12-31 23:59:59', '2021-01-03 12:00:00', '2020-12-31 00:30:00', '2027-01-01 13:05:00']) {
       for (const fmt of formats) {
@@ -57,6 +62,7 @@ describe('date formats', () => {
       }
     }
     assert.strictEqual(formatDate('+%Q', parseSampleDate('2024-01-01')!), undefined);
+    assert.strictEqual(formatDate('+%-3N', parseSampleDate('2024-01-01')!), undefined);
     // Flags on composites are left out.
     assert.strictEqual(formatDate('+%-F', parseSampleDate('2024-01-01')!), undefined);
   });
