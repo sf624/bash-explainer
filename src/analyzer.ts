@@ -1570,12 +1570,14 @@ export class Analyzer {
       : this.s(`コマンド文字列の位置パラメータ \`$${index}\``, `Positional parameter \`$${index}\` of the command string`);
   }
 
+  /** The text of an option; another one when one of `opt.inMode.when` is given (`rpm -i` installs, `rpm -qi` shows information). */
+  private optText(opt: OptDoc): string {
+    return this.t(opt.inMode && this.argCtx && optionGiven(this.argCtx.args, opt.inMode.when) ? opt.inMode.text : opt.text);
+  }
+
   /** Describe the positional arguments by how many there are (`seq 5` has a last value, `seq 1 5` a first and a last). */
   private describeByCount(rules: PositionalBy[], args: SyntaxNode[], operands: { index: number; token: Token; desc: string }[], count: number): void {
-    const words = args.map((a) => a.text);
-    const end = words.indexOf('--');
-    const given = (names: string): boolean => (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
-      n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
+    const given = (names: string): boolean => optionGiven(args, names);
     const rule = rules.find((r) => (r.orMore ? count >= r.count : count === r.count) && !(r.unless && given(r.unless)) && (!r.when || given(r.when)));
     if (!rule) return;
     for (const { index, token, desc } of operands) {
@@ -2825,7 +2827,7 @@ export class Analyzer {
         ? (disable
           ? this.s('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed')
           : this.s('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'))
-        : opt ? inv(text, this.t(opt.text)) : unknown, []));
+        : opt ? inv(text, this.optText(opt)) : unknown, []));
       out.push(...children);
       return last;
     }
@@ -2847,12 +2849,12 @@ export class Analyzer {
       const opt = opts[flag];
       const at = k + 1;
       if (opt?.arg && cmdName === 'set') {
-        parts.push(sub(at, at + 1, 'option', inv(flag, this.t(opt.text)), flag));
+        parts.push(sub(at, at + 1, 'option', inv(flag, this.optText(opt)), flag));
         named.push([flag, opt]);
         continue;
       }
       if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
-      parts.push(sub(at, at + 1, 'option', inv(flag, this.t(opt.text)), flag));
+      parts.push(sub(at, at + 1, 'option', inv(flag, this.optText(opt)), flag));
       if (opt.attachedOnly) {
         // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
         if (k + 1 < letters.length) {
@@ -4173,4 +4175,12 @@ function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
 function redirectParts(n: SyntaxNode): { op: string; dest: string } {
   const op = n.children.find((c) => !c.named)!.type;
   return { op, dest: fields(n, 'destination').map((d) => d.text).join(' ') };
+}
+
+/** Is one of the options `names` (`-q|--query`) among the words before `--`? Short ones count inside a bundle (`-qi`). */
+function optionGiven(args: SyntaxNode[], names: string): boolean {
+  const words = args.map((a) => a.text);
+  const end = words.indexOf('--');
+  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
+    n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
 }

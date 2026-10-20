@@ -13,6 +13,8 @@ export interface OptDoc {
   lang?: EmbeddedLang;
   /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
   fillsPositional?: boolean;
+  /** What the option means instead when one of these options is given (`-i` is `--info` with `-q`). */
+  inMode?: { when: string; text: Text };
   /** The option takes the next word as its value only when that word matches this pattern (`journalctl -b -1`). */
   nextIf?: string;
   /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */

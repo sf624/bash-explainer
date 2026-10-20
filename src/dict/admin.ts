@@ -104,7 +104,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-l|--loader', 'ローダーのパス', 'loader path', 'arg'],
   ]),
   syslinux: cmd('FAT ファイルシステムに SYSLINUX ブートローダーを入れる', 'Install the SYSLINUX boot loader on a FAT file system', [
-    ['-i|--install', 'インストールする（`-q` と一緒の `-qi` ではパッケージの情報を表示）', 'install (in a query, `-qi`, it shows package information)'],
+    ['-i|--install', 'インストールする', 'install'],
     ['-d|--directory', '入れるサブディレクトリ', 'subdirectory to install in', 'arg'],
     ['-f|--force', '強制的に入れる', 'force installation'],
   ], { positional: [device()] }),
@@ -711,3 +711,6 @@ export const admin: Record<string, CommandDoc> = {
     ['--reuse-cmdline', '現在のカーネルのコマンドラインを使う', 'reuse the current kernel command line'],
   ]),
 };
+
+// `rpm -i` installs, but `rpm -qi` (with `-q`) shows information about a package.
+admin.rpm.options!['-i'].inMode = { when: '-q|--query', text: pos('パッケージの情報を表示する', 'show package information') };
