@@ -310,6 +310,27 @@ describe('the web page in a browser', function () {
     // ...and its explanation then goes under it, not into a narrow column beside it.
     const below = await panel.evaluate('(() => { const r = document.querySelector(".row"); return r.querySelector(".text").getBoundingClientRect().top >= r.querySelector(".label").getBoundingClientRect().bottom - 1; })()');
     assert.strictEqual(below, true);
+    // ...with the fold mark and the label on one line.
+    const oneLine = await panel.evaluate('(() => { const r = document.querySelector(".row"); return Math.abs(r.querySelector(".twisty").getBoundingClientRect().top - r.querySelector(".label").getBoundingClientRect().top) < 8; })()');
+    assert.strictEqual(oneLine, true);
+    // Nothing in the toolbar is cut: every option fits its select (measured with the select's font), in both languages.
+    for (const lang of ['en', 'ja']) {
+      await page.locator('#lang').selectOption(lang);
+      const clipped = await page.evaluate(`(() => {
+        const c = document.createElement('canvas').getContext('2d');
+        const bad = [];
+        for (const s of document.querySelectorAll('.toolbar select')) {
+          const cs = getComputedStyle(s);
+          c.font = cs.font;
+          const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          const widest = Math.max(...[...s.options].map((o) => c.measureText(o.text).width));
+          if (widest > room) bad.push(s.id + ' ' + Math.round(widest) + ' > ' + Math.round(room));
+        }
+        for (const b of document.querySelectorAll('.toolbar button')) if (b.scrollWidth > b.clientWidth) bad.push(b.id);
+        return bad;
+      })()`);
+      assert.deepStrictEqual(clipped, [], lang);
+    }
     // The toolbar is three rows of two, no taller than it was (173px) when it had five rows of small controls.
     const toolbar = await page.evaluate('document.querySelector(".toolbar").getBoundingClientRect().height') as number;
     assert.ok(toolbar < 175, String(toolbar));
