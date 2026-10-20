@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { run } from './support/run';
 import { execFileSync } from 'child_process';
-import { readSampleLine, runRead, runXargs, testCases, xargsExample } from '../src/examples/runtime';
+import { readSampleLine, runRead, runXargs, showCommand, testCases, xargsExample } from '../src/examples/runtime';
 
 describe('xargs agrees with GNU xargs', () => {
   const cases: [string[], string[]][] = [
@@ -14,9 +14,20 @@ describe('xargs agrees with GNU xargs', () => {
       assert.ok(ex, 'has an example');
       // Prefix the command with echo so xargs prints the command lines instead of running them.
       const real = run('xargs', [...opts, 'echo', ...(cmd.length ? cmd : ['echo'])], { input: ex.input }).stdout.toString().trim().split('\n').filter(Boolean);
-      assert.deepStrictEqual(runXargs([...opts, ...cmd], ex.input).map((c) => c.join(' ')), real);
+      // (With -d, the newline ending the input stays in the last item; echo prints it, and the line split above drops it.)
+      assert.deepStrictEqual(runXargs([...opts, ...cmd], ex.input).map((c) => c.join(' ').trimEnd()), real);
     });
   }
+  it('keeps the newline that ends the input in the last item of -d', () => {
+    const cases: [string, string][] = [[',', 'a,b,c\n'], [',', 'a,b,\n'], [',', 'a,b,'], ['\\n', 'a\n\nb\n'], [' ', 'a b\tc\n'], [';', 'a;;b'], [',', ''], [',', ',']];
+    for (const [d, input] of cases) {
+      const real = run('xargs', ['-d', d, 'printf', '[%s]'], { input }).stdout.toString();
+      const mine = runXargs(['-d', d, 'printf', '[%s]'], input).map((c) => c.slice(2).map((x) => `[${x}]`).join('')).join('');
+      assert.strictEqual(mine === '' ? '[]' : mine, real === '' ? '[]' : real, JSON.stringify([d, input]));
+    }
+    assert.deepStrictEqual(runXargs(['-d', ',', 'echo'], 'a,b\n'), [['echo', 'a', 'b\n']]);
+    assert.strictEqual(showCommand(['echo', 'b\n', "it's\t", 'a\\\x01']), "echo $'b\\n' $'it\\'s\\t' $'a\\\\\\x01'");
+  });
   it('treats quotes in the input as grouping', () => {
     assert.deepStrictEqual(runXargs(['-n', '1'], 'a "b c" d\\ e\n'), [['echo', 'a'], ['echo', 'b c'], ['echo', 'd e']]);
   });

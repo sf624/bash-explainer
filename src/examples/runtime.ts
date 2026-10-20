@@ -61,8 +61,8 @@ export function runXargs(words: (string | undefined)[], input: string): string[]
   }
   if (delim !== undefined) {
     items = input.split(delim);
-    if (items[items.length - 1] === '' || (delim !== '\n' && items[items.length - 1] === '\n')) items.pop();
-    if (delim !== '\0' && items.length && items[items.length - 1].endsWith('\n') && delim !== '\n') items[items.length - 1] = items[items.length - 1].slice(0, -1);
+    // (With -d , the newline that ends the input stays in the last item, as in GNU xargs.)
+    if (items[items.length - 1] === '') items.pop();
   } else if (get('L') !== undefined) {
     const per = Number(get('L'));
     const lines = input.split('\n').filter((l) => l.trim() !== '');
@@ -81,7 +81,12 @@ export function runXargs(words: (string | undefined)[], input: string): string[]
 
 /** Shell-style display of a command line. */
 export function showCommand(words: string[]): string {
-  return words.map((w) => (w === '' ? "''" : /[^A-Za-z0-9_\-.,:/@%+=]/.test(w) ? `'${w.replace(/'/g, "'\\''")}'` : w)).join(' ');
+  const quote = (w: string) => {
+    if (w === '') return "''";
+    if (/[\x00-\x1f\x7f]/.test(w)) return `$'${w.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\x00-\x1f\x7f]/g, (c) => ({ '\n': '\\n', '\t': '\\t', '\r': '\\r' } as Record<string, string>)[c] ?? `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`)}'`;
+    return /[^A-Za-z0-9_\-.,:/@%+=]/.test(w) ? `'${w.replace(/'/g, "'\\''")}'` : w;
+  };
+  return words.map(quote).join(' ');
 }
 
 /** Input that shows how xargs groups items, and the commands that result. */
