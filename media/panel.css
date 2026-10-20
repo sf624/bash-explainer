@@ -346,9 +346,10 @@ li.collapsed > .body {
   border-radius: 3px;
 }
 
-/* Narrow panels (a phone): a long label no longer squeezes the explanation to a few words. The
-   explanation goes under the label when less than 12em is left beside it, and a label too long for
-   the row is cut at the row's width. */
+/* Narrow panels (a phone): a long label no longer squeezes the explanation into a few words. When
+   less than 60% of the row is left beside the label, the explanation goes under it, in line with the
+   label (after the twisty); a label too long for the row is cut at the row's width. A short label
+   keeps its explanation beside it. */
 @media (max-width: 520px) {
   .row {
     flex-wrap: wrap;
@@ -356,7 +357,7 @@ li.collapsed > .body {
   }
 
   .row .text {
-    flex: 1 1 7em;
+    flex: 1 1 60%;
     min-width: 0;
     overflow-wrap: anywhere;
   }
