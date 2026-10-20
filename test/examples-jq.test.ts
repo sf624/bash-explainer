@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { rerun } from '../src/examples/rerun';
 import { Json, jqExample, jqSteps, runJq } from '../src/examples/jq';
 
 /** Expected outputs follow the jq 1.7 manual (examples-jq-real.test.ts also compares with jq when it is installed). */
@@ -90,7 +91,7 @@ describe('jq evaluator', () => {
   }
 
   it('declines what it cannot run', () => {
-    for (const f of ['input', 'now', '$ENV.HOME', 'tostream', '. as [$a, $b] ?// $c | 1 | reduce . as [$x] ?// $y (0; .)', '$nothing']) {
+    for (const f of ['. as {1: $x} | 1', '. as {a} | 1', '. as 1 | 1', 'input', 'now', '$ENV.HOME', 'tostream', '. as [$a, $b] ?// $c | 1 | reduce . as [$x] ?// $y (0; .)', '$nothing']) {
       assert.strictEqual(runJq(f, null), undefined, f);
     }
   });
@@ -152,5 +153,23 @@ describe('jq steps', () => {
     const long = new Analyzer('ja').explainLine(createUnbashParser().parse(`jq 'range(10) | tostring | . + "${'x'.repeat(40)}"' u.json`), 0);
     assert.deepStrictEqual(long.examples[0].sections[1].lines.length, 5);
     assert.match(long.examples[0].sections[3].label, /…` の後）$/);
+  });
+});
+
+describe('jq example inputs and flags', () => {
+  it('fits the input to a pattern, a literal compared with and a key that is not a name', () => {
+    for (const f of ['. as {(.k): $v} | $v', '. as [$a, [$b]] | $a', '.[] as [{a: $x}] | $x', 'contains([1])', 'contains([])', 'contains({"b": 1})', '. as {"a": $x} | $x']) {
+      assert.ok(jqExample(f), f);
+    }
+    assert.deepStrictEqual(jqExample('contains(["a"])')![0].input, ['a', 'other1', 'a']);
+  });
+  it('-j puts the outputs together, and none at all gives none', () => {
+    assert.deepStrictEqual(jqExample('empty', { join: true })![0].outputs, []);
+    assert.deepStrictEqual(jqExample('.[]', { join: true })![0].outputs, ['value1value2value3']);
+  });
+  it('re-runs a joined example', () => {
+    const run = (filter: string) => rerun({ kind: 'jq', filter, raw: false, join: true, slurp: true, vars: {} }, ['1', '2'], 'en');
+    assert.deepStrictEqual(run('.[]').sections[0].lines, ['12']);
+    assert.deepStrictEqual(run('empty').sections[0].lines, []);
   });
 });

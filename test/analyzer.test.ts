@@ -980,6 +980,7 @@ describe('jq destructuring and label/break', () => {
       [`jq 'reduce .[] as [$a,$b] (0; . + $a)' f`, 'for each value'],
       [`jq '[foreach .[] as {n: $n} (0; . + $n)]' f`, 'Destructuring pattern `{n: $n}` for each value'],
       [`jq '. as $x | $x' f`, 'Variable `$x`'],
+      [`jq '. as [{a: $x}] | $x' f`, 'Destructuring pattern `[{a: $x}]`'],
     ];
     for (const [src, text] of cases) {
       const t = texts(src);

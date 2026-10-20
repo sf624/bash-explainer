@@ -297,8 +297,8 @@ class JqParser {
     if (pat.plain) return this.node(pat.start, pat.end, 'variable', each ? s(`各値が入る変数 \`${pat.text}\``, `Each value is bound to \`${pat.text}\``) : s(`変数 \`${pat.text}\``, `Variable \`${pat.text}\``));
     const alt = pat.text.includes('?//');
     return this.node(pat.start, pat.end, 'variable', s(
-      `${each ? '各値を' : ''}分解するパターン \`${pat.text}\`: 値の中身を取り出して ${names || '（変数なし）'} に入れる${alt ? '（`?//` で区切った形を順に試し、合うものを使う。使われなかった側の変数は null）' : ''}`,
-      `Destructuring pattern \`${pat.text}\`${each ? ' for each value' : ''}: takes the value apart into ${names || '(no variables)'}${alt ? ' (the forms joined by `?//` are tried in turn; variables of the others are null)' : ''}`));
+      `${each ? '各値を' : ''}分解するパターン \`${pat.text}\`: 値の中身を取り出して ${names} に入れる${alt ? '（`?//` で区切った形を順に試し、合うものを使う。使われなかった側の変数は null）' : ''}`,
+      `Destructuring pattern \`${pat.text}\`${each ? ' for each value' : ''}: takes the value apart into ${names}${alt ? ' (the forms joined by `?//` are tried in turn; variables of the others are null)' : ''}`));
   }
 
   private opNode(t: Lex, explanation: string): Node {

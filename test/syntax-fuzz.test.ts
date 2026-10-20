@@ -56,6 +56,12 @@ describe('unbash adapter: fuzzing', () => {
     assert.deepEqual(bad.slice(0, 30), []);
   });
 
+  it('keeps a quoted [ out of the test command, and a condition out of the part after it', () => {
+    for (const text of ["'[", "'[' -f x ]", 'if !(then :; fi', 'if (then :; elif (then :; fi']) {
+      assert.deepEqual(soundness(ub.parse(text)), [], text);
+    }
+  });
+
   // The analyzer and the checks must not throw on any tree, whatever is typed: the extension explains the line the user is typing.
   const analyzers = { en: new Analyzer('en'), ja: new Analyzer('ja') };
   const shells: Shell[] = ['sh', 'bash', 'zsh'];
