@@ -3126,8 +3126,25 @@ export class Analyzer {
   /** The right side of `[[ x =~ re ]]` (an ERE) is broken down; other `regex` nodes are glob-like patterns. */
   private regexNode(n: SyntaxNode): Token {
     // (A `regex` node is only the plain right side of `=~`, without quotes: expansions and quotes make other nodes.)
-    const tokens = explainRegex(n.text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text: n.text, base: 0 }));
-    const js = toJsRegex(n.text, 'ere');
+    // Quote removal drops a backslash before an ordinary character: `\b` is `b`, `\w` is `w`, `\<` is `<` (bash), not the GNU operators.
+    // One before a character special in an ERE stays, and makes it literal.
+    let text = '';
+    const offsets: number[] = [];
+    for (let i = 0; i < n.text.length; i++) {
+      if (n.text[i] === '\\' && i + 1 < n.text.length && !/[.[\]{}()\\*+?|^$]/.test(n.text[i + 1])) i++;
+      offsets.push(i);
+      text += n.text[i];
+      if (n.text[i] === '\\' && i + 1 < n.text.length) { offsets.push(++i); text += n.text[i]; }
+    }
+    const tokens = explainRegex(text, 'ere', this.lang).map((t) => this.fromEmbedded(t, n, { text, offsets }));
+    const js = toJsRegex(text, 'ere');
+    const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
+    if (dropped.length) {
+      const list = dropped.map((d) => `\`${d}\``).join(this.s('、', ', '));
+      this.extraNotes.push(this.s(
+        `⚠ \`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`re='\\bfoo'; [[ $x =~ $re ]]\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
+        `⚠ In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`re='\\bfoo'; [[ $x =~ $re ]]\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`));
+    }
     if (js) this.regexExample(js, 'values');
     return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
   }

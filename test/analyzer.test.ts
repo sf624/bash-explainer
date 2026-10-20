@@ -1001,3 +1001,26 @@ describe('jq destructuring and label/break', () => {
     for (const f of [`jq '. as 1 | 2' f`, `jq 'label out | 1' f`]) assert.ok(texts(f).some((x) => x.includes('Could not parse')), f);
   });
 });
+
+describe('the unquoted regex of [[ =~ ]] after quote removal', () => {
+  const sources = [String.raw`\bfoo`, String.raw`^\w+\s\d$`, String.raw`\<foo\>`, String.raw`a\.b\+`, String.raw`a\ b`];
+  for (const re of sources) {
+    it(re, () => {
+      const e = explain(`[[ $x =~ ${re} ]]`);
+      const matches = e.examples.flatMap((x) => x.sections[0].lines);
+      const rest = e.examples.flatMap((x) => x.sections[1].lines);
+      assert.ok(matches.length && rest.length);
+      // Every sample agrees with what bash itself does.
+      const test = (s: string) => spawnSync('bash', ['-c', `[[ $1 =~ ${re} ]]`, 'bash', s]).status === 0;
+      for (const m of matches) assert.ok(test(m), `bash should match ${JSON.stringify(m)}`);
+      for (const m of rest) assert.ok(!test(m), `bash should not match ${JSON.stringify(m)}`);
+    });
+  }
+  it('warns that \\b \\w \\s \\< are plain characters there', () => {
+    const note = explain(String.raw`[[ $x =~ \bfoo\s ]]`).notes.join('\n');
+    assert.ok(note.includes('`\\b`') && note.includes('`\\s`') && note.includes('quote removal'), note);
+    assert.deepStrictEqual(explain(String.raw`[[ $x =~ a\.b ]]`).notes, []);
+    const ja = explain(String.raw`[[ $x =~ \bfoo ]]`, 0, 'ja').notes.join('\n');
+    assert.ok(ja.includes('クォート除去'), ja);
+  });
+});
