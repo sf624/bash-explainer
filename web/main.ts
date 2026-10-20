@@ -181,7 +181,9 @@ const editorTheme = EditorView.theme({
   '.cm-scroller': { fontFamily: 'var(--vscode-editor-font-family)', lineHeight: '1.5' },
   '.cm-content': { caretColor: 'var(--vscode-editor-foreground)' },
   '.cm-gutters': { backgroundColor: 'var(--vscode-editor-background)', color: 'var(--vscode-descriptionForeground)', border: 'none' },
-  '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--vscode-list-hoverBackground)' },
+  // The active line is drawn over the selection layer, so its colour must let a selection on it show through.
+  '.cm-activeLine': { backgroundColor: 'rgba(127, 127, 127, 0.1)' },
+  '.cm-activeLineGutter': { backgroundColor: 'var(--vscode-list-hoverBackground)' },
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--vscode-editor-foreground)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 120, 212, 0.3)' },
   '.cm-bx-highlight': { backgroundColor: 'var(--vscode-editor-findMatchHighlightBackground)', borderRadius: '2px' },
