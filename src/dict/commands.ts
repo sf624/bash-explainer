@@ -298,7 +298,7 @@ export const core: Record<string, CommandDoc> = {
     ['-P|--max-procs', '並列実行するプロセス数', 'run up to N processes in parallel', 'arg'],
     ['-r|--no-run-if-empty', '入力が空ならコマンドを実行しない', 'do not run if input is empty'],
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
-    ['-d|--delimiter', '入力の区切り文字', 'input delimiter', 'arg'],
+    ['-d|--delimiter', '入力の区切り文字（`echo` が出す末尾の改行は、最後の項目にそのまま残る）', 'input delimiter (the newline `echo` ends with stays in the last item)', 'arg'],
     ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
     ['-L|--max-lines', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
   ], { wraps: true }),
