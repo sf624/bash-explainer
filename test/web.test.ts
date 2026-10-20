@@ -236,6 +236,26 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('shows a selection made with Shift and the arrow keys on the line of the cursor', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('echo hello world');
+    for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowLeft');
+    assert.strictEqual(await page.locator('.cm-selectionBackground').count() > 0, true);
+    // The active line lies over the selection layer: its background must let the selection show through.
+    const alpha = await page.locator('.cm-activeLine').evaluate((el) => {
+      const c = (globalThis as any).getComputedStyle(el).backgroundColor as string;
+      const m = /rgba?\(([^)]*)\)/.exec(c);
+      const parts = m ? m[1].split(',').map((x) => parseFloat(x)) : [];
+      return parts.length === 4 ? parts[3] : 1;
+    });
+    assert.ok(alpha < 0.5, `the active line's background alpha is ${alpha}`);
+    await ctx.close();
+  });
+
   it('has a theme switch (Auto, Light, Dark) that is remembered and works without storage', async () => {
     const LIGHT = 'rgb(255, 255, 255)';
     const DARK = 'rgb(31, 31, 31)';
