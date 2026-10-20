@@ -263,7 +263,10 @@
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
     const examples = (token.examples ?? []).map((e) => example(e, true));
-    if (examplesFirst) li.append(...examples);
+    // What lies under the row (its examples and parts), in one box: the indent guide is drawn beside it.
+    const body = document.createElement('div');
+    body.className = 'body';
+    if (examplesFirst) body.append(...examples);
     const index = flat.length;
     flat.push({ token, el: row });
     row.addEventListener('mouseenter', () => focus(index));
@@ -279,9 +282,10 @@
     if (token.children.length) {
       const ul = document.createElement('ul');
       ul.append(...token.children.map((c, i) => item(c, `${path}.${i}`)));
-      li.append(ul);
+      body.append(ul);
     }
-    if (!examplesFirst) li.append(...examples);
+    if (!examplesFirst) body.append(...examples);
+    if (body.childElementCount) li.append(body);
     return li;
   }
 
@@ -299,7 +303,7 @@
   }
 
   $('toggle').addEventListener('click', () => {
-    const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > ul'));
+    const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .body > ul'));
     const collapse = !items.some((li) => li.classList.contains('collapsed'));
     // Collapse below the top level, so the outline stays visible.
     for (const li of items) {

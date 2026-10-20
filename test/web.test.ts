@@ -106,7 +106,7 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
-  it('draws an indent guide in the column of the row border from a tree item to its next sibling, and none below the last', async () => {
+  it('draws an indent guide in the column of the row border beside what lies under an item, clear of the rows, and none below the last', async () => {
     const ctx = await browser!.newContext();
     const page = await ctx.newPage();
     await page.goto(base);
@@ -116,29 +116,33 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo hello | tr a-z A-Z');
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
-    // The children of the first item with parts: a guide on each but the last, in the column of the
-    // row's own border and reaching the next sibling; no tick (::after).
-    const kids = panel().locator('#tree > li > ul > li');
+    // The parts of the first item with parts: beside what lies under each one but the last, a line in the
+    // column of the row's own border that keeps clear of the rows, as an example's rule does.
+    const kids = panel().locator('#tree > li > .body > ul > li');
     const n = await kids.count();
-    assert.ok(n >= 2, `${n} children`);
+    assert.ok(n >= 2, `${n} parts`);
     const info = (i: number) => kids.nth(i).evaluate((li) => {
       const w = li.ownerDocument.defaultView!;
-      const b = w.getComputedStyle(li, '::before');
-      const a = w.getComputedStyle(li, '::after');
-      const next = li.nextElementSibling;
+      const body = li.querySelector(':scope > .body');
+      if (!body) return { line: false };
+      const b = w.getComputedStyle(body, '::before');
+      if (b.content === 'none' || b.content === 'normal') return { line: false };
+      const box = body.getBoundingClientRect();
+      const row = li.querySelector(':scope > .row')!.getBoundingClientRect();
+      const next = li.nextElementSibling?.querySelector(':scope > .row')?.getBoundingClientRect();
+      const top = box.top + parseFloat(b.top), bottom = box.bottom - parseFloat(b.bottom);
       return {
-        before: b.content !== 'none' && b.content !== 'normal', after: a.content !== 'none' && a.content !== 'normal',
-        left: b.left, width: b.borderLeftWidth, style: b.borderLeftStyle,
-        // The line's bottom reaches the next sibling's top (the content box is li's own height plus bottom).
-        reaches: !next || li.getBoundingClientRect().bottom - parseFloat(b.bottom) >= next.getBoundingClientRect().top,
+        line: true, column: box.left === row.left, width: b.borderLeftWidth, style: b.borderLeftStyle,
+        clearOfRows: top > row.bottom && (!next || bottom < next.top),
       };
     });
-    for (let i = 0; i < n - 1; i++) {
-      assert.deepStrictEqual(await info(i), { before: true, after: false, left: '0px', width: '2px', style: 'solid', reaches: true }, `child ${i}`);
+    const lines = [];
+    for (let i = 0; i < n; i++) lines.push(await info(i));
+    assert.strictEqual(lines.some((l) => l.line), true, 'some part has a line beside what lies under it');
+    for (const l of lines.slice(0, -1).filter((l) => l.line)) {
+      assert.deepStrictEqual(l, { line: true, column: true, width: '2px', style: 'solid', clearOfRows: true });
     }
-    const last = await info(n - 1);
-    assert.strictEqual(last.before, false, 'no guide below the last sibling');
-    assert.strictEqual(last.after, false);
+    assert.deepStrictEqual(lines[n - 1], { line: false }, 'no line below the last part');
     await ctx.close();
   });
 
@@ -154,10 +158,10 @@ describe('the web page in a browser', function () {
     await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('tr a-z'));
     const selected = () => page.locator('.cm-selectionBackground').count();
     // The first row with parts, and a row without.
-    const parent = () => panel().locator('#tree li:has(> ul)').first();
+    const parent = () => panel().locator('#tree li:has(> .body > ul)').first();
     const folded = async () => parent().evaluate((li) => li.classList.contains('collapsed'));
     const twisty = async () => (await parent().locator('> .row > .twisty').textContent()) ?? '';
-    const leaf = () => panel().locator('#tree li:not(:has(> ul)) > .row').first();
+    const leaf = () => panel().locator('#tree li:not(:has(> .body > ul)) > .row').first();
 
     // A click on the text of the row folds it, and again unfolds it.
     await page.keyboard.press('Home');
