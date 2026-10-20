@@ -13,6 +13,8 @@
   } catch {
     apply(null);
   }
+  // ?view=panel: the page shows its explanation panel only (page.css), to be filled by the page around it.
+  if (/[?&]view=panel(&|$)/.test(location.search)) root.classList.add('view-panel');
   // The frame follows the page at once, also when it cannot read the storage itself.
   if (window.parent !== window) {
     window.addEventListener('message', (event) => {
