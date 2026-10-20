@@ -533,7 +533,7 @@ export class Analyzer {
       const delim = h.namedChildren.find((c) => c.type === 'heredoc_start')?.text;
       if (delim === undefined) continue; // `cat <<` while typing
       // `<<-END` / `<<END` as written (the operator may have a tab-stripping `-`).
-      const operator = `${/<<-?/.exec(h.text)?.[0] ?? '<<'}${delim}`;
+      const operator = `${/<<-?/.exec(h.text)![0]}${delim}`;
       // The end line itself can be inside the range of the body (with `<<-` it is indented with tabs).
       if (end && end.startPosition.row === line) {
         notes.push(this.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${h.startPosition.row + 1} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${h.startPosition.row + 1}.`));
@@ -611,11 +611,11 @@ export class Analyzer {
       }
       case 'do_group': return this.block(n, 'block', this.s('ループ本体: `do` から `done` までを繰り返し実行する', 'Loop body: the commands between `do` and `done`'));
       case 'function_definition': return this.functionDef(n);
-      case 'for_statement': case 'select_statement': return this.forStatement(n);
+      case 'for_statement': case 'select_statement': return this.missingKeyword(n, this.forStatement(n));
       case 'c_style_for_statement': return this.block(n, 'keyword', this.s('C 言語風 for ループ: `((初期化; 条件; 更新))` で回数を制御して繰り返す', 'C-style for loop: `((init; condition; update))`') + this.lineRef(n));
-      case 'while_statement': return this.whileStatement(n);
-      case 'if_statement': return this.block(n, 'keyword', this.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + this.lineRef(n));
-      case 'elif_clause': return this.block(n, 'keyword', this.t(keywords.elif));
+      case 'while_statement': return this.missingKeyword(n, this.whileStatement(n));
+      case 'if_statement': return this.missingKeyword(n, this.block(n, 'keyword', this.s('if 文: 条件コマンドの終了ステータスが 0（成功）なら then 以下を実行', 'if statement: runs the `then` branch if the condition exits 0') + this.lineRef(n)));
+      case 'elif_clause': return this.missingKeyword(n, this.block(n, 'keyword', this.t(keywords.elif)));
       case 'else_clause': return this.block(n, 'keyword', this.t(keywords.else));
       case 'coproc_statement': return this.coprocStatement(n);
       case 'case_statement': return this.caseStatement(n);
@@ -1078,6 +1078,25 @@ export class Analyzer {
       }
     }
     return this.tok(n, 'assignment', expl, children);
+  }
+
+  /**
+   * `if [ -f a ] then …` and `for x in a b do …`: with no `;` or newline before it, `then` / `do` is an ordinary
+   * word, the construct lacks its keyword and bash stops with a syntax error. Marks the token and adds a note.
+   */
+  private missingKeyword(n: SyntaxNode, t: Token): Token {
+    if (!n.incomplete) return t;
+    const kw = n.type === 'if_statement' || n.type === 'elif_clause' ? 'then' : 'do';
+    const head = n.type === 'for_statement' || n.type === 'select_statement' ? n.namedChildren : n.namedChildren.slice(0, 1);
+    const stray = head.some((h) => [h, ...descendants(h, ['word'])].some((w) => w.type === 'word' && w.text === kw));
+    if (!stray) return t;
+    const msg = this.s(
+      `構文エラー: \`${kw}\` の前に \`;\` か改行が要る。無いと \`${kw}\` はただの引数として読まれ、この構文に \`${kw}\` が無いので、bash は「syntax error near unexpected token」で止まる`,
+      `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`);
+    t.kind = 'error';
+    t.explanation = `${msg}. ${t.explanation}`;
+    this.extraNotes.push(`⚠ ${msg}`);
+    return t;
   }
 
   /** `((i++))` is the old value of `i`: 0 makes the status 1, which `set -e` treats as a failure. */

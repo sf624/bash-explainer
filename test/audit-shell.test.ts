@@ -55,6 +55,11 @@ describe('shell audit fixes', () => {
     assert.deepStrictEqual(ex.map((c) => c.when), ['When there are no arguments or only an empty one', 'When the arguments are `hello`']);
   });
 
+  it('the arguments are worded in Japanese too', () => {
+    assert.deepStrictEqual(exampleFor(parseExpansion('${@-x}')!, 'ja')!.map((c) => c.when), ['引数が無いとき', '引数が空の1つだけのとき', '引数が `hello` のとき']);
+    assert.strictEqual(exampleFor(parseExpansion('${@:-x}')!, 'ja')![0].when, '引数が無いか、空の1つだけのとき');
+  });
+
   it('an unquoted ~ in the word of ${x-~/d} is the home directory', () => {
     const unquoted = exampleFor(parseExpansion('${x-~/d}')!, 'en')!;
     assert.strictEqual(unquoted[0].result, '$HOME/d (expanded)');
@@ -153,5 +158,24 @@ describe('shell audit fixes', () => {
     assert.match(explain('local y').notes.join(), /can be used only inside a function/);
     assert.doesNotMatch(explain('f() { local y; }').notes.join(), /only inside a function/);
     assert.match(spawnSync('bash', ['-c', 'local y']).stderr.toString(), /can only be used in a function/);
+  });
+
+  it('a missing ; or newline before then / do is a syntax error', () => {
+    const note = (src: string, lang: 'ja' | 'en' = 'en') => explain(src, 0, lang).notes.join('\n');
+    assert.match(note('if [ -f a ] then echo x; fi'), /a `;` or a newline is needed before `then`/);
+    assert.match(note('for x in a b do echo $x; done'), /before `do`/);
+    assert.match(note('while true do echo; done'), /before `do`/);
+    assert.match(note('until false do echo; done'), /before `do`/);
+    assert.match(note('if a; then b; elif c then d; fi'), /before `then`/);
+    assert.match(note('select x in a b do echo; done'), /before `do`/);
+    assert.match(note('if [ -f a ] then echo x; fi', 'ja'), /構文エラー/);
+    assert.strictEqual(find('for x in a b do echo $x; done', 'for x in a b do echo $x;').kind, 'error');
+    // Valid code, and code still being typed, is not flagged.
+    for (const ok of ['echo then', 'for x in a b; do echo then; done', 'if echo then; then b; fi', 'if a', 'for x in a b', 'while true', 'if a; then b; elif c']) {
+      assert.doesNotMatch(note(ok), /needed before/, ok);
+    }
+    for (const bad of ['if [ -f a ] then echo x; fi', 'for x in a b do echo $x; done', 'while true do echo; done', 'if a; then b; elif c then d; fi']) {
+      assert.notStrictEqual(spawnSync('bash', ['-n', '-c', bad]).status, 0, bad);
+    }
   });
 });
