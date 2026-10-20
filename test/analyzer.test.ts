@@ -968,3 +968,36 @@ describe('jq examples follow -s and -j', () => {
     assert.strictEqual(ex.sections[1].lines.length, 1);
   });
 });
+
+describe('jq destructuring and label/break', () => {
+  const texts = (src: string) => all(explain(src).items).map((t) => t.explanation);
+  it('explains patterns after as, reduce and foreach', () => {
+    const cases: [string, string][] = [
+      [`jq '.[] as [$a,$b] | $a + $b' f`, 'Destructuring pattern `[$a,$b]`: takes the value apart into `$a`, `$b`'],
+      [`jq '.[] as {k:$v, $w} | $v' f`, 'Destructuring pattern `{k:$v, $w}`'],
+      [`jq '. as {("a"):$x} | $x' f`, 'into `$x`'],
+      [`jq '. as [$a] ?// $a | $a' f`, 'tried in turn'],
+      [`jq 'reduce .[] as [$a,$b] (0; . + $a)' f`, 'for each value'],
+      [`jq '[foreach .[] as {n: $n} (0; . + $n)]' f`, 'Destructuring pattern `{n: $n}` for each value'],
+      [`jq '. as $x | $x' f`, 'Variable `$x`'],
+    ];
+    for (const [src, text] of cases) {
+      const t = texts(src);
+      assert.ok(t.some((x) => x.includes(text)), `${src}: ${t.join('\n')}`);
+      assert.ok(!t.some((x) => x.includes('Could not parse')), src);
+    }
+  });
+  it('explains label and break', () => {
+    const t = texts(`jq 'label $out | .[] | if . > 1 then ., break $out else . end' f`);
+    assert.ok(t.some((x) => x.includes('leaves the `label $out` scope')), t.join('\n'));
+    assert.ok(!t.some((x) => x.includes('Could not parse')));
+  });
+  it('shows an example with a sample input that fits the pattern', () => {
+    const ex = explain(`jq '.[] as [$a,$b] | $a + $b' f`).examples[0];
+    assert.ok(ex && !ex.sections.some((s) => s.label === 'Error'), JSON.stringify(ex));
+    assert.ok(explain(`jq '. as {name: $n} | $n' f`).examples[0].sections[0].lines.join('').includes('name'));
+  });
+  it('rejects a bad pattern or label', () => {
+    for (const f of [`jq '. as 1 | 2' f`, `jq 'label out | 1' f`]) assert.ok(texts(f).some((x) => x.includes('Could not parse')), f);
+  });
+});
