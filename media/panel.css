@@ -60,8 +60,9 @@ ul {
   padding-left: 1.1rem;
 }
 
+/* Room on the left for the twisties of the top level (see .twisty). */
 ul#tree {
-  padding-left: 0;
+  padding-left: 1.1rem;
 }
 
 /* Indent guides, as in VS Code's trees: a faint line in the column of the rows' own coloured
@@ -88,8 +89,9 @@ ul#tree {
   display: flex;
   gap: 0.6rem;
   align-items: baseline;
-  /* The same space after the line as beside an example (0.7rem). */
-  padding: 0.15rem 0.4rem 0.15rem 0.7rem;
+  position: relative;
+  /* The text starts as far from the line as an example's text from its rule (2px + 0.7rem). */
+  padding: 0.15rem 0.4rem 0.15rem calc(0.7rem - 1px);
   border-left: 3px solid currentColor;
   margin: 0.15rem 0;
   border-radius: 2px;
@@ -231,9 +233,16 @@ header {
 
 /* Folding: the twisty, and a collapsed item's children. */
 .twisty {
-  flex: 0 0 0.8em;
+  /* Outside the row, left of its line (in the indent), so that every label starts at the same place
+     whether or not the item has parts. */
+  position: absolute;
+  right: calc(100% + 3px + 2px);
+  top: 0.15rem;
+  width: 0.7em;
+  text-align: center;
   color: var(--c-muted);
   user-select: none;
+  cursor: pointer;
 }
 
 li.collapsed > ul,
