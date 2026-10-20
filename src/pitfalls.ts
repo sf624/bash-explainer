@@ -23,6 +23,11 @@ function varName(n: SyntaxNode): string | undefined {
   return v?.text;
 }
 
+/** Does the text read the variable (`$NAME`, `${NAME}`, `${NAME:-…}`)? */
+export function usesVariable(text: string, name: string): boolean {
+  return new RegExp(`\\$(\\{${name}\\b|${name}\\b)`).test(text);
+}
+
 function commandName(n: SyntaxNode): string | undefined {
   return field(n, 'name')?.text.split('/').pop();
 }
@@ -55,6 +60,27 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text))) {
           add(`\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
             `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write \`${name}=…\` with no spaces around \`=\``);
+        }
+        // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value.
+        const prefix = n.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
+        for (const v of prefix) {
+          const use = a.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
+          if (name && use) {
+            add(`\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use.text}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
+              `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use.text}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… sh -c '… "\$${v}"'\``);
+            break;
+          }
+        }
+        // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
+        if (name && /^\{[A-Za-z_]\w*$/.test(name)) {
+          add(`\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: \`{ ${name.slice(1)} …; }\``,
+            `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: \`{ ${name.slice(1)} …; }\``);
+        }
+        // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed.
+        const lastArg = a[a.length - 1];
+        if (lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
+          add(`\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
+            `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`{ …; }\``);
         }
         // `rm -rf $DIR/…`: an empty DIR removes from the root.
         if (name === 'rm' && a.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) {

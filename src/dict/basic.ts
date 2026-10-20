@@ -192,7 +192,7 @@ export const basic: Record<string, CommandDoc> = {
     ['--userspec', '実行するユーザーとグループ（`ユーザー:グループ`）', 'user and group to run as (`user:group`)', 'arg'],
     ['--groups', '追加するグループ（コンマ区切り）', 'supplementary groups (comma-separated)', 'arg'],
     ['--skip-chdir', '新しいルートの `/` に移動しない', 'do not change directory to `/`'],
-  ], { positional: [pos('新しいルートにするディレクトリ', 'directory to use as the new root'), pos('実行するコマンド', 'command to run')] }),
+  ], { wraps: true, wrapSkip: 1, positional: [pos('新しいルートにするディレクトリ', 'directory to use as the new root')] }),
   // ---- text and number tools ----------------------------------------------------------------
   unlink: cmd('1つのファイルを削除する（`rm` より機能が少ない）', 'Remove a single file (a plainer `rm`)', [], { positional: [files] }),
   link: cmd('既存のファイルへのハードリンクを作る', 'Create a hard link to an existing file', [], { positional: [pos('元のファイル', 'existing file'), pos('作るリンク名', 'link name to create')] }),

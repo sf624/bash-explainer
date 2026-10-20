@@ -34,7 +34,9 @@ const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a K
     create: cmd('リソースを作る', 'Create resources', kube, { positional: [resource] }),
     delete: cmd('リソースを削除する', 'Delete resources', [...kube, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
     logs: cmd('Pod のログを表示する', "Print a pod's logs", [...kube, ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
-    exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kube, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { positional: [pos('Pod', 'pod')] }),
+    exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kube, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { afterDashes: true, positional: [pos('Pod', 'pod')] }),
+    run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kube, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { afterDashes: true, positional: [pos('Pod の名前', 'pod name')] }),
+    debug: cmd('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kube, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { afterDashes: true, positional: [pos('Pod', 'pod')] }),
     'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kube, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
     rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kube),
     wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kube, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
@@ -106,6 +108,12 @@ const iptables: OptSpec[] = [
 
 export const ops: Record<string, CommandDoc> = {
   kubectl,
+  uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
+    subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { wraps: true }) },
+  }),
+  poetry: cmd('Python のパッケージ・プロジェクト管理ツール（Poetry）', 'Python package and project manager (Poetry)', [], {
+    subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { wraps: true }) },
+  }),
   helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmCommon, {
     subcommands: {
       install: cmd('チャートを入れる（`名前 チャート`）', 'Install a chart (`name chart`)', helmCommon, { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),

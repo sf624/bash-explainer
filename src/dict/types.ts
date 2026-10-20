@@ -58,6 +58,14 @@ export interface CommandDoc {
   positionalLang?: (EmbeddedLang | undefined)[];
   /** After its own options, the remaining words form another command (sudo, xargs, env…). */
   wraps?: boolean;
+  /** Positional operands before the wrapped command (`timeout 5 cmd`, `chroot dir cmd`, `docker run image cmd`). */
+  wrapSkip?: number;
+  /** The words after `--` form the wrapped command (`kubectl exec pod -- cmd`). */
+  afterDashes?: boolean;
+  /** `NAME=value` words before the wrapped command set variables for it (`env`, `sudo`, `doas`). */
+  assigns?: boolean;
+  /** A shell: with `-c`, the words after the command string are `$0`, `$1`…; otherwise the script and its arguments. */
+  shellC?: boolean;
   subcommands?: Record<string, CommandDoc>;
   /** Options are single words that never combine (find, java-style `-name`). */
   longSingleDash?: boolean;

@@ -805,6 +805,7 @@
  "time rm $f",
  "time sleep 1",
  "time | wc",
+ "timeout 5 cd /tmp",
  "tr \"$a\" x",
  "tr '' x",
  "tr '[:upper:]' '[:lower:]'",
