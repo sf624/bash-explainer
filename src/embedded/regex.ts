@@ -119,6 +119,12 @@ function sequence(st: State, depth: number): EmbeddedToken[] {
       out.push(bracket(st));
       continue;
     }
+    if (st.flavor === 'bre' && st.src.startsWith('\\{', start)) {
+      // (A valid `\{n,m\}` was taken as a quantifier above.)
+      st.i += 2;
+      out.push({ start, end: st.i, kind: 'error', explanation: s('`\\{` は `\\{n\\}` や `\\{n,m\\}` の形でないと使えない。grep と sed は "Unmatched \\{" などのエラーで止まる', '`\\{` must start a complete `\\{n\\}` or `\\{n,m\\}`; grep and sed stop with an error such as "Unmatched \\{"'), children: [] });
+      continue;
+    }
     if (c === '\\') {
       out.push(escape(st));
       continue;

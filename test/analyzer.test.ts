@@ -1064,3 +1064,16 @@ describe('awk explanations (audit fixes)', () => {
     assert.ok(JSON.stringify(explain("awk '{print $1,$2}' OFS=, f", 0, 'ja')).includes('変数の代入'));
   });
 });
+
+describe('regex explanations (audit fixes)', () => {
+  it('says that an incomplete BRE interval is an error', () => {
+    assert.match(JSON.stringify(explain("grep 'a\\{1' f")), /Unmatched/);
+    assert.match(JSON.stringify(explain("grep 'a\\{1' f", 0, 'ja')), /Unmatched/);
+    assert.ok(!JSON.stringify(explain("grep 'a\\{1,2\\}' f")).includes('Unmatched'));
+  });
+  it('gives no example for a pattern grep rejects', () => {
+    assert.strictEqual(explain("grep 'a\\{1' f").examples.length, 0);
+    const lines = explain("grep -E 'a{2}|b+?' f").examples[0].sections.find((s) => s.label === 'Matching lines')!.lines;
+    assert.ok(lines.length > 0);
+  });
+});

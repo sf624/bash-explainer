@@ -24,6 +24,8 @@ const cases: [string, 'bre' | 'ere' | 'pcre'][] = [
   ['(?<=id=)\\d+', 'pcre'], ['\\bfoo\\b', 'pcre'], ['^\\s*#', 'pcre'], ['(?<year>\\d{4})-\\d\\d', 'pcre'],
   ['^a{,2}$', 'ere'], ['^a\\{,2\\}$', 'bre'], ['^[]a]+$', 'pcre'], ['^[^]a]x', 'pcre'], ['\\(a\\)\\1', 'bre'], ['a^b$c', 'bre'], ['a\\,b', 'ere'],
   ['(?s)a.b', 'pcre'], ['(?i)abc', 'pcre'], ['\\Aab\\z', 'pcre'], ['a\\hb', 'pcre'], ['(?P<n>a)b', 'pcre'], ['\\D\\W\\S', 'pcre'], ['(?:ab)+c', 'pcre'], ['(?!x)a', 'pcre'], ['\\w+\\s', 'ere'], ['a{2,}b', 'ere'],
+  // Stacked quantifiers repeat the repeated atom: `b+?` is `(b+)?`, not a lazy `b+`.
+  ['a{2}|b+?', 'ere'], ['a**b', 'ere'], ['(b+)?x', 'ere'], ['a+*b', 'ere'], ['(ab)+?c', 'ere'], ['a{2}?b', 'ere'], ['a*\\+b', 'bre'], ['^(a|b+?)c', 'ere'], ['\\(a*\\)*b', 'bre'],
 ];
 
 describe('regex examples agree with real engines', () => {
@@ -46,6 +48,22 @@ describe('regex translation', () => {
     // GNU grep -E reads a `{` that starts no interval as itself (GNU sed rejects it).
     assert.strictEqual(toJsRegex('a{x', 'ere')!.source, 'a\\{x');
     assert.strictEqual(toJsRegex('[[:upper:]]\\<x\\>', 'bre')!.source, '[A-Z]\\bx\\b');
+  });
+
+  it('wraps a repeated atom that is repeated again', () => {
+    assert.strictEqual(toJsRegex('b+?', 'ere')!.source, '(?:b+)?');
+    assert.strictEqual(toJsRegex('a**', 'ere')!.source, '(?:a*)*');
+    assert.strictEqual(toJsRegex('(ab)+?', 'ere')!.source, '(?:(ab)+)?');
+    assert.strictEqual(toJsRegex('a{,2}{3}', 'ere')!.source, '(?:a{0,2}){3}');
+    assert.strictEqual(toJsRegex('a\\{,2\\}*', 'bre')!.source, '(?:a{0,2})*');
+  });
+
+  it('declines what GNU rejects or ignores', () => {
+    for (const [p, f] of [['a\\{1', 'bre'], ['a\\{\\}', 'bre'], ['a\\}', 'bre'], ['*a', 'ere'], ['a|+b', 'ere'], ['(*a)', 'ere'], ['a)', 'ere'], ['(a', 'ere']] as const) {
+      assert.strictEqual(toJsRegex(p, f), undefined, `${p} ${f}`);
+    }
+    // grep -E keeps a `{` that starts no interval.
+    assert.strictEqual(toJsRegex('a{}', 'ere')!.source, 'a\\{}');
   });
 
   it('declines what JavaScript cannot express', () => {
