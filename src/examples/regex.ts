@@ -80,6 +80,20 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
   let out = '';
   let i = 0;
   const atStart = () => out === '' || out.endsWith('(') || out.endsWith('|') || out === '^';
+  // POSIX lets quantifiers stack (`a+?` is `(a+)?`, `a**` is `(a*)*`); JavaScript reads `+?` as lazy or fails.
+  // So the last atom's start is tracked, and an atom that is already repeated is wrapped before it is repeated again.
+  let atomStart = -1;
+  let repeated = false;
+  const groups: number[] = [];
+  const atom = (t: string) => { atomStart = out.length; repeated = false; out += t; };
+  const quantifier = (q: string) => {
+    if (repeated) out = `${out.slice(0, atomStart)}(?:${out.slice(atomStart)})`;
+    out += q;
+    repeated = true;
+  };
+  const open = () => { groups.push(out.length); out += '('; atomStart = -1; repeated = false; };
+  const close = () => { atomStart = groups.pop() ?? -1; repeated = false; out += ')'; };
+  const branch = () => { out += '|'; atomStart = -1; repeated = false; };
   if (flavor === 'pcre') {
     const inline = /^\(\?([imsx]+)\)/.exec(src);
     if (inline) {
@@ -110,40 +124,71 @@ export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: bool
     if (c === '[') {
       const b = posixBracket(src, i, !!opts.sedEscapes);
       if (!b) return undefined;
-      out += b[0];
+      atom(b[0]);
       i = b[1];
       continue;
     }
     if (c === '\\') {
       if (n === undefined) return undefined;
       i += 2;
-      if (/[1-9]/.test(n)) { out += '\\' + n; continue; }
-      if (n === '<' || n === '>') { out += '\\b'; continue; }
-      if ('wWsSbB'.includes(n)) { out += '\\' + n; continue; }
-      if (opts.sedEscapes && SED_ESCAPES[n]) { out += SED_ESCAPES[n]; continue; }
-      // `\{,n\}`: at most n, which JavaScript writes `{0,n}`.
-      if (flavor === 'bre' && n === '{' && src[i] === ',') { out += '{0'; continue; }
-      if (flavor === 'bre' && '(){}|+?'.includes(n)) { out += n; continue; }
+      if (/[1-9]/.test(n)) { atom('\\' + n); continue; }
+      if (n === '<' || n === '>') { atom('\\b'); continue; }
+      if ('wWsSbB'.includes(n)) { atom('\\' + n); continue; }
+      if (opts.sedEscapes && SED_ESCAPES[n]) { atom(SED_ESCAPES[n]); continue; }
+      if (flavor === 'bre' && n === '{') {
+        // `\{n,m\}`; GNU says "Unmatched \{" for anything else.
+        const m = /^(\d*)(,?)(\d*)\\\}/.exec(src.slice(i));
+        if (!m || (!m[1] && !m[3])) return undefined;
+        quantifier(`{${m[1] || '0'}${m[2]}${m[3]}}`);
+        i += m[0].length;
+        continue;
+      }
+      if (flavor === 'bre' && (n === '+' || n === '?')) { quantifier(n); continue; }
+      if (flavor === 'bre' && n === '(') { open(); continue; }
+      if (flavor === 'bre' && n === ')') { close(); continue; }
+      if (flavor === 'bre' && n === '|') { branch(); continue; }
+      if (flavor === 'bre' && n === '}') return undefined;
       if (n === '`' || n === "'") return undefined;
       // Anything else escaped is that character itself.
-      out += /[\\^$.*+?()[\]{}|/-]/.test(n) ? '\\' + n : n;
+      atom(/[\\^$.*+?()[\]{}|/-]/.test(n) ? '\\' + n : n);
       continue;
     }
     if (flavor === 'bre') {
-      if ('+?(){}|'.includes(c)) { out += '\\' + c; i++; continue; }
-      if (c === '*' && atStart()) { out += '\\*'; i++; continue; }
-      if (c === '^' && out !== '' && !out.endsWith('(') && !out.endsWith('|')) { out += '\\^'; i++; continue; }
-      if (c === '$' && i < src.length - 1 && !src.startsWith('\\)', i + 1) && !src.startsWith('\\|', i + 1)) { out += '\\$'; i++; continue; }
-    } else if (c === '{' && !/^\{\d*,?\d*\}/.test(src.slice(i))) {
-      out += '\\{';
+      if ('+?(){}|'.includes(c)) { atom('\\' + c); i++; continue; }
+      if (c === '*' && atStart()) { atom('\\*'); i++; continue; }
+      if (c === '*') { quantifier('*'); i++; continue; }
+      if (c === '^' && out !== '' && !out.endsWith('(') && !out.endsWith('|')) { atom('\\^'); i++; continue; }
+      if (c === '$' && i < src.length - 1 && !src.startsWith('\\)', i + 1) && !src.startsWith('\\|', i + 1)) { atom('\\$'); i++; continue; }
+    } else if (c === '(') {
+      open();
       i++;
       continue;
-    } else if (c === '{' && src[i + 1] === ',') {
-      out += '{0';
+    } else if (c === ')') {
+      close();
+      i++;
+      continue;
+    } else if (c === '|') {
+      branch();
+      i++;
+      continue;
+    } else if (c === '*' || c === '+' || c === '?') {
+      // A quantifier with nothing before it: GNU grep ignores it (with a warning), sed -E rejects it.
+      if (atStart()) return undefined;
+      quantifier(c);
+      i++;
+      continue;
+    } else if (c === '{') {
+      const m = /^\{(\d*)(,?)(\d*)\}/.exec(src.slice(i));
+      if (m && (m[1] || m[3])) {
+        quantifier(`{${m[1] || '0'}${m[2]}${m[3]}}`);
+        i += m[0].length;
+        continue;
+      }
+      atom('\\{');
       i++;
       continue;
     }
-    out += c === '/' ? '\\/' : c;
+    atom(c === '/' ? '\\/' : c);
     i++;
   }
   try {
