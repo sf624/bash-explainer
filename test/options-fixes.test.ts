@@ -131,3 +131,10 @@ describe('option dictionary fixes (audit)', () => {
     assert.strictEqual(fs.readFileSync(path.join(tmp, 'out.txt'), 'utf8'), 'a\nb\n');
   });
 });
+
+import { soundness } from './support/fuzz';
+describe('redirections around assignments', () => {
+  it('keeps the children of `>f x=1 >g` in order', () => {
+    assert.deepStrictEqual(soundness(createUnbashParser().parse('>f x=1 >g')), []);
+  });
+});
