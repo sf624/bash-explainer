@@ -21,7 +21,7 @@ const VARS: Record<string, [string, string]> = {
   NF: ['現在の行のフィールド（列）の数', 'number of fields on the current line'],
   FS: ['入力のフィールド区切り（既定は空白。`-F` で指定）', 'input field separator (whitespace by default; set with `-F`)'],
   OFS: ['出力のフィールド区切り（`print a, b` の `,` の所に入る。既定は空白）', 'output field separator (placed between `print a, b`; a space by default)'],
-  RS: ['入力のレコード（行）区切り', 'input record separator'],
+  RS: ['入力のレコード（行）区切り（既定は改行。`""` なら空行区切りの段落。2文字以上は gawk では正規表現）', 'input record separator (default: newline; `""` = paragraphs split by blank lines; longer than one character is a regex in gawk)'],
   ORS: ['出力のレコード区切り（既定は改行）', 'output record separator (a newline by default)'],
   FILENAME: ['現在の入力ファイル名', 'the current input file name'],
   SUBSEP: ['多次元配列のキーの区切り', 'separator for multi-dimensional array keys'],
@@ -345,7 +345,12 @@ class AwkExplainer {
       case 'break': return tok(s('ループを抜ける', 'leave the loop'), []);
       case 'continue': return tok(s('ループの次の繰り返しに進む', 'continue with the next iteration'), []);
       case 'return': return tok(s('関数から値を返す', 'return from the function'));
-      case 'delete': return tok(s(`配列の要素 \`${this.text(toks.slice(1))}\` を削除する`, `delete the array element \`${this.text(toks.slice(1))}\``));
+      case 'delete': {
+        const target = this.text(toks.slice(1));
+        return tok(toks.some((t) => t.text === '[')
+          ? s(`配列の要素 \`${target}\` を削除する`, `delete the array element \`${target}\``)
+          : s(`配列 \`${target}\` の要素をすべて削除する`, `delete every element of the array \`${target}\``));
+      }
       case 'getline': return tok(s('次の行を読み込む', 'read the next line'));
       case 'if': {
         const close = this.matching(k + 1);
@@ -391,7 +396,11 @@ class AwkExplainer {
         '%=': [`\`${target}\` を \`${value}\` で割った余りにする`, `set \`${target}\` to the remainder`],
         '^=': [`\`${target}\` を \`${value}\` 乗する`, `raise \`${target}\` to \`${value}\``],
       };
-      const extra = /^\$\d+$|^\$NF$/.test(target) ? s('（フィールドを書き換えると `$0` も OFS で組み立て直される）', ' (changing a field rebuilds `$0` with OFS)') : '';
+      const extra = target === '$0'
+        ? s('（行全体を書き換えるので、フィールド `$1`、`$2`…と `NF` は新しい `$0` を FS で分け直したものになる）', ' (the whole line changes, so `$1`, `$2`… and `NF` come from splitting the new `$0` with FS again)')
+        : /^\$\d+$|^\$NF$/.test(target) ? s('（フィールドを書き換えると `$0` も OFS で組み立て直される）', ' (changing a field rebuilds `$0` with OFS)')
+          : target === 'RS' && op === '=' && /^""$/.test(value) ? s('（空文字列は「段落モード」: 空行で区切られた塊が1レコードになり、改行もフィールドの区切りになる）', ' (the empty string is "paragraph mode": blocks separated by blank lines are the records, and a newline also separates fields)')
+            : '';
       return tok(s(d[op][0], d[op][1]) + extra);
     }
     if (toks.length >= 2 && (toks[toks.length - 1].text === '++' || toks[toks.length - 1].text === '--' || toks[0].text === '++' || toks[0].text === '--')) {

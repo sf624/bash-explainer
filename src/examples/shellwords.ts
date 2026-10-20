@@ -391,14 +391,22 @@ function shellQuote(s: string): string {
   return s.replace(/[^A-Za-z0-9_\-.,:/@%+=^]/g, '\\$&');
 }
 
-function numberArg(a: string | undefined): number {
+/**
+ * A numeric printf argument as bash reads it. `integer`: for %d %i %o %u %x %X, which take only integers
+ * (`1.5` and `1e3` are "invalid number"; floats are for %e %f %g). Leading blanks are allowed, trailing ones are not.
+ */
+function numberArg(a: string | undefined, integer = false): number {
   if (a === undefined || a === '') return 0;
   if (/^['"]/.test(a)) return a.length > 1 ? a.codePointAt(1)! : 0;
-  const s = a.trim();
-  if (/^[-+]?0[xX][0-9a-fA-F]+$/.test(s)) return parseInt(s, 16);
-  if (/^[-+]?0[0-7]+$/.test(s)) return parseInt(s, 8);
-  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) return Number(s);
-  throw new Unsupported('invalid number');
+  const s = a.replace(/^\s+/, '');
+  let n: number;
+  if (/^[-+]?0[xX][0-9a-fA-F]+$/.test(s)) n = (s.startsWith('-') ? -1 : 1) * parseInt(s.replace(/^[-+]/, ''), 16);
+  else if (/^[-+]?0[0-7]+$/.test(s)) n = (s.startsWith('-') ? -1 : 1) * parseInt(s.replace(/^[-+]/, ''), 8);
+  else if (/^[-+]?\d+$/.test(s) || (!integer && /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s))) n = Number(s);
+  else throw new Unsupported('invalid number');
+  // Beyond 2^53 a JavaScript number is no longer exact (and bash clamps at 2^63 with a warning).
+  if (integer && Math.abs(n) > Number.MAX_SAFE_INTEGER) throw new Unsupported('out of range');
+  return n;
 }
 
 /** The output of bash's `printf FORMAT ARGS…` (the format is reused while arguments remain). */
@@ -423,8 +431,8 @@ export function bashPrintf(format: string, args: string[]): string {
       i += m[0].length;
       const [, flags, w, p, conv] = m;
       if (conv === '%') { out += '%'; continue; }
-      const width = w === '*' ? numberArg(args[ai++]) : w;
-      const prec = p === '*' ? numberArg(args[ai++]) : p;
+      const width = w === '*' ? numberArg(args[ai++], true) : w;
+      const prec = p === '*' ? numberArg(args[ai++], true) : p;
       const spec = `%${flags.replace("'", '')}${width ?? ''}${prec !== undefined ? '.' + prec : ''}`;
       const arg = args[ai++];
       if (conv === 'b') {
@@ -437,7 +445,7 @@ export function bashPrintf(format: string, args: string[]): string {
       if (conv === 's') { out += sprintf(`${spec}s`, [arg ?? '']); continue; }
       // An empty argument prints a NUL byte.
       if (conv === 'c') { out += sprintf(`${spec}s`, [(arg ?? '').slice(0, 1) || '\0']); continue; }
-      out += sprintf(`${spec}${conv}`, [numberArg(arg)]);
+      out += sprintf(`${spec}${conv}`, [numberArg(arg, /[diouxX]/.test(conv))]);
     }
     if (stopped) return out;
     // Reuse the format only while it consumed arguments and some remain.
