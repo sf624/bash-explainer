@@ -10,6 +10,8 @@ export interface LabelPart {
   text: string;
   /** A part that stands for text left out. The names are English in every language; only explanations are translated. */
   placeholder?: true;
+  /** Joined to the part before it with no space, as in `NAME=`*value* or *pattern*`)`. */
+  tight?: true;
 }
 
 /**
@@ -25,9 +27,14 @@ export const PLACEHOLDER_CLOSE = '›';
 export const code = (text: string): LabelPart => ({ text });
 export const placeholder = (name: string): LabelPart => ({ text: name, placeholder: true });
 
+/** Joins the rendered parts of a label: a space apart, but none before a tight part. */
+export function joinParts(parts: readonly LabelPart[], render: (p: LabelPart) => string): string {
+  return parts.map((p, i) => (i && !p.tight ? ' ' : '') + render(p)).join('');
+}
+
 /** The plain-text form of a label: the parts apart by a space, each placeholder as ‹name›. */
 export function labelText(parts: readonly LabelPart[]): string {
-  return parts.map((p) => (p.placeholder ? `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}` : p.text)).join(' ');
+  return joinParts(parts, (p) => (p.placeholder ? `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}` : p.text));
 }
 
 /** The parts of a token's label: its skeleton, or its text as one code part. */
@@ -100,7 +107,7 @@ function caseItem(n: SyntaxNode): LabelPart[] {
   const patterns = fields(n, 'value').map((p) => flat(p.text)).join('|');
   const close = n.children.find((c) => !c.named && c.type === ')');
   // The `)` is written against the pattern.
-  const out: LabelPart[] = patterns.length + 1 <= LABEL_LIMIT && !patterns.includes('\n') && close ? [code(patterns + ')')] : [placeholder('pattern'), ...(close ? [code(')')] : [])];
+  const out: LabelPart[] = patterns.length + 1 <= LABEL_LIMIT && !patterns.includes('\n') && close ? [code(patterns + ')')] : [placeholder('pattern'), ...(close ? [{ ...code(')'), tight: true as const }] : [])];
   if (n.namedChildren.some((c) => c.field === null)) out.push(placeholder('commands'));
   const end = n.children.find((c) => !c.named && /^;[;&]/.test(c.type));
   if (end) out.push(code(end.type));
@@ -204,7 +211,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
     case 'arithmetic_command': return whole(n, () => [code('(('), placeholder('expression'), code('))')]);
     case 'variable_assignment': return whole(n, () => {
       const op = n.children.find((c) => !c.named && (c.type === '=' || c.type === '+='))!.type;
-      return [code(field(n, 'name')!.text + op), placeholder('value')];
+      return [code(field(n, 'name')!.text + op), { ...placeholder('value'), tight: true }];
     });
     default: return [keep(flat(n.text), 'word')];
   }

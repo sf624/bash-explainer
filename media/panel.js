@@ -257,7 +257,7 @@
     // A skeleton: code parts as they are (the label is monospace), placeholders apart in italics.
     const parts = token.labelParts ?? [{ text: token.label }];
     parts.forEach((p, i) => {
-      if (i) label.append(' ');
+      if (i && !p.tight) label.append(' ');
       if (p.placeholder) {
         const ph = document.createElement('span');
         ph.className = 'ph';

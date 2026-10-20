@@ -1,7 +1,7 @@
 import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
-import { LabelPart, labelParts } from '../label';
+import { joinParts, LabelPart, labelParts } from '../label';
 
 export const ui = {
   ja: {
@@ -181,9 +181,9 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   }
   const walk = (tok: Token, depth: number) => {
     // A code part in `<code>`, a placeholder in italics and the muted colour; the parts are a space apart.
-    const label = labelParts(tok).map((p) => (p.placeholder
+    const label = joinParts(labelParts(tok), (p) => (p.placeholder
       ? `<i>${colored(p.text, 'comment')}</i>`
-      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind)}</code>`)).join(' ');
+      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind)}</code>`));
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
     out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
@@ -228,7 +228,7 @@ export function codeSpan(text: string): string {
 
 /** A label as Markdown: code parts as code spans, placeholders in italics (`if` *condition* `then`). */
 export function labelMarkdown(parts: readonly LabelPart[]): string {
-  return parts.map((p) => (p.placeholder ? `*${p.text}*` : codeSpan(p.text.replace(/\s*\n\s*/g, ' ⏎ ')))).join(' ');
+  return joinParts(parts, (p) => (p.placeholder ? `*${p.text}*` : codeSpan(p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
 }
 
 /** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */

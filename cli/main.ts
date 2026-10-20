@@ -6,7 +6,7 @@ import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang } from '../src/i18n';
-import { labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
+import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
@@ -187,9 +187,9 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   for (const n of ex.notes) out.push(`  ${n}`);
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
-    const label = labelParts(t).map((p) => (p.placeholder
+    const label = joinParts(labelParts(t), (p) => (p.placeholder
       ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
-      : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ ')))).join(' ');
+      : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
     out.push(`${'  '.repeat(depth + 1)}${label}  ${t.explanation.replace(/`/g, '')}`);
     for (const c of t.children) walk(c, depth + 1);
   };
