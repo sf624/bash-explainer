@@ -53,6 +53,8 @@ describe('the web page in a browser', function () {
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
     // The development version, under /next/ as on GitHub Pages.
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${path.join(dir, 'next')}`, '--channel=next'], { cwd: root, stdio: 'pipe' });
+    // The preview of a pull request, under /pr/N/.
+    execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${path.join(dir, 'pr', '123')}`, '--channel=pr', '--pr=123'], { cwd: root, stdio: 'pipe' });
     server = http.createServer((req, res) => {
       const name = path.normalize(decodeURIComponent((req.url ?? '/').split('?')[0])).replace(/^(\.\.[/\\])+/, '');
       let file = path.join(dir, name);
@@ -169,6 +171,27 @@ describe('the web page in a browser', function () {
     await panel().locator('#toggle').click();
     assert.strictEqual(await folded(), false);
     assert.strictEqual(await panel().locator('#tree .collapsed').count() > 0, true);
+    await ctx.close();
+  });
+
+  it('shows the preview of a pull request with a banner, and switches to the other pages', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(`${base}pr/123/`);
+    assert.strictEqual(await page.locator('#channel-banner').isVisible(), true);
+    assert.match(await page.locator('#banner-text').innerText(), /^Preview of pull request #123 \(commit [0-9a-f]{7}\)\. Not released\.$/);
+    assert.strictEqual(await page.locator('#banner-pr').getAttribute('href'), 'https://github.com/sf624/bash-explainer/pull/123');
+    assert.match((await page.locator('#banner-commit').getAttribute('href')) ?? '', /\/commit\/[0-9a-f]{7}$/);
+    assert.strictEqual(await page.locator('meta[name=robots]').getAttribute('content'), 'noindex');
+    assert.strictEqual(await page.locator('#channel').inputValue(), 'pr');
+    assert.strictEqual(await page.locator('#dev-link').isHidden(), true);
+    await page.locator('#lang').selectOption('ja');
+    assert.match(await page.locator('#banner-text').innerText(), /^プルリクエスト #123（コミット [0-9a-f]{7}）のプレビュー。未リリース。$/);
+    await page.locator('#channel').selectOption('next');
+    await page.waitForURL(`${base}next/**`);
+    await page.goBack();
+    await page.locator('#channel').selectOption('release');
+    await page.waitForURL(new RegExp(`^${base}#`));
     await ctx.close();
   });
 

@@ -1,12 +1,20 @@
 name: Web page
 
-# Builds the web page (web/) twice and publishes both in one GitHub Pages deployment: the latest
-# release tag at the root, and main under /next/ (the development version). The Release workflow
-# calls this after publishing a version; a push to main that changes the page redeploys both; run it
-# by hand for the first deployment or a fix. One-time setup: docs/publishing.md.
+# Builds the web page (web/) and publishes all of it in one GitHub Pages deployment: the latest
+# release tag at the root, main under /next/ (the development version), and the head of every open
+# pull request of this repository under /pr/<number>/ (a preview). A deployment replaces the whole
+# site, so each run rebuilds all of them. A comment on the pull request links to its preview.
+# The Release workflow calls this after publishing a version; a push to main that changes the page
+# redeploys; a pull request that is opened, updated, reopened or closed redeploys (pull_request_target,
+# so that this file runs from main, the branch the github-pages environment allows); run it by hand
+# for the first deployment or a fix. Pull request code runs only in the build job, which can read
+# but not write, with no secrets. One-time setup: docs/publishing.md.
 on:
   workflow_call:
   workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -31,13 +39,23 @@ concurrency:
 jobs:
   build:
     name: Build the web page
+    # A pull request from a fork has no preview. (Only pull requests to main start this workflow, and it
+    # runs from main, which the github-pages environment allows.)
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      previews: ${{ steps.previews.outputs.previews }}
     steps:
       # Always main, even when the Release workflow calls this on a tag; all tags are needed below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
+          # The pull request builds below share this clone: it must not hold the token.
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -65,6 +83,39 @@ jobs:
           npx tsc --noEmit -p web
           BASH_EXPLAINER_CHANNEL=next npm run build:web -- --outdir="$GITHUB_WORKSPACE/site/next"
 
+      # The head of each open pull request of this repository, built like main under /pr/<number>/. This
+      # runs the pull request's code (npm ci, its build script), so: the job can only read, the token is
+      # given to the listing step alone, and npm uses its own cache directory, so that the cache the job
+      # saves for main cannot be written by that code. A pull request that does not build is left out.
+      - name: Build the open pull requests into site/pr/
+        id: previews
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          list="$RUNNER_TEMP/prs.txt"
+          gh pr list --repo "$REPO" --state open --limit 200 \
+            --json number,isCrossRepository --jq '.[] | select(.isCrossRepository | not) | .number' > "$list"
+          unset GH_TOKEN
+          built="$RUNNER_TEMP/previews.txt"
+          : > "$built"
+          export npm_config_cache="$RUNNER_TEMP/npm-pr"
+          while read -r n; do
+            test -n "$n" || continue
+            dir="$RUNNER_TEMP/pr-$n"
+            if sha="$(git fetch --quiet origin "refs/pull/$n/head" && git rev-parse FETCH_HEAD)" \
+              && git worktree add --detach "$dir" "$sha" > /dev/null \
+              && (cd "$dir" && npm ci --no-audit --no-fund && BASH_EXPLAINER_CHANNEL=pr BASH_EXPLAINER_PR="$n" npm run build:web -- --outdir="$GITHUB_WORKSPACE/site/pr/$n"); then
+              echo "$n $sha" >> "$built"
+            else
+              echo "::warning::No preview for pull request #$n: it did not build"
+              rm -rf "$GITHUB_WORKSPACE/site/pr/$n"
+            fi
+            git worktree remove --force "$dir" || true
+          done < "$list"
+          cat "$built"
+          { echo 'previews<<EOF'; cat "$built"; echo EOF; } >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
@@ -79,6 +130,56 @@ jobs:
     permissions:
       pages: write
       id-token: write
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # Links each deployed preview from its pull request, in one comment that later runs update. No pull
+  # request code runs here, and nothing is checked out.
+  comment:
+    name: Link the previews on the pull requests
+    needs: [build, deploy]
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Create or update the comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          PREVIEWS: ${{ needs.build.outputs.previews }}
+          CLOSED: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.number || '' }}
+        run: |
+          marker='<!-- web-preview -->'
+          # The comment of this bot that holds the marker, if any.
+          find_comment() {
+            gh api --paginate "repos/$REPO/issues/$1/comments" \
+              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- web-preview -->"))) | "\(.id) \(.body | @base64)"' | sed -n 1p
+          }
+          # Writes the body into the comment of pull request $1 (a new one if there is none), unless it is the same.
+          write_comment() {
+            local found id old
+            found="$(find_comment "$1")"
+            id="${found%% *}"
+            old="$(printf '%s' "${found#* }" | base64 -d 2>/dev/null || true)"
+            if [ -z "$found" ]; then
+              gh api "repos/$REPO/issues/$1/comments" -f body="$2" > /dev/null
+            elif [ "$old" != "$2" ]; then
+              gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$2" > /dev/null
+            fi
+          }
+          if [ -n "$CLOSED" ]; then
+            # The page of a closed pull request is gone from this deployment.
+            found="$(find_comment "$CLOSED")"
+            test -z "$found" || write_comment "$CLOSED" "$marker
+          Web preview removed: the pull request is closed."
+            exit 0
+          fi
+          while read -r n sha; do
+            test -n "$n" || continue
+            write_comment "$n" "$marker
+          Web preview: ${PAGE_URL%/}/pr/$n/ (commit ${sha:0:7})"
+          done <<< "$PREVIEWS"

@@ -1,8 +1,9 @@
 // Builds the web page (GitHub Pages) into site/, or the directory given with --outdir=.
-// Usage: npx tsx scripts/build-web.ts [--outdir=site] [--channel=release|next]
-// The channel is `release` (the page of a released version, the default) or `next` (the development
-// version built from main: a banner says so and the page asks search engines not to index it).
-// It can also be set with BASH_EXPLAINER_CHANNEL; the flag wins.
+// Usage: npx tsx scripts/build-web.ts [--outdir=site] [--channel=release|next|pr] [--pr=N]
+// The channel is `release` (the page of a released version, the default), `next` (the development
+// version built from main) or `pr` (the preview of open pull request N, built from its head). A banner
+// says so on the last two, and they ask search engines not to index them.
+// The channel can also be set with BASH_EXPLAINER_CHANNEL and the number with BASH_EXPLAINER_PR; the flags win.
 import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,8 +15,11 @@ const outdir = path.resolve(root, process.argv.find((a) => a.startsWith('--outdi
 /** Where to write what went into the bundle, for scripts/notices.ts. */
 const metafile = process.argv.find((a) => a.startsWith('--metafile='))?.slice('--metafile='.length);
 const channel = process.argv.find((a) => a.startsWith('--channel='))?.slice('--channel='.length) ?? process.env.BASH_EXPLAINER_CHANNEL ?? 'release';
-if (channel !== 'release' && channel !== 'next') throw new Error(`Unknown channel "${channel}": use release or next`);
-/** The commit the page is built from, for the banner of the development version. */
+if (channel !== 'release' && channel !== 'next' && channel !== 'pr') throw new Error(`Unknown channel "${channel}": use release, next or pr`);
+/** The pull request number of a preview. */
+const pr = process.argv.find((a) => a.startsWith('--pr='))?.slice('--pr='.length) ?? process.env.BASH_EXPLAINER_PR ?? '';
+if (channel === 'pr' ? !/^[1-9][0-9]{0,8}$/.test(pr) : pr !== '') throw new Error(`The pull request number (--pr=N) goes with the pr channel only, and is a number: "${pr}"`);
+/** The commit the page is built from, for the banner of the development version and the previews. */
 function commit(): string {
   try {
     return execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -59,7 +63,8 @@ async function main(): Promise<void> {
     define: {
       __VERSION__: JSON.stringify(version),
       __CHANNEL__: JSON.stringify(channel),
-      __COMMIT__: JSON.stringify(channel === 'next' ? commit() : ''),
+      __PR__: JSON.stringify(pr),
+      __COMMIT__: JSON.stringify(channel === 'release' ? '' : commit()),
       // The web page's shell sample is test/fixtures/sample.sh, the tour of every feature (web/samples.ts).
       __SAMPLE_SH__: JSON.stringify(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8')),
     },
@@ -68,8 +73,8 @@ async function main(): Promise<void> {
   });
   if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   const copy = (from: string, to = path.basename(from)) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
-  // The development version asks search engines to leave it out, so that the released page is the one they find.
-  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel === 'next' ? '<meta name="robots" content="noindex">' : '');
+  // The development version and the previews ask search engines to leave them out, so that the released page is the one they find.
+  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '');
   fs.writeFileSync(path.join(outdir, 'index.html'), index);
   copy('web/page.css');
   copy('web/theme.css');
@@ -85,7 +90,7 @@ async function main(): Promise<void> {
   fs.writeFileSync(path.join(outdir, 'panel.html'), PANEL_HTML);
   // GitHub Pages: serve the files as they are, without Jekyll.
   fs.writeFileSync(path.join(outdir, '.nojekyll'), '');
-  console.log(`Built the web page ${version} (${channel}) into ${path.relative(root, outdir) || '.'}`);
+  console.log(`Built the web page ${version} (${channel === 'pr' ? `pr #${pr}` : channel}) into ${path.relative(root, outdir) || '.'}`);
 }
 
 main().catch((e) => {

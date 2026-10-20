@@ -25,8 +25,12 @@ import { toPlainMarkdown } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 
 declare const __VERSION__: string;
-declare const __CHANNEL__: 'release' | 'next';
+declare const __CHANNEL__: 'release' | 'next' | 'pr';
+declare const __PR__: string;
 declare const __COMMIT__: string;
+
+/** The way up from this page to the root of the site: the release at /, main at /next/, a preview at /pr/N/. */
+const UP = __CHANNEL__ === 'pr' ? '../../' : __CHANNEL__ === 'next' ? '../' : '';
 
 const TEXT = {
   en: {
@@ -43,13 +47,17 @@ const TEXT = {
     notices: 'Third-party notices',
     banner: 'Development version, unreleased: built from main at',
     bannerTail: 'It may differ from the released extension.',
+    prBanner: 'Preview of pull request',
+    prBannerTail: 'Not released.',
     toRelease: 'Released version',
+    toPr: 'Pull request',
     dev: 'Development version',
     theme: 'Theme',
     themes: { auto: 'Auto', light: 'Light', dark: 'Dark' },
     version: 'Version',
     release: 'Release',
     development: 'Development (main',
+    pr: 'PR',
     replace: 'Replace your script with the sample?',
     line: (n: number) => `Ln ${n}`,
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
@@ -68,13 +76,17 @@ const TEXT = {
     notices: 'サードパーティのライセンス',
     banner: '開発版（未リリース）: main の',
     bannerTail: 'からビルドしています。リリース済みの拡張とは異なる場合があります。',
+    prBanner: 'プルリクエスト',
+    prBannerTail: 'のプレビュー。未リリース。',
     toRelease: 'リリース版',
+    toPr: 'プルリクエスト',
     dev: '開発版',
     theme: 'テーマ',
     themes: { auto: '自動', light: 'ライト', dark: 'ダーク' },
     version: 'バージョン',
     release: 'リリース版',
     development: '開発版（main',
+    pr: 'PR',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
     line: (n: number) => `${n} 行目`,
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
@@ -361,11 +373,29 @@ function applyLanguage(): void {
   $<HTMLSelectElement>('channel').replaceChildren(
     new Option(__CHANNEL__ === 'release' ? `${t.release} (v${__VERSION__})` : t.release, 'release', false, __CHANNEL__ === 'release'),
     new Option(__CHANNEL__ === 'next' ? `${t.development}, ${__COMMIT__})` : `${t.development})`, 'next', false, __CHANNEL__ === 'next'),
+    // A preview has its own entry, the current one; the other pages do not list previews.
+    ...(__CHANNEL__ === 'pr' ? [new Option(`${t.pr} #${__PR__}, ${__COMMIT__}`, 'pr', false, true)] : []),
   );
-  if (__CHANNEL__ === 'next') {
-    // Ja reads "main の abc1234 からビルドしています。": the commit sits in the middle of the sentence.
-    $('banner-text').replaceChildren(t.banner + ' ', Object.assign(document.createElement('code'), { textContent: __COMMIT__ }), ' ' + t.bannerTail);
-    $('banner-release').textContent = t.toRelease;
+  if (__CHANNEL__ !== 'release') {
+    const code = Object.assign(document.createElement('code'), { textContent: __COMMIT__ });
+    const release = $<HTMLAnchorElement>('banner-release');
+    // The pages sit at /, /next/ and /pr/N/.
+    release.href = UP;
+    release.textContent = t.toRelease;
+    if (__CHANNEL__ === 'next') {
+      // Ja reads "main の abc1234 からビルドしています。": the commit sits in the middle of the sentence.
+      $('banner-text').replaceChildren(t.banner + ' ', code, ' ' + t.bannerTail);
+    } else {
+      // En reads "Preview of pull request #12 (commit abc1234). Not released."; ja "プルリクエスト #12（コミット abc1234）のプレビュー。未リリース。"
+      const open = lang === 'ja' ? '（コミット ' : ' (commit ';
+      const close = lang === 'ja' ? '）' : ')';
+      $('banner-text').replaceChildren(`${t.prBanner} #${__PR__}${open}`, code, close + t.prBannerTail);
+      $<HTMLAnchorElement>('banner-pr').href = `https://github.com/sf624/bash-explainer/pull/${__PR__}`;
+      $('banner-pr').textContent = `${t.toPr} #${__PR__}`;
+      $('banner-pr').hidden = false;
+      $('banner-pr-sep').hidden = false;
+    }
+    $<HTMLAnchorElement>('banner-commit').href = `https://github.com/sf624/bash-explainer/commit/${__COMMIT__}`;
     $('banner-commit').textContent = __COMMIT__;
     $('channel-banner').hidden = false;
   } else {
@@ -426,7 +456,7 @@ $<HTMLSelectElement>('channel').addEventListener('change', async (e) => {
   const to = (e.target as HTMLSelectElement).value;
   if (to === __CHANNEL__) return;
   const params = new URLSearchParams({ lang, kind, ...(await encodeText(view.state.doc.toString())) });
-  location.href = `${to === 'next' ? 'next/' : '../'}#${params}`;
+  location.href = `${UP}${to === 'next' ? 'next/' : ''}#${params}`;
 });
 
 $('share').addEventListener('click', async () => {
