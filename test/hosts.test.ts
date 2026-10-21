@@ -454,3 +454,35 @@ describe('host files the other tests do not reach', () => {
     assert.match(extractShell('python', src).text, /^echo A \\n \$0$/m);
   });
 });
+
+describe('the shell of a Markdown code block', () => {
+  const code = '[[ -n $name ]] && echo -e "hi\\t$name"';
+  const codes = (fence: string, first?: string, forced?: 'sh') => {
+    const src = ['# T', '', '```' + fence, ...(first ? [first] : []), code, '```', ''].join('\n');
+    const extracted = extractShell('markdown', src);
+    return hostIssues(parser.parse(extracted.text), extracted, src.split('\n'), 'en', forced).map((i) => i.code).sort();
+  };
+  it('reads sh as bash, unless a shebang says otherwise', () => {
+    assert.deepStrictEqual(codes('sh'), []);
+    assert.deepStrictEqual(codes('shell'), []);
+    assert.deepStrictEqual(codes('sh', '#!/bin/bash'), []);
+    assert.deepStrictEqual(codes('sh', '#!/bin/sh').length > 0, true);
+    assert.deepStrictEqual(codes('sh', '# shellcheck shell=dash').length > 0, true);
+  });
+  it('lets the shebang win over a tag that names a shell', () => {
+    assert.deepStrictEqual(codes('bash', '#!/bin/sh').length > 0, true);
+    assert.deepStrictEqual(codes('zsh', '#!/bin/bash'), []);
+    assert.deepStrictEqual(codes('bash', '#!/usr/bin/python3'), []);
+  });
+  it('keeps the shell a tag names', () => {
+    for (const f of ['dash', 'posix', 'ksh', 'zsh']) {
+      const want = { dash: 'dash', posix: 'sh', ksh: 'ksh', zsh: 'zsh' }[f];
+      assert.strictEqual(extractShell('markdown', '```' + f + '\n' + code + '\n```\n').regions[0].shell, want, f);
+    }
+    assert.deepStrictEqual(codes('bash'), []);
+  });
+  it('lets an explicit shell win', () => {
+    assert.ok(codes('sh', '#!/bin/bash', 'sh').length > 0);
+    assert.ok(codes('sh', undefined, 'sh').length > 0);
+  });
+});

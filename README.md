@@ -81,7 +81,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 ```
 
 - **Shells:** POSIX `sh` (naming what fails in dash and busybox ash), `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh`. What works where was measured with each shell.
-- **Which shell:** from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, …), a `# shellcheck shell=` line or the file name — or set `bashExplainer.shell`.
+- **Which shell:** from the shebang (`#!/bin/sh`, `#!/usr/bin/env dash`, …), a `# shellcheck shell=` line or the file name — or set `bashExplainer.shell`. In a Markdown code block, a shebang wins over the fence's tag; a block tagged `sh` without one is read as bash (write `#!/bin/sh` in it to check it as POSIX sh), and `bash`, `zsh`, `dash`, `ksh` keep their shell.
 
 ## Shell code in other files
 
@@ -91,7 +91,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 | Makefile | recipes, with make's `$(VAR)`, `$@` and `$$` explained |
 | CI YAML | GitHub Actions `run:` (workflows and `action.yml`, following `shell:` and `defaults`), GitLab CI `script:`, CircleCI `run:` / `command:`, and Azure Pipelines `script:` / `bash:` with its `$(variable)` macros; warns when untrusted input like `${{ github.event.pull_request.title }}` is pasted into a script |
 | `package.json` | `scripts` |
-| Markdown | code blocks marked `sh`, `bash`, `console`, … |
+| Markdown | code blocks marked `sh`, `bash`, `console`, …; the shell is the block's shebang, else the one the tag names (`sh` counts as bash) |
 | Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
 | Jenkinsfile | `sh '…'`, `sh "…"`, `sh '''…'''`, `sh(script: …)`; points out the `$name` and `${…}` that Groovy fills in before the shell runs |
 

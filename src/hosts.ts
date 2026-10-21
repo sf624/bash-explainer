@@ -1,6 +1,6 @@
 import { azureVariables as AZURE_VARIABLES, ciVariables, githubContext } from './dict/ciVariables';
 import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
-import { dialectIssues, Shell } from './dialect';
+import { detectShell, dialectIssues, Shell } from './dialect';
 import { descendants, type BashParser, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { createUnbashParser } from './syntax/adapters/unbash';
 import { option, shellState } from './semantics/state';
@@ -752,10 +752,12 @@ function markdown(b: Builder): void {
     const lang = (open[3] ?? '').toLowerCase();
     let j = i + 1;
     const close = (l: string) => l.trim().startsWith(fence[0].repeat(fence.length)) && !l.trim().slice(fence.length).trim();
-    const shell: Shell | undefined | null = ['sh', 'posix'].includes(lang) ? 'sh' : ['bash', 'shell', 'shellscript', 'console', 'shellsession', 'terminal'].includes(lang) ? 'bash' : lang === 'zsh' ? 'zsh' : lang === 'ksh' ? 'ksh' : lang === 'dash' ? 'dash' : null;
+    // `sh` and `shell` mostly mean "shell code" (GitHub colours them like bash), so they are bash, not POSIX sh;
+    // a shebang or `# shellcheck shell=` line in the block wins over every tag.
+    const fenceShell: Shell | undefined | null = lang === 'posix' ? 'sh' : ['sh', 'bash', 'shell', 'shellscript', 'console', 'shellsession', 'terminal'].includes(lang) ? 'bash' : lang === 'zsh' ? 'zsh' : lang === 'ksh' ? 'ksh' : lang === 'dash' ? 'dash' : null;
     const prompts = ['console', 'shellsession', 'terminal'].includes(lang);
     while (j < b.lines.length && !close(b.lines[j])) {
-      if (shell !== null) {
+      if (fenceShell !== null) {
         if (prompts) {
           // Only lines after a `$ ` prompt are commands; the rest is output.
           const p = /^(\s*[$#%]\s)/.exec(b.lines[j]);
@@ -764,6 +766,7 @@ function markdown(b: Builder): void {
       }
       j++;
     }
+    const shell = fenceShell === null ? null : detectShell(b.lines.slice(i + 1, j).join('\n')) ?? fenceShell;
     if (shell !== null && j > i + 1) b.region(i + 1, j - 1, [`Markdown のコードブロック（${lang}）`, `Markdown code block (${lang})`], shell === 'bash' ? undefined : shell);
     i = j;
   }
