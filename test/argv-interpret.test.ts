@@ -368,6 +368,12 @@ describe('argv interpreter: the option grammar', () => {
     const dir = parseOf('cp *.txt dir').roles[1].role;
     assert.ok(dir.role === 'operand' && dir.uncertain);
     assert.strictEqual(dir.otherwise!.text.en, 'destination directory');
+    const brace = parseOf('cp a{,.bak}').roles[0].role;
+    assert.ok(brace.role === 'operand' && !brace.uncertain);
+    assert.deepStrictEqual(brace.each!.map((o) => o.text.en), ['source', 'destination (the new name, or an existing directory)']);
+    const all = parseOf('cp "$@"').roles[0].role;
+    assert.ok(all.role === 'operand' && all.uncertain);
+    assert.deepStrictEqual(all.several!.map((o) => o.text.en), ['source', 'destination directory']);
     const p = parseOf('timeout 5 sleep 1');
     const run = p.roles[1].role;
     assert.ok(run.role === 'command');
@@ -527,7 +533,8 @@ describe('argv interpreter: review fixes', () => {
     assert.deepStrictEqual(roles('cp {a,b} dir'), ['{a,b}: ARG1', 'dir: ARG3']);
     assert.deepStrictEqual(roles('cp *.txt dir'), ['*.txt: ARG1', 'dir: ARG2 (uncertain)']);
     assert.deepStrictEqual(roles('cp "$@" dir'), ['"$@": ARG1', 'dir: ARG2 (uncertain)']);
-    assert.deepStrictEqual(roles('cp {a,b}'), ['{a,b}: ARG1 (uncertain)']);
+    // (A brace expansion gives known words: each has its role, in `each`.)
+    assert.deepStrictEqual(roles('cp {a,b}'), ['{a,b}: ARG1']);
     // Only the many-words reading fits.
     const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }] };
     assert.deepStrictEqual(render(interpret(three, [{ value: 'x', count: { min: 0 } }]), ['$x']), ['$x: A (uncertain)']);

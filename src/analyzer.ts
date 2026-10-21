@@ -1707,8 +1707,12 @@ export class Analyzer {
     if (isFn) desc = this.s(`関数への引数 $${role.index + 1}`, `Argument $${role.index + 1} to the function`);
     else if (item?.type === 'shell-option' && a.text in shoptOptions) desc = this.s(`シェルオプション \`${a.text}\`: `, `Shell option \`${a.text}\`: `) + this.t(shoptOptions[a.text as keyof typeof shoptOptions]);
     else if (role.assignment) desc = this.t(item!.assignmentText!);
+    else if (role.each) desc = this.eachText(a, role.each);
     else if (item) desc = this.t(item.text).replace('`$N`', `\`$${n}\``);
-    if (desc && role.otherwise) desc += this.uncertainNote(this.t(role.otherwise.text), parse, nodes, word);
+    if (desc && role.several) {
+      const roles = role.several.map((o) => this.t(o.text)).join(this.s('、', ', then '));
+      desc = this.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
+    } else if (desc && role.otherwise) desc = this.uncertainText(desc, this.t(role.otherwise.text), parse, nodes);
     // `trap 'cmd' INT`: when the command runs, and so when its expansions are.
     const alt = parse.alternative === undefined ? undefined : spec.operands![parse.alternative];
     if (parse.command === 'trap' && role.index === 0 && desc && !(alt?.when && 'option' in alt.when)) desc += this.trapNote(a);
@@ -1716,15 +1720,21 @@ export class Analyzer {
   }
 
   /**
-   * The other role an operand may have: some of the words it becomes (`cp a{,.bak}`), or all of it, depending on
-   * how many words the expansions among the operands give (`cp *.txt dir`).
+   * The roles an operand may have, which depend on how many words the expansions among the operands give
+   * (`cp *.txt dir`): `desc` when they give one word each, `other` when they give more.
    */
-  private uncertainNote(other: string, parse: ArgvParse, nodes: SyntaxNode[], word: number): string {
-    const count = countOf(nodes[word]);
-    if (count && count.max === count.min) return this.s(`（展開してできる語の一部は「${other}」）`, ` — of the words it becomes, some are "${other}"`);
+  private uncertainText(desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
     const many = parse.roles.filter((r) => r.role.role === 'operand' && countOf(nodes[r.word])?.max !== countOf(nodes[r.word])?.min);
     const list = many.map((r) => `\`${nodes[r.word].text}\``).join(this.s('・', ', '));
-    return this.s(`（${list} から何語できるかによっては「${other}」）`, ` (or "${other}", depending on how many words come from ${list})`);
+    return this.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
+  }
+
+  /** The words a brace expansion gives, each with its role (`cp a{,.bak}`: the source, then the destination). */
+  private eachText(a: SyntaxNode, each: OperandSpec[]): string {
+    // `destination (the new name…)` reads `destination: the new name…` in the parentheses.
+    const parts = braceExpand(a.text)!.map((w, k) => `\`${w}\`${this.s(`（${this.t(each[k].text).replace(/（(.*)）$/, ': $1')}）`, ` (${this.t(each[k].text).replace(/ \((.*)\)$/, ': $1')})`)}`);
+    const list = `${parts.slice(0, -1).join(this.s('、', ', '))}${this.s('と ', ' and ')}${parts[parts.length - 1]}`;
+    return this.s(`${list}に展開される`, `expands to ${list}`);
   }
 
   /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
