@@ -641,12 +641,15 @@ export const core: Record<string, CommandDoc> = {
   timeout: native('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
     ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
+    ['--preserve-status', 'タイムアウトしても、コマンドの終了ステータスを返す（124 にしない）', 'exit with the status of the command, also on timeout (not 124)'],
+    ['--foreground', 'コマンドを前面で動かす（端末を読め、Ctrl-C も届く。その子プロセスは時間切れでも止めない）', 'run the command in the foreground (it can read the terminal and gets Ctrl-C; its children are not stopped on timeout)'],
+    ['-v|--verbose', '時間切れでシグナルを送ったら、標準エラー出力に知らせる', 'report on stderr when a signal is sent on timeout'],
+  ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
   nice: native('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
     ['-n', '優先度の調整値', 'niceness adjustment', 'arg'],
     ['--adjustment', 'ニス値の増分', 'niceness increment', 'arg'],
   ], {
-    style: 'posix',
+    style: 'posix', longPrefixes: true,
     patternOptions: [
       {
         pattern: /^-(\d+)$/,

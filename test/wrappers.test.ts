@@ -104,6 +104,17 @@ describe('the command a wrapper runs', () => {
     assert.match(ran('uv run pytest -x', 'pytest'), /runs `pytest`/);
     assert.match(ran('poetry run pytest -x', 'pytest'), /runs `pytest`/);
   });
+  it('timeout: every option, also as a unique prefix; command -v: names, not a command', () => {
+    assert.strictEqual(about('timeout --preserve-status 5 ls', '--preserve-status'), 'exit with the status of the command, also on timeout (not 124)');
+    assert.match(about('timeout --foreground 5 ls', '--foreground', 'ja'), /^コマンドを前面で動かす/);
+    assert.strictEqual(about('timeout --sig KILL 5 ls', '--sig'), 'signal to send on timeout');
+    assert.strictEqual(about('timeout --sig KILL 5 ls', 'KILL'), 'Value for `--sig`');
+    assert.strictEqual(about('nice --adj 3 ls', '3'), 'Value for `--adj`');
+    assert.strictEqual(about('command -v git', 'git'), 'name to look up');
+    assert.strictEqual(about('command -V ls cd', 'cd', 'ja'), '調べる名前');
+    assert.strictEqual(explain('command -v git').items[0].children.find((t) => t.label === 'git')?.kind, 'argument');
+    assert.match(ran('command -p ls -l', 'ls'), /runs `ls`/);
+  });
   it('su: a lone dash is the login option', () => {
     assert.strictEqual(about('su - user', '-'), 'as a login shell (fresh environment)');
     assert.match(about('su - user', '-', 'ja'), /^ログインシェルとして/);
