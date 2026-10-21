@@ -359,6 +359,9 @@
         }
       },
       "status": 0
+    },
+    "gaps": {
+      "end.variables.w": "the model does not read the condition: the body of a loop may run"
     }
   },
   {
@@ -374,6 +377,9 @@
         }
       },
       "status": 0
+    },
+    "gaps": {
+      "end.variables.OLDPWD": "the model does not follow the current directory (cd, pushd, popd)"
     }
   },
   {
@@ -467,6 +473,315 @@
             "attrs": "x",
             "value": "\"/BOX/sub\""
           }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.OLDPWD": "the model does not follow the current directory (cd, pushd, popd)",
+      "end.variables.PWD": "the model does not follow the current directory (cd, pushd, popd)"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "if [ -n \"$HOME\" ]; then shopt -s nullglob; else shopt -s nullglob dotglob; fi\nx=1 && y=2 || z=3",
+    "note": "branches that agree give a known state; one that may run gives an unknown one",
+    "facts": {
+      "end": {
+        "shopt": {
+          "nullglob": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.shopt.dotglob": "the model does not know which branch runs",
+      "end.variables.y": "the model does not know whether `x=1` succeeds",
+      "end.variables.z": "the model does not know whether `y=2` fails"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "case $HOME in /*) set -f ;; *) set -f; IFS=: ;; esac\n@PROBE:after@\nif false; then shopt -s globstar; fi",
+    "facts": {
+      "after": {
+        "set": {
+          "noglob": true
+        }
+      },
+      "end": {
+        "set": {
+          "noglob": true
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "after.variables.IFS": "the model does not know which branch runs",
+      "end.variables.IFS": "the model does not know which branch runs",
+      "end.shopt.globstar": "the model does not read the condition `false`"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { shopt -s dotglob; g() { :; }; IFS=,; local l=1; alias e='echo hi'; }\n@PROBE:before@\nf\ndeclare -fx f",
+    "note": "a call applies what the body changes, but its locals",
+    "facts": {
+      "before": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "shopt": {
+          "dotglob": true
+        },
+        "variables": {
+          "IFS": {
+            "attrs": "-",
+            "value": "\",\""
+          }
+        },
+        "functions": {
+          "f": "fx",
+          "g": "f"
+        },
+        "aliases": {
+          "e": "echo hi"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { set -f; }\nh() ( shopt -s nullglob )\nh",
+    "note": "a function not called changes nothing; a body in ( ) is a subshell",
+    "facts": {
+      "end": {
+        "functions": {
+          "f": "f",
+          "h": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix; set +o posix",
+    "note": "leaving POSIX mode turns expand_aliases and shift_verbose off, and keeps inherit_errexit",
+    "facts": {
+      "end": {
+        "shopt": {
+          "inherit_errexit": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "declare -n r=t; r=5; declare -a arr; arr+=(1); typeset -i n; n=1+1; unset -v n; export -n HOME; declare +x PATH; x=1; declare -x x",
+    "facts": {
+      "end": {
+        "variables": {
+          "HOME": {
+            "attrs": "-",
+            "value": "\"/home/probe\""
+          },
+          "PATH": {
+            "attrs": "-",
+            "value": "\"/usr/bin:/bin\""
+          },
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"1\")"
+          },
+          "r": {
+            "attrs": "n",
+            "value": "\"t\""
+          },
+          "t": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "x": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "{ a=1; } | cat; b=1 & wait; cat <(c=1) >/dev/null; coproc { d=1; }; wait\n: $(( e = 1 ))",
+    "note": "pipeline stages, background jobs, process substitutions and coprocesses are subshells; arithmetic assigns in the shell",
+    "facts": {
+      "end": {
+        "variables": {
+          "e": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.e": "assignments in arithmetic are not followed"
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "while read -r line; do arr+=(\"$line\"); done <<< 'a'\nfor f in *.txt; do last=$f; done; select s in a; do break; done <<< 1",
+    "note": "a loop body may run: what it sets is unknown after it",
+    "facts": {
+      "end": {
+        "variables": {
+          "REPLY": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"a\")"
+          },
+          "f": {
+            "attrs": "-",
+            "value": "\"x y.txt\""
+          },
+          "last": {
+            "attrs": "-",
+            "value": "\"x y.txt\""
+          },
+          "line": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"a\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "1) a"
+    },
+    "gaps": {
+      "end.variables.arr": "the model does not read the condition: the body of a loop may run",
+      "end.variables.f": "the model does not read the condition: the body of a loop may run",
+      "end.variables.last": "the model does not read the condition: the body of a loop may run",
+      "end.variables.s": "the model does not read the condition: the body of a loop may run",
+      "end.variables.REPLY": "select's REPLY is not followed"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "IFS=$'\\n'; set -o noglob; shopt -s -o nounset; set +f -e",
+    "facts": {
+      "end": {
+        "set": {
+          "errexit": true,
+          "nounset": true
+        },
+        "variables": {
+          "IFS": {
+            "attrs": "-",
+            "value": "$'\\n'"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "shopt -s lastpipe\n( shopt -s dotglob; shopt -u lastpipe; brr=(1 2); p='3*4'; later() { :; } )\n@PROBE:a@\nsetup() { shopt -s extglob; set -f; }\ncnt() { declare -A m; }; loopy() { local -i z; }; mk() { alias mm=make; }\n@PROBE:b@\nk() { IFS=-; }; k; setup\n@PROBE:c@\nx=1 :; set -o posix; y=2 :",
+    "note": "nothing leaks from a subshell or from a function that is not called; a call applies its body",
+    "facts": {
+      "a": {
+        "shopt": {
+          "lastpipe": true
+        }
+      },
+      "b": {
+        "shopt": {
+          "lastpipe": true
+        },
+        "functions": {
+          "cnt": "f",
+          "loopy": "f",
+          "mk": "f",
+          "setup": "f"
+        }
+      },
+      "c": {
+        "shopt": {
+          "extglob": true,
+          "lastpipe": true
+        },
+        "set": {
+          "noglob": true
+        },
+        "variables": {
+          "IFS": {
+            "attrs": "-",
+            "value": "\"-\""
+          }
+        },
+        "functions": {
+          "cnt": "f",
+          "k": "f",
+          "loopy": "f",
+          "mk": "f",
+          "setup": "f"
+        }
+      },
+      "end": {
+        "shopt": {
+          "expand_aliases": true,
+          "extglob": true,
+          "inherit_errexit": true,
+          "lastpipe": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "noglob": true,
+          "posix": true
+        },
+        "variables": {
+          "IFS": {
+            "attrs": "-",
+            "value": "\"-\""
+          },
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"y\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "cnt": "f",
+          "k": "f",
+          "loopy": "f",
+          "mk": "f",
+          "setup": "f"
         }
       },
       "status": 0
