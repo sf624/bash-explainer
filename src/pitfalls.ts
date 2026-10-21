@@ -2,20 +2,13 @@ import { Lang } from './i18n';
 import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
-// Common mistakes in shell scripts, explained where they appear: what goes wrong and how to write
-// it instead. Each is found from the syntax tree, and only on the line where its node starts.
+// Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
+// `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
+// goes wrong and how to write it instead. Each is found from the syntax tree, and only on the line where its node
+// starts. The pitfalls that state what the shell does with a word, from the models, are facts with a catalog entry
+// (src/wordfacts.ts, src/messages.ts), not here.
 
 const pick = (lang: Lang) => (ja: string, en: string) => (lang === 'ja' ? ja : en);
-
-/** A variable expansion the shell word-splits and globs: not inside double quotes. */
-function unquotedExpansion(n: SyntaxNode): boolean {
-  return (n.type === 'simple_expansion' || n.type === 'expansion') && n.parent?.type !== 'string';
-}
-
-/** `$?`, `$#`, `$$`, `$!` and `${#…}`: always a number, so safe unquoted. */
-function alwaysNumber(n: SyntaxNode): boolean {
-  return /^\$[?#$!]$/.test(n.text) || /^\$\{#/.test(n.text);
-}
 
 /** The variable an expansion reads (`DIR` for `$DIR` or `${DIR}`), when it is a plain one. */
 function varName(n: SyntaxNode): string | undefined {
@@ -28,11 +21,11 @@ export function usesVariable(text: string, name: string): boolean {
   return new RegExp(`\\$(\\{${name}\\b|${name}\\b)`).test(text);
 }
 
-function commandName(n: SyntaxNode): string | undefined {
+export function commandName(n: SyntaxNode): string | undefined {
   return field(n, 'name')?.text.split('/').pop();
 }
 
-function args(n: SyntaxNode): SyntaxNode[] {
+export function args(n: SyntaxNode): SyntaxNode[] {
   return fields(n, 'argument');
 }
 
@@ -60,16 +53,6 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text))) {
           add(`\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
             `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write \`${name}=…\` with no spaces around \`=\``);
-        }
-        // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value.
-        const prefix = n.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
-        for (const v of prefix) {
-          const use = a.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
-          if (name && use) {
-            add(`\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use.text}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
-              `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use.text}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… sh -c '… "\$${v}"'\``);
-            break;
-          }
         }
         // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
         if (name && /^\{[A-Za-z_]\w*$/.test(name)) {
@@ -103,52 +86,9 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
           add('`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
             'without `-r`, backslashes in the input are taken as escapes and lost. Usually write `read -r`');
         }
-        // Unquoted variables as paths of file commands.
-        if (name && ['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.'].includes(name)) {
-          const bare = a.find((w) => unquotedExpansion(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => unquotedExpansion(c))));
-          if (bare) {
-            add(`\`${bare.text}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします。\`"${bare.text}"\` と書きます`,
-              `\`${bare.text}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names. Write \`"${bare.text}"\``);
-          }
-        }
-        break;
-      }
-      case 'redirected_statement': {
-        // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
-        const body = field(n, 'body');
-        // Only for files that need root: system directories, not your logs or /dev/null.
-        const toFile = n.namedChildren.some((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
-          && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(field(c, 'destination')?.text.replace(/^["']/, '') ?? ''));
-        if (body?.type === 'command' && commandName(body) === 'sudo' && toFile) {
-          add('リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
-            'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`');
-        }
-        break;
-      }
-      case 'for_statement': case 'select_statement': {
-        const value = field(n, 'value');
-        if (!value) break;
-        // `for f in $(ls …)`
-        const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
-        if (cmd === 'ls' || cmd === 'find') {
-          add(`\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
-            `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`);
-        }
-        // `for a in $*` / `for a in $@`
-        if (value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) {
-          add(`\`${value.text}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
-            `unquoted \`${value.text}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`);
-        }
         break;
       }
       case 'test_command': {
-        // `[ $x = y ]`: an empty or spaced value breaks the test.
-        // The words of the test itself, not variables inside a `$(…)` in it.
-        const bare = n.namedChildren.find((e) => unquotedExpansion(e) && !alwaysNumber(e));
-        if (bare) {
-          add(`\`[ ]\` の中の \`${bare.text}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare.text}"\` と書きます`,
-            `unquoted \`${bare.text}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare.text}"\``);
-        }
         // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`.
         const redirect = n.namedChildren.find((e) => e.type === 'file_redirect');
         if (redirect) {

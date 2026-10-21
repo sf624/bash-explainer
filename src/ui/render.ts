@@ -66,9 +66,9 @@ export function refsMarkdown(lang: Lang, refs: readonly string[]): string {
   return [manualLabel(lang, [first]), ...rest].join(', ');
 }
 
-/** " (Bash manual 3.7.2)" after a row, or nothing. */
-export function refsText(lang: Lang, refs: readonly string[] | undefined): string {
-  return refs?.length ? ` (${manualLabel(lang, refs)})` : '';
+/** " (Bash manual 3.7.2)", after a row that cites sections. */
+export function refsText(lang: Lang, refs: readonly string[]): string {
+  return ` (${manualLabel(lang, refs)})`;
 }
 
 /** Display features that can each be turned on or off. */

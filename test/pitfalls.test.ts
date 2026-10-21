@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pitfallNotes } from '../src/pitfalls';
+import { wordFacts } from '../src/wordfacts';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -22,20 +23,13 @@ describe('pitfalls', () => {
     ['x = 1', /runs a command named `x`; it is not an assignment/],
     ['rm -rf $DIR/build', /if `DIR` is empty this becomes `rm -r \/build`/],
     ['rm -rf "${DIR}/build"', /if `DIR` is empty/],
-    ['for f in $(ls *.txt); do echo "$f"; done', /`\$\(ls …\)` is split on spaces/],
-    ['for f in $(find . -name "*.sh"); do :; done', /-print0/],
-    ['[ $x = y ]', /unquoted `\$x` inside `\[ \]`/],
     ['[-f x]', /`\[` is an ordinary command, so a space must follow it \(`\[-f` reads as another command name\)/],
     ['[ -f x]', /the `\]` in `x\]` is read as part of the word/],
     ['[ "$a" < "$b" ]', /`<` inside `\[ \]` is read as a redirection, not a comparison/],
     ['[ -f x && -n y ]', /`&&` inside `\[ \]` is not an argument of `\[`/],
     ['while read line; do :; done < f', /without `-r`, backslashes/],
-    ['sudo echo 1 > /proc/sys/vm/drop_caches', /done by your own shell .* `… \| sudo tee file`/],
-    ['for a in $*; do :; done', /unquoted `\$\*` splits arguments/],
-    ['cp $src "$dst"', /`\$src` is not quoted/],
     // `time` times what follows; what follows is a command like any other.
     ['time read x', /without `-r`, backslashes/],
-    ['time rm $f', /`\$f` is not quoted/],
     ['time -p rm -rf $DIR/x | cat', /if `DIR` is empty/],
   ];
   for (const [src, expected] of cases) {
@@ -72,7 +66,8 @@ describe('the spacing of [ ], against bash', () => {
       if (expected === 'ok') assert.ok(r.status !== null && r.stderr === '', r.stderr);
       else assert.ok(r.stderr !== '' || r.status === 127, `${r.status} ${r.stderr}`);
       // The tool finds the same mistake.
-      const mistakes = notes(cmd.replace(/^a=.*?; /, '').replace(/^a=1; b=2; /, '')).length > 0;
+      const one = cmd.replace(/^a=.*?; /, '').replace(/^a=1; b=2; /, '');
+      const mistakes = notes(one).length > 0 || wordFacts(parser.parse(one).root, 0, 'en').length > 0;
       if (expected === 'fails') assert.ok(mistakes, cmd);
     });
   }
