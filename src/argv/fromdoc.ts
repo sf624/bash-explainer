@@ -1,52 +1,30 @@
 // Turns a dictionary entry of today's shape (CommandDoc, src/dict/types.ts) into a command spec, with the
-// rules the analyzer applies by the command's name (`echo`, `set`, `kill`, `head -5`…). It lets the
-// interpreter read every command of the dictionary until the entries are written as specs.
+// rules the analyzer applies by the command's name (`find`, `jq`, `head -5`…). It lets the interpreter read
+// every command of the dictionary until the entries are written as specs (the builtins are already).
 import type { CommandDoc, OptDoc, PositionalBy } from '../dict/types';
 import { Text, tx } from '../i18n';
-import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType } from './spec';
+import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from './spec';
 
-/** POSIX special builtins: an assignment before them stays in POSIX mode. */
-const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
-/** Builtins that are programs too (coreutils, procps): `sudo echo` runs the program. */
-const PROGRAMS = new Set(['echo', 'printf', 'pwd', 'kill', 'test', 'true', 'false']);
-/** Commands whose operands may be job specs (`%1`). */
-const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);
 /** Commands that read `-N` as `-n N` (`head -5`). */
 const COUNT_COMMANDS = new Set(['head', 'tail', 'git log', 'git show']);
-const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CONT|STOP|TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|PWR|SYS|EMT|INFO|POLL|CLD|IOT';
 
 const names = (list: string): string[] => list.split('|');
 
 /** The spec of a dictionary entry; `name` is the command's name (`git log` for a subcommand), which some rules depend on. */
 export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   const spec: CommandSpec = { summary: doc.summary };
-  const options = convertOptions(doc.options ?? {}, name);
+  const options = convertOptions(doc.options ?? {});
   // find's expression has a parser of its own; only the options before the paths are options.
   if (name === 'find') {
     spec.operandParser = 'find-expression';
     spec.options = options.filter((o) => o.names.some((n) => /^-[HLP]$/.test(n)));
   } else spec.options = options;
-  // `kill -9 -1`: only the first signal is one; then a word like `-1` is a PID (bash's `saw_signal`).
-  if (name === 'kill') {
-    for (const o of options) {
-      if (o.names.some((n) => ['-s', '-n', '-9', '-0'].includes(n))) o.marks = 'signal';
-      if (o.names.some((n) => ['-9', '-0'].includes(n))) o.unlessMarked = 'signal';
-    }
-  }
   if (doc.longSingleDash) spec.style = 'single-dash';
-  // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word is text to print. `let` has no options: `let -a` is an expression.
-  else if (name === 'echo' || name === 'let') spec.style = 'none';
-  // Builtins read options up to their first operand.
-  else if (doc.builtin) spec.style = 'posix';
-  if (doc.builtin) spec.builtin = SPECIAL_BUILTINS.has(name) ? 'special' : 'regular';
-  if (doc.builtin && PROGRAMS.has(name)) spec.alsoProgram = true;
-  if (['set', 'declare', 'typeset', 'local'].includes(name)) spec.plusOptions = true;
   // jq reads `--arg NAME VALUE` only as separate words: `--arg=x` is an unknown option.
   if (name === 'jq') spec.longEquals = false;
   if (/^dpkg(-query|-deb)?$/.test(name)) spec.shortEquals = true;
   const patterns = patternOptions(name);
   if (patterns.length) spec.patternOptions = patterns;
-  if (name === 'echo') spec.dashDash = 'literal';
   // `rpm -qi`: an option means something else when another is given (a mode).
   const modes = new Set<string>();
   for (const [opt, o] of optionPairs(doc.options ?? {}, options)) {
@@ -56,16 +34,10 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   }
   for (const when of modes) for (const opt of options) if (opt.names.some((n) => names(when).includes(n))) opt.selects = when;
   if (modes.size) spec.modes = [...modes].map((m) => ({ name: m }));
-  // `echo -e`: backslash escapes are read; the last of `-e` and `-E` decides.
-  if (name === 'echo') {
-    spec.modes = [{ name: 'escapes' }, { name: 'plain', default: true }];
-    spec.lastModeWins = true;
-    for (const o of options) if (o.names[0] === '-e' || o.names[0] === '-E') o.selects = o.names[0] === '-e' ? 'escapes' : 'plain';
-  }
   if (doc.bundle) {
     const b = doc.bundle;
     spec.oldStyle = {
-      ...(b.options ? { letters: Object.fromEntries(Object.entries(b.options).map(([ch, o]) => [ch, convertOption([ch], o, name)])) } : {}),
+      ...(b.options ? { letters: Object.fromEntries(Object.entries(b.options).map(([ch, o]) => [ch, convertOption([ch], o)])) } : {}),
       ...(b.needs ? { needs: b.needs } : {}),
       ...(b.style ? { style: b.style } : {}),
     };
@@ -79,10 +51,10 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
 }
 
 /** Options that share one OptDoc (`-r|--recursive`) become one option with several names. */
-function convertOptions(opts: Record<string, OptDoc>, command: string): OptionSpec[] {
+function convertOptions(opts: Record<string, OptDoc>): OptionSpec[] {
   const byDoc = new Map<OptDoc, string[]>();
   for (const [n, o] of Object.entries(opts)) byDoc.set(o, [...(byDoc.get(o) ?? []), n]);
-  return [...byDoc].map(([o, ns]) => convertOption(ns, o, command));
+  return [...byDoc].map(([o, ns]) => convertOption(ns, o));
 }
 
 /** Each option with the OptDoc it came from. */
@@ -90,17 +62,15 @@ function optionPairs(opts: Record<string, OptDoc>, options: OptionSpec[]): [Opti
   return options.map((opt) => [opt, opts[opt.names[0]]]);
 }
 
-function convertOption(ns: string[], o: OptDoc, command: string): OptionSpec {
+function convertOption(ns: string[], o: OptDoc): OptionSpec {
   const opt: OptionSpec = { names: ns, text: o.text };
   const extra: Partial<ValueSpec> = { ...(o.lang ? { lang: o.lang } : {}), ...(o.values ? { values: o.values } : {}) };
   if (o.untilTerminator) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
   else if (o.arg) {
-    // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
-    const how = command === 'set' ? { how: 'next-only' as const } : {};
     const n = o.argCount ?? 1;
     opt.value = n > 1
-      ? Array.from({ length: n }, (_, k): ValueSpec => ({ name: n === 2 ? ['NAME', 'VALUE'][k] : `VALUE${k + 1}`, ...how, ...(k === n - 1 ? extra : {}) }))
-      : { name: 'VALUE', ...how, ...extra };
+      ? Array.from({ length: n }, (_, k): ValueSpec => ({ name: n === 2 ? ['NAME', 'VALUE'][k] : `VALUE${k + 1}`, ...(k === n - 1 ? extra : {}) }))
+      : { name: 'VALUE', ...extra };
   } else if (o.attachedOnly) opt.value = { name: 'VALUE', how: 'attached-only', optional: true, ...extra };
   else if (o.nextIf) opt.value = { name: 'VALUE', optional: true, next: new RegExp(o.nextIf), ...extra };
   // `jq . in.json --args a`: the operands after the option are values, not files.
@@ -121,46 +91,29 @@ function patternOptions(name: string): PatternOption[] {
         : tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
     });
   }
-  if (name === 'kill') {
-    const signal = { marks: 'signal', unlessMarked: 'signal' };
-    out.push(
-      {
-        pattern: /^-(\d+)$/, ...signal,
-        text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-n ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-n ${n}\`; \`kill -l ${n}\` prints its name)`),
-        open: tx('展開した名前か番号のシグナルを送る（`-s 名前` と同じ）', 'Send the signal the expansion names (same as `-s NAME`)'),
-      },
-      {
-        pattern: new RegExp(`^-(?:SIG)?(${SIGNALS})$`, 'i'), ...signal,
-        text: ([, s]) => tx(`送るシグナル \`${s.toUpperCase()}\`（\`-s ${s.toUpperCase()}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${s.toUpperCase()}\` (same as \`-s ${s.toUpperCase()}\`; \`kill -l\` lists them)`),
-      },
-    );
-  }
   return out;
 }
 
-/** The operand alternatives: by count (`positionalBy`), by option (`positionalWith`, `fills`), then the default; none when nothing describes them. */
+/** The operand alternatives: by count (`positionalBy`), by option (`fills`), then the default; none when nothing describes them. */
 function operandAlts(doc: CommandDoc, name: string): OperandAlt[] | undefined {
   const texts = doc.positional ?? [];
   const opts = Object.entries(doc.options ?? {});
-  const job = JOB_COMMANDS.has(name);
-  const type: ValueType | undefined = job ? 'job' : name === 'let' ? 'arith' : name === 'shopt' ? 'shell-option' : undefined;
-  // (`typed`: the type and language of the positional arguments, which an option may change: `kill -l`, `chmod --reference`.)
+  // (`typed`: the language of the positional arguments, which an option may change: `chmod --reference`.)
   const item = (i: number, t: Text, repeat?: OperandSpec['repeat'], typed = true): OperandSpec => {
-    const itemType = typed ? type : undefined;
-    const lang = !typed ? undefined : name === 'let' ? 'arith' : doc.positionalLang?.[i];
+    const lang = typed ? doc.positionalLang?.[i] : undefined;
     return {
-      name: `ARG${i + 1}`, text: t, ...(repeat ? { repeat } : {}), ...(itemType ? { type: itemType } : {}), ...(lang ? { lang } : {}),
+      name: `ARG${i + 1}`, text: t, ...(repeat ? { repeat } : {}), ...(lang ? { lang } : {}),
       ...(i > 0 && /^(g|m|n)?awk$/.test(name) ? { assignmentText: AWK_ASSIGNMENT } : {}),
     };
   };
   // The positional texts from `from` on: each optional, and the last repeats (as `positional` does).
-  const listed = (list: Text[], from = 0, typed = true): OperandSpec[] => {
+  const listed = (list: Text[], from = 0): OperandSpec[] => {
     const out: OperandSpec[] = [];
     for (let i = from; i < list.length; i++) {
-      if (i < list.length - 1) { out.push(item(i, list[i], '?', typed)); continue; }
+      if (i < list.length - 1) { out.push(item(i, list[i], '?')); continue; }
       // A language applies to its own index only (`positionalLang` does not repeat).
-      if (doc.positionalLang?.[i] && name !== 'let') out.push(item(i, list[i], '?', typed), { ...item(i + 1, list[i], '*', typed), lang: undefined });
-      else out.push(item(i, list[i], '*', typed));
+      if (doc.positionalLang?.[i]) out.push(item(i, list[i], '?'), { ...item(i + 1, list[i], '*'), lang: undefined });
+      else out.push(item(i, list[i], '*'));
     }
     return out;
   };
@@ -169,10 +122,8 @@ function operandAlts(doc: CommandDoc, name: string): OperandAlt[] | undefined {
     const when = condition(rule);
     alts.push({ ...when, pattern: byCount(rule, (i, t, repeat) => item(i, t, repeat, !when.when)) });
   }
-  for (const [o, list] of Object.entries(doc.positionalWith ?? {})) alts.push({ when: { option: names(o) }, pattern: listed(list, 0, !job) });
   const fills = opts.filter(([, o]) => o.fillsPositional).map(([n]) => n);
   if (fills.length) alts.push({ when: { option: fills }, pattern: listed(texts, 1) });
-  if (name === 'echo') alts.push({ when: { mode: 'escapes' }, pattern: [{ ...item(0, texts[0], '*'), lang: 'echo' }] });
   if (texts.length) alts.push({ pattern: listed(texts) });
   return alts.length ? alts : undefined;
 }

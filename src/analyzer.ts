@@ -1138,7 +1138,7 @@ export class Analyzer {
       if (redirsOut && c.type.endsWith('redirect')) continue;
       // Options end at the first name: `declare x -i` is an error for the name `-i`.
       // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
-      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && ['declare', 'typeset', 'local'].includes(kw);
+      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && !!builtins[kw].spec!.plusOptions;
       if (c.type === 'word' && (c.text.startsWith('-') || off) && !named) {
         const table = kw === 'export' ? exportFlags : kw === 'readonly' ? readonlyFlags : off ? declarationOffFlags : declarationFlags;
         const flags = c.text.slice(1).split('').map((ch) => table['-' + ch]).filter(Boolean);
@@ -1163,7 +1163,7 @@ export class Analyzer {
     const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
     const ref = !fn && n.namedChildren.some((c) => c?.type === 'word' && /^-\w*n/.test(c.text));
     const children = n.namedChildren.map((c) => {
-      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options?.[c.text] : undefined;
+      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.spec!.options!.find((o) => o.names.includes(c.text)) : undefined;
       if (opt) return this.tok(c, 'option', this.t(opt.text));
       if (c.type === 'variable_name' || isPlainWord(c)) {
         return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
@@ -1234,7 +1234,7 @@ export class Analyzer {
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
         // In POSIX mode (sh, dash, `set -o posix`) an assignment before a special builtin stays after it.
-        const stays = SPECIAL_BUILTINS.has(nameNode.text) && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
+        const stays = lookupCommand(nameNode.text)?.spec?.builtin === 'special' && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
         for (const t of this.sub(c)) {
           t.explanation = stays
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
@@ -1425,7 +1425,8 @@ export class Analyzer {
     }
     const doc = lookupCommand(name);
     if (doc) {
-      return { name, doc, kind: doc.builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(doc.summary) + (doc.builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
+      const builtin = !!doc.spec?.builtin;
+      return { name, doc, kind: builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(doc.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
     }
     const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
     if (distro) {
@@ -3985,9 +3986,6 @@ function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined 
   const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
   return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
 }
-
-/** POSIX special builtins: an assignment before them persists in POSIX mode. */
-const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {

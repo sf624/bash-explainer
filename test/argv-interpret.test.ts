@@ -280,14 +280,14 @@ describe('argv interpreter: commands of the dictionary', () => {
   it('`--` ends the options, except for echo; a builtin reads options before its first operand', () => {
     assert.deepStrictEqual(roles('rm -- -f x'), ['--: end of options', '-f: ARG1', 'x: ARG1']);
     assert.deepStrictEqual(roles('rm -f -- -x').map((l) => l.split(':')[0]), ['-f', '--', '-x']);
-    assert.deepStrictEqual(roles('echo -- -n'), ['--: ARG1', '-n: ARG1']);
-    assert.deepStrictEqual(roles('echo -ne x -n'), ['-ne: cluster -n do not print the trailing newline | -e interpret backslash escapes like `\\n`', 'x: ARG1', '-n: ARG1']);
-    assert.deepStrictEqual(roles('echo -nx'), ['-nx: ARG1']);
+    assert.deepStrictEqual(roles('echo -- -n'), ['--: TEXT', '-n: TEXT']);
+    assert.deepStrictEqual(roles('echo -ne x -n'), ['-ne: cluster -n do not print the trailing newline | -e interpret backslash escapes like `\\n`', 'x: TEXT', '-n: TEXT']);
+    assert.deepStrictEqual(roles('echo -nx'), ['-nx: TEXT']);
     // A word in quotes is an option all the same: the program sees no quotes.
     assert.deepStrictEqual(roles('ls "-l" "--all"').map((l) => l.split(':')[0] + ':' + l.split(':')[1].split(' ')[1]), ['"-l":-l', '"--all":--all']);
     // A builtin: options before the first operand only.
-    assert.deepStrictEqual(roles('printf %s -v'), ['%s: ARG1', '-v: ARG2']);
-    assert.deepStrictEqual(roles('let -1+2'), ['-1+2: ARG1']);
+    assert.deepStrictEqual(roles('printf %s -v'), ['%s: FORMAT', '-v: ARG']);
+    assert.deepStrictEqual(roles('let -1+2'), ['-1+2: EXPR']);
   });
 
   it('set: `+` turns options off, and `-o` takes the next word even inside a cluster', () => {
@@ -463,7 +463,7 @@ describe('argv interpreter: the option grammar', () => {
     const awk: CommandSpec = { summary: t('awk'), operands: [{ pattern: [item('FILE', { repeat: '*', assignmentText: t('assignment') })] }] };
     assert.deepStrictEqual(interpret(awk, [{}, { prefix: 'v=' }]).roles.map((r) => r.role.role === 'operand' && !!r.role.assignment), [false, true]);
     // `echo -n$x`: an option only when every letter is known.
-    assert.deepStrictEqual(roles('echo -n$x a'), ['-n$x: open -n', 'a: ARG1']);
+    assert.deepStrictEqual(roles('echo -n$x a'), ['-n$x: open -n', 'a: TEXT']);
   });
 
   it('gives a command the words after it, also those read as options before the command was known', () => {
@@ -486,16 +486,16 @@ describe('argv interpreter: the option grammar', () => {
 describe('argv interpreter: review fixes', () => {
   it('kill: only the first signal is one; a later `-1` is a PID (bash kill.def, `saw_signal`)', () => {
     // `bash -c 'kill -9 -999999'`: "No such process": `-999999` is a process group, not a signal.
-    assert.deepStrictEqual(roles('kill -9 -1'), ['-9: -9 force kill (SIGKILL)', '-1: ARG1']);
-    assert.deepStrictEqual(roles('kill -s TERM -1').slice(2), ['-1: ARG1']);
-    assert.deepStrictEqual(roles('kill -s TERM -9').slice(2), ['-9: ARG1']);
-    assert.deepStrictEqual(roles('kill -TERM -15').map((l) => l.split(':')[1].trim().split(' ')[0]), ['pattern', 'ARG1']);
+    assert.deepStrictEqual(roles('kill -9 -1'), ['-9: -9 force kill (SIGKILL)', '-1: PID']);
+    assert.deepStrictEqual(roles('kill -s TERM -1').slice(2), ['-1: PID']);
+    assert.deepStrictEqual(roles('kill -s TERM -9').slice(2), ['-9: PID']);
+    assert.deepStrictEqual(roles('kill -TERM -15').map((l) => l.split(':')[1].trim().split(' ')[0]), ['pattern', 'PID']);
     // `-l` sets no signal.
     assert.deepStrictEqual(roles('kill -l -15')[1].split(':')[1].trim().split(' ')[0], 'pattern');
   });
 
   it('reads `-` and an expansion as an option known at run time', () => {
-    assert.deepStrictEqual(roles('kill -$sig $pid'), ['-$sig: pattern (open) Send the signal the expansion names (same as `-s NAME`)', '$pid: ARG1']);
+    assert.deepStrictEqual(roles('kill -$sig $pid'), ['-$sig: pattern (open) Send the signal the expansion names (same as `-s NAME`)', '$pid: PID']);
     assert.deepStrictEqual(roles('head -$n f'), ['-$n: pattern (open) as many lines as the expansion gives (old way to write `-n N`)', 'f: ARG1']);
     // No operand slot: `cp -$opts a b` keeps `b` as the destination.
     assert.deepStrictEqual(roles('cp -$opts a b'), ['-$opts: open -', 'a: ARG1', 'b: ARG2']);
@@ -628,10 +628,10 @@ describe('argv converter: dictionary entries to specs', () => {
     const tr = fromCommandDoc(lookupCommand('tr')!, 'tr').operands!.at(-1)!.pattern;
     assert.deepStrictEqual(tr.map((x) => [x.repeat, x.lang]), [['?', 'trset'], ['?', 'trset'], ['*', undefined]]);
     // `let`: every operand is arithmetic.
-    assert.deepStrictEqual(fromCommandDoc(lookupCommand('let')!, 'let').operands!.at(-1)!.pattern.map((x) => [x.repeat, x.lang, x.type]), [['*', 'arith', 'arith']]);
-    assert.strictEqual(fromCommandDoc(lookupCommand('set')!, 'set').builtin, 'special');
-    assert.strictEqual(fromCommandDoc(lookupCommand('cd')!, 'cd').builtin, 'regular');
-    assert.strictEqual(fromCommandDoc(lookupCommand('shopt')!, 'shopt').operands!.at(-1)!.pattern[0].type, 'shell-option');
+    assert.deepStrictEqual(commandSpec('let')!.operands!.at(-1)!.pattern.map((x) => [x.repeat, x.lang, x.type]), [['*', 'arith', 'arith']]);
+    assert.strictEqual(commandSpec('set')!.builtin, 'special');
+    assert.strictEqual(commandSpec('cd')!.builtin, 'regular');
+    assert.strictEqual(commandSpec('shopt')!.operands!.at(-1)!.pattern[0].type, 'shell-option');
     // `echo -e`: the operands are read with escapes.
     assert.strictEqual(parseOf('echo -e x').roles[1].role.role === 'operand' && (parseOf('echo -e x').roles[1].role as { spec: OperandSpec }).spec.lang, 'echo');
   });

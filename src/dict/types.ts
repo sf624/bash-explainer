@@ -59,14 +59,11 @@ export interface PositionalBy {
 
 export interface CommandDoc {
   summary: Text;
-  builtin?: boolean;
   options?: Record<string, OptDoc>;
   /** Descriptions of positional arguments in order; the last one repeats. */
   positional?: Text[];
   /** Descriptions that depend on how many positional arguments there are; the first that fits wins over `positional`. */
   positionalBy?: PositionalBy[];
-  /** Descriptions of the positional arguments when one of these options is given (`kill -l 15`: a signal, not a PID). */
-  positionalWith?: Record<string, Text[]>;
   /** Embedded language of positional arguments, by index (does not repeat). */
   positionalLang?: (EmbeddedLang | undefined)[];
   subcommands?: Record<string, CommandDoc>;
@@ -76,7 +73,7 @@ export interface CommandDoc {
   bundle?: BundleDoc;
   /**
    * The command spec, written directly (`native`): the analyzer reads the arguments with it, and the fields
-   * above, other than `summary`, `builtin` and `subcommands`, are not used.
+   * above, other than `summary` and `subcommands`, are not used. Builtins are written this way (`builtin`).
    */
   spec?: CommandSpec;
 }
@@ -144,7 +141,7 @@ export function native(ja: string, en: string, opts: (OptSpec | OptionSpec)[], r
     names.forEach((n) => seen.add(n));
     return names.length ? [{ ...o, names }] : [];
   }).reverse();
-  return { summary, ...(rest.builtin ? { builtin: true } : {}), spec: { summary, options, ...rest } };
+  return { summary, spec: { summary, options, ...rest } };
 }
 
 export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
