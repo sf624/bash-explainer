@@ -27,6 +27,9 @@ import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { descendants, field, fields, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { EnvModel, type ExecEnv, lastStageInShell, STATEMENTS, subshellReasons } from './env';
+
+export { lastStageInShell } from './env';
 
 /** On, off, or decided at run time (a branch, a loop, a function that may be defined). */
 export type Tri = 'on' | 'off' | 'unknown';
@@ -213,6 +216,10 @@ export interface StateModel {
   readonly end: ShellState;
   /** The variables some command of the script sets, wherever it runs. */
   readonly assigned: ReadonlySet<string>;
+  /** Where `n` runs (src/semantics/env.ts): the main shell, a subshell, or a command run through slots. */
+  env(n: SyntaxNode): ExecEnv;
+  /** The commands that call each function definition (in the walk: those its state reaches). */
+  readonly calls: ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
 }
@@ -240,19 +247,6 @@ export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';
 }
 
-/**
- * Whether the last stage of a pipeline runs in the shell itself: always in zsh and ksh; in bash with lastpipe on
- * and job control (`set -m`) off.
- */
-export function lastStageInShell(st: ShellState, shell?: Shell): Tri {
-  if (shell === 'zsh' || shell === 'ksh') return 'on';
-  if (shell && shell !== 'bash') return 'off';
-  const monitor = option(st, 'set', 'monitor');
-  const lastpipe = option(st, 'shopt', 'lastpipe');
-  if (monitor === 'on' || lastpipe === 'off' || lastpipe === 'default') return 'off';
-  return lastpipe === 'on' && monitor !== 'unknown' ? 'on' : 'unknown';
-}
-
 /** `set` letters and the options they stand for. */
 const SET_LETTERS: Record<string, string> = {
   a: 'allexport', b: 'notify', e: 'errexit', f: 'noglob', h: 'hashall', k: 'keyword', m: 'monitor', n: 'noexec', p: 'privileged',
@@ -265,10 +259,6 @@ const DECLARATIONS = new Set(['declare', 'typeset', 'local', 'export', 'readonly
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 const NAME = /^[A-Za-z_]\w*$/;
 
-/** Statements: what a list of commands is made of. */
-const STATEMENTS = new Set(['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments', 'negated_command',
-  'redirected_statement', 'pipeline', 'list', 'time_statement', 'coproc_statement', 'compound_statement', 'subshell', 'if_statement', 'case_statement',
-  'for_statement', 'select_statement', 'c_style_for_statement', 'while_statement', 'function_definition', 'arithmetic_command', 'test_command', 'extended_test']);
 const SUBSTITUTIONS = ['command_substitution', 'process_substitution'];
 
 // ---------------------------------------------------------------------------------------------------
@@ -415,6 +405,10 @@ class Walker {
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   readonly aliasDefs = new Map<string, SyntaxNode[]>();
+  /** The commands that call each function definition. */
+  readonly calls = new Map<SyntaxNode, SyntaxNode[]>();
+  /** The command whose alias is being run (its nodes are in the alias's own tree). */
+  private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
   private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState }[]>();
   /** What the walks of each function body changed. */
@@ -550,14 +544,13 @@ class Walker {
     };
   }
 
-  /** Runs the statements among `nodes`, in order; one followed by `&` runs in the background (a subshell). */
+  /** Runs the statements among `nodes`, in order. */
   private sequence(nodes: readonly SyntaxNode[], st: ShellState, before?: (n: SyntaxNode, st: ShellState) => void): ShellState {
-    nodes.forEach((n, i) => {
-      if (!STATEMENTS.has(n.type)) return;
+    for (const n of nodes) {
+      if (!STATEMENTS.has(n.type)) continue;
       before?.(n, st);
-      if (nodes[i + 1]?.type === '&') this.run(n, st);
-      else st = this.run(n, st);
-    });
+      st = this.run(n, st);
+    }
     return st;
   }
 
@@ -569,13 +562,17 @@ class Walker {
     return out;
   }
 
-  /** The state after `n` runs from `st`. */
+  /**
+   * The state after `n` runs from `st`. A subshell (`( )`, `&`, a coproc's command, a pipeline stage but the last
+   * one: src/semantics/env.ts) drops what it changes.
+   */
   run(n: SyntaxNode, st: ShellState): ShellState {
     this.record(n, st);
     const outer = this.node;
     this.node = n;
     try {
-      return this.runStatement(n, st);
+      const after = this.runStatement(n, st);
+      return subshellReasons(n).length ? st : after;
     } finally {
       this.node = outer;
     }
@@ -611,8 +608,7 @@ class Walker {
         for (const r of fields(n, 'redirect')) this.substitutions(r, st);
         return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
       case 'subshell': case 'coproc_statement':
-        this.sequence(n.children, st);
-        return st;
+        return this.sequence(n.children, st);
       case 'pipeline': return this.pipeline(n, st);
       case 'list': {
         // (`a &&` while typing has no right side yet.)
@@ -687,6 +683,7 @@ class Walker {
 
   private pipeline(n: SyntaxNode, st: ShellState): ShellState {
     const stages = n.namedChildren.filter((c) => STATEMENTS.has(c.type));
+    // (The stages but the last one are subshells.)
     stages.slice(0, -1).forEach((s) => this.run(s, st));
     const here = lastStageInShell(st, this.shell);
     const after = this.run(stages[stages.length - 1], st);
@@ -756,6 +753,10 @@ class Walker {
   /** The state after a call of `fn`, with the prefix assignments `temporaries` (`x=1 f`) set while it runs. */
   private call(fn: FunctionState, st: ShellState, temporaries: SyntaxNode[]): ShellState {
     const def = fn.def;
+    const site = this.aliasHost ?? this.node!;
+    const sites = this.calls.get(def);
+    if (!sites) this.calls.set(def, [site]);
+    else if (!sites.includes(site)) sites.push(site);
     let exit: ShellState;
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
       // A recursive call: what the body changed in its walks so far may change.
@@ -856,7 +857,10 @@ class Walker {
       aliasTrees.set(text, tree);
     }
     this.expanding.add(name);
+    const host = this.aliasHost;
+    this.aliasHost ??= n;
     const after = this.sequence(tree.root.children, st);
+    this.aliasHost = host;
     this.expanding.delete(name);
     return alias.state === 'on' && expands === 'on' ? after : merge([st, after], this.posix);
   }
@@ -1197,8 +1201,12 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const w = new Walker(shell, !!opts.posix);
   const initial = w.initial();
   const end = w.program(tree.root);
+  // (The model's `at` is defined below; the environments ask for it only later.)
+  const envs = new EnvModel({ run: (n) => model.at(n).run, calls: w.calls, shell });
   const model: StateModel = {
     end,
+    env: (n) => envs.at(n),
+    calls: w.calls,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliasDefs },
     at(n) {
