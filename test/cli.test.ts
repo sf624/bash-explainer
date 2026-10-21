@@ -64,6 +64,17 @@ describe('the command-line tool', function () {
     assert.strictEqual(json[0].explanation.items[0].kind, 'command');
   });
 
+  it('checks a Markdown block as POSIX sh only when it says so', () => {
+    const file = path.join(dir, 'fences.md');
+    const body = '[[ -n $x ]] && echo -e hi\n';
+    fs.writeFileSync(file, '```sh\n' + body + '```\n\n```sh\n#!/bin/bash\n' + body + '```\n');
+    assert.strictEqual(run(['--check', '--no-color', file]).code, 0);
+    fs.writeFileSync(file, '```sh\n#!/bin/sh\n' + body + '```\n');
+    const r = run(['--check', '--no-color', file]);
+    assert.strictEqual(r.code, 1);
+    assert.match(r.out, /not POSIX sh/);
+  });
+
   it('warns about CRLF line ends in a script, and explains it as an LF one', () => {
     const file = path.join(dir, 'crlf.sh');
     fs.writeFileSync(file, 'if true; then\r\n  echo hi\r\nfi\r\n');

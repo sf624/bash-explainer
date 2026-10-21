@@ -81,7 +81,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 ```
 
 - **対応シェル:** POSIX `sh`（dash と busybox ash で動かないものを明記）、`dash`、`ash`、`yash`、`ksh`、`mksh`、`zsh`。どのシェルで何が動くかは、各シェルで実測しています。
-- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplainer.shell` で指定もできます。
+- **シェルの判定:** shebang（`#!/bin/sh`、`#!/usr/bin/env dash` など）、`# shellcheck shell=` の行、ファイル名から判定します。`bashExplainer.shell` で指定もできます。Markdown のコードブロックでは、ブロック内の shebang がフェンスの言語名より優先されます。shebang のない `sh` のブロックは bash として読みます（POSIX sh として調べるには `#!/bin/sh` を書く）。`bash`・`zsh`・`dash`・`ksh` はそのシェルのままです。
 
 ## 他のファイルの中のシェル
 
@@ -91,7 +91,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | Makefile | レシピ。make の `$(VAR)`・`$@`・`$$` も説明 |
 | CI の YAML | GitHub Actions の `run:`（ワークフローと `action.yml`。`shell:` や `defaults` に従う）、GitLab CI の `script:`、CircleCI の `run:`・`command:`、Azure Pipelines の `script:`・`bash:`（`$(変数)` のマクロも）。`${{ github.event.pull_request.title }}` のような外部からの入力をスクリプトに埋め込むと警告 |
 | `package.json` | `scripts` |
-| Markdown | `sh`・`bash`・`console` などのコードブロック |
+| Markdown | `sh`・`bash`・`console` などのコードブロック（シェルはブロック内の shebang、なければ言語名のシェル。`sh` は bash として読む） |
 | Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
 | Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
 
