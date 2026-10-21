@@ -1085,6 +1085,8 @@ export const core: Record<string, CommandSpec> = {
     ['-v|--version', 'バージョンを表示する', 'print the version'],
     ['-h|--help', 'ヘルプを表示する', 'show help'],
   ], {
+    // git's own options before the subcommand never cluster (`git -pP log`: "unknown option: -pP"), and `-C.` is not `-C .`.
+    style: 'single-dash',
     subcommands: {
       submodule: cmd('サブモジュールを操作する（`update --init --recursive` で取得）', 'Manage submodules (`update --init --recursive` fetches them)', [['--init', 'まだ初期化していないものも初期化する', 'initialise those not yet initialised'], ['--recursive', '入れ子のサブモジュールも', 'nested submodules too'], ['--remote', '追跡するブランチの最新にする', "update to the tracked branch's latest"], ['--depth', '取得する履歴の深さ', 'history depth', 'arg']]),
       'show-ref': cmd('参照（ブランチやタグ）とそのコミットを一覧表示する', 'List references and their commits', [['--verify', 'この参照があるかを確かめる', 'check that this exact reference exists'], ['-q|--quiet', '何も表示せず、終了ステータスで返す', 'print nothing; report via the exit status'], ['--tags', 'タグだけ', 'tags only'], ['--heads', 'ブランチだけ', 'branches only']]),
