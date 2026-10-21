@@ -45,6 +45,9 @@ describe('editable examples', () => {
     assert.deepStrictEqual(rerun(explain('sort -rn nums.txt').examples[0].interactive!.spec, ['2', '10', '1'], 'en').sections[0].lines, ['10', '2', '1']);
     const pipe = explain('grep a f.txt | sort | uniq -c').examples.find((e) => e.interactive?.spec.kind === 'pipeline')!;
     assert.deepStrictEqual(rerun(pipe.interactive!.spec, ['ab', 'ca', 'ab', 'x'], 'en').sections.pop()!.lines, ['      2 ab', '      1 ca']);
+    // The panel sends the spec back through JSON, where a word that is not literal ("$f") is null.
+    const sent = JSON.parse(JSON.stringify(explain('grep -n "ERROR" "$f" | tail -n 2').examples.find((e) => e.interactive?.spec.kind === 'pipeline')!.interactive!.spec));
+    assert.deepStrictEqual(rerun(sent, ['ERROR', 'RROR', 'x ERROR', 'ERROR'], 'en').sections.pop()!.lines, ['3:x ERROR', '4:ERROR']);
   });
   it('keeps examples of data the command makes itself read-only', () => {
     assert.strictEqual(explain('seq 3 | sort -r').examples[0].interactive, undefined);

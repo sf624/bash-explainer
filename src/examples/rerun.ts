@@ -84,6 +84,12 @@ export function jqStepSections(steps: JqStep[], last: string[], lang: Lang, show
 }
 
 /** Run an example again on the given input lines. */
+/**
+ * A word that is not literal is undefined. A spec sent back by the VS Code panel went through
+ * JSON, which turns it into null, so read null as undefined again.
+ */
+const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefined);
+
 export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
   const none = s('（出力なし）', '(no output)');
@@ -118,7 +124,7 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
     case 'perl': return out(runPerl(spec.code, spec.opts, input));
     case 'filter': {
       const run = FILTERS[spec.cmd];
-      return out(run ? run(spec.words, input) : undefined);
+      return out(run ? run(words(spec.words), input) : undefined);
     }
     case 'jq': {
       let value: Json;
@@ -137,7 +143,7 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
       return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.map(toJson)) } : out(lines);
     }
     case 'pipeline': {
-      const ex = pipelineExample(spec.stages, true, input);
+      const ex = pipelineExample(spec.stages.map((st) => ({ ...st, words: words(st.words) })), true, input);
       if (!ex) return out(undefined);
       return {
         sections: ex.steps.filter((st, i) => st.stage.cmd !== 'cat' || i === ex.steps.length - 1).map((st, i, all) => ({
@@ -146,7 +152,7 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
         })),
       };
     }
-    case 'xargs': return out(runXargs(spec.words, input.join('\n') + '\n').map(showCommand), s('実行されるコマンド', 'Commands that run'));
+    case 'xargs': return out(runXargs(words(spec.words), input.join('\n') + '\n').map(showCommand), s('実行されるコマンド', 'Commands that run'));
     case 'date': {
       const unreadable = s('（日時として読めません。`2024-03-05 07:08:09` の形で）', '(not a date; write it like `2024-03-05 07:08:09`)');
       return out(input.filter((l) => l.trim()).map((l) => {
