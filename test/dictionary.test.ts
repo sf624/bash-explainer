@@ -16,8 +16,11 @@ import { ops } from '../src/dict/ops';
 import { extraFiles } from '../src/dict/extrasFiles';
 import { extraAdmin } from '../src/dict/extrasAdmin';
 import { extraSubcommands } from '../src/dict/extras';
-import type { CommandSpec, ValueSpec } from '../src/argv/spec';
+import { cmd } from '../src/dict/types';
+import type { CommandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
+import { interpret } from '../src/argv/interpret';
 import { YQ_SPECS } from '../src/dict/yq';
+import { tx } from '../src/i18n';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -277,3 +280,53 @@ describe('the dictionary', () => {
   });
 });
 
+describe('the specs of the dictionary', () => {
+  it('give each option name once at each level', () => {
+    const twice: string[] = [];
+    everySpec((path, spec) => {
+      const names = (spec.options ?? []).flatMap((o) => o.names);
+      twice.push(...names.filter((n, i) => names.indexOf(n) !== i).map((n) => `${path} ${n}`));
+    });
+    assert.deepStrictEqual(twice, []);
+  });
+
+  it('give a value spec to every option that takes a value', () => {
+    const bad: string[] = [];
+    const check = (path: string, o: OptionSpec) => {
+      for (const v of [o.value ?? []].flat()) {
+        if (!v.name || (v.next && !v.optional) || (v.how === 'attached-only' && !v.optional)) bad.push(`${path} ${o.names[0]}`);
+      }
+      if (o.until && (o.value || !o.until.terminators.length)) bad.push(`${path} ${o.names[0]} (until)`);
+    };
+    everySpec((path, spec) => {
+      for (const o of spec.options ?? []) check(path, o);
+      for (const [letter, o] of Object.entries(spec.oldStyle?.letters ?? {})) check(`${path} (letter ${letter})`, o);
+    });
+    assert.deepStrictEqual(bad, []);
+    // A tuple that gives the value a language or meanings, but no value, is a mistake in the dictionary.
+    assert.throws(() => cmd('x', 'x', [['-x', 'x', 'x', 'lang:sed']]), /-x: a language or values, but no value/);
+    assert.throws(() => cmd('x', 'x', [['-x', 'x', 'x', '', { a: tx('a', 'a') }]]), /-x: a language or values, but no value/);
+  });
+
+  it('have operand patterns that some words fit', () => {
+    // For each alternative: the words its pattern takes (each item once, then each repeating item twice), after
+    // the options its condition names. The alternative must be the one the interpreter chooses for one of them.
+    const unreachable: string[] = [];
+    everySpec((path, spec) => {
+      (spec.operands ?? []).forEach((alt, k) => {
+        const optionWords = (o: OptionSpec | undefined): string[] => (o ? [o.names[0], ...[o.value ?? []].flat().filter((v) => !v.optional).map(() => 'V')] : []);
+        const find = (pred: (o: OptionSpec) => boolean) => (spec.options ?? []).find(pred);
+        const before = !alt.when || 'not' in alt.when ? []
+          : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
+          : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
+        const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : 'w0rd'));
+        const once = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [] : [item(o)]));
+        const each = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [item(o)] : [item(o)]));
+        const twice = alt.pattern.flatMap((o) => (o.repeat === '*' || o.repeat === '+' ? [item(o), item(o)] : [item(o)]));
+        const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...ws].map((value) => ({ value })), { name: path }).alternative === k);
+        if (!fits) unreachable.push(`${path} #${k}`);
+      });
+    });
+    assert.deepStrictEqual(unreachable, []);
+  });
+});
