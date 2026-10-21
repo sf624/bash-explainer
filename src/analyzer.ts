@@ -54,7 +54,7 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
-import { attribute, FunctionState, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { attribute, FunctionState, lastStageInShell, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -412,7 +412,9 @@ export class Analyzer {
       if (p.type === 'coproc_statement') return { ja: 'コプロセスはサブシェルで動く', en: 'A coprocess runs in a subshell' };
       if (p.type === 'pipeline') {
         const last = p.namedChildren[p.namedChildren.length - 1];
-        if (!same(last, x) || !(this.shell === 'zsh' || this.shell === 'ksh' || this.shoptAt(p).lastpipe === 'on')) return { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' };
+        const here = same(last, x) ? lastStageInShell(this.state.at(p).run, this.shell) : 'off';
+        if (here === 'unknown') return { ja: 'パイプラインの各段は別々のサブシェルで動く（最後の段は、`shopt -s lastpipe` が効いている経路ではシェル自身で動く）', en: 'Each stage of a pipeline runs in its own subshell (the last one runs in the shell itself on the paths where `shopt -s lastpipe` is on)' };
+        if (here === 'off') return { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' };
       } else if (!['list', 'redirected_statement', 'negated_command'].includes(p.type)) break;
       x = p;
     }
@@ -1082,11 +1084,15 @@ export class Analyzer {
   }
 
   private unset(n: SyntaxNode): Token {
-    const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
-    const ref = !fn && n.namedChildren.some((c) => c?.type === 'word' && /^-\w*n/.test(c.text));
+    // The options, read with unset's spec.
+    const flags = interpret(builtins.unset, n.namedChildren.map(argWord), { name: 'unset' }).roles
+      .flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).map((r) => (r.role === 'option' ? r.flag : ''));
+    const fn = flags.includes('-f');
+    const ref = !fn && flags.includes('-n');
     const children = n.namedChildren.map((c) => {
-      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options!.find((o) => o.names.includes(c.text)) : undefined;
-      if (opt) return this.tok(c, 'option', this.t(opt.text));
+      // (`-fv`: the letters together.)
+      const opts = c.type === 'word' && /^-[fvn]+$/.test(c.text) ? [...c.text.slice(1)].map((l) => builtins.unset.options!.find((o) => o.names.includes(`-${l}`))!) : [];
+      if (opts.length) return this.tok(c, 'option', opts.map((o) => this.t(o.text)).join(this.s('、', '; ')));
       if (c.type === 'variable_name' || isPlainWord(c)) {
         return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
       }
@@ -1316,7 +1322,8 @@ export class Analyzer {
     // bash reads a whole line (or compound command, or function body) before running it, so an alias
     // counts only from the next line on: the aliases are those of the state when this was read.
     const aliasable = !lookupCommand(name) && sv === undefined;
-    const parse = this.state.at(nameNode).parse;
+    // (The aliases of a command substitution are those of when it runs.)
+    const parse = this.state.at(nameNode).expand;
     const defined = aliasable ? parse.aliases.get(name) : undefined;
     const alias = defined && defined.state !== 'off' ? defined : undefined;
     const defs = aliasable ? this.state.definitions.aliases.get(name) : undefined;
@@ -2335,7 +2342,8 @@ export class Analyzer {
    */
   private pipeSubshellPitfalls(root: SyntaxNode, line: number): string[] {
     for (const p of onLine(root, ['pipeline'], line)) {
-      if (p.startPosition.row !== line || this.shell === 'zsh' || this.shell === 'ksh' || this.shoptAt(p).lastpipe === 'on') continue;
+      const here = lastStageInShell(this.state.at(p).run, this.shell);
+      if (p.startPosition.row !== line || here === 'on') continue;
       let last = p.namedChildren[p.namedChildren.length - 1];
       // The redirections after the last stage (`… | while …; done > log`) are its own.
       if (last?.type === 'redirected_statement') last = field(last, 'body') ?? last;
@@ -2373,7 +2381,8 @@ export class Analyzer {
           : ['`done < ファイル` のようにリダイレクトで渡すか、一時ファイルを使います', 'Feed the loop with a redirection, `done < file`, or use a temporary file']);
       return [this.s(
         `⚠ 落とし穴: パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix[0]}`,
-        `⚠ Pitfall: the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix[1]}`)];
+        `⚠ Pitfall: the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix[1]}`) + (here === 'unknown'
+        ? this.s('（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）', ' (only some paths before here turn `shopt -s lastpipe` on)') : '')];
     }
     return [];
   }
@@ -3267,7 +3276,14 @@ export class Analyzer {
   /** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */
   private variableNote(n: SyntaxNode, name: string): string {
     const st = this.state.at(n).run;
-    const arr = attribute(st, name, 'a') === 'on' || attribute(st, name, 'A') === 'on' ? { assoc: attribute(st, name, 'A') === 'on' } : undefined;
+    const a = attribute(st, name, 'a');
+    const assoc = attribute(st, name, 'A');
+    const arr = a === 'on' || assoc === 'on' ? { assoc: assoc === 'on' } : undefined;
+    if (!arr && (a === 'unknown' || assoc === 'unknown')) {
+      // An array on some paths only (a loop that may not run, a branch).
+      return this.s(`。\`${name}\` は一部の経路（分岐やループ）で配列になる。そのときは \`$${name}\` は先頭の要素だけで、全要素は \`"\${${name}[@]}"\``,
+        `. \`${name}\` is an array on some paths (a branch or a loop): there \`$${name}\` is only its first element, and all of them are \`"\${${name}[@]}"\``);
+    }
     if (arr) {
       const first = `\${${name}[0]}`;
       return this.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
@@ -3390,7 +3406,7 @@ export class Analyzer {
     if (wellKnownVariables[name]) return this.t(wellKnownVariables[name]);
     // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).
     const ci = Object.hasOwn(ciVariables, name) ? ciVariables[name] : undefined;
-    if (ci && !new RegExp(`(^|[\\s;&|(])(export\\s+)?${name}=|\\bread\\b[^\\n;|&]*\\s${name}\\b`, 'm').test(this.source)) {
+    if (ci && !this.state.assigned.has(name)) {
       return this.s(`${ci.ci} が設定する環境変数: ${this.t(ci.meaning)}`, `set by ${ci.ci}: ${this.t(ci.meaning)}`);
     }
     return undefined;
