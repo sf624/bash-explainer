@@ -16,6 +16,7 @@
 - `declare`, `local`, `export`, `readonly` and `typeset` read their options up to the first name or `--`, as bash does. `declare -- x=1` says `--` ends the options (before: "Option"). In `declare -x -- -i` and `declare y -i`, `-i` is a name, which bash rejects (before: the integer attribute, and a later `y=1` was explained as arithmetic).
 - The summary of a command names its deepest subcommand: `git stash push` and `docker compose -f x run` (before: `git stash` and `docker compose`).
 - `locate -r REGEXP` takes the regular expression as its value, as mlocate and plocate do, and `--regex` reads the patterns as extended regular expressions. Before, `-r` was the same as `--regex`, and the regular expression was a pattern.
+- `git` knows its other global options: `--git-dir`, `--work-tree`, `--bare`, `--namespace`, `--config-env`, `--exec-path`, `-p`, `-P`, `--literal-pathspecs` and the other pathspec options, `--no-replace-objects`, `--no-optional-locks`, `--attr-source` and `--no-advice`. In `git --git-dir .git log`, `log` is the subcommand. Before, these were unknown options, and `log` a plain argument.
 
 ## 0.6.0
 
