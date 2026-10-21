@@ -48,12 +48,60 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--lang <en\|ja>` | language (default: from `LANG`) |
 | `--format <format>` | `text`, `markdown` or `json`; with `--check`, also `github` (annotations in GitHub Actions) or `sarif` (for code scanning) |
 | `--no-examples` | leave out worked examples |
+| `--config <file>` | read the settings from this file (see [Settings](#settings)) |
+| `--no-config` | read no settings file |
+| `--set <key>=<value>` | set one setting, as named in VS Code (`--set shell=dash`, `--set notes.idioms=false`); may be repeated |
+| `--print-config` | print the settings in effect, as JSON |
 | `--lsp` | run as a Language Server on standard input and output (see [In your editor](#in-your-editor-language-server)) |
 | `--color`, `--no-color` | colour the text output (default: when writing to a terminal; `NO_COLOR` turns it off) |
 
 In the text output, a construct is labelled with its keywords and a placeholder for what is left out (`while` *condition* `do` *commands* `done`): the placeholder is in italics and dim with colour, and shown as `‹condition›` without. With `--format json`, `label` is that text and `labelParts` lists the parts (`{ "text": "while" }`, `{ "text": "condition", "placeholder": true }`…).
 
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.
+
+## Settings
+
+The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
+
+```jsonc
+{
+  // The shell to check scripts for, whatever their shebang says.
+  "bashExplainer.shell": "sh",
+  "bashExplainer.language": "ja",
+  "bashExplainer.diagnostics.ignore": ["crlf"],
+  "bashExplainer.examples.disabled": ["date"],
+  "bashExplainer.customCommands": {
+    "deploy": {
+      "summary": "Deploy a service to production",
+      "options": [{ "names": ["-n", "--dry-run"], "description": "only show what would happen" }]
+    }
+  }
+}
+```
+
+The file is the one given with `--config`, else the one in `$BASH_EXPLAINER_CONFIG`, else `$XDG_CONFIG_HOME/bash-explainer/settings.json` (`~/.config/bash-explainer/settings.json` when `XDG_CONFIG_HOME` is not set). The last one may be missing; a file named with `--config` or `$BASH_EXPLAINER_CONFIG` must be there, and a file that is not JSON is an error (exit status 2). `--no-config` reads none. An unknown key, or a value of the wrong type, is left out with a warning on standard error. Settings that have a meaning only in VS Code or the Language Server (`hover.enabled`, `panel.autoOpen`…) are accepted and left alone, so the file can be a copy of the editor's settings.
+
+`--set key=value` sets one setting; the value is read as JSON when it is JSON (`false`, `["crlf"]`), else as a string (`dash`). Each source overrides the ones before it:
+
+1. the defaults,
+2. the settings file,
+3. `--set`,
+4. `--lang`, `--shell` and `--no-examples`.
+
+`--print-config` prints the settings in effect, as JSON that can be saved as a settings file:
+
+```console
+$ bash-explainer --set shell=dash --print-config
+{
+  "bashExplainer.language": "auto",
+  "bashExplainer.notes.idioms": true,
+  "bashExplainer.notes.pitfalls": true,
+  "bashExplainer.shell": "dash",
+  …
+}
+```
+
+With `language` set to `auto` (the default), the language follows `LC_ALL`, `LC_MESSAGES` or `LANG`.
 
 ## In CI (GitHub Actions)
 
@@ -109,7 +157,7 @@ language-servers = ["bash-language-server", "bash-explainer"]
   (add-to-list 'eglot-server-programs '((sh-mode bash-ts-mode) . ("bash-explainer" "--lsp"))))
 ```
 
-Settings, as `initializationOptions` or through `workspace/didChangeConfiguration` (under `bashExplainer`): `language` (`en` or `ja`; default from `LANG`), `shell` (the shell to check for; default: from the file), `examples` (`false` leaves out worked examples).
+Settings: the keys of the VS Code extension's settings that have a meaning here, as `initializationOptions` or through `workspace/didChangeConfiguration`, under `bashExplainer` or not, flat (`"diagnostics.ignore": ["crlf"]`) or nested (`diagnostics = { ignore = { 'crlf' } }`): `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.enabled`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `languages` (more language IDs to read as shell scripts), `embedded.files` and `customCommands`. `examples: false`, as earlier releases read it, still turns the examples off. Under what the editor sends, the server reads the [settings file](#settings) of the command-line tool (also `--lsp --config <file>`). Keys and values it cannot use are reported in the editor's log (`window/logMessage`).
 
 ## Privacy
 
