@@ -179,7 +179,7 @@ describe('the dictionary', () => {
     assert.match(ping.find((t) => t.label === 'example.com')!.explanation, /host name/);
     assert.match(tokens('mkfs.ext4 -L data /dev/sdb1')[0].explanation, /ext4 file system/);
     assert.match(tokens('vim -c q f')[0].explanation, /Text editor/);
-    for (const c of ['setsid', 'stdbuf', 'ionice', 'unshare', 'nsenter']) assert.ok(commands[c].wraps, c);
+    for (const c of ['setsid', 'stdbuf', 'ionice', 'unshare', 'nsenter']) assert.ok(commands[c].spec!.operands![0].pattern.some((o) => o.command), c);
     assert.deepStrictEqual(unknown('flock -n /tmp/l ls; ping -c 1 h; dig +short a.com; chattr +i f'), []);
   });
 
@@ -230,6 +230,7 @@ describe('the dictionary', () => {
     const check = (name: string, d: CommandDoc) => {
       assert.ok(d.summary.ja.trim() && d.summary.en.trim(), `${name}: summary`);
       for (const [flag, o] of Object.entries(d.options ?? {})) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${flag}`);
+      for (const o of d.spec?.options ?? []) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${o.names[0]}`);
       for (const [sub, sd] of Object.entries(d.subcommands ?? {})) check(`${name} ${sub}`, sd);
     };
     for (const [name, d] of [...Object.entries(commands), ...Object.entries(builtins)]) check(name, d);
@@ -253,6 +254,9 @@ describe('the dictionary', () => {
       for (const [name, opt] of Object.entries(doc.options ?? {})) {
         if (!opt.arg) continue;
         if (/この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${name}: ${opt.text.ja} / ${opt.text.en}`);
+      }
+      for (const opt of doc.spec?.options ?? []) {
+        if (opt.value && /この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${opt.names[0]}: ${opt.text.ja} / ${opt.text.en}`);
       }
       for (const [name, sub] of Object.entries(doc.subcommands ?? {})) visit(`${path} ${name}`, sub);
     };

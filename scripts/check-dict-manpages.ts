@@ -43,7 +43,7 @@ const noHelp = new Set(['reboot', 'halt', 'poweroff', 'shutdown', 'init', 'telin
 
 /** Option names of one table entry, including its subcommands' options (prefixed by the path). */
 function collect(prefix: string, doc: CommandDoc, into: Map<string, string[]>): void {
-  const names = Object.keys(doc.options ?? {});
+  const names = [...Object.keys(doc.options ?? {}), ...(doc.spec?.options ?? []).flatMap((o) => o.names)];
   if (names.length) into.set(prefix, names);
   for (const [sub, d] of Object.entries(doc.subcommands ?? {})) collect(`${prefix} ${sub}`, d, into);
 }

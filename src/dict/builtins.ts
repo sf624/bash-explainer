@@ -1,5 +1,5 @@
 import { tx } from '../i18n';
-import { CommandDoc, OptDoc, OptSpec, cmd, pos } from './types';
+import { cmd, CommandDoc, native, OptDoc, OptSpec, pos, runs } from './types';
 import { Text } from '../i18n';
 import { declarationCommands, declarationFlags, exportFlags, readonlyFlags } from './syntax';
 
@@ -161,11 +161,11 @@ export const builtins: Record<string, CommandDoc> = {
   source: b('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], { positional: [pos('読み込むファイル', 'file to source'), pos('そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')] }),
   '.': b('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], { positional: [pos('読み込むファイル', 'file to source'), pos('そのファイルに渡す引数（実行中は $1, $2…になる）', 'arguments passed to it (they are $1, $2… while it runs)')] }),
   eval: b('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)'),
-  exec: b('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
+  exec: native('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
     ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
-  ], { wraps: true }),
+  ], { builtin: 'special', style: 'posix', operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
   shift: b('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], { positional: [pos('ずらす数（省略時は 1）', 'how many (default 1)')] }),
   getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], { positional: [pos('受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)'), pos('見つけたオプションの文字を入れる変数名', 'variable that receives the option letter'), pos('解析する単語（省略時は位置パラメータ $@）', 'words to parse (default: the positional parameters `$@`)')], positionalLang: ['getopts'] }),
   wait: b('バックグラウンドジョブの終了を待つ', 'Wait for background jobs to finish', [
@@ -224,12 +224,12 @@ export const builtins: Record<string, CommandDoc> = {
     ['-p', '外部コマンドのパスだけを表示（ビルトイン・関数・別名なら何も出さない）', 'print the path only when the name would run an executable (nothing for a builtin, function or alias)'],
     ['-f', '関数を無視する', 'ignore functions'],
   ], { positional: [pos('調べる名前', 'name to look up')] }),
-  command: b('関数や別名を無視してコマンドを実行する。`-v` で存在確認によく使う', 'Run a command ignoring functions/aliases; `-v` is often used to check existence', [
+  command: native('関数や別名を無視してコマンドを実行する。`-v` で存在確認によく使う', 'Run a command ignoring functions/aliases; `-v` is often used to check existence', [
     ['-v', 'コマンドのパスまたは名前を表示（存在確認に使う）', 'print the command path or name (existence check)'],
     ['-V', 'コマンドの詳しい説明を表示', 'print a verbose description'],
     ['-p', '標準の PATH で検索する', 'use a default PATH'],
-  ], { wraps: true }),
-  builtin: b('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { wraps: true }),
+  ], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] }] }),
+  builtin: native('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
     ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],

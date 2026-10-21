@@ -1,23 +1,20 @@
 // The argument interpreter (src/argv/interpret.ts): the worked examples of the design, commands of the
 // dictionary through the converter (src/argv/fromdoc.ts), and the corners of the option grammar.
 import * as assert from 'assert';
-import { lookupCommand } from '../src/analyzer';
+import { commandSpec, lookupCommand } from '../src/analyzer';
 import { fromCommandDoc } from '../src/argv/fromdoc';
 import { ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { builtins } from '../src/dict/builtins';
 import { commands } from '../src/dict/commands';
-import { CommandDoc, cmd } from '../src/dict/types';
+import { CommandDoc, cmd, native, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
 import { argWords, render } from './support/argwords';
 // (Types only: loaded so that its coverage is measured.)
 import '../src/argv/spec';
 
 const t = (en: string) => tx(en, en);
-const lookup = (name: string): CommandSpec | undefined => {
-  const doc = lookupCommand(name);
-  return doc && fromCommandDoc(doc, name.slice(name.lastIndexOf('/') + 1));
-};
+const lookup = (name: string): CommandSpec | undefined => commandSpec(name);
 /** The roles of the words of `line`, read with `spec` (by default the dictionary's entry, converted). */
 const roles = (line: string, spec?: CommandSpec, ctx: InterpretContext = {}): string[] => {
   const { name, words, texts } = argWords(line);
@@ -262,7 +259,7 @@ describe('argv interpreter: commands of the dictionary', () => {
     assert.deepStrictEqual(roles('bash -s a'), ['-s: -s read commands from stdin', 'a: ARG']);
     // `su -c`: the value of `-c` is a shell string.
     // `su -c 'cmd'` and `bash -c 'cmd'`: the same form, a command role with a shell-string slot.
-    assert.deepStrictEqual(roles("su -c 'ls' user"), ['-c: -c run the given command with the shell', "'ls': command shell-string of -c", 'user: ARG1']);
+    assert.deepStrictEqual(roles("su -c 'ls' user"), ['-c: -c run the given command with the shell', "'ls': command shell-string of -c", 'user: USER']);
     // `bash +x s.sh`: `+x` is an option (`bash +x /dev/null` exits 0).
     assert.deepStrictEqual(roles('bash +x s.sh'), ['+x: +x (off) trace commands', 's.sh: SCRIPT']);
   });
@@ -508,14 +505,14 @@ describe('argv interpreter: review fixes', () => {
 
   it('ssh: options again after the host, up to the command, whose words are joined for the remote shell', () => {
     // `ssh -G localhost ls -l` still shows the local user: `-l` belongs to the remote command.
-    assert.deepStrictEqual(roles('ssh host ls -l'), ['host: ARG1', 'ls: command shell-string@remote', '-l: joined']);
-    assert.deepStrictEqual(roles('ssh -p 22 host -t ls -l').map((l) => l.split(':')[0] + ':' + l.split(': ')[1].split(' ')[0]), ['-p:-p', '22:value', 'host:ARG1', '-t:-t', 'ls:command', '-l:joined']);
+    assert.deepStrictEqual(roles('ssh host ls -l'), ['host: DESTINATION', 'ls: command shell-string@remote', '-l: joined']);
+    assert.deepStrictEqual(roles('ssh -p 22 host -t ls -l').map((l) => l.split(':')[0] + ':' + l.split(': ')[1].split(' ')[0]), ['-p:-p', '22:value', 'host:DESTINATION', '-t:-t', 'ls:command', '-l:joined']);
   });
 
   it('flock: options end at the file, except `-c` right after it', () => {
     // `flock /tmp/l -n true`: "failed to execute -n".
-    assert.deepStrictEqual(roles('flock /tmp/l -n true'), ['/tmp/l: ARG1', '-n: command exec -n (unknown)', '  true: operand']);
-    assert.deepStrictEqual(roles("flock -n /tmp/l -c 'x'"), ['-n: -n fail instead of waiting if the lock is taken', '/tmp/l: ARG1', '-c: -c command string to run with the shell', "'x': command shell-string"]);
+    assert.deepStrictEqual(roles('flock /tmp/l -n true'), ['/tmp/l: LOCK', '-n: command exec -n (unknown)', '  true: operand']);
+    assert.deepStrictEqual(roles("flock -n /tmp/l -c 'x'"), ['-n: -n fail instead of waiting if the lock is taken', '/tmp/l: LOCK', '-c: -c command string to run with the shell', "'x': command shell-string"]);
     assert.deepStrictEqual(roles("flock /tmp/l --command 'x'").slice(1, 2), ['--command: --command command string to run with the shell']);
   });
 
@@ -566,7 +563,7 @@ describe('argv converter: dictionary entries to specs', () => {
       const spec = fromCommandDoc(doc, name);
       // Every option with a value in the dictionary has one in the spec, under the same names.
       for (const [n, o] of Object.entries(doc.options ?? {})) {
-        if (name === 'find' || (doc.shellC && n === '-c')) continue;
+        if (name === 'find') continue;
         const s = spec.options!.find((x) => x.names.includes(n));
         assert.ok(s, `${name} ${n}`);
         assert.strictEqual(!!(s.value || s.until), !!(o.arg || o.attachedOnly || o.nextIf || o.untilTerminator), `${name} ${n}`);
@@ -580,7 +577,8 @@ describe('argv converter: dictionary entries to specs', () => {
     ], {
       positional: [tx('a', 'pattern'), tx('b', 'file')],
       bundle: { options: { k: { text: tx('k', 'k'), arg: true } }, needs: 'k', style: tx('s', 'style') },
-      subcommands: { run: cmd('r', 'run', [], { wraps: true, assigns: true }) },
+      // (A subcommand written as a spec is taken as it is.)
+      subcommands: { run: native('r', 'run', [], { style: 'posix', operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
     });
     doc.options!['-i'].inMode = { when: '-q|--query', text: tx('情報', 'info') };
     const spec = fromCommandDoc(doc, 'x');

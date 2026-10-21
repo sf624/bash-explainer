@@ -2,6 +2,7 @@ import { builtins, shellOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
+import type { OperandAlt, OperandSpec } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
@@ -10,7 +11,7 @@ import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { applyExtras } from './extras';
-import { CommandDoc, cmd, lastIsDestination, letters, OptSpec, pos } from './types';
+import { ASSIGNMENTS, CommandDoc, cmd, lastIsDestination, letters, native, operand, OptSpec, pos, runs } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -129,12 +130,17 @@ const composeOpts: OptSpec[] = [
   ['-p|--project-name', 'プロジェクト名', 'project name', 'arg'],
 ];
 
+/** The command of `docker run IMAGE CMD`: a program of the image, started without a shell. */
+const IN_CONTAINER = { run: 'exec', where: 'container', env: 'none' } as const;
+const IMAGE = operand('IMAGE', 'イメージ', 'image', { repeat: '?' });
+const SERVICE = operand('SERVICE', 'サービス', 'service', { repeat: '?' });
+
 /** Subcommands shared by docker and podman. */
 const dockerSubs: Record<string, CommandDoc> = {
-  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { wraps: true, wrapSkip: 1, positional: [pos('イメージ', 'image')] }),
+  run: native('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { style: 'posix', operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
   build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
   login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { wraps: true, wrapSkip: 1, positional: [pos('コンテナ', 'container')] }),
+  exec: native('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { style: 'posix', operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
   ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
   images: cmd('イメージ一覧を表示する', 'List images'),
   pull: cmd('イメージを取得する', 'Pull an image'),
@@ -148,8 +154,8 @@ const dockerSubs: Record<string, CommandDoc> = {
       down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [...composeOpts, ['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
       ps: cmd('コンテナの一覧を表示する', 'List the containers', [...composeOpts, ['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
       logs: cmd('コンテナのログを表示する', 'Show the logs', [...composeOpts, ['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
-      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...composeOpts, ...dockerRun], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
-      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [...composeOpts, ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { wraps: true, wrapSkip: 1, positional: [pos('サービス', 'service')] }),
+      run: native('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...composeOpts, ...dockerRun], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      exec: native('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [...composeOpts, ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
     },
   }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
@@ -172,6 +178,24 @@ const dockerSubs: Record<string, CommandDoc> = {
 };
 
 /** The commands written in this file; the other tables are spread after them. */
+const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en, { repeat: '*' });
+/**
+ * The operands of a shell: `bash -c 'cmd' NAME ARG…` (the string runs in a new shell; `NAME` is its `$0`),
+ * `bash -s ARG…`, and `bash SCRIPT ARG…` (`$N`: the number of the positional parameter).
+ */
+const SHELL_OPERANDS: OperandAlt[] = [
+  {
+    when: { option: ['-c'] },
+    pattern: [
+      operand('COMMAND_STRING', '実行するコマンド文字列', 'command string to run', { command: { run: 'shell-string', env: 'exported' } }),
+      operand('NAME', '`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument', { repeat: '?' }),
+      shellArgs('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string'),
+    ],
+  },
+  { when: { option: ['-s'] }, pattern: [shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')] },
+  { pattern: [operand('SCRIPT', '実行するスクリプト', 'Script to run', { repeat: '?', type: 'file' }), shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')] },
+];
+
 export const core: Record<string, CommandDoc> = {
   ls: cmd('ディレクトリの中身（ファイル一覧）を表示する', 'List directory contents', [
     ['-l', '詳細形式（権限・所有者・サイズ・更新日時）で表示', 'long format (permissions, owner, size, mtime)'],
@@ -291,7 +315,7 @@ export const core: Record<string, CommandDoc> = {
     ['-a|-and', 'AND 条件（既定）', 'logical AND (default)'],
     ['-L', 'シンボリックリンクをたどる', 'follow symbolic links'],
   ], { longSingleDash: true, positional: [pos('探索を開始するディレクトリ', 'starting directory')] }),
-  xargs: cmd('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
+  xargs: native('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
     ['-0|--null', '入力を NUL 区切りとして読む（`find -print0` と組み合わせる）', 'input is NUL-separated (pair with `find -print0`)'],
     ['-n|--max-args', '1回のコマンド実行に渡す引数の最大数', 'max arguments per command', 'arg'],
     ['-I', '置換文字列（例: `-I{}` で `{}` を入力値に置き換えて1件ずつ実行）', 'replace string (e.g. `-I{}`), runs once per input', 'arg'],
@@ -301,7 +325,14 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--delimiter', '入力の区切り文字（`echo` が出す末尾の改行は、最後の項目にそのまま残る）', 'input delimiter (the newline `echo` ends with stays in the last item)', 'arg'],
     ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
     ['-L|--max-lines', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
-  ], { wraps: true }),
+    ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],
+    ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg'],
+    ['-o|--open-tty', '子プロセスの標準入力を端末にする', 'reopen stdin as the terminal in the child'],
+    ['-s|--max-chars', 'コマンドラインの最大の長さ', 'maximum length of the command line', 'arg'],
+    ['-x|--exit', '長さが収まらないとき終了する', 'exit if the size is exceeded'],
+    ['-p|--interactive', '実行する前に確認する', 'ask before running each command'],
+    ['--show-limits', 'コマンドラインの長さの制限を表示', 'show the limits on command-line length'],
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
     ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
@@ -511,14 +542,49 @@ export const core: Record<string, CommandDoc> = {
     ['-i|--ignore-case', '大文字・小文字の違いを無視', 'ignore case differences'],
     ['-B|--ignore-blank-lines', '空行の増減を無視', 'ignore changes that are only blank lines'],
   ], { positional: [pos('比較元', 'first file'), pos('比較先', 'second file')] }),
-  ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
+  ssh: native('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],
     ['-o', 'ssh の設定オプション（例: `StrictHostKeyChecking=no`）', 'config option (e.g. `StrictHostKeyChecking=no`)', 'arg'],
     ['-L', 'ローカルポートフォワーディング', 'local port forwarding', 'arg'],
     ['-N', 'リモートコマンドを実行しない（転送専用）', 'do not run a remote command'],
     ['-t', '疑似端末を割り当てる', 'force pseudo-terminal allocation'],
-  ], { positional: [pos('接続先（`user@host`）', 'destination (`user@host`)'), pos('リモートで実行するコマンド', 'remote command')] }),
+    ['-l', 'ログインするユーザー名', 'login user name', 'arg'],
+    ['-F', '設定ファイル', 'configuration file', 'arg'],
+    ['-J', '経由する踏み台ホスト（ProxyJump）', 'jump host (ProxyJump)', 'arg'],
+    ['-A', '認証エージェントを転送する', 'forward the authentication agent'],
+    ['-a', '認証エージェントを転送しない', 'do not forward the authentication agent'],
+    ['-X', 'X11 を転送する', 'forward X11'],
+    ['-Y', '信頼された X11 を転送する', 'forward X11 as trusted'],
+    ['-x', 'X11 を転送しない', 'do not forward X11'],
+    ['-C', '通信を圧縮する', 'compress the connection'],
+    ['-q', '警告を出さない', 'quiet'],
+    ['-v', '詳しく表示する（`-vv` `-vvv` でさらに詳しく）', 'verbose (`-vv` `-vvv`: more)'],
+    ['-f', '認証後にバックグラウンドへ移る', 'go to the background after authentication'],
+    ['-n', '標準入力を読まない（`/dev/null` から）', 'read no stdin (from `/dev/null`)'],
+    ['-g', '転送したポートを他のホストにも開く', 'allow remote hosts to use forwarded local ports'],
+    ['-R', 'リモート側のポートをこちらに転送（`リモートポート:ホスト:ポート`）', 'forward a remote port to here (`remote_port:host:port`)', 'arg'],
+    ['-D', '動的ポート転送（SOCKS プロキシ）', 'dynamic forwarding (SOCKS proxy)', 'arg'],
+    ['-T', '疑似端末を割り当てない', 'do not allocate a pseudo-terminal'],
+    ['-E', 'ログを書くファイル', 'append debug logs to the given file', 'arg'],
+    ['-e', 'エスケープ文字', 'escape character', 'arg'],
+    ['-M', '接続の共有(ControlMaster)の親になる', 'become the master of a shared connection'],
+    ['-S', '接続の共有に使うソケット', 'control socket for connection sharing', 'arg'],
+    ['-c', '暗号方式', 'cipher', 'arg'],
+    ['-W', '標準入出力を指定のホスト:ポートに転送する', 'forward stdio to host:port', 'arg'],
+    ['-w', 'tun デバイスを転送する', 'forward a tun device', 'arg'],
+    ['-G', '有効な設定を表示して終わる', 'print the effective configuration and exit'],
+    ['-V', 'バージョンを表示する', 'print the version'],
+    ['-4', 'IPv4 だけを使う', 'use IPv4 only'],
+    ['-6', 'IPv6 だけを使う', 'use IPv6 only'],
+    ['-Q', '対応している項目を一覧表示（`cipher`、`kex`…）', 'query supported algorithms (`cipher`, `kex`…)', 'arg'],
+    ['-b', '接続元のアドレス', 'source address', 'arg'],
+    ['-s', 'サブシステムを使う（`sftp`）', 'request a subsystem (`sftp`)'],
+    ['-K', 'GSSAPI 認証を使う', 'enable GSSAPI authentication'],
+  ], {
+    // ssh reads options again after the host; the words after it are joined into one string for the remote shell.
+    operands: [{ pattern: [operand('DESTINATION', '接続先（`user@host`）', 'destination (`user@host`)'), operand('COMMAND', 'リモートで実行するコマンド', 'remote command', { repeat: '?', command: { run: 'shell-string', where: 'remote', joinsWords: true } })] }],
+  }),
   scp: cmd('SSH 経由でファイルをコピーする', 'Copy files over SSH', [
     ['-r', 'ディレクトリを再帰的にコピー', 'copy recursively'],
     ['-P', 'ポート番号', 'port', 'arg'],
@@ -537,30 +603,72 @@ export const core: Record<string, CommandDoc> = {
     ['-r|--recursive', 'ディレクトリを再帰的に', 'recurse into directories'],
     ['--progress', '進捗を表示', 'show progress'],
   ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], positionalBy: [{ count: 1, texts: [pos('一覧を表示するファイルまたはディレクトリ（転送先がないので転送はしない）', 'file or directory to list (with no destination, nothing is copied)')] }, { count: 2, orMore: true, texts: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], last: pos('転送先', 'destination') }] }),
-  sudo: cmd('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
+  sudo: native('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
     ['-u|--user', '実行するユーザー', 'run as the given user', 'arg'],
     ['-E|--preserve-env', '現在の環境変数を引き継ぐ', 'preserve the environment'],
     ['-i|--login', 'ログインシェルとして実行', 'run a login shell'],
     ['-n|--non-interactive', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
-  ], { wraps: true, assigns: true }),
-  env: cmd('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
+    ['-l|--list', '許可されたコマンドを一覧表示', 'list the commands you may run'],
+    ['-v|--validate', 'パスワードを確認して有効期限を延ばす', 'validate and extend the timestamp'],
+    ['-k|--reset-timestamp', '認証の記録を無効にする', 'invalidate the timestamp'],
+    ['-K|--remove-timestamp', '認証の記録を完全に削除する', 'remove the timestamp file'],
+    ['-s|--shell', 'シェルを実行する', 'run a shell'],
+    ['-H|--set-home', 'HOME を対象ユーザーのホームにする', 'set HOME to the target user home'],
+    ['-b|--background', 'バックグラウンドで実行する', 'run in the background'],
+    ['-e|--edit', 'ファイルを権限昇格して編集する（`sudoedit`）', 'edit files with elevated privileges (`sudoedit`)'],
+    ['-g|--group', '実行するグループ', 'run with the given group', 'arg'],
+    ['-h|--host', 'ホスト（`-l` と併用）', 'host to use (with `-l`)', 'arg'],
+    ['-S|--stdin', 'パスワードを標準入力から読む', 'read the password from stdin'],
+    ['-A|--askpass', '外部のプログラムでパスワードを尋ねる', 'ask for the password with a helper program'],
+    ['-p|--prompt', 'パスワードのプロンプト', 'password prompt', 'arg'],
+    ['-P|--preserve-groups', 'グループの一覧をそのまま使う', 'preserve the group vector'],
+    ['-T|--command-timeout', 'コマンドの実行時間の上限', 'time limit for the command', 'arg'],
+    ['-V|--version', 'バージョンを表示する', 'print the version'],
+  ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
+  env: native('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
     ['-i|--ignore-environment', '空の環境から始める', 'start with an empty environment'],
     ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg'],
-  ], { wraps: true, assigns: true }),
-  doas: cmd('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
+    ['-S|--split-string', '文字列を分割して引数にする（shebang で使う）', 'split a string into arguments (useful in shebang lines)', 'arg'],
+    ['-C|--chdir', '先に移動するディレクトリ', 'change to the given directory first', 'arg'],
+    ['-0|--null', '各項目を改行でなく NUL で終える', 'end each output line with NUL'],
+  ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
+  doas: native('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { wraps: true, assigns: true }),
-  nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { wraps: true }),
-  timeout: cmd('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
+  ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
+  nohup: native('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  timeout: native('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
     ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
-  ], { wraps: true, wrapSkip: 1, positional: [pos('制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)')] }),
-  nice: cmd('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [['-n', '優先度の調整値', 'niceness adjustment', 'arg']], { wraps: true }),
-  watch: cmd('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
+  ], { style: 'posix', operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
+  nice: native('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
+    ['-n', '優先度の調整値', 'niceness adjustment', 'arg'],
+    ['--adjustment', 'ニス値の増分', 'niceness increment', 'arg'],
+  ], {
+    style: 'posix',
+    patternOptions: [
+      {
+        pattern: /^-(\d+)$/,
+        text: ([, n]) => tx(`優先度の調整値 ${n}（\`-n ${n}\` の古い書き方。負の値は \`--${n}\` で、権限が必要）`, `niceness adjustment ${n} (old way to write \`-n ${n}\`; a negative value is \`--${n}\` and needs privileges)`),
+        open: tx('展開した値を優先度の調整値にする（`-n 値` の古い書き方）', 'niceness adjustment given by the expansion (old way to write `-n N`)'),
+      },
+      // `nice --5`: an adjustment of -5.
+      { pattern: /^--(\d+)$/, text: ([, n]) => tx(`優先度の調整値 -${n}（\`-n -${n}\` の古い書き方。負の値には権限が必要）`, `niceness adjustment -${n} (old way to write \`-n -${n}\`; a negative value needs privileges)`) },
+    ],
+    operands: [{ pattern: [runs()] }],
+  }),
+  watch: native('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
     ['-n|--interval', '実行間隔（秒）', 'interval in seconds', 'arg'],
-  ], { wraps: true }),
+    ['-d|--differences', '前回との差を強調表示', 'highlight changes between updates'],
+    ['-t|--no-title', 'ヘッダーを表示しない', 'turn off the header'],
+    ['-b|--beep', 'コマンドが失敗したら音を鳴らす', 'beep if the command exits non-zero'],
+    ['-e|--errexit', 'コマンドが失敗したら止める', 'freeze on error and exit after a key'],
+    ['-c|--color', '色を解釈する', 'interpret ANSI colors'],
+    ['-x|--exec', 'シェルを通さず直接実行する', 'pass the command to exec instead of a shell'],
+    ['-g|--chgexit', '出力が変わったら終了する', 'exit when the output changes'],
+    ['-p|--precise', '間隔を正確に保つ', 'run at precise intervals'],
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   which: cmd('コマンドの実行ファイルのパスを表示する', 'Show the full path of a command'),
   jq: cmd('JSON を整形・抽出・変換する', 'Filter and transform JSON', [
     ['-r|--raw-output', '文字列をクォートなしで出力', 'output raw strings without quotes'],
@@ -724,8 +832,8 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--decode', 'デコードする', 'decode'],
     ['-w|--wrap', '指定文字数で折り返す（0 で折り返さない）', 'wrap at N columns (0 disables)', 'arg'],
   ]),
-  bash: cmd('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
-    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg'],
+  bash: native('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
+    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
     ['-e', 'エラーで即終了', 'exit on error'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを表示', 'trace commands'],
@@ -736,14 +844,20 @@ export const core: Record<string, CommandDoc> = {
     ['-s', 'コマンドを標準入力から読む', 'read commands from stdin'],
     ['--norc', '~/.bashrc を読まない', 'do not read ~/.bashrc'],
     ['--noprofile', 'ログイン時の設定ファイルを読まない', 'do not read the login profile files'],
-  ], { shellC: true }),
-  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
-    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command', 'arg'],
+  ], {
+    style: 'posix', plusOptions: true,
+    operands: SHELL_OPERANDS,
+  }),
+  sh: native('POSIX シェルを起動する', 'Run the POSIX shell', [
+    ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
     ['-e', 'エラーで即終了', 'exit on error'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを表示', 'trace commands'],
     ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
-  ], { shellC: true }),
+  ], {
+    style: 'posix', plusOptions: true,
+    operands: SHELL_OPERANDS,
+  }),
   perl: cmd('Perl を実行する（`-e` でその場のコードを実行。sed や awk の代わりのワンライナーによく使う）', 'Run Perl (`-e` runs code given on the command line; common for one-liners instead of sed/awk)', [
     ['-e', '実行する Perl のコード', 'Perl code to run', 'arg fills lang:perl'],
     ['-E', '実行する Perl のコード（say などの新機能を有効にして）', 'Perl code to run, with newer features like say', 'arg fills lang:perl'],

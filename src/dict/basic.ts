@@ -1,4 +1,4 @@
-import { CommandDoc, cmd, pos } from './types';
+import { cmd, CommandDoc, native, operand, pos, runs } from './types';
 
 // Everyday commands a Linux learner meets early (and that the LPIC-1 and LinuC-1 objectives name):
 // finding help and files, who is logged in, power control, small text tools, terminals and editors.
@@ -188,11 +188,11 @@ export const basic: Record<string, CommandDoc> = {
     ['--no-wall', '警告を送らない（systemd）', 'do not send the wall message (systemd)'],
   ], { positional: [pos('ランレベル（`0`〜`6`）、`q`（設定の再読み込み）', 'run level (`0` to `6`), or `q` (reload the configuration)')] }),
   runlevel: cmd('直前と現在のランレベルを表示する', 'Print the previous and current run level'),
-  chroot: cmd('ルートディレクトリを変えてコマンドを実行する', 'Run a command with a different root directory', [
+  chroot: native('ルートディレクトリを変えてコマンドを実行する', 'Run a command with a different root directory', [
     ['--userspec', '実行するユーザーとグループ（`ユーザー:グループ`）', 'user and group to run as (`user:group`)', 'arg'],
     ['--groups', '追加するグループ（コンマ区切り）', 'supplementary groups (comma-separated)', 'arg'],
     ['--skip-chdir', '新しいルートの `/` に移動しない', 'do not change directory to `/`'],
-  ], { wraps: true, wrapSkip: 1, positional: [pos('新しいルートにするディレクトリ', 'directory to use as the new root')] }),
+  ], { style: 'posix', operands: [{ pattern: [operand('NEWROOT', '新しいルートにするディレクトリ', 'directory to use as the new root', { repeat: '?', type: 'dir' }), runs()] }] }),
   // ---- text and number tools ----------------------------------------------------------------
   unlink: cmd('1つのファイルを削除する（`rm` より機能が少ない）', 'Remove a single file (a plainer `rm`)', [], { positional: [files] }),
   link: cmd('既存のファイルへのハードリンクを作る', 'Create a hard link to an existing file', [], { positional: [pos('元のファイル', 'existing file'), pos('作るリンク名', 'link name to create')] }),
@@ -221,13 +221,13 @@ export const basic: Record<string, CommandDoc> = {
     ['-e|--expression', '実行する式', 'expression to run', 'arg'],
     ['-f|--file', '実行するファイル', 'file to run', 'arg'],
   ]),
-  time: cmd('コマンドの実行時間と資源の使用量を測る（`/usr/bin/time`）', 'Measure the run time and resource use of a command (`/usr/bin/time`)', [
+  time: native('コマンドの実行時間と資源の使用量を測る（`/usr/bin/time`）', 'Measure the run time and resource use of a command (`/usr/bin/time`)', [
     ['-v|--verbose', '詳しく表示（最大メモリ量など）', 'verbose output (maximum memory use and more)'],
     ['-p|--portability', 'POSIX の書式で表示', 'print in the POSIX format'],
     ['-o|--output', '結果を指定したファイルに書く', 'write the result to the given file', 'arg'],
     ['-a|--append', '`-o` のファイルに追記する', 'append to the `-o` file'],
     ['-f|--format', '出力の書式（`%e` 経過秒、`%M` 最大メモリ KB…）', 'output format (`%e` elapsed seconds, `%M` max memory in KB…)', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   sum: cmd('ファイルの簡易チェックサムとブロック数を出力する（古い形式）', 'Print a simple checksum and block count of files (old format)', [
     ['-r', 'BSD の方式で計算する（既定）', 'use the BSD algorithm (default)'],
     ['-s|--sysv', 'System V の方式で計算する', 'use the System V algorithm'],

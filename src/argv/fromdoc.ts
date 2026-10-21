@@ -3,17 +3,16 @@
 // interpreter read every command of the dictionary until the entries are written as specs.
 import type { CommandDoc, OptDoc, PositionalBy } from '../dict/types';
 import { Text, tx } from '../i18n';
-import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType } from './spec';
+import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType } from './spec';
 
 /** POSIX special builtins: an assignment before them stays in POSIX mode. */
 const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
 /** Commands whose operands may be job specs (`%1`). */
 const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);
 /** Commands that read `-N` as `-n N` (`head -5`). */
-const COUNT_COMMANDS = new Set(['head', 'tail', 'git log', 'git show', 'nice']);
+const COUNT_COMMANDS = new Set(['head', 'tail', 'git log', 'git show']);
 const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALRM|TERM|STKFLT|CHLD|CONT|STOP|TSTP|TTIN|TTOU|URG|XCPU|XFSZ|VTALRM|PROF|WINCH|IO|PWR|SYS|EMT|INFO|POLL|CLD|IOT';
 
-const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
 const names = (list: string): string[] => list.split('|');
 
 /** The spec of a dictionary entry; `name` is the command's name (`git log` for a subcommand), which some rules depend on. */
@@ -25,8 +24,6 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
     spec.operandParser = 'find-expression';
     spec.options = options.filter((o) => o.names.some((n) => /^-[HLP]$/.test(n)));
   } else spec.options = options;
-  // `bash -c 'cmd'`: `-c` says that the first operand is a command string; it takes no value of its own.
-  if (doc.shellC) for (const o of options) if (o.names.includes('-c')) delete o.value;
   // `kill -9 -1`: only the first signal is one; then a word like `-1` is a PID (bash's `saw_signal`).
   if (name === 'kill') {
     for (const o of options) {
@@ -37,18 +34,16 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   if (doc.longSingleDash) spec.style = 'single-dash';
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word is text to print. `let` has no options: `let -a` is an expression.
   else if (name === 'echo' || name === 'let') spec.style = 'none';
-  // Builtins read options up to their first operand; so do wrappers (getopt with `+`) and shells.
-  // (ssh reads options again after the host, up to the command: the gnu style with a command slot.)
-  else if (doc.builtin || doc.wraps || doc.shellC) spec.style = 'posix';
+  // Builtins read options up to their first operand.
+  else if (doc.builtin) spec.style = 'posix';
   if (doc.builtin) spec.builtin = SPECIAL_BUILTINS.has(name) ? 'special' : 'regular';
-  if (['set', 'declare', 'typeset', 'local'].includes(name) || doc.shellC) spec.plusOptions = true;
+  if (['set', 'declare', 'typeset', 'local'].includes(name)) spec.plusOptions = true;
   // jq reads `--arg NAME VALUE` only as separate words: `--arg=x` is an unknown option.
   if (name === 'jq') spec.longEquals = false;
   if (/^dpkg(-query|-deb)?$/.test(name)) spec.shortEquals = true;
   const patterns = patternOptions(name);
   if (patterns.length) spec.patternOptions = patterns;
   if (name === 'echo') spec.dashDash = 'literal';
-  if (doc.afterDashes) spec.dashDash = { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] };
   // `rpm -qi`: an option means something else when another is given (a mode).
   const modes = new Set<string>();
   for (const [opt, o] of optionPairs(doc.options ?? {}, options)) {
@@ -74,7 +69,8 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   }
   spec.operands = operandAlts(doc, name);
   if (doc.subcommands) {
-    spec.subcommands = Object.fromEntries(Object.entries(doc.subcommands).map(([sub, d]) => [sub, fromCommandDoc(d, `${name} ${sub}`)]));
+    // (A subcommand written as a spec is used as it is.)
+    spec.subcommands = Object.fromEntries(Object.entries(doc.subcommands).map(([sub, d]) => [sub, d.spec ?? fromCommandDoc(d, `${name} ${sub}`)]));
   }
   return spec;
 }
@@ -99,11 +95,9 @@ function convertOption(ns: string[], o: OptDoc, command: string): OptionSpec {
     // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
     const how = command === 'set' ? { how: 'next-only' as const } : {};
     const n = o.argCount ?? 1;
-    // `su -c 'cmd'`, `flock FILE -c 'cmd'`: the value is a command string.
-    const shell: CommandSlot | undefined = command === 'su' ? { run: 'shell-string', env: 'reset' } : command === 'flock' ? { run: 'shell-string', env: 'exported' } : undefined;
     opt.value = n > 1
       ? Array.from({ length: n }, (_, k): ValueSpec => ({ name: n === 2 ? ['NAME', 'VALUE'][k] : `VALUE${k + 1}`, ...how, ...(k === n - 1 ? extra : {}) }))
-      : { name: 'VALUE', ...how, ...extra, ...(shell && ns.includes('-c') ? { command: shell } : {}) };
+      : { name: 'VALUE', ...how, ...extra };
   } else if (o.attachedOnly) opt.value = { name: 'VALUE', how: 'attached-only', optional: true, ...extra };
   else if (o.nextIf) opt.value = { name: 'VALUE', optional: true, next: new RegExp(o.nextIf), ...extra };
   // `jq . in.json --args a`: the operands after the option are values, not files.
@@ -119,16 +113,10 @@ function patternOptions(name: string): PatternOption[] {
     out.push({
       pattern: /^-(\d+)$/,
       text: ([, n]) => (base === 'git' ? tx(`${n} 件だけ（\`-n ${n}\` と同じ）`, `only ${n} (same as \`-n ${n}\`)`)
-        : base === 'nice' ? tx(`優先度の調整値 ${n}（\`-n ${n}\` の古い書き方。負の値は \`--${n}\` で、権限が必要）`, `niceness adjustment ${n} (old way to write \`-n ${n}\`; a negative value is \`--${n}\` and needs privileges)`)
-          : tx(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`)),
+        : tx(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`)),
       open: base === 'git' ? tx('展開した数の件数だけ（`-n 数` と同じ）', 'only as many as the expansion gives (same as `-n N`)')
-        : base === 'nice' ? tx('展開した値を優先度の調整値にする（`-n 値` の古い書き方）', 'niceness adjustment given by the expansion (old way to write `-n N`)')
-          : tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
+        : tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
     });
-  }
-  // `nice --5`: an adjustment of -5.
-  if (name === 'nice') {
-    out.push({ pattern: /^--(\d+)$/, text: ([, n]) => tx(`優先度の調整値 -${n}（\`-n -${n}\` の古い書き方。負の値には権限が必要）`, `niceness adjustment -${n} (old way to write \`-n -${n}\`; a negative value needs privileges)`) });
   }
   if (name === 'kill') {
     const signal = { marks: 'signal', unlessMarked: 'signal' };
@@ -173,33 +161,7 @@ function operandAlts(doc: CommandDoc, name: string): OperandAlt[] | undefined {
     }
     return out;
   };
-  if (doc.shellC) return SHELL_OPERANDS;
   const alts: OperandAlt[] = [];
-  // ssh reads options again after the host; the words after it are joined into one string for the remote shell.
-  if (name === 'ssh') {
-    return [{
-      pattern: [
-        item(0, texts[0]),
-        { name: 'COMMAND', text: texts[1], repeat: '?', command: { run: 'shell-string', where: 'remote', joinsWords: true } },
-      ],
-    }];
-  }
-  if (doc.wraps) {
-    const slot: CommandSlot = name === 'command' ? { run: 'current-shell', lookup: 'no-functions' }
-      : name === 'builtin' ? { run: 'current-shell', lookup: 'builtins-only' }
-        : name === 'exec' ? { run: 'exec', replacesShell: true } : { run: 'exec' };
-    const skip = Array.from({ length: doc.wrapSkip ?? 0 }, (_, i) => item(i, texts[Math.min(i, texts.length - 1)], '?'));
-    // `flock FILE -c CMD`: options end at the file, but `-c` right after it is still read.
-    if (name === 'flock') alts.push({ pattern: [item(0, texts[0]), { name: '-c', text: COMMAND_TEXT, option: '-c' }, { name: 'COMMAND_STRING', text: COMMAND_TEXT, command: { run: 'shell-string', env: 'exported' } }] });
-    alts.push({
-      pattern: [
-        ...(doc.assigns ? [{ name: 'NAME=VALUE', text: tx('コマンドの環境に入れる変数', 'variable for the command'), assignment: true, repeat: '*' as const }] : []),
-        ...skip,
-        { name: 'COMMAND', text: COMMAND_TEXT, repeat: '?', command: slot },
-      ],
-    });
-    return alts;
-  }
   for (const rule of doc.positionalBy ?? []) {
     const when = condition(rule);
     alts.push({ ...when, pattern: byCount(rule, (i, t, repeat) => item(i, t, repeat, !when.when)) });
@@ -241,18 +203,3 @@ function byCount(rule: PositionalBy, item: (i: number, t: Text, repeat?: Operand
   if (last) out.push(item(count - 1, last));
   return out;
 }
-
-const shellArgs = (t: Text): OperandSpec => ({ name: 'ARG', text: t, repeat: '*' });
-/** `bash -c 'cmd' NAME ARG…`, `bash -s ARG…`, `bash SCRIPT ARG…` (`$N`: the number of the positional parameter). */
-const SHELL_OPERANDS: OperandAlt[] = [
-  {
-    when: { option: ['-c'] },
-    pattern: [
-      { name: 'COMMAND_STRING', text: tx('実行するコマンド文字列', 'command string to run'), command: { run: 'shell-string', env: 'exported' } },
-      { name: 'NAME', repeat: '?', text: tx('`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument') },
-      shellArgs(tx('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string')),
-    ],
-  },
-  { when: { option: ['-s'] }, pattern: [shellArgs(tx('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)'))] },
-  { pattern: [{ name: 'SCRIPT', repeat: '?', text: tx('実行するスクリプト', 'Script to run'), type: 'file' }, shellArgs(tx('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)'))] },
-];
