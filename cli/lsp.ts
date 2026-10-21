@@ -1,11 +1,12 @@
 // A Language Server (LSP over standard input and output) for editors other than VS Code: hover
-// explanations, the problems as diagnostics and their quick fixes. Hand-written JSON-RPC, so the
+// explanations, the problems as diagnostics and their quick fixes, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
+import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
@@ -65,6 +66,9 @@ export function startLanguageServer(io: Io): void {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const parser = createUnbashParser();
   let shuttingDown = false;
+  /** Whether the client lets the server ask it to request the semantic tokens again. */
+  let canRefresh = false;
+  let requests = 0;
 
   const send = (msg: Message) => {
     const json = JSON.stringify({ jsonrpc: '2.0', ...msg });
@@ -161,6 +165,12 @@ export function startLanguageServer(io: Io): void {
       }));
   }
 
+  /** The semantic tokens of a document (none while highlight.enabled is off); with `lines`, of those lines only. */
+  function tokens(doc: Doc | undefined, lines?: { from: number; to: number }) {
+    const parsed = doc && settings['highlight.enabled'] ? parse(doc) : undefined;
+    return { data: parsed ? semanticTokens(parsed, lines) : [] };
+  }
+
   const log = (message: string) => send({ method: 'window/logMessage', params: { type: 2, message: `Bash Explainer: ${message}` } });
 
   /** Settings from the editor: the keys of VS Code's settings, flat or nested, under `bashExplainer` or not. */
@@ -182,11 +192,14 @@ export function startLanguageServer(io: Io): void {
     switch (m.method) {
       case 'initialize':
         configure(m.params?.initializationOptions, 'initializationOptions');
+        canRefresh = !!m.params?.capabilities?.workspace?.semanticTokens?.refreshSupport;
         return void reply({
           capabilities: {
             textDocumentSync: { openClose: true, change: 1 },
             hoverProvider: true,
             codeActionProvider: { codeActionKinds: ['quickfix'] },
+            // Always offered: highlight.enabled may be turned on later, and the tokens are empty while it is off.
+            semanticTokensProvider: { legend: LEGEND, full: true, range: true },
           },
           serverInfo: { name: 'bash-explainer', version: io.version },
         });
@@ -205,6 +218,8 @@ export function startLanguageServer(io: Io): void {
           forget(doc);
           schedule(doc.uri);
         }
+        // highlight.enabled, or which documents are shell code, may have changed.
+        if (canRefresh) send({ id: `bash-explainer-${++requests}`, method: 'workspace/semanticTokens/refresh' });
         return;
       case 'textDocument/didOpen': {
         const d = m.params.textDocument;
@@ -230,6 +245,12 @@ export function startLanguageServer(io: Io): void {
       case 'textDocument/hover': {
         const doc = docs.get(m.params.textDocument.uri);
         return void reply(doc ? hover(doc, m.params.position.line) : null);
+      }
+      case 'textDocument/semanticTokens/full':
+        return void reply(tokens(docs.get(m.params.textDocument.uri)));
+      case 'textDocument/semanticTokens/range': {
+        const r = m.params.range;
+        return void reply(tokens(docs.get(m.params.textDocument.uri), { from: r.start.line, to: r.end.line }));
       }
       case 'textDocument/codeAction': {
         const doc = docs.get(m.params.textDocument.uri);

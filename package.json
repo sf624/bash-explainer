@@ -320,6 +320,11 @@
           "default": false,
           "markdownDescription": "%config.panel.autoOpen%"
         },
+        "bashExplainer.highlight.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.highlight.enabled%"
+        },
         "bashExplainer.languages": {
           "type": "array",
           "items": {

@@ -62,6 +62,15 @@ export class ExplainService implements vscode.Disposable {
     return kind && files.includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
   }
 
+  /** The documents that may have shell code: the shell languages, and the kinds of files with embedded code (`isTarget` tells). */
+  selector(): vscode.DocumentSelector {
+    return [
+      ...this.languages.map((language) => ({ language })),
+      ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile'].map((language) => ({ language })),
+      { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' },
+    ];
+  }
+
   /** The shell parts of a host document (cached per version). */
   extractedOf(doc: vscode.TextDocument, kind: HostKind): Extracted {
     const key = doc.uri.toString();
@@ -119,11 +128,11 @@ export class ExplainService implements vscode.Disposable {
     const lang = this.lang;
     let analyzer = this.analyzers.get(lang);
     if (!analyzer) this.analyzers.set(lang, (analyzer = new Analyzer(lang)));
-    return explainDocumentLine(analyzer, this.shellDocument(doc), line, lang, this.shells(doc), this.explainOptions(doc));
+    return explainDocumentLine(analyzer, this.document(doc), line, lang, this.shells(doc), this.explainOptions(doc));
   }
 
   /** The document's lines and parse tree; for a host file, the tree of its shell parts. */
-  private shellDocument(doc: vscode.TextDocument): ShellDocument {
+  document(doc: vscode.TextDocument): ShellDocument {
     const lines = doc.getText().split(/\r?\n/);
     const kind = this.hostOf(doc);
     if (!kind) return { lines, tree: this.trees.get(doc.uri.toString(), doc.version, () => doc.getText()) };
@@ -150,7 +159,7 @@ export class ExplainService implements vscode.Disposable {
   issues(doc: vscode.TextDocument): DocumentIssue[] {
     if (this.hostOf(doc) && !this.config.get<boolean>('diagnostics.embedded', true)) return [];
     // Codes turned off in the settings, or by `# bash-explainer disable=` comments in the file.
-    return documentIssues(this.shellDocument(doc), this.lang, this.shells(doc), this.config.get<string[]>('diagnostics.ignore', []));
+    return documentIssues(this.document(doc), this.lang, this.shells(doc), this.config.get<string[]>('diagnostics.ignore', []));
   }
 
   forget(doc: vscode.TextDocument): void {

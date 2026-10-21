@@ -8,7 +8,8 @@
     "src/ui/diagnostics.ts",
     "src/ui/hover.ts",
     "src/ui/inline.ts",
-    "src/ui/panel.ts"
+    "src/ui/panel.ts",
+    "src/ui/semanticTokens.ts"
   ],
   "reporter": ["json"],
   "report-dir": "coverage"

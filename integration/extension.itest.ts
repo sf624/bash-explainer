@@ -101,6 +101,30 @@ describe('Bash Explainer in VS Code', function () {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
+  it('colours shell code with semantic tokens when highlight.enabled is on, and stops when it is off', async () => {
+    const tokens = (uri: vscode.Uri) => vscode.commands.executeCommand<vscode.SemanticTokens | undefined>('vscode.provideDocumentSemanticTokens', uri);
+    const { document: script } = await open(fixture('sample.sh'));
+    const docker = await vscode.workspace.openTextDocument(fixture('hosts', 'Dockerfile'));
+    assert.strictEqual((await tokens(script.uri))?.data.length ?? 0, 0);
+    await config().update('highlight.enabled', true, vscode.ConfigurationTarget.Global);
+    try {
+      const legend = await until('the legend', () => vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>('vscode.provideDocumentSemanticTokensLegend', script.uri), Boolean);
+      assert.ok(legend!.tokenTypes.includes('keyword'));
+      const data = (await until('tokens', () => tokens(script.uri), (t) => !!t && t.data.length > 0))!.data;
+      // The first token is the shebang, a comment.
+      assert.deepStrictEqual([...data.slice(0, 2)], [0, 0]);
+      assert.strictEqual(legend!.tokenTypes[data[3]], 'comment');
+      // A Dockerfile has tokens on its RUN lines only.
+      const ddata = (await until('Dockerfile tokens', () => tokens(docker.uri), (t) => !!t && t.data.length > 0))!.data;
+      const firstLine = ddata[0];
+      assert.match(docker.lineAt(firstLine).text, /^\s*(RUN|&&|\S+.*\\$)/);
+    } finally {
+      await config().update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await until('no tokens', () => tokens(script.uri), (t) => (t?.data.length ?? 0) === 0);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
   it('shows the inline summary and the hover at the cursor', async () => {
     await config().update('inline.enabled', true, vscode.ConfigurationTarget.Global);
     try {

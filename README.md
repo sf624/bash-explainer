@@ -197,6 +197,7 @@ The panel works like regex101:
 | `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
 | `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
+| `bashExplainer.highlight.enabled` | `false` | Colour shell code from the syntax tree the explanations use (semantic tokens over the editor's colours); the web page always does |
 | `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
 | `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
 | `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
@@ -254,7 +255,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `examples.placement` | ✓ | | |
-| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `languages`, `embedded.files` | | | ✓ |
+| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
 | `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen` | | | |
 
 The empty cells are about what only VS Code has (a hover, an inline summary, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.

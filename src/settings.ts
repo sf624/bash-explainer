@@ -32,6 +32,7 @@ export interface Settings {
   'inline.enabled': boolean;
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
+  'highlight.enabled': boolean;
   languages: string[];
   'embedded.files': string[];
   customCommands: Record<string, unknown>;
@@ -113,6 +114,10 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'panel.autoOpen', type: 'boolean', default: false, group: 'display', title: ['パネルを自動で開く', 'Open the panel by itself'], surfaces: ['vscode'],
     elsewhere: 'The web page always shows its panel; the others have none.',
+  },
+  {
+    key: 'highlight.enabled', type: 'boolean', default: false, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
+    elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
   },
   {
     key: 'languages', type: 'array', default: ['shellscript'], group: 'files', title: ['対象の言語 ID', 'Language IDs'], surfaces: ['vscode', 'lsp'],
