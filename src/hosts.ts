@@ -1,7 +1,9 @@
 import { azureVariables as AZURE_VARIABLES, ciVariables, githubContext } from './dict/ciVariables';
 import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
-import type { SyntaxNode, SyntaxTree } from './syntax/tree';
+import { descendants, type BashParser, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { createUnbashParser } from './syntax/adapters/unbash';
+import { option, shellState } from './semantics/state';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile';
@@ -1103,11 +1105,25 @@ const PIPEFAIL: [string, string] = [
   '⚠ If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.',
 ];
 
-/** Whether a pipe `|` starts on the line. */
-function pipesOn(n: SyntaxNode, line: number): boolean {
-  if (n.startPosition.row > line || n.endPosition.row < line) return false;
-  if (n.type === 'pipeline' && n.children.some((c) => c.type === '|' && c.startPosition.row === line)) return true;
-  return n.children.some((c) => pipesOn(c, line));
+let regionParser: BashParser | undefined;
+const regionTrees = new Map<string, SyntaxTree>();
+
+/**
+ * Whether a pipeline with a `|` on `line` of a region runs without pipefail. The region is read as the script
+ * its own shell runs (a RUN instruction), so `set -o pipefail` counts from where it runs, and not in a comment.
+ */
+function pipeWithoutPipefail(extracted: Extracted, region: ShellRegion, line: number): boolean {
+  const text = extracted.text.split('\n').slice(region.start, region.end + 1).join('\n');
+  let tree = regionTrees.get(text);
+  if (!tree) {
+    regionParser ??= createUnbashParser();
+    tree = regionParser.parse(text);
+    regionTrees.set(text, tree);
+  }
+  const model = shellState(tree, region.shell);
+  const row = line - region.start;
+  return descendants(tree.root, ['pipeline']).some((p) => p.children.some((c) => c.type === '|' && c.startPosition.row === row)
+    && ['off', 'default'].includes(option(model.at(p).run, 'set', 'pipefail')));
 }
 
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */
@@ -1122,7 +1138,7 @@ export function explainHostedLine(
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
   if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line], lang));
-  if (region.warnPipefail && pipesOn(tree.root, line) && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
+  if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
     notes.push(pick(PIPEFAIL));
   }
   ex.notes.unshift(...notes);
@@ -1153,9 +1169,9 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
     for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
     }
-    if (region.warnPipefail && !/pipefail/.test(extracted.text.split('\n').slice(region.start, region.end + 1).join('\n'))) {
+    if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {
-        if (!pipesOn(tree.root, line)) continue;
+        if (!pipeWithoutPipefail(extracted, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         out.push({ code: 'dockerPipefail', severity: 'warning', message: pick(PIPEFAIL), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
       }

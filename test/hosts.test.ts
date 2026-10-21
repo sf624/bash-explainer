@@ -68,6 +68,22 @@ describe('Dockerfile', () => {
     assert.ok(!explain('Dockerfile', 18)!.notes.some((n) => /middle of the pipe/.test(n)));
     assert.ok(!explain('Dockerfile', 3)!.notes.some((n) => /middle of the pipe/.test(n)), 'no pipe, no warning');
   });
+  it('reads set -o pipefail where it runs in the RUN, not a word pipefail anywhere', () => {
+    const warns = (src: string, line: number) => {
+      const extracted = extractShell('dockerfile', src);
+      const tree = parser.parse(extracted.text);
+      const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en')!;
+      const issues = hostIssues(tree, extracted, src.split('\n'), 'en').filter((i) => i.code === 'dockerPipefail' && i.startLine === line);
+      const said = ex.notes.some((n) => /middle of the pipe/.test(n));
+      assert.strictEqual(said, issues.length > 0);
+      return said;
+    };
+    assert.ok(!warns('FROM x\nRUN set -o pipefail && a | b', 1));
+    assert.ok(warns('FROM x\nRUN a | b && set -o pipefail', 1));
+    assert.ok(warns('FROM x\n# set -o pipefail\nRUN a | b', 2));
+    assert.ok(warns('FROM x\nRUN set -o pipefail\nRUN a | b', 2));
+    assert.ok(!warns('FROM x\nRUN [ -n "$x" ] && set -o pipefail; a | b', 1));
+  });
   it('checks for /bin/sh until SHELL switches to bash', () => {
     assert.match(explain('Dockerfile', 6)!.notes.join(), /`\[\[ \]\]` is not POSIX sh/);
     assert.ok(!explain('Dockerfile', 13)!.notes.some((n) => /POSIX/.test(n)));

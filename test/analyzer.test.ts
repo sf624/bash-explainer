@@ -634,6 +634,15 @@ describe('the state along the script (src/semantics/state.ts)', () => {
     assert.match(find(explain('if a; then shopt -s expand_aliases; fi\nalias ll="ls -l"\nll', 2), 'll').explanation, /replaced by `ls -l`, but only when `shopt -s expand_aliases` is on/);
     assert.match(find(explain('if a; then IFS=,; fi\necho $x', 1), '$x', 'variable').explanation, /set on line 1 to a value not known here/);
   });
+  it('says "may" for a pipeline stage and an array that depend on the path', () => {
+    assert.match(find(explain('a && shopt -s lastpipe\necho | { x=1; }', 1), '{ ‹commands› }').explanation, /on the paths where `shopt -s lastpipe` is on/);
+    assert.ok(notes('a && shopt -s lastpipe\necho x | read y; echo "$y"', 1).some((n) => /only some paths before here turn `shopt -s lastpipe` on/.test(n)));
+    assert.match(find(explain('while read -r l; do a+=("$l"); done < f\necho $a', 1), '$a', 'variable').explanation, /is an array on some paths/);
+    // A command substitution reads its aliases when it runs.
+    assert.match(find(explain('shopt -s expand_aliases; alias hi="echo A"; echo "$(hi)"'), 'hi').explanation, /alias `hi`/);
+    // `unset -fv`: both options.
+    assert.match(find(explain('unset -fv g'), '-fv').explanation, /unset functions; unset variables/);
+  });
   it('a subshell keeps its changes', () => {
     assert.doesNotMatch(find(explain('( shopt -s dotglob )\nls *', 1), '*').explanation, /dotglob/);
     assert.ok(!/array/.test(find(explain('( a=(1 2) ); echo $a'), '$a', 'variable').explanation));
