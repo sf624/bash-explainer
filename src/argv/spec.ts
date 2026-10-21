@@ -62,15 +62,22 @@ export interface CommandSpec {
   builtin?: 'special' | 'regular';
   /**
    * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`) or ends it
-   * (`exit`). In a subshell (src/semantics/env.ts), only the subshell.
+   * (`exit`). In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not all of
+   * them do (`set +o` and `umask` only print).
    */
-  shellEffect?: 'changes' | 'exits';
+  shellEffect?: { does: 'changes' | 'exits'; when?: (call: BuiltinCall) => boolean };
   /**
    * The program of a builtin's name (coreutils echo, procps kill): a path (`/bin/kill`) or a wrapper that starts
    * a program (`env echo`) runs it, and its options may differ from the builtin's.
    */
   program?: CommandSpec;
 }
+
+/**
+ * A call of a builtin, as `shellEffect.when` reads it: the options given (`-p`, `+o`; `--` too), those given
+ * without the value they take (`set -o`), and the operands' values (undefined when not known).
+ */
+export interface BuiltinCall { flags: string[]; bare: string[]; operands: (string | undefined)[] }
 
 export type SubcommandSpec = CommandSpec & { aliases?: string[] };
 
@@ -120,6 +127,11 @@ export interface ValueSpec {
   values?: Record<string, Text>;
   /** The value is a command, read as a `command` role (`su -c 'cmd'`). */
   command?: CommandSlot;
+  /**
+   * The value gives the command a slot runs an environment variable (`docker run -e NAME[=VALUE]`), or a file
+   * of them (`--env-file`).
+   */
+  setsEnv?: 'variable' | 'file';
 }
 
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'
@@ -197,6 +209,11 @@ export interface CommandSlot {
   env?: 'exported' | 'variables' | 'reset' | 'none';
   /** `command`, `builtin`. */
   lookup?: 'no-functions' | 'builtins-only';
+  /**
+   * With an option among `options`, `env` is this instead (`su -c`: the environment is kept; with `su -l -c`, it
+   * starts afresh).
+   */
+  envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none' };
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
   /**

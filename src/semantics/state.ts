@@ -218,8 +218,11 @@ export interface StateModel {
   readonly assigned: ReadonlySet<string>;
   /** Where `n` runs (src/semantics/env.ts): the main shell, a subshell, or a command run through slots. */
   env(n: SyntaxNode): ExecEnv;
-  /** The commands that call each function definition (in the walk: those its state reaches). */
-  readonly calls: ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>;
+  /**
+   * The commands that call each function definition (those its state reaches; through an alias, `eval` or a trap,
+   * the command that runs it), and whether the function is surely defined there.
+   */
+  readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
 }
@@ -405,9 +408,9 @@ class Walker {
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   readonly aliasDefs = new Map<string, SyntaxNode[]>();
-  /** The commands that call each function definition. */
-  readonly calls = new Map<SyntaxNode, SyntaxNode[]>();
-  /** The command whose alias is being run (its nodes are in the alias's own tree). */
+  /** The commands that call each function definition, and whether it is surely defined there on every walk. */
+  readonly calls = new Map<SyntaxNode, Map<SyntaxNode, boolean>>();
+  /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
   private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState }[]>();
@@ -754,9 +757,9 @@ class Walker {
   private call(fn: FunctionState, st: ShellState, temporaries: SyntaxNode[]): ShellState {
     const def = fn.def;
     const site = this.aliasHost ?? this.node!;
-    const sites = this.calls.get(def);
-    if (!sites) this.calls.set(def, [site]);
-    else if (!sites.includes(site)) sites.push(site);
+    const sites = this.calls.get(def) ?? new Map<SyntaxNode, boolean>();
+    this.calls.set(def, sites);
+    sites.set(site, (sites.get(site) ?? true) && fn.state === 'on');
     let exit: ShellState;
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
       // A recursive call: what the body changed in its walks so far may change.
@@ -847,15 +850,27 @@ class Walker {
     return this.builtin(name, fields(n, 'argument'), n, st);
   }
 
-  /** A command whose name is an alias: the alias's text, then the rest of the command, read and run instead. */
-  private expandAlias(n: SyntaxNode, nameNode: SyntaxNode, name: string, alias: AliasState, expands: OptionState, st: ShellState): ShellState {
-    const text = alias.value + n.text.slice(nameNode.endIndex - n.startIndex);
+  /** Runs `text` as a script for the calls it makes, from `host` (an `eval`, a `trap`); the state it leaves is dropped. */
+  private runText(text: string, host: SyntaxNode, st: ShellState): void {
+    const outer = this.aliasHost;
+    this.aliasHost ??= host;
+    this.sequence(this.parseText(text).root.children, st);
+    this.aliasHost = outer;
+  }
+
+  private parseText(text: string): SyntaxTree {
     let tree = aliasTrees.get(text);
     if (!tree) {
       aliasParser ??= createUnbashParser();
       tree = aliasParser.parse(text);
       aliasTrees.set(text, tree);
     }
+    return tree;
+  }
+
+  /** A command whose name is an alias: the alias's text, then the rest of the command, read and run instead. */
+  private expandAlias(n: SyntaxNode, nameNode: SyntaxNode, name: string, alias: AliasState, expands: OptionState, st: ShellState): ShellState {
+    const tree = this.parseText(alias.value + n.text.slice(nameNode.endIndex - n.startIndex));
     this.expanding.add(name);
     const host = this.aliasHost;
     this.aliasHost ??= n;
@@ -886,6 +901,14 @@ class Walker {
     const letters = optionRoles(parse);
     const has = (flag: string): boolean => letters.some((l) => l.flag === flag);
     switch (name) {
+      case 'eval': case 'trap': {
+        // A static string of `eval`, or a trap's action: the functions it calls are called here (or when the trap
+        // runs, from the shell that set it). Its changes to the state are not followed.
+        const words = name === 'eval' ? args.filter((a, i) => i > 0 || a.text !== '--') : parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name === 'ACTION').map((r) => args[r.word]);
+        const text = words.map((w) => staticWordValue(w));
+        if (words.length && text.every((t) => t !== undefined)) this.runText(text.join(' '), n, st);
+        return st;
+      }
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
@@ -1202,7 +1225,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   const initial = w.initial();
   const end = w.program(tree.root);
   // (The model's `at` is defined below; the environments ask for it only later.)
-  const envs = new EnvModel({ run: (n) => model.at(n).run, calls: w.calls, shell });
+  const envs = new EnvModel({ run: (n) => model.at(n).run, calls: w.calls, root: tree.root, shell });
   const model: StateModel = {
     end,
     env: (n) => envs.at(n),

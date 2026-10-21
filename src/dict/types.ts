@@ -5,7 +5,8 @@ import { Text, tx } from '../i18n';
 /**
  * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg` (a value; `arg2` for two
  * words, as `jq --arg NAME VALUE`), `until` (the words up to `;` or `+` are a command: `find -exec`), `fills`
- * (the option gives what is otherwise the first operand: `grep -e`), `attached` (a value only in the same word:
+ * (the option gives what is otherwise the first operand: `grep -e`), `setenv` and `envfile` (the value gives the
+ * command a slot runs an environment variable, or a file of them: `docker run -e`), `attached` (a value only in the same word:
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
  * `lang:<name>` (the value's language) and `persistent` (subcommands take it too). The fifth item gives the
  * meaning of particular values (`set -o pipefail`).
@@ -16,7 +17,8 @@ export type OptSpec = [string, string, string, string?] | [string, string, strin
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
-  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}) };
+  const setsEnv = flags.includes('setenv') ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
   else if (flags.includes('arg')) {

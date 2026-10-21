@@ -11,9 +11,9 @@
 // - A slot link comes from a command slot (src/argv/spec.ts) that runs a command: a program (`sudo cmd`, `xargs
 //   cmd`), another shell (`bash -c`, `su -c`, `ssh host cmd`) or the current shell again (`eval`, `command`).
 //   What reaches the command is what every link on the way passes on (`env -i bash -c f`: no function).
-import type { ArgvParse, CommandRole } from '../argv/interpret';
+import type { ArgRole, ArgvParse, CommandRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
-import type { CommandSlot, CommandSpec } from '../argv/spec';
+import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import type { Shell } from '../dialect';
 import { field, type SyntaxNode } from '../syntax/tree';
@@ -24,13 +24,26 @@ export type SubshellReason = 'parentheses' | 'command-substitution' | 'process-s
 
 /** A subshell that starts at `at`; `sure: false` when it does on some paths only (lastpipe, or some of a function's calls). */
 export interface SubshellLink { readonly kind: 'subshell'; readonly why: SubshellReason; readonly at: SyntaxNode; readonly sure: boolean }
+/** The shell a `shell-string` slot starts, from the program's name (`unknown`: `su -c`, ssh, a path or a name not known). */
+export type ShellKind = 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh' | 'unknown';
+
 /**
  * A command run through a command slot: `at` is its first word (or the shell string); `via` names the slot (`bash -c`,
- * `sudo`); `assigns`, the variables the slot's command sets for it (`env x=1 cmd`).
+ * `sudo`); `assigns`, the variables the slot's command sets for it (`env x=1 cmd`, `docker run -e x`; `*` for a
+ * file of them); `env`, what reaches it (the slot's, or the one its options give); `shell`, the shell a string runs in.
  */
-export interface SlotLink { readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[] }
-/** A function body, which runs where the function is called: in any of `envs` (a merge of different places). */
-export interface CallLink { readonly kind: 'call'; readonly def: SyntaxNode; readonly envs: readonly ExecEnv[] }
+export interface SlotLink {
+  readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[];
+  readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
+}
+/** A place a function is called from: the command, where it runs, and whether the function is surely defined there. */
+export interface CallSite { readonly at: SyntaxNode; readonly env: ExecEnv; readonly sure: boolean }
+/**
+ * A function body, which runs where the function is called: at any of `sites`. `unsure`: it may also be called from
+ * where the model does not see (its name is a word the walk did not take for a call, `bash -c f`), or it is never
+ * called (then the links before this one are where it is defined).
+ */
+export interface CallLink { readonly kind: 'call'; readonly def: SyntaxNode; readonly sites: readonly CallSite[]; readonly unsure: boolean }
 export type EnvLink = SubshellLink | SlotLink | CallLink;
 
 /** Where a node runs: the links from the main shell to it, outermost first (none: the main shell). */
@@ -97,32 +110,34 @@ export function lastStageInShell(st: ShellState, shell?: Shell): Tri {
 export interface WalkFacts {
   /** The run state of a node. */
   run(n: SyntaxNode): ShellState;
-  /** The commands that call each function definition. */
-  readonly calls: ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>;
+  /** The commands that call each function definition, and whether it is surely defined there. */
+  readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
+  readonly root: SyntaxNode;
   readonly shell?: Shell;
+}
+
+/** The function definition whose body holds `n`, if any. */
+function enclosingFunction(n: SyntaxNode): SyntaxNode | undefined {
+  for (let x = n; x.parent; x = x.parent) if (x.parent.type === 'function_definition' && x === field(x.parent, 'body')) return x.parent;
+  return undefined;
 }
 
 /** The environment of every node of a tree, computed when asked and kept. */
 export class EnvModel {
   private readonly memo = new Map<SyntaxNode, ExecEnv>();
-  /** The function definitions whose callers are being merged (a recursive call is left out). */
-  private readonly merging = new Set<SyntaxNode>();
+  /** The strongly connected components of the call graph (functions that call each other), by definition. */
+  private components: Map<SyntaxNode, Set<SyntaxNode>> | undefined;
+  /** How many times each word appears in the script (not in comments): a function's name that is not a call it saw. */
+  private words: Map<string, number> | undefined;
 
   constructor(private readonly walk: WalkFacts) {}
 
   /** Where `n` runs. */
   at(n: SyntaxNode): ExecEnv {
-    // (Only a node asked for while the callers of a function are merged has none yet.)
-    return this.find(n)!;
-  }
-
-  /** Undefined while the callers of a function it depends on are being merged (a recursive call). */
-  private find(n: SyntaxNode): ExecEnv | undefined {
     const hit = this.memo.get(n);
     if (hit) return hit;
     const p = n.parent;
-    const base = !p ? MAIN_SHELL : p.type === 'function_definition' && n === field(p, 'body') ? this.callers(p) : this.find(p);
-    if (!base) return undefined;
+    const base = !p ? MAIN_SHELL : p.type === 'function_definition' && n === field(p, 'body') ? this.body(p) : this.at(p);
     const own = this.own(n);
     const env = own.length ? { links: [...base.links, ...own] } : base;
     this.memo.set(n, env);
@@ -139,13 +154,95 @@ export class EnvModel {
     return links;
   }
 
-  /** Where the body of `def` runs: the merge of where it is called (where it is defined, when no call is known). */
-  private callers(def: SyntaxNode): ExecEnv | undefined {
-    if (this.merging.has(def)) return undefined;
-    this.merging.add(def);
-    const envs = (this.walk.calls.get(def) ?? []).map((c) => this.find(c)).filter((e): e is ExecEnv => !!e);
-    this.merging.delete(def);
-    return envs.length ? { links: [{ kind: 'call', def, envs }] } : this.find(def);
+  /** The subshell links from `n` up to the body of the function that holds it (not that body's base). */
+  private within(n: SyntaxNode, def: SyntaxNode): SubshellLink[] {
+    const links: SubshellLink[] = [];
+    for (let x: SyntaxNode = n; x !== def; x = x.parent!) links.unshift(...this.own(x));
+    return links;
+  }
+
+  /**
+   * Where the body of `def` runs: at each of its calls. The functions that call each other (a component of the
+   * call graph) run where a call from outside the component runs, with the subshells of the calls inside it on
+   * top (`f() { g | cat; }`). A function no call reaches runs where it is defined, but `unsure`.
+   */
+  private body(def: SyntaxNode): ExecEnv {
+    const component = this.component(def);
+    // The calls into the component from outside it: where they run is known without it.
+    const entries: CallSite[] = [];
+    for (const member of component) {
+      for (const [at, sure] of this.walk.calls.get(member) ?? []) {
+        const caller = enclosingFunction(at);
+        if (!caller || !component.has(caller)) entries.push({ at, env: this.at(at), sure });
+      }
+    }
+    const sites: CallSite[] = [];
+    for (const [at, sure] of this.walk.calls.get(def) ?? []) {
+      const caller = enclosingFunction(at);
+      if (!caller || !component.has(caller)) sites.push({ at, env: this.at(at), sure });
+      else {
+        // A call from inside the component: wherever the component is entered, with the subshells around the call.
+        const inner = this.within(at, caller);
+        for (const e of entries) sites.push({ at, env: inner.length ? { links: [...e.env.links, ...inner] } : e.env, sure: sure && e.sure });
+      }
+    }
+    const name = field(def, 'name')!.text;
+    // (Each call is one word of the name; the definition is another.)
+    const unsure = !sites.length || this.count(name) > 1 + new Set(sites.map((x) => x.at)).size;
+    const link: CallLink = { kind: 'call', def, sites, unsure };
+    return { links: sites.length ? [link] : [...this.at(def).links, link] };
+  }
+
+  private count(name: string): number {
+    if (!this.words) {
+      this.words = new Map();
+      const visit = (n: SyntaxNode): void => {
+        if (n.type === 'comment') return;
+        if (!n.children.length) for (const w of n.text.match(/[^\s'"`$;|&(){}<>=]+/g) ?? []) this.words!.set(w, (this.words!.get(w) ?? 0) + 1);
+        n.children.forEach(visit);
+      };
+      visit(this.walk.root);
+    }
+    // (The definition's own name is one of the words.)
+    return this.words.get(name)!;
+  }
+
+  /** The functions that call `def`, directly or not, and that it calls (Tarjan's algorithm, over every definition at once). */
+  private component(def: SyntaxNode): Set<SyntaxNode> {
+    if (!this.components) {
+      this.components = new Map();
+      const callees = new Map<SyntaxNode, SyntaxNode[]>();
+      for (const [callee, sites] of this.walk.calls) {
+        for (const at of sites.keys()) {
+          const caller = enclosingFunction(at);
+          if (caller) callees.set(caller, [...(callees.get(caller) ?? []), callee]);
+        }
+      }
+      const index = new Map<SyntaxNode, number>();
+      const low = new Map<SyntaxNode, number>();
+      const stack: SyntaxNode[] = [];
+      const visit = (v: SyntaxNode): void => {
+        index.set(v, index.size);
+        low.set(v, index.get(v)!);
+        stack.push(v);
+        for (const w of callees.get(v) ?? []) {
+          if (!index.has(w)) {
+            visit(w);
+            low.set(v, Math.min(low.get(v)!, low.get(w)!));
+          } else if (stack.includes(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+        }
+        if (low.get(v) === index.get(v)) {
+          const set = new Set<SyntaxNode>();
+          for (let w = stack.pop()!; ; w = stack.pop()!) {
+            set.add(w);
+            this.components!.set(w, set);
+            if (w === v) break;
+          }
+        }
+      };
+      for (const v of new Set([...this.walk.calls.keys(), ...callees.keys()])) if (!index.has(v)) visit(v);
+    }
+    return this.components.get(def) ?? new Set([def]);
   }
 }
 
@@ -167,13 +264,18 @@ export function processOf(env: ExecEnv): { kind: ProcessKind; sure: boolean; lin
   let out: { kind: ProcessKind; sure: boolean; link?: EnvLink } = { kind: 'main', sure: true };
   for (const l of env.links) {
     if (l.kind === 'call') {
-      // (The places a function is called from are all in the script's shell: none is in another program.)
-      const all = l.envs.map(processOf);
+      // (A function is called from the script's own shells: none is in another program.)
+      if (out.kind === 'subshell' && out.sure) continue;
+      const all = l.sites.map((x) => processOf(x.env));
       const sub = all.filter((p) => p.kind === 'subshell');
-      out = !sub.length ? out : { kind: 'subshell', sure: sub.length === all.length && sub.every((p) => p.sure), link: l };
+      out = !sub.length ? { kind: 'main', sure: out.sure && !l.unsure }
+        : { kind: 'subshell', sure: sub.length === all.length && sub.every((p) => p.sure) && !l.unsure, link: l };
     } else if (l.kind === 'slot') {
       if (l.slot.run !== 'current-shell') out = { kind: l.slot.run === 'exec' ? 'program' : 'shell', sure: true, link: l };
-    } else if (out.kind === 'main' || (out.kind === 'subshell' && !out.sure)) out = { kind: 'subshell', sure: l.sure, link: l };
+    } else if (out.kind === 'main' || out.kind === 'subshell') {
+      // (The innermost subshell gives the reason: `( cd ) &` is in `( )`.)
+      out = { kind: 'subshell', sure: l.sure || (out.kind === 'subshell' && out.sure), link: l };
+    }
   }
   return out;
 }
@@ -185,27 +287,31 @@ export function whereOf(env: ExecEnv): 'local' | 'remote' | 'container' {
   return where;
 }
 
-/** How much of a script's functions or variables reaches a process: all of them, the exported ones, or none. */
+/** How much of a script's functions, variables, options or aliases reaches a process: all of them, the exported ones, or none. */
 export type Reach = 'all' | 'exported' | 'none';
 
 /**
- * What of this script reaches the code in `env`: its functions and its variables. A subshell has all of them;
- * a command started by a slot gets the exported ones, unless a link on the way passes no functions (`sudo -E`),
- * or nothing of this script (`env -i`, sudo, `su -c`, a container, another machine): `blocker` is the first such link.
+ * What of this script reaches the code in `env`. A subshell has all of it; a command started by a slot gets the
+ * exported functions and variables, unless a link on the way passes no functions (`sudo -E`), or nothing of this
+ * script (`env -i`, sudo, `su -l -c`, a container, another machine): `blocker` is the first such link. The set
+ * options reach another shell only through an exported `SHELLOPTS` (`shellopts`); aliases never do.
  */
-export function reachOf(env: ExecEnv): { functions: Reach; variables: Reach; blocker?: SlotLink } {
+export function reachOf(env: ExecEnv, shellopts = false): { functions: Reach; variables: Reach; options: Reach; aliases: Reach; blocker?: SlotLink } {
   let functions: Reach = 'all';
   let variables: Reach = 'all';
+  let options: Reach = 'all';
+  let aliases: Reach = 'all';
   let blocker: SlotLink | undefined;
   for (const l of env.links) {
     if (l.kind !== 'slot' || l.slot.run === 'current-shell') continue;
     const away = l.slot.where === 'remote' || l.slot.where === 'container';
-    const env = l.slot.env ?? 'exported';
-    if (functions !== 'none') functions = away || env !== 'exported' ? 'none' : 'exported';
-    if (variables !== 'none') variables = away || env === 'reset' || env === 'none' ? 'none' : 'exported';
+    if (functions !== 'none') functions = away || l.env !== 'exported' ? 'none' : 'exported';
+    if (variables !== 'none') variables = away || l.env === 'reset' || l.env === 'none' ? 'none' : 'exported';
+    options = variables === 'none' || !shellopts || (options as Reach) === 'none' ? 'none' : 'exported';
+    aliases = 'none';
     if (functions === 'none') blocker ??= l;
   }
-  return { functions, variables, ...(blocker ? { blocker } : {}) };
+  return { functions, variables, options, aliases, ...(blocker ? { blocker } : {}) };
 }
 
 /** The subshell links `n` itself starts (a pipeline stage, `( )`, `&`…). */
@@ -236,13 +342,23 @@ const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, words: readonly SyntaxNode[]): void => {
-    // (`env x=1 cmd`: the assignments come before the command.)
+    // (`env x=1 cmd`, `docker run -e x img cmd`: the assignments come before the command.)
     const assigns: string[] = [];
+    const flags = p.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
     for (const { word, role } of p.roles) {
+      // (`-e x`, or `--env=x` in the option's word.)
+      const value = role.role === 'value' ? role : role.role === 'option' ? role.value : undefined;
+      if (value?.spec?.setsEnv) {
+        const text = argWord(words[word]).value?.slice(value.attached);
+        assigns.push(value.spec.setsEnv === 'file' || text === undefined ? '*' : text.replace(/=[\s\S]*$/, ''));
+      }
       if (role.role === 'operand' && role.spec?.assignment) assigns.push(words[word].text.slice(0, words[word].text.indexOf('=')));
       else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, words);
       else if (role.role === 'command') {
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns });
+        const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
+        const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
+        const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : /^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown';
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns, env, ...(shell ? { shell } : {}) });
         out.set(words[word], inner);
         if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, words);
       } else if (role.role === 'expression' && word === p.expression && s.expressionSpec) {
@@ -254,4 +370,24 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
   };
   visit(env, parse, spec, nodes);
   return out;
+}
+
+/**
+ * What a call of a builtin does to the shell that runs it (`CommandSpec.shellEffect`): `changes` it, `exits` it,
+ * or nothing (`set +o`, `umask`, `declare -p` only print). `roles` are its words with their roles.
+ */
+export function shellEffectOf(spec: CommandSpec | undefined, roles: readonly (readonly [SyntaxNode, ArgRole])[]): 'changes' | 'exits' | undefined {
+  const effect = spec?.shellEffect;
+  if (!effect?.when) return effect?.does;
+  const call: BuiltinCall = { flags: [], bare: [], operands: [] };
+  for (const [w, role] of roles) {
+    for (const r of role.role === 'cluster' ? role.letters : [role]) {
+      if (r.role === 'option' || r.role === 'unknown-option' || r.role === 'pattern-option') {
+        call.flags.push(r.flag);
+        if (r.role === 'option' && r.missing) call.bare.push(r.flag);
+      } else if (r.role === 'end-of-options') call.flags.push('--');
+      else if (r.role === 'operand') call.operands.push(argWord(w).value);
+    }
+  }
+  return effect.when(call) ? 'changes' : undefined;
 }

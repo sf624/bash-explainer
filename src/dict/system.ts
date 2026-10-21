@@ -433,8 +433,9 @@ export const system: Record<string, CommandSpec> = {
     ['--system|-S', 'システムグループとして作る', 'create a system group'], ['--gid|-g', 'グループ ID', 'group ID', 'arg'],
   ], { positional: [group] }),
   su: cmd('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
-    // The string runs in the user's shell, which starts afresh: this script's functions are not there.
-    { names: ['-c', '--command'], text: tx('シェルで指定したコマンドを実行する', 'run the given command with the shell'), value: { name: 'COMMAND', command: { run: 'shell-string', env: 'reset' } } },
+    // The string runs in the user's shell. util-linux su keeps the environment but HOME, SHELL, USER, LOGNAME and
+    // PATH (exported functions too); `-`, `-l` and `--login` start it afresh.
+    { names: ['-c', '--command'], text: tx('シェルで指定したコマンドを実行する', 'run the given command with the shell'), value: { name: 'COMMAND', command: { run: 'shell-string', env: 'exported', envWith: { options: ['-', '-l', '--login'], env: 'reset' } } } },
     ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
     ['-s|--shell', '使うシェル', 'shell to use', 'arg'], ['-m|-p|--preserve-environment', '今の環境変数を引き継ぐ', 'keep the environment'],
     ['-g|--group', '主グループを指定する', 'specify the primary group', 'arg'],
