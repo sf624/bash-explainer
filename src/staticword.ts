@@ -94,14 +94,16 @@ export function decodedText(n: SyntaxNode): string {
 /**
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
- * depends on a variable, a command, a glob or a brace expansion.
+ * depends on a variable, a command, a glob or a brace expansion. `assignment`: the word is the value of an
+ * assignment, where globs and braces are plain text.
  */
-export function staticWordValue(n: SyntaxNode): string | undefined {
+export function staticWordValue(n: SyntaxNode, assignment = false): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
     case 'word': case 'number': {
-      // An unescaped glob, brace or tilde is not text yet.
-      if (/(^|[^\\])(\\\\)*[*?[{]/.test(text) || /^~/.test(text)) return undefined;
+      // An unescaped glob, brace or tilde is not text yet. In the value of an assignment, globs and braces are text,
+      // and a tilde is expanded after a `:` too (manual 3.4).
+      if (assignment ? /(^|:)~/.test(text) : /(^|[^\\])(\\\\)*[*?[{]/.test(text) || /^~/.test(text)) return undefined;
       return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
     }
     case 'raw_string': return text.slice(1, -1);
@@ -113,7 +115,7 @@ export function staticWordValue(n: SyntaxNode): string | undefined {
     case 'concatenation': {
       let out = '';
       for (const c of n.namedChildren) {
-        const v = staticWordValue(c);
+        const v = staticWordValue(c, assignment);
         if (v === undefined) return undefined;
         out += v;
       }
