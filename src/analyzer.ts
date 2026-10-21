@@ -162,7 +162,6 @@ const BLOCK_OWNERS = types('program', 'compound_statement', 'do_group', 'subshel
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
 /** Does the word hold a variable, command or arithmetic expansion (even inside double quotes)? */
 const hasExpansionNode = (w: SyntaxNode): boolean => descendants(w, ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']).length > 0;
-/** Programs that start another program from their arguments (not the builtins `command`, `exec` and `builtin`). */
 const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -254,9 +253,10 @@ export class Analyzer {
   private rootNode!: SyntaxNode;
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   private examples: Example[] = [];
-  /** The command whose arguments are being explained (for option-dependent embedded languages). */
-  /** The command whose arguments are being explained (set while they are, which is when the helpers that read it run). */
-  /** The command whose arguments are explained, its words, and whether the shell reads them again (`eval`). */
+  /**
+   * The command whose arguments are being explained (set while they are, which is when the helpers that read it
+   * run), its words, and whether the shell reads them again (`eval`).
+   */
   private argCtx: { cmd: string; args: SyntaxNode[]; rereads?: boolean } | undefined;
 
   constructor(private lang: Lang) {}
