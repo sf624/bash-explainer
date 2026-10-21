@@ -21,7 +21,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field } from '../src/syntax/tree';
 import type { SyntaxNode } from '../src/syntax/tree';
 import * as ts from 'typescript';
-import { argWord } from './support/argwords';
+import { argWord } from '../src/argv/words';
 import { corpus } from './support/corpus';
 
 interface Known { input: string; command: string; word: string; old: string; new: string; reason: string }
