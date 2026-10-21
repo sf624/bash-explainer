@@ -744,7 +744,7 @@ class Walker {
       // A command substitution is read again when it runs: its aliases are those of the state then.
       const outer = this.expand;
       if (c.type === 'command_substitution') this.expand = st;
-      this.sequence(c.children, st);
+      this.sequence(c.children, c.type === 'command_substitution' ? this.substitutionErrexit(st) : st);
       this.expand = outer;
     };
     const visit = (x: SyntaxNode): void => {
@@ -755,6 +755,18 @@ class Walker {
     };
     if (SUBSTITUTIONS.includes(n.type)) sub(n);
     else visit(n);
+  }
+
+  /**
+   * The state a command substitution starts with: bash turns errexit off in it, unless inherit_errexit is on (POSIX
+   * mode turns it on). Other shells keep it.
+   */
+  private substitutionErrexit(st: ShellState): ShellState {
+    const errexit = option(st, 'set', 'errexit');
+    if (!this.bash || errexit === 'off' || errexit === 'default') return st;
+    const inherit = option(st, 'shopt', 'inherit_errexit');
+    if (inherit === 'on') return st;
+    return { ...st, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off') };
   }
 
   /** `${x:=word}` and `${x=word}` in the words of `n` set `x` (to a value not known here). */

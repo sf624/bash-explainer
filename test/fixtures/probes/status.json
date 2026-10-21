@@ -243,6 +243,7 @@
   {
     "manual": "4.3.1",
     "snippet": "trap '@PROBE:trap@' ERR; false; @PROBE:a@",
+    "gaps": "trap actions are not read (4.7); ERR runs where set -e would stop the shell",
     "facts": {
       "ran": [
         "trap"
@@ -283,6 +284,7 @@
     "manual": "3.7.5",
     "snippet": "bash -c 'kill -TERM $$'",
     "errexit": false,
+    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
     "facts": {
       "ran": [],
       "status": 143,
@@ -293,6 +295,7 @@
     "manual": "3.7.5",
     "snippet": "touch noexec; ./noexec",
     "errexit": false,
+    "gaps": "126 (not executable) depends on the file system",
     "facts": {
       "ran": [],
       "status": 126,
@@ -316,6 +319,7 @@
     "manual": "3.7.1",
     "snippet": "readonly r=1; r=2; @PROBE:a@",
     "errexit": false,
+    "gaps": "an assignment to a readonly variable is B3 (AssignmentMeaning.readonly): it abandons the line, or the script in POSIX mode or under set -e",
     "facts": {
       "ran": [],
       "status": 1,
@@ -327,6 +331,7 @@
     "snippet": "readonly r=1\nr=2\n@PROBE:a@",
     "errexit": false,
     "posix": true,
+    "gaps": "an assignment to a readonly variable is B3 (AssignmentMeaning.readonly): it abandons the line, or the script in POSIX mode or under set -e",
     "facts": {
       "ran": [],
       "status": 1,
@@ -376,6 +381,7 @@
     "errexit": false,
     "posix": true,
     "note": "an error in a special builtin ends a script in POSIX mode",
+    "gaps": "an error in a special builtin ends the script in POSIX mode (B3)",
     "facts": {
       "ran": [],
       "status": 2,
@@ -386,6 +392,7 @@
     "manual": "6.11",
     "snippet": ". ./nofile\n@PROBE:a@",
     "errexit": false,
+    "gaps": "`.` reads a file (not followed)",
     "facts": {
       "ran": [
         "a"
@@ -399,6 +406,7 @@
     "snippet": ". ./nofile\n@PROBE:a@",
     "errexit": false,
     "posix": true,
+    "gaps": "`.` reads a file (not followed)",
     "facts": {
       "ran": [],
       "status": 1,
@@ -422,6 +430,455 @@
       "ran": [],
       "status": 1,
       "stderr": "SCRIPT: line 1: cd: /nonexistent: No such file or directory"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; f && @PROBE:and@; @PROBE:after@",
+    "note": "set -e is ignored in a function called left of &&",
+    "facts": {
+      "ran": [
+        "in",
+        "and",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; if ! f; then :; fi; @PROBE:after@",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; g() { f; @PROBE:g@; }; g || :; g; @PROBE:after@",
+    "note": "a function called both where set -e is ignored and where it is not",
+    "gaps": "the body of f runs both where set -e is ignored and where it is not: the model says \"may\"",
+    "facts": {
+      "ran": [
+        "in",
+        "g"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set +e; f() { set -e; false; @PROBE:in@; }; if f; then @PROBE:then@; fi; false; @PROBE:after@",
+    "note": "set -e in a function called from if takes effect when the call returns",
+    "facts": {
+      "ran": [
+        "in",
+        "then"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "( set -e; false; @PROBE:in@ ) || @PROBE:or@; @PROBE:after@",
+    "errexit": false,
+    "note": "set -e in a subshell left of || has no effect",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "( set -e; false; @PROBE:in@ ); @PROBE:after@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "if (false; @PROBE:in@); then @PROBE:then@; fi",
+    "note": "ignoring set -e reaches into a subshell",
+    "facts": {
+      "ran": [
+        "in",
+        "then"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=$(set -e; false; @PROBE:in@); @PROBE:after@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s inherit_errexit; echo $(false; @PROBE:in@); @PROBE:after@",
+    "facts": {
+      "ran": [
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s inherit_errexit; if x=$(false; @PROBE:in@); then @PROBE:then@; fi",
+    "facts": {
+      "ran": [
+        "in",
+        "then"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix; x=$(false; @PROBE:in@); @PROBE:after@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; x=$(f); @PROBE:after@",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; f | cat; @PROBE:after@",
+    "facts": {
+      "ran": [
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "! false; @PROBE:a@; ! true; @PROBE:b@",
+    "facts": {
+      "ran": [
+        "a",
+        "b"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "false || false; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "true && ! false; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "( false && true ); @PROBE:a@",
+    "note": "a subshell is checked, though its failure came from left of &&",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "{ false && true; }; @PROBE:a@",
+    "note": "a group is not",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "if true; then false && true; fi; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false && true; }; f; @PROBE:a@",
+    "note": "a function call is a simple command: checked",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "case x in x) false;; esac; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "while false; do :; done; until true; do :; done; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "f() { set -o pipefail; }; f; false | true; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "f() { set -o pipefail; false | true; @PROBE:in@; }; f || :; false | true; @PROBE:after@",
+    "facts": {
+      "ran": [
+        "in"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "set -o pipefail; ! false | true; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "{ time false; } 2>/dev/null; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "trap '@PROBE:trap@' ERR; false || true; if false; then :; fi; @PROBE:a@",
+    "note": "ERR is not trapped where set -e is ignored",
+    "gaps": "trap actions are not read (4.7); ERR runs where set -e would stop the shell",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "false & wait; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "true & wait $!; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "declare x=$(false); @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "export x=$(false); @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(true)$(false); @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(false)$(true); @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(false) true; @PROBE:a@",
+    "note": "with a command name, the command's status",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(false) y=1; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "readonly r=1\nr=2\n@PROBE:a@",
+    "gaps": "an assignment to a readonly variable is B3 (AssignmentMeaning.readonly): it abandons the line, or the script in POSIX mode or under set -e",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "(( 0 )); @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "[[ -z x ]] && @PROBE:b@; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { return 3; }; f; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 3
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { [ -f a.txt ] && @PROBE:found@; }; f; @PROBE:after@",
+    "facts": {
+      "ran": [
+        "found",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "bash -c 'false; @PROBE:in@'; @PROBE:after@",
+    "note": "set -e does not reach another bash",
+    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "export SHELLOPTS; bash -c 'false; @PROBE:in@'; @PROBE:after@",
+    "note": "unless SHELLOPTS is exported",
+    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; : $nope; @PROBE:a@",
+    "errexit": false,
+    "note": "an expansion error ends the script without set -e",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: nope: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if [ -n \"$nope\" ]; then :; fi; @PROBE:a@",
+    "errexit": false,
+    "note": "also in a condition",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: nope: unbound variable"
     }
   }
 ]
