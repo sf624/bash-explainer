@@ -2,6 +2,7 @@
 // that the colours of a script follow bash's reading of it (a heredoc ends where bash ends it). Pure:
 // no DOM, no editor; the web page turns the spans into marks, and a language server could serve them
 // as semantic tokens.
+import type { ShellDocument } from './document';
 import type { Extracted } from './hosts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
 
@@ -236,34 +237,43 @@ function glob(w: SyntaxNode, set: Painter): void {
   }
 }
 
-/** A span in a host file (Dockerfile, YAML…): zero-based line, and columns in that line of the original text. */
-export interface HostedSpan {
+/** A span within one line: zero-based line, and columns in that line (UTF-16 code units). */
+export interface LineSpan {
   readonly line: number;
   readonly from: number;
   readonly to: number;
   readonly kind: HighlightKind;
 }
 
-/**
- * The spans of the shell code of a host file, moved back to the original text, one per line piece.
- * A part of text the host rewrote (the name inside `${CC}` for make's `$(CC)`) has no place there and is dropped.
- */
-export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extracted): HostedSpan[] {
+/** The spans cut at line ends, as editors take them: one per line piece, the line ends left out. */
+export function lineSpans(spans: readonly HighlightSpan[], text: string): LineSpan[] {
   const starts = [0];
-  for (let i = 0; i < extracted.text.length; i++) if (extracted.text[i] === '\n') starts.push(i + 1);
-  const out: HostedSpan[] = [];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const out: LineSpan[] = [];
   let line = 0;
   for (const s of spans) {
     while (line + 1 < starts.length && starts[line + 1] <= s.from) line++;
-    // A span over several lines (a heredoc body, a string) becomes one span per line.
     for (let l = line, a = s.from; ; a = starts[++l]) {
-      const end = Math.min(s.to, l + 1 < starts.length ? starts[l + 1] - 1 : extracted.text.length);
-      const map = extracted.maps[l];
-      const from = map[a - starts[l]];
-      const to = map[end - starts[l]];
-      if (to > from) out.push({ line: l, from, to, kind: s.kind });
+      const end = Math.min(s.to, l + 1 < starts.length ? starts[l + 1] - 1 : text.length);
+      if (end > a) out.push({ line: l, from: a - starts[l], to: end - starts[l], kind: s.kind });
       if (end >= s.to) break;
     }
   }
   return out;
+}
+
+/**
+ * The spans of the shell code of a host file, moved back to the original text, one per line piece.
+ * A part of text the host rewrote (the name inside `${CC}` for make's `$(CC)`) has no place there and is dropped.
+ */
+export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extracted): LineSpan[] {
+  return lineSpans(spans, extracted.text)
+    .map((s) => ({ ...s, from: extracted.maps[s.line][s.from], to: extracted.maps[s.line][s.to] }))
+    .filter((s) => s.to > s.from);
+}
+
+/** The spans of a document, in its own lines: a shell script, or the shell code of a host file. */
+export function documentHighlight(doc: ShellDocument): LineSpan[] {
+  const spans = highlight(doc.tree);
+  return doc.extracted ? hostedHighlight(spans, doc.extracted) : lineSpans(spans, doc.tree.text);
 }

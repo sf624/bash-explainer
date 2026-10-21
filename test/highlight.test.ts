@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILTINS, highlight, HighlightKind, hostedHighlight } from '../src/highlight';
+import { BUILTINS, documentHighlight, highlight, HighlightKind, hostedHighlight, lineSpans } from '../src/highlight';
 import { extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -192,4 +192,15 @@ describe('hostedHighlight', () => {
       '1:variable:$(CC)', '1:option:-o', '1:variable:$^', '2:builtin:echo', '2:string:"a', '3:string:b"',
     ]);
   });
+
+  it('gives the spans of a whole document in its own lines', () => {
+    const text = 'echo "a\r\nb" # c\r\nls';
+    const lines = text.split(/\r?\n/);
+    const show = (spans: ReturnType<typeof lineSpans>, src: string[]) => spans.map((s) => `${s.line}:${s.kind}:${src[s.line].slice(s.from, s.to)}`);
+    assert.deepEqual(show(documentHighlight({ lines, tree: parser.parse(text) }), lines), ['0:builtin:echo', '0:string:"a', '1:string:b"', '1:comment:# c', '2:command:ls']);
+    const make = 'all:\n\techo $(X)';
+    const extracted = extractShell('makefile', make);
+    assert.deepEqual(show(documentHighlight({ lines: make.split('\n'), extracted, tree: parser.parse(extracted.text) }), make.split('\n')), ['1:builtin:echo', '1:variable:$(X)']);
+  });
 });
+
