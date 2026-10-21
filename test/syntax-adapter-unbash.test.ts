@@ -580,6 +580,8 @@ describe('unbash adapter: unfinished input', () => {
   });
   it('an array with no ) is an incomplete array', () => {
     assert.equal(o('a=(1 2'), '(program (variable_assignment (variable_name @name "a") "=" (array @value INCOMPLETE "(" (number "1") (number "2"))))');
+    // Text after the `)` makes the value a plain word: bash assigns `(x)y` (found by the fuzz).
+    assert.equal(o('a+=(x)one < f'), '(program (redirected_statement (variable_assignment @body (variable_name @name "a") "+=" (word @value "(x)one")) (file_redirect @redirect "<" (word @destination "f"))))');
     assert.equal(o('a=(b "c d"').includes('INCOMPLETE'), true);
   });
   it('text unbash cannot read is an error node and an unreadable error', () => {
