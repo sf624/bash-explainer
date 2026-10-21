@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The example of `xargs -0 -n 1 -I{} rm -f {}` runs `rm -f` once for each NUL-separated name. Before, it showed one run with all three names joined by NUL bytes. The same holds for `-d` with `-I`.
 - The options of `git` before the subcommand are read one word each, as git reads them: `git -pP log` and `git -C. log` are unknown options, as git says ("unknown option: -pP"). Before, `-pP` was `-p` and `-P`, and `-C.` was `-C` with the value `.`. The options of a subcommand still cluster (`git commit -am x`).
 - In `ip - 3 link`, the lone `-` is the option `-loops`, as iproute2 reads it (it takes the first option the word starts). Before, `-` was a plain argument.
 - A long option that is the start of several options, as `timeout --v`, `env --ig` and `xargs --max`, is shown as ambiguous, with the options it could be (`--verbose`, `--version`), and says that the tool refuses it. Before, it was "Option (not in the dictionary)".
