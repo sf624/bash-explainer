@@ -122,6 +122,21 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     }
   });
 
+  it('kill: `-s9` and `-nTERM` are one refused signal spec; with `-l`, a signal option sends nothing', () => {
+    for (const word of ['-s9', '-s1', '-nTERM', '-nint', '-s-1']) {
+      const { parse } = parseOf(`kill ${word} 1`);
+      assert.strictEqual(parse.roles[0].role.role, 'pattern-option', word);
+      assert.match(spawnSync('bash', ['--norc', '-c', `kill ${word} 1`], { env: ENV, encoding: 'utf8' }).stderr, /invalid signal specification/, word);
+    }
+    // With `-l` the words `-15` and `-TERM` are options that do nothing, and the list is printed whole.
+    for (const word of ['-15', '-TERM']) {
+      const { parse } = parseOf(`kill -l ${word}`);
+      assert.match((parse.roles[1].role as { text: { en: string } }).text.en, /^No signal is sent/, word);
+      assert.ok(bash(`kill -l ${word}`).split('\n').length > 5, word);
+    }
+    assert.match((parseOf('kill -15 1').parse.roles[0].role as { text: { en: string } }).text.en, /^Send signal number 15/);
+  });
+
   it('exit, return, shift, break and continue: a number, even with a `-`', () => {
     assert.deepStrictEqual(operands('exit -1'), ['-1']);
     assert.strictEqual(spawnSync('bash', ['--norc', '-c', 'exit -1']).status, 255);
