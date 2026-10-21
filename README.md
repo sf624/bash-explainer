@@ -145,23 +145,23 @@ Requires VS Code 1.85 or later. There are no native dependencies (the parser is 
 
 | | How | Default |
 | --- | --- | --- |
+| **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the editor title bar or the hover |
 | **Hover** | Hover a line, or press `Ctrl+K Ctrl+E` on the cursor line | on |
-| **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the hover or the editor title bar |
 | **Inline** | A faint one-line summary at the end of the cursor line | off |
 
 Turn them on or off by clicking **Bash Explainer** in the status bar.
-
-#### Hover
-
-Hover a line to see its breakdown, right where you are reading.
-
-![Hover](images/hover.gif)
 
 #### Panel
 
 The panel follows the cursor line by line. Point at a part of the tree to highlight it in the editor.
 
 ![Panel](images/panel.gif)
+
+#### Hover
+
+Hover a line to see its breakdown, right where you are reading.
+
+![Hover](images/hover.gif)
 
 #### Inline
 
