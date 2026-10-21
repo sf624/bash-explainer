@@ -386,3 +386,14 @@ describe('shell state: name maps', () => {
     assert.ok(!NameMap.same(a.with('w', 1), a.with('v', 1), (x, y) => x === y));
   });
 });
+
+describe('shell state: GLOBIGNORE and dotglob', () => {
+  it('follows a local GLOBIGNORE going out of scope', () => {
+    assert.strictEqual(shopt(end('f() { local GLOBIGNORE=x; }; f'), 'dotglob'), 'off');
+    assert.strictEqual(shopt(end('unset GLOBIGNORE; f() { local GLOBIGNORE=x; }; f'), 'dotglob'), 'off');
+    assert.strictEqual(shopt(end('GLOBIGNORE=y; f() { local GLOBIGNORE=x; }; f'), 'dotglob'), 'on');
+    assert.strictEqual(shopt(end('if a; then GLOBIGNORE=y; fi; f() { local GLOBIGNORE=; }; f'), 'dotglob'), 'unknown');
+    assert.strictEqual(shopt(end('GLOBIGNORE=$v'), 'dotglob'), 'unknown');
+  });
+
+});

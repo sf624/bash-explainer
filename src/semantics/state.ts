@@ -816,6 +816,11 @@ class Walker {
     // (`f() ( … )` runs its body in a subshell.)
     if (body.type === 'subshell') return entry;
     for (const [name, v] of frame.saved) end = { ...end, variables: end.variables.with(name, v) };
+    // A `local GLOBIGNORE` going out of scope sets GLOBIGNORE again, or unsets it: dotglob follows, as for an assignment or `unset`.
+    if (frame.saved.has('GLOBIGNORE') && this.bash) {
+      const gi = frame.saved.get('GLOBIGNORE');
+      end = !gi || gi.set === 'off' ? this.put(end, 'shopt', 'dotglob', 'off') : this.globignore(end, gi.set === 'on' ? gi.value : undefined);
+    }
     if (frame.options) end = { ...end, set: frame.options };
     return end;
   }
@@ -1209,14 +1214,18 @@ class Walker {
     const prev = st.variables.get(name);
     st = this.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at });
     if (name === 'POSIXLY_CORRECT' && !plain && this.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);
-    // A GLOBIGNORE that is not empty turns dotglob on, until GLOBIGNORE is unset (an empty one leaves it as it is).
-    if (name === 'GLOBIGNORE' && this.bash && value !== '' && option(st, 'shopt', 'dotglob') !== 'on') st = this.put(st, 'shopt', 'dotglob', value === undefined ? 'unknown' : 'on');
+    if (name === 'GLOBIGNORE' && this.bash) st = this.globignore(st, value);
     const all = option(st, 'set', 'allexport');
     if (!array && (all === 'on' || (all === 'unknown' && prev?.attrs.x?.state !== 'on'))) {
       const v = st.variables.get(name)!;
       st = this.put(st, 'variables', name, { ...v, attrs: { ...v.attrs, x: { state: all === 'on' ? 'on' : 'unknown', at } } });
     }
     return st;
+  }
+
+  /** GLOBIGNORE set to `value` (undefined: not known here): one that is not empty turns dotglob on, until it is unset; an empty one leaves it as it is. */
+  private globignore(st: ShellState, value: string | undefined): ShellState {
+    return value !== '' && option(st, 'shopt', 'dotglob') !== 'on' ? this.put(st, 'shopt', 'dotglob', value === undefined ? 'unknown' : 'on') : st;
   }
 
   private giveAttribute(st: ShellState, name: string, letter: string, at: SyntaxNode): ShellState {
