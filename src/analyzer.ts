@@ -1647,8 +1647,9 @@ export class Analyzer {
     // In `-F'|'` the value is what is left after quote removal.
     const lit = literalContent(a);
     const val = lit ? lit.text.slice(value.attached) : a.text.slice(value.attached);
-    const raw = this.span(a, value.attached!, -1, 'argument', '', '');
-    raw.label = a.text.slice(raw.span.start.character - a.startPosition.column);
+    // The value ends where its text ends, not at the closing quote (`-f='X${Package}'`: the label is `X${Package}`).
+    const raw = this.span(a, value.attached!, lit && val ? lit.text.length : -1, 'argument', '', '');
+    raw.label = lit && val ? val : a.text.slice(raw.span.start.character - a.startPosition.column);
     if (value.spec?.how === 'attached-only') {
       // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
       const trap = /^[a-zA-Z]/.test(val) && spec.options?.some((o) => o.names.includes('-' + val[0]))
