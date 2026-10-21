@@ -374,6 +374,47 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('colours the script from its own syntax tree: code again after a heredoc, and the shell code of a host file', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    /** The colour and the highlight class of each piece of a line of the editor, as `text|class|colour`. */
+    const pieces = (start: string) => page.locator('.cm-line').filter({ hasText: start }).first().evaluate((line) => {
+      const out: string[] = [];
+      // No named functions in here: tsx would wrap them in a helper the page does not have.
+      const texts = (globalThis as any).document.createTreeWalker(line, 4);
+      for (let n = texts.nextNode(); n; n = texts.nextNode()) {
+        if (!n.textContent.trim()) continue;
+        const el = n.parentElement;
+        const cls = [...el.classList].find((c) => (c as string).startsWith('cm-bx-')) ?? '';
+        out.push(`${n.textContent.trim()}|${cls}|${(globalThis as any).getComputedStyle(el).color}`);
+      }
+      return out;
+    });
+    await page.locator('.cm-scroller').evaluate((e) => (e.scrollTop = e.scrollHeight));
+    const shopt = await until('the shopt line coloured', () => pieces('shopt -s extglob'), (p) => p.some((x) => x.startsWith('shopt|cm-bx-builtin')));
+    assert.deepEqual(shopt.map((x) => x.split('|').slice(0, 2).join('|')), ['shopt|cm-bx-builtin', '-s|cm-bx-option', 'extglob|']);
+    const body = await pieces('tabs are removed');
+    assert.deepEqual(body.map((x) => x.split('|')[1]), ['cm-bx-heredoc']);
+    // A string and a builtin do not share a colour.
+    assert.notStrictEqual(body[0].split('|')[2], shopt[0].split('|')[2]);
+    // Typing colours the new text too.
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.insertText('\necho "typed"');
+    await until('the typed line coloured', () => pieces('echo "typed"'), (p) => p.some((x) => x.startsWith('"typed"|cm-bx-string')));
+    // A Dockerfile: its own mode for FROM and RUN, ours for the shell code after RUN.
+    await page.locator('#kind').selectOption('dockerfile');
+    page.once('dialog', (d) => void d.accept()); // replace the typed script with the sample
+    await page.locator('#sample').click();
+    const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get|cm-bx-command')));
+    assert.deepEqual(run.map((x) => x.split('|')[1]), ['', 'cm-bx-command', '']);
+    assert.notStrictEqual(run[0].split('|')[2], run[2].split('|')[2], 'RUN is coloured by the Dockerfile mode');
+    const entry = await pieces('ENTRYPOINT');
+    assert.ok(entry.some((x) => x.startsWith('${PORT:-8080}|cm-bx-variable')), entry.join('\n'));
+    await ctx.close();
+  });
+
   it('has a theme switch (Auto, Light, Dark) that is remembered and works without storage', async () => {
     const LIGHT = 'rgb(255, 255, 255)';
     const DARK = 'rgb(31, 31, 31)';

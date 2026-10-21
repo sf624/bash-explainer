@@ -9,16 +9,16 @@ import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { groovy } from '@codemirror/legacy-modes/mode/groovy';
 import { json } from '@codemirror/legacy-modes/mode/javascript';
 import { python } from '@codemirror/legacy-modes/mode/python';
-import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
 import { Diagnostic, forceLinting, linter, lintGutter } from '@codemirror/lint';
-import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
-import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
+import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
+import { highlight, HighlightKind, hostedHighlight } from '../src/highlight';
 import { extractShell } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -180,7 +180,7 @@ let kind: Kind = shared.kind ?? 'shell';
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
 const parser = createUnbashParser();
 const analyzers = new Map<Lang, Analyzer>();
-let parsed: { text: string; kind: Kind; doc: ShellDocument } | undefined;
+let parsed: { text: string; kind: Kind; doc: ShellDocument; spans?: Shading[] } | undefined;
 let shown: { explanation: LineExplanation; line: number } | undefined;
 
 const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(lang)).get(lang)!;
@@ -208,8 +208,9 @@ function shells(): Shells {
 
 // ---- Editor ---------------------------------------------------------------------------------
 
+// The shell code is coloured from our own syntax tree (below); these modes colour the rest of a host file.
 const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
-  shell, makefile: shell, dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
+  dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
 const languageMode = new Compartment();
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);
@@ -226,6 +227,77 @@ const highlightField = StateField.define<DecorationSet>({
   },
   provide: (f) => EditorView.decorations.from(f),
 });
+
+// ---- Shell highlighting: from the tree the explanations are made from (src/highlight.ts) ----------
+
+/** A span to colour, in editor positions. */
+interface Shading { from: number; to: number; kind: HighlightKind }
+
+/** The spans of the whole script, worked out once per parse. */
+function shadings(): Shading[] {
+  const doc = shellDocument()!;
+  if (parsed!.spans) return parsed!.spans;
+  const spans = highlight(doc.tree);
+  const editorDoc = view.state.doc;
+  // In a host file, the shell code sits in other columns of the same lines.
+  parsed!.spans = doc.extracted
+    ? hostedHighlight(spans, doc.extracted).map((s) => ({ from: editorDoc.line(s.line + 1).from + s.from, to: editorDoc.line(s.line + 1).from + s.to, kind: s.kind }))
+    : spans;
+  return parsed!.spans;
+}
+
+const marks = new Map<HighlightKind, Decoration>();
+const mark = (k: HighlightKind) => marks.get(k) ?? marks.set(k, Decoration.mark({ class: `cm-bx-${k}` })).get(k)!;
+/** New spans for the text the editor has now. */
+const setShadings = StateEffect.define<Shading[]>();
+
+/**
+ * Marks the visible part of the script with the spans. While the text changes, the marks move with it
+ * until the new spans come (debounced, as the panel is), so typing never waits for a parse.
+ */
+const shading = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+  spans: Shading[] = [];
+  /** Whether `spans` are positions in the current text. */
+  current = false;
+  constructor(view: EditorView) {
+    this.decorations = this.build(view);
+  }
+  update(u: ViewUpdate): void {
+    const fresh = u.transactions.flatMap((tr) => tr.effects.filter((e) => e.is(setShadings)));
+    if (fresh.length) {
+      // shade() sends them alone, made from the text of that moment.
+      this.spans = fresh[fresh.length - 1].value as Shading[];
+      this.current = true;
+    } else if (u.docChanged) {
+      this.current = false;
+    }
+    if (this.current && (fresh.length || u.viewportChanged)) this.decorations = this.build(u.view);
+    else if (u.docChanged) this.decorations = this.decorations.map(u.changes);
+  }
+  build(view: EditorView): DecorationSet {
+    const b = new RangeSetBuilder<Decoration>();
+    let i = 0;
+    for (const r of view.visibleRanges) {
+      // The first span that ends after the start of the range.
+      let lo = i, hi = this.spans.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (this.spans[mid].to <= r.from) lo = mid + 1;
+        else hi = mid;
+      }
+      for (i = lo; i < this.spans.length && this.spans[i].from < r.to; i++) b.add(this.spans[i].from, this.spans[i].to, mark(this.spans[i].kind));
+    }
+    return b.finish();
+  }
+}, { decorations: (p) => p.decorations });
+
+let shadingTimer: ReturnType<typeof setTimeout> | undefined;
+/** Colours the script as it is now (the parse is shared with the panel and the problems). */
+function shade(): void {
+  clearTimeout(shadingTimer);
+  view.dispatch({ effects: setShadings.of(shadings()) });
+}
 
 const highlightStyle = HighlightStyle.define([
   { tag: [tags.keyword, tags.operator, tags.controlKeyword], color: 'var(--vscode-charts-purple)' },
@@ -248,6 +320,14 @@ const editorTheme = EditorView.theme({
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--vscode-editor-foreground)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 120, 212, 0.3)' },
   '.cm-bx-highlight': { backgroundColor: 'var(--vscode-editor-findMatchHighlightBackground)', borderRadius: '2px' },
+  // The shell's colours, the same as the host files' modes use (highlightStyle).
+  '.cm-bx-keyword, .cm-bx-operator, .cm-bx-redirect, .cm-bx-substitution': { color: 'var(--vscode-charts-purple)' },
+  '.cm-bx-string, .cm-bx-heredoc, .cm-bx-heredocDelimiter': { color: 'var(--vscode-charts-green)' },
+  '.cm-bx-comment': { color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' },
+  '.cm-bx-variable, .cm-bx-assignment': { color: 'var(--vscode-charts-red)' },
+  '.cm-bx-number, .cm-bx-glob': { color: 'var(--vscode-charts-orange)' },
+  '.cm-bx-builtin, .cm-bx-command, .cm-bx-function, .cm-bx-functionName, .cm-bx-option': { color: 'var(--vscode-charts-blue)' },
+  '.cm-bx-error': { color: 'var(--vscode-errorForeground)' },
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
 });
 
@@ -306,8 +386,12 @@ const view = new EditorView({
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       languageMode.of(modeFor(kind)), syntaxHighlighting(highlightStyle), editorTheme,
-      highlightField, ...(panelOnly ? [] : [problems, lintGutter()]),
+      highlightField, Prec.highest(shading), ...(panelOnly ? [] : [problems, lintGutter()]),
       EditorView.updateListener.of((u) => {
+        if (u.docChanged) {
+          clearTimeout(shadingTimer);
+          shadingTimer = setTimeout(shade, 100);
+        }
         // In panel mode the page around sends every change as a message, which is handled at once.
         if (panelOnly || (!u.docChanged && !u.selectionSet)) return;
         clearTimeout(timer);
@@ -316,6 +400,7 @@ const view = new EditorView({
     ],
   }),
 });
+shade();
 placeCursor(shared.text ? 1 : kindInfo(kind).cursorLine);
 
 function placeCursor(lineNumber: number): void {
@@ -708,6 +793,7 @@ $<HTMLSelectElement>('kind').addEventListener('change', (e) => {
   // An untouched sample gives way to the sample of the new kind; the user's own text stays.
   const text = view.state.doc.toString();
   if (!text.trim() || text === before.sample) setText(kindInfo(kind).sample, kindInfo(kind).cursorLine);
+  shade();
   updatePanel();
   recheck();
 });
