@@ -127,3 +127,72 @@ describe('reading a file line by line', () => {
     assert.deepStrictEqual(notes('for x in a; do read -r y; done < f'), []);
   });
 });
+
+describe('argument parsing, NUL-safe loops and other everyday idioms', () => {
+  const en = (stmt: string) => findIdioms([stmt], 'en').join('\n');
+  const ja = (stmt: string) => findIdioms([stmt], 'ja').join('\n');
+  const yes = (stmt: string, re: RegExp, jaRe: RegExp) => {
+    assert.match(en(stmt), re, stmt);
+    assert.match(ja(stmt), jaRe, stmt);
+  };
+
+  it('knows getopts and the shift after it', () => {
+    yes("while getopts 'ab:' opt; do", /`while getopts`.*\$OPTARG/, /\$OPTARG/);
+    yes('shift $((OPTIND-1))', /local OPTIND=1/, /local OPTIND=1/);
+    yes('shift "$(( OPTIND - 1 ))"', /drops the options/, /取り除き/);
+    assert.strictEqual(en('shift $((OPTIND))'), '');
+    assert.strictEqual(en('shift 2'), '');
+    assert.strictEqual(en('getopts ab: opt'), '');
+    yes('while getopt ab: "$@"; do', /no `s`/, /`s` なし/);
+    assert.strictEqual(en('getopt ab: "$@"'), '');
+  });
+
+  it('knows GNU getopt with eval set --', () => {
+    yes('args=$(getopt -o ab: --long all,bar: -- "$@")', /rewrites the arguments/, /書き直す/);
+    yes('eval set -- "$args"', /Keep `"\$args"` in double quotes/, /ダブルクォート/);
+    assert.strictEqual(en('args=$(date)'), '');
+    assert.strictEqual(en('eval "$cmd"'), '');
+    assert.strictEqual(en('set -- a b'), '');
+  });
+
+  it('knows the loop over the arguments', () => {
+    for (const w of ['while [ $# -gt 0 ]; do', 'while [[ $# -gt 0 ]]; do', 'while [ "$#" -ne 0 ]; do', 'while (( $# )); do', 'while (( $# > 0 )); do', 'while [[ $# != 0 ]]; do']) {
+      yes(w, /a loop over the arguments/, /引数を先頭から順に/);
+    }
+    assert.strictEqual(en('while [ $# -gt 1 ]; do'), '');
+    assert.strictEqual(en('while [ $x -gt 0 ]; do'), '');
+    assert.strictEqual(en('while (( n < 3 )); do'), '');
+  });
+
+  it('knows NUL-separated names', () => {
+    yes("while IFS= read -r -d '' f; do", /`read -d ''`/, /NUL/);
+    yes('read -rd "" f', /up to a NUL byte/, /NUL/);
+    assert.strictEqual(en('read -d , f').includes('NUL'), false);
+    assert.strictEqual(en('read -r f').includes('NUL'), false);
+    yes("find . -type f -print0 | while IFS= read -r -d '' f", /`find -print0`/, /`find -print0`/);
+    assert.strictEqual(en('find . -type f -print'), '');
+    yes('find . -print0 | xargs -0 rm', /`xargs -0`/, /`xargs -0`/);
+    yes('xargs -n 1 -0 echo', /`xargs -0`/, /`xargs -0`/);
+    yes('xargs --null rm', /`xargs -0`/, /`xargs -0`/);
+    assert.strictEqual(en('xargs rm'), '');
+    assert.strictEqual(en('xargs -n 10 rm'), '');
+    assert.strictEqual(en('xargs -I {} cp {} /tmp'), '');
+  });
+
+  it('knows until, mapfile, the glob guard and the yes/no prompt', () => {
+    yes('until curl -sf localhost:8080; do', /`until command`/, /失敗する間/);
+    assert.strictEqual(en('echo until x'), '');
+    yes('mapfile -t lines < input.txt', /reads each line of the input into an array/, /配列の要素/);
+    yes('readarray -t lines < <(ls)', /`mapfile` \(`readarray`\)/, /`mapfile`/);
+    yes('ls | mapfile -t lines', /loses the array/, /配列が消える/);
+    assert.strictEqual(en('echo mapfile'), '');
+    yes('[ -e "$f" ] || continue', /skips a name that does not exist/, /存在しない名前/);
+    yes('[[ -f $f ]] || continue', /\*\.txt/, /\*\.txt/);
+    assert.strictEqual(en('[ -e "$f" ] || exit 1'), '');
+    assert.strictEqual(en('[ -z "$f" ] || continue'), '');
+    yes("read -r -p 'Continue? [y/N] ' ans", /a yes\/no question/, /はい／いいえ/);
+    yes('read -rp "Sure (y/n)? " ans', /a yes\/no question/, /はい／いいえ/);
+    assert.strictEqual(en("read -r -p 'Name: ' name"), '');
+    assert.strictEqual(en('read -r ans'), '');
+  });
+});
