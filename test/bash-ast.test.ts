@@ -3,7 +3,8 @@
 // GPL boundary: bash-ast is GPL-3.0 and this project is MIT. The test only runs it as an external
 // program (child_process, see test/support/bashast.ts) and reads its JSON output. No code or type
 // definitions of bash-ast are copied, it is not in package.json, and it is never bundled or shipped.
-// The binary comes from $BASH_AST or PATH; without it, this test is skipped (CI has none).
+// The binary comes from $BASH_AST or PATH; without it, this test is skipped. CI sets BASH_EXPLAINER_BASH_AST=1
+// (it downloads the pinned release), and then a missing or broken binary fails the test instead.
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -57,6 +58,7 @@ describe('shapes (no bash-ast needed)', () => {
 
 describe('bash-ast: our syntax tree against bash\'s parser', function () {
   before(function () {
+    if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
     if (!bin) this.skip();
   });
 
