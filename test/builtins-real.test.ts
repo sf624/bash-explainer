@@ -136,6 +136,8 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       assert.ok(bash(`kill -l ${word}`).split('\n').length > 5, word);
     }
     assert.match((parseOf('kill -15 1').parse.roles[0].role as { text: { en: string } }).text.en, /^Send signal number 15/);
+    // A pattern option with no text for the mode keeps its own.
+    assert.match((parseOf('kill -l -s9').parse.roles[1].role as { text: { en: string } }).text.en, /^Invalid/);
   });
 
   it('pushd, popd and dirs: `+N` and `-N` are places in the stack, not options', () => {

@@ -924,6 +924,14 @@ describe('a short option with a quoted value glued on', () => {
   it('says what the value is after quote removal', () => {
     assert.ok(all(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
   });
+  it('says that a long option prefix is ambiguous, with the options it could be', () => {
+    const word = (src: string, lang: 'en' | 'ja') => all(new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0).items).find((t) => t.kind === 'option')!.explanation;
+    assert.strictEqual(word('timeout --v 1 true', 'en'), 'Ambiguous option (it starts several long options: `--verbose`, `--version`); timeout refuses it');
+    assert.match(word('env --ig=x true', 'en'), /^Ambiguous option .*`--ignore-environment`, `--ignore-signal`\); env refuses it/);
+    assert.match(word('timeout --v 1 true', 'ja'), /^あいまいなオプション（.*`--verbose`、`--version`）。timeout は受け付けない$/);
+    // A prefix of no option stays unknown.
+    assert.match(word('timeout --zz 1 true', 'en'), /^Option \(not in the dictionary/);
+  });
   it('shows the value of a partly quoted word without its quote characters, and its span ends there', () => {
     const line = "dpkg-query -Wf='X${Package}' bash";
     const value = all(explain(line).items).find((t) => t.kind === 'argument' && t.explanation.startsWith('Value for `-f`'))!;
