@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `jobs -x echo %1` explains `echo %1` as a command, with its own words, as `-x` runs it. Before, `echo` and `%1` were job specs.
 - In `shopt -o errexit`, `shopt -so pipefail` and the like, the names are explained as `set -o` options (before: plain words with the text of a `shopt` name).
 - `pushd +1`, `pushd -1`, `popd -2` and `dirs +0` say which entry of the directory stack they mean, counted from the left (`+`) or the right (`-`) of what `dirs` prints. Before, `+1` was a plain argument and `-2` an unknown option.
 - `kill -s9 1` and `kill -nTERM 1` say that bash refuses the signal spec (`s9`, `nTERM`): a name may be attached to `-s` and a number to `-n`, nothing else. Before, they were read as `-s 9` and `-n TERM`. In `kill -l -15`, `-15` is said to send nothing, as `-l` only lists the signals. Before, it was "Send signal number 15".

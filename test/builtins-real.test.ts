@@ -166,6 +166,16 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     assert.match(children('shopt -s extglob')[1].explanation, /^Shell option `extglob`/);
   });
 
+  it('jobs -x: the rest is a command run in this shell, with the job specs replaced', () => {
+    for (const line of ['jobs -x echo %1', 'jobs -x -l f %1']) {
+      const role = parseOf(line).parse.roles.at(-1)!.role;
+      assert.strictEqual(role.role, 'command', line);
+    }
+    assert.match(bash('set -m; f() { echo "fn:$1"; }; sleep 5 & jobs -x f %1 | grep -c "^fn:[0-9]*$"; kill %1'), /^1\n/);
+    // Without `-x` the words are job specs.
+    assert.strictEqual(parseOf('jobs -l %1').parse.roles.at(-1)!.role.role, 'operand');
+  });
+
   it('exit, return, shift, break and continue: a number, even with a `-`', () => {
     assert.deepStrictEqual(operands('exit -1'), ['-1']);
     assert.strictEqual(spawnSync('bash', ['--norc', '-c', 'exit -1']).status, 255);
