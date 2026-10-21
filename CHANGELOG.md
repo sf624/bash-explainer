@@ -23,6 +23,7 @@
 - `env`, `xargs`, `stdbuf`, `flock` and `sudo` accept a long option shortened to a unique prefix, as they do: in `xargs --max-a 2 echo`, `echo` is the command (before: `2`). A prefix the tool finds ambiguous (`timeout --v`, `env --ig`, `flock --no`) is left unknown. They know the rest of their options: `env -v`, `-` and the signal options, `xargs -e`, `-l` and `--process-slot-var`, `flock -o`, `-F`, `--verbose`, `--nonblocking` and `--wait`, and sudo's `-B`, `-C`, `-D`, `-R`, `-N`, `-U`, `-r`, `-t`, `--host` and `--preserve-env=LIST`. In `sudo -h`, `-h` is help (before: it took the next word as a host).
 - In `env -S 'ls -l' x`, `x` is an argument of the command that `-S` gives. Before, `x` was the command.
 - A builtin run by its path, or by a wrapper that starts a program, is read as the program: `/bin/kill -s TERM 1`, `/bin/echo -e x`, `/usr/bin/test -f x` and `/bin/pwd -L` explain their options, and `env echo` and `sudo kill` show a command, not a builtin. The programs' own options count: in `env printf -v x`, `-v` is the format, and in `sudo kill -n 9 1`, `-n` is unknown (procps kill has no `-n`). Before, a path had no explanation of its words, and a wrapper read them with the builtin's options.
+- A jq program with a definition whose parameters have no `)` yet, as in `jq 'def g(x'`, is explained as unfinished. Before, the explanation never ended.
 
 ## 0.6.0
 

@@ -84,8 +84,9 @@ describe('unbash adapter: fuzzing', () => {
     return undefined;
   };
 
+  // (`jq 'def g(x'` looped for ever: the parameters of a definition with no `)`.)
   it('analyzer and document checks: the unfinished lines that threw', () => {
-    for (const text of ['for f in *', 'for f in *.txt; d', '[[ -f', 'if [[ -z', '[[ $a && -n', '[[ x || -z ', 'cat <<', 'cat <<-', 'tr a-z A-Z <<', '#!/bin/sh\nmake build &>', '#!/bin/sh\nif [[ -f ]]; then :; fi']) {
+    for (const text of ['for f in *', 'for f in *.txt; d', '[[ -f', 'if [[ -z', '[[ $a && -n', '[[ x || -z ', 'cat <<', 'cat <<-', 'tr a-z A-Z <<', '#!/bin/sh\nmake build &>', '#!/bin/sh\nif [[ -f ]]; then :; fi', "jq 'def g(x'"]) {
       assert.strictEqual(exercise(text), undefined, text);
     }
   });

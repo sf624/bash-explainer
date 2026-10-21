@@ -790,7 +790,8 @@ class JqParser {
     let params = '';
     if (this.peek('(')) {
       const open = this.next();
-      while (!this.peek(')')) this.p++;
+      // (`next` throws at the end of the tokens: `def g(x` has no `)`.)
+      while (!this.peek(')')) this.next();
       const close = this.next();
       params = this.src.slice(open.start, close.end);
     }
