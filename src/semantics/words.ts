@@ -12,6 +12,7 @@ import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../ex
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { STATEMENTS } from './env';
 import { attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 
 /** Where a word is: its context decides which expansions it undergoes. */
@@ -756,28 +757,32 @@ export function underscoreValue(n: SyntaxNode, model: StateModel): string | unde
 const ASSIGNED = /([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*)/g;
 const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();
 /**
- * The variables an arithmetic expression or a `${x:=word}` may assign: the state model does not follow these
- * (4.7), so their values are not known here.
+ * The variables an arithmetic expression or a `${x:=word}` may assign in the statement that holds `n` (through
+ * the substitutions around it): the state there is the one before the statement, so their values are not known.
  */
 function unreliableNames(n: SyntaxNode): Set<string> {
-  let root = n;
-  while (root.parent) root = root.parent;
-  let names = unreliableCache.get(root);
+  let top = n;
+  let open = true;
+  for (let x = n.parent; x; x = x.parent) {
+    if (x.type === 'command_substitution' || x.type === 'process_substitution') open = true;
+    else if (open && STATEMENTS.has(x.type)) {
+      top = x;
+      open = false;
+    }
+  }
+  let names = unreliableCache.get(top);
   if (names) return names;
   names = new Set();
-  for (const a of descendants(root, [...ARITH, 'command', 'expansion'])) {
-    let text = '';
+  // (Not `let`: its words are expanded before it runs.)
+  for (const a of descendants(top, [...ARITH, 'expansion'])) {
     if (a.type === 'expansion') {
       const p = parseExpansion(a.text);
       if (p && (p.op === ':=' || p.op === '=')) names.add(p.name);
       continue;
     }
-    // (`let i++`: its arguments are arithmetic.)
-    if (a.type === 'command') text = field(a, 'name')?.text === 'let' ? a.text : '';
-    else text = a.text;
-    for (const m of text.matchAll(ASSIGNED)) names.add(m[1] ?? m[2] ?? m[3]);
+    for (const m of a.text.matchAll(ASSIGNED)) names.add(m[1] ?? m[2] ?? m[3]);
   }
-  unreliableCache.set(root, names);
+  unreliableCache.set(top, names);
   return names;
 }
 

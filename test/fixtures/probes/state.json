@@ -646,9 +646,6 @@
         }
       },
       "status": 0
-    },
-    "gaps": {
-      "end.variables.e": "assignments in arithmetic are not followed"
     }
   },
   {
@@ -1224,6 +1221,470 @@
         }
       },
       "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "i=1; (( i++, x = 5, y += 2, z = x * 3 ))\n(( n = (k = 4) << 1, m = n > 7 ? 10 : 20, --i ))\n(( u ? v = 1 : (w = 2), q = 0 && (r = 1), s = 1 || (t = 1) ))",
+    "note": "assignments in (( )), in the order bash makes them; `&&`, `||` and `?:` skip a side",
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"10\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"8\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"15\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "let a=1 b++ \"c = a + 2\" 'd <<= 3' \"e = $a + 1\"\nlet x=7; let \"x %= 4\" y=x**2",
+    "note": "each argument of let is an expression",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"9\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "for (( i = 0, j = 10; i < 3; i++, j -= 2 )); do last=$i; done\nfor (( k = 5; ; )); do break; done\nn=0; while (( n < 3 )); do (( n++ )); done",
+    "note": "the expressions of a for (( )) run in the shell",
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "j": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "last": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.last": "the model does not read the condition: the body of a loop may run"
+    }
+  },
+  {
+    "manual": "3.5.5",
+    "snippet": ": $(( n = 3 )) $(( n *= 2 )); echo \"$(( q = 7 ))\" > /dev/null\necho x > f$(( rd = 2 ))\ncase $(( c = 4 )) in *) ;; esac\nx=$(( pre = 1 )) cat /dev/null $(( arg = 1 )) 2>/dev/null; cat < /dev/null$(( o = 1 )) 2>/dev/null; cat <<< $(( t = 1 )) > /dev/null\n{ :; } > f$(( p = 1 )); g() { :; }; g > f$(( fn = 1 )); > f$(( none = 1 ))\ncat <<E > /dev/null\n$(( hd = 1 ))\nE\n: <<E\n$(( hd2 = 1 ))\nE",
+    "note": "an arithmetic expansion assigns in the shell, also in a redirection or a case word; but a program makes its redirections in its own process",
+    "facts": {
+      "end": {
+        "variables": {
+          "arg": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "fn": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "hd2": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "none": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "p": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "pre": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "rd": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 4: /dev/null1: No such file or directory"
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "( (( a = 1 )) ); (( b = 1 )) | cat; let c=1 & wait\necho $(( d = 1 )) | cat; x=$( (( e = 1 )); echo ); cat <(let f=1) > /dev/null",
+    "note": "arithmetic in a subshell does not assign in the shell",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { (( g += 5 )); let h=g*2; local l; (( l = 3 )); }\n@PROBE:before@\ng=1; f",
+    "note": "arithmetic in a function assigns where it is called; a local stays local",
+    "facts": {
+      "before": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "g": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "h": {
+            "attrs": "-",
+            "value": "\"12\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "declare -i n; declare -n r=t; declare -u up; (( n = 2, r = 9, up = 5 ))\nset -a; let ex=1; set +a\ndeclare -a arr; (( arr[2] = 4, arr = 1 ))",
+    "note": "arithmetic assigns through a nameref, keeps the attributes, and exports under set -a",
+    "facts": {
+      "end": {
+        "variables": {
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [2]=\"4\")"
+          },
+          "ex": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "n": {
+            "attrs": "i",
+            "value": "\"2\""
+          },
+          "r": {
+            "attrs": "n",
+            "value": "\"t\""
+          },
+          "t": {
+            "attrs": "-",
+            "value": "\"9\""
+          },
+          "up": {
+            "attrs": "u",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "x=1+2; y=x; v=5; arr=(1 2); U=1\n(( a = y * 2, b = -a, c = ~0, d = !b, e = 7 / 2 % 3, f = 2 ** 3, g = 1 << 2 >> 1, h = 6 & 3 | 8 ^ 1 ))\n(( i = 1 < 2, j = 2 <= 1, k = 3 >= 3, l = 3 > 4, m = 1 == 1, n = 1 != 1, o = 0x1f + 2#101 + 010 ))\n(( p = $v + ${v}, q = v++, r = ++v, s = v--, t = --v, big = 9223372036854775807 + 1, ab = arr + 1, uu = U + 1 ))\ne1=; (( u1 = +v, t1 = Z0 ? 1 : 1, c1 = (b1 = 1, 2), n1 = $(( x1 = 2 )) + 1, e2 = e1, p1 = 1 ** 200 ))",
+    "note": "the operators of arithmetic; a variable's value is an expression",
+    "facts": {
+      "end": {
+        "variables": {
+          "U": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "a": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "ab": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"-6\""
+          },
+          "b1": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "big": {
+            "attrs": "-",
+            "value": "\"-9223372036854775808\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"-1\""
+          },
+          "c1": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "e1": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "e2": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "f": {
+            "attrs": "-",
+            "value": "\"8\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "h": {
+            "attrs": "-",
+            "value": "\"11\""
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "j": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "l": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "n1": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "o": {
+            "attrs": "-",
+            "value": "\"44\""
+          },
+          "p": {
+            "attrs": "-",
+            "value": "\"10\""
+          },
+          "p1": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "r": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "t": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "t1": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "u1": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "uu": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"1+2\""
+          },
+          "x1": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"x\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "readonly ro=1; (( a = 1, ro = 2, b = 1 ))\nlet c=1 'd = 1 / 0' e=1; (( f = 2 ** -1, g = 1 )); x=5; (( x /= 0, x = 1 ))\nzz=yy; yy=zz; (( l = 1 + )); (( m = zz )); for (( cc = 1, ii = ; ; )); do break; done",
+    "note": "an error stops the expression (a division by 0, a readonly variable, a missing operand, a name that leads back to itself): what it assigned before stays",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "cc": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "ro": {
+            "attrs": "r",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "yy": {
+            "attrs": "-",
+            "value": "\"zz\""
+          },
+          "zz": {
+            "attrs": "-",
+            "value": "\"yy\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ro: readonly variable"
     }
   }
 ]
