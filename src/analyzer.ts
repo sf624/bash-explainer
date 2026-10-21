@@ -54,6 +54,7 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
+import { attribute, FunctionState, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -221,27 +222,10 @@ const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s
 
 export class Analyzer {
   private line: number | null = null;
-  /** The shell options in effect on this line (see shoptStates). */
-  private shopt: ShoptStates = shoptStates('', 0);
   private shell: Shell | undefined;
-  /** Aliases defined in the script (`alias ll='ls -l'`): name → where, and what it stands for. */
-  private aliases = new Map<string, { line: number; value: string; readAt: number }[]>();
   private context: ContextEntry[] = [];
-  /** Function definitions in the script: name → where each starts and ends, in source order. */
-  private functions = new Map<string, { line: number; start: number; end: number }[]>();
-  /** Variables declared as namerefs (`local -n r=$1`): name → the line of the declaration. */
-  /** Where `set -f` / `set -o noglob` (off: true) and `set +f` / `set +o noglob` (off: false) end, in source order. */
-  private noglob: { end: number; off: boolean }[] = [];
-  /** Arrays assigned in the script (`y=(a b)`, `declare -A m`, `read -a r`): name → where, and whether it is associative. */
-  private arrays = new Map<string, { index: number; assoc: boolean }>();
-  /** Standalone assignments to IFS with a known value: where each ends, its value, and the part of the script it is local to. */
-  /** `value`: undefined when the script gives IFS a value that is not known here; `unset`: `unset IFS` (back to the default). */
-  private ifsAssigns: { node: SyntaxNode; value: string | undefined; unset?: boolean; scope: SyntaxNode | undefined }[] = [];
-  private namerefs = new Map<string, { line: number; index: number }>();
-  /** Variables declared with the integer attribute (`declare -i n`): name → where the declaration starts. */
-  private integers = new Map<string, number>();
-  /** Associative arrays (`declare -A m`): name → where the declaration starts. */
-  private assocs = new Map<string, number>();
+  /** The shell state along the script (src/semantics/state.ts). */
+  private state!: StateModel;
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
   /** Context of the current explainLine call. */
@@ -266,81 +250,10 @@ export class Analyzer {
     this.opts = opts;
     this.source = root.text;
     this.rootNode = root;
-    this.functions.clear();
-    for (const f of descendants(root, ['function_definition'])) {
-      const name = field(f, 'name')?.text;
-      if (name) this.functions.set(name, [...(this.functions.get(name) ?? []), { line: f.startPosition.row, start: f.startIndex, end: f.endIndex }]);
-    }
-    this.arrays.clear();
-    const addArray = (name: string | undefined, index: number, assoc: boolean): void => { if (name && !this.arrays.has(name)) this.arrays.set(name, { index, assoc }); };
-    for (const a of descendants(root, ['variable_assignment'])) {
-      const nameNode = field(a, 'name');
-      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && readDeclaration(a.parent).on.includes('A'));
-      else if (nameNode?.type === 'subscript') addArray(nameNode.text.replace(/\[.*/s, ''), a.startIndex, false);
-    }
-    for (const d of descendants(root, ['declaration_command'])) {
-      const { roles, on } = readDeclaration(d);
-      if (!/[aA]/.test(on)) continue;
-      for (const c of d.namedChildren) addArray(c.type === 'variable_name' && roles.get(c)?.role === 'operand' ? c.text : undefined, d.startIndex, on.includes('A'));
-    }
-    for (const c of descendants(root, ['command'])) {
-      const cmd = field(c, 'name')?.text;
-      const args = fields(c, 'argument').map((a) => a.text);
-      if (cmd === 'read' && args.includes('-a')) addArray(args[args.indexOf('-a') + 1], c.startIndex, false);
-      if (cmd === 'mapfile' || cmd === 'readarray') addArray(args.filter((a) => !a.startsWith('-')).pop(), c.startIndex, false);
-    }
-    this.ifsAssigns = [];
-    for (const a of descendants(root, ['variable_assignment'])) {
-      if (field(a, 'name')?.text !== 'IFS' || (a.parent?.type === 'command' && field(a.parent, 'name')?.text) || a.parent?.type === 'declaration_command') continue;
-      const v = field(a, 'value');
-      const value = v ? staticWordValue(v) : '';
-      this.ifsAssigns.push({ node: a, value, scope: ancestor(a, IFS_SCOPES) });
-    }
-    for (const u of descendants(root, ['unset_command'])) {
-      if (u.namedChildren.some((c) => c.text === 'IFS') && !u.namedChildren.some((c) => /^-\w*f/.test(c.text))) this.ifsAssigns.push({ node: u, value: undefined, unset: true, scope: ancestor(u, IFS_SCOPES) });
-    }
-    this.ifsAssigns.sort((x, y) => x.node.startIndex - y.node.startIndex);
-    this.noglob = [];
-    for (const c of descendants(root, ['command'])) {
-      if (field(c, 'name')?.text !== 'set') continue;
-      const words = fields(c, 'argument').map((a) => a.text);
-      for (let i = 0; i < words.length && words[i] !== '--'; i++) {
-        const m = /^([-+])([a-zA-Z]+)$/.exec(words[i]);
-        if (!m) break;
-        if (m[2].includes('f')) this.noglob.push({ end: c.endIndex, off: m[1] === '-' });
-        if (m[2].includes('o') && words[i + 1] === 'noglob') this.noglob.push({ end: c.endIndex, off: m[1] === '-' });
-      }
-    }
-    this.namerefs.clear();
-    for (const d of descendants(root, ['declaration_command'])) {
-      if (!readDeclaration(d).on.includes('n')) continue;
-      for (const c of d.namedChildren) {
-        const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
-        if (name && !this.namerefs.has(name)) this.namerefs.set(name, { line: d.startPosition.row, index: d.startIndex });
-      }
-    }
-    this.integers.clear();
-    this.assocs.clear();
-    for (const d of descendants(root, ['declaration_command'])) {
-      for (const [flag, into] of [['i', this.integers], ['A', this.assocs]] as const) {
-        if (!readDeclaration(d).on.includes(flag)) continue;
-        for (const c of d.namedChildren) {
-          const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
-          if (name && !into.has(name)) into.set(name, d.startIndex);
-        }
-      }
-    }
-    this.aliases.clear();
-    for (const c of descendants(root, ['command'])) {
-      if (field(c, 'name')?.text !== 'alias') continue;
-      for (const a of fields(c, 'argument')) {
-        const m = /^([\w.:-]+)=(['"]?)([\s\S]*)\2$/.exec(a.text);
-        if (m) this.aliases.set(m[1], [...(this.aliases.get(m[1]) ?? []), { line: c.startPosition.row, value: m[3], readAt: unitOf(c).end }]);
-      }
-    }
     this.line = line;
     this.shell = shell;
-    this.shopt = shoptStates(root.text, line, shell);
+    // (`#!/bin/bash --posix` starts bash in POSIX mode.)
+    this.state = shellState(tree, shell, { posix: /^#![^\n]*\s--posix\b/.test(root.text) });
     this.context = [];
     this.extraNotes = [];
     this.examples = [];
@@ -478,6 +391,17 @@ export class Analyzer {
     }
   }
 
+  /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */
+  private shoptAt(n: SyntaxNode, when: 'run' | 'parse' = 'run'): ShoptStates {
+    const st = this.state.at(n)[when];
+    const bash = !this.shell || this.shell === 'bash';
+    return Object.fromEntries(SHOPT_NAMES.map((name) => [name,
+      bash ? option(st, 'shopt', name)
+      : name === 'globstar' && this.shell === 'zsh' ? 'on'
+      : name === 'globstar' && this.shell === 'ksh' ? option(st, 'set', 'globstar')
+      : 'unsupported'])) as ShoptStates;
+  }
+
   /**
    * Why a `{ }` group runs in a subshell: it is a stage of a pipeline (the last one too, unless lastpipe is on), a
    * background job (`&`) or a coproc. Undefined when it runs in the current shell.
@@ -488,7 +412,7 @@ export class Analyzer {
       if (p.type === 'coproc_statement') return { ja: 'コプロセスはサブシェルで動く', en: 'A coprocess runs in a subshell' };
       if (p.type === 'pipeline') {
         const last = p.namedChildren[p.namedChildren.length - 1];
-        if (!same(last, x) || !(this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on')) return { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' };
+        if (!same(last, x) || !(this.shell === 'zsh' || this.shell === 'ksh' || this.shoptAt(p).lastpipe === 'on')) return { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' };
       } else if (!['list', 'redirected_statement', 'negated_command'].includes(p.type)) break;
       x = p;
     }
@@ -1016,17 +940,18 @@ export class Analyzer {
         : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
     // `local -n r=$1` makes `r` another name for the variable named by `$1`; every later `r=…` then sets that variable.
     const decl = n.parent?.type === 'declaration_command' && readDeclaration(n.parent).on.includes('n');
-    const refLine = this.namerefs.get(nm);
+    // (In a declaration, the state has the attributes it gives: they apply before the value is assigned.)
+    const st = this.state.at(n).run;
+    const ref = st.variables.get(nm)?.attrs.n;
     if (decl && value) {
       expl = this.s(`\`${nm}\` は参照（nameref）になる: 値 \`${value.text}\` を名前とする変数の別名で、\`${nm}\` への代入や参照は、その変数に対して行われる`,
         `\`${nm}\` becomes a nameref: another name for the variable whose name is the value \`${value.text}\`; assigning to or reading \`${nm}\` then acts on that variable`);
-    } else if (!decl && refLine !== undefined && refLine.index < n.startIndex && op === '=') {
-      expl += this.s(`。ただし \`${nm}\` は行 ${refLine.line + 1} で nameref として宣言されているので、参照先の変数に代入される`,
-        `. But \`${nm}\` is declared a nameref on line ${refLine.line + 1}, so this sets the variable it points to`);
+    } else if (!decl && ref?.state === 'on' && op === '=') {
+      expl += this.s(`。ただし \`${nm}\` は行 ${ref.at.startPosition.row + 1} で nameref として宣言されているので、参照先の変数に代入される`,
+        `. But \`${nm}\` is declared a nameref on line ${ref.at.startPosition.row + 1}, so this sets the variable it points to`);
     }
     // An integer variable (`declare -i n`) takes the value of an arithmetic expression, and `+=` adds.
-    const intAt = this.integers.get(nm);
-    const integer = name.type !== 'subscript' && value && value.type !== 'array' && intAt !== undefined && intAt < n.startIndex;
+    const integer = name.type !== 'subscript' && value && value.type !== 'array' && attribute(st, nm, 'i') === 'on';
     let intValueText: string | undefined;
     if (integer) {
       const v = evalArith(value.text);
@@ -1044,10 +969,9 @@ export class Analyzer {
       const v = evalArith(idx);
       const add = op === '+=';
       // With `declare -i`, `+=` on an element adds numbers; otherwise it appends text to the element.
-      const intAtArr = this.integers.get(arr);
-      const toInt = add && intAtArr !== undefined && intAtArr < n.startIndex;
+      const toInt = add && attribute(st, arr, 'i') === 'on';
       const verb = (set: string, plus: string, plusInt: string): string => (toInt ? plusInt : add ? plus : set);
-      if (this.isAssoc(arr, n.startIndex)) {
+      if (this.isAssoc(arr, n)) {
         const key = this.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素`, `the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
         expl = this.s(`${key}${verb('に代入する', 'に値を追記する（文字列の連結）', 'に値を足す（`-i` が付いているので算術式の足し算）')}`,
           `${verb('Assign to ', 'Append to ', 'Add to ')}${key}${add && !toInt ? ' (text is appended to the existing value)' : toInt ? ' (it has `-i`, so this adds numbers)' : ''}`);
@@ -1232,7 +1156,7 @@ export class Analyzer {
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
         // In POSIX mode (sh, dash, `set -o posix`) an assignment before a special builtin stays after it.
-        const stays = lookupCommand(nameNode.text)?.builtin === 'special' && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
+        const stays = lookupCommand(nameNode.text)?.builtin === 'special' && option(this.state.at(n).run, 'set', 'posix') === 'on';
         for (const t of this.sub(c)) {
           t.explanation = stays
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
@@ -1353,22 +1277,26 @@ export class Analyzer {
   }
 
   /**
-   * The line of the function `name` that exists when `at` runs. A function exists once its definition
-   * has run, so a call before it is the builtin or program of that name; a call inside a function body
+   * The function `name` that exists when `at` runs (see src/semantics/state.ts): a function exists once its
+   * definition has run, so a call before it is the builtin or program of that name; a call inside a function body
    * runs later, whenever the function is called, so any definition in the script counts there.
    */
-  private functionAt(name: string, at: SyntaxNode): number | undefined {
-    const defs = this.functions.get(name);
-    if (!defs) return undefined;
-    const deferred = ancestor(at, (a) => a.type === 'function_definition') !== undefined;
-    const def = defs.find((d) => deferred || d.end <= at.startIndex);
-    if (!def) {
+  private functionAt(name: string, at: SyntaxNode): FunctionState | undefined {
+    const fn = this.state.at(at).run.functions.get(name);
+    return fn && fn.state !== 'off' ? fn : undefined;
+  }
+
+  /** The line of the function `name` that a command at `at` calls, with a note when it is defined only after. */
+  private calledFunction(name: string, at: SyntaxNode): number | undefined {
+    const fn = this.functionAt(name, at);
+    const defs = this.state.definitions.functions.get(name);
+    if (!fn && defs?.every((d) => d.endIndex > at.startIndex)) {
       // The call comes first: say that the name is not yet the function.
       this.extraNotes.push(this.s(
-        `ℹ \`${name}\` は行 ${defs[0].line + 1} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（組み込みコマンドや外部コマンドの \`${name}\` が動きます）`,
-        `ℹ \`${name}\` is defined as a function on line ${defs[0].line + 1}, but this runs before that, so it is not the function yet (the builtin or program \`${name}\` runs)`));
+        `ℹ \`${name}\` は行 ${defs[0].startPosition.row + 1} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（組み込みコマンドや外部コマンドの \`${name}\` が動きます）`,
+        `ℹ \`${name}\` is defined as a function on line ${defs[0].startPosition.row + 1}, but this runs before that, so it is not the function yet (the builtin or program \`${name}\` runs)`));
     }
-    return def?.line;
+    return fn?.def.startPosition.row;
   }
 
   private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
@@ -1386,19 +1314,25 @@ export class Analyzer {
     // An alias over a known command (`alias grep=ggrep`) is still explained as that command.
     // (A quoted name is never an alias.)
     // bash reads a whole line (or compound command, or function body) before running it, so an alias
-    // counts only from the next line on; the last definition before this line wins.
-    const known = lookupCommand(name) || sv !== undefined ? undefined : this.aliases.get(name);
-    const alias = known?.filter((d) => d.readAt <= unitOf(nameNode).start).pop();
-    if (known && !alias) {
-      const same = known[0].line <= nameNode.startPosition.row;
+    // counts only from the next line on: the aliases are those of the state when this was read.
+    const aliasable = !lookupCommand(name) && sv === undefined;
+    const parse = this.state.at(nameNode).parse;
+    const defined = aliasable ? parse.aliases.get(name) : undefined;
+    const alias = defined && defined.state !== 'off' ? defined : undefined;
+    const defs = aliasable ? this.state.definitions.aliases.get(name) : undefined;
+    const unit = unitOf(nameNode).start;
+    if (!alias && defs?.every((d) => d.endIndex > unit)) {
+      const first = defs[0].startPosition.row;
+      const same = first <= nameNode.startPosition.row;
       this.extraNotes.push(this.s(
-        `ℹ \`${name}\` は行 ${known[0].line + 1} で \`alias\` として定義されますが、${same ? 'bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません' : 'これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます'}。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-        `ℹ \`${name}\` is defined as an alias on line ${known[0].line + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
+        `ℹ \`${name}\` は行 ${first + 1} で \`alias\` として定義されますが、${same ? 'bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません' : 'これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます'}。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
+        `ℹ \`${name}\` is defined as an alias on line ${first + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
     }
     if (alias) {
-      // bash expands aliases in scripts only with expand_aliases (interactive shells always do);
-      // a script that turns it on anywhere is taken to know.
-      const unexpanded = (!this.shell || this.shell === 'bash') && this.shopt.expand_aliases !== 'on' && !/\bshopt\s+-s\b[^\n;]*\bexpand_aliases\b/.test(this.source);
+      // bash expands aliases in scripts only with expand_aliases (interactive shells always do), as it was when the line was read.
+      const expand = !this.shell || this.shell === 'bash' ? option(parse, 'shopt', 'expand_aliases') : 'on';
+      const unexpanded = expand !== 'on' && expand !== 'unknown';
+      const line = alias.at.startPosition.row + 1;
       if (unexpanded && this.opts.pitfalls !== false) {
         this.extraNotes.push(this.s(
           `⚠ 落とし穴: bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${alias.value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
@@ -1407,12 +1341,15 @@ export class Analyzer {
       return {
         name, kind: 'function', nameTokens: [],
         explanation: unexpanded
-          ? this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`（\`${alias.value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${alias.value}\` に置き換わる`,
-            `The alias \`${name}\` defined on line ${alias.line + 1} (\`${alias.value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${alias.value}\``)
-          : this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${alias.line + 1}: replaced by \`${alias.value}\``),
+          ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`（\`${alias.value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${alias.value}\` に置き換わる`,
+            `The alias \`${name}\` defined on line ${line} (\`${alias.value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${alias.value}\``)
+          : expand === 'unknown'
+            ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
+              `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
+            : this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\``),
       };
     }
-    const fnLine = this.functionAt(name, nameNode);
+    const fnLine = this.calledFunction(name, nameNode);
     if (fnLine !== undefined) {
       return {
         name, kind: 'function', fn: true, nameTokens: [],
@@ -1795,7 +1732,7 @@ export class Analyzer {
       if (tilde) return this.tok(a, 'argument', desc, [tilde]);
       const off = hasGlob(a.text) && this.globOff(a);
       if (off) return this.tok(a, 'argument', desc + this.noglobNote());
-      const glob = hasGlob(a.text) ? ` — ${globIntro(this.lang, 'file')}` + this.globNotes(a.text) : '';
+      const glob = hasGlob(a.text) ? ` — ${globIntro(this.lang, 'file')}` + this.globNotes(a.text, a) : '';
       return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
     }
     const inner = this.sub(a);
@@ -1971,7 +1908,7 @@ export class Analyzer {
         // The test before the pattern: -name, -path…
         const opt = this.previousNamed(a).text;
         if (!/^-i/.test(opt)) {
-          this.globExample(lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
+          this.globExample(a, lit.text, 'value', this.s(`例（\`${opt}\` のパターン）`, `Example (the \`${opt}\` pattern)`),
             opt === '-name' ? [this.s('一致するファイル名', 'Matching names'), this.s('一致しないファイル名', 'Non-matching names')] : [this.s('一致するパス', 'Matching paths'), this.s('一致しないパス', 'Non-matching paths')]);
         }
         break;
@@ -2368,15 +2305,15 @@ export class Analyzer {
       return;
     }
     /* c8 ignore stop */
-    if (isGlob(text) && !this.globOff(a)) this.globExample(text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
+    if (isGlob(text) && !this.globOff(a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
   /**
    * What `**` does in a file-name glob. It is written for any depth, so it is explained that way, with
    * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
    */
-  private globNotes(text: string): string {
-    return this.globOptionNote() + this.starStarNote(text) + this.extglobNote(text);
+  private globNotes(text: string, n: SyntaxNode): string {
+    return this.globOptionNote(n) + this.starStarNote(text, n) + this.extglobNote(text);
   }
 
   /** The extended globs of a pattern in words: `!(*.txt)` is anything but `*.txt`. */
@@ -2397,9 +2334,8 @@ export class Analyzer {
    * it. Pointed out where the pipeline starts, when such a variable is used after it.
    */
   private pipeSubshellPitfalls(root: SyntaxNode, line: number): string[] {
-    if (this.shell === 'zsh' || this.shell === 'ksh' || this.shopt.lastpipe === 'on') return [];
     for (const p of onLine(root, ['pipeline'], line)) {
-      if (p.startPosition.row !== line) continue;
+      if (p.startPosition.row !== line || this.shell === 'zsh' || this.shell === 'ksh' || this.shoptAt(p).lastpipe === 'on') continue;
       let last = p.namedChildren[p.namedChildren.length - 1];
       // The redirections after the last stage (`… | while …; done > log`) are its own.
       if (last?.type === 'redirected_statement') last = field(last, 'body') ?? last;
@@ -2447,9 +2383,10 @@ export class Analyzer {
    * failglob is on, or zsh, where it is an error). Quiet when the body checks that the file exists.
    */
   private unmatchedGlobPitfalls(root: SyntaxNode, line: number): string[] {
-    if (this.shell === 'zsh' || this.shopt.nullglob === 'on' || this.shopt.failglob === 'on') return [];
+    if (this.shell === 'zsh') return [];
     for (const loop of onLine(root, ['for_statement', 'select_statement'], line)) {
-      if (loop.startPosition.row !== line) continue;
+      const shopt = this.shoptAt(loop);
+      if (loop.startPosition.row !== line || shopt.nullglob === 'on' || shopt.failglob === 'on') continue;
       // `*.log`, and `"$dir"/*.log` too.
       const glob = fields(loop, 'value').find((v) => ((!!this.unquotedWord(v) && isGlob(v.text))
         || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
@@ -2460,7 +2397,7 @@ export class Analyzer {
       if (!bodyNode) continue;
       const body = bodyNode.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
-      const nullglob = this.shopt.nullglob !== 'unsupported';
+      const nullglob = shopt.nullglob !== 'unsupported';
       const fix = this.s(nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます', nullglob ? ', or turn on `shopt -s nullglob` before the loop' : '');
       return [this.s(
         `⚠ 落とし穴: \`${glob.text}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob.text}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${fix}`,
@@ -2481,16 +2418,18 @@ export class Analyzer {
     const use = uses[0];
     let top = use;
     while (top.parent && top.parent.type !== 'program') top = top.parent;
-    const inBlock = top !== use && descendants(top, ['command']).some((c) => c.startIndex < use.startIndex && field(c, 'name')?.text === 'shopt'
-      && /(^|\s)-\w*s/.test(c.text) && /\bextglob\b/.test(c.text));
-    if (inBlock) {
+    // On when the block runs up to the glob, but not when bash read the block.
+    const state = this.shoptAt(use, 'parse').extglob;
+    if (state === 'on') return [];
+    if (top !== use && this.shoptAt(top).extglob !== 'on' && this.shoptAt(use).extglob === 'on') {
       return [this.s(
         `⚠ 落とし穴: bash は関数や \`if\`・\`{ }\` などのまとまりを最後まで読んでから実行します。そのため、同じまとまりの中の \`shopt -s extglob\` は \`${use.text}\` を読む時点ではまだ効いておらず、構文エラーになります。\`shopt -s extglob\` は、まとまりの外のそれより前の行に書きます`,
         `⚠ Pitfall: bash reads a whole function or block (\`if\`, \`{ }\`…) before running it, so a \`shopt -s extglob\` inside the same block is not yet on when it reads \`${use.text}\`: a syntax error. Put \`shopt -s extglob\` on an earlier line, outside the block`)];
     }
-    const state = this.shopt.extglob;
-    if (state === 'on') return [];
-    return [state === 'off'
+    return [state === 'unknown'
+      ? this.s(`⚠ 落とし穴: \`${use.text}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では構文エラーになります`,
+        `⚠ Pitfall: extended globs like \`${use.text}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and only some paths before here (a branch or a loop) turn it on`)
+      : state === 'off'
       ? this.s(`⚠ 落とし穴: \`${use.text}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
         `⚠ Pitfall: extended globs like \`${use.text}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`)
       : this.s(`⚠ 落とし穴: \`${use.text}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
@@ -2498,18 +2437,24 @@ export class Analyzer {
   }
 
   /** What dotglob and nocaseglob, turned on before the line, change for a file-name glob. */
-  private globOptionNote(): string {
+  private globOptionNote(n: SyntaxNode): string {
     const notes: string[] = [];
-    if (this.shopt.dotglob === 'on') notes.push(this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
-    if (this.shopt.nocaseglob === 'on') notes.push(this.s('nocaseglob が有効なので大文字と小文字を区別しない', 'with nocaseglob on, case is ignored'));
+    const shopt = this.shoptAt(n);
+    if (shopt.dotglob === 'on') notes.push(this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
+    if (shopt.nocaseglob === 'on') notes.push(this.s('nocaseglob が有効なので大文字と小文字を区別しない', 'with nocaseglob on, case is ignored'));
     return notes.map((n) => this.s(`。${n}`, `; ${n}`)).join('');
   }
 
-  private starStarNote(text: string): string {
+  private starStarNote(text: string, n: SyntaxNode): string {
     if (!hasGlobstar(text)) return '';
-    const globstar = this.shopt.globstar;
+    const globstar = this.shoptAt(n).globstar;
+    const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
     if (globstar === 'unknown' && this.opts.pitfalls !== false) {
-      const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: \`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
+        `⚠ Pitfall: \`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`));
+    }
+    if (globstar === 'default' && this.opts.pitfalls !== false) {
       this.extraNotes.push(this.s(
         `⚠ 落とし穴: \`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
         `⚠ Pitfall: \`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``));
@@ -2525,17 +2470,19 @@ export class Analyzer {
   }
 
   /** How globs match on this line: file names, or `case` and `[[ == ]]` patterns (`find -name` takes neither). */
-  private globOpts(use: 'file' | 'pattern' | 'none'): GlobOpts {
-    const on = (name: ShoptName) => this.shopt[name] === 'on';
+  private globOpts(use: 'file' | 'pattern' | 'none', n: SyntaxNode): GlobOpts {
+    const shopt = this.shoptAt(n);
+    const on = (name: ShoptName) => shopt[name] === 'on';
     if (use === 'file') {
-      const o: GlobOpts = { globstar: this.shopt.globstar === 'on' || this.shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob') };
+      // (`**` is explained as it is written: for any depth, unless globstar is off.)
+      const o: GlobOpts = { globstar: shopt.globstar !== 'off' && shopt.globstar !== 'unsupported', dotglob: on('dotglob'), nocase: on('nocaseglob') };
       return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
     }
     return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};
   }
 
-  private globExample(pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
-    const opts = this.globOpts(mode === 'file' ? 'file' : 'none');
+  private globExample(n: SyntaxNode, pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
+    const opts = this.globOpts(mode === 'file' ? 'file' : 'none', n);
     if (!hasGlobstar(pattern)) delete opts.globstar;
     const ex = globExamples(pattern, mode, opts);
     if (!ex) return;
@@ -2564,7 +2511,7 @@ export class Analyzer {
     const all = texts as string[];
     const matching: string[] = [];
     const candidates: string[] = [];
-    const opts = this.globOpts('pattern');
+    const opts = this.globOpts('pattern', pats[0]);
     for (const t of all) {
       const ex = globExamples(t, 'value', opts);
       if (!ex) return;
@@ -2880,7 +2827,8 @@ export class Analyzer {
     const { slot } = role;
     const first = words[0];
     const name = first.text;
-    const isFn = isPlainWord(first) && this.functions.has(name);
+    // (A function the script defines anywhere: even one defined later is not what the wrapper runs.)
+    const isFn = isPlainWord(first) && this.state.definitions.functions.has(name);
     if (slot.run === 'exec' && slot.where === 'container') {
       if (isFn) {
         this.extraNotes.push(this.s(
@@ -2922,7 +2870,8 @@ export class Analyzer {
       // bash takes the functions exported to it (`export -f f`); a shell started afresh (`su -c`) has none, nor
       // has one inside a wrapper that clears the environment (`env -i bash -c f`, `sudo bash -c f`).
       const blocker = this.functionBlocker(slot, via);
-      if (fn && this.functions.has(fn) && (blocker || !this.exportedFunctions().has(fn))) {
+      // (A function exported on some paths only is taken as exported.)
+      if (fn && this.state.definitions.functions.has(fn) && (blocker || (this.functionAt(fn, first)?.exported ?? 'off') === 'off')) {
         this.extraNotes.push(blocker && blocker.slot !== slot
           ? this.s(
             `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker.via}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
@@ -2953,13 +2902,6 @@ export class Analyzer {
    */
   private functionBlocker(slot: CommandSlot, via: string): { slot: CommandSlot; via: string } | undefined {
     return [...this.slotChain, { slot, via }].find((c) => c.slot.env !== undefined && c.slot.env !== 'exported');
-  }
-
-  /** The functions the script exports to the shells it starts (`export -f f`, `declare -fx f`). */
-  private exportedFunctions(): Set<string> {
-    const out = new Set<string>();
-    for (const m of this.source.matchAll(/\b(?:export\s+-f|declare\s+-(?:fx|xf))((?:[ \t]+[A-Za-z_][\w-]*)+)/g)) for (const n of m[1].trim().split(/\s+/)) out.add(n);
-    return out;
   }
 
   // ---------------------------------------------------------------- tests
@@ -3190,10 +3132,9 @@ export class Analyzer {
       `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
   }
 
-  /** Whether `name` is declared an associative array (`declare -A`) before `at`: its subscripts are strings, not arithmetic. */
-  private isAssoc(name: string, at: number): boolean {
-    const d = this.assocs.get(name);
-    return d !== undefined && d < at;
+  /** Whether `name` is an associative array (`declare -A`) where `n` runs: its subscripts are strings, not arithmetic. */
+  private isAssoc(name: string, n: SyntaxNode): boolean {
+    return attribute(this.state.at(n).run, name, 'A') === 'on';
   }
 
   /**
@@ -3238,7 +3179,7 @@ export class Analyzer {
     // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
     const key = unquoteWord(e.key) ?? e.key;
     const m = ['', key, e.plus, e.value];
-    const assoc = this.isAssoc(field(n.parent!.parent!, 'name')!.text, n.startIndex);
+    const assoc = this.isAssoc(field(n.parent!.parent!, 'name')!.text, n);
     // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
     const v = evalArith(m[1]);
     const what = assoc ? this.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
@@ -3269,7 +3210,7 @@ export class Analyzer {
     const tilde = this.tilde(n);
     if (tilde) return tilde;
     if (hasGlob(text) && this.globOff(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.noglobNote());
-    if (hasGlob(text)) return this.tok(n, 'pattern', globIntro(this.lang, 'file') + this.globNotes(text), this.globChildren(n, text, 0));
+    if (hasGlob(text)) return this.tok(n, 'pattern', globIntro(this.lang, 'file') + this.globNotes(text, n), this.globChildren(n, text, 0));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
   }
 
@@ -3287,10 +3228,13 @@ export class Analyzer {
       `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
   }
 
-  /** The IFS in effect at `n` when the script assigns it a known value before (`IFS=-`): its text, and the line. */
+  /**
+   * The IFS in effect at `n` when the script gives it a value before (`IFS=-`): its text (undefined when it is
+   * not known here), and the line. Undefined when IFS is bash's default (never set, or unset).
+   */
   private ifsAt(n: SyntaxNode): { value: string | undefined; line: number } | undefined {
-    const a = this.ifsAssigns.filter((x) => x.node.endIndex <= n.startIndex && (!x.scope || ancestor(n, (p) => p === x.scope))).pop();
-    return a && !a.unset ? { value: a.value, line: a.node.startPosition.row } : undefined;
+    const ifs = this.state.at(n).run.variables.get('IFS');
+    return ifs && ifs.set !== 'off' ? { value: ifs.set === 'on' ? ifs.value : undefined, line: ifs.at.startPosition.row } : undefined;
   }
 
   /** What the splitting of an unquoted expansion at `n` splits on. */
@@ -3322,8 +3266,9 @@ export class Analyzer {
 
   /** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */
   private variableNote(n: SyntaxNode, name: string): string {
-    const arr = this.arrays.get(name);
-    if (arr && arr.index < n.startIndex) {
+    const st = this.state.at(n).run;
+    const arr = attribute(st, name, 'a') === 'on' || attribute(st, name, 'A') === 'on' ? { assoc: attribute(st, name, 'A') === 'on' } : undefined;
+    if (arr) {
       const first = `\${${name}[0]}`;
       return this.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
     }
@@ -3338,14 +3283,10 @@ export class Analyzer {
     return '';
   }
 
-  /** The text assigned to `name` by the last plain assignment before `n`, when it is not a plain integer (it has operators or names in it). */
+  /** The value of `name` where `n` runs (src/semantics/state.ts), when it is known and not a plain integer (it has operators or names in it). */
   private pastedValue(n: SyntaxNode, name: string): string | undefined {
-    let value: string | undefined;
-    for (const a of descendants(this.rootNode, ['variable_assignment'])) {
-      if (a.endIndex > n.startIndex || field(a, 'name')?.text !== name || a.parent?.type === 'declaration_command') continue;
-      const v = field(a, 'value');
-      value = v ? staticWordValue(v) : '';
-    }
+    const v = this.state.at(n).run.variables.get(name);
+    const value = v?.set === 'on' ? v.value : undefined;
     return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
   }
 
@@ -3362,7 +3303,7 @@ export class Analyzer {
 
   /** Whether file-name globbing is off where `n` is (after `set -f` and before any `set +f`). */
   private globOff(n: SyntaxNode): boolean {
-    return this.noglob.filter((g) => g.end <= n.startIndex).pop()?.off ?? false;
+    return option(this.state.at(n).run, 'set', 'noglob') === 'on';
   }
 
   /** What to say of a word with `*` or `?` while `set -f` is on: it stays as it is. */
@@ -3514,7 +3455,7 @@ export class Analyzer {
     // The index is arithmetic (`a[0x1]` is element 1).
     const index = field(n, 'index')!;
     const num = this.arithNumber(index);
-    if (this.isAssoc(name, n.startIndex)) return this.tok(n, 'variable', this.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
+    if (this.isAssoc(name, n)) return this.tok(n, 'variable', this.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
   }
 
@@ -3544,7 +3485,7 @@ export class Analyzer {
     if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
     else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
     if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
-    const cases = exampleFor(parsed, this.lang, { quoted: inDoubleQuotes(n), assoc: this.isAssoc(parsed.name, n.startIndex) });
+    const cases = exampleFor(parsed, this.lang, { quoted: inDoubleQuotes(n), assoc: this.isAssoc(parsed.name, n) });
     // A `${…}` on one line is always on the line explained.
     if (cases) {
       this.examples.push({ kind: 'expansion',
@@ -3559,7 +3500,7 @@ export class Analyzer {
     const col = n.startPosition.column;
     const mainOp = parsed.parts.find((p) => p.role === 'op');
     summary.children = parsed.parts.flatMap((part) => {
-      const expl = this.expansionPart(parsed, part, part === mainOp, this.isAssoc(parsed.name, n.startIndex));
+      const expl = this.expansionPart(parsed, part, part === mainOp, this.isAssoc(parsed.name, n));
       if (!expl || !part.text) return [];
       const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
       const nested = this.nestedIn(n, col + part.start, col + part.end);
@@ -3960,48 +3901,11 @@ function visible(line: string): string {
   return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
 }
 
-const IFS_SCOPES = (x: SyntaxNode): boolean => ['subshell', 'command_substitution', 'process_substitution', 'function_definition'].includes(x.type);
-
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
-/** `unknown`: not set before the line, so the default (off) unless a file read with `source` sets it. */
-export type ShoptState = 'on' | 'off' | 'unknown' | 'unsupported';
+/** An option's state (see `OptionState`), or `unsupported` in a shell that does not have it. */
+export type ShoptState = OptionState | 'unsupported';
 export type ShoptStates = Record<ShoptName, ShoptState>;
-
-/**
- * The shell options in effect on `line`: bash's `shopt -s` / `-u` before it (the last one wins). zsh
- * always has globstar, ksh93 has it after `set -G` / `set -o globstar`; the other options, and every
- * option in the other shells, are `unsupported`.
- */
-export function shoptStates(source: string, line: number, shell?: Shell): ShoptStates {
-  const bash = !shell || shell === 'bash';
-  const states = Object.fromEntries(SHOPT_NAMES.map((n) => [n, bash ? 'unknown' : 'unsupported'])) as ShoptStates;
-  if (shell === 'zsh') states.globstar = 'on';
-  if (shell === 'ksh') states.globstar = 'unknown';
-  for (const l of source.split('\n').slice(0, line)) {
-    const code = l.replace(/(^|\s)#.*/, '');
-    if (bash) {
-      for (const m of code.matchAll(/\bshopt((?:\s+-[a-z]+)+)((?:\s+\w+)+)/g)) {
-        const flags = m[1].replace(/[\s-]/g, '');
-        if (!/[su]/.test(flags)) continue;
-        for (const n of m[2].trim().split(/\s+/)) if (n in states) states[n as ShoptName] = flags.includes('s') ? 'on' : 'off';
-      }
-    }
-    if (shell === 'ksh' && /\bset\s+(-\w*G|-o\s+globstar)\b/.test(code)) states.globstar = 'on';
-    if (shell === 'ksh' && /\bset\s+(\+\w*G|\+o\s+globstar)\b/.test(code)) states.globstar = 'off';
-  }
-  // The options work when the command runs: `shopt -s globstar; ls **/*.txt` on one line has globstar on (unless a glob comes before the shopt).
-  // (Not extglob, which the parser needs before the line is read, and not aliases.)
-  const code = (source.split('\n')[line] ?? '').replace(/(^|\s)#.*/, '');
-  if (bash) {
-    for (const m of code.matchAll(/\bshopt((?:\s+-[a-z]+)+)((?:\s+\w+)+)/g)) {
-      const flags = m[1].replace(/[\s-]/g, '');
-      if (!/[su]/.test(flags) || code.slice(0, m.index).includes('*')) continue;
-      for (const n of m[2].trim().split(/\s+/)) if (n in states && n !== 'extglob' && n !== 'expand_aliases') states[n as ShoptName] = flags.includes('s') ? 'on' : 'off';
-    }
-  }
-  return states;
-}
 
 /** The pattern of a sed script made of a single `s` command, to highlight what it matches. */
 function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined {
@@ -4034,28 +3938,8 @@ const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
-/**
- * A declaration command (`declare -ix -- a=1 b`) read with its builtin's spec: the role of each word (the
- * options end at the first name or at `--`), and the letters of the options turned on (`ix`).
- */
 /** The subcommand a parse names, if any (`git stash push`: `stash`, whose parse names `push`). */
 const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; role: Extract<ArgRole, { role: 'subcommand' }> } => r.role.role === 'subcommand');
-
-const declarations = new WeakMap<SyntaxNode, { roles: Map<SyntaxNode, ArgRole>; on: string }>();
-function readDeclaration(d: SyntaxNode): { roles: Map<SyntaxNode, ArgRole>; on: string } {
-  const seen = declarations.get(d);
-  if (seen) return seen;
-  const words = d.namedChildren.filter((c) => !c.type.endsWith('redirect'));
-  const parse = interpret(builtins[d.children[0].type], words.map(argWord), { name: d.children[0].type });
-  const roles = new Map(parse.roles.map(({ word, role }) => [words[word], role]));
-  let on = '';
-  for (const { role } of parse.roles) {
-    for (const r of role.role === 'cluster' ? role.letters : [role]) if (r.role === 'option' && !r.disables) on += r.flag.slice(1);
-  }
-  const out = { roles, on };
-  declarations.set(d, out);
-  return out;
-}
 
 export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];

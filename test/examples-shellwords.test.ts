@@ -3,7 +3,6 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { shoptStates } from '../src/analyzer';
 import { bashPrintf, braceExpand, globExamples, globMatches, GlobOpts } from '../src/examples/shellwords';
 
 const bash = (script: string, ...args: string[]) => execFileSync('bash', ['-c', script, '_', ...args]).toString();
@@ -135,16 +134,6 @@ describe('glob examples agree with bash and find', () => {
     assert.ok(globExamples('**/*.ts', 'file', { globstar: true })!.nonMatching.includes('.cache/app.ts'));
     assert.deepStrictEqual(globExamples('**/*.ts', 'file')!.matching, ['app/app.ts', 'data/data.ts', 'error/error.ts']);
     assert.ok(globExamples('**/*.ts', 'file')!.nonMatching.includes('src/app/app.ts'));
-  });
-  it('shopt states: set before the line, the last one wins', () => {
-    const src = 'ls **\nshopt -s globstar\nls **\nshopt -u globstar\nls **';
-    assert.deepStrictEqual([0, 2, 4].map((l) => shoptStates(src, l).globstar), ['unknown', 'on', 'off']);
-    assert.strictEqual(shoptStates('ls **', 0, 'zsh').globstar, 'on');
-    assert.strictEqual(shoptStates('ls **', 0, 'dash').globstar, 'unsupported');
-    assert.strictEqual(shoptStates('# shopt -s globstar\nls **', 1).globstar, 'unknown');
-    assert.strictEqual(shoptStates('set -o globstar\nls **', 1, 'ksh').globstar, 'on');
-    const many = shoptStates('shopt -s -q dotglob nullglob; shopt -u nocaseglob\nls', 1);
-    assert.deepStrictEqual([many.dotglob, many.nullglob, many.nocaseglob, many.extglob], ['on', 'on', 'off', 'unknown']);
   });
   it('find -name matches names starting with a dot', () => {
     const ex = globExamples('*.tmp', 'value')!;
