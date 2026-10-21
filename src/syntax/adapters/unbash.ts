@@ -539,8 +539,9 @@ class Converter {
       const arr = this.node('array', a.value.pos, a.value.end, 'value', node);
       for (const e of a.value.elements) this.add(arr, this.element(e));
       this.fill(arr);
-    } else if (a.value.text.startsWith('(') && a.value.parts === undefined) {
-      // `a=(1 2` with no `)`: unbash gives the rest as one word.
+    } else if (a.value.text.startsWith('(') && a.value.parts === undefined && !a.value.text.includes(')')) {
+      // `a=(1 2` with no `)`: unbash gives the rest as one word. (With text after the `)`, `a=(x)y`, bash
+      // assigns the text `(x)y`: an ordinary value.)
       const arr = this.node('array', a.value.pos, a.value.end, 'value', node);
       this.tok('(', a.value.pos, arr);
       for (const m of a.value.text.matchAll(/[^\s()]+/g)) this.node(NUMBER.test(m[0]) ? 'number' : 'word', a.value.pos + m.index!, a.value.pos + m.index! + m[0].length, null, arr);
