@@ -11,6 +11,7 @@
 import type { Shell } from '../dialect';
 import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
+import { resolveName } from './names';
 import { option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
@@ -158,6 +159,10 @@ class Statuses implements StatusModel {
       case 'command': {
         const name = commandName(n);
         const args = fields(n, 'argument');
+        // (B3: a function of that name runs instead of the builtin.)
+        const res = name ? resolveName(this.state, name, field(n, 'name')!, { shell: this.shell, command: true }) : undefined;
+        if (res?.kind === 'function') return { kind: 'command', functions: [res.fn.def] };
+        if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         if (name === 'exit' || name === 'return') {
           const v = args[0]?.text;
           if (v === undefined) return { kind: 'previous', by: name };
@@ -170,9 +175,11 @@ class Statuses implements StatusModel {
           const job = args.length === 1 && args[0].text === '$!' ? this.lastJob(n) : undefined;
           return { kind: 'wait', all, ...(job ? { job } : {}) };
         }
-        return { kind: 'command', functions: this.calledBy(n) };
+        return { kind: 'command', functions: [] };
       }
       case 'declaration_command': {
+        const fn = resolveName(this.state, n.children[0].text, n.children[0], { shell: this.shell, command: true });
+        if (fn.kind === 'function') return { kind: 'command', functions: [fn.fn.def] };
         const subs = n.namedChildren.filter((c) => c.type === 'variable_assignment').flatMap(outerSubstitutions);
         return subs.length ? { kind: 'masked', by: n.children[0].text, substitutions: subs } : { kind: 'command', functions: [] };
       }
