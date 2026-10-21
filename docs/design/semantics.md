@@ -355,6 +355,19 @@ git: {
 
 `journalctl -b -1 -u nginx` gives `-b` with `-1`, then `-u nginx`. `journalctl -b -u nginx` gives `-b` alone. `journalctl --boot=-1` takes the attached value.
 
+### 3.7 As built
+
+The code (src/argv/) differs from 3.2–3.4 in these points:
+
+- Words are passed by index, as `ArgWord { value?, prefix?, count? }` (src/argv/words.ts makes them from the tree). `prefix` is the known start of a word whose value is not known (`--file=` of `--file=$f`). `count` is how many words it becomes (`{a,b}` 2, `*.txt` at least 1).
+- Each word gets exactly one role. The words of a subcommand or a command slot are in that role's nested parse, which records where its words end (`end`).
+- Added role kinds: `cluster`, `pattern-option`, `open-option` (`-$opts`), `terminator` (the `;` of `-exec`), `joined` (the words ssh joins) and `expression` (find). An attached value records its offset.
+- Added spec fields: `longPrefixes` (decision 3), `longEquals`, `shortEquals` (`dpkg-query -f=…`), `lastModeWins` (`echo -e -E`), `ValueSpec.command` (`su -c`), `OperandSpec.assignmentText` (awk `name=value`), `OperandSpec.option` (`flock FILE -c`), `OptionSpec.laterOperands` (`jq --args`), `marks`/`unlessMarked` (`kill -9 -1`), and `SubcommandSpec`.
+- `style: 'none'`: a word is an option only if all its letters are known options (`echo`, `let`).
+- An assignment operand ends the options (`env A=1 -i cmd` runs `-i`; checked with the real env).
+- An operand whose role depends on how many words an expansion gives is `uncertain`, with the role it may have instead (`otherwise`).
+- `fromCommandDoc(doc, name)` takes the command's name, for the rules the old walk applied by name (`kill`, `head -5`, `echo`).
+
 ## 4. B: the semantic model
 
 ### 4.1 Where it sits
@@ -684,9 +697,9 @@ Strangler steps. Each one is a PR (or a stack) that ships with every existing te
 
 **C1. The bash-ast test.** test/support/bashast.ts (runner and shape of bash-ast's JSON), the shape of our tree, the test, and the known-differences file. Fix the adapter bugs it finds, each with a CHANGELOG line. Guarded by: itself, and the adapter tests. Size: 400–600, plus fixes.
 
-**A1. The spec types and the interpreter, in the shadow.** src/argv/spec.ts, src/argv/interpret.ts and the operand matcher. A converter `fromCommandDoc(doc)` turns today's `CommandDoc` into a `CommandSpec`. A test runs both the old walk and `interpret` on every command of the corpus and of the analyzer tests, and compares the roles (the same oracle method as the move to unbash). Nothing changes for users. Size: 900–1,200.
+**A1. The spec types and the interpreter, in the shadow.** Done (#135). src/argv/spec.ts, src/argv/interpret.ts and the operand matcher. A converter `fromCommandDoc(doc)` turns today's `CommandDoc` into a `CommandSpec`. A test runs both the old walk and `interpret` on every command of the corpus and of the analyzer tests, and compares the roles (the same oracle method as the move to unbash). Nothing changes for users. Size: 900–1,200.
 
-**A2. The walk reads the interpreter.** `args`, `option`, `bundle` and `describeByCount` become a renderer of `ArgvParse`. `glueOption`, `fillsPositional`, `optionGiven` and `killSignal` go. The converter still feeds it. Guarded by: analyzer, options-fixes, positional-count, oldstyle, wrappers, builtins-flags and dictionary tests. Size: −600 / +400.
+**A2. The walk reads the interpreter.** Done: the shadow test found 31 words the old walk read wrongly; test/argv-fixes.test.ts keeps them, and the comparison is gone. The ssh and `su -c` pitfalls read the command slot. `args`, `option`, `bundle` and `describeByCount` become a renderer of `ArgvParse`. `glueOption`, `fillsPositional`, `optionGiven` and `killSignal` go. The converter still feeds it. Guarded by: analyzer, options-fixes, positional-count, oldstyle, wrappers, builtins-flags and dictionary tests. Size: −600 / +400.
 
 **A3. Families move to native specs**, one PR each, removing the name branches as they go:
 - wrappers and shells (sudo, env, timeout, nice, nohup, xargs, chroot, flock, ssh, su, bash/sh, exec, command, builtin, eval): `CommandSlot`; `WRAPPER_PROGRAMS`, `SHELL_ONLY`, `remoteNotes` and `shellArgument` go;
