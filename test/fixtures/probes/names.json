@@ -843,13 +843,13 @@
   },
   {
     "manual": "3.7.3",
-    "snippet": "f() { :; }; export -f f; sh -c '@PROBE:sh@'; env -i bash -c '@PROBE:clean@'",
-    "note": "dash (sh here) reads no exported function, and `env -i` passes none: the marker, an exported function too, does not run",
+    "snippet": "f() { :; }; export -f f; dash -c '@PROBE:dash@'; env -i bash -c '@PROBE:clean@'",
+    "note": "dash reads no exported function, and `env -i` passes none: the marker, an exported function too, does not run",
     "names": [
       "f"
     ],
     "facts": {
-      "sh": {
+      "dash": {
         "f": {
           "bash": "not-run",
           "posix": "not-run"
@@ -861,6 +861,7 @@
           "posix": "not-run"
         }
       }
-    }
+    },
+    "requires": "dash"
   }
 ]

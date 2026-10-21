@@ -325,6 +325,8 @@ export interface ProbeRow {
   names?: string[];
   /** What the row shows (optional). */
   note?: string;
+  /** A program the snippet runs that may be missing (`dash`): without it on the probes' PATH, the row is not run again. */
+  requires?: string;
   facts?: unknown;
 }
 
@@ -358,6 +360,11 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
       return { ran, status, ...firstError(run) };
     }
   }
+}
+
+/** Whether the program a row requires is on the probes' PATH. */
+export function hasRequired(row: ProbeRow): boolean {
+  return !row.requires || spawnSync('sh', ['-c', `command -v ${row.requires}`], { env: PROBE_ENV }).status === 0;
 }
 
 export const PROBE_DIR = path.join(__dirname, '..', 'fixtures', 'probes');

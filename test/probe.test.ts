@@ -2,7 +2,7 @@
 // scripts/record-probes.ts recorded it. Steps B1–B5 of docs/design/semantics.md compare the semantic model
 // with these facts; here bash is run again on every row, to check that the facts are still what it does.
 import * as assert from 'assert';
-import { factsOf, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable } from './support/probe';
+import { factsOf, hasRequired, instrument, pooled, PROBE_KINDS, probeEnv, probeSkipReason, probeState, probeWords, readProbeTable } from './support/probe';
 
 describe('probes: the harness', () => {
   it('numbers the markers that have no id, and keeps the lines', () => {
@@ -49,7 +49,7 @@ describe('probes: the harness', () => {
       const rows = readProbeTable(kind);
       let facts: unknown[] = [];
       before(async () => {
-        facts = await pooled(rows.map((row) => () => factsOf(kind, row)));
+        facts = await pooled(rows.map((row) => () => (hasRequired(row) ? factsOf(kind, row) : Promise.resolve(row.facts))));
       });
       rows.forEach((row, i) => {
         const opts = [row.posix && 'bash --posix', row.errexit === false && 'no -e'].filter(Boolean).join(', ');

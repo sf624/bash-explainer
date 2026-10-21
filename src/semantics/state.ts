@@ -245,6 +245,10 @@ export interface StateModel {
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
+  /** The `source` and `.` commands that run (their files are not read). */
+  readonly sources: readonly SyntaxNode[];
+  /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
+  unit(n: SyntaxNode): SyntaxNode;
 }
 
 /** The options bash has on in a script (`bash --norc script`), and the ones POSIX mode adds. */
@@ -437,6 +441,18 @@ class Walker {
   readonly aliasDefs = new Map<string, SyntaxNode[]>();
   /** The commands that call each function definition, and whether it is surely defined there on every walk. */
   readonly calls = new Map<SyntaxNode, Map<SyntaxNode, boolean>>();
+  /** The `source` and `.` commands run. */
+  readonly sources: SyntaxNode[] = [];
+  /** The first top-level statement of the unit of each top-level statement. */
+  readonly unitStart = new Map<SyntaxNode, SyntaxNode>();
+  /**
+   * The functions surely defined once the script has run its top level: defined by a top-level statement of the
+   * main shell (not in a branch, a subshell or a function), and never named by `unset`. A body that runs later
+   * (no call reaches it, a trap's action) has them.
+   */
+  private sureLater = new Map<string, SyntaxNode>();
+  /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
+  private readonly traps: { text: string; host: SyntaxNode; st: ShellState; since: number; exit: boolean }[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
@@ -507,15 +523,25 @@ class Walker {
         if (name) this.aliasDefs.set(name, [...(this.aliasDefs.get(name) ?? []), c]);
       }
     }
+    const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
+      ...descendants(root, ['command']).filter((c) => this.commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
+    for (const def of descendants(root, ['function_definition'])) {
+      // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
+      let x = def;
+      while (x.parent?.type === 'list' && x.parent.namedChildren[0] === x) x = x.parent;
+      const name = field(def, 'name')!.text;
+      if (x.parent === root && !unset.has(name) && !subshellReasons(x).length) this.sureLater.set(name, def);
+    }
     // The units bash reads at once: the top-level statements that share a line.
     const tops = root.namedChildren.filter((c) => STATEMENTS.has(c.type));
-    const unitStart = new Map<SyntaxNode, SyntaxNode>();
+    const unitStart = this.unitStart;
     tops.forEach((t, i) => unitStart.set(t, i > 0 && tops[i - 1].endPosition.row === t.startPosition.row ? unitStart.get(tops[i - 1])! : t));
     const end = this.sequence(root.children, this.initial(), (t, st) => {
       const unit = unitStart.get(t)!;
       this.parseAt.set(t, unit === t ? st : this.parseAt.get(unit)!);
       this.expand = this.parseAt.get(t)!;
     });
+    this.runTraps(end);
     this.uncalled();
     return end;
   }
@@ -541,7 +567,33 @@ class Walker {
     }
   }
 
-  /** `st` with the names in `keys` (`kind name`) taken as unknown. */
+  /**
+   * The actions of `trap`, for the calls they make: they run later, when a signal comes or (EXIT) when the script
+   * ends, so each runs from the state when it was set, with what the script changes after that taken as unknown;
+   * an EXIT trap set at the top level, from the state at the end.
+   */
+  private runTraps(end: ShellState): void {
+    for (const t of this.traps.splice(0)) {
+      const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
+      const st = t.exit && this.topLevel(t.host) ? end : this.widen(t.st, after);
+      this.expand = st;
+      this.runText(t.text, t.host, st);
+    }
+  }
+
+  /** Whether `n` is a statement of the top level, in the main shell. */
+  private topLevel(n: SyntaxNode): boolean {
+    for (let x = n; x.parent; x = x.parent) {
+      if (subshellReasons(x).length || (x.parent.parent && x.parent.type !== 'list' && x.parent.type !== 'redirected_statement')) return false;
+    }
+    return true;
+  }
+
+
+  /**
+   * `st` with the names in `keys` (`kind name`) taken as unknown; but a function surely defined by the top level
+   * (`sureLater`) is defined.
+   */
   private widen(st: ShellState, keys: Set<string>): ShellState {
     const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
     for (const key of keys) {
@@ -556,7 +608,10 @@ class Walker {
       } else if (kind === 'functions') {
         const f = st.functions.get(name);
         const defs = this.functionDefs.get(name)!;
-        if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
+        const sure = this.sureLater.get(name);
+        if (sure) {
+          if (f?.state !== 'on') changes.functions.set(name, { state: 'on', def: f?.def ?? sure, exported: f?.exported ?? 'unknown', readonly: f?.readonly ?? 'unknown' });
+        } else if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
         else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
       } else if (kind === 'disabled' || kind === 'hashed') {
         const e = st[kind].get(name);
@@ -618,11 +673,11 @@ class Walker {
       case 'declaration_command': {
         this.substitutions(n, st);
         const words = n.namedChildren.filter((c) => !c.type.endsWith('redirect'));
-        return this.defaults(n, this.declare(n.children[0].type, words, readDeclaration(n), n, st));
+        return this.orFunction(n.children[0].type, st, (s) => this.defaults(n, this.declare(n.children[0].type, words, readDeclaration(n), n, s)));
       }
       case 'unset_command':
         this.substitutions(n, st);
-        return this.unset(n.namedChildren, n, st);
+        return this.orFunction('unset', st, (s) => this.unset(n.namedChildren, n, s));
       case 'variable_assignment':
         this.substitutions(n, st);
         return this.defaults(n, this.assignNode(n, st));
@@ -871,6 +926,8 @@ class Walker {
     }
     const before = st;
     st = this.defaults(n, st);
+    // A prefix assignment to PATH empties the table of remembered paths too.
+    if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.forgetHashed(st);
     const word = nameNode.namedChildren[0];
     const alias = name !== undefined && word.type === 'word' && word.text === name && !this.expanding.has(name) ? this.expand.aliases.get(name) : undefined;
     const expands = !this.bash ? 'on' : option(this.expand, 'shopt', 'expand_aliases');
@@ -883,9 +940,27 @@ class Walker {
       st = posix === 'on' ? kept : merge([st, kept], this.posix);
     }
     if (name === undefined) return st;
-    const fn = st.functions.get(name);
-    if (fn && fn.state !== 'off') return this.call(fn, st, assignments);
+    const fn = this.functionCalled(name, st);
+    if (fn) return this.call(fn, st, assignments);
     return this.builtin(name, fields(n, 'argument'), n, st);
+  }
+
+  /**
+   * A function named like the builtin `name` (`export() { …; }; export x`) runs instead of it, unless POSIX mode
+   * finds the special builtin first; `builtin` runs the builtin.
+   */
+  private orFunction(name: string, st: ShellState, builtin: (st: ShellState) => ShellState): ShellState {
+    const fn = this.functionCalled(name, st);
+    if (!fn) return builtin(st);
+    const called = this.call(fn, st, []);
+    return fn.state === 'on' ? called : merge([called, builtin(st)], this.posix);
+  }
+
+  /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */
+  private functionCalled(name: string, st: ShellState): FunctionState | undefined {
+    const fn = st.functions.get(name);
+    if (!fn || fn.state === 'off') return undefined;
+    return builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on' ? undefined : fn;
   }
 
   /** Runs `text` as a script for the calls it makes, from `host` (an `eval`, a `trap`); the state it leaves is dropped. */
@@ -944,9 +1019,18 @@ class Walker {
         // runs, from the shell that set it). Its changes to the state are not followed.
         const words = name === 'eval' ? args.filter((a, i) => i > 0 || a.text !== '--') : parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name === 'ACTION').map((r) => args[r.word]);
         const text = words.map((w) => staticWordValue(w));
-        if (words.length && text.every((t) => t !== undefined)) this.runText(text.join(' '), n, st);
+        if (!words.length || text.some((t) => t === undefined)) return st;
+        if (name === 'eval') this.runText(text.join(' '), n, st);
+        else {
+          const signals = parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name !== 'ACTION').map((r) => staticWordValue(args[r.word]) ?? '');
+          this.traps.push({ text: text.join(' '), host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some((x) => /^(SIG)?EXIT$|^0$/i.test(x)) });
+        }
         return st;
       }
+      case 'source': case '.':
+        // (The file is not read: what it defines is not known here.)
+        this.sources.push(this.aliasHost ?? n);
+        return st;
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
@@ -1319,6 +1403,12 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
     calls: w.calls,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliasDefs },
+    sources: w.sources,
+    unit(n) {
+      let top = n;
+      while (top.parent?.parent) top = top.parent;
+      return w.unitStart.get(top) ?? top;
+    },
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;

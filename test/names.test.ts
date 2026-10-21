@@ -73,7 +73,7 @@ describe('NameResolution', () => {
     }
     const d = resolve(`${on}d`, 'd');
     assert.ok(d.kind === 'alias' && d.target?.kind === 'file');
-    assert.strictEqual(short(resolve(`${on}\\ls`, '\\ls', { name: 'ls', quoted: true })), 'file:search');
+    assert.strictEqual(short(resolve(`${on}\\ls`, '\\ls', { name: 'ls', quoted: true })), 'file:search<alias:quoted');
     // Without expand_aliases, bash does not expand them; sh does, and POSIX mode turns it on.
     assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll')), 'file:search-unknown<alias:expand_aliases');
     assert.strictEqual(short(resolve('alias ll=\'ls -l\'\nll', 'll', { shell: 'sh' })), 'alias');
@@ -181,11 +181,90 @@ describe('NameResolution', () => {
   });
 });
 
+describe('NameResolution in bodies that run later, after `source`, and of declaration builtins', () => {
+  /** The resolution of every call of the function bodies of `src`, as `name=short`. */
+  const calls = (src: string): string[] => {
+    const tree = parser.parse(src);
+    const model = shellState(tree);
+    return descendants(tree.root, ['function_definition']).flatMap((d) => descendants(d, ['command']))
+      .map((c) => `${field(c, 'name')!.text}=${short(resolveName(model, field(c, 'name')!.text, c, { command: true, program }))}`);
+  };
+
+  it('a library file: functions the top level defines after a body are there when it runs', () => {
+    const lib = 'log() { printf "%s\\n" "$*" >&2; }\ndie() { log "error: $*"; exit 1; }\nneed() { command -v "$1" >/dev/null || die "missing $1"; }\nearly() { later_fn; }\nlater_fn() { :; }';
+    assert.deepStrictEqual(calls(lib).filter((c) => /^(log|die|later_fn)=/.test(c)), ['log=function', 'die=function', 'later_fn=function']);
+  });
+
+  it('a dispatch script: `"cmd_$1"` calls bodies that call functions defined after them', () => {
+    const d = 'cmd_build() { compile; package; }\ncompile() { make; }\npackage() { tar czf out.tgz build; }\n"cmd_$1" "${@:2}"';
+    assert.deepStrictEqual(calls(d).filter((c) => /^(compile|package)=/.test(c)), ['compile=function', 'package=function']);
+  });
+
+  it("git-sh-setup's pattern: a function defined later, first in a list, or in a branch", () => {
+    const g = 'die() { die_with_status 1 "$@"; }\ndie_with_status() { exit "$1"; }\nf() { g; h; }\ng() { :; } && complete -F g x\nif [ "$x" ]; then h() { :; }; fi';
+    assert.deepStrictEqual(calls(g).filter((c) => /^(die_with_status|g|h)=/.test(c)), ['die_with_status=function', 'g=function', 'h=function?']);
+    // (Not when a definition comes after the body but in a subshell, or is removed somewhere: then "may".)
+    assert.deepStrictEqual(calls('f() { g; }\n( g() { :; } )').filter((c) => c.startsWith('g=')), ['g=function?']);
+    assert.deepStrictEqual(calls('f() { g; }\ng() { :; }\nunset -f g').filter((c) => c.startsWith('g=')), ['g=function?']);
+  });
+
+  it('the state of a body no call reaches, with a function defined on some paths before it and by the top level after', () => {
+    assert.deepStrictEqual(calls('if [ "$x" ]; then g() { :; }; fi\nf() { g; }\ng() { :; }').filter((c) => c.startsWith('g=')), ['g=function']);
+    // (The unit of a node outside the top level's statements is itself.)
+    const tree = parser.parse('a; b\nc');
+    const model = shellState(tree);
+    assert.deepStrictEqual(descendants(tree.root, ['command']).map((c) => model.unit(c).text), ['a', 'a', 'c']);
+    assert.strictEqual(model.unit(tree.root), tree.root);
+  });
+
+  it('trap actions run later: an EXIT trap with the state at the end', () => {
+    assert.deepStrictEqual(calls('on_exit() { report; }\ntrap on_exit EXIT\nreport() { echo done; }').filter((c) => c.startsWith('report')), ['report=function']);
+    assert.deepStrictEqual(calls('on_int() { report; }\ntrap on_int INT\nreport() { echo done; }').filter((c) => c.startsWith('report')), ['report=function']);
+    assert.deepStrictEqual(calls('f() { trap on_exit EXIT; }\non_exit() { report; }\nf\nreport() { :; }').filter((c) => c.startsWith('report')), ['report=function']);
+    // (A signal known only at run time: not taken as EXIT.)
+    assert.deepStrictEqual(calls('on_x() { report; }\ntrap on_x "$sig"\nreport() { :; }').filter((c) => c.startsWith('report')), ['report=function']);
+  });
+
+  it('after `source`, a name the dictionary does not know may be a function of the file', () => {
+    const r = resolve('. ./lib.sh\nlog hello', 'log hello');
+    assert.ok(r.kind === 'file' && r.sourced?.text === '. ./lib.sh');
+    assert.ok(!(resolve('f() { log x; }\nsource lib.sh', 'log x') as { missed?: unknown }).missed);
+    assert.ok((resolve('f() { log x; }\nsource lib.sh', 'log x') as { sourced?: unknown }).sourced);
+    // (No `later` note: the function may come from the file.)
+    assert.strictEqual(short(resolve('source lib.sh\nlf\nlf() { :; }', 'lf')), 'file:search-unknown');
+    assert.strictEqual(short(resolve('lf\nsource lib.sh', 'lf')), 'file:search-unknown');
+    assert.ok(!(resolve('source lib.sh\nls', 'ls') as { sourced?: unknown }).sourced);
+  });
+
+  it('a function named like a declaration builtin or `unset` runs instead of it, unless POSIX mode finds the special builtin', () => {
+    const tree = parser.parse('export() { echo my; }\nexport a=1\nset -o posix\nexport b=2\nlocal() { :; }\nf() { local x=1; }\nf\nunset() { :; }\nx=1\nunset x');
+    const model = shellState(tree);
+    const decl = descendants(tree.root, ['declaration_command', 'unset_command']).map((d) => short(resolveName(model, d.children[0].type, d, { command: true })));
+    assert.deepStrictEqual(decl, ['function', 'builtin:special<function:posix-special', 'function', 'builtin:special']);
+    // (`unset() { …; }` after `set -o posix` is not defined: bash stops there.) The walk calls the function:
+    // `unset x` leaves x set; `export a=1` does not export it.
+    assert.strictEqual(model.end.variables.get('a'), undefined);
+    const after = shellState(parser.parse('unset() { :; }\nx=1\nunset x'));
+    assert.strictEqual(after.end.variables.get('x')?.set, 'on');
+    assert.strictEqual(shellState(parser.parse('[ "$v" ] && export() { :; }\nexport a=1')).end.variables.get('a')?.set, 'unknown');
+  });
+
+  it('`PATH=… cmd` looks the name up with that PATH, and forgets the paths of `hash -p`', () => {
+    assert.strictEqual(short(resolve('hash -p /bin/echo e\nPATH=/usr/bin:/bin e d', 'PATH=/usr/bin:/bin e d')), 'file:search-unknown');
+    assert.strictEqual(short(resolve('hash -p /bin/echo e\nPATH=/usr/bin:/bin e d\ne x', 'e x')), 'file:search-unknown');
+  });
+
+  it('an alias defined after its use on the same line is "later"', () => {
+    assert.strictEqual(short(resolve('shopt -s expand_aliases\nhi; alias hi=x', 'hi')), 'file:search-unknown<alias:later');
+  });
+});
+
 describe('AssignmentMeaning', () => {
   const scopes = (src: string, text: string, posix = false, none = false): string => {
     const { node, tree } = commandAt(src, text);
     const model = shellState(tree, undefined, { posix });
     const res = none ? undefined : resolveName(model, field(node, 'name')!.text, node, { command: true, program });
+    if (text.includes('$cmd')) return assignmentsOf(model, node, 'dynamic').map((a) => `${a.name}:${a.scope}${a.sure ? '' : '?'}`).join(' ');
     return assignmentsOf(model, node, res).map((a) => `${a.name}:${a.scope}${a.sure ? '' : '?'}`).join(' ');
   };
 
@@ -193,6 +272,8 @@ describe('AssignmentMeaning', () => {
     // (`x=1 $empty`: no command name results.)
     assert.strictEqual(scopes('x=1 a[2]=3 $empty', 'x=1 a[2]=3 $empty', false, true), 'x:shell a:shell');
     assert.strictEqual(scopes('x=1 ls', 'x=1 ls'), 'x:command');
+    // (A name that may expand to no word: then the assignment is the shell's.)
+    assert.strictEqual(scopes('x=1 $cmd', 'x=1 $cmd'), 'x:command?');
     assert.strictEqual(scopes('x=1 export y', 'x=1 export y'), 'x:command');
     assert.strictEqual(scopes('x=1 export y', 'x=1 export y', true), 'x:persists');
     assert.strictEqual(scopes('[ "$v" ] && set -o posix\nx=1 :', 'x=1 :'), 'x:persists?');
@@ -207,6 +288,42 @@ describe('the analyzer says what a name runs', () => {
   const head = (src: string, line: number, lang: 'en' | 'ja' = 'en'): string => explain(src, line, lang).items[0].explanation;
   const notes = (src: string, line: number, lang: 'en' | 'ja' = 'en', opts = {}): string => explain(src, line, lang, opts).notes.join('\n');
   const all = (t: { explanation: string; children: unknown[] }): string[] => [t.explanation, ...(t.children as typeof t[]).flatMap(all)];
+
+  it('a body that runs later, and a function from a file read by `source`', () => {
+    assert.match(all(explain('f() { g; }\nif [ "$x" ]; then g() { :; }; fi', 0).items[0]).join('\n'), /That is, if it is defined when this runs: it is defined later in the script, on some paths only/);
+    assert.match(all(explain('f() { g; }\nif [ "$x" ]; then g() { :; }; fi', 0, 'ja').items[0]).join('\n'), /定義はスクリプトのあとの部分/);
+    assert.match(head('. ./lib.sh\nlog hi', 1), /^Run `log`: maybe a function of the file read on line 1, else an external command$/);
+    assert.match(head('. ./lib.sh\nlog hi', 1, 'ja'), /行 1 で読み込んだファイルの関数かもしれない/);
+  });
+
+  it('a declaration builtin or `unset` shadowed by a function is a call of it', () => {
+    const t = explain('export() { :; }\nexport a=1', 1).items[0];
+    assert.strictEqual(t.kind, 'function');
+    assert.match(all(t).join('\n'), /Call the function `export` defined on line 1.*Argument \$1 to the function/s);
+    assert.match(all(explain('export() { :; }\nexport a=1 >/dev/null', 1).items[0]).join('\n'), /Call the function `export`.*stdout/s);
+    assert.match(all(explain('unset() { :; }\nunset x', 1).items[0]).join('\n'), /Call the function `unset`/);
+    assert.doesNotMatch(notes('local() { :; }\nlocal x', 1), /only inside a function/);
+  });
+
+  it('`command` runs the program of a builtin turned off; `builtin` of it fails', () => {
+    const c = explain('enable -n echo\ncommand echo z', 1).items[0].children.find((x) => x.label === 'echo')!;
+    assert.strictEqual(c.kind, 'command');
+    assert.match(c.explanation, /the external command `echo` \(`enable -n` on line 1 turned the builtin off\): .*coreutils/);
+    assert.match(explain('enable -n echo\ncommand echo z', 1, 'ja').items[0].children.find((x) => x.label === 'echo')!.explanation, /組み込みは無効/);
+    assert.match(explain('enable -n read\ncommand read z', 1).items[0].children.find((x) => x.label === 'read')!.explanation, /turned the builtin off\)$/);
+    assert.strictEqual(explain('enable -n echo\nbuiltin echo y', 1).items[0].children.find((x) => x.label === 'echo')!.kind, 'command');
+  });
+
+  it('a function named like a tool gets no example of the tool', () => {
+    assert.strictEqual(explain('read() { :; }\nread -r line <<< "a b"', 1).examples.length, 0);
+    assert.ok(explain('read -r line <<< "a b"', 0).examples.length > 0);
+  });
+
+  it('an assignment before a name that may expand to no word', () => {
+    assert.match(all(explain('x=1 $cmd', 0).items[0]).join('\n'), /if `\$cmd` expands to no word at all, it stays as a shell variable/);
+    assert.match(all(explain('x=1 $cmd', 0, 'ja').items[0]).join('\n'), /シェルの変数として残る/);
+    assert.doesNotMatch(all(explain('x=1 "$cmd"', 0).items[0]).join('\n'), /expands to no word at all/);
+  });
 
   it('a function, what it hides, and "may"', () => {
     assert.match(head('cd() { :; }\ncd /', 1), /function `cd` defined on line 1 \(it runs instead of the builtin of that name; `builtin cd` runs the builtin\)/);
