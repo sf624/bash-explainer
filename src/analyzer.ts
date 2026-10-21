@@ -273,13 +273,13 @@ export class Analyzer {
     const addArray = (name: string | undefined, index: number, assoc: boolean): void => { if (name && !this.arrays.has(name)) this.arrays.set(name, { index, assoc }); };
     for (const a of descendants(root, ['variable_assignment'])) {
       const nameNode = field(a, 'name');
-      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && /^\w+\s+-[a-zA-Z]*A/.test(a.parent.text));
+      if (field(a, 'value')?.type === 'array') addArray(nameNode?.text, a.startIndex, a.parent?.type === 'declaration_command' && readDeclaration(a.parent).on.includes('A'));
       else if (nameNode?.type === 'subscript') addArray(nameNode.text.replace(/\[.*/s, ''), a.startIndex, false);
     }
     for (const d of descendants(root, ['declaration_command'])) {
-      const flags = d.namedChildren.find((c) => c.type === 'word' && /^-[a-zA-Z]+$/.test(c.text))?.text ?? '';
-      if (!/[aA]/.test(flags)) continue;
-      for (const c of d.namedChildren) addArray(c.type === 'variable_name' ? c.text : undefined, d.startIndex, flags.includes('A'));
+      const { roles, on } = readDeclaration(d);
+      if (!/[aA]/.test(on)) continue;
+      for (const c of d.namedChildren) addArray(c.type === 'variable_name' && roles.get(c)?.role === 'operand' ? c.text : undefined, d.startIndex, on.includes('A'));
     }
     for (const c of descendants(root, ['command'])) {
       const cmd = field(c, 'name')?.text;
@@ -311,7 +311,7 @@ export class Analyzer {
     }
     this.namerefs.clear();
     for (const d of descendants(root, ['declaration_command'])) {
-      if (!d.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*n/.test(c.text))) continue;
+      if (!readDeclaration(d).on.includes('n')) continue;
       for (const c of d.namedChildren) {
         const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
         if (name && !this.namerefs.has(name)) this.namerefs.set(name, { line: d.startPosition.row, index: d.startIndex });
@@ -321,7 +321,7 @@ export class Analyzer {
     this.assocs.clear();
     for (const d of descendants(root, ['declaration_command'])) {
       for (const [flag, into] of [['i', this.integers], ['A', this.assocs]] as const) {
-        if (!d.namedChildren.some((c) => c.type === 'word' && new RegExp(`^-[a-zA-Z]*${flag}`).test(c.text))) continue;
+        if (!readDeclaration(d).on.includes(flag)) continue;
         for (const c of d.namedChildren) {
           const name = c.type === 'variable_assignment' ? field(c, 'name')?.text : c.type === 'variable_name' ? c.text : undefined;
           if (name && !into.has(name)) into.set(name, d.startIndex);
@@ -1013,7 +1013,7 @@ export class Analyzer {
         ? this.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`)
         : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
     // `local -n r=$1` makes `r` another name for the variable named by `$1`; every later `r=…` then sets that variable.
-    const decl = n.parent?.type === 'declaration_command' && n.parent.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*n/.test(c.text));
+    const decl = n.parent?.type === 'declaration_command' && readDeclaration(n.parent).on.includes('n');
     const refLine = this.namerefs.get(nm);
     if (decl && value) {
       expl = this.s(`\`${nm}\` は参照（nameref）になる: 値 \`${value.text}\` を名前とする変数の別名で、\`${nm}\` への代入や参照は、その変数に対して行われる`,
@@ -1130,27 +1130,25 @@ export class Analyzer {
     const base = declarationCommands[kw];
     const children: Token[] = [];
     // A declaration over several lines is explained whole (see sub), so every part counts.
-    let named = false;
-    const funcs = kw !== 'local' && n.namedChildren.some((c) => c.type === 'word' && /^-[a-zA-Z]*[fF]/.test(c.text));
+    // The options end at the first name or at `--`: `declare x -i` and `declare -- -i` are errors for the name `-i`.
+    const { roles, on } = readDeclaration(n);
+    const funcs = kw !== 'local' && /[fF]/.test(on);
     for (const c of n.namedChildren) {
       if (redirsOut && c.type.endsWith('redirect')) continue;
-      // Options end at the first name: `declare x -i` is an error for the name `-i`.
-      // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
-      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && !!builtins[kw].plusOptions;
-      if (c.type === 'word' && (c.text.startsWith('-') || off) && !named) {
+      const role = roles.get(c)?.role;
+      if (role === 'end-of-options') children.push(this.tok(c, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
+      else if (role && role !== 'operand') {
+        // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
+        const off = c.text.startsWith('+');
         const table = kw === 'export' ? exportFlags : kw === 'readonly' ? readonlyFlags : off ? declarationOffFlags : declarationFlags;
         const flags = c.text.slice(1).split('').map((ch) => table['-' + ch]).filter(Boolean);
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
       } else if (c.type === 'variable_name' || c.type === 'word') {
-        named = true;
         // With `-f` or `-F` the names are functions.
         children.push(this.tok(c, 'variable', funcs
           ? this.s(`関数 \`${c.text}\` を対象にする`, `Function \`${c.text}\``)
           : this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
-      } else {
-        named = true;
-        children.push(...this.sub(c));
-      }
+      } else children.push(...this.sub(c));
     }
     const t = this.tok(n, 'builtin', this.t(base) + this.s('（シェル組み込み）', ' (shell builtin)'), children, kw);
     t.summary = `${kw}: ${t.explanation}`;
@@ -3997,6 +3995,26 @@ const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
+/**
+ * A declaration command (`declare -ix -- a=1 b`) read with its builtin's spec: the role of each word (the
+ * options end at the first name or at `--`), and the letters of the options turned on (`ix`).
+ */
+const declarations = new WeakMap<SyntaxNode, { roles: Map<SyntaxNode, ArgRole>; on: string }>();
+function readDeclaration(d: SyntaxNode): { roles: Map<SyntaxNode, ArgRole>; on: string } {
+  const seen = declarations.get(d);
+  if (seen) return seen;
+  const words = d.namedChildren.filter((c) => !c.type.endsWith('redirect'));
+  const parse = interpret(builtins[d.children[0].type], words.map(argWord), { name: d.children[0].type });
+  const roles = new Map(parse.roles.map(({ word, role }) => [words[word], role]));
+  let on = '';
+  for (const { role } of parse.roles) {
+    for (const r of role.role === 'cluster' ? role.letters : [role]) if (r.role === 'option' && !r.disables) on += r.flag.slice(1);
+  }
+  const out = { roles, on };
+  declarations.set(d, out);
+  return out;
+}
+
 export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;

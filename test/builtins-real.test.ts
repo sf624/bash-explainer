@@ -5,8 +5,9 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { lookupCommand } from '../src/analyzer';
+import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { ArgvParse, interpret } from '../src/argv/interpret';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 
 const hasBash = spawnSync('bash', ['--norc', '-c', 'true']).status === 0;
@@ -69,6 +70,29 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       const script = line.startsWith('local') ? `f() { ${line}; declare -p ${names.join(' ')}; }; f` : `${line}; declare -p ${names.join(' ')}`;
       assert.strictEqual(bash(`${script} 2>&1 | grep -c '^declare'`).trim(), String(names.length), line);
     }
+  });
+
+  it('declare, local, export and readonly: what the explanation shows', () => {
+    const parser = createUnbashParser();
+    /** The token of the first command of line `line` (from 0) of `script`. */
+    const top = (script: string, line = 0): Token => new Analyzer('en').explainLine(parser.parse(script), line).items[0];
+    const shown = (script: string): Token[] => top(script).children;
+    const kinds = (line: string) => shown(line).map((t) => `${t.label} ${t.kind}`);
+    // `--` ends the options; a word after it, or after a name, is a name (bash: "not a valid identifier").
+    assert.deepStrictEqual(kinds('declare -- x=1'), ['-- option', 'x=1 assignment']);
+    assert.match(shown('declare -- x=1')[0].explanation, /^End of options/);
+    assert.match(bash('declare -- x=1; declare -p x'), /^declare -- x="1"/);
+    assert.deepStrictEqual(kinds('export -- A=1'), ['-- option', 'A=1 assignment']);
+    assert.match(bash('export -- A=1; declare -p A'), /^declare -x A="1"/);
+    for (const line of ['declare -x -- -i', 'declare y -i']) {
+      assert.deepStrictEqual(kinds(line).pop(), '-i variable', line);
+      assert.match(bash(`${line} 2>&1`), /`-i': not a valid identifier/, line);
+    }
+    // `declare y -i` gives `y` no integer attribute: `y=1+1` stays text.
+    assert.strictEqual(bash('declare y -i 2>/dev/null; y=1+1; echo $y'), '1+1\n');
+    assert.doesNotMatch(top('declare y -i\ny=1+1', 1).explanation, /integer/);
+    assert.strictEqual(bash('declare -i -- z=1+1; echo $z'), '2\n');
+    assert.match(top('declare -i -- z=1+1').children[2].explanation, /integer/);
   });
 
   it('kill -l and -L: the operands are signals to translate', () => {
