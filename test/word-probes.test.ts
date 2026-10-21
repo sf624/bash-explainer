@@ -26,10 +26,11 @@ describe('the word model against bash (probes/words.json)', () => {
       const markers = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === '__probe');
       const found = new Map<string, string>();
       let stopped = false;
+      const created = (row.facts.created ?? []) as string[];
       for (const c of markers) {
         const [id, ...args] = fields(c, 'argument');
         const runs = row.facts[id.text] as string[][];
-        const words = [...args, ...[c, c.parent!].flatMap((x) => fields(x, 'redirect')).map((r) => field(r, 'destination')!)];
+        const words = [...args, ...[c, c.parent!].flatMap((x) => fields(x, 'redirect')).filter((r) => r.type === 'file_redirect').map((r) => field(r, 'destination')!)];
         const results = words.map((w) => wordFields(w, state, ENV));
         const error = results.find((r) => r.error)?.error;
         if (error) {
@@ -56,6 +57,11 @@ describe('the word model against bash (probes/words.json)', () => {
           continue;
         }
         for (const run of runs) if (JSON.stringify(run) !== JSON.stringify(model)) found.set(id.text, `model: ${JSON.stringify(model)}, bash: ${JSON.stringify(run)}`);
+        // A redirection that went to a file of the run's directory: that file is there after the run.
+        for (const r of results.slice(args.length)) {
+          const target = r.fields![0].startsWith(`${BOX}/`) ? r.fields![0].slice(BOX.length + 1) : r.fields![0];
+          if (!target.startsWith('/') && !FILES.includes(target) && !created.includes(target)) found.set(`${id.text}.redirect`, `model: ${target}, bash created: ${JSON.stringify(created)}`);
+        }
       }
       const gaps = row.gaps ?? {};
       const unexplained = [...found].filter(([k]) => !(k in gaps)).map(([k, v]) => `${k}: ${v}`);

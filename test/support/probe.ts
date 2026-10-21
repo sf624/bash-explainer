@@ -55,6 +55,8 @@ export interface ProbeRun {
   markers: string[];
   /** The process ID of the script's shell (its `$$`). */
   pid?: number;
+  /** The files and directories (with a `/`) the run left in its directory besides FILES, sorted. */
+  created: string[];
 }
 
 const MARKER = /@PROBE(?::([\w.-]+))?@/g;
@@ -97,9 +99,19 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   return new Promise((resolve) => {
     const child = execFile(PROBE_BASH, args, { cwd: box, env: { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn }, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
       const raw = fs.readFileSync(log, 'utf8');
+      // What the run left in its directory besides FILES (a directory ends with `/`).
+      const created: string[] = [];
+      const walk = (dir: string, rel: string): void => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const name = `${rel}${e.name}${e.isDirectory() ? '/' : ''}`;
+          if (!FILES.includes(name)) created.push(name);
+          if (e.isDirectory()) walk(path.join(dir, e.name), name);
+        }
+      };
+      walk(box, '');
       fs.rmSync(root, { recursive: true, force: true });
       const records = raw.split('\x1e').slice(0, -1).map((r) => normalize(r).split('\0').slice(0, -1));
-      resolve({ status: child.exitCode, signal: child.signalCode ?? undefined, stdout: normalize(stdout), stderr: normalize(stderr), records, markers, pid: child.pid });
+      resolve({ status: child.exitCode, signal: child.signalCode ?? undefined, stdout: normalize(stdout), stderr: normalize(stderr), records, markers, pid: child.pid, created: created.sort() });
     });
     child.stdin?.end();
   });
@@ -338,7 +350,8 @@ export async function factsOf(kind: ProbeKind, row: ProbeRow): Promise<unknown> 
       return probeNames(row.snippet, row.names ?? []);
     case 'words': {
       const { fields, run } = await probeWords(row.snippet, { posix: row.posix });
-      return { ...fields, status: run.status, ...firstError(run) };
+      // (What the run created shows where its redirections went.)
+      return { ...fields, status: run.status, ...firstError(run), ...(run.created.length ? { created: run.created } : {}) };
     }
     case 'status': {
       const { ran, status, run } = await probeStatus(row.snippet, { errexit: row.errexit ?? true, posix: row.posix });
