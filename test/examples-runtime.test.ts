@@ -7,6 +7,8 @@ describe('xargs agrees with GNU xargs', () => {
   const cases: [string[], string[]][] = [
     [['-n', '2'], ['rm']], [['-I{}'], ['mv', '{}', '{}.bak']], [['-0'], ['rm', '-f']], [['-L', '1'], ['echo']], [[], []], [['-d', ','], ['echo']],
     [['-n1', '-P4'], ['gzip']], [['-r'], ['ls']], [['-n', '3'], ['cp', '-t', 'dest']], [['--max-args=2'], ['echo']],
+    // With `-I` and a delimiter, each item is a run of its own.
+    [['-0', '-n', '1', '-I{}'], ['rm', '-f', '{}']], [['-0', '-I{}'], ['mv', '{}', '{}.bak']], [['-d', ',', '-I{}'], ['echo', '{}']],
   ];
   for (const [opts, cmd] of cases) {
     it([...opts, ...cmd].join(' ') || '(no options)', () => {
@@ -27,6 +29,16 @@ describe('xargs agrees with GNU xargs', () => {
     }
     assert.deepStrictEqual(runXargs(['-d', ',', 'echo'], 'a,b\n'), [['echo', 'a', 'b\n']]);
     assert.strictEqual(showCommand(['echo', 'b\n', "it's\t", 'a\\\x01']), "echo $'b\\n' $'it\\'s\\t' $'a\\\\\\x01'");
+  });
+  it('-I with -0 or -d: an item is whole, blanks and empty items included; with newlines, leading blanks go', () => {
+    const cases: [string[], string][] = [
+      [['-0', '-I{}'], ' a b\0c\0'], [['-0', '-I{}'], 'a\0\0b\0'], [['-d', ',', '-I{}'], ' a b,c\n'], [['-d', ',', '-I{}'], 'a,,b,'], [['-I{}'], ' a\n\nb \n'],
+    ];
+    for (const [opts, input] of cases) {
+      const real = run('xargs', [...opts, 'printf', '[%s]', '{}'], { input }).stdout.toString();
+      const mine = runXargs([...opts, 'printf', '[%s]', '{}'], input).map((c) => c.slice(2).map((x) => `[${x}]`).join('')).join('');
+      assert.strictEqual(mine, real, JSON.stringify([opts, input]));
+    }
   });
   it('treats quotes in the input as grouping', () => {
     assert.deepStrictEqual(runXargs(['-n', '1'], 'a "b c" d\\ e\n'), [['echo', 'a'], ['echo', 'b c'], ['echo', 'd e']]);
