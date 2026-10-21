@@ -94,15 +94,21 @@ const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALR
 const SIGNAL_GIVEN = { marks: 'signal', unlessMarked: 'signal' };
 /** `TERM` in any case: `[Tt][Ee][Rr][Mm]`. */
 const anyCase = (s: string): string => s.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`);
+const KILL_LISTING = tx('シグナルは送られない（`-l` があるので一覧の表示だけで、この語は無視される）', 'No signal is sent (with `-l`, kill only lists signals and ignores this word)');
 const KILL_PATTERNS: PatternOption[] = [
   {
-    pattern: /^-(\d+)$/, ...SIGNAL_GIVEN,
+    pattern: /^-(\d+)$/, ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING },
     text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-n ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-n ${n}\`; \`kill -l ${n}\` prints its name)`),
     open: tx('展開した名前か番号のシグナルを送る（`-s 名前` と同じ）', 'Send the signal the expansion names (same as `-s NAME`)'),
   },
   {
+    // `-s` is followed by a name and `-n` by a number: bash reads any other word of this shape as one signal spec, which it refuses.
+    pattern: /^-((?:s(?![A-Za-z])|n(?!\d)).+)$/,
+    text: ([, s]) => tx(`bash は \`${s}\` を 1 つのシグナル指定として読み、受け付けない（\`-s\` には名前、\`-n\` には番号をつなげる。離して書けば値になる）`, `Invalid: bash reads \`${s}\` as one signal spec and refuses it (attached to \`-s\` a name works, attached to \`-n\` a number; written apart, either is a value)`),
+  },
+  {
     // A name in any case, with or without `SIG`; but bash reads `-s` and a letter as `-s NAME` (`-sigterm`, `-stop`: the signal `igterm`, `top`).
-    pattern: new RegExp(`^-(?!s[A-Za-z])(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN,
+    pattern: new RegExp(`^-(?!s[A-Za-z])(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING },
     text: ([, s]) => tx(`送るシグナル \`${s.toUpperCase()}\`（\`-s ${s.toUpperCase()}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${s.toUpperCase()}\` (same as \`-s ${s.toUpperCase()}\`; \`kill -l\` lists them)`),
   },
 ];
@@ -292,10 +298,10 @@ export const builtins: Record<string, CommandSpec> = {
     { names: ['-9', '-KILL'], text: tx('強制終了（KILL シグナル）', 'force kill (SIGKILL)'), ...SIGNAL_GIVEN },
     { names: ['-s'], text: tx('送るシグナル名', 'signal name to send'), value: { name: 'VALUE' }, marks: 'signal' },
     { names: ['-n'], text: tx('送るシグナルの番号', 'signal number to send'), value: { name: 'VALUE' }, marks: 'signal' },
-    ['-l|-L', 'シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'],
+    { names: ['-l', '-L'], text: tx('シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'), selects: 'list' },
     { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN },
   ], {
-    program: PROGRAMS.kill, patternOptions: KILL_PATTERNS,
+    program: PROGRAMS.kill, patternOptions: KILL_PATTERNS, modes: [{ name: 'list' }],
     operands: [
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
       ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,

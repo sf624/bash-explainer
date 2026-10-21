@@ -120,6 +120,8 @@ export interface PatternOption {
   open?: Text;
   marks?: string;
   unlessMarked?: string;
+  /** Its text in a mode, as for `OptionSpec.inMode` (`kill -l -15`: the signal is not sent). */
+  inMode?: Record<string, Text>;
 }
 
 export interface ModeSpec { name: string; default?: boolean }

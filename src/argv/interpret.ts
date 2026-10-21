@@ -513,7 +513,9 @@ function conditionHolds(c: Condition | undefined, given: Given, mode: string | u
 /** An option's text in the mode (`rpm -qi`: `-i` shows information). */
 function inMode(role: ArgRole, mode: string | undefined): ArgRole {
   if (role.role === 'cluster' || role.role === 'old-style') return { ...role, letters: role.letters.map((l) => inMode(l, mode)) };
-  if (role.role !== 'option' || mode === undefined || !role.spec.inMode?.[mode]) return role;
+  if (mode === undefined) return role;
+  if (role.role === 'pattern-option') return role.pattern.inMode?.[mode] ? { ...role, text: role.pattern.inMode[mode] } : role;
+  if (role.role !== 'option' || !role.spec.inMode?.[mode]) return role;
   return { ...role, text: role.spec.inMode[mode] };
 }
 
