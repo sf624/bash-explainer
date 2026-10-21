@@ -18,8 +18,8 @@ class Client {
   readonly notifications: Message[] = [];
   readonly exited: Promise<number | null>;
 
-  constructor(cli: string, preload: string) {
-    this.proc = spawn(process.execPath, ['--require', preload, cli, '--lsp', '--stdio'], { env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8' } });
+  constructor(cli: string, preload: string, opts: { env?: NodeJS.ProcessEnv; args?: string[] } = {}) {
+    this.proc = spawn(process.execPath, ['--require', preload, cli, '--lsp', '--stdio', ...(opts.args ?? [])], { env: { PATH: process.env.PATH, LANG: 'en_US.UTF-8', ...opts.env } });
     this.exited = new Promise((r) => this.proc.on('exit', r));
     this.proc.stdout!.on('data', (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
@@ -68,11 +68,13 @@ describe('the Language Server', function () {
   this.timeout(60000);
   let dir = '';
   let client: Client;
+  let cli = '';
+  let blocker = '';
 
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-explainer-lsp-'));
     execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-cli.ts', `--outdir=${dir}`], { cwd: root, stdio: 'pipe' });
-    const blocker = path.join(dir, 'block.js');
+    blocker = path.join(dir, 'block.js');
     fs.writeFileSync(blocker, `
       const Module = require('module');
       const load = Module._load;
@@ -83,7 +85,8 @@ describe('the Language Server', function () {
       };
       for (const name of ['fetch', 'XMLHttpRequest', 'WebSocket']) globalThis[name] = () => { throw new Error('blocked: ' + name); };
     `);
-    client = new Client(path.join(dir, 'dist', 'cli.js'), blocker);
+    cli = path.join(dir, 'dist', 'cli.js');
+    client = new Client(cli, blocker);
   });
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -144,4 +147,82 @@ describe('the Language Server', function () {
     client.notify('exit', null);
     assert.strictEqual(await client.exited, 0);
   });
+
+  it('reads the settings file of the command-line tool, under the settings the editor sends', async () => {
+    const xdg = path.join(dir, 'xdg');
+    fs.mkdirSync(path.join(xdg, 'bash-explainer'), { recursive: true });
+    fs.writeFileSync(path.join(xdg, 'bash-explainer', 'settings.json'), '{ "bashExplainer.shell": "sh", "hover.maxDepth": 1, "nope": 1 }');
+    const c = new Client(cli, blocker, { env: { XDG_CONFIG_HOME: xdg } });
+    await c.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { bashExplainer: { examples: false, notes: { pitfalls: false } } } });
+    c.notify('initialized', {});
+    const uri = 'file:///work/bash.sh';
+    c.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'sh', version: 1, text: '#!/bin/bash\n[[ -f x ]] && echo "hi"\n' } });
+    // The shell from the file: a bash script is checked as sh.
+    const d = await c.diagnostics(uri, (list) => list.length > 0);
+    assert.deepStrictEqual(d.map((x) => x.code), ['dbracket']);
+    const logs = c.notifications.filter((n) => n.method === 'window/logMessage').map((n) => n.params.message);
+    assert.ok(logs.some((m) => /settings\.json: unknown setting nope; ignored/.test(m)), JSON.stringify(logs));
+    // hover.maxDepth from the file: the top level only.
+    const hover = async () => (await c.request('textDocument/hover', { textDocument: { uri }, position: { line: 1, character: 0 } })).result;
+    const value: string = (await hover()).contents.value;
+    assert.match(value, /^- /m);
+    assert.doesNotMatch(value, /^ {2}- /m);
+    // The editor's settings win, a key at a time; a wrong value is logged and left out.
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { diagnostics: { ignore: ['dbracket'] }, 'hover.maxDepth': 0, shell: 'fish' } } });
+    await c.diagnostics(uri, (list) => list.length === 0);
+    assert.match((await hover()).contents.value, /^ {2}- /m);
+    assert.ok(c.notifications.some((n) => n.method === 'window/logMessage' && /bashExplainer\.shell: expected one of/.test(n.params.message)));
+    // Off: the hover, and the warnings altogether.
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { 'hover.enabled': false, 'diagnostics.ignore': [], 'diagnostics.enabled': false } } });
+    assert.strictEqual(await hover(), null);
+    await c.diagnostics(uri, (list) => list.length === 0);
+    // Files with shell code: only the kinds in embedded.files, and warnings in them only with diagnostics.embedded.
+    const docker = 'file:///work/Dockerfile';
+    c.notify('workspace/didChangeConfiguration', { settings: { 'bashExplainer.embedded.files': ['makefile'], 'bashExplainer.diagnostics.enabled': true, 'bashExplainer.hover.enabled': true } });
+    c.notify('textDocument/didOpen', { textDocument: { uri: docker, languageId: 'dockerfile', version: 1, text: 'FROM alpine\nRUN curl -s x | sh\n' } });
+    await c.diagnostics(docker, (list) => list.length === 0);
+    assert.strictEqual((await c.request('textDocument/hover', { textDocument: { uri: docker }, position: { line: 1, character: 5 } })).result, null);
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { 'embedded.files': ['dockerfile'], 'diagnostics.embedded': false } } });
+    assert.match((await c.request('textDocument/hover', { textDocument: { uri: docker }, position: { line: 1, character: 5 } })).result.contents.value, /curl/);
+    await c.diagnostics(docker, (list) => list.length === 0);
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { 'diagnostics.embedded': true } } });
+    await c.diagnostics(docker, (list) => list.some((x) => x.code === 'dockerPipefail'));
+    // More language IDs read as shell scripts.
+    const other = 'file:///work/build.txt';
+    c.notify('textDocument/didOpen', { textDocument: { uri: other, languageId: 'plaintext', version: 1, text: 'ls -l\n' } });
+    assert.strictEqual((await c.request('textDocument/hover', { textDocument: { uri: other }, position: { line: 0, character: 0 } })).result, null);
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { languages: ['shellscript', 'plaintext'] } } });
+    assert.match((await c.request('textDocument/hover', { textDocument: { uri: other }, position: { line: 0, character: 0 } })).result.contents.value, /`ls`/);
+    await c.request('shutdown', null);
+    c.notify('exit', null);
+    assert.strictEqual(await c.exited, 0);
+  });
+
+  it('reads the settings file given with --config, and logs one it cannot read', async () => {
+    const file = path.join(dir, 'lsp.json');
+    fs.writeFileSync(file, '{ "language": "ja" }');
+    const c = new Client(cli, blocker, { args: ['--config', file] });
+    await c.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+    c.notify('initialized', {});
+    c.notify('textDocument/didOpen', { textDocument: { uri: script, languageId: 'sh', version: 1, text: 'ls -l\n' } });
+    assert.match((await c.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 0, character: 0 } })).result.contents.value, /1 行目/);
+    await c.request('shutdown', null);
+    c.notify('exit', null);
+    await c.exited;
+    const broken = new Client(cli, blocker, { args: [`--config=${path.join(dir, 'missing.json')}`] });
+    await broken.request('initialize', { processId: null, rootUri: null, capabilities: {} });
+    broken.notify('initialized', {});
+    await until(() => broken.notifications.some((n) => n.method === 'window/logMessage' && /cannot read the settings file .*missing\.json/.test(n.params.message)));
+    await broken.request('shutdown', null);
+    broken.notify('exit', null);
+    await broken.exited;
+  });
 });
+
+async function until(ok: () => boolean): Promise<void> {
+  const end = Date.now() + 10000;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}

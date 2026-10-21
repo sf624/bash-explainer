@@ -5,11 +5,13 @@ import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
 import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
-import { Lang } from '../src/i18n';
+import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
+import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
+import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
 declare const __VERSION__: string;
 
@@ -41,11 +43,21 @@ Options:
                          sarif (for code scanning) or github (annotations in
                          GitHub Actions)
       --no-examples      leave out worked examples
+      --config <file>    read the settings from this JSON file (default:
+                         $BASH_EXPLAINER_CONFIG, else
+                         ~/.config/bash-explainer/settings.json when it exists)
+      --no-config        read no settings file
+      --set <key>=<value>  set one setting, as named in VS Code (shell=dash,
+                         notes.idioms=false); may be repeated
+      --print-config     print the settings in effect as JSON
       --color, --no-color  colour the text output (default: when a terminal)
       --lsp              run as a Language Server on standard input and output
                          (hover, diagnostics, quick fixes) for editors
   -h, --help             show this help
   -v, --version          show the version
+
+Settings: the file, then --set, then --lang, --shell and --no-examples, each
+overriding the one before.
 
 Exit status: 0 when done (with --check: no warning), 1 with --check when there
 is a warning, 2 on a usage or input error.
@@ -62,8 +74,11 @@ interface Options {
   kind?: Kind;
   lang: Lang;
   format: Format;
-  examples: boolean;
   color: boolean;
+  settings: Settings;
+  /** Keys and values from the settings file or --set that were left out. */
+  warnings: string[];
+  printConfig: boolean;
 }
 
 function parseRange(text: string): [number, number] {
@@ -75,13 +90,17 @@ function parseRange(text: string): [number, number] {
   return [from, to];
 }
 
-function defaultLang(env: NodeJS.ProcessEnv): Lang {
-  const locale = env.LC_ALL || env.LC_MESSAGES || env.LANG || '';
-  return locale.toLowerCase().startsWith('ja') ? 'ja' : 'en';
-}
+const locale = (env: NodeJS.ProcessEnv) => env.LC_ALL || env.LC_MESSAGES || env.LANG || '';
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean): Options | 'help' | 'version' {
-  const o: Options = { inputs: [], check: false, lang: defaultLang(env), format: 'text', examples: true, color: isTTY && !env.NO_COLOR };
+  const o: Options = {
+    inputs: [], check: false, lang: 'en', format: 'text', color: isTTY && !env.NO_COLOR, settings: mergeSettings(), warnings: [], printConfig: false,
+  };
+  let config: string | undefined;
+  let noConfig = false;
+  const sets: Record<string, unknown> = {};
+  /** The settings the dedicated options set, which win over the file and --set. */
+  const flags: Partial<Settings> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     // Everything after -- is a file, even if it starts with -.
@@ -101,13 +120,23 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       case '-e': case '--command': o.command = value(); break;
       case '-l': case '--line': o.lines = parseRange(value()); break;
       case '--check': o.check = true; break;
-      case '--no-examples': o.examples = false; break;
+      case '--no-examples': flags['examples.enabled'] = false; break;
+      case '--config': config = value(); break;
+      case '--no-config': noConfig = true; break;
+      case '--print-config': o.printConfig = true; break;
+      case '--set': {
+        const v = value();
+        const a = parseAssignment(v);
+        if (!a) throw new UsageError(`--set needs <key>=<value>: ${v}`);
+        sets[a.key] = a.value;
+        break;
+      }
       case '--color': o.color = true; break;
       case '--no-color': o.color = false; break;
       case '--shell': {
         const v = value();
         if (!(v in SHELL_NAMES)) throw new UsageError(`unknown shell: ${v} (${Object.keys(SHELL_NAMES).join(', ')})`);
-        o.shell = v as Shell;
+        flags.shell = v as Shell;
         break;
       }
       case '--kind': {
@@ -119,7 +148,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       case '--lang': {
         const v = value();
         if (v !== 'en' && v !== 'ja') throw new UsageError(`unknown language: ${v} (en, ja)`);
-        o.lang = v;
+        flags.language = v;
         break;
       }
       case '--format': {
@@ -138,6 +167,25 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
     }
   }
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
+  // defaults < settings file < --set < --lang, --shell, --no-examples
+  const file = noConfig ? undefined : settingsFile(config, env);
+  let fromFile: Partial<Settings> = {};
+  if (file) {
+    try {
+      const read = readSettingsFile(file);
+      fromFile = read.settings;
+      o.warnings.push(...read.warnings);
+    } catch (e) {
+      if (!(e instanceof SettingsFileError)) throw e;
+      throw new UsageError(e.message);
+    }
+  }
+  const set = readSettings(sets, '--set');
+  o.warnings.push(...set.warnings);
+  o.settings = mergeSettings(fromFile, set.settings, flags);
+  o.lang = resolveLang(o.settings.language, locale(env));
+  o.shell = forcedShell(o.settings);
+  if (o.printConfig) return o;
   if (!o.inputs.length && o.command === undefined) throw new UsageError('nothing to explain: give a file, - for standard input, or -e <command line>');
   return o;
 }
@@ -268,6 +316,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     o = parseArgs(argv, io.env, io.isTTY);
     if (o === 'help') return io.stdout(HELP), 0;
     if (o === 'version') return io.stdout(`${__VERSION__}\n`), 0;
+    for (const w of o.warnings) io.stderr(`bash-explainer: warning: ${w}\n`);
+    if (o.printConfig) return io.stdout(`${JSON.stringify(settingsJson(o.settings, 'cli'), null, 2)}\n`), 0;
     inputs = readInputs(o);
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
@@ -293,7 +343,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     const shells = { forced: o.shell, detected: detectShell(lines.slice(0, 50).join('\n'), input.name) };
 
     if (o.check) {
-      const issues = documentIssues(doc, o.lang, shells)
+      // Warnings in the shell code of other files are left out when diagnostics.embedded is off.
+      const issues = (input.kind !== 'shell' && !o.settings['diagnostics.embedded'] ? [] : documentIssues(doc, o.lang, shells, o.settings['diagnostics.ignore']))
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       warnings += issues.filter((i) => i.severity === 'warning').length;
@@ -307,7 +358,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         return 2;
       }
       for (let line = from - 1; line < to; line++) {
-        const ex = explainDocumentLine(analyzer, doc, line, o.lang, shells, { examples: { enabled: o.examples, disabled: [] } });
+        const ex = explainDocumentLine(analyzer, doc, line, o.lang, shells, explainOptions(o.settings));
         // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
         if (!input.lines && !ex.items.length && !ex.notes.length) continue;
         if (o.format === 'json') json.push({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
@@ -324,8 +375,10 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
 }
 
 if (require.main === module && process.argv.includes('--lsp')) {
-  // --stdio, which some editors add, is the only transport there is.
-  startLanguageServer({ input: process.stdin, output: process.stdout, env: process.env, version: __VERSION__, exit: (code) => process.exit(code) });
+  // --stdio, which some editors add, is the only transport there is. --config names the settings file.
+  const at = process.argv.findIndex((a) => a === '--config' || a.startsWith('--config='));
+  const config = at < 0 ? undefined : process.argv[at].startsWith('--config=') ? process.argv[at].slice('--config='.length) : process.argv[at + 1];
+  startLanguageServer({ input: process.stdin, output: process.stdout, env: process.env, version: __VERSION__, exit: (code) => process.exit(code), config });
 } else if (require.main === module) {
   main(process.argv.slice(2), {
     stdout: (s) => process.stdout.write(s),
