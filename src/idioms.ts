@@ -170,6 +170,16 @@ const IDIOMS: Idiom[] = [
     ja: '`mktemp`: 他と重ならない一時ファイル（-d ならディレクトリ）を安全に作る',
     en: '`mktemp`: safely creates a unique temporary file (or directory with -d)',
   },
+  {
+    test: /^while .*\bread\b.* done < (?!<\()\S+$/,
+    ja: '`while read … done < ファイル`: ファイルを1行ずつ読んで処理する（ループ全体の標準入力がそのファイルになる）。最後の行の末尾に改行がないと、その行は読まれずに終わる（`while read -r line || [ -n "$line" ]` とすれば読める）',
+    en: '`while read … done < file`: reads a file line by line (the file is the stdin of the whole loop). A last line with no newline at its end is skipped, unless the loop is `while read -r line || [ -n "$line" ]`',
+  },
+  {
+    test: /^while .*\bread\b.* done < <\(.*\)$/,
+    ja: '`while read … done < <(コマンド)`: コマンドの出力を1行ずつ読んで処理する。`コマンド | while read …` と違い、ループがカレントシェルで動くので、中で代入した変数がループのあとも残る。最後の行の末尾に改行がないと、その行は読まれずに終わる（`|| [ -n "$line" ]` を足せば読める）',
+    en: '`while read … done < <(command)`: reads the output of a command line by line. Unlike `command | while read …`, the loop runs in the current shell, so variables set in it are still there after the loop. A last line with no newline at its end is skipped, unless `|| [ -n "$line" ]` is added',
+  },
 ];
 
 /** Notes for the idioms found in the given statements, without duplicates. */
