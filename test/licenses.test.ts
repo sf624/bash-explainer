@@ -6,7 +6,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALLOWED_LICENSES, collect, NOTICES, packageInfo, render, Target } from '../scripts/notices';
+import { ALLOWED_LICENSES, collect, FIRST, NOTICES, order, packageInfo, render, Target } from '../scripts/notices';
 
 const root = path.join(__dirname, '..');
 
@@ -19,6 +19,15 @@ describe('licenses', function () {
 
   it('THIRD_PARTY_NOTICES.md lists exactly what the extension and the web page include (npm run notices)', () => {
     assert.strictEqual(fs.readFileSync(NOTICES, 'utf8'), render(targets), 'THIRD_PARTY_NOTICES.md is out of date: run `npm run notices` and check the changes');
+  });
+
+  it('lists unbash, the parser, first in every table and under "License texts", then the rest alphabetically', () => {
+    assert.deepStrictEqual(order(['w3c-keyname', 'unbash', '@codemirror/view', 'crelt']), [FIRST, '@codemirror/view', 'crelt', 'w3c-keyname']);
+    const text = fs.readFileSync(NOTICES, 'utf8');
+    for (const section of text.split(/^## /m).slice(1)) {
+      const first = /^\| \[([^\]]+)\]|^### (.+)$/m.exec(section.replace(/^[^\n]*\n/, ''));
+      assert.strictEqual(first?.[1] ?? first?.[2], FIRST, section.split('\n')[0]);
+    }
   });
 
   it('includes only software under licenses whose terms reproducing the notice meets', () => {

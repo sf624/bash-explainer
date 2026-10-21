@@ -26,6 +26,13 @@ export interface Target {
   uses: Map<string, string[]>;
 }
 
+/** The parser every product is built on: listed first in every table and under "License texts"; the rest follow in alphabetical order. */
+export const FIRST = 'unbash';
+
+/** Package names in the order the notices list them: FIRST, then the others alphabetically. */
+export const order = (names: Iterable<string>): string[] =>
+  [...names].sort((a, b) => Number(b === FIRST) - Number(a === FIRST) || a.localeCompare(b, 'en'));
+
 const packageDir = (name: string) => path.join(root, 'node_modules', name);
 
 export function packageInfo(name: string): Package {
@@ -80,7 +87,7 @@ export function collect(): Target[] {
 }
 
 export function render(targets: Target[]): string {
-  const names = [...new Set(targets.flatMap((t) => [...t.uses.keys()]))].sort();
+  const names = order(new Set(targets.flatMap((t) => [...t.uses.keys()])));
   const packages = new Map(names.map((n) => [n, packageInfo(n)]));
   const licenses = [...new Set([...packages.values()].map((p) => p.license))].sort();
   const out: string[] = [
@@ -92,7 +99,7 @@ export function render(targets: Target[]): string {
   ];
   for (const t of targets) {
     out.push('', `## ${t.title}`, '', '| Component | Version | License | Included as |', '| --- | --- | --- | --- |');
-    for (const name of [...t.uses.keys()].sort()) {
+    for (const name of order(t.uses.keys())) {
       const p = packages.get(name)!;
       out.push(`| [${name}](${p.url}) | ${p.version} | ${p.license} | ${t.uses.get(name)!.join('; ')} |`);
     }
@@ -101,7 +108,7 @@ export function render(targets: Target[]): string {
   // Packages with the very same license text share one copy.
   const byText = new Map<string, string[]>();
   for (const p of packages.values()) byText.set(p.licenseText, [...(byText.get(p.licenseText) ?? []), p.name]);
-  for (const [text, group] of [...byText].sort((a, b) => a[1][0].localeCompare(b[1][0]))) {
+  for (const [text, group] of [...byText].sort((a, b) => order([a[1][0], b[1][0]])[0] === a[1][0] ? -1 : 1)) {
     out.push('', `### ${group.join(', ')}`, '', '```text', text, '```');
   }
   return out.join('\n') + '\n';

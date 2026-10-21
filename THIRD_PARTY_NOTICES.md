@@ -8,12 +8,13 @@ Bash Explainer includes the following third-party software (ISC, MIT). Their lic
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.0 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
 
 ## In the web version
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `app.js` |
 | [@codemirror/commands](https://code.haverbeke.berlin/codemirror/commands) | 6.11.1 | MIT | bundled into `app.js` |
 | [@codemirror/language](https://code.haverbeke.berlin/codemirror/language) | 6.13.1 | MIT | bundled into `app.js` |
 | [@codemirror/legacy-modes](https://code.haverbeke.berlin/codemirror/legacy-modes) | 6.5.5 | MIT | bundled into `app.js` |
@@ -26,16 +27,35 @@ Bash Explainer includes the following third-party software (ISC, MIT). Their lic
 | [@marijn/find-cluster-break](https://code.haverbeke.berlin/marijn/find-cluster-break) | 1.0.4 | MIT | bundled into `app.js` |
 | [crelt](https://code.haverbeke.berlin/marijn/crelt) | 1.0.7 | MIT | bundled into `app.js` |
 | [style-mod](https://code.haverbeke.berlin/marijn/style-mod) | 4.1.4 | MIT | bundled into `app.js` |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.0 | ISC | bundled into `app.js` |
 | [w3c-keyname](https://github.com/marijnh/w3c-keyname#readme) | 2.2.8 | MIT | bundled into `app.js` |
 
 ## In the command-line tool (npm package bash-explainer)
 
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
-| [unbash](https://github.com/webpro-nl/unbash) | 6.0.0 | ISC | bundled into `dist/cli.js` |
+| [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/cli.js` |
 
 ## License texts
+
+### unbash
+
+```text
+ISC License
+
+Copyright (c) Lars Kappert
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+```
 
 ### @codemirror/commands, @codemirror/language, @codemirror/legacy-modes, @codemirror/lint, @codemirror/state, @codemirror/streamparser, @codemirror/view
 
@@ -161,26 +181,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-```
-
-### unbash
-
-```text
-ISC License
-
-Copyright (c) Lars Kappert
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
 ```
 
 ### w3c-keyname
