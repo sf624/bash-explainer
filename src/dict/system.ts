@@ -1,4 +1,4 @@
-import type { CommandSpec } from '../argv/spec';
+import type { CommandSpec, SubcommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
 import { args, byCount, cmd, operand, OptSpec, persistent, pos } from './types';
 
@@ -125,15 +125,65 @@ const group = pos('グループ名', 'group name');
 
 // ---- The dictionary ---------------------------------------------------------------------------
 
-const ipVerbs = (what: string, whatJa: string): Record<string, CommandSpec> => ({
-  show: cmd(`${whatJa}を表示する（省略可。\`dev 名前\` で絞る）`, `Show ${what} (the default; \`dev NAME\` filters)`),
-  add: cmd(`${whatJa}を追加する`, `Add ${what}`),
-  del: cmd(`${whatJa}を削除する`, `Delete ${what}`),
+// iproute2 reads an object, and a command of an object, by a prefix of its name: the first name in its own
+// table that the word starts (`ip a s` is `ip address show`, `ip l s` is `ip link set`). The entries are in
+// that order, with the commands written as aliases at the place of the name they share a meaning with.
+const ipSub = (ja: string, en: string, subs?: Record<string, SubcommandSpec>): SubcommandSpec =>
+  cmd(ja, en, [], subs ? { subcommandPrefixes: 'first', subcommands: subs } : {});
+const ipCommand = (ja: string, en: string, aliases?: string[]): SubcommandSpec => ({ ...cmd(ja, en), ...(aliases ? { aliases } : {}) });
+const ipShow = (what: string, whatJa: string): SubcommandSpec => ipCommand(`${whatJa}を表示する（省略可。\`dev 名前\` で絞る）`, `Show ${what} (the default; \`dev NAME\` filters)`, ['list', 'lst']);
+const ipChange = (what: string, whatJa: string): Record<string, SubcommandSpec> => ({
+  add: ipCommand(`${whatJa}を追加する`, `Add ${what}`),
+  change: ipCommand(`${whatJa}を変更する`, `Change ${what}`, ['chg']),
+  replace: ipCommand(`${whatJa}を追加するか、あれば置き換える`, `Add ${what}, or replace it`),
 });
-const ipAddr = cmd('IP アドレスを表示・設定する', 'Show or set IP addresses', [], { subcommands: { ...ipVerbs('an address', 'アドレス'), flush: cmd('アドレスをまとめて削除する', 'Remove all matching addresses') } });
-const ipLink = cmd('ネットワークインターフェースを表示・設定する', 'Show or set network interfaces', [], { subcommands: { ...ipVerbs('an interface', 'インターフェース'), set: cmd('インターフェースの状態を変える（`up`、`down`、`mtu`…）', 'Change an interface (`up`, `down`, `mtu`…)') } });
-const ipRoute = cmd('ルーティングテーブルを表示・設定する', 'Show or set routes', [], { subcommands: ipVerbs('a route', '経路') });
-const ipNeigh = cmd('ARP / 近隣のテーブルを表示する', 'Show the neighbour (ARP) table', [], { subcommands: ipVerbs('a neighbour entry', '近隣エントリ') });
+const ipDelete = (what: string, whatJa: string): SubcommandSpec => ipCommand(`${whatJa}を削除する`, `Delete ${what}`);
+const ipFlush = (what: string, whatJa: string): SubcommandSpec => ipCommand(`条件に合う${whatJa}をまとめて削除する`, `Remove every ${what} that matches`);
+
+const IP_OBJECTS: Record<string, SubcommandSpec> = {
+  address: ipSub('IP アドレスを表示・設定する', 'Show or set IP addresses', {
+    ...ipChange('an address', 'アドレス'), delete: ipDelete('an address', 'アドレス'), show: ipShow('addresses', 'アドレス'), flush: ipFlush('address', 'アドレス'),
+  }),
+  addrlabel: ipSub('アドレスの選び方に使うラベルを扱う', 'Handle the labels used to choose addresses'),
+  maddress: ipSub('マルチキャストアドレスを扱う', 'Handle multicast addresses'),
+  route: ipSub('ルーティングテーブルを表示・設定する', 'Show or set routes', {
+    ...ipChange('a route', '経路'), delete: ipDelete('a route', '経路'), show: ipShow('routes', '経路'),
+    get: ipCommand('宛先に使われる経路を1つ表示する', 'Show the route used to reach a destination'), flush: ipFlush('route', '経路'),
+  }),
+  rule: ipSub('ルーティングポリシーのルールを扱う', 'Handle routing policy rules'),
+  neighbor: { ...ipSub('ARP / 近隣のテーブルを表示・設定する', 'Show or set the neighbour (ARP) table', {
+    ...ipChange('a neighbour entry', '近隣エントリ'), delete: ipDelete('a neighbour entry', '近隣エントリ'),
+    get: ipCommand('近隣エントリを1つ調べる', 'Look up one neighbour entry'), show: ipShow('neighbour entries', '近隣エントリ'), flush: ipFlush('neighbour entry', '近隣エントリ'),
+  }), aliases: ['neighbour'] },
+  ntable: { ...ipSub('近隣テーブルの設定を扱う', 'Handle the settings of the neighbour tables'), aliases: ['ntbl'] },
+  link: ipSub('ネットワークインターフェースを表示・設定する', 'Show or set network interfaces', {
+    add: ipCommand('インターフェースを追加する', 'Add an interface'),
+    set: ipCommand('インターフェースの状態を変える（`up`、`down`、`mtu`…）', 'Change an interface (`up`, `down`, `mtu`…)', ['change']),
+    replace: ipCommand('インターフェースを追加するか、あれば置き換える', 'Add an interface, or replace it'),
+    delete: ipDelete('an interface', 'インターフェース'), show: ipShow('interfaces', 'インターフェース'),
+  }),
+  l2tp: ipSub('L2TP のトンネルを扱う', 'Handle L2TP tunnels'),
+  fou: ipSub('UDP で包むトンネル（FOU）の受け口を扱う', 'Handle receive ports of tunnels over UDP (FOU)'),
+  ila: ipSub('ILA の変換を扱う', 'Handle ILA mappings'),
+  macsec: ipSub('MACsec の設定を扱う', 'Handle MACsec settings'),
+  tunnel: { ...ipSub('IP トンネルを扱う', 'Handle IP tunnels'), aliases: ['tunl'] },
+  tuntap: { ...ipSub('TUN / TAP デバイスを扱う', 'Handle TUN and TAP devices'), aliases: ['tap'] },
+  token: ipSub('IPv6 のトークン（インターフェース識別子）を扱う', 'Handle IPv6 tokens (interface identifiers)'),
+  tcpmetrics: { ...ipSub('TCP の接続ごとの記録を扱う', 'Handle the metrics TCP keeps per peer'), aliases: ['tcp_metrics'] },
+  monitor: ipSub('ネットワークの変化を見張る', 'Watch for network changes'),
+  xfrm: ipSub('IPsec の設定を扱う', 'Handle IPsec policies and states'),
+  mroute: ipSub('マルチキャストのルーティングを表示する', 'Show multicast routing'),
+  mrule: ipSub('マルチキャストのルーティングのルールを扱う', 'Handle multicast routing rules'),
+  netns: ipSub('ネットワーク名前空間を扱う（`add`、`exec`、`list`、`delete`）', 'Handle network namespaces (`add`, `exec`, `list`, `delete`)'),
+  netconf: ipSub('インターフェースごとのネットワーク設定を表示する', 'Show the network settings of each interface'),
+  vrf: ipSub('VRF（仮想ルーティング）を扱う', 'Handle VRFs (virtual routing)'),
+  sr: ipSub('セグメントルーティング（IPv6）を扱う', 'Handle segment routing (IPv6)'),
+  nexthop: ipSub('ネクストホップのオブジェクトを扱う', 'Handle next-hop objects'),
+  mptcp: ipSub('MPTCP の設定を扱う', 'Handle MPTCP settings'),
+  ioam: ipSub('IOAM（経路上の計測）の設定を扱う', 'Handle IOAM (in-situ measurement) settings'),
+  help: ipSub('使い方を表示する', 'Show the usage'),
+  stats: ipSub('インターフェースの統計を表示する', 'Show interface statistics'),
+};
 
 export const system: Record<string, CommandSpec> = {
   'apt-get': cmd('Debian / Ubuntu のパッケージ管理（APT）', 'Debian/Ubuntu package manager (APT)', aptCommon, { subcommands: aptSubs() }),
@@ -458,17 +508,32 @@ export const system: Record<string, CommandSpec> = {
     ['-echo', '入力した文字を表示しない（パスワード入力向け）', 'do not echo typed characters (for passwords)'], ['-icanon', '行単位でなく1文字ずつ読む', 'read character by character, not by line'],
     ['-g|--save', '今の設定を、あとで戻せる形で表示する', 'print the settings in a form that can restore them'], ['-F|--file', '対象の端末デバイス', 'terminal device', 'arg'],
   ], { positional: [pos('設定（`size`: 行数と桁数、`sane`: 既定に戻す、`raw`、`echo`…）', 'setting (`size`: rows and columns, `sane`: reset, `raw`, `echo`…)')] }),
+  // The options in iproute2's order (ip.c): `-s` is `-stats`, `-b` is `-batch`, `-br` is `-brief`.
   ip: cmd('ネットワークの設定を表示・変更する（iproute2）', 'Show or change network configuration (iproute2)', [
-    ['-4', 'IPv4 だけ', 'IPv4 only'], ['-6', 'IPv6 だけ', 'IPv6 only'], ['-br|-brief', '簡潔な表形式', 'brief table'], ['-j|-json', 'JSON で出力', 'JSON output'],
-  ], {
-    style: 'single-dash',
-    subcommands: {
-      addr: ipAddr, address: ipAddr, a: ipAddr,
-      link: ipLink, l: ipLink,
-      route: ipRoute, r: ipRoute,
-      neigh: ipNeigh, neighbour: ipNeigh, n: ipNeigh,
-    },
-  }),
+    ['-l|-loops', 'アドレスをまとめて削除するとき、試す回数の上限', 'maximum number of attempts when flushing addresses', 'arg'],
+    ['-f|-family', 'アドレスファミリ（`inet`、`inet6`、`link`）', 'protocol family (`inet`, `inet6`, `link`)', 'arg'],
+    ['-4', 'IPv4 だけ', 'IPv4 only'], ['-6', 'IPv6 だけ', 'IPv6 only'], ['-0', 'リンク層だけ（`-f link` と同じ）', 'link layer only (same as `-f link`)'],
+    ['-M', 'MPLS だけ', 'MPLS only'], ['-B', 'ブリッジだけ', 'bridge only'],
+    ['-h|-human|-human-readable', '統計の数を単位付きの読みやすい形にする', 'print statistics in human-readable units'],
+    ['-iec', '単位を 1024 の累乗にする（`Ki`、`Mi`）', 'use units in powers of 1024 (`Ki`, `Mi`)'],
+    ['-s|-stats|-statistics', '統計も表示する（2回でさらに詳しく）', 'show statistics (twice for more)'],
+    ['-d|-details', '詳細を表示する', 'show details'],
+    ['-r|-resolve', '名前を引いて表示する', 'resolve addresses to names'],
+    ['-o|-oneline', '1つの項目を1行で表示する', 'one record per line'],
+    ['-t|-timestamp', '`monitor` で時刻も表示する', 'show the time in `monitor`'],
+    ['-ts|-tshort', '`monitor` で時刻を短い形で表示する', 'show the time in short form in `monitor`'],
+    ['-V|-Version', 'バージョンを表示する', 'print the version'],
+    ['-force', '`-batch` でエラーがあっても続ける', 'go on after errors with `-batch`'],
+    ['-b|-batch', 'コマンドを読むファイル（1行に1つ）', 'file to read commands from (one per line)', 'arg'],
+    ['-rc|-rcvbuf', '受信バッファの大きさ', 'size of the receive buffer', 'arg'],
+    ['-c|-color', '色を付ける', 'colorize the output'],
+    ['-n|-netns', '操作するネットワーク名前空間', 'network namespace to use', 'arg'],
+    ['-N|-Numeric', '名前でなく番号で表示する（プロトコルなど）', 'print numbers instead of names (protocols…)'],
+    ['-a|-all', 'すべてのオブジェクトに実行する', 'execute for all objects'],
+    ['-j|-json', 'JSON で出力', 'JSON output'],
+    ['-p|-pretty', 'JSON を読みやすく整える', 'pretty-print the JSON'],
+    ['-br|-brief', '簡潔な表形式', 'brief table'],
+  ], { style: 'single-dash', longPrefixes: 'first', subcommandPrefixes: 'first', subcommands: IP_OBJECTS }),
   ss: cmd('ソケット（通信の接続や待ち受け）を表示する', 'Show sockets (connections and listeners)', [
     ['-t|--tcp', 'TCP', 'TCP'], ['-u|--udp', 'UDP', 'UDP'], ['-l|--listening', '待ち受け中のものだけ', 'listening sockets only'],
     ['-n|--numeric', '名前に変換せず数字で表示', 'numeric addresses and ports'], ['-p|--processes', '使っているプロセスも表示', 'show the processes using them'], ['-a|--all', 'すべて', 'all sockets'],

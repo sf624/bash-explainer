@@ -71,12 +71,12 @@ const roles: [string, Record<string, RegExp>][] = [
   ['docker compose ps -a', { '-a': /stopped/ }],
   ['docker compose logs -f web', { '-f': /follow/, web: /service/ }],
   ['docker compose exec web sh', { web: /service/, sh: /runs `sh`/ }],
-  ['ip a show eth0', { a: /IP addresses/, show: /Show an address/ }],
+  ['ip a show eth0', { a: /IP addresses/, show: /Show addresses/ }],
   ['ip addr add 10.0.0.1/24 dev eth0', { add: /Add an address/ }],
   ['ip r del default', { r: /routes/, del: /Delete a route/ }],
   ['ip l set eth0 up', { l: /interfaces/, set: /Change an interface/ }],
   ['ip n show', { n: /neighbour/ }],
-  ['ip addr flush dev eth0', { flush: /Remove all/ }],
+  ['ip addr flush dev eth0', { flush: /Remove every address/ }],
   ['pkill -f nginx', { nginx: /pattern/ }],
 ];
 

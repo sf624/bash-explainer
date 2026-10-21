@@ -98,7 +98,7 @@ describe('ip agrees with the real ip', () => {
   // (iproute2's ip; iproute2mac's `ip` on macOS reads its words otherwise.)
   const ip = has('ip') && /iproute2/.test(spawnSync('ip', ['-V'], { env: ENV, encoding: 'utf8' }).stdout ?? '') ? it : it.skip;
   // (`-n NETNS` switches to the namespace at once, so it needs one that exists.)
-  const VALUES: Record<string, string> = { '-f': 'inet', '-family': 'inet' };
+  const VALUES: Record<string, string> = { '-f': 'inet', '-family': 'inet', '-l': '1', '-loops': '1', '-b': '/dev/null', '-batch': '/dev/null', '-rc': '65536', '-rcvbuf': '65536' };
   ip('accepts every option of the dictionary before the object', () => {
     for (const o of lookupCommand('ip')!.options!) {
       for (const n of o.names.filter((x) => !['-n', '-netns'].includes(x))) {
@@ -118,6 +118,40 @@ describe('ip agrees with the real ip', () => {
     ['ip a -4', '-4', false],
     ['ip link show -d lo', '-d', false],
   ];
+  // A prefix of an object, of its command or of an option selects the first one in iproute2's tables:
+  // the line does what the full one does.
+  const PREFIXES: [string, string][] = [
+    ['ip ad s lo', 'ip address show lo'],
+    ['ip a l lo', 'ip address list lo'],
+    ['ip ro g 127.0.0.1', 'ip route get 127.0.0.1'],
+    ['ip r l', 'ip route list'],
+    ['ip ne s', 'ip neighbor show'],
+    ['ip m help', 'ip maddress help'],
+    ['ip t help', 'ip tunnel help'],
+    ['ip s help', 'ip sr help'],
+    ['ip st help', 'ip stats help'],
+    ['ip ntb', 'ip ntable'],
+    ['ip -stat a s lo', 'ip -statistics address show lo'],
+    ['ip -bri a s lo', 'ip -brief address show lo'],
+    ['ip -det link show lo', 'ip -details link show lo'],
+    ['ip --stats -human a s lo', 'ip -statistics -human-readable address show lo'],
+    ['ip -fam inet a s lo', 'ip -family inet address show lo'],
+  ];
+  for (const [line, full] of PREFIXES) {
+    ip(`${line}: reads as ${full}`, () => {
+      const r = run(line);
+      assert.strictEqual(r.out + r.err, run(full).out + run(full).err, line);
+      // The same subcommands and options, by name.
+      const names = (l: string) => roles(l).map((x) => (x.role.role === 'subcommand' ? x.role.name : x.role.role === 'option' ? x.role.spec.names.at(-1) : x.word));
+      const ours = names(line);
+      assert.deepStrictEqual(ours, names(full), line);
+    });
+  }
+  ip('-b is -batch, before -brief', () => {
+    assert.match(run('ip -b nosuchfile a').err, /Cannot open file "nosuchfile"/);
+    const r = roleOf('ip -b nosuchfile a', '-b').role;
+    assert.ok(r.role === 'option' && r.spec.names.includes('-batch'));
+  });
   for (const [line, flag, ok] of ROWS) {
     ip(`${line}: ${flag} is ${ok ? '' : 'not '}an option of ip`, () => {
       assert.strictEqual(run(line).status === 0, ok, line);

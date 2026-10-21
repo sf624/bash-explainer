@@ -17,6 +17,7 @@
 - The summary of a command names its deepest subcommand: `git stash push` and `docker compose -f x run` (before: `git stash` and `docker compose`).
 - `locate -r REGEXP` takes the regular expression as its value, as mlocate and plocate do, and `--regex` reads the patterns as extended regular expressions. Before, `-r` was the same as `--regex`, and the regular expression was a pattern.
 - `git` knows its other global options: `--git-dir`, `--work-tree`, `--bare`, `--namespace`, `--config-env`, `--exec-path`, `-p`, `-P`, `--literal-pathspecs` and the other pathspec options, `--no-replace-objects`, `--no-optional-locks`, `--attr-source` and `--no-advice`. In `git --git-dir .git log`, `log` is the subcommand. Before, these were unknown options, and `log` a plain argument.
+- `ip` reads objects, their commands and its options by a prefix, as iproute2 does: the first one in its table that the word starts. `ip ad s`, `ip ne`, `ip ro g`, `ip m` (maddress), `ip t` (tunnel) and `ip l s` (link set) name their subcommands, and `-stat`, `-bri`, `-det`, `-col`, `-human`, `--stats` and `-fam inet` are options (`-b` is `-batch`). `ip` knows every object and the rest of its options (`-l`, `-0`, `-M`, `-B`, `-iec`, `-t`, `-ts`, `-V`, `-force`, `-b`, `-rc`, `-N`, `-p`). Before, only `a`, `l`, `r` and `n` and the full names were known, and in `ip -fam inet a` the subcommand was lost.
 
 ## 0.6.0
 
