@@ -153,6 +153,8 @@ export interface OperandSpec {
    * a `shell-string` slot is this one word, a script).
    */
   command?: CommandSlot;
+  /** The meaning of particular values (`shopt -o errexit`: the names of `set -o`), shown in front of the operand's text. */
+  values?: Record<string, Text>;
   /** Only a `NAME=value` word fits: a variable for the command that follows (`env A=1 cmd`). */
   assignment?: boolean;
   /** A `NAME=value` word here is an assignment with this meaning instead (awk's operands). */

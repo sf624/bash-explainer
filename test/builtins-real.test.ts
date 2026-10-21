@@ -7,6 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
 import { ArgvParse, interpret } from '../src/argv/interpret';
+import { shellOptions } from '../src/dict/builtins';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 
@@ -148,6 +149,21 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     }
     // Out of the stack's range bash complains about the number, so it was read as one.
     assert.match(spawnSync('bash', ['--norc', '-c', `${stack} pushd +9`], { env: ENV, encoding: 'utf8' }).stderr, /directory stack index/);
+  });
+
+  it('shopt -o: the names are those of `set -o`, and the ones the dictionary explains are all known to bash', () => {
+    const parser = createUnbashParser();
+    const children = (script: string): Token[] => new Analyzer('en').explainLine(parser.parse(script), 0).items[0].children;
+    for (const name of Object.keys(shellOptions)) {
+      assert.strictEqual(spawnSync('bash', ['--norc', '-c', `shopt -qo ${name}`]).status! < 2, true, name);
+    }
+    const [opt, errexit, other] = children('shopt -o errexit nullglob');
+    assert.strictEqual(opt.label, '-o');
+    assert.match(errexit.explanation, /^Shell option `errexit`: exit immediately/);
+    assert.doesNotMatch(other.explanation, /^Shell option/);
+    // Without `-o`, `errexit` is no shopt name.
+    assert.match(spawnSync('bash', ['--norc', '-c', 'shopt errexit'], { env: ENV, encoding: 'utf8' }).stderr, /invalid shell option name/);
+    assert.match(children('shopt -s extglob')[1].explanation, /^Shell option `extglob`/);
   });
 
   it('exit, return, shift, break and continue: a number, even with a `-`', () => {
