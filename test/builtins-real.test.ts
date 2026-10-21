@@ -86,7 +86,9 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       // The signal the interpreter reads: from the pattern, or the value attached to `-s` or `-n`.
       // (`-9` and `-KILL` are options of their own.)
       const named = r.role === 'pattern-option' ? /^-(?:sig)?(.*)$/i.exec(word)![1] : r.role === 'option' && r.flag === word ? word.slice(1) : word.slice(2);
-      const out = spawnSync('bash', ['--norc', '-c', `sleep 5 & kill ${word} $! 2>&1; kill -9 $! 2>/dev/null; wait $!; echo $?`], { encoding: 'utf8' }).stdout;
+      // Job control keeps SIGINT for the background job (bash ignores it there otherwise), and only
+      // a refused signal is followed by `kill -9`, so no second signal races the first.
+      const out = spawnSync('bash', ['--norc', '-c', `set -m; sleep 5 & kill ${word} $! 2>&1 || kill -9 $!; wait $!; echo $?`], { encoding: 'utf8' }).stdout;
       const valid = spawnSync('bash', ['--norc', '-c', `kill -l ${named}`]).status === 0;
       assert.strictEqual(/invalid signal/.test(out), !valid, word);
       // The process ends with 128 + the signal's number.
