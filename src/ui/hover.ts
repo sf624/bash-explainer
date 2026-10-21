@@ -18,15 +18,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
   /** (Re-)register for the configured languages. */
   register(): void {
     this.registration?.dispose();
-    this.registration = vscode.languages.registerHoverProvider(
-      [
-        ...this.service.languages.map((language) => ({ language })),
-        // Files with embedded shell code; provideHover skips them when that is turned off.
-        ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile'].map((language) => ({ language })),
-        { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' },
-      ],
-      this,
-    );
+    this.registration = vscode.languages.registerHoverProvider(this.service.selector(), this);
   }
 
   /** Show the hover at the cursor, even when the hover is turned off. */

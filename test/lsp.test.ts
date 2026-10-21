@@ -134,6 +134,35 @@ describe('the Language Server', function () {
     assert.match(r.result.contents.value, /^ {2}- `curl` — Transfer data/m);
   });
 
+  it('gives semantic tokens once highlight.enabled is on, for scripts and the shell code of host files', async () => {
+    const init = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
+    assert.deepStrictEqual(init.result, { data: [] });
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { highlight: { enabled: true } } } });
+    // [line, character, length, type, modifiers], absolute.
+    const decode = (data: number[], legend: string[]) => {
+      const out: string[] = [];
+      for (let i = 0, line = 0, ch = 0; i < data.length; i += 5) {
+        ch = data[i] ? data[i + 1] : ch + data[i + 1];
+        line += data[i];
+        out.push(`${line}:${ch}:${data[i + 2]}:${legend[data[i + 3]]}:${data[i + 4]}`);
+      }
+      return out;
+    };
+    const { tokenTypes } = (await import('../src/semanticTokens')).LEGEND;
+    const full = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
+    // #!/bin/sh / if [ -f "$1" ]; then echo yes; fi
+    assert.deepStrictEqual(decode(full.result.data, tokenTypes), [
+      '0:0:9:comment:0', '1:0:2:keyword:0', '1:3:1:function:4', '1:5:2:parameter:0', '1:8:1:string:0', '1:9:2:variable:0', '1:11:1:string:0', '1:13:1:function:4',
+      '1:14:1:operator:0', '1:16:4:keyword:0', '1:21:4:function:4', '1:29:1:operator:0', '1:31:2:keyword:0',
+    ]);
+    const range = await client.request('textDocument/semanticTokens/range', { textDocument: { uri: script }, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 9 } } });
+    assert.deepStrictEqual(decode(range.result.data, tokenTypes), ['0:0:9:comment:0']);
+    const docker = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: dockerfile } });
+    assert.deepStrictEqual(decode(docker.result.data, tokenTypes), ['1:4:4:function:0', '1:9:2:parameter:0', '1:14:1:operator:0', '1:16:2:function:0']);
+    const unknown = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: 'file:///work/none.sh' } });
+    assert.deepStrictEqual(unknown.result, { data: [] });
+  });
+
   it('switches to Japanese when configured', async () => {
     client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { language: 'ja' } } });
     const r = await client.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 1, character: 5 } });
@@ -216,6 +245,18 @@ describe('the Language Server', function () {
     await broken.request('shutdown', null);
     broken.notify('exit', null);
     await broken.exited;
+  });
+
+  it('asks a client that can do it to request the semantic tokens again when the settings change', async () => {
+    const c = new Client(cli, blocker);
+    const init = await c.request('initialize', { processId: null, rootUri: null, capabilities: { workspace: { semanticTokens: { refreshSupport: true } } } });
+    assert.strictEqual(init.result.capabilities.semanticTokensProvider.legend.tokenTypes[0], 'comment');
+    c.notify('initialized', {});
+    c.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { 'highlight.enabled': true } } });
+    await until(() => c.notifications.some((n) => n.method === 'workspace/semanticTokens/refresh' && n.id !== undefined));
+    await c.request('shutdown', null);
+    c.notify('exit', null);
+    await c.exited;
   });
 });
 

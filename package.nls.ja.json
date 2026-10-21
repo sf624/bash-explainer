@@ -17,6 +17,7 @@
   "cmd.openSettings": "設定を開く",
   "config.hover.enabled": "マウスを乗せた行の解説をホバーで表示する。オフでも **Bash Explainer: カーソル行の bash を解説**（`Ctrl+K Ctrl+E`）は使えます。",
   "config.inline.enabled": "カーソル行の行末に1行の要約を薄く表示する。",
+  "config.highlight.enabled": "解説と同じ構文木からシェルのコードを色分けする（セマンティックトークン）。エディタ自身の色分けの上に重ねます。ヒアドキュメントは bash と同じ所で終わり、コマンド・組み込みコマンド・スクリプト内の関数・オプション・グロブ・算術式にそれぞれ色が付きます。Dockerfile・CI の YAML・Makefile・Markdown の中のシェルのコードも対象です。セマンティックハイライトに対応したテーマが必要です（ほとんどのテーマが対応）。",
   "config.panel.autoOpen": "bash スクリプトを開いたら解説パネルを自動で開く。パネルは **Bash Explainer: bash の解説パネルを開く** やホバーのリンクからいつでも開けます。",
   "config.shell": "スクリプトの対象シェル。そのシェルで使えない書き方を指摘します（bash では指摘なし）。",
   "config.shell.auto": "shebang（`#!/bin/sh` など）・`# shellcheck shell=` 指定・ファイル名から判定。分からなければ bash",

@@ -6,6 +6,7 @@ import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
 import { InlineController } from './ui/inline';
 import { PanelController } from './ui/panel';
+import { SemanticTokensController } from './ui/semanticTokens';
 import { Feature, ui } from './ui/render';
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
@@ -15,6 +16,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const panel = new PanelController(ctx, service);
   const inline = new InlineController(service);
   const diagnostics = new DiagnosticsController(service);
+  const semantic = new SemanticTokensController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   status.command = 'bashExplainer.selectDisplayMode';
 
@@ -33,7 +35,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
 
   ctx.subscriptions.push(
-    service, hover, panel, inline, diagnostics, status,
+    service, hover, panel, inline, diagnostics, semantic, status,
     vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
     vscode.commands.registerCommand('bashExplainer.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
     vscode.commands.registerCommand('bashExplainer.openPanel', (target?: { uri: string; line: number }) => {
@@ -59,6 +61,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       if (e.affectsConfiguration('bashExplainer.languages')) hover.register();
       if (e.affectsConfiguration('bashExplainer.embedded.files')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();
+      // Which documents have shell code depends on the languages and the kinds of files too.
+      if (['highlight.enabled', 'languages', 'embedded.files'].some((k) => e.affectsConfiguration(`bashExplainer.${k}`))) semantic.refresh();
       panel.refresh();
       inline.refresh();
       diagnostics.refresh();
