@@ -316,7 +316,10 @@ describe('the specs of the dictionary', () => {
       (spec.operands ?? []).forEach((alt, k) => {
         const optionWords = (o: OptionSpec | undefined): string[] => (o ? [o.names[0], ...[o.value ?? []].flat().filter((v) => !v.optional).map(() => 'V')] : []);
         const find = (pred: (o: OptionSpec) => boolean) => (spec.options ?? []).find(pred);
-        const before = !alt.when || 'not' in alt.when || 'operand' in alt.when ? []
+        // (A condition on an option's value: the option with a value the condition matches.)
+        const valued = alt.when && 'optionValue' in alt.when ? alt.when : undefined;
+        const befores: string[][] = valued ? ['-i', 'A=1', 'w0rd'].filter((x) => valued.matches.test(x)).map((x) => [valued.optionValue[0], x]) : [];
+        const before = !alt.when || 'not' in alt.when || 'operand' in alt.when || valued ? []
           : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
           : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
         const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : 'w0rd'));
@@ -328,7 +331,7 @@ describe('the specs of the dictionary', () => {
           const c = alt.when && 'operand' in alt.when ? alt.when : undefined;
           return c ? ws.map((w, i) => (i === c.operand ? ['1', 'w0rd'].find((x) => c.matches.test(x))! : w)) : ws;
         };
-        const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k);
+        const fits = (valued ? befores : [before]).some((b) => [once, each, twice].some((ws) => interpret(spec, [...b, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k));
         if (!fits) unreachable.push(`${path} #${k}`);
       });
     });
