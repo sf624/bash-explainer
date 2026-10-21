@@ -187,6 +187,9 @@ const dockerSubs: Record<string, CommandSpec> = {
 
 /** The commands written in this file; the other tables are spread after them. */
 const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en, { repeat: '*' });
+/** An `env -S` string that holds only options and assignments (`-i A=1`, `-u HOME`), and one of them clears the environment. */
+const SPLIT_OPTIONS_ONLY = /^\s*(?:(?:-[uCSP]\s*\S+|--(?:unset|chdir|split-string|path)=\S*|-\S*|[A-Za-z_]\w*=\S*)(?:\s+|$))*$/;
+const SPLIT_RESET = new RegExp(`(?=${SPLIT_OPTIONS_ONLY.source})(?:^|.*\\s)(?:-[a-zA-Z]*i[a-zA-Z]*|--ignore-environment|-)(?:\\s|$)`);
 /**
  * The operands of a shell: `bash -c 'cmd' NAME ARG…` (the string runs in a new shell; `NAME` is its `$0`),
  * `bash -s ARG…`, and `bash SCRIPT ARG…` (`$N`: the number of the positional parameter).
@@ -732,6 +735,10 @@ export const core: Record<string, CommandSpec> = {
     style: 'posix', longPrefixes: true,
     patternOptions: [{ pattern: /^-$/, text: () => tx('空の環境から始める（`-i` と同じ）', 'start with an empty environment (same as `-i`)') }],
     operands: [
+      // `env -S'-i A=1' cmd`: env splits the string and goes on reading its words, then the rest of the line, as one command line.
+      // A string of options and assignments only leaves the command to the words after it; one with a command ends it, and the words after it are its arguments.
+      { when: { optionValue: ['-S', '--split-string'], matches: SPLIT_RESET }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
+      { when: { optionValue: ['-S', '--split-string'], matches: SPLIT_OPTIONS_ONLY }, pattern: [ASSIGNMENTS, runs()] },
       { when: { option: ['-S', '--split-string'] }, pattern: [operand('ARG', '`-S` の文字列から作るコマンドへの引数', 'argument to the command made from the string of `-S`', { repeat: '*' })] },
       { when: { option: ['-i', '--ignore-environment', '-'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
       { pattern: [ASSIGNMENTS, runs()] },

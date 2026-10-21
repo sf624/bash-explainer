@@ -73,6 +73,8 @@ describe('wrappers agree with the real tools', () => {
       // Long options written as a unique prefix (getopt_long), and `env -` (same as `-i`).
       'env --ignore-e --deb printf %s, a',
       'env - printf %s, -i',
+      // A string of options and assignments only: the command is after it.
+      "env -S-i A=1 printf %s, a", "env -S'A=1' printf %s, -i", "env -S'-u HOME -i' B=2 printf %s, x", "env --split-string='-i A=1' printf %s, y",
     ],
     stdbuf: [
       'stdbuf -oL printf %s, -o',
@@ -145,7 +147,7 @@ describe('wrappers agree with the real tools', () => {
   }
 
   (usable('env') ? it : it.skip)("env -S: the string is the command and its first arguments; the operands are more", () => {
-    for (const line of ["env -S 'printf %s,' x y", "env --split-string='printf %s,' b", "env -S 'A=1 printf %s,' x -i"]) {
+    for (const line of ["env -S 'printf %s,' x y", "env --split-string='printf %s,' b", "env -S 'A=1 printf %s,' x -i", "env -S'-i A=1 printf %s,' x"]) {
       assert.strictEqual(run(line).out, printed(operands(line, ['ARG'])), line);
       assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
     }
