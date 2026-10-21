@@ -519,7 +519,7 @@ export interface ManualRef { section: string; page: string; anchor?: string }   
 
 **Assignment scope** follows 3.7.1 and 3.7.4. With no command name, the assignments set shell variables. Before a special builtin in POSIX mode, they persist. Before any other command, they are in its environment only. Declaration builtins set shell variables, local in a function (`declare`, `local`), unless `-g`.
 
-**Execution environment.** Each node's `ExecEnv` is computed from its ancestors, once. Here is where the four copies of "is this a subshell?" go. `exit` in a subshell exits only that subshell. `cd` and assignments in `$( )` do not leak. `$$` is the main shell's PID there, and `BASHPID` is not.
+**Execution environment.** Each node's `ExecEnv` is computed from its ancestors, once (as built: 4.8). Here is where the four copies of "is this a subshell?" go. `exit` in a subshell exits only that subshell. `cd` and assignments in `$( )` do not leak. `$$` is the main shell's PID there, and `BASHPID` is not.
 
 **Words.** A word's `steps` come from one table, keyed by context. It is the manual's 3.5 and the paragraphs that make exceptions to it:
 
@@ -655,6 +655,32 @@ export function lastStageInShell(st: ShellState, shell?: Shell): Tri;  // lastpi
 
 Not followed yet, each listed in the probe rows' `gaps` (where a row shows it): the conditions themselves (`if false` and `[[ 1 ]]` are branches like any other; `return`), the current directory (`cd`, `pushd`: `PWD`, `OLDPWD`), assignments in arithmetic (`(( i = 1 ))`, `let`), `select`'s `REPLY`, the values that `read`, `mapfile`, `getopts`, `printf -v` and `${x:=w}` give (and whether getopts sets `OPTARG`), array values, positional parameters at calls (`local -n r=$1`), and the environment. `source`, `eval` and `trap` actions are not read.
 
+### 4.8 As built: execution environments (B2)
+
+```ts
+// src/semantics/env.ts
+export type SubshellReason = 'parentheses' | 'command-substitution' | 'process-substitution' | 'background' | 'coproc' | 'pipeline-stage';
+export interface SubshellLink { kind: 'subshell'; why: SubshellReason; at: SyntaxNode; sure: boolean }   // sure: false on some paths only (lastpipe)
+export interface SlotLink { kind: 'slot'; slot: CommandSlot; via: string; at: SyntaxNode; assigns: string[] } // `bash -c`, `sudo`; `env x=1`
+export interface CallLink { kind: 'call'; def: SyntaxNode; envs: ExecEnv[] }                             // a function body: where its calls run
+export interface ExecEnv { links: readonly (SubshellLink | SlotLink | CallLink)[] }                      // outermost first; none: the main shell
+export function processOf(env): { kind: 'main' | 'subshell' | 'shell' | 'program'; sure: boolean; link? };
+export function whereOf(env): 'local' | 'remote' | 'container';
+export function reachOf(env): { functions: Reach; variables: Reach; blocker?: SlotLink };              // Reach: 'all' | 'exported' | 'none'
+export function slotEnvs(env, parse, spec, words, lookup?): Map<SyntaxNode, ExecEnv>;                  // the commands a command's words run, by first word
+// src/semantics/state.ts
+interface StateModel { env(n: SyntaxNode): ExecEnv; calls: ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>; … }
+```
+
+- The design's `ExecEnv` (a `current` / `subshell` / `child-process` tree) became a flat chain: each link is a place where a new process may start, outermost first. A `$( )` in a pipeline stage is `[pipeline-stage, command-substitution]`; a string under `sudo env -i bash -c` is `[sudo, env, bash -c]`.
+- The subshell rules are shared with the walk of B1, so that state and environment cannot disagree: `subshellReasons(n)` (the place in the tree) decides which statements drop their changes in the walk, and `lastStageInShell` reads lastpipe and `set -m` from the state where the pipeline runs (with the state merged over every walk of it: "may" when they differ).
+- The walk records the calls of each function (`calls`; through an alias, the command that uses it). A body's chain starts with a `call` link that holds the chains of its calls: `processOf` says "subshell" when every call is in one, and "may" when only some are. A function no call reaches runs where it is defined. A recursive call adds no place of its own (`f() { f | cat; }` is "main" for the first call's body).
+- Slot links come from the argument interpreter: `slotEnvs` reads the nested parses (subcommands, find's actions) of a command and gives each command a slot runs the chain to it. The analyzer asks it once per command and renders the pitfalls of a slot from its environment: whether a function or a variable reaches the command (`reachOf`, with the first link that blocks it), and where it runs. `slotChain`, `functionBlocker` and the analyzer's `via` are gone, and so are the four subshell checks (`groupSubshell`'s walk, the pipeline pitfall's lastpipe test, the `$_` scan's list of subshell types, and the walk's own `&` and pipeline tests).
+- The explanations it gives: a builtin that acts on its shell (`CommandSpec.shellEffect`: `cd`, `set`, `read`, the declarations… and `exit`) says that it acts on the subshell only, with the reason; `$$` in a subshell is still the script's PID; a string run by another shell that reads a variable of the script the shell does not get (not exported, or a link passes none: `env -i`, sudo, a container, ssh) is a pitfall. The string is read with the parser and the state model, so a variable it sets itself does not count.
+- test/env-probes.test.ts compares the model with every row of `env.json` (37 rows): a marker is a call of an exported function, so the model says `not-run` where a function cannot run (a program, `command f`, a shell that gets no exported function). Every marker agrees with bash but one, listed in the row's `gaps`: the model does not evaluate conditions, so lastpipe turned on in an `if` is "may".
+
+Not followed yet: what runs inside a string (`bash -c 'a | b'`, `eval '( … )'`: the string is not parsed for its environment, and the analyzer does not explain it as a script), the commands that never run after `exec cmd`, sudo's policy (`env_keep`, `-E` with a policy that keeps functions), `sh` that is not bash (`export -f` reaches only bash), and the subshell of a function called recursively from a pipeline.
+
 ## 5. C: the bash-ast differential test
 
 ### 5.1 What it compares
@@ -763,7 +789,7 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 **B1. Shell state.** src/semantics/state.ts builds `ShellState` along the tree, with parse-time and run-time states; `shoptStates`, the scans in `explainLine` (functions, arrays, IFS, noglob, aliases) move there. Cached per tree. Guarded by: analyzer, audit-shell, mode and pitfalls tests; a new probe test runs bash on snippets with `shopt -p`, `set -o` and `declare -p` at the end and compares. Size: 600–900. Done: the model is in src/semantics/state.ts (4.7); `shoptStates`, the scans of `explainLine` (functions, arrays, associative arrays, integers, namerefs, IFS, noglob, aliases), `exportedFunctions`, the `set -o posix` regular expression, `pastedValue`'s scan, the CI variables' regular expression, the `unset -f` regular expression and the `lastpipe` tests are gone, and the analyzer asks `shellState(tree, shell).at(node)`; src/hosts.ts reads `set -o pipefail` in a Dockerfile RUN with it. test/state-probes.test.ts compares the model with every row of state.json (50 rows; what the model gives as unknown or does not follow is listed in each row's `gaps`, with the reason), and test/state.test.ts tests the walk, with a bound on its time.
 
-**B2. Execution environments.** `ExecEnv` for every node; the four subshell checks go. A command run by a wrapper has the chain of slots that leads to it (`env -i` → `bash -c`), and its environment is what each link passes on (3.7); `slotChain` and `functionBlocker` in the analyzer go. A probe test compares with bash: a marker command replaced by `[ "$BASHPID" = "$$" ]` says whether it runs in a subshell. Size: 300–500.
+**B2. Execution environments.** `ExecEnv` for every node; the four subshell checks go. A command run by a wrapper has the chain of slots that leads to it (`env -i` → `bash -c`), and its environment is what each link passes on (3.7); `slotChain` and `functionBlocker` in the analyzer go. A probe test compares with bash: a marker command replaced by `[ "$BASHPID" = "$$" ]` says whether it runs in a subshell. Size: 300–500. Done: src/semantics/env.ts (4.8); `shellState(tree).env(n)` gives the chain of every node, from the walk's calls and states and the subshell rules it shares with the walk. test/env-probes.test.ts compares it with the 37 rows of env.json (added: `env -i`, `xargs` and `find -exec` with `bash -c`, `exec` in a subshell, `{ }` in a pipeline, `done < <(…)`, coproc of a command and of `( )`, trap actions, `eval` in a pipeline and a subshell, `command`, `builtin eval`, `time`, functions called from several subshells), and test/env.test.ts the chains that cannot be probed (sudo, ssh, containers).
 
 **B3. Name resolution and assignments.** `NameResolution`, `AssignmentMeaning`, special builtins and POSIX mode; `commandHeadFor` renders from it. The name-keyed cases left in src/analyzer.ts go here or in B1: the flag texts of the declaration commands (their words are read with the builtin's spec, but the texts come from the tables of src/dict/syntax.ts chosen by the name), `unset` (its own node, with regular expressions for `-f` and `-n`), `head.name === 'test'` (the expression reading), the positions of `read -a NAME` and of mapfile's array in the scans of `explainLine` (by name and word position, not by the interpreter), the `set -o posix` regular expression of the special-builtin assignment note, the `set` scan for noglob, and `exportedFunctions`, a regular expression over the whole source that ignores where the export is (before or after the use, in a function or not). Probe: `type -t` at the place of the command, under bash and `bash --posix`. Size: 500–700.
 
