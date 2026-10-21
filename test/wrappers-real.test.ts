@@ -223,4 +223,17 @@ describe('wrappers agree with the real tools', () => {
       assert.match(run(line).err, /user nosuchuser_zz does not exist/, line);
     }
   });
+
+  it('sh: every letter the dictionary lists is accepted by sh, and one it lacks is not', function () {
+    if (!has('sh')) return this.skip();
+    const accepts = (letter: string): boolean => spawnSync('sh', [`-${letter}`, '-c', ':'], { input: '', env: ENV, encoding: 'utf8' }).status === 0;
+    const letters = lookupCommand('sh')!.options!.flatMap((o) => o.names).filter((n) => /^-[a-nA-Zp-z]$/.test(n)).map((n) => n[1]); // (`-o` takes a name)
+    for (const letter of ['s', 'i', 'c', 'e', 'x', 'u', 'n', 'v']) assert.ok(letters.includes(letter), letter);
+    for (const letter of letters) assert.ok(accepts(letter), letter);
+    assert.strictEqual(accepts('Z'), false);
+    // `-s` reads the script from stdin: the words are its arguments.
+    const { parse } = parseOf('sh -s a b');
+    assert.deepStrictEqual(parse.roles.map((r) => r.role.role), ['option', 'operand', 'operand']);
+    assert.strictEqual(run('echo \'printf %s, "$@"\' | sh -s a b').out, 'a,b,');
+  });
 });
