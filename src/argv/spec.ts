@@ -55,8 +55,11 @@ export interface CommandSpec {
    * operand too (procps `ps 1 u`: a bare number starts a list of process IDs, which ends the line).
    */
   endsOptions?: RegExp;
-  /** The operands are an expression that patterns cannot describe; a parser of its own reads them. */
-  operandParser?: 'find-expression';
+  /**
+   * The operands are an expression that patterns cannot describe; a parser of its own reads them: find's
+   * (src/argv/interpret.ts), or test's (src/testexpr.ts, which the analyzer runs on `test`'s words as on `[ ]`).
+   */
+  operandParser?: 'find-expression' | 'test-expression';
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
   builtin?: 'special' | 'regular';
@@ -85,6 +88,8 @@ export interface OptionSpec {
   /** `['-f', '--file']`. */
   names: string[];
   text: Text;
+  /** What it does written with a `+` (`declare +x`), with the command's `plusOptions`, when that differs from turning it on. */
+  offText?: Text;
   /** The value the option takes; a list when it takes several words (`jq --arg NAME VALUE`). */
   value?: ValueSpec | ValueSpec[];
   /** Inherited by subcommands (`kubectl -n`). */

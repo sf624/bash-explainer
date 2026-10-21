@@ -1,7 +1,7 @@
 import { Text, tx } from '../i18n';
 import type { BuiltinCall, CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { args, cmd, operand, OptSpec, runs } from './types';
-import { declarationCommands, declarationFlags, exportFlags, readonlyFlags } from './syntax';
+import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
   errexit: tx('コマンドが失敗したら即座にスクリプトを終了（`-e` と同じ）', 'exit immediately when a command fails (same as `-e`)'),
@@ -85,9 +85,9 @@ const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], re
 const numeric = (o: OperandSpec): Rest => ({ style: 'none', ...args(o) });
 
 /** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
-function declarationSpec(name: string, flags: Record<string, Text>, rest: Rest = {}): CommandSpec {
+function declarationSpec(name: string, flags: Record<string, Text>, rest: Rest = {}, off: Record<string, Text> = {}): CommandSpec {
   const t = declarationCommands[name];
-  return b(t.ja, t.en, Object.entries(flags).map(([flag, text]) => ({ names: [flag], text })), {
+  return b(t.ja, t.en, Object.entries(flags).map(([flag, text]) => ({ names: [flag], text, ...(off[flag] ? { offText: off[flag] } : {}) })), {
     ...args(operand('NAME', '変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)')),
     ...rest,
   });
@@ -181,7 +181,7 @@ const PROGRAMS: Record<string, CommandSpec> = {
       ...args(operand('PID', '対象のプロセス ID', 'target PID')).operands!,
     ],
   }),
-  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { style: 'single-dash' }),
+  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { style: 'single-dash', operandParser: 'test-expression' }),
   true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { style: 'none' }),
   false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { style: 'none' }),
 };
@@ -201,9 +201,9 @@ export const builtins: Record<string, CommandSpec> = {
   export: actsOnShell(declarationSpec('export', exportFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   // `declare +x`: a `+` turns the attribute off.
-  declare: actsOnShell(declarationSpec('declare', declarationFlags, { plusOptions: true }), declares),
-  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, { plusOptions: true }), declares),
-  local: actsOnShell(declarationSpec('local', declarationFlags, { plusOptions: true }), (c) => c.operands.length > 0),
+  declare: actsOnShell(declarationSpec('declare', declarationFlags, { plusOptions: true }, declarationOffFlags), declares),
+  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, { plusOptions: true }, declarationOffFlags), declares),
+  local: actsOnShell(declarationSpec('local', declarationFlags, { plusOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
@@ -334,7 +334,7 @@ export const builtins: Record<string, CommandSpec> = {
       ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,
     ],
   }),
-  test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, style: 'single-dash' }),
+  test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, style: 'single-dash', operandParser: 'test-expression' }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
     ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
