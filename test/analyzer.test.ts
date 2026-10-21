@@ -1146,3 +1146,53 @@ describe('regex explanations (audit fixes)', () => {
     assert.ok(lines.length > 0);
   });
 });
+
+describe('a redirection after a compound command, on its first line', () => {
+  const header = (src: string, lang: 'ja' | 'en' = 'en') => explain(src, 0, lang).items[0];
+  const redirect = (src: string, lang: 'ja' | 'en' = 'en') => all([header(src, lang)]).find((t) => t.kind === 'redirect')!;
+
+  it('is a child of the header that applies to the whole loop (while)', () => {
+    const src = 'while read -r line; do\n  echo "$line"\ndone < input.txt';
+    const r = redirect(src);
+    assert.strictEqual(r.label, '< input.txt');
+    assert.strictEqual(spanText(src, r), '< input.txt');
+    assert.deepStrictEqual(r.span, { start: { line: 2, character: 5 }, end: { line: 2, character: 16 } });
+    assert.match(r.explanation, /^Read file `input.txt` as stdin \(fd 0\)\. It applies to the whole loop: every command in it that reads stdin, such as `read`, reads from here/);
+    assert.match(redirect(src, 'ja').explanation, /^ファイル `input.txt` の内容を標準入力\(fd 0\)として読み込む。ループ全体に付いている: .*`read`/);
+    // The line of the redirection itself is explained as before, and a middle line has none.
+    assert.strictEqual(explain(src, 2).items.filter((t) => t.kind === 'redirect').length, 1);
+    assert.strictEqual(all(explain(src, 1).items).filter((t) => t.kind === 'redirect').length, 0);
+  });
+
+  it('says what an output redirection does to the commands', () => {
+    const r = redirect('for x in 1 2; do\n  echo $x\ndone > out.txt');
+    assert.match(r.explanation, /It applies to the whole loop: every command in it has its stdout sent here$/);
+    assert.match(redirect('for x in 1 2; do\n  echo $x\ndone 2> err.log').explanation, /has its stderr sent here$/);
+    assert.match(redirect('for x in 1 2; do\n  echo $x\ndone > out.txt', 'ja').explanation, /ループ全体に付いている: 中のコマンドすべてに働く（中のコマンドが標準出力に出すものはここに出る）$/);
+    assert.match(redirect('for x in 1 2; do\n  echo $x\ndone 3> fd3.txt').explanation, /every command in it is affected$/);
+  });
+
+  it('works for if, case, { }, ( ) and a function with a redirection', () => {
+    assert.match(redirect('if true; then\n  cat\nfi < in.txt').explanation, /whole `if` statement/);
+    assert.match(redirect('case $x in\n  a) cat ;;\nesac < in.txt').explanation, /whole `case` statement/);
+    assert.match(redirect('{ echo a\n  echo b\n} 2> err.log').explanation, /whole command group: every command in it has its stderr/);
+    assert.match(redirect('(\n  cat\n) < in.txt').explanation, /whole subshell/);
+    const f = redirect('f() {\n  echo a\n} > out.txt');
+    assert.match(f.explanation, /whole command group/);
+    assert.match(redirect('f() {\n  echo a\n} > out.txt', 'ja').explanation, /コマンドグループ全体に付いている/);
+    assert.match(redirect('if true; then\n  cat\nfi < in.txt', 'ja').explanation, /`if` 文全体に付いている/);
+  });
+
+  it('keeps every redirection, in source order', () => {
+    const toks = all([header('while read -r l; do\n  :\ndone < in.txt 2> err.log')]).filter((t) => t.kind === 'redirect');
+    assert.deepStrictEqual(toks.map((t) => t.label), ['< in.txt', '2> err.log']);
+  });
+});
+
+describe('a redirection after another multi-line command', () => {
+  it('is said to apply to the whole command', () => {
+    const r = all(explain('((\n  x = 1\n)) > out.txt').items).find((t) => t.kind === 'redirect');
+    if (r) assert.match(r.explanation, /whole command: /);
+    else assert.fail('no redirect token');
+  });
+});

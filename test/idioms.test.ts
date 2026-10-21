@@ -109,3 +109,21 @@ describe('set option bundles, compared with bash', () => {
     assert.strictEqual(isStrictMode('set -euo pipefail && echo ok'), true);
   });
 });
+
+describe('reading a file line by line', () => {
+  const notes = (stmt: string) => findIdioms([stmt], 'en').filter((n) => /line by line/.test(n));
+
+  it('knows a loop fed by a file and one fed by a command', () => {
+    assert.match(notes('while read -r line; do echo "$line"; done < input.txt')[0], /^Idiom: `while read … done < file`.*unless the loop is `while read -r line \|\| \[ -n "\$line" \]`$/);
+    assert.match(notes('while read -r line; do echo "$line" done < "$f"')[0], /done < file/);
+    assert.match(notes('while IFS= read -r line; do n=$((n+1)); done < <(ls)')[0], /done < <\(command\)`.*current shell/);
+    assert.match(findIdioms(['while read -r l; do :; done < <(ls)'], 'ja').join(), /カレントシェル/);
+    assert.match(findIdioms(['while read -r l; do :; done < f'], 'ja').join(), /1行ずつ/);
+  });
+
+  it('leaves other loops alone', () => {
+    assert.deepStrictEqual(notes('while true; do sleep 1; done < f'), []);
+    assert.deepStrictEqual(notes('while read -r line; do echo "$line"; done'), []);
+    assert.deepStrictEqual(notes('for x in a; do read -r y; done < f'), []);
+  });
+});

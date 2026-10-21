@@ -773,7 +773,11 @@ export class Analyzer {
     // On a line where none of the redirections appear (e.g. a loop header), show the body alone.
     // The label still shows them: `while` *condition* `do` *commands* `done` `< input.txt`.
     if (this.line !== null && redirToks.length === 0 && bodyToks.length === 1) {
-      return skeletal({ ...bodyToks[0] }, n);
+      // On the first line of the construct, the redirections (on a later line) are children of the header: they apply to all of it.
+      const header = body!.startPosition.row === this.line && isBlockLike(body!);
+      const t = { ...bodyToks[0] };
+      if (header) t.children = sortTokens([...t.children, ...redirs.map((r) => this.wholeRedirect(r, body!))]);
+      return skeletal(t, n);
     }
     // `f() { …; } >&2`: the redirection belongs to the function, not to its definition.
     const ofFunction = n.parent?.type === 'function_definition';
@@ -871,6 +875,32 @@ export class Analyzer {
     }
     const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => this.sub(d));
     return this.tok(n, 'redirect', expl, children);
+  }
+
+  /** A redirection after the closing word of a compound command, explained on the line where the construct starts: it applies to the whole construct. */
+  private wholeRedirect(r: SyntaxNode, body: SyntaxNode): Token {
+    const t = this.full(r);
+    const kind = this.constructName(body);
+    const { op, fd } = this.redirectInfo(r);
+    const num = fd !== '' ? Number(fd) : op.startsWith('<') ? 0 : 1;
+    const reads = op.startsWith('<') && num === 0;
+    const writes = !op.startsWith('<') && (num === 1 || num === 2);
+    t.explanation += this.s(
+      `。${kind.ja}全体に付いている: 中のコマンドすべてに働く${reads ? '（標準入力を読むコマンド、たとえば `read` は、ここから読む。同じ入力を分け合うので、1つが読んだ分は次のコマンドには届かない）' : writes ? `（中のコマンドが${num === 1 ? '標準出力' : '標準エラー出力'}に出すものはここに出る）` : ''}`,
+      `. It applies to the whole ${kind.en}: every command in it${reads ? ' that reads stdin, such as `read`, reads from here; they share this one input, so what one reads is not left for the next' : writes ? ` has its ${num === 1 ? 'stdout' : 'stderr'} sent here` : ' is affected'}`,
+    );
+    return t;
+  }
+
+  private constructName(body: SyntaxNode): { ja: string; en: string } {
+    switch (body.type) {
+      case 'while_statement': case 'for_statement': case 'c_style_for_statement': case 'select_statement': return { ja: 'ループ', en: 'loop' };
+      case 'if_statement': return { ja: '`if` 文', en: '`if` statement' };
+      case 'case_statement': return { ja: '`case` 文', en: '`case` statement' };
+      case 'subshell': return { ja: 'サブシェル', en: 'subshell' };
+      case 'compound_statement': return { ja: 'コマンドグループ', en: 'command group' };
+      default: return { ja: 'コマンド', en: 'command' };
+    }
   }
 
   /** `>&${COPROC[1]}`, `<&$fd`: a word that expands to a number is a descriptor to duplicate, not a file. */
