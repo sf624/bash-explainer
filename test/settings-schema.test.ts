@@ -7,7 +7,7 @@ import { EXAMPLE_KINDS } from '../src/analyzer';
 import { SHELL_NAMES } from '../src/dialect';
 import { YQ_NAMES } from '../src/embedded/yq';
 import {
-  changedSettings, checkValue, defaultSettings, defaultSettingsPath, explainOptions, forcedShell, mergeSettings, parseAssignment,
+  changedSettings, checkValue, defaultSettings, defaultSettingsPath, explainOptions, exportSettings, forcedShell, importSettings, mergeSettings, parseAssignment,
   parseJsonc, PREFIX, readSettings, settingSpec, settingsFor, settingsJson, settingTexts, SETTINGS,
 } from '../src/settings';
 
@@ -105,12 +105,57 @@ describe('the settings module', () => {
       'settings.json: unknown setting editor.fontSize; ignored',
     ]);
     assert.deepStrictEqual(readSettings({ bashExplainer: 1 }, 'x').warnings, ['x: unknown setting bashExplainer; ignored']);
-    assert.deepStrictEqual(readSettings([1], 'x'), { settings: {}, warnings: ['x: expected an object of settings'] });
+    assert.deepStrictEqual(readSettings([1], 'x'), { settings: {}, warnings: ['x: expected an object of settings'], ignored: [] });
     // A value read is a copy.
     const list = ['crlf'];
     const read = readSettings({ 'diagnostics.ignore': list }, 'x').settings;
     list.push('more');
     assert.deepStrictEqual(read['diagnostics.ignore'], ['crlf']);
+  });
+
+  it('imports what applies on a surface, and says which keys it leaves out and why', () => {
+    const text = `{
+      // a copy of VS Code's settings.json
+      "bashExplainer.shell": "sh",
+      "notes": { "idioms": false },
+      "bashExplainer.hover.enabled": false,
+      "bashExplainer.nope": 1,
+      "editor.fontSize": 14,
+      "examples.placement": "nowhere",
+    }`;
+    assert.deepStrictEqual(importSettings(text, 'web'), {
+      settings: { shell: 'sh', 'notes.idioms': false },
+      ignored: [
+        { key: 'nope', reason: 'unknown' },
+        { key: 'editor.fontSize', reason: 'unknown' },
+        { key: 'examples.placement', reason: 'invalid', detail: 'expected one of first, last, bottom' },
+        { key: 'hover.enabled', reason: 'elsewhere' },
+      ],
+    });
+    assert.deepStrictEqual(importSettings('{"hover.enabled": false}', 'lsp').settings, { 'hover.enabled': false });
+    assert.throws(() => importSettings('[1]', 'web'), /expected an object of settings/);
+    assert.throws(() => importSettings('{', 'web'), SyntaxError);
+  });
+
+  it('exports the settings that differ from the defaults, as a settings file, and imports them back', () => {
+    assert.strictEqual(exportSettings(defaultSettings(), 'web'), '{}\n');
+    const s = mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], 'hover.enabled': false, customCommands: { deploy: { summary: 'Deploy' } } });
+    const text = exportSettings(s, 'web');
+    assert.strictEqual(text, `{
+  "bashExplainer.shell": "dash",
+  "bashExplainer.examples.disabled": [
+    "sed"
+  ],
+  "bashExplainer.customCommands": {
+    "deploy": {
+      "summary": "Deploy"
+    }
+  }
+}
+`);
+    const back = importSettings(text, 'web');
+    assert.deepStrictEqual(back.ignored, []);
+    assert.deepStrictEqual(mergeSettings(back.settings), mergeSettings({ shell: 'dash', 'examples.disabled': ['sed'], customCommands: { deploy: { summary: 'Deploy' } } }));
   });
 
   it('reads key=value, the value as JSON when it is JSON', () => {
