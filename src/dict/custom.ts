@@ -51,10 +51,12 @@ export function customCommandSpec(c: unknown): CommandSpec | undefined {
 
 function options(c: Record<string, unknown>): OptionSpec[] {
   const out: OptionSpec[] = [];
-  const add = (names: string[], v: unknown): void => {
+  // (`old`: in the shape of 0.6, any true value of `takesValue` counted, as `"yes"` or `1`.)
+  const add = (names: string[], v: unknown, old = false): void => {
     const desc = typeof v === 'string' ? v : isObject(v) && typeof v.description === 'string' ? v.description : undefined;
     if (desc === undefined || !names.length) return;
-    out.push({ names, text: text(desc), ...(isObject(v) && v.takesValue === true ? { value: { name: 'VALUE' } } : {}) });
+    const takes = isObject(v) && (old ? !!v.takesValue : v.takesValue === true);
+    out.push({ names, text: text(desc), ...(takes ? { value: { name: 'VALUE' } } : {}) });
   };
   if (Array.isArray(c.options)) {
     for (const o of c.options) {
@@ -62,7 +64,7 @@ function options(c: Record<string, unknown>): OptionSpec[] {
     }
   } else if (isObject(c.options)) {
     // The old shape: `-o|--output` names several spellings of one option, as in the built-in dictionary.
-    for (const [names, v] of Object.entries((c as OldCustomCommand).options!)) add(names.split('|').map((n) => n.trim()), v);
+    for (const [names, v] of Object.entries((c as OldCustomCommand).options!)) add(names.split('|').map((n) => n.trim()), v, true);
   }
   // (A name given twice means what it says last.)
   return out.reduce<OptionSpec[]>((list, o) => mergeOptions(list, [o]), []);

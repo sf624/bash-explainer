@@ -75,6 +75,13 @@ describe('custom commands', () => {
     assert.ok(sub.includes('-f: without asking') && sub.includes('nginx: service'), sub.join('\n'));
     assert.match(explain('tool restart', { customCommands: { tool } }).summary, /^tool restart: Restart the service/);
   });
+  it('reads takesValue as 0.6 did in the old shape (any true value), and only `true` in the new one', () => {
+    const old = { summary: 'Old', options: { '-a': { description: 'a', takesValue: 'yes' }, '-b': { description: 'b', takesValue: 1 }, '-c': { description: 'c', takesValue: 0 } } };
+    const toks = all(explain('old -a x -b y -c z', { customCommands: { old } }).items).map((t) => `${t.label}: ${t.explanation}`);
+    assert.ok(toks.includes('x: Value for `-a`') && toks.includes('y: Value for `-b`') && !toks.includes('z: Value for `-c`'), toks.join('\n'));
+    const tool = { summary: 'New', options: [{ names: ['-a'], description: 'a', takesValue: 'yes' }] };
+    assert.ok(!all(explain('tool -a x', { customCommands: { tool } }).items).some((t) => t.explanation === 'Value for `-a`'));
+  });
   it('also inside sudo, and ignores malformed entries', () => {
     assert.match(all(explain('sudo deploy web', { customCommands }).items).map((t) => t.explanation).join('\n'), /Deploy to production/);
     assert.match(explain('broken -x', { customCommands }).items[0].explanation, /not in the dictionary/);

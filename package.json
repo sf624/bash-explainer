@@ -585,6 +585,16 @@
                         "type": "string"
                       },
                       "deprecationMessage": "Use operands: [{ \"description\": \"…\", \"repeat\": \"*\" }]. This shape is still read, and a later release drops it."
+                    },
+                    "subcommands": {
+                      "type": "object",
+                      "description": "Its own subcommands, with the same fields.",
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "summary"
+                        ]
+                      }
                     }
                   }
                 }
