@@ -114,6 +114,12 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "at": "positional parameters are not followed (4.7)",
+      "star": "positional parameters are not followed (4.7)",
+      "ustar": "positional parameters are not followed (4.7)",
+      "uat": "positional parameters are not followed (4.7)"
     }
   },
   {
@@ -127,6 +133,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "positional parameters are not followed (4.7), nor array values"
     }
   },
   {
@@ -147,6 +156,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "array values are not followed (4.7)"
     }
   },
   {
@@ -360,6 +372,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "`~nope`: the user database is not read (the prefix stays as it is when there is no such user)"
     }
   },
   {
@@ -430,6 +445,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "a loop variable takes each word in turn: its value in the body is not known"
     }
   },
   {
@@ -526,6 +544,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "arithmetic with variables is not evaluated, and `$((i++))` assigns `i`, which the state does not follow (4.7)"
     }
   },
   {
@@ -543,6 +564,9 @@
         ]
       ],
       "status": 0
+    },
+    "gaps": {
+      "a": "the output of a command is not known"
     }
   },
   {
@@ -553,6 +577,436 @@
       "b": [],
       "status": 1,
       "stderr": "SCRIPT: line 1: nope: unbound variable"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x='a  b'; declare a=$x; declare \"b=$x\"; declare \"c\"=$x; @PROBE:a@ \"$a\" \"$b\" \"$c\"",
+    "note": "A declaration's word is an assignment only when its name is unquoted: `\"c\"=$x` is split into `c=a` and `b`.",
+    "facts": {
+      "a": [
+        [
+          "a  b",
+          "a  b",
+          "a"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "a declaration word with an expansion that is not an assignment to the parser (`\"b=$x\"`, `\"c\"=$x`) gives a value the state does not follow"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x='a  *.txt'; f() { local a=$x c=~/x; export d=a:~/y; readonly e=$x; @PROBE:a@ \"$a\" \"$c\" \"$d\" \"$e\" $a; }; f",
+    "facts": {
+      "a": [
+        [
+          "a  *.txt",
+          "/home/probe/x",
+          "a:/home/probe/y",
+          "a  *.txt",
+          "a",
+          "a.txt",
+          "b.txt",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "PATH=~/bin:$PATH; v=a:~/b:~; @PROBE:a@ \"$PATH\" \"$v\"",
+    "facts": {
+      "a": [
+        [
+          "/home/probe/bin:/usr/bin:/bin",
+          "a:/home/probe/b:/home/probe"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "set -- 'a b' c; x=\"$@\"; y=$@; z=$*; IFS=-; w=\"$*\"; @PROBE:a@ \"$x\" \"$y\" \"$z\" \"$w\"",
+    "facts": {
+      "a": [
+        [
+          "a b c",
+          "a b c",
+          "a b c",
+          "a b-c"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "positional parameters are not followed (4.7)"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x='a b'; y='a*'; [[ $x == $y ]] && @PROBE:a@ pattern; [[ $x == \"$y\" ]] || @PROBE:b@ string; [[ $x = a\\ * ]] && @PROBE:c@ escaped",
+    "facts": {
+      "a": [
+        [
+          "pattern"
+        ]
+      ],
+      "b": [
+        [
+          "string"
+        ]
+      ],
+      "c": [
+        [
+          "escaped"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x='a b'; p='a*'; case $x in $p) @PROBE:a@ \"$x\" $x;; esac; case $x in \"$p\") @PROBE:b@ no;; *) @PROBE:c@ literal;; esac",
+    "facts": {
+      "a": [
+        [
+          "a b",
+          "a",
+          "b"
+        ]
+      ],
+      "b": [],
+      "c": [
+        [
+          "literal"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "b": "the model does not decide which `case` branch runs"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "x='*.log'; @PROBE:a@ > $x; y='a b'; @PROBE:b@ 2> $y; @PROBE:c@ > {p,q}; @PROBE:d@ > *.txt; @PROBE:e@ > ~+/e.out",
+    "note": "A redirection target that does not become exactly one word is an ambiguous redirection; the command does not run, the script goes on.",
+    "facts": {
+      "a": [
+        []
+      ],
+      "b": [],
+      "c": [],
+      "d": [],
+      "e": [
+        []
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: $y: ambiguous redirect"
+    }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "x='*.log'; @PROBE:a@ > $x; y='a b'; @PROBE:b@ 2> $y; @PROBE:c@ > {p,q}; @PROBE:d@ > *.txt",
+    "posix": true,
+    "note": "In POSIX mode, a non-interactive shell neither splits nor globs a redirection target; braces still expand.",
+    "facts": {
+      "a": [
+        []
+      ],
+      "b": [
+        []
+      ],
+      "c": [],
+      "d": [
+        []
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: {p,q}: ambiguous redirect"
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "IFS=:; list='a:b c:*.log'; @PROBE:a@ $list; for x in $list; do @PROBE:b@ \"$x\"; done",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b c",
+          "c.log"
+        ]
+      ],
+      "b": [
+        [
+          "a"
+        ],
+        [
+          "b c"
+        ],
+        [
+          "c.log"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "b": "a loop variable takes each word in turn: its value in the body is not known"
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "a=(x 'y z'); @PROBE:a@ \"${a[@]}\" ${a[*]}; IFS=-; @PROBE:b@ \"${a[*]}\" \"${a[@]}\" ${a[*]}",
+    "facts": {
+      "a": [
+        [
+          "x",
+          "y z",
+          "x",
+          "y",
+          "z"
+        ]
+      ],
+      "b": [
+        [
+          "x-y z",
+          "x",
+          "y z",
+          "x",
+          "y z"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "array values are not followed (4.7)",
+      "b": "array values are not followed (4.7)"
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "GLOBIGNORE='*.log:sub'; @PROBE:a@ * .*; GLOBIGNORE=; @PROBE:b@ *",
+    "facts": {
+      "a": [
+        [
+          ".hidden",
+          "a.txt",
+          "b.txt",
+          "empty",
+          "x y.txt",
+          ".hidden"
+        ]
+      ],
+      "b": [
+        [
+          ".hidden",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "shopt -s nocaseglob; @PROBE:a@ [A-B]*.TXT S*/D* C.LOG",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "sub/d.txt",
+          "C.LOG"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "shopt -s extglob\n@PROBE:a@ +(a|b).txt *.@(log|txt) ?(x)*",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "x y.txt",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "shopt -s globstar; @PROBE:a@ ** **/ sub/**",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "sub/d.txt",
+          "x y.txt",
+          "empty/",
+          "sub/",
+          "sub/",
+          "sub/d.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "shopt -s nullglob; @PROBE:a@ *.zz; x='*.zz'; @PROBE:b@ $x \"$x\" \"\"*.zz",
+    "facts": {
+      "a": [
+        []
+      ],
+      "b": [
+        [
+          "*.zz"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "shopt -s failglob; x='*.zz'; @PROBE:a@ \"$x\"; @PROBE:b@ $x; @PROBE:c@ after",
+    "facts": {
+      "a": [
+        [
+          "*.zz"
+        ]
+      ],
+      "b": [],
+      "c": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: no match: *.zz"
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "@PROBE:a@ x=~/a:~/b --opt=~/c \"x\"=~/d a[1]=~/e n+=~/f x:~/g ~/h:~/i",
+    "facts": {
+      "a": [
+        [
+          "x=/home/probe/a:/home/probe/b",
+          "--opt=~/c",
+          "x=~/d",
+          "a[1]=/home/probe/e",
+          "n+=/home/probe/f",
+          "x:~/g",
+          "/home/probe/h:~/i"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "@PROBE:a@ x=~/a:~/b ~/h:~/i; declare d=~/a:~/b; @PROBE:b@ \"$d\"",
+    "posix": true,
+    "facts": {
+      "a": [
+        [
+          "x=~/a:~/b",
+          "/home/probe/h:~/i"
+        ]
+      ],
+      "b": [
+        [
+          "/home/probe/a:/home/probe/b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "unset u; @PROBE:a@ ${u:-~/x} \"${u:-~/x}\" ${u:-*.txt} ${u:-'a b'}c ${u-$'\\t'}",
+    "facts": {
+      "a": [
+        [
+          "/home/probe/x",
+          "~/x",
+          "a.txt",
+          "b.txt",
+          "x y.txt",
+          "a bc",
+          "\t"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "x='a.b.c'; p='*.'; @PROBE:a@ ${x#$p} ${x#\"$p\"} ${x/b/\"&\"} ${x//./-} ${x/#a/A} ${x/%c/C} ${x^} ${x,,}",
+    "facts": {
+      "a": [
+        [
+          "b.c",
+          "a.b.c",
+          "a.&.c",
+          "a-b-c",
+          "A.b.c",
+          "a.b.C",
+          "A.b.c",
+          "a.b.c"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "x=' a  b '; @PROBE:a@ $x\"\" \"\"$x a$x ${x}b; IFS=' ,'; y='a, ,b,'; @PROBE:b@ $y",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "b",
+          "",
+          "",
+          "a",
+          "b",
+          "a",
+          "a",
+          "b",
+          "a",
+          "b",
+          "b"
+        ]
+      ],
+      "b": [
+        [
+          "a",
+          "",
+          "b"
+        ]
+      ],
+      "status": 0
     }
   }
 ]
