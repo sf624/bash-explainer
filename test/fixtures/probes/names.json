@@ -240,6 +240,9 @@
           "posix": "not-run"
         }
       }
+    },
+    "gaps": {
+      "1 export posix": "bash --posix stops the script at a function named like a special builtin; the model does not follow that the script stops, and says the special builtin runs"
     }
   },
   {
@@ -296,6 +299,10 @@
           "posix": "alias"
         }
       }
+    },
+    "gaps": {
+      "1 ll posix": "type -t looks at the aliases when it runs; the commands of the line that defines the alias were read before, so they do not use it (the model gives what a command there runs)",
+      "1 if posix": "type -t looks up aliases before reserved words; the parser reads `if` as a keyword first (`alias if=echo; if x` is a syntax error), which is what the model gives"
     }
   },
   {
@@ -454,6 +461,14 @@
           "posix": "none"
         }
       }
+    },
+    "gaps": {
+      "1 ./a.txt bash": "the model does not know the file system: a name with a slash is a path to run",
+      "1 sub/d.txt bash": "the model does not know the file system: a name with a slash is a path to run",
+      "1 /nonexistent bash": "the model does not know the file system: a name with a slash is a path to run",
+      "1 ./a.txt posix": "the model does not know the file system: a name with a slash is a path to run",
+      "1 sub/d.txt posix": "the model does not know the file system: a name with a slash is a path to run",
+      "1 /nonexistent posix": "the model does not know the file system: a name with a slash is a path to run"
     }
   },
   {
@@ -489,6 +504,361 @@
         "f": {
           "bash": "none",
           "posix": "none"
+        }
+      }
+    },
+    "gaps": {
+      "1 f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "1 f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\""
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "@PROBE:before@\ng() { :; }; g; @PROBE:same@\nh() { :; } | cat\n@PROBE:after@",
+    "note": "a function exists once its definition ran, in this shell",
+    "names": [
+      "g",
+      "h"
+    ],
+    "facts": {
+      "before": {
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "h": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "same": {
+        "g": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "h": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "after": {
+        "g": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "h": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "if [ -n \"$HOME\" ]; then f() { :; }; fi; @PROBE:a@\nif [ -z \"$HOME\" ]; then g() { :; }; fi; @PROBE:b@",
+    "note": "a definition in an `if`: the model does not evaluate the condition",
+    "names": [
+      "f",
+      "g"
+    ],
+    "facts": {
+      "a": {
+        "f": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "b": {
+        "f": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    },
+    "gaps": {
+      "a f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "b f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "b g bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "a f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "b f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
+      "b g posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\""
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n echo\n@PROBE:off@\nenable echo\n@PROBE:on@",
+    "names": [
+      "echo"
+    ],
+    "facts": {
+      "off": {
+        "echo": {
+          "bash": "file",
+          "posix": "file"
+        }
+      },
+      "on": {
+        "echo": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "eval() { :; }; f() { :; }\nset -o posix\n@PROBE@",
+    "note": "type -t says function, but in POSIX mode bash runs the special builtin `eval` (a function with its name cannot be defined in POSIX mode, but this one was defined before)",
+    "names": [
+      "eval",
+      "f"
+    ],
+    "facts": {
+      "1": {
+        "eval": {
+          "bash": "function",
+          "posix": "not-run"
+        },
+        "f": {
+          "bash": "function",
+          "posix": "not-run"
+        }
+      }
+    },
+    "gaps": {
+      "1 eval bash": "type -t finds the function first, but in POSIX mode bash runs the special builtin `eval` before a function (checked by running it); the model gives what runs",
+      "1 eval posix": "bash --posix stops the script at the function named `eval`; the model does not follow that the script stops",
+      "1 f posix": "bash --posix stops the script at the function named `eval`; the model does not follow that the script stops"
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "shopt -s expand_aliases\nalias ll='ls -l'\n@PROBE:on@\nshopt -u expand_aliases\n@PROBE:off@",
+    "names": [
+      "ll"
+    ],
+    "facts": {
+      "on": {
+        "ll": {
+          "bash": "alias",
+          "posix": "alias"
+        }
+      },
+      "off": {
+        "ll": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "set -o posix\nalias ll='ls -l'\n@PROBE:posix@\nset +o posix\n@PROBE:bash@",
+    "note": "`set -o posix` turns expand_aliases on, and `set +o posix` off again",
+    "names": [
+      "ll"
+    ],
+    "facts": {
+      "posix": {
+        "ll": {
+          "bash": "alias",
+          "posix": "alias"
+        }
+      },
+      "bash": {
+        "ll": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "alias a=b b='echo B'\n@PROBE:defined@\nunalias b\n@PROBE:unaliased@",
+    "note": "an alias chain; under bash --posix aliases expand",
+    "names": [
+      "a",
+      "b"
+    ],
+    "facts": {
+      "defined": {
+        "a": {
+          "bash": "none",
+          "posix": "alias"
+        },
+        "b": {
+          "bash": "none",
+          "posix": "alias"
+        }
+      },
+      "unaliased": {
+        "a": {
+          "bash": "none",
+          "posix": "alias"
+        },
+        "b": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "alias ll='ls -l'; @PROBE@",
+    "note": "type -t sees the alias the line defined, but the commands of that line were read before it: they do not use it",
+    "names": [
+      "ll"
+    ],
+    "facts": {
+      "1": {
+        "ll": {
+          "bash": "none",
+          "posix": "alias"
+        }
+      }
+    },
+    "gaps": {
+      "1 ll posix": "type -t looks at the aliases when it runs; the commands of the line that defines the alias were read before, so they do not use it (the model gives what a command there runs)"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "hash -p /bin/echo e1; hash -p /bin/echo e2; PATH=$PATH; @PROBE:path@\nhash -p /bin/echo e3; hash -r; @PROBE:r@\nhash -p /bin/echo e4; hash -d e4; @PROBE:d@",
+    "note": "assigning PATH, `hash -r` and `hash -d` forget the paths of `hash -p`",
+    "names": [
+      "e1",
+      "e3",
+      "e4"
+    ],
+    "facts": {
+      "path": {
+        "e1": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e3": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e4": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "r": {
+        "e1": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e3": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e4": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "d": {
+        "e1": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e3": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "e4": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "PATH=/usr/bin; @PROBE:usr@\nPATH=$HOME/bin; @PROBE:home@",
+    "names": [
+      "ls",
+      "echo"
+    ],
+    "facts": {
+      "usr": {
+        "ls": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "echo": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      },
+      "home": {
+        "ls": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "echo": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    },
+    "gaps": {
+      "home ls bash": "the model does not know the value of `$HOME/bin`, so not whether PATH still finds `ls`",
+      "home ls posix": "the model does not know the value of `$HOME/bin`, so not whether PATH still finds `ls`"
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "f() { :; }; g() { :; }; export -f f; bash -c '@PROBE:bash@'",
+    "note": "another bash gets the exported functions only",
+    "names": [
+      "f",
+      "g"
+    ],
+    "facts": {
+      "bash": {
+        "f": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "f() { :; }; export -f f; sh -c '@PROBE:sh@'; env -i bash -c '@PROBE:clean@'",
+    "note": "dash (sh here) reads no exported function, and `env -i` passes none: the marker, an exported function too, does not run",
+    "names": [
+      "f"
+    ],
+    "facts": {
+      "sh": {
+        "f": {
+          "bash": "not-run",
+          "posix": "not-run"
+        }
+      },
+      "clean": {
+        "f": {
+          "bash": "not-run",
+          "posix": "not-run"
         }
       }
     }
