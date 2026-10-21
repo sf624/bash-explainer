@@ -902,6 +902,7 @@
  "time sleep 1",
  "time | wc",
  "timeout 5 cd /tmp",
+ "tool restart",
  "tr \"$a\" x",
  "tr '' x",
  "tr '[:upper:]' '[:lower:]'",

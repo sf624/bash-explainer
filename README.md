@@ -226,14 +226,24 @@ In-house tools are shown as *external commands* until you describe them:
 "bashExplainer.customCommands": {
   "deploy": {
     "summary": "Deploy a service to production",
-    "options": {
-      "-n|--dry-run": "only show what would happen",
-      "-e": { "description": "target environment", "takesValue": true }
-    },
-    "arguments": ["service name"]
+    "options": [
+      { "names": ["-n", "--dry-run"], "description": "only show what would happen" },
+      { "names": ["-e"], "description": "target environment", "takesValue": true }
+    ],
+    "operands": [{ "description": "service name", "repeat": "+" }],
+    "subcommands": {
+      "status": { "summary": "Show what is deployed", "operands": [{ "description": "service name", "repeat": "*" }] }
+    }
   }
 }
 ```
+
+- `options`: each option's names, its description, and `takesValue` when it takes a value (`-e prod`, `-eprod`, `--env=prod`).
+- `operands`: the words that are not options, in order. `repeat` is `?` (optional), `*` (any number) or `+` (one or more); without it, the operand is there exactly once. When the words do not fit, they are shown as plain words.
+- `style`: `gnu` (the default: options may come after operands), `posix` (the first operand ends the options) or `single-dash` (long options with one dash, `-name value`).
+- `subcommands`: the same fields, for each subcommand.
+
+The shape before 0.7 (`options` as an object, `"-n|--dry-run": "…"`, and `arguments`, a list of texts of which the last repeats) is still read, and a later release drops it.
 
 ## Command line, other editors and CI
 

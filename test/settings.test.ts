@@ -61,6 +61,20 @@ describe('custom commands', () => {
     assert.ok(toks.includes('-e: environment') && toks.includes('prod: Value for `-e`'), toks.join('\n'));
     assert.ok(toks.includes('web: service name'));
   });
+  it('reads options, operands and subcommands written as lists', () => {
+    const tool = {
+      summary: 'In-house tool', style: 'posix',
+      options: [{ names: ['-c', '--config'], description: 'config file', takesValue: true }],
+      operands: [{ name: 'HOST', description: 'host to act on', repeat: '+' }],
+      subcommands: { restart: { summary: 'Restart the service', options: [{ names: ['-f'], description: 'without asking' }], operands: [{ description: 'service', repeat: '*' }] } },
+    };
+    const toks = (line: string) => all(explain(line, { customCommands: { tool } }).items).map((t) => `${t.label}: ${t.explanation}`);
+    const hosts = toks('tool -c a.yml web1 web2 -x');
+    assert.ok(hosts.includes('a.yml: Value for `-c`') && hosts.includes('web1: host to act on') && hosts.includes('-x: host to act on'), hosts.join('\n'));
+    const sub = toks('tool restart -f nginx');
+    assert.ok(sub.includes('-f: without asking') && sub.includes('nginx: service'), sub.join('\n'));
+    assert.match(explain('tool restart', { customCommands: { tool } }).summary, /^tool restart: Restart the service/);
+  });
   it('also inside sudo, and ignores malformed entries', () => {
     assert.match(all(explain('sudo deploy web', { customCommands }).items).map((t) => t.explanation).join('\n'), /Deploy to production/);
     assert.match(explain('broken -x', { customCommands }).items[0].explanation, /not in the dictionary/);

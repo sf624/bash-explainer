@@ -226,14 +226,24 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 "bashExplainer.customCommands": {
   "deploy": {
     "summary": "サービスを本番にデプロイする",
-    "options": {
-      "-n|--dry-run": "実行せずに内容だけ表示",
-      "-e": { "description": "デプロイ先の環境", "takesValue": true }
-    },
-    "arguments": ["サービス名"]
+    "options": [
+      { "names": ["-n", "--dry-run"], "description": "実行せずに内容だけ表示" },
+      { "names": ["-e"], "description": "デプロイ先の環境", "takesValue": true }
+    ],
+    "operands": [{ "description": "サービス名", "repeat": "+" }],
+    "subcommands": {
+      "status": { "summary": "デプロイ済みのものを表示する", "operands": [{ "description": "サービス名", "repeat": "*" }] }
+    }
   }
 }
 ```
+
+- `options`: 各オプションの名前（`names`）・説明（`description`）と、値を取るなら `"takesValue": true`（`-e prod`・`-eprod`・`--env=prod`）。
+- `operands`: オプションでない語を順に書きます。`repeat` は `?`（省略できる）・`*`（いくつでも）・`+`（1つ以上）のどれかで、書かなければちょうど1つです。語の数が合わないときは、普通の語として表示します。
+- `style`: `gnu`（既定。オペランドの後にもオプションを書ける）・`posix`（最初のオペランドでオプションが終わる）・`single-dash`（長いオプションも `-` 1つ。`-name 値`）のどれか。
+- `subcommands`: サブコマンドごとに、同じ項目を書きます。
+
+0.7 より前の形（`options` をオブジェクト `"-n|--dry-run": "…"` で、オペランドを `arguments` の説明の並びで書く形。最後の説明は繰り返す）も読みます。この形は今後のリリースで読まなくなります。
 
 ## コマンドライン、他のエディタ、CI
 

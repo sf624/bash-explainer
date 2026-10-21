@@ -379,29 +379,94 @@
                 "type": "string",
                 "description": "What the command does."
               },
+              "style": {
+                "enum": [
+                  "gnu",
+                  "posix",
+                  "single-dash"
+                ],
+                "description": "How options are written: gnu (the default: options may come after operands), posix (the first operand ends the options), single-dash (long options with one dash: -name value)."
+              },
               "options": {
-                "type": "object",
-                "description": "Option (e.g. \"-n\" or \"-o|--output\") → description, or { \"description\", \"takesValue\" }.",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "description": "The options.",
+                    "items": {
                       "type": "object",
                       "required": [
+                        "names",
                         "description"
                       ],
                       "properties": {
+                        "names": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Its names, such as [\"-o\", \"--output\"]."
+                        },
                         "description": {
                           "type": "string"
                         },
                         "takesValue": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "The option takes a value (-o file, -ofile, --output=file)."
                         }
                       }
                     }
-                  ]
+                  },
+                  {
+                    "type": "object",
+                    "deprecationMessage": "Write options as a list: [{ \"names\": [\"-o\", \"--output\"], \"description\": \"…\" }]. This shape is still read, and a later release drops it.",
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "description"
+                          ],
+                          "properties": {
+                            "description": {
+                              "type": "string"
+                            },
+                            "takesValue": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "operands": {
+                "type": "array",
+                "description": "The words that are not options, in order.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "description"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "repeat": {
+                      "enum": [
+                        "?",
+                        "*",
+                        "+"
+                      ],
+                      "description": "? optional, * any number, + one or more; absent: exactly one."
+                    }
+                  }
                 }
               },
               "arguments": {
@@ -409,7 +474,120 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Descriptions of the arguments in order; the last one repeats."
+                "deprecationMessage": "Use operands: [{ \"description\": \"…\", \"repeat\": \"*\" }]. This shape is still read, and a later release drops it."
+              },
+              "subcommands": {
+                "type": "object",
+                "description": "The subcommands, with the same fields.",
+                "additionalProperties": {
+                  "type": "object",
+                  "required": [
+                    "summary"
+                  ],
+                  "properties": {
+                    "summary": {
+                      "type": "string",
+                      "description": "What the command does."
+                    },
+                    "style": {
+                      "enum": [
+                        "gnu",
+                        "posix",
+                        "single-dash"
+                      ],
+                      "description": "How options are written: gnu (the default: options may come after operands), posix (the first operand ends the options), single-dash (long options with one dash: -name value)."
+                    },
+                    "options": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "description": "The options.",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "names",
+                              "description"
+                            ],
+                            "properties": {
+                              "names": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Its names, such as [\"-o\", \"--output\"]."
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "takesValue": {
+                                "type": "boolean",
+                                "description": "The option takes a value (-o file, -ofile, --output=file)."
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "deprecationMessage": "Write options as a list: [{ \"names\": [\"-o\", \"--output\"], \"description\": \"…\" }]. This shape is still read, and a later release drops it.",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "description"
+                                ],
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "takesValue": {
+                                    "type": "boolean"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "operands": {
+                      "type": "array",
+                      "description": "The words that are not options, in order.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "description"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "repeat": {
+                            "enum": [
+                              "?",
+                              "*",
+                              "+"
+                            ],
+                            "description": "? optional, * any number, + one or more; absent: exactly one."
+                          }
+                        }
+                      }
+                    },
+                    "arguments": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "deprecationMessage": "Use operands: [{ \"description\": \"…\", \"repeat\": \"*\" }]. This shape is still read, and a later release drops it."
+                    }
+                  }
+                }
               }
             }
           }
