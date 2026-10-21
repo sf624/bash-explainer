@@ -1006,9 +1006,11 @@ describe('the web page in a browser', function () {
     await panel().locator('textarea').first().fill('user=alice');
     await until('the rerun example', text('#tree'), (t) => t.includes('alice=user'));
 
-    // Pointing at a part highlights it in the editor.
-    await panel().locator('#tree li').first().hover();
-    await until('the highlight', () => page.locator('.cm-bx-highlight').count(), (n) => n > 0);
+    // Pointing at a part highlights it in the editor. The pointer goes on the part's row: the middle of
+    // the whole item may fall between rows (a nested list's margin), depending on the fonts.
+    await panel().locator('#tree > li > .row').first().hover();
+    const lit = await until('the highlight', () => page.locator('.cm-bx-highlight').allTextContents(), (t) => t.length > 0);
+    assert.ok(lit.join('').startsWith('sed -E'), lit.join(''));
 
     // A skeleton label (the `while` line of the sample): code in monospace, placeholders apart in muted italics.
     const whileLine = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8').split('\n').findIndex((l) => l.startsWith('while read'));
