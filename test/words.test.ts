@@ -47,7 +47,7 @@ describe('words: contexts', () => {
       ['case $x in $p) ;; esac', '$x', 'case-word'], ['case $x in $p) ;; esac', '$p', 'case-pattern'], ['for i in $l; do :; done', '$l', 'for-list'],
       ['select i in $l; do :; done', '$l', 'for-list'], ['cat > $o', '$o', 'redirect-target'], ['cat <<< $h', '$h', 'herestring'],
       ['cat <<E\n$h\nE', '$h', 'heredoc-body'], ['echo $(( $n + 1 ))', '$n', 'arith'], ['(( $n ))', '$n', 'arith'], ['for ((i=$n; i<3; i++)); do :; done', '$n', 'arith'],
-      ['a[$i]=1', '$i', 'subscript'], ['echo ${a[$i]}', '$i', 'subscript'], ['echo ${u:-$w}', '$w', 'param-word'], ['echo ${u#x}', 'x', 'param-pattern'],
+      ['a[$i]=1', '$i', 'subscript'], ['echo ${a[$i]}', '$i', 'subscript'], ['echo ${u:-$w}', '$w', 'param-word'], ['echo ${s:$i:2}', '$i', 'arith'], ['echo ${u#x}', 'x', 'param-pattern'],
       ['echo "a$x"', '$x', 'argument'], ['echo $(( $(echo $n) ))', '$n', 'argument'],
       ['$c a', '$c', undefined],
       // Not words: a name, the variable of a loop, a function's name, a descriptor, a here-document's delimiter.
