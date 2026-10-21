@@ -892,7 +892,8 @@ describe('[ ] shows its syntax', () => {
   it('keeps `test -f x` as a builtin command', () => {
     const t = explain('test -f x').items[0];
     assert.strictEqual(t.kind, 'builtin');
-    assert.deepStrictEqual(t.children.map((c) => c.label), ['-f', 'x']);
+    // Its words are read as an expression, like the inside of `[ ]` (without the `[` and `]` tokens).
+    assert.deepStrictEqual(t.children.map((c) => c.label), ['-f x']);
   });
   it('contrasts [[ ]] with it', () => {
     assert.match(explain('[[ -f $f ]]').items[0].explanation, /shell syntax, not a command, so there is no word splitting or globbing inside/);
