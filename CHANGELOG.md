@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The options of `git` before the subcommand are read one word each, as git reads them: `git -pP log` and `git -C. log` are unknown options, as git says ("unknown option: -pP"). Before, `-pP` was `-p` and `-P`, and `-C.` was `-C` with the value `.`. The options of a subcommand still cluster (`git commit -am x`).
 - In `ip - 3 link`, the lone `-` is the option `-loops`, as iproute2 reads it (it takes the first option the word starts). Before, `-` was a plain argument.
 - A long option that is the start of several options, as `timeout --v`, `env --ig` and `xargs --max`, is shown as ambiguous, with the options it could be (`--verbose`, `--version`), and says that the tool refuses it. Before, it was "Option (not in the dictionary)".
 - `env -S'-i A=1' printenv A` and `env -S-i A=1 cmd` read the words after the `-S` string as env reads them when the string holds only options and assignments: `A=1` is a variable and `cmd` the command. Before, they were arguments of a command "made from the string". With a command in the string (`env -S'-i A=1 printenv' x`), `x` is still its argument.
