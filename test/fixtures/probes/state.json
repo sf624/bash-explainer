@@ -1686,5 +1686,294 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: ro: readonly variable"
     }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "x=1; (( x = 3, y = $x )); a=1; (( a++, a += $a )); b=1; (( b = 3, c = $(( b )) ))\no=010; (( d = $o, e = ${o} )); n=08; (( f = $n )); (( g = 1 ))",
+    "note": "`$x` is expanded before the expression runs, and pasted as text (`010` is octal)",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"8\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"8\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"08\""
+          },
+          "o": {
+            "attrs": "-",
+            "value": "\"010\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 2: ((: f = 08: value too great for base (error token is \"08\")"
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=1; : $(( x++ )) > f$(( x *= 3 )); a=1; b=$(( a *= 3 )) : > f$(( a++ )); c=1; d=$(( c *= 3 )) : $(( c++ ))\ne=1; let e*=3 > f$(( e++ )); i=5; i=$(( i = 9 ))x; j=5; declare j=$(( j = 9 ))x\nk=1; k=5 > f$(( k *= 2 )); m=1; declare n=$(( m *= 3 )) > f$(( m++ )); p=1; { p=2; } > f$(( p *= 5 ))",
+    "note": "a simple command expands its words, then the values of its assignments, then its redirections; a compound command makes its redirections first",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"9x\""
+          },
+          "j": {
+            "attrs": "-",
+            "value": "\"9x\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"10\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "p": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"6\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=1; for y in $(( x = 5 )); do :; done; s=1; select t in $(( s = 6 )); do break; done </dev/null\nc=1; case 7 in $(( c = 7 ))) ;; $(( c = 9 ))) ;; esac; d=1; case 1 in ${d:=x}|${q:=y}) ;; esac",
+    "note": "the words of for and select are expanded; the patterns of case, until one matches",
+    "facts": {
+      "end": {
+        "variables": {
+          "REPLY": {
+            "attrs": "-",
+            "value": "\"\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "1) 6"
+    },
+    "gaps": {
+      "end.variables.y": "the model does not read the condition: the body of a loop may run",
+      "end.variables.t": "the model does not read the condition: the body of a loop may run",
+      "end.variables.REPLY": "select's REPLY is not followed",
+      "end.variables.q": "a pattern after the first one may be expanded: the model does not match the patterns"
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "x=1; [[ 0 == 1 && $(( x = 4 )) ]]; y=1; [[ 1 == 1 || $(( y = 4 )) ]]; z=1; [[ -n $(( z = 4 )) || $(( z = 5 )) ]]",
+    "note": "&& and || in [[ ]] expand their right side only when the left one does not decide",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"4\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "i=0; declare -A m; (( m[i++] = 1 )); (( m[i++] )); let 'm[i++]=1'; declare -a a; (( a[i++] = 1 ))",
+    "note": "the subscript of an associative array is a key, not arithmetic",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "a",
+            "value": "([0]=\"1\")"
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "m": {
+            "attrs": "A",
+            "value": "([i++]=\"1\" )"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "(( a = 08 )); (( b = 0xG )); (( c = 1#1 )); (( d = 65#1 )); (( e = 2#102 )); (( f = 10#-8 )); (( g = 'a' ))\ny1=1x; (( h = y1 )); y2='(1'; (( i = y2 )); y3='1 2'; (( j = y3 )); y4=-; (( k = y4 )); y5='\"1\"'; (( l = y5 ))\ny6='3 # c'; (( m = y6 )); y7='z = 4'; (( n = y7 )); y8='y8 + 1'; (( o = y8 ))",
+    "note": "an invalid constant, or a value that is no expression, is an error; a value is run as an expression",
+    "facts": {
+      "end": {
+        "variables": {
+          "n": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "y1": {
+            "attrs": "-",
+            "value": "\"1x\""
+          },
+          "y2": {
+            "attrs": "-",
+            "value": "\"(1\""
+          },
+          "y3": {
+            "attrs": "-",
+            "value": "\"1 2\""
+          },
+          "y4": {
+            "attrs": "-",
+            "value": "\"-\""
+          },
+          "y5": {
+            "attrs": "-",
+            "value": "\"\\\"1\\\"\""
+          },
+          "y6": {
+            "attrs": "-",
+            "value": "\"3 # c\""
+          },
+          "y7": {
+            "attrs": "-",
+            "value": "\"z = 4\""
+          },
+          "y8": {
+            "attrs": "-",
+            "value": "\"y8 + 1\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"4\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: a = 08: value too great for base (error token is \"08\")"
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "x=1; command cat </dev/null > f$(( x = 5 )); y=1; command -v cat > f$(( y = 2 )); f() { :; }; z=1; command f > g$(( z = 3 )) 2>/dev/null",
+    "note": "`command` runs a program in a process of its own, where its redirections are made",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.5",
+    "snippet": ": $(( 1 / 0 )) $(( y = 3 )); z=1",
+    "note": "an error in an expansion discards the rest of the command, and of the line",
+    "gaps": {
+      "end.variables.z": "the rest of the line after an expansion error is not followed"
+    },
+    "facts": {
+      "end": {},
+      "status": 0,
+      "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
+    }
   }
 ]

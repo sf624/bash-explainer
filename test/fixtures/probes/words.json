@@ -1039,7 +1039,7 @@
   {
     "manual": "3.5.2",
     "snippet": "HOME=h; mkdir -p a=h; case a=~/d in a=h/d) @PROBE:a@ case-word;; esac; case a=h/d in a=~/d) @PROBE:b@ case-pattern;; esac; [[ a=~/e == a=h/e ]] && @PROBE:c@ cond; @PROBE:d@ > a=~/f; u=; @PROBE:e@ <<< a=~/g ${u:-a=~/x}",
-    "note": "In bash mode, a word that looks like an assignment has its tilde expanded in `case`, `[[ ]]` and a redirection target too; not in a here-string or the word of `${u:-\u2026}`.",
+    "note": "In bash mode, a word that looks like an assignment has its tilde expanded in `case`, `[[ ]]` and a redirection target too; not in a here-string or the word of `${u:-…}`.",
     "facts": {
       "a": [
         [
@@ -1207,6 +1207,22 @@
         ]
       ],
       "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "y=1; { @PROBE:b@ \"$y\"; } > h$(( y *= 5 ))",
+    "note": "a compound command makes its redirections before it runs",
+    "facts": {
+      "b": [
+        [
+          "5"
+        ]
+      ],
+      "status": 0,
+      "created": [
+        "h5"
+      ]
     }
   }
 ]

@@ -13,7 +13,7 @@ import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { STATEMENTS } from './env';
-import { attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -754,7 +754,6 @@ export function underscoreValue(n: SyntaxNode, model: StateModel): string | unde
   return afterAssignment(n, model) ? '' : undefined;
 }
 
-const ASSIGNED = /([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*)/g;
 const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();
 /**
  * The variables an arithmetic expression or a `${x:=word}` may assign in the statement that holds `n` (through
@@ -780,7 +779,7 @@ function unreliableNames(n: SyntaxNode): Set<string> {
       if (p && (p.op === ':=' || p.op === '=')) names.add(p.name);
       continue;
     }
-    for (const m of a.text.matchAll(ASSIGNED)) names.add(m[1] ?? m[2] ?? m[3]);
+    for (const m of a.text.matchAll(ARITH_ASSIGNED)) names.add(m[1] ?? m[3] ?? m[4]);
   }
   unreliableCache.set(top, names);
   return names;
