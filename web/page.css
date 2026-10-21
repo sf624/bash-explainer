@@ -1,112 +1,255 @@
+/*
+ * The web page: an app shell as high as the window. A top bar, then the editor and the explanation,
+ * side by side (one above the other on a phone) with a divider to resize them. The page itself never
+ * scrolls; the editor, the explanation and the side sheets (the menu, the settings) scroll inside.
+ * The colours are the tokens of theme.css.
+ */
+
 * {
   box-sizing: border-box;
 }
 
+/* The app shell: the window's height, and no page scroll. */
 html,
 body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
   display: flex;
   flex-direction: column;
+  height: 100dvh;
   line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
   color: var(--vscode-textLink-foreground);
 }
 
-.top {
-  display: flex;
-  flex-wrap: wrap;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The icons, drawn with the text's colour. */
+.icons {
+  display: none;
+}
+
+.icon-btn svg,
+.menu-item svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Controls --------------------------------------------------------------------------------- */
+
+select,
+button {
+  font: inherit;
+  color: var(--vscode-dropdown-foreground);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: var(--control-h);
+  max-width: 100%;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-dropdown-background) var(--select-arrow) no-repeat right 8px center / 12px 12px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Hover states for a mouse only: on a touch screen they would stay after a tap. */
+@media (hover: hover) {
+  select:hover {
+    border-color: var(--hover-border);
+  }
+}
+
+button {
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-dropdown-background);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+@media (hover: hover) {
+  button:hover {
+    background: var(--vscode-list-hoverBackground);
+    border-color: var(--hover-border);
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* A square button with an icon only; its name is its aria-label and its title. */
+.icon-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem 1.25rem;
-  padding: 0.6rem 1rem;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--vscode-list-hoverBackground);
+    border-color: transparent;
+  }
+}
+
+.icon-btn:active,
+.menu-item:active {
+  background: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::backdrop {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---- The top bar ------------------------------------------------------------------------------ */
+
+.top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--bar-h);
+  padding: 0 8px 0 12px;
   background: var(--page-background);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
 .brand {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   color: var(--vscode-foreground);
-  font-size: 1.15rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.tagline {
-  flex: 1 1 20rem;
-  margin: 0;
-  color: var(--vscode-descriptionForeground);
-}
-
-.links {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.install {
-  padding: 0.3rem 0.8rem;
-  border-radius: 4px;
-  background: var(--page-accent);
-  color: var(--page-accent-foreground);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   text-decoration: none;
   white-space: nowrap;
 }
 
-.toolbar {
+.brand img {
+  border-radius: 6px;
+}
+
+.kind {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  min-width: 0;
 }
 
-select,
-button {
-  font: inherit;
-  color: var(--vscode-dropdown-foreground);
-  background: var(--vscode-dropdown-background);
-  border: 1px solid var(--vscode-dropdown-border);
-  border-radius: 3px;
-  padding: 0.15rem 0.5rem;
+.kind select {
+  max-width: 15rem;
+  font-weight: 500;
 }
 
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: 1px;
-}
-
-#status {
+.tagline {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.actions .sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--vscode-panel-border);
+}
+
+.compact select {
+  font-size: 12.5px;
+}
+
+.install {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  margin: 0 4px 0 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  background: var(--page-accent);
+  color: var(--page-accent-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 0.15s;
+}
+
+.install:hover {
+  filter: brightness(1.1);
+}
+
+/* ---- The editor and the explanation ----------------------------------------------------------- */
 
 .split {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--split, 50%)) var(--gutter) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
 .source {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--vscode-panel-border);
 }
 
 #editor {
@@ -118,33 +261,91 @@ button:hover {
   height: 100%;
 }
 
+#panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--vscode-editor-background);
+}
+
+/* The divider: a line to drag, to move with the arrow keys, or to double-click for the default sizes. */
+.splitter {
+  position: relative;
+  z-index: 2;
+  background: var(--page-background);
+  border-inline: 1px solid var(--vscode-panel-border);
+  cursor: col-resize;
+  touch-action: none;
+  transition: background-color 0.15s;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.45;
+  transform: translate(-50%, -50%);
+}
+
+.splitter:hover,
+.splitter:focus-visible,
+body.resizing .splitter {
+  background: var(--accent-soft);
+}
+
+.splitter:focus-visible {
+  outline-offset: -2px;
+}
+
+/* While the divider is dragged, the frame must not take the pointer. */
+body.resizing,
+body.resizing * {
+  user-select: none;
+}
+
+body.resizing iframe {
+  pointer-events: none;
+}
+
 #problems {
+  flex: none;
   max-height: 30%;
   overflow: auto;
   border-top: 1px solid var(--vscode-panel-border);
-  padding: 0.25rem 1rem 0.5rem;
+  padding: 0 0 6px;
+  background: var(--page-background);
 }
 
 #problems h2 {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 6px 12px 4px;
+  background: var(--page-background);
   color: var(--vscode-descriptionForeground);
-  margin: 0.25rem 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 #problem-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 6px;
 }
 
 #problem-list li {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.1rem 0.25rem;
-  border-radius: 3px;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -166,180 +367,336 @@ button:hover {
   color: var(--vscode-charts-blue);
 }
 
-#panel {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: var(--vscode-editor-background);
-}
-
-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0 1rem;
-  padding: 0.4rem 1rem;
-  border-top: 1px solid var(--vscode-panel-border);
-  background: var(--page-background);
-  color: var(--vscode-descriptionForeground);
-  font-size: 0.85rem;
-}
-
-footer p {
+/* What an action did ("Link copied"): a toast at the bottom, for a few seconds. */
+#status {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 20;
+  width: max-content;
+  max-width: min(32rem, calc(100vw - 32px));
   margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  transition: opacity 0.2s, transform 0.2s var(--ease);
+}
+
+#status:empty {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* A strip along the right edge of a touch screen: a swipe from it opens the menu. */
+.edge {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .edge {
+    display: block;
+    position: fixed;
+    top: var(--bar-h);
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    width: 12px;
+    touch-action: none;
+  }
 }
 
 .noscript {
   padding: 1rem;
 }
 
-/* Phones and narrow windows: the explanation below the script. */
-@media (max-width: 760px) {
-  html,
-  body {
-    height: auto;
-  }
+/* ---- The side sheets: the menu and the settings ------------------------------------------------ */
 
-  .split {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.sheet {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(22rem, calc(100vw - 48px));
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vscode-panel-border);
+  border-radius: 12px 0 0 12px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: transform 0.22s var(--ease);
+}
 
-  .source {
-    border-right: 0;
-    border-bottom: 1px solid var(--vscode-panel-border);
-  }
+/* A swipe sideways moves the sheet (layout.ts); up and down scrolls it. The scrolling parts need it
+   too, as touch-action does not reach past a scroll container. */
+.sheet,
+.sheet-body,
+.settings-body {
+  touch-action: pan-y pinch-zoom;
+}
 
-  #editor {
-    height: 45vh;
-    flex: none;
-  }
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
 
-  #panel {
-    height: 75vh;
-  }
-
-  /* The toolbar in three rows (File | Language, Version | Theme, Load | Copy), every control 44px
-     high to tap. Each control is as wide as its longest option, so that nothing is cut ("Release
-     (v0.5.0)", "GitHub Actions / GitLab CI"), and the row breaks only when two do not fit; they
-     then share the rest of the row. It was five rows of small controls, half the screen above the
-     script. */
-  .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 0.4rem 0.5rem;
-  }
-
-  .toolbar label {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    min-width: 0;
-  }
-
-  .toolbar button {
-    flex: 1 1 8rem;
-    padding-inline: 0.4rem;
-    line-height: 1.2;
-  }
-
-  .toolbar select,
-  .toolbar button {
-    min-height: 2.75rem;
-  }
-
-  /* The settings button is its gear alone (its name is read, not drawn), beside the theme. */
-  .toolbar #settings-open {
-    flex: 0 0 2.75rem;
-    padding-inline: 0;
-  }
-
-  #settings-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  /* The labels are read by screen readers but not drawn: the selects show what they are (a name
-     beside each took the room the values need). */
-  .toolbar label > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .toolbar label select {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: 0.9rem;
-  }
-
-  .toolbar #status {
-    flex: 1 0 100%;
-  }
-
-  .toolbar #status:empty {
-    display: none;
-  }
-
-  .install,
-  .links a {
-    padding-block: 0.5rem;
-  }
-
-  #problem-list li {
-    padding-block: 0.4rem;
+@starting-style {
+  .sheet[open] {
+    transform: translateX(100%);
   }
 }
 
-/* The banner of the development version (/next/). */
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  transition: opacity 0.22s;
+}
+
+@starting-style {
+  .sheet[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* A sheet being swiped away follows the finger. */
+.sheet.dragging {
+  transition: none;
+}
+
+.sheet-head,
+.settings-head,
+.settings-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  background: var(--page-background);
+}
+
+.sheet-head,
+.settings-head {
+  justify-content: space-between;
+  min-height: var(--bar-h);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.sheet-head h2,
+.settings-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+
+.menu-group + .menu-group {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  color: var(--vscode-foreground);
+}
+
+.field select {
+  flex: 0 1 12rem;
+  min-width: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  text-decoration: none;
+}
+
+.menu-item[hidden] {
+  display: none;
+}
+
+@media (hover: hover) {
+  .menu-item:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+.menu-item svg {
+  color: var(--vscode-descriptionForeground);
+}
+
+.about {
+  padding: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.about p {
+  margin: 0 0 6px;
+}
+
+/* The banner of the development version and of the previews (/next/, /pr/N/). */
 .banner {
-  padding: 0.5rem 1rem;
+  flex: none;
+  padding: 4px 12px;
   background: var(--vscode-textBlockQuote-background);
   border-bottom: 2px solid var(--vscode-focusBorder);
   color: var(--vscode-foreground);
-  font-size: 0.9rem;
+  font-size: 12px;
 }
 
 .banner[hidden] {
   display: none;
 }
 
-/* The small link from the released page to the development version. */
-.dev-link {
-  color: var(--vscode-descriptionForeground);
+/* ---- Sizes ------------------------------------------------------------------------------------ */
+
+/* No room for the tagline, then for the button to install. */
+@media (max-width: 1100px) {
+  .tagline {
+    visibility: hidden;
+  }
+}
+
+@media (max-width: 900px) {
+  .top .install {
+    display: none;
+  }
+}
+
+/* Phones and narrow windows: the explanation below the script, and the top bar's main controls only
+   (the file kind, the link, the settings, the menu), each 44px wide to tap; the rest is in the menu. */
+@media (max-width: 767px) {
+  :root {
+    --gutter: 14px;
+  }
+
+  .top {
+    gap: 6px;
+    padding: 0 4px 0 10px;
+  }
+
+  .brand-name,
+  .wide-only {
+    display: none;
+  }
+
+  .kind {
+    flex: 1 1 auto;
+  }
+
+  .kind select {
+    width: 100%;
+    max-width: none;
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .icon-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, var(--split, 45%)) var(--gutter) minmax(0, 1fr);
+  }
+
+  .splitter {
+    border-inline: 0;
+    border-block: 1px solid var(--vscode-panel-border);
+    cursor: row-resize;
+  }
+
+  .splitter::after {
+    width: 36px;
+    height: 4px;
+  }
+
+  /* A wider area to grab with a finger than the line shows. */
+  .splitter::before {
+    content: "";
+    position: absolute;
+    inset: -8px 0;
+  }
+
+  .menu-item {
+    min-height: 44px;
+  }
+
+  .field select {
+    min-height: 40px;
+  }
+
+  #problem-list li {
+    padding-block: 8px;
+  }
+
+  #settings-dialog {
+    width: 100vw;
+    border-radius: 0;
+  }
 }
 
 /* ?view=panel: the explanation panel only, the whole window (the compare page puts it in a frame). */
-html.view-panel,
-html.view-panel body {
-  height: 100%;
-}
-
 html.view-panel .top,
-html.view-panel .toolbar,
 html.view-panel .banner,
-html.view-panel footer,
 html.view-panel .noscript,
-html.view-panel .source {
+html.view-panel .source,
+html.view-panel .splitter,
+html.view-panel .edge,
+html.view-panel #status {
   display: none;
 }
 
 html.view-panel .split {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
-html.view-panel #panel {
-  height: 100%;
-}
+/* ---- compare.html: the script, then the two copies' panels, each under the name of its version -- */
 
-/* compare.html: the script, then the two copies' panels, each under the name of its version. */
 .compare {
   flex: 1;
   display: grid;
@@ -358,17 +715,14 @@ html.view-panel #panel {
   border-left: 1px solid var(--vscode-panel-border);
 }
 
-.compare .source {
-  border-right: 0;
-}
-
 .copy-head {
   margin: 0;
-  padding: 0.35rem 1rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 6px 12px;
   background: var(--page-background);
   border-bottom: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .copy iframe {
@@ -390,11 +744,13 @@ html.view-panel #panel {
   color: var(--vscode-descriptionForeground);
 }
 
-/* Narrower than 1000px: the script on top, the two panels side by side below it; on a phone, one under the other. */
+/* Narrower than 1000px: the script on top, the two panels side by side below it; on a phone, one
+   under the other. Three panes do not fit in a window's height there, so this page scrolls. */
 @media (max-width: 1000px) {
   html:has(.compare),
   html:has(.compare) body {
     height: auto;
+    overflow: auto;
   }
 
   .compare {
@@ -423,9 +779,13 @@ html.view-panel #panel {
     flex: none;
     height: 75vh;
   }
+
+  body[data-page="compare"] .tagline {
+    display: none;
+  }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .compare {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -434,95 +794,79 @@ html.view-panel #panel {
     border-left: 0;
     border-top: 1px solid var(--vscode-panel-border);
   }
+
+  body[data-page="compare"] .top {
+    height: auto;
+    min-height: var(--bar-h);
+    flex-wrap: wrap;
+    padding-block: 2px;
+  }
+
+  body[data-page="compare"] .actions {
+    flex-wrap: wrap;
+  }
 }
 
-/* ---- The settings dialog ---------------------------------------------------------------------- */
+/* ---- The settings sheet ----------------------------------------------------------------------- */
 
 #settings-dialog {
-  width: min(44rem, calc(100vw - 32px));
-  max-width: none;
-  max-height: calc(100dvh - 32px);
-  padding: 0;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 6px;
-  background: var(--vscode-editor-background);
-  color: var(--vscode-foreground);
-  overflow: hidden;
-}
-
-#settings-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-#settings-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.settings-head,
-.settings-foot {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--page-background);
-}
-
-.settings-head {
-  justify-content: space-between;
-  border-bottom: 1px solid var(--vscode-panel-border);
-}
-
-.settings-head h2 {
-  margin: 0;
-  font-size: 1.1rem;
+  width: min(36rem, 100vw);
 }
 
 .settings-x {
-  border: none;
-  background: none;
   font-size: 1.3rem;
   line-height: 1;
-  padding: 0.1rem 0.4rem;
 }
 
 .settings-foot {
   flex-wrap: wrap;
   justify-content: flex-end;
+  padding: 8px 12px;
   border-top: 1px solid var(--vscode-panel-border);
+}
+
+.settings-foot #settings-done {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+  color: var(--page-accent-foreground);
+}
+
+.settings-foot #settings-done:hover {
+  filter: brightness(1.1);
 }
 
 .settings-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.25rem 1rem 0.75rem;
+  overscroll-behavior: contain;
+  padding: 4px 16px 12px;
   overflow-wrap: anywhere;
 }
 
 .settings-intro,
 .settings-elsewhere {
   color: var(--vscode-descriptionForeground);
-  margin: 0.5rem 0;
+  margin: 8px 0;
 }
 
 .settings-elsewhere {
   font-size: 0.9em;
   border-top: 1px solid var(--vscode-panel-border);
-  padding-top: 0.75rem;
+  padding-top: 12px;
 }
 
 .settings-group h3 {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  margin: 20px 0 4px;
   color: var(--vscode-descriptionForeground);
-  margin: 1rem 0 0.25rem;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .setting {
-  padding: 0.5rem 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -531,7 +875,7 @@ html.view-panel #panel {
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0 0.75rem;
+  gap: 0 12px;
 }
 
 .setting-head label {
@@ -544,7 +888,7 @@ html.view-panel #panel {
 }
 
 .setting-desc {
-  margin: 0.15rem 0 0.4rem;
+  margin: 2px 0 6px;
   font-size: 0.92em;
   color: var(--vscode-descriptionForeground);
 }
@@ -553,29 +897,30 @@ html.view-panel #panel {
   font-family: var(--vscode-editor-font-family);
   font-size: 0.92em;
   background: var(--vscode-textCodeBlock-background);
-  border-radius: 3px;
-  padding: 0 0.2em;
+  border-radius: 4px;
+  padding: 0 0.25em;
 }
 
-.setting select,
 .setting input[type='text'],
 .setting input[type='number'],
-.setting textarea {
+.setting textarea,
+.settings-io textarea {
   max-width: 100%;
+  min-height: var(--control-h);
   font: inherit;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
-  border-radius: 3px;
-  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
 }
 
 .setting select {
   width: 100%;
-  text-overflow: ellipsis;
 }
 
-.setting textarea {
+.setting textarea,
+.settings-io textarea {
   display: block;
   width: 100%;
   font-family: var(--vscode-editor-font-family);
@@ -583,12 +928,16 @@ html.view-panel #panel {
   resize: vertical;
 }
 
+.setting input[type='checkbox'] {
+  accent-color: var(--page-accent);
+}
+
 .setting textarea[aria-invalid='true'] {
   border-color: var(--vscode-errorForeground);
 }
 
 .setting-error {
-  margin: 0.25rem 0 0;
+  margin: 4px 0 0;
   color: var(--vscode-errorForeground);
 }
 
@@ -599,7 +948,7 @@ html.view-panel #panel {
 .setting-choices {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
-  gap: 0.15rem 1rem;
+  gap: 2px 16px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -616,19 +965,19 @@ html.view-panel #panel {
 .setting-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: 4px;
   list-style: none;
-  margin: 0 0 0.4rem;
+  margin: 0 0 6px;
   padding: 0;
 }
 
 .setting-list li {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 2px;
   border: 1px solid var(--vscode-panel-border);
   border-radius: 999px;
-  padding: 0 0.15rem 0 0.5rem;
+  padding: 0 2px 0 8px;
 }
 
 .setting-list li.setting-none {
@@ -638,15 +987,17 @@ html.view-panel #panel {
 }
 
 .setting-list button {
+  min-height: 0;
   border: none;
+  border-radius: 999px;
   background: none;
-  padding: 0 0.3rem;
-  line-height: 1.2;
+  padding: 0 6px;
+  line-height: 1.4;
 }
 
 .setting-add {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .setting-add input {
@@ -657,11 +1008,11 @@ html.view-panel #panel {
 .settings-io-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .settings-io details {
-  margin-top: 0.5rem;
+  margin-top: 8px;
 }
 
 .settings-io summary {
@@ -670,16 +1021,7 @@ html.view-panel #panel {
 }
 
 .settings-io textarea {
-  display: block;
-  width: 100%;
-  margin: 0.4rem 0;
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
-  border-radius: 3px;
-  resize: vertical;
+  margin: 6px 0;
 }
 
 .settings-io-status:empty {
@@ -687,9 +1029,10 @@ html.view-panel #panel {
 }
 
 .settings-io-status {
-  margin-top: 0.5rem;
-  padding: 0.4rem 0.75rem;
+  margin-top: 8px;
+  padding: 6px 12px;
   border-left: 3px solid var(--vscode-charts-green);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--vscode-textBlockQuote-background);
 }
 
@@ -698,10 +1041,10 @@ html.view-panel #panel {
 }
 
 .settings-io-status p {
-  margin: 0.15rem 0;
+  margin: 2px 0;
 }
 
 .settings-io-status ul {
-  margin: 0.15rem 0;
-  padding-left: 1.25rem;
+  margin: 2px 0;
+  padding-left: 20px;
 }

@@ -258,7 +258,7 @@ export class SettingsDialog {
     const s = this.host.get();
     const here = settingsFor('web');
     const groups = [...new Set(here.map((x) => x.group))];
-    const close = el('button', { type: 'button', className: 'settings-x', textContent: '×', title: t.close });
+    const close = el('button', { type: 'button', className: 'icon-btn settings-x', textContent: '×', title: t.close });
     close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => this.dialog.close());
     const reset = el('button', { type: 'button', id: 'settings-reset', textContent: t.reset });

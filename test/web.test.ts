@@ -32,6 +32,20 @@ async function until<T>(what: string, get: () => Promise<T>, ok: (v: T) => boole
   return v;
 }
 
+/**
+ * Chooses a value in a select of the page's menu (the language, the theme, the version), opening the
+ * menu first and closing it after; the compare page has these in its top bar.
+ */
+async function choose(page: Page, id: string, value: string): Promise<void> {
+  const drawer = page.locator('#drawer');
+  if (await drawer.count()) {
+    if (!(await drawer.evaluate((d) => (d as unknown as { open: boolean }).open))) await page.locator('#menu-open').click();
+  }
+  await page.locator(id).selectOption(value);
+  // The version is another page: the menu then went with the page.
+  await page.evaluate("document.getElementById('drawer')?.close()").catch(() => undefined);
+}
+
 describe('the web page in a browser', function () {
   this.timeout(120000);
   let browser: Browser | undefined;
@@ -80,12 +94,16 @@ describe('the web page in a browser', function () {
     const page = await ctx.newPage();
     await page.goto(base);
     assert.strictEqual(await page.locator('#channel-banner').isHidden(), true);
+    // The link to the development version is in the menu.
+    assert.strictEqual(await page.locator('#dev-link').isVisible(), false);
+    await page.locator('#menu-open').click();
     assert.strictEqual(await page.locator('#dev-link').isVisible(), true);
-    await page.locator('#lang').selectOption('ja');
+    await page.locator('#menu-close').click();
+    await choose(page, '#lang', 'ja');
     await page.locator('.cm-content').click();
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('echo NEXTMARK');
-    await page.locator('#channel').selectOption('next');
+    await choose(page, '#channel', 'next');
     await page.waitForURL(`${base}next/**`);
     await until('the typed script', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
     assert.strictEqual(await page.locator('#channel-banner').isVisible(), true);
@@ -100,7 +118,7 @@ describe('the web page in a browser', function () {
     await page.locator('#share').click();
     const link = await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
     assert.ok(link.startsWith(`${base}next/#`), link);
-    await page.locator('#channel').selectOption('release');
+    await choose(page, '#channel', 'release');
     await page.waitForURL(new RegExp(`^${base}#`));
     await until('the script back', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
     await ctx.close();
@@ -226,12 +244,12 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await page.locator('meta[name=robots]').getAttribute('content'), 'noindex');
     assert.strictEqual(await page.locator('#channel').inputValue(), 'pr');
     assert.strictEqual(await page.locator('#dev-link').isHidden(), true);
-    await page.locator('#lang').selectOption('ja');
+    await choose(page, '#lang', 'ja');
     assert.match(await page.locator('#banner-text').innerText(), /^プルリクエスト #123（コミット [0-9a-f]{7}）のプレビュー。未リリース。$/);
-    await page.locator('#channel').selectOption('next');
+    await choose(page, '#channel', 'next');
     await page.waitForURL(`${base}next/**`);
     await page.goBack();
-    await page.locator('#channel').selectOption('release');
+    await choose(page, '#channel', 'release');
     await page.waitForURL(new RegExp(`^${base}#`));
     await ctx.close();
   });
@@ -248,7 +266,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(ready!.pr, '123');
     const f = page.frames().find((x) => x.url().includes('view=panel'))!;
     assert.strictEqual(await f.locator('.top').isHidden(), true);
-    assert.strictEqual(await f.locator('.toolbar').isHidden(), true);
+    assert.strictEqual(await f.locator('#splitter').isHidden(), true);
     assert.strictEqual(await f.locator('#channel-banner').isHidden(), true);
     assert.strictEqual(await f.locator('#editor').isHidden(), true);
     await page.evaluate(`document.getElementById('f').contentWindow.postMessage({ type: 'bx-state', text: 'echo one\\nsort -u a.txt\\n', kind: 'shell', line: 1, col: 0, lang: 'en', theme: 'auto', choice: {} }, location.origin)`);
@@ -299,7 +317,7 @@ describe('the web page in a browser', function () {
       void before;
     }
     // The editor's own choice of language reaches both.
-    await page.locator('#lang').selectOption('ja');
+    await choose(page, '#lang', 'ja');
     for (const f of [mine, main]) await until('Japanese', async () => (await f()!.locator('#tree').textContent().catch(() => '')) ?? '', (t) => /[ぁ-ん]/.test(t));
     await ctx.close();
   });
@@ -430,7 +448,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await bg(page), LIGHT);
     assert.strictEqual(await bg(panel()), LIGHT);
     // Dark is dark whatever the system says, in the editor and the panel too, and survives a reload.
-    await page.locator('#theme').selectOption('dark');
+    await choose(page, '#theme', 'dark');
     assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), 'dark');
     assert.strictEqual(await bg(page), DARK);
     assert.strictEqual(await page.evaluate("getComputedStyle(document.querySelector('.cm-editor')).backgroundColor"), DARK);
@@ -441,14 +459,14 @@ describe('the web page in a browser', function () {
     await until('the dark panel after the reload', async () => bg(panel()), (c) => c === DARK);
     // Light, with the system dark.
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.locator('#theme').selectOption('light');
+    await choose(page, '#theme', 'light');
     assert.strictEqual(await bg(page), LIGHT);
     await until('the light panel', () => bg(panel()), (c) => c === LIGHT);
     // The Japanese label.
-    await page.locator('#lang').selectOption('ja');
+    await choose(page, '#lang', 'ja');
     assert.strictEqual(await page.locator('#theme-label').textContent(), 'テーマ');
     // Auto again forgets the choice.
-    await page.locator('#theme').selectOption('auto');
+    await choose(page, '#theme', 'auto');
     assert.strictEqual(await page.evaluate('document.documentElement.dataset.theme'), undefined);
     assert.strictEqual(await bg(page), DARK);
     await ctx.close();
@@ -461,7 +479,7 @@ describe('the web page in a browser', function () {
     p2.on('pageerror', (e) => errors.push(e.message));
     await p2.goto(base);
     assert.strictEqual(await bg(p2), DARK);
-    await p2.locator('#theme').selectOption('light');
+    await choose(p2, '#theme', 'light');
     assert.strictEqual(await bg(p2), LIGHT);
     assert.deepStrictEqual(errors, []);
     await blocked.close();
@@ -547,7 +565,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await page.locator('#settings-title').textContent(), '設定');
     await page.locator('#settings-done').click();
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), false);
-    await page.locator('#lang').selectOption('en');
+    await choose(page, '#lang', 'en');
     // The panel's ⚙ button opens the dialog too, and a shell chosen in the panel is the setting.
     await until('the panel in English', () => panel().locator('#settings').isVisible(), (v) => v);
     await panel().locator('#shell').selectOption('dash');
@@ -690,7 +708,7 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
-  it('keeps the settings dialog inside a phone screen, and works without storage', async () => {
+  it('keeps the settings sheet inside a phone screen, and works without storage', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser!.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
     await ctx.addInitScript("Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } });");
@@ -700,6 +718,8 @@ describe('the web page in a browser', function () {
     await page.goto(base);
     await page.locator('#settings-open').tap();
     assert.match(await page.locator('.settings-intro').innerText(), /does not let the page keep them/);
+    // Once it has slid in.
+    await page.evaluate("Promise.all(document.getElementById('settings-dialog').getAnimations().map((a) => a.finished))");
     const fit = await page.evaluate(`(() => {
       const d = document.getElementById('settings-dialog').getBoundingClientRect();
       const body = document.querySelector('.settings-body');
@@ -709,8 +729,8 @@ describe('the web page in a browser', function () {
       }).map((e) => e.tagName + (e.id ? '#' + e.id : ''));
       return { left: d.left, right: innerWidth - d.right, top: d.top, bottom: innerHeight - d.bottom, sideways: body.scrollWidth > body.clientWidth, page: document.documentElement.scrollWidth > innerWidth, out };
     })()`) as { left: number; right: number; top: number; bottom: number; sideways: boolean; page: boolean; out: string[] };
-    assert.deepStrictEqual(fit, { left: 16, right: 16, top: fit.top, bottom: fit.bottom, sideways: false, page: false, out: [] });
-    assert.ok(fit.top >= 16 && fit.bottom >= 16, JSON.stringify(fit));
+    // On a phone the settings take the whole screen, as a sheet.
+    assert.deepStrictEqual(fit, { left: 0, right: 0, top: 0, bottom: 0, sideways: false, page: false, out: [] });
     // Without storage, a change still applies for as long as the page is open.
     await page.locator('#setting-shell').selectOption('dash');
     const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
@@ -724,7 +744,8 @@ describe('the web page in a browser', function () {
     const ctx = await browser!.newContext({ ...devices['iPhone 13'] });
     const page = await ctx.newPage();
     await page.goto(base);
-    await page.locator('#sample').tap();
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-sample').tap();
     await page.locator('.cm-line').nth(3).waitFor();
     assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
     assert.strictEqual(await page.evaluate('window.matchMedia("(pointer: fine)").matches'), false);
@@ -736,39 +757,210 @@ describe('the web page in a browser', function () {
     await until('the selection', () => page.locator('.cm-selectionBackground').count(), (n) => n > 0);
     assert.strictEqual(await page.evaluate('!!document.activeElement && !!document.activeElement.closest(".cm-content")'), false);
     // In the narrow panel a long label may take the whole row (it was cut at 45% of it).
-    const share = await panel.evaluate('(() => { const l = document.querySelector(".row .label"); return l.getBoundingClientRect().width / l.parentElement.getBoundingClientRect().width; })()') as number;
-    assert.ok(share > 0.6, String(share));
+    const share = await panel.evaluate('(() => { const l = document.querySelector(".row .label"); return [l.getBoundingClientRect().width / l.parentElement.getBoundingClientRect().width, l.scrollWidth <= l.clientWidth]; })()') as [number, boolean];
+    assert.ok(share[0] > 0.5 && share[1], String(share));
     // ...and its explanation then goes under it, not into a narrow column beside it.
     const below = await panel.evaluate('(() => { const r = document.querySelector(".row"); return r.querySelector(".text").getBoundingClientRect().top >= r.querySelector(".label").getBoundingClientRect().bottom - 1; })()');
     assert.strictEqual(below, true);
     // ...with the fold mark and the label on one line.
     const oneLine = await panel.evaluate('(() => { const r = document.querySelector(".row"); return Math.abs(r.querySelector(".twisty").getBoundingClientRect().top - r.querySelector(".label").getBoundingClientRect().top) < 8; })()');
     assert.strictEqual(oneLine, true);
-    // Nothing in the toolbar is cut: every option fits its select (measured with the select's font), in both languages.
+    // Nothing in the top bar or the menu is cut: every option fits its select (measured with the
+    // select's font, less the room of its arrow), in both languages.
     for (const lang of ['en', 'ja']) {
-      await page.locator('#lang').selectOption(lang);
+      await choose(page, '#lang', lang);
+      await page.locator('#menu-open').tap();
       const clipped = await page.evaluate(`(() => {
         const c = document.createElement('canvas').getContext('2d');
         const bad = [];
-        for (const s of document.querySelectorAll('.toolbar select')) {
+        for (const s of document.querySelectorAll('.top select, #drawer select')) {
           const cs = getComputedStyle(s);
           c.font = cs.font;
           const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-          const widest = Math.max(...[...s.options].map((o) => c.measureText(o.text).width));
+          // The file kind may cut a long name with "…"; the others show every option whole.
+          const widest = Math.max(...[...s.options].filter((o) => s.id !== 'kind' || o.selected).map((o) => c.measureText(o.text).width));
           if (widest > room) bad.push(s.id + ' ' + Math.round(widest) + ' > ' + Math.round(room));
         }
-        for (const b of document.querySelectorAll('.toolbar button')) if (b.scrollWidth > b.clientWidth) bad.push(b.id);
+        for (const b of document.querySelectorAll('.top button, #drawer button, #drawer a')) if (b.scrollWidth > b.clientWidth) bad.push(b.id);
         return bad;
       })()`);
       assert.deepStrictEqual(clipped, [], lang);
+      await page.locator('#menu-close').tap();
     }
-    // The toolbar is three rows of two, no taller than it was (173px) when it had five rows of small controls.
-    const toolbar = await page.evaluate('document.querySelector(".toolbar").getBoundingClientRect().height') as number;
-    assert.ok(toolbar < 175, String(toolbar));
-    // The controls of the toolbar are big enough to tap.
-    const small = await page.evaluate('[...document.querySelectorAll(".toolbar select, .toolbar button")].filter((e) => e.getBoundingClientRect().height < 43).length');
-    assert.strictEqual(small, 0);
+    // The top bar is one row, and its controls are big enough to tap.
+    const bar = await page.evaluate('document.querySelector(".top").getBoundingClientRect().height') as number;
+    assert.ok(bar <= 49, String(bar));
+    const small = await page.evaluate('[...document.querySelectorAll(".top select, .top button")].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height < 40).map((e) => e.id)');
+    assert.deepStrictEqual(small, []);
     await ctx.close();
+  });
+
+  it('fits the window on phones and desktops: the page never scrolls, the editor and the explanation scroll inside', async () => {
+    const { devices } = await import('playwright-core');
+    const sizes = [
+      { ...devices['iPhone 13'], viewport: { width: 390, height: 844 } },
+      { ...devices['Galaxy S9+'], viewport: { width: 360, height: 740 } },
+      { viewport: { width: 1440, height: 900 } },
+      { viewport: { width: 1280, height: 720 } },
+    ];
+    for (const size of sizes) {
+      const ctx = await browser!.newContext(size);
+      const page = await ctx.newPage();
+      await page.goto(base);
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      await until('the tree', () => panel()?.locator('.row .label').count().catch(() => 0) ?? Promise.resolve(0), (n) => n > 1);
+      const { width, height } = size.viewport;
+      // A wheel over the explanation and over the editor scrolls them, not the page. (Chromium's synthetic
+      // touch scrolling moves no scroller inside a page here, on the old page either: the wheel it is.)
+      const box = (await page.locator('#panel').boundingBox())!;
+      const ed0 = (await page.locator('#editor').boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, 400);
+      await page.mouse.move(ed0.x + ed0.width / 2, ed0.y + ed0.height / 2);
+      await page.mouse.wheel(0, 400);
+      await until('the editor scrolled', () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>, (t) => t > 0);
+      await page.evaluate('window.scrollTo(0, 500)');
+      const m = await page.evaluate(`(() => {
+        const s = document.querySelector('.cm-scroller');
+        return {
+          page: [document.scrollingElement.scrollHeight - innerHeight, document.scrollingElement.scrollWidth - innerWidth, scrollY],
+          footer: document.querySelectorAll('footer').length,
+          editor: s.scrollTop > 0 && s.scrollHeight > s.clientHeight,
+        };
+      })()`);
+      assert.deepStrictEqual(m, { page: [0, 0, 0], footer: 0, editor: true }, `${width}×${height}`);
+      const inner = await until('the explanation scrolled', () => panel().evaluate('[document.scrollingElement.scrollHeight > innerHeight, scrollY > 0]') as Promise<boolean[]>, (v) => v[1]);
+      assert.deepStrictEqual(inner, [true, true], `${width}×${height}`);
+      // The editor and the explanation take the window below the top bar, side by side or one above the other.
+      const ed = (await page.locator('.source').boundingBox())!;
+      const bar = (await page.locator('.top').boundingBox())!;
+      assert.ok(bar.height <= 49, String(bar.height));
+      if (width < 768) assert.ok(ed.width === width && box.width === width && box.y > ed.y + ed.height && Math.round(box.y + box.height) === height, JSON.stringify([ed, box]));
+      else assert.ok(box.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(box.height) === height - bar.height, JSON.stringify([ed, box]));
+      await ctx.close();
+    }
+  });
+
+  it('has a menu that opens with its button or a swipe from the right edge, closes with Esc, × or a swipe, and holds what the toolbar and the footer had', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const open = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
+    // On a phone the top bar has the file kind, the link, the settings and the menu; the rest is in the menu.
+    const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
+    assert.deepStrictEqual(await shown(['#kind', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
+      [['#kind', true], ['#share', true], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
+    assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
+    assert.strictEqual(await page.locator('#share').getAttribute('aria-label'), 'Copy a link to this script');
+    await page.locator('#menu-open').tap();
+    assert.strictEqual(await open(), true);
+    // The focus stays in the menu.
+    assert.strictEqual(await page.evaluate("!!document.activeElement.closest('#drawer')"), true);
+    for (const id of ['#lang', '#theme', '#channel', '#menu-settings', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
+      assert.strictEqual(await page.locator(id).isVisible(), true, id);
+    }
+    assert.match(await page.locator('#version').innerText(), /^Bash Explainer \d+\.\d+\.\d+/);
+    // Esc closes it, and the focus goes back to the button.
+    await page.keyboard.press('Escape');
+    assert.strictEqual(await open(), false);
+    assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
+    // A swipe from the right edge opens it, a swipe to the right closes it (real touches).
+    const cdp = await ctx.newCDPSession(page);
+    const swipe = async (from: number, to: number) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from, y: 500 }] });
+      for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from + ((to - from) * i) / 8, y: 500 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await swipe(386, 250);
+    await until('the menu open', open, (v) => v);
+    await swipe(150, 380);
+    await until('the menu closed', open, (v) => !v);
+    // A tap beside it closes it too; the × does.
+    await page.locator('#menu-open').tap();
+    await page.mouse.click(10, 400);
+    assert.strictEqual(await open(), false);
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-close').tap();
+    assert.strictEqual(await open(), false);
+    // Its items do what the buttons did: the settings, the sample, the link.
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-settings').tap();
+    assert.strictEqual(await open(), false);
+    assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
+    await page.locator('#settings-done').tap();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.press('Delete');
+    await until('an empty editor', () => page.locator('.cm-content').innerText(), (t) => !t.trim());
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-sample').tap();
+    await until('the sample', () => page.locator('.cm-content').innerText(), (t) => t.startsWith('#!/usr/bin/env bash'));
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+    await page.evaluate('navigator.clipboard.writeText("")');
+    await page.locator('#menu-open').tap();
+    await page.locator('#menu-share').tap();
+    await until('the copied link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.startsWith(`${base}#`));
+    // ...and says so in a toast, inside the screen.
+    const toast = (await page.locator('#status').boundingBox())!;
+    assert.ok(toast.x >= 16 && toast.x + toast.width <= 390 - 16 + 0.5, JSON.stringify(toast));
+    await ctx.close();
+  });
+
+  it('resizes the editor and the explanation with the divider: a drag, the keys, a double click; the size is kept', async () => {
+    const ctx = await browser!.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const width = async () => Math.round((await page.locator('.source').boundingBox())!.width);
+    const value = () => page.locator('#splitter').getAttribute('aria-valuenow');
+    assert.strictEqual(await value(), '50');
+    assert.strictEqual(await page.locator('#splitter').getAttribute('aria-orientation'), 'vertical');
+    const handle = (await page.locator('#splitter').boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, 400);
+    await page.mouse.down();
+    // Over the explanation's frame too: the drag goes on.
+    await page.mouse.move(900, 400, { steps: 8 });
+    await page.mouse.up();
+    assert.ok(Math.abs(await width() - 896) < 6, String(await width()));
+    assert.strictEqual(await value(), '70');
+    // The keys: 5% a step, Home and End for the ends (15% and 85%), Enter for the default.
+    await page.locator('#splitter').focus();
+    await page.keyboard.press('ArrowLeft');
+    assert.strictEqual(await value(), '65');
+    await page.keyboard.press('End');
+    assert.strictEqual(await value(), '85');
+    await page.keyboard.press('Home');
+    assert.strictEqual(await value(), '15');
+    await page.keyboard.press('Enter');
+    assert.strictEqual(await value(), '50');
+    await page.keyboard.press('ArrowRight');
+    await page.reload();
+    await page.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await value(), '55');
+    await page.locator('#splitter').dblclick();
+    assert.strictEqual(await value(), '50');
+    await ctx.close();
+
+    // On a phone, one above the other: a drag with a finger.
+    const { devices } = await import('playwright-core');
+    const phone = await browser!.newContext({ ...devices['iPhone 13'] });
+    const p2 = await phone.newPage();
+    await p2.goto(base);
+    await p2.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p2.locator('#splitter').getAttribute('aria-orientation'), 'horizontal');
+    const h = (await p2.locator('#splitter').boundingBox())!;
+    const before = (await p2.locator('.source').boundingBox())!.height;
+    const cdp = await phone.newCDPSession(p2);
+    const x = h.x + h.width / 2, y = h.y + h.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - 20 * i }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const after = (await p2.locator('.source').boundingBox())!.height;
+    assert.ok(Math.abs(before - 120 - after) < 6, `${before} → ${after}`);
+    assert.strictEqual(await p2.evaluate('document.scrollingElement.scrollHeight === innerHeight'), true);
+    await phone.close();
   });
 
   it('explains, checks and shares scripts without any request to another site, and keeps working offline', async () => {
@@ -853,7 +1045,7 @@ describe('the web page in a browser', function () {
     await until('the shared script', () => page2.locator('.cm-content').innerText(), (t) => t.includes(MARKER));
 
     // Japanese, which reloads the panel from the page's own files.
-    await page2.locator('#lang').selectOption('ja');
+    await choose(page2, '#lang', 'ja');
     await until('the Japanese panel', text('#where', page2), (t) => t.includes('行目'));
 
     await ctx.close();

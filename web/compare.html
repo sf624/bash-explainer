@@ -14,19 +14,22 @@
 <link rel="stylesheet" href="page.css">
 </head>
 <body data-page="compare">
+<svg class="icons" aria-hidden="true">
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M18.47 9.32L21.36 10.37L21.36 13.63L18.47 14.68L19.77 17.46L17.46 19.77L14.68 18.47L13.63 21.36L10.37 21.36L9.32 18.47L6.54 19.77L4.23 17.46L5.53 14.68L2.64 13.63L2.64 10.37L5.53 9.32L4.23 6.54L6.54 4.23L9.32 5.53L10.37 2.64L13.63 2.64L14.68 5.53L17.46 4.23L19.77 6.54Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-sample" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></symbol>
+</svg>
 <header class="top">
-  <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"><span>Bash Explainer</span></a>
+  <a class="brand" href="./" aria-label="Bash Explainer"><img src="icon.png" alt="" width="26" height="26"><span class="brand-name">Bash Explainer</span></a>
+  <label class="kind"><span id="kind-label" class="sr-only">File</span><select id="kind"></select></label>
   <p class="tagline" id="tagline"></p>
-  <nav class="links"><a id="back" href="./"></a></nav>
+  <div class="actions">
+    <label class="compact"><span id="lang-label" class="sr-only">Language</span><select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
+    <label class="compact"><span id="theme-label" class="sr-only">Theme</span><select id="theme"></select></label>
+    <button id="sample" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg></button>
+    <button id="settings-open" class="icon-btn" type="button" aria-haspopup="dialog"><svg aria-hidden="true"><use href="#i-gear"/></svg><span id="settings-label" class="sr-only">Settings</span></button>
+    <a id="back" class="install" href="./"></a>
+  </div>
 </header>
-<div class="toolbar">
-  <label><span id="kind-label">File</span> <select id="kind"></select></label>
-  <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
-  <label><span id="theme-label">Theme</span> <select id="theme"></select></label>
-  <button id="settings-open" type="button" aria-haspopup="dialog"><span aria-hidden="true">⚙</span> <span id="settings-label">Settings</span></button>
-  <button id="sample" type="button">Load the sample</button>
-  <span id="status" role="status"></span>
-</div>
 <main class="compare">
   <section class="source">
     <h2 class="copy-head" id="editor-head"></h2>
@@ -47,7 +50,8 @@
     <p class="copy-note" id="note-other" hidden></p>
   </section>
 </main>
-<dialog id="settings-dialog" aria-labelledby="settings-title"></dialog>
+<p id="status" role="status"></p>
+<dialog id="settings-dialog" class="sheet" aria-labelledby="settings-title"></dialog>
 <noscript><p class="noscript">Bash Explainer needs JavaScript to run in the browser.</p></noscript>
 <script src="app.js"></script>
 </body>
