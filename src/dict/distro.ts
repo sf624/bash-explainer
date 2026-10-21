@@ -1,5 +1,6 @@
+import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { cmd, COMMAND_TEXT, CommandDoc, native, operand, pos, runs } from './types';
+import { byCount, cmd, COMMAND_TEXT, operand, pos, runs } from './types';
 
 // External commands that major distributions install by default (util-linux, coreutils, procps,
 // iproute / net-tools, systemd, openssh, acl, attr, libcap…), with the options scripts use most.
@@ -22,9 +23,9 @@ const editor = cmd('テキストエディタ', 'Text editor', [
 const FLOCK_C = tx('シェルで実行するコマンド文字列', 'command string to run with the shell');
 const LOCK = operand('LOCK', 'ロックファイルまたはディレクトリ（番号ならファイルディスクリプタ）', 'lock file or directory (or a file descriptor number)');
 
-export const distro: Record<string, CommandDoc> = {
+export const distro: Record<string, CommandSpec> = {
   // ---- coreutils and util-linux -------------------------------------------------------------
-  flock: native('ロックを取ってからコマンドを実行する（同時実行を防ぐ）', 'Run a command while holding a lock (prevents concurrent runs)', [
+  flock: cmd('ロックを取ってからコマンドを実行する（同時実行を防ぐ）', 'Run a command while holding a lock (prevents concurrent runs)', [
     ['-n|--nonblock', 'ロックが取れなければ待たずに失敗する', 'fail instead of waiting if the lock is taken'],
     ['-w|--timeout', 'ロックを待つ秒数の上限', 'give up waiting after the given number of seconds', 'arg'],
     ['-x|--exclusive', '排他ロックを取る（既定）', 'take an exclusive lock (default)'],
@@ -40,7 +41,7 @@ export const distro: Record<string, CommandDoc> = {
       { pattern: [{ ...LOCK, repeat: '?' }, runs()] },
     ],
   }),
-  setsid: native('新しいセッションでコマンドを実行する（端末から切り離す）', 'Run a command in a new session (detached from the terminal)', [
+  setsid: cmd('新しいセッションでコマンドを実行する（端末から切り離す）', 'Run a command in a new session (detached from the terminal)', [
     ['-f|--fork', '常に fork して実行する', 'always fork'],
     ['-w|--wait', '子プロセスの終了を待ち、その終了ステータスを返す', 'wait for the child and return its exit status'],
     ['-c|--ctty', '制御端末を引き継ぐ', 'take over the controlling terminal'],
@@ -58,7 +59,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-o|--output', '出力先のファイル', 'output file', 'arg'],
     ['-z|--zero-terminated', '行の区切りを NUL にする', 'lines end with NUL'],
   ], { positional: [files] }),
-  stdbuf: native('標準入出力のバッファリングを変えてコマンドを実行する', 'Run a command with modified buffering of its standard streams', [
+  stdbuf: cmd('標準入出力のバッファリングを変えてコマンドを実行する', 'Run a command with modified buffering of its standard streams', [
     ['-i|--input', '標準入力のバッファ（`L`: 行単位、`0`: なし）', 'stdin buffering (`L`: line, `0`: none)', 'arg'],
     ['-o|--output', '標準出力のバッファ（`L`: 行単位、`0`: なし）', 'stdout buffering (`L`: line, `0`: none)', 'arg'],
     ['-e|--error', '標準エラー出力のバッファ（`L`: 行単位、`0`: なし）', 'stderr buffering (`L`: line, `0`: none)', 'arg'],
@@ -105,7 +106,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-c|--changes', '変更があったものだけ報告する', 'report only changes'],
     ['-v|--verbose', '処理したファイルを報告する', 'report every file processed'],
     ['--reference', '指定したファイルと同じグループにする', 'use the group of the given file', 'arg'],
-  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('グループ', 'group'), files] }),
+  ], { operands: [byCount(1, [files], { orMore: true, when: '--reference' })], positional: [pos('グループ', 'group'), files] }),
   mkfifo: cmd('名前付きパイプ(FIFO)を作る', 'Make named pipes (FIFOs)', [
     ['-m|--mode', '権限（`0600`…）', 'permissions (`0600`…)', 'arg'],
   ], { positional: [pos('作る FIFO のパス', 'FIFO path to create')] }),
@@ -213,12 +214,12 @@ export const distro: Record<string, CommandDoc> = {
     ['-u|--user', '対象はユーザー', 'targets are users'],
     ['-g|--pgrp', '対象はプロセスグループ', 'targets are process groups'],
   ], { positional: [pos('プロセス ID', 'process ID')] }),
-  ionice: native('ディスク入出力の優先度を指定してコマンドを実行する', 'Run a command with a lower or higher priority for disk I/O', [
+  ionice: cmd('ディスク入出力の優先度を指定してコマンドを実行する', 'Run a command with a lower or higher priority for disk I/O', [
     ['-c|--class', 'クラス（`1`: リアルタイム、`2`: ベストエフォート（既定）、`3`: ディスクが空いているときだけ）', 'class: `1` real time, `2` best effort (the default), `3` only when the disk is idle', 'arg'],
     ['-n|--classdata', 'クラス内の優先度（0〜7、小さいほど優先）', 'priority within the class (0 to 7, lower is higher)', 'arg'],
     ['-p|--pid', '動いているプロセスを対象にする', 'operate on a running PID', 'arg'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-  unshare: native('名前空間を切り離してコマンドを実行する', 'Run a command in new namespaces', [
+  unshare: cmd('名前空間を切り離してコマンドを実行する', 'Run a command in new namespaces', [
     ['-m|--mount', 'マウント名前空間を分ける', 'new mount namespace'],
     ['-u|--uts', 'ホスト名の名前空間を分ける', 'new UTS (host name) namespace'],
     ['-i|--ipc', 'IPC 名前空間を分ける', 'new IPC namespace'],
@@ -229,7 +230,7 @@ export const distro: Record<string, CommandDoc> = {
     ['-f|--fork', '子プロセスとして実行する', 'fork before running the command'],
     ['--mount-proc', '新しい PID 名前空間用に `/proc` をマウントし直す', 'mount `/proc` for the new PID namespace'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-  nsenter: native('他のプロセスの名前空間に入ってコマンドを実行する', "Run a command in another process's namespaces", [
+  nsenter: cmd('他のプロセスの名前空間に入ってコマンドを実行する', "Run a command in another process's namespaces", [
     ['-t|--target', '名前空間を借りるプロセスの PID', 'PID whose namespaces to enter', 'arg'],
     ['-m|--mount', 'マウント名前空間に入る', 'enter the mount namespace'],
     ['-u|--uts', 'ホスト名の名前空間に入る', 'enter the UTS namespace'],

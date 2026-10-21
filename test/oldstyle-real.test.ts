@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { commandSpec } from '../src/analyzer';
+import { lookupCommand } from '../src/analyzer';
 import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
 import type { OptionSpec } from '../src/argv/spec';
 import { argWords } from './support/argwords';
@@ -20,7 +20,7 @@ const run = (line: string, cwd: string): { out: string; err: string; status: num
 };
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
   const { name, words, texts } = argWords(line);
-  return { parse: interpret(commandSpec(name)!, words, { name, lookup: commandSpec }), words: words.map((w, i) => w.value ?? texts[i]) };
+  return { parse: interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }), words: words.map((w, i) => w.value ?? texts[i]) };
 };
 /** The words the interpreter gives a role that `pick` accepts. */
 const wordsWith = (line: string, pick: (r: ArgRole) => boolean): string[] => {
@@ -58,7 +58,7 @@ const arityOf = (o: OptionSpec): string => (!o.value ? 'none' : !Array.isArray(o
 describe('tar agrees with the real tar', () => {
   (has('tar') ? it : it.skip)('every option is one tar lists, and takes a value when tar\'s does', () => {
     const help = helpOptions(spawnSync('tar', ['--help'], { env: ENV, encoding: 'utf8' }).stdout);
-    for (const o of commandSpec('tar')!.options!) for (const n of o.names) assert.strictEqual(arityOf(o), help.get(n), n);
+    for (const o of lookupCommand('tar')!.options!) for (const n of o.names) assert.strictEqual(arityOf(o), help.get(n), n);
   });
 
   // Each line names its archive with `f` (or `-f`, `--file`); the members tar lists or stores are the operands.
@@ -133,7 +133,7 @@ describe('ar agrees with the real ar', () => {
     const usage = /\{(\w+)\}\[(\w+)\]/.exec(help)!;
     const theirs = new Set([...usage[1] + usage[2]].filter((l) => l !== 'M'));
     for (const m of help.matchAll(/^ {2}\[(\w)/gm)) theirs.add(m[1]);
-    const ours = new Set(Object.keys(commandSpec('ar')!.oldStyle!.letters!));
+    const ours = new Set(Object.keys(lookupCommand('ar')!.oldStyle!.letters!));
     assert.deepStrictEqual([...theirs].filter((l) => !ours.has(l)), []);
   });
 

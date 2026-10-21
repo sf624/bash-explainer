@@ -16,7 +16,8 @@ import { ops } from '../src/dict/ops';
 import { extraFiles } from '../src/dict/extrasFiles';
 import { extraAdmin } from '../src/dict/extrasAdmin';
 import { extraSubcommands } from '../src/dict/extras';
-import { CommandDoc } from '../src/dict/types';
+import type { CommandSpec, ValueSpec } from '../src/argv/spec';
+import { YQ_SPECS } from '../src/dict/yq';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -35,6 +36,16 @@ function tokens(src: string, lang: 'en' | 'ja' = 'en'): Token[] {
 }
 
 const unknown = (src: string) => tokens(src).filter((t) => /not in the dictionary/.test(t.explanation)).map((t) => t.label);
+
+/** Every spec of the dictionary, with its subcommands (and find's expression), by its path (`git remote add`). */
+function everySpec(visit: (path: string, spec: CommandSpec) => void): void {
+  const walk = (path: string, spec: CommandSpec): void => {
+    visit(path, spec);
+    if (spec.expressionSpec) walk(`${path} (expression)`, spec.expressionSpec);
+    for (const [name, sub] of Object.entries(spec.subcommands ?? {})) walk(`${path} ${name}`, sub);
+  };
+  for (const [name, spec] of [...Object.entries(commands), ...Object.entries(builtins), ...Object.entries(YQ_SPECS).map(([f, d]) => [`yq (${f})`, d] as const)]) walk(name, spec);
+}
 
 describe('the dictionary', () => {
   // Lines as they appear in installers, official Docker images and CI images: the commands and
@@ -179,7 +190,7 @@ describe('the dictionary', () => {
     assert.match(ping.find((t) => t.label === 'example.com')!.explanation, /host name/);
     assert.match(tokens('mkfs.ext4 -L data /dev/sdb1')[0].explanation, /ext4 file system/);
     assert.match(tokens('vim -c q f')[0].explanation, /Text editor/);
-    for (const c of ['setsid', 'stdbuf', 'ionice', 'unshare', 'nsenter']) assert.ok(commands[c].spec!.operands![0].pattern.some((o) => o.command), c);
+    for (const c of ['setsid', 'stdbuf', 'ionice', 'unshare', 'nsenter']) assert.ok(commands[c].operands![0].pattern.some((o) => o.command), c);
     assert.deepStrictEqual(unknown('flock -n /tmp/l ls; ping -c 1 h; dig +short a.com; chattr +i f'), []);
   });
 
@@ -237,13 +248,10 @@ describe('the dictionary', () => {
   });
 
   it('describes every command and option in both languages', () => {
-    const check = (name: string, d: CommandDoc) => {
+    everySpec((name, d) => {
       assert.ok(d.summary.ja.trim() && d.summary.en.trim(), `${name}: summary`);
-      for (const [flag, o] of Object.entries(d.options ?? {})) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${flag}`);
-      for (const o of d.spec?.options ?? []) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${o.names[0]}`);
-      for (const [sub, sd] of Object.entries(d.subcommands ?? {})) check(`${name} ${sub}`, sd);
-    };
-    for (const [name, d] of [...Object.entries(commands), ...Object.entries(builtins)]) check(name, d);
+      for (const o of d.options ?? []) assert.ok(o.text.ja.trim() && o.text.en.trim(), `${name} ${o.names[0]}`);
+    });
   });
 
   it('defines each command in one base table only, and extras only for commands that exist', () => {
@@ -260,17 +268,12 @@ describe('the dictionary', () => {
 
   it('does not point at the value of an option with "この" or "this" (it reads as the current one)', () => {
     const bad: string[] = [];
-    const visit = (path: string, doc: CommandDoc): void => {
-      for (const [name, opt] of Object.entries(doc.options ?? {})) {
-        if (!opt.arg) continue;
-        if (/この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${name}: ${opt.text.ja} / ${opt.text.en}`);
+    everySpec((path, doc) => {
+      for (const opt of doc.options ?? []) {
+        if (opt.value && !(opt.value as ValueSpec).optional && /この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${opt.names[0]}: ${opt.text.ja} / ${opt.text.en}`);
       }
-      for (const opt of doc.spec?.options ?? []) {
-        if (opt.value && /この|これ|\bthis\b/.test(opt.text.ja + ' ' + opt.text.en.replace(/\bthis (?:is|one)\b/g, ''))) bad.push(`${path} ${opt.names[0]}: ${opt.text.ja} / ${opt.text.en}`);
-      }
-      for (const [name, sub] of Object.entries(doc.subcommands ?? {})) visit(`${path} ${name}`, sub);
-    };
-    for (const [name, doc] of [...Object.entries(commands), ...Object.entries(builtins)]) visit(name, doc);
+    });
     assert.deepStrictEqual(bad, [], 'say "指定した…" / "the given …" for the value');
   });
 });
+

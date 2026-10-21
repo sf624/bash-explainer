@@ -1,4 +1,5 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, OptSpec, pos } from './types';
 
 // Disks, partitions, file systems, LVM, software RAID and network storage: the LPIC-1 topics 104
 // and the LPIC-2 / LinuC-2 storage topics, plus the tools of the same families.
@@ -20,7 +21,7 @@ const mkfsCommon = (): OptSpec[] => [
   ['-f|--force', '既存のファイルシステムがあっても作り直す（注意）', 'overwrite an existing file system (careful)'],
 ];
 
-export const storage: Record<string, CommandDoc> = {
+export const storage: Record<string, CommandSpec> = {
   // ---- partitions ---------------------------------------------------------------------------
   fdisk: cmd('MBR/GPT のパーティションテーブルを対話的に編集する', 'Edit an MBR/GPT partition table interactively', [
     ['-l|--list', 'パーティションテーブルを表示するだけ', 'only list the partition tables'],

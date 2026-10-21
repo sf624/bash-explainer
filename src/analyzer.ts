@@ -7,8 +7,6 @@ import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { CommandDoc } from './dict/types';
-import { fromCommandDoc } from './argv/fromdoc';
 import { ArgRole, ArgvParse, CommandRole, interpret, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
@@ -33,8 +31,8 @@ import { explainGetopts } from './embedded/getopts';
 import { parseTest, TestExpr, testRange } from './testexpr';
 import { explainYq3Path, judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
-import { YQ_DOCS } from './dict/yq';
-import { customCommandDoc } from './dict/custom';
+import { YQ_SPECS } from './dict/yq';
+import { customCommandSpec } from './dict/custom';
 import { DIRECTIVE } from './directives';
 import { explainGetoptLong, explainGetoptShort } from './embedded/getopt';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './examples/getopt';
@@ -1138,7 +1136,7 @@ export class Analyzer {
       if (redirsOut && c.type.endsWith('redirect')) continue;
       // Options end at the first name: `declare x -i` is an error for the name `-i`.
       // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
-      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && !!builtins[kw].spec!.plusOptions;
+      const off = c.type === 'word' && c.text.startsWith('+') && c.text.length > 1 && !named && !!builtins[kw].plusOptions;
       if (c.type === 'word' && (c.text.startsWith('-') || off) && !named) {
         const table = kw === 'export' ? exportFlags : kw === 'readonly' ? readonlyFlags : off ? declarationOffFlags : declarationFlags;
         const flags = c.text.slice(1).split('').map((ch) => table['-' + ch]).filter(Boolean);
@@ -1163,7 +1161,7 @@ export class Analyzer {
     const fn = n.namedChildren.some((c) => c?.type === 'word' && /^-\w*f/.test(c.text));
     const ref = !fn && n.namedChildren.some((c) => c?.type === 'word' && /^-\w*n/.test(c.text));
     const children = n.namedChildren.map((c) => {
-      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.spec!.options!.find((o) => o.names.includes(c.text)) : undefined;
+      const opt = c.type === 'word' && c.text.startsWith('-') ? builtins.unset.options!.find((o) => o.names.includes(c.text)) : undefined;
       if (opt) return this.tok(c, 'option', this.t(opt.text));
       if (c.type === 'variable_name' || isPlainWord(c)) {
         return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
@@ -1234,7 +1232,7 @@ export class Analyzer {
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
         // In POSIX mode (sh, dash, `set -o posix`) an assignment before a special builtin stays after it.
-        const stays = lookupCommand(nameNode.text)?.spec?.builtin === 'special' && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
+        const stays = lookupCommand(nameNode.text)?.builtin === 'special' && (['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh'].includes(this.shell ?? '') || /\bset\s+-o\s+posix\b|--posix\b/.test(this.source));
         for (const t of this.sub(c)) {
           t.explanation = stays
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
@@ -1295,12 +1293,12 @@ export class Analyzer {
     if (head.name.split('/').pop() === 'yq') {
       // Three tools are called yq; explain the arguments as the one this command is for.
       const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: this.source, host: this.opts.host, setting: this.opts.yqFlavor });
-      head.doc = YQ_DOCS[verdict.flavor];
-      head.explanation = this.t(head.doc.summary);
+      head.spec = YQ_SPECS[verdict.flavor];
+      head.explanation = this.t(head.spec.summary);
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    let argToks = this.args(head.doc, args, head.name, head.fn);
+    let argToks = this.args(head.spec, args, head.name, head.fn);
     // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
     const asTest = head.name === 'test' && head.kind === 'builtin' && args.length ? testOfWords(args) : undefined;
     if (asTest) {
@@ -1318,11 +1316,11 @@ export class Analyzer {
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
-    const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'subcommand' && !a.children.length);
+    const subTok = head.spec?.subcommands && argToks.find((a) => a.kind === 'subcommand' && !a.children.length);
     // Every subcommand in the dictionary has a summary. (The name is the word's value: `yq 'e'` names `e`.)
     const subWord = subTok && args.find((a) => a.startPosition.row === subTok.span.start.line && a.startPosition.column === subTok.span.start.character);
     const sub = subWord && argWord(subWord).value!;
-    if (sub) t.summary = `${head.name} ${sub}: ${this.t(head.doc!.subcommands![sub].summary)}`;
+    if (sub) t.summary = `${head.name} ${sub}: ${this.t(head.spec!.subcommands![sub].summary)}`;
     return t;
   }
 
@@ -1407,7 +1405,6 @@ export class Analyzer {
           ? this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`（\`${alias.value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${alias.value}\` に置き換わる`,
             `The alias \`${name}\` defined on line ${alias.line + 1} (\`${alias.value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${alias.value}\``)
           : this.s(`このスクリプトの行 ${alias.line + 1} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${alias.line + 1}: replaced by \`${alias.value}\``),
-        doc: { summary: { ja: '', en: '' }, positional: [] },
       };
     }
     const fnLine = this.functionAt(name, nameNode);
@@ -1415,18 +1412,17 @@ export class Analyzer {
       return {
         name, kind: 'function', fn: true, nameTokens: [],
         explanation: this.s(`このスクリプトの行 ${fnLine + 1} で定義された関数 \`${name}\` を呼び出す`, `Call the function \`${name}\` defined on line ${fnLine + 1}`),
-        doc: { summary: { ja: '', en: '' }, positional: [] },
       };
     }
     // A command described in the customCommands setting wins over the built-in dictionary.
-    const custom = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]);
+    const custom = customCommandSpec(this.opts.customCommands?.[name.split('/').pop()!]);
     if (custom) {
-      return { name, doc: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
+      return { name, spec: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
-    const doc = lookupCommand(name);
-    if (doc) {
-      const builtin = !!doc.spec?.builtin;
-      return { name, doc, kind: builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(doc.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
+    const spec = lookupCommand(name);
+    if (spec) {
+      const builtin = !!spec.builtin;
+      return { name, spec, kind: builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
     }
     const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
     if (distro) {
@@ -1444,7 +1440,7 @@ export class Analyzer {
         : this.s(`⚠ 環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${distro.definitions.length > 1 ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead}`,
           `⚠ System-dependent: \`${name}\` is an ${what} ${where} define${distro.definitions.length > 1 ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead}`));
       return {
-        name, doc: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
+        name, spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
         explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
       };
     }
@@ -1458,17 +1454,16 @@ export class Analyzer {
    * Explain the argument words of a command: the argument interpreter (src/argv/interpret.ts) reads them
    * with the command's spec, and each word's role becomes a token.
    */
-  private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string, isFn = false): Token[] {
+  private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn = false): Token[] {
     // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
-    const spec = doc && !isFn ? specOf(doc, cmdName) : NO_SPEC;
+    const spec = known && !isFn ? known : NO_SPEC;
     const parse = interpret(spec, args.map(argWord), { name: cmdName, lookup: (name) => this.specFor(name) });
     return this.render(parse, spec, args, args, isFn);
   }
 
   /** The spec of a command a wrapper runs: from the customCommands setting, or the dictionary. */
   private specFor(name: string): CommandSpec | undefined {
-    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
-    return doc && specOf(doc, name);
+    return customCommandSpec(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
   }
 
   /**
@@ -1554,7 +1549,7 @@ export class Analyzer {
             break;
           case 'expression':
             // find's expression, read as a whole from its first word.
-            if (word === parse.expression) out.push(...this.findExpression(nodes.slice(word, parse.end), docs.get(spec)!));
+            if (word === parse.expression) out.push(...this.findExpression(nodes.slice(word, parse.end), spec.expressionSpec!));
             break;
         }
       }
@@ -2012,16 +2007,17 @@ export class Analyzer {
    * find's expression, explained as a whole (`-o`, implicit `-a`, `!` and `\( \)` grouping) with the tokens
    * of each primary inside. When it cannot be parsed, its words are read as options of find.
    */
-  private findExpression(nodes: SyntaxNode[], doc: CommandDoc): Token[] {
-    const opts = doc.options!;
+  private findExpression(nodes: SyntaxNode[], spec: CommandSpec): Token[] {
     const words = nodes.map((a) => unquote(a.text));
-    // (Every option of find: the spec of `find` itself has only those before the starting points.)
-    const spec = specOf(doc, '');
     const read = (from: number, to: number): Token[] => {
       const part = nodes.slice(from, to);
       return this.render(interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => this.specFor(name) }), spec, part, this.argCtx!.args);
     };
-    const tree = parseFind(words, (w) => (opts[w]?.untilTerminator ? 'until' : opts[w]?.arg ? 1 : 0));
+    // (No option of find has an optional value.)
+    const tree = parseFind(words, (w) => {
+      const o = spec.options!.find((x) => x.names.includes(w));
+      return o?.until ? 'until' : o?.value ? 1 : 0;
+    });
     if (!tree) return read(0, nodes.length);
     const exprArgs = nodes;
 
@@ -3828,7 +3824,7 @@ export class Analyzer {
   }
 }
 
-interface CommandHead { name: string; doc?: CommandDoc; kind: Kind; explanation: string; nameTokens: Token[]; /** A call of a function defined in the script. */ fn?: boolean }
+interface CommandHead { name: string; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[]; /** A call of a function defined in the script. */ fn?: boolean }
 
 /**
  * The text a command receives for a word, and where each of its characters sits in the word's
@@ -4001,33 +3997,8 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
 const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
-/** The spec of each dictionary entry, by the command's name (the converter applies some rules by name). */
-const specs = new WeakMap<CommandDoc, Map<string, CommandSpec>>();
-/** The dictionary entry of each spec (find's expression reads its options). */
-const docs = new WeakMap<CommandSpec, CommandDoc>();
-
-/** The spec of a command's dictionary entry (`name` as written: `/usr/bin/kill` is `kill`): written as one, or converted. */
-function specOf(doc: CommandDoc, name: string): CommandSpec {
-  if (doc.spec) return doc.spec;
-  const base = name.slice(name.lastIndexOf('/') + 1);
-  const byName = specs.get(doc) ?? new Map<string, CommandSpec>();
-  specs.set(doc, byName);
-  let spec = byName.get(base);
-  if (!spec) {
-    spec = fromCommandDoc(doc, base);
-    byName.set(base, spec);
-    docs.set(spec, doc);
-  }
-  return spec;
-}
-
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
-export function commandSpec(name: string): CommandSpec | undefined {
-  const doc = lookupCommand(name);
-  return doc && specOf(doc, name);
-}
-
-export function lookupCommand(name: string): CommandDoc | undefined {
+export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
   if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];

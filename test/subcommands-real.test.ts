@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { commandSpec } from '../src/analyzer';
+import { lookupCommand } from '../src/analyzer';
 import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
 import { argWords } from './support/argwords';
 
@@ -27,7 +27,7 @@ function roles(line: string): { path: string; word: string; role: ArgRole }[] {
       if (role.role === 'subcommand') walk(role.parse);
     }
   };
-  walk(interpret(commandSpec(name)!, words, { name, lookup: commandSpec }));
+  walk(interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }));
   return out;
 }
 const roleOf = (line: string, word: string) => roles(line).find((r) => r.word === word)!;
@@ -86,7 +86,7 @@ describe('ip agrees with the real ip', () => {
   // (`-n NETNS` switches to the namespace at once, so it needs one that exists.)
   const VALUES: Record<string, string> = { '-f': 'inet', '-family': 'inet' };
   ip('accepts every option of the dictionary before the object', () => {
-    for (const o of commandSpec('ip')!.options!) {
+    for (const o of lookupCommand('ip')!.options!) {
       for (const n of o.names.filter((x) => !['-n', '-netns'].includes(x))) {
         const value = o.value ? ` ${VALUES[n]}` : '';
         assert.strictEqual(run(`ip ${n}${value} -V`).status, 0, n);
@@ -120,7 +120,7 @@ describe('systemctl agrees with the real systemctl', () => {
     '--root': '/', '-n': '5', '--lines': '5', '-o': 'short', '--output': 'short', '--signal': 'TERM', '-M': 'x', '--machine': 'x',
   };
   (has('systemctl') ? it : it.skip)('reads every option of the dictionary after the verb', () => {
-    for (const o of commandSpec('systemctl')!.options!) {
+    for (const o of lookupCommand('systemctl')!.options!) {
       assert.ok(o.persistent, o.names[0]);
       for (const n of o.names) {
         const value = o.value ? ` ${VALUES[n]}` : '';
