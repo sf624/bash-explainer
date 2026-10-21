@@ -1296,7 +1296,8 @@ export class Analyzer {
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    let argToks = this.args(head.spec, args, head.name, head.fn);
+    const read = this.args(head.spec, args, head.name, head.fn);
+    let argToks = read.tokens;
     // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
     const asTest = head.name === 'test' && head.kind === 'builtin' && args.length ? testOfWords(args) : undefined;
     if (asTest) {
@@ -1314,11 +1315,15 @@ export class Analyzer {
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
-    const subTok = head.spec?.subcommands && argToks.find((a) => a.kind === 'subcommand' && !a.children.length);
-    // Every subcommand in the dictionary has a summary. (The name is the word's value: `yq 'e'` names `e`.)
-    const subWord = subTok && args.find((a) => a.startPosition.row === subTok.span.start.line && a.startPosition.column === subTok.span.start.character);
-    const sub = subWord && argWord(subWord).value!;
-    if (sub) t.summary = `${head.name} ${sub}: ${this.t(head.spec!.subcommands![sub].summary)}`;
+    // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
+    // words' values: `yq 'e'` names `e`.)
+    const path: string[] = [];
+    let summary: Text | undefined;
+    for (let p = read.parse, r = subcommandOf(p); r; p = r.role.parse, r = subcommandOf(p)) {
+      path.push(argWord(args[r.word]).value!);
+      summary = r.role.spec.summary;
+    }
+    if (summary) t.summary = `${[head.name, ...path].join(' ')}: ${this.t(summary)}`;
     return t;
   }
 
@@ -1452,11 +1457,11 @@ export class Analyzer {
    * Explain the argument words of a command: the argument interpreter (src/argv/interpret.ts) reads them
    * with the command's spec, and each word's role becomes a token.
    */
-  private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn = false): Token[] {
+  private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn = false): { tokens: Token[]; parse: ArgvParse } {
     // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
     const spec = known && !isFn ? known : NO_SPEC;
     const parse = interpret(spec, args.map(argWord), { name: cmdName, lookup: (name) => this.specFor(name) });
-    return this.render(parse, spec, args, args, isFn);
+    return { tokens: this.render(parse, spec, args, args, isFn), parse };
   }
 
   /** The spec of a command a wrapper runs: from the customCommands setting, or the dictionary. */
@@ -3999,6 +4004,9 @@ const dash = (flag: string): string => flag.replace(/^\+/, '-');
  * A declaration command (`declare -ix -- a=1 b`) read with its builtin's spec: the role of each word (the
  * options end at the first name or at `--`), and the letters of the options turned on (`ix`).
  */
+/** The subcommand a parse names, if any (`git stash push`: `stash`, whose parse names `push`). */
+const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; role: Extract<ArgRole, { role: 'subcommand' }> } => r.role.role === 'subcommand');
+
 const declarations = new WeakMap<SyntaxNode, { roles: Map<SyntaxNode, ArgRole>; on: string }>();
 function readDeclaration(d: SyntaxNode): { roles: Map<SyntaxNode, ArgRole>; on: string } {
   const seen = declarations.get(d);

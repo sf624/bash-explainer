@@ -14,6 +14,7 @@
 - The `bashExplainer.customCommands` setting takes options and operands as lists: an option's `names`, and for each operand whether it repeats (`"repeat": "+"`). A command can also have a `style` and `subcommands`. Before, options were an object (`"-n|--dry-run": "…"`) and `arguments` a list of texts, of which the last repeated; that shape is still read, and a later release drops it. A command in the setting is read only as written there: one named `head` no longer reads `-5` as `-n 5` (before, the rules of the dictionary's `head`, `tail`, `find`, `jq` and `awk` applied by name).
 - In `trap 1 2` and `trap 1 INT`, every word is a signal reset to its default, as bash reads a signal number first. Before, `1` was the command to run.
 - `declare`, `local`, `export`, `readonly` and `typeset` read their options up to the first name or `--`, as bash does. `declare -- x=1` says `--` ends the options (before: "Option"). In `declare -x -- -i` and `declare y -i`, `-i` is a name, which bash rejects (before: the integer attribute, and a later `y=1` was explained as arithmetic).
+- The summary of a command names its deepest subcommand: `git stash push` and `docker compose -f x run` (before: `git stash` and `docker compose`).
 
 ## 0.6.0
 

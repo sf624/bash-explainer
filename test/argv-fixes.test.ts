@@ -84,6 +84,10 @@ describe('argument roles the old walk read wrongly', () => {
     // `yq 'e' .` runs `yq eval .`: quote removal makes the word `e`.
     assert.strictEqual(new Analyzer('en').explainLine(parser.parse("yq 'e' ."), 0).items[0].summary, 'yq e: apply the expression to each document (`eval`)');
     assert.strictEqual(tokenOf("git \"log\" -1", '"log"').kind, 'subcommand');
+    // The deepest subcommand names the summary.
+    const summary = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).items[0].summary;
+    assert.strictEqual(summary('git stash push -m x'), 'git stash push: Stash the changes (the default)');
+    assert.match(summary('docker compose -f x run web ls')!, /^docker compose run: Run a one-off command/);
   });
 
   it('reads an operand that is a file as a file, not in the language of another operand', () => {
