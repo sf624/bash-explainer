@@ -763,6 +763,40 @@ export function definitionFails(model: StateModel, def: SyntaxNode): Tri;   // a
 
 Not followed yet: trailing-space aliases (`alias s='sudo '; s ll` expands `ll`), an alias that defines a function (`alias e=echo; e() { …; }` defines `echo`), `enable -f` and `-d` (loadable builtins), `hash` without `-p` (it only fills the table), whether PATH finds a program after the script changes it, `command -p` (the default PATH), the builtins of shells other than bash (dash is taken to have bash's, but `shopt`, `mapfile` and `readarray`), what a sourced file defines (only that it may define functions), a function defined after a body but in a subshell or a branch ("may": the walk does not tell subshell changes apart when it widens), and `local` outside a function written after a prefix assignment (`x=1 local y`, which the parser reads as a plain command: no pitfall).
 
+### 4.11 As built: status and errexit (B5)
+
+```ts
+// src/semantics/status.ts
+export type StatusRule =
+  | { kind: 'command'; functions: SyntaxNode[] }          // its own (a function's: the definitions it calls)
+  | { kind: 'last-substitution'; at?: SyntaxNode }        // only assignments: the last `$( )`, 0 without one
+  | { kind: 'masked'; by: string; substitutions: SyntaxNode[] } // `local x=$(cmd)`: the builtin's status
+  | { kind: 'pipeline'; stages: SyntaxNode[]; pipefail: Tri; negated: boolean }
+  | { kind: 'arith' } | { kind: 'test' }                  // `(( ))`, `let`; `[[ ]]`, `[ ]`
+  | { kind: 'last-run' }                                  // lists, compound commands, `time`
+  | { kind: 'given'; by: 'exit' | 'return'; value: number } | { kind: 'previous'; by: 'exit' | 'return' }
+  | { kind: 'wait'; job?: SyntaxNode; all: boolean }      // `wait $!`: the job `$!` names
+  | { kind: 'background'; job: StatusRule }               // `cmd &`, coproc: 0
+  | { kind: 'definition' };
+export interface Ignored { why: 'condition' | 'and-or' | 'negated' | 'called-in-condition'; at: SyntaxNode; sure: boolean }
+export interface ErrexitContext { errexit: Tri; ignored?: Ignored; active: Tri; checked: boolean; stops: 'script' | 'subshell' | 'unknown' }
+export interface StatusModel {
+  status(n): StatusRule; errexit(n): ErrexitContext;
+  expansionError(n, env?: WordEnv): { word; failure: WordFailure } | undefined; // B4's fatal failures, surely
+}
+export function statusModel(state: StateModel, shell?: Shell): StatusModel;  // cached per state model
+export function setsErrexit(n): boolean; export function conditionOf(n): SyntaxNode[] | undefined; export function lastStatements(n): SyntaxNode[];
+```
+
+- The design's `ErrexitContext.ignoredBecause` became `ignored`, with the node that causes it and `sure`. `'substitution'` is not a reason: the B1 walk turns errexit off in a command substitution unless inherit_errexit is on (POSIX mode turns it on; shells other than bash keep it), so `errexit` there is `off` from the state, and a `set -e` inside the substitution turns it on again. `'modulo-256'` became `given`, and a `wait` and a job have their own rules.
+- Ignoring follows the manual's 4.3.1 and the probes: the condition of `if`, `elif`, `while`, `until`; every command of an and-or list but the last; `!`; and it reaches into `( )` and `$( )` there (`if (false; echo in)` prints `in`, also with inherit_errexit). A function body is ignored when every call (B2's `calls`) is: `sure: false` when some are, and the body then says "may". A call of the function from itself does not count.
+- `checked`: simple commands, assignments, `[ ]`, `[[ ]]`, `(( ))`, pipelines and `( )`. Lists and the other compound commands are not, so `{ false && true; }` does not stop the script but `( false && true )` and `f() { false && true; }; f` do. A pipeline's stages and a job are not either. `stops` reads B2's `processOf`, but for a `( )` the shell that checks it is the one around it.
+- `expansionError` uses B4's `wordFields`: without the environment (the analyzer gives none) a variable may come from it, so it is surely an error only with the probes' environment. The analyzer does not render it yet.
+- test/status-probes.test.ts runs the rows of status.json (87 rows) on a small evaluator: the model gives the rules, the evaluator knows the status of a few commands (`true`, `false`, `[ -f FILE ]`, `cd`…). Every row agrees with bash but 13, each with its reason in `gaps`: trap actions are not read; `bash -c` strings are not run; 126 depends on the file system; an assignment to a readonly variable (B3: it abandons the line, or ends the script in POSIX mode or under `set -e`); a special builtin's error in POSIX mode (B3); `.`; and a body run both where `set -e` is ignored and where it is not ("may").
+- The analyzer renders, from the model: on the `$( )` of an assignment with no command, that the script stops if it fails, and on one in a command's arguments that it does not; the `local x=$(cmd)` pitfall (now for any `$( )` in a declaration's value; it left src/pitfalls.ts); a pipeline without pipefail under `set -e` (not in sh and dash); a function whose last command is `test && cmd`, called under `set -e`; a `set -e` run where bash ignores it; a function called only where `set -e` is ignored (once, on its definition), and a `( )` or `{ }` there, when a plain command comes before the last; and a `$( )` of several commands, where bash turns `set -e` off. The `((i++))` pitfall, the note on `exit 256` and the Dockerfile `pipefail` check read it too. To keep `set -e` scripts quiet, nothing is said of each command that `set -e` stops on, nor of one-command predicates called from `if`.
+
+Deferred: the ERR trap (it runs where `set -e` would stop the shell; inside it, and inside an EXIT trap, `set -e` is in effect) and trap actions in general; `bash -c` strings (`reachOf(env, shellopts).options` says whether `set -e` reaches them; their text is not read); readonly assignments and special builtins' errors in POSIX mode (B3); the value of conditions (a branch that never runs); rendering `expansionError` where a value is known to be missing; `x=1 $(false)` (no command name after expansion: the substitution's status).
+
 ## 5. C: the bash-ast differential test
 
 ### 5.1 What it compares
@@ -877,7 +911,7 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 **B4. Words.** The context table and `WordMeaning`; `splitNote`, `noSplit`, `valueNote`, `globOff`, `afterAssignment`, `tilde` and the quoting notes render from it. Probe: bash prints the fields of a word in its context (`printf '<%s>'` in a temporary directory with known files and `IFS`), compared with `fields` and with the static value. Size: 800–1,200. Done: the table and `WordMeaning` are in src/semantics/words.ts (4.9); the analyzer's `splitNote`, `globOff`, `tilde` and the note on `$_` render from it, and `noSplit`, `ifsAt` and `afterAssignment` are gone. test/word-probes.test.ts compares `wordFields` with every row of words.json (62 rows; a marker the model gives as unknown is in the row's `gaps`, with the reason; a redirection is checked by the file the run created), and test/words.test.ts compares a here-string and a here-document with bash. `valueNote` and the text of double-quoted strings still read src/staticword.ts, which the model uses for `value` too.
 
-**B5. Status and errexit.** `StatusRule`, `ErrexitContext`, and their facts. Probe: bash runs the snippet with `set -e` and a marker after it. Size: 300–500.
+**B5. Status and errexit.** `StatusRule`, `ErrexitContext`, and their facts. Probe: bash runs the snippet with `set -e` and a marker after it. Size: 300–500. Done: src/semantics/status.ts (4.11); the B1 walk turns errexit off in `$( )` without inherit_errexit. test/status-probes.test.ts compares the model with every row of status.json (87 rows, 44 added: functions called from `if`, `&&`, `!` and from both kinds of places, `set -e` in a subshell and a substitution, inherit_errexit, POSIX mode, `!`, lists, pipefail set in a function, `time`, `wait`, the ERR trap, assignments and declarations with substitutions, readonly assignments, `[[ ]]`, `(( ))`, `return`, `bash -c` with and without SHELLOPTS, `set -u`), with the gaps listed in the rows. The analyzer had no errexit logic of its own besides the `local x=$(…)` pitfall in src/pitfalls.ts, the unconditional `set -e` sentence of the `((i++))` pitfall, the modulo of `exit N` and the Dockerfile `pipefail` test: they read the model now.
 
 **B6. Facts and manual links.** The message catalog, `refs` on tokens, links in the hover, the panel and the web page; section numbers in the CLI. src/pitfalls.ts keeps the style checks. Guarded by the render and web tests. Size: 400–600.
 
