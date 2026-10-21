@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- In `ps`, a bare number is a process ID, and it ends the line: procps reads every word after it as a process ID, and `ps -o pid= 1 u` and `ps 1 -e` fail with "process ID list syntax error". The explanation marks those words as not allowed. Before, `1` was a plain word, and `u` and `-e` were read as options.
 - The value of an option written in the same word as quotes, as in `dpkg-query -Wf='${Package}'` and `tar -C'/tmp' -xf a.tar`, is shown without the closing quote (`${Package}`, `/tmp`), and its mark ends before the quote. Before, the label kept the quote (`${Package}'`).
 - `sh` knows `-s`, `-i`, `-l`, `-n`, `-v`, `-a`, `-C`, `-f`, `-b`, `-m` and `-p`, as dash and `bash --posix` do. In `sh -s a b` and `sh -i`, they are options. Before, they were "Option (not in the dictionary)".
 - `jobs -x echo %1` explains `echo %1` as a command, with its own words, as `-x` runs it. Before, `echo` and `%1` were job specs.
