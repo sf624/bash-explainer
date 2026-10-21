@@ -245,6 +245,35 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 0.7 より前の形（`options` をオブジェクト `"-n|--dry-run": "…"` で、オペランドを `arguments` の説明の並びで書く形。最後の説明は繰り返す）も読みます。この形は今後のリリースで読まなくなります。
 
+## VS Code 以外での設定
+
+同じ設定を、意味のある範囲で、Web 版・コマンドラインツール・Language Server でも使えます。
+
+| 設定（`bashExplainer.`…） | Web 版 | コマンドライン | Language Server |
+| --- | --- | --- | --- |
+| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
+| `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
+| `examples.placement` | ✓ | | |
+| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`languages`・`embedded.files` | | | ✓ |
+| `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen` | | | |
+
+空欄は、VS Code にしかないもの（ホバー、インライン要約、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
+
+- **Web 版:** ツールバーの **⚙ 設定**、または解説パネルの設定ボタンで開きます。変更はすぐに反映され、ブラウザに保存されます（localStorage）。**既定値に戻す** で消えます。ページの言語メニュー、パネルのシェルと yq のメニューは、同じ設定です。
+- **コマンドラインと Language Server:** VS Code の `settings.json` と同じキー（`bashExplainer.` は付けても付けなくてもよい）の JSON ファイルです（コメントも書けます）。`--config` で指定したファイル、なければ `$BASH_EXPLAINER_CONFIG`、なければ `$XDG_CONFIG_HOME/bash-explainer/settings.json`（既定では `~/.config/bash-explainer/settings.json`）を読みます。1つの設定は `--set キー=値` でも変えられます。詳しくはツールの README の [Settings](cli/README.md#settings) を参照してください（英語）。
+
+```json
+{
+  "bashExplainer.language": "ja",
+  "bashExplainer.shell": "sh",
+  "bashExplainer.diagnostics.ignore": ["crlf"],
+  "bashExplainer.examples.disabled": ["date"],
+  "bashExplainer.customCommands": {
+    "deploy": { "summary": "サービスを本番にデプロイする" }
+  }
+}
+```
+
 ## コマンドライン、他のエディタ、CI
 
 コマンドラインツール、Language Server、GitHub Action は、1つの npm パッケージ [`bash-explainer`](cli/README.md) にまとまっています。オプション、出力形式（テキスト、Markdown、JSON、SARIF、GitHub のアノテーション）、Neovim・Helix・Emacs の設定、Action の入力は、そちらの README を参照してください（英語）。

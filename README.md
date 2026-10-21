@@ -245,6 +245,35 @@ In-house tools are shown as *external commands* until you describe them:
 
 The shape before 0.7 (`options` as an object, `"-n|--dry-run": "…"`, and `arguments`, a list of texts of which the last repeats) is still read, and a later release drops it.
 
+## Settings outside VS Code
+
+The same settings work on the web page, in the command-line tool and in the Language Server, wherever they have a meaning:
+
+| Settings (`bashExplainer.`…) | Web page | Command line | Language Server |
+| --- | --- | --- | --- |
+| `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
+| `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
+| `examples.placement` | ✓ | | |
+| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `languages`, `embedded.files` | | | ✓ |
+| `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen` | | | |
+
+The empty cells are about what only VS Code has (a hover, an inline summary, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
+
+- **Web page:** click **⚙ Settings** in the toolbar, or the settings button of the explanation panel. Changes apply at once, and are kept in your browser (localStorage); **Reset to defaults** clears them. The page's language menu and the panel's shell and yq menus are the same settings.
+- **Command line and Language Server:** a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.` (comments are allowed). It is the file given with `--config`, else `$BASH_EXPLAINER_CONFIG`, else `$XDG_CONFIG_HOME/bash-explainer/settings.json` (by default `~/.config/bash-explainer/settings.json`). `--set key=value` sets one setting. See [Settings](cli/README.md#settings) in the tool's README.
+
+```json
+{
+  "bashExplainer.language": "ja",
+  "bashExplainer.shell": "sh",
+  "bashExplainer.diagnostics.ignore": ["crlf"],
+  "bashExplainer.examples.disabled": ["date"],
+  "bashExplainer.customCommands": {
+    "deploy": { "summary": "Deploy a service to production" }
+  }
+}
+```
+
 ## Command line, other editors and CI
 
 The command-line tool, the Language Server and the GitHub Action are one npm package, [`bash-explainer`](cli/README.md). Its README covers the options, the output formats (text, Markdown, JSON, SARIF, GitHub annotations), the set-up for Neovim, Helix and Emacs, and the action's inputs.
