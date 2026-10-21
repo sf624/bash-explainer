@@ -211,6 +211,8 @@ describe('words: fields', () => {
     // (In the statement that assigns it, the state is the one before it.)
     assert.deepStrictEqual(fieldsOf('x=1; echo $(( ++x )) "$x"', '"$x"'), {});
     assert.deepStrictEqual(fieldsOf('x=1; echo $(( ++x )) "$(echo "$x")"', '"$x"'), {});
+    // A simple command expands its words before its redirections (bash prints <1>).
+    assert.deepStrictEqual(fieldsOf('x=1; printf "<%s>" "$x" 2>/dev/null > g$(( x *= 5 ))', '"$x"').fields, ['1']);
     assert.deepStrictEqual(wordFields(find('x=1', 'x').node, find('x=1', 'x').model), {});
     assert.deepStrictEqual(fieldsOf('x=1; : ${x:=2}; echo "$x"', '"$x"'), {});
     assert.deepStrictEqual(fieldsOf('x=1; let y=1; echo "$x"', '"$x"').fields, ['1']);

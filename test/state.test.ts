@@ -410,9 +410,10 @@ describe('shell state: arithmetic', () => {
   });
   it('gives no value when an operand is not known', () => {
     assert.deepStrictEqual(after('x=$y; a=(1); z=a; q=w\n(( b = x, c = a, e = Z, f = -Z, g = Z += 1, h = $1, i = $q, j = "3", k = $(echo 1) ))', 'b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', 'k'),
-      ['set', 'set', 'set', 'set', 'set', 'set', 'set', 'set', 'set']);
-    assert.deepStrictEqual(after('[ "$1" ] && x=1\nn9=1; n8=n9; n7=n8; n6=n7; n5=n6; n4=n5; n3=n4; n2=n3; n1=n2; n0=n1\n(( a = x, b = n0, c = 2 ** 200, d = 1 << 64, e = n1 ))', 'a', 'b', 'c', 'd', 'e'),
-      ['set', 'set', 'set', 'set', 'set=1']);
+      ['set', 'set', 'set', 'set', 'set', 'set', 'set=0', 'set=3', 'set']);
+    assert.deepStrictEqual(after('[ "$1" ] && x=1\narr=(1); (( a = x, c = 2 ** 200, d = 1 << 64, e = $(( Z )), f = $nope, g = $arr ))', 'a', 'c', 'd', 'e', 'f', 'g'), ['set', 'set', 'set', 'set', 'set', 'set']);
+    // (An error in a subshell's expansion stays there.)
+    assert.deepStrictEqual(after(': $(( a = 1, 1 / 0 )) | cat', 'a'), ['none']);
     // (A shift by a negative count or by 64 or more depends on the machine; a nameref to an element is not followed.)
     assert.deepStrictEqual(after('declare -n e=\'a[1]\'; (( a = 1 << -1, b = 1 << 64, c = 1 >> -1, d = 1 >> 64, f = e ))', 'a', 'b', 'c', 'd', 'f'), ['set', 'set', 'set', 'set', 'set']);
     assert.deepStrictEqual(after('declare x; declare -n r; (( a = x, b = 1 && 2, c = 0 || 3, d = 1 ? 4 : 4, e = r ))', 'a', 'b', 'c', 'd', 'e'), ['set=0', 'set=1', 'set=1', 'set=4', 'set=0']);
@@ -426,12 +427,17 @@ describe('shell state: arithmetic', () => {
     // An operand of `${…}` may not be expanded.
     assert.deepStrictEqual(after('s=abc; echo ${s:$(( k = 1 ))} ${s:-$(( 2 ))}', 'k'), ['unknown']);
     // A command whose name is not known may be a program, which makes its redirections in its own process.
-    assert.deepStrictEqual(after('$cmd > f$(( a = 1 )); $cmd > ${b:=x}; ls > ${c:=x}; { $cmd; } > f$(( d = 1 ))', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'none', 'set=1']);
+    assert.deepStrictEqual(after('$cmd > f$(( a = 1 )); $cmd > ${b:=x}; ls > ${c:=x}; { $cmd; } > f$(( d = 1 )); command > f$(( e = 1 ))', 'a', 'b', 'c', 'd', 'e'),
+      ['unknown', 'unknown', 'none', 'set=1', 'set=1']);
+    // An array that may be associative: its subscript may be arithmetic.
+    assert.deepStrictEqual(after('[ "$1" ] && declare -A m\ni=0; (( m[i++] = 1 ))', 'i'), ['set']);
+    // An error there discards the command: what came before it may have been assigned.
+    assert.deepStrictEqual(after('s=abc; echo ${s:$(( a = 1, 1 / 0 ))}; $cmd > f$(( b = 1, 1 / 0 )); echo $(( c = 1, 1 / 0 ))', 'a', 'b', 'c'), ['unknown', 'unknown', 'set=1']);
   });
   it('reads what it can of arithmetic the parser does not read', () => {
     // (Assigning to `$x`, or to a number, is not followed.)
     assert.deepStrictEqual(after('(( $x = 1, 1++ ))', 'x'), ['none']);
-    assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['set', 'set', 'none', 'unknown']);
+    assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['set', 'set', 'none', 'none']);
     assert.strictEqual(attribute(end('let "a[1] = $v"'), 'a', 'a'), 'on');
     assert.deepStrictEqual(after('let "n++ + $v" "++q + $v"', 'n', 'q'), ['set', 'set']);
     assert.deepStrictEqual(after('i=0; (( a[i++] = 2, a[j += 2] = 3 ))', 'i', 'j'), ['set=1', 'set=2']);
