@@ -4,11 +4,9 @@ import { detectShell, Shell, SHELL_NAMES } from './dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from './document';
 import { Extracted, extractShell, HostKind, hostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
+import { EMBEDDED_FILES } from './settings';
 import type { TreeCache } from './syntax/cache';
 import type { ExamplePlacement, Feature } from './ui/render';
-
-/** Kinds of files with embedded shell code, as named in the `embedded.files` setting. */
-export const EMBEDDED_FILES = ['dockerfile', 'makefile', 'yaml', 'packageJson', 'markdown', 'python', 'jenkinsfile'] as const;
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {

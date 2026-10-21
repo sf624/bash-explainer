@@ -2,12 +2,14 @@
 // explanations, the problems as diagnostics and their quick fixes. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
-import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
+import { detectShell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
 import { extractShell, HostKind, hostKind } from '../src/hosts';
-import { Lang } from '../src/i18n';
+import { Lang, resolveLang } from '../src/i18n';
+import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { toPlainMarkdown } from '../src/ui/render';
+import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
+import { readSettingsFile, settingsFile } from './settings-file';
 
 type Message = { id?: number | string; method?: string; params?: any; result?: unknown; error?: unknown };
 
@@ -22,26 +24,43 @@ interface Doc {
   parsed?: ShellDocument;
 }
 
-interface Settings {
-  language: Lang;
-  /** The shell to check for; undefined: from the file. */
-  shell?: Shell;
-  examples: boolean;
-}
-
 export interface Io {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
   env: NodeJS.ProcessEnv;
   version: string;
   exit: (code: number) => void;
+  /** The settings file given with --config. */
+  config?: string;
 }
 
 const fileName = (uri: string) => decodeURIComponent(uri.replace(/^[a-z][\w+.-]*:\/\/[^/]*/i, ''));
 
 export function startLanguageServer(io: Io): void {
   const locale = io.env.LC_ALL || io.env.LC_MESSAGES || io.env.LANG || '';
-  const settings: Settings = { language: locale.toLowerCase().startsWith('ja') ? 'ja' : 'en', examples: true };
+  // The settings: the defaults, then the settings file of the command-line tool, then what the editor
+  // sends (initializationOptions, workspace/didChangeConfiguration).
+  let fromFile: Partial<Settings> = {};
+  let fromEditor: Partial<Settings> = {};
+  let settings = mergeSettings();
+  let lang: Lang = 'en';
+  const update = () => {
+    settings = mergeSettings(fromFile, fromEditor);
+    lang = resolveLang(settings.language, locale);
+  };
+  /** Said in the editor's log once the client is ready. */
+  const notices: string[] = [];
+  const file = settingsFile(io.config, io.env);
+  if (file) {
+    try {
+      const read = readSettingsFile(file);
+      fromFile = read.settings;
+      notices.push(...read.warnings);
+    } catch (e) {
+      notices.push((e as Error).message);
+    }
+  }
+  update();
   const docs = new Map<string, Doc>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const parser = createUnbashParser();
@@ -54,8 +73,10 @@ export function startLanguageServer(io: Io): void {
 
   /** What kind of document it is, or undefined when it has nothing for us. */
   function kindOf(doc: Doc): 'shell' | HostKind | undefined {
-    if (SHELL_LANGUAGES.has(doc.languageId)) return 'shell';
-    return hostKind(doc.languageId === 'make' ? 'makefile' : doc.languageId, fileName(doc.uri));
+    if (SHELL_LANGUAGES.has(doc.languageId) || settings.languages.includes(doc.languageId)) return 'shell';
+    const kind = hostKind(doc.languageId === 'make' ? 'makefile' : doc.languageId, fileName(doc.uri));
+    // The setting names package.json files `packageJson`.
+    return kind && settings['embedded.files'].includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
   }
 
   function parse(doc: Doc): ShellDocument | undefined {
@@ -76,12 +97,14 @@ export function startLanguageServer(io: Io): void {
     if (doc) doc.parsed = undefined;
   }
 
-  const shells = (doc: ShellDocument, uri: string) => ({ forced: settings.shell, detected: detectShell(doc.lines.slice(0, 50).join('\n'), fileName(uri)) });
+  const shells = (doc: ShellDocument, uri: string) => ({ forced: forcedShell(settings), detected: detectShell(doc.lines.slice(0, 50).join('\n'), fileName(uri)) });
   const plain = (message: string) => message.replace(/^[⚠ℹ]️?\s*/u, '');
 
   function issues(doc: Doc): DocumentIssue[] {
+    if (!settings['diagnostics.enabled']) return [];
     const parsed = parse(doc);
-    return parsed ? documentIssues(parsed, settings.language, shells(parsed, doc.uri)) : [];
+    if (!parsed || (parsed.extracted && !settings['diagnostics.embedded'])) return [];
+    return documentIssues(parsed, lang, shells(parsed, doc.uri), settings['diagnostics.ignore']);
   }
 
   function publish(uri: string): void {
@@ -108,12 +131,15 @@ export function startLanguageServer(io: Io): void {
   }
 
   function hover(doc: Doc, line: number) {
+    if (!settings['hover.enabled']) return null;
     const parsed = parse(doc);
     if (!parsed || line >= parsed.lines.length) return null;
-    const analyzer = new Analyzer(settings.language);
-    const ex = explainDocumentLine(analyzer, parsed, line, settings.language, shells(parsed, doc.uri), { examples: { enabled: settings.examples, disabled: [] } });
-    if (!ex.items.length && !ex.notes.length) return null;
-    const where = `Bash Explainer · ${settings.language === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
+    const analyzer = new Analyzer(lang);
+    const full = explainDocumentLine(analyzer, parsed, line, lang, shells(parsed, doc.uri), explainOptions(settings));
+    if (!full.items.length && !full.notes.length) return null;
+    // As in VS Code, the hover can be kept short: fewer levels of the tree, no examples.
+    const ex = { ...full, items: pruneDepth(full.items, settings['hover.maxDepth']), examples: settings['examples.inHover'] ? full.examples : [] };
+    const where = `Bash Explainer · ${lang === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
     return {
       contents: { kind: 'markdown', value: toPlainMarkdown(ex, parsed.lines[line], where) },
       range: { start: { line, character: 0 }, end: { line, character: parsed.lines[line].length } },
@@ -124,7 +150,7 @@ export function startLanguageServer(io: Io): void {
     return issues(doc)
       .filter((i) => i.fix && i.startLine <= range.end.line && i.endLine >= range.start.line)
       .map((i) => ({
-        title: i.fix!.title[settings.language === 'ja' ? 0 : 1],
+        title: i.fix!.title[lang === 'ja' ? 0 : 1],
         kind: 'quickfix',
         diagnostics: [{ range: { start: { line: i.startLine, character: i.startCol }, end: { line: i.endLine, character: i.endCol } }, code: i.code, source: 'Bash Explainer', message: plain(i.message) }],
         edit: {
@@ -135,18 +161,27 @@ export function startLanguageServer(io: Io): void {
       }));
   }
 
-  function configure(options: any): void {
-    const o = options?.bashExplainer ?? options ?? {};
-    if (o.language === 'en' || o.language === 'ja') settings.language = o.language;
-    if (typeof o.shell === 'string') settings.shell = o.shell in SHELL_NAMES ? (o.shell as Shell) : undefined;
-    if (typeof o.examples === 'boolean') settings.examples = o.examples;
+  const log = (message: string) => send({ method: 'window/logMessage', params: { type: 2, message: `Bash Explainer: ${message}` } });
+
+  /** Settings from the editor: the keys of VS Code's settings, flat or nested, under `bashExplainer` or not. */
+  function configure(options: any, where: string): void {
+    const o = { ...(options?.bashExplainer ?? options) };
+    // `examples: false`, as the first releases of the server read it.
+    if (typeof o.examples === 'boolean') {
+      o['examples.enabled'] = o.examples;
+      delete o.examples;
+    }
+    const read = readSettings(o, where);
+    fromEditor = { ...fromEditor, ...read.settings };
+    update();
+    read.warnings.forEach(log);
   }
 
   async function handle(m: Message): Promise<void> {
     const reply = (result: unknown) => m.id !== undefined && send({ id: m.id, result });
     switch (m.method) {
       case 'initialize':
-        configure(m.params?.initializationOptions);
+        configure(m.params?.initializationOptions, 'initializationOptions');
         return void reply({
           capabilities: {
             textDocumentSync: { openClose: true, change: 1 },
@@ -156,6 +191,7 @@ export function startLanguageServer(io: Io): void {
           serverInfo: { name: 'bash-explainer', version: io.version },
         });
       case 'initialized':
+        notices.splice(0).forEach(log);
         return;
       case 'shutdown':
         shuttingDown = true;
@@ -163,8 +199,12 @@ export function startLanguageServer(io: Io): void {
       case 'exit':
         return io.exit(shuttingDown ? 0 : 1);
       case 'workspace/didChangeConfiguration':
-        configure(m.params?.settings);
-        for (const doc of docs.values()) schedule(doc.uri);
+        configure(m.params?.settings, 'settings');
+        // The kind of a document depends on the settings too (languages, embedded.files).
+        for (const doc of docs.values()) {
+          forget(doc);
+          schedule(doc.uri);
+        }
         return;
       case 'textDocument/didOpen': {
         const d = m.params.textDocument;
