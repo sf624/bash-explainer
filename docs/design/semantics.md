@@ -618,6 +618,37 @@ src/pitfalls.ts and the pitfalls in the analyzer become facts of the model where
 | builtins G6: `test`, `[ "$a" > "$b" ]`, one-word tests | `test` reads its words with src/testexpr.ts like `[`; the `>` redirection inside `[ ]` is a fact |
 | builtins G8: directory stack | part A specs (`pushd +N`); tilde `~N` in the table |
 
+### 4.7 As built: the shell state (B1)
+
+```ts
+// src/semantics/state.ts
+export type Tri = 'on' | 'off' | 'unknown';
+export type OptionState = Tri | 'default';          // default: the script has not changed it
+export interface ShellState {                       // immutable; a name not in a map is untouched by the script
+  set: ReadonlyMap<string, OptionState>;            // by long name: errexit, noglob, posix, monitor… (`set -G` is globstar in ksh)
+  shopt: ReadonlyMap<string, OptionState>;
+  variables: ReadonlyMap<string, VariableState>;    // { set: Tri; attrs: { [letter]: { state: Tri; at } }; value?: string; at }
+  functions: ReadonlyMap<string, FunctionState>;    // { state: Tri; def; exported: Tri }
+  aliases: ReadonlyMap<string, AliasState>;         // { state: Tri; value; at }
+}
+export interface StateModel {
+  at(n: SyntaxNode): { run: ShellState; parse: ShellState };
+  end: ShellState;
+  definitions: { functions; aliases };              // every definition in the script, wherever it runs
+}
+export function shellState(tree: SyntaxTree, shell?: Shell, opts?: { posix?: boolean }): StateModel; // cached per tree and shell
+```
+
+- `default` is apart from `off`: the analyzer says "not found before this line; fine if a file read with `source` turns it on" for `default`, and "may" for `unknown` (decision 5). A branch that turns an option to its default value, merged with one that leaves it alone, stays `default`.
+- `run` is the state before the nearest statement that holds the node (a word has the state of its command); `parse` is the state before the first top-level statement of the line or compound command that holds it. In a declaration, the state of an assignment has the attributes the declaration gives (`declare -i n=2+3` is an integer assignment).
+- A variable's value is kept when it is static text (with `-i`, `-l`, `-u` and `+=` applied; for `IFS` and `$x` pasted in arithmetic). Arrays have no value.
+- The branches of `if`, `case` (a `*)` branch makes the "no match" path impossible), `&&` and `||` are merged; a loop runs its body until the state at its start is stable (five passes at most), and may run it zero times. Merging a name set on one path only keeps its attributes and makes it `set: 'unknown'`.
+- A function body is walked once at its definition, from the state there plus every function of the script as `unknown` (decision 6). Its effects (what it changes outside its `local`/`declare` variables) are applied at each call in the current shell; a call of a function defined on some paths only merges them. `f() ( … )` has none.
+- Subshells (`( )`, `$( )`, `<( )`, `&`, coproc, pipeline stages but the last one with lastpipe on and job control off; in zsh and ksh the last stage is always in the shell) get the state and drop their changes.
+- POSIX mode: `bash --posix` (and `#!/bin/bash --posix`) start with it and its shell options; sh, dash, ash, yash, ksh and mksh start with `posix` on; `set -o posix` turns on expand_aliases, inherit_errexit and shift_verbose and sets `POSIXLY_CORRECT`; `set +o posix` turns expand_aliases and shift_verbose off, as bash 5.2 does.
+
+Not followed yet, each listed in the probe rows' `gaps`: the conditions themselves (`if false` is a branch like any other), the current directory (`cd`, `pushd`: `PWD`, `OLDPWD`), assignments in arithmetic (`(( i = 1 ))`, `let`), `select`'s `REPLY`, the values that `read`, `mapfile`, `getopts`, `printf -v` and `${x:=w}` give, and array values. `source`, `eval` and `trap` actions are not read. Calls do not merge the state of every call site into a function body (decision 6: later).
+
 ## 5. C: the bash-ast differential test
 
 ### 5.1 What it compares
@@ -724,7 +755,7 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 **Probes.** The B steps compare the model with what bash does. test/support/probe.ts runs bash 5.2 (`bash --norc --noprofile`, `LC_ALL=C`, a fixed `PATH` and `HOME`, a fresh directory with known files) on a snippet whose markers (`@PROBE:id@`) become a call to an instrumentation function; the probes skip when bash is missing or older than 5.2. The tables are test/fixtures/probes/*.json: each row is a manual section, a snippet and the facts bash gave, recorded by scripts/record-probes.ts and checked by test/probe.test.ts. Each step reads its own table: B1 `state.json` (`shopt -p`, `set -o`, `declare -p`, `declare -F` and `alias` at a marker and at the end, as changes from an empty script), B2 `env.json` (main shell, subshell or another shell, from `$BASHPID` and `$$`), B3 `names.json` (`type -t` under bash and `bash --posix`), B4 `words.json` (the fields of the words after a marker) and B5 `status.json` (under `bash -e`: the markers that ran, and the exit status). A step adds the rows it needs, records them, reads the facts, then makes its test compare the model with every row.
 
-**B1. Shell state.** src/semantics/state.ts builds `ShellState` along the tree, with parse-time and run-time states; `shoptStates`, the scans in `explainLine` (functions, arrays, IFS, noglob, aliases) move there. Cached per tree. Guarded by: analyzer, audit-shell, mode and pitfalls tests; a new probe test runs bash on snippets with `shopt -p`, `set -o` and `declare -p` at the end and compares. Size: 600–900.
+**B1. Shell state.** src/semantics/state.ts builds `ShellState` along the tree, with parse-time and run-time states; `shoptStates`, the scans in `explainLine` (functions, arrays, IFS, noglob, aliases) move there. Cached per tree. Guarded by: analyzer, audit-shell, mode and pitfalls tests; a new probe test runs bash on snippets with `shopt -p`, `set -o` and `declare -p` at the end and compares. Size: 600–900. Done: the model is in src/semantics/state.ts (4.7); `shoptStates`, the scans of `explainLine` (functions, arrays, associative arrays, integers, namerefs, IFS, noglob, aliases), `exportedFunctions`, the `set -o posix` regular expression and `pastedValue`'s scan are gone, and the analyzer asks `shellState(tree, shell).at(node)`. test/state-probes.test.ts compares the model with every row of state.json (37 rows; what the model gives as unknown or does not follow is listed in each row's `gaps`, with the reason), and test/state.test.ts tests the walk.
 
 **B2. Execution environments.** `ExecEnv` for every node; the four subshell checks go. A command run by a wrapper has the chain of slots that leads to it (`env -i` → `bash -c`), and its environment is what each link passes on (3.7); `slotChain` and `functionBlocker` in the analyzer go. A probe test compares with bash: a marker command replaced by `[ "$BASHPID" = "$$" ]` says whether it runs in a subshell. Size: 300–500.
 
