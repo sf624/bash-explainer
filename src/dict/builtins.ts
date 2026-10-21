@@ -231,7 +231,14 @@ export const builtins: Record<string, CommandDoc> = {
     ['-v', 'コマンドのパスまたは名前を表示（存在確認に使う）', 'print the command path or name (existence check)'],
     ['-V', 'コマンドの詳しい説明を表示', 'print a verbose description'],
     ['-p', '標準の PATH で検索する', 'use a default PATH'],
-  ], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] }] }),
+  ], {
+    builtin: 'regular', style: 'posix',
+    operands: [
+      // `command -v git`: the names are looked up, and nothing runs.
+      { when: { option: ['-v', '-V'] }, pattern: [operand('NAME', '調べる名前', 'name to look up', { repeat: '*' })] },
+      { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
+    ],
+  }),
   builtin: native('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
