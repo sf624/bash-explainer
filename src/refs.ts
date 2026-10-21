@@ -41,7 +41,7 @@ export const OPERATORS: Readonly<Record<string, readonly string[]>> = {
 
 /** A redirection's subsection, from its operator and target (`2>&1` duplicates, `2>&-` closes, `>&file` is 3.6.4). */
 function redirectSections(n: SyntaxNode): readonly string[] {
-  const op = n.children.find((c) => !c.named)?.type ?? '';
+  const op = n.children.find((c) => !c.named)!.type;
   const dest = field(n, 'destination')?.text ?? '';
   if ((op === '>&' || op === '<&') && /^(\d+-?|-|\$\w+|\$\{\w+\})$/.test(dest)) return [/^\d+-$/.test(dest) ? '3.6.9' : '3.6.8'];
   const sub: Record<string, string> = { '<': '3.6.1', '>': '3.6.2', '>|': '3.6.2', '>>': '3.6.3', '&>': '3.6.4', '>&': '3.6.4', '&>>': '3.6.5', '<>': '3.6.10' };
@@ -50,7 +50,7 @@ function redirectSections(n: SyntaxNode): readonly string[] {
 
 /** `$1` and `$10` (3.4.1), `$?`, `$@`, `$$` and the other special parameters (3.4.2), or a variable (3.5.3). */
 function parameterSections(text: string): readonly string[] {
-  const name = text.replace(/^\$\{?#?/, '');
+  const name = text.slice(1);
   if (/^\d/.test(name)) return ['3.4.1'];
   if (/^[-*@#?$!_]/.test(name)) return ['3.4.2'];
   return ['3.5.3'];
@@ -69,12 +69,9 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
 export function anonSections(n: SyntaxNode): readonly string[] | undefined {
   let construct: string | undefined;
   for (let p = n.parent; p && !construct; p = p.parent) if (CONSTRUCTS[p.type]) construct = p.type;
-  // (`&&` and `!` inside `[[ ]]` or `(( ))` are the test's own operators.)
-  if (construct && TESTS.has(construct)) return CONSTRUCTS[construct];
+  // (The operators inside `[[ ]]` and `(( ))` are parts of their expressions, not tokens of their own.)
   return OPERATORS[n.type] ?? (construct ? CONSTRUCTS[construct] : undefined);
 }
-
-const TESTS = new Set(['test_command', 'extended_test', 'arithmetic_command']);
 
 /** A builtin's section, and 4.4 for a special builtin. */
 export function builtinSections(name: string, special: boolean): readonly string[] {

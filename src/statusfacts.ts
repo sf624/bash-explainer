@@ -5,6 +5,7 @@
 // where bash ignores it; a function, `( )` or `{ }` of several commands run where it is ignored; a `$( )` of several
 // commands, where bash turns it off; a declaration that hides the status of its `$( )`; the first pipeline that
 // hides a failure without pipefail; a function whose last command is `test && cmd`, called where `set -e` stops it.
+import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
@@ -12,7 +13,7 @@ import type { StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
 import { ancestor, descendants, field, fields, type SyntaxNode } from './syntax/tree';
 
-export interface StatusFact { readonly pitfall: boolean; readonly ja: string; readonly en: string }
+export type StatusFact = FactSpec;
 
 const shorten = (text: string): string => {
   const one = text.replace(/\s*\n\s*/g, ' ');
@@ -25,7 +26,7 @@ const row = (n: SyntaxNode): number => n.startPosition.row + 1;
  * Where bash ignores `set -e`, in words: `in the condition of \`if\``, `on the left side of \`||\``, `after \`!\``. (A
  * function called there has notes of its own, which name the call.)
  */
-function where(ig: Ignored): { ja: string; en: string } {
+function where(ig: Ignored): Words {
   if (ig.why === 'condition') {
     const kw = ig.at.type === 'if_statement' ? 'if' : ig.at.children[0].type;
     return { ja: `\`${kw}\` の条件（行 ${row(ig.at)}）`, en: `in the condition of \`${kw}\` (line ${row(ig.at)})` };
@@ -49,9 +50,9 @@ function inGroup(n: SyntaxNode, at: SyntaxNode): boolean {
 /** The facts of every line of the script, from its models. */
 export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusModel, shell?: Shell): Map<number, StatusFact[]> {
   const out = new Map<number, StatusFact[]>();
-  const add = (n: SyntaxNode, pitfall: boolean, ja: string, en: string): void => {
+  const add = (n: SyntaxNode, spec: FactSpec): void => {
     const line = n.startPosition.row;
-    out.set(line, [...(out.get(line) ?? []), { pitfall, ja: pitfall ? `⚠ 落とし穴: ${ja}` : `ℹ ${ja}`, en: pitfall ? `⚠ Pitfall: ${en}` : `ℹ ${en}` }]);
+    out.set(line, [...(out.get(line) ?? []), spec]);
   };
   // A command whose failure `set -e` would catch: a simple command or a pipeline (not an assignment, `local` or a test).
   const plain = (body: SyntaxNode): boolean => statements(body).slice(0, -1).some((c) => {
@@ -68,8 +69,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const inner = statements(n);
         if (inner.length < 2 || status.errexit(n).errexit !== 'on' || status.errexit(inner[0]).errexitWhy !== 'off-in-substitution' || turnsOn(n)) break;
         const first = shorten(inner[0].text);
-        add(n, false, `bash は \`$( )\` の中では \`set -e\` を切る（\`shopt -s inherit_errexit\` が無いとき）。\`${first}\` が失敗しても、あとのコマンドは実行される`,
-          `bash turns \`set -e\` off inside \`$( )\` (without \`shopt -s inherit_errexit\`): if \`${first}\` fails, the commands after it still run`);
+        add(n, { id: 'errexit-off-in-substitution', params: { first } });
         break;
       }
       case 'command': {
@@ -80,23 +80,13 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         if (!ig) break;
         if (ig.why === 'called-in-condition') {
           const name = field(ig.at, 'name')!.text;
-          if (ig.sure) {
-            add(n, false, `この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（行 ${row(ig.at)}）から呼ばれる`,
-              `This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (line ${row(ig.at)})`);
-          } else {
-            add(n, false, `\`${name}\` は \`set -e\` が無視される所（行 ${row(ig.at)}）からも呼ばれ、そのときこの \`set -e\` は呼び出しが終わるまで効かない`,
-              `\`${name}\` is also called where \`set -e\` is ignored (line ${row(ig.at)}); there this \`set -e\` takes effect only when the call returns`);
-          }
+          add(n, { id: ig.sure ? 'errexit-set-called-where-ignored' : 'errexit-set-maybe-called-where-ignored', params: { name, line: row(ig.at) } });
           break;
         }
         // (A `set -e` that is itself left of `&&`, or the condition, takes effect at once: `set -e && cmd`.)
         if (!inGroup(n, ig.at)) break;
         const w = where(ig);
-        if (ctx.stops === 'subshell') {
-          add(n, false, `この \`set -e\` は効かない: このサブシェルは ${w.ja}にあり、そこでは \`set -e\` が無視される`, `This \`set -e\` has no effect: this subshell runs ${w.en}, where \`set -e\` is ignored`);
-        } else {
-          add(n, false, `この \`set -e\` は、それを含むコマンドが終わるまで効かない: ${w.ja}では \`set -e\` が無視される`, `This \`set -e\` takes effect only when the command that holds it ends: \`set -e\` is ignored ${w.en}`);
-        }
+        add(n, { id: ctx.stops === 'subshell' ? 'errexit-set-in-ignored-subshell' : 'errexit-set-in-ignored-group', params: { where: w } });
         break;
       }
       case 'function_definition': {
@@ -106,8 +96,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const ig = status.errexit(statements(body)[0]).ignored;
         if (!ig?.sure || ig.why !== 'called-in-condition' || status.errexit(ig.at).errexit !== 'on' || !plain(body) || turnsOn(body)) break;
         const name = field(n, 'name')!.text;
-        add(n, false, `\`${name}\` は \`set -e\` が無視される所（行 ${row(ig.at)}）からしか呼ばれないので、その中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
-          `\`${name}\` is called only where \`set -e\` is ignored (line ${row(ig.at)}), so it is ignored in all of its body too: a command that fails in the middle does not stop it`);
+        add(n, { id: 'errexit-function-called-only-where-ignored', params: { name, line: row(ig.at) } });
         break;
       }
       case 'subshell': case 'compound_statement': {
@@ -118,8 +107,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         if (ctx.errexit !== 'on' || !ig?.sure || ig.why === 'called-in-condition' || !plain(n) || turnsOn(n)) break;
         const what = n.type === 'subshell' ? '`( )`' : '`{ }`';
         const w = where(ig);
-        add(n, false, `${w.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
-          `\`set -e\` is ignored in this ${what}, since it runs ${w.en}: a command that fails in the middle does not stop it`);
+        add(n, { id: 'errexit-group-where-ignored', params: { what, where: w } });
         break;
       }
       case 'declaration_command': {
@@ -129,8 +117,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         // The keyword: local, export, declare, readonly or typeset.
         const kw = rule.by;
         const v = field(ancestor(rule.substitutions[0], (x) => x.type === 'variable_assignment')!, 'name')!.text;
-        add(n, true, `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
-          `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``);
+        add(n, { id: 'declaration-masks-status', params: { kw, v } });
         break;
       }
       case 'pipeline': {
@@ -140,8 +127,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         // (A pipeline that hides a failure has a pipeline's rule.)
         const rule = status.status(n) as Extract<StatusRule, { kind: 'pipeline' }>;
         const last = shorten(rule.stages[rule.stages.length - 1].text);
-        add(n, true, `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
-          `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`);
+        add(n, { id: 'pipefail-missing', params: { last } });
         break;
       }
       case 'list': {
@@ -155,12 +141,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const name = field(def, 'name')!.text;
         // (The script's last command: its status is the script's.)
         const end = lastStatements(root).some((s) => s === call || s === call.parent);
-        add(n, true, end
-          ? `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${row(call)} の呼び出しで終わるスクリプトもその終了ステータスになる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`
-          : `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${row(call)} の呼び出しでスクリプトが止まる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
-        end
-          ? `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${row(call)}. Write \`if …; then …; fi\`, or end the function with \`return 0\``
-          : `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${row(call)}. Write \`if …; then …; fi\`, or end the function with \`return 0\``);
+        add(n, { id: end ? 'function-last-test-returns-status' : 'function-last-test-stops-script', params: { name, line: row(call) } });
         break;
       }
     }
