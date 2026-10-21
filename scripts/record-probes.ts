@@ -8,7 +8,7 @@
 // To add a row, add `{ "manual": "3.5.7", "snippet": "…" }` to a table and run the script; then read the
 // facts it wrote before committing them.
 import * as fs from 'fs';
-import { factsOf, pooled, PROBE_KINDS, probeFile, ProbeKind, probeSkipReason, readProbeTable } from '../test/support/probe';
+import { factsOf, hasRequired, pooled, PROBE_KINDS, probeFile, ProbeKind, probeSkipReason, readProbeTable } from '../test/support/probe';
 
 const args = process.argv.slice(2);
 const check = args.includes('--check');
@@ -23,7 +23,8 @@ for (const k of kinds) if (!PROBE_KINDS.includes(k)) throw new Error(`unknown pr
   let stale = 0;
   for (const kind of kinds.length ? kinds : PROBE_KINDS) {
     const rows = readProbeTable(kind);
-    const facts = await pooled(rows.map((row) => () => factsOf(kind, row)));
+    // (A row whose program is missing keeps its facts.)
+    const facts = await pooled(rows.map((row) => () => (hasRequired(row) ? factsOf(kind, row) : Promise.resolve(row.facts))));
     const next = rows.map((row, i) => ({ ...row, facts: facts[i] }));
     const json = `${JSON.stringify(next, null, 2)}\n`;
     if (check) {

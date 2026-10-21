@@ -1184,7 +1184,28 @@ export class Analyzer {
     this.extraNotes.push(this.s(`ℹ 終了ステータスは 0〜255 なので、\`${v}\` は 256 で割った余りの ${status} になる`, `ℹ An exit status is 0–255, so \`${v}\` becomes ${status} (the value modulo 256)`));
   }
 
+  /**
+   * `export() { …; }; export x=1`: a declaration builtin or `unset` that the parser reads as its own node, when a
+   * function of its name runs instead (src/semantics/names.ts; in POSIX mode, `export`, `readonly` and `unset`, special
+   * builtins, are found first). Its words are the function's arguments.
+   */
+  private builtinAsFunction(n: SyntaxNode, redirsOut: boolean): Token | undefined {
+    const head = n.children[0];
+    const res = this.resolve(head.type, n);
+    if (res.kind !== 'function') return undefined;
+    const words = n.namedChildren.filter((c) => !c.type.endsWith('redirect'));
+    const redirs = redirsOut ? [] : n.namedChildren.filter((c) => c.type.endsWith('redirect'));
+    const explanation = this.functionCall(res);
+    const t = this.tok(n, 'function', explanation, sortTokens([
+      this.tok(head, 'function', explanation), ...this.args(undefined, words, head.type, true).tokens, ...this.subs(redirs),
+    ]), head.type);
+    t.summary = `${head.type}: ${explanation}`;
+    return t;
+  }
+
   private declaration(n: SyntaxNode, redirsOut = false): Token {
+    const call = this.builtinAsFunction(n, redirsOut);
+    if (call) return call;
     if (n.children[0].type === 'local' && this.opts.pitfalls !== false && !ancestor(n, (a) => a.type === 'function_definition')) {
       this.extraNotes.push(this.s('⚠ 落とし穴: `local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります', '⚠ Pitfall: `local` can be used only inside a function; outside one it fails with "can only be used in a function"'));
     }
@@ -1220,6 +1241,8 @@ export class Analyzer {
   }
 
   private unset(n: SyntaxNode): Token {
+    const call = this.builtinAsFunction(n, false);
+    if (call) return call;
     // The options and the names, read with unset's spec.
     const kids = n.namedChildren;
     const roles = new Map(interpret(builtins.unset, kids.map(argWord), { name: 'unset' }).roles.map(({ word, role }) => [kids[word], role]));
@@ -1300,8 +1323,11 @@ export class Analyzer {
     // What each assignment before the name does (src/semantics/names.ts): in POSIX mode (sh, dash, `set -o posix`)
     // one before a special builtin stays after it.
     const word = nameNode.namedChildren[0];
+    // (An unquoted expansion alone may give no word: `x=1 $cmd`.)
+    const spelled = staticWordValue(word);
+    const dynamic = spelled === undefined && ['simple_expansion', 'expansion', 'command_substitution'].includes(word.type);
     const meanings = n.children.some((c) => c.type === 'variable_assignment')
-      ? assignmentsOf(this.state, n, this.resolve(staticWordValue(word) ?? nameNode.text, nameNode))
+      ? assignmentsOf(this.state, n, dynamic ? 'dynamic' : this.resolve(spelled ?? nameNode.text, nameNode))
       : [];
     for (const c of n.children) {
       if (same(c, nameNode)) { seenName = true; continue; }
@@ -1316,6 +1342,9 @@ export class Analyzer {
             : stays
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
               `\`${nameNode.text}\` is a POSIX special builtin, so this assignment stays after the command (in bash's normal mode it would last only while the command runs): ${t.explanation}`)
+            : !meaning.sure
+            ? this.s(`このコマンドの実行中だけ設定される環境変数（\`${nameNode.text}\` が何の語にもならなければ、シェルの変数として残る）: ${t.explanation}`,
+              `Environment variable set only for this command (if \`${nameNode.text}\` expands to no word at all, it stays as a shell variable): ${t.explanation}`)
             : this.s(
               `このコマンドの実行中だけ設定される環境変数: ${t.explanation}`,
               `Environment variable set only for this command: ${t.explanation}`,
@@ -1385,8 +1414,11 @@ export class Analyzer {
       this.testExample(n, bracketShape(asTest), '[');
       argToks = this.testTokens(n, asTest, asTest.expr);
     }
-    this.commandExampleFor(head.name, args);
-    if (head.name === 'read') this.readExample(n, args);
+    // (A function of the script is not the command its name suggests: no example of that command.)
+    if (!head.fn) {
+      this.commandExampleFor(head.name, args);
+      if (head.kind === 'builtin' && head.name === 'read') this.readExample(n, args);
+    }
     for (const a of args) {
       const before = this.examples.length;
       this.wordExample(a);
@@ -1471,6 +1503,23 @@ export class Analyzer {
     }
   }
 
+  /** "Call the function `f` defined on line N", with what it hides and whether it is sure. */
+  private functionCall(res: Extract<NameResolution, { kind: 'function' }>): string {
+    const { name } = res;
+    const line = res.fn.def.startPosition.row + 1;
+    const shadows = res.shadows === 'builtin'
+      ? this.s(`（同じ名前の組み込みコマンドの代わりに動く。組み込みは \`builtin ${name}\` で呼べる）`, ` (it runs instead of the builtin of that name; \`builtin ${name}\` runs the builtin)`)
+      : res.shadows === 'program'
+        ? this.s(`（同じ名前のコマンドの代わりに動く。コマンドは \`command ${name}\` で呼べる）`, ` (it runs instead of the command of that name; \`command ${name}\` runs the command)`)
+        : '';
+    const may = res.sure ? '' : res.maybe === 'branch'
+      ? this.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
+        '. But only some paths before here (a branch…) define it; on the others the command of that name runs')
+      : this.s('。ただし、それはこれが動くときに定義されていればで、定義はスクリプトのあとの部分の一部の経路にしかない',
+        '. That is, if it is defined when this runs: it is defined later in the script, on some paths only');
+    return this.s(`このスクリプトの行 ${line} で定義された関数 \`${name}\` を呼び出す${shadows}${may}`, `Call the function \`${name}\` defined on line ${line}${shadows}${may}`);
+  }
+
   private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
     // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
     // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
@@ -1530,21 +1579,17 @@ export class Analyzer {
           `ℹ \`${name}\` is defined as an alias on line ${first + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
       }
     }
-    if (res.kind === 'function') {
-      const line = res.fn.def.startPosition.row + 1;
-      const shadows = res.shadows === 'builtin'
-        ? this.s(`（同じ名前の組み込みコマンドの代わりに動く。組み込みは \`builtin ${name}\` で呼べる）`, ` (it runs instead of the builtin of that name; \`builtin ${name}\` runs the builtin)`)
-        : res.shadows === 'program'
-          ? this.s(`（同じ名前のコマンドの代わりに動く。コマンドは \`command ${name}\` で呼べる）`, ` (it runs instead of the command of that name; \`command ${name}\` runs the command)`)
-          : '';
-      const may = res.sure ? '' : this.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
-        '. But only some paths before here (a branch…) define it; on the others the command of that name runs');
+    if (res.kind === 'function') return { name, kind: 'function', fn: true, nameTokens: [], explanation: this.functionCall(res) };
+    this.missedNote(name, missed);
+    // After `source`, a name the dictionary does not know may be a function of the file read.
+    if (res.kind === 'file' && res.sourced) {
+      const line = res.sourced.startPosition.row + 1;
       return {
-        name, kind: 'function', fn: true, nameTokens: [],
-        explanation: this.s(`このスクリプトの行 ${line} で定義された関数 \`${name}\` を呼び出す${shadows}${may}`, `Call the function \`${name}\` defined on line ${line}${shadows}${may}`),
+        name, kind: 'command', nameTokens: [],
+        explanation: this.s(`\`${name}\` を実行する。行 ${line} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
+          `Run \`${name}\`: maybe a function of the file read on line ${line}, else an external command`),
       };
     }
-    this.missedNote(name, missed);
     // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
     if (res.kind === 'file' && (res.disabled || res.hashed)) {
       const path = res.hashed?.value;
@@ -1897,13 +1942,22 @@ export class Analyzer {
     this.slotNotes(role, this.slotEnvs.get(first)!, words, assigned, effect);
     const name = first.text;
     let explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
+    let kind: Kind = role.spec?.builtin ? 'builtin' : 'command';
     // `command` skips functions, `builtin` looks at the builtins only (src/semantics/names.ts).
     if (role.slot.lookup && isPlainWord(first)) {
       const res = this.resolve(name, first, { env: this.slotEnvs.get(first) });
       // (A builtin, a file or nothing: `command` and `builtin` skip aliases and functions.)
       const missed = (res as { missed?: Missed }).missed;
       if (res.kind === 'none') {
+        kind = 'command';
         explanation = this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
+      } else if (res.kind === 'file' && res.disabled) {
+        // (`enable -n echo; command echo`: the program.)
+        kind = 'command';
+        const program = role.spec?.program;
+        const line = res.disabled.at.startPosition.row + 1;
+        explanation = this.s(`外部コマンド \`${name}\`（行 ${line} の \`enable -n\` で組み込みは無効）${program ? `: ${this.t(program.summary)}` : ''}`,
+          `the external command \`${name}\` (\`enable -n\` on line ${line} turned the builtin off)${program ? `: ${this.t(program.summary)}` : ''}`);
       }
       if (missed?.kind === 'function' && (missed.why === 'command' || missed.why === 'builtin')) {
         explanation += this.s(`（行 ${missed.def.startPosition.row + 1} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${missed.def.startPosition.row + 1})`);
@@ -1922,7 +1976,7 @@ export class Analyzer {
     }
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
     return {
-      kind: role.spec?.builtin ? 'builtin' : 'command',
+      kind,
       label: shorten(name),
       explanation: (role.of ? this.s('実行するコマンド: ', 'Command to run: ') : '') + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
       span, children, summary: `${name}: ${explanation}`,
@@ -3114,8 +3168,8 @@ export class Analyzer {
     const { blocker } = reachOf(env);
     const first = words[0];
     const name = first.text;
-    // (A function the script defines anywhere: even one defined later is not what the wrapper runs.)
-    const isFn = isPlainWord(first) && this.state.definitions.functions.has(name);
+    // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.
+    const isFn = isPlainWord(first) && (this.resolve(name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
     if (slot.run === 'exec' && where === 'container') {
       if (isFn) {
         this.extraNotes.push(this.s(

@@ -244,7 +244,11 @@ describe('shell state: function bodies run at their calls', () => {
   it('a function no call reaches is walked from its definition, with what changes after it unknown', () => {
     const src = 'f() { ls; }\nset -C\nshopt -s nullglob\nalias q=ls\ng() { :; }\nx=1';
     const st = before(src, 'ls');
-    assert.deepStrictEqual([set(st, 'noclobber'), shopt(st, 'nullglob'), st.aliases.get('q')?.state, st.functions.get('g')?.state, variable(st, 'x')?.set], ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
+    // (But a function the top level defines, in the main shell and on every path, is there: the body runs later.)
+    assert.deepStrictEqual([set(st, 'noclobber'), shopt(st, 'nullglob'), st.aliases.get('q')?.state, st.functions.get('g')?.state, variable(st, 'x')?.set], ['unknown', 'unknown', 'unknown', 'on', 'unknown']);
+    for (const later of ['if [ "$x" ]; then g() { :; }; fi', 'g() { :; } &', 'g() { :; }\nunset g', '( g() { :; } )']) {
+      assert.strictEqual(before(`f() { ls; }\n${later}`, 'ls').functions.get('g')?.state, 'unknown', later);
+    }
     assert.strictEqual(set(before('set -C\nf() { ls; }\nset -C', 'ls'), 'noclobber'), 'unknown');
     // A function only called from one that is never called.
     assert.strictEqual(set(before('f() { g; }\ng() { ls; }\nset -f', 'ls'), 'noglob'), 'unknown');

@@ -33,6 +33,7 @@ export type MissReason =
   | 'in-function'      // defined by a function that has not run before this
   | 'unset'            // removed by `unset -f` (or `unalias`)
   | 'expand_aliases'   // aliases are not expanded in a bash script without `shopt -s expand_aliases`
+  | 'quoted'           // a quoted or escaped name is not an alias (`\\ls`, `"ls"`)
   | 'command'          // `command` skips functions and aliases
   | 'builtin'          // `builtin` looks at the builtins only
   | 'posix-special'    // a special builtin comes before a function in POSIX mode
@@ -66,14 +67,22 @@ export type NameResolution =
    * A function defined here: `sure` when it is on every path (else `otherwise` runs on the others). `shadows`: the
    * builtin or the program of the same name that it hides.
    */
-  | { kind: 'function'; name: string; fn: FunctionState; sure: boolean; shadows?: 'builtin' | 'program'; otherwise?: NameResolution; missed?: Missed }
+  | {
+    kind: 'function'; name: string; fn: FunctionState; sure: boolean; shadows?: 'builtin' | 'program'; otherwise?: NameResolution; missed?: Missed;
+    /** Not sure because a definition before here is on some paths only (`branch`), or comes after it in the text, in a body that runs later (`later`). */
+    maybe?: 'branch' | 'later';
+  }
   /** A builtin; `special` for the POSIX special builtins. `disabled`: `enable -n` on some paths only. */
   | { kind: 'builtin'; name: string; special: boolean; missed?: Missed; disabled?: CommandEntry }
   /**
    * A file: searched in PATH (`known` when the dictionary describes a program of that name), given as a path, or
    * remembered by `hash -p` (`hashed`). `disabled`: the builtin of that name turned off by `enable -n`.
    */
-  | { kind: 'file'; name: string; path: 'search' | 'given' | 'hashed'; known: boolean; hashed?: CommandEntry; disabled?: CommandEntry; missed?: Missed }
+  | {
+    kind: 'file'; name: string; path: 'search' | 'given' | 'hashed'; known: boolean; hashed?: CommandEntry; disabled?: CommandEntry; missed?: Missed;
+    /** A name the dictionary does not know, after a `source` or `.` (this command): it may be a function of the file read. */
+    sourced?: SyntaxNode;
+  }
   /** Nothing runs: `builtin x` where `x` is not a builtin. */
   | { kind: 'none'; name: string; why: 'not-a-builtin'; missed?: Missed };
 
@@ -118,19 +127,20 @@ function missedAlias(model: StateModel, name: string, at: SyntaxNode, alias: Ali
   if (alias && alias.state === 'off') return { kind: 'alias', def: alias.at, why: 'unset' };
   const defs = model.definitions.aliases.get(name);
   if (!defs || alias) return undefined;
-  if (defs.every((d) => d.endIndex > unit)) return { kind: 'alias', def: defs[0], why: defs[0].startPosition.row <= at.startPosition.row ? 'same-unit' : 'later' };
+  if (defs.every((d) => d.endIndex > unit)) return { kind: 'alias', def: defs[0], why: defs[0].startIndex < at.startIndex ? 'same-unit' : 'later' };
   return undefined;
 }
 
-/** The start of the unit bash reads at once that holds `n`: its line's first top-level statement, or the compound command. */
-function unitStart(n: SyntaxNode): number {
-  let top = n;
-  while (top.parent?.parent) top = top.parent;
-  const siblings = top.parent!.namedChildren;
-  let i = siblings.indexOf(top);
-  while (i > 0 && siblings[i - 1].endPosition.row === siblings[i].startPosition.row) i--;
-  return siblings[i].startIndex;
+/** A `source` or `.` that may have run before `at`: before it in the text, or anywhere when `at` is in a function body. */
+function sourcedBefore(model: StateModel, at: SyntaxNode): { sourced?: SyntaxNode } {
+  let body = false;
+  for (let x = at.parent; x; x = x.parent) if (x.type === 'function_definition') body = true;
+  const s = model.sources.find((c) => body || c.startIndex < at.startIndex);
+  return s ? { sourced: s } : {};
 }
+
+/** `PATH=… cmd`: an assignment to PATH before the name of the command `c`. */
+const pathPrefix = (c: SyntaxNode): boolean => c.type === 'command' && c.namedChildren.some((a) => a.type === 'variable_assignment' && field(a, 'name')!.text === 'PATH');
 
 /** How a shell run through a slot takes the functions exported to it: bash does, dash, zsh and ksh do not; `sh` may be dash. */
 function imports(shell: SlotLink['shell']): Tri {
@@ -149,6 +159,10 @@ interface Place {
   /** The shell that looks it up has bash's builtins. */
   bash: boolean;
   st: ShellState;
+  /** A `source` that may have run before (its file may define functions). */
+  sourced?: SyntaxNode;
+  /** `PATH=… cmd`: the command is looked up with that PATH, and the paths of `hash -p` are forgotten. */
+  pathPrefix: boolean;
 }
 
 /**
@@ -165,6 +179,8 @@ export function resolveName(model: StateModel, name: string, at: SyntaxNode, opt
     lookup: opts.lookup ?? (slot?.slot.run === 'current-shell' ? slot.slot.lookup : undefined),
     bash: shellString ? slot!.shell === 'bash' || slot!.shell === 'unknown' : !opts.shell || opts.shell === 'bash',
     st: model.at(at).run,
+    ...sourcedBefore(model, at),
+    pathPrefix: pathPrefix(at.type === 'command_name' ? at.parent! : at),
   };
   return resolve(model, name, at, opts, place, new Set());
 }
@@ -175,12 +191,15 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   let missed: Missed | undefined;
 
   // Aliases: from the state when the line was read; bash expands them in a script only with expand_aliases.
-  if (!opts.quoted && !lookup && !exec && !shellString && !expanding.has(name)) {
+  if (!lookup && !exec && !shellString && !expanding.has(name)) {
     const parse = model.at(at).expand;
     const alias = parse.aliases.get(name);
     const option_ = option(parse, 'shopt', 'expand_aliases');
     const expands: Tri = !opts.shell || opts.shell === 'bash' ? (option_ === 'on' || option_ === 'unknown' ? option_ : 'off') : 'on';
-    if (alias && alias.state !== 'off' && expands !== 'off') {
+    // (A quoted name is not an alias: `\ls` runs `ls` itself.)
+    if (opts.quoted) {
+      if (alias && alias.state !== 'off' && expands !== 'off') missed = { kind: 'alias', def: alias.at, why: 'quoted' };
+    } else if (alias && alias.state !== 'off' && expands !== 'off') {
       const inner = new Set([...expanding, name]);
       const sure = alias.state === 'on' && expands === 'on';
       // (An alias whose text starts with an assignment, a quote or an expansion has no plain first word.)
@@ -188,14 +207,16 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
       const target = first !== undefined ? resolve(model, first, at, opts, place, inner) : undefined;
       return { kind: 'alias', name, alias, sure, ...(target ? { target } : {}), ...(sure ? {} : { otherwise: resolve(model, name, at, opts, place, inner) }) };
     }
-    missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases' } : missedAlias(model, name, at, alias, unitStart(at));
+    else missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases' } : missedAlias(model, name, at, alias, model.unit(at).startIndex);
   }
 
   // Functions: not for `command` and `builtin`, nor in a program; in another shell, only those it gets.
   const fn = st.functions.get(name);
   const defined = fn && fn.state !== 'off' ? fn : undefined;
   if (!defined) {
-    if (!exec && !lookup && !shellString) missed ??= missedFunction(model, name, at, fn);
+    const why = missedFunction(model, name, at, fn);
+    // (After a `source`, a function defined later in the script may come from the file read.)
+    if (why && !(why.why === 'later' && place.sourced)) missed ??= why;
     return builtinOrFile(name, opts, place, missed);
   }
   const miss = (why: MissReason, by?: SlotLink): NameResolution => builtinOrFile(name, opts, place, { kind: 'function', def: defined.def, why, ...(by ? { slot: by } : {}) });
@@ -219,11 +240,13 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   if (special === 'on') return miss('posix-special');
   if (special === 'unknown') sure = false;
   const shadows = builtin.kind === 'builtin' ? 'builtin' as const : opts.program?.(name) ? 'program' as const : undefined;
-  return { kind: 'function', name, fn: defined, sure, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
+  // (Not sure: defined on some paths before here, or only after it in the text, in a body that runs later.)
+  const maybe = sure ? {} : { maybe: model.definitions.functions.get(name)!.some((d) => d.endIndex <= at.startIndex) ? 'branch' as const : 'later' as const };
+  return { kind: 'function', name, fn: defined, sure, ...maybe, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
 }
 
 /** The builtin or the file `name` runs, past aliases and functions. */
-function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash, st }: Place, missed: Missed | undefined): NameResolution {
+function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash, st, sourced, pathPrefix }: Place, missed: Missed | undefined): NameResolution {
   const spec = name.includes('/') || exec || (!bash && BASH_ONLY.has(name)) ? undefined : builtins[SAME_AS[name] ?? name];
   const disabled = spec ? st.disabled.get(name) : undefined;
   const m = missed ? { missed } : {};
@@ -231,10 +254,11 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
   if (lookup === 'builtins-only') return { kind: 'none', name, why: 'not-a-builtin', ...m };
   const off = disabled ? { disabled } : {};
   if (name.includes('/')) return { kind: 'file', name, path: 'given', known: !!opts.program?.(name), ...m };
-  const hashed = exec ? undefined : st.hashed.get(name);
+  const hashed = exec || pathPrefix ? undefined : st.hashed.get(name);
   if (hashed && hashed.state === 'on') return { kind: 'file', name, path: 'hashed', known: !!opts.program?.(hashed.value), hashed, ...off, ...m };
   // (A builtin turned off runs the program of its name, which the dictionary describes with it.)
-  return { kind: 'file', name, path: 'search', known: !!opts.program?.(name) || !!spec?.program, ...off, ...m };
+  const known = !!opts.program?.(name) || !!spec?.program;
+  return { kind: 'file', name, path: 'search', known, ...off, ...m, ...(sourced && !known && !missed && !exec && !opts.env ? { sourced } : {}) };
 }
 
 /** What an assignment before a command name does (3.7.1, 3.7.4, 6.11). */
@@ -247,24 +271,27 @@ export interface AssignmentMeaning {
    * command, exported (a special builtin in POSIX mode).
    */
   scope: 'shell' | 'command' | 'persists';
-  /** With `persists`: false when POSIX mode is on on some paths only. */
+  /**
+   * False when it depends on run time: `persists` when POSIX mode is on on some paths only; `command` when the
+   * name is an expansion that may give no word (`x=1 $cmd`: then the assignment is the shell's).
+   */
   sure: boolean;
 }
 
 /**
- * The meaning of the assignments before the name of `command` (a `command` node), which runs `res` (undefined
- * when it has no name).
+ * The meaning of the assignments before the name of `command` (a `command` node), which runs `res`: undefined when
+ * it has no name, `dynamic` when the name is known only at run time and may expand to nothing.
  */
-export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameResolution | undefined): AssignmentMeaning[] {
+export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameResolution | 'dynamic' | undefined): AssignmentMeaning[] {
   const name = field(command, 'name');
   const assignments = command.namedChildren.filter((c) => c.type === 'variable_assignment' && (!name || c.startIndex < name.startIndex));
   const posix = option(model.at(command).run, 'set', 'posix');
-  const stays = res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
+  const stays = res !== 'dynamic' && res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
   return assignments.map((a) => ({
     node: a,
     name: (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text,
     scope: !res ? 'shell' : stays ? 'persists' : 'command',
-    sure: !stays || posix === 'on',
+    sure: res === 'dynamic' ? false : !stays || posix === 'on',
   }));
 }
 
