@@ -853,6 +853,15 @@ export const core: Record<string, CommandSpec> = {
     ['--user', 'ユーザーで絞る', 'select by user', 'arg'],
     ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
+    // A bare number starts a list of process IDs that ends the line: `ps 1 u` and `ps 1 -e` fail with "process ID list syntax error".
+    endsOptions: /^\d+$/,
+    operands: [{
+      when: { operand: 0, matches: /^\d+$/ },
+      pattern: [
+        operand('PID', 'プロセス ID（数字だけの語は BSD 形式の PID 指定）', 'process ID (a bare number is a BSD-style PID selection)', { repeat: '*', matches: /^\d+$/ }),
+        operand('WORD', 'ここには書けない: 数字だけの語の後は、ps はすべての語を PID として読み、「process ID list syntax error」で失敗する', 'Not allowed here: after a bare number, ps reads every word as a process ID and fails with "process ID list syntax error"', { repeat: '*' }),
+      ],
+    }],
     oldStyle: {
       anywhere: true,
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),

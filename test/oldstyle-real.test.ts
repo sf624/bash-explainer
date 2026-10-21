@@ -128,6 +128,26 @@ describe('ps reads BSD letters in any place, as procps does', () => {
   });
 });
 
+describe('ps: a bare number starts a list of PIDs that ends the line', () => {
+  const isError = (line: string): boolean => /process ID list syntax error/.test(run(line, os.tmpdir()).err);
+  (usable('ps') ? it : it.skip)('reads the words after it as an error, as procps does', () => {
+    for (const line of ['ps -o pid= 1 u', 'ps 1 u', 'ps 1 -e', 'ps -o pid= 1 -p 2', 'ps 1 x 2']) {
+      assert.ok(isError(line), line);
+      const { name, words } = argWords(line);
+      const parse = interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand });
+      const bad = parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name === 'WORD');
+      assert.ok(bad.length >= 1, line);
+    }
+    // PIDs alone, or after other words (not before), are fine.
+    for (const line of ['ps 1', 'ps 1 2', 'ps u 1', 'ps -e 1', 'ps -o pid= -p 1 u', 'ps -C systemd 1']) {
+      assert.ok(!isError(line), line);
+      const { name, words } = argWords(line);
+      const parse = interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand });
+      assert.ok(!parse.roles.some((r) => r.role.role === 'operand' && r.role.spec?.name === 'WORD'), line);
+    }
+  });
+});
+
 describe('ar agrees with the real ar', () => {
   (usable('ar') ? it : it.skip)('every letter ar --help lists has a meaning', function () {
     // (See test/oldstyle.test.ts: the first run of ar may load large plugins.)

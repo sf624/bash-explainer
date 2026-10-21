@@ -145,7 +145,7 @@ describe('old-style options: ps', () => {
   });
 
   it('leaves PIDs and UNIX options alone', () => {
-    assert.strictEqual(top('ps 1234')[0].explanation, 'Word `1234`');
+    assert.strictEqual(top('ps 1234')[0].explanation, 'process ID (a bare number is a BSD-style PID selection)');
     assert.strictEqual(top('ps -ef')[0].explanation, 'Combined short options `-e` `-f`');
     assert.strictEqual(top('ps u1')[0].explanation, 'Word `u1`');
   });
@@ -156,7 +156,7 @@ describe('old-style options: ps', () => {
     assert.deepStrictEqual(shape('ps -o pid -p 1 o comm').slice(-3), [
       'o: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `o`', '  o: output columns (`o pid,comm`)', 'comm: Value for `o`',
     ]);
-    assert.strictEqual(top('ps -C bash 12')[2].explanation, 'Word `12`');
+    assert.strictEqual(top('ps -C bash 12')[2].explanation, 'process ID (a bare number is a BSD-style PID selection)');
   });
 
   // What each letter makes ps print: a word of the header it shows with that letter.

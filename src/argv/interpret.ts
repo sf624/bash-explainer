@@ -169,7 +169,7 @@ class Reader {
         break;
       }
       // Options end at the first operand (posix), or where a command starts (gnu).
-      if (style === 'posix' || style === 'none' || this.startsCommand(st, [...operands, i])) endOpts = true;
+      if (style === 'posix' || style === 'none' || this.startsCommand(st, [...operands, i]) || (spec.endsOptions && value !== undefined && spec.endsOptions.test(value))) endOpts = true;
       operands.push(i);
     }
     parse.mode = chooseMode(spec, given);
@@ -538,7 +538,7 @@ export function match(pattern: OperandSpec[], words: ArgWord[], maxSteps: number
   const fits = (item: OperandSpec, w: ArgWord): boolean => {
     if (item.assignment) return ASSIGNMENT.test(known(w));
     if (item.option) return w.value !== undefined && !!findOption(options, item.option, false)?.names.includes(w.value);
-    return true;
+    return !item.matches || w.value === undefined || item.matches.test(w.value);
   };
   const from = (it: number, at: number): number[] | null => {
     const key = it * (words.length + 1) + at;
