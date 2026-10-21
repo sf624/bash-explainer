@@ -445,6 +445,10 @@ describe('argv interpreter: the option grammar', () => {
     assert.deepStrictEqual(roles('trap 1 INT'), ['1: SIGNAL', 'INT: SIGNAL']);
     assert.deepStrictEqual(roles('trap "$x" INT'), ['"$x": ACTION', 'INT: SIGNAL']);
     assert.deepStrictEqual(roles('trap 65 INT'), ['65: ACTION', 'INT: SIGNAL']);
+    // `'first'` prefixes: the first name a word starts; an empty word starts none (`ip ''`: "Object "" is unknown").
+    assert.deepStrictEqual(roles('ip m'), ['m: subcommand maddress']);
+    assert.deepStrictEqual(roles("ip ''"), ["'': operand"]);
+    assert.deepStrictEqual(roles('ip -'), ['-: operand']);
   });
 
   it('reads `--` that starts words of another pattern, and a `--` that is text', () => {
