@@ -2,7 +2,7 @@
 // checked on the rows of test/fixtures/probes/state.json by test/state-probes.test.ts.
 import * as assert from 'assert';
 import type { Shell } from '../src/dialect';
-import { attribute, defaultOn, merge, option, readDeclaration, shellState, ShellState, StateModel } from '../src/semantics/state';
+import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 
@@ -122,14 +122,22 @@ describe('shell state: variables', () => {
   it('reads the declaration builtins with their specs', () => {
     const st = end('export e=1 f; readonly r; declare -x +i g; typeset -r t; export -n f; declare -p e; declare -- "s=1" $x');
     assert.deepStrictEqual([attribute(st, 'e', 'x'), attribute(st, 'f', 'x'), attribute(st, 'g', 'x'), attribute(st, 'g', 'i'), attribute(st, 'r', 'r'), attribute(st, 't', 'r')], ['on', 'off', 'on', 'off', 'on', 'on']);
-    assert.strictEqual(variable(st, 's'), undefined);
+    // (`declare "s=1"` assigns, as bash does; `$x` is not known.)
+    assert.strictEqual(variable(st, 's')?.value, '1');
     assert.deepStrictEqual(readDeclaration(parser.parse('declare -ix +r a').root.namedChildren[0]).on, 'ix');
   });
   it('a nameref passes its assignments on', () => {
     assert.strictEqual(variable(end('declare -n r=t; r=5'), 't')?.value, '5');
     assert.strictEqual(variable(end('declare -n r=t; r=5'), 'r')?.value, 't');
     assert.strictEqual(variable(end('declare -n r=$1; r=5'), 'r')?.value, undefined);
-    assert.strictEqual(variable(end('declare -n r; r=5'), 'r')?.value, undefined);
+    // An empty nameref takes the name assigned to it (not one that is no name).
+    assert.strictEqual(variable(end('declare -n r; r=5'), 'r')?.set, 'off');
+    assert.strictEqual(variable(end('declare -n r; r=x; r=5'), 'x')?.value, '5');
+    assert.strictEqual(variable(end('declare -n a=b; declare -n b=c; a=1'), 'c')?.value, '1');
+    assert.strictEqual(variable(end('declare -n a=b; declare -n b=a; a=1'), 'a')?.value, 'b');
+    assert.strictEqual(variable(end('x=1; declare -n r=x; unset r'), 'x')?.declared, 'off');
+    assert.strictEqual(variable(end('x=1; declare -n r=x; unset -n r'), 'r')?.declared, 'off');
+    assert.strictEqual(variable(end('declare -n r=$1; unset r'), 'r')?.declared, 'on');
   });
   it('allexport exports what is assigned', () => {
     assert.strictEqual(attribute(end('set -a; x=1'), 'x', 'x'), 'on');
@@ -138,7 +146,10 @@ describe('shell state: variables', () => {
   });
   it('read, mapfile, printf -v, getopts and ${x:=…} set variables', () => {
     const st = end('read -r a b; read -ra arr; mapfile -t; readarray lines; printf -v pv %s 1; printf x; getopts ab o; getopts; : ${d:=1} ${e=} ${f:-1} "$(: ${g:=1})"');
-    assert.deepStrictEqual(['a', 'b', 'pv', 'o', 'OPTIND', 'OPTARG', 'd', 'e'].map((v) => variable(st, v)?.set), ['on', 'on', 'on', 'on', 'on', 'on', 'on', 'on']);
+    assert.deepStrictEqual(['a', 'b', 'pv', 'o', 'OPTIND', 'OPTARG', 'd', 'e'].map((v) => variable(st, v)?.set), ['on', 'on', 'on', 'on', 'on', 'unknown', 'on', 'on']);
+    assert.strictEqual(variable(end('read'), 'REPLY')?.set, 'on');
+    assert.strictEqual(attribute(end("printf -v 'a[1]' x"), 'a', 'a'), 'on');
+    assert.strictEqual(end('printf -v $v x; mapfile $m').variables.size, 0);
     assert.deepStrictEqual(['arr', 'MAPFILE', 'lines'].map((v) => attribute(st, v, 'a')), ['on', 'on', 'on']);
     assert.deepStrictEqual([variable(st, 'f'), variable(st, 'g')], [undefined, undefined]);
     assert.strictEqual(variable(end('x=${y:=1}'), 'y')?.set, 'on');
@@ -155,7 +166,7 @@ describe('shell state: variables', () => {
   });
   it('merges the variables of the branches', () => {
     const st = end('if a; then x=1; y=1; declare -A m; else y=1; declare -a m; unset z; fi; if b; then w=1; fi; if c; then w=2; fi');
-    assert.deepStrictEqual([variable(st, 'x')?.set, variable(st, 'y')?.value, attribute(st, 'm', 'A'), attribute(st, 'm', 'a'), variable(st, 'z')?.set, variable(st, 'w')?.set], ['unknown', '1', 'unknown', 'unknown', 'unknown', 'unknown']);
+    assert.deepStrictEqual([variable(st, 'x')?.set, variable(st, 'y')?.value, attribute(st, 'm', 'A'), attribute(st, 'm', 'a'), variable(st, 'z')?.set, variable(st, 'w')?.set], ['unknown', '1', 'unknown', 'unknown', 'off', 'unknown']);
     assert.strictEqual(merge([st, st]), st);
     // Set, or given an attribute, in the else branch only; or later in the second branch.
     const other = end('x=1; if a; then :; else export x; y=1; fi; if b; then z=1; else z=2; fi');
@@ -167,12 +178,13 @@ describe('shell state: variables', () => {
 });
 
 describe('shell state: functions and aliases', () => {
-  it('a function exists once its definition ran; its body runs with every function of the script', () => {
+  it('a function exists once its definition ran; its body runs with the state of its call', () => {
     const src = 'f\nf() { g; }\nf -x\ng() { :; }';
     const m = model(src);
     assert.strictEqual(before(src, 'f').functions.get('f'), undefined);
     assert.strictEqual(before(src, 'f -x').functions.get('f')?.state, 'on');
-    assert.strictEqual(before(src, 'g').functions.get('g')?.state, 'unknown');
+    assert.strictEqual(before(src, 'g').functions.get('g'), undefined);
+    assert.strictEqual(before('f() { g; }\ng() { :; }\nf', 'g').functions.get('g')?.state, 'on');
     assert.deepStrictEqual([...m.definitions.functions.keys()], ['f', 'g']);
   });
   it('a call applies what the body changes, but its locals', () => {
@@ -200,7 +212,7 @@ describe('shell state: functions and aliases', () => {
   });
   it('alias and unalias', () => {
     const st = end(`alias ll='ls -l' q='it'\\''s' r="$x" -p; alias g=grep; unalias g nope $x`);
-    assert.deepStrictEqual([...st.aliases].map(([k, a]) => [k, a.state, a.value]), [['ll', 'on', 'ls -l'], ['q', 'on', "it's"], ['r', 'on', '$x'], ['g', 'off', 'grep']]);
+    assert.deepStrictEqual([...st.aliases].map(([k, a]) => [k, a.state, a.value]).sort(), [['g', 'off', 'grep'], ['ll', 'on', 'ls -l'], ['q', 'on', "it's"], ['r', 'on', '$x']]);
     assert.ok([...end('alias a=1 b=2; unalias -a').aliases.values()].every((a) => a.state === 'off'));
     const merged = end('alias a=1 b=1; if x; then alias a=2 c=1; unalias b; fi');
     assert.deepStrictEqual(['a', 'b', 'c'].map((k) => merged.aliases.get(k)?.state), ['unknown', 'unknown', 'unknown']);
@@ -214,5 +226,163 @@ describe('shell state: functions and aliases', () => {
     assert.strictEqual(shellState(tree), shellState(tree, 'bash'));
     assert.notStrictEqual(shellState(tree), shellState(tree, 'sh'));
     assert.strictEqual(shellState(tree).at(tree.root).run.set.size, 0);
+  });
+});
+
+describe('shell state: function bodies run at their calls', () => {
+  it('a body has the state of its call: functions defined and options set after the definition count', () => {
+    const src = 'main() { setup; ls; }\nsetup() { shopt -s nullglob; }\nmain';
+    assert.strictEqual(shopt(before(src, 'ls'), 'nullglob'), 'on');
+    assert.strictEqual(set(end('f() { g; }; g() { set -f; }; f'), 'noglob'), 'on');
+    assert.strictEqual(variable(end('f() { declare x=1; g; }; g() { y=2; }; f'), 'y')?.value, '2');
+    assert.strictEqual(shopt(before('f() { ls; }\nshopt -s lastpipe\nf', 'ls'), 'lastpipe'), 'on');
+    // Called twice with different states: the merge of both.
+    assert.strictEqual(set(before('f() { ls; }\nf\nset -f\nf', 'ls'), 'noglob'), 'unknown');
+    // Called twice with the same state: walked once.
+    assert.strictEqual(set(end('f() { set -f; }; f; f'), 'noglob'), 'on');
+  });
+  it('a function no call reaches is walked from its definition, with what changes after it unknown', () => {
+    const src = 'f() { ls; }\nset -C\nshopt -s nullglob\nalias q=ls\ng() { :; }\nx=1';
+    const st = before(src, 'ls');
+    assert.deepStrictEqual([set(st, 'noclobber'), shopt(st, 'nullglob'), st.aliases.get('q')?.state, st.functions.get('g')?.state, variable(st, 'x')?.set], ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
+    assert.strictEqual(set(before('set -C\nf() { ls; }\nset -C', 'ls'), 'noclobber'), 'unknown');
+    // A function only called from one that is never called.
+    assert.strictEqual(set(before('f() { g; }\ng() { ls; }\nset -f', 'ls'), 'noglob'), 'unknown');
+    // An alias defined after, with a value that is not static, is left alone.
+    assert.strictEqual(before('f() { ls; }\nalias q="$x"', 'ls').aliases.get('q')?.value, '$x');
+  });
+  it('locals and temporaries come back when the function returns', () => {
+    assert.strictEqual(variable(end('f() { local x; declare -g x=1; }; f'), 'x')?.value, '1');
+    assert.strictEqual(variable(end('f() { x=1; local x=2; }; f'), 'x')?.value, '1');
+    assert.strictEqual(variable(end('x=0; f() { local x=1; g; }; g() { x=2; }; f'), 'x')?.value, '0');
+    assert.strictEqual(variable(end('f() { local x=1; local x=2; }; f'), 'x'), undefined);
+    assert.strictEqual(set(end('f() { local -; set -f; shopt -s dotglob; }; f'), 'noglob'), 'default');
+    assert.strictEqual(shopt(end('f() { local -; set -f; shopt -s dotglob; }; f'), 'dotglob'), 'on');
+    assert.strictEqual(variable(end('f() { x=5; }; x=1 f'), 'x'), undefined);
+    assert.strictEqual(variable(end('x=0; f() { x=5; }; x=1 f; x=1 x=2 f'), 'x')?.value, '0');
+    // `unset` of a caller's local shows the variable outside again; of its own local, it stays local.
+    assert.strictEqual(variable(end('x=0; f() { local x=1; g; }; g() { unset x; x=2; }; f'), 'x')?.value, '2');
+    assert.strictEqual(variable(end('x=0; f() { local x=1; g; }; g() { local x; unset x; x=2; }; f'), 'x')?.value, '0');
+    // `local` outside a function sets nothing.
+    assert.strictEqual(variable(end('local x=1'), 'x'), undefined);
+    // `declare` in a function is local, `declare -g` is not, and `typeset` is local too.
+    assert.deepStrictEqual(['a', 'b', 'c'].map((v) => variable(end('f() { declare a=1; declare -g b=1; typeset c=1; }; f'), v)?.value), [undefined, '1', undefined]);
+  });
+  it('a recursive call, and calls too deep, are guessed from what the body changes', () => {
+    assert.strictEqual(set(end('f() { if a; then set -f; return; fi; f; }; f'), 'noglob'), 'unknown');
+    const deep = Array.from({ length: 40 }, (_, i) => `f${i}() { f${i + 1}; }`).join('\n') + '\nf40() { set -f; }\nf0';
+    assert.strictEqual(set(end(deep), 'noglob'), 'on');
+    // Deeper than 64 calls, the rest is not followed.
+    const deeper = Array.from({ length: 70 }, (_, i) => `f${i}() { f${i + 1}; }`).join('\n') + '\nf70() { set -f; }\nf0';
+    assert.strictEqual(set(end(deeper), 'noglob'), 'default');
+    // Called with many different states.
+    const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
+    assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');
+  });
+  it('a readonly function is not defined again', () => {
+    const st = end('f() { :; }; readonly -f f; f() { set -f; }; f');
+    assert.deepStrictEqual([set(st, 'noglob'), st.functions.get('f')?.readonly], ['default', 'on']);
+    assert.strictEqual(end('f() { :; }; declare -fr f').functions.get('f')?.readonly, 'on');
+  });
+});
+
+describe('shell state: more builtins', () => {
+  it('command, builtin, and declarations after a prefix assignment', () => {
+    const st = end('command set -f; builtin shopt -s nullglob; command -p set -C; x=1 declare y=2; x=1 export z=3 w; builtin unset y; builtin; command -v set -u; command $c');
+    assert.deepStrictEqual([set(st, 'noglob'), shopt(st, 'nullglob'), set(st, 'noclobber'), variable(st, 'y')?.declared, attribute(st, 'z', 'x'), variable(st, 'w')?.set, variable(st, 'x'), set(st, 'nounset')], ['on', 'on', 'on', 'off', 'on', 'off', undefined, 'default']);
+    assert.strictEqual(variable(end('declare "a[1]=x" b+=1 "c d=1"'), 'b')?.set, 'on');
+  });
+  it('POSIXLY_CORRECT turns POSIX mode on and off; leaving a mode bash is not in changes nothing', () => {
+    assert.deepStrictEqual([set(end('POSIXLY_CORRECT=1'), 'posix'), shopt(end('export POSIXLY_CORRECT=1'), 'expand_aliases')], ['on', 'on']);
+    const off = model('unset POSIXLY_CORRECT', 'bash', true).end;
+    assert.deepStrictEqual([set(off, 'posix'), shopt(off, 'expand_aliases'), shopt(off, 'inherit_errexit')], ['off', 'off', 'on']);
+    assert.strictEqual(shopt(end('shopt -s shift_verbose; set +o posix'), 'shift_verbose'), 'on');
+    assert.strictEqual(shopt(end('a && set -o posix; set +o posix'), 'shift_verbose'), 'unknown');
+    assert.strictEqual(set(end('shopt -so posix'), 'posix'), 'on');
+    assert.strictEqual(set(end('set -o posix; set +o posix', 'dash'), 'posix'), 'off');
+  });
+  it('an alias that is expanded runs its text', () => {
+    assert.strictEqual(set(end("shopt -s expand_aliases\nalias e='set -f'\ne"), 'noglob'), 'on');
+    assert.strictEqual(set(end("alias e='set -f'\ne"), 'noglob'), 'default');
+    assert.strictEqual(set(end("shopt -s expand_aliases; alias e='set -f'; e"), 'noglob'), 'default');
+    assert.strictEqual(set(end("a && shopt -s expand_aliases\nalias e='set -f'\ne"), 'noglob'), 'unknown');
+    assert.strictEqual(set(end("alias e='set -f'\ne", 'sh'), 'noglob'), 'on');
+    assert.strictEqual(set(end("shopt -s expand_aliases\nalias set='set -C'\nset -f; 'set' -u"), 'noclobber'), 'on');
+    assert.strictEqual(end("alias 'q=echo'").aliases.get('q')?.value, 'echo');
+  });
+  it('the aliases of a command substitution are those of when it runs', () => {
+    const src = 'shopt -s expand_aliases; alias x="echo A"; echo "$(x)" `y`; x';
+    const tree = parser.parse(src);
+    const m = shellState(tree);
+    const cmds = descendants(tree.root, ['command']).filter((c) => c.text === 'x');
+    assert.deepStrictEqual(cmds.map((c) => m.at(c).expand.aliases.get('x')?.state), ['on', undefined]);
+    assert.strictEqual(m.at(cmds[0]).parse.aliases.get('x'), undefined);
+  });
+  it('attributes bash refuses or keeps', () => {
+    const st = end('declare -a a; declare -A a; declare -A m; declare -a m; declare -r r=1; r=2; r+=3; unset r; set -a; arr=(1); arr2[1]=x; s=1; fn() { :; }');
+    assert.deepStrictEqual([attribute(st, 'a', 'A'), attribute(st, 'm', 'a'), variable(st, 'r')?.value, attribute(st, 'arr', 'x'), attribute(st, 'arr2', 'x'), attribute(st, 's', 'x'), st.functions.get('fn')?.exported], ['off', 'off', '1', 'off', 'off', 'on', 'on']);
+    assert.strictEqual(end('a && set -a; fn() { :; }').functions.get('fn')?.exported, 'unknown');
+    assert.strictEqual(variable(end('declare -r r=1; declare r=2'), 'r')?.value, '1');
+    assert.strictEqual(variable(end('x=1; unset x; x+=2'), 'x')?.value, '2');
+  });
+  it('unset: a name with no variable is a function; -f and -v together unset nothing', () => {
+    assert.strictEqual(end('unset -v f; f() { :; }; unset f').functions.get('f')?.state, 'off');
+    assert.strictEqual(end('f() { :; }; x=1; unset -fv f x').functions.get('f')?.state, 'on');
+  });
+  it('more paths through the walk', () => {
+    // A default merged again with a path that left it alone.
+    assert.strictEqual(shopt(end('if a; then if b; then shopt -u nullglob; fi; fi'), 'nullglob'), 'default');
+    // Aliases changed after a function no call reaches.
+    const al = (src: string) => before(src, 'ls').aliases.get('q');
+    assert.strictEqual(al('alias q=ls\nf() { ls; }\nalias q=ls2')?.state, 'unknown');
+    assert.strictEqual(al('if x; then alias q=1; fi\nf() { ls; }\nalias q=2')?.state, 'unknown');
+    assert.strictEqual(al('f() { ls; }\nbuiltin alias q=ls'), undefined);
+    // Export under set -a of a function defined again.
+    assert.strictEqual(end('fn() { :; }; export -f fn; a && set -a; fn() { :; }').functions.get('fn')?.exported, 'on');
+    assert.strictEqual(end('fn() { :; }; export -f fn; fn() { :; }').functions.get('fn')?.exported, 'on');
+    // A function defined by an alias.
+    assert.strictEqual(set(end("shopt -s expand_aliases\nalias d='g() { set -f; }'\nd\ng"), 'noglob'), 'on');
+    assert.strictEqual(attribute(end('declare a[1]=x b[2]'), 'b', 'a'), 'on');
+    assert.strictEqual(end('x=1; unset $v').variables.get('x')?.set, 'on');
+  });
+  it('names that are no names are left alone', () => {
+    assert.strictEqual(end('read 1x; printf -v $v x; mapfile 2; getopts ab').variables.get('1x'), undefined);
+  });
+  it('the last stage of a pipeline', () => {
+    const st = (src: string) => end(src);
+    assert.deepStrictEqual([lastStageInShell(st('shopt -s lastpipe')), lastStageInShell(st('')), lastStageInShell(st('a && shopt -s lastpipe')),
+      lastStageInShell(st('shopt -s lastpipe; a && set -m')), lastStageInShell(st(''), 'zsh'), lastStageInShell(st('shopt -s lastpipe'), 'dash')],
+    ['on', 'off', 'unknown', 'unknown', 'on', 'off']);
+  });
+  it('is fast on long scripts with many functions', function () {
+    this.timeout(20000);
+    const lines: string[] = [];
+    for (let i = 0; i < 300; i++) {
+      lines.push(`f${i}() {`, `  local a${i}=1`, '  for x in a b c; do', `    while read -r line; do v${i}=$line; f${(i * 7) % 300}; done < /dev/null`, '  done',
+        `  g${i}=2; IFS=, ; [[ -n $x ]] && shopt -s extglob`, `  f${(i * 13) % 300}`, '}', `f${i} "$@"`, `if [ -n "$x" ]; then y${i}=1; else declare -A m${i}; fi`);
+    }
+    const tree = parser.parse(lines.join('\n'));
+    const t = Date.now();
+    shellState(tree);
+    assert.ok(Date.now() - t < 3000, `${Date.now() - t} ms`);
+  });
+});
+
+describe('shell state: name maps', () => {
+  it('keeps names in buckets that are shared between states', () => {
+    const a = NameMap.empty<number>().with('x', 1).with('y', 2);
+    assert.strictEqual(a.with('x', 1), a);
+    assert.strictEqual(a.with('z', undefined), a);
+    const b = a.with('x', undefined);
+    assert.deepStrictEqual([b.size, b.has('x'), [...b.values()], [...a.keys()].sort()], [1, false, [2], ['x', 'y']]);
+    const seen: string[] = [];
+    a.forEach((v, k) => seen.push(`${k}${v}`));
+    assert.deepStrictEqual(seen.sort(), ['x1', 'y2']);
+    assert.strictEqual(a.withAll(new Map()), a);
+    assert.deepStrictEqual([...a.withAll(new Map([['x', 3], ['w', 4]]))].sort(), [['w', 4], ['x', 3], ['y', 2]]);
+    assert.ok(NameMap.same(a, NameMap.empty<number>().with('y', 2).with('x', 1), (x, y) => x === y));
+    assert.ok(!NameMap.same(a, b, (x, y) => x === y));
+    assert.ok(!NameMap.same(a, a.with('x', 5), (x, y) => x === y));
+    assert.ok(!NameMap.same(a.with('w', 1), a.with('v', 1), (x, y) => x === y));
   });
 });
