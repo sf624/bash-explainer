@@ -61,6 +61,11 @@ export interface CommandSpec {
   expressionSpec?: CommandSpec;
   builtin?: 'special' | 'regular';
   /**
+   * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`) or ends it
+   * (`exit`). In a subshell (src/semantics/env.ts), only the subshell.
+   */
+  shellEffect?: 'changes' | 'exits';
+  /**
    * The program of a builtin's name (coreutils echo, procps kill): a path (`/bin/kill`) or a wrapper that starts
    * a program (`env echo`) runs it, and its options may differ from the builtin's.
    */

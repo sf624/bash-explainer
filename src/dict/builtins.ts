@@ -186,20 +186,26 @@ const PROGRAMS: Record<string, CommandSpec> = {
   false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { style: 'none' }),
 };
 
+/**
+ * A builtin whose effect is on the shell that runs it (`CommandSpec.shellEffect`): it changes its state, or ends
+ * it (`exit`). In a subshell, that is the subshell only.
+ */
+const actsOnShell = (spec: CommandSpec, effect: 'changes' | 'exits' = 'changes'): CommandSpec => ({ ...spec, shellEffect: effect });
+
 export const builtins: Record<string, CommandSpec> = {
-  export: declarationSpec('export', exportFlags, { builtin: 'special' }),
-  readonly: declarationSpec('readonly', readonlyFlags, { builtin: 'special' }),
+  export: actsOnShell(declarationSpec('export', exportFlags, { builtin: 'special' })),
+  readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, { builtin: 'special' })),
   // `declare +x`: a `+` turns the attribute off.
-  declare: declarationSpec('declare', declarationFlags, { plusOptions: true }),
-  typeset: declarationSpec('typeset', declarationFlags, { plusOptions: true }),
-  local: declarationSpec('local', declarationFlags, { plusOptions: true }),
+  declare: actsOnShell(declarationSpec('declare', declarationFlags, { plusOptions: true })),
+  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, { plusOptions: true })),
+  local: actsOnShell(declarationSpec('local', declarationFlags, { plusOptions: true })),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     ['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'],
   ], { program: PROGRAMS.printf, ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
-  read: b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
+  read: actsOnShell(b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
     ['-r', 'バックスラッシュをエスケープ文字として扱わない（ほぼ常に付けるべき）', 'do not treat backslashes as escapes (almost always wanted)'],
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],
     ['-s', '入力を画面に表示しない（パスワード入力用）', 'silent mode (for passwords)'],
@@ -211,19 +217,19 @@ export const builtins: Record<string, CommandSpec> = {
     ['-N', '区切り文字に関係なく、ちょうど指定した文字数を読む', 'read exactly the given number of characters, whatever the delimiter', 'arg'],
     ['-i', '`-e` の編集行に最初から入れておく文字列', 'text to put in the `-e` edit line to begin with', 'arg'],
     ['-e', 'Readline で行編集しながら読む（対話シェル用）', 'read with Readline line editing (interactive shells)'],
-  ], args(operand('NAME', '読み込んだ値を入れる変数名', 'variable to store the input'))),
-  cd: b('カレントディレクトリを移動する', 'Change the current directory', [
+  ], args(operand('NAME', '読み込んだ値を入れる変数名', 'variable to store the input')))),
+  cd: actsOnShell(b('カレントディレクトリを移動する', 'Change the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスに移動', 'use the physical path (resolve symlinks)'],
     ['-L', 'シンボリックリンクをたどる（既定）', 'follow symlinks (default)'],
-  ], args(operand('DIR', '移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)'))),
+  ], args(operand('DIR', '移動先のディレクトリ（`-` は直前のディレクトリ、省略時は $HOME）', 'target directory (`-` = previous, default $HOME)')))),
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
   ], { program: PROGRAMS.pwd }),
   logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], numeric(operand('STATUS', '終了ステータス', 'exit status'))),
-  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))),
+  exit: actsOnShell(special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))), 'exits'),
   return: special('関数から戻る', 'Return from a function', [], numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return'))),
-  set: special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
+  set: actsOnShell(special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
     ['-e', 'コマンドが失敗したら即座にスクリプトを終了する', 'exit immediately if a command fails'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
     ['-x', '実行するコマンドを展開後の形で表示する（デバッグ用）', 'print each command after expansion (debugging)'],
@@ -246,8 +252,8 @@ export const builtins: Record<string, CommandSpec> = {
     ['-p', '特権モード（`$ENV` を読まず、環境の関数を取り込まない）', 'privileged mode (reads no `$ENV`, imports no functions)'],
     ['-t', '1つコマンドを読んで実行したら終了する', 'exit after reading and running one command'],
     ['--', '以降の引数を位置パラメータ $1, $2... に設定する', 'set the remaining arguments as $1, $2…'],
-  ], { plusOptions: true }),
-  shopt: b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
+  ], { plusOptions: true })),
+  shopt: actsOnShell(b('bash 固有のシェルオプションを設定・表示する', 'Set or show bash-specific shell options', [
     ['-s', 'オプションを有効にする', 'enable the options'],
     ['-u', 'オプションを無効にする', 'disable the options'],
     ['-q', '何も表示せず、終了ステータスで状態を返す', 'quiet; report via exit status'],
@@ -259,7 +265,7 @@ export const builtins: Record<string, CommandSpec> = {
       { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: named(shellOptions) })] },
       ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option', values: named(shoptOptions) })).operands!,
     ],
-  }),
+  })),
   print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
     ['-n', '最後に改行を出さない', 'do not print a trailing newline'],
     ['-r', '`\\` によるエスケープを解釈しない', 'do not interpret `\\` escapes'],
@@ -274,7 +280,7 @@ export const builtins: Record<string, CommandSpec> = {
     ['-p', '関数やエイリアスを無視して PATH から探す', 'search PATH only, ignoring functions and aliases'],
     ['-a', '見つかったものをすべて表示する', 'show every match'],
   ], args(operand('NAME', '調べるコマンド名', 'command name to look up'))),
-  trap: special('シグナルや終了時に実行するコマンドを登録する', 'Run a command when a signal or event occurs', [
+  trap: actsOnShell(special('シグナルや終了時に実行するコマンドを登録する', 'Run a command when a signal or event occurs', [
     ['-l', 'シグナル名の一覧を表示', 'list signal names'],
     ['-p', '登録済みの trap を表示', 'show registered traps'],
   ], {
@@ -287,9 +293,9 @@ export const builtins: Record<string, CommandSpec> = {
       { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
       ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)'), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
     ],
-  }),
-  source: special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS),
-  '.': special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS),
+  })),
+  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS)),
+  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS)),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
     builtin: 'special', style: 'posix', operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
@@ -299,12 +305,12 @@ export const builtins: Record<string, CommandSpec> = {
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
   ], { builtin: 'special', style: 'posix', operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
-  shift: special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)'))),
-  getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
+  shift: actsOnShell(special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)')))),
+  getopts: actsOnShell(b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
     operand('OPTSTRING', '受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)', { lang: 'getopts' }),
     operand('NAME', '見つけたオプションの文字を入れる変数名', 'variable that receives the option letter'),
     operand('ARG', '解析する単語（省略時は位置パラメータ $@）', 'words to parse (default: the positional parameters `$@`)'),
-  )),
+  ))),
   wait: b('バックグラウンドジョブの終了を待つ', 'Wait for background jobs to finish', [
     ['-n', 'どれか1つの終了を待つ', 'wait for any single job'],
     ['-f', 'ジョブが止まっただけでなく、終了するまで待つ', 'wait until the job has ended, not only changed state'],
@@ -343,12 +349,12 @@ export const builtins: Record<string, CommandSpec> = {
   true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { program: PROGRAMS.true }),
   false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { program: PROGRAMS.false }),
   ':': special('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions'),
-  alias: b('コマンドの別名を定義する', 'Define a command alias', [
+  alias: actsOnShell(b('コマンドの別名を定義する', 'Define a command alias', [
     ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],
-  ]),
-  unalias: b('別名を削除する', 'Remove an alias', [
+  ])),
+  unalias: actsOnShell(b('別名を削除する', 'Remove an alias', [
     ['-a', 'すべての別名を削除する', 'remove all aliases'],
-  ]),
+  ])),
   type: b('コマンドの種類（ビルトイン・関数・外部コマンドなど）を表示する', 'Show how a name would be interpreted (builtin, function, file…)', [
     ['-t', '種類だけを1語で表示', 'print only the kind'],
     ['-a', '該当する全ての候補を表示', 'show all matches'],
@@ -369,13 +375,13 @@ export const builtins: Record<string, CommandSpec> = {
     ],
   }),
   builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
-  hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
+  hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
     ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],
     ['-l', '再入力できる形で表示する', 'print in a reusable form'],
     ['-p', '名前に対応するパスを指定して覚えさせる', 'remember the given path for the name', 'arg'],
     ['-t', '覚えているパスを表示する', 'print the remembered path of each name'],
-  ]),
+  ])),
   jobs: b('現在のジョブ一覧を表示する', 'List current jobs', [
     ['-l', 'プロセス ID も表示する', 'show process IDs too'],
     ['-p', 'プロセス ID だけを表示する', 'show only the process IDs'],
@@ -397,11 +403,11 @@ export const builtins: Record<string, CommandSpec> = {
     ['-a', 'すべてのジョブを対象にする', 'act on all jobs'],
     ['-r', '実行中のジョブだけを対象にする', 'act on running jobs only'],
   ], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
-  umask: b('新規ファイルのパーミッションマスク（作成時に外す権限）を設定・表示する', 'Set or show the file creation mask (permissions removed from new files)', [
+  umask: actsOnShell(b('新規ファイルのパーミッションマスク（作成時に外す権限）を設定・表示する', 'Set or show the file creation mask (permissions removed from new files)', [
     ['-S', '記号形式（u=rwx,g=rx,o=rx など）で表示する', 'show in symbolic form (u=rwx,g=rx,…)'],
     ['-p', '再入力できる形で表示する', 'output in a reusable form'],
-  ], args(operand('MODE', 'マスク値（例: `022`）', 'mask (e.g. `022`)', { lang: 'umask' }), operand('MODE', 'マスク値（例: `022`）', 'mask (e.g. `022`)'))),
-  ulimit: b('プロセスのリソース上限を設定・表示する', 'Set or show resource limits', [
+  ], args(operand('MODE', 'マスク値（例: `022`）', 'mask (e.g. `022`)', { lang: 'umask' }), operand('MODE', 'マスク値（例: `022`）', 'mask (e.g. `022`)')))),
+  ulimit: actsOnShell(b('プロセスのリソース上限を設定・表示する', 'Set or show resource limits', [
     ['-n', 'オープンできるファイル数', 'max open files'],
     ['-c', 'コアダンプのサイズ', 'core dump size'],
     ['-a', '全ての上限を表示', 'show all limits'],
@@ -422,21 +428,21 @@ export const builtins: Record<string, CommandSpec> = {
     ['-i', '待機中のシグナルの最大数', 'maximum number of pending signals'],
     ['-r', 'リアルタイム優先度の上限', 'maximum real-time priority'],
     ['-b', 'ソケットバッファの最大サイズ', 'maximum socket buffer size'],
-  ]),
-  mapfile: b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, args(operand('ARRAY', '格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)'))),
-  readarray: b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, args(operand('ARRAY', '格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)'))),
+  ])),
+  mapfile: actsOnShell(b('標準入力の各行を配列に読み込む', 'Read lines from stdin into an array', MAPFILE_OPTIONS, args(operand('ARRAY', '格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)')))),
+  readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, args(operand('ARRAY', '格納する配列名（省略時は MAPFILE）', 'array name (default MAPFILE)')))),
   // `let` has no options: `let -a` is an expression.
   let: b('算術式を評価する（例: `let i++`）', 'Evaluate arithmetic expressions (e.g. `let i++`)', [], {
     style: 'none',
     ...args(operand('EXPR', '算術式（引数ごとに1つ。左から順に評価され、前の結果が後ろの式から見える）',
       'arithmetic expression (one per argument, evaluated left to right, so later ones see earlier results)', { type: 'arith', lang: 'arith' })),
   }),
-  pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
+  pushd: actsOnShell(b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] }),
-  popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
+  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] })),
+  popd: actsOnShell(b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] }),
+  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] })),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
@@ -445,19 +451,19 @@ export const builtins: Record<string, CommandSpec> = {
   ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
   break: special('ループを抜ける', 'Exit from a loop', [], numeric(operand('N', '抜けるループの段数', 'number of loop levels'))),
   continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], numeric(operand('N', '対象のループの段数', 'number of loop levels'))),
-  unset: special('変数や関数を削除する', 'Unset variables or functions', [
+  unset: actsOnShell(special('変数や関数を削除する', 'Unset variables or functions', [
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],
     ['-n', '名前参照（`declare -n`）そのものを削除する（参照先の変数は残る）', 'unset the name reference itself, not the variable it points to'],
-  ], args(operand('NAME', '削除する名前', 'name to unset'))),
-  enable: b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
+  ], args(operand('NAME', '削除する名前', 'name to unset')))),
+  enable: actsOnShell(b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
     ['-n', 'ビルトインを無効にする（同名の外部コマンドが使われる）', 'disable the builtin (an external command of that name runs)'],
     ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],
     ['-p', '再入力できる形で表示する', 'print in a reusable form'],
     ['-s', 'POSIX の特殊ビルトインだけを対象にする', 'act on POSIX special builtins only'],
     ['-d', '`-f` で読み込んだビルトインを取り除く', 'remove a builtin loaded with `-f`', 'arg'],
     ['-f', '共有オブジェクトからビルトインを読み込む', 'load a builtin from a shared object', 'arg'],
-  ]),
+  ])),
   help: b('ビルトインのヘルプを表示する', 'Show help for builtins', [
     ['-d', '1行の説明だけを表示する', 'print a one-line description'],
     ['-m', 'man ページの形式で表示する', 'print in man page format'],
