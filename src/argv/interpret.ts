@@ -104,6 +104,7 @@ export interface InterpretContext {
 const EMPTY: CommandSpec = { summary: { ja: '', en: '' } };
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 /** What is known of a word's text: all of it, or its start. */
+const ambiguous = (r: { candidates?: string[] }): { ambiguous?: string[] } => (r.candidates ? { ambiguous: r.candidates } : {});
 const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /** Reads the words of a command (its arguments, without the name) with its spec. */
@@ -337,15 +338,15 @@ class Reader {
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
       if (opt && !open) given.values.push({ names: opt.names, text: text.slice(eq + 1) });
-      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguity(options, flag, spec.longPrefixes) }); return i; }
+      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, spec.longPrefixes)) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
       mark(opt);
       return this.separateValues(st, opt, flag, i, 1);
     }
-    if (long || style === 'single-dash') {
+    if (long || style === 'single-dash' || spec.shortClusters === false) {
       if (open) return openOption();
-      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguity(options, text, spec.longPrefixes) });
+      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguous(lookupOption(options, text, spec.longPrefixes)) });
       given.flags.push(text);
       return i;
     }
@@ -470,25 +471,21 @@ interface OptionState {
 /**
  * The option named `flag`. With `prefixes`, a long option of which `flag` is a unique prefix (`--pres`), or
  * with `'first'`, the first option with a name that `flag` (or `flag` without one of two dashes) starts.
+ * `candidates`: when a prefix starts several long options (`timeout --v`), one name of each, which the tool refuses.
  */
-function findOption(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): OptionSpec | undefined {
+function lookupOption(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): { option?: OptionSpec; candidates?: string[] } {
   if (prefixes === 'first') {
     const word = flag.startsWith('--') ? flag.slice(1) : flag;
     // (A lone `-` starts every option, so it is the first one: iproute2's `ip - 3 link` is `ip -loops 3 link`.)
-    return word[0] !== '-' ? undefined : options.find((o) => o.names.some((n) => n.startsWith(word)));
+    return { option: word[0] !== '-' ? undefined : options.find((o) => o.names.some((n) => n.startsWith(word))) };
   }
   const exact = options.find((o) => o.names.includes(flag));
-  if (exact || !prefixes || !flag.startsWith('--') || flag.length < 3) return exact;
+  if (exact || !prefixes || !flag.startsWith('--') || flag.length < 3) return { option: exact };
   const found = options.filter((o) => o.names.some((n) => n.startsWith(flag)));
-  return found.length === 1 ? found[0] : undefined;
+  return found.length === 1 ? { option: found[0] } : found.length > 1 ? { candidates: found.map((o) => o.names.find((n) => n.startsWith(flag))!) } : {};
 }
 
-/** The long options a prefix could be, when `longPrefixes` allows only a unique one and several start with it (`timeout --v`). */
-function ambiguity(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): { ambiguous?: string[] } {
-  if (prefixes !== true || !flag.startsWith('--') || flag.length < 3) return {};
-  const found = options.flatMap((o) => o.names.filter((n) => n.startsWith(flag)).slice(0, 1));
-  return found.length > 1 ? { ambiguous: found } : {};
-}
+const findOption = (options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): OptionSpec | undefined => lookupOption(options, flag, prefixes).option;
 
 /** The subcommand a word names: its name and spec. */
 function subcommand(spec: CommandSpec, word: string): [string, CommandSpec] | undefined {

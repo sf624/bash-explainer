@@ -61,9 +61,13 @@ const MAPFILE_OPTIONS: OptSpec[] = [
 const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
 
 /** `+N` and `-N` of `pushd`, `popd` and `dirs`: a place in the directory stack, from the left (`+`) or the right (`-`) of what `dirs` prints. */
-const stackPosition = (text: (side: '左' | '右', n: string) => Text): PatternOption => ({
+/** The meanings of option names as the text of an operand: `Shell option \`x\`: …` (`OperandSpec.values`). */
+const named = (options: Record<string, Text>): Record<string, Text> =>
+  Object.fromEntries(Object.entries(options).map(([name, t]) => [name, tx(`シェルオプション \`${name}\`: ${t.ja}`, `Shell option \`${name}\`: ${t.en}`)]));
+const SIDE_JA = { left: '左', right: '右' };
+const stackPosition = (text: (side: 'left' | 'right', n: string) => Text): PatternOption => ({
   pattern: /^([+-])(\d+)$/,
-  text: ([, sign, n]) => text(sign === '+' ? '左' : '右', n),
+  text: ([, sign, n]) => text(sign === '+' ? 'left' : 'right', n),
 });
 
 type Rest = Omit<Partial<CommandSpec>, 'summary' | 'options'>;
@@ -109,7 +113,7 @@ const KILL_PATTERNS: PatternOption[] = [
   },
   {
     // `-s` is followed by a name and `-n` by a number: bash reads any other word of this shape as one signal spec, which it refuses.
-    pattern: /^-((?:s(?![A-Za-z])|n(?!\d)).+)$/,
+    pattern: /^-((?:s(?![A-Za-z])|n(?!\d)).+)$/, unlessMarked: 'signal',
     text: ([, s]) => tx(`bash は \`${s}\` を 1 つのシグナル指定として読み、受け付けない（\`-s\` には名前、\`-n\` には番号をつなげる。離して書けば値になる）`, `Invalid: bash reads \`${s}\` as one signal spec and refuses it (attached to \`-s\` a name works, attached to \`-n\` a number; written apart, either is a value)`),
   },
   {
@@ -252,8 +256,8 @@ export const builtins: Record<string, CommandSpec> = {
   ], {
     operands: [
       // With `-o` the names are those of `set -o`.
-      { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: shellOptions })] },
-      ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option' })).operands!,
+      { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: named(shellOptions) })] },
+      ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option', values: named(shoptOptions) })).operands!,
     ],
   }),
   print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
@@ -307,11 +311,11 @@ export const builtins: Record<string, CommandSpec> = {
     ['-p', '終了したジョブの ID を入れる変数名（`-n` と使う）', 'name of the variable that receives the ID of the job that ended (use with `-n`)', 'arg'],
   ], args(operand('ID', '待つプロセス ID かジョブ指定（省略時は全て）', 'PID or job spec to wait for (default: all)', { type: 'job' }))),
   kill: b('プロセスにシグナルを送る（既定は TERM で終了要求）', 'Send a signal to a process (default TERM)', [
-    { names: ['-9', '-KILL'], text: tx('強制終了（KILL シグナル）', 'force kill (SIGKILL)'), ...SIGNAL_GIVEN },
-    { names: ['-s'], text: tx('送るシグナル名', 'signal name to send'), value: { name: 'VALUE' }, marks: 'signal' },
-    { names: ['-n'], text: tx('送るシグナルの番号', 'signal number to send'), value: { name: 'VALUE' }, marks: 'signal' },
+    { names: ['-9', '-KILL'], text: tx('強制終了（KILL シグナル）', 'force kill (SIGKILL)'), ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING } },
+    { names: ['-s'], text: tx('送るシグナル名', 'signal name to send'), value: { name: 'VALUE' }, marks: 'signal', inMode: { list: KILL_LISTING } },
+    { names: ['-n'], text: tx('送るシグナルの番号', 'signal number to send'), value: { name: 'VALUE' }, marks: 'signal', inMode: { list: KILL_LISTING } },
     { names: ['-l', '-L'], text: tx('シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'), selects: 'list' },
-    { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN },
+    { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN, inMode: { list: KILL_LISTING } },
   ], {
     program: PROGRAMS.kill, patternOptions: KILL_PATTERNS, modes: [{ name: 'list' }],
     operands: [
@@ -429,16 +433,16 @@ export const builtins: Record<string, CommandSpec> = {
   }),
   pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${side}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} of \`dirs\` (from 0), is on top, and cd there`))] }),
+  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side} of \`dirs\` (from 0), is on top, and cd there`))] }),
   popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${side}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} of \`dirs\` (from 0), from the stack`))] }),
+  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side} of \`dirs\` (from 0), from the stack`))] }),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
     ['-p', '1行に1つずつ表示する', 'print one entry per line'],
     ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
-  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${side}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} (from 0)`))] }),
+  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${SIDE_JA[side]}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side} (from 0)`))] }),
   break: special('ループを抜ける', 'Exit from a loop', [], numeric(operand('N', '抜けるループの段数', 'number of loop levels'))),
   continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], numeric(operand('N', '対象のループの段数', 'number of loop levels'))),
   unset: special('変数や関数を削除する', 'Unset variables or functions', [

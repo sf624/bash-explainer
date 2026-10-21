@@ -187,9 +187,17 @@ const dockerSubs: Record<string, CommandSpec> = {
 
 /** The commands written in this file; the other tables are spread after them. */
 const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en, { repeat: '*' });
-/** An `env -S` string that holds only options and assignments (`-i A=1`, `-u HOME`), and one of them clears the environment. */
-const SPLIT_OPTIONS_ONLY = /^\s*(?:(?:-[uCSP]\s*\S+|--(?:unset|chdir|split-string|path)=\S*|-\S*|[A-Za-z_]\w*=\S*)(?:\s+|$))*$/;
-const SPLIT_RESET = new RegExp(`(?=${SPLIT_OPTIONS_ONLY.source})(?:^|.*\\s)(?:-[a-zA-Z]*i[a-zA-Z]*|--ignore-environment|-)(?:\\s|$)`);
+/** A word of digits only. */
+const BARE_NUMBER = /^\d+$/;
+/**
+ * `env -S'…'`: env splits the string and reads its words as more of its own line. A string of options and
+ * assignments only (`-i A=1`, `-u HOME`) leaves the command to the words after it. An option that takes a value
+ * needs one in the string (`-S'-u' HOME` takes `HOME`), and an option after an assignment is the command.
+ */
+const SPLIT_OPTION = String.raw`(?:-[a-zA-Z]*[uCSP]\s*\S+|--(?:unset|chdir|split-string|path)=\S*|-(?![a-zA-Z]*[uCSP](?:\s|$))\S*)`;
+const SPLIT_OPTIONS_ONLY = new RegExp(String.raw`^\s*(?:${SPLIT_OPTION}(?:\s+|$))*(?:[A-Za-z_]\w*=\S*(?:\s+|$))*$`);
+/** ... and an `-i` (or `-`) among the options, before the first assignment, clears the environment. */
+const SPLIT_RESET = new RegExp(String.raw`^(?=${SPLIT_OPTIONS_ONLY.source})\s*(?:${SPLIT_OPTION}\s+)*(?:-[a-zA-Z]*i[a-zA-Z]*|--ignore-environment|-)(?:\s|$)`);
 /**
  * The operands of a shell: `bash -c 'cmd' NAME ARG…` (the string runs in a new shell; `NAME` is its `$0`),
  * `bash -s ARG…`, and `bash SCRIPT ARG…` (`$N`: the number of the positional parameter).
@@ -861,11 +869,11 @@ export const core: Record<string, CommandSpec> = {
     ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
     // A bare number starts a list of process IDs that ends the line: `ps 1 u` and `ps 1 -e` fail with "process ID list syntax error".
-    endsOptions: /^\d+$/,
+    endsOptions: BARE_NUMBER,
     operands: [{
-      when: { operand: 0, matches: /^\d+$/ },
+      when: { operand: 0, matches: BARE_NUMBER },
       pattern: [
-        operand('PID', 'プロセス ID（数字だけの語は BSD 形式の PID 指定）', 'process ID (a bare number is a BSD-style PID selection)', { repeat: '*', matches: /^\d+$/ }),
+        operand('PID', 'プロセス ID（数字だけの語は BSD 形式の PID 指定）', 'process ID (a bare number is a BSD-style PID selection)', { repeat: '*', matches: BARE_NUMBER }),
         operand('WORD', 'ここには書けない: 数字だけの語の後は、ps はすべての語を PID として読み、「process ID list syntax error」で失敗する', 'Not allowed here: after a bare number, ps reads every word as a process ID and fails with "process ID list syntax error"', { repeat: '*' }),
       ],
     }],
@@ -1031,7 +1039,7 @@ export const core: Record<string, CommandSpec> = {
     ['-f', 'グロブ（ワイルドカード展開）を無効にする', 'disable globbing'],
     ['-b', 'バックグラウンドジョブの終了をすぐに知らせる', 'report the end of background jobs at once'],
     ['-m', 'ジョブ制御を有効にする', 'turn on job control'],
-    ['-p', '特権モードで起動する（`$ENV` を読まない）', 'start in privileged mode (reads no `$ENV`)'],
+    ['-p', '実効ユーザー ID が実ユーザー ID と違っても、実効 ID を戻さない（setuid の権限を捨てない）', 'keep the effective user ID when it differs from the real one (do not drop setuid privileges)'],
     ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
   ], {
     style: 'posix', plusOptions: true,
@@ -1086,7 +1094,7 @@ export const core: Record<string, CommandSpec> = {
     ['-h|--help', 'ヘルプを表示する', 'show help'],
   ], {
     // git's own options before the subcommand never cluster (`git -pP log`: "unknown option: -pP"), and `-C.` is not `-C .`.
-    style: 'single-dash',
+    shortClusters: false,
     subcommands: {
       submodule: cmd('サブモジュールを操作する（`update --init --recursive` で取得）', 'Manage submodules (`update --init --recursive` fetches them)', [['--init', 'まだ初期化していないものも初期化する', 'initialise those not yet initialised'], ['--recursive', '入れ子のサブモジュールも', 'nested submodules too'], ['--remote', '追跡するブランチの最新にする', "update to the tracked branch's latest"], ['--depth', '取得する履歴の深さ', 'history depth', 'arg']]),
       'show-ref': cmd('参照（ブランチやタグ）とそのコミットを一覧表示する', 'List references and their commits', [['--verify', 'この参照があるかを確かめる', 'check that this exact reference exists'], ['-q|--quiet', '何も表示せず、終了ステータスで返す', 'print nothing; report via the exit status'], ['--tags', 'タグだけ', 'tags only'], ['--heads', 'ブランチだけ', 'branches only']]),

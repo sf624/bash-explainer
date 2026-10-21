@@ -23,6 +23,8 @@ export interface CommandSpec {
   longPrefixes?: boolean | 'first';
   /** Whether `--name=value` gives a long option its value (getopt_long; the default). jq has no such form: `--arg=x` is unknown. */
   longEquals?: boolean;
+  /** `false`: a short option is a whole word: no clusters (`-pP`), no attached value (`-C.`, `-c=x`); long options keep `--name=value` (git, before its subcommand). */
+  shortClusters?: boolean;
   /** `-f=x` is `-f` with the value `x`, not `=x` (dpkg's own parser). */
   shortEquals?: boolean;
   options?: OptionSpec[];
