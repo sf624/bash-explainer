@@ -5,18 +5,18 @@ name: Web page
 # pull request of this repository under /pr/<number>/ (a preview). A deployment replaces the whole
 # site, so each run rebuilds all of them. A comment on the pull request links to its preview.
 # The Release workflow calls this after publishing a version; a push to main that changes the page
-# redeploys; a pull request that is opened, updated, reopened or closed redeploys (pull_request_target,
-# so that this file runs from main, the branch the github-pages environment allows); run it by hand
-# for the first deployment or a fix. Pull request code runs only in the build job, which can read
-# but not write, with no secrets. That code can still write anywhere in site/, so a pull request can
+# redeploys; a pull request that is opened, updated, reopened or closed redeploys, whatever its base
+# (the pull requests of a stack target each other's branches); run it by hand for the first
+# deployment or a fix. A pull request runs this file from its own branch, so the github-pages
+# environment allows every branch. Pull request code runs only in the build job, which can read but
+# not write, with no secrets. That code can still write anywhere in site/, so a pull request can
 # change any page of the site: only people who can push branches here get a preview.
 # One-time setup: docs/publishing.md.
 on:
   workflow_call:
   workflow_dispatch:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, closed]
-    branches: [main]
   push:
     branches: [main]
     paths:
@@ -41,9 +41,8 @@ concurrency:
 jobs:
   build:
     name: Build the web page
-    # A pull request from a fork has no preview. (Only pull requests to main start this workflow, and it
-    # runs from main, which the github-pages environment allows.)
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    # A pull request from a fork has no preview (its token could not deploy or comment anyway).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -166,7 +165,7 @@ jobs:
           REPO: ${{ github.repository }}
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           PREVIEWS: ${{ needs.build.outputs.previews }}
-          CLOSED: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.number || '' }}
+          CLOSED: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.number || '' }}
         run: |
           marker='<!-- web-preview -->'
           # The comment of this bot that holds the marker, if any.
