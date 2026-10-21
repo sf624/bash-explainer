@@ -55,12 +55,15 @@ function sequence(body: string): string[] | undefined {
   return undefined;
 }
 
-/** Expand braces in an unquoted word; undefined when the word has no brace expansion. */
-export function braceExpand(word: string): string[] | undefined {
+/**
+ * Expand braces in an unquoted word; undefined when the word has no brace expansion. `raw`: keep the backslashes
+ * (quote removal comes later, after the other expansions).
+ */
+export function braceExpand(word: string, raw = false): string[] | undefined {
   const words = expand(word);
   // Words that end up empty are dropped, as bash drops empty unquoted words.
   // (A backslash left at the end of a word, as the one `{Z..a}` makes, is removed with quote removal: an empty argument that stays.)
-  return words?.filter((w) => w !== '').map((w) => w.replace(/\\(.|$)/g, '$1'));
+  return words?.filter((w) => w !== '').map((w) => (raw ? w : w.replace(/\\(.|$)/g, '$1')));
 }
 
 function expand(word: string): string[] | undefined {
