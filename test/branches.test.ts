@@ -105,12 +105,31 @@ describe('branches no other test takes', () => {
     assert.ok(explainMode('7', 'en'));
   });
 
-  it('custom commands: settings without options or arguments, and options without a description', () => {
-    assert.deepStrictEqual(customCommandSpec({ summary: 'x' }), { summary: { ja: 'x', en: 'x' }, options: [] });
-    const spec = customCommandSpec({ summary: 'x', options: { '-a': 'all', '-b': { takesValue: true }, '-c': 7, '-d': { description: 'd' } }, arguments: 'nope' })!;
-    assert.deepStrictEqual(spec.options!.map((o) => o.names[0]), ['-a', '-d']);
-    assert.strictEqual(spec.options![1].value, undefined);
-    assert.strictEqual(spec.operands, undefined);
+  it('custom commands: both shapes of the setting, and the parts that are malformed', () => {
+    const x = { ja: 'x', en: 'x' };
+    assert.deepStrictEqual(customCommandSpec({ summary: 'x' }), { summary: x, options: [] });
+    for (const bad of [undefined, 'x', ['x'], { summary: 1 }]) assert.strictEqual(customCommandSpec(bad), undefined);
+    const names = (c: unknown) => customCommandSpec(c)!.options!.map((o) => `${o.names.join('|')}${o.value ? ' VALUE' : ''}`);
+    // The old shape (up to 0.6): options as an object, `arguments`.
+    const old = { summary: 'x', options: { '-a': 'all', '-b': { takesValue: true }, '-c': 7, '-d': { description: 'd' }, '-e | --each': { description: 'e', takesValue: true }, '-f': null }, arguments: 'nope' };
+    assert.deepStrictEqual(names(old), ['-a', '-d', '-e|--each VALUE']);
+    assert.strictEqual(customCommandSpec(old)!.operands, undefined);
+    assert.deepStrictEqual(customCommandSpec({ summary: 'x', arguments: ['a', 3, 'b'] })!.operands, [{ pattern: [
+      { name: 'ARG1', text: { ja: 'a', en: 'a' }, repeat: '?' }, { name: 'ARG2', text: { ja: 'b', en: 'b' }, repeat: '*' },
+    ] }]);
+    // The new shape: options and operands as lists, a style, subcommands.
+    const spec = customCommandSpec({
+      summary: 'x', style: 'posix',
+      options: [{ names: ['-o', '--out'], description: 'o', takesValue: true }, { names: [], description: 'none' }, { names: ['-n', 2] , description: 'n' }, { names: '-z', description: 'z' }, { description: 'no names' }, 'bad', { names: ['-o'], description: 'again' }],
+      operands: [{ name: 'SRC', description: 's', repeat: '+' }, { description: 'd' }, { description: 'r', repeat: 'x' }, { name: 'N' }, 7],
+      subcommands: { up: { summary: 'u' }, bad: {} },
+    })!;
+    assert.deepStrictEqual(spec.options!.map((o) => `${o.names.join('|')} ${o.text.en}${o.value ? ' VALUE' : ''}`), ['--out o VALUE', '-n n', '-o again']);
+    assert.strictEqual(spec.style, 'posix');
+    assert.deepStrictEqual(spec.operands![0].pattern.map((o) => `${o.name}${o.repeat ?? ''}`), ['SRC+', 'ARG2', 'ARG3']);
+    assert.deepStrictEqual(Object.keys(spec.subcommands!), ['up']);
+    assert.strictEqual(customCommandSpec({ summary: 'x', style: 'none', subcommands: { bad: 1 } })!.style, undefined);
+    assert.strictEqual(customCommandSpec({ summary: 'x', style: 1, subcommands: [] })!.subcommands, undefined);
   });
 
   it('redirections: copies of high descriptors, closing, and here-documents', () => {
