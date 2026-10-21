@@ -234,7 +234,8 @@ class Reader {
         if (!takesRest(item)) { roles.set(i, { role: 'command', slot: item.command, item }); continue; }
         for (const j of [...roles.keys()]) if (j > i && j < end) roles.delete(j);
         // ssh: the words are joined into one string for the remote shell, which reads it as a script.
-        if (item.command.joinsWords) {
+        // (`sudo -s` escapes each word first: the shell reads the same words, a command.)
+        if (item.command.joinsWords && !item.command.escapesWords) {
           roles.set(i, { role: 'command', slot: item.command, item });
           for (let j = i + 1; j < end; j++) roles.set(j, { role: 'joined' });
         } else roles.set(i, { ...this.command(item.command, i, end), item });

@@ -62,6 +62,7 @@ describe('wrappers agree with the real tools', () => {
       'timeout --foreground -v --preserve-status 5 printf %s, -v',
       'timeout --sig KILL 2 printf %s, a',
       'timeout --kill 1 2 printf %s, a',
+      'timeout --fore 2 printf %s, a',
     ],
     env: [
       'env -i A=1 printf %s, -i',
@@ -69,6 +70,13 @@ describe('wrappers agree with the real tools', () => {
       'env -iu HOME printf %s, a',
       'env A=1 B=2 printf %s, A=3',
       'env -- printf %s, -u',
+      // Long options written as a unique prefix (getopt_long), and `env -` (same as `-i`).
+      'env --ignore-e --deb printf %s, a',
+      'env - printf %s, -i',
+    ],
+    stdbuf: [
+      'stdbuf -oL printf %s, -o',
+      'stdbuf --out=L --err 0 printf %s, a',
     ],
     nice: [
       'nice -n 5 printf %s, -n',
@@ -81,6 +89,7 @@ describe('wrappers agree with the real tools', () => {
       `flock ${lock} printf %s, -n`,
       `flock -n ${lock} printf %s, a`,
       `flock -w 1 ${lock} printf %s, a`,
+      `flock --nonb --wai 1 ${lock} printf %s, a`,
     ],
     exec: [
       'exec -a name printf %s, a',
@@ -104,11 +113,43 @@ describe('wrappers agree with the real tools', () => {
   }
 
   (usable('xargs') ? it : it.skip)('xargs: the words of the command, and the input after them (or in place of `{}`)', () => {
-    for (const line of ['xargs printf %s, -0', 'xargs -n 1 printf %s, a', 'xargs -r printf %s, -r', 'xargs -I{} printf %s, {} b', 'xargs -i printf %s, {} b', 'xargs -d , printf %s, a', 'xargs -L 1 printf %s, -L']) {
+    for (const line of ['xargs --max-a 1 printf %s, a', 'xargs --no-r printf %s, b', 'xargs printf %s, -0', 'xargs -n 1 printf %s, a', 'xargs -r printf %s, -r', 'xargs -I{} printf %s, {} b', 'xargs -i printf %s, {} b', 'xargs -d , printf %s, a', 'xargs -L 1 printf %s, -L']) {
       const words = ran(line).slice(2);
       const replaces = /-I\{\}|-i /.test(line);
       assert.strictEqual(run(line, 'z').out, printed(replaces ? words.map((w) => (w === '{}' ? 'z' : w)) : [...words, 'z']), line);
     }
+  });
+
+  // The long options a tool lists in `--help`: with them all in the entry, a prefix that the tool finds
+  // ambiguous is ambiguous here too.
+  const longNames = (help: string): string[] => [...new Set(help.split('\n').filter((l) => /^\s+-/.test(l)).flatMap((l) => l.match(/--[a-z][a-z0-9-]*/g) ?? []))];
+  for (const tool of ['timeout', 'env', 'nice', 'xargs', 'stdbuf', 'flock', 'sudo']) {
+    (usable(tool) ? it : it.skip)(`${tool}: every long option of --help, and the prefixes it finds ambiguous`, () => {
+      const spec = lookupCommand(tool)!;
+      assert.ok(spec.longPrefixes, tool);
+      const ours = spec.options!.flatMap((o) => o.names);
+      const theirs = longNames(spawnSync(tool, ['--help'], { env: ENV, encoding: 'utf8' }).stdout);
+      assert.ok(theirs.length > 2, tool);
+      assert.deepStrictEqual(theirs.filter((n) => !ours.includes(n)), [], tool);
+    });
+  }
+  const AMBIGUOUS: Record<string, string> = {
+    timeout: 'timeout --v 1 true', env: 'env --ig true', flock: 'flock --no /tmp/x true', sudo: 'sudo --pre true', xargs: 'xargs --max true',
+  };
+  for (const [tool, line] of Object.entries(AMBIGUOUS)) {
+    (usable(tool) ? it : it.skip)(`${tool}: an ambiguous prefix is no option: ${line}`, () => {
+      assert.match(run(line, '').err, /is ambiguous/, line);
+      const { parse } = parseOf(line);
+      assert.strictEqual(parse.roles[0].role.role, 'unknown-option', line);
+    });
+  }
+
+  (usable('env') ? it : it.skip)("env -S: the string is the command and its first arguments; the operands are more", () => {
+    for (const line of ["env -S 'printf %s,' x y", "env --split-string='printf %s,' b", "env -S 'A=1 printf %s,' x -i"]) {
+      assert.strictEqual(run(line).out, printed(operands(line, ['ARG'])), line);
+      assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
+    }
+    assert.match(run("env -S 'printf %s,' x y").out, /^x,y,$/);
   });
 
   (has('bash') ? it : it.skip)('bash and sh: `$0`, the arguments, and the script', () => {
