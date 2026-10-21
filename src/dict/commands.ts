@@ -35,6 +35,11 @@ const arLetters: OptSpec[] = [
   ['D', '日時や所有者を 0 にして、毎回同じアーカイブになるようにする', 'zero dates and owners so the archive is reproducible'],
   ['U', '日時や所有者を実際の値で保存する（`D` の逆）', 'store real dates and owners (opposite of `D`)'],
   ['T', '中身を持たない薄いアーカイブを作る', 'make a thin archive that points to the files'],
+  ['f', '入れるファイルの名前を切り詰める', 'truncate the names of inserted files'],
+  ['P', 'メンバーを探すとき、パス全体で比べる', 'match members by their full path'],
+  ['O', '一覧にメンバーの位置（オフセット）も表示する', 'show the offset of each member in the list'],
+  ['l', 'ライブラリの依存（`-lm` など）を記録する（次の語に書く）', 'record the dependencies of the library, such as `-lm` (the next word)', 'arg'],
+  ['V', 'バージョンを表示', 'print the version'],
   ['a', '指定したメンバーの後ろに入れる（メンバー名を次の語に書く）', 'place after the named member (the name is the next word)', 'arg'],
   ['b', '指定したメンバーの前に入れる（メンバー名を次の語に書く）', 'place before the named member (the name is the next word)', 'arg'],
   ['i', '指定したメンバーの前に入れる（`b` と同じ）', 'place before the named member (same as `b`)', 'arg'],
@@ -465,7 +470,7 @@ export const core: Record<string, CommandDoc> = {
     ['--owner', 'アーカイブする所有者を上書きする', 'force the given owner in the archive', 'arg'],
     ['--group', 'アーカイブするグループを上書きする', 'force the given group in the archive', 'arg'],
     ['--remove-files', 'アーカイブに入れた後で元のファイルを削除する（注意）', 'remove the files after adding them (careful)'],
-    ['--totals', '終了時に書き込んだバイト数を表示', 'print the total bytes written'],
+    ['--totals', '終了時に書き込んだバイト数を表示（`--totals=シグナル` では、そのシグナルを受けたときに表示）', 'print the total bytes written (`--totals=SIGNAL`: when the signal arrives)', 'attached'],
     ['-W|--verify', '書き込み後に検証する', 'verify the archive after writing'],
     ['--acls', 'ACL を保存・復元する', 'save and restore ACLs'],
     ['--xattrs', '拡張属性を保存・復元する', 'save and restore extended attributes'],
@@ -756,6 +761,7 @@ export const core: Record<string, CommandDoc> = {
     ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
     oldStyle: {
+      anywhere: true,
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
       letters: letters([
         ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],
@@ -793,7 +799,7 @@ export const core: Record<string, CommandDoc> = {
   ar: native('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
     ...dashed(arLetters),
   ], {
-    oldStyle: { letters: letters(arLetters), needs: 'dmpqrstx' },
+    oldStyle: { letters: letters(arLetters), needs: 'dmpqrstxV' },
     ...args(operand('ARCHIVE', 'アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), operand('MEMBER', '対象のメンバー（ファイル）', 'member file')),
   }),
   jar: native('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [

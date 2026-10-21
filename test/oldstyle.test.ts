@@ -148,7 +148,15 @@ describe('old-style options: ps', () => {
     assert.strictEqual(top('ps 1234')[0].explanation, 'Word `1234`');
     assert.strictEqual(top('ps -ef')[0].explanation, 'Combined short options `-e` `-f`');
     assert.strictEqual(top('ps u1')[0].explanation, 'Word `u1`');
-    assert.strictEqual(top('ps -p 1 u')[2].explanation, 'Word `u`');
+  });
+
+  it('reads BSD letters after other options too, as procps does', () => {
+    // `ps -p 1 u` is `ps u -p 1` (test/oldstyle-real.test.ts compares with ps).
+    assert.match(top('ps -p 1 u')[2].explanation, /^BSD-style options/);
+    assert.deepStrictEqual(shape('ps -o pid -p 1 o comm').slice(-3), [
+      'o: BSD-style options (no dash; some mean something else than the UNIX forms with `-`): `o`', '  o: output columns (`o pid,comm`)', 'comm: Value for `o`',
+    ]);
+    assert.strictEqual(top('ps -C bash 12')[2].explanation, 'Word `12`');
   });
 
   // What each letter makes ps print: a word of the header it shows with that letter.
