@@ -1,0 +1,56 @@
+name: Watch unbash releases
+
+# unbash is the parser every product is built on and is pinned exactly in package.json.
+# This opens an issue when a newer version is on npm, so an upgrade is not left to the monthly Dependabot run.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    name: Compare with npm
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Open an issue for a newer version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          current=$(node -p "require('./package.json').dependencies.unbash")
+          latest=$(npm view unbash version)
+          echo "pinned: $current, latest: $latest"
+          # Only a newer version counts (sort -V puts the highest last); never an older or equal one.
+          if [ "$current" = "$latest" ] || [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" != "$latest" ]; then
+            echo "Up to date."
+            exit 0
+          fi
+          title="unbash $latest is out"
+          if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json title --jq ".[] | select(.title == \"$title\") | .title")" ]; then
+            echo "An issue already exists."
+            exit 0
+          fi
+          body=$(cat <<EOF
+          unbash $latest is on npm; \`package.json\` pins $current.
+
+          - Release: https://github.com/webpro-nl/unbash/releases/tag/$latest
+          - Changes: https://github.com/webpro-nl/unbash/compare/$current...$latest
+
+          Checklist:
+
+          - [ ] Read the release notes and the compare above
+          - [ ] \`npm install unbash@$latest --save-exact\`
+          - [ ] Run the tests, the fuzz tests and \`npx tsx scripts/extract-snippets.ts --check\`
+          - [ ] Run the bash-ast test (\`test/bash-ast.test.ts\`) and update \`test/fixtures/bash-ast-known.json\` if a known difference is fixed
+          - [ ] Compare \`npx tsx test/dump.ts test/fixtures/sample.sh en|ja\` before and after
+          - [ ] \`npm run notices\` to regenerate THIRD_PARTY_NOTICES.md
+          - [ ] CHANGELOG line under "Unreleased" if users see a difference
+          EOF
+          )
+          gh issue create --title "$title" --body "$body"
