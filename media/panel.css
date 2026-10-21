@@ -133,6 +133,31 @@ ul#tree {
   color: var(--vscode-foreground);
 }
 
+/* The sections of the manual a row or a note is about: small links at the end, quiet until pointed at. */
+.refs {
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.row .refs {
+  margin-left: auto;
+}
+
+.note .refs {
+  margin-left: 0.5em;
+}
+
+.refs a {
+  color: var(--c-muted);
+  text-decoration: none;
+}
+
+.refs a:hover,
+.refs a:focus-visible {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+}
+
 .row.active {
   background: var(--vscode-list-hoverBackground);
 }

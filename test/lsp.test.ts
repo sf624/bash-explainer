@@ -111,6 +111,8 @@ describe('the Language Server', function () {
     assert.strictEqual(r.result.contents.kind, 'markdown');
     assert.match(r.result.contents.value, /^\*\*Bash Explainer · line 2\*\*/);
     assert.match(r.result.contents.value, /`-f "\$1"`/);
+    // Each row ends with the sections of the manual it is about, linked.
+    assert.ok(r.result.contents.value.includes('(Bash manual [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html "Conditional Constructs")'), r.result.contents.value);
   });
 
   it('offers the quick fix', async () => {

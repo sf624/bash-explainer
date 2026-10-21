@@ -7,7 +7,7 @@ import { field, type SyntaxNode } from './syntax/tree';
 // `commandHeadFor`), and the facts from the message catalog (src/messages.ts).
 
 /** Constructs, and the keywords and operators inside them. */
-const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
+export const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
   if_statement: ['3.2.5.2'], elif_clause: ['3.2.5.2'], else_clause: ['3.2.5.2'],
   case_statement: ['3.2.5.2'], case_item: ['3.2.5.2'], select_statement: ['3.2.5.2'],
   for_statement: ['3.2.5.1'], c_style_for_statement: ['3.2.5.1'], while_statement: ['3.2.5.1'],
@@ -20,7 +20,7 @@ const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Other nodes, by type. */
-const NODES: Readonly<Record<string, readonly string[]>> = {
+export const NODES: Readonly<Record<string, readonly string[]>> = {
   ...CONSTRUCTS,
   variable_assignment: ['3.4'], variable_assignments: ['3.4'],
   heredoc_redirect: ['3.6.6'], herestring_redirect: ['3.6.7'],
@@ -32,7 +32,7 @@ const NODES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** Operators, by their own type: their meaning does not depend on where they are. */
-const OPERATORS: Readonly<Record<string, readonly string[]>> = {
+export const OPERATORS: Readonly<Record<string, readonly string[]>> = {
   '|': ['3.2.3'], '|&': ['3.2.3'],
   '&&': ['3.2.4'], '||': ['3.2.4'], '&': ['3.2.4'], ';': ['3.2.4'],
   ';;': ['3.2.5.2'], ';&': ['3.2.5.2'], ';;&': ['3.2.5.2'],

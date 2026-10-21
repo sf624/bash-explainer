@@ -145,7 +145,7 @@ export function startLanguageServer(io: Io): void {
     const ex = { ...full, items: pruneDepth(full.items, settings['hover.maxDepth']), examples: settings['examples.inHover'] ? full.examples : [] };
     const where = `Bash Explainer · ${lang === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
     return {
-      contents: { kind: 'markdown', value: toPlainMarkdown(ex, parsed.lines[line], where) },
+      contents: { kind: 'markdown', value: toPlainMarkdown(ex, parsed.lines[line], where, lang) },
       range: { start: { line, character: 0 }, end: { line, character: parsed.lines[line].length } },
     };
   }

@@ -2,6 +2,7 @@ import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';
+import { manualLabel, SECTIONS } from '../manual';
 
 export const ui = {
   ja: {
@@ -53,6 +54,22 @@ export const ui = {
     },
   },
 } satisfies Record<Lang, unknown>;
+
+/** The sections of the manual a note cites: those of the fact it says (`LineExplanation.facts`), if it is one. */
+export function noteRefs(ex: LineExplanation, note: string): readonly string[] | undefined {
+  return ex.facts?.find((f) => f.text === note)?.refs;
+}
+
+/** "Bash manual [3.2.5.2](…), [6.4](…)": the sections as Markdown links, after the words "Bash manual". */
+export function refsMarkdown(lang: Lang, refs: readonly string[]): string {
+  const [first, ...rest] = refs.map((id) => `[${id}](${SECTIONS.get(id)!.url} "${SECTIONS.get(id)!.title}")`);
+  return [manualLabel(lang, [first]), ...rest].join(', ');
+}
+
+/** " (Bash manual 3.7.2)" after a row, or nothing. */
+export function refsText(lang: Lang, refs: readonly string[] | undefined): string {
+  return refs?.length ? ` (${manualLabel(lang, refs)})` : '';
+}
 
 /** Display features that can each be turned on or off. */
 export type Feature = keyof typeof ui.ja.features;
@@ -174,7 +191,9 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     if (segs.length) segs[0].text = segs[0].text.trimStart();
     out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind) : esc(g.text))).join('') + '</code>', '');
   }
-  for (const n of ex.notes) out.push(`> ${n}`, '');
+  // A note, and a token, end with the sections of the manual they are about, small.
+  const small = (refs: readonly string[] | undefined) => (refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : '');
+  for (const n of ex.notes) out.push(`> ${n}${small(noteRefs(ex, n))}`, '');
   if (!ex.items.length) {
     out.push(t.empty);
     return out.join('\n');
@@ -185,7 +204,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
       ? `<i>${colored(p.text, 'comment')}</i>`
       : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind)}</code>`));
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
-    out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}`);
+    out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}${small(tok.refs)}`);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
     const examples = tok.examples?.length ? examplesMarkdown(tok.examples, '  '.repeat(depth + 1)) : [];
     if (placement === 'first') out.push(...examples);
@@ -232,11 +251,12 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
 }
 
 /** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */
-export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string): string {
+export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
-  for (const n of ex.notes) out.push(`> ${n}`, '');
+  const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
+  for (const n of ex.notes) out.push(`> ${n}${links(noteRefs(ex, n))}`, '');
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${tok.explanation}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${tok.explanation}${links(tok.refs)}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

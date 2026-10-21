@@ -35,6 +35,22 @@ describe('the command-line tool', function () {
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 
+  it('names the sections of the Bash manual: numbers in the text, links in Markdown, ids in JSON', () => {
+    const text = run(['-e', 'exit 300', '--no-color']).out;
+    assert.match(text, /ℹ An exit status is 0–255, so `300` becomes 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);
+    assert.match(text, /exit  Exit the shell or script \(shell builtin\) \(Bash manual 4\.1, 4\.4\)$/m);
+    assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /\(Bash マニュアル 3\.7\.5\)$/m);
+    // In colour, the numbers are dim; a row with none ends with its explanation.
+    const color = run(['-e', 'exit 300', '--color']).out;
+    assert.ok(color.includes('\x1b[90m (Bash manual 4.1, 4.4)\x1b[0m'), color);
+    assert.match(run(['-e', 'grep x', '--no-color', '--no-examples']).out, /grep  Print lines matching a pattern \(regex\)$/m);
+    const md = run(['--format', 'markdown', '-e', 'exit 300']).out;
+    assert.ok(md.includes('(Bash manual [3.7.5](https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html "Exit Status"))'), md);
+    const json = JSON.parse(run(['--format', 'json', '-e', 'exit 300']).out);
+    assert.deepStrictEqual(json[0].explanation.items[0].refs, ['4.1', '4.4']);
+    assert.deepStrictEqual(json[0].explanation.facts.map((f: { id: string; refs: string[] }) => [f.id, f.refs]), [['exit-modulo', ['3.7.5']]]);
+  });
+
   it('labels a command with its name, and its arguments as before', () => {
     const r = run(['-e', "grep -E '^[A-Z]{3}-[0-9]+$' ids.txt", '--no-color', '--no-examples']);
     assert.strictEqual(r.code, 0, r.err);

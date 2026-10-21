@@ -9,7 +9,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { toPlainMarkdown } from '../src/ui/render';
+import { noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -228,17 +228,19 @@ const ANSI: Partial<Record<Token['kind'], string>> = {
   comment: '90', error: '91',
 };
 
-function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean): string {
+function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
   const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
+  // The sections of the manual a row is about, dim: " (Bash manual 3.7.2)".
+  const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);
-  for (const n of ex.notes) out.push(`  ${n}`);
+  for (const n of ex.notes) out.push(`  ${n}${refs(noteRefs(ex, n))}`);
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(labelParts(t), (p) => (p.placeholder
       ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
-    out.push(`${'  '.repeat(depth + 1)}${label}  ${t.explanation.replace(/`/g, '')}`);
+    out.push(`${'  '.repeat(depth + 1)}${label}  ${t.explanation.replace(/`/g, '')}${refs(t.refs)}`);
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);
@@ -362,8 +364,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         // Without an explicit range, lines with nothing to explain (blank, outside the shell code) are skipped.
         if (!input.lines && !ex.items.length && !ex.notes.length) continue;
         if (o.format === 'json') json.push({ file: input.name, line: line + 1, text: lines[line], explanation: forJson(ex) });
-        else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.name}:${line + 1}`).trimEnd());
-        else chunks.push(textOutput(input.name, line, lines[line], ex, o.color));
+        else if (o.format === 'markdown') chunks.push(toPlainMarkdown(ex, lines[line], `${input.name}:${line + 1}`, o.lang).trimEnd());
+        else chunks.push(textOutput(input.name, line, lines[line], ex, o.color, o.lang));
       }
     }
   }
