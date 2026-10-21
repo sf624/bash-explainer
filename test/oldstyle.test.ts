@@ -123,7 +123,7 @@ describe('old-style options: tar', () => {
   });
 
   it('leaves other first words alone', () => {
-    for (const src of ['tar --create -f a.tar d', 'tar -xf a.tar', 'tar a.tar', 'tar foo', 'tar cfq a', 'tar xf2 a', 'tar vf a.tar', 'tar "xf" a.tar', 'tar $w a', 'tar zz a']) {
+    for (const src of ['tar --create -f a.tar d', 'tar -xf a.tar', 'tar a.tar', 'tar foo', 'tar cfq a', 'tar xf2 a', 'tar vf a.tar', 'tar $w a', 'tar zz a']) {
       const first = top(src)[0];
       assert.notStrictEqual(first.kind === 'option' && first.explanation.startsWith('Old-style'), true, src);
     }

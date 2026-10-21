@@ -243,16 +243,16 @@ function byCount(rule: PositionalBy, item: (i: number, t: Text, repeat?: Operand
 }
 
 const shellArgs = (t: Text): OperandSpec => ({ name: 'ARG', text: t, repeat: '*' });
-/** `bash -c 'cmd' NAME ARG…`, `bash -s ARG…`, `bash SCRIPT ARG…`. */
+/** `bash -c 'cmd' NAME ARG…`, `bash -s ARG…`, `bash SCRIPT ARG…` (`$N`: the number of the positional parameter). */
 const SHELL_OPERANDS: OperandAlt[] = [
   {
     when: { option: ['-c'] },
     pattern: [
       { name: 'COMMAND_STRING', text: tx('実行するコマンド文字列', 'command string to run'), command: { run: 'shell-string', env: 'exported' } },
       { name: 'NAME', repeat: '?', text: tx('`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument') },
-      shellArgs(tx('コマンド文字列の位置パラメータ', 'Positional parameter')),
+      shellArgs(tx('コマンド文字列の位置パラメータ `$N`', 'Positional parameter `$N` of the command string')),
     ],
   },
-  { when: { option: ['-s'] }, pattern: [shellArgs(tx('スクリプトへの引数', 'Argument to the script'))] },
-  { pattern: [{ name: 'SCRIPT', repeat: '?', text: tx('実行するスクリプト', 'Script to run'), type: 'file' }, shellArgs(tx('スクリプトへの引数', 'Argument to the script'))] },
+  { when: { option: ['-s'] }, pattern: [shellArgs(tx('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)'))] },
+  { pattern: [{ name: 'SCRIPT', repeat: '?', text: tx('実行するスクリプト', 'Script to run'), type: 'file' }, shellArgs(tx('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)'))] },
 ];

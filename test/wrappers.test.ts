@@ -95,7 +95,7 @@ describe('the command a wrapper runs', () => {
     assert.match(about('env A=$x cmd', 'A=$x'), /^Sets the variable `A`/);
     assert.match(notes('f() { :; }\nssh -- host f', 'en', 1)[0], /function `f`/);
     assert.deepStrictEqual(notes('f() { :; }\nsu -c', 'en', 1), []);
-    assert.match(notes('find . -ok myfunc {} \\;\nmyfunc() { :; }')[0], /`find -exec` starts `myfunc`/);
+    assert.match(notes('find . -ok myfunc {} \\;\nmyfunc() { :; }')[0], /`find -ok` starts `myfunc`/);
   });
   it('uv run and poetry run run the command', () => {
     assert.match(ran('timeout -k 5 10 sleep 1', 'sleep'), /runs `sleep`/);
@@ -105,7 +105,7 @@ describe('the command a wrapper runs', () => {
     assert.match(ran('poetry run pytest -x', 'pytest'), /runs `pytest`/);
   });
   it('su: a lone dash is the login option', () => {
-    assert.match(about('su - user', '-'), /^Run a login shell/);
+    assert.strictEqual(about('su - user', '-'), 'as a login shell (fresh environment)');
     assert.match(about('su - user', '-', 'ja'), /^ログインシェルとして/);
     assert.strictEqual(about('su - user', 'user'), 'user name');
   });

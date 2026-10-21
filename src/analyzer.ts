@@ -7,7 +7,11 @@ import { builtins, shoptOptions } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { BundleDoc, CommandDoc, OptDoc, PositionalBy } from './dict/types';
+import { CommandDoc } from './dict/types';
+import { fromCommandDoc } from './argv/fromdoc';
+import { ArgRole, ArgvParse, CommandRole, interpret, ValueRole } from './argv/interpret';
+import type { CommandSlot, CommandSpec, OperandSpec } from './argv/spec';
+import { argWord, countOf } from './argv/words';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
@@ -23,7 +27,7 @@ import { bashPrintf, braceExpand, extglobs, globExamples, globMatches, GlobMode,
 import { explainAwk } from './embedded/awk';
 import { pictureNote } from './ctlchars';
 import { explainDate, explainEscapes, explainPrintf, formatDate as formatDateCommand, parseSampleDate, printfNote, SAMPLE_DATES } from './embedded/format';
-import { describeFind, describeFindPattern, FindNode, isExpressionStart, parseFind, unquote } from './embedded/find';
+import { describeFind, describeFindPattern, FindNode, parseFind, unquote } from './embedded/find';
 import { explainArith } from './embedded/arith';
 import { explainGetopts } from './embedded/getopts';
 import { parseTest, TestExpr, testRange } from './testexpr';
@@ -169,7 +173,6 @@ const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution',
 
 const plural = (n: number, word: string) => `${word}${n === 1 ? '' : 's'}`;
 
-const TERMINATORS = new Set(['\\;', ';', "';'", '"\\;"', '"; "', '+']);
 
 const effEndRow = (n: SyntaxNode) =>
   n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row ? n.endPosition.row - 1 : n.endPosition.row;
@@ -1300,7 +1303,6 @@ export class Analyzer {
       this.extraNotes.push(...yqNotes(verdict, this.lang));
     }
     let argToks = this.args(head.doc, args, head.name, head.fn);
-    if (!head.fn) this.remoteNotes(head.name, args);
     // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
     const asTest = head.name === 'test' && head.kind === 'builtin' && args.length ? testOfWords(args) : undefined;
     if (asTest) {
@@ -1451,179 +1453,308 @@ export class Analyzer {
     return { name, kind: 'command', nameTokens: [], explanation };
   }
 
-  /** Explain the argument words of a command according to its dictionary entry. */
+  /**
+   * Explain the argument words of a command: the argument interpreter (src/argv/interpret.ts) reads them
+   * with the command's spec, and each word's role becomes a token.
+   */
   private args(doc: CommandDoc | undefined, args: SyntaxNode[], cmdName: string, isFn = false): Token[] {
-    if (doc && cmdName.split('/').pop() === 'find') {
-      const found = this.findArgs(doc, args);
-      if (found) return found;
-    }
+    // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
+    const spec = doc && !isFn ? specOf(doc, cmdName) : NO_SPEC;
+    const parse = interpret(spec, args.map(argWord), { name: cmdName, lookup: (name) => this.specFor(name) });
+    return this.render(parse, spec, args, args, isFn);
+  }
+
+  /** The spec of a command a wrapper runs: from the customCommands setting, or the dictionary. */
+  private specFor(name: string): CommandSpec | undefined {
+    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
+    return doc && specOf(doc, name);
+  }
+
+  /**
+   * The tokens of the words `nodes` (indexed as the interpreter's words) that `parse` reads with `spec`.
+   * `words` are the words of this command, which the explanations of embedded languages look at.
+   */
+  private render(parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], isFn = false): Token[] {
+    const savedCtx = this.argCtx;
+    this.argCtx = { cmd: parse.command, args: words };
     const out: Token[] = [];
-    // `grep -e PATTERN file`: the option supplies the pattern, so `file` is the second positional.
-    let posIndex = fillsPositional(doc, args) ? 1 : 0;
-    let endOfOpts = false;
-    // `kill -l 15`, `trap -p INT`: with this option the words mean something else.
-    const withOpt = doc?.positionalWith && Object.keys(doc.positionalWith).find((o) => optionGiven(args, o));
-    const positionalTexts = withOpt ? doc!.positionalWith![withOpt] : doc?.positional;
-    // After `jq --args`: the operands are values, not files.
-    let restDesc: Text | undefined;
-    // The positional arguments, to describe again once their number is known (`positionalBy`).
-    const operands: { index: number; token: Token; desc: string }[] = [];
     // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
     const assigned: string[] = [];
-    const savedCtx = this.argCtx;
-    this.argCtx = { cmd: cmdName, args };
+    // `set +o pipefail`: the values of an option turned off say so.
+    let disables = false;
+    // ssh: the words joined into the remote command have the text of its first word.
+    let joined: OperandSpec | undefined;
+    const ordinals = new Map<OperandSpec, number>();
     try {
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      const text = a.text;
-      if (!endOfOpts && isPlainWord(a) && text === '--' && cmdName !== 'echo') {
-        out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
-        endOfOpts = true;
-        // `kubectl exec pod -- ls -la`: the rest is the command run in the container.
-        if (doc?.afterDashes && i + 1 < args.length) out.push(this.wrapped(args.slice(i + 1), '', cmdName, assigned));
-        if (doc?.afterDashes) break;
-        continue;
+      for (const { word, role } of parse.roles) {
+        const a = nodes[word];
+        switch (role.role) {
+          case 'end-of-options':
+            out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
+            break;
+          case 'option':
+          case 'unknown-option':
+          case 'cluster':
+            disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
+            out.push(this.optionToken(a, role, spec, parse));
+            break;
+          case 'pattern-option':
+            out.push(this.tok(a, 'option', this.t(role.text), this.wordParts(a)));
+            break;
+          case 'open-option':
+            out.push(this.tok(a, 'option', this.s(
+              '実行時に決まるオプション（展開した結果を、コマンドがオプションとして読む）',
+              'Options known only at run time (the command reads what the expansion gives as options)'), this.wordParts(a)));
+            break;
+          case 'value':
+            out.push(this.valueToken(a, role, disables));
+            break;
+          case 'old-style': {
+            const parts = role.letters.map((l) => {
+              const letter = l as Extract<ArgRole, { role: 'option' }>;
+              return this.part(a, letter, letter.flag, this.t(letter.text));
+            });
+            const style = spec.oldStyle!.style ? this.t(spec.oldStyle!.style) : this.s('旧式のオプション（ハイフンなし）', 'Old-style options (no dash)');
+            out.push(this.tok(a, 'option', `${style}: ${parts.map((p) => `\`${p.label}\``).join(' ')}`, parts));
+            break;
+          }
+          case 'terminator':
+            out.push(this.tok(a, 'operator', a.text === '+'
+              ? this.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
+              : this.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
+            break;
+          case 'operand': {
+            const n = role.spec ? (ordinals.get(role.spec) ?? 0) + 1 : 0;
+            if (role.spec) ordinals.set(role.spec, n);
+            out.push(this.operandToken(nodes, word, role, parse, spec, n, assigned, isFn));
+            break;
+          }
+          case 'subcommand': {
+            const note = this.s(`（シェルから見れば \`${parse.command}\` への引数で、\`${parse.command}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${parse.command}\`, which interprets it itself)`);
+            out.push(this.tok(a, 'subcommand', this.s(`サブコマンド \`${role.parse.command}\`: `, `Subcommand \`${role.parse.command}\`: `) + this.t(role.spec.summary) + note));
+            out.push(...this.render(role.parse, role.spec, nodes, nodes.slice(word + 1, role.parse.end)));
+            break;
+          }
+          case 'command':
+            if (role.slot.joinsWords) {
+              joined = role.item!;
+              this.remoteNotes(role.slot, nodes.slice(word, parse.end));
+              out.push(this.positional(a, this.t(joined.text)));
+            } else if (!role.parse) {
+              // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
+              if (role.slot.env === 'reset') this.remoteNotes(role.slot, [a]);
+              out.push(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false));
+            } else out.push(this.wrapped(nodes, word, role, assigned, parse));
+            break;
+          case 'joined':
+            out.push(this.positional(a, this.t(joined!.text)));
+            break;
+          case 'expression':
+            // find's expression, read as a whole from its first word.
+            if (word === parse.expression) out.push(...this.findExpression(nodes.slice(word, parse.end), docs.get(spec)!));
+            break;
+        }
       }
-      // `--pretty=format:'%h %s'` is one word made of a plain part and a quoted part.
-      const quotedLongOpt = a.type === 'concatenation' && /^--[\w-]+=/.test(a.namedChildren[0]!.text);
-      if (i === 0 && doc?.bundle && isPlainWord(a)) {
-        const end = this.bundle(doc, doc.bundle, args, out);
-        if (end >= 0) { i = end; continue; }
-      }
-      // A builtin reads options up to its first operand: `printf '%d' -0` and `echo a -n` take `-0` and `-n` as values.
-      // `echo` only knows `-n`, `-e` and `-E` (alone or joined); any other word, `-x` or `-nx`, is text to print.
-      const echoText = cmdName === 'echo' && !/^-[neE]+$/.test(text);
-      // `-F'|'`, `-d','`, `-e's/a/b/'`: a short option with its value glued on, partly quoted.
-      const quotedShortOpt = a.type === 'concatenation' && glueOption(doc, a) !== undefined;
-      const optLike = !endOfOpts && !(doc?.builtin && posIndex > 0) && !echoText && (isPlainWord(a) || quotedLongOpt || quotedShortOpt) && text.length > 1 && (text.startsWith('-') || (cmdName === 'set' && text.startsWith('+')));
-      if (optLike) {
-        restDesc = doc?.options?.[text]?.restOperands ?? restDesc;
-        i = this.option(doc, args, i, cmdName, out);
-        continue;
-      }
-      // `su - user`: a lone dash is the login option.
-      if (cmdName === 'su' && text === '-' && posIndex === 0 && isPlainWord(a)) {
-        out.push(this.tok(a, 'option', this.s('ログインシェルとして実行する（`-l` と同じ）', 'Run a login shell (same as `-l`)')));
-        continue;
-      }
-      // `env FOO=1 cmd`: an assignment for the command, not the command.
-      if (doc?.assigns && posIndex === 0 && /^[A-Za-z_]\w*=/.test(text)) {
-        const eq = text.indexOf('=');
-        assigned.push(text.slice(0, eq));
-        out.push(this.tok(a, 'argument', this.s(`環境変数 \`${text.slice(0, eq)}\` の設定（実行するコマンドの環境にだけ入る）`, `Sets the variable \`${text.slice(0, eq)}\` for the command to run`), isPlainWord(a) ? [] : this.sub(a)));
-        continue;
-      }
-      if (posIndex === (doc?.wrapSkip ?? 0) && doc?.wraps) {
-        out.push(this.wrapped(args.slice(i), '', cmdName, assigned));
-        break;
-      }
-      if (posIndex === 0 && isPlainWord(a) && doc?.subcommands?.[text]) {
-        const sd = doc.subcommands[text];
-        const rest = this.args(sd, args.slice(i + 1), `${cmdName} ${text}`);
-        // The convention first (it reads as a command), then a note on the syntax: to the shell it is a plain argument.
-        const note = this.s(`（シェルから見れば \`${cmdName}\` への引数で、\`${cmdName}\` 自身が解釈する）`, ` (to the shell it is an argument to \`${cmdName}\`, which interprets it itself)`);
-        out.push({ ...this.tok(a, 'subcommand', this.s(`サブコマンド \`${cmdName} ${text}\`: `, `Subcommand \`${cmdName} ${text}\`: `) + this.t(sd.summary) + note), children: [] }, ...rest);
-        break;
-      }
-      // Positional argument.
-      let desc: string | undefined;
-      if (isFn) desc = this.s(`関数への引数 $${posIndex + 1}`, `Argument $${posIndex + 1} to the function`);
-      else if (cmdName === 'shopt' && text in shoptOptions) desc = this.s(`シェルオプション \`${text}\`: `, `Shell option \`${text}\`: `) + this.t(shoptOptions[text as keyof typeof shoptOptions]);
-      else if (doc?.shellC) desc = this.shellArgument(args, posIndex);
-      else if (/^(g|m|n)?awk$/.test(cmdName.split('/').pop()!) && posIndex > 0 && /^[A-Za-z_]\w*=/.test(text)) {
-        desc = this.s('変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えない。`\\t` などのエスケープは解釈される）', 'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it; escapes such as `\\t` are processed)');
-      }
-      else if (positionalTexts?.length) desc = this.t(positionalTexts[Math.min(posIndex, positionalTexts.length - 1)]);
-      // `%1`, `%%`, `%name`: a job, not a file or a PID.
-      const job = JOB_COMMANDS.has(cmdName) && !withOpt && isPlainWord(a) ? jobSpec(text) : undefined;
-      if (job) {
-        out.push(this.tok(a, 'argument', this.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`)));
-        posIndex++;
-        continue;
-      }
-      if (restDesc && posIndex > 0) desc = this.t(restDesc);
-      if (cmdName === 'trap' && posIndex === 0 && desc && !withOpt) desc += this.trapNote(a);
-      // (Every argument of `let` is an arithmetic expression.)
-      const lang = isFn ? undefined : cmdName === 'let' ? 'arith' : cmdName === 'echo' && echoEscapes(args) ? 'echo' : doc?.positionalLang?.[posIndex];
-      const token = this.positional(a, desc, lang);
-      if (desc && doc?.positionalBy && !isFn) operands.push({ index: posIndex, token, desc });
-      posIndex++;
-      out.push(token);
-    }
     } finally {
       this.argCtx = savedCtx;
     }
-    if (doc?.positionalBy) this.describeByCount(doc.positionalBy, args, operands, posIndex);
     return out;
   }
 
-  /**
-   * The words after a shell's options: with `-c` the command string comes first, then `$0` and `$1`…;
-   * otherwise the script, then its arguments.
-   */
-  private shellArgument(args: SyntaxNode[], index: number): string {
-    let withC = false;
-    for (let i = 0; i < args.length; i++) {
-      const w = args[i].text;
-      if (/^-[A-Za-z]*c[A-Za-z]*$/.test(w)) { withC = true; break; }
-      if (w === '-o' || w === '-O' || w === '+o' || w === '+O') i++;
-      else if (!w.startsWith('-') || w === '--') break;
-    }
-    if (!withC) {
-      return index === 0 ? this.s('実行するスクリプト', 'Script to run')
-        : this.s(`スクリプトへの引数（\`$${index}\`）`, `Argument to the script (\`$${index}\`)`);
-    }
-    return index === 0
-      ? this.s('`$0` になる名前（スクリプト名の代わり。エラーメッセージにも出る）。引数ではない', 'Becomes `$0`, the name in place of a script name (shown in error messages); not an argument')
-      : this.s(`コマンド文字列の位置パラメータ \`$${index}\``, `Positional parameter \`$${index}\` of the command string`);
+  /** The tokens of an expansion in a word read as an option (`-$opts`), if any. */
+  private wordParts(a: SyntaxNode): Token[] {
+    return isPlainWord(a) ? [] : this.sub(a);
   }
 
-  /** The text of an option; another one when one of `opt.inMode.when` is given (`rpm -i` installs, `rpm -qi` shows information). */
-  private optText(opt: OptDoc): string {
-    return this.t(opt.inMode && this.argCtx && optionGiven(this.argCtx.args, opt.inMode.when) ? opt.inMode.text : opt.text);
+  /** The text of an option not in the dictionary. */
+  private unknownOption(command: string): string {
+    return this.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
   }
 
-  /** Describe the positional arguments by how many there are (`seq 5` has a last value, `seq 1 5` a first and a last). */
-  private describeByCount(rules: PositionalBy[], args: SyntaxNode[], operands: { index: number; token: Token; desc: string }[], count: number): void {
-    const given = (names: string): boolean => optionGiven(args, names);
-    const rule = rules.find((r) => (r.orMore ? count >= r.count : count === r.count) && !(r.unless && given(r.unless)) && (!r.when || given(r.when)));
-    if (!rule) return;
-    for (const { index, token, desc } of operands) {
-      const now = this.t(index === count - 1 && rule.last ? rule.last : rule.texts[Math.min(index, rule.texts.length - 1)]);
-      token.explanation = now + token.explanation.slice(desc.length);
+  /** `set +f` is the opposite of `set -f`: what turning the option (or the option named by a value) off does. */
+  private turnedOff(flag: string, what: string, value = false): string {
+    const on = flag === '-f' || flag === 'noglob'
+      ? this.s('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again')
+      : flag === '-o' ? this.s('名前で指定したオプションを無効にする', 'disable an option by name')
+        : this.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
+    return value ? on : this.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
+  }
+
+  /** The token of an option word: one option, `--name=value`, or short options together (`-rn`, `-n5`, `-F'|'`). */
+  private optionToken(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>, spec: CommandSpec, parse: ArgvParse): Token {
+    if (role.role !== 'cluster' && role.value && !role.part) return this.equalsToken(a, role, parse);
+    if (role.role === 'cluster' || role.part) {
+      const parts = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => this.letterParts(a, l, spec, parse));
+      const flags = parts.filter((p) => p.kind === 'option');
+      // `-F,` / `-n5`: one option with its value attached is not a combination.
+      return this.tok(a, 'option', flags.length > 1
+        ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
+        : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
     }
+    if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command));
+    const flag = dash(role.flag);
+    // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
+    const listing = parse.command === 'set' && flag === '-o' && role.missing;
+    return this.tok(a, 'option', listing
+      ? (role.disables
+        ? this.s('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed')
+        : this.s('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'))
+      : role.disables ? this.turnedOff(flag, this.t(role.text)) : this.t(role.text), this.wordParts(a));
   }
 
-  /**
-   * `tar xzf a.tgz`, `ps aux`: the first argument as options without a dash. Each letter is explained,
-   * and those that take a value (`f`, `C`) use the words after the bundle in order. Returns the index of
-   * the last word used, or -1 when the word is not such a bundle.
-   */
-  private bundle(doc: CommandDoc, b: BundleDoc, args: SyntaxNode[], out: Token[]): number {
-    const a = args[0];
-    const text = a.text;
-    const look = (ch: string): OptDoc | undefined => (b.options ? b.options[ch] : doc.options?.['-' + ch]);
-    if (!/^[A-Za-z0-9]+$/.test(text) || ![...text].every((ch) => look(ch))) return -1;
-    if (b.needs && ![...text].some((ch) => b.needs!.includes(ch))) return -1;
+  /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
+  private equalsToken(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, parse: ArgvParse): Token {
+    const value = role.value!;
+    const whole = literalContent(a);
+    const litEq = whole?.text.indexOf('=') ?? -1;
+    const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : a.text.slice(a.text.indexOf('=') + 1);
+    const known = value.spec?.values?.[val];
+    const valueLit: Literal | undefined = whole && litEq >= 0
+      ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
+      : undefined;
+    const emb = value.spec?.lang && valueLit ? this.embeddedText(valueLit, value.spec.lang, a) : undefined;
+    const extra = emb?.note ? ` — ${emb.note}` : '';
+    const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command);
+    return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []);
+  }
+
+  /** A letter of an option word (`-e` of `-euo`, `c` of `tar cf`), as a token over its character. */
+  private part(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, label: string, explanation: string): Token {
+    const [from, to] = role.part!;
+    return this.span(a, from, to, 'option', explanation, label);
+  }
+
+  /** A token over the characters `from` to `to` of the value of the word `a`. */
+  private span(a: SyntaxNode, from: number, to: number, kind: Kind, explanation: string, label: string): Token {
+    const lit = literalContent(a);
+    const at = (i: number): number => (lit?.offsets ? lit.offsets[i] : (lit?.base ?? 0) + i);
     const col = a.startPosition.column;
     const row = a.startPosition.row;
-    const parts: Token[] = [];
-    const values: Token[] = [];
-    let last = 0;
-    [...text].forEach((ch, k) => {
-      const opt = look(ch)!;
-      parts.push({
-        kind: 'option', label: ch, explanation: this.t(opt.text), children: [],
-        span: { start: { line: row, character: col + k }, end: { line: row, character: col + k + 1 } },
+    return { kind, label, explanation, children: [], span: { start: { line: row, character: col + at(from) }, end: { line: row, character: to < 0 ? col + a.text.length : col + at(to - 1) + 1 } } };
+  }
+
+  /** The tokens of one letter of a cluster: the option, and the value written after it (`-n5`, `-i.bak`, `-F'|'`). */
+  private letterParts(a: SyntaxNode, l: ArgRole, spec: CommandSpec, parse: ArgvParse): Token[] {
+    const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
+    const flag = dash(letter.flag);
+    if (letter.role === 'unknown-option') return [this.part(a, letter, flag, this.unknownOption(parse.command))];
+    const parts = [this.part(a, letter, flag, letter.disables ? this.turnedOff(flag, this.t(letter.text)) : this.t(letter.text))];
+    const value = letter.value;
+    if (!value) return parts;
+    // In `-F'|'` the value is what is left after quote removal.
+    const lit = literalContent(a);
+    const val = lit ? lit.text.slice(value.attached) : a.text.slice(value.attached);
+    const raw = this.span(a, value.attached!, -1, 'argument', '', '');
+    raw.label = a.text.slice(raw.span.start.character - a.startPosition.column);
+    if (value.spec?.how === 'attached-only') {
+      // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
+      const trap = /^[a-zA-Z]/.test(val) && spec.options?.some((o) => o.names.includes('-' + val[0]))
+        && this.s(`。注意: \`${val}\` は別のオプションではなく \`${flag}\` の値として扱われる`, `. Note: \`${val}\` is taken as the value of \`${flag}\`, not as more options`);
+      raw.label = val;
+      raw.explanation = this.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || '');
+      return [...parts, raw];
+    }
+    const known = value.spec?.values?.[val];
+    const glued = lit && !isPlainWord(a);
+    raw.explanation = known ? `${val}: ${this.t(known)}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '');
+    // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
+    const lang = value.spec?.lang;
+    const emb = lang && lit ? this.embeddedText(lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
+    if (emb) {
+      raw.children = emb.tokens;
+      if (emb.note) raw.explanation += ` — ${emb.note}`;
+    }
+    return [...parts, raw];
+  }
+
+  /** The token of an option's value in a word of its own (`-o pipefail`, `-e 's/a/b/'`, `--arg name value`). */
+  private valueToken(v: SyntaxNode, role: ValueRole, disables: boolean): Token {
+    const flag = dash(role.of);
+    const spec = role.spec;
+    let t: Token;
+    // (`tar cf a.tar`: the value of the letter `f`.)
+    const valueFor = /^-/.test(flag) ? this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``);
+    if (spec?.lang) t = this.positional(v, valueFor + ': ' + this.t(role.option!.text), spec.lang);
+    else {
+      const known = spec?.values?.[v.text];
+      t = this.tok(v, 'argument', known
+        ? `${v.text}: ${disables ? this.turnedOff(v.text, this.t(known), true) : this.t(known)}`
+        : valueFor, this.wordParts(v));
+    }
+    // `jq --arg NAME VALUE`: two words follow; the first is the name.
+    if (Array.isArray(role.option?.value) && role.option.value.length === 2) {
+      const names = [this.s('名前', 'name'), this.s('値', 'value')];
+      const name = names[role.index];
+      t.explanation = this.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? this.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
+    }
+    return t;
+  }
+
+  /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */
+  private operandToken(nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean): Token {
+    const a = nodes[word];
+    const item = role.spec;
+    // `env FOO=1 cmd`: an assignment for the command, not the command.
+    if (item?.assignment) {
+      const name = a.text.slice(0, a.text.indexOf('='));
+      assigned.push(name);
+      return this.tok(a, 'argument', this.s(`環境変数 \`${name}\` の設定（実行するコマンドの環境にだけ入る）`, `Sets the variable \`${name}\` for the command to run`), this.wordParts(a));
+    }
+    // `%1`, `%%`, `%name`: a job, not a file or a PID.
+    const job = item?.type === 'job' && isPlainWord(a) ? jobSpec(a.text) : undefined;
+    if (job) return this.tok(a, 'argument', this.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`));
+    let desc: string | undefined;
+    if (isFn) desc = this.s(`関数への引数 $${role.index + 1}`, `Argument $${role.index + 1} to the function`);
+    else if (item?.type === 'shell-option' && a.text in shoptOptions) desc = this.s(`シェルオプション \`${a.text}\`: `, `Shell option \`${a.text}\`: `) + this.t(shoptOptions[a.text as keyof typeof shoptOptions]);
+    else if (role.assignment) desc = this.t(item!.assignmentText!);
+    else if (item) desc = this.t(item.text).replace('`$N`', `\`$${n}\``);
+    if (desc && role.otherwise) desc += this.uncertainNote(this.t(role.otherwise.text), parse, nodes, word);
+    // `trap 'cmd' INT`: when the command runs, and so when its expansions are.
+    const alt = parse.alternative === undefined ? undefined : spec.operands![parse.alternative];
+    if (parse.command === 'trap' && role.index === 0 && desc && !(alt?.when && 'option' in alt.when)) desc += this.trapNote(a);
+    return this.positional(a, desc, isFn ? undefined : item?.lang);
+  }
+
+  /**
+   * The other role an operand may have: some of the words it becomes (`cp a{,.bak}`), or all of it, depending on
+   * how many words the expansions among the operands give (`cp *.txt dir`).
+   */
+  private uncertainNote(other: string, parse: ArgvParse, nodes: SyntaxNode[], word: number): string {
+    const count = countOf(nodes[word]);
+    if (count && count.max === count.min) return this.s(`（展開してできる語の一部は「${other}」）`, ` — of the words it becomes, some are "${other}"`);
+    const many = parse.roles.filter((r) => r.role.role === 'operand' && countOf(nodes[r.word])?.max !== countOf(nodes[r.word])?.min);
+    const list = many.map((r) => `\`${nodes[r.word].text}\``).join(this.s('・', ', '));
+    return this.s(`（${list} から何語できるかによっては「${other}」）`, ` (or "${other}", depending on how many words come from ${list})`);
+  }
+
+  /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
+  private wrapped(nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], parent: ArgvParse): Token {
+    const parse = role.parse!;
+    const words = nodes.slice(word, parse.end);
+    const first = nodes[word];
+    // `find -exec cmd {} ;`: the words up to the terminator.
+    const via = role.of ? `${parent.command} ${role.of}` : parent.command;
+    this.wrapperNotes(via, words, assigned);
+    const name = first.text;
+    const explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
+    const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    if (role.of) {
+      // `{}` is replaced by find (and `xargs -I{}`) with each path.
+      const mark = (ts: Token[]) => ts.forEach((t) => {
+        if (t.label === '{}') {
+          t.explanation = this.s('`{}`: 見つかったファイルのパスに置き換わる', '`{}`: replaced with the path that was found');
+          t.children = [];
+        } else mark(t.children);
       });
-      if (opt.arg && last + 1 < args.length) {
-        last++;
-        values.push(this.tok(args[last], 'argument', this.s(`\`${ch}\` の値`, `Value for \`${ch}\``), isPlainWord(args[last]) ? [] : this.sub(args[last])));
-      }
-    });
-    const style = b.style ? this.t(b.style) : this.s('旧式のオプション（ハイフンなし）', 'Old-style options (no dash)');
-    out.push(this.tok(a, 'option', `${style}: ${parts.map((p) => `\`${p.label}\``).join(' ')}`, parts), ...values);
-    return last;
+      mark(children);
+    }
+    const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
+    return {
+      kind: role.spec?.builtin ? 'builtin' : 'command',
+      label: shorten(name),
+      explanation: (role.of ? this.s('実行するコマンド: ', 'Command to run: ') : '') + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
+      span, children, summary: `${name}: ${explanation}`,
+    };
   }
 
   private positional(a: SyntaxNode, desc: string | undefined, lang?: EmbeddedLang): Token {
@@ -1866,33 +1997,27 @@ export class Analyzer {
   }
 
   /**
-   * find's arguments: global options, starting points, then an expression explained as a whole
-   * (`-o`, implicit `-a`, `!` and `\( \)` grouping) with the usual per-primary tokens inside.
-   * Returns undefined when the expression cannot be parsed, so the generic handling applies.
+   * find's expression, explained as a whole (`-o`, implicit `-a`, `!` and `\( \)` grouping) with the tokens
+   * of each primary inside. When it cannot be parsed, its words are read as options of find.
    */
-  private findArgs(doc: CommandDoc, args: SyntaxNode[]): Token[] | undefined {
-    const out: Token[] = [];
+  private findExpression(nodes: SyntaxNode[], doc: CommandDoc): Token[] {
     const opts = doc.options!;
-    let i = 0;
-    while (i < args.length && /^-[HLP]$/.test(args[i].text)) i = this.option(doc, args, i, 'find', out) + 1;
-    while (i < args.length && !isExpressionStart(args[i].text)) {
-      out.push(this.positional(args[i], this.t(doc.positional![0])));
-      i++;
-    }
-    if (i >= args.length) return out;
-    const exprArgs = args.slice(i);
-    const words = exprArgs.map((a) => unquote(a.text));
+    const words = nodes.map((a) => unquote(a.text));
+    // (Every option of find: the spec of `find` itself has only those before the starting points.)
+    const spec = specOf(doc, '');
+    const read = (from: number, to: number): Token[] => {
+      const part = nodes.slice(from, to);
+      return this.render(interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => this.specFor(name) }), spec, part, this.argCtx!.args);
+    };
     const tree = parseFind(words, (w) => (opts[w]?.untilTerminator ? 'until' : opts[w]?.arg ? 1 : 0));
-    if (!tree) return undefined;
+    if (!tree) return read(0, nodes.length);
+    const exprArgs = nodes;
 
     const opTok = (idx: number, ja: string, en: string): Token[] => [this.tok(exprArgs[idx], 'operator', this.s(ja, en))];
     const build = (n: FindNode): Token[] => {
       switch (n.type) {
-        case 'primary': {
-          const tmp: Token[] = [];
-          this.option(doc, exprArgs, n.from, 'find', tmp);
-          return tmp;
-        }
+        case 'primary':
+          return read(n.from, n.to + 1);
         case 'not':
           return [...opTok(n.op, '`!`: 直後の条件を否定する', '`!`: negates what follows'), ...build(n.child)];
         case 'group': {
@@ -1919,11 +2044,10 @@ export class Analyzer {
     };
     const first = exprArgs[0];
     const last = exprArgs[exprArgs.length - 1];
-    out.push({
+    return [{
       kind: 'test', label: shorten(words.join(' ')), explanation: describeFind(tree, this.lang),
       span: { start: spanOf(first).start, end: spanOf(last).end }, children: build(tree),
-    });
-    return out;
+    }];
   }
 
   /** How tr uses the set in `a`: its position among the sets and the -d/-s flags. */
@@ -2707,203 +2831,6 @@ export class Analyzer {
     return 'bre';
   }
 
-  /** Explain an option at args[i]; returns the index of the last consumed word. */
-  private option(doc: CommandDoc | undefined, args: SyntaxNode[], i: number, cmdName: string, out: Token[]): number {
-    const a = args[i];
-    let text = a.text;
-    const opts = doc?.options ?? {};
-    // Options are explained with the whole command, which is on the line (see sub): all of them show.
-    const unknown = this.s(`オプション（辞書に未登録。\`man ${cmdName.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${cmdName.split(' ')[0]}\`)`);
-    let disable = false;
-    if (cmdName === 'set' && text.startsWith('+')) { disable = true; text = '-' + text.slice(1); }
-    // `set +f` is the opposite of `set -f`: it turns the option off again.
-    const inv = (flag: string, what: string, value = false): string => {
-      if (!disable) return what;
-      const on = flag === '-f' || flag === 'noglob'
-        ? this.s('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again')
-        : flag === '-o' ? this.s('名前で指定したオプションを無効にする', 'disable an option by name')
-          : this.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
-      return value ? on : this.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
-    };
-
-    const valueTok = (opt: OptDoc, flag: string, v: SyntaxNode): Token => {
-      if (opt.lang) return this.positional(v, this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) + ': ' + this.t(opt.text), opt.lang);
-      const known = opt.values?.[v.text];
-      return this.tok(v, 'argument', known
-        ? `${v.text}: ${inv(v.text, this.t(known), true)}`
-        : this.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``), isPlainWord(v) ? [] : this.sub(v));
-    };
-
-    // `--name=value`
-    const eq = text.indexOf('=');
-    // `--name=value`, and `-name=value` for commands with single-dash long options (`terraform -var-file=x`).
-    if (eq > 0 && (text.startsWith('--') || (doc?.longSingleDash && opts[text.slice(0, eq)]))) {
-      const flag = text.slice(0, eq);
-      const opt = opts[flag];
-      {
-        const whole = literalContent(a);
-        const litEq = whole?.text.indexOf('=') ?? -1;
-        const val = whole && litEq >= 0 ? whole.text.slice(litEq + 1) : text.slice(eq + 1);
-        const known = opt?.values?.[val];
-        const valueLit: Literal | undefined = whole && litEq >= 0
-          ? (whole.offsets ? { text: val, offsets: whole.offsets.slice(litEq + 1) } : { text: val, base: whole.base! + litEq + 1 })
-          : undefined;
-        const emb = opt?.lang && valueLit ? this.embeddedText(valueLit, opt.lang, a) : undefined;
-        const extra = emb?.note ? ` — ${emb.note}` : '';
-        out.push(this.tok(a, 'option', (opt ? this.t(opt.text) : unknown) + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []));
-      }
-      return i;
-    }
-
-    // `head -5`, `tail -1`, `git log -3`: the old way to write `-n N`.
-    const count = /^-(\d+)$/.exec(text)?.[1];
-    const countCmd = cmdName.split(' ').map((w, k) => (k ? w : w.split('/').pop())).join(' ');
-    if (count && !opts[text] && ['head', 'tail', 'git log', 'git show', 'nice'].includes(countCmd)) {
-      {
-        out.push(this.tok(a, 'option', countCmd.startsWith('git')
-          ? this.s(`${count} 件だけ（\`-n ${count}\` と同じ）`, `only ${count} (same as \`-n ${count}\`)`)
-          : countCmd === 'nice' ? this.s(`優先度の調整値 ${count}（\`-n ${count}\` の古い書き方。負の値は \`--${count}\` で、権限が必要）`, `niceness adjustment ${count} (old way to write \`-n ${count}\`; a negative value is \`--${count}\` and needs privileges)`)
-          : this.s(`${count} 行（\`-n ${count}\` の古い書き方）`, `${count} line${count === '1' ? '' : 's'} (old way to write \`-n ${count}\`)`)));
-      }
-      return i;
-    }
-
-    // `kill -TERM`, `-SIGTERM`, `-15`: one signal, not combined short options.
-    const signal = cmdName === 'kill' && !opts[text] ? killSignal(text) : undefined;
-    if (signal) {
-      out.push(this.tok(a, 'option', signal.number
-        ? this.s(`送るシグナルの番号 ${signal.number}（\`-n ${signal.number}\` と同じ。\`kill -l ${signal.number}\` で名前がわかる）`, `Send signal number ${signal.number} (same as \`-n ${signal.number}\`; \`kill -l ${signal.number}\` prints its name)`)
-        : this.s(`送るシグナル \`${signal.name}\`（\`-s ${signal.name}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${signal.name}\` (same as \`-s ${signal.name}\`; \`kill -l\` lists them)`)));
-      return i;
-    }
-
-    const exact = opts[text];
-    if (exact || text.startsWith('--') || doc?.longSingleDash) {
-      const opt = exact;
-      let last = i;
-      const children: Token[] = [];
-      if (opt?.untilTerminator) {
-        let j = i + 1;
-        while (j < args.length && !TERMINATORS.has(args[j].text)) j++;
-        const inner = args.slice(i + 1, j);
-        if (inner.length) {
-          const run = this.wrapped(inner, this.s('実行するコマンド: ', 'Command to run: '), 'find -exec');
-          // `{}` is replaced by find (and `xargs -I{}`) with each path.
-          const mark = (ts: Token[]) => ts.forEach((t) => {
-            if (t.label === '{}') {
-              t.explanation = this.s('`{}`: 見つかったファイルのパスに置き換わる', '`{}`: replaced with the path that was found');
-              t.children = [];
-            } else mark(t.children);
-          });
-          mark(run.children);
-          children.push(run);
-        }
-        if (j < args.length) {
-          const term = args[j];
-          {
-            children.push(this.tok(term, 'operator', term.text === '+'
-              ? this.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
-              : this.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
-          }
-        }
-        last = Math.min(j, args.length - 1);
-      } else if (opt?.arg && i + 1 < args.length) {
-        // `jq --arg NAME VALUE`: two words follow; the first is the name.
-        const names = [this.s('名前', 'name'), this.s('値', 'value')];
-        for (let n = 1; n <= (opt.argCount ?? 1) && i + n < args.length; n++) {
-          last = i + n;
-          const v = valueTok(opt, text, args[last]);
-          if (opt.argCount === 2) v.explanation = this.s(`\`${text}\` の${names[n - 1]}`, `${names[n - 1][0].toUpperCase()}${names[n - 1].slice(1)} for \`${text}\``) + (n === 1 ? this.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
-          children.push(v);
-        }
-      } else if (opt?.nextIf && i + 1 < args.length && isPlainWord(args[i + 1]) && new RegExp(opt.nextIf).test(args[i + 1].text)) {
-        last = i + 1;
-        children.push(valueTok(opt, text, args[last]));
-      }
-      // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
-      const listing = cmdName === 'set' && text === '-o' && opt?.arg && last === i;
-      out.push(this.tok(a, 'option', listing
-        ? (disable
-          ? this.s('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed')
-          : this.s('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'))
-        : opt ? inv(text, this.optText(opt)) : unknown, []));
-      out.push(...children);
-      return last;
-    }
-
-    // Combined short options: `-rn`, `-euo pipefail`, `-n5`. In `-F'|'` only the plain part before the quote holds letters;
-    // the value is the rest of the word, and its text is what is left after quote removal.
-    const glued = a.type === 'concatenation' ? literalContent(a) : undefined;
-    const letters = a.type === 'concatenation' ? a.namedChildren[0].text.slice(1) : text.slice(1);
-    const parts: Token[] = [];
-    let last = i;
-    const col = a.startPosition.column;
-    const row = a.startPosition.row;
-    const sub = (from: number, to: number, kind: Kind, expl: string, label: string): Token => ({
-      kind, label, explanation: expl, children: [],
-      span: { start: { line: row, character: col + from }, end: { line: row, character: col + to } },
-    });
-    // `set -eou pipefail`: in `set`, every `o` of a bundle takes the next word as its name and the other letters still apply (unlike `tar -fv`).
-    const named: [string, OptDoc][] = [];
-    for (let k = 0; k < letters.length; k++) {
-      const flag = '-' + letters[k];
-      const opt = opts[flag];
-      const at = k + 1;
-      if (opt?.arg && cmdName === 'set') {
-        parts.push(sub(at, at + 1, 'option', inv(flag, this.optText(opt)), flag));
-        named.push([flag, opt]);
-        continue;
-      }
-      if (!opt) { parts.push(sub(at, at + 1, 'option', unknown, flag)); continue; }
-      parts.push(sub(at, at + 1, 'option', inv(flag, this.optText(opt)), flag));
-      const attached = k + 1 < letters.length || a.type === 'concatenation';
-      if (opt.attachedOnly) {
-        // `-i.bak`: the rest of the word is the value. In `-pie` that makes `e` the value, not `-e`.
-        if (attached) {
-          const val = text.slice(k + 2);
-          const trap = /^[a-zA-Z]/.test(val) && opts['-' + val[0]] && this.s(`。注意: \`${val}\` は別のオプションではなく \`${flag}\` の値として扱われる`, `. Note: \`${val}\` is taken as the value of \`${flag}\`, not as more options`);
-          parts.push(sub(at + 1, text.length, 'argument', this.s(`\`${flag}\` の値 \`${val}\``, `Value \`${val}\` for \`${flag}\``) + (trap || ''), val));
-        }
-        break;
-      }
-      if (opt.arg) {
-        if (attached) {
-          const raw = text.slice(k + 2);
-          const val = glued ? glued.text.slice(k + 2) : raw;
-          const valTok = sub(at + 1, text.length, 'argument', opt.values?.[val] ? `${val}: ${this.t(opt.values[val])}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : ''), raw);
-          // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
-          const emb = opt.lang && glued ? this.embeddedText({ text: val, offsets: glued.offsets!.slice(k + 2) }, opt.lang, a)
-            : opt.lang && !/[\\'"$`]/.test(text) ? this.embeddedText({ text: val, base: at + 1 }, opt.lang, a) : undefined;
-          if (emb) {
-            valTok.children = emb.tokens;
-            if (emb.note) valTok.explanation += ` — ${emb.note}`;
-          }
-          parts.push(valTok);
-        } else if (i + 1 < args.length) {
-          last = i + 1;
-          parts.push(valueTok(opt, flag, args[last]));
-        }
-        break;
-      }
-    }
-    for (const [flag, opt] of named) {
-      if (last + 1 >= args.length) break;
-      last++;
-      parts.push(valueTok(opt, flag, args[last]));
-    }
-    const own = parts.filter((p) => p.span.start.line === row && p.span.end.character <= col + text.length);
-    const tail = parts.filter((p) => !own.includes(p));
-    {
-      const flags = own.filter((p) => p.kind === 'option');
-      // `-F,` / `-n5`: one option with its value attached is not a combination.
-      out.push(this.tok(a, 'option', flags.length > 1
-        ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
-        : flags[0].explanation, flags.length > 1 ? own : own.filter((p) => p.kind === 'argument')));
-    }
-    out.push(...tail);
-    return last;
-  }
-
   /**
    * Pitfalls of a command run by a wrapper (`sudo`, `xargs`…): the wrapper starts it as a separate program, so a
    * function or a builtin that only changes the shell cannot run, and `$NAME` of its words is read before the wrapper sets it.
@@ -2937,62 +2864,33 @@ export class Analyzer {
   }
 
   /**
-   * `ssh host cmd` and `su -c 'cmd'` hand a command to another shell: the script's functions are not there, and
-   * `ssh` words are expanded here, by the local shell, before they are sent.
+   * `ssh host cmd` and `su -c 'cmd'` hand a command to another shell (`slot`): the script's functions are not there,
+   * and the words joined for ssh are expanded here, by the local shell, before they are sent.
    */
-  private remoteNotes(name: string, args: SyntaxNode[]): void {
+  private remoteNotes(slot: CommandSlot, command: SyntaxNode[]): void {
     if (this.opts.pitfalls === false) return;
-    const base = name.split('/').pop();
-    let command: SyntaxNode[] = [];
-    if (base === 'ssh') {
-      const withValue = new Set(['-p', '-i', '-l', '-o', '-F', '-J', '-L', '-R', '-D', '-b', '-c', '-m', '-w', '-E', '-e', '-O', '-S', '-W', '-B', '-I', '-Q']);
-      let i = 0;
-      while (i < args.length && args[i].text.startsWith('-') && args[i].text !== '--') i += withValue.has(args[i].text) ? 2 : 1;
-      if (args[i]?.text === '--') i++;
-      command = args.slice(i + 1);
-      const risky = command.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
-      if (risky) {
-        this.extraNotes.push(this.s(
-          `⚠ 落とし穴: \`ssh\` に渡すコマンドのうち \`${risky.text}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
-          `⚠ Pitfall: the local shell expands \`${risky.text}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``));
-      }
-    } else if (base === 'su') {
-      const k = args.findIndex((w) => w.text === '-c' || w.text === '--command');
-      const word = k >= 0 ? args[k + 1] : undefined;
-      const lit = word && literalContent(word)?.text;
-      if (lit) command = [word!];
+    if (!slot.joinsWords) {
+      const lit = literalContent(command[0])?.text;
       const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
-      if (fn && !this.functions.has(fn)) return;
-      if (fn) {
+      if (fn && this.functions.has(fn)) {
         this.extraNotes.push(this.s(
           `⚠ 落とし穴: \`su -c\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
           `⚠ Pitfall: \`su -c\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`));
       }
       return;
     }
+    const risky = command.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
+    if (risky) {
+      this.extraNotes.push(this.s(
+        `⚠ 落とし穴: \`ssh\` に渡すコマンドのうち \`${risky.text}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
+        `⚠ Pitfall: the local shell expands \`${risky.text}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``));
+    }
     const first = command[0];
-    if (first && isPlainWord(first) && this.functions.has(first.text)) {
+    if (isPlainWord(first) && this.functions.has(first.text)) {
       this.extraNotes.push(this.s(
         `⚠ 落とし穴: リモートのシェルには、このスクリプトの関数 \`${first.text}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${first.text}); ${first.text}"\` のように定義ごと送ります`,
         `⚠ Pitfall: the remote shell does not have this script's function \`${first.text}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${first.text}); ${first.text}"\``));
     }
-  }
-
-  /** Words forming a command run by another command (sudo, xargs, find -exec…). */
-  private wrapped(words: SyntaxNode[], prefix = '', via?: string, assigned: string[] = []): Token {
-    const first = words[0];
-    if (via) this.wrapperNotes(via, words, assigned);
-    const name = first.text;
-    const doc = customCommandDoc(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
-    const explanation = doc ? this.t(doc.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
-    const children = this.args(doc, words.slice(1), name);
-    const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
-    return {
-      kind: doc?.builtin ? 'builtin' : 'command',
-      label: shorten(name),
-      explanation: prefix + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
-      span, children, summary: `${name}: ${explanation}`,
-    };
   }
 
   // ---------------------------------------------------------------- tests
@@ -3980,28 +3878,6 @@ function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined
   return undefined;
 }
 
-/**
- * `-F'|'`: a word made of a plain `-X` part and quoted parts, where the option `-X` of the command
- * takes a value. Returns the option's letter, or undefined when the word is not such an option.
- */
-function glueOption(doc: CommandDoc | undefined, a: SyntaxNode): string | undefined {
-  const first = a.namedChildren[0];
-  if (!doc?.options || first.type !== 'word' || !/^-[A-Za-z0-9]+$/.test(first.text)) return undefined;
-  const flag = '-' + first.text.slice(-1);
-  const opt = doc.options[flag];
-  return opt && (opt.arg || opt.attachedOnly) ? flag : undefined;
-}
-
-/** Whether `echo` reads backslash escapes: its last `-e` or `-E` among the leading options decides. */
-function echoEscapes(args: SyntaxNode[]): boolean {
-  let on = false;
-  for (const a of args) {
-    if (!isPlainWord(a) || !/^-[neE]+$/.test(a.text)) break;
-    for (const ch of a.text) if (ch === 'e' || ch === 'E') on = ch === 'e';
-  }
-  return on;
-}
-
 /** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
 function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
   // A literal has a base or offsets, one for each character (tokens lie within its text).
@@ -4058,26 +3934,6 @@ export function shoptStates(source: string, line: number, shell?: Shell): ShoptS
   return states;
 }
 
-/** Whether an option such as `grep -e PATTERN` supplies the first positional argument. */
-function fillsPositional(doc: CommandDoc | undefined, args: SyntaxNode[]): boolean {
-  const opts = doc?.options;
-  if (!opts) return false;
-  for (const a of args) {
-    const t = a.text;
-    if (t === '--') break;
-    if (opts[t.split('=')[0]]?.fillsPositional) return true;
-    if (/^-[A-Za-z]+/.test(t) && !t.startsWith('--')) {
-      for (const ch of t.slice(1)) {
-        const o = opts['-' + ch];
-        if (o?.fillsPositional) return true;
-        // In `-pie`, `e` is the value of `-i`, not the `-e` option.
-        if (o?.arg || o?.attachedOnly) break;
-      }
-    }
-  }
-  return false;
-}
-
 /** The pattern of a sed script made of a single `s` command, to highlight what it matches. */
 function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined {
   const m = /^\s*s(.)/.exec(script);
@@ -4097,9 +3953,6 @@ function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined 
 /** POSIX special builtins: an assignment before them persists in POSIX mode. */
 const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
 
-/** Commands whose words may be job specs (`%1`). */
-const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);
-
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
   if (!text.startsWith('%') || text.length < 2) return undefined;
@@ -4111,25 +3964,26 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
   return { ja: `コマンドが \`${rest}\` で始まるジョブ`, en: `the job whose command starts with \`${rest}\`` };
 }
 
-const SIGNALS = new Set(['HUP', 'INT', 'QUIT', 'ILL', 'TRAP', 'ABRT', 'BUS', 'FPE', 'KILL', 'USR1', 'SEGV', 'USR2', 'PIPE', 'ALRM', 'TERM', 'STKFLT', 'CHLD', 'CONT', 'STOP', 'TSTP', 'TTIN', 'TTOU', 'URG', 'XCPU', 'XFSZ', 'VTALRM', 'PROF', 'WINCH', 'IO', 'PWR', 'SYS', 'EMT', 'INFO', 'POLL', 'CLD', 'IOT']);
+const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
+/** `+x` (an option turned off) is written as `-x` in texts. */
+const dash = (flag: string): string => flag.replace(/^\+/, '-');
+/** The spec of each dictionary entry, by the command's name (the converter applies some rules by name). */
+const specs = new WeakMap<CommandDoc, Map<string, CommandSpec>>();
+/** The dictionary entry of each spec (find's expression reads its options). */
+const docs = new WeakMap<CommandSpec, CommandDoc>();
 
-/** `kill -TERM`, `-SIGTERM`, `-term` (a name) or `-15` (a number): the signal to send. */
-function killSignal(text: string): { name?: string; number?: string } | undefined {
-  const number = /^-(\d+)$/.exec(text)?.[1];
-  if (number) return { number };
-  const name = /^-(?:SIG)?([A-Za-z0-9]+)$/i.exec(text)?.[1].toUpperCase();
-  return name && SIGNALS.has(name) ? { name } : undefined;
-}
-
-/**
- * Whether one of the options `names` (`-l|-p`, `-q|--query`) is among the words before `--`: a long one as
- * itself or with `=value`, a short one alone or bundled (`-lp`, `-qi`). Signal options of `kill` (`-TERM`) do not count.
- */
-function optionGiven(args: SyntaxNode[], names: string): boolean {
-  const words = args.map((a) => a.text).filter((w) => !killSignal(w));
-  const end = words.indexOf('--');
-  return (end < 0 ? words : words.slice(0, end)).some((w) => names.split('|').some((n) =>
-    n.startsWith('--') ? w === n || w.startsWith(n + '=') : new RegExp(`^-[^-]*${n[1]}`).test(w)));
+/** The spec of a command's dictionary entry (`name` as written: `/usr/bin/kill` is `kill`). */
+function specOf(doc: CommandDoc, name: string): CommandSpec {
+  const base = name.slice(name.lastIndexOf('/') + 1);
+  const byName = specs.get(doc) ?? new Map<string, CommandSpec>();
+  specs.set(doc, byName);
+  let spec = byName.get(base);
+  if (!spec) {
+    spec = fromCommandDoc(doc, base);
+    byName.set(base, spec);
+    docs.set(spec, doc);
+  }
+  return spec;
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {
