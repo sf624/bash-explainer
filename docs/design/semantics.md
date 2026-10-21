@@ -365,7 +365,7 @@ The code (src/argv/) differs from 3.2–3.4 in these points:
 - Added spec fields: `longPrefixes` (decision 3), `longEquals`, `shortEquals` (`dpkg-query -f=…`), `lastModeWins` (`echo -e -E`), `ValueSpec.command` (`su -c`), `OperandSpec.assignmentText` (awk `name=value`), `OperandSpec.option` (`flock FILE -c`), `OptionSpec.laterOperands` (`jq --args`), `marks`/`unlessMarked` (`kill -9 -1`), and `SubcommandSpec`.
 - `style: 'none'`: a word is an option only if all its letters are known options (`echo`, `let`).
 - An assignment operand ends the options (`env A=1 -i cmd` runs `-i`; checked with the real env).
-- An operand whose role depends on how many words an expansion gives is `uncertain`, with the role it may have instead (`otherwise`).
+- A word that becomes known words (`a{,.bak}`) gives each its role (`each`). An operand whose role depends on how many words an expansion gives is `uncertain`, with the role it may have instead (`otherwise`), or the roles of its words when it gives several (`several`).
 - `fromCommandDoc(doc, name)` takes the command's name, for the rules the old walk applied by name (`kill`, `head -5`, `echo`).
 
 ## 4. B: the semantic model

@@ -40,9 +40,11 @@ export type ArgRole =
   /**
    * An operand; `spec` is absent when the spec does not describe the operands, or none of its patterns fits
    * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
-   * `otherwise` is the other role it may have.
+   * `otherwise` is the other role it may have. `each`: the role of each word it becomes, when they are known
+   * and differ (`cp a{,.bak}`: the source, then the destination). `several`: the roles, in order, of the words it
+   * becomes when it gives more than one, when they differ (`cp "$@"`: sources, then the destination).
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec; each?: OperandSpec[]; several?: OperandSpec[] }
   /** The rest of the words are read with the subcommand's spec. */
   | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
   /**
@@ -245,13 +247,18 @@ class Reader {
       // Copies of one word with different meanings, or another meaning when the words are more: not certain.
       const copies = primary.at.flatMap((x, p) => (x === k ? [pattern[primary.items[p]]] : []));
       const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
-      const otherwise = [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
+      const count = words[k].count;
+      const each = count?.min === count?.max && copies.some((o) => o.text.en !== item.text.en) ? copies : undefined;
+      const otherwise = each ? undefined : [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
+      // `cp "$@"`: when the word gives more words, they take these roles, in order.
+      const theirs = other && other !== primary && primary === low ? other.at.flatMap((x, p) => (x === k ? [other.alt.pattern[other.items[p]]] : [])) : [];
+      const several = theirs.filter((o, j) => j === 0 || o.text.en !== theirs[j - 1].text.en);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}) });
+      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}), ...(each ? { each } : {}), ...(several.length > 1 ? { uncertain: true, several } : {}) });
     }
   }
 

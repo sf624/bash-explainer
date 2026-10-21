@@ -43,7 +43,8 @@ export function countOf(n: SyntaxNode): ArgWord['count'] {
       // Too many words to list (`{1..100000}`).
       return { min: 1 };
     }
-    if (words && words.length !== 1) return { min: words.length, max: words.length };
+    // (`{a,b}*.txt`: each word is a glob, which gives at least one.)
+    if (words && words.length !== 1) return words.some((w) => /(^|[^\\])[*?[]/.test(w)) ? { min: words.length } : { min: words.length, max: words.length };
     if (/(^|[^\\])[*?[]/.test(n.text)) return { min: 1 };
   }
   return undefined;

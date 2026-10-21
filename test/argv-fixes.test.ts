@@ -85,9 +85,17 @@ describe('argument roles the old walk read wrongly', () => {
   });
 });
 
-describe('an operand whose role depends on how many words an expansion gives', () => {
-  it('says the other role it may have', () => {
-    assert.match(tokenOf('cp *.txt dir', 'dir').explanation, / \(or "destination directory", depending on how many words come from `\*\.txt`\)$/);
-    assert.match(tokenOf('cp a{,.bak}', 'a{,.bak}').explanation, /^source — of the words it becomes, some are "destination \(/);
+describe('an operand that becomes several words', () => {
+  it('names the words of a brace expansion with their roles', () => {
+    assert.strictEqual(tokenOf('cp config.yml{,.bak}', 'config.yml{,.bak}').explanation, 'expands to `config.yml` (source) and `config.yml.bak` (destination: the new name, or an existing directory)');
+    assert.strictEqual(tokenOf('cp x{1,2,3}', 'x{1,2,3}').explanation, 'expands to `x1` (source), `x2` (source) and `x3` (destination directory)');
+    assert.strictEqual(tokenOf('cp {a,b,c} dir', 'dir').explanation, 'destination directory');
+  });
+
+  it('gives the roles for one word and for more when the count is not known', () => {
+    assert.strictEqual(tokenOf('cp *.txt dir', 'dir').explanation, 'destination (the new name, or an existing directory) when `*.txt` expands to a single word; destination directory when it expands to more');
+    assert.strictEqual(tokenOf('cp "$@"', '"$@"').explanation, 'source when `"$@"` expands to a single word; when it expands to more, they are source, then destination directory');
+    // (A brace expansion of globs gives at least one word each.)
+    assert.strictEqual(tokenOf('cp {a,b}*.txt dir', 'dir').explanation, 'destination directory');
   });
 });
