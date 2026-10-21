@@ -733,6 +733,10 @@ export class Analyzer {
   }
 
   private casePattern(p: SyntaxNode): Token {
+    // `$p)`: what the expansion gives is the pattern (its parts say whether it is read as one).
+    if (descendants(p, ['simple_expansion', 'expansion', 'command_substitution']).length) {
+      return this.tok(p, 'pattern', this.s(`パターン \`${p.text}\`: 展開した結果がパターンになる`, `Pattern \`${p.text}\`: what it expands to is the pattern`), this.sub(p));
+    }
     return this.globToken(p, 'value', p.text, 0);
   }
 
@@ -2441,7 +2445,7 @@ export class Analyzer {
    * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
    */
   private globNotes(text: string, n: SyntaxNode): string {
-    return this.globOptionNote(n) + this.starStarNote(text, n) + this.extglobNote(text);
+    return this.globOptionNote(n, text) + this.starStarNote(text, n) + this.extglobNote(text);
   }
 
   /** The extended globs of a pattern in words: `!(*.txt)` is anything but `*.txt`. */
@@ -2572,12 +2576,16 @@ export class Analyzer {
    * What the glob options in effect change for a file-name glob: dotglob (also turned on by a GLOBIGNORE that is
    * not empty), GLOBIGNORE, nocaseglob, and what happens when nothing matches (nullglob, failglob).
    */
-  private globOptionNote(n: SyntaxNode): string {
+  private globOptionNote(n: SyntaxNode, text: string): string {
     const notes: string[] = [];
     const shopt = this.shoptAt(n);
-    const glob = this.wordAt(n)?.glob;
-    const ignore = glob?.globignore;
-    if (shopt.dotglob === 'on') notes.push(ignore && ignore !== 'unset'
+    const word = this.wordAt(n);
+    const ignore = word?.glob.globignore;
+    const step = word?.steps.find((s) => s.kind === 'glob');
+    // (As for an unquoted `$x` on the same line: `set -f` on some paths only.)
+    if (step?.applies === 'unknown' && step.why === 'noglob') notes.push(this.s('`set -f` でグロブ展開が無効になる経路もある（そこではこの文字のまま渡される）', 'globbing is off on some paths, after `set -f` (there it stays as written)'));
+    // (A pattern that starts with `.` matches those names anyway.)
+    if (shopt.dotglob === 'on' && !text.startsWith('.')) notes.push(ignore && ignore !== 'unset'
       ? this.s('`GLOBIGNORE` を設定したので dotglob が有効になり、`.` で始まる名前にも一致する（`.` と `..` は除く）', 'setting `GLOBIGNORE` turned dotglob on, so it also matches names starting with `.` (not `.` and `..`)')
       : this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
     if (ignore && typeof ignore === 'object') {
@@ -3676,8 +3684,19 @@ export class Analyzer {
     const t = this.tok(n, 'variable', d ?? (note
       ? this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
       : this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
-    t.explanation += this.orderNote(n, name) + this.variableNote(n, name);
+    t.explanation += this.matchNote(n) + this.orderNote(n, name) + this.variableNote(n, name);
     return t;
+  }
+
+  /** `case $x in $p)`, `[[ $x == $p ]]`, `[[ $x =~ $re ]]`: an unquoted expansion there is read as a pattern or a regex, not as text. */
+  private matchNote(n: SyntaxNode): string {
+    const part = partMeaning(n, this.state);
+    const match = part && !part.quoted ? part.word.rule.match : undefined;
+    if (!match) return '';
+    return match === 'pattern'
+      ? this.s('。クォートしていないので、値はパターンとして読まれる（値の中の `*`、`?`、`[…]` が働く。文字列として比べるなら `"$…"` とクォートする）',
+        '. Unquoted here, its value is read as a pattern (`*`, `?` and `[…]` in it match; quote it to compare text)')
+      : this.s('。クォートしていないので、値は正規表現として読まれる', '. Unquoted here, its value is read as a regex');
   }
 
   /**
