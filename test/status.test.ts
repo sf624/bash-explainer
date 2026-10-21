@@ -96,9 +96,16 @@ describe('status rules (src/semantics/status.ts)', () => {
     assert.ok(g.kind === 'wait' && g.job?.text === 'a');
   });
 
-  it('knows the functions a command calls', () => {
+  it('knows the functions a command calls (B3), also one named like a builtin', () => {
     const r = status('f() { :; }; f', 'f');
     assert.ok(r.kind === 'command' && r.functions.length === 1);
+    const w = status('wait() { :; }; wait', 'wait');
+    assert.ok(w.kind === 'command' && w.functions.length === 1);
+    const l = status('local() { :; }; local x=$(a)', 'local x=$(a)');
+    assert.ok(l.kind === 'command' && l.functions.length === 1, JSON.stringify(l.kind));
+    const a = status('f() { :; }; alias g=f; g', 'g');
+    assert.ok(a.kind === 'command');
+    assert.deepStrictEqual(status('"$cmd" x', '"$cmd" x'), { kind: 'command', functions: [] });
   });
 });
 
