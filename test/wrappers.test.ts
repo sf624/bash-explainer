@@ -121,9 +121,11 @@ describe('the command a wrapper runs', () => {
     assert.strictEqual(about('su - user', 'user'), 'user name');
   });
   it('still explains the others', () => {
-    for (const src of ['nice -n 5 cmd', 'ionice -c3 cmd', 'stdbuf -oL cmd', 'setsid cmd', 'strace -f cmd', 'watch -n 2 cmd', 'exec cmd', 'nohup cmd &']) {
+    for (const src of ['nice -n 5 cmd', 'ionice -c3 cmd', 'stdbuf -oL cmd', 'setsid cmd', 'strace -f cmd', 'watch -n 2 -x cmd', 'exec cmd', 'nohup cmd &']) {
       assert.match(ran(src, 'cmd') || ran(src, 'pkg'), /runs `/, src);
     }
+    // (Without -x, watch joins the words for `sh -c`: they are the text of the command.)
+    assert.strictEqual(about('watch -n 2 cmd', 'cmd'), 'command to run');
     assert.match(ran('sudo -u u cmd arg', 'cmd'), /runs `cmd`/);
     assert.match(ran('command ls -la', 'ls'), /runs `ls`/);
     assert.match(ran('find . -exec ls {} +', 'ls'), /runs `ls`/);
@@ -136,9 +138,9 @@ describe('a wrapper cannot run a shell function or builtin', () => {
   const at = (src: string, line: number, lang: 'en' | 'ja' = 'en') => notes(src, lang, line);
   it('a function defined in the script', () => {
     for (const [src, who] of [
-      ['echo a | xargs myfunc', 'xargs'], ['sudo myfunc', 'sudo'], ['doas myfunc', 'doas'], ['env myfunc', 'env'], ['nohup myfunc', 'nohup'],
+      ['echo a | xargs myfunc', 'xargs'], ['doas myfunc', 'doas'], ['env myfunc', 'env'], ['nohup myfunc', 'nohup'],
       ['timeout 5 myfunc', 'timeout'], ['nice myfunc', 'nice'], ['find . -exec myfunc {} \;', 'find -exec'], ['find . -exec myfunc {} +', 'find -exec'], ['chroot /r myfunc', 'chroot'],
-      ['flock /l myfunc', 'flock'], ['setsid myfunc', 'setsid'], ['watch myfunc', 'watch'], ['strace myfunc', 'strace'], ['stdbuf -oL myfunc', 'stdbuf'], ['ionice -c3 myfunc', 'ionice'],
+      ['flock /l myfunc', 'flock'], ['setsid myfunc', 'setsid'], ['watch -x myfunc', 'watch'], ['strace myfunc', 'strace'], ['stdbuf -oL myfunc', 'stdbuf'], ['ionice -c3 myfunc', 'ionice'],
     ]) {
       const n = at(FN + src, 1);
       assert.strictEqual(n.length, 1, src);
@@ -231,6 +233,28 @@ describe('the pitfalls follow from how the command is run', () => {
       assert.deepStrictEqual(at(src), [], src);
     }
   });
+  it('a wrapper that passes no exported functions: export -f does not help', () => {
+    // env -i and `env -` clear the environment; sudo's policy removes the values that start with `()` (the
+    // functions bash exports), with -E too (sudoers(5): env_reset, and `*=()*` in env_delete).
+    for (const [src, blocker] of [["env -i bash -c 'myfunc'", 'env'], ['env - bash -c myfunc', 'env'], ['sudo bash -c myfunc', 'sudo'], ['sudo -E bash -c myfunc', 'sudo'], ['export -f myfunc; sudo -u bob bash -c myfunc', 'sudo'], ['env -i timeout 5 bash -c myfunc', 'env']]) {
+      assert.deepStrictEqual(at(src), [`⚠ Pitfall: \`bash -c\` runs the command in a new shell, which does not have this script's function \`myfunc\`, and \`${blocker}\` passes no exported functions, so \`export -f myfunc\` does not help either. Write out its body`], src);
+    }
+    assert.strictEqual(at('sudo bash -c myfunc', 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。`sudo` は環境の関数を渡さないので、`export -f myfunc` も効きません。関数の中身を直接書きます');
+    for (const src of ['export -f myfunc; env bash -c myfunc', 'export -f myfunc; env -u X bash -c myfunc', 'export -f myfunc; timeout 5 bash -c myfunc']) assert.deepStrictEqual(at(src), [], src);
+    // A function run as a program: the fix sends its definition.
+    assert.match(at('sudo myfunc')[0], /^⚠ Pitfall: `sudo` starts `myfunc` as a separate program.*Write out its body, or pass the definition along: `sudo bash -c "\$\(declare -f myfunc\); myfunc"` \(`sudo` passes no exported functions, so `export -f` does not help\)$/);
+    assert.match(at('env -i myfunc', 'ja')[0], /`env bash -c "\$\(declare -f myfunc\); myfunc"` のように定義ごと渡します（`env` は環境の関数を渡さないので、`export -f` は効きません）$/);
+  });
+  it('sudo -s and -i: a shell runs the command, so builtins run, and the function is not there', () => {
+    for (const src of ['sudo -i cd /tmp', 'sudo -s cd /tmp', 'sudo --login export A=1', 'sudo -iu bob cd ~']) assert.deepStrictEqual(at(src), [], src);
+    assert.strictEqual(all(explain('sudo -i cd /tmp').items).find((t) => t.label === 'cd')?.kind, 'builtin');
+    assert.deepStrictEqual(at('sudo -s myfunc'), ["⚠ Pitfall: `sudo` runs the command in a new shell, which does not have this script's function `myfunc`. Write out its body"]);
+  });
+  it('watch: sh -c runs the words joined, unless -x execs them', () => {
+    assert.deepStrictEqual(at('watch cd /x'), []);
+    assert.match(at('watch -n 1 myfunc')[0], /^⚠ Pitfall: `watch` runs the command in a new shell, which does not have this script's function `myfunc`/);
+    assert.match(at('watch -x cd /x')[0], /^⚠ Pitfall: `watch` starts `cd` as a separate program/);
+  });
   it('the current shell: eval, command and builtin run functions and builtins', () => {
     for (const src of ['eval myfunc', "eval 'myfunc a'", 'command cd /x', 'builtin cd /x', 'eval export A=1']) assert.deepStrictEqual(at(src), [], src);
   });
@@ -241,8 +265,11 @@ describe('the pitfalls follow from how the command is run', () => {
     // A builtin with no program of its name: env and xargs cannot run it.
     assert.strictEqual(bash('env disown').status, 127);
     assert.strictEqual(bash('echo a | xargs :').status, 127);
-    // bash -c finds a function only when it is exported.
+    // bash -c finds a function only when it is exported, and not through `env -i` or `env -`.
     assert.strictEqual(bash("f(){ echo x; }; bash -c f").status, 127);
+    assert.strictEqual(bash("f(){ echo x; }; export -f f; env -i bash -c f").status, 127);
+    assert.strictEqual(bash("f(){ echo x; }; export -f f; env - bash -c f").status, 127);
+    assert.strictEqual(bash("f(){ echo x; }; export -f f; env -u X bash -c f").out, 'x\n');
     assert.strictEqual(bash("f(){ echo x; }; export -f f; bash -c f").out, 'x\n');
     assert.strictEqual(bash("f(){ echo x; }; declare -fx f; bash -c f").out, 'x\n');
     // The current shell runs both.

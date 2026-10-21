@@ -167,8 +167,12 @@ export interface CommandSlot {
   run: 'exec' | 'shell-string' | 'current-shell';
   /** Default 'local'. */
   where?: 'local' | 'remote' | 'container';
-  /** What reaches it: exported variables, a clean set (`su -`), nothing. */
-  env?: 'exported' | 'reset' | 'none';
+  /**
+   * What reaches it: the exported variables and functions (the default), the exported variables but no
+   * functions (`sudo -E`: sudo's policy removes values that start with `()`), a clean set (`su -`, `env -i`,
+   * sudo), nothing. A slot inside another one gets only what each slot on the way passes on (`env -i bash -c f`).
+   */
+  env?: 'exported' | 'variables' | 'reset' | 'none';
   /** `command`, `builtin`. */
   lookup?: 'no-functions' | 'builtins-only';
   /** `exec cmd`: nothing after it runs. */
@@ -178,4 +182,9 @@ export interface CommandSlot {
    * word left, like `exec`, instead of one word.
    */
   joinsWords?: boolean;
+  /**
+   * With `joinsWords`: each word is escaped before they are joined, so the shell reads the same words
+   * (`sudo -s cmd args`), which are then read as a command; otherwise the shell reads the joined text afresh.
+   */
+  escapesWords?: boolean;
 }

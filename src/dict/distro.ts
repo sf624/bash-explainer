@@ -26,15 +26,20 @@ const LOCK = operand('LOCK', 'ロックファイルまたはディレクトリ�
 export const distro: Record<string, CommandSpec> = {
   // ---- coreutils and util-linux -------------------------------------------------------------
   flock: cmd('ロックを取ってからコマンドを実行する（同時実行を防ぐ）', 'Run a command while holding a lock (prevents concurrent runs)', [
-    ['-n|--nonblock', 'ロックが取れなければ待たずに失敗する', 'fail instead of waiting if the lock is taken'],
-    ['-w|--timeout', 'ロックを待つ秒数の上限', 'give up waiting after the given number of seconds', 'arg'],
+    ['-n|--nonblock|--nonblocking|--nb', 'ロックが取れなければ待たずに失敗する', 'fail instead of waiting if the lock is taken'],
+    ['-w|--timeout|--wait', 'ロックを待つ秒数の上限', 'give up waiting after the given number of seconds', 'arg'],
     ['-x|--exclusive', '排他ロックを取る（既定）', 'take an exclusive lock (default)'],
     ['-s|--shared', '共有ロックを取る', 'take a shared lock'],
     ['-u|--unlock', 'ロックを解放する', 'release the lock'],
     { names: ['-c', '--command'], text: FLOCK_C, value: { name: 'COMMAND_STRING', command: { run: 'shell-string', env: 'exported' } } },
     ['-E|--conflict-exit-code', 'ロックが取れなかったときの終了ステータス', 'exit status when the lock is taken', 'arg'],
+    ['-o|--close', 'コマンドを実行する前に、ロックのファイルディスクリプタを閉じる', 'close the file descriptor of the lock before running the command'],
+    ['-F|--no-fork', 'fork せずにコマンドを実行する', 'run the command without forking'],
+    ['--verbose', 'ロックを取るまでの時間などを表示する', 'report how long the lock took and the like'],
+    ['-h|--help', 'ヘルプを表示する', 'show help'],
+    ['-V|--version', 'バージョンを表示する', 'print the version'],
   ], {
-    style: 'posix',
+    style: 'posix', longPrefixes: true,
     operands: [
       // `flock FILE -c CMD`: options end at the file, but `-c` right after it is still read.
       { pattern: [LOCK, { name: '-c', text: COMMAND_TEXT, option: '-c' }, { name: 'COMMAND_STRING', text: COMMAND_TEXT, command: { run: 'shell-string', env: 'exported' } }] },
@@ -63,7 +68,9 @@ export const distro: Record<string, CommandSpec> = {
     ['-i|--input', '標準入力のバッファ（`L`: 行単位、`0`: なし）', 'stdin buffering (`L`: line, `0`: none)', 'arg'],
     ['-o|--output', '標準出力のバッファ（`L`: 行単位、`0`: なし）', 'stdout buffering (`L`: line, `0`: none)', 'arg'],
     ['-e|--error', '標準エラー出力のバッファ（`L`: 行単位、`0`: なし）', 'stderr buffering (`L`: line, `0`: none)', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+    ['--help', 'ヘルプを表示する', 'show help'],
+    ['--version', 'バージョンを表示する', 'print the version'],
+  ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [runs()] }] }),
   truncate: cmd('ファイルのサイズを変える（足りない分は 0 で埋める）', 'Make a file shorter or longer (new bytes are zeros)', [
     ['-s|--size', '新しいサイズ（`+` で増やす、`-` で減らす、`K` `M` `G` の単位）', 'new size (`+` grows, `-` shrinks; units `K` `M` `G`)', 'arg'],
     ['-c|--no-create', 'ファイルがなければ作らない', 'do not create the file'],

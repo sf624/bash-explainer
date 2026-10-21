@@ -8,7 +8,7 @@ import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
 import { ArgRole, ArgvParse, CommandRole, interpret, ValueRole } from './argv/interpret';
-import type { CommandSpec, OperandSpec } from './argv/spec';
+import type { CommandSlot, CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
@@ -256,6 +256,8 @@ export class Analyzer {
    * run), its words, and whether the shell reads them again (`eval`).
    */
   private argCtx: { cmd: string; args: SyntaxNode[]; rereads?: boolean } | undefined;
+  /** The command slots the words being explained run inside, outermost first, with how the pitfalls name each (`env -i bash -c f`). */
+  private slotChain: { slot: CommandSlot; via: string }[] = [];
 
   constructor(private lang: Lang) {}
 
@@ -1535,7 +1537,7 @@ export class Analyzer {
             break;
           }
           case 'command':
-            if (role.slot.joinsWords) {
+            if (role.slot.joinsWords && !role.slot.escapesWords) {
               // ssh sends the words joined to the remote shell; eval joins them and reads them again here, so they are plain words.
               joined = role.slot.run === 'current-shell' ? undefined : this.t(role.item!.text);
               if (role.slot.run === 'current-shell') this.argCtx!.rereads = true;
@@ -1743,10 +1745,18 @@ export class Analyzer {
     const words = nodes.slice(word, parse.end);
     const first = nodes[word];
     // `find -exec cmd {} ;`: the words up to the terminator.
-    this.slotNotes(role, this.via(parent, spec, role), words, assigned);
+    const via = this.via(parent, spec, role);
+    this.slotNotes(role, via, words, assigned);
     const name = first.text;
     const explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
-    const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    // (A command it runs in turn gets only what this slot passes on.)
+    this.slotChain.push({ slot: role.slot, via });
+    let children: Token[];
+    try {
+      children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    } finally {
+      this.slotChain.pop();
+    }
     if (role.of) {
       // `{}` is replaced by find (and `xargs -I{}`) with each path.
       const mark = (ts: Token[]) => ts.forEach((t) => {
@@ -2874,7 +2884,11 @@ export class Analyzer {
       }
     } else if (slot.run === 'exec') {
       if (isPlainWord(first) && (isFn || (role.spec?.builtin && !role.spec.alsoProgram))) {
-        const fix = isFn
+        const blocker = this.functionBlocker(slot, via);
+        const fix = isFn && blocker
+          ? this.s(`関数の中身を直接書くか、\`${via} bash -c "$(declare -f ${name}); ${name}"\` のように定義ごと渡します（\`${blocker.via}\` は環境の関数を渡さないので、\`export -f\` は効きません）`,
+            `Write out its body, or pass the definition along: \`${via} bash -c "$(declare -f ${name}); ${name}"\` (\`${blocker.via}\` passes no exported functions, so \`export -f\` does not help)`)
+          : isFn
           ? this.s(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
           : name === 'cd'
             ? this.s(`サブシェル \`(cd … && …)\` か、\`${via} sh -c 'cd … && …'\` を使います`, `Use a subshell \`(cd … && …)\`, or \`${via} sh -c 'cd … && …'\``)
@@ -2899,9 +2913,15 @@ export class Analyzer {
       // The first word of the string, when it is known (`su -c 'f arg'`).
       const lit = literalContent(first)?.text;
       const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
-      // bash takes the functions exported to it (`export -f f`); a shell started afresh (`su -c`) has none.
-      if (fn && this.functions.has(fn) && (slot.env === 'reset' || !this.exportedFunctions().has(fn))) {
-        this.extraNotes.push(slot.env === 'reset'
+      // bash takes the functions exported to it (`export -f f`); a shell started afresh (`su -c`) has none, nor
+      // has one inside a wrapper that clears the environment (`env -i bash -c f`, `sudo bash -c f`).
+      const blocker = this.functionBlocker(slot, via);
+      if (fn && this.functions.has(fn) && (blocker || !this.exportedFunctions().has(fn))) {
+        this.extraNotes.push(blocker && blocker.slot !== slot
+          ? this.s(
+            `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker.via}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
+            `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`, and \`${blocker.via}\` passes no exported functions, so \`export -f ${fn}\` does not help either. Write out its body`)
+          : blocker
           ? this.s(
             `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
             `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`)
@@ -2919,6 +2939,14 @@ export class Analyzer {
         break;
       }
     }
+  }
+
+  /**
+   * The wrapper on the way to a command run through `slot` that passes no exported functions on (`env -i`,
+   * `su -`, sudo), as the pitfalls name it; undefined when every slot passes them.
+   */
+  private functionBlocker(slot: CommandSlot, via: string): { slot: CommandSlot; via: string } | undefined {
+    return [...this.slotChain, { slot, via }].find((c) => c.slot.env !== undefined && c.slot.env !== 'exported');
   }
 
   /** The functions the script exports to the shells it starts (`export -f f`, `declare -fx f`). */
