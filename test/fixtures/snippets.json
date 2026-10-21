@@ -947,6 +947,7 @@
  "yq '.a | input' f.yml",
  "yq '.a' \"$f\"",
  "yq '.a' \\\n  f.yml",
+ "yq 'e' .",
  "yq 'env(HOME)' f.yml",
  "yq --output-format=json '.a' f.yml",
  "yq -i '.a = 1' f.yml",

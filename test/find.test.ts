@@ -5,7 +5,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, parseFind } from '../src/embedded/find';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
-const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-type', '-mtime', '-newer', '-maxdepth'].includes(w) ? 1 : 0);
+const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-wholename', '-type', '-mtime', '-newer', '-maxdepth', '-mmin'].includes(w) ? 1 : 0);
 
 let parser: Parser;
 before(async () => {
@@ -32,6 +32,8 @@ describe('find expressions', () => {
     assert.strictEqual(describeFind(parseFind(w, arity)!, 'en'),
       'Print what matches: (name matches *.log; or name matches *.tmp) and modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days) (no action is given, so `-print` is implied)');
     assert.match(describeFind(parseFind('! -newer ref'.split(' '), arity)!, 'en'), /not \(newer than ref\)/);
+    assert.match(describeFind(parseFind('-wholename ./a/*'.split(' '), arity)!, 'en'), /path matches \.\/a\/\*/);
+    assert.match(describeFind(parseFind('-mmin -5'.split(' '), arity)!, 'en'), /modified less than 5 minutes ago/);
   });
 
   it('reads actions after conditions and spots the -prune idiom', () => {
