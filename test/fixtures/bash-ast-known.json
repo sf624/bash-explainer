@@ -1,0 +1,57 @@
+[
+  {
+    "input": "!",
+    "path": "$",
+    "reason": "bash runs a bare `!` as an empty negated command; unbash reports an error"
+  },
+  {
+    "input": "! ! ! ! !",
+    "path": "$",
+    "reason": "bash runs a row of `!` as an empty negated command; unbash reports an error"
+  },
+  {
+    "input": "[",
+    "path": "$",
+    "reason": "unbash reads `[` as a test command and needs its `]`; bash reads an ordinary command (ours: error)"
+  },
+  {
+    "input": "[ -d / && -d /tmp ]",
+    "path": "$",
+    "reason": "bash ends the command at `&&`; unbash reads `[ ... ]` as one test command and reports an error (ours: error)"
+  },
+  {
+    "input": "[ -d /]",
+    "path": "$",
+    "reason": "`/]` is a word to bash; unbash needs a separate `]` (ours: error)"
+  },
+  {
+    "input": "[ -f x",
+    "path": "$",
+    "reason": "bash runs `[` with no `]`; unbash reports an error (ours: error)"
+  },
+  {
+    "input": "[ -f x && -n y ]",
+    "path": "$",
+    "reason": "bash ends the command at `&&`; unbash reports an error (ours: error)"
+  },
+  {
+    "input": "[ -f x]",
+    "path": "$",
+    "reason": "`x]` is a word to bash; unbash needs a separate `]` (ours: error)"
+  },
+  {
+    "input": "[ a && b ]",
+    "path": "$",
+    "reason": "bash ends the command at `&&`; unbash reports an error (ours: error)"
+  },
+  {
+    "input": "[ a = *\"$a\"*z",
+    "path": "$",
+    "reason": "bash runs `[` with no `]`; unbash reports an error (ours: error)"
+  },
+  {
+    "input": "a\\",
+    "path": "$",
+    "reason": "unbash accepts a backslash at the end of the input; bash rejects it (like `echo (`, README Limitations)"
+  }
+]
