@@ -142,7 +142,13 @@ describe('wrappers agree with the real tools', () => {
     (usable(tool) ? it : it.skip)(`${tool}: an ambiguous prefix is no option: ${line}`, () => {
       assert.match(run(line, '').err, /is ambiguous/, line);
       const { parse } = parseOf(line);
-      assert.strictEqual(parse.roles[0].role.role, 'unknown-option', line);
+      const role = parse.roles[0].role;
+      assert.strictEqual(role.role, 'unknown-option', line);
+      // It lists the options the tool lists (one name of each; flock says `--nonblocking` where the entry's first name is `--nonblock`).
+      const theirs = [...run(line, '').err.matchAll(/'(--[\w-]+)'/g)].map((m) => m[1]).slice(1);
+      const ours = role.role === 'unknown-option' ? role.ambiguous ?? [] : [];
+      assert.strictEqual(ours.length, theirs.length, line);
+      assert.ok(ours.every((n) => theirs.some((t) => t.startsWith(n))), `${line}: ${ours} / ${theirs}`);
     });
   }
 
