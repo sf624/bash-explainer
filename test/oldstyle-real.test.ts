@@ -13,6 +13,9 @@ import { argWords } from './support/argwords';
 
 const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
 const ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC', COLUMNS: '200' };
+/** The builds whose options the tests follow (`--version` says which); a BSD or macOS build is skipped. */
+const BUILDS: Record<string, RegExp> = { tar: /GNU tar/, ar: /GNU ar/, ps: /procps/ };
+const usable = (tool: string): boolean => has(tool) && BUILDS[tool].test(spawnSync(tool, ['--version'], { env: ENV, encoding: 'utf8' }).stdout ?? '');
 /** Runs a line of bash in `cwd`. */
 const run = (line: string, cwd: string): { out: string; err: string; status: number | null } => {
   const r = spawnSync('bash', ['--norc', '-c', line], { cwd, env: ENV, encoding: 'utf8', timeout: 60000 });
@@ -56,7 +59,7 @@ function helpOptions(text: string): Map<string, 'none' | 'required' | 'optional'
 const arityOf = (o: OptionSpec): string => (!o.value ? 'none' : !Array.isArray(o.value) && o.value.optional ? 'optional' : 'required');
 
 describe('tar agrees with the real tar', () => {
-  (has('tar') ? it : it.skip)('every option is one tar lists, and takes a value when tar\'s does', () => {
+  (usable('tar') ? it : it.skip)('every option is one tar lists, and takes a value when tar\'s does', () => {
     const help = helpOptions(spawnSync('tar', ['--help'], { env: ENV, encoding: 'utf8' }).stdout);
     for (const o of lookupCommand('tar')!.options!) for (const n of o.names) assert.strictEqual(arityOf(o), help.get(n), n);
   });
@@ -81,7 +84,7 @@ describe('tar agrees with the real tar', () => {
     'tar cvhf b.tar --no-recursion src',
     'tar -cf b.tar -I gzip c.txt',
   ];
-  (has('tar') ? it : it.skip)('acts on the archive and the members the interpreter names', () => {
+  (usable('tar') ? it : it.skip)('acts on the archive and the members the interpreter names', () => {
     for (const line of ROWS) {
       const dir = tempDir();
       try {
@@ -116,7 +119,7 @@ describe('ps reads BSD letters in any place, as procps does', () => {
     ['ps -p 1 o pid,comm', ['o'], 'ps o pid,comm -p 1', 'ps -p 1'],
   ];
   const first = (line: string): string => run(line, os.tmpdir()).out.split('\n')[0];
-  (has('ps') ? it : it.skip)('reads them as the interpreter does', () => {
+  (usable('ps') ? it : it.skip)('reads them as the interpreter does', () => {
     for (const [line, letters, moved, without] of ROWS) {
       assert.deepStrictEqual(wordsWith(line, (r) => r.role === 'old-style'), letters, line);
       assert.strictEqual(first(line), first(moved), line);
@@ -126,7 +129,7 @@ describe('ps reads BSD letters in any place, as procps does', () => {
 });
 
 describe('ar agrees with the real ar', () => {
-  (has('ar') ? it : it.skip)('every letter ar --help lists has a meaning', function () {
+  (usable('ar') ? it : it.skip)('every letter ar --help lists has a meaning', function () {
     // (See test/oldstyle.test.ts: the first run of ar may load large plugins.)
     this.timeout(60000);
     const help = spawnSync('ar', ['--help'], { env: ENV, encoding: 'utf8' }).stdout;
@@ -147,7 +150,7 @@ describe('ar agrees with the real ar', () => {
     ['ar dv lib.a b.txt', 'a.txt'],
     ['ar tO lib.a', 'a.txt b.txt'],
   ];
-  (has('ar') ? it : it.skip)('acts on the archive the interpreter names', function () {
+  (usable('ar') ? it : it.skip)('acts on the archive the interpreter names', function () {
     this.timeout(60000);
     for (const [line, after] of ROWS) {
       const dir = tempDir();

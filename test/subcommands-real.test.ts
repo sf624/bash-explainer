@@ -82,7 +82,8 @@ describe('git agrees with the real git', () => {
 });
 
 describe('ip agrees with the real ip', () => {
-  const ip = has('ip') ? it : it.skip;
+  // (iproute2's ip; iproute2mac's `ip` on macOS reads its words otherwise.)
+  const ip = has('ip') && /iproute2/.test(spawnSync('ip', ['-V'], { env: ENV, encoding: 'utf8' }).stdout ?? '') ? it : it.skip;
   // (`-n NETNS` switches to the namespace at once, so it needs one that exists.)
   const VALUES: Record<string, string> = { '-f': 'inet', '-family': 'inet' };
   ip('accepts every option of the dictionary before the object', () => {
