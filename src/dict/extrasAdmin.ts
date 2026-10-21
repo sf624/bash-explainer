@@ -1,4 +1,4 @@
-import { OptSpec } from './types';
+import { OptSpec, persistent } from './types';
 
 // Options of administration, network and transfer commands that the LPIC and LinuC objectives
 // use and that the first entries did not list. See extras.ts for how they are merged.
@@ -207,7 +207,8 @@ export const extraAdmin: Record<string, OptSpec[]> = {
     ['-T|-w|--mesg', 'メッセージを受けられるか（`+` / `-`）を表示', 'show whether messages are allowed (`+` / `-`)'],
     ['-t|--time', '最後にシステム時計が変更された時刻を表示', 'print the last system clock change'],
   ],
-  systemctl: [
+  // (systemctl reads its options before or after the verb: `systemctl status -l x`.)
+  systemctl: persistent([
     ['-a|--all', 'すべてのユニットを表示（停止中のものも）', 'show all units, including inactive ones'],
     ['-t|--type', 'ユニットの種類で絞る（`service`、`timer`、`socket`…）', 'filter by unit type (`service`, `timer`, `socket`…)', 'arg'],
     ['--state', '状態で絞る（`failed`、`running`…）', 'filter by state (`failed`, `running`…)', 'arg'],
@@ -232,7 +233,7 @@ export const extraAdmin: Record<string, OptSpec[]> = {
     ['--signal', '`kill` で送るシグナル', 'signal to send with `kill`', 'arg'],
     ['-M|--machine', '操作するコンテナ', 'operate on a container', 'arg'],
     ['--wait', '`start` したユニットが終わるまで待つ', 'wait until started units finish'],
-  ],
+  ]),
   journalctl: [
     ['-k|--dmesg', 'カーネルのメッセージだけ', 'kernel messages only'],
     ['-x|--catalog', '説明文（カタログ）を付ける', 'add explanatory texts from the catalog'],

@@ -11,7 +11,7 @@ import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { applyExtras } from './extras';
-import { args, ASSIGNMENTS, CommandDoc, cmd, dashed, lastIsDestination, letters, native, operand, OptSpec, pos, runs } from './types';
+import { args, ASSIGNMENTS, CommandDoc, cmd, countOption, dashed, lastIsDestination, letters, native, operand, OptSpec, persistent, pos, runs } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -129,7 +129,10 @@ const dockerBuild: OptSpec[] = [
   ['--pull', 'ベースイメージを取り直す', 'pull newer base images'],
 ];
 
-/** Options before the subcommand of `docker compose`. */
+/** `git log -3`: as many commits as `-n 3`. */
+const gitCount = countOption((n) => tx(`${n} 件だけ（\`-n ${n}\` と同じ）`, `only ${n} (same as \`-n ${n}\`)`), tx('展開した数の件数だけ（`-n 数` と同じ）', 'only as many as the expansion gives (same as `-n N`)'));
+
+/** Options of `docker compose`, which its subcommands take too. */
 const composeOpts: OptSpec[] = [
   ['-f|--file', 'compose ファイル', 'compose file', 'arg'],
   ['-p|--project-name', 'プロジェクト名', 'project name', 'arg'],
@@ -153,14 +156,14 @@ const dockerSubs: Record<string, CommandDoc> = {
   logs: cmd('コンテナのログを表示する', 'Fetch container logs', [['-f|--follow', 'ログを追い続ける', 'follow log output']]),
   stop: cmd('コンテナを停止する', 'Stop containers'),
   rm: cmd('コンテナを削除する', 'Remove containers', [['-f|--force', '実行中でも強制削除', 'force removal']]),
-  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)', composeOpts, {
+  compose: cmd('複数コンテナの構成（compose.yaml）を操作する', 'Manage multi-container apps (compose.yaml)', persistent(composeOpts), {
     subcommands: {
-      up: cmd('コンテナを作って起動する', 'Create and start the containers', [...composeOpts, ['-d|--detach', 'バックグラウンドで動かす', 'run in the background'], ['--build', '起動前にイメージをビルドする', 'build images before starting'], ['--force-recreate', '設定が同じでも作り直す', 'recreate containers even if unchanged']]),
-      down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [...composeOpts, ['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
-      ps: cmd('コンテナの一覧を表示する', 'List the containers', [...composeOpts, ['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
-      logs: cmd('コンテナのログを表示する', 'Show the logs', [...composeOpts, ['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
-      run: native('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', [...composeOpts, ...dockerRun], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
-      exec: native('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [...composeOpts, ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      up: cmd('コンテナを作って起動する', 'Create and start the containers', [['-d|--detach', 'バックグラウンドで動かす', 'run in the background'], ['--build', '起動前にイメージをビルドする', 'build images before starting'], ['--force-recreate', '設定が同じでも作り直す', 'recreate containers even if unchanged']]),
+      down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
+      ps: cmd('コンテナの一覧を表示する', 'List the containers', [['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
+      logs: cmd('コンテナのログを表示する', 'Show the logs', [['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
+      run: native('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', dockerRun, { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      exec: native('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
     },
   }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
@@ -956,7 +959,7 @@ export const core: Record<string, CommandDoc> = {
       clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']], { positional: [pos('複製元のリポジトリ（URL かパス）', 'repository to clone (URL or path)'), pos('複製先のディレクトリ（省略するとリポジトリ名）', 'directory to clone into (default: the repository name)')] }),
       add: cmd('変更をステージする', 'Stage changes', [['-A|--all', '全ての変更をステージ', 'stage all changes'], ['-p|--patch', '変更を対話的に選んでステージ', 'stage hunks interactively']]),
       commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output'], ['-s|--signoff', '`Signed-off-by:` の行を付ける', 'add a `Signed-off-by:` line'], ['--allow-empty', '変更がなくてもコミットする', 'commit even with no changes'], ['--no-verify', 'フックを実行しない', 'skip the hooks']]),
-      show: cmd('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']]),
+      show: native('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']], { patternOptions: [gitCount] }),
       'ls-files': cmd('Git が知っているファイルを一覧表示する', 'List the files Git knows about', [['-c|--cached', '追跡中のファイル', 'tracked files'], ['-m|--modified', '変更されたファイル', 'modified files'], ['-o|--others', '追跡していないファイル', 'untracked files'], ['--exclude-standard', '`.gitignore` などで無視されるものを除く', 'leave out files ignored by `.gitignore` and the like'], ['-z', 'NUL で区切って出力（`xargs -0` 向け）', 'NUL-separated output (for `xargs -0`)']]),
       push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('送るブランチや参照（`HEAD`、`main`、`local:remote`）', 'branch or ref to push (`HEAD`, `main`, `local:remote`)')] }),
       pull: cmd('リモートから取得して統合する', 'Fetch and integrate from a remote', [['--rebase', 'マージではなくリベースで統合', 'rebase instead of merge']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('取り込むブランチ', 'branch to pull')] }),
@@ -975,7 +978,7 @@ export const core: Record<string, CommandDoc> = {
         positional: [pos('ブランチ名', 'branch name'), pos('起点（コミットやブランチ）', 'start point (commit or branch)')],
       }),
       status: cmd('作業ツリーの状態を表示する', 'Show working tree status', [['-s|--short', '短い形式', 'short format'], ['--porcelain', 'スクリプト向けの安定した形式', 'stable machine-readable format']]),
-      log: cmd('コミット履歴を表示する', 'Show commit logs', [
+      log: native('コミット履歴を表示する', 'Show commit logs', [
         ['--oneline', '1コミット1行で表示', 'one line per commit'], ['-n', '表示する件数', 'number of commits', 'arg'], ['--graph', 'ブランチをグラフ表示', 'draw a graph'],
         ['--pretty|--format', '各コミットの表示形式', 'how each commit is shown', 'arg lang:gitformat'],
         ['--date', '日時の表示形式', 'how dates are shown', 'arg lang:gitdate'],
@@ -989,7 +992,7 @@ export const core: Record<string, CommandDoc> = {
         ['--name-only', '変更されたファイル名も表示', 'list the changed files'],
         ['--diff-filter', '変更の種類で絞る（`D`: 削除、`A`: 追加…）', 'filter by kind of change (`D`: deleted, `A`: added…)', 'arg'],
         ['--no-renames', '名前の変更を、削除と追加として扱う', 'treat renames as a delete and an add'],
-      ]),
+      ], { patternOptions: [gitCount] }),
       diff: cmd('差分を表示する', 'Show changes', [['--cached|--staged', 'ステージ済みの差分', 'staged changes'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only'], ['--exit-code', '差分があれば終了ステータス 1（CI で変更がないことの確認に）', 'exit 1 if there are changes (CI checks for none)'], ['--quiet', '何も表示せず、差分の有無を終了ステータスで返す', 'print nothing; report via the exit status']]),
       merge: cmd('ブランチを統合する', 'Merge branches', [['--no-ff', '早送りせずマージコミットを作る', 'always create a merge commit']]),
       rebase: cmd('コミットを別の基点に付け替える', 'Reapply commits on another base', [['-i|--interactive', '対話的にリベース', 'interactive rebase']]),

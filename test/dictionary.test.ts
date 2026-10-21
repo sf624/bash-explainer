@@ -219,7 +219,17 @@ describe('the dictionary', () => {
     assert.match(tokens('ls -i --group-directories-first').find((t) => t.label === '-i')!.explanation, /inode/);
     assert.match(tokens('systemctl status -l nginx').find((t) => t.label === '-l')!.explanation, /ellipsize/);
     assert.match(tokens('systemctl list-unit-files --state=enabled')[0].explanation, /Control systemd/);
-    assert.match(tokens('ip addr show -s').find((t) => t.label === '-s')!.explanation, /statistics/);
+    // ip reads its options only before the object (test/subcommands-real.test.ts runs it).
+    assert.match(tokens('ip -s addr show').find((t) => t.label === '-s')!.explanation, /statistics/);
+    assert.match(tokens('ip addr show -s').find((t) => t.label === '-s')!.explanation, /not in the dictionary/);
+    // kubectl's global options are its subcommands' too (kubernetes.io: `kubectl config view`, "Options inherited
+    // from parent commands"), and `logs` keeps its own `-f`.
+    assert.match(tokens('kubectl config view -o json').find((t) => t.label === '-o')!.explanation, /output format/);
+    assert.match(tokens('kubectl config --kubeconfig k.yaml view').find((t) => t.label === '--kubeconfig')!.explanation, /kubeconfig file/);
+    assert.match(tokens('kubectl logs -f web').find((t) => t.label === '-f')!.explanation, /stream/);
+    assert.match(tokens('kubectl logs -k web').find((t) => t.label === '-k')!.explanation, /not in the dictionary/);
+    assert.match(tokens('docker compose logs -p proj -f web').find((t) => t.label === '-p')!.explanation, /project name/);
+    assert.match(tokens('docker compose run -p 80:80 web').find((t) => t.label === '-p')!.explanation, /publish|port/i);
     assert.match(tokens('ulimit -Hn 4096').find((t) => t.label === '-H')!.explanation, /hard limit/);
     assert.match(tokens('tar --zstd -cf a.tar.zst d').find((t) => t.label === '--zstd')!.explanation, /zstd/);
     assert.match(tokens('pkill -HUP -u root nginx').find((t) => t.label === '-HUP')!.explanation, /SIGHUP/);

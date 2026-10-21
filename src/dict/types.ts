@@ -1,4 +1,4 @@
-import type { CommandSlot, CommandSpec, OperandSpec, OptionSpec, ValueSpec } from '../argv/spec';
+import type { CommandSlot, CommandSpec, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
@@ -22,6 +22,8 @@ export interface OptDoc {
   nextIf?: string;
   /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */
   attachedOnly?: boolean;
+  /** Subcommands take the option too (`kubectl get -n ns`): `OptionSpec.persistent`. */
+  persistent?: boolean;
 }
 
 /**
@@ -61,7 +63,10 @@ export interface CommandDoc {
   spec?: CommandSpec;
 }
 
-/** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `attached`, `next:<regexp>`, `lang:<name>`. */
+/**
+ * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `attached`,
+ * `next:<regexp>`, `lang:<name>`, `persistent`.
+ */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
 export function cmd(
@@ -79,6 +84,7 @@ export function cmd(
     if (flags.includes('until')) doc.untilTerminator = true;
     if (flags.includes('fills')) doc.fillsPositional = true;
     if (flags.includes('attached')) doc.attachedOnly = true;
+    if (flags.includes('persistent')) doc.persistent = true;
     const nextIf = /next:(\S+)/.exec(flags)?.[1];
     if (nextIf) doc.nextIf = nextIf;
     const lang = /lang:(\w+)/.exec(flags)?.[1];
@@ -99,12 +105,22 @@ export function lastIsDestination(source: Text, one: Text, several: Text, unless
   ];
 }
 
-/** An option of a spec from the tuple form of `cmd`: `arg` takes a value, `attached` only a value in the same word. */
+/**
+ * An option of a spec from the tuple form of `cmd`: `arg` takes a value (in `lang:<name>` when given), `attached`
+ * only a value in the same word. (No native entry has subcommands yet, so none uses `persistent`.)
+ */
 function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
+  const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const value: ValueSpec | undefined = flags.includes('attached') ? { name: 'VALUE', how: 'attached-only', optional: true }
-    : flags.includes('arg') ? { name: 'VALUE', ...(values ? { values } : {}) } : undefined;
+    : flags.includes('arg') ? { name: 'VALUE', ...(lang ? { lang } : {}), ...(values ? { values } : {}) } : undefined;
   return { names: names.split('|'), text: tx(ja, en), ...(value ? { value } : {}) };
 }
+
+/** The same options, taken by every subcommand too (`kubectl -n`, `systemctl -l`): written once, on the parent. */
+export const persistent = (opts: OptSpec[]): OptSpec[] => opts.map(([n, ja, en, flags = '', ...r]): OptSpec => [n, ja, en, `${flags} persistent`.trim(), ...r] as OptSpec);
+
+/** `-N` for `-n N` (`git log -3`): `text` says what N counts; `open` is for `-$n`, whose number is known at run time. */
+export const countOption = (text: (n: string) => Text, open: Text): PatternOption => ({ pattern: /^-(\d+)$/, text: ([, n]) => text(n), open });
 
 /**
  * A dictionary entry written as a command spec (src/argv/spec.ts), not converted from the fields above.
@@ -112,7 +128,7 @@ function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
  */
 export function native(ja: string, en: string, opts: (OptSpec | OptionSpec)[], rest: Omit<Partial<CommandSpec>, 'summary' | 'options'> = {}): CommandDoc {
   const summary = tx(ja, en);
-  // A name given twice (lists put together: `[...composeOpts, ...dockerRun]`) means what it means last, as with `cmd`.
+  // A name given twice (lists put together) means what it means last, as with `cmd`.
   const seen = new Set<string>();
   const options = opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)).reverse().flatMap((o) => {
     const names = o.names.filter((n) => !seen.has(n));
