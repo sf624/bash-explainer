@@ -290,7 +290,7 @@ The command-line tool, the Language Server and the GitHub Action are one npm pac
 
 Bash Explainer works entirely offline by design:
 
-- **No network access.** The extension contains no code that opens network connections, and the panel's Content Security Policy blocks external requests.
+- **No network access.** The extension contains no code that opens network connections, and the panel's Content Security Policy blocks external requests. The links to the Bash manual (gnu.org) are plain links: a page opens only when you click one.
 - **No AI.** Scripts are parsed with [unbash](https://github.com/webpro-nl/unbash), a JavaScript parser bundled into the extension, and explained from built-in dictionaries, so the same line always gets the same explanation.
 - **No telemetry.** The extension collects nothing.
 - **No external processes.** Examples are computed by built-in code; your tools are never run.

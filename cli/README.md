@@ -57,6 +57,8 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 
 In the text output, a construct is labelled with its keywords and a placeholder for what is left out (`while` *condition* `do` *commands* `done`): the placeholder is in italics and dim with colour, and shown as `‹condition›` without. With `--format json`, `label` is that text and `labelParts` lists the parts (`{ "text": "while" }`, `{ "text": "condition", "placeholder": true }`…).
 
+A row or a note about a part of bash ends with the sections of the GNU Bash Reference Manual it is about: `(Bash manual 3.7.2)` in the text output, links to the sections on gnu.org with `--format markdown`. The numbers are those of the bash 5.2 manual. With `--format json`, a token has them in `refs` (`["3.7.2"]`), and `facts` lists the notes that come from the message catalog, with their `id`, `kind` (`note` or `pitfall`), `text` and `refs`.
+
 `--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.
 
 ## Settings
