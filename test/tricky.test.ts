@@ -950,7 +950,10 @@ describe('tricky lines (round 4)', () => {
     assert.match(find(arr, '$y').explanation, /`y` is an array, so `\$y` is only its first element \(`\$\{y\[0\]\}`\); all of them are `"\$\{y\[@\]\}"`$/);
     assert.match(find(arr, '$y', 'ja').explanation, /`y` は配列なので、`\$y` は先頭の要素だけ（`\$\{y\[0\]\}`）になる。全要素は `"\$\{y\[@\]\}"`$/);
     assert.strictEqual(bash('y=(a b); echo $y'), 'a\n');
-    for (const decl of ['declare -a y', 'local -a y', 'y[2]=c', 'read -a y <<< "a b"', 'mapfile y < /dev/null', 'readarray -t y < /dev/null', 'declare -a y=(a b)']) {
+    // (`local` outside a function fails: `y` stays as it was.)
+    assert.doesNotMatch(find('local -a y; echo $y', '$y').explanation, /is an array/);
+    assert.match(find('f() { local -a y; echo $y; }', '$y').explanation, /is an array/);
+    for (const decl of ['declare -a y', 'y[2]=c', 'read -a y <<< "a b"', 'mapfile y < /dev/null', 'readarray -t y < /dev/null', 'declare -a y=(a b)']) {
       assert.match(find(`${decl}; echo $y`, '$y').explanation, /is an array/, decl);
     }
     assert.match(find('declare -A m=([k]=v); echo $m', '$m').explanation, /is only the element with key 0 \(`\$\{m\[0\]\}`\)/);

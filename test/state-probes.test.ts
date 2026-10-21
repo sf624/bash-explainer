@@ -40,23 +40,26 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
     const v = st.variables.get(name);
     const bash = vars[name];
     const unset = facts.unset?.includes(name);
+    // What bash has: unset, unchanged, declared (with no value) or set.
+    const has = unset ? 'unset' : !bash ? 'unchanged' : bash.value === undefined ? 'declared' : 'set';
     if (!v) {
-      say(`variables.${name}`, 'not followed', unset ? 'unset' : JSON.stringify(bash));
+      say(`variables.${name}`, 'not followed', has);
       continue;
     }
-    if (v.set === 'unknown') {
-      say(`variables.${name}`, 'set or not', unset ? 'unset' : bash ? 'set' : 'unchanged');
+    if (v.declared === 'unknown' || v.set === 'unknown') {
+      say(`variables.${name}`, `declared ${v.declared}, set ${v.set}`, has);
       continue;
     }
-    if (v.set === 'off') {
-      if (!unset && bash) say(`variables.${name}`, 'unset', bash ? 'set' : 'unchanged');
+    if (v.declared === 'off') {
+      if (bash) say(`variables.${name}`, 'unset', has);
       continue;
     }
     if (!bash) {
       // Set by the script to what bash had already.
-      if (!(name in BASELINE_ATTRS) && name !== 'IFS') say(`variables.${name}`, 'set', unset ? 'unset' : 'unchanged');
+      if (!(name in BASELINE_ATTRS) && name !== 'IFS') say(`variables.${name}`, v.set === 'on' ? 'set' : 'declared', has);
       continue;
     }
+    if ((v.set === 'on') !== (has === 'set')) say(`variables.${name}.set`, v.set === 'on' ? 'set' : 'declared', has);
     const attrs = new Set([...(BASELINE_ATTRS[name] ?? '')]);
     for (const [l, a] of Object.entries(v.attrs)) {
       if (a.state === 'unknown') say(`variables.${name}.${l}`, 'unknown', bash.attrs.includes(l) ? 'on' : 'off');
@@ -66,12 +69,14 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
     const model = [...attrs].sort().join('') || '-';
     const want = [...bash.attrs].sort().join('');
     if (model !== want) say(`variables.${name}.attrs`, model, want);
-    if (v.value !== undefined && !attrs.has('a') && !attrs.has('A') && quoted(v.value) !== bash.value) say(`variables.${name}.value`, quoted(v.value), String(bash.value));
+    if (v.set === 'on' && v.value !== undefined && !attrs.has('a') && !attrs.has('A') && quoted(v.value) !== bash.value) say(`variables.${name}.value`, quoted(v.value), String(bash.value));
   }
   for (const [name, f] of st.functions) {
     const bash = facts.functions?.[name];
-    const model = f.state === 'unknown' || f.exported === 'unknown' ? 'unknown' : f.state === 'off' ? 'none' : f.exported === 'on' ? 'fx' : 'f';
-    if (model !== (bash ?? 'none')) say(`functions.${name}`, model, bash ?? 'none');
+    const unknown = [f.state, f.exported, f.readonly].includes('unknown');
+    const model = unknown ? 'unknown' : f.state === 'off' ? 'none' : `f${f.readonly === 'on' ? 'r' : ''}${f.exported === 'on' ? 'x' : ''}`;
+    const want = bash ? `f${[...bash.slice(1)].sort().join('')}` : 'none';
+    if (model !== want) say(`functions.${name}`, model, want);
   }
   for (const name of Object.keys(facts.functions ?? {})) if (!st.functions.has(name)) say(`functions.${name}`, 'none', facts.functions![name]);
   for (const name of new Set([...st.aliases.keys(), ...Object.keys(facts.aliases ?? {})])) {

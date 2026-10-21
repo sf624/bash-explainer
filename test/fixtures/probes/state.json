@@ -406,6 +406,9 @@
         }
       },
       "status": 0
+    },
+    "gaps": {
+      "end.variables.OPTARG": "getopts sets OPTARG, or unsets it when the option takes no value: the model does not read the options"
     }
   },
   {
@@ -623,6 +626,10 @@
         }
       },
       "status": 0
+    },
+    "gaps": {
+      "end.variables.HOME": "a name in capitals the script has not set may come from the environment: whether it has a value is unknown",
+      "end.variables.PATH": "a name in capitals the script has not set may come from the environment: whether it has a value is unknown"
     }
   },
   {
@@ -782,6 +789,353 @@
           "loopy": "f",
           "mk": "f",
           "setup": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "main() { setup; for f in *.txt; do :; done; }\nsetup() { shopt -s nullglob; }\nmain",
+    "note": "a function body runs with the state of its call: setup is defined by then",
+    "facts": {
+      "end": {
+        "shopt": {
+          "nullglob": true
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"x y.txt\""
+          }
+        },
+        "functions": {
+          "main": "f",
+          "setup": "f"
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.f": "the model does not know whether a glob matches: the loop may not run"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { g; }\ng() { set -f; }\nf\nh() { declare x=1; k; }\nk() { y=2; }\nh",
+    "note": "a call inside a body reaches a function defined after the caller",
+    "facts": {
+      "end": {
+        "set": {
+          "noglob": true
+        },
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f",
+          "h": "f",
+          "k": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { echo | read v; }\nshopt -s lastpipe\nf",
+    "note": "an option set after the definition counts at the call",
+    "facts": {
+      "end": {
+        "shopt": {
+          "lastpipe": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { local x; declare -g x=1; }\nf\ng() { y=1; local y=2; }\ng\nh() { local -; set -f; shopt -s dotglob; }\nh\nlocal z=1 2>/dev/null",
+    "note": "locals start at local; declare -g sets the global one; local - restores the set options; local outside a function sets nothing",
+    "facts": {
+      "end": {
+        "shopt": {
+          "dotglob": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { x=5; }\nx=1 f\nset -u\ndeclare d\nloc() { local l; }\nloc",
+    "note": "a prefix assignment to a function is its temporary; declare with no value declares a variable that is not set",
+    "facts": {
+      "end": {
+        "set": {
+          "nounset": true
+        },
+        "variables": {
+          "d": {
+            "attrs": "-"
+          }
+        },
+        "functions": {
+          "f": "f",
+          "loc": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { set -f; }\nunset -v f\nf() { :; }\nunset f\nreadonly -f g 2>/dev/null\ng() { :; }\nreadonly -f g",
+    "note": "unset of a name with no variable removes the function; readonly -f",
+    "facts": {
+      "end": {
+        "functions": {
+          "g": "fr"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4",
+    "snippet": "declare -n a=b\ndeclare -n b=c\na=1\nx=1\ndeclare -n r=x\nunset r\ndeclare -n e\ne=t\ne=5",
+    "note": "namerefs: a chain, unset through a nameref, an empty nameref takes the name first",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "n",
+            "value": "\"b\""
+          },
+          "b": {
+            "attrs": "n",
+            "value": "\"c\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "e": {
+            "attrs": "n",
+            "value": "\"t\""
+          },
+          "r": {
+            "attrs": "n",
+            "value": "\"x\""
+          },
+          "t": {
+            "attrs": "-",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "declare -a a; declare -A a 2>/dev/null\ndeclare -A m; declare -a m 2>/dev/null\ndeclare -r ro=1; ro=2 2>/dev/null\nset -a; arr=(1); fn() { :; }; sc=1",
+    "note": "bash keeps an indexed or associative array as it is; a readonly variable keeps its value; set -a exports functions and scalars, not arrays",
+    "facts": {
+      "end": {
+        "set": {
+          "allexport": true
+        },
+        "variables": {
+          "a": {
+            "attrs": "a"
+          },
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"1\")"
+          },
+          "m": {
+            "attrs": "A"
+          },
+          "ro": {
+            "attrs": "r",
+            "value": "\"1\""
+          },
+          "sc": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "fn": "fx"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 3: ro: readonly variable"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "POSIXLY_CORRECT=1\n@PROBE:on@\nunset POSIXLY_CORRECT\n@PROBE:off@\nshopt -s shift_verbose; set +o posix",
+    "note": "POSIXLY_CORRECT turns POSIX mode on and off; leaving a mode bash is not in changes nothing",
+    "facts": {
+      "on": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "off": {
+        "shopt": {
+          "inherit_errexit": true
+        }
+      },
+      "end": {
+        "shopt": {
+          "inherit_errexit": true,
+          "shift_verbose": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "command set -f; builtin shopt -s nullglob; x=1 declare y=2; x=1 export z=3",
+    "note": "command, builtin, and a declaration after a prefix assignment",
+    "facts": {
+      "end": {
+        "shopt": {
+          "nullglob": true
+        },
+        "set": {
+          "noglob": true
+        },
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "x",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "shopt -s expand_aliases\nalias e='set -f' q=echo\nalias 'w=shopt -s dotglob'\ne\nw; alias r='set -C'; r\nv=$(r)",
+    "note": "an alias that changes the state, once expanded; the same line is read before the alias exists, a command substitution after",
+    "facts": {
+      "end": {
+        "shopt": {
+          "dotglob": true,
+          "expand_aliases": true
+        },
+        "set": {
+          "noglob": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        },
+        "aliases": {
+          "e": "set -f",
+          "q": "echo",
+          "r": "set -C",
+          "w": "shopt -s dotglob"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 5: r: command not found"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "printf -v 'a[1]' x; read <<< in; getopts ab opt",
+    "note": "printf -v sets an element; read with no name sets REPLY; getopts with no option left",
+    "facts": {
+      "end": {
+        "variables": {
+          "REPLY": {
+            "attrs": "-",
+            "value": "\"in\""
+          },
+          "a": {
+            "attrs": "a",
+            "value": "([1]=\"x\")"
+          },
+          "opt": {
+            "attrs": "-",
+            "value": "\"?\""
+          }
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.OPTARG": "getopts sets OPTARG, or unsets it when the option takes no value: the model does not read the options"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { local x=1; g; }\ng() { unset x; x=2; }\nx=0\nf",
+    "note": "unset in a called function removes the caller's local: the global x shows again and is set",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f"
         }
       },
       "status": 0
