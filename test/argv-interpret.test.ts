@@ -4,7 +4,7 @@ import * as assert from 'assert';
 import { lookupCommand } from '../src/analyzer';
 import { ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
-import { byCount, cmd, runs } from '../src/dict/types';
+import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
 import { argWords, render } from './support/argwords';
 // (Types only: loaded so that its coverage is measured.)
@@ -573,11 +573,11 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
     assert.deepStrictEqual(roles('x run A=1 ls', spec), ['run: subcommand run', '  A=1: NAME=VALUE (assignment)', '  ls: command exec ls']);
     // An entry without options.
     assert.deepStrictEqual(cmd('s', 's').options, []);
-    // A name given twice means what it means last; an option given later with `fills` no longer fills.
-    const twice = cmd('n', 'n', [['-q', 'q', 'quiet'], ['-a|--all', 'a', 'all'], ['-p|--project', 'p', 'project'], ['-p|--publish', 'p', 'publish', 'arg'], ['-a', 'a', 'again'], ['-q', 'q', 'quiet again'], ['-e', 'e', 'e', 'arg fills'], { names: ['-e'], text: t('e again') }], { positional: [t('p')] });
-    assert.deepStrictEqual(twice.options!.map((o) => `${o.names.join('|')} ${o.text.en}`),
-      ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again', '-e e again']);
-    assert.strictEqual(twice.operands!.length, 1);
+    // A name given twice in one list is a mistake; a name of the overrides means what it says there.
+    assert.throws(() => cmd('n', 'n', [['-q', 'q', 'quiet'], ['-a|-q', 'a', 'again']]), /-q: an option named twice/);
+    assert.throws(() => mergeOptions([], [opt('-q', 'q'), opt('-q', 'again')]), /-q: an option named twice/);
+    const merged = mergeOptions([opt('-a|--all', 'all'), opt('-p|--project', 'project'), opt('-q', 'quiet')], [opt('-p|--publish', 'publish'), opt('-a', 'again'), opt('-q', 'quiet again')]);
+    assert.deepStrictEqual(merged.map((o) => `${o.names.join('|')} ${o.text.en}`), ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again']);
   });
 
   it('builds the operand patterns of `byCount`', () => {

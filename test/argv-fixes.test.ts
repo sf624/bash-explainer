@@ -69,6 +69,9 @@ const FIXED: [string, string, Kind, string][] = [
   ['ls "-l" "--all"', '"--all"', 'option', 'include hidden files'],
   // let has no options: `bash -c 'let -1+2; echo $?'` prints 0.
   ['let -1+2', '-1+2', 'argument', 'arithmetic expression'],
+  // mlocate(1) and plocate(1): `-r, --regexp REGEXP` takes a basic regular expression; `--regex` is a flag (EREs).
+  ['locate -r ^/etc/hosts$', '^/etc/hosts$', 'argument', 'Value for `-r`'],
+  ['locate --regex hosts$', 'hosts$', 'argument', 'pattern to search for'],
 ];
 
 describe('argument roles the old walk read wrongly', () => {

@@ -30,14 +30,23 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
   return opt;
 }
 
-/** Lists of options put together: a name given twice means what it means last (the option loses its earlier name). */
-export function mergeOptions(...lists: OptionSpec[][]): OptionSpec[] {
-  const seen = new Set<string>();
-  return lists.flat().reverse().flatMap((o) => {
-    const names = o.names.filter((n) => !seen.has(n));
-    names.forEach((n) => seen.add(n));
+/**
+ * A list of options, with `overrides` put over it: a name of `overrides` means what it says there (the option
+ * of `list` loses that name). A name given twice in one list is a mistake in the dictionary, and throws.
+ */
+export function mergeOptions(list: OptionSpec[], overrides: OptionSpec[] = []): OptionSpec[] {
+  for (const l of [list, overrides]) {
+    const seen = new Set<string>();
+    for (const n of l.flatMap((o) => o.names)) {
+      if (seen.has(n)) throw new Error(`${n}: an option named twice`);
+      seen.add(n);
+    }
+  }
+  const over = new Set(overrides.flatMap((o) => o.names));
+  return [...list.flatMap((o) => {
+    const names = o.names.filter((n) => !over.has(n));
     return names.length === o.names.length ? [o] : names.length ? [{ ...o, names }] : [];
-  }).reverse();
+  }), ...overrides];
 }
 
 /** What `cmd` takes besides the summary and the options: any field of a spec, and a shorthand for the operands. */
@@ -60,10 +69,7 @@ export function cmd(ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [],
   const summary = tx(ja, en);
   const { positional = [], positionalLang = [], operands = [], ...fields } = rest;
   const options = mergeOptions(opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)));
-  // (The names whose last meaning has the flag `fills`.)
-  const filling = new Map<string, boolean>();
-  for (const o of opts) for (const n of Array.isArray(o) ? o[0].split('|') : o.names) filling.set(n, Array.isArray(o) && !!o[3]?.includes('fills'));
-  const fills = [...filling].filter(([, f]) => f).map(([n]) => n);
+  const fills = opts.flatMap((o) => (Array.isArray(o) && o[3]?.includes('fills') ? o[0].split('|') : []));
   const alts: OperandAlt[] = [
     ...operands,
     ...(fills.length ? [{ when: { option: fills }, pattern: listed(positional, positionalLang, 1) }] : []),
