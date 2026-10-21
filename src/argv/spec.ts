@@ -172,9 +172,10 @@ export interface OperandSpec {
 
 /**
  * When an alternative applies: an option is given, the mode is chosen, an operand (by its index among the
- * operands) has a known value that matches (`trap 1 2`: a number first makes every word a signal), or not.
+ * operands) has a known value that matches (`trap 1 2`: a number first makes every word a signal), an option is given
+ * with a known value that matches (`env -S'-i A=1'`), or not.
  */
-export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { not: Condition };
+export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { optionValue: string[]; matches: RegExp } | { not: Condition };
 
 /** How the words of a command slot are run. */
 export interface CommandSlot {

@@ -130,7 +130,7 @@ class Reader {
     const options = [...(spec.options ?? []), ...inherited];
     const style = spec.style ?? 'gnu';
     const roles = new Map<number, ArgRole>();
-    const given: Given = { specs: [], flags: [], marks: new Set(), later: [] };
+    const given: Given = { specs: [], flags: [], values: [], marks: new Set(), later: [] };
     const operands: number[] = [];
     const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
     let endOpts = false;
@@ -335,6 +335,7 @@ class Reader {
       const opt = findOption(options, flag, spec.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
+      if (opt && !open) given.values.push({ names: opt.names, text: text.slice(eq + 1) });
       if (!opt) { roles.set(i, { role: 'unknown-option', flag, value }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
@@ -381,6 +382,7 @@ class Reader {
         // `dpkg-query -f=FORMAT`: the value starts after the `=`.
         const at = st.spec.shortEquals && text[k + 1] === '=' ? k + 2 : k + 1;
         role.value = { role: 'value', of: as, option: opt, spec: first, index: 0, attached: at };
+        if (!open) st.given.values.push({ names: opt.names, text: text.slice(at) });
         valued = true;
         last = this.separateValues(st, opt, as, last, 1, role);
       } else if (first.how !== 'attached-only') last = this.separateValues(st, opt, as, last, 0, role);
@@ -419,6 +421,7 @@ class Reader {
       }
       if (v.optional && !(v.next && next.value !== undefined && v.next.test(next.value))) break;
       last++;
+      st.given.values.push({ names: opt.names, text: this.words[last].value });
       st.roles.set(last, v.command ? { role: 'command', slot: v.command, of: flag } : { role: 'value', of: flag, option: opt, spec: v, index });
     }
     return last;
@@ -449,10 +452,10 @@ class Reader {
 }
 
 /**
- * The options given so far, the flags as written (unknown ones too: a condition may name them), the marks
- * they set, and the options that change the operands after them.
+ * The options given so far, the flags as written (unknown ones too: a condition may name them), the values
+ * written for them, the marks they set, and the options that change the operands after them.
  */
-interface Given { specs: OptionSpec[]; flags: string[]; marks: Set<string>; later: { word: number; spec: OperandSpec }[] }
+interface Given { specs: OptionSpec[]; flags: string[]; values: { names: string[]; text?: string }[]; marks: Set<string>; later: { word: number; spec: OperandSpec }[] }
 
 interface OptionState {
   spec: CommandSpec;
@@ -503,6 +506,7 @@ function conditionHolds(c: Condition | undefined, given: Given, mode: string | u
   if (c === undefined) return true;
   if ('not' in c) return !conditionHolds(c.not, given, mode, operands);
   if ('mode' in c) return c.mode === mode;
+  if ('optionValue' in c) return given.values.some((v) => v.text !== undefined && v.names.some((n) => c.optionValue.includes(n)) && c.matches.test(v.text));
   if ('operand' in c) {
     const value = operands[c.operand]?.value;
     return value !== undefined && c.matches.test(value);
