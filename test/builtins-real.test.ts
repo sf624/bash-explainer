@@ -137,6 +137,19 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     assert.match((parseOf('kill -15 1').parse.roles[0].role as { text: { en: string } }).text.en, /^Send signal number 15/);
   });
 
+  it('pushd, popd and dirs: `+N` and `-N` are places in the stack, not options', () => {
+    const stack = 'mkdir -p /tmp/be-a /tmp/be-b; cd /tmp; pushd /tmp/be-a >/dev/null; pushd /tmp/be-b >/dev/null;';
+    for (const line of ['pushd +1', 'pushd -1', 'popd +1', 'popd -2', 'dirs +0', 'dirs -0', 'dirs -p +2']) {
+      const { parse } = parseOf(line);
+      assert.strictEqual(parse.roles.at(-1)!.role.role, 'pattern-option', line);
+      const run = spawnSync('bash', ['--norc', '-c', `${stack} ${line}`], { env: ENV, encoding: 'utf8' });
+      assert.strictEqual(run.status, 0, line);
+      assert.strictEqual(run.stderr, '', line);
+    }
+    // Out of the stack's range bash complains about the number, so it was read as one.
+    assert.match(spawnSync('bash', ['--norc', '-c', `${stack} pushd +9`], { env: ENV, encoding: 'utf8' }).stderr, /directory stack index/);
+  });
+
   it('exit, return, shift, break and continue: a number, even with a `-`', () => {
     assert.deepStrictEqual(operands('exit -1'), ['-1']);
     assert.strictEqual(spawnSync('bash', ['--norc', '-c', 'exit -1']).status, 255);
