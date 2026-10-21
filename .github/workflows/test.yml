@@ -211,3 +211,42 @@ jobs:
         with:
           files: test/fixtures/sample.sh images/*.sh
           package: ${{ steps.pack.outputs.tgz }}
+
+  bash-ast:
+    # Compares our syntax tree with bash's own parser through bash-ast (test/bash-ast.test.ts).
+    # GPL boundary: bash-ast is GPL-3.0. We only download and run it as a separate program, and read
+    # its JSON on a pipe. We never redistribute it: no artifact, cache, commit, release or bundle.
+    name: Syntax tree against bash-ast
+    runs-on: ubuntu-24.04
+    env:
+      BASH_AST_VERSION: v0.3.3
+      BASH_AST_SHA256: e38481887369559f493bbbceb43214fd7a5bc7238f0bc8fdf2d6cd4699d6925f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download bash-ast from upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="bash-ast-$BASH_AST_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$BASH_AST_VERSION" --repo cv/bash-ast --pattern "$asset" --dir "$RUNNER_TEMP"
+          echo "$BASH_AST_SHA256  $RUNNER_TEMP/$asset" | sha256sum --check
+          mkdir "$RUNNER_TEMP/bash-ast"
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/bash-ast"
+          echo "BASH_AST=$RUNNER_TEMP/bash-ast/bash-ast" >> "$GITHUB_ENV"
+
+      # --no-config: .mocharc.json lists every test file, and --spec would add to it.
+      - name: Run test/bash-ast.test.ts
+        env:
+          # Fail instead of skipping when bash-ast cannot be run.
+          BASH_EXPLAINER_BASH_AST: '1'
+        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash-ast.test.ts
