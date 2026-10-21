@@ -60,7 +60,7 @@ class Run {
     const s = this.inner(n);
     this.last = s;
     const ctx = this.status.errexit(n);
-    if (s !== 0 && ctx.checked) {
+    if (s !== 0 && ctx.checked === true) {
       if (ctx.active === 'unknown') throw new Unknown(`errexit may be on at ${n.text}`);
       if (ctx.active === 'on') throw new Exit(s);
     }
@@ -130,6 +130,15 @@ class Run {
           if ((this.block(fields(n, 'condition')) === 0) === until) return s;
           s = this.block(field(n, 'body')!.namedChildren);
         }
+      }
+      case 'for_statement': {
+        let s = 0;
+        for (const w of fields(n, 'value')) {
+          const f = wordFields(w, this.state, ENV).fields;
+          if (!f) throw new Unknown(`the fields of ${w.text}`);
+          for (let i = 0; i < f.length; i++) s = this.block(field(n, 'body')!.namedChildren);
+        }
+        return s;
       }
       case 'case_statement': {
         const v = this.value(field(n, 'value')!);

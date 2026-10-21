@@ -245,6 +245,8 @@ export interface StateModel {
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
+  /** The options a `set` command turns on or off (`set -e`: errexit on), on any walk; empty for another node. */
+  setWrites(n: SyntaxNode): ReadonlyMap<string, 'on' | 'off'>;
   /** The `source` and `.` commands that run (their files are not read). */
   readonly sources: readonly SyntaxNode[];
   /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
@@ -436,6 +438,8 @@ const aliasTrees = new Map<string, SyntaxTree>();
 class Walker {
   /** The states each node was run with (more than one in a loop or a function called more than once); merged when asked. */
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
+  /** The `set` commands, with the options they turn on or off (on any walk). */
+  readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   readonly aliasDefs = new Map<string, SyntaxNode[]>();
@@ -744,7 +748,7 @@ class Walker {
       // A command substitution is read again when it runs: its aliases are those of the state then.
       const outer = this.expand;
       if (c.type === 'command_substitution') this.expand = st;
-      this.sequence(c.children, c.type === 'command_substitution' ? this.substitutionErrexit(st) : st);
+      this.sequence(c.children, st);
       this.expand = outer;
     };
     const visit = (x: SyntaxNode): void => {
@@ -755,18 +759,6 @@ class Walker {
     };
     if (SUBSTITUTIONS.includes(n.type)) sub(n);
     else visit(n);
-  }
-
-  /**
-   * The state a command substitution starts with: bash turns errexit off in it, unless inherit_errexit is on (POSIX
-   * mode turns it on). Other shells keep it.
-   */
-  private substitutionErrexit(st: ShellState): ShellState {
-    const errexit = option(st, 'set', 'errexit');
-    if (!this.bash || errexit === 'off' || errexit === 'default') return st;
-    const inherit = option(st, 'shopt', 'inherit_errexit');
-    if (inherit === 'on') return st;
-    return { ...st, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off') };
   }
 
   /** `${x:=word}` and `${x=word}` in the words of `n` set `x` (to a value not known here). */
@@ -1168,6 +1160,8 @@ class Walker {
 
   private setCommand(st: ShellState, roles: ArgRole[], args: SyntaxNode[]): ShellState {
     const turn = (name: string, on: boolean): void => {
+      const writes = this.setWrites.get(this.node!) ?? new Map<string, 'on' | 'off'>();
+      this.setWrites.set(this.node!, writes.set(name, on ? 'on' : 'off'));
       st = name === 'posix' ? this.setPosix(st, on, this.node!) : this.put(st, 'set', name, on ? 'on' : 'off');
     };
     roles.forEach((role, i) => {
@@ -1421,6 +1415,7 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
       while (top.parent?.parent) top = top.parent;
       return w.unitStart.get(top) ?? top;
     },
+    setWrites: (n) => w.setWrites.get(n) ?? new Map(),
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;

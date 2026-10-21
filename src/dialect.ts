@@ -196,6 +196,11 @@ function works(f: Feature, shell: RealShell): boolean {
   return f.works.includes(LETTER[shell]);
 }
 
+/** Whether feature `id` of FEATURES works in `shell` (bash when absent; POSIX sh has none of them). */
+export function featureWorks(id: string, shell?: Shell): boolean {
+  return !shell || (shell !== 'sh' && works(FEATURES[id], shell as RealShell));
+}
+
 /** Features used by the constructs starting on lines [from, to]. */
 export function collectFeatures(root: SyntaxNode, from: number, to: number): Found[] {
   const found: Found[] = [];

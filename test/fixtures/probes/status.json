@@ -880,5 +880,67 @@
       "status": 1,
       "stderr": "SCRIPT: line 1: nope: unbound variable"
     }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -e && false; @PROBE:a@",
+    "errexit": false,
+    "note": "a set -e left of && takes effect at once",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "if set -e; then false; @PROBE:in@; fi; @PROBE:a@",
+    "errexit": false,
+    "note": "and in a condition too",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "{ set -e; false; @PROBE:in@; } || :; @PROBE:a@; false; @PROBE:b@",
+    "errexit": false,
+    "note": "in a group left of ||, only when the group ends",
+    "facts": {
+      "ran": [
+        "in",
+        "a"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "for i in $nothing; do false; done; @PROBE:a@",
+    "note": "a for loop over no words is 0",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "for i in; do false; done; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "for i in 1; do false; @PROBE:in@; done; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
   }
 ]
