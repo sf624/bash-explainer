@@ -21,7 +21,7 @@
 // The model is built once per tree (and shell) and cached.
 import { evalArith } from '../arith';
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
-import { argWord } from '../argv/words';
+import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
@@ -50,6 +50,11 @@ export interface VariableState {
   readonly attrs: Readonly<Record<string, Attribute>>;
   /** Its value, when it is a scalar whose text is known here (for a nameref, the name it refers to). */
   readonly value?: string;
+  /**
+   * When the value is not static text, the value word of the plain assignment (`x=$y`, `declare x=$y`) that gave it, on
+   * every path to here: src/semantics/words.ts expands it where it ran.
+   */
+  readonly source?: SyntaxNode;
   /** The node that last changed it (after a merge, the latest in the source). */
   readonly at: SyntaxNode;
 }
@@ -337,7 +342,8 @@ function mergeVariable(a: VariableState | undefined, b: VariableState | undefine
     const y = b.attrs[l];
     attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
-  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, at: later(a.at, b.at) };
+  const source = a.source === b.source ? a.source : undefined;
+  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at) };
 }
 
 function mergeFunction(a: FunctionState | undefined, b: FunctionState | undefined): FunctionState {
@@ -391,7 +397,7 @@ interface Operand {
   node: SyntaxNode;
   name: string;
   subscript: boolean;
-  assign?: { append: boolean; text: string | undefined; array: boolean };
+  assign?: { append: boolean; text: string | undefined; array: boolean; source?: SyntaxNode };
 }
 
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
@@ -1028,13 +1034,14 @@ class Walker {
         const value = field(w, 'value');
         const subscript = nameNode.type === 'subscript';
         out.push({ node: w, name: subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
-          assign: { append: w.children.some((c) => c.type === '+='), text: value ? staticWordValue(value) : '', array: value?.type === 'array' } });
+          assign: { append: w.children.some((c) => c.type === '+='), text: value ? staticWordValue(value, true) : '', array: value?.type === 'array', source: value } });
         continue;
       }
-      // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command.
-      const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec((w.type === 'variable_name' || w.type === 'subscript' ? w.text : staticWordValue(w)) ?? '');
-      if (!m) continue;
-      out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: m[4], array: false } } : {}) });
+      // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command; `"c"=$x` (whose value is not known here).
+      const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : staticWordValue(w);
+      const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(w).replace(/=.*/s, '=')) ;
+      if (!m || (text === undefined && !m[3])) continue;
+      out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: text === undefined ? undefined : m[4], array: false } } : {}) });
     }
     return out;
   }
@@ -1142,6 +1149,8 @@ class Walker {
         continue;
       }
       if (target === 'POSIXLY_CORRECT' && this.bash) st = this.setPosix(st, false, node, true);
+      // Unsetting GLOBIGNORE turns dotglob off (setting it turned it on).
+      if (target === 'GLOBIGNORE' && this.bash) st = this.put(st, 'shopt', 'dotglob', 'off');
       st = this.put(st, 'variables', target, { declared: 'off', set: 'off', attrs: {}, at: node });
     }
     return st;
@@ -1163,7 +1172,7 @@ class Walker {
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     return this.assign(st, subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
-      { append: a.children.some((c) => c.type === '+='), text: value ? staticWordValue(value) : '', array: value?.type === 'array' }, a, false);
+      { append: a.children.some((c) => c.type === '+='), text: value ? staticWordValue(value, true) : '', array: value?.type === 'array', source: value }, a, false);
   }
 
   /** `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`. */
@@ -1190,14 +1199,18 @@ class Walker {
     if (text !== undefined && is('u')) text = text.toUpperCase();
     // An empty nameref (`declare -n r; r=x`) takes the name as its value; bash refuses one that is no name.
     if (is('n') && !nameref && (text === undefined || !NAME.test(text))) return st;
-    return this.setVariable(st, target, at, text, false, is('a') || is('A'));
+    // (An integer or a case attribute changes the value: then the word alone does not give it.)
+    const source = text === undefined && !how.append && !['i', 'l', 'u'].some(is) ? how.source : undefined;
+    return this.setVariable(st, target, at, text, false, is('a') || is('A'), source);
   }
 
   /** Sets `name` (to `value`, when known), exporting it under `set -a` (not an array: bash cannot export one). */
-  private setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false): ShellState {
+  private setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false, source?: SyntaxNode): ShellState {
     const prev = st.variables.get(name);
-    st = this.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, at });
+    st = this.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at });
     if (name === 'POSIXLY_CORRECT' && !plain && this.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);
+    // A GLOBIGNORE that is not empty turns dotglob on, until GLOBIGNORE is unset (an empty one leaves it as it is).
+    if (name === 'GLOBIGNORE' && this.bash && value !== '' && option(st, 'shopt', 'dotglob') !== 'on') st = this.put(st, 'shopt', 'dotglob', value === undefined ? 'unknown' : 'on');
     const all = option(st, 'set', 'allexport');
     if (!array && (all === 'on' || (all === 'unknown' && prev?.attrs.x?.state !== 'on'))) {
       const v = st.variables.get(name)!;

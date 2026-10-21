@@ -1140,5 +1140,36 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "GLOBIGNORE='*.txt'\n@PROBE:a@\nGLOBIGNORE=\n@PROBE:b@\nunset GLOBIGNORE",
+    "note": "A GLOBIGNORE that is not empty turns dotglob on; an empty one leaves it; unset turns it off.",
+    "facts": {
+      "a": {
+        "shopt": {
+          "dotglob": true
+        },
+        "variables": {
+          "GLOBIGNORE": {
+            "attrs": "-",
+            "value": "\"*.txt\""
+          }
+        }
+      },
+      "b": {
+        "shopt": {
+          "dotglob": true
+        },
+        "variables": {
+          "GLOBIGNORE": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        }
+      },
+      "end": {},
+      "status": 0
+    }
   }
 ]
