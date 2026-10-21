@@ -39,22 +39,26 @@ export type ArgRole =
   | { role: 'end-of-options' }
   /**
    * An operand; `spec` is absent when the spec does not describe the operands, or none of its patterns fits
-   * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives.
+   * (see `ArgvParse.unmatched`). `uncertain`: the role depends on how many words an expansion gives, and
+   * `otherwise` is the other role it may have.
    */
-  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean }
+  | { role: 'operand'; spec?: OperandSpec; index: number; assignment?: boolean; uncertain?: boolean; otherwise?: OperandSpec }
   /** The rest of the words are read with the subcommand's spec. */
   | { role: 'subcommand'; name: string; spec: CommandSpec; parse: ArgvParse }
   /**
    * The first word of a command run by this one; `parse` reads the words after it. A shell string (`bash -c 'cmd'`,
-   * `su -c 'cmd'`, the value of the option `of`) has no `parse`; nor has a string joined from the words (`joined`).
+   * `su -c 'cmd'`) has no `parse`; nor has a string joined from the words (`joined`). `of` is the option whose
+   * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
    */
-  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string }
+  | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
   /** The word that ends an option's command (`;` of `find -exec … ;`). */
   | { role: 'terminator' }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
   | { role: 'joined' }
   /** A word of the expression that `operandParser` reads (`find . -name x`). */
   | { role: 'expression' };
+
+export type CommandRole = Extract<ArgRole, { role: 'command' }>;
 
 /**
  * The value of an option: `of` is the option's `flag` as written (`-f`, `--file`, `f` of `tar cf`), `index`
@@ -73,6 +77,8 @@ export interface ArgvParse {
   mode?: string;
   /** One role per word, in order. Words of a subcommand or of a command slot are in the `parse` of its role. */
   roles: RoleAt[];
+  /** The end of the words it reads (exclusive): those of a subcommand or a command run end with their parent's, or at a terminator. */
+  end: number;
   /** Operands that fit no pattern of the spec (too many, too few): shown as plain words. */
   unmatched: number[];
   /** The index in `spec.operands` of the alternative the operands fit. */
@@ -124,7 +130,7 @@ class Reader {
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [] };
     const operands: number[] = [];
-    const parse: ArgvParse = { command, roles: [], unmatched: [] };
+    const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
@@ -222,13 +228,13 @@ class Reader {
       const n = primary.items[pos];
       const item = pattern[n];
       if (item.command) {
-        if (!takesRest(item)) { roles.set(i, { role: 'command', slot: item.command }); continue; }
+        if (!takesRest(item)) { roles.set(i, { role: 'command', slot: item.command, item }); continue; }
         for (const j of [...roles.keys()]) if (j > i && j < end) roles.delete(j);
         // ssh: the words are joined into one string for the remote shell, which reads it as a script.
         if (item.command.joinsWords) {
-          roles.set(i, { role: 'command', slot: item.command });
+          roles.set(i, { role: 'command', slot: item.command, item });
           for (let j = i + 1; j < end; j++) roles.set(j, { role: 'joined' });
-        } else roles.set(i, this.command(item.command, i, end));
+        } else roles.set(i, { ...this.command(item.command, i, end), item });
         return;
       }
       if (item.option) {
@@ -237,24 +243,23 @@ class Reader {
         continue;
       }
       // Copies of one word with different meanings, or another meaning when the words are more: not certain.
-      const meaning = (r: { alt: OperandAlt }, at: number): string => r.alt.pattern[at].text.en;
-      const copies = primary.at.flatMap((x, p) => (x === k ? [meaning(primary, primary.items[p])] : []));
-      const elsewhere = other && meaning(other, other.items[other.first[k]]) !== item.text.en;
-      const uncertain = copies.some((c) => c !== item.text.en) || !!elsewhere || undefined;
+      const copies = primary.at.flatMap((x, p) => (x === k ? [pattern[primary.items[p]]] : []));
+      const elsewhere = other ? [other.alt.pattern[other.items[other.first[k]]]] : [];
+      const otherwise = [...copies, ...elsewhere].find((o) => o.text.en !== item.text.en);
       // `jq . in.json --args a`: after the option, the operands of the repeating last item are something else.
       const last = n === pattern.length - 1 && (item.repeat === '*' || item.repeat === '+');
       const later = last ? st.given.later.filter((l) => l.word < i).pop()?.spec : undefined;
       const spec = later ?? item;
       const assignment = (spec.assignment || (spec.assignmentText && ASSIGNMENT.test(known(words[k])))) || undefined;
-      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(uncertain ? { uncertain } : {}) });
+      roles.set(i, { role: 'operand', spec, index: k, ...(assignment ? { assignment } : {}), ...(otherwise ? { uncertain: true, otherwise } : {}) });
     }
   }
 
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
-  private command(slot: CommandSlot, at: number, end: number): ArgRole {
+  private command(slot: CommandSlot, at: number, end: number, of?: string): CommandRole {
     const name = this.words[at].value;
     const spec = name === undefined ? undefined : this.ctx.lookup?.(name);
-    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', []) };
+    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', []), ...(of ? { of } : {}) };
   }
 
   /** In the gnu style, whether the last of these operands would start a command, which ends the options (`ssh host ls -l`). */
@@ -388,7 +393,7 @@ class Reader {
       const { terminators, slot } = opt.until;
       let j = last + 1;
       while (j < st.end && !terminators.includes(this.words[j].value ?? '')) j++;
-      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j));
+      if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
       if (j < st.end) { st.roles.set(j, { role: 'terminator' }); return j; }
       return st.end - 1;
     }

@@ -364,10 +364,20 @@ describe('argv interpreter: the option grammar', () => {
     assert.deepStrictEqual(roles('t --lines=$n --$x --lines$x', spec), ['--lines=$n: --lines=8 lines', '--$x: open --', '--lines$x: open --lines']);
   });
 
+  it('records the other role of an uncertain operand, the operand a command fills, and where nested words end', () => {
+    const dir = parseOf('cp *.txt dir').roles[1].role;
+    assert.ok(dir.role === 'operand' && dir.uncertain);
+    assert.strictEqual(dir.otherwise!.text.en, 'destination directory');
+    const p = parseOf('timeout 5 sleep 1');
+    const run = p.roles[1].role;
+    assert.ok(run.role === 'command');
+    assert.deepStrictEqual([run.item!.name, run.parse!.end, p.end], ['COMMAND', 3, 3]);
+  });
+
   it('reads the words up to a terminator as a command', () => {
-    assert.deepStrictEqual(roles('t --exec rm {} \\; f', spec), ['--exec: --exec exec', 'rm: command exec rm', '  {}: ARG1', '\\;: terminator', 'f: FILE']);
+    assert.deepStrictEqual(roles('t --exec rm {} \\; f', spec), ['--exec: --exec exec', 'rm: command exec of --exec rm', '  {}: ARG1', '\\;: terminator', 'f: FILE']);
     assert.deepStrictEqual(roles('t --exec + f', spec), ['--exec: --exec exec', '+: terminator', 'f: FILE']);
-    assert.deepStrictEqual(roles('t --exec rm x', spec), ['--exec: --exec exec', 'rm: command exec rm', '  x: ARG1']);
+    assert.deepStrictEqual(roles('t --exec rm x', spec), ['--exec: --exec exec', 'rm: command exec of --exec rm', '  x: ARG1']);
   });
 
   it('reads single-dash options', () => {
