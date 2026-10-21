@@ -924,6 +924,14 @@ describe('a short option with a quoted value glued on', () => {
   it('says what the value is after quote removal', () => {
     assert.ok(all(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
   });
+  it('shows the value of a partly quoted word without its quote characters, and its span ends there', () => {
+    const line = "dpkg-query -Wf='X${Package}' bash";
+    const value = all(explain(line).items).find((t) => t.kind === 'argument' && t.explanation.startsWith('Value for `-f`'))!;
+    assert.strictEqual(value.label, 'X${Package}');
+    assert.strictEqual(line.slice(value.span.start.character, value.span.end.character), 'X${Package}');
+    const dir = all(explain("tar -C'/tmp' -xf a.tar").items).find((t) => t.explanation.startsWith('Value for `-C`'))!;
+    assert.strictEqual(dir.label, '/tmp');
+  });
 });
 
 describe('jq options with values', () => {
