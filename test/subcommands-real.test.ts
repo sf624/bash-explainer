@@ -54,6 +54,19 @@ describe('git agrees with the real git', () => {
     'git -C repo branch -a',
     'git -C repo diff --cached --stat',
     'git -C repo rev-parse --short HEAD',
+    // The other global options of git(1).
+    'git --git-dir repo/.git log -1 --oneline',
+    'git --git-dir=repo/.git --work-tree=repo status -s',
+    'git --work-tree repo --git-dir repo/.git diff --stat',
+    'git -P -p --paginate -C repo log -1 --oneline',
+    'git --no-replace-objects --literal-pathspecs -C repo log -1',
+    'git --glob-pathspecs --icase-pathspecs --no-optional-locks -C repo status -s',
+    'git --noglob-pathspecs -C repo status -s',
+    'git --namespace x -C repo log -1 --oneline',
+    'git --config-env core.pager=HOME --config-env=core.editor=HOME -C repo log -1 --oneline',
+    'git --bare --git-dir repo/.git log -1 --oneline',
+    'git --exec-path=/nonexistent -C repo log -1 --oneline',
+    'git --attr-source HEAD --attr-source=HEAD -C repo log -1 --oneline',
   ];
   for (const line of ROWS) {
     it(`reads the subcommand and its words as git does: ${line}`, () => {
