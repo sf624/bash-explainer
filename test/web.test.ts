@@ -795,6 +795,52 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('read mode: on a phone a tap places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const btn = page.locator('#readmode');
+    assert.strictEqual(await btn.isVisible(), true);
+    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'false');
+    assert.match((await btn.getAttribute('aria-label'))!, /^Read mode/);
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    const fits = async () => page.evaluate('(() => { const t = document.querySelector(".top"); const k = document.querySelector("#kind").getBoundingClientRect(); return [t.getBoundingClientRect().height, k.width, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; })()') as Promise<[number, number, boolean]>;
+    await btn.tap();
+    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
+    const [h, w, ok] = await fits();
+    assert.ok(h <= 49 && w > 100 && ok, String([h, w, ok]));
+    // A tap in the editor moves the cursor, and the explanation follows.
+    const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    const lineOf = () => page.evaluate('document.querySelector(".cm-activeLine") && [...document.querySelectorAll(".cm-line")].indexOf(document.querySelector(".cm-activeLine"))') as Promise<number>;
+    await page.locator('.cm-line').nth(5).tap();
+    await until('the cursor line', lineOf, (n) => n === 5);
+    const first = await panel.locator('.row .label').first().innerText();
+    await page.locator('.cm-line').nth(2).tap();
+    await until('the cursor line', lineOf, (n) => n === 2);
+    await until('the explanation', () => panel.locator('.row .label').first().innerText(), (t) => t !== first);
+    // The choice is kept; turning it off lets the editor take text again.
+    await page.reload();
+    await page.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
+    await page.locator('#readmode').tap();
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    await ctx.close();
+    // Not on a desktop (a fine pointer), and the mode works without storage.
+    const desk = await browser!.newContext({ viewport: { width: 1200, height: 800 } });
+    await desk.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const d = await desk.newPage();
+    await d.goto(base);
+    await d.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await d.locator('#readmode').isVisible(), false);
+    await d.evaluate('document.getElementById("readmode").click()');
+    assert.strictEqual(await d.locator('.cm-content').getAttribute('inputmode'), 'none');
+    await desk.close();
+  });
+
   it('fits the window on phones and desktops: the page never scrolls, the editor and the explanation scroll inside', async () => {
     const { devices } = await import('playwright-core');
     const sizes = [
