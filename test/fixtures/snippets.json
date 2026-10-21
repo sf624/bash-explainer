@@ -646,6 +646,7 @@
  "grep -P 'a+?b{,3}c{2,3}d{x}[\\d_]' f",
  "grep -e'x' f",
  "grep -i \"foo\" ./src",
+ "grep -n \"ERROR\" \"$f\" | tail -n 2",
  "grep -r a \\\n  b",
  "grep -v 'foo[0-9]' f",
  "grep a f 2>/dev/null | sort",
