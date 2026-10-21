@@ -527,6 +527,89 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('exports the settings as a settings file, and imports one, saying which keys it left out', async () => {
+    const ctx = await browser!.newContext({ locale: 'en-US', acceptDownloads: true });
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    await page.locator('#settings-open').click();
+    await page.locator('#setting-shell').selectOption('sh');
+    await page.locator('#setting-notes-pitfalls').uncheck();
+    await page.locator('#setting-examples-disabled-regex').check();
+    await page.locator('#setting-customCommands').fill('{ "deploy": { "summary": "Deploy to production" } }');
+    const saved = () => page.evaluate('localStorage.getItem("bash-explainer-settings")') as Promise<string | null>;
+    const before = await saved();
+    const expected = {
+      'bashExplainer.notes.pitfalls': false, 'bashExplainer.shell': 'sh', 'bashExplainer.examples.disabled': ['regex'],
+      'bashExplainer.customCommands': { deploy: { summary: 'Deploy to production' } },
+    };
+    // Export: the keys of settings.json, only those changed, pretty-printed.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#settings-export').click()]);
+    assert.strictEqual(download.suggestedFilename(), 'bash-explainer-settings.json');
+    const file = await download.path();
+    const text = fs.readFileSync(file, 'utf8');
+    assert.deepStrictEqual(JSON.parse(text), expected);
+    assert.strictEqual(text, `${JSON.stringify(expected, null, 2)}\n`);
+    assert.match(await page.locator('#settings-io-status').innerText(), /Downloaded bash-explainer-settings\.json/);
+    // Copy gives the same text.
+    await page.evaluate('navigator.clipboard.writeText("")');
+    await page.locator('#settings-copy').click();
+    assert.strictEqual(await until('the copied settings', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t !== ''), text);
+    // Round trip: reset, then import the exported file.
+    await page.locator('#settings-reset').click();
+    assert.strictEqual(await saved(), null);
+    await page.locator('#settings-file').setInputFiles(file);
+    await until('the import', () => page.locator('#settings-io-status').innerText(), (t) => /Imported 4 settings/.test(t));
+    assert.strictEqual(await saved(), before);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'sh');
+    assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), false);
+    // A file with keys that are not settings, not used here, or of the wrong type: the rest replaces the settings.
+    await page.locator('#settings-file').setInputFiles({
+      name: 'vscode.json', mimeType: 'application/json',
+      buffer: Buffer.from('{\n  // from VS Code\n  "bashExplainer.shell": "dash",\n  "bashExplainer.hover.enabled": false,\n  "editor.fontSize": 14,\n  "examples": { "placement": "nowhere" },\n}'),
+    });
+    const status = await until('the second import', () => page.locator('#settings-io-status').innerText(), (t) => /Imported 1 setting;/.test(t));
+    assert.match(status, /editor\.fontSize — not a setting/);
+    assert.match(status, /examples\.placement — wrong value \(expected one of first, last, bottom\)/);
+    assert.match(status, /hover\.enabled — not used on this page/);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
+    assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), true);
+    const afterSecond = await saved();
+    assert.deepStrictEqual(JSON.parse(afterSecond!), { 'bashExplainer.shell': 'dash' });
+    // JSON that does not parse, pasted: an error, and nothing changes.
+    await page.locator('#settings-paste summary').click();
+    await page.locator('#settings-paste-text').fill('{ "bashExplainer.shell": ');
+    await page.locator('#settings-paste-import').click();
+    assert.match(await page.locator('#settings-io-status').innerText(), /^Not imported, nothing changed: /);
+    assert.strictEqual(await saved(), afterSecond);
+    await page.locator('#settings-paste-text').fill('["shell"]');
+    await page.locator('#settings-paste-import').click();
+    assert.match(await page.locator('#settings-io-status').innerText(), /nothing changed: expected an object of settings/);
+    // Pasted JSON that is right.
+    await page.locator('#settings-paste-text').fill('{ "shell": "ksh" }');
+    await page.locator('#settings-paste-import').click();
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'ksh');
+    // A file dropped on the dialog.
+    await page.evaluate(`(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(['{ "bashExplainer.shell": "zsh" }'], 'drop.json', { type: 'application/json' }));
+      document.getElementById('settings-dialog').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    })()`);
+    await until('the dropped file', () => page.locator('#setting-shell').inputValue(), (v) => v === 'zsh');
+    // Without a clipboard, the JSON is shown to copy by hand.
+    await page.evaluate('navigator.clipboard.writeText = () => Promise.reject(new Error("denied"))');
+    await page.locator('#settings-copy').click();
+    await until('the fallback', () => page.locator('#settings-io-status').innerText(), (t) => /does not let the page copy/.test(t));
+    assert.deepStrictEqual(JSON.parse(await page.locator('#settings-paste-text').inputValue()), { 'bashExplainer.shell': 'zsh' });
+    // In Japanese.
+    await page.locator('#setting-language').selectOption('ja');
+    assert.strictEqual(await page.locator('#settings-export').textContent(), 'ファイルにエクスポート');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
   it('keeps the settings dialog inside a phone screen, and works without storage', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser!.newContext({ ...devices['iPhone 13'], locale: 'en-US' });

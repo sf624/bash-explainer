@@ -653,3 +653,55 @@ html.view-panel #panel {
   flex: 1;
   min-width: 0;
 }
+
+.settings-io-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.settings-io details {
+  margin-top: 0.5rem;
+}
+
+.settings-io summary {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground);
+}
+
+.settings-io textarea {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
+  border-radius: 3px;
+  resize: vertical;
+}
+
+.settings-io-status:empty {
+  display: none;
+}
+
+.settings-io-status {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-left: 3px solid var(--vscode-charts-green);
+  background: var(--vscode-textBlockQuote-background);
+}
+
+.settings-io-status.error {
+  border-left-color: var(--vscode-errorForeground);
+}
+
+.settings-io-status p {
+  margin: 0.15rem 0;
+}
+
+.settings-io-status ul {
+  margin: 0.15rem 0;
+  padding-left: 1.25rem;
+}

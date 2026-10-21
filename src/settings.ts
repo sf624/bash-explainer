@@ -160,10 +160,20 @@ export function checkValue(spec: SettingSpec, value: unknown): string | undefine
   }
 }
 
+/** A key left out, and why: not a setting, a value of the wrong type, or no meaning where it is read. */
+export interface Ignored {
+  key: string;
+  reason: 'unknown' | 'invalid' | 'elsewhere';
+  /** For `invalid`: what was expected. */
+  detail?: string;
+}
+
 export interface ReadSettings {
   settings: Partial<Settings>;
   /** Keys that are not settings, and values of the wrong type, which are left out. */
   warnings: string[];
+  /** The same, one entry per key. */
+  ignored: Ignored[];
 }
 
 /**
@@ -172,7 +182,7 @@ export interface ReadSettings {
  * (`{ "bashExplainer": { "notes": { "idioms": false } } }`). `where` names the source in the warnings.
  */
 export function readSettings(input: unknown, where: string): ReadSettings {
-  const out: ReadSettings = { settings: {}, warnings: [] };
+  const out: ReadSettings = { settings: {}, warnings: [], ignored: [] };
   if (!isObject(input)) {
     out.warnings.push(`${where}: expected an object of settings`);
     return out;
@@ -183,19 +193,45 @@ export function readSettings(input: unknown, where: string): ReadSettings {
       const spec = settingSpec(key);
       if (spec) {
         const why = checkValue(spec, value);
-        if (why) out.warnings.push(`${where}: ${PREFIX}${key}: ${why}; ignored`);
-        else (out.settings as Record<string, unknown>)[key] = structuredClone(value);
+        if (why) {
+          out.warnings.push(`${where}: ${PREFIX}${key}: ${why}; ignored`);
+          out.ignored.push({ key, reason: 'invalid', detail: why });
+        } else (out.settings as Record<string, unknown>)[key] = structuredClone(value);
       } else if (prefix === '' && key === 'bashExplainer' && isObject(value)) {
         walk(value, '');
       } else if (isObject(value) && SETTINGS.some((s) => s.key.startsWith(`${key}.`))) {
         walk(value, `${key}.`);
       } else {
         out.warnings.push(`${where}: unknown setting ${key}; ignored`);
+        out.ignored.push({ key, reason: 'unknown' });
       }
     }
   };
   walk(input, '');
   return out;
+}
+
+/**
+ * Settings to import, as a settings file holds them (the text of settings.json, the CLI's file or an
+ * export of the web page): those that apply on the surface, and the keys left out. Throws a
+ * SyntaxError when the text is not JSON, or not an object.
+ */
+export function importSettings(text: string, surface: Surface): { settings: Partial<Settings>; ignored: Ignored[] } {
+  const json = parseJsonc(text);
+  if (!isObject(json)) throw new SyntaxError('expected an object of settings');
+  const read = readSettings(json, 'import');
+  const settings: Partial<Settings> = {};
+  const ignored = [...read.ignored];
+  for (const [key, value] of Object.entries(read.settings)) {
+    if (settingSpec(key)!.surfaces.includes(surface)) (settings as Record<string, unknown>)[key] = value;
+    else ignored.push({ key, reason: 'elsewhere' });
+  }
+  return { settings, ignored };
+}
+
+/** The settings that differ from the defaults on a surface, as the text of a settings file. */
+export function exportSettings(s: Settings, surface: Surface): string {
+  return `${JSON.stringify(changedSettings(s, surface), null, 2)}\n`;
 }
 
 /** `key=value` from the command line: the value is read as JSON when it is JSON, else as a string. */
