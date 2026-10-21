@@ -172,6 +172,11 @@ describe('words: steps', () => {
   });
 });
 
+const underscore = (src: string) => {
+  const { node, model } = find(src, '$_');
+  return underscoreValue(node, model);
+};
+
 describe('words: fields', () => {
   it('splits on IFS as bash does', () => {
     assert.deepStrictEqual(fieldsOf("x=' a  b '; echo $x", '$x').fields, ['a', 'b']);
@@ -216,11 +221,11 @@ describe('words: fields', () => {
   it('expands `$_` after an assignment to nothing', () => {
     assert.deepStrictEqual(fieldsOf('x=1\necho "$_"', '"$_"').fields, ['']);
     assert.deepStrictEqual(fieldsOf('echo a\necho "$_"', '"$_"'), {});
-    assert.strictEqual(underscoreValue(find('x=1; y=$(z=1); f() { a=1; }; ( b=1 ); echo $_', '$_').node), '');
-    assert.strictEqual(underscoreValue(find('echo $_', '$_').node), undefined);
-    assert.strictEqual(underscoreValue(find('x=1 cmd; echo $_', '$_').node), undefined);
-    assert.strictEqual(underscoreValue(find('declare x=1; echo $_', '$_').node), undefined);
-    assert.strictEqual(underscoreValue(find('x=1 y=2\necho $_', '$_').node), '');
+    assert.strictEqual(underscore('x=1; y=$(z=1); f() { a=1; }; ( b=1 ); echo $_'), '');
+    assert.strictEqual(underscore('echo $_'), undefined);
+    assert.strictEqual(underscore('x=1 cmd; echo $_'), undefined);
+    assert.strictEqual(underscore('declare x=1; echo $_'), undefined);
+    assert.strictEqual(underscore('x=1 y=2\necho $_'), '');
   });
 
   it('fails as bash does under `set -u`', () => {

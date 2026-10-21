@@ -57,6 +57,7 @@ import {
 import { LabelPart, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, FunctionState, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -938,7 +939,33 @@ export class Analyzer {
         'Send stdout to stderr (the usual way to print an error message)');
     }
     const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => this.sub(d));
+    if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression')) expl += this.redirectTargetNote(dests[0]);
     return this.tok(n, 'redirect', expl, children);
+  }
+
+  /**
+   * A redirection target that brace expansion or a glob can turn into other words (`> *.log`, `> {a,b}`): it must
+   * become exactly one word, else bash reports an ambiguous redirect. In POSIX mode it is not globbed.
+   */
+  private redirectTargetNote(d: SyntaxNode): string {
+    const w = this.wordAt(d);
+    const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
+    if (step('brace')!.applies === true) {
+      let words: string[] | undefined;
+      try {
+        words = braceExpand(d.text);
+      } catch {
+        words = undefined;
+      }
+      if (!words || words.length !== 1) return this.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
+    }
+    const glob = step('glob')!;
+    if (!hasGlob(d.text)) return '';
+    if (glob.why === 'posix-mode') return this.globOff(d);
+    return glob.applies === true
+      ? this.s(`。\`${d.text}\` はグロブなので、一致するファイルがちょうど1つならその名前になり、2つ以上なら「ambiguous redirect」のエラーになる（なければこの名前のまま）`,
+        `. \`${d.text}\` is a glob: it becomes the one file it matches; matching two or more is an error ("ambiguous redirect"), and matching none leaves the name as it is`)
+      : '';
   }
 
   /** A redirection after the closing word of a compound command, explained on the line where the construct starts: it applies to the whole construct. */
@@ -1093,7 +1120,7 @@ export class Analyzer {
     if (value) {
       for (const t of this.sub(value)) {
         if (intValueText && isPlainWord(value) && !this.arithNumber(value)) t.explanation = `\`${value.text}\`: ${intValueText}`;
-        else if (isPlainWord(value) && !this.arithNumber(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``);
+        else if (isPlainWord(value) && !this.arithNumber(value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? this.notGlobbedHere(value) : '');
         children.push(t);
       }
     }
@@ -1829,9 +1856,10 @@ export class Analyzer {
       if (!desc) return base;
       if (brace) return this.tok(a, 'argument', desc, [brace]);
       const tilde = this.tilde(a);
-      if (tilde) return this.tok(a, 'argument', desc, [tilde]);
+      // (Tildes after `=` and `:` come as a word with them as its children.)
+      if (tilde) return tilde.kind === 'expansion' ? this.tok(a, 'argument', desc, [tilde]) : this.tok(a, 'argument', desc + this.tildeNote(a), tilde.children);
       const off = hasGlob(a.text) && this.globOff(a);
-      if (off) return this.tok(a, 'argument', desc + this.noglobNote());
+      if (off) return this.tok(a, 'argument', desc + off);
       const glob = hasGlob(a.text) ? ` — ${globIntro(this.lang, 'file')}` + this.globNotes(a.text, a) : '';
       return this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
     }
@@ -2540,12 +2568,34 @@ export class Analyzer {
         `⚠ Pitfall: extended globs like \`${use.text}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``)];
   }
 
-  /** What dotglob and nocaseglob, turned on before the line, change for a file-name glob. */
+  /**
+   * What the glob options in effect change for a file-name glob: dotglob (also turned on by a GLOBIGNORE that is
+   * not empty), GLOBIGNORE, nocaseglob, and what happens when nothing matches (nullglob, failglob).
+   */
   private globOptionNote(n: SyntaxNode): string {
     const notes: string[] = [];
     const shopt = this.shoptAt(n);
-    if (shopt.dotglob === 'on') notes.push(this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
+    const glob = this.wordAt(n)?.glob;
+    const ignore = glob?.globignore;
+    if (shopt.dotglob === 'on') notes.push(ignore && ignore !== 'unset'
+      ? this.s('`GLOBIGNORE` を設定したので dotglob が有効になり、`.` で始まる名前にも一致する（`.` と `..` は除く）', 'setting `GLOBIGNORE` turned dotglob on, so it also matches names starting with `.` (not `.` and `..`)')
+      : this.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
+    if (ignore && typeof ignore === 'object') {
+      const pats = ignore.value.split(':').filter(Boolean).map((p) => `\`${p}\``).join(this.s('、', ', '));
+      notes.push(this.s(`\`GLOBIGNORE\` の ${pats} に一致する名前は結果から除かれる`, `names that match ${pats} of \`GLOBIGNORE\` are left out`));
+    }
     if (shopt.nocaseglob === 'on') notes.push(this.s('nocaseglob が有効なので大文字と小文字を区別しない', 'with nocaseglob on, case is ignored'));
+    if (shopt.failglob === 'on') {
+      notes.push(this.s('failglob が有効なので、一致するものがなければエラーになり、コマンドは実行されない', 'with failglob on, a pattern that matches nothing is an error, and the command does not run'));
+    } else if (shopt.nullglob === 'on') {
+      notes.push(this.wordAt(n)?.context === 'for-list'
+        ? this.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（ループはこの単語の分は回らない。ほかに単語がなければ1回も実行されない）',
+          'with nullglob on, a pattern that matches nothing goes away (the loop does not run for it, and not at all when there is no other word)')
+        : this.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（引数が1つ減る。ほかに引数がなければ、コマンドは引数なしで実行される）',
+          'with nullglob on, a pattern that matches nothing goes away (one argument fewer; with no other argument, the command runs with none)'));
+    } else if (shopt.nullglob === 'unknown') {
+      notes.push(this.s('一致するものがないとき、nullglob が有効な経路ではこの単語はなくなり、ほかの経路ではそのままの文字で渡される', 'when nothing matches, it goes away on the paths where nullglob is on, and stays as written on the others'));
+    }
     return notes.map((n) => this.s(`。${n}`, `; ${n}`)).join('');
   }
 
@@ -2590,11 +2640,20 @@ export class Analyzer {
     if (!hasGlobstar(pattern)) delete opts.globstar;
     const ex = globExamples(pattern, mode, opts);
     if (!ex) return;
+    // A name that matches a pattern of GLOBIGNORE is left out.
+    const ignore = mode === 'file' ? this.wordAt(n)?.glob.globignore : undefined;
+    if (ignore && typeof ignore === 'object') {
+      const pats = ignore.value.split(':').filter(Boolean);
+      const ignored = (name: string) => pats.some((p) => globMatches(p, name, 'file', { dotglob: true }));
+      ex.nonMatching.push(...ex.matching.filter(ignored));
+      ex.matching = ex.matching.filter((m) => !ignored(m));
+    }
     // Values (find -name) always come with their labels.
     const [yes, no] = labels ?? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')];
     this.examples.push({ kind: 'glob',
       title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
-      interactive: this.interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')),
+      // (The panel's matcher does not know GLOBIGNORE: no names to try then.)
+      ...(typeof ignore === 'object' ? {} : { interactive: this.interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')) }),
     });
   }
 
@@ -3323,25 +3382,56 @@ export class Analyzer {
     ));
   }
 
+  /** What a tilde prefix becomes (`~`, `~+`, `~-`, `~user`); undefined for the others (`~1`, the directory stack). */
+  private tildeTarget(user: string): string | undefined {
+    if (user === '+') return this.s('`~+` はカレントディレクトリ（`$PWD`）', '`~+` becomes the current directory (`$PWD`)');
+    if (user === '-') return this.s('`~-` は直前のディレクトリ（`$OLDPWD`）', '`~-` becomes the previous directory (`$OLDPWD`)');
+    if (user && !/^[A-Za-z_][\w.-]*$/.test(user)) return undefined;
+    return user
+      ? this.s(`\`~${user}\` はユーザー \`${user}\` のホームディレクトリ（そのユーザーがいなければそのまま）`, `\`~${user}\` becomes the home directory of the user \`${user}\` (unchanged if there is no such user)`)
+      : this.s('`~` はホームディレクトリ（`$HOME`）', '`~` becomes the home directory (`$HOME`)');
+  }
+
   /**
-   * Tilde expansion of an unquoted word that starts with `~` (`~`, `~/x`, `~user/x`, `~+`, `~-`).
-   * Not `x~`, `--o=~` or a quoted `"~"` (those are not plain words starting with `~`).
+   * Tilde expansion in a plain word (src/semantics/words.ts): at its start (`~`, `~/x`, `~user/x`, `~+`), after the
+   * `:` of an assignment (`PATH=~/bin:~/x`), and after the `=` of an argument that looks like an assignment in bash
+   * mode (`echo x=~/y`). Not in `--o=~` or a quoted `"~"`.
    */
   private tilde(n: SyntaxNode): Token | undefined {
-    const m = /^~([+-]|[A-Za-z_][\w.-]*)?(?=\/|$)/.exec(n.text);
-    if (!m || !isPlainWord(n)) return undefined;
-    const what = m[1] === '+' ? this.s('`~+` はカレントディレクトリ（`$PWD`）', '`~+` becomes the current directory (`$PWD`)')
-      : m[1] === '-' ? this.s('`~-` は直前のディレクトリ（`$OLDPWD`）', '`~-` becomes the previous directory (`$OLDPWD`)')
-      : m[1] ? this.s(`\`~${m[1]}\` はユーザー \`${m[1]}\` のホームディレクトリ（そのユーザーがいなければそのまま）`, `\`~${m[1]}\` becomes the home directory of the user \`${m[1]}\` (unchanged if there is no such user)`)
-      : this.s('`~` はホームディレクトリ（`$HOME`）', '`~` becomes the home directory (`$HOME`)');
-    return this.tok(n, 'expansion', this.s(`チルダ展開: ${what}に置き換わる`, `Tilde expansion: ${what}`) + (m[0].length < n.text.length ? this.s(`。残りの \`${n.text.slice(m[0].length)}\` はそのまま続く`, `. The rest, \`${n.text.slice(m[0].length)}\`, stays as it is`) : ''));
+    const tildes = (this.wordAt(n)?.tildes ?? []).filter((t) => t.node === n && this.tildeTarget(t.user));
+    if (!tildes.length) return undefined;
+    const [first] = tildes;
+    if (tildes.length === 1 && first.start === 0) {
+      return this.tok(n, 'expansion', this.s(`チルダ展開: ${this.tildeTarget(first.user)}に置き換わる`, `Tilde expansion: ${this.tildeTarget(first.user)}`)
+        + (first.end < n.text.length ? this.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : ''));
+    }
+    const row = n.startPosition.row;
+    const col = n.startPosition.column;
+    const kids = tildes.map((t) => ({
+      kind: 'expansion' as Kind, label: n.text.slice(t.start, t.end), children: [],
+      span: { start: { line: row, character: col + t.start }, end: { line: row, character: col + t.end } },
+      explanation: t.after
+        ? this.s(`チルダ展開（\`${t.after}\` の後ろ）: ${this.tildeTarget(t.user)}に置き換わる`, `Tilde expansion (after \`${t.after}\`): ${this.tildeTarget(t.user)}`)
+        : this.s(`チルダ展開: ${this.tildeTarget(t.user)}に置き換わる`, `Tilde expansion: ${this.tildeTarget(t.user)}`),
+    }));
+    return this.tok(n, 'argument', this.s(`文字列 \`${n.text}\``, `Word \`${n.text}\``) + this.tildeNote(n), kids);
+  }
+
+  /** An argument that looks like an assignment (`x=~/y`): bash expands a tilde after its `=` and `:`. */
+  private tildeNote(n: SyntaxNode): string {
+    const w = this.wordAt(n)!;
+    return w.context !== 'assignment-value' && w.tildes.some((t) => t.after === '=')
+      ? this.s('。代入の形をした引数なので、bash では `=` と `:` の後ろの `~` も展開される（POSIX モードでは先頭だけ）', '. It looks like an assignment, so bash expands a `~` after the `=` and after each `:` too (in POSIX mode, only at the start)')
+      : '';
   }
 
   private word(n: SyntaxNode): Token {
     const text = n.text;
     const tilde = this.tilde(n);
     if (tilde) return tilde;
-    if (hasGlob(text) && this.globOff(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.noglobNote());
+    const off = hasGlob(text) && this.globOff(n);
+    if (off) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
+    if (hasGlob(text) && this.notGlobbedHere(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.notGlobbedHere(n));
     if (hasGlob(text)) return this.tok(n, 'pattern', globIntro(this.lang, 'file') + this.globNotes(text, n), this.globChildren(n, text, 0));
     return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.valueNote(n) + this.braceVarNote(text));
   }
@@ -3361,24 +3451,48 @@ export class Analyzer {
   }
 
   /**
-   * The IFS in effect at `n` when the script gives it a value before (`IFS=-`): its text (undefined when it is
-   * not known here), and the line. Undefined when IFS is bash's default (never set, or unset).
+   * What word splitting and globbing do to the unquoted expansion `n` (src/semantics/words.ts): the text after
+   * "unquoted, ". Undefined when neither applies there (in quotes, or in a context that does neither).
    */
-  private ifsAt(n: SyntaxNode): { value: string | undefined; line: number } | undefined {
-    const ifs = this.state.at(n).run.variables.get('IFS');
-    return ifs && ifs.set !== 'off' ? { value: ifs.set === 'on' ? ifs.value : undefined, line: ifs.at.startPosition.row } : undefined;
+  private splitNote(n: SyntaxNode): { ja: string; en: string } | undefined {
+    const part = partMeaning(n, this.state);
+    if (!part) return undefined;
+    const { split, glob, word } = part;
+    if (split.applies === false && (split.why === 'quoted' || split.why === 'context')) return undefined;
+    if (split.applies === false && split.why === 'posix-mode') {
+      return { ja: 'POSIX モードではリダイレクト先は単語分割もグロブ展開もされない', en: 'in POSIX mode a redirection target is neither word-split nor globbed' };
+    }
+    const g = this.globState(glob);
+    const ambiguous = word.rule.fields === 'one-or-error'
+      ? { ja: '。結果がちょうど1語にならないとエラー（ambiguous redirect）', en: '; a result that is not exactly one word is an error (ambiguous redirect)' } : { ja: '', en: '' };
+    const ifs = word.ifs;
+    const line = ifs.kind === 'default' ? 0 : ifs.at.startPosition.row + 1;
+    // What globbing does, after each way of splitting: [ja, en] for off (`set -f`), may (on some paths) and on.
+    const after = {
+      split: { off: ['る（`set -f` でグロブ展開は無効）', ' (globbing is off after `set -f`)'], may: ['る（`set -f` でグロブ展開が無効になる経路もある）', ' (globbing is off on some paths, after `set -f`)'], on: ['、グロブ展開もされる', ' and globbed'] },
+      ifs: { off: ['る（`set -f` でグロブ展開は無効）', '; globbing is off after `set -f`'], may: ['る（`set -f` でグロブ展開が無効になる経路もある）', '; globbing is off on some paths, after `set -f`'], on: ['、グロブ展開もされる', ', and globbed'] },
+      empty: { off: ['（`set -f` でグロブ展開も無効）', ' (and globbing is off after `set -f`)'], may: ['（`set -f` でグロブ展開が無効になる経路もある）', ' (and globbing is off on some paths, after `set -f`)'], on: ['が、グロブ展開はされる', ', but it is globbed'] },
+      value: { off: ['。`set -f` でグロブ展開は無効', '; globbing is off after `set -f`'], may: ['。`set -f` でグロブ展開が無効になる経路もある', '; globbing is off on some paths, after `set -f`'], on: ['。グロブ展開もされる', ', and globbed'] },
+    };
+    let ja: string;
+    let en: string;
+    if (ifs.kind === 'default') {
+      [ja, en] = [`空白で分割され${after.split[g][0]}`, `it is word-split${after.split[g][1]}`];
+    } else if (ifs.kind === 'unknown') {
+      [ja, en] = [`\`IFS\` は行 ${line} で、ここでは分からない値にしてある。その文字で分割され${after.ifs[g][0]}`, `it is split on the characters of \`IFS\` (set on line ${line} to a value not known here)${after.ifs[g][1]}`];
+    } else if (ifs.value === '') {
+      [ja, en] = [`\`IFS\` が空（行 ${line}）なので単語分割はされない${after.empty[g][0]}`, `\`IFS\` is empty (line ${line}), so it is not word-split${after.empty[g][1]}`];
+    } else {
+      const noSpace = !/[ \t\n]/.test(ifs.value);
+      [ja, en] = [`\`IFS\`（行 ${line} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${after.value[g][0]}`,
+        `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${line})${noSpace ? ', not on spaces' : ''}${after.value[g][1]}`];
+    }
+    return { ja: ja + ambiguous.ja, en: en + ambiguous.en };
   }
 
-  /** What the splitting of an unquoted expansion at `n` splits on. */
-  private splitNote(n: SyntaxNode): string {
-    const ifs = this.ifsAt(n);
-    const off = this.globOff(n);
-    if (!ifs) return this.s(`空白で分割され${off ? 'る（`set -f` でグロブ展開は無効）' : '、グロブ展開もされる'}`, `it is word-split${off ? ' (globbing is off after `set -f`)' : ' and globbed'}`);
-    if (ifs.value === undefined) return this.s(`\`IFS\` は行 ${ifs.line + 1} で、ここでは分からない値にしてある。その文字で分割され${off ? 'る（`set -f` でグロブ展開は無効）' : '、グロブ展開もされる'}`, `it is split on the characters of \`IFS\` (set on line ${ifs.line + 1} to a value not known here)${off ? '; globbing is off after `set -f`' : ', and globbed'}`);
-    if (ifs.value === '') return this.s(`\`IFS\` が空（行 ${ifs.line + 1}）なので単語分割はされない${off ? '（`set -f` でグロブ展開も無効）' : 'が、グロブ展開はされる'}`, `\`IFS\` is empty (line ${ifs.line + 1}), so it is not word-split${off ? ' (and globbing is off after `set -f`)' : ', but it is globbed'}`);
-    const noSpace = !/[ \t\n]/.test(ifs.value);
-    return this.s(`\`IFS\`（行 ${ifs.line + 1} で \`${this.shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${off ? '。`set -f` でグロブ展開は無効' : '。グロブ展開もされる'}`,
-      `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${ifs.line + 1})${noSpace ? ', not on spaces' : ''}${off ? '; globbing is off after `set -f`' : ', and globbed'}`);
+  /** Whether a glob step is off by `set -f`, may be (on some paths), or on. */
+  private globState(glob: ExpansionStep): 'off' | 'may' | 'on' {
+    return glob.why === 'noglob' ? (glob.applies === false ? 'off' : 'may') : 'on';
   }
 
   /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
@@ -3412,7 +3526,7 @@ export class Analyzer {
       const first = `\${${name}[0]}`;
       return this.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
     }
-    if (name === '_' && this.afterAssignment(n)) {
+    if (name === '_' && underscoreValue(n, this.state) === '') {
       return this.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty');
     }
     if (this.inArithmetic(n) && this.pastedValue(n, name) !== undefined) {
@@ -3430,27 +3544,34 @@ export class Analyzer {
     return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
   }
 
-  /** Whether the simple command before `n` is only an assignment (it sets `$_` to nothing). */
-  private afterAssignment(n: SyntaxNode): boolean {
-    let prev: SyntaxNode | undefined;
-    // (A command in a subshell that `n` is not in sets the subshell's `$_`, and a function body runs elsewhere.)
-    const here = this.state.env(n).links;
-    for (const c of descendants(this.rootNode, ['command', 'variable_assignment', 'declaration_command'])) {
-      if (c.endIndex > n.startIndex || (c.parent?.type === 'command' && c.type === 'variable_assignment')) continue;
-      if (ancestor(c, (x) => x.type === 'function_definition') || this.state.env(c).links.some((l) => !here.includes(l))) continue;
-      if (!prev || c.endIndex >= prev.endIndex) prev = c;
+  /** A word with `*` or `?` where bash does no pathname expansion (the value of an assignment): it stays text. */
+  private notGlobbedHere(n: SyntaxNode): string {
+    const w = this.wordAt(n);
+    return w?.context === 'assignment-value'
+      ? this.s('。代入ではファイル名の展開はされないので、`*` や `?` もそのままの文字として代入される', '. An assignment does no file-name expansion, so `*` and `?` are assigned as they are')
+      : '';
+  }
+
+  /** The meaning of the word that holds `n` (src/semantics/words.ts). */
+  private wordAt(n: SyntaxNode): WordMeaning | undefined {
+    return wordMeaning(n, this.state);
+  }
+
+  /**
+   * What to say of a word with `*` or `?` that is not globbed where it is (`set -f`, or a redirection target in
+   * POSIX mode): it stays as it is. Empty when it is globbed; `may` when `set -f` is on some paths only.
+   */
+  private globOff(n: SyntaxNode): string {
+    const glob = this.wordAt(n)?.steps.find((s) => s.kind === 'glob');
+    if (!glob || glob.applies === true) return '';
+    if (glob.why === 'noglob') {
+      return glob.applies === false
+        ? this.s('。ただし `set -f`（`set -o noglob`）でグロブが無効になっているので、展開されずこの文字のまま渡される', '. But `set -f` (`set -o noglob`) has turned globbing off, so it is not expanded and stays as written')
+        : '';
     }
-    return !!prev && (prev.type === 'variable_assignment' || (prev.type === 'command' && !field(prev, 'name')?.text));
-  }
-
-  /** Whether file-name globbing is off where `n` is (after `set -f` and before any `set +f`). */
-  private globOff(n: SyntaxNode): boolean {
-    return option(this.state.at(n).run, 'set', 'noglob') === 'on';
-  }
-
-  /** What to say of a word with `*` or `?` while `set -f` is on: it stays as it is. */
-  private noglobNote(): string {
-    return this.s('。ただし `set -f`（`set -o noglob`）でグロブが無効になっているので、展開されずこの文字のまま渡される', '. But `set -f` (`set -o noglob`) has turned globbing off, so it is not expanded and stays as written');
+    return glob.why === 'posix-mode' && glob.applies === false
+      ? this.s('。ただし POSIX モードではリダイレクト先はグロブ展開されないので、この名前のファイルになる', '. But in POSIX mode a redirection target is not globbed: the file has this very name')
+      : '';
   }
 
   /** How a value is shown in an explanation: control characters as pictures, a newline as `\n`. */
@@ -3546,12 +3667,10 @@ export class Analyzer {
   private simpleExpansion(n: SyntaxNode): Token {
     const name = n.text.slice(1);
     const d = this.varDesc(name);
-    const t = this.tok(n, 'variable', d
-      ? `${d}`
-      : this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${this.splitNote(n)}）`, `Expands to the value of \`${name}\` (unquoted, ${this.splitNote(n)})`));
-    if (this.noSplit(n)) {
-      t.explanation = d ?? this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``);
-    }
+    const note = this.splitNote(n);
+    const t = this.tok(n, 'variable', d ?? (note
+      ? this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
+      : this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
     t.explanation += this.orderNote(n, name) + this.variableNote(n, name);
     return t;
   }
@@ -3575,19 +3694,6 @@ export class Analyzer {
     return field(cmd, 'name') && mine.type !== 'variable_assignment' && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
       ? this.s(`。\`${name}=…\` はこのコマンドの実行中だけ有効で、引数の展開が先に行われるので、ここでは代入前の値（未設定なら空）になる`, `. \`${name}=…\` only applies while the command runs, and the arguments are expanded first, so this is the value from before the assignment (empty if unset)`)
       : '';
-  }
-
-  /** Contexts where an unquoted expansion is not word-split (quotes, `[[ ]]`, assignments, heredocs, case). */
-  private noSplit(n: SyntaxNode): boolean {
-    const p = n.parent!;
-    if (['string', 'heredoc_body', 'variable_assignment', 'case_statement'].includes(p.type)) return true;
-    for (let a: SyntaxNode | null = p; a; a = a.parent) {
-      if (a.type === 'test_command') return false;
-      if (a.type === 'extended_test' || a.type === 'arithmetic_command') return true;
-      if (a.type === 'arithmetic_expansion') return true;
-      if (a.type === 'command' || a.type === 'string') return false;
-    }
-    return false;
   }
 
   private subscript(n: SyntaxNode): Token {
