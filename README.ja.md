@@ -198,6 +198,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplainer.highlight.enabled` | `false` | 解説と同じ構文木からシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。Web 版は常にこの色分け |
+| `bashExplainer.colors` | `vscode` | パネルと Web 版エディタでのトークンの色: `vscode`（VS Code の標準テーマの色）か `classic`（パネル独自の配色: コマンドは青、オプションは橙、引数は緑）。VS Code のエディタはテーマの色のまま |
 | `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
 | `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
@@ -254,7 +255,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- | --- | --- |
 | `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
-| `examples.placement` | ✓ | | |
+| `examples.placement`・`colors` | ✓ | | |
 | `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
 | `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen` | | | |
 

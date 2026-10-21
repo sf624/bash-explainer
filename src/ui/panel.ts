@@ -107,6 +107,7 @@ export class PanelController implements vscode.Disposable {
       choice: this.service.overrideOf(ed.document),
       detected: this.service.detectedShell(ed.document),
       placement: this.service.examplePlacement,
+      colors: this.service.colors,
     }));
   }
 

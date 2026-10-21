@@ -18,7 +18,8 @@ import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
-import { documentHighlight, HighlightKind } from '../src/highlight';
+import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
+import { CLASSIC_COLOURS, Colors, paletteColour } from './editor-colors';
 import { extractShell } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -167,6 +168,7 @@ function savedSettings(): Settings {
 }
 /** In panel mode the page around sends the settings; a copy keeps none of its own. */
 let settings: Settings = savedSettings();
+applyColors(settings.colors);
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
@@ -298,15 +300,29 @@ function shade(): void {
   view.dispatch({ effects: setShadings.of(shadings()) });
 }
 
+// The colours are variables on the page (`--bx-<kind>`, set by applyColors from the `colors` setting): the shell's
+// kinds, and the host files' modes (Dockerfile, YAML, Makefile, …) by the kind that means the same.
+const bx = (kind: string) => `var(--bx-${kind})`;
 const highlightStyle = HighlightStyle.define([
-  { tag: [tags.keyword, tags.operator, tags.controlKeyword], color: 'var(--vscode-charts-purple)' },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--vscode-charts-green)' },
-  { tag: tags.comment, color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' },
-  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: 'var(--vscode-charts-red)' },
-  { tag: [tags.number, tags.bool, tags.atom], color: 'var(--vscode-charts-orange)' },
-  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: 'var(--vscode-charts-blue)' },
-  { tag: tags.meta, color: 'var(--vscode-descriptionForeground)' },
+  { tag: [tags.keyword, tags.controlKeyword], color: bx('keyword') },
+  { tag: tags.operator, color: bx('operator') },
+  { tag: [tags.string, tags.special(tags.string)], color: bx('string') },
+  { tag: tags.comment, color: bx('comment'), fontStyle: 'var(--bx-comment-style)' },
+  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: bx('variable') },
+  { tag: [tags.number, tags.bool, tags.atom], color: bx('number') },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: bx('function') },
+  { tag: tags.meta, color: bx('meta') },
 ]);
+
+/** Sets the editor's colours from the `colors` setting: the VS Code default themes' (light and dark) or the panel's classic ones. */
+function applyColors(colors: Colors): void {
+  const style = document.documentElement.style;
+  for (const k of HIGHLIGHT_KINDS) style.setProperty(`--bx-${k}`, paletteColour(k, colors));
+  style.setProperty('--bx-meta', colors === 'classic' ? CLASSIC_COLOURS.muted : 'light-dark(#0000FF, #569CD6)');
+  style.setProperty('--bx-comment-style', colors === 'classic' ? 'italic' : 'normal');
+}
+
+const shellColours = Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: bx(k), ...(k === 'comment' ? { fontStyle: 'var(--bx-comment-style)' } : {}) }]));
 
 const editorTheme = EditorView.theme({
   '&': { height: '100%', color: 'var(--vscode-editor-foreground)', backgroundColor: 'var(--vscode-editor-background)', fontSize: 'var(--vscode-editor-font-size)' },
@@ -319,14 +335,8 @@ const editorTheme = EditorView.theme({
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--vscode-editor-foreground)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 120, 212, 0.3)' },
   '.cm-bx-highlight': { backgroundColor: 'var(--vscode-editor-findMatchHighlightBackground)', borderRadius: '2px' },
-  // The shell's colours, the same as the host files' modes use (highlightStyle).
-  '.cm-bx-keyword, .cm-bx-operator, .cm-bx-redirect, .cm-bx-substitution': { color: 'var(--vscode-charts-purple)' },
-  '.cm-bx-string, .cm-bx-heredoc, .cm-bx-heredocDelimiter': { color: 'var(--vscode-charts-green)' },
-  '.cm-bx-comment': { color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic' },
-  '.cm-bx-variable, .cm-bx-assignment': { color: 'var(--vscode-charts-red)' },
-  '.cm-bx-number, .cm-bx-glob': { color: 'var(--vscode-charts-orange)' },
-  '.cm-bx-builtin, .cm-bx-command, .cm-bx-function, .cm-bx-functionName, .cm-bx-option': { color: 'var(--vscode-charts-blue)' },
-  '.cm-bx-error': { color: 'var(--vscode-errorForeground)' },
+  // The shell's colours: those of VS Code's shell grammar and default themes (editor-colors.ts).
+  ...shellColours,
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
 });
 
@@ -463,7 +473,7 @@ function updatePanel(): void {
   shown = { explanation, line };
   toPanel(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
-    choice: choice(), detected: s.detected, placement: settings['examples.placement'],
+    choice: choice(), detected: s.detected, placement: settings['examples.placement'], colors: settings.colors,
   }));
 }
 
@@ -745,6 +755,7 @@ function changeSettings(next: Settings): void {
   // A link's language stays until the setting itself changes.
   const languageChanged = next.language !== settings.language;
   settings = next;
+  applyColors(settings.colors);
   try {
     const changed = changedSettings(settings, 'web');
     if (Object.keys(changed).length) localStorage.setItem(SETTINGS_KEY, JSON.stringify(changed));

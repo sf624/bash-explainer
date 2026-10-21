@@ -34,6 +34,7 @@
       const key = JSON.stringify(msg);
       if (key === lastUpdate) return;
       lastUpdate = key;
+      document.body.classList.toggle('colors-classic', msg.colors === 'classic');
       render(msg);
     }
     if (msg.type === 'empty') {

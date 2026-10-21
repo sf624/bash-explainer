@@ -467,6 +467,45 @@ describe('the web page in a browser', function () {
     await blocked.close();
   });
 
+  it('colours the editor and the panel alike, in the VS Code palette or the classic one (the colors setting), light and dark', async () => {
+    const ctx = await browser!.newContext({ locale: 'en-US', colorScheme: 'light' });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('grep -rn "x" f 2>&1');
+    const colour = (loc: ReturnType<Page['locator']>) => (loc.first().evaluate(new Function('e', 'return getComputedStyle(e).color') as never) as Promise<string>);
+    const both = async () => [
+      await until('the option in the editor', () => colour(page.locator('.cm-bx-option')), (c) => !!c),
+      await until('the option in the panel', async () => (await panel().locator('.kind-option').count() ? colour(panel().locator('.kind-option')) : ''), (c) => !!c),
+    ];
+    // VS Code's default themes: Light Modern, then Dark Modern.
+    assert.deepStrictEqual(await both(), ['rgb(0, 0, 255)', 'rgb(0, 0, 255)']);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    assert.deepStrictEqual(await both(), ['rgb(86, 156, 214)', 'rgb(86, 156, 214)']);
+    assert.strictEqual(await colour(page.locator('.cm-bx-command')), 'rgb(220, 220, 170)');
+    // Classic: the panel's own palette in both, orange options and blue commands (the dark chart colours).
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-colors').inputValue(), 'vscode');
+    await page.locator('#setting-colors').selectOption('classic');
+    await until('the classic option', async () => (await both()).join('|'), (c) => c === 'rgb(209, 134, 22)|rgb(209, 134, 22)');
+    assert.strictEqual(await colour(page.locator('.cm-bx-command')), 'rgb(55, 148, 255)');
+    assert.strictEqual(await colour(panel().locator('.kind-command')), 'rgb(55, 148, 255)');
+    await page.locator('#settings-done').click();
+    // It is kept for the next visit, and back to the default.
+    await page.reload();
+    await until('the editor', () => colour(page.locator('.cm-bx-option')), (c) => c === 'rgb(209, 134, 22)');
+    await page.locator('#settings-open').click();
+    await page.locator('#setting-colors').selectOption('vscode');
+    await until('the VS Code option', () => colour(page.locator('.cm-bx-option')), (c) => c === 'rgb(86, 156, 214)');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
   it('has a settings dialog: a change shows at once, stays in sync with the toolbar and the panel, is kept, and can be reset', async () => {
     const ctx = await browser!.newContext({ locale: 'en-US' });
     const page = await ctx.newPage();

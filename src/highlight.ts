@@ -37,6 +37,8 @@ export interface HighlightSpan {
 /** The kinds in a fixed order: index 0 is "nothing". */
 const KINDS: readonly (HighlightKind | null)[] = [null, 'comment', 'keyword', 'builtin', 'command', 'function', 'functionName', 'option', 'string',
   'heredoc', 'heredocDelimiter', 'variable', 'assignment', 'substitution', 'number', 'operator', 'redirect', 'glob', 'error'];
+/** Every kind. */
+export const HIGHLIGHT_KINDS = KINDS.slice(1) as HighlightKind[];
 const CODE = new Map(KINDS.map((k, i) => [k, i]));
 
 /** The builtins of bash 5 (`compgen -b`), and `[[`'s cousins that bash also runs itself. */

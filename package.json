@@ -325,6 +325,19 @@
           "default": false,
           "markdownDescription": "%config.highlight.enabled%"
         },
+        "bashExplainer.colors": {
+          "type": "string",
+          "enum": [
+            "vscode",
+            "classic"
+          ],
+          "enumDescriptions": [
+            "%config.colors.vscode%",
+            "%config.colors.classic%"
+          ],
+          "default": "vscode",
+          "markdownDescription": "%config.colors%"
+        },
         "bashExplainer.languages": {
           "type": "array",
           "items": {
@@ -608,7 +621,49 @@
           }
         }
       }
-    }
+    },
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ]
+        }
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

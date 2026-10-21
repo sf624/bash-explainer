@@ -2,10 +2,41 @@
   --c-command: var(--vscode-charts-blue, #3794ff);
   --c-option: var(--vscode-charts-orange, #d18616);
   --c-argument: var(--vscode-charts-green, #89d185);
-  --c-operator: var(--vscode-charts-purple, #b180d7);
+  --c-number: var(--c-argument);
+  --c-keyword: var(--vscode-charts-purple, #b180d7);
+  --c-operator: var(--c-keyword);
   --c-redirect: var(--vscode-charts-yellow, #cca700);
+  --c-pattern: var(--c-redirect);
   --c-variable: var(--vscode-charts-red, #f14c4c);
+  --c-comment: var(--vscode-descriptionForeground, #888);
   --c-muted: var(--vscode-descriptionForeground, #888);
+}
+
+/* The setting `bashExplainer.colors`: `classic` (the class colors-classic on the body) keeps the variables above, the panel's own palette. Otherwise: the colours VS Code's default themes give shell code (Dark Modern and Light Modern, with Dark+, Light+): the same as the web page's editor, from web/editor-colors.ts (a test compares them). High contrast themes keep the variables above. */
+body.vscode-dark:not(.vscode-high-contrast):not(.colors-classic) {
+  --c-command: #DCDCAA;
+  --c-option: #569CD6;
+  --c-argument: #CE9178;
+  --c-number: #B5CEA8;
+  --c-keyword: #C586C0;
+  --c-operator: #D4D4D4;
+  --c-redirect: #D4D4D4;
+  --c-pattern: #D16969;
+  --c-variable: #9CDCFE;
+  --c-comment: #6A9955;
+}
+
+body.vscode-light:not(.vscode-high-contrast-light):not(.colors-classic) {
+  --c-command: #795E26;
+  --c-option: #0000FF;
+  --c-argument: #A31515;
+  --c-number: #098658;
+  --c-keyword: #AF00DB;
+  --c-operator: #000000;
+  --c-redirect: #000000;
+  --c-pattern: #811F3F;
+  --c-variable: #001080;
+  --c-comment: #008000;
 }
 
 body {
@@ -136,11 +167,14 @@ code {
 
 .kind-command, .kind-subcommand, .kind-builtin, .kind-function { color: var(--c-command); }
 .kind-option { color: var(--c-option); }
-.kind-argument, .kind-string, .kind-number { color: var(--c-argument); }
-.kind-operator, .kind-keyword, .kind-block, .kind-test { color: var(--c-operator); }
-.kind-redirect, .kind-pattern { color: var(--c-redirect); }
-.kind-variable, .kind-expansion, .kind-substitution, .kind-assignment { color: var(--c-variable); }
-.kind-comment { color: var(--c-muted); }
+.kind-pattern { color: var(--c-pattern); }
+.kind-argument, .kind-string { color: var(--c-argument); }
+.kind-number { color: var(--c-number); }
+.kind-keyword { color: var(--c-keyword); }
+.kind-operator, .kind-block, .kind-test { color: var(--c-operator); }
+.kind-redirect { color: var(--c-redirect); }
+.kind-variable, .kind-expansion, .kind-assignment, .kind-substitution { color: var(--c-variable); }
+.kind-comment { color: var(--c-comment); }
 .kind-error { color: var(--vscode-errorForeground, #f14c4c); }
 
 #empty {

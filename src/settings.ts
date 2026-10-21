@@ -33,6 +33,7 @@ export interface Settings {
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
   'highlight.enabled': boolean;
+  colors: 'vscode' | 'classic';
   languages: string[];
   'embedded.files': string[];
   customCommands: Record<string, unknown>;
@@ -118,6 +119,10 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'highlight.enabled', type: 'boolean', default: false, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
+  },
+  {
+    key: 'colors', type: 'string', default: 'vscode', enum: ['vscode', 'classic'], group: 'display', title: ['トークンの色', 'Token colours'], surfaces: ['vscode', 'web'],
+    elsewhere: 'The command-line tool and the Language Server draw no colours of their own (the editor colours code by its theme, or by the semantic tokens of highlight.enabled).',
   },
   {
     key: 'languages', type: 'array', default: ['shellscript'], group: 'files', title: ['対象の言語 ID', 'Language IDs'], surfaces: ['vscode', 'lsp'],
