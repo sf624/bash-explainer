@@ -60,6 +60,12 @@ const MAPFILE_OPTIONS: OptSpec[] = [
 /** A signal number of Linux (0 to 64, leading zeros allowed), as `trap` checks its first word. */
 const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
 
+/** `+N` and `-N` of `pushd`, `popd` and `dirs`: a place in the directory stack, from the left (`+`) or the right (`-`) of what `dirs` prints. */
+const stackPosition = (text: (side: '左' | '右', n: string) => Text): PatternOption => ({
+  pattern: /^([+-])(\d+)$/,
+  text: ([, sign, n]) => text(sign === '+' ? '左' : '右', n),
+});
+
 type Rest = Omit<Partial<CommandSpec>, 'summary' | 'options'>;
 
 /** A builtin of bash: it reads options up to its first operand (`-` words after it are operands). */
@@ -411,16 +417,16 @@ export const builtins: Record<string, CommandSpec> = {
   }),
   pushd: b('ディレクトリスタックに積んで移動する', 'Push a directory onto the stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ]),
+  ], { patternOptions: [stackPosition((side, n) => tx(`スタックを回して、\`dirs\` の${side}から ${n} 番目（0 始まり）を先頭にして移動する`, `Rotate the stack so that entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} of \`dirs\` (from 0), is on top, and cd there`))] }),
   popd: b('ディレクトリスタックから取り出してそこへ戻る', 'Pop the directory stack and cd to it', [
     ['-n', '移動せず、スタックだけを変える', 'change only the stack, do not cd'],
-  ]),
+  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${side}から ${n} 番目（0 始まり）をスタックから取り除く`, `Remove entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} of \`dirs\` (from 0), from the stack`))] }),
   dirs: b('ディレクトリスタックを表示する', 'Show the directory stack', [
     ['-c', 'スタックを空にする', 'clear the stack'],
     ['-l', '`~` を使わず、ホームからのパスを全部書く', 'print full paths, not `~`'],
     ['-p', '1行に1つずつ表示する', 'print one entry per line'],
     ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
-  ]),
+  ], { patternOptions: [stackPosition((side, n) => tx(`\`dirs\` の${side}から ${n} 番目（0 始まり）だけを表示する`, `Show only entry ${n}, counted from the ${side === '左' ? 'left' : 'right'} (from 0)`))] }),
   break: special('ループを抜ける', 'Exit from a loop', [], numeric(operand('N', '抜けるループの段数', 'number of loop levels'))),
   continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], numeric(operand('N', '対象のループの段数', 'number of loop levels'))),
   unset: special('変数や関数を削除する', 'Unset variables or functions', [
