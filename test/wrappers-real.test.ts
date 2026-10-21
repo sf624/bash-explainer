@@ -158,6 +158,17 @@ describe('wrappers agree with the real tools', () => {
       assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
     }
     assert.match(run("env -S 'printf %s,' x y").out, /^x,y,$/);
+    // A string that ends in an option that takes a value, or has an option after an assignment, is not
+    // only options and assignments: the words after it are not read as env's own command.
+    assert.strictEqual(run("env -S'-u' HOME printf %s, x").out, 'x,');
+    assert.match(run("env -S'A=1 -i' printf %s, x").err, /'-i': No such file/);
+    for (const line of ["env -S'-u' HOME printf %s, x", "env -S'-iu' HOME printf %s, x", "env -S'A=1 -i' printf %s, x"]) {
+      assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
+    }
+    // `-i` counts before the first assignment only.
+    const resets = (line: string): string | undefined => parseOf(line).parse.roles.map((r) => r.role).find((r) => r.role === 'command' && r.slot.env === 'reset')?.role;
+    assert.strictEqual(resets("env -S'-i A=1' printf %s, x"), 'command');
+    assert.strictEqual(resets("env -S'A=1 -i' printf %s, x"), undefined);
   });
 
   // A path, or a wrapper that starts a program, runs the program named like a builtin, whose options differ.
