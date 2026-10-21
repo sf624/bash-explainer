@@ -585,7 +585,7 @@
  "git log --pretty=format:'%h %ad' --date=format:%Y -n 2",
  "git log --pretty=format:'%h %s'",
  "git log -3",
- "git remote add origin URL",
+ "git remote frobnicate origin URL",
  "greet() { echo hi; }\ngreet world",
  "grep \"a\"'b' f",
  "grep 'a'b f",
