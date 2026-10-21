@@ -1,0 +1,193 @@
+// The commands with old-style letters and modes, compared with the real tools: the options and their
+// values that `tar --help` and `ar --help` list, the archive and the members tar and ar act on, the BSD
+// letters ps reads in any place, and the `-f=FORMAT` of dpkg-query. Tools that are missing are skipped.
+import * as assert from 'assert';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { commandSpec } from '../src/analyzer';
+import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
+import type { OptionSpec } from '../src/argv/spec';
+import { argWords } from './support/argwords';
+
+const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
+const ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC', COLUMNS: '200' };
+/** Runs a line of bash in `cwd`. */
+const run = (line: string, cwd: string): { out: string; err: string; status: number | null } => {
+  const r = spawnSync('bash', ['--norc', '-c', line], { cwd, env: ENV, encoding: 'utf8', timeout: 60000 });
+  return { out: r.stdout, err: r.stderr, status: r.status };
+};
+const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
+  const { name, words, texts } = argWords(line);
+  return { parse: interpret(commandSpec(name)!, words, { name, lookup: commandSpec }), words: words.map((w, i) => w.value ?? texts[i]) };
+};
+/** The words the interpreter gives a role that `pick` accepts. */
+const wordsWith = (line: string, pick: (r: ArgRole) => boolean): string[] => {
+  const { parse, words } = parseOf(line);
+  return parse.roles.flatMap(({ word, role }) => (pick(role) ? [words[word]] : []));
+};
+const valueOf = (names: string[]) => (r: ArgRole): boolean => r.role === 'value' && names.includes(r.of);
+const operand = (r: ArgRole): boolean => r.role === 'operand';
+
+function tempDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oldstyle-real-'));
+  fs.mkdirSync(path.join(dir, 'src/sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src/a.txt'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'src/sub/b.txt'), 'b\n');
+  fs.writeFileSync(path.join(dir, 'c.txt'), 'c\n');
+  fs.writeFileSync(path.join(dir, 'list'), 'src/a.txt\n');
+  return dir;
+}
+
+/** The options a `--help` lists (`-f, --file=ARCHIVE`): whether each takes a value, needs one or may have one. */
+function helpOptions(text: string): Map<string, 'none' | 'required' | 'optional'> {
+  const out = new Map<string, 'none' | 'required' | 'optional'>();
+  for (const line of text.split('\n')) {
+    const head = /^\s+(-\S.*?)(?:\s{2,}|$)/.exec(line);
+    if (!head) continue;
+    const names = head[1].split(/,\s*/);
+    const last = names[names.length - 1];
+    const arity = last.includes('[=') ? 'optional' : last.includes('=') ? 'required' : 'none';
+    for (const n of names) out.set(n.replace(/[[=].*$/, ''), arity);
+  }
+  return out;
+}
+const arityOf = (o: OptionSpec): string => (!o.value ? 'none' : !Array.isArray(o.value) && o.value.optional ? 'optional' : 'required');
+
+describe('tar agrees with the real tar', () => {
+  (has('tar') ? it : it.skip)('every option is one tar lists, and takes a value when tar\'s does', () => {
+    const help = helpOptions(spawnSync('tar', ['--help'], { env: ENV, encoding: 'utf8' }).stdout);
+    for (const o of commandSpec('tar')!.options!) for (const n of o.names) assert.strictEqual(arityOf(o), help.get(n), n);
+  });
+
+  // Each line names its archive with `f` (or `-f`, `--file`); the members tar lists or stores are the operands.
+  const ROWS = [
+    'tar tf a.tar src/a.txt',
+    'tar -tf a.tar src/sub',
+    'tar tbf 20 a.tar src/a.txt',
+    'tar tfb a.tar 20 src/a.txt',
+    'tar --list --file=a.tar src/a.txt',
+    'tar -t --file a.tar -N 2000-01-01 src/sub/b.txt',
+    'tar cf b.tar src/a.txt',
+    'tar cfC b.tar src a.txt',
+    'tar cCf src b.tar sub',
+    'tar -cf b.tar --exclude=b.txt src',
+    'tar cf b.tar -T list c.txt',
+    'tar cf b.tar --owner root --group=0 src/a.txt',
+    'tar cgf snap b.tar src/a.txt',
+    'tar --totals=USR1 -cf b.tar src/a.txt',
+    'tar cf b.tar --totals c.txt',
+    'tar cvhf b.tar --no-recursion src',
+    'tar -cf b.tar -I gzip c.txt',
+  ];
+  (has('tar') ? it : it.skip)('acts on the archive and the members the interpreter names', () => {
+    for (const line of ROWS) {
+      const dir = tempDir();
+      try {
+        assert.strictEqual(run('tar cf a.tar src', dir).status, 0);
+        const r = run(line, dir);
+        assert.strictEqual(r.status, 0, `${line}: ${r.err}`);
+        const [archive] = wordsWith(line, valueOf(['f', '-f', '--file']));
+        // (The names in the file of `-T` are members too.)
+        const listedIn = wordsWith(line, valueOf(['-T'])).flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean));
+        const members = [...wordsWith(line, operand), ...listedIn];
+        const listed = (/^tar (-?t|--list)/.test(line) ? r.out : run(`tar tf ${archive}`, dir).out).split('\n').filter(Boolean);
+        // Every name stored or listed is a member or under one; every member is there.
+        const under = (n: string): string | undefined => members.find((m) => n === m || n.startsWith(m.replace(/\/?$/, '/')));
+        assert.ok(listed.every(under), `${line}: ${listed.join(' ')} for ${members.join(' ')}`);
+        assert.ok(members.every((m) => listed.some((n) => under(n) === m)), line);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+});
+
+describe('ps reads BSD letters in any place, as procps does', () => {
+  // [line, the words read as BSD letters, the line with them first, the line without them]: what ps prints
+  // first is the same as with the letters first, and not the same as without them.
+  const ROWS: [string, string[], string, string][] = [
+    ['ps -p 1 u', ['u'], 'ps u -p 1', 'ps -p 1'],
+    ['ps -p 1 j', ['j'], 'ps j -p 1', 'ps -p 1'],
+    ['ps --pid 1 l', ['l'], 'ps l --pid 1', 'ps --pid 1'],
+    ['ps -o pid,comm -p 1 h', ['h'], 'ps h -o pid,comm -p 1', 'ps -o pid,comm -p 1'],
+    ['ps -p 1 v', ['v'], 'ps v -p 1', 'ps -p 1'],
+    ['ps -p 1 o pid,comm', ['o'], 'ps o pid,comm -p 1', 'ps -p 1'],
+  ];
+  const first = (line: string): string => run(line, os.tmpdir()).out.split('\n')[0];
+  (has('ps') ? it : it.skip)('reads them as the interpreter does', () => {
+    for (const [line, letters, moved, without] of ROWS) {
+      assert.deepStrictEqual(wordsWith(line, (r) => r.role === 'old-style'), letters, line);
+      assert.strictEqual(first(line), first(moved), line);
+      assert.notStrictEqual(first(line), first(without), line);
+    }
+  });
+});
+
+describe('ar agrees with the real ar', () => {
+  (has('ar') ? it : it.skip)('every letter ar --help lists has a meaning', function () {
+    // (See test/oldstyle.test.ts: the first run of ar may load large plugins.)
+    this.timeout(60000);
+    const help = spawnSync('ar', ['--help'], { env: ENV, encoding: 'utf8' }).stdout;
+    const usage = /\{(\w+)\}\[(\w+)\]/.exec(help)!;
+    const theirs = new Set([...usage[1] + usage[2]].filter((l) => l !== 'M'));
+    for (const m of help.matchAll(/^ {2}\[(\w)/gm)) theirs.add(m[1]);
+    const ours = new Set(Object.keys(commandSpec('ar')!.oldStyle!.letters!));
+    assert.deepStrictEqual([...theirs].filter((l) => !ours.has(l)), []);
+  });
+
+  // [line, the members of lib.a after it]: the archive is the operand the interpreter names; values come first.
+  const ROWS: [string, string][] = [
+    ['ar rc lib.a c.txt', 'a.txt b.txt c.txt'],
+    ['ar ra a.txt lib.a c.txt', 'a.txt c.txt b.txt'],
+    ['ar rb a.txt lib.a c.txt', 'c.txt a.txt b.txt'],
+    ['ar rcl -lm lib.a c.txt', 'a.txt b.txt c.txt __.LIBDEP'],
+    ['ar -d lib.a a.txt', 'b.txt'],
+    ['ar dv lib.a b.txt', 'a.txt'],
+    ['ar tO lib.a', 'a.txt b.txt'],
+  ];
+  (has('ar') ? it : it.skip)('acts on the archive the interpreter names', function () {
+    this.timeout(60000);
+    for (const [line, after] of ROWS) {
+      const dir = tempDir();
+      try {
+        fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+        fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
+        assert.strictEqual(run('ar rc lib.a a.txt b.txt', dir).status, 0);
+        assert.strictEqual(run(line, dir).status, 0, line);
+        assert.deepStrictEqual(wordsWith(line, (r) => r.role === 'operand' && r.spec?.name === 'ARCHIVE'), ['lib.a'], line);
+        assert.strictEqual(run('ar t lib.a', dir).out.split('\n').filter(Boolean).join(' '), after, line);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+});
+
+describe('dpkg-query reads -f=FORMAT as dpkg does', () => {
+  const ROWS = [
+    "dpkg-query -W -f='X${Package}\\n' dpkg",
+    "dpkg-query -W -f '=X${Package}\\n' dpkg",
+    "dpkg-query -W -f'=X${Package}\\n' dpkg",
+    "dpkg-query -Wf='X${Package}\\n' dpkg",
+    "dpkg-query -W --showformat='=${Package}\\n' dpkg",
+  ];
+  /** The format the interpreter gives `-f` or `--showformat`: attached to the option, or the next word. */
+  const formatOf = (line: string): string | undefined => {
+    const { parse, words } = parseOf(line);
+    for (const { word, role } of parse.roles) {
+      if (role.role === 'value' && role.option?.names.includes('--showformat')) return words[word];
+      for (const o of role.role === 'cluster' ? role.letters : [role]) {
+        if (o.role === 'option' && o.value && o.spec.names.includes('--showformat')) return words[word].slice(o.value.attached);
+      }
+    }
+    return undefined;
+  };
+  (has('dpkg-query') ? it : it.skip)('the format is the value the interpreter gives', () => {
+    for (const line of ROWS) {
+      const expected = spawnSync('dpkg-query', ['-W', `--showformat=${formatOf(line)}`, 'dpkg'], { env: ENV, encoding: 'utf8' }).stdout;
+      assert.strictEqual(run(line, os.tmpdir()).out, expected, line);
+    }
+  });
+});

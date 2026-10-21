@@ -28,7 +28,7 @@ export interface CommandSpec {
   modes?: ModeSpec[];
   /** The mode is that of the last option given that selects one (`echo -e -E` reads no escapes), not the first of `modes`. */
   lastModeWins?: boolean;
-  /** Dashless letters in the first word (`tar cvzf`, `ps aux`). */
+  /** Dashless letters in the first word (`tar cvzf`, `ps aux`), or in any word (`ps -p 1 u`). */
   oldStyle?: OldStyleSpec;
   /**
    * What the operands mean: the first alternative whose condition holds and whose pattern fits. Absent: the
@@ -118,6 +118,8 @@ export interface OldStyleSpec {
   needs?: string;
   /** What the word is called (default: old-style options). */
   style?: Text;
+  /** Any word that is not an option or a value may be such letters, not only the first (procps reads `ps -p 1 u` as `ps u -p 1`). */
+  anywhere?: boolean;
 }
 
 /** One way to read the operands: it applies when `when` holds and the pattern fits. */

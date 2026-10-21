@@ -152,7 +152,7 @@ class Reader {
         end = i;
         break;
       }
-      if (!endOpts && i === from && spec.oldStyle) {
+      if (!endOpts && spec.oldStyle && (i === from || spec.oldStyle.anywhere)) {
         const used = this.oldStyle(st, i);
         if (used >= 0) { i = used; continue; }
       }
@@ -420,7 +420,7 @@ class Reader {
     return last;
   }
 
-  /** `tar cvf a.tar`, `ps aux`: the first word as letters without a dash. Returns the last word used, or -1. */
+  /** `tar cvf a.tar`, `ps aux`: a word as letters without a dash. Returns the last word used, or -1. */
   private oldStyle(st: OptionState, i: number): number {
     const old = st.spec.oldStyle!;
     const text = this.words[i].value;
