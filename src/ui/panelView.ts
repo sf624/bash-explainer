@@ -30,6 +30,8 @@ export interface PanelLine {
   /** The shell the file says, shown next to "auto". */
   detected?: Shell;
   placement: ExamplePlacement;
+  /** The palette of the token kinds (media/panel.css). */
+  colors: 'vscode' | 'classic';
 }
 
 /** The message that shows a line's explanation in the panel. */
@@ -53,6 +55,7 @@ export function panelUpdate(p: PanelLine) {
     explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
     examplesFirst: p.placement === 'first',
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
+    colors: p.colors,
     emptyMessage: t.empty,
     settingsLabel: t.settings,
   };
