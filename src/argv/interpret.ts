@@ -474,7 +474,8 @@ interface OptionState {
 function findOption(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): OptionSpec | undefined {
   if (prefixes === 'first') {
     const word = flag.startsWith('--') ? flag.slice(1) : flag;
-    return word.length < 2 || word[0] !== '-' ? undefined : options.find((o) => o.names.some((n) => n.startsWith(word)));
+    // (A lone `-` starts every option, so it is the first one: iproute2's `ip - 3 link` is `ip -loops 3 link`.)
+    return word[0] !== '-' ? undefined : options.find((o) => o.names.some((n) => n.startsWith(word)));
   }
   const exact = options.find((o) => o.names.includes(flag));
   if (exact || !prefixes || !flag.startsWith('--') || flag.length < 3) return exact;

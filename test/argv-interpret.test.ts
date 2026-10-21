@@ -448,7 +448,9 @@ describe('argv interpreter: the option grammar', () => {
     // `'first'` prefixes: the first name a word starts; an empty word starts none (`ip ''`: "Object "" is unknown").
     assert.deepStrictEqual(roles('ip m'), ['m: subcommand maddress']);
     assert.deepStrictEqual(roles("ip ''"), ["'': operand"]);
-    assert.deepStrictEqual(roles('ip -'), ['-: operand']);
+    // A lone `-` starts every option: the first, `-loops` (`ip - 3 link` is `ip -loops 3 link`; test/subcommands-real.test.ts).
+    assert.deepStrictEqual(roles('ip -'), ['-: - (no value) maximum number of attempts when flushing addresses']);
+    assert.deepStrictEqual(roles('ip - 3 l'), ['-: - maximum number of attempts when flushing addresses', '3: value 0 of - VALUE', 'l: subcommand link']);
   });
 
   it('reads `--` that starts words of another pattern, and a `--` that is text', () => {

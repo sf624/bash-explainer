@@ -136,6 +136,7 @@ describe('ip agrees with the real ip', () => {
     ['ip -det link show lo', 'ip -details link show lo'],
     ['ip --stats -human a s lo', 'ip -statistics -human-readable address show lo'],
     ['ip -fam inet a s lo', 'ip -family inet address show lo'],
+    ['ip - 3 a s lo', 'ip -loops 3 address show lo'],
   ];
   for (const [line, full] of PREFIXES) {
     ip(`${line}: reads as ${full}`, () => {
