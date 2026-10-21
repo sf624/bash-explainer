@@ -167,18 +167,14 @@ export const extraSubcommands: Record<string, Record<string, CommandDoc>> = {
   },
 };
 
-/**
- * Merge the extra options and subcommands into the entries of `commands` (or of `builtins` for the
- * names it holds). What the main entry already has is kept.
- */
-export function applyExtras(commands: Record<string, CommandDoc>, builtins: Record<string, CommandDoc>): void {
-  const entry = (name: string): CommandDoc => (Object.hasOwn(builtins, name) ? builtins[name] : commands[name]);
+/** Merge the extra options and subcommands into the entries of `commands`. What the main entry already has is kept. */
+export function applyExtras(commands: Record<string, CommandDoc>): void {
   for (const [key, specs] of Object.entries({ ...extraFiles, ...extraAdmin })) {
-    const doc = entry(key);
+    const doc = commands[key];
     doc.options = { ...cmd('', '', specs).options, ...doc.options };
   }
   for (const [key, subs] of Object.entries(extraSubcommands)) {
-    const doc = entry(key);
+    const doc = commands[key];
     doc.subcommands = { ...subs, ...doc.subcommands };
   }
   // These take their global options before or after the subcommand (`systemctl status -l x`,

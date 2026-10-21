@@ -1,4 +1,4 @@
-import { builtins, shellOptions } from './builtins';
+import { shellOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
@@ -992,4 +992,4 @@ export const commands: Record<string, CommandDoc> = {
   ...ops,
 };
 
-applyExtras(commands, builtins);
+applyExtras(commands);
