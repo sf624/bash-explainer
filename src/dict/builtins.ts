@@ -379,7 +379,13 @@ export const builtins: Record<string, CommandSpec> = {
     ['-r', '実行中のジョブだけを表示する', 'show only running jobs'],
     ['-s', '停止中のジョブだけを表示する', 'show only stopped jobs'],
     ['-x', 'ジョブ指定をプロセス ID に置き換えてコマンドを実行する', 'replace job specs with process IDs and run the command'],
-  ], args(operand('JOB', '対象のジョブ指定（`%1`。省略時は全て）', 'job spec (`%1`; default: all)', { type: 'job' }))),
+  ], {
+    operands: [
+      // `jobs -x cmd %1`: the command runs in this shell, with the job specs among its words replaced by process IDs.
+      { when: { option: ['-x'] }, pattern: [runs({ run: 'current-shell' })] },
+      ...args(operand('JOB', '対象のジョブ指定（`%1`。省略時は全て）', 'job spec (`%1`; default: all)', { type: 'job' })).operands!,
+    ],
+  }),
   fg: b('ジョブをフォアグラウンドに戻す', 'Bring a job to the foreground', [], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
   bg: b('停止中のジョブをバックグラウンドで再開する', 'Resume a stopped job in the background', [], args(operand('JOB', 'ジョブ指定（`%1`。省略時は現在のジョブ）', 'job spec (`%1`; default: the current job)', { type: 'job' }))),
   disown: b('ジョブをシェルの管理から外す（シェル終了時に終了させない）', 'Remove jobs from the job table (they survive shell exit)', [
