@@ -367,6 +367,8 @@ The code (src/argv/) differs from 3.2–3.4 in these points:
 - An assignment operand ends the options (`env A=1 -i cmd` runs `-i`; checked with the real env).
 - A word that becomes known words (`a{,.bak}`) gives each its role (`each`). An operand whose role depends on how many words an expansion gives is `uncertain`, with the role it may have instead (`otherwise`), or the roles of its words when it gives several (`several`).
 - `fromCommandDoc(doc, name)` takes the command's name, for the rules the old walk applied by name (`kill`, `head -5`, `echo`).
+- A dictionary entry may carry its spec, written directly with `native()` (src/dict/types.ts) next to the other entries: `CommandDoc.spec`, with `summary` and `builtin` kept for the name. The analyzer uses it, and the converter otherwise; a converted entry may have native subcommands (`docker run`). Options are still written as `cmd`'s tuples; a name given twice means what it means last.
+- `CommandSpec.alsoProgram`: a builtin that is also a program (`echo`, `kill`, `test`). A wrapper that starts a program runs it, so it gets no pitfall.
 
 ## 4. B: the semantic model
 
@@ -702,7 +704,11 @@ Strangler steps. Each one is a PR (or a stack) that ships with every existing te
 **A2. The walk reads the interpreter.** Done: the shadow test found 31 words the old walk read wrongly; test/argv-fixes.test.ts keeps them, and the comparison is gone. The ssh and `su -c` pitfalls read the command slot. `args`, `option`, `bundle` and `describeByCount` become a renderer of `ArgvParse`. `glueOption`, `fillsPositional`, `optionGiven` and `killSignal` go. The converter still feeds it. Guarded by: analyzer, options-fixes, positional-count, oldstyle, wrappers, builtins-flags and dictionary tests. Size: −600 / +400.
 
 **A3. Families move to native specs**, one PR each, removing the name branches as they go:
-- wrappers and shells (sudo, env, timeout, nice, nohup, xargs, chroot, flock, ssh, su, bash/sh, exec, command, builtin, eval): `CommandSlot`; `WRAPPER_PROGRAMS`, `SHELL_ONLY`, `remoteNotes` and `shellArgument` go;
+- wrappers and shells (sudo, env, timeout, nice, nohup, xargs, chroot, flock, ssh, su, bash/sh, exec, command, builtin, eval): `CommandSlot`; `WRAPPER_PROGRAMS`, `SHELL_ONLY`, `remoteNotes` and `shellArgument` go. Done: also doas, time, setsid, stdbuf, ionice, watch, strace, ltrace, unshare, nsenter, runcon, systemd-run, systemd-cat, caffeinate, npx, `perf stat|record`, `docker run|exec`, `docker compose run|exec`, `podman`, `kubectl exec|run|debug`, `uv run` and `poetry run`. The pitfalls follow from the slot's `run` and `where`; `find -exec` keeps its converted `until` slot. The fields `wraps`, `wrapSkip`, `afterDashes`, `assigns` and `shellC` are gone. Still to move, with the families that use them:
+  - builtins: `SPECIAL_BUILTINS` and `PROGRAMS` (`alsoProgram`), `JOB_COMMANDS`, the signal patterns and marks of `kill`, `echo` (style, modes, literal `--`), `let` and `shopt` operand types, `set`'s `next-only` values, `plusOptions` by name, and the fields `positionalWith` (`kill -l`, `trap -p`) and `builtin`;
+  - modes and old styles: `inMode`, `bundle`, and dpkg's `shortEquals`;
+  - subcommand trees: `subcommands`, the `...kube`/`composeOpts` spreads and the option inheritance of `systemctl` and `ip` in extras.ts, `COUNT_COMMANDS` for `git log|show`;
+  - the rest, until A4: `arg`, `argCount` and `restOperands` (jq, with `longEquals`), `values`, `lang`, `fillsPositional` (grep, sed, perl), `nextIf` (journalctl), `attachedOnly`, `untilTerminator` and `longSingleDash` (find, with its option filter and `operandParser`), `positional`, `positionalBy`, `positionalLang`, the count patterns of `head` and `tail`, and awk's `assignmentText`;
 - builtins (set, shopt, declare/export/local/readonly, unset, kill, trap, read, mapfile, getopts, wait, jobs, echo, let, `.`);
 - modes and old styles (rpm, dpkg, tar, ps, ar);
 - subcommand trees (git, kubectl, docker, systemctl, ip), with `persistent` options instead of spreads.
