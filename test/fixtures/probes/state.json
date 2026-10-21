@@ -1,0 +1,475 @@
+[
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s extglob nullglob; shopt -u globskipdots",
+    "facts": {
+      "end": {
+        "shopt": {
+          "extglob": true,
+          "globskipdots": false,
+          "nullglob": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -so pipefail noglob",
+    "note": "shopt -o sets the options of set -o",
+    "facts": {
+      "end": {
+        "set": {
+          "noglob": true,
+          "pipefail": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -euo pipefail",
+    "facts": {
+      "end": {
+        "set": {
+          "errexit": true,
+          "nounset": true,
+          "pipefail": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -fC +B",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false,
+          "noclobber": true,
+          "noglob": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -a; x=1; set +a; y=2",
+    "note": "allexport exports what is assigned while it is on",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix",
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"y\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "x=1 :; y=2 true",
+    "posix": true,
+    "note": "in POSIX mode, assignments before a special builtin persist",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "x=1 :; y=2 true",
+    "note": "in bash mode, they do not",
+    "facts": {
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "a=(1 2 3); a[5]=x; unset 'a[1]'",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [2]=\"3\" [5]=\"x\")"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "declare -A m; m[k]=v; m[two words]=w",
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "A",
+            "value": "([k]=\"v\" [\"two words\"]=\"w\" )"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "declare -i n=2+3; n+=1; s=1; s+=1",
+    "facts": {
+      "end": {
+        "variables": {
+          "n": {
+            "attrs": "i",
+            "value": "\"6\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"11\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "readonly r=1; export e=2; declare -l lo=ABC; declare -u up=abc; declare -n ref=lo",
+    "facts": {
+      "end": {
+        "variables": {
+          "e": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "lo": {
+            "attrs": "l",
+            "value": "\"abc\""
+          },
+          "r": {
+            "attrs": "r",
+            "value": "\"1\""
+          },
+          "ref": {
+            "attrs": "n",
+            "value": "\"lo\""
+          },
+          "up": {
+            "attrs": "u",
+            "value": "\"ABC\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { local l=1; g=2; declare d=3; declare -g dg=4; }; f",
+    "facts": {
+      "end": {
+        "variables": {
+          "dg": {
+            "attrs": "-",
+            "value": "\"4\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { :; }; g() { :; }; h() { :; }; unset -f g; export -f h",
+    "facts": {
+      "end": {
+        "functions": {
+          "f": "f",
+          "h": "fx"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.3",
+    "snippet": "( z=1; cd sub; shopt -s extglob; f() { :; } ); y=$(w=1; echo 2)",
+    "note": "nothing leaks out of ( ) or $( )",
+    "facts": {
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "echo 1 | read v; echo 2 | { read u; }",
+    "note": "pipeline stages are subshells",
+    "facts": {
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "shopt -s lastpipe; echo 1 | read v",
+    "note": "with lastpipe, the last stage runs in the shell",
+    "facts": {
+      "end": {
+        "shopt": {
+          "lastpipe": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "alias ll='ls -l' q='it'\\''s'; alias g=grep; unalias g",
+    "facts": {
+      "end": {
+        "aliases": {
+          "ll": "ls -l",
+          "q": "it's"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": ": ${d:=default} ${e=}; unset IFS",
+    "facts": {
+      "end": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "\"default\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"\""
+          }
+        },
+        "unset": [
+          "IFS"
+        ]
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.6.7",
+    "snippet": "read -r a b <<< 'x y z'; IFS=: read -r p q <<< 'a:b:c'",
+    "note": "IFS before read is for read only",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"x\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"y z\""
+          },
+          "p": {
+            "attrs": "-",
+            "value": "\"a\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"b:c\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "for i in 1 2 3; do :; done; while false; do w=1; done",
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "cd sub; pushd .. >/dev/null",
+    "facts": {
+      "end": {
+        "variables": {
+          "OLDPWD": {
+            "attrs": "x",
+            "value": "\"/BOX/sub\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "set -- -a x -b; getopts a:b o; getopts a:b o2",
+    "facts": {
+      "end": {
+        "variables": {
+          "OPTARG": {
+            "attrs": "-"
+          },
+          "OPTIND": {
+            "attrs": "i",
+            "value": "\"4\""
+          },
+          "o": {
+            "attrs": "-",
+            "value": "\"a\""
+          },
+          "o2": {
+            "attrs": "-",
+            "value": "\"b\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "mapfile -t lines < <(printf 'a\\nb\\n'); printf -v pv '%03d' 7",
+    "facts": {
+      "end": {
+        "variables": {
+          "lines": {
+            "attrs": "a",
+            "value": "([0]=\"a\" [1]=\"b\")"
+          },
+          "pv": {
+            "attrs": "-",
+            "value": "\"007\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s extglob\n@PROBE:mid@\nshopt -u extglob",
+    "note": "a marker gives the state at its place",
+    "facts": {
+      "mid": {
+        "shopt": {
+          "extglob": true
+        }
+      },
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "f() { @PROBE:inside@; }; f | cat",
+    "note": "a marker in a subshell sees the state of that subshell",
+    "facts": {
+      "inside": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.3",
+    "snippet": "cd sub || exit; exec 3>&1; umask 077",
+    "facts": {
+      "end": {
+        "variables": {
+          "OLDPWD": {
+            "attrs": "x",
+            "value": "\"/BOX\""
+          },
+          "PWD": {
+            "attrs": "x",
+            "value": "\"/BOX/sub\""
+          }
+        }
+      },
+      "status": 0
+    }
+  }
+]

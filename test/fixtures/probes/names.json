@@ -1,0 +1,496 @@
+[
+  {
+    "manual": "3.7.2",
+    "snippet": "@PROBE@",
+    "names": [
+      "if",
+      "then",
+      "[[",
+      "function",
+      "coproc",
+      "time",
+      "!",
+      "{",
+      "cd",
+      "echo",
+      "test",
+      "[",
+      "printf",
+      "kill",
+      "true",
+      "type",
+      "mapfile",
+      "ls",
+      "nope"
+    ],
+    "facts": {
+      "1": {
+        "if": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "then": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "[[": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "function": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "coproc": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "time": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "!": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "{": {
+          "bash": "keyword",
+          "posix": "keyword"
+        },
+        "cd": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "echo": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "test": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "[": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "printf": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "kill": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "true": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "type": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "mapfile": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "ls": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "nope": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "@PROBE@",
+    "note": "type -t says builtin for the special builtins too",
+    "names": [
+      ":",
+      ".",
+      "break",
+      "continue",
+      "eval",
+      "exec",
+      "exit",
+      "export",
+      "readonly",
+      "return",
+      "set",
+      "shift",
+      "times",
+      "trap",
+      "unset",
+      "source",
+      "declare",
+      "local"
+    ],
+    "facts": {
+      "1": {
+        ":": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        ".": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "break": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "continue": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "eval": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "exec": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "exit": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "export": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "readonly": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "return": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "set": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "shift": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "times": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "trap": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "unset": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "source": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "declare": {
+          "bash": "builtin",
+          "posix": "builtin"
+        },
+        "local": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "echo() { :; }; cd() { :; }; @PROBE@",
+    "names": [
+      "echo",
+      "cd"
+    ],
+    "note": "a function shadows a builtin",
+    "facts": {
+      "1": {
+        "echo": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "cd": {
+          "bash": "function",
+          "posix": "function"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "export() { :; }; @PROBE@",
+    "names": [
+      "export"
+    ],
+    "note": "in POSIX mode, a function cannot have the name of a special builtin: the script stops",
+    "facts": {
+      "1": {
+        "export": {
+          "bash": "function",
+          "posix": "not-run"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o posix\nf() { :; }\n@PROBE@",
+    "names": [
+      "f",
+      "set"
+    ],
+    "facts": {
+      "1": {
+        "f": {
+          "bash": "function",
+          "posix": "function"
+        },
+        "set": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "ls() { :; }; @PROBE@",
+    "names": [
+      "ls"
+    ],
+    "facts": {
+      "1": {
+        "ls": {
+          "bash": "function",
+          "posix": "function"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "alias ll='ls -l'; alias if=echo; @PROBE@",
+    "names": [
+      "ll",
+      "if"
+    ],
+    "note": "type -t reports an alias only where aliases are expanded: expand_aliases is off in a script, on in POSIX mode",
+    "facts": {
+      "1": {
+        "ll": {
+          "bash": "none",
+          "posix": "alias"
+        },
+        "if": {
+          "bash": "keyword",
+          "posix": "alias"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "@PROBE:before@\nf() { :; }\n@PROBE:after@\nunset -f f\n@PROBE:unset@",
+    "names": [
+      "f"
+    ],
+    "facts": {
+      "before": {
+        "f": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "after": {
+        "f": {
+          "bash": "function",
+          "posix": "function"
+        }
+      },
+      "unset": {
+        "f": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.2.5.3",
+    "snippet": "( g() { :; } ); h=$(h() { :; }); @PROBE@",
+    "names": [
+      "g",
+      "h"
+    ],
+    "note": "functions defined in a subshell are gone",
+    "facts": {
+      "1": {
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "h": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "p() { :; } | cat; @PROBE@",
+    "names": [
+      "p"
+    ],
+    "facts": {
+      "1": {
+        "p": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n echo kill; @PROBE@",
+    "names": [
+      "echo",
+      "kill"
+    ],
+    "facts": {
+      "1": {
+        "echo": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "kill": {
+          "bash": "file",
+          "posix": "file"
+        }
+      }
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "hash -p /bin/echo myecho; @PROBE@",
+    "names": [
+      "myecho"
+    ],
+    "facts": {
+      "1": {
+        "myecho": {
+          "bash": "file",
+          "posix": "file"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "PATH=; @PROBE:empty@; PATH=/nonexistent; @PROBE:none@",
+    "names": [
+      "ls",
+      "cd"
+    ],
+    "facts": {
+      "empty": {
+        "ls": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "cd": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      },
+      "none": {
+        "ls": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "cd": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "@PROBE@",
+    "names": [
+      "/bin/ls",
+      "./a.txt",
+      "sub/d.txt",
+      "/nonexistent"
+    ],
+    "facts": {
+      "1": {
+        "/bin/ls": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "./a.txt": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "sub/d.txt": {
+          "bash": "none",
+          "posix": "none"
+        },
+        "/nonexistent": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "f() { g() { :; }; }; @PROBE:before@; f; @PROBE:after@",
+    "names": [
+      "g"
+    ],
+    "note": "a function defined by a function exists once that one ran",
+    "facts": {
+      "before": {
+        "g": {
+          "bash": "none",
+          "posix": "none"
+        }
+      },
+      "after": {
+        "g": {
+          "bash": "function",
+          "posix": "function"
+        }
+      }
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "if false; then f() { :; }; fi; @PROBE@",
+    "names": [
+      "f"
+    ],
+    "facts": {
+      "1": {
+        "f": {
+          "bash": "none",
+          "posix": "none"
+        }
+      }
+    }
+  }
+]
