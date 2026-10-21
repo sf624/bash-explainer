@@ -707,7 +707,10 @@
         []
       ],
       "status": 0,
-      "stderr": "SCRIPT: line 1: $y: ambiguous redirect"
+      "stderr": "SCRIPT: line 1: $y: ambiguous redirect",
+      "created": [
+        "e.out"
+      ]
     }
   },
   {
@@ -727,7 +730,12 @@
         []
       ],
       "status": 0,
-      "stderr": "SCRIPT: line 1: {p,q}: ambiguous redirect"
+      "stderr": "SCRIPT: line 1: {p,q}: ambiguous redirect",
+      "created": [
+        "*.log",
+        "*.txt",
+        "a b"
+      ]
     }
   },
   {
@@ -1004,6 +1012,198 @@
           "a",
           "",
           "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "P=/p; PATH=$P:~/bin; x=\"a:\"~/b; y=a\"b\":~/c; z=\"a\"~/b; export Q=\"$P\":~/b:~/x; @PROBE:a@ \"$PATH\" \"$x\" \"$y\" \"$z\" \"$Q\" x=$P:~/bin a\"b\"=~/c",
+    "note": "A tilde after a `:` of an assignment expands also when the word does not start with plain text; a quoted `:` or `~` is text.",
+    "facts": {
+      "a": [
+        [
+          "/p:/home/probe/bin",
+          "a:~/b",
+          "ab:/home/probe/c",
+          "a~/b",
+          "/p:/home/probe/b:/home/probe/x",
+          "x=/p:/home/probe/bin",
+          "ab=~/c"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "HOME=h; mkdir -p a=h; case a=~/d in a=h/d) @PROBE:a@ case-word;; esac; case a=h/d in a=~/d) @PROBE:b@ case-pattern;; esac; [[ a=~/e == a=h/e ]] && @PROBE:c@ cond; @PROBE:d@ > a=~/f; u=; @PROBE:e@ <<< a=~/g ${u:-a=~/x}",
+    "note": "In bash mode, a word that looks like an assignment has its tilde expanded in `case`, `[[ ]]` and a redirection target too; not in a here-string or the word of `${u:-\u2026}`.",
+    "facts": {
+      "a": [
+        [
+          "case-word"
+        ]
+      ],
+      "b": [
+        [
+          "case-pattern"
+        ]
+      ],
+      "c": [
+        [
+          "cond"
+        ]
+      ],
+      "d": [
+        []
+      ],
+      "e": [
+        [
+          "a=~/x"
+        ]
+      ],
+      "status": 0,
+      "created": [
+        "a=h/",
+        "a=h/f"
+      ]
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "HOME=h; mkdir -p 'a=~'; case a=~/d in a=h/d) @PROBE:a@ case-word;; esac; [[ a=~/e == a=h/e ]] && @PROBE:c@ cond; @PROBE:d@ > a=~/f",
+    "posix": true,
+    "note": "In POSIX mode, the tilde after `=` stays.",
+    "facts": {
+      "a": [],
+      "c": [],
+      "d": [
+        []
+      ],
+      "status": 0,
+      "created": [
+        "a=~/",
+        "a=~/f"
+      ]
+    },
+    "gaps": {
+      "a": "the model does not decide which `case` branch runs",
+      "c": "the model does not evaluate `[[ ]]`"
+    }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "shopt -s globstar; @PROBE:a@ ./.* ./** ./*.log sub/../*.log; shopt -u globskipdots; @PROBE:b@ .* ./.*; shopt -s globskipdots",
+    "facts": {
+      "a": [
+        [
+          "./.hidden",
+          "./",
+          "./a.txt",
+          "./b.txt",
+          "./c.log",
+          "./empty",
+          "./sub",
+          "./sub/d.txt",
+          "./x y.txt",
+          "./c.log",
+          "sub/../c.log"
+        ]
+      ],
+      "b": [
+        [
+          ".",
+          "..",
+          ".hidden",
+          "./.",
+          "./..",
+          "./.hidden"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "`sub/../*.log`: a path through `..` is not followed (the files of the run are known only by their names)"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "shopt -s nocasematch; x=ABC; @PROBE:a@ ${x/b/-} ${x#a} ${x%c} ${x//[b]/-}; shopt -u nocasematch; @PROBE:b@ ${x/b/-}",
+    "facts": {
+      "a": [
+        [
+          "A-C",
+          "ABC",
+          "ABC",
+          "A-C"
+        ]
+      ],
+      "b": [
+        [
+          "ABC"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.2",
+    "snippet": "cd sub; @PROBE:a@ ~+ ~- *; cd ..; @PROBE:b@ ~+/x",
+    "facts": {
+      "a": [
+        [
+          "/BOX/sub",
+          "/BOX",
+          "d.txt"
+        ]
+      ],
+      "b": [
+        [
+          "/BOX/x"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "the current directory is not followed: after a `cd` anywhere, `~+`, `~-` and globs are not known",
+      "b": "the current directory is not followed: after a `cd` anywhere, `~+`, `~-` and globs are not known"
+    }
+  },
+  {
+    "manual": "5.2",
+    "snippet": "f() { local GLOBIGNORE=x; }; f; @PROBE:a@ *; shopt -s dotglob; g() { local GLOBIGNORE; }; g; @PROBE:b@ *; h() { local GLOBIGNORE=y; }; h; @PROBE:c@ *",
+    "note": "A `local GLOBIGNORE` that goes out of scope is unset again: dotglob goes off.",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "b": [
+        [
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "c": [
+        [
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
         ]
       ],
       "status": 0
