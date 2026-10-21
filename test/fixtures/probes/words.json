@@ -546,7 +546,7 @@
       "status": 0
     },
     "gaps": {
-      "a": "arithmetic with variables is not evaluated, and `$((i++))` assigns `i`, which the state does not follow (4.7)"
+      "a": "arithmetic with variables is not evaluated, and `$((i++))` assigns `i` in the same command, whose state is the one before it"
     }
   },
   {

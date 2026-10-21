@@ -401,3 +401,39 @@ describe('shell state: GLOBIGNORE and dotglob', () => {
   });
 
 });
+
+describe('shell state: arithmetic', () => {
+  /** What the state says of each name at the end: `set` (with the value when known), `unknown`, `off` or `none`. */
+  const after = (src: string, ...names: string[]): string[] => names.map((n) => {
+    const v = variable(end(src), n);
+    return !v ? 'none' : v.set === 'on' ? `set${v.value === undefined ? '' : `=${v.value}`}` : v.set;
+  });
+  it('gives no value when an operand is not known', () => {
+    assert.deepStrictEqual(after('x=$y; a=(1); z=a; q=w\n(( b = x, c = a, e = Z, f = -Z, g = Z += 1, h = $1, i = $q, j = "3", k = $(echo 1) ))', 'b', 'c', 'e', 'f', 'g', 'h', 'i', 'j', 'k'),
+      ['set', 'set', 'set', 'set', 'set', 'set', 'set', 'set', 'set']);
+    assert.deepStrictEqual(after('[ "$1" ] && x=1\nn9=1; n8=n9; n7=n8; n6=n7; n5=n6; n4=n5; n3=n4; n2=n3; n1=n2; n0=n1\n(( a = x, b = n0, c = 2 ** 200, d = 1 << 64, e = n1 ))', 'a', 'b', 'c', 'd', 'e'),
+      ['set', 'set', 'set', 'set', 'set=1']);
+    // (A shift by a negative count or by 64 or more depends on the machine; a nameref to an element is not followed.)
+    assert.deepStrictEqual(after('declare -n e=\'a[1]\'; (( a = 1 << -1, b = 1 << 64, c = 1 >> -1, d = 1 >> 64, f = e ))', 'a', 'b', 'c', 'd', 'f'), ['set', 'set', 'set', 'set', 'set']);
+    assert.deepStrictEqual(after('declare x; declare -n r; (( a = x, b = 1 && 2, c = 0 || 3, d = 1 ? 4 : 4, e = r ))', 'a', 'b', 'c', 'd', 'e'), ['set=0', 'set=1', 'set=1', 'set=4', 'set=0']);
+    // Errors bash reports: a missing operand, a name that leads back to itself.
+    assert.deepStrictEqual(after('z=y; y=z; (( a = 1, l = 1 + )); (( b = 1, m = z )); for (( c = 1, i = ; ; )); do break; done', 'a', 'l', 'b', 'm', 'c', 'i'),
+      ['set=1', 'none', 'set=1', 'none', 'set=1', 'none']);
+  });
+  it('may assign on a side the condition does not decide', () => {
+    assert.deepStrictEqual(after('(( Z ? v = 1 : (w = 2), Z && (o = 2), Z || (p = 3), q = Z && 1, r = 1 && Z ))', 'v', 'w', 'o', 'p', 'q', 'r'), ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'set']);
+    assert.deepStrictEqual(after('(( Z ? 1 : 2, Z && 1 ))', 'Z'), ['none']);
+    // An operand of `${…}` may not be expanded.
+    assert.deepStrictEqual(after('s=abc; echo ${s:$(( k = 1 ))} ${s:-$(( 2 ))}', 'k'), ['unknown']);
+    // A command whose name is not known may be a program, which makes its redirections in its own process.
+    assert.deepStrictEqual(after('$cmd > f$(( a = 1 )); $cmd > ${b:=x}; ls > ${c:=x}; { $cmd; } > f$(( d = 1 ))', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'none', 'set=1']);
+  });
+  it('reads what it can of arithmetic the parser does not read', () => {
+    // (Assigning to `$x`, or to a number, is not followed.)
+    assert.deepStrictEqual(after('(( $x = 1, 1++ ))', 'x'), ['none']);
+    assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['set', 'set', 'none', 'unknown']);
+    assert.strictEqual(attribute(end('let "a[1] = $v"'), 'a', 'a'), 'on');
+    assert.deepStrictEqual(after('let "n++ + $v" "++q + $v"', 'n', 'q'), ['set', 'set']);
+    assert.deepStrictEqual(after('i=0; (( a[i++] = 2, a[j += 2] = 3 ))', 'i', 'j'), ['set=1', 'set=2']);
+  });
+});
