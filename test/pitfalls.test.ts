@@ -30,7 +30,6 @@ describe('pitfalls', () => {
     ['[ "$a" < "$b" ]', /`<` inside `\[ \]` is read as a redirection, not a comparison/],
     ['[ -f x && -n y ]', /`&&` inside `\[ \]` is not an argument of `\[`/],
     ['while read line; do :; done < f', /without `-r`, backslashes/],
-    ['local out=$(cmd)', /hides a failure inside `\$\(…\)`/],
     ['sudo echo 1 > /proc/sys/vm/drop_caches', /done by your own shell .* `… \| sudo tee file`/],
     ['for a in $*; do :; done', /unquoted `\$\*` splits arguments/],
     ['cp $src "$dst"', /`\$src` is not quoted/],

@@ -3,7 +3,8 @@ import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
 import { detectShell, dialectIssues, Shell } from './dialect';
 import { descendants, type BashParser, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { createUnbashParser } from './syntax/adapters/unbash';
-import { option, shellState } from './semantics/state';
+import { shellState } from './semantics/state';
+import { statusModel } from './semantics/status';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile';
@@ -1125,8 +1126,11 @@ function pipeWithoutPipefail(extracted: Extracted, region: ShellRegion, line: nu
   }
   const model = shellState(tree, region.shell);
   const row = line - region.start;
-  return descendants(tree.root, ['pipeline']).some((p) => p.children.some((c) => c.type === '|' && c.startPosition.row === row)
-    && ['off', 'default'].includes(option(model.at(p).run, 'set', 'pipefail')));
+  const statuses = statusModel(model, region.shell);
+  return descendants(tree.root, ['pipeline']).some((p) => {
+    const rule = statuses.status(p);
+    return p.children.some((c) => c.type === '|' && c.startPosition.row === row) && rule.kind === 'pipeline' && rule.pipefail === 'off';
+  });
 }
 
 /** Explain `line` of a host document whose shell parts were extracted and parsed into `tree`. */

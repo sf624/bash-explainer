@@ -88,6 +88,12 @@
 - A Dockerfile RUN warns about a pipe without pipefail unless `set -o pipefail` runs before the pipe in that RUN. Before, the word `pipefail` anywhere in the RUN, in a comment too, silenced it.
 - `unset -fv` shows both options (before: `-fv` was a function name).
 - A function defined twice is the one defined last before the call (before: the first one). An arithmetic `$p` after `( p='3*4' )` uses the value outside the subshell.
+- Under `set -e`, the `$( )` of an assignment with no command (`x=$(cmd)`) says that the script stops there if it fails: the assignment takes the status of its last command substitution. A `$( )` in a command's arguments (`echo "$(cmd)"`) says that its failure does not stop the script, since the command's own status counts. Before, neither was said.
+- `local x="$(cmd)"`, and `export`, `declare`, `readonly` or `typeset` with a `$( )` anywhere in the value, get the pitfall that the builtin's status hides the failure. Before, only a value that was exactly an unquoted `$(cmd)` got it.
+- Under `set -e` without `set -o pipefail`, a pipeline gets a pitfall: its status is that of its last command, so a failure before it does not stop the script (`false | tee log`). Not in `sh` and `dash` scripts, which have no pipefail to suggest. Before, nothing was said.
+- A function whose last command is `test && cmd` gets a pitfall when it is called under `set -e`: when the test fails, the function returns that status and the script stops at the call. Before, nothing was said.
+- Where bash ignores `set -e`, the explanation says so when it matters: a `set -e` that runs in a function called from `if`, `&&`, `||` or `!` (it takes effect only when the call returns), or in a `( )` left of `||` (no effect); a function called only from such places, and a `( )` or `{ }` there, whose commands go on after a failure; and a `$( )` of several commands, where bash turns `set -e` off unless `shopt -s inherit_errexit`. Before, nothing was said.
+- The `((i++))` pitfall no longer says that `set -e` stops the script where bash ignores `set -e` (`((i++)) || true`).
 
 ## 0.6.0
 
