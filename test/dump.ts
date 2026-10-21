@@ -19,7 +19,7 @@ const root = path.join(__dirname, '..');
   const analyzer = new Analyzer(lang as 'ja' | 'en');
   const lines = src.split('\n');
   const print = (t: Token, d: number) => {
-    console.log(`${'  '.repeat(d)}- [${t.kind}] ${t.label} (${t.span.start.line + 1}:${t.span.start.character}-${t.span.end.line + 1}:${t.span.end.character}) — ${t.explanation}`);
+    console.log(`${'  '.repeat(d)}- [${t.kind}] ${t.label} (${t.span.start.line + 1}:${t.span.start.character}-${t.span.end.line + 1}:${t.span.end.character}) — ${t.explanation}${t.refs ? ` ⟦${t.refs.join(', ')}⟧` : ''}`);
     t.children.forEach((c) => print(c, d + 1));
   };
   lines.forEach((text, i) => {
@@ -28,7 +28,10 @@ const root = path.join(__dirname, '..');
     if (!e) return;
     console.log(`\n### ${i + 1}: ${text}`);
     if (e.context.length) console.log('  context: ' + e.context.map((c) => `${c.label}@${c.line + 1}`).join(' > '));
-    e.notes.forEach((n) => console.log('  note: ' + n));
+    e.notes.forEach((n) => {
+      const f = e.facts?.find((x) => x.text === n);
+      console.log('  note: ' + n + (f ? ` ⟦${f.id}: ${f.refs.join(', ')}⟧` : ''));
+    });
     console.log('  summary: ' + e.summary);
     e.items.forEach((t) => print(t, 1));
     for (const x of e.examples) {

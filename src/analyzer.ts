@@ -61,6 +61,8 @@ import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning }
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
+import { anonSections, builtinSections, nodeSections } from './refs';
+import { type Fact, fact } from './messages';
 
 /** The status facts of a script, by line, computed once per status model (both languages). */
 const statusFactCache = new WeakMap<StatusModel, Map<number, StatusFact[]>>();
@@ -95,6 +97,8 @@ export interface Token {
   examples?: Example[];
   /** A regex capture group (or a reference to one), coloured alike in the panel and the examples. */
   group?: number;
+  /** The sections of the Bash manual it is about ('3.7.2'; src/manual.ts), shown as a link or a section number. */
+  refs?: readonly string[];
 }
 
 export interface ContextEntry { label: string; line: number }
@@ -122,6 +126,11 @@ export interface LineExplanation {
   /** Enclosing constructs, outermost first (e.g. "for loop (line 3)"). */
   context: ContextEntry[];
   notes: string[];
+  /**
+   * The notes that are facts of the message catalog (src/messages.ts): their id and the sections of the manual
+   * they cite. `text` is the note as it is in `notes`.
+   */
+  facts?: Fact[];
   /** Worked examples (e.g. input and output of a sed script), shown line by line. */
   examples: Example[];
   /** The shell the script is written for, when it is not bash (checked for unsupported features). */
@@ -242,6 +251,8 @@ export class Analyzer {
   private status!: StatusModel;
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
+  /** The facts of the message catalog said on this line (src/messages.ts), as `say` records them. */
+  private facts: Fact[] = [];
   /** Context of the current explainLine call. */
   private opts: ExplainOptions = {};
   /** The whole text being explained (for hints such as how yq was installed). */
@@ -272,17 +283,22 @@ export class Analyzer {
     this.context = [];
     this.slotEnvs = new Map();
     this.extraNotes = [];
+    this.facts = [];
     this.examples = [];
     const items = this.flatten(root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line))
       .map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text));
+    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)])];
+    // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
+    const facts = this.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
     const result: LineExplanation = {
       line,
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)])],
+      notes,
+      ...(facts.length ? { facts } : {}),
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -300,6 +316,12 @@ export class Analyzer {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. */
+  private say(f: Fact): string {
+    this.facts.push(f);
+    return f.text;
+  }
 
   private s(ja: string, en: string): string {
     return this.lang === 'ja' ? ja : en;
@@ -498,13 +520,14 @@ export class Analyzer {
   /** Token for an anonymous node (keyword or operator), or undefined for plain punctuation. */
   private anon(n: SyntaxNode): Token | undefined {
     if (n.type === '{' && n.parent?.type === 'compound_statement' && this.groupSubshell(n.parent)) {
-      return this.tok(n, 'keyword', this.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)'));
+      return { ...this.tok(n, 'keyword', this.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)')), refs: ['3.2.5.3', '3.7.3'] };
     }
     const k = keywords[n.type];
-    if (k) return this.tok(n, 'keyword', this.t(k));
     const op = listOps[n.type];
-    if (op) return this.tok(n, 'operator', this.t(op));
-    return undefined;
+    const t = k ? this.tok(n, 'keyword', this.t(k)) : op ? this.tok(n, 'operator', this.t(op)) : undefined;
+    const refs = t && anonSections(n);
+    if (refs) t.refs = refs;
+    return t;
   }
 
   private anonOnLine(nodes: SyntaxNode[]): Token[] {
@@ -557,7 +580,15 @@ export class Analyzer {
 
   // ---------------------------------------------------------------- dispatch
 
+  /** A node's token, with the sections of the manual it is about when it has none of its own. */
   private explain(n: SyntaxNode): Token {
+    const t = this.explainNode(n);
+    const refs = t.refs ?? nodeSections(n);
+    if (refs) t.refs = refs;
+    return t;
+  }
+
+  private explainNode(n: SyntaxNode): Token {
     switch (n.type) {
       case 'comment': return this.comment(n);
       case 'command': return this.command(n);
@@ -1189,7 +1220,7 @@ export class Analyzer {
     const v = Number(fields(n, 'argument')[0].text);
     if (v >= 0 && v <= 255) return;
     const status = rule.value;
-    this.extraNotes.push(this.s(`ℹ 終了ステータスは 0〜255 なので、\`${v}\` は 256 で割った余りの ${status} になる`, `ℹ An exit status is 0–255, so \`${v}\` becomes ${status} (the value modulo 256)`));
+    this.extraNotes.push(this.say(fact(this.lang, 'exit-modulo', { value: String(v), status })));
   }
 
   /**
@@ -1208,6 +1239,7 @@ export class Analyzer {
       this.tok(head, 'function', explanation), ...this.args(undefined, words, head.type, true).tokens, ...this.subs(redirs),
     ]), head.type);
     t.summary = `${head.type}: ${explanation}`;
+    t.refs = ['3.3'];
     return t;
   }
 
@@ -1344,6 +1376,7 @@ export class Analyzer {
         const meaning = meanings.find((m) => m.node === c)!;
         const stays = meaning.scope === 'persists';
         for (const t of this.sub(c)) {
+          t.refs = stays ? ['3.7.4', '4.4'] : ['3.7.4'];
           t.explanation = stays && !meaning.sure
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、ここで POSIX モードなら（この前で有効にしているのは一部の経路だけ）、この代入はコマンドの後も残る: ${t.explanation}`,
               `\`${nameNode.text}\` is a POSIX special builtin, so if POSIX mode is on here (only some paths before here turn it on), this assignment stays after the command: ${t.explanation}`)
@@ -1436,6 +1469,7 @@ export class Analyzer {
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
+    if (head.refs?.length) t.refs = head.refs;
     if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
     // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
     // words' values: `yq 'e'` names `e`.)
@@ -1536,7 +1570,7 @@ export class Analyzer {
     const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
     if (sv === undefined && !isPlainWord(word) && word.type !== 'raw_string') {
       return {
-        name, kind: 'command', nameTokens: this.sub(word),
+        name, kind: 'command', nameTokens: this.sub(word), refs: ['3.7.1'],
         explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
       };
     }
@@ -1553,7 +1587,7 @@ export class Analyzer {
         ? this.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
         : '';
       return {
-        name, kind: 'function', nameTokens: [],
+        name, kind: 'function', nameTokens: [], refs: ['6.6'],
         explanation: res.sure
           ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
           : alias.state === 'on'
@@ -1575,7 +1609,7 @@ export class Analyzer {
             `⚠ Pitfall: bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`));
         }
         return {
-          name, kind: 'function', nameTokens: [],
+          name, kind: 'function', nameTokens: [], refs: ['6.6'],
           explanation: this.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
             `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${value}\``),
         };
@@ -1587,13 +1621,13 @@ export class Analyzer {
           `ℹ \`${name}\` is defined as an alias on line ${first + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
       }
     }
-    if (res.kind === 'function') return { name, kind: 'function', fn: true, nameTokens: [], explanation: this.functionCall(res) };
+    if (res.kind === 'function') return { name, kind: 'function', fn: true, nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
     this.missedNote(name, missed);
     // After `source`, a name the dictionary does not know may be a function of the file read.
     if (res.kind === 'file' && res.sourced) {
       const line = res.sourced.startPosition.row + 1;
       return {
-        name, kind: 'command', nameTokens: [],
+        name, kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`\`${name}\` を実行する。行 ${line} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
           `Run \`${name}\`: maybe a function of the file read on line ${line}, else an external command`),
       };
@@ -1608,7 +1642,7 @@ export class Analyzer {
         ? this.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
         : this.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
       return {
-        name, ...(program ? { spec: program } : {}), kind: 'command', nameTokens: [],
+        name, ...(program ? { spec: program } : {}), kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${this.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${this.t(program.summary)}` : ''}`),
       };
     }
@@ -1620,7 +1654,10 @@ export class Analyzer {
     const spec = lookupCommand(name);
     if (spec) {
       const builtin = !!spec.builtin;
-      return { name, spec, kind: builtin ? 'builtin' : 'command', nameTokens: [], explanation: this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : '') };
+      return {
+        name, spec, kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
+        explanation: this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : ''),
+      };
     }
     const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
     if (distro) {
@@ -1642,10 +1679,8 @@ export class Analyzer {
         explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
       };
     }
-    const explanation = name.includes('/')
-      ? this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``)
-      : this.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`);
-    return { name, kind: 'command', nameTokens: [], explanation };
+    if (name.includes('/')) return { name, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
+    return { name, kind: 'command', nameTokens: [], explanation: this.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
   }
 
   /**
@@ -4261,7 +4296,13 @@ export class Analyzer {
   }
 }
 
-interface CommandHead { name: string; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[]; /** A call of a function defined in the script. */ fn?: boolean }
+interface CommandHead {
+  name: string; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[];
+  /** A call of a function defined in the script. */
+  fn?: boolean;
+  /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
+  refs?: readonly string[];
+}
 
 /**
  * The text a command receives for a word, and where each of its characters sits in the word's
