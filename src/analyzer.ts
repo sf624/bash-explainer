@@ -51,13 +51,14 @@ import { decodedText, splitElement, staticWordValue, unquoteWord } from './stati
 import { bracketEnd } from './bracket';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
-  binaryTestOps, extendedEqualOps, declarationCommands, fdName, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags, cannotAssign, expansionOps, keywords, listOps,
+  binaryTestOps, extendedEqualOps, declarationCommands, fdName, cannotAssign, expansionOps, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, FunctionState, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { attribute, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
+import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -668,6 +669,15 @@ export class Analyzer {
     // A redirection after the body is part of the function: it is applied on every call.
     const redirected = n.namedChildren.some((c) => c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect' || c.type === 'redirected_statement');
     const stored = redirected ? this.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
+    // In POSIX mode a function cannot have the name of a special builtin.
+    const fails = definitionFails(this.state, n);
+    if (fails !== 'off' && this.opts.pitfalls !== false) {
+      this.extraNotes.push(fails === 'on'
+        ? this.s(`⚠ 落とし穴: POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます。別の名前にします`,
+          `⚠ Pitfall: in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin". Use another name`)
+        : this.s(`⚠ 落とし穴: POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
+          `⚠ Pitfall: in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`));
+    }
     return skeletal(this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${this.lineRef(n)}`,
       `Defines function \`${name}\`; call it like a command (arguments become $1, $2…)${stored}${this.lineRef(n)}`,
@@ -1191,10 +1201,10 @@ export class Analyzer {
       const role = roles.get(c)?.role;
       if (role === 'end-of-options') children.push(this.tok(c, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
       else if (role && role !== 'operand') {
-        // `declare +x v` turns an attribute off; `export` and `readonly` have no `+` form and their own letters.
-        const off = c.text.startsWith('+');
-        const table = kw === 'export' ? exportFlags : kw === 'readonly' ? readonlyFlags : off ? declarationOffFlags : declarationFlags;
-        const flags = c.text.slice(1).split('').map((ch) => table['-' + ch]).filter(Boolean);
+        // The texts of the builtin's spec: `declare +x v` turns an attribute off (its `offText`); `export` and
+        // `readonly` have no `+` form and their own letters. (A letter with no text, or `+g`, says nothing.)
+        const r = roles.get(c)!;
+        const flags = (r.role === 'cluster' ? r.letters : [r]).flatMap((l) => (l.role !== 'option' ? [] : l.disables ? (l.spec.offText ? [l.spec.offText] : []) : [l.text]));
         children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
       } else if (c.type === 'variable_name' || c.type === 'word') {
         // With `-f` or `-F` the names are functions.
@@ -1210,14 +1220,17 @@ export class Analyzer {
   }
 
   private unset(n: SyntaxNode): Token {
-    // The options, read with unset's spec.
-    const flags = interpret(builtins.unset, n.namedChildren.map(argWord), { name: 'unset' }).roles
-      .flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).map((r) => (r.role === 'option' ? r.flag : ''));
+    // The options and the names, read with unset's spec.
+    const kids = n.namedChildren;
+    const roles = new Map(interpret(builtins.unset, kids.map(argWord), { name: 'unset' }).roles.map(({ word, role }) => [kids[word], role]));
+    const letters = (r: ArgRole): Extract<ArgRole, { role: 'option' }>[] =>
+      (r.role === 'cluster' ? r.letters : [r]).filter((l): l is Extract<ArgRole, { role: 'option' }> => l.role === 'option');
+    const flags = kids.flatMap((c) => letters(roles.get(c)!).map((l) => l.flag));
     const fn = flags.includes('-f');
     const ref = !fn && flags.includes('-n');
-    const children = n.namedChildren.map((c) => {
+    const children = kids.map((c) => {
       // (`-fv`: the letters together.)
-      const opts = c.type === 'word' && /^-[fvn]+$/.test(c.text) ? [...c.text.slice(1)].map((l) => builtins.unset.options!.find((o) => o.names.includes(`-${l}`))!) : [];
+      const opts = letters(roles.get(c)!);
       if (opts.length) return this.tok(c, 'option', opts.map((o) => this.t(o.text)).join(this.s('、', '; ')));
       if (c.type === 'variable_name' || isPlainWord(c)) {
         return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
@@ -1284,14 +1297,23 @@ export class Analyzer {
     const args: SyntaxNode[] = [];
     const redirs: SyntaxNode[] = [];
     let seenName = false;
+    // What each assignment before the name does (src/semantics/names.ts): in POSIX mode (sh, dash, `set -o posix`)
+    // one before a special builtin stays after it.
+    const word = nameNode.namedChildren[0];
+    const meanings = n.children.some((c) => c.type === 'variable_assignment')
+      ? assignmentsOf(this.state, n, this.resolve(staticWordValue(word) ?? nameNode.text, nameNode))
+      : [];
     for (const c of n.children) {
       if (same(c, nameNode)) { seenName = true; continue; }
       if (c.type.endsWith('redirect')) { redirs.push(c); continue; }
       if (!seenName && c.type === 'variable_assignment') {
-        // In POSIX mode (sh, dash, `set -o posix`) an assignment before a special builtin stays after it.
-        const stays = lookupCommand(nameNode.text)?.builtin === 'special' && option(this.state.at(n).run, 'set', 'posix') === 'on';
+        const meaning = meanings.find((m) => m.node === c)!;
+        const stays = meaning.scope === 'persists';
         for (const t of this.sub(c)) {
-          t.explanation = stays
+          t.explanation = stays && !meaning.sure
+            ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、ここで POSIX モードなら（この前で有効にしているのは一部の経路だけ）、この代入はコマンドの後も残る: ${t.explanation}`,
+              `\`${nameNode.text}\` is a POSIX special builtin, so if POSIX mode is on here (only some paths before here turn it on), this assignment stays after the command: ${t.explanation}`)
+            : stays
             ? this.s(`\`${nameNode.text}\` は POSIX の特殊ビルトインなので、この代入はコマンドの後も残る（bash の通常モードでは実行中だけ）: ${t.explanation}`,
               `\`${nameNode.text}\` is a POSIX special builtin, so this assignment stays after the command (in bash's normal mode it would last only while the command runs): ${t.explanation}`)
             : this.s(
@@ -1358,7 +1380,7 @@ export class Analyzer {
     const read = this.args(head.spec, args, head.name, head.fn);
     let argToks = read.tokens;
     // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
-    const asTest = head.name === 'test' && head.kind === 'builtin' && args.length ? testOfWords(args) : undefined;
+    const asTest = head.spec?.operandParser === 'test-expression' && !head.fn && args.length ? testOfWords(args) : undefined;
     if (asTest) {
       this.testExample(n, bracketShape(asTest), '[');
       argToks = this.testTokens(n, asTest, asTest.expr);
@@ -1410,27 +1432,43 @@ export class Analyzer {
     return head;
   }
 
-  /**
-   * The function `name` that exists when `at` runs (see src/semantics/state.ts): a function exists once its
-   * definition has run, so a call before it is the builtin or program of that name; a call inside a function body
-   * runs later, whenever the function is called, so any definition in the script counts there.
-   */
-  private functionAt(name: string, at: SyntaxNode): FunctionState | undefined {
-    const fn = this.state.at(at).run.functions.get(name);
-    return fn && fn.state !== 'off' ? fn : undefined;
+  /** What the command name `name` runs at `at` (src/semantics/names.ts). */
+  private resolve(name: string, at: SyntaxNode, opts: { quoted?: boolean; env?: ExecEnv } = {}): NameResolution {
+    return resolveName(this.state, name, at, { shell: this.shell, command: true, program: isProgram, ...opts });
   }
 
-  /** The line of the function `name` that a command at `at` calls, with a note when it is defined only after. */
-  private calledFunction(name: string, at: SyntaxNode): number | undefined {
-    const fn = this.functionAt(name, at);
-    const defs = this.state.definitions.functions.get(name);
-    if (!fn && defs?.every((d) => d.endIndex > at.startIndex)) {
-      // The call comes first: say that the name is not yet the function.
-      this.extraNotes.push(this.s(
-        `ℹ \`${name}\` は行 ${defs[0].startPosition.row + 1} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（組み込みコマンドや外部コマンドの \`${name}\` が動きます）`,
-        `ℹ \`${name}\` is defined as a function on line ${defs[0].startPosition.row + 1}, but this runs before that, so it is not the function yet (the builtin or program \`${name}\` runs)`));
+  /** A note on a definition of `name` that does not run here (a function defined later, in a subshell, removed). */
+  private missedNote(name: string, missed: Missed | undefined): void {
+    if (missed?.kind !== 'function') return;
+    const line = missed.def.startPosition.row + 1;
+    const runs = this.s(`組み込みコマンドや外部コマンドの \`${name}\` が動きます`, `the builtin or program \`${name}\` runs`);
+    switch (missed.why) {
+      case 'later':
+        this.extraNotes.push(this.s(
+          `ℹ \`${name}\` は行 ${line} で関数として定義されますが、この行はその前に実行されるので、まだ関数ではありません（${runs}）`,
+          `ℹ \`${name}\` is defined as a function on line ${line}, but this runs before that, so it is not the function yet (${runs})`));
+        return;
+      case 'subshell':
+        this.extraNotes.push(this.s(
+          `ℹ \`${name}\` は行 ${line} で関数として定義されますが、それはサブシェルの中で、サブシェルで定義した関数は終わると消えます。ここでは関数ではありません（${runs}）`,
+          `ℹ \`${name}\` is defined as a function on line ${line}, but in a subshell, and what a subshell defines is gone when it ends. It is not the function here (${runs})`));
+        return;
+      case 'in-function':
+        this.extraNotes.push(this.s(
+          `ℹ \`${name}\` は行 ${line} で関数 \`${field(missed.by!, 'name')!.text}\` の中で定義され、その関数がここより前に実行されないので、まだ関数ではありません（${runs}）`,
+          `ℹ \`${name}\` is defined on line ${line} inside the function \`${field(missed.by!, 'name')!.text}\`, which has not run before this, so it is not a function yet (${runs})`));
+        return;
+      case 'unset':
+        this.extraNotes.push(this.s(
+          `ℹ 関数 \`${name}\` は行 ${missed.by!.startPosition.row + 1} の \`unset\` で削除されているので、ここでは関数ではありません（${runs}）`,
+          `ℹ The function \`${name}\` was removed by \`unset\` on line ${missed.by!.startPosition.row + 1}, so it is not a function here (${runs})`));
+        return;
+      case 'posix-special':
+        this.extraNotes.push(this.s(
+          `ℹ POSIX モードでは特殊ビルトインが関数より先に見つかるので、行 ${line} の関数 \`${name}\` ではなく、ビルトインの \`${name}\` が動きます`,
+          `ℹ In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of line ${line}`));
+        return;
     }
-    return fn?.def.startPosition.row;
   }
 
   private commandHeadFor(nameNode: SyntaxNode, word: SyntaxNode, as?: string): CommandHead {
@@ -1445,50 +1483,80 @@ export class Analyzer {
         explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
       };
     }
-    // An alias over a known command (`alias grep=ggrep`) is still explained as that command.
-    // (A quoted name is never an alias.)
-    // bash reads a whole line (or compound command, or function body) before running it, so an alias
-    // counts only from the next line on: the aliases are those of the state when this was read.
-    const aliasable = !lookupCommand(name) && sv === undefined;
-    // (The aliases of a command substitution are those of when it runs.)
-    const parse = this.state.at(nameNode).expand;
-    const defined = aliasable ? parse.aliases.get(name) : undefined;
-    const alias = defined && defined.state !== 'off' ? defined : undefined;
-    const defs = aliasable ? this.state.definitions.aliases.get(name) : undefined;
-    const unit = unitOf(nameNode).start;
-    if (!alias && defs?.every((d) => d.endIndex > unit)) {
-      const first = defs[0].startPosition.row;
-      const same = first <= nameNode.startPosition.row;
-      this.extraNotes.push(this.s(
-        `ℹ \`${name}\` は行 ${first + 1} で \`alias\` として定義されますが、${same ? 'bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません' : 'これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます'}。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
-        `ℹ \`${name}\` is defined as an alias on line ${first + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
-    }
-    if (alias) {
-      // bash expands aliases in scripts only with expand_aliases (interactive shells always do), as it was when the line was read.
-      const expand = !this.shell || this.shell === 'bash' ? option(parse, 'shopt', 'expand_aliases') : 'on';
-      const unexpanded = expand !== 'on' && expand !== 'unknown';
+    // What bash runs (src/semantics/names.ts). An alias over a known command (`alias grep=ggrep`) is still
+    // explained as that command. (A quoted name is never an alias.)
+    let res = this.resolve(name, nameNode, { quoted: sv !== undefined });
+    const known = !!lookupCommand(name);
+    if (res.kind === 'alias' && known) res = this.resolve(name, nameNode, { quoted: true });
+    if (res.kind === 'alias') {
+      const { alias } = res;
       const line = alias.at.startPosition.row + 1;
-      if (unexpanded && this.opts.pitfalls !== false) {
-        this.extraNotes.push(this.s(
-          `⚠ 落とし穴: bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${alias.value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
-          `⚠ Pitfall: bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${alias.value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`));
-      }
+      // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
+      const chain = res.target?.kind === 'alias'
+        ? this.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
+        : '';
       return {
         name, kind: 'function', nameTokens: [],
-        explanation: unexpanded
-          ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`（\`${alias.value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${alias.value}\` に置き換わる`,
-            `The alias \`${name}\` defined on line ${line} (\`${alias.value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${alias.value}\``)
-          : expand === 'unknown'
-            ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
-              `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
-            : this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\``),
+        explanation: res.sure
+          ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
+          : alias.state === 'on'
+            ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは \`shopt -s expand_aliases\` が効いているときだけで、この前で有効にしているのは一部の経路（分岐やループ）だけ`,
+              `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when \`shopt -s expand_aliases\` is on, and only some paths before here (a branch or a loop) turn it on`)
+            : this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}。ただし、それは定義する行を通ったときだけ（この前で定義しているのは一部の経路だけ）`,
+              `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}, but only when its definition has run (only some paths before here define it)`),
       };
     }
-    const fnLine = this.calledFunction(name, nameNode);
-    if (fnLine !== undefined) {
+    // (The parser has read it as a command name: not a keyword.)
+    const missed = (res as { missed?: Missed }).missed;
+    if (missed?.kind === 'alias' && !known) {
+      const first = missed.def.startPosition.row;
+      if (missed.why === 'expand_aliases') {
+        const value = this.state.at(nameNode).expand.aliases.get(name)!.value;
+        if (this.opts.pitfalls !== false) {
+          this.extraNotes.push(this.s(
+            `⚠ 落とし穴: bash はスクリプトの中ではエイリアスを展開しないので、\`${name}\` は「command not found」になります。\`shopt -s expand_aliases\` を \`alias\` より前に書くか、関数 \`${name}() { ${value} "$@"; }\` にします（\`.bashrc\` など対話シェルで読むファイルなら問題ありません）`,
+            `⚠ Pitfall: bash does not expand aliases in scripts, so \`${name}\` is "command not found". Put \`shopt -s expand_aliases\` before the \`alias\`, or make it a function: \`${name}() { ${value} "$@"; }\` (fine in files read by interactive shells, such as \`.bashrc\`)`));
+        }
+        return {
+          name, kind: 'function', nameTokens: [],
+          explanation: this.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
+            `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${value}\``),
+        };
+      }
+      if (missed.why === 'later' || missed.why === 'same-unit') {
+        const same = missed.why === 'same-unit';
+        this.extraNotes.push(this.s(
+          `ℹ \`${name}\` は行 ${first + 1} で \`alias\` として定義されますが、${same ? 'bash は行（複合コマンドや関数の本体も）をまとめて読んでから実行するので、同じ行で定義したエイリアスはまだ使えません' : 'これはその前に読まれ、エイリアスは実行された後に読まれるものにだけ効きます'}。ここでは alias ではないので、\`${name}\` というコマンドがなければ「command not found」になります（\`eval\` に渡した文字列は実行時に読み直されるので、エイリアスが使えます）`,
+          `ℹ \`${name}\` is defined as an alias on line ${first + 1}, but ${same ? 'bash reads a whole line (and a whole compound command or function body) before running it, so an alias defined on the same line is not in effect yet' : 'this is read before that, and an alias works only on what is read after it ran'}. It is not an alias here: without a command named \`${name}\`, this is "command not found" (a string given to \`eval\` is read again when it runs, so it can use the alias)`));
+      }
+    }
+    if (res.kind === 'function') {
+      const line = res.fn.def.startPosition.row + 1;
+      const shadows = res.shadows === 'builtin'
+        ? this.s(`（同じ名前の組み込みコマンドの代わりに動く。組み込みは \`builtin ${name}\` で呼べる）`, ` (it runs instead of the builtin of that name; \`builtin ${name}\` runs the builtin)`)
+        : res.shadows === 'program'
+          ? this.s(`（同じ名前のコマンドの代わりに動く。コマンドは \`command ${name}\` で呼べる）`, ` (it runs instead of the command of that name; \`command ${name}\` runs the command)`)
+          : '';
+      const may = res.sure ? '' : this.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
+        '. But only some paths before here (a branch…) define it; on the others the command of that name runs');
       return {
         name, kind: 'function', fn: true, nameTokens: [],
-        explanation: this.s(`このスクリプトの行 ${fnLine + 1} で定義された関数 \`${name}\` を呼び出す`, `Call the function \`${name}\` defined on line ${fnLine + 1}`),
+        explanation: this.s(`このスクリプトの行 ${line} で定義された関数 \`${name}\` を呼び出す${shadows}${may}`, `Call the function \`${name}\` defined on line ${line}${shadows}${may}`),
+      };
+    }
+    this.missedNote(name, missed);
+    // A builtin turned off with `enable -n` runs the program of its name; `hash -p` gives a name a path.
+    if (res.kind === 'file' && (res.disabled || res.hashed)) {
+      const path = res.hashed?.value;
+      const spec = lookupCommand(path || name);
+      const program = spec?.builtin ? spec.program : spec;
+      const by = (res.hashed ?? res.disabled)!.at.startPosition.row + 1;
+      const why = res.hashed
+        ? this.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
+        : this.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
+      return {
+        name, ...(program ? { spec: program } : {}), kind: 'command', nameTokens: [],
+        explanation: this.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${this.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${this.t(program.summary)}` : ''}`),
       };
     }
     // A command described in the customCommands setting wins over the built-in dictionary.
@@ -1828,7 +1896,19 @@ export class Analyzer {
     const effect = shellEffectOf(role.spec, parse.roles.map((r) => [nodes[r.word], r.role] as const));
     this.slotNotes(role, this.slotEnvs.get(first)!, words, assigned, effect);
     const name = first.text;
-    const explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
+    let explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
+    // `command` skips functions, `builtin` looks at the builtins only (src/semantics/names.ts).
+    if (role.slot.lookup && isPlainWord(first)) {
+      const res = this.resolve(name, first, { env: this.slotEnvs.get(first) });
+      // (A builtin, a file or nothing: `command` and `builtin` skip aliases and functions.)
+      const missed = (res as { missed?: Missed }).missed;
+      if (res.kind === 'none') {
+        explanation = this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
+      }
+      if (missed?.kind === 'function' && (missed.why === 'command' || missed.why === 'builtin')) {
+        explanation += this.s(`（行 ${missed.def.startPosition.row + 1} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${missed.def.startPosition.row + 1})`);
+      }
+    }
     const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
     if (role.of) {
       // `{}` is replaced by find (and `xargs -I{}`) with each path.
@@ -3075,21 +3155,33 @@ export class Analyzer {
       // The first word of the string, when it is known (`su -c 'f arg'`).
       const lit = literalContent(first)?.text;
       const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
-      // bash takes the functions exported to it (`export -f f`); a shell started afresh (`su -c`) has none, nor
-      // has one inside a wrapper that clears the environment (`env -i bash -c f`, `sudo bash -c f`).
-      // (A function exported on some paths only is taken as exported.)
-      if (fn && this.state.definitions.functions.has(fn) && (blocker || (this.functionAt(fn, first)?.exported ?? 'off') === 'off')) {
-        this.extraNotes.push(blocker && blocker !== link
+      // What the string's first word runs in the new shell (src/semantics/names.ts): this script's function only
+      // when every link passes the exported functions (not `su -c`, `env -i bash -c f`, `sudo bash -c f`) and the
+      // shell reads them (bash, not dash). (A function exported on some paths only is taken as exported.)
+      const res = fn && this.state.definitions.functions.has(fn) ? this.resolve(fn, first, { env }) : undefined;
+      const missed = res && res.kind !== 'keyword' && res.kind !== 'alias' ? res.missed : undefined;
+      const shell = link.shell!;
+      if (res && res.kind !== 'function') {
+        this.extraNotes.push(missed?.why === 'not-passed' && blocker !== link
           ? this.s(
-            `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker.via}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
-            `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`, and \`${blocker.via}\` passes no exported functions, so \`export -f ${fn}\` does not help either. Write out its body`)
-          : blocker
+            `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。\`${blocker!.via}\` は環境の関数を渡さないので、\`export -f ${fn}\` も効きません。関数の中身を直接書きます`,
+            `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`, and \`${blocker!.via}\` passes no exported functions, so \`export -f ${fn}\` does not help either. Write out its body`)
+          : missed?.why === 'not-passed'
           ? this.s(
             `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
             `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`)
+          : missed?.why === 'not-imported'
+          ? this.s(
+            `⚠ 落とし穴: \`${via}\` はコマンドを ${shell} で実行します。${shell} は bash がエクスポートした関数を読まないので、\`export -f\` してもこのスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、\`bash -c\` を使います`,
+            `⚠ Pitfall: \`${via}\` runs the command in ${shell}, which does not read the functions bash exports, so this script's function \`${fn}\` is not there, even with \`export -f\`. Write out its body, or use \`bash -c\``)
           : this.s(
             `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、先に \`export -f ${fn}\` で関数を渡します（新しいシェルが bash のときだけ）`,
             `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`));
+      } else if (missed?.why === 'not-imported') {
+        // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
+          `⚠ Pitfall: \`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``));
       }
     }
     for (const v of assigned) {
@@ -4213,6 +4305,12 @@ const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The subcommand a parse names, if any (`git stash push`: `stash`, whose parse names `push`). */
 const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; role: Extract<ArgRole, { role: 'subcommand' }> } => r.role.role === 'subcommand');
 
+/** Whether the dictionary describes a program (not a builtin) of this name. */
+const isProgram = (name: string): boolean => {
+  const spec = lookupCommand(name);
+  return !!spec && !spec.builtin;
+};
+
 export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
@@ -4268,23 +4366,6 @@ function sortTokens(ts: Token[]): Token[] {
 }
 
 /** Whether an ancestor of `n` satisfies `test`. */
-/**
- * The text bash reads before it runs anything of `n`: the top-level command that holds it, together
- * with the others that start on the line it ends on (`a; b` is read as one).
- */
-function unitOf(n: SyntaxNode): { start: number; end: number } {
-  let top = n;
-  while (top.parent?.parent) top = top.parent;
-  const all = top.parent!.namedChildren;
-  let i = all.findIndex((x) => x.startIndex === top.startIndex && x.endIndex === top.endIndex);
-  /* c8 ignore next -- a top-level node is always among its parent's children */
-  if (i < 0) i = 0;
-  let a = i;
-  let b = i;
-  while (a > 0 && all[a - 1].endPosition.row === all[a].startPosition.row) a--;
-  while (b + 1 < all.length && all[b + 1].startPosition.row === all[b].endPosition.row) b++;
-  return { start: all[a].startIndex, end: all[b].endIndex };
-}
 
 function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
