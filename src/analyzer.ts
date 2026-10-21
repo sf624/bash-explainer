@@ -2848,7 +2848,7 @@ export class Analyzer {
     const name = parse.command.split('/').pop()!;
     // (`bash -c`: the string is the operand that `-c` makes a command.)
     const of = role.of ?? (role.slot.run === 'shell-string' && !role.slot.joinsWords ? '-c' : undefined);
-    return of ? `${name} ${spec.options?.find((o) => o.names.includes(of))?.names[0] ?? of}` : name;
+    return of ? `${name} ${spec.options!.find((o) => o.names.includes(of))!.names[0]}` : name;
   }
 
   /**
