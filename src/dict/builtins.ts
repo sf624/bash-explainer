@@ -57,6 +57,9 @@ const MAPFILE_OPTIONS: OptSpec[] = [
     ['-c', '`-C` を呼び出す間隔の行数', 'number of lines between callbacks', 'arg'],
   ];
 
+/** A signal number of Linux (0 to 64, leading zeros allowed), as `trap` checks its first word. */
+const SIGNAL_NUMBER = /^0*(?:\d|[1-5]\d|6[0-4])$/;
+
 type Rest = Omit<Partial<CommandSpec>, 'summary' | 'options'>;
 
 /** A builtin of bash: it reads options up to its first operand (`-` words after it are operands). */
@@ -205,6 +208,8 @@ export const builtins: Record<string, CommandSpec> = {
       { when: { not: { option: ['-p', '-l'] } }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（コマンドを書かない `trap INT` は登録の解除）', 'signal to reset to its default (`trap INT`, with no command, removes the trap)')] },
       { when: { option: ['-p'] }, pattern: [operand('SIGNAL', '表示するシグナル（EXIT, ERR, INT, TERM など）', 'signal to show (EXIT, ERR, INT, TERM…)', { repeat: '*' })] },
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
+      // `trap 1 2`: a signal number first resets every signal named (bash reads it so for old scripts).
+      { when: { operand: 0, matches: SIGNAL_NUMBER }, pattern: [operand('SIGNAL', '既定の動作に戻すシグナル（最初の語がシグナル番号なら、どの語もシグナル）', 'signal to reset to its default (when the first word is a signal number, every word is a signal)', { repeat: '+' })] },
       ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)'), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
     ],
   }),

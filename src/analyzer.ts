@@ -1712,8 +1712,7 @@ export class Analyzer {
       desc = this.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
     } else if (desc && role.otherwise) desc = this.uncertainText(desc, this.t(role.otherwise.text), parse, nodes);
     // `trap 'cmd' INT`: when the command runs, and so when its expansions are.
-    const alt = parse.alternative === undefined ? undefined : spec.operands![parse.alternative];
-    if (parse.command === 'trap' && role.index === 0 && desc && !(alt?.when && 'option' in alt.when)) desc += this.trapNote(a);
+    if (parse.command === 'trap' && item?.name === 'ACTION' && desc) desc += this.trapNote(a);
     return this.positional(a, desc, isFn ? undefined : item?.lang);
   }
 

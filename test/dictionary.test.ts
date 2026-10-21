@@ -316,14 +316,19 @@ describe('the specs of the dictionary', () => {
       (spec.operands ?? []).forEach((alt, k) => {
         const optionWords = (o: OptionSpec | undefined): string[] => (o ? [o.names[0], ...[o.value ?? []].flat().filter((v) => !v.optional).map(() => 'V')] : []);
         const find = (pred: (o: OptionSpec) => boolean) => (spec.options ?? []).find(pred);
-        const before = !alt.when || 'not' in alt.when ? []
+        const before = !alt.when || 'not' in alt.when || 'operand' in alt.when ? []
           : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
           : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
         const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : 'w0rd'));
         const once = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [] : [item(o)]));
         const each = alt.pattern.flatMap((o) => (o.repeat === '?' || o.repeat === '*' ? [item(o)] : [item(o)]));
         const twice = alt.pattern.flatMap((o) => (o.repeat === '*' || o.repeat === '+' ? [item(o), item(o)] : [item(o)]));
-        const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...ws].map((value) => ({ value })), { name: path }).alternative === k);
+        // (A condition on an operand's value: that operand is a word the condition matches.)
+        const shaped = (ws: string[]): string[] => {
+          const c = alt.when && 'operand' in alt.when ? alt.when : undefined;
+          return c ? ws.map((w, i) => (i === c.operand ? ['1', 'w0rd'].find((x) => c.matches.test(x))! : w)) : ws;
+        };
+        const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k);
         if (!fits) unreachable.push(`${path} #${k}`);
       });
     });

@@ -174,7 +174,8 @@ class Reader {
     }
     parse.mode = chooseMode(spec, given);
     if (spec.operands) {
-      const alts = spec.operands.flatMap((alt, index) => (conditionHolds(alt.when, given, parse.mode) ? [{ alt, index }] : []));
+      const words = operands.map((i) => this.words[i]);
+      const alts = spec.operands.flatMap((alt, index) => (conditionHolds(alt.when, given, parse.mode, words) ? [{ alt, index }] : []));
       this.placeOperands(parse, st, operands, alts, end, true);
     } else operands.forEach((i, index) => roles.set(i, { role: 'operand', index }));
     if (afterDashes !== undefined && afterDashes < to) {
@@ -275,7 +276,7 @@ class Reader {
     const words = operands.map((i) => this.words[i]);
     return (st.spec.operands ?? []).some((alt) => {
       const k = alt.pattern.findIndex(takesRest);
-      if (k < 0 || !conditionHolds(alt.when, st.given, mode)) return false;
+      if (k < 0 || !conditionHolds(alt.when, st.given, mode, words)) return false;
       return match(alt.pattern, words, this.maxSteps, st.options).items?.[words.length - 1] === k;
     });
   }
@@ -486,10 +487,14 @@ function chooseMode(spec: CommandSpec, given: Given): string | undefined {
   return modes.find((m) => given.specs.some((o) => o.selects === m.name))?.name ?? modes.find((m) => m.default)?.name;
 }
 
-function conditionHolds(c: Condition | undefined, given: Given, mode: string | undefined): boolean {
+function conditionHolds(c: Condition | undefined, given: Given, mode: string | undefined, operands: ArgWord[]): boolean {
   if (c === undefined) return true;
-  if ('not' in c) return !conditionHolds(c.not, given, mode);
+  if ('not' in c) return !conditionHolds(c.not, given, mode, operands);
   if ('mode' in c) return c.mode === mode;
+  if ('operand' in c) {
+    const value = operands[c.operand]?.value;
+    return value !== undefined && c.matches.test(value);
+  }
   return given.flags.some((f) => c.option.includes(f)) || given.specs.some((o) => o.names.some((n) => c.option.includes(n)));
 }
 

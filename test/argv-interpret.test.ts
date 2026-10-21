@@ -440,6 +440,11 @@ describe('argv interpreter: the option grammar', () => {
     assert.deepStrictEqual(roles('c -t -z a', spec)[2], 'a: ZED');
     assert.deepStrictEqual(roles('c -tz a', spec)[1], 'a: ZED');
     assert.deepStrictEqual(roles('c -t a', spec)[1], 'a: operand');
+    // A condition on an operand's value: `trap 1 2` resets both signals; a value not known matches nothing.
+    assert.deepStrictEqual(roles('trap 1 2'), ['1: SIGNAL', '2: SIGNAL']);
+    assert.deepStrictEqual(roles('trap 1 INT'), ['1: SIGNAL', 'INT: SIGNAL']);
+    assert.deepStrictEqual(roles('trap "$x" INT'), ['"$x": ACTION', 'INT: SIGNAL']);
+    assert.deepStrictEqual(roles('trap 65 INT'), ['65: ACTION', 'INT: SIGNAL']);
   });
 
   it('reads `--` that starts words of another pattern, and a `--` that is text', () => {

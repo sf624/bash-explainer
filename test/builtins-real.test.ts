@@ -118,6 +118,11 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     // `trap INT`: one word is a signal, reset to its default.
     assert.deepStrictEqual(operands('trap INT', 'SIGNAL'), ['INT']);
     assert.strictEqual(bash("trap ':' INT; trap INT; trap -p"), '');
+    // `trap 1 2`, `trap 1 INT`: a signal number first makes every word a signal, reset (`65` is no signal: an action).
+    for (const line of ['trap 1 2', 'trap 1 INT', 'trap 01 INT HUP', 'trap 65 INT']) {
+      const reset = operands(line, 'ACTION').length === 0;
+      assert.strictEqual(bash(`trap ':' INT HUP; ${line}; trap -p INT HUP`).includes("trap -- ':'"), !reset, line);
+    }
     // `trap -p INT`: the operands are signals to show.
     assert.deepStrictEqual(operands('trap -p INT TERM', 'SIGNAL'), ['INT', 'TERM']);
     assert.strictEqual(bash("trap ':' INT TERM; trap -p INT TERM").trim().split('\n').length, 2);
