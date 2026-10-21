@@ -1,4 +1,4 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { cmd, COMMAND_TEXT, CommandDoc, native, operand, OptSpec, pos, runs } from './types';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -34,9 +34,9 @@ const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a K
     create: cmd('リソースを作る', 'Create resources', kube, { positional: [resource] }),
     delete: cmd('リソースを削除する', 'Delete resources', [...kube, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
     logs: cmd('Pod のログを表示する', "Print a pod's logs", [...kube.filter(([n]) => !/^-[fk]\b/.test(n)), ['-f|--follow', 'ログを流し続ける', 'stream the logs'], ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
-    exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kube, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { afterDashes: true, positional: [pos('Pod', 'pod')] }),
-    run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kube, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { afterDashes: true, positional: [pos('Pod の名前', 'pod name')] }),
-    debug: cmd('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kube, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { afterDashes: true, positional: [pos('Pod', 'pod')] }),
+    exec: native('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kube, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    run: native('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kube, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    debug: native('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kube, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
     'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kube, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
     rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kube),
     wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kube, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
@@ -109,10 +109,10 @@ const iptables: OptSpec[] = [
 export const ops: Record<string, CommandDoc> = {
   kubectl,
   uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
-    subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { wraps: true }) },
+    subcommands: { run: native('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
   }),
   poetry: cmd('Python のパッケージ・プロジェクト管理ツール（Poetry）', 'Python package and project manager (Poetry)', [], {
-    subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { wraps: true }) },
+    subcommands: { run: native('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
   }),
   helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmCommon, {
     subcommands: {
@@ -213,9 +213,9 @@ export const ops: Record<string, CommandDoc> = {
   }),
 
   // ---- JavaScript and Ruby tools ----
-  npx: cmd('npm のパッケージのコマンドを実行する（なければ一時的に取得）', "Run a package's command (fetching it if needed)", [
+  npx: native('npm のパッケージのコマンドを実行する（なければ一時的に取得）', "Run a package's command (fetching it if needed)", [
     ['--yes|-y', '取得の確認をしない', 'do not ask before fetching'], ['--package|-p', 'コマンドを含むパッケージ（`名前@版`）', 'package that provides the command (`name@version`)', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   pnpm: cmd('Node.js のパッケージマネージャ（pnpm）', 'Node.js package manager (pnpm)', [['--frozen-lockfile', 'pnpm-lock.yaml を書き換えない（CI 向け）', 'do not change pnpm-lock.yaml (for CI)'], ['-r|--recursive', 'ワークスペースのすべてのパッケージで', 'in every workspace package'], ['--filter|-F', '対象のパッケージ', 'packages to act on', 'arg']], {
     subcommands: {
       install: cmd('依存をインストールする', 'Install dependencies', [['--frozen-lockfile', 'pnpm-lock.yaml を書き換えない（CI 向け）', 'do not change pnpm-lock.yaml (for CI)'], ['--prod|-P', '開発用の依存を入れない', 'skip development dependencies']]),

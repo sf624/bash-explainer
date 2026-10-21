@@ -1,4 +1,4 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { cmd, CommandDoc, native, OptSpec, pos, runs } from './types';
 
 // System administration commands from the LPIC and LinuC objectives: boot loaders and kernel
 // modules, package tools of the Debian and Red Hat families, accounts, scheduling, time, logs,
@@ -123,7 +123,7 @@ export const admin: Record<string, CommandDoc> = {
     },
   }),
   udevmonitor: cmd('udev とカーネルのイベントを見張る（古い名前。`udevadm monitor`）', 'Watch udev and kernel events (old name for `udevadm monitor`)'),
-  'systemd-run': cmd('コマンドを一時的な systemd のユニットとして実行する', 'Run a command as a transient systemd unit', [
+  'systemd-run': native('コマンドを一時的な systemd のユニットとして実行する', 'Run a command as a transient systemd unit', [
     ['--unit', 'ユニット名', 'unit name', 'arg'],
     ['--scope', 'サービスでなくスコープとして実行（前面で）', 'run as a scope instead of a service'],
     ['--on-calendar', '指定した日時の書式で繰り返す（タイマー）', 'repeat on the given calendar spec (timer)', 'arg'],
@@ -133,11 +133,11 @@ export const admin: Record<string, CommandDoc> = {
     ['-t|--pty', '疑似端末をつなぐ', 'connect a pseudo-terminal'],
     ['-r|--remain-after-exit', '終了後もユニットを残す', 'keep the unit after it exits'],
     ['-G|--collect', '失敗してもユニットを残さず片付ける', 'unload the unit even if it failed'],
-  ], { wraps: true }),
-  'systemd-cat': cmd('コマンドの出力や標準入力をジャーナルに送る', 'Send the output of a command, or stdin, to the journal', [
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  'systemd-cat': native('コマンドの出力や標準入力をジャーナルに送る', 'Send the output of a command, or stdin, to the journal', [
     ['-t|--identifier', 'ログの識別子', 'syslog identifier', 'arg'],
     ['-p|--priority', '優先度（`info`、`err`…）', 'priority (`info`, `err`…)', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   'systemd-delta': cmd('上書きされた systemd の設定ファイルの差分を一覧表示する', 'List systemd configuration files that override defaults', [
     ['-t|--type', '種類で絞る（`masked`、`overridden`、`extended`…）', 'filter by type (`masked`, `overridden`, `extended`…)', 'arg'],
     ['--diff', '差分を表示するかどうか（`true` / `false`）', 'whether to show the diff (`true` / `false`)', 'arg'],
@@ -633,11 +633,11 @@ export const admin: Record<string, CommandDoc> = {
     ['-R|--recursive', '再帰的に処理する', 'recurse'],
     ['--reference', '同じコンテキストにするファイル', 'copy the context of the given file', 'arg'],
   ], { positional: [files] }),
-  runcon: cmd('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
+  runcon: native('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
     ['-t|--type', 'タイプ', 'type', 'arg'],
     ['-u|--user', 'ユーザー', 'user', 'arg'],
     ['-r|--role', 'ロール', 'role', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   semanage: cmd('SELinux のポリシーの設定（ポート・ファイル・ブール値）を管理する', 'Manage SELinux policy settings (ports, files, booleans)', [], {
     subcommands: {
       port: cmd('ポートのタイプを管理する（`-a -t http_port_t -p tcp 8080`）', 'Manage port types (`-a -t http_port_t -p tcp 8080`)', [['-a|--add', '追加', 'add'], ['-d|--delete', '削除', 'delete'], ['-l|--list', '一覧表示', 'list'], ['-t|--type', 'タイプ', 'type', 'arg'], ['-p|--proto', 'プロトコル', 'protocol', 'arg']]),

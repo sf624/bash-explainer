@@ -1,4 +1,5 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { tx } from '../i18n';
+import { cmd, CommandDoc, native, OptSpec, pos } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -361,10 +362,15 @@ export const system: Record<string, CommandDoc> = {
   addgroup: cmd('グループを作る（Debian / BusyBox）', 'Create a group (Debian, BusyBox)', [
     ['--system|-S', 'システムグループとして作る', 'create a system group'], ['--gid|-g', 'グループ ID', 'group ID', 'arg'],
   ], { positional: [group] }),
-  su: cmd('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
-    ['-c|--command', 'シェルで指定したコマンドを実行する', 'run the given command with the shell', 'arg'], ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
+  su: native('別のユーザー（既定は root）になってシェルやコマンドを実行する', 'Run a shell or command as another user (root by default)', [
+    // The string runs in the user's shell, which starts afresh: this script's functions are not there.
+    { names: ['-c', '--command'], text: tx('シェルで指定したコマンドを実行する', 'run the given command with the shell'), value: { name: 'COMMAND', command: { run: 'shell-string', env: 'reset' } } },
+    ['-|-l|--login', 'ログインシェルとして（環境を初期化して）', 'as a login shell (fresh environment)'],
     ['-s|--shell', '使うシェル', 'shell to use', 'arg'], ['-m|-p|--preserve-environment', '今の環境変数を引き継ぐ', 'keep the environment'],
-  ], { positional: [user] }),
+    ['-g|--group', '主グループを指定する', 'specify the primary group', 'arg'],
+    ['-G|--supp-group', '追加のグループを指定する', 'specify a supplementary group', 'arg'],
+    ['-P|--pty', '疑似端末を作る', 'create a pseudo-terminal for the session'],
+  ], { operands: [{ pattern: [{ name: 'USER', text: user, repeat: '*' }] }] }),
   gosu: cmd('別のユーザーでコマンドを実行する（コンテナの入口向け。sudo と違い PID 1 を引き継ぐ）', "Run a command as another user (for container entrypoints; unlike sudo it keeps PID 1)", [], {
     positional: [pos('ユーザー（`ユーザー:グループ` も可）', 'user (or `user:group`)'), pos('実行するコマンド', 'command to run'), pos('コマンドへの引数', 'argument to the command')],
   }),

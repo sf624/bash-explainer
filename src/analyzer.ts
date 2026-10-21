@@ -3982,8 +3982,9 @@ const specs = new WeakMap<CommandDoc, Map<string, CommandSpec>>();
 /** The dictionary entry of each spec (find's expression reads its options). */
 const docs = new WeakMap<CommandSpec, CommandDoc>();
 
-/** The spec of a command's dictionary entry (`name` as written: `/usr/bin/kill` is `kill`). */
+/** The spec of a command's dictionary entry (`name` as written: `/usr/bin/kill` is `kill`): written as one, or converted. */
 function specOf(doc: CommandDoc, name: string): CommandSpec {
+  if (doc.spec) return doc.spec;
   const base = name.slice(name.lastIndexOf('/') + 1);
   const byName = specs.get(doc) ?? new Map<string, CommandSpec>();
   specs.set(doc, byName);
@@ -3994,6 +3995,12 @@ function specOf(doc: CommandDoc, name: string): CommandSpec {
     docs.set(spec, doc);
   }
   return spec;
+}
+
+/** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
+export function commandSpec(name: string): CommandSpec | undefined {
+  const doc = lookupCommand(name);
+  return doc && specOf(doc, name);
 }
 
 export function lookupCommand(name: string): CommandDoc | undefined {

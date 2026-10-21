@@ -1,4 +1,4 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { cmd, CommandDoc, native, OptSpec, pos, runs } from './types';
 
 // Performance monitoring and tracing, virtualization and configuration management, and the
 // build tools that LPIC-2 and LinuC-2 name (building and installing software from source).
@@ -132,7 +132,7 @@ export const monitor: Record<string, CommandDoc> = {
     ['-q|--queues', 'メッセージキュー', 'message queues'],
     ['-g|--global', '全体の制限と使用状況', 'global limits and usage'],
   ]),
-  strace: cmd('プロセスのシステムコールとシグナルを追跡して表示する', 'Trace the system calls and signals of a process', [
+  strace: native('プロセスのシステムコールとシグナルを追跡して表示する', 'Trace the system calls and signals of a process', [
     ['-p', '追跡する実行中のプロセスの PID', 'attach to the given running PID', 'arg'],
     ['-f', '子プロセスも追跡', 'follow child processes'],
     ['-e', '追跡する対象を絞る（`trace=open,read`）', 'filter what is traced (`trace=open,read`)', 'arg'],
@@ -142,18 +142,18 @@ export const monitor: Record<string, CommandDoc> = {
     ['-T', '各システムコールの所要時間を表示', 'show time spent in each call'],
     ['-s', '文字列の表示を切る長さ', 'maximum string length to print', 'arg'],
     ['-v', '省略せずに表示', 'unabbreviated output'],
-  ], { wraps: true }),
-  ltrace: cmd('プロセスのライブラリ関数の呼び出しを追跡して表示する', 'Trace the library calls of a process', [
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ltrace: native('プロセスのライブラリ関数の呼び出しを追跡して表示する', 'Trace the library calls of a process', [
     ['-p', '追跡する実行中のプロセスの PID', 'attach to the given running PID', 'arg'],
     ['-f', '子プロセスも追跡', 'follow child processes'],
     ['-c', '呼び出しの回数と時間を集計する', 'count calls and time'],
     ['-S', 'システムコールも表示', 'also show system calls'],
     ['-o', '出力をファイルに書く', 'write the output to a file', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   perf: cmd('Linux の性能解析ツール（プロファイリング）', 'Linux performance analysis tool (profiling)', [], {
     subcommands: {
-      stat: cmd('コマンドのハードウェアカウンタ（命令数、キャッシュミス…）を数える', 'Count hardware events (instructions, cache misses…) of a command', [['-e', '数えるイベント', 'events to count', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide']], { wraps: true }),
-      record: cmd('サンプリングして `perf.data` に記録する', 'Sample and record to `perf.data`', [['-g', 'コールグラフを記録', 'record call graphs'], ['-F', 'サンプリング周波数（Hz）', 'sampling frequency (Hz)', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide'], ['-o', '出力ファイル', 'output file', 'arg']], { wraps: true }),
+      stat: native('コマンドのハードウェアカウンタ（命令数、キャッシュミス…）を数える', 'Count hardware events (instructions, cache misses…) of a command', [['-e', '数えるイベント', 'events to count', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+      record: native('サンプリングして `perf.data` に記録する', 'Sample and record to `perf.data`', [['-g', 'コールグラフを記録', 'record call graphs'], ['-F', 'サンプリング周波数（Hz）', 'sampling frequency (Hz)', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide'], ['-o', '出力ファイル', 'output file', 'arg']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
       report: cmd('記録した結果を表示する', 'Show a recorded profile', [['-i', '入力ファイル', 'input file', 'arg'], ['--stdio', '端末にそのまま出力', 'plain text output']]),
       top: cmd('実行中の様子を `top` 風に表示する', 'Live profile in the style of `top`'),
       list: cmd('使えるイベントを一覧表示する', 'List available events'),

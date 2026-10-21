@@ -1,4 +1,4 @@
-import { CommandDoc, cmd, pos } from './types';
+import { cmd, CommandDoc, native, pos, runs } from './types';
 
 // Commands that exist on macOS only (or are met mostly there): the clipboard and `open`, disk,
 // service and network management, Spotlight, signing, property lists and system information.
@@ -37,7 +37,7 @@ export const macos: Record<string, CommandDoc> = {
     ['-f', '読み上げるテキストのファイル', 'text file to read', 'arg'],
     ['--data-format', '保存する音声の形式', 'format of the saved audio', 'arg'],
   ], { positional: [pos('読み上げる文字列', 'text to speak')] }),
-  caffeinate: cmd('Mac がスリープしないようにして、コマンドを実行する', 'Keep the Mac awake while running a command', [
+  caffeinate: native('Mac がスリープしないようにして、コマンドを実行する', 'Keep the Mac awake while running a command', [
     ['-d', 'ディスプレイのスリープを防ぐ', 'prevent the display from sleeping'],
     ['-i', 'システムのアイドルスリープを防ぐ', 'prevent idle sleep of the system'],
     ['-m', 'ディスクのスリープを防ぐ', 'prevent the disk from sleeping'],
@@ -45,7 +45,7 @@ export const macos: Record<string, CommandDoc> = {
     ['-u', 'ユーザーが操作したことにしてディスプレイを起こす', 'declare the user active and wake the display'],
     ['-t', '指定した秒数だけ防ぐ', 'prevent sleep for the given number of seconds', 'arg'],
     ['-w', '指定した PID のプロセスが終わるまで防ぐ', 'prevent sleep until the given PID exits', 'arg'],
-  ], { wraps: true }),
+  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   diskutil: cmd('ディスク・パーティション・ボリュームを管理する（macOS）', 'Manage disks, partitions and volumes (macOS)', [], {
     subcommands: {
       list: cmd('ディスクとパーティションを一覧表示する', 'List disks and partitions', [['-plist', 'plist 形式で出力', 'output as a plist']], { longSingleDash: true }),

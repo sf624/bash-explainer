@@ -1,3 +1,4 @@
+import type { CommandSlot, CommandSpec, OperandSpec, OptionSpec, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
@@ -68,21 +69,16 @@ export interface CommandDoc {
   positionalWith?: Record<string, Text[]>;
   /** Embedded language of positional arguments, by index (does not repeat). */
   positionalLang?: (EmbeddedLang | undefined)[];
-  /** After its own options, the remaining words form another command (sudo, xargs, env…). */
-  wraps?: boolean;
-  /** Positional operands before the wrapped command (`timeout 5 cmd`, `chroot dir cmd`, `docker run image cmd`). */
-  wrapSkip?: number;
-  /** The words after `--` form the wrapped command (`kubectl exec pod -- cmd`). */
-  afterDashes?: boolean;
-  /** `NAME=value` words before the wrapped command set variables for it (`env`, `sudo`, `doas`). */
-  assigns?: boolean;
-  /** A shell: with `-c`, the words after the command string are `$0`, `$1`…; otherwise the script and its arguments. */
-  shellC?: boolean;
   subcommands?: Record<string, CommandDoc>;
   /** Options are single words that never combine (find, java-style `-name`). */
   longSingleDash?: boolean;
   /** The first argument may be dashless bundled options. A letter with `arg` takes the following words in order. */
   bundle?: BundleDoc;
+  /**
+   * The command spec, written directly (`native`): the analyzer reads the arguments with it, and the fields
+   * above, other than `summary`, `builtin` and `subcommands`, are not used.
+   */
+  spec?: CommandSpec;
 }
 
 /** `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `attached`, `next:<regexp>`, `lang:<name>`. */
@@ -127,3 +123,37 @@ export function lastIsDestination(source: Text, one: Text, several: Text, unless
     { count: 3, orMore: true, unless, texts: [source], last: several },
   ];
 }
+
+/** An option of a spec from the tuple form of `cmd`: `arg` takes a value, `attached` only a value in the same word. */
+function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
+  const value: ValueSpec | undefined = flags.includes('attached') ? { name: 'VALUE', how: 'attached-only', optional: true }
+    : flags.includes('arg') ? { name: 'VALUE', ...(values ? { values } : {}) } : undefined;
+  return { names: names.split('|'), text: tx(ja, en), ...(value ? { value } : {}) };
+}
+
+/**
+ * A dictionary entry written as a command spec (src/argv/spec.ts), not converted from the fields above.
+ * Options are tuples, as for `cmd`, or option specs.
+ */
+export function native(ja: string, en: string, opts: (OptSpec | OptionSpec)[], rest: Omit<Partial<CommandSpec>, 'summary' | 'options'> = {}): CommandDoc {
+  const summary = tx(ja, en);
+  // A name given twice (lists put together: `[...composeOpts, ...dockerRun]`) means what it means last, as with `cmd`.
+  const seen = new Set<string>();
+  const options = opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)).reverse().flatMap((o) => {
+    const names = o.names.filter((n) => !seen.has(n));
+    names.forEach((n) => seen.add(n));
+    return names.length ? [{ ...o, names }] : [];
+  }).reverse();
+  return { summary, ...(rest.builtin ? { builtin: true } : {}), spec: { summary, options, ...rest } };
+}
+
+export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
+
+/** The operand from which the words are the command a wrapper runs (`sudo cmd args`), started as `slot` says. */
+export const runs = (slot: CommandSlot = { run: 'exec' }): OperandSpec => ({ name: 'COMMAND', text: COMMAND_TEXT, repeat: '?', command: slot });
+
+/** `NAME=value` words before the command: variables for it (`env A=1 cmd`). */
+export const ASSIGNMENTS: OperandSpec = { name: 'NAME=VALUE', text: tx('コマンドの環境に入れる変数', 'variable for the command'), assignment: true, repeat: '*' };
+
+/** An operand of a spec, with its text in both languages. */
+export const operand = (name: string, ja: string, en: string, rest: Partial<OperandSpec> = {}): OperandSpec => ({ name, text: tx(ja, en), ...rest });

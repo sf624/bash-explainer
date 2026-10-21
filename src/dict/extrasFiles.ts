@@ -200,15 +200,6 @@ export const extraFiles: Record<string, OptSpec[]> = {
     ['-p', 'パイプへの書き込みエラーを診断する', 'diagnose errors writing to pipes'],
     ['--output-error', '書き込みエラーの扱い（`warn`、`exit`…）', 'what to do on write errors (`warn`, `exit`…)', 'attached'],
   ],
-  xargs: [
-    ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],
-    ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg'],
-    ['-o|--open-tty', '子プロセスの標準入力を端末にする', 'reopen stdin as the terminal in the child'],
-    ['-s|--max-chars', 'コマンドラインの最大の長さ', 'maximum length of the command line', 'arg'],
-    ['-x|--exit', '長さが収まらないとき終了する', 'exit if the size is exceeded'],
-    ['-p|--interactive', '実行する前に確認する', 'ask before running each command'],
-    ['--show-limits', 'コマンドラインの長さの制限を表示', 'show the limits on command-line length'],
-  ],
   file: [
     ['-b|--brief', 'ファイル名を付けずに結果だけ表示', 'do not prepend file names'],
     ['-i|--mime', 'MIME タイプと文字コードを表示', 'show the MIME type and encoding'],
@@ -410,17 +401,6 @@ export const extraFiles: Record<string, OptSpec[]> = {
   ],
   pkill: [...signalOpts(), ...pgrepCommon()],
   pgrep: pgrepCommon(),
-  nice: [['--adjustment', 'ニス値の増分', 'niceness increment', 'arg']],
-  watch: [
-    ['-d|--differences', '前回との差を強調表示', 'highlight changes between updates'],
-    ['-t|--no-title', 'ヘッダーを表示しない', 'turn off the header'],
-    ['-b|--beep', 'コマンドが失敗したら音を鳴らす', 'beep if the command exits non-zero'],
-    ['-e|--errexit', 'コマンドが失敗したら止める', 'freeze on error and exit after a key'],
-    ['-c|--color', '色を解釈する', 'interpret ANSI colors'],
-    ['-x|--exec', 'シェルを通さず直接実行する', 'pass the command to exec instead of a shell'],
-    ['-g|--chgexit', '出力が変わったら終了する', 'exit when the output changes'],
-    ['-p|--precise', '間隔を正確に保つ', 'run at precise intervals'],
-  ],
   uname: [['-i|--hardware-platform', 'ハードウェアのプラットフォーム', 'hardware platform']],
   date: [
     ['-s|--set', '時刻を設定する（root）', 'set the time (root)', 'arg'],
@@ -431,11 +411,6 @@ export const extraFiles: Record<string, OptSpec[]> = {
   stat: [
     ['-t|--terse', '簡潔な形式で表示', 'terse output'],
     ['--printf', '書式を指定して出力', 'custom format, with backslash escapes', 'arg'],
-  ],
-  env: [
-    ['-S|--split-string', '文字列を分割して引数にする（shebang で使う）', 'split a string into arguments (useful in shebang lines)', 'arg'],
-    ['-C|--chdir', '先に移動するディレクトリ', 'change to the given directory first', 'arg'],
-    ['-0|--null', '各項目を改行でなく NUL で終える', 'end each output line with NUL'],
   ],
   readlink: [
     ['-e|--canonicalize-existing', 'すべての要素が存在する場合だけ正規化する', 'canonicalize; all components must exist'],
