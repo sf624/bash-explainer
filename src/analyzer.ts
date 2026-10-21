@@ -1319,8 +1319,10 @@ export class Analyzer {
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
     const subTok = head.doc?.subcommands && argToks.find((a) => a.kind === 'subcommand' && !a.children.length);
-    // Every subcommand in the dictionary has a summary.
-    if (subTok) t.summary = `${head.name} ${subTok.label}: ${this.t(head.doc!.subcommands![subTok.label].summary)}`;
+    // Every subcommand in the dictionary has a summary. (The name is the word's value: `yq 'e'` names `e`.)
+    const subWord = subTok && args.find((a) => a.startPosition.row === subTok.span.start.line && a.startPosition.column === subTok.span.start.character);
+    const sub = subWord && argWord(subWord).value!;
+    if (sub) t.summary = `${head.name} ${sub}: ${this.t(head.doc!.subcommands![sub].summary)}`;
     return t;
   }
 

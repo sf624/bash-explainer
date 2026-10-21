@@ -80,6 +80,12 @@ describe('argument roles the old walk read wrongly', () => {
     });
   }
 
+  it('names a quoted subcommand in the summary', () => {
+    // `yq 'e' .` runs `yq eval .`: quote removal makes the word `e`.
+    assert.strictEqual(new Analyzer('en').explainLine(parser.parse("yq 'e' ."), 0).items[0].summary, 'yq e: apply the expression to each document (`eval`)');
+    assert.strictEqual(tokenOf("git \"log\" -1", '"log"').kind, 'subcommand');
+  });
+
   it('reads an operand that is a file as a file, not in the language of another operand', () => {
     assert.deepStrictEqual(tokenOf('chmod --reference=r u+x', 'u+x').children, []);
   });
