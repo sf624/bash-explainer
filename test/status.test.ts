@@ -4,7 +4,7 @@
 import * as assert from 'assert';
 import { Analyzer } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import { conditionOf, lastStatements, setsErrexit, statusModel } from '../src/semantics/status';
+import { conditionOf, lastStatements, statusModel } from '../src/semantics/status';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
@@ -148,21 +148,28 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
     assert.strictEqual(errexit('set -e; x=$(a; b)', 'a', 'bash', true).active, 'on');
     assert.strictEqual(ctx('set -e; x=$(a; b)', 'a', 'sh'), 'on');
     assert.strictEqual(ctx('x=$(set -e; a; b)', 'a'), 'on');
+    // (A function called in `$( )`: bash -ec 'f() { false; echo in; }; x=$(f); echo "$x"' prints in.)
+    assert.strictEqual(ctx('set -e; f() { a; b; }; x=$(f)', 'a'), 'off');
+    assert.strictEqual(ctx('set -e; f() { a; b; }; x=$(f); f', 'a'), 'unknown');
+    assert.strictEqual(ctx('set -e; f() { a; b; }; f', 'a'), 'on');
+    assert.strictEqual(ctx('set -e; f() { set -e; a; }; x=$(f)', 'a'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; x=$(f)', 'a'), 'off');
   });
 
   it('says which statements are checked, and which shell stops', () => {
     const e = (src: string, text: string) => {
       const c = errexit(src, text);
-      return `${c.checked ? 'checked' : '-'} ${c.stops}`;
+      return `${c.checked === true ? 'checked' : c.checked.why} ${c.stops}`;
     };
     assert.strictEqual(e('set -e; a', 'a'), 'checked script');
-    assert.strictEqual(e('set -e; { a; }', '{ a; }'), '- script');
+    assert.strictEqual(e('set -e; { a; }', '{ a; }'), 'compound script');
     assert.strictEqual(e('set -e; (a)', '(a)'), 'checked script');
     assert.strictEqual(e('set -e; (a)', 'a'), 'checked subshell');
-    assert.strictEqual(e('set -e; a | b', 'a'), '- subshell');
+    assert.strictEqual(e('set -e; a | b', 'a'), 'pipeline-stage subshell');
     assert.strictEqual(e('set -e; a | b', 'a | b'), 'checked script');
-    assert.strictEqual(e('set -e; a &', 'a'), '- subshell');
-    assert.strictEqual(e('set -e; local x=1 y=2', 'x=1'), '- script');
+    assert.strictEqual(e('set -e; a &', 'a'), 'job subshell');
+    assert.strictEqual(e('set -e; coproc a', 'coproc a'), 'job script');
+    assert.strictEqual(e('set -e; local x=1 y=2', 'x=1'), 'part-of-command script');
     assert.strictEqual(e('set -e; [ x ] && shopt -s lastpipe; a | { b; c; }', 'b'), 'checked unknown');
   });
 
@@ -178,10 +185,40 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
 });
 
 describe('helpers of the status model', () => {
-  it('finds a `set` that turns errexit on', () => {
-    const sets = (src: string) => setsErrexit(descendants(parser.parse(src).root, ['command'])[0]);
-    for (const yes of ['set -e', 'set -euo pipefail', 'set -o errexit', 'set -xe', 'set -uo errexit']) assert.ok(sets(yes), yes);
-    for (const no of ['set +e', 'set -u', 'set -o pipefail', 'set -- -e', 'set errexit', 'echo -e', '"$x" -e']) assert.ok(!sets(no), no);
+  it('finds a `set` that turns errexit on, from the state before and after it', () => {
+    // (The last `set` command of the snippet.)
+    const sets = (src: string) => {
+      const tree = parser.parse(src);
+      const node = descendants(tree.root, ['command']).filter((c) => /^(set|echo|"\$x")(\s|$)/.test(c.text)).pop()!;
+      return statusModel(shellState(tree)).turnsErrexitOn(node);
+    };
+    for (const yes of ['set -e', 'set -euo pipefail', 'set -o errexit', 'set -xe', 'set -uo errexit', 'f() { set -e; }; if f; then :; fi']) assert.ok(sets(yes), yes);
+    // (In the walk of a function called after `set -e`, errexit is on already.)
+    for (const no of ['set +e', 'set -u', 'set -o pipefail', 'set -- -e', 'set errexit', 'echo -e', '"$x" -e', 'set -e; set -eu', 'set -e; f() { set -e; }; if f; then :; fi']) assert.ok(!sets(no), no);
+  });
+
+  it('says why errexit is what it is', () => {
+    const why = (src: string, text: string, posix?: boolean) => errexit(src, text, undefined, posix).errexitWhy;
+    assert.strictEqual(why('a', 'a'), 'default');
+    assert.strictEqual(why('set -e; a', 'a'), 'set');
+    assert.strictEqual(why('set -e; x=$(a)', 'a'), 'off-in-substitution');
+    assert.strictEqual(why('set -e; shopt -s inherit_errexit; x=$(a)', 'a'), 'inherit_errexit');
+    assert.strictEqual(why('set -e; set -o posix; x=$(a)', 'a'), 'posix');
+    assert.strictEqual(why('set -e; x=$(set -e; a)', 'a'), 'set');
+    assert.strictEqual(why('x=$(a)', 'a'), 'default');
+  });
+
+  it('finds the pipelines that hide a failure without pipefail', () => {
+    const hides = (src: string) => {
+      const { node, model } = at(src, src.split('; ').pop()!);
+      return model.hidesFailure(node);
+    };
+    for (const yes of ['a | b', 'echo $(a) | b', 'cat f | b', 'a | grep x', 'a | sed s/a/b/', 'a | head -1 > f'.replace(' head -1', ' tr a b')]) assert.ok(hides(yes), yes);
+    for (const no of ['set -o pipefail; a | b', '! a | b', 'echo x | b', 'printf "%s" x | b', 'cat <<EOF | b\nx\nEOF'.replace(/\\n/g, '\n'), 'a | head -1', 'a | grep -q x',
+      'a | grep -m1 x', "a | sed '1q'", 'a b', 'echo x > f | b'.replace(' > f', '') + '; echo x | b']) assert.ok(!hides(no), no);
+    assert.ok(hides('cat <<EOF f | b\nx\nEOF'.replace(/\\n/g, '\n')));
+    assert.ok(hides('echo x > f | b'));
+    assert.ok(hides('a | grep -v x > f'));
   });
 
   it('finds the condition of an `if` that is not closed', () => {
@@ -232,9 +269,14 @@ describe('the notes on status and errexit', () => {
     assert.ok(explanations('set -e\n"$(cmd)" a', 1).every((e) => !/set -e/.test(e)));
     assert.ok(explanations('set -e\necho $(a $(false))', 1).some((e) => /the status is that of `echo`/.test(e)));
     assert.ok(explanations('set -e\ndiff <(echo $(false)) b', 1).every((e) => !/set -e/.test(e)));
+    // bash -ec 'n=$(grep -c x /dev/null || true); echo after' prints after.
+    for (const ok of ['n=$(grep -c x f || true)', 'n=$(grep -c x f || :)']) assert.ok(explanations(`set -e\n${ok}`, 1).every((e) => !/set -e/.test(e)), ok);
+    assert.ok(explanations('set -e\nn=$(grep -c x f || echo 0)', 1).some((e) => /stops here/.test(e)));
+    assert.ok(explanations('set -e\nn=$(grep -c x f && true)', 1).some((e) => /stops here/.test(e)));
   });
 
-  it('points out `local x=$(cmd)`, also quoted', () => {
+  it('points out `local x=$(cmd)`, also quoted, not `export $(cmd)`', () => {
+    assert.ok(!notes('export $(cat .env)', 0).some((n) => /hides a failure/.test(n)));
     for (const src of ['f() {\nlocal out=$(cmd)\n}', 'f() {\nlocal out="$(cmd)"\n}']) {
       assert.ok(notes(src, 1).some((n) => /the status of `local out=\$\(…\)` is that of `local` \(success\)/.test(n)), src);
       assert.ok(notes(src, 1, 'ja').some((n) => /`local out=\$\(…\)` の終了ステータスは `local` 自身のもの/.test(n)), src);
@@ -252,9 +294,19 @@ describe('the notes on status and errexit', () => {
 
   it('points out a function that ends with `test && cmd` under set -e', () => {
     // status.json: `f() { [ -f nofile ] && echo found; }; f` stops the script with status 1.
-    const src = 'set -e\nf() {\n  [ -f x ] && echo found\n}\nf';
+    const src = 'set -e\nf() {\n  [ -f x ] && echo found\n}\nf\necho done';
     assert.ok(notes(src, 2).some((n) => /this is the last command of `f`, so when the left side of `&&` fails, `f` returns its non-zero status and `set -e` stops the script at the call on line 5/.test(n)));
-    assert.ok(notes(src, 2, 'ja').some((n) => /関数 `f` の最後のコマンド/.test(n)));
+    assert.ok(notes(src, 2, 'ja').some((n) => /`set -e` により行 5 の呼び出しでスクリプトが止まる/.test(n)));
+    // bash -ec 'f() { [ -f nofile ] && echo found; }; f'; echo $? prints 1.
+    const end = 'set -e\nf() {\n  [ -f x ] && echo found\n}\nf > log';
+    assert.ok(notes(end, 2).some((n) => /`f` returns its non-zero status, and so does the script, which ends with the call on line 5/.test(n)));
+    assert.ok(notes(end, 2, 'ja').some((n) => /終わるスクリプトもその終了ステータスになる/.test(n)));
+    for (const left of ['[[ -n $x ]]', '(( n ))', 'test -f x', 'grep -q x f', 'grep --quiet x f', '[ -f x ] && [ -r x ]']) {
+      assert.ok(notes(`set -e\nf() {\n  ${left} && echo found\n}\nf\n:`, 2).some((n) => /last command of/.test(n)), left);
+    }
+    for (const left of ['mkdir -p d', 'grep x f', 'cd d', '[ -f x ] && cd d', 'x=1', 'test() { :; }; test x']) {
+      assert.ok(!notes(`set -e\nf() {\n  ${left} && echo found\n}\nf\n:`, 2).some((n) => /last command of/.test(n)), left);
+    }
     for (const quiet of ['set -e\nf() {\n  [ -f x ] && echo found\n}\nif f; then :; fi', 'f() {\n  [ -f x ] && echo found\n}\nf', 'set -e\nf() {\n  [ -f x ] || echo none\n}\nf',
       'set -e\nf() {\n  [ -f x ] && echo found; :\n}\nf', 'set -e\nf() {\n  [ -f x ] && a || b\n}\nf',
       'set -e\nf() {\n  [ -f x ] && echo found\n}']) {
@@ -280,6 +332,10 @@ describe('the notes on status and errexit', () => {
     assert.ok(notes('! { set -e; false; }', 0, 'ja').some((n) => /`!` のあと/.test(n)));
     assert.ok(notes('while { set -e; false; }; do :; done', 0).some((n) => /condition of `while`/.test(n)));
     assert.ok(!notes('set -e', 0).some((n) => /set -e/.test(n)));
+    // A `set -e` that is itself in the ignored place takes effect at once: bash -c 'set -e && false; echo a' prints nothing,
+    // and so does bash -c 'if set -e; then false; echo in; fi'; bash -c '{ set -e; false; echo in; } || :' prints in.
+    for (const quiet of ['set -e && apt-get update && x=$(false)', 'if set -e; then false; fi', 'a && set -e && b', '! set -e']) assert.ok(!notes(quiet, 0).some((n) => /This `set -e`/.test(n)), quiet);
+    assert.ok(notes('{ set -e; false; echo in; } || :', 0).some((n) => /This `set -e` takes effect only when the command that holds it ends: `set -e` is ignored on the left side of `\|\|`/.test(n)));
   });
 
   it('says that set -e is ignored in a group or a function run where it is ignored', () => {
@@ -293,7 +349,7 @@ describe('the notes on status and errexit', () => {
     assert.ok(notes(fn, 1).some((n) => /`f` is called only where `set -e` is ignored \(line 6\), so it is ignored in all of its body too/.test(n)));
     assert.ok(notes(fn, 1, 'ja').some((n) => /からしか呼ばれないので/.test(n)));
     for (const quiet of ['set -e\nf() {\n  cd /x\n  rm y\n}\nf || :\nf', 'f() {\n  cd /x\n  rm y\n}\nif f; then :; fi', 'set -e\nf() {\n  x=1\n  rm y\n}\nif f; then :; fi',
-      'set -e\nf() { rm y; }\nif f; then :; fi', 'set -e\nf() {\n  set -e\n  rm y\n}\nif f; then :; fi', 'set -e\nf() {\n  cd /x\n  rm y\n}']) {
+      'set -e\nf() { rm y; }\nif f; then :; fi', 'f() {\n  set -e\n  rm y\n}\nset -e\nif f; then :; fi', 'set -e\nf() {\n  cd /x\n  rm y\n}']) {
       assert.ok(!notes(quiet, 1).some((n) => /called only where/.test(n)), quiet);
     }
   });
@@ -302,14 +358,15 @@ describe('the notes on status and errexit', () => {
     // status.json: `x=$(false; @in@); @after@` under bash -e runs in and after.
     assert.ok(notes('set -e\nx=$(cd /nowhere; ls)', 1).some((n) => /bash turns `set -e` off inside `\$\( \)` \(without `shopt -s inherit_errexit`\): if `cd \/nowhere` fails/.test(n)));
     assert.ok(notes('set -e\nx=$(cd /nowhere; ls)', 1, 'ja').some((n) => /`\$\( \)` の中では `set -e` を切る/.test(n)));
+    assert.ok(notes('set -e\nx=$(cd /a/rather/long/directory/name; ls)', 1).some((n) => /if `cd \/a\/rather\/long\/directory\/n…` fails/.test(n)));
     for (const quiet of ['set -e\nx=$(cd /nowhere && ls)', 'x=$(cd /nowhere; ls)', 'set -e\nshopt -s inherit_errexit\nx=$(cd /nowhere; ls)', 'set -e\nx=$(set -e; ls)']) {
       assert.ok(!notes(quiet, quiet.split('\n').length - 1).some((n) => /inherit_errexit/.test(n)), quiet);
     }
   });
 
-  it('drops the set -e part of the `((i++))` pitfall where set -e is ignored', () => {
-    assert.ok(notes('((i++)) || true', 0).some((n) => /the exit status is 1 when `i` is 0$/.test(n)));
-    assert.ok(notes('((i--)) || true', 0, 'ja').some((n) => /`\(\(i--\)\)` の値は減らす前の値なので、`i` が 0 のとき終了ステータスは 1 になる$/.test(n)));
+  it('drops the `((i++))` pitfall where set -e is surely ignored', () => {
+    assert.ok(!notes('((i++)) || true', 0).some((n) => /i\+\+/.test(n)));
+    assert.ok(!notes('if ((i--)); then :; fi', 0, 'ja').some((n) => /i--/.test(n)));
     assert.ok(notes('((i++))', 0).some((n) => /under `set -e` the script stops/.test(n)));
   });
 });

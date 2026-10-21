@@ -9,7 +9,7 @@
 //   command but the last of the list), after `!`, and in all of a function called from such a place (B2's calls).
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
 import type { Shell } from '../dialect';
-import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { option, type ShellState, type StateModel, type Tri } from './state';
@@ -57,15 +57,21 @@ export interface Ignored {
 export interface ErrexitContext {
   /** errexit where it runs (off in `$( )` unless inherit_errexit). */
   readonly errexit: Tri;
+  /**
+   * Why errexit has that value: `default` (never turned on: `#!/bin/bash -e` is not read), `set` (a `set -e` before),
+   * `off-in-substitution` (bash turns it off in `$( )`), `inherit_errexit` or `posix` (kept in `$( )` by them).
+   */
+  readonly errexitWhy: 'default' | 'set' | 'off-in-substitution' | 'inherit_errexit' | 'posix';
   readonly ignored?: Ignored;
   /** Whether a failure of it stops the shell: errexit on, and not ignored. */
   readonly active: Tri;
   /**
-   * Whether its own status is checked: simple commands, assignments, tests, `(( ))`, pipelines and `( )`. Lists and
-   * the other compound commands are not (their commands are), nor a pipeline's stages (the pipeline is), nor a
-   * statement started with `&` (0 for the shell).
+   * Whether its own status is checked (`true`): simple commands, assignments, tests, `(( ))`, pipelines and `( )`. Else
+   * why not: lists, function definitions and the compound commands other than `( )` (`compound`: their commands
+   * are checked), a pipeline's stages (`pipeline-stage`: the pipeline is), a statement started with `&` or a coproc
+   * (`job`: 0 for the shell), an assignment in a declaration or before a command (`part-of-command`).
    */
-  readonly checked: boolean;
+  readonly checked: true | { readonly why: 'compound' | 'pipeline-stage' | 'job' | 'part-of-command' };
   /** The shell it stops: the script, a subshell (`( )`, `$( )`, a pipeline stage, a job), or either. */
   readonly stops: 'script' | 'subshell' | 'unknown';
 }
@@ -122,6 +128,14 @@ export interface StatusModel {
    * `set -e` says, also where it is ignored.
    */
   expansionError(n: SyntaxNode, env?: WordEnv): { word: SyntaxNode; failure: WordFailure } | undefined;
+  /** Whether `n` is a `set` (the builtin) that turns errexit on where it was not (from the state before and after it). */
+  turnsErrexitOn(n: SyntaxNode): boolean;
+  /**
+   * Whether pipeline `n` hides a failure: no pipefail, a stage before the last that can fail (not `echo` or `printf`
+   * of plain words, nor `cat` of a here-document), and a last stage that reads to the end (not `head`, `grep -q`,
+   * `grep -m`, `sed …q`: with pipefail the SIGPIPE of the stages before it would fail the pipeline).
+   */
+  hidesFailure(n: SyntaxNode): boolean;
 }
 
 const models = new WeakMap<StateModel, StatusModel>();
@@ -136,6 +150,8 @@ export function statusModel(state: StateModel, shell?: Shell): StatusModel {
 class Statuses implements StatusModel {
   private readonly ignoreMemo = new Map<SyntaxNode, Ignored | null>();
   private readonly errexitMemo = new Map<SyntaxNode, ErrexitContext>();
+  /** The function definitions whose calls are being read (a function that calls itself). */
+  private readonly walking = new Set<SyntaxNode>();
   private callees: Map<SyntaxNode, SyntaxNode[]> | undefined;
 
   constructor(private readonly state: StateModel, private readonly shell?: Shell) {}
@@ -222,19 +238,72 @@ class Statuses implements StatusModel {
     const hit = this.errexitMemo.get(n);
     if (hit) return hit;
     const st = this.state.at(n).run;
-    const errexit = optionOn(st, 'set', 'errexit');
+    const { errexit, why: errexitWhy } = this.errexitAt(n, st);
     const ignored = this.ignored(n) ?? undefined;
     const active: Tri = errexit === 'off' || ignored?.sure ? 'off' : errexit === 'unknown' || ignored ? 'unknown' : 'on';
     // (The shell that checks a `( )` is the one around it.)
     const p = processOf({ links: this.state.env(n).links.filter((l) => !(l.kind === 'subshell' && l.at === n && l.why === 'parentheses')) });
     const stops = !p.sure ? 'unknown' : p.kind === 'main' ? 'script' : 'subshell';
-    const stage = n.parent?.type === 'pipeline' && STATEMENTS.has(n.type);
     // (An assignment in a declaration, before a command or among others is part of that statement.)
-    const part = n.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(n.parent!.type);
-    const checked = CHECKED.has(n.type) && !stage && !part && !backgrounded(n);
-    const ctx: ErrexitContext = { errexit, ...(ignored ? { ignored } : {}), active, checked, stops };
+    const checked: ErrexitContext['checked'] = n.parent?.type === 'pipeline' && STATEMENTS.has(n.type) ? { why: 'pipeline-stage' }
+      : backgrounded(n) || n.type === 'coproc_statement' ? { why: 'job' }
+      : n.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(n.parent!.type) ? { why: 'part-of-command' }
+      : CHECKED.has(n.type) ? true : { why: 'compound' };
+    const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops };
     this.errexitMemo.set(n, ctx);
     return ctx;
+  }
+
+  /**
+   * errexit at `n` (`st`, its run state), and why. In bash, a `$( )` starts with errexit off unless inherit_errexit is
+   * on (POSIX mode turns it on); a `set` inside it before `n` that turns errexit on or off counts from there. The
+   * walk of the state does not follow this (it would walk the functions called in `$( )` again), so it is done here.
+   */
+  private errexitAt(n: SyntaxNode, st: ShellState): { errexit: Tri; why: ErrexitContext['errexitWhy'] } {
+    const own = optionOn(st, 'set', 'errexit');
+    // The nearest `$( )` or function body around `n`.
+    const sub = ancestor(n, (a) => a.type === 'command_substitution' || (a.parent?.type === 'function_definition' && a === field(a.parent, 'body')));
+    const plain = { errexit: own, why: option(st, 'set', 'errexit') === 'default' ? 'default' as const : 'set' as const };
+    if (!sub || (this.shell && this.shell !== 'bash') || this.setBefore(sub, n)) return plain;
+    if (sub.type !== 'command_substitution') return this.fromCalls(sub.parent!, plain);
+    const outerSt = this.state.at(sub).run;
+    const outer = this.errexit(sub).errexit;
+    if (outer === 'off') return plain;
+    const inherit = option(outerSt, 'shopt', 'inherit_errexit');
+    if (inherit === 'on') return { errexit: outer, why: optionOn(outerSt, 'set', 'posix') === 'on' ? 'posix' : 'inherit_errexit' };
+    return { errexit: inherit === 'unknown' ? 'unknown' : 'off', why: 'off-in-substitution' };
+  }
+
+  /**
+   * errexit in the body of `def`, where its calls left it: off in a function called in `$( )` (`x=$(f)`), though the
+   * state, walked from the caller's, has it on. `plain` is what the state says.
+   */
+  private fromCalls(def: SyntaxNode, plain: { errexit: Tri; why: ErrexitContext['errexitWhy'] }): { errexit: Tri; why: ErrexitContext['errexitWhy'] } {
+    if (this.walking.has(def)) return plain;
+    this.walking.add(def);
+    try {
+      const sites = [...this.state.calls.get(def)?.keys() ?? []].map((c) => this.errexit(c));
+      if (!sites.some((c) => c.errexitWhy === 'off-in-substitution')) return plain;
+      const all = new Set(sites.map((c) => c.errexit));
+      return { errexit: all.size === 1 ? [...all][0] : 'unknown', why: 'off-in-substitution' };
+    } finally {
+      this.walking.delete(def);
+    }
+  }
+
+  /** Whether a `set` in `sub` before `n` turns errexit on or off (`$(set -e; cmd)`). */
+  private setBefore(sub: SyntaxNode, n: SyntaxNode): boolean {
+    return descendants(sub, ['command']).some((c) => c.startIndex < n.startIndex && this.state.setWrites(c).has('errexit'));
+  }
+
+  turnsErrexitOn(n: SyntaxNode): boolean {
+    return this.state.setWrites(n).get('errexit') === 'on' && this.errexit(n).errexit !== 'on';
+  }
+
+  hidesFailure(n: SyntaxNode): boolean {
+    const rule = this.status(n);
+    if (rule.kind !== 'pipeline' || rule.negated || rule.pipefail !== 'off') return false;
+    return rule.stages.slice(0, -1).some((s) => !cannotFail(s)) && !closesEarly(rule.stages[rule.stages.length - 1]);
   }
 
   expansionError(n: SyntaxNode, env?: WordEnv): { word: SyntaxNode; failure: WordFailure } | undefined {
@@ -308,13 +377,22 @@ export function lastStatements(n: SyntaxNode): SyntaxNode[] {
   return [n];
 }
 
-/** Whether `n` is a `set` command that turns errexit on (`set -e`, `set -euo pipefail`, `set -o errexit`). */
-export function setsErrexit(n: SyntaxNode): boolean {
-  if (n.type !== 'command' || commandName(n) !== 'set') return false;
-  const words = fields(n, 'argument').map((w) => w.text);
-  // (Options end at the first word that is not one: `set -- -e` sets the positional parameters.)
-  const end = words.findIndex((w, i) => !/^-[A-Za-z]/.test(w) && !/^[-+][A-Za-z]*o$/.test(words[i - 1] ?? ''));
-  const options = end < 0 ? words : words.slice(0, end);
-  // (`errexit` is never the first: the options start with `-`.)
-  return options.some((w, i) => /^-[A-Za-z]*e/.test(w) || (w === 'errexit' && /^-[A-Za-z]*o$/.test(options[i - 1]!)));
+/** A pipeline stage that cannot fail: `echo` or `printf` of words with no `$( )`, `cat` of a here-document or a here-string. */
+function cannotFail(stage: SyntaxNode): boolean {
+  const body = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
+  if (body?.type !== 'command' || descendants(body, ['command_substitution', 'process_substitution']).length) return false;
+  const name = commandName(body);
+  if (name === 'echo' || name === 'printf') return stage === body;
+  return name === 'cat' && !fields(body, 'argument').length && stage !== body
+    && fields(stage, 'redirect').every((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect');
+}
+
+/** A last stage that may stop reading before the end: `head`, `grep -q`, `grep -m N`, `sed …q`. */
+function closesEarly(stage: SyntaxNode): boolean {
+  const body = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
+  if (body?.type !== 'command') return false;
+  const name = commandName(body);
+  const args = fields(body, 'argument').map((a) => a.text);
+  return name === 'head' || (name === 'grep' && args.some((a) => /^-[A-Za-z]*[qm]/.test(a) || /^--(quiet|silent|max-count)/.test(a)))
+    || (name === 'sed' && args.some((a) => /q\d*['"]?$/.test(a)));
 }
