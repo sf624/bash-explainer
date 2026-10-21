@@ -130,7 +130,7 @@ describe('argv interpreter: the worked examples of the design', () => {
     assert.deepStrictEqual(roles('kubectl -n prod exec -it web -c app -- ls *.log', kubectl), [
       '-n: -n namespace', 'prod: value 0 of -n NS', 'exec: subcommand exec',
       '  -it: cluster -i pass stdin | -t allocate a TTY', '  web: POD', '  -c: -c container', '  app: value 0 of -c CONTAINER', '  --: end of options',
-      '  ls: command exec ls', '    *.log: ARG1',
+      '  ls: command exec@container ls', '    *.log: ARG1',
     ]);
     // A persistent option is known after the subcommand; the others are not spread into it.
     assert.deepStrictEqual(roles('kubectl logs -n x -f web', kubectl), ['logs: subcommand logs', '  -n: -n namespace', '  x: value 0 of -n NS', '  -f: -f stream the logs', '  web: POD']);
@@ -206,7 +206,13 @@ describe('argv interpreter: commands of the dictionary', () => {
   it('jq --arg n v f: an option with two values', () => {
     assert.deepStrictEqual(roles("jq --arg n v '.x' f").slice(0, 3), ['--arg: --arg pass a string variable (`--arg name value`)', 'n: value 0 of --arg NAME', 'v: value 1 of --arg VALUE']);
     // `--args`: the operands after the filter are values.
-    assert.deepStrictEqual(roles("jq -n --args '$ARGS' a b").slice(2), ["'$ARGS': ARG1", 'a: ARG2', 'b: ARG2']);
+    assert.deepStrictEqual(roles("jq -n --args '$ARGS' a b").slice(2), ["'$ARGS': ARG1", 'a: ARG', 'b: ARG']);
+    // Only the operands after `--args` are values: `jq -c '[input_filename,$ARGS.positional]' in.json --args a` prints `["in.json",["a"]]`.
+    assert.deepStrictEqual(roles("jq '$ARGS' in.json --args a").filter((l) => !l.startsWith('--')), ["'$ARGS': ARG1", 'in.json: ARG2', 'a: ARG']);
+    // With `-f`, too (`jq -n -f prog.jq --args a`: `a` is positional).
+    assert.deepStrictEqual(roles('jq -n -f prog.jq --args a').slice(-1), ['a: ARG']);
+    // jq reads no `--arg=x`: an unknown option (`jq: Unknown option --arg=x`).
+    assert.deepStrictEqual(roles('jq --arg=x y .').slice(0, 1), ['--arg=x: --arg=x?']);
   });
 
   it('cut -d\',\' -f2: a quoted value glued to its option', () => {
@@ -255,8 +261,10 @@ describe('argv interpreter: commands of the dictionary', () => {
     assert.deepStrictEqual(roles('bash -ex script.sh -x'), ['-ex: cluster -e exit on error | -x trace commands', 'script.sh: SCRIPT', '-x: ARG']);
     assert.deepStrictEqual(roles('bash -s a'), ['-s: -s read commands from stdin', 'a: ARG']);
     // `su -c`: the value of `-c` is a shell string.
-    const su = parseOf("su -c 'ls' user").roles[1].role;
-    assert.ok(su.role === 'value' && su.spec?.command?.run === 'shell-string');
+    // `su -c 'cmd'` and `bash -c 'cmd'`: the same form, a command role with a shell-string slot.
+    assert.deepStrictEqual(roles("su -c 'ls' user"), ['-c: -c run the given command with the shell', "'ls': command shell-string of -c", 'user: ARG1']);
+    // `bash +x s.sh`: `+x` is an option (`bash +x /dev/null` exits 0).
+    assert.deepStrictEqual(roles('bash +x s.sh'), ['+x: +x (off) trace commands', 's.sh: SCRIPT']);
   });
 
   it('env A=1 cmd: assignments, then the command; the first word that is not one ends the options', () => {
@@ -269,7 +277,7 @@ describe('argv interpreter: commands of the dictionary', () => {
   it('xargs -I{} f {}: a value attached to its option, then the command', () => {
     assert.deepStrictEqual(roles('xargs -I{} f {}').map((l) => l.replace(/=2 .*/, '=2')), ['-I{}: -I=2', 'f: command exec f (unknown)', '  {}: operand']);
     // `-r$x`: what follows is not known, and `-r` takes no value: an operand.
-    assert.deepStrictEqual(roles('xargs -r$x'), ['-r$x: command exec (unknown)']);
+    assert.deepStrictEqual(roles('xargs -r$x'), ['-r$x: open -r']);
   });
 
   it('`--` ends the options, except for echo; a builtin reads options before its first operand', () => {
@@ -288,8 +296,10 @@ describe('argv interpreter: commands of the dictionary', () => {
   it('set: `+` turns options off, and `-o` takes the next word even inside a cluster', () => {
     assert.deepStrictEqual(roles('set -euo pipefail'), ['-euo: cluster -e exit immediately if a command fails | -u treat unset variables as an error | -o enable an option by name', 'pipefail: value 0 of -o VALUE']);
     assert.deepStrictEqual(roles('set -oe pipefail').slice(1), ['pipefail: value 0 of -o VALUE']);
-    assert.deepStrictEqual(roles('set +x +o xtrace'), ['+x: -x (off) print each command after expansion (debugging)', '+o: -o (off) enable an option by name', 'xtrace: value 0 of -o VALUE']);
-    assert.deepStrictEqual(roles('set +ex')[0], '+ex: cluster -e (off) exit immediately if a command fails | -x (off) print each command after expansion (debugging)');
+    // The flags as written; a value names its option's flag (`of`).
+    assert.deepStrictEqual(roles('set +x +o xtrace'), ['+x: +x (off) print each command after expansion (debugging)', '+o: +o (off) enable an option by name', 'xtrace: value 0 of +o VALUE']);
+    assert.deepStrictEqual(roles('set -o'), ['-o: -o (no value) enable an option by name']);
+    assert.deepStrictEqual(roles('set +ex')[0], '+ex: cluster +e (off) exit immediately if a command fails | +x (off) print each command after expansion (debugging)');
     assert.deepStrictEqual(roles('set -- a').map((l) => l.split(':')[0]), ['--', 'a']);
   });
 
@@ -300,7 +310,8 @@ describe('argv interpreter: commands of the dictionary', () => {
 
   it('find: the options before the paths, then the expression for its own parser', () => {
     const p = parseOf('find -L . /tmp -name x -exec rm {} +');
-    assert.deepStrictEqual(render(p, argWords('find -L . /tmp -name x').texts), ['-L: -L follow symbolic links', '.: ARG1', '/tmp: ARG1']);
+    assert.deepStrictEqual(render(p, argWords('find -L . /tmp -name x -exec rm {} +').texts).slice(0, 5), ['-L: -L follow symbolic links', '.: ARG1', '/tmp: ARG1', '-name: expression', 'x: expression']);
+    assert.strictEqual(p.roles.length, 9);
     assert.strictEqual(p.expression, 3);
     assert.strictEqual(parseOf('find . \\( -a \\)').expression, 1);
     assert.strictEqual(parseOf('find .').expression, undefined);
@@ -334,8 +345,8 @@ describe('argv interpreter: the option grammar', () => {
     // A next-only value: the next word, and the letters after it still count.
     assert.deepStrictEqual(roles('t -xa p f', spec), ['-xa: cluster -x exclude | -a all', 'p: value 0 of -x PATTERN', 'f: FILE']);
     // A value at the end of the words is missing.
-    assert.deepStrictEqual(roles('t -an', spec), ['-an: cluster -a all | -n lines']);
-    assert.deepStrictEqual(roles('t -n', spec), ['-n: -n lines']);
+    assert.deepStrictEqual(roles('t -an', spec), ['-an: cluster -a all | -n (no value) lines']);
+    assert.deepStrictEqual(roles('t -n', spec), ['-n: -n (no value) lines']);
     // Unknown letters, and an unknown single letter.
     assert.deepStrictEqual(roles('t -az -q', spec), ['-az: cluster -a all | -z?', '-q: -q?']);
   });
@@ -350,7 +361,7 @@ describe('argv interpreter: the option grammar', () => {
     // A unique prefix; an ambiguous one (`--ver`) and an unknown one are unknown options.
     assert.deepStrictEqual(roles('t --lin 5 --ver --nope=1 --nope', spec), ['--lin: --lin lines', '5: value 0 of --lin N', '--ver: --ver?', '--nope=1: --nope?=7', '--nope: --nope?']);
     // `--file=$x`: the value is not known, the option is.
-    assert.deepStrictEqual(roles('t --lines=$n --$x --lines$x', spec), ['--lines=$n: --lines=8 lines', '--$x: FILE', '--lines$x: FILE']);
+    assert.deepStrictEqual(roles('t --lines=$n --$x --lines$x', spec), ['--lines=$n: --lines=8 lines', '--$x: open --', '--lines$x: open --lines']);
   });
 
   it('reads the words up to a terminator as a command', () => {
@@ -362,7 +373,7 @@ describe('argv interpreter: the option grammar', () => {
   it('reads single-dash options', () => {
     const sd: CommandSpec = { summary: t('sd'), style: 'single-dash', options: [opt('-var-file', 'variables file', { value: { name: 'FILE' } }), opt('-v', 'v')] };
     assert.deepStrictEqual(roles('sd -var-file=x -var-file y -nope -no=1 -v$x a -vx$y', sd), [
-      '-var-file=x: -var-file=10 variables file', '-var-file: -var-file variables file', 'y: value 0 of -var-file FILE', '-nope: -nope?', '-no=1: -no=1?', '-v$x: operand', 'a: operand', '-vx$y: operand',
+      '-var-file=x: -var-file=10 variables file', '-var-file: -var-file variables file', 'y: value 0 of -var-file FILE', '-nope: -nope?', '-no=1: -no=1?', '-v$x: open -v', 'a: operand', '-vx$y: open -vx',
     ]);
   });
 
@@ -381,18 +392,24 @@ describe('argv interpreter: the option grammar', () => {
   it('matches operand patterns with backtracking, and gives up past the work cap', () => {
     const w = (s: string): ArgWord[] => s.split(' ').map((value) => ({ value }));
     const seq = [item('FIRST', { repeat: '?' }), item('INCREMENT', { repeat: '?' }), item('LAST')];
-    assert.deepStrictEqual(match(seq, w('5'), 100), [2]);
-    assert.deepStrictEqual(match(seq, w('1 5'), 100), [0, 2]);
-    assert.deepStrictEqual(match(seq, w('1 2 5'), 100), [0, 1, 2]);
-    assert.strictEqual(match(seq, w('1 2 3 4'), 100), undefined);
-    const many = [item('A', { repeat: '*' }), item('B', { repeat: '*' }), item('C', { repeat: '*' }), item('D')];
-    const words = w('a b c d e f g h i j k l m n o p');
-    assert.ok(match([...many, item('E')], words, 100000));
-    assert.strictEqual(match([...many, item('E'), item('F', { assignment: true })], words, 50), undefined);
-    // The cap reaches the interpreter: the operands are left unmatched.
-    const spec: CommandSpec = { summary: t('m'), operands: [{ pattern: [...many, item('E')] }] };
-    assert.deepStrictEqual(roles('m a b c d e f', spec, { maxSteps: 5 }), ['a: operand', 'b: operand', 'c: operand', 'd: operand', 'e: operand', 'f: operand']);
-    assert.deepStrictEqual(roles('m a b', spec), ['a: D', 'b: E']);
+    assert.deepStrictEqual(match(seq, w('5'), 100), { items: [2] });
+    assert.deepStrictEqual(match(seq, w('1 5'), 100), { items: [0, 2] });
+    assert.deepStrictEqual(match(seq, w('1 2 5'), 100), { items: [0, 1, 2] });
+    assert.deepStrictEqual(match(seq, w('1 2 3 4'), 100), {});
+    // Memoized: a pattern that cannot fit, over 41 words, is answered at once (it was exponential).
+    const words = w(Array.from({ length: 41 }, (_, k) => `w${k}`).join(' '));
+    const hard = [item('A', { repeat: '*' }), item('B', { repeat: '*' }), item('C', { repeat: '*' }), item('Z', { assignment: true }), item('D', { repeat: '*' })];
+    assert.deepStrictEqual(match(hard, words, 100000), {});
+    // The cap is a guard: past it, the answer is "gave up", not "does not fit".
+    assert.deepStrictEqual(match(hard, words, 50), { gaveUp: true });
+    const spec: CommandSpec = { summary: t('m'), operands: [{ pattern: hard }] };
+    const p = parseOf('m a b c', spec);
+    assert.deepStrictEqual([p.unmatched, p.gaveUp], [[0, 1, 2], undefined]);
+    const { words: ws, texts } = argWords('m a b c');
+    const capped = interpret(spec, ws, { maxSteps: 3 });
+    assert.deepStrictEqual([render(capped, texts), capped.gaveUp], [['a: operand', 'b: operand', 'c: operand'], true]);
+    const many = [item('A', { repeat: '*' }), item('B', { repeat: '*' }), item('C', { repeat: '*' }), item('D'), item('E')];
+    assert.deepStrictEqual(roles('m a b', { summary: t('m'), operands: [{ pattern: many }] }), ['a: D', 'b: E']);
   });
 
   it('applies the conditions of the alternatives', () => {
@@ -433,7 +450,7 @@ describe('argv interpreter: the option grammar', () => {
     const awk: CommandSpec = { summary: t('awk'), operands: [{ pattern: [item('FILE', { repeat: '*', assignmentText: t('assignment') })] }] };
     assert.deepStrictEqual(interpret(awk, [{}, { prefix: 'v=' }]).roles.map((r) => r.role.role === 'operand' && !!r.role.assignment), [false, true]);
     // `echo -n$x`: an option only when every letter is known.
-    assert.deepStrictEqual(roles('echo -n$x a'), ['-n$x: ARG1', 'a: ARG1']);
+    assert.deepStrictEqual(roles('echo -n$x a'), ['-n$x: open -n', 'a: ARG1']);
   });
 
   it('gives a command the words after it, also those read as options before the command was known', () => {
@@ -449,6 +466,79 @@ describe('argv interpreter: the option grammar', () => {
     assert.strictEqual(p.command, '');
     const c = p.roles[0].role;
     assert.ok(c.role === 'command' && c.spec === undefined && c.parse!.roles.length === 1);
+  });
+});
+
+
+describe('argv interpreter: review fixes', () => {
+  it('kill: only the first signal is one; a later `-1` is a PID (bash kill.def, `saw_signal`)', () => {
+    // `bash -c 'kill -9 -999999'`: "No such process": `-999999` is a process group, not a signal.
+    assert.deepStrictEqual(roles('kill -9 -1'), ['-9: -9 force kill (SIGKILL)', '-1: ARG1']);
+    assert.deepStrictEqual(roles('kill -s TERM -1').slice(2), ['-1: ARG1']);
+    assert.deepStrictEqual(roles('kill -s TERM -9').slice(2), ['-9: ARG1']);
+    assert.deepStrictEqual(roles('kill -TERM -15').map((l) => l.split(':')[1].trim().split(' ')[0]), ['pattern', 'ARG1']);
+    // `-l` sets no signal.
+    assert.deepStrictEqual(roles('kill -l -15')[1].split(':')[1].trim().split(' ')[0], 'pattern');
+  });
+
+  it('reads `-` and an expansion as an option known at run time', () => {
+    assert.deepStrictEqual(roles('kill -$sig $pid'), ['-$sig: pattern (open) Send the signal the expansion names (same as `-s NAME`)', '$pid: ARG1']);
+    assert.deepStrictEqual(roles('head -$n f'), ['-$n: pattern (open) as many lines as the expansion gives (old way to write `-n N`)', 'f: ARG1']);
+    // No operand slot: `cp -$opts a b` keeps `b` as the destination.
+    assert.deepStrictEqual(roles('cp -$opts a b'), ['-$opts: open -', 'a: ARG1', 'b: ARG2']);
+    assert.deepStrictEqual(roles('ls -l$x d'), ['-l$x: open -l', 'd: ARG1']);
+    assert.deepStrictEqual(roles('nice --5 make').slice(0, 1), ['--5: pattern niceness adjustment -5 (old way to write `-n -5`; a negative value needs privileges)']);
+  });
+
+  it('ssh: options again after the host, up to the command, whose words are joined for the remote shell', () => {
+    // `ssh -G localhost ls -l` still shows the local user: `-l` belongs to the remote command.
+    assert.deepStrictEqual(roles('ssh host ls -l'), ['host: ARG1', 'ls: command shell-string@remote', '-l: joined']);
+    assert.deepStrictEqual(roles('ssh -p 22 host -t ls -l').map((l) => l.split(':')[0] + ':' + l.split(': ')[1].split(' ')[0]), ['-p:-p', '22:value', 'host:ARG1', '-t:-t', 'ls:command', '-l:joined']);
+  });
+
+  it('flock: options end at the file, except `-c` right after it', () => {
+    // `flock /tmp/l -n true`: "failed to execute -n".
+    assert.deepStrictEqual(roles('flock /tmp/l -n true'), ['/tmp/l: ARG1', '-n: command exec -n (unknown)', '  true: operand']);
+    assert.deepStrictEqual(roles("flock -n /tmp/l -c 'x'"), ['-n: -n fail instead of waiting if the lock is taken', '/tmp/l: ARG1', '-c: -c command string to run with the shell', "'x': command shell-string"]);
+    assert.deepStrictEqual(roles("flock /tmp/l --command 'x'").slice(1, 2), ['--command: --command command string to run with the shell']);
+  });
+
+  it('a language of the operands does not carry over to the alternatives an option chooses', () => {
+    const lang = (line: string) => parseOf(line).roles.flatMap((r) => (r.role.role === 'operand' ? [r.role.spec?.lang ?? '-'] : []));
+    // `chmod --reference=r u+x`: `u+x` is a file (chmod: cannot access 'u+x').
+    assert.deepStrictEqual(lang('chmod --reference=r u+x'), ['-']);
+    assert.deepStrictEqual(lang('chmod u+x f'), ['mode', '-']);
+    // `echo -e -E`: the last one decides.
+    const echo = (line: string) => parseOf(line).roles.flatMap((r) => (r.role.role === 'operand' ? [r.role.spec?.lang ?? '-'] : []));
+    assert.deepStrictEqual([echo('echo -e x'), echo('echo -e -E x'), echo('echo -Ee x'), echo('echo x')], [['echo'], ['-'], ['echo'], ['-']]);
+  });
+
+  it('a word that may be several words: the role is certain only when it is the same for any count', () => {
+    assert.deepStrictEqual(roles('cp {a,b} dir'), ['{a,b}: ARG1', 'dir: ARG3']);
+    assert.deepStrictEqual(roles('cp *.txt dir'), ['*.txt: ARG1', 'dir: ARG2 (uncertain)']);
+    assert.deepStrictEqual(roles('cp "$@" dir'), ['"$@": ARG1', 'dir: ARG2 (uncertain)']);
+    assert.deepStrictEqual(roles('cp {a,b}'), ['{a,b}: ARG1 (uncertain)']);
+    // Only the many-words reading fits.
+    const three: CommandSpec = { summary: t('three'), operands: [{ pattern: [item('A'), item('B'), item('C')] }] };
+    assert.deepStrictEqual(render(interpret(three, [{ value: 'x', count: { min: 0 } }]), ['$x']), ['$x: A (uncertain)']);
+    // When more words fit nothing, the one reading that fits stands.
+    const two: CommandSpec = { summary: t('two'), operands: [{ pattern: [item('A'), item('B')] }] };
+    assert.deepStrictEqual(render(interpret(two, [{ value: 'x', count: { min: 1, max: 5 } }, { value: 'y' }]), ['$x', 'y']), ['$x: A', 'y: B']);
+  });
+
+  it('records the alternative the operands fit; operands the spec does not describe are not unmatched', () => {
+    assert.strictEqual(parseOf('cp a b').alternative, 0);
+    assert.strictEqual(parseOf('cp a b c').alternative, 1);
+    const p = parseOf('true a b');
+    assert.deepStrictEqual([p.unmatched, p.alternative, render(p, ['a', 'b'])], [[], undefined, ['a: operand', 'b: operand']]);
+  });
+
+  it('reads more values, and `-f=FORMAT` for dpkg', () => {
+    const spec: CommandSpec = fromCommandDoc(cmd('n', 'n', [['--three', 't', 'three', 'arg3']]), 'n');
+    assert.deepStrictEqual(roles('n --three a b c d', spec), ['--three: --three three', 'a: value 0 of --three VALUE1', 'b: value 1 of --three VALUE2', 'c: value 2 of --three VALUE3', 'd: operand']);
+    // `dpkg-query -W -f=X bash` prints `X`: the value starts after the `=`.
+    assert.deepStrictEqual(roles("dpkg-query -W -f='${Package}' bash")[1].split(':')[0] + roles("dpkg-query -W -f='${Package}' bash")[1].replace(/.*: -f=(\d).*/, ' $1'), "-f='${Package}' 3");
+    assert.match(roles('cut -f=2 x')[0], /-f=2 /);
   });
 });
 
