@@ -95,7 +95,7 @@ const scenarioSettings = {
   panel: { 'bashExplainer.hover.enabled': false, 'bashExplainer.panel.autoOpen': true },
   inline: { 'bashExplainer.hover.enabled': false, 'bashExplainer.inline.enabled': true },
 };
-const viewport = { demo: [1280, 720], hover: [1000, 600], panel: [1280, 720], inline: [1280, 720] };
+const viewport = { demo: [1280, 840], hover: [1000, 600], panel: [1280, 720], inline: [1280, 720] };
 const startMouse = { demo: [900, 600], hover: [900, 520], panel: [330, 640], inline: [-100, -100] };
 
 async function launch(code, work, extDir, scenario) {
@@ -243,7 +243,10 @@ async function record(page, scenario, frameDir) {
     const loop = (async () => {
       const t0 = Date.now();
       while (recording) {
-        frames.push({ t: Date.now() - t0, buf: await page.screenshot({ type: 'png' }) });
+        // When a step fails, the window closes under the loop; let that step's error be the one reported.
+        const buf = await page.screenshot({ type: 'png' }).catch(() => undefined);
+        if (!buf) break;
+        frames.push({ t: Date.now() - t0, buf });
         await sleep(40);
       }
     })();
@@ -254,42 +257,54 @@ async function record(page, scenario, frameDir) {
   await setCursor(mx, my);
 
   if (scenario === 'demo') {
-    await clickLineEnd(8);
+    // The cursor waits on the pipeline of line 8; the panel is opened as a user would, from the editor title bar.
+    await hoverWord(8, 'grep', 10);
+    await click();
+    await moveTo(...startMouse.demo, 10);
     const stop = start();
-    await sleep(300);
-    await hoverWord(8, 'grep', 800);
-    await sleep(1600);
-    // The link sits at the bottom of a long hover; scroll it into view.
-    const link = page.locator('.monaco-hover a', { hasText: 'Open in panel' }).first();
-    const hb = await page.locator('.monaco-hover:visible').first().boundingBox();
-    await moveTo(hb.x + hb.width * 0.55, Math.min(hb.y + hb.height * 0.6, 640), 700);
-    let lb = await link.boundingBox();
-    for (let i = 0; i < 20 && lb.y + lb.height > Math.min(700, hb.y + hb.height - 8); i++) {
-      await page.mouse.wheel(0, 100);
-      await sleep(120);
-      lb = await link.boundingBox();
-    }
-    await sleep(400);
-    await moveTo(lb.x + lb.width / 2, lb.y + lb.height / 2, 700);
+    await sleep(600);
+    const open = page.locator('a.codicon-comment-discussion[aria-label^="Open Bash Explanation Panel"]').first();
+    const ob = await open.boundingBox();
+    await moveTo(ob.x + ob.width / 2, ob.y + ob.height / 2, 900);
     await sleep(300);
     await click();
-    // Keep the old hover from coming back over the new panel.
-    await page.keyboard.press('Escape');
-    await moveTo(mx, 690, 250);
-    await page.keyboard.press('Escape');
-    await sleep(700);
     const f = await panelFrame();
-    const sb = await f.locator('.seg', { hasText: '2>/dev/null' }).first().boundingBox();
-    await moveTo(sb.x + sb.width / 2, 690, 500);
-    await moveTo(sb.x + sb.width / 2, sb.y + sb.height / 2, 600);
-    await sleep(1800);
-    await moveTo(300, 600, 700);
-    await clickLineEnd(10);
-    await sleep(300);
-    await page.keyboard.press('ArrowDown');
-    await sleep(1500);
-    await page.keyboard.press('ArrowDown');
-    await sleep(1800);
+    await sleep(1600);
+    // The worked example of the whole pipeline sits under its row; scroll until all of it shows.
+    const ex = f.locator('.example').first();
+    const area = ex.locator('textarea');
+    const pb = await f.locator('#main').boundingBox();
+    await moveTo(pb.x + pb.width * 0.6, 560, 700);
+    // Stop with the example's heading just under the panel's header, or once all of it shows.
+    const [, vh] = viewport.demo;
+    const hb = await f.locator('header').boundingBox();
+    for (let i = 0; i < 40; i++) {
+      const b = await ex.boundingBox();
+      if (b.y - 40 < hb.y + hb.height + 6 || b.y + b.height + 60 < vh - 22) break;
+      await page.mouse.wheel(0, 40);
+      await sleep(50);
+    }
+    await sleep(1600);
+    // Make the fourth input line ("RROR") match: grep keeps it, so tail's last 5 lines change.
+    const ab = await area.boundingBox();
+    const { top, line } = await area.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { top: parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth), line: parseFloat(cs.lineHeight) };
+    });
+    await moveTo(ab.x + 14, ab.y + top + line * 3.5, 800);
+    await sleep(200);
+    await click();
+    await page.keyboard.press('Home');
+    await sleep(500);
+    await page.keyboard.type('E', { delay: 120 });
+    await sleep(800);
+    // Step aside so the pointer does not hide the result.
+    await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * 3.5, 500);
+    await sleep(2400);
+    // Back in the editor, a hover explains a single word.
+    await moveTo(...startMouse.demo, 700);
+    await hoverWord(2, 'pipefail', 800);
+    await sleep(3200);
     await stop();
   } else if (scenario === 'hover') {
     const stop = start();
