@@ -18,7 +18,7 @@ import { Analyzer, LineExplanation, Span } from '../src/analyzer';
 import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
-import { highlight, HighlightKind, hostedHighlight } from '../src/highlight';
+import { documentHighlight, HighlightKind } from '../src/highlight';
 import { extractShell } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -237,12 +237,11 @@ interface Shading { from: number; to: number; kind: HighlightKind }
 function shadings(): Shading[] {
   const doc = shellDocument()!;
   if (parsed!.spans) return parsed!.spans;
-  const spans = highlight(doc.tree);
-  const editorDoc = view.state.doc;
-  // In a host file, the shell code sits in other columns of the same lines.
-  parsed!.spans = doc.extracted
-    ? hostedHighlight(spans, doc.extracted).map((s) => ({ from: editorDoc.line(s.line + 1).from + s.from, to: editorDoc.line(s.line + 1).from + s.to, kind: s.kind }))
-    : spans;
+  const lines = view.state.doc;
+  parsed!.spans = documentHighlight(doc).map((s) => {
+    const start = lines.line(s.line + 1).from;
+    return { from: start + s.from, to: start + s.to, kind: s.kind };
+  });
   return parsed!.spans;
 }
 
