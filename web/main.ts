@@ -28,6 +28,7 @@ import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
+import { narrow, setUpEdgeSwipe, setUpSheet, setUpSplitter } from './layout';
 import { SettingsDialog } from './settings-dialog';
 
 declare const __VERSION__: string;
@@ -75,6 +76,10 @@ const TEXT = {
     otherNames: { release: 'Release', next: 'main' },
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
     settings: 'Settings',
+    menu: 'Menu',
+    close: 'Close',
+    github: 'Source code on GitHub',
+    resize: 'Resize the script and the explanation',
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -112,6 +117,10 @@ const TEXT = {
     otherNames: { release: 'リリース版', next: 'main' },
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
     settings: '設定',
+    menu: 'メニュー',
+    close: '閉じる',
+    github: 'GitHub のソースコード',
+    resize: 'スクリプトと解説の大きさを変える',
   },
 };
 
@@ -677,9 +686,18 @@ function applyLanguage(): void {
   put('install', t.install);
   put('kind-label', t.kind);
   put('lang-label', t.lang);
-  put('sample', t.sample);
-  put('share', t.share);
+  put('menu-sample-label', t.sample);
+  put('menu-share-label', t.share);
+  put('menu-settings-label', t.settings);
+  put('menu-install-label', t.install);
   put('settings-label', t.settings);
+  put('drawer-title', t.menu);
+  // The buttons drawn as icons say what they do to screen readers and in a tooltip.
+  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize]]) {
+    const el = document.getElementById(id);
+    el?.setAttribute('aria-label', name);
+    if (id !== 'splitter') el?.setAttribute('title', name);
+  }
   put('privacy', t.privacy);
   put('notices', t.notices);
   put('editor-head', t.editor);
@@ -723,9 +741,8 @@ function applyLanguage(): void {
     $('banner-commit').textContent = __COMMIT__;
     $('channel-banner').hidden = false;
   } else {
-    $('dev-link').textContent = t.dev;
+    put('dev-link-label', t.dev);
     $('dev-link').hidden = false;
-    $('dev-sep').hidden = false;
   }
   $<HTMLSelectElement>('lang').value = lang;
   $<HTMLSelectElement>('kind').replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind, false, k.kind === kind)));
@@ -795,6 +812,34 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   codes: () => codesSeen,
 });
 on('settings-open', 'click', () => settingsDialog?.show());
+if (dialogElement) setUpSheet(dialogElement);
+
+// ---- The menu: a sheet from the right, with what the top bar has no room for ----------------------
+
+const drawer = document.getElementById('drawer') as HTMLDialogElement | null;
+function openMenu(): void {
+  if (!drawer || drawer.open || settingsDialog?.open) return;
+  drawer.showModal();
+}
+on('menu-open', 'click', openMenu);
+on('menu-close', 'click', () => drawer?.close());
+if (drawer) setUpSheet(drawer);
+const edge = document.getElementById('edge');
+if (edge) setUpEdgeSwipe(edge, openMenu);
+// The menu's items do what the top bar's buttons do, and close the menu first.
+for (const [item, target] of [['menu-settings', 'settings-open'], ['menu-sample', 'sample'], ['menu-share', 'share']]) {
+  on(item, 'click', () => {
+    drawer?.close();
+    $(target).click();
+  });
+}
+
+// ---- The divider between the editor and the explanation ------------------------------------------
+
+const splitElement = document.getElementById('split');
+if (splitElement && !panelOnly) setUpSplitter(splitElement, $('splitter'), () => view.requestMeasure());
+// The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
+narrow.addEventListener('change', () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'center' }) }));
 
 $<HTMLSelectElement>('kind').addEventListener('change', (e) => {
   const before = kindInfo(kind);

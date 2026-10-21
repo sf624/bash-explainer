@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!-- Everything runs in this page: scripts are explained here and sent nowhere. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <meta name="description" content="Explains shell scripts line by line, like regex101 for bash. Runs in your browser; your script is sent nowhere.">
 <!--robots-->
 <title>Bash Explainer</title>
@@ -14,40 +14,72 @@
 <link rel="stylesheet" href="page.css">
 </head>
 <body>
+<svg class="icons" aria-hidden="true">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M18.47 9.32L21.36 10.37L21.36 13.63L18.47 14.68L19.77 17.46L17.46 19.77L14.68 18.47L13.63 21.36L10.37 21.36L9.32 18.47L6.54 19.77L4.23 17.46L5.53 14.68L2.64 13.63L2.64 10.37L5.53 9.32L4.23 6.54L6.54 4.23L9.32 5.53L10.37 2.64L13.63 2.64L14.68 5.53L17.46 4.23L19.77 6.54Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-sample" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+  <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="7" r="2"/><path d="M7 8v8M17 9c0 5-10 3-10 7"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
 <div id="channel-banner" class="banner" role="note" hidden><span id="banner-text"></span> <a id="banner-release" href="../"></a> · <a id="banner-compare" href="compare.html"></a> · <a id="banner-pr" href="https://github.com/sf624/bash-explainer/pull/" hidden></a><span id="banner-pr-sep" hidden> · </span><a id="banner-commit" href="https://github.com/sf624/bash-explainer/commit/"></a></div>
 <header class="top">
-  <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"><span>Bash Explainer</span></a>
+  <a class="brand" href="./" aria-label="Bash Explainer"><img src="icon.png" alt="" width="26" height="26"><span class="brand-name">Bash Explainer</span></a>
+  <label class="kind"><span id="kind-label" class="sr-only">File</span><select id="kind"></select></label>
   <p class="tagline" id="tagline">Explains shell scripts line by line. Move the cursor to a line to see what it does.</p>
-  <nav class="links">
+  <div class="actions">
+    <button id="sample" class="icon-btn wide-only" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg></button>
+    <button id="share" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg></button>
+    <button id="settings-open" class="icon-btn" type="button" aria-haspopup="dialog"><svg aria-hidden="true"><use href="#i-gear"/></svg><span id="settings-label" class="sr-only">Settings</span></button>
+    <span class="sep wide-only" aria-hidden="true"></span>
+    <a id="github" class="icon-btn wide-only" href="https://github.com/sf624/bash-explainer"><svg aria-hidden="true"><use href="#i-branch"/></svg></a>
     <a id="install" class="install" href="https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer">Install for VS Code</a>
-    <a href="https://github.com/sf624/bash-explainer">GitHub</a>
-  </nav>
+    <button id="menu-open" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="drawer"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
+  </div>
 </header>
-<div class="toolbar">
-  <label><span id="kind-label">File</span> <select id="kind"></select></label>
-  <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
-  <label><span id="channel-label">Version</span> <select id="channel"></select></label>
-  <label><span id="theme-label">Theme</span> <select id="theme"></select></label>
-  <button id="settings-open" type="button" aria-haspopup="dialog"><span aria-hidden="true">⚙</span> <span id="settings-label">Settings</span></button>
-  <button id="sample" type="button">Load the sample</button>
-  <button id="share" type="button">Copy a link to this script</button>
-  <span id="status" role="status"></span>
-</div>
-<main class="split">
-  <section class="source">
+<main class="split" id="split">
+  <section class="source" id="source">
     <div id="editor"></div>
     <section id="problems" hidden>
       <h2 id="problems-title">Problems</h2>
       <ul id="problem-list"></ul>
     </section>
   </section>
+  <div id="splitter" class="splitter" role="separator" tabindex="0" aria-controls="source" aria-valuemin="15" aria-valuemax="85" aria-valuenow="50"></div>
   <iframe id="panel" src="panel.html" title="Explanation"></iframe>
 </main>
-<dialog id="settings-dialog" aria-labelledby="settings-title"></dialog>
-<footer>
-  <p id="privacy">Your script stays in this browser: it is parsed and explained here, with no server and no AI.</p>
-  <p><span id="version"></span> · <a id="dev-link" class="dev-link" href="next/" hidden></a><span id="dev-sep" hidden> · </span><a href="LICENSE.txt">MIT License</a> · <a id="notices" href="THIRD_PARTY_NOTICES.txt">Third-party notices</a></p>
-</footer>
+<p id="status" role="status"></p>
+<div class="edge" id="edge" aria-hidden="true"></div>
+<dialog id="drawer" class="sheet menu" aria-labelledby="drawer-title">
+  <header class="sheet-head">
+    <h2 id="drawer-title">Menu</h2>
+    <button id="menu-close" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="sheet-body">
+    <section class="menu-group">
+      <label class="field"><span id="lang-label">Language</span><select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
+      <label class="field"><span id="theme-label">Theme</span><select id="theme"></select></label>
+      <label class="field"><span id="channel-label">Version</span><select id="channel"></select></label>
+    </section>
+    <section class="menu-group">
+      <button id="menu-settings" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-gear"/></svg><span id="menu-settings-label">Settings</span></button>
+      <button id="menu-sample" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="menu-sample-label">Load the sample</span></button>
+      <button id="menu-share" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
+    </section>
+    <section class="menu-group">
+      <a id="menu-install" class="menu-item" href="https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer"><svg aria-hidden="true"><use href="#i-install"/></svg><span id="menu-install-label">Install for VS Code</span></a>
+      <a class="menu-item" href="https://github.com/sf624/bash-explainer"><svg aria-hidden="true"><use href="#i-branch"/></svg><span>GitHub</span></a>
+      <a id="dev-link" class="menu-item" href="next/" hidden><svg aria-hidden="true"><use href="#i-code"/></svg><span id="dev-link-label"></span></a>
+    </section>
+    <section class="menu-group about">
+      <p id="privacy">Your script stays in this browser: it is parsed and explained here, with no server and no AI.</p>
+      <p><span id="version"></span> · <a href="LICENSE.txt">MIT License</a> · <a id="notices" href="THIRD_PARTY_NOTICES.txt">Third-party notices</a></p>
+    </section>
+  </div>
+</dialog>
+<dialog id="settings-dialog" class="sheet" aria-labelledby="settings-title"></dialog>
 <noscript><p class="noscript">Bash Explainer needs JavaScript to run in the browser.</p></noscript>
 <script src="app.js"></script>
 </body>
