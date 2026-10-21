@@ -1,4 +1,5 @@
-import { cmd, CommandDoc, native, OptSpec, pos, runs } from './types';
+import { tx } from '../i18n';
+import { args, cmd, CommandDoc, native, operand, OptSpec, pos, runs } from './types';
 
 // System administration commands from the LPIC and LinuC objectives: boot loaders and kernel
 // modules, package tools of the Debian and Red Hat families, accounts, scheduling, time, logs,
@@ -187,13 +188,13 @@ export const admin: Record<string, CommandDoc> = {
     ['-p|--priority', '指定した優先度以上の質問だけ', 'only ask questions of the given priority or higher', 'arg'],
     ['-a|--all', 'すべてのパッケージを再設定する', 'reconfigure all packages'],
   ], { positional: [pkg] }),
-  'dpkg-deb': cmd('.deb パッケージの中身を調べる・作る・取り出す', 'Inspect, build and unpack .deb packages', [
+  'dpkg-deb': native('.deb パッケージの中身を調べる・作る・取り出す', 'Inspect, build and unpack .deb packages', [
     ['-c|--contents', '含まれるファイルを一覧表示', 'list the files inside'],
     ['-I|--info', 'パッケージの情報を表示', 'show package information'],
     ['-x|--extract', '指定ディレクトリに展開する', 'extract into a directory'],
     ['-R|--raw-extract', '制御ファイルも含めて展開する', 'extract with the control files'],
     ['-b|--build', 'ディレクトリから .deb を作る', 'build a .deb from a directory'],
-  ], { positional: [pos('.deb ファイル', '.deb file')] }),
+  ], { shortEquals: true, ...args(operand('DEB', '.deb ファイル', '.deb file')) }),
   alien: cmd('パッケージの形式（rpm、deb、tgz）を相互に変換する', 'Convert between package formats (rpm, deb, tgz)', [
     ['-d|--to-deb', 'deb に変換（既定）', 'convert to deb (default)'],
     ['-r|--to-rpm', 'rpm に変換', 'convert to rpm'],
@@ -223,14 +224,15 @@ export const admin: Record<string, CommandDoc> = {
     },
   }),
   // ---- Red Hat and SUSE package tools -------------------------------------------------------
-  rpm: cmd('RPM パッケージを入れる・問い合わせる・検証する', 'Install, query and verify RPM packages', [
-    ['-i|--install', 'インストールする', 'install'],
+  // `rpm -i` installs, but `rpm -qi` (in the query mode) shows information about a package.
+  rpm: native('RPM パッケージを入れる・問い合わせる・検証する', 'Install, query and verify RPM packages', [
+    { names: ['-i', '--install'], text: tx('インストールする', 'install'), inMode: { query: tx('パッケージの情報を表示する', 'show package information') } },
     ['-U|--upgrade', '更新する（なければ入れる）', 'upgrade (install if absent)'],
     ['-F|--freshen', '入っているものだけ更新する', 'upgrade only if already installed'],
     ['-e|--erase', '削除する', 'erase'],
     ['-v|--verbose', '詳しく表示する', 'verbose'],
     ['-h|--hash', '進行状況を `#` で表示する', 'print hash marks as progress'],
-    ['-q|--query', 'インストール済みのパッケージを問い合わせる', 'query installed packages'],
+    { names: ['-q', '--query'], text: tx('インストール済みのパッケージを問い合わせる', 'query installed packages'), selects: 'query' },
     ['-a|--all', 'すべてのパッケージ（`-qa`）', 'all packages (`-qa`)'],
     ['-l|--list', '含まれるファイルを一覧表示（`-ql`）', 'list the files (`-ql`)'],
     ['-f|--file', '指定したファイルを持つパッケージを調べる（`-qf`）', 'which package owns the given file (`-qf`)'],
@@ -246,7 +248,7 @@ export const admin: Record<string, CommandDoc> = {
     ['--provides', '提供するものを表示', 'show what the package provides'],
     ['--scripts', 'インストール用のスクリプトを表示', 'show install scripts'],
     ['--changelog', '変更履歴を表示', 'show the changelog'],
-  ], { positional: [rpmFile] }),
+  ], { modes: [{ name: 'query' }], ...args({ name: 'PACKAGE', text: rpmFile }) }),
   rpm2cpio: cmd('RPM を cpio アーカイブにして標準出力に書く（中身を取り出すのに使う）', 'Write an RPM as a cpio archive to stdout (to extract its files)', [], { positional: [pos('RPM ファイル', 'RPM file')] }),
   yumdownloader: cmd('RPM パッケージをインストールせずにダウンロードする', 'Download RPM packages without installing them', [
     ['--resolve', '依存するパッケージも取得する', 'also download dependencies'],
@@ -711,6 +713,3 @@ export const admin: Record<string, CommandDoc> = {
     ['--reuse-cmdline', '現在のカーネルのコマンドラインを使う', 'reuse the current kernel command line'],
   ]),
 };
-
-// `rpm -i` installs, but `rpm -qi` (with `-q`) shows information about a package.
-admin.rpm.options!['-i'].inMode = { when: '-q|--query', text: pos('パッケージの情報を表示する', 'show package information') };

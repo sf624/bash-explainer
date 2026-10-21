@@ -578,26 +578,18 @@ describe('argv converter: dictionary entries to specs', () => {
       ['-q|--query', 'q', 'query'], ['-i', 'i', 'install'], ['-f', 'f', 'file', 'arg fills'],
     ], {
       positional: [tx('a', 'pattern'), tx('b', 'file')],
-      bundle: { options: { k: { text: tx('k', 'k'), arg: true } }, needs: 'k', style: tx('s', 'style') },
       // (A subcommand written as a spec is taken as it is.)
       subcommands: { run: native('r', 'run', [], { style: 'posix', operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
     });
-    doc.options!['-i'].inMode = { when: '-q|--query', text: tx('情報', 'info') };
     const spec = fromCommandDoc(doc, 'x');
-    assert.deepStrictEqual(spec.modes, [{ name: '-q|--query' }]);
-    assert.strictEqual(spec.options!.find((o) => o.names.includes('-q'))!.selects, '-q|--query');
-    assert.deepStrictEqual(spec.oldStyle!.needs, 'k');
-    assert.deepStrictEqual(Object.keys(spec.oldStyle!.letters!), ['k']);
     assert.deepStrictEqual(spec.operands![0], { when: { option: ['-f'] }, pattern: [{ name: 'ARG2', text: tx('b', 'file'), repeat: '*' }] });
-    assert.deepStrictEqual(roles('x -qi a', spec), ['-qi: cluster -q query | -i info', 'a: ARG1']);
+    assert.deepStrictEqual(roles('x -qi a', spec), ['-qi: cluster -q query | -i install', 'a: ARG1']);
     assert.deepStrictEqual(roles('x run A=1 ls', spec), ['run: subcommand run', '  A=1: NAME=VALUE (assignment)', '  ls: command exec ls']);
     // An entry without options.
     assert.deepStrictEqual(fromCommandDoc({ summary: tx('s', 's') }).options, []);
     // A spec written directly: a name given twice means what it means last, as in `cmd`.
     assert.deepStrictEqual(native('n', 'n', [['-q', 'q', 'quiet'], ['-a|--all', 'a', 'all'], ['-p|--project', 'p', 'project'], ['-p|--publish', 'p', 'publish', 'arg'], ['-a', 'a', 'again'], ['-q', 'q', 'quiet again']]).spec!.options!.map((o) => `${o.names.join('|')} ${o.text.en}`),
       ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again']);
-    // A bundle without options of its own uses the `-x` options.
-    assert.strictEqual(fromCommandDoc(cmd('y', 'y', [], { bundle: {} }), 'y').oldStyle!.letters, undefined);
   });
 
   it('builds the operand patterns of `positionalBy`', () => {

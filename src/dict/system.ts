@@ -1,5 +1,5 @@
 import { tx } from '../i18n';
-import { cmd, CommandDoc, native, OptSpec, pos } from './types';
+import { args, cmd, CommandDoc, native, operand, OptSpec, pos } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -155,7 +155,7 @@ export const system: Record<string, CommandDoc> = {
       showhold: cmd('固定されたパッケージを一覧表示する', 'List held packages'),
     },
   }),
-  dpkg: cmd('Debian のパッケージ（.deb）を直接操作する', 'Manage Debian packages (.deb) directly', [
+  dpkg: native('Debian のパッケージ（.deb）を直接操作する', 'Manage Debian packages (.deb) directly', [
     ['-i|--install', '.deb ファイルをインストールする', 'install a .deb file'],
     ['-r|--remove', 'パッケージを削除する', 'remove a package'],
     ['-P|--purge', '設定ファイルごと削除する', 'remove with configuration files'],
@@ -166,15 +166,34 @@ export const system: Record<string, CommandDoc> = {
     ['--print-architecture', 'このシステムのアーキテクチャ（`amd64`、`arm64`…）を表示する', "print the system's architecture (`amd64`, `arm64`…)"],
     ['--add-architecture', '別のアーキテクチャのパッケージも入れられるようにする', "allow another architecture's packages", 'arg'],
     ['--configure', '展開済みのパッケージを設定する（`-a` ですべて）', 'configure unpacked packages (`-a`: all)'],
-  ], { positional: [pos('パッケージ名または .deb ファイル', 'package name or .deb file')] }),
-  'dpkg-query': cmd('入っている Debian パッケージの情報を問い合わせる', 'Query installed Debian packages', [
+    ['-c|--contents', '.deb に含まれるファイルを一覧表示', 'list the files inside a .deb'],
+    ['-I|--info', '.deb の情報を表示', 'show information about a .deb'],
+    ['-x|--extract', '.deb の中身を指定のディレクトリに展開する', 'extract the files of a .deb into a directory'],
+    ['-X|--vextract', '.deb の中身を展開し、ファイル名を表示する', 'extract the files of a .deb and list them'],
+    ['-b|--build', 'ディレクトリから .deb を作る', 'build a .deb from a directory'],
+    ['--unpack', '展開だけして設定はしない', 'unpack the package without configuring it'],
+    ['-C|--audit', '正しく入っていないパッケージを調べる', 'search for packages broken or half-installed'],
+    ['-V|--verify', '入れたファイルが変更されていないか検証する', 'verify the installed files'],
+    ['--get-selections', 'パッケージの選択状態を一覧表示する', 'list the package selections'],
+    ['--set-selections', '標準入力の選択状態を設定する', 'set the package selections from stdin'],
+    ['--force-all', 'すべての問題を無視して強制的に実行する（注意）', 'force everything despite problems (careful)'],
+    ['--force-depends', '依存関係の問題を無視して実行する（注意）', 'ignore dependency problems (careful)'],
+    ['--compare-versions', '2つの版を比べる（`1.0 lt 2.0`）', 'compare two versions (`1.0 lt 2.0`)'],
+    ['-p|--print-avail', '取得できるパッケージの情報を表示', 'show information of an available package'],
+    ['-W|--show', '指定の書式でパッケージを表示', 'show packages in a given format'],
+    ['--simulate|--no-act|--dry-run', '実際には何もしない', 'do not change anything'],
+    ['--root', '代わりのルートディレクトリ', 'install into the given root directory', 'arg'],
+    ['--force-confold', '設定ファイルが違うとき、現在のものを残す', 'keep the current configuration files when they differ'],
+    ['--force-confnew', '設定ファイルが違うとき、新しいものを使う', 'use the new configuration files when they differ'],
+  ], { shortEquals: true, ...args(operand('PACKAGE', 'パッケージ名または .deb ファイル', 'package name or .deb file')) }),
+  'dpkg-query': native('入っている Debian パッケージの情報を問い合わせる', 'Query installed Debian packages', [
     ['-W|--show', 'パッケージを一覧表示する（`-f` で形式を指定）', 'show packages (format with `-f`)'],
     ['-f|--showformat', '`-W` の出力形式（`${Package} ${Version}\\n` など）', 'output format for `-W` (`${Package} ${Version}\\n`…)', 'arg'],
     ['-l|--list', 'パッケージを一覧表示する', 'list packages'],
     ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
     ['-S|--search', '指定したファイルを入れたパッケージを探す', 'find the package that installed a file'],
     ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
-  ], { positional: [pkg] }),
+  ], { shortEquals: true, ...args({ name: 'PACKAGE', text: pkg }) }),
   'dpkg-architecture': cmd('Debian のビルド用アーキテクチャの値を表示する', 'Print Debian build architecture values', [
     ['-q|--query', '指定した変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only the given variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
     ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use the given Debian host architecture', 'arg'],

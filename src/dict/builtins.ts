@@ -1,6 +1,6 @@
 import { Text, tx } from '../i18n';
 import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
-import { CommandDoc, native, operand, OptSpec, runs } from './types';
+import { args, CommandDoc, native, operand, OptSpec, runs } from './types';
 import { declarationCommands, declarationFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
@@ -64,11 +64,6 @@ const b = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Re
   native(ja, en, opts, { builtin: 'regular', style: 'posix', ...rest });
 /** A POSIX special builtin: an assignment before it stays in POSIX mode, and an error in it exits a POSIX shell. */
 const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandDoc => b(ja, en, opts, { builtin: 'special', ...rest });
-
-/** Operands written in order: each optional, and the last one repeats (unless the item says otherwise). */
-function args(...items: OperandSpec[]): Rest {
-  return { operands: [{ pattern: items.map((o, i) => ({ repeat: i === items.length - 1 ? '*' : '?', ...o })) }] };
-}
 
 /**
  * The one operand of `exit`, `return`, `shift`, `break` and `continue`, a number. They take no options:
