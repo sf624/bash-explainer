@@ -48,6 +48,11 @@ export interface CommandSpec {
    * as `ip maddress`).
    */
   subcommandPrefixes?: boolean | 'first';
+  /**
+   * A word that matches is an operand and ends the options and the old-style letters: every word after it is an
+   * operand too (procps `ps 1 u`: a bare number starts a list of process IDs, which ends the line).
+   */
+  endsOptions?: RegExp;
   /** The operands are an expression that patterns cannot describe; a parser of its own reads them. */
   operandParser?: 'find-expression';
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
@@ -155,6 +160,8 @@ export interface OperandSpec {
   command?: CommandSlot;
   /** The meaning of particular values (`shopt -o errexit`: the names of `set -o`), shown in front of the operand's text. */
   values?: Record<string, Text>;
+  /** Only a word whose text matches fits; a word whose text is not known fits too. */
+  matches?: RegExp;
   /** Only a `NAME=value` word fits: a variable for the command that follows (`env A=1 cmd`). */
   assignment?: boolean;
   /** A `NAME=value` word here is an assignment with this meaning instead (awk's operands). */
