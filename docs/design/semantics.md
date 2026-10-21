@@ -575,7 +575,7 @@ Within a context, a step applies to a part unless the part is quoted, or state t
 
 ### 4.5 Facts, notes and pitfalls
 
-The model also lists **facts**: what a reader should know about a node. The analyzer renders them, in ja and en, from one catalog (src/semantics/messages.ts).
+The model also lists **facts**: what a reader should know about a node. The analyzer renders them, in ja and en, from one catalog (src/semantics/messages.ts). (As built, 4.12: src/messages.ts, and the sections are plain section numbers.)
 
 ```ts
 export interface Fact {
@@ -804,6 +804,36 @@ export function conditionOf(n): SyntaxNode[] | undefined; export function lastSt
 
 Deferred: the ERR trap (it runs where `set -e` would stop the shell; inside it, and inside an EXIT trap, `set -e` is in effect) and trap actions in general; `bash -c` strings (`reachOf(env, shellopts).options` says whether `set -e` reaches them; their text is not read); readonly assignments and special builtins' errors in POSIX mode (B3); the value of conditions (a branch that never runs); rendering `expansionError` where a value is known to be missing; `x=1 $(false)` (no command name after expansion: the substitution's status); `#!/bin/bash -e`.
 
+### 4.12 As built: facts and manual links (B6)
+
+```ts
+// src/manual.ts: the sections of the bash 5.2 manual, chapters 3 to 7 and the builtins of 8.7 and 9.2
+export const MANUAL_VERSION = '5.2';
+export const SECTIONS: ReadonlyMap<string, { id; title; url }>;   // '3.7.2' → Command Search and Execution, its page on gnu.org
+export const BUILTIN_SECTIONS: Record<string, string>;            // each builtin's section (its @btindex): cd 4.1, declare 4.2, jobs 7.2
+export function manualLabel(lang, ids): string;                  // "Bash manual 3.7.2, 6.11"
+// src/refs.ts: the sections of a token, from its node
+export function nodeSections(n): readonly string[] | undefined;  // constructs, quotes, expansions, redirections by operator (3.6.1–3.6.10)
+export function anonSections(n): readonly string[] | undefined;  // a keyword or operator: its own (`|` 3.2.3, `&&` 3.2.4), else its construct's
+export function builtinSections(name, special): readonly string[]; // and 4.4 for a special builtin
+// src/messages.ts: the catalog
+export const MESSAGES: Record<FactId, { kind: 'note' | 'pitfall'; refs: readonly string[]; text: (params) => [ja, en] }>;
+export interface Fact { id: FactId; kind; text: string; refs: readonly string[] }   // text with its ℹ or ⚠
+export function fact(lang, id, params): Fact;  export function factOf(lang, { id, params }): Fact;
+// src/analyzer.ts
+interface Token { …; refs?: readonly string[] }
+interface LineExplanation { …; notes: string[]; facts?: Fact[] }   // the notes that are facts, with the same text
+```
+
+- `ManualRef` became a section number: the table gives its title and page, so a token or a fact carries only `'3.7.2'`. The design's `Fact` with a node and a `meaning` severity was not needed: a meaning is a sentence of the token's explanation, and the token's `refs` cite it; a fact is a note (`kind`), said where the model is read: the analyzer, src/statusfacts.ts (which now gives `{ id, params }` per line, rendered in either language) and src/wordfacts.ts.
+- **The URL (decision 7).** gnu.org serves only the manual of the current release, one page per node (`html_node/Command-Search-and-Execution.html`); no versioned copy of the 5.2 manual is known there (the 5.2 manual ships in the source tarball and the git tag, as Texinfo and one-page HTML). This could not be checked online when B6 was built (no network); if gnu.org publishes a versioned copy, only `BASE` in src/manual.ts changes. The links point to gnu.org, and the numbers are those of 5.2. bashref.texi of 5.2 and of 5.3 have the same nodes and titles for every section of the table; only "Bash POSIX Mode" moved, from 6.11 to 6.11.2 (its page name is unchanged). The redirections share one page; their subsections are anchors (`Redirections.html#Here-Documents`). test/manual.test.ts rebuilds the table from bashref.texi at the tag `bash-5.2` when `BASH_SOURCE_DIR` names a bash git checkout (numbers, titles, page and anchor names as makeinfo writes them, and every builtin's section), and the anchors were checked against the 5.2 bashref.html.
+- **Tokens.** A construct, keyword or operator cites its section (if 3.2.5.2, loops 3.2.5.1, `{ }` and `( )` 3.2.5.3, functions 3.3, coproc 3.2.6, pipelines and `time` 3.2.3, lists 3.2.4, `[ ]` 4.1 and 6.4, `[[ ]]` 3.2.5.2 and 6.4, `(( ))` 3.2.5.2 and 6.5); a quote its subsection of 3.1.2; an expansion its subsection of 3.5 (`$1` 3.4.1, `$?` 3.4.2); a redirection its subsection of 3.6, from its operator and target (`2>&1` 3.6.8, `3>&1-` 3.6.9, `>&file` 3.6.4); an assignment 3.4, before a command 3.7.4 (and 4.4 when it stays); arrays 6.7; the shebang 3.8. A command name cites what the name resolution found: a builtin's section (and 4.4), a function 3.3, an alias 6.6, a path or a program found otherwise (`hash -p`, `enable -n`) 3.7.2, a name from an expansion 3.7.1. A program of the dictionary, its options and plain words cite nothing: they are not parts of bash.
+- **Facts.** 53 ids (exit status, errexit, functions and POSIX mode, aliases, pipelines and globs, wrappers and other shells, words). The texts are the analyzer's, unchanged. Not facts: the style checks of src/pitfalls.ts (`[-f`, `x = 1`, `{echo`, `}` without `;`, `rm -rf $DIR/…`, `read` without `-r`, `<` in `[ ]`, `[ -f x]`, `[ a && b ]`), the dialect notes, the dictionary's notes (distribution aliases, yq), the redirection summary, the here-document and continuation notes, the syntax errors.
+- **Renderers.** The hover ends a row and a note with `<small>Bash manual [3.7.2](url)</small>` (VS Code keeps `<small>`); the plain Markdown (the LSP hover, Copy as Markdown, `--format markdown`) with `(Bash manual [3.7.2](url))`; the panel, in VS Code and on the web page, with quiet `§3.7.2` links at the end of the row (`panelUpdate` sends the label, title and page of each section shown), which open in the browser (VS Code opens a webview's links outside, after its usual prompt for an untrusted domain; the web page in a new tab); the CLI text with "(Bash manual 3.7.2)", dim in colour; JSON gives `refs` and `facts` as they are. The links are plain links: nothing is fetched (test/offline.test.ts and the web page's CSP).
+- Tests: test/manual.test.ts (every cited section is known, the sections of tokens, the table against bashref.texi), test/messages.test.ts (every entry's sections, the prefixes, `facts` in the explanation), test/wordfacts.test.ts, and the render, CLI, LSP and web tests. The dumps of sample.sh and the corpora are the same as before but for the sections.
+
+Deferred: the notes of `read` (`IFS=` and separators) and of `[[ =~ ]]` backslashes are still inline (about a builtin and a regex, not a model); a fact for each meaning sentence of a token (the token's `refs` cite them as a whole); links in the inline display (one line, no room); section numbers for the notes of the dialect check (about other shells, not in the manual).
+
 ## 5. C: the bash-ast differential test
 
 ### 5.1 What it compares
@@ -920,9 +950,21 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 **B5. Status and errexit.** `StatusRule`, `ErrexitContext`, and their facts. Probe: bash runs the snippet with `set -e` and a marker after it. Size: 300–500. Done: src/semantics/status.ts and src/statusfacts.ts (4.11). test/status-probes.test.ts compares the model with every row of status.json (93 rows, 50 added: functions called from `if`, `&&`, `!` and from both kinds of places, `set -e` in a subshell and a substitution, inherit_errexit, POSIX mode, `!`, lists, pipefail set in a function, `time`, `wait`, the ERR trap, assignments and declarations with substitutions, readonly assignments, `[[ ]]`, `(( ))`, `return`, `bash -c` with and without SHELLOPTS, `set -u`, `set -e && …`, `if set -e`, `{ set -e; … } || :`, `for` over no words), with the gaps listed in the rows. The analyzer had no errexit logic of its own besides the `local x=$(…)` pitfall in src/pitfalls.ts, the unconditional `set -e` sentence of the `((i++))` pitfall, the modulo of `exit N` and the Dockerfile `pipefail` test: they read the model now.
 
-**B6. Facts and manual links.** The message catalog, `refs` on tokens, links in the hover, the panel and the web page; section numbers in the CLI. src/pitfalls.ts keeps the style checks. Guarded by the render and web tests. Size: 400–600.
+**B6. Facts and manual links.** The message catalog, `refs` on tokens, links in the hover, the panel and the web page; section numbers in the CLI. src/pitfalls.ts keeps the style checks. Guarded by the render and web tests. Size: 400–600. Done: src/manual.ts, src/refs.ts, src/messages.ts and src/wordfacts.ts (4.12); every renderer shows the sections, and the dumps change only by them.
 
-After B6, src/analyzer.ts lays out tokens and examples and renders facts; the meaning lives in src/argv/ and src/semantics/. The expected size of the analyzer is under half of today's.
+**The redesign is complete.** The layers, as built:
+
+```
+SyntaxTree (src/syntax/, unbash) ── checked against bash's parser (C, test/bash-ast.test.ts)
+  ├─ argv: CommandSpec → interpret() → ArgvParse (A, src/argv/; command slots)
+  └─ semantics (B, src/semantics/): shellState → state.ts (B1), env.ts (B2) → names.ts (B3), words.ts (B4) → status.ts (B5)
+       └─ each compared with bash 5.2 by its probes (test/fixtures/probes/*.json)
+Analyzer (src/analyzer.ts): lays out tokens, labels and examples; renders the specs and the models;
+  facts from src/messages.ts (statusfacts.ts, wordfacts.ts), sections from src/refs.ts and src/manual.ts (B6)
+Renderers (src/ui/, media/panel.js, cli/, web/): hover, panel, inline, CLI text/Markdown/JSON, LSP, web page
+```
+
+The analyzer no longer decides what a construct means from node types or names: it asks the specs and the models, and says what they found. It did not shrink to half, as hoped (4,460 lines after B6): most of it is the layout of tokens, the examples and the texts of the explanations, which stay there.
 
 Spec fields that serve one or two entries, candidates to generalize when a third needs them: `marks`/`unlessMarked` (kill's first signal), `OperandSpec.option` (`flock FILE -c`), `longEquals` (jq) and `shortEquals` (dpkg).
 
