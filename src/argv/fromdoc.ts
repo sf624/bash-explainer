@@ -7,6 +7,8 @@ import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, Patte
 
 /** POSIX special builtins: an assignment before them stays in POSIX mode. */
 const SPECIAL_BUILTINS = new Set([':', '.', 'source', 'break', 'continue', 'eval', 'exec', 'exit', 'export', 'readonly', 'return', 'set', 'shift', 'times', 'trap', 'unset']);
+/** Builtins that are programs too (coreutils, procps): `sudo echo` runs the program. */
+const PROGRAMS = new Set(['echo', 'printf', 'pwd', 'kill', 'test', 'true', 'false']);
 /** Commands whose operands may be job specs (`%1`). */
 const JOB_COMMANDS = new Set(['kill', 'fg', 'bg', 'wait', 'disown', 'jobs']);
 /** Commands that read `-N` as `-n N` (`head -5`). */
@@ -37,6 +39,7 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   // Builtins read options up to their first operand.
   else if (doc.builtin) spec.style = 'posix';
   if (doc.builtin) spec.builtin = SPECIAL_BUILTINS.has(name) ? 'special' : 'regular';
+  if (doc.builtin && PROGRAMS.has(name)) spec.alsoProgram = true;
   if (['set', 'declare', 'typeset', 'local'].includes(name)) spec.plusOptions = true;
   // jq reads `--arg NAME VALUE` only as separate words: `--arg=x` is an unknown option.
   if (name === 'jq') spec.longEquals = false;

@@ -43,6 +43,8 @@ export interface CommandSpec {
   /** The operands are an expression that patterns cannot describe; a parser of its own reads them. */
   operandParser?: 'find-expression';
   builtin?: 'special' | 'regular';
+  /** A builtin that is also a program (`echo`, `kill`, `test`): a wrapper that starts programs runs the program. */
+  alsoProgram?: boolean;
 }
 
 export type SubcommandSpec = CommandSpec & { aliases?: string[] };
