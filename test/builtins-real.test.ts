@@ -130,11 +130,15 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       assert.match(spawnSync('bash', ['--norc', '-c', `kill ${word} 1`], { env: ENV, encoding: 'utf8' }).stderr, /invalid signal specification/, word);
     }
     // With `-l` the words `-15` and `-TERM` are options that do nothing, and the list is printed whole.
-    for (const word of ['-15', '-TERM']) {
+    for (const word of ['-15', '-TERM', '-9', '-KILL', '-0', '-s HUP', '-sHUP', '-n 9', '-nINT']) {
       const { parse } = parseOf(`kill -l ${word}`);
-      assert.match((parse.roles[1].role as { text: { en: string } }).text.en, /^No signal is sent/, word);
+      assert.match((parse.roles[1].role as { text: { en: string } }).text.en, /^(No signal is sent|Invalid)/, word);
+      if (word !== '-nINT') assert.match((parse.roles[1].role as { text: { en: string } }).text.en, /^No signal is sent/, word);
       assert.ok(bash(`kill -l ${word}`).split('\n').length > 5, word);
     }
+    // Once a signal is given, `-s9` is a process ID, which bash refuses as such.
+    assert.strictEqual(parseOf('kill -9 -s9 1').parse.roles[1].role.role, 'operand');
+    assert.match(spawnSync('bash', ['--norc', '-c', 'kill -9 -s9 1'], { env: ENV, encoding: 'utf8' }).stderr, /arguments must be process or job IDs/);
     assert.match((parseOf('kill -15 1').parse.roles[0].role as { text: { en: string } }).text.en, /^Send signal number 15/);
     // A pattern option with no text for the mode keeps its own.
     assert.match((parseOf('kill -l -s9').parse.roles[1].role as { text: { en: string } }).text.en, /^Invalid/);
@@ -157,7 +161,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     const parser = createUnbashParser();
     const children = (script: string): Token[] => new Analyzer('en').explainLine(parser.parse(script), 0).items[0].children;
     for (const name of Object.keys(shellOptions)) {
-      assert.strictEqual(spawnSync('bash', ['--norc', '-c', `shopt -qo ${name}`]).status! < 2, true, name);
+      assert.strictEqual(spawnSync('bash', ['--norc', '-c', `shopt -qo ${name}`], { encoding: 'utf8' }).stderr, '', name);
     }
     const [opt, errexit, other] = children('shopt -o errexit nullglob');
     assert.strictEqual(opt.label, '-o');
