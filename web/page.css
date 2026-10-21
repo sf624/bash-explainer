@@ -248,6 +248,21 @@ footer p {
     min-height: 2.75rem;
   }
 
+  /* The settings button is its gear alone (its name is read, not drawn), beside the theme. */
+  .toolbar #settings-open {
+    flex: 0 0 2.75rem;
+    padding-inline: 0;
+  }
+
+  #settings-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   /* The labels are read by screen readers but not drawn: the selects show what they are (a name
      beside each took the room the values need). */
   .toolbar label > span {
@@ -419,4 +434,222 @@ html.view-panel #panel {
     border-left: 0;
     border-top: 1px solid var(--vscode-panel-border);
   }
+}
+
+/* ---- The settings dialog ---------------------------------------------------------------------- */
+
+#settings-dialog {
+  width: min(44rem, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  overflow: hidden;
+}
+
+#settings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+#settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.settings-head,
+.settings-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--page-background);
+}
+
+.settings-head {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.settings-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.settings-x {
+  border: none;
+  background: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+}
+
+.settings-foot {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.25rem 1rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-intro,
+.settings-elsewhere {
+  color: var(--vscode-descriptionForeground);
+  margin: 0.5rem 0;
+}
+
+.settings-elsewhere {
+  font-size: 0.9em;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 0.75rem;
+}
+
+.settings-group h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  margin: 1rem 0 0.25rem;
+}
+
+.setting {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.setting-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 0.75rem;
+}
+
+.setting-head label {
+  font-weight: 600;
+}
+
+.setting-key {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.setting-desc {
+  margin: 0.15rem 0 0.4rem;
+  font-size: 0.92em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.settings-body code {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.92em;
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 3px;
+  padding: 0 0.2em;
+}
+
+.setting select,
+.setting input[type='text'],
+.setting input[type='number'],
+.setting textarea {
+  max-width: 100%;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
+  border-radius: 3px;
+  padding: 0.2rem 0.4rem;
+}
+
+.setting select {
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+.setting textarea {
+  display: block;
+  width: 100%;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  resize: vertical;
+}
+
+.setting textarea[aria-invalid='true'] {
+  border-color: var(--vscode-errorForeground);
+}
+
+.setting-error {
+  margin: 0.25rem 0 0;
+  color: var(--vscode-errorForeground);
+}
+
+.setting-error:empty {
+  display: none;
+}
+
+.setting-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
+  gap: 0.15rem 1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-choices label {
+  font-size: 0.92em;
+}
+
+.setting-choices code {
+  white-space: nowrap;
+}
+
+.setting-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+
+.setting-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 999px;
+  padding: 0 0.15rem 0 0.5rem;
+}
+
+.setting-list li.setting-none {
+  border: 0;
+  padding: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.setting-list button {
+  border: none;
+  background: none;
+  padding: 0 0.3rem;
+  line-height: 1.2;
+}
+
+.setting-add {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.setting-add input {
+  flex: 1;
+  min-width: 0;
 }

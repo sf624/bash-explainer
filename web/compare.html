@@ -23,6 +23,7 @@
   <label><span id="kind-label">File</span> <select id="kind"></select></label>
   <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
   <label><span id="theme-label">Theme</span> <select id="theme"></select></label>
+  <button id="settings-open" type="button" aria-haspopup="dialog"><span aria-hidden="true">⚙</span> <span id="settings-label">Settings</span></button>
   <button id="sample" type="button">Load the sample</button>
   <span id="status" role="status"></span>
 </div>
@@ -46,6 +47,7 @@
     <p class="copy-note" id="note-other" hidden></p>
   </section>
 </main>
+<dialog id="settings-dialog" aria-labelledby="settings-title"></dialog>
 <noscript><p class="noscript">Bash Explainer needs JavaScript to run in the browser.</p></noscript>
 <script src="app.js"></script>
 </body>

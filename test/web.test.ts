@@ -261,6 +261,11 @@ describe('the web page in a browser', function () {
     await inner().locator('.row .label').nth(1).click();
     const reveal = await until('the reveal', () => page.evaluate('window.got.find((m) => m.type === "bx-reveal") || null') as Promise<{ span: { start: { line: number } } } | null>, (m) => !!m);
     assert.strictEqual(reveal!.span.start.line, 1);
+    // The settings come with the script: here, no worked examples. The panel's ⚙ button is hidden, as there is no dialog to open.
+    assert.match(await inner().locator('#main').innerText(), /Example/);
+    await page.evaluate(`document.getElementById('f').contentWindow.postMessage({ type: 'bx-state', text: 'echo one\\nsort -u a.txt\\n', kind: 'shell', line: 1, col: 0, lang: 'en', theme: 'auto', choice: {}, settings: { 'bashExplainer.examples.enabled': false } }, location.origin)`);
+    await until('no example', () => inner().locator('#main').innerText(), (t) => !/Example/.test(t));
+    assert.strictEqual(await inner().locator('#settings').isHidden(), true);
     await ctx.close();
   });
 
@@ -419,6 +424,136 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await bg(p2), LIGHT);
     assert.deepStrictEqual(errors, []);
     await blocked.close();
+  });
+
+  it('has a settings dialog: a change shows at once, stays in sync with the toolbar and the panel, is kept, and can be reset', async () => {
+    const ctx = await browser!.newContext({ locale: 'en-US' });
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('#!/bin/bash\n[[ -f x ]] && for f in $(ls); do echo "$f"; done');
+    const panelText = () => panel().locator('#main').innerText();
+    await until('the pitfall', panelText, (t) => /Pitfall/.test(t));
+    assert.strictEqual(await page.locator('#problems').isHidden(), true);
+
+    // The dialog lists the settings that apply here, and none that do not.
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
+    assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), true);
+    assert.strictEqual(await page.locator('#setting-hover-enabled').count(), 0);
+    assert.match(await page.locator('.settings-elsewhere').innerText(), /panel\.autoOpen/);
+    // A note turned off goes from the explanation at once.
+    await page.locator('#setting-notes-pitfalls').uncheck();
+    await until('no pitfall', panelText, (t) => !/Pitfall/.test(t));
+    // The shell: the script is checked for sh, and the panel's own menu says so.
+    await page.locator('#setting-shell').selectOption('sh');
+    await until('the problem', () => page.locator('#problem-list').innerText(), (t) => /dbracket/.test(t));
+    await until('the panel\'s shell', () => panel().locator('#shell').inputValue(), (v) => v === 'sh');
+    // A warning code left out.
+    await page.locator('#setting-diagnostics-ignore').fill('dbracket');
+    await page.locator('#setting-diagnostics-ignore-add').click();
+    await until('no problem', () => page.locator('#problems').isHidden(), (h) => h);
+    assert.match(await page.locator('[data-key="diagnostics.ignore"] .setting-list').innerText(), /dbracket/);
+    // Examples off by kind.
+    await page.locator('#setting-examples-disabled-regex').check();
+    // The language follows the toolbar, and the other way round.
+    await page.locator('#setting-language').selectOption('ja');
+    assert.strictEqual(await page.locator('#lang').inputValue(), 'ja');
+    assert.strictEqual(await page.locator('#settings-title').textContent(), '設定');
+    await page.locator('#settings-done').click();
+    assert.strictEqual(await page.locator('#settings-dialog').isVisible(), false);
+    await page.locator('#lang').selectOption('en');
+    // The panel's ⚙ button opens the dialog too, and a shell chosen in the panel is the setting.
+    await until('the panel in English', () => panel().locator('#settings').isVisible(), (v) => v);
+    await panel().locator('#shell').selectOption('dash');
+    await panel().locator('#settings').click();
+    await until('the dialog', () => page.locator('#settings-dialog').isVisible(), (v) => v);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
+    assert.strictEqual(await page.locator('#setting-language').inputValue(), 'en');
+    await page.keyboard.press('Escape');
+    assert.strictEqual(await page.locator('#settings-dialog').isVisible(), false);
+
+    // Kept across a reload, as VS Code keys.
+    assert.deepStrictEqual(JSON.parse(await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string), {
+      'bashExplainer.language': 'en', 'bashExplainer.notes.pitfalls': false, 'bashExplainer.shell': 'dash',
+      'bashExplainer.diagnostics.ignore': ['dbracket'], 'bashExplainer.examples.disabled': ['regex'],
+    });
+    await page.reload();
+    await until('the panel after the reload', () => Promise.resolve(panel()), (f) => !!f);
+    await until('the shell after the reload', () => panel().locator('#shell').inputValue(), (v) => v === 'dash');
+    await page.locator('#settings-open').click();
+    assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), false);
+    assert.strictEqual(await page.locator('#setting-examples-disabled-regex').isChecked(), true);
+    // Reset: the defaults, and nothing kept.
+    await page.locator('#settings-reset').click();
+    assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), true);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'auto');
+    assert.strictEqual(await page.evaluate('localStorage.getItem("bash-explainer-settings")'), null);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
+  it('checks the JSON of customCommands as it is typed, and applies it when it is valid', async () => {
+    const ctx = await browser!.newContext({ locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('deploy web');
+    await until('the line explained', () => panel().locator('#main').innerText(), (t) => /deploy/.test(t));
+    await page.locator('#settings-open').click();
+    const area = page.locator('#setting-customCommands');
+    await area.fill('{ "deploy": ');
+    assert.match(await page.locator('#setting-customCommands-error').innerText(), /^Not applied: /);
+    assert.strictEqual(await area.getAttribute('aria-invalid'), 'true');
+    await area.fill('[]');
+    assert.match(await page.locator('#setting-customCommands-error').innerText(), /expected an object/);
+    // What is typed stays while another setting changes.
+    await page.locator('#setting-notes-idioms').uncheck();
+    assert.strictEqual(await area.inputValue(), '[]');
+    await area.fill('{\n  // comments are allowed, as in settings.json\n  "deploy": { "summary": "Deploy to production" },\n}');
+    assert.strictEqual(await page.locator('#setting-customCommands-error').isHidden(), true);
+    assert.strictEqual(await area.getAttribute('aria-invalid'), 'false');
+    await until('the command described', () => panel().locator('#main').innerText(), (t) => /Deploy to production/.test(t));
+    const saved = JSON.parse(await page.evaluate('localStorage.getItem("bash-explainer-settings")') as string);
+    assert.deepStrictEqual(saved['bashExplainer.customCommands'], { deploy: { summary: 'Deploy to production' } });
+    await ctx.close();
+  });
+
+  it('keeps the settings dialog inside a phone screen, and works without storage', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
+    await ctx.addInitScript("Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } });");
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(base);
+    await page.locator('#settings-open').tap();
+    assert.match(await page.locator('.settings-intro').innerText(), /does not let the page keep them/);
+    const fit = await page.evaluate(`(() => {
+      const d = document.getElementById('settings-dialog').getBoundingClientRect();
+      const body = document.querySelector('.settings-body');
+      const out = [...document.querySelectorAll('#settings-dialog *')].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && (r.left < d.left - 0.5 || r.right > d.right + 0.5);
+      }).map((e) => e.tagName + (e.id ? '#' + e.id : ''));
+      return { left: d.left, right: innerWidth - d.right, top: d.top, bottom: innerHeight - d.bottom, sideways: body.scrollWidth > body.clientWidth, page: document.documentElement.scrollWidth > innerWidth, out };
+    })()`) as { left: number; right: number; top: number; bottom: number; sideways: boolean; page: boolean; out: string[] };
+    assert.deepStrictEqual(fit, { left: 16, right: 16, top: fit.top, bottom: fit.bottom, sideways: false, page: false, out: [] });
+    assert.ok(fit.top >= 16 && fit.bottom >= 16, JSON.stringify(fit));
+    // Without storage, a change still applies for as long as the page is open.
+    await page.locator('#setting-shell').selectOption('dash');
+    const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel\'s shell', () => panel.locator('#shell').inputValue(), (v) => v === 'dash');
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
   });
 
   it('on a phone, tapping a row of the explanation selects its token without focusing the editor, and the page does not scroll sideways', async () => {
