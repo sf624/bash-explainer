@@ -55,7 +55,7 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
-import { type EnvLink, type ExecEnv, lastStage, ownSubshells, processOf, reachOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
+import { type EnvLink, type ExecEnv, lastStage, ownSubshells, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, FunctionState, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 
 export type Kind =
@@ -433,7 +433,7 @@ export class Analyzer {
     if (link.kind === 'call') {
       if (!sure) return this.s('関数の呼び出し元の一部', 'some of the places its function is called from');
       // (Every call is in a subshell: named when they all give the same reason.)
-      const whys = new Set(link.envs.map(processOf).map((p) => this.subshellWhy(p.link!, p.sure)));
+      const whys = new Set(link.sites.map((x) => processOf(x.env)).map((p) => this.subshellWhy(p.link!, p.sure)));
       return whys.size === 1 ? this.s(`関数の呼び出し元: ${[...whys][0]}`, `where its function is called: ${[...whys][0]}`) : this.s('関数の呼び出し元', 'where its function is called');
     }
     const l = link as SubshellLink;
@@ -447,17 +447,27 @@ export class Analyzer {
     }
   }
 
-  /** `n` in a subshell: whether it surely is, and why; undefined when it runs in this shell (or in another program). */
-  private inSubshell(n: SyntaxNode): { sure: boolean; why: string } | undefined {
+  /**
+   * `n` in a subshell: whether it surely is, and why (`substitution`: the subshell of a `$( )` or `<( )` around it);
+   * undefined when it runs in this shell (or in another program).
+   */
+  private inSubshell(n: SyntaxNode): { sure: boolean; why: string; substitution: boolean } | undefined {
     const p = processOf(this.state.env(n));
-    return p.kind === 'subshell' ? { sure: p.sure, why: this.subshellWhy(p.link!, p.sure) } : undefined;
+    const l = p.link;
+    return p.kind === 'subshell' ? { sure: p.sure, why: this.subshellWhy(l!, p.sure), substitution: l!.kind === 'subshell' && /substitution/.test(l!.why) } : undefined;
   }
 
-  /** What a builtin that acts on its shell does in a subshell (`cd` in `( )`, `exit` in `$( )`): it acts on the subshell only. */
-  private shellEffectNote(n: SyntaxNode, effect: CommandSpec['shellEffect']): string {
+  /**
+   * What a builtin that acts on its shell does in a subshell (`cd` in `( )`, `exit` in `$( )`): it acts on the
+   * subshell only. In `$( )` a change is usually there for the commands after it (`$(cd dir && pwd)`): said mildly.
+   */
+  private shellEffectNote(n: SyntaxNode, effect: 'changes' | 'exits' | undefined): string {
     const sub = effect && this.inSubshell(n);
     if (!sub) return '';
     const { sure, why } = sub;
+    if (effect === 'changes' && sub.substitution) {
+      return this.s(`。${why} の中のサブシェルで実行されるので、この変更はその中のあとのコマンドにだけ効く`, `. It runs in the subshell of ${why}, so the change holds only for the commands after it there`);
+    }
     return effect === 'exits'
       ? (sure ? this.s(`。サブシェル（${why}）で実行されるので、終わるのはサブシェルだけ（スクリプト全体は終わらない）`, `. It runs in a subshell (${why}), so it ends only the subshell, not the script`)
         : this.s(`。サブシェル（${why}）で実行されることがあり、そのとき終わるのはサブシェルだけ（スクリプト全体は終わらない）`, `. It may run in a subshell (${why}); then it ends only the subshell, not the script`))
@@ -1164,7 +1174,7 @@ export class Analyzer {
     }
     const t = this.tok(n, 'builtin', this.t(base) + this.s('（シェル組み込み）', ' (shell builtin)'), children, kw);
     t.summary = `${kw}: ${t.explanation}`;
-    t.explanation += this.shellEffectNote(n, builtins[kw].shellEffect);
+    t.explanation += this.shellEffectNote(n, shellEffectOf(builtins[kw], [...roles]));
     return t;
   }
 
@@ -1185,7 +1195,7 @@ export class Analyzer {
     });
     const t = this.tok(n, 'builtin', this.t(builtins.unset.summary) + this.s('（シェル組み込み）', ' (shell builtin)'), children, 'unset');
     t.summary = `unset: ${t.explanation}`;
-    t.explanation += this.shellEffectNote(n, builtins.unset.shellEffect);
+    t.explanation += this.shellEffectNote(n, 'changes');
     return t;
   }
 
@@ -1333,7 +1343,7 @@ export class Analyzer {
       ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
     ]), shorten((word ?? nameNode).text));
     t.summary = `${head.name}: ${head.explanation}`;
-    if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, head.spec!.shellEffect);
+    if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
     // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
     // words' values: `yq 'e'` names `e`.)
     const path: string[] = [];
@@ -1783,7 +1793,9 @@ export class Analyzer {
     const words = nodes.slice(word, parse.end);
     const first = nodes[word];
     // `find -exec cmd {} ;`: the words up to the terminator.
-    this.slotNotes(role, this.slotEnvs.get(first)!, words, assigned);
+    // (What the builtin it names would do to a shell: `sudo cd /x` cannot change this one.)
+    const effect = shellEffectOf(role.spec, parse.roles.map((r) => [nodes[r.word], r.role] as const));
+    this.slotNotes(role, this.slotEnvs.get(first)!, words, assigned, effect);
     const name = first.text;
     const explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
@@ -2903,20 +2915,22 @@ export class Analyzer {
    */
   private unpassedVariables(env: ExecEnv, words: SyntaxNode[]): void {
     const text = words.flatMap((w) => descendants(w, ['raw_string'])).map((r) => r.text.slice(1, -1)).join('\n');
-    // The string, read as the script it is: the variables it reads, and those it sets itself.
+    // The string, read as the script it is: the variables it reads, and what it has set itself before each read.
     stringParser ??= createUnbashParser();
     const inner = stringParser.parse(text);
-    const sets = shellState(inner).assigned;
+    const own = shellState(inner);
     const cmd = ancestor(words[0], (x) => x.type === 'command')!;
     const given = [...cmd.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')!.text),
       ...env.links.flatMap((l) => (l.kind === 'slot' ? l.assigns : []))];
     const st = this.state.at(cmd).run;
     const { variables, blocker } = reachOf(env);
     const remote = whereOf(env) === 'remote';
-    const reads = new Set(descendants(inner.root, ['simple_expansion', 'expansion']).map((e) => e.namedChildren[0]).filter((c) => c?.type === 'variable_name').map((c) => c.text));
-    for (const v of reads) {
+    // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value.)
+    const reads = descendants(inner.root, ['simple_expansion', 'expansion']).filter((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(e.text));
+    for (const e of reads) {
+      const v = e.text.replace(/\W/g, '');
       const x = st.variables.get(v);
-      if (!x || x.set !== 'on' || wellKnownVariables[v] || given.includes(v) || sets.has(v)) continue;
+      if (!x || x.set !== 'on' || wellKnownVariables[v] || given.includes(v) || given.includes('*') || own.at(e).run.variables.has(v)) continue;
       const exported = x.attrs.x?.state ?? 'off';
       if (variables === 'none') {
         this.extraNotes.push(remote
@@ -2943,7 +2957,7 @@ export class Analyzer {
    * (`current-shell`: eval, command, builtin) runs both. `env` is where the command runs (src/semantics/env.ts):
    * its last link is this slot, and what reaches it is what every link on the way passes on.
    */
-  private slotNotes(role: CommandRole, env: ExecEnv, words: SyntaxNode[], assigned: string[]): void {
+  private slotNotes(role: CommandRole, env: ExecEnv, words: SyntaxNode[], assigned: string[], effect?: 'changes' | 'exits'): void {
     if (this.opts.pitfalls === false) return;
     const { slot } = role;
     const link = env.links[env.links.length - 1] as SlotLink;
@@ -2969,8 +2983,8 @@ export class Analyzer {
             `Write out its body, or pass the definition along: \`${via} bash -c "$(declare -f ${name}); ${name}"\` (\`${blocker.via}\` passes no exported functions, so \`export -f\` does not help)`)
           : isFn
           ? this.s(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
-          : name === 'cd'
-            ? this.s(`サブシェル \`(cd … && …)\` か、\`${via} sh -c 'cd … && …'\` を使います`, `Use a subshell \`(cd … && …)\`, or \`${via} sh -c 'cd … && …'\``)
+          : effect === 'changes'
+            ? this.s(`サブシェル \`(${name} … && …)\` か、\`${via} sh -c '${name} … && …'\` を使います`, `Use a subshell \`(${name} … && …)\`, or \`${via} sh -c '${name} … && …'\``)
             : this.s(`\`${via} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${via} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
         this.extraNotes.push(this.s(
           `⚠ 落とし穴: \`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix}`,

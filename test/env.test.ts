@@ -7,7 +7,7 @@ import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand, type Token } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import { type ExecEnv, lastStage, processOf, reachOf, slotEnvs, subshellReasons, whereOf } from '../src/semantics/env';
+import { type CallLink, type ExecEnv, lastStage, type SlotLink, type SubshellLink, processOf, reachOf, slotEnvs, subshellReasons, whereOf } from '../src/semantics/env';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -44,6 +44,8 @@ function slots(src: string, text: string): Map<string, ExecEnv> {
 describe('execution environments: subshells', () => {
   it('gives the reasons of the subshells around a node, outermost first', () => {
     assert.deepStrictEqual(whys('( a ) &', 'a'), ['background', 'parentheses']);
+    // The innermost subshell gives the reason.
+    assert.strictEqual((processOf(at('( a ) &', 'a').env).link as SubshellLink).why, 'parentheses');
     assert.deepStrictEqual(whys('x | y $(a)', 'a'), ['pipeline-stage', 'command-substitution']);
     assert.deepStrictEqual(whys('b && { a; } & wait', 'a'), ['background']);
     assert.deepStrictEqual(whys('coproc a', 'a'), ['coproc']);
@@ -70,12 +72,27 @@ describe('execution environments: subshells', () => {
     assert.strictEqual(kind('f() { a; }; g() { f; }; g | cat; h() { x=$(f); }; h', 'a'), 'subshell');
     // `f() ( … )`: a subshell wherever it is called.
     assert.strictEqual(kind('f() ( a ); f', 'a'), 'subshell');
-    // Not called: where it is defined.
+    // Not called: where it is defined, but not for sure (it may be called where the model does not see).
     assert.strictEqual(kind('( f() { a; } )', 'a'), 'subshell');
-    assert.strictEqual(kind('f() { a; }', 'a'), 'main');
-    // A recursive call adds no place of its own; one that only calls itself runs where it is defined.
+    assert.strictEqual(kind('f() { a; }', 'a'), 'main?');
+    assert.strictEqual(kind("f() { a; }; export -f f; bash -c f", 'a'), 'main?');
+    // A recursive call: wherever the function is entered, with the subshells around the call.
     assert.strictEqual(kind('f() { a; f; }; f | cat', 'a'), 'subshell');
-    assert.strictEqual(kind('f() { a; f; }', 'a'), 'main');
+    assert.strictEqual(kind('f() { a; f | cat; }; f', 'a'), 'subshell?');
+    assert.strictEqual(kind('f() { a; f; }', 'a'), 'main?');
+    // Functions that call each other run where either is called from outside.
+    const mutual = 'f() { [ "$1" ] && return; a; g; }; g() { b; f x; }; echo | f';
+    assert.deepStrictEqual([kind(mutual, 'a'), kind(mutual, 'b')], ['subshell', 'subshell']);
+    assert.deepStrictEqual([kind(`${mutual}; g`, 'a'), kind(`${mutual}; g`, 'b')], ['subshell?', 'subshell?']);
+    // Called by `eval` or a trap: from where they run; a name used where the walk sees no call: not for sure.
+    assert.strictEqual(kind('m() { a; }; echo | m; eval m', 'a'), 'subshell?');
+    assert.strictEqual(kind('m() { a; }; x=$(builtin eval "m")', 'a'), 'subshell');
+    assert.strictEqual(kind('m() { a; }; echo | m; trap m EXIT', 'a'), 'subshell?');
+    assert.strictEqual(kind('m() { a; }; echo | m; "${1:-m}"', 'a'), 'subshell?');
+    assert.strictEqual(kind('m() { a; }; echo | m # m', 'a'), 'subshell');
+    // A call where the function may not be defined yet.
+    const sites = (at('[ "$1" ] && m() { :; }; m', ':').env.links[0] as CallLink).sites;
+    assert.deepStrictEqual(sites.map((x) => x.sure), [false]);
     // Called through an alias: from where the alias is used.
     assert.strictEqual(kind('shopt -s expand_aliases\nalias g=f\nf() { a; }\nx=$(g)', 'a'), 'subshell');
   });
@@ -92,19 +109,28 @@ describe('execution environments: command slots', () => {
     const inner = s.get("'f'")!;
     assert.deepStrictEqual(inner.links.map((l) => (l.kind === 'slot' ? l.via : l.kind)), ['sudo', 'env', 'bash -c']);
     assert.strictEqual(processOf(inner).kind, 'shell');
+    assert.deepStrictEqual(inner.links.map((l) => (l.kind === 'slot' ? l.shell : undefined)), [undefined, undefined, 'bash']);
+    assert.deepStrictEqual(['dash -c x', '/bin/sh -c x', 'zsh -c x', 'ksh -c x', 'ssh h x'].map((src) => (slots(src, src).values().next().value!.links[0] as SlotLink).shell), ['dash', 'sh', 'zsh', 'ksh', 'unknown']);
     assert.strictEqual(processOf(s.get('env')!).kind, 'program');
     const reach = reachOf(inner);
     assert.deepStrictEqual([reach.functions, reach.variables, reach.blocker?.kind === 'slot' && reach.blocker.via], ['none', 'none', 'sudo']);
   });
   it('passes exported functions and variables through programs and shells that keep the environment', () => {
     const s = slots("echo x | xargs bash -c 'f'", "xargs bash -c 'f'");
-    assert.deepStrictEqual(reachOf(s.get("'f'")!), { functions: 'exported', variables: 'exported' });
+    assert.deepStrictEqual(reachOf(s.get("'f'")!), { functions: 'exported', variables: 'exported', options: 'none', aliases: 'none' });
+    assert.strictEqual(reachOf(s.get("'f'")!, true).options, 'exported');
+    assert.deepStrictEqual(reachOf(at('( a )', 'a').env), { functions: 'all', variables: 'all', options: 'all', aliases: 'all' });
     // sudo -E: the variables, but no function.
     const e = slots("sudo -E bash -c 'f'", "sudo -E bash -c 'f'").get("'f'")!;
     assert.deepStrictEqual([reachOf(e).functions, reachOf(e).variables], ['none', 'exported']);
     // eval and command run in this shell.
     const c = slots('command eval f', 'command eval f').get('f')!;
     assert.deepStrictEqual([processOf(c).kind, reachOf(c).functions], ['main', 'all']);
+    // su keeps the environment, unless it starts a login shell; docker run -e passes a variable.
+    assert.deepStrictEqual(reachOf(slots("su -c 'f' bob", "su -c 'f' bob").get("'f'")!).functions, 'exported');
+    for (const src of ["su - -c 'f' bob", "su -l -c 'f' bob", "su --login -c 'f'"]) assert.strictEqual(reachOf(slots(src, src).get("'f'")!).functions, 'none', src);
+    const docker = slots("docker run -e x --env y=1 --env=z=2 -ew --env-file f img sh -c 'f'", "docker run -e x --env y=1 --env=z=2 -ew --env-file f img sh -c 'f'").get('sh')!;
+    assert.deepStrictEqual(docker.links.map((l) => (l.kind === 'slot' ? l.assigns : [])), [['x', 'y', 'z', 'w', '*']]);
   });
   it('knows where a command runs: here, on another machine, in a container', () => {
     const ssh = slots('ssh host ls -l', 'ssh host ls -l').get('ls')!;
@@ -138,8 +164,22 @@ describe('explanations from the execution environment', () => {
   it('says that a builtin which acts on its shell acts on the subshell only', function () {
     assert.match(about('( cd /; ls )', 'cd'), /\. It runs in a subshell \(`\( \)`\), so the change stays in the subshell and is gone when it ends$/);
     assert.match(about('x=$(exit 3)', 'exit'), /\. It runs in a subshell \(`\$\( \)`\), so it ends only the subshell, not the script$/);
-    assert.match(about('x=`cd /`', 'cd'), /\(backquotes\)/);
-    assert.match(about('cat <(cd /)', 'cd'), /\(`<\( \)`\)/);
+    // In a substitution, the change is usually there for the commands after it: said mildly.
+    assert.match(about('x=`cd /`', 'cd'), /\. It runs in the subshell of backquotes, so the change holds only for the commands after it there$/);
+    assert.match(about('dir=$(cd "$(dirname "$0")" && pwd)', 'cd'), /\. It runs in the subshell of `\$\( \)`, so the change holds only for the commands after it there$/);
+    assert.match(about('cat <(cd /)', 'cd'), /the subshell of `<\( \)`/);
+    assert.match(about('x=$(cd /)', 'cd', 'ja'), /。`\$\( \)` の中のサブシェルで実行されるので、この変更はその中のあとのコマンドにだけ効く$/);
+    // A call that only prints changes nothing.
+    for (const [src, label] of [['saved=$(set +o)', 'set'], ['x=$(set -o)', 'set'], ['m=$(umask)', 'umask'], ['t=$(trap -p EXIT)', 'trap'], ['x=$(trap -l)', 'trap'], ['a=$(alias)', 'alias'], ['a=$(alias ll)', 'alias'],
+      ['e=$(export -p)', 'export'], ['e=$(export)', 'export'], ['s=$(shopt -p)', 'shopt'], ['s=$(shopt -s)', 'shopt'], ['s=$(shopt extglob)', 'shopt'], ['h=$(hash -t ls)', 'hash'], ['h=$(hash)', 'hash'], ['l=$(ulimit -n)', 'ulimit'],
+      ['d=$(declare -p x)', 'declare'], ['d=$(declare -f f)', 'declare'], ['d=$(typeset -F)', 'typeset'], ['d=$(declare)', 'declare'], ['r=$(readonly -p)', 'readonly'], ['x=$(enable -a)', 'enable'], ['f() { x=$(local); }; f', 'local']]) {
+      assert.doesNotMatch(about(src, label), /subshell/, src);
+    }
+    for (const [src, label] of [['( set -e )', 'set'], ['( set -- a )', 'set'], ['( umask 022 )', 'umask'], ['( trap - INT )', 'trap'], ['( trap -- "" INT )', 'trap'], ['( alias ll="ls -l" )', 'alias'], ['( alias $x )', 'alias'],
+      ['( export -n x )', 'export'], ['( shopt -s extglob )', 'shopt'], ['( hash -r )', 'hash'], ['( hash ls )', 'hash'], ['( ulimit -n 100 )', 'ulimit'], ['( declare -fx f )', 'declare'], ['( declare -i n )', 'declare'],
+      ['( readonly x )', 'readonly'], ['( enable -n echo )', 'enable'], ['( unset x )', 'unset']]) {
+      assert.match(about(src, label), /subshell/, src);
+    }
     assert.match(about('cd / &', 'cd'), /\(`&`\)/);
     assert.match(about('coproc { cd /; }', 'cd'), /\(`coproc`\)/);
     assert.match(about('echo x | read -r v', 'read'), /\(a pipeline stage\)/);
@@ -157,8 +197,9 @@ describe('explanations from the execution environment', () => {
     assert.match(about('f() { cd /; }\nx=$(f); f | cat', 'cd', 'ja'), /サブシェル（関数の呼び出し元）/);
     assert.match(about('f() { cd /; }\nx=$(f)', 'cd', 'ja'), /サブシェル（関数の呼び出し元: `\$\( \)`）/);
     assert.match(about('f() { cd /; }\nf; f | cat', 'cd', 'ja'), /サブシェル（関数の呼び出し元の一部）/);
-    assert.match(about('x | y `cd /`', 'cd', 'ja'), /サブシェル（パイプラインの段）/);
-    assert.match(about('x=`cd /`', 'cd', 'ja'), /サブシェル（バッククォート）/);
+    assert.match(about('x | y; cd /', 'cd', 'ja', 0), /^カレントディレクトリを移動する（シェル組み込み）$/);
+    assert.match(about('cd / | y', 'cd', 'ja'), /サブシェル（パイプラインの段）/);
+    assert.match(about('x=`cd /`', 'cd', 'ja'), /バッククォート の中のサブシェル/);
     // In the shell itself, or as a function: nothing to say.
     for (const [src, label] of [['cd /', 'cd'], ['shopt -s lastpipe; echo | read v', 'read'], ['cd() { :; }; ( cd / )', 'cd'], ['( ls )', 'ls']]) assert.doesNotMatch(about(src, label), /subshell/, src);
     if (!hasBash) this.skip();
@@ -190,7 +231,19 @@ describe('explanations from the execution environment', () => {
       "set -a; name=x\nbash -c 'echo $name'", "export name=x\nx | env name=$name bash -c 'echo $name'", "[ \"$1\" ] && export name\nname=x\nbash -c 'echo $name'"]) {
       assert.deepStrictEqual(pitfalls(src, 'en', 1), [], src);
     }
+    // A read before the string sets the variable counts; one with a default or a length does not.
+    assert.strictEqual(pitfalls("x=1\nbash -c 'echo $x; x=2'", 'en', 1).length, 1);
+    assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y:-none} ${#y} ${y+set} ${y:=d} ${y?}'", 'en', 1), []);
+    assert.deepStrictEqual(pitfalls("y=1\nbash -c 'for y in a; do echo $y; done; f() { local y=1; echo $y; }; f'", 'en', 1), []);
+    // su keeps the environment (not with a login shell); docker run -e and --env-file pass variables.
+    assert.match(pitfalls("export x=1\nsu -l -c 'echo $x'", 'en', 1)[0], /`su -c` passes none of this script's variables/);
+    assert.deepStrictEqual(pitfalls("export x=1\nsu -c 'echo $x'", 'en', 1), []);
+    assert.match(pitfalls("x=1\nsu -c 'echo $x'", 'en', 1)[0], /not exported/);
+    assert.deepStrictEqual(pitfalls("export x=1\ndocker run -e x img sh -c 'echo $x'", 'en', 1), []);
+    assert.deepStrictEqual(pitfalls("export x=1\ndocker run --env-file f img sh -c 'echo $x'", 'en', 1), []);
+    assert.strictEqual(pitfalls("export x=1\ndocker run -e y img sh -c 'echo $x'", 'en', 1).length, 1);
     if (!hasBash) this.skip();
+    assert.strictEqual(bash("x=1; bash -c 'echo \"[$x]\"; x=2'; y=1; bash -c 'echo ${y:-none} ${#y} ${y+set}'"), '[]\nnone 0\n');
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
   });
   it('reads `$_` after the commands of its own process only', function () {
