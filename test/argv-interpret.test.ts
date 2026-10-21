@@ -1,21 +1,18 @@
 // The argument interpreter (src/argv/interpret.ts): the worked examples of the design, commands of the
-// dictionary through the converter (src/argv/fromdoc.ts), and the corners of the option grammar.
+// dictionary, the specs `cmd` builds (src/dict/types.ts), and the corners of the option grammar.
 import * as assert from 'assert';
-import { commandSpec, lookupCommand } from '../src/analyzer';
-import { fromCommandDoc } from '../src/argv/fromdoc';
+import { lookupCommand } from '../src/analyzer';
 import { ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
-import { builtins } from '../src/dict/builtins';
-import { commands } from '../src/dict/commands';
-import { CommandDoc, cmd, native, runs } from '../src/dict/types';
+import { byCount, cmd, runs } from '../src/dict/types';
 import { tx } from '../src/i18n';
 import { argWords, render } from './support/argwords';
 // (Types only: loaded so that its coverage is measured.)
 import '../src/argv/spec';
 
 const t = (en: string) => tx(en, en);
-const lookup = (name: string): CommandSpec | undefined => commandSpec(name);
-/** The roles of the words of `line`, read with `spec` (by default the dictionary's entry, converted). */
+const lookup = lookupCommand;
+/** The roles of the words of `line`, read with `spec` (by default the dictionary's entry). */
 const roles = (line: string, spec?: CommandSpec, ctx: InterpretContext = {}): string[] => {
   const { name, words, texts } = argWords(line);
   return render(interpret(spec ?? lookup(name)!, words, { name, lookup, ...ctx }), texts);
@@ -550,7 +547,7 @@ describe('argv interpreter: review fixes', () => {
   });
 
   it('reads more values, and `-f=FORMAT` for dpkg', () => {
-    const spec: CommandSpec = fromCommandDoc(cmd('n', 'n', [['--three', 't', 'three', 'arg3']]), 'n');
+    const spec: CommandSpec = cmd('n', 'n', [['--three', 't', 'three', 'arg3']]);
     assert.deepStrictEqual(roles('n --three a b c d', spec), ['--three: --three three', 'a: value 0 of --three VALUE1', 'b: value 1 of --three VALUE2', 'c: value 2 of --three VALUE3', 'd: operand']);
     // `dpkg-query -W -f=X bash` prints `X`: the value starts after the `=`.
     assert.deepStrictEqual(roles("dpkg-query -W -f='${Package}' bash")[1].split(':')[0] + roles("dpkg-query -W -f='${Package}' bash")[1].replace(/.*: -f=(\d).*/, ' $1'), "-f='${Package}' 3");
@@ -558,52 +555,41 @@ describe('argv interpreter: review fixes', () => {
   });
 });
 
-describe('argv converter: dictionary entries to specs', () => {
-  it('converts every entry of the dictionary', () => {
-    const all: [string, CommandDoc][] = [...Object.entries(commands), ...Object.entries(builtins)];
-    for (const [name, doc] of all) {
-      const spec = fromCommandDoc(doc, name);
-      // Every option with a value in the dictionary has one in the spec, under the same names.
-      for (const [n, o] of Object.entries(doc.options ?? {})) {
-        if (name === 'find') continue;
-        const s = spec.options!.find((x) => x.names.includes(n));
-        assert.ok(s, `${name} ${n}`);
-        assert.strictEqual(!!(s.value || s.until), !!(o.arg || o.attachedOnly || o.nextIf || o.untilTerminator), `${name} ${n}`);
-      }
-    }
-  });
-
-  it('turns the special fields into the spec', () => {
-    const doc = cmd('x', 'x', [
+describe('argv specs: the dictionary entries `cmd` builds', () => {
+  it('turns the tuples and the shorthand into the spec', () => {
+    const spec = cmd('x', 'x', [
       ['-q|--query', 'q', 'query'], ['-i', 'i', 'install'], ['-f', 'f', 'file', 'arg fills'],
     ], {
       positional: [tx('a', 'pattern'), tx('b', 'file')],
-      // (A subcommand written as a spec is taken as it is.)
-      subcommands: { run: native('r', 'run', [], { style: 'posix', operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
+      subcommands: { run: cmd('r', 'run', [], { style: 'posix', operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
     });
-    const spec = fromCommandDoc(doc, 'x');
     assert.deepStrictEqual(spec.operands![0], { when: { option: ['-f'] }, pattern: [{ name: 'ARG2', text: tx('b', 'file'), repeat: '*' }] });
     assert.deepStrictEqual(roles('x -qi a', spec), ['-qi: cluster -q query | -i install', 'a: ARG1']);
     assert.deepStrictEqual(roles('x run A=1 ls', spec), ['run: subcommand run', '  A=1: NAME=VALUE (assignment)', '  ls: command exec ls']);
     // An entry without options.
-    assert.deepStrictEqual(fromCommandDoc({ summary: tx('s', 's') }).options, []);
-    // A spec written directly: a name given twice means what it means last, as in `cmd`.
-    assert.deepStrictEqual(native('n', 'n', [['-q', 'q', 'quiet'], ['-a|--all', 'a', 'all'], ['-p|--project', 'p', 'project'], ['-p|--publish', 'p', 'publish', 'arg'], ['-a', 'a', 'again'], ['-q', 'q', 'quiet again']]).spec!.options!.map((o) => `${o.names.join('|')} ${o.text.en}`),
-      ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again']);
+    assert.deepStrictEqual(cmd('s', 's').options, []);
+    // A name given twice means what it means last; an option given later with `fills` no longer fills.
+    const twice = cmd('n', 'n', [['-q', 'q', 'quiet'], ['-a|--all', 'a', 'all'], ['-p|--project', 'p', 'project'], ['-p|--publish', 'p', 'publish', 'arg'], ['-a', 'a', 'again'], ['-q', 'q', 'quiet again'], ['-e', 'e', 'e', 'arg fills'], { names: ['-e'], text: t('e again') }], { positional: [t('p')] });
+    assert.deepStrictEqual(twice.options!.map((o) => `${o.names.join('|')} ${o.text.en}`),
+      ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again', '-e e again']);
+    assert.strictEqual(twice.operands!.length, 1);
   });
 
-  it('builds the operand patterns of `positionalBy`', () => {
-    const by = (rules: CommandDoc['positionalBy'], line: string): string[] =>
-      parseOf(line, fromCommandDoc(cmd('p', 'p', [['-t', 't', 't']], { positional: [tx('d', 'default')], positionalBy: rules }), 'p'))
-        .roles.flatMap((r) => (r.role.role === 'operand' ? [r.role.spec?.text.en ?? '?'] : []));
-    const rules: CommandDoc['positionalBy'] = [
-      { count: 2, texts: [tx('a', 'a'), tx('b', 'b'), tx('c', 'c')], orMore: true, last: tx('z', 'z') },
-      { count: 1, when: '-t', texts: [tx('t', 't')] },
-    ];
-    assert.deepStrictEqual(by(rules, 'p 1 2'), ['a', 'z']);
-    assert.deepStrictEqual(by(rules, 'p 1 2 3 4 5'), ['a', 'b', 'c', 'c', 'z']);
-    assert.deepStrictEqual(by(rules, 'p -t 1'), ['t']);
-    assert.deepStrictEqual(by(rules, 'p 1'), ['default']);
+  it('builds the operand patterns of `byCount`', () => {
+    const by = (line: string): string[] =>
+      parseOf(line, cmd('p', 'p', [['-t', 't', 't']], {
+        positional: [tx('d', 'default')],
+        operands: [
+          byCount(2, [tx('a', 'a'), tx('b', 'b'), tx('c', 'c')], { orMore: true, last: tx('z', 'z') }),
+          byCount(1, [tx('t', 't')], { when: '-t' }),
+          byCount(1, [tx('u', 'u')], { unless: '-t' }),
+        ],
+      })).roles.flatMap((r) => (r.role.role === 'operand' ? [r.role.spec?.text.en ?? '?'] : []));
+    assert.deepStrictEqual(by('p 1 2'), ['a', 'z']);
+    assert.deepStrictEqual(by('p 1 2 3 4 5'), ['a', 'b', 'c', 'c', 'z']);
+    assert.deepStrictEqual(by('p -t 1'), ['t']);
+    assert.deepStrictEqual(by('p 1'), ['u']);
+    assert.deepStrictEqual(by('p'), []);
   });
 
   it('gives the wrappers their command slots', () => {
@@ -619,13 +605,13 @@ describe('argv converter: dictionary entries to specs', () => {
     const k = parseOf('kubectl exec pod -- ls').roles[0].role;
     assert.ok(k.role === 'subcommand' && k.parse.roles[2].role.role === 'command');
     // A positional language applies to its own index only.
-    const tr = fromCommandDoc(lookupCommand('tr')!, 'tr').operands!.at(-1)!.pattern;
+    const tr = lookupCommand('tr')!.operands!.at(-1)!.pattern;
     assert.deepStrictEqual(tr.map((x) => [x.repeat, x.lang]), [['?', 'trset'], ['?', 'trset'], ['*', undefined]]);
     // `let`: every operand is arithmetic.
-    assert.deepStrictEqual(commandSpec('let')!.operands!.at(-1)!.pattern.map((x) => [x.repeat, x.lang, x.type]), [['*', 'arith', 'arith']]);
-    assert.strictEqual(commandSpec('set')!.builtin, 'special');
-    assert.strictEqual(commandSpec('cd')!.builtin, 'regular');
-    assert.strictEqual(commandSpec('shopt')!.operands!.at(-1)!.pattern[0].type, 'shell-option');
+    assert.deepStrictEqual(lookupCommand('let')!.operands!.at(-1)!.pattern.map((x) => [x.repeat, x.lang, x.type]), [['*', 'arith', 'arith']]);
+    assert.strictEqual(lookupCommand('set')!.builtin, 'special');
+    assert.strictEqual(lookupCommand('cd')!.builtin, 'regular');
+    assert.strictEqual(lookupCommand('shopt')!.operands!.at(-1)!.pattern[0].type, 'shell-option');
     // `echo -e`: the operands are read with escapes.
     assert.strictEqual(parseOf('echo -e x').roles[1].role.role === 'operand' && (parseOf('echo -e x').roles[1].role as { spec: OperandSpec }).spec.lang, 'echo');
   });

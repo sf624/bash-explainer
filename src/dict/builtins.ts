@@ -1,6 +1,6 @@
 import { Text, tx } from '../i18n';
 import type { CommandSpec, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
-import { args, CommandDoc, native, operand, OptSpec, runs } from './types';
+import { args, cmd, operand, OptSpec, runs } from './types';
 import { declarationCommands, declarationFlags, exportFlags, readonlyFlags } from './syntax';
 
 export const shellOptions = {
@@ -60,10 +60,10 @@ const MAPFILE_OPTIONS: OptSpec[] = [
 type Rest = Omit<Partial<CommandSpec>, 'summary' | 'options'>;
 
 /** A builtin of bash: it reads options up to its first operand (`-` words after it are operands). */
-const b = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandDoc =>
-  native(ja, en, opts, { builtin: 'regular', style: 'posix', ...rest });
+const b = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandSpec =>
+  cmd(ja, en, opts, { builtin: 'regular', style: 'posix', ...rest });
 /** A POSIX special builtin: an assignment before it stays in POSIX mode, and an error in it exits a POSIX shell. */
-const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandDoc => b(ja, en, opts, { builtin: 'special', ...rest });
+const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandSpec => b(ja, en, opts, { builtin: 'special', ...rest });
 
 /**
  * The one operand of `exit`, `return`, `shift`, `break` and `continue`, a number. They take no options:
@@ -72,7 +72,7 @@ const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], re
 const numeric = (o: OperandSpec): Rest => ({ style: 'none', ...args(o) });
 
 /** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
-function declarationDoc(name: string, flags: Record<string, Text>, rest: Rest = {}): CommandDoc {
+function declarationSpec(name: string, flags: Record<string, Text>, rest: Rest = {}): CommandSpec {
   const t = declarationCommands[name];
   return b(t.ja, t.en, Object.entries(flags).map(([flag, text]) => ({ names: [flag], text })), {
     ...args(operand('NAME', '変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)')),
@@ -104,13 +104,13 @@ const KILL_PATTERNS: PatternOption[] = [
   },
 ];
 
-export const builtins: Record<string, CommandDoc> = {
-  export: declarationDoc('export', exportFlags, { builtin: 'special' }),
-  readonly: declarationDoc('readonly', readonlyFlags, { builtin: 'special' }),
+export const builtins: Record<string, CommandSpec> = {
+  export: declarationSpec('export', exportFlags, { builtin: 'special' }),
+  readonly: declarationSpec('readonly', readonlyFlags, { builtin: 'special' }),
   // `declare +x`: a `+` turns the attribute off.
-  declare: declarationDoc('declare', declarationFlags, { plusOptions: true }),
-  typeset: declarationDoc('typeset', declarationFlags, { plusOptions: true }),
-  local: declarationDoc('local', declarationFlags, { plusOptions: true }),
+  declare: declarationSpec('declare', declarationFlags, { plusOptions: true }),
+  typeset: declarationSpec('typeset', declarationFlags, { plusOptions: true }),
+  local: declarationSpec('local', declarationFlags, { plusOptions: true }),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', [
@@ -211,10 +211,10 @@ export const builtins: Record<string, CommandDoc> = {
   source: special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS),
   '.': special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS),
   // The words are joined with spaces and read again as a command of this shell.
-  eval: native('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
+  eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
     builtin: 'special', style: 'posix', operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
   }),
-  exec: native('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
+  exec: cmd('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
     ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
@@ -284,7 +284,7 @@ export const builtins: Record<string, CommandDoc> = {
     ['-p', '外部コマンドのパスだけを表示（ビルトイン・関数・別名なら何も出さない）', 'print the path only when the name would run an executable (nothing for a builtin, function or alias)'],
     ['-f', '関数を無視する', 'ignore functions'],
   ], args(operand('NAME', '調べる名前', 'name to look up'))),
-  command: native('関数や別名を無視してコマンドを実行する。`-v` で存在確認によく使う', 'Run a command ignoring functions/aliases; `-v` is often used to check existence', [
+  command: cmd('関数や別名を無視してコマンドを実行する。`-v` で存在確認によく使う', 'Run a command ignoring functions/aliases; `-v` is often used to check existence', [
     ['-v', 'コマンドのパスまたは名前を表示（存在確認に使う）', 'print the command path or name (existence check)'],
     ['-V', 'コマンドの詳しい説明を表示', 'print a verbose description'],
     ['-p', '標準の PATH で検索する', 'use a default PATH'],
@@ -296,7 +296,7 @@ export const builtins: Record<string, CommandDoc> = {
       { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
     ],
   }),
-  builtin: native('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
+  builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
     ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],

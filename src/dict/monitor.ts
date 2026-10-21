@@ -1,4 +1,5 @@
-import { cmd, CommandDoc, native, OptSpec, pos, runs } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, OptSpec, pos, runs } from './types';
 
 // Performance monitoring and tracing, virtualization and configuration management, and the
 // build tools that LPIC-2 and LinuC-2 name (building and installing software from source).
@@ -16,7 +17,7 @@ const sysstat = (extra: OptSpec[] = []): OptSpec[] => [
   ...extra,
 ];
 
-export const monitor: Record<string, CommandDoc> = {
+export const monitor: Record<string, CommandSpec> = {
   // ---- performance --------------------------------------------------------------------------
   iostat: cmd('CPU とディスクの入出力の統計を表示する', 'Report CPU and disk I/O statistics', sysstat([
     ['-x', '詳しい拡張統計を表示', 'show extended statistics'],
@@ -106,7 +107,7 @@ export const monitor: Record<string, CommandDoc> = {
     ['-json', 'JSON で出力', 'JSON output'],
     ['-html', 'HTML で出力', 'HTML output'],
     ['-sanitize', '個人を特定できる情報（シリアルなど）を伏せる', 'hide identifying data such as serial numbers'],
-  ], { longSingleDash: true }),
+  ], { style: 'single-dash' }),
   dmidecode: cmd('BIOS/UEFI(DMI)が持つハードウェア情報を表示する', 'Show hardware information from the BIOS/UEFI (DMI)', [
     ['-t|--type', '表示する種類（`memory`、`bios`、`system`、`processor`）', 'type to show (`memory`, `bios`, `system`, `processor`)', 'arg'],
     ['-s|--string', '指定した項目の値だけ表示（`system-serial-number`…）', 'print one value (`system-serial-number`…)', 'arg'],
@@ -132,7 +133,7 @@ export const monitor: Record<string, CommandDoc> = {
     ['-q|--queues', 'メッセージキュー', 'message queues'],
     ['-g|--global', '全体の制限と使用状況', 'global limits and usage'],
   ]),
-  strace: native('プロセスのシステムコールとシグナルを追跡して表示する', 'Trace the system calls and signals of a process', [
+  strace: cmd('プロセスのシステムコールとシグナルを追跡して表示する', 'Trace the system calls and signals of a process', [
     ['-p', '追跡する実行中のプロセスの PID', 'attach to the given running PID', 'arg'],
     ['-f', '子プロセスも追跡', 'follow child processes'],
     ['-e', '追跡する対象を絞る（`trace=open,read`）', 'filter what is traced (`trace=open,read`)', 'arg'],
@@ -143,7 +144,7 @@ export const monitor: Record<string, CommandDoc> = {
     ['-s', '文字列の表示を切る長さ', 'maximum string length to print', 'arg'],
     ['-v', '省略せずに表示', 'unabbreviated output'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-  ltrace: native('プロセスのライブラリ関数の呼び出しを追跡して表示する', 'Trace the library calls of a process', [
+  ltrace: cmd('プロセスのライブラリ関数の呼び出しを追跡して表示する', 'Trace the library calls of a process', [
     ['-p', '追跡する実行中のプロセスの PID', 'attach to the given running PID', 'arg'],
     ['-f', '子プロセスも追跡', 'follow child processes'],
     ['-c', '呼び出しの回数と時間を集計する', 'count calls and time'],
@@ -152,8 +153,8 @@ export const monitor: Record<string, CommandDoc> = {
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   perf: cmd('Linux の性能解析ツール（プロファイリング）', 'Linux performance analysis tool (profiling)', [], {
     subcommands: {
-      stat: native('コマンドのハードウェアカウンタ（命令数、キャッシュミス…）を数える', 'Count hardware events (instructions, cache misses…) of a command', [['-e', '数えるイベント', 'events to count', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-      record: native('サンプリングして `perf.data` に記録する', 'Sample and record to `perf.data`', [['-g', 'コールグラフを記録', 'record call graphs'], ['-F', 'サンプリング周波数（Hz）', 'sampling frequency (Hz)', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide'], ['-o', '出力ファイル', 'output file', 'arg']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+      stat: cmd('コマンドのハードウェアカウンタ（命令数、キャッシュミス…）を数える', 'Count hardware events (instructions, cache misses…) of a command', [['-e', '数えるイベント', 'events to count', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+      record: cmd('サンプリングして `perf.data` に記録する', 'Sample and record to `perf.data`', [['-g', 'コールグラフを記録', 'record call graphs'], ['-F', 'サンプリング周波数（Hz）', 'sampling frequency (Hz)', 'arg'], ['-p', '対象の PID', 'target PID', 'arg'], ['-a', 'システム全体を対象にする', 'system-wide'], ['-o', '出力ファイル', 'output file', 'arg']], { style: 'posix', operands: [{ pattern: [runs()] }] }),
       report: cmd('記録した結果を表示する', 'Show a recorded profile', [['-i', '入力ファイル', 'input file', 'arg'], ['--stdio', '端末にそのまま出力', 'plain text output']]),
       top: cmd('実行中の様子を `top` 風に表示する', 'Live profile in the style of `top`'),
       list: cmd('使えるイベントを一覧表示する', 'List available events'),
@@ -215,14 +216,14 @@ export const monitor: Record<string, CommandDoc> = {
     ['-nographic', 'グラフィックを使わず端末に出す', 'no graphics; use the terminal'],
     ['-netdev', 'ネットワークバックエンドの指定', 'network backend', 'arg'],
     ['-cpu', 'CPU の種類（`host`…）', 'CPU model (`host`…)', 'arg'],
-  ], { longSingleDash: true }),
+  ], { style: 'single-dash' }),
   kvm: cmd('KVM を有効にして QEMU の仮想マシンを動かす', 'Run a QEMU virtual machine with KVM enabled', [
     ['-m', 'メモリの量', 'memory size', 'arg'],
     ['-smp', 'CPU の数', 'number of CPUs', 'arg'],
     ['-hda', 'ハードディスクのイメージ', 'hard disk image', 'arg'],
     ['-cdrom', 'CD-ROM のイメージ', 'CD-ROM image', 'arg'],
     ['-nographic', 'グラフィックを使わず端末に出す', 'no graphics; use the terminal'],
-  ], { longSingleDash: true }),
+  ], { style: 'single-dash' }),
   vagrant: cmd('開発用の仮想マシンを定義ファイル(Vagrantfile)から作り管理する', 'Build and manage development virtual machines from a Vagrantfile', [], {
     subcommands: {
       init: cmd('Vagrantfile を作る', 'Create a Vagrantfile'),

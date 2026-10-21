@@ -1,5 +1,6 @@
+import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, cmd, CommandDoc, native, operand, OptSpec, pos, runs } from './types';
+import { args, cmd, operand, OptSpec, pos, runs } from './types';
 
 // System administration commands from the LPIC and LinuC objectives: boot loaders and kernel
 // modules, package tools of the Debian and Red Hat families, accounts, scheduling, time, logs,
@@ -23,7 +24,7 @@ const zypperCommon: OptSpec[] = [
 ];
 const ufwRule = pos('規則（`allow 22/tcp`、`deny from 10.0.0.0/8`…）', 'rule (`allow 22/tcp`, `deny from 10.0.0.0/8`…)');
 
-export const admin: Record<string, CommandDoc> = {
+export const admin: Record<string, CommandSpec> = {
   // ---- kernel modules, boot loaders and early boot ------------------------------------------
   insmod: cmd('カーネルモジュールをファイルから読み込む（依存関係は解決しない）', 'Load a kernel module from a file (no dependency handling)', [], { positional: [pos('モジュールのファイル（`.ko`）', 'module file (`.ko`)'), pos('モジュールのパラメータ（`名前=値`）', 'module parameters (`name=value`)')] }),
   rmmod: cmd('カーネルモジュールを取り外す', 'Unload a kernel module', [
@@ -124,7 +125,7 @@ export const admin: Record<string, CommandDoc> = {
     },
   }),
   udevmonitor: cmd('udev とカーネルのイベントを見張る（古い名前。`udevadm monitor`）', 'Watch udev and kernel events (old name for `udevadm monitor`)'),
-  'systemd-run': native('コマンドを一時的な systemd のユニットとして実行する', 'Run a command as a transient systemd unit', [
+  'systemd-run': cmd('コマンドを一時的な systemd のユニットとして実行する', 'Run a command as a transient systemd unit', [
     ['--unit', 'ユニット名', 'unit name', 'arg'],
     ['--scope', 'サービスでなくスコープとして実行（前面で）', 'run as a scope instead of a service'],
     ['--on-calendar', '指定した日時の書式で繰り返す（タイマー）', 'repeat on the given calendar spec (timer)', 'arg'],
@@ -135,7 +136,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-r|--remain-after-exit', '終了後もユニットを残す', 'keep the unit after it exits'],
     ['-G|--collect', '失敗してもユニットを残さず片付ける', 'unload the unit even if it failed'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-  'systemd-cat': native('コマンドの出力や標準入力をジャーナルに送る', 'Send the output of a command, or stdin, to the journal', [
+  'systemd-cat': cmd('コマンドの出力や標準入力をジャーナルに送る', 'Send the output of a command, or stdin, to the journal', [
     ['-t|--identifier', 'ログの識別子', 'syslog identifier', 'arg'],
     ['-p|--priority', '優先度（`info`、`err`…）', 'priority (`info`, `err`…)', 'arg'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
@@ -188,7 +189,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-p|--priority', '指定した優先度以上の質問だけ', 'only ask questions of the given priority or higher', 'arg'],
     ['-a|--all', 'すべてのパッケージを再設定する', 'reconfigure all packages'],
   ], { positional: [pkg] }),
-  'dpkg-deb': native('.deb パッケージの中身を調べる・作る・取り出す', 'Inspect, build and unpack .deb packages', [
+  'dpkg-deb': cmd('.deb パッケージの中身を調べる・作る・取り出す', 'Inspect, build and unpack .deb packages', [
     ['-c|--contents', '含まれるファイルを一覧表示', 'list the files inside'],
     ['-I|--info', 'パッケージの情報を表示', 'show package information'],
     ['-x|--extract', '指定ディレクトリに展開する', 'extract into a directory'],
@@ -225,7 +226,7 @@ export const admin: Record<string, CommandDoc> = {
   }),
   // ---- Red Hat and SUSE package tools -------------------------------------------------------
   // `rpm -i` installs, but `rpm -qi` (in the query mode) shows information about a package.
-  rpm: native('RPM パッケージを入れる・問い合わせる・検証する', 'Install, query and verify RPM packages', [
+  rpm: cmd('RPM パッケージを入れる・問い合わせる・検証する', 'Install, query and verify RPM packages', [
     { names: ['-i', '--install'], text: tx('インストールする', 'install'), inMode: { query: tx('パッケージの情報を表示する', 'show package information') } },
     ['-U|--upgrade', '更新する（なければ入れる）', 'upgrade (install if absent)'],
     ['-F|--freshen', '入っているものだけ更新する', 'upgrade only if already installed'],
@@ -635,7 +636,7 @@ export const admin: Record<string, CommandDoc> = {
     ['-R|--recursive', '再帰的に処理する', 'recurse'],
     ['--reference', '同じコンテキストにするファイル', 'copy the context of the given file', 'arg'],
   ], { positional: [files] }),
-  runcon: native('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
+  runcon: cmd('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
     ['-t|--type', 'タイプ', 'type', 'arg'],
     ['-u|--user', 'ユーザー', 'user', 'arg'],
     ['-r|--role', 'ロール', 'role', 'arg'],

@@ -24,7 +24,8 @@ import { monitor } from '../src/dict/monitor';
 import { extraFiles } from '../src/dict/extrasFiles';
 import { extraAdmin } from '../src/dict/extrasAdmin';
 import { extraSubcommands } from '../src/dict/extras';
-import { CommandDoc, cmd } from '../src/dict/types';
+import type { CommandSpec } from '../src/argv/spec';
+import { cmd } from '../src/dict/types';
 
 const SUITE = 'trixie'; // the current Debian stable release
 const BASE = 'https://manpages.debian.org';
@@ -42,8 +43,8 @@ const related: Record<string, string[]> = { iptables: ['iptables-extensions'], i
 const noHelp = new Set(['reboot', 'halt', 'poweroff', 'shutdown', 'init', 'telinit', 'kill', 'killall', 'pkill', 'sleep', 'wall', 'write', 'mkfs', 'fdisk', 'parted', 'dd', 'swapoff', 'umount', 'chroot', 'su', 'sudo', 'passwd', 'login', 'vi', 'vim', 'nano', 'less', 'more', 'top', 'htop', 'watch', 'screen', 'tmux']);
 
 /** Option names of one table entry, including its subcommands' options (prefixed by the path). */
-function collect(prefix: string, doc: CommandDoc, into: Map<string, string[]>): void {
-  const names = [...Object.keys(doc.options ?? {}), ...(doc.spec?.options ?? []).flatMap((o) => o.names)];
+function collect(prefix: string, doc: CommandSpec, into: Map<string, string[]>): void {
+  const names = (doc.options ?? []).flatMap((o) => o.names);
   if (names.length) into.set(prefix, names);
   for (const [sub, d] of Object.entries(doc.subcommands ?? {})) collect(`${prefix} ${sub}`, d, into);
 }
@@ -64,7 +65,7 @@ function targets(): Map<string, Map<string, string[]>> {
     }
   }
   for (const table of [extraFiles, extraAdmin]) {
-    for (const [name, specs] of Object.entries(table)) add(name, name, Object.keys(cmd('', '', specs).options!));
+    for (const [name, specs] of Object.entries(table)) add(name, name, cmd('', '', specs).options!.flatMap((o) => o.names));
   }
   for (const [name, subs] of Object.entries(extraSubcommands)) {
     for (const [sub, d] of Object.entries(subs)) {

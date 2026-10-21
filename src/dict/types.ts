@@ -1,119 +1,119 @@
-import type { CommandSlot, CommandSpec, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
+import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
-export interface OptDoc {
-  text: Text;
-  /** The option consumes the next word (or the rest of a combined word) as its value. */
-  arg?: boolean;
-  /** The number of words the option consumes when it is not 1 (`jq --arg NAME VALUE`: 2). */
-  argCount?: number;
-  /** After this option the remaining operands are described by this text (`jq --args`: positional strings, not files). */
-  restOperands?: Text;
-  /** Explanations for specific option values (e.g. `set -o pipefail`). */
-  values?: Record<string, Text>;
-  /** The option consumes words up to a terminator such as `;` or `+` (e.g. `find -exec`). */
-  untilTerminator?: boolean;
-  /** The option's value is written in an embedded language (e.g. `grep -e PATTERN`). */
-  lang?: EmbeddedLang;
-  /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
-  fillsPositional?: boolean;
-  /** The option takes the next word as its value only when that word matches this pattern (`journalctl -b -1`). */
-  nextIf?: string;
-  /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */
-  attachedOnly?: boolean;
-  /** Subcommands take the option too (`kubectl get -n ns`): `OptionSpec.persistent`. */
-  persistent?: boolean;
-}
-
 /**
- * What the positional arguments mean for a given number of them (`seq 5`, `seq 1 5`, `seq 1 2 10`; `cp a b` and
- * `cp a b c dir/`). The first entry that fits replaces `positional`.
- */
-export interface PositionalBy {
-  /** The number of positional arguments: exactly this many, or at least this many with `orMore`. */
-  count: number;
-  orMore?: boolean;
-  /** Applies only when one of these options is given (`--reference=RFILE`, after which every operand is a file). */
-  when?: string;
-  /** Does not apply when one of these options is given (`-t|--target-directory`, which names the destination). */
-  unless?: string;
-  /** Descriptions in order; the last repeats. */
-  texts: Text[];
-  /** Describes the final argument instead of `texts`. */
-  last?: Text;
-}
-
-export interface CommandDoc {
-  summary: Text;
-  options?: Record<string, OptDoc>;
-  /** Descriptions of positional arguments in order; the last one repeats. */
-  positional?: Text[];
-  /** Descriptions that depend on how many positional arguments there are; the first that fits wins over `positional`. */
-  positionalBy?: PositionalBy[];
-  /** Embedded language of positional arguments, by index (does not repeat). */
-  positionalLang?: (EmbeddedLang | undefined)[];
-  subcommands?: Record<string, CommandDoc>;
-  /** Options are single words that never combine (find, java-style `-name`). */
-  longSingleDash?: boolean;
-  /**
-   * The command spec, written directly (`native`): the analyzer reads the arguments with it, and the fields
-   * above, other than `summary` and `subcommands`, are not used. Builtins are written this way (`builtin`).
-   */
-  spec?: CommandSpec;
-}
-
-/**
- * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg`, `until`, `fills`, `attached`,
- * `next:<regexp>`, `lang:<name>`, `persistent`.
+ * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg` (a value; `arg2` for two
+ * words, as `jq --arg NAME VALUE`), `until` (the words up to `;` or `+` are a command: `find -exec`), `fills`
+ * (the option gives what is otherwise the first operand: `grep -e`), `attached` (a value only in the same word:
+ * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
+ * `lang:<name>` (the value's language) and `persistent` (subcommands take it too). The fifth item gives the
+ * meaning of particular values (`set -o pipefail`).
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
-export function cmd(
-  ja: string,
-  en: string,
-  opts: OptSpec[] = [],
-  extra: Partial<Omit<CommandDoc, 'summary' | 'options'>> = {},
-): CommandDoc {
-  const options: Record<string, OptDoc> = {};
-  for (const [names, oja, oen, flags = '', values] of opts) {
-    const doc: OptDoc = { text: tx(oja, oen) };
-    if (flags.includes('arg')) doc.arg = true;
-    const count = /arg(\d)/.exec(flags)?.[1];
-    if (count) doc.argCount = Number(count);
-    if (flags.includes('until')) doc.untilTerminator = true;
-    if (flags.includes('fills')) doc.fillsPositional = true;
-    if (flags.includes('attached')) doc.attachedOnly = true;
-    if (flags.includes('persistent')) doc.persistent = true;
-    const nextIf = /next:(\S+)/.exec(flags)?.[1];
-    if (nextIf) doc.nextIf = nextIf;
-    const lang = /lang:(\w+)/.exec(flags)?.[1];
-    if (lang) doc.lang = lang as EmbeddedLang;
-    if (values) doc.values = values;
-    for (const n of names.split('|')) options[n] = doc;
+/** The option spec of a tuple (see `OptSpec`). */
+export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
+  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}) };
+  const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}) };
+  const nextIf = /next:(\S+)/.exec(flags)?.[1];
+  if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
+  else if (flags.includes('arg')) {
+    const n = Number(/arg(\d)/.exec(flags)?.[1] ?? 1);
+    opt.value = n > 1
+      ? Array.from({ length: n }, (_, k): ValueSpec => ({ name: n === 2 ? ['NAME', 'VALUE'][k] : `VALUE${k + 1}`, ...(k === n - 1 ? extra : {}) }))
+      : { name: 'VALUE', ...extra };
+  } else if (flags.includes('attached')) opt.value = { name: 'VALUE', how: 'attached-only', optional: true, ...extra };
+  else if (nextIf) opt.value = { name: 'VALUE', optional: true, next: new RegExp(nextIf), ...extra };
+  return opt;
+}
+
+/** Lists of options put together: a name given twice means what it means last (the option loses its earlier name). */
+export function mergeOptions(...lists: OptionSpec[][]): OptionSpec[] {
+  const seen = new Set<string>();
+  return lists.flat().reverse().flatMap((o) => {
+    const names = o.names.filter((n) => !seen.has(n));
+    names.forEach((n) => seen.add(n));
+    return names.length === o.names.length ? [o] : names.length ? [{ ...o, names }] : [];
+  }).reverse();
+}
+
+/** What `cmd` takes besides the summary and the options: any field of a spec, and a shorthand for the operands. */
+export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options'> {
+  /**
+   * The operands in order (`ARG1`, `ARG2`…): each optional, and the last one repeats. They are the last
+   * alternative of `operands`. An option with the flag `fills` gives the first one (`grep -e PATTERN`): with it,
+   * the operands start at the second.
+   */
+  positional?: Text[];
+  /** The language of the operand at each index of `positional` (it does not repeat). */
+  positionalLang?: (EmbeddedLang | undefined)[];
+}
+
+/**
+ * A dictionary entry: the spec of a command (src/argv/spec.ts). Options are tuples (`OptSpec`) or option specs;
+ * the other fields are those of a spec, and `positional`.
+ */
+export function cmd(ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: CmdRest = {}): CommandSpec {
+  const summary = tx(ja, en);
+  const { positional = [], positionalLang = [], operands = [], ...fields } = rest;
+  const options = mergeOptions(opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)));
+  // (The names whose last meaning has the flag `fills`.)
+  const filling = new Map<string, boolean>();
+  for (const o of opts) for (const n of Array.isArray(o) ? o[0].split('|') : o.names) filling.set(n, Array.isArray(o) && !!o[3]?.includes('fills'));
+  const fills = [...filling].filter(([, f]) => f).map(([n]) => n);
+  const alts: OperandAlt[] = [
+    ...operands,
+    ...(fills.length ? [{ when: { option: fills }, pattern: listed(positional, positionalLang, 1) }] : []),
+    ...(positional.length ? [{ pattern: listed(positional, positionalLang) }] : []),
+  ];
+  return { summary, options, ...fields, ...(alts.length ? { operands: alts } : {}) };
+}
+
+/** `ARG<i+1>`: the operand at index `i`, in the language given for it. */
+const item = (i: number, text: Text, repeat?: OperandSpec['repeat'], lang?: EmbeddedLang): OperandSpec =>
+  ({ name: `ARG${i + 1}`, text, ...(repeat ? { repeat } : {}), ...(lang ? { lang } : {}) });
+
+/** The texts from `from` on: each optional, and the last repeats; a language applies to its own index only. */
+function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], from = 0): OperandSpec[] {
+  const out: OperandSpec[] = [];
+  for (let i = from; i < texts.length; i++) {
+    if (i < texts.length - 1) out.push(item(i, texts[i], '?', langs[i]));
+    else if (langs[i]) out.push(item(i, texts[i], '?', langs[i]), item(i + 1, texts[i], '*'));
+    else out.push(item(i, texts[i], '*'));
   }
-  return { summary: tx(ja, en), options, ...extra };
+  return out;
+}
+
+/**
+ * Operands by count (`seq 5`, `seq 1 5`; `cp a b` and `cp a b c dir/`): exactly `count` of them, or more with
+ * `orMore`; the texts in order, the last one repeating, and `last` for the final one. `when` and `unless` are
+ * options (`-t|--target-directory`) given, or not, for the alternative to apply; `langs` the language of each.
+ */
+export function byCount(count: number, texts: Text[], o: { orMore?: boolean; last?: Text; when?: string; unless?: string; langs?: (EmbeddedLang | undefined)[] } = {}): OperandAlt {
+  const at = (i: number): Text => texts[Math.min(i, texts.length - 1)];
+  const it = (i: number, t: Text, repeat?: OperandSpec['repeat']): OperandSpec => item(i, t, repeat, o.langs?.[i]);
+  const required = o.last ? count - 1 : count;
+  const pattern: OperandSpec[] = [];
+  for (let i = 0; i < required; i++) pattern.push(it(i, at(i)));
+  if (o.orMore) {
+    for (let i = required; i < texts.length - 1; i++) pattern.push(it(i, at(i), '?'));
+    pattern.push(it(Math.max(required, texts.length - 1), at(texts.length - 1), '*'));
+  }
+  if (o.last) pattern.push(it(count - 1, o.last));
+  const when: Condition | undefined = o.when ? { option: o.when.split('|') } : o.unless ? { not: { option: o.unless.split('|') } } : undefined;
+  return { ...(when ? { when } : {}), pattern };
 }
 
 export const pos = (ja: string, en: string): Text => tx(ja, en);
 
 /** `cp a b` copies to `b`, `cp a b c dir` into `dir`: the last argument is the destination, unless an option names it. */
-export function lastIsDestination(source: Text, one: Text, several: Text, unless = '-t|--target-directory'): PositionalBy[] {
+export function lastIsDestination(source: Text, one: Text, several: Text, unless = '-t|--target-directory'): OperandAlt[] {
   return [
-    { count: 2, unless, texts: [source], last: one },
-    { count: 3, orMore: true, unless, texts: [source], last: several },
+    byCount(2, [source], { unless, last: one }),
+    byCount(3, [source], { orMore: true, unless, last: several }),
   ];
-}
-
-/**
- * An option of a spec from the tuple form of `cmd`: `arg` takes a value (in `lang:<name>` when given), `attached`
- * only a value in the same word. (No native entry has subcommands yet, so none uses `persistent`.)
- */
-function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
-  const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
-  const value: ValueSpec | undefined = flags.includes('attached') ? { name: 'VALUE', how: 'attached-only', optional: true }
-    : flags.includes('arg') ? { name: 'VALUE', ...(lang ? { lang } : {}), ...(values ? { values } : {}) } : undefined;
-  return { names: names.split('|'), text: tx(ja, en), ...(value ? { value } : {}) };
 }
 
 /** The same options, taken by every subcommand too (`kubectl -n`, `systemctl -l`): written once, on the parent. */
@@ -121,22 +121,6 @@ export const persistent = (opts: OptSpec[]): OptSpec[] => opts.map(([n, ja, en, 
 
 /** `-N` for `-n N` (`git log -3`): `text` says what N counts; `open` is for `-$n`, whose number is known at run time. */
 export const countOption = (text: (n: string) => Text, open: Text): PatternOption => ({ pattern: /^-(\d+)$/, text: ([, n]) => text(n), open });
-
-/**
- * A dictionary entry written as a command spec (src/argv/spec.ts), not converted from the fields above.
- * Options are tuples, as for `cmd`, or option specs.
- */
-export function native(ja: string, en: string, opts: (OptSpec | OptionSpec)[], rest: Omit<Partial<CommandSpec>, 'summary' | 'options'> = {}): CommandDoc {
-  const summary = tx(ja, en);
-  // A name given twice (lists put together) means what it means last, as with `cmd`.
-  const seen = new Set<string>();
-  const options = opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)).reverse().flatMap((o) => {
-    const names = o.names.filter((n) => !seen.has(n));
-    names.forEach((n) => seen.add(n));
-    return names.length ? [{ ...o, names }] : [];
-  }).reverse();
-  return { summary, spec: { summary, options, ...rest } };
-}
 
 /** The meanings of dashless letters (`tar xzf`, `ar rcs`), written like options but without the dash: `['c', 'ja', 'en']`. */
 export function letters(opts: OptSpec[]): Record<string, OptionSpec> {

@@ -2,7 +2,7 @@ import { shellOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
-import type { OperandAlt, OperandSpec } from '../argv/spec';
+import type { CommandSpec, OperandAlt, OperandSpec } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
@@ -11,7 +11,7 @@ import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { applyExtras } from './extras';
-import { args, ASSIGNMENTS, CommandDoc, cmd, countOption, dashed, lastIsDestination, letters, native, operand, OptSpec, persistent, pos, runs } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, OptSpec, persistent, pos, runs } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -144,11 +144,11 @@ const IMAGE = operand('IMAGE', 'イメージ', 'image', { repeat: '?' });
 const SERVICE = operand('SERVICE', 'サービス', 'service', { repeat: '?' });
 
 /** Subcommands shared by docker and podman. */
-const dockerSubs: Record<string, CommandDoc> = {
-  run: native('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { style: 'posix', operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
+const dockerSubs: Record<string, CommandSpec> = {
+  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { style: 'posix', operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
   build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
   login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-  exec: native('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { style: 'posix', operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
+  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { style: 'posix', operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
   ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
   images: cmd('イメージ一覧を表示する', 'List images'),
   pull: cmd('イメージを取得する', 'Pull an image'),
@@ -162,8 +162,8 @@ const dockerSubs: Record<string, CommandDoc> = {
       down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
       ps: cmd('コンテナの一覧を表示する', 'List the containers', [['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
       logs: cmd('コンテナのログを表示する', 'Show the logs', [['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
-      run: native('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', dockerRun, { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
-      exec: native('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', dockerRun, { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定', 'set an environment variable', 'arg'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
     },
   }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
@@ -204,7 +204,30 @@ const SHELL_OPERANDS: OperandAlt[] = [
   { pattern: [operand('SCRIPT', '実行するスクリプト', 'Script to run', { repeat: '?', type: 'file' }), shellArgs('スクリプトへの引数（`$N`）', 'Argument to the script (`$N`)')] },
 ];
 
-export const core: Record<string, CommandDoc> = {
+/** `head -5`, `tail -5`: the old way to write `-n 5`. */
+const LINE_COUNT = countOption(
+  (n) => pos(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`),
+  pos('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
+);
+
+/** awk's files, or `name=value` assignments between them. */
+const AWK_FILES: OperandSpec = {
+  name: 'ARG2', text: files, repeat: '*',
+  assignmentText: pos(
+    '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えない。`\\t` などのエスケープは解釈される）',
+    'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it; escapes such as `\\t` are processed)',
+  ),
+};
+
+/**
+ * find reads only `-H`, `-L` and `-P` as options, before the starting points; the words from the first test or
+ * action on are an expression (`operandParser`), whose words are read with all of its options (`expressionSpec`).
+ */
+const findSpec = (spec: CommandSpec): CommandSpec => ({
+  ...spec, options: spec.options!.filter((o) => o.names.some((n) => /^-[HLP]$/.test(n))), operandParser: 'find-expression', expressionSpec: spec,
+});
+
+export const core: Record<string, CommandSpec> = {
   ls: cmd('ディレクトリの中身（ファイル一覧）を表示する', 'List directory contents', [
     ['-l', '詳細形式（権限・所有者・サイズ・更新日時）で表示', 'long format (permissions, owner, size, mtime)'],
     ['-a|--all', '`.` で始まる隠しファイルも表示', 'include hidden files starting with `.`'],
@@ -266,9 +289,14 @@ export const core: Record<string, CommandDoc> = {
   awk: cmd('テキストを行・フィールド単位で処理するプログラミング言語（`$1` は1列目）', 'Pattern-scanning language that processes lines and fields (`$1` = first field)', [
     ['-F', 'フィールド区切り文字を指定（既定は空白）', 'field separator (default: whitespace)', 'arg'],
     ['-v', 'awk の変数を設定（`-v name=value`）', 'set an awk variable (`-v name=value`)', 'arg'],
-    ['-f', 'プログラムをファイルから読む', 'read the program from a file', 'arg fills'],
-  ], { positional: [pos('awk プログラム（`パターン { アクション }`）', 'awk program (`pattern { action }`)'), files], positionalLang: ['awk'] }),
-  find: cmd('条件に一致するファイルをディレクトリ階層から探す', 'Search a directory tree for files matching conditions', [
+    ['-f', 'プログラムをファイルから読む', 'read the program from a file', 'arg'],
+  ], {
+    operands: [
+      { when: { option: ['-f'] }, pattern: [AWK_FILES] },
+      { pattern: [{ name: 'ARG1', text: pos('awk プログラム（`パターン { アクション }`）', 'awk program (`pattern { action }`)'), repeat: '?', lang: 'awk' }, AWK_FILES] },
+    ],
+  }),
+  find: findSpec(cmd('条件に一致するファイルをディレクトリ階層から探す', 'Search a directory tree for files matching conditions', [
     ['-name', 'ファイル名がグロブパターンに一致する', 'file name matches the glob', 'arg lang:glob'],
     ['-iname', 'ファイル名が一致する（大文字・小文字を区別しない）', 'name matches, case-insensitive', 'arg lang:glob'],
     ['-path|-wholename', 'パス全体がパターンに一致する', 'whole path matches the pattern', 'arg lang:glob'],
@@ -322,8 +350,8 @@ export const core: Record<string, CommandDoc> = {
     ['-o|-or', 'OR 条件', 'logical OR'],
     ['-a|-and', 'AND 条件（既定）', 'logical AND (default)'],
     ['-L', 'シンボリックリンクをたどる', 'follow symbolic links'],
-  ], { longSingleDash: true, positional: [pos('探索を開始するディレクトリ', 'starting directory')] }),
-  xargs: native('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
+  ], { style: 'single-dash', positional: [pos('探索を開始するディレクトリ', 'starting directory')] })),
+  xargs: cmd('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
     ['-0|--null', '入力を NUL 区切りとして読む（`find -print0` と組み合わせる）', 'input is NUL-separated (pair with `find -print0`)'],
     ['-n|--max-args', '1回のコマンド実行に渡す引数の最大数', 'max arguments per command', 'arg'],
     ['-I', '置換文字列（例: `-I{}` で `{}` を入力値に置き換えて1件ずつ実行）', 'replace string (e.g. `-I{}`), runs once per input', 'arg'],
@@ -380,17 +408,17 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
-  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], positionalBy: [{ count: 1, texts: [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')] }] }),
+  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
-  ], { positional: [files] }),
+  ], { positional: [files], patternOptions: [LINE_COUNT] }),
   tail: cmd('ファイルの末尾部分を表示する（既定は10行）', 'Print the last part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`+N` で N 行目以降）', 'number of lines (`+N`: from line N)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
     ['-f|--follow', '追記を監視し続けて表示する（ログ監視）', 'keep following appended data (log watching)'],
     ['-F', 'ファイルが作り直されても追い続ける', 'follow by name, retrying'],
-  ], { positional: [files] }),
+  ], { positional: [files], patternOptions: [LINE_COUNT] }),
   wc: cmd('行数・単語数・バイト数を数える', 'Count lines, words and bytes', [
     ['-l|--lines', '行数を数える', 'count lines'],
     ['-w|--words', '単語数を数える', 'count words'],
@@ -431,7 +459,7 @@ export const core: Record<string, CommandDoc> = {
     ['--spider', 'ダウンロードせず、ファイルがあるかだけ確かめる', 'only check that the file exists, do not download'],
     ['--version', '版を表示する', 'print the version'],
   ], { positional: [pos('ダウンロードする URL', 'URL to download')] }),
-  tar: native('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
+  tar: cmd('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
     ['-c|--create', 'アーカイブを作る', 'create an archive'],
     ['-x|--extract', 'アーカイブを展開する', 'extract an archive'],
     ['-t|--list', 'アーカイブの中身を一覧表示', 'list contents'],
@@ -506,13 +534,13 @@ export const core: Record<string, CommandDoc> = {
     ['-p', '権限・所有者・日時を保持', 'preserve mode, ownership, timestamps'],
     ['-v|--verbose', '処理内容を表示', 'explain what is being done'],
     ['-u|--update', 'コピー元の方が新しい場合のみコピー', 'copy only when source is newer'],
-  ], { positional: [pos('コピー元', 'source')], positionalBy: lastIsDestination(pos('コピー元', 'source'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory')) }),
+  ], { positional: [pos('コピー元', 'source')], operands: lastIsDestination(pos('コピー元', 'source'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory')) }),
   mv: cmd('ファイルを移動・名前変更する', 'Move or rename files', [
     ['-f|--force', '確認せず上書き', 'do not prompt before overwriting'],
     ['-i|--interactive', '上書き前に確認する', 'prompt before overwrite'],
     ['-n|--no-clobber', '既存ファイルを上書きしない', 'do not overwrite'],
     ['-v|--verbose', '処理内容を表示', 'explain what is being done'],
-  ], { positional: [pos('移動元', 'source')], positionalBy: lastIsDestination(pos('移動元', 'source'), pos('移動先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('移動先のディレクトリ', 'destination directory')) }),
+  ], { positional: [pos('移動元', 'source')], operands: lastIsDestination(pos('移動元', 'source'), pos('移動先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('移動先のディレクトリ', 'destination directory')) }),
   rm: cmd('ファイルを削除する（ゴミ箱には入らない）', 'Remove files (no trash; permanent)', [
     ['-r|-R|--recursive', 'ディレクトリを中身ごと再帰的に削除', 'remove directories and their contents'],
     ['-f|--force', '存在しないファイルを無視し、確認もしない', 'ignore nonexistent files, never prompt'],
@@ -533,24 +561,24 @@ export const core: Record<string, CommandDoc> = {
   chmod: cmd('ファイルの権限（パーミッション）を変更する', 'Change file permissions', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
     ['--reference', '指定したファイルと同じ権限にする', 'use the mode of the given file', 'arg'],
-  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
+  ], { operands: [byCount(1, [files], { orMore: true, when: '--reference' })], positional: [pos('権限（例: `755`, `+x` は実行権限を付与, `u+w`）', 'mode (e.g. `755`, `+x`, `u+w`)'), files], positionalLang: ['mode'] }),
   chown: cmd('ファイルの所有者・グループを変更する', 'Change file owner and group', [
     ['-R|--recursive', 'ディレクトリ内を再帰的に変更', 'change recursively'],
     ['--reference', '指定したファイルと同じ所有者・グループにする', 'use the owner and group of the given file', 'arg'],
-  ], { positionalBy: [{ count: 1, orMore: true, when: '--reference', texts: [files] }], positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
+  ], { operands: [byCount(1, [files], { orMore: true, when: '--reference' })], positional: [pos('所有者（`user:group` 形式）', 'owner (`user:group`)'), files] }),
   ln: cmd('ファイルへのリンクを作る', 'Create links between files', [
     ['-s|--symbolic', 'シンボリックリンクを作成（なければハードリンク）', 'make a symbolic link (otherwise hard link)'],
     ['-f|--force', '既存のリンク先ファイルを置き換える', 'remove existing destination files'],
     ['-n|--no-dereference', 'リンク先がディレクトリへのシンボリックリンクでもその中に作らない', 'treat a symlinked destination directory as a file'],
   ], {
     positional: [pos('リンク先（実体）', 'target')],
-    positionalBy: [
-      { count: 1, texts: [pos('リンク先（実体）。リンクは同じ名前でカレントディレクトリに作る', 'target (the link is made in the current directory, with the same name)')] },
-      { count: 2, unless: '-t|--target-directory', texts: [pos('リンク先（実体）', 'target'), pos('作るリンクの名前（既存のディレクトリならその中に作る）', 'link name (or an existing directory to make the link in)')] },
-      { count: 3, orMore: true, unless: '-t|--target-directory', texts: [pos('リンク先（実体）', 'target')], last: pos('リンクを作るディレクトリ', 'directory to make the links in') },
+    operands: [
+      byCount(1, [pos('リンク先（実体）。リンクは同じ名前でカレントディレクトリに作る', 'target (the link is made in the current directory, with the same name)')]),
+      byCount(2, [pos('リンク先（実体）', 'target'), pos('作るリンクの名前（既存のディレクトリならその中に作る）', 'link name (or an existing directory to make the link in)')], { unless: '-t|--target-directory' }),
+      byCount(3, [pos('リンク先（実体）', 'target')], { orMore: true, unless: '-t|--target-directory', last: pos('リンクを作るディレクトリ', 'directory to make the links in') }),
     ],
   }),
-  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path')], positionalBy: [{ count: 2, unless: '-a|--multiple|-s|--suffix', texts: [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')] }] }),
+  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
   dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', [], { positional: [pos('パス', 'path')] }),
   realpath: cmd('シンボリックリンクや `..` を解決した絶対パスを表示する', 'Print the resolved absolute path', [], { positional: [pos('パス', 'path')] }),
   readlink: cmd('シンボリックリンクのリンク先を表示する', 'Print the target of a symbolic link', [
@@ -575,7 +603,7 @@ export const core: Record<string, CommandDoc> = {
     ['-i|--ignore-case', '大文字・小文字の違いを無視', 'ignore case differences'],
     ['-B|--ignore-blank-lines', '空行の増減を無視', 'ignore changes that are only blank lines'],
   ], { positional: [pos('比較元', 'first file'), pos('比較先', 'second file')] }),
-  ssh: native('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
+  ssh: cmd('リモートホストに SSH で接続する（コマンドを渡すとリモートで実行）', 'Connect to a remote host over SSH (optionally run a command)', [
     ['-i', '秘密鍵ファイル', 'identity (private key) file', 'arg'],
     ['-p', 'ポート番号', 'port', 'arg'],
     ['-o', 'ssh の設定オプション（例: `StrictHostKeyChecking=no`）', 'config option (e.g. `StrictHostKeyChecking=no`)', 'arg'],
@@ -622,7 +650,7 @@ export const core: Record<string, CommandDoc> = {
     ['-r', 'ディレクトリを再帰的にコピー', 'copy recursively'],
     ['-P', 'ポート番号', 'port', 'arg'],
     ['-i', '秘密鍵ファイル', 'identity file', 'arg'],
-  ], { positional: [pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)')], positionalBy: lastIsDestination(pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)'), pos('コピー先（`ホスト:パス` も可）', 'destination (or `host:path`)'), pos('コピー先のディレクトリ（`ホスト:パス` も可）', 'destination directory (or `host:path`)')) }),
+  ], { positional: [pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)')], operands: lastIsDestination(pos('コピー元（`ホスト:パス` も可）', 'source (or `host:path`)'), pos('コピー先（`ホスト:パス` も可）', 'destination (or `host:path`)'), pos('コピー先のディレクトリ（`ホスト:パス` も可）', 'destination directory (or `host:path`)')) }),
   rsync: cmd('ファイルを差分転送で同期する（ローカル・リモート間）', 'Sync files efficiently (local or remote)', [
     ['-a|--archive', '属性を保ったまま再帰的に同期（`-rlptgoD` と同じ）', 'archive mode (recursive, preserve attributes)'],
     ['-v|--verbose', '詳細を表示', 'verbose'],
@@ -635,8 +663,8 @@ export const core: Record<string, CommandDoc> = {
     ['-h|--human-readable', 'サイズを読みやすい単位で表示', 'human-readable sizes'],
     ['-r|--recursive', 'ディレクトリを再帰的に', 'recurse into directories'],
     ['--progress', '進捗を表示', 'show progress'],
-  ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], positionalBy: [{ count: 1, texts: [pos('一覧を表示するファイルまたはディレクトリ（転送先がないので転送はしない）', 'file or directory to list (with no destination, nothing is copied)')] }, { count: 2, orMore: true, texts: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], last: pos('転送先', 'destination') }] }),
-  sudo: native('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
+  ], { positional: [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], operands: [byCount(1, [pos('一覧を表示するファイルまたはディレクトリ（転送先がないので転送はしない）', 'file or directory to list (with no destination, nothing is copied)')]), byCount(2, [pos('転送元（末尾 `/` の有無で意味が変わる）', 'source (trailing `/` matters)')], { orMore: true, last: pos('転送先', 'destination') })] }),
+  sudo: cmd('他のユーザー（既定は root）の権限でコマンドを実行する', 'Run a command as another user (root by default)', [
     ['-u|--user', '実行するユーザー', 'run as the given user', 'arg'],
     ['-E|--preserve-env', '現在の環境変数を引き継ぐ', 'preserve the environment'],
     ['-i|--login', 'ログインシェルとして実行', 'run a login shell'],
@@ -658,27 +686,27 @@ export const core: Record<string, CommandDoc> = {
     ['-T|--command-timeout', 'コマンドの実行時間の上限', 'time limit for the command', 'arg'],
     ['-V|--version', 'バージョンを表示する', 'print the version'],
   ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
-  env: native('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
+  env: cmd('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
     ['-i|--ignore-environment', '空の環境から始める', 'start with an empty environment'],
     ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg'],
     ['-S|--split-string', '文字列を分割して引数にする（shebang で使う）', 'split a string into arguments (useful in shebang lines)', 'arg'],
     ['-C|--chdir', '先に移動するディレクトリ', 'change to the given directory first', 'arg'],
     ['-0|--null', '各項目を改行でなく NUL で終える', 'end each output line with NUL'],
   ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
-  doas: native('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
+  doas: cmd('他のユーザー（既定は root）の権限でコマンドを実行する（OpenBSD 由来の sudo の代わり）', 'Run a command as another user (root by default; the OpenBSD alternative to sudo)', [
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
   ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
-  nohup: native('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { style: 'posix', operands: [{ pattern: [runs()] }] }),
-  timeout: native('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
+  nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  timeout: cmd('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
     ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
     ['--preserve-status', 'タイムアウトしても、コマンドの終了ステータスを返す（124 にしない）', 'exit with the status of the command, also on timeout (not 124)'],
     ['--foreground', 'コマンドを前面で動かす（端末を読め、Ctrl-C も届く。その子プロセスは時間切れでも止めない）', 'run the command in the foreground (it can read the terminal and gets Ctrl-C; its children are not stopped on timeout)'],
     ['-v|--verbose', '時間切れでシグナルを送ったら、標準エラー出力に知らせる', 'report on stderr when a signal is sent on timeout'],
   ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
-  nice: native('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
+  nice: cmd('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
     ['-n', '優先度の調整値', 'niceness adjustment', 'arg'],
     ['--adjustment', 'ニス値の増分', 'niceness increment', 'arg'],
   ], {
@@ -694,7 +722,7 @@ export const core: Record<string, CommandDoc> = {
     ],
     operands: [{ pattern: [runs()] }],
   }),
-  watch: native('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
+  watch: cmd('コマンドを定期的に実行して結果を全画面表示する', 'Run a command periodically and show its output', [
     ['-n|--interval', '実行間隔（秒）', 'interval in seconds', 'arg'],
     ['-d|--differences', '前回との差を強調表示', 'highlight changes between updates'],
     ['-t|--no-title', 'ヘッダーを表示しない', 'turn off the header'],
@@ -717,8 +745,15 @@ export const core: Record<string, CommandDoc> = {
     ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg2'],
     ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2'],
     ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2'],
-    ['--args', '残りの引数を（ファイルでなく）文字列として `$ARGS.positional` に入れる', 'take the remaining arguments as strings in `$ARGS.positional`, not as files'],
-    ['--jsonargs', '残りの引数を（ファイルでなく）JSON の値として `$ARGS.positional` に入れる', 'take the remaining arguments as JSON values in `$ARGS.positional`, not as files'],
+    {
+      names: ['--args'], text: pos('残りの引数を（ファイルでなく）文字列として `$ARGS.positional` に入れる', 'take the remaining arguments as strings in `$ARGS.positional`, not as files'),
+      // (The operands after the filter are values for `$ARGS.positional`, not input files.)
+      laterOperands: { name: 'ARG', text: pos('位置引数の文字列（`$ARGS.positional` に入る。ファイルではない）', 'positional string (goes to `$ARGS.positional`; not a file)'), repeat: '*' },
+    },
+    {
+      names: ['--jsonargs'], text: pos('残りの引数を（ファイルでなく）JSON の値として `$ARGS.positional` に入れる', 'take the remaining arguments as JSON values in `$ARGS.positional`, not as files'),
+      laterOperands: { name: 'ARG', text: pos('位置引数の JSON 値（`$ARGS.positional` に入る。ファイルではない）', 'positional JSON value (goes to `$ARGS.positional`; not a file)'), repeat: '*' },
+    },
     ['--indent', '出力のインデント幅（0〜7。0 は `-c` と同じ）', 'indentation width of the output (0 to 7; 0 is like `-c`)', 'arg'],
     ['--tab', 'インデントにタブを使う', 'indent with tabs'],
     ['-f|--from-file', 'フィルタをファイルから読む（その場合、最初の引数は入力ファイル）', 'read the filter from a file (the first operand is then an input file)', 'arg fills'],
@@ -731,8 +766,8 @@ export const core: Record<string, CommandDoc> = {
     ['-C|--color-output', '色を付けて出力', 'colour the output'],
     ['-M|--monochrome-output', '色を付けない', 'no colours'],
     ['-L', 'モジュールを探すディレクトリ', 'directory to search for modules', 'arg'],
-  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'] }),
-  ps: native('実行中のプロセスを表示する', 'Report running processes', [
+  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'], longEquals: false /* `--arg=x` is an unknown option: jq reads values only as separate words */ }),
+  ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
     ['-f', '詳細形式で表示', 'full format'],
     ['-p', '指定した PID のみ', 'only these PIDs', 'arg'],
@@ -799,25 +834,25 @@ export const core: Record<string, CommandDoc> = {
       ]),
     },
   }),
-  ar: native('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
+  ar: cmd('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
     ...dashed(arLetters),
   ], {
     oldStyle: { letters: letters(arLetters), needs: 'dmpqrstxV' },
     ...args(operand('ARCHIVE', 'アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), operand('MEMBER', '対象のメンバー（ファイル）', 'member file')),
   }),
-  jar: native('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
+  jar: cmd('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
     ...dashed(jarLetters),
   ], {
     oldStyle: { letters: letters(jarLetters), needs: 'ctxui' },
     ...args(operand('FILE', 'アーカイブに入れる（または取り出す）ファイル', 'files to put in (or take out of) the archive')),
   }),
-  dump: native('ファイルシステムをバックアップする', 'Back up a file system', [
+  dump: cmd('ファイルシステムをバックアップする', 'Back up a file system', [
     ...dashed(dumpLetters),
   ], {
     oldStyle: { letters: letters(dumpLetters), needs: '0123456789SWw' },
     ...args(operand('FILE_SYSTEM', 'バックアップするファイルシステムまたはディレクトリ', 'file system or directory to back up')),
   }),
-  restore: native('dump で取ったバックアップから復元する', 'Restore from a backup made by dump', [
+  restore: cmd('dump で取ったバックアップから復元する', 'Restore from a backup made by dump', [
     ...dashed(restoreLetters),
   ], {
     oldStyle: { letters: letters(restoreLetters), needs: 'CrRxti' },
@@ -831,10 +866,10 @@ export const core: Record<string, CommandDoc> = {
     ['-f|--format', 'printf 形式の書式（`%03g`…）', 'printf-style format (`%03g`…)', 'arg'],
   ], {
     positional: [pos('開始値・増分・終了値', 'first, increment or last')],
-    positionalBy: [
-      { count: 1, texts: [pos('終了値（開始値は 1）', 'last (counting from 1)')] },
-      { count: 2, texts: [pos('開始値', 'first'), pos('終了値', 'last')] },
-      { count: 3, orMore: true, texts: [pos('開始値', 'first'), pos('増分', 'increment'), pos('終了値', 'last')] },
+    operands: [
+      byCount(1, [pos('終了値（開始値は 1）', 'last (counting from 1)')]),
+      byCount(2, [pos('開始値', 'first'), pos('終了値', 'last')]),
+      byCount(3, [pos('開始値', 'first'), pos('増分', 'increment'), pos('終了値', 'last')], { orMore: true }),
     ],
   }),
   mktemp: cmd('一意な名前の一時ファイルを作り、そのパスを表示する', 'Create a unique temporary file and print its path', [
@@ -866,7 +901,7 @@ export const core: Record<string, CommandDoc> = {
     ['-o|--owner', '所有者', 'owner', 'arg'], ['-g|--group', 'グループ', 'group', 'arg'],
   ], {
     positional: [pos('コピーするファイル（`-d` ではディレクトリ）', 'file to copy (a directory to create with `-d`)')],
-    positionalBy: lastIsDestination(pos('コピーするファイル', 'file to copy'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory'), '-t|--target-directory|-d|--directory'),
+    operands: lastIsDestination(pos('コピーするファイル', 'file to copy'), pos('コピー先（新しい名前、または既存のディレクトリ）', 'destination (the new name, or an existing directory)'), pos('コピー先のディレクトリ', 'destination directory'), '-t|--target-directory|-d|--directory'),
   }),
   tac: cmd('ファイルを末尾の行から逆順に表示する', 'Print files in reverse line order'),
   rev: cmd('各行の文字を左右反転する', 'Reverse characters of each line'),
@@ -894,7 +929,7 @@ export const core: Record<string, CommandDoc> = {
     ['-d|--decode', 'デコードする', 'decode'],
     ['-w|--wrap', '指定文字数で折り返す（0 で折り返さない）', 'wrap at N columns (0 disables)', 'arg'],
   ]),
-  bash: native('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
+  bash: cmd('bash シェルを起動する（スクリプトやコマンド文字列を実行）', 'Run the bash shell (a script or a command string)', [
     ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
     ['-e', 'エラーで即終了', 'exit on error'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
@@ -910,7 +945,7 @@ export const core: Record<string, CommandDoc> = {
     style: 'posix', plusOptions: true,
     operands: SHELL_OPERANDS,
   }),
-  sh: native('POSIX シェルを起動する', 'Run the POSIX shell', [
+  sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
     ['-c', '続く文字列をコマンドとして実行', 'run the following string as a command'],
     ['-e', 'エラーで即終了', 'exit on error'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
@@ -959,7 +994,7 @@ export const core: Record<string, CommandDoc> = {
       clone: cmd('リポジトリを複製する', 'Clone a repository', [['--depth', '取得する履歴の深さ（浅いクローン）', 'shallow clone depth', 'arg'], ['-b|--branch', 'チェックアウトするブランチ', 'branch to check out', 'arg']], { positional: [pos('複製元のリポジトリ（URL かパス）', 'repository to clone (URL or path)'), pos('複製先のディレクトリ（省略するとリポジトリ名）', 'directory to clone into (default: the repository name)')] }),
       add: cmd('変更をステージする', 'Stage changes', [['-A|--all', '全ての変更をステージ', 'stage all changes'], ['-p|--patch', '変更を対話的に選んでステージ', 'stage hunks interactively']]),
       commit: cmd('ステージした変更をコミットする', 'Record staged changes', [['-m|--message', 'コミットメッセージ', 'commit message', 'arg'], ['-a|--all', '追跡中ファイルの変更を自動でステージ', 'stage tracked changes automatically'], ['--amend', '直前のコミットを修正', 'amend the previous commit'], ['-q|--quiet', '表示を減らす', 'less output'], ['-s|--signoff', '`Signed-off-by:` の行を付ける', 'add a `Signed-off-by:` line'], ['--allow-empty', '変更がなくてもコミットする', 'commit even with no changes'], ['--no-verify', 'フックを実行しない', 'skip the hooks']]),
-      show: native('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']], { patternOptions: [gitCount] }),
+      show: cmd('コミットなどの内容を表示する', 'Show commits and other objects', [['-s|--no-patch', '差分を表示しない', 'do not show the diff'], ['--pretty|--format', '表示形式', 'how it is shown', 'arg lang:gitformat'], ['--stat', '変更の統計だけ表示', 'show a diffstat'], ['--name-only', 'ファイル名のみ表示', 'names only']], { patternOptions: [gitCount] }),
       'ls-files': cmd('Git が知っているファイルを一覧表示する', 'List the files Git knows about', [['-c|--cached', '追跡中のファイル', 'tracked files'], ['-m|--modified', '変更されたファイル', 'modified files'], ['-o|--others', '追跡していないファイル', 'untracked files'], ['--exclude-standard', '`.gitignore` などで無視されるものを除く', 'leave out files ignored by `.gitignore` and the like'], ['-z', 'NUL で区切って出力（`xargs -0` 向け）', 'NUL-separated output (for `xargs -0`)']]),
       push: cmd('リモートに送信する', 'Push to a remote', [['-u|--set-upstream', '上流ブランチとして設定', 'set upstream'], ['-f|--force', '強制的に上書き（注意）', 'force push (careful!)'], ['--tags', 'タグも送信', 'push tags']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('送るブランチや参照（`HEAD`、`main`、`local:remote`）', 'branch or ref to push (`HEAD`, `main`, `local:remote`)')] }),
       pull: cmd('リモートから取得して統合する', 'Fetch and integrate from a remote', [['--rebase', 'マージではなくリベースで統合', 'rebase instead of merge']], { positional: [pos('リモート名（`origin`…）', 'remote name (`origin`…)'), pos('取り込むブランチ', 'branch to pull')] }),
@@ -971,14 +1006,14 @@ export const core: Record<string, CommandDoc> = {
       checkout: cmd('ブランチを切り替える・ファイルを復元する', 'Switch branches or restore files', [['-b', '新しいブランチを作って切り替える', 'create and switch to a new branch', 'arg']]),
       switch: cmd('ブランチを切り替える', 'Switch branches', [['-c|--create', '新しいブランチを作って切り替える', 'create a new branch', 'arg']]),
       branch: cmd('ブランチを一覧・作成・削除する', 'List, create or delete branches', [['-d|--delete', 'ブランチを削除', 'delete a branch'], ['-D', '強制削除', 'force delete'], ['-a|--all', 'リモートブランチも表示', 'list remote branches too'], ['-m|--move', 'ブランチ名を変える', 'rename a branch'], ['-M', '強制的にブランチ名を変える', 'force-rename a branch']], {
-        positionalBy: [
-          { count: 1, orMore: true, when: '-m|-M|--move', texts: [pos('変更前のブランチ名（1つだけなら今のブランチを変更）', 'old branch name (a single name renames the current branch)'), pos('新しいブランチ名', 'new branch name')] },
-          { count: 1, orMore: true, when: '-d|-D|--delete', texts: [pos('削除するブランチ', 'branch to delete')] },
+        operands: [
+          byCount(1, [pos('変更前のブランチ名（1つだけなら今のブランチを変更）', 'old branch name (a single name renames the current branch)'), pos('新しいブランチ名', 'new branch name')], { orMore: true, when: '-m|-M|--move' }),
+          byCount(1, [pos('削除するブランチ', 'branch to delete')], { orMore: true, when: '-d|-D|--delete' }),
         ],
         positional: [pos('ブランチ名', 'branch name'), pos('起点（コミットやブランチ）', 'start point (commit or branch)')],
       }),
       status: cmd('作業ツリーの状態を表示する', 'Show working tree status', [['-s|--short', '短い形式', 'short format'], ['--porcelain', 'スクリプト向けの安定した形式', 'stable machine-readable format']]),
-      log: native('コミット履歴を表示する', 'Show commit logs', [
+      log: cmd('コミット履歴を表示する', 'Show commit logs', [
         ['--oneline', '1コミット1行で表示', 'one line per commit'], ['-n', '表示する件数', 'number of commits', 'arg'], ['--graph', 'ブランチをグラフ表示', 'draw a graph'],
         ['--pretty|--format', '各コミットの表示形式', 'how each commit is shown', 'arg lang:gitformat'],
         ['--date', '日時の表示形式', 'how dates are shown', 'arg lang:gitdate'],
@@ -1034,11 +1069,7 @@ export const core: Record<string, CommandDoc> = {
   }),
 };
 
-// After `--args` or `--jsonargs`, the operands after the filter are values for `$ARGS.positional`, not input files.
-core.jq.options!['--args'] = { ...core.jq.options!['--args'], restOperands: pos('位置引数の文字列（`$ARGS.positional` に入る。ファイルではない）', 'positional string (goes to `$ARGS.positional`; not a file)') };
-core.jq.options!['--jsonargs'] = { ...core.jq.options!['--jsonargs'], restOperands: pos('位置引数の JSON 値（`$ARGS.positional` に入る。ファイルではない）', 'positional JSON value (goes to `$ARGS.positional`; not a file)') };
-
-export const commands: Record<string, CommandDoc> = {
+export const commands: Record<string, CommandSpec> = {
   ...core,
   ...distro,
   ...system,

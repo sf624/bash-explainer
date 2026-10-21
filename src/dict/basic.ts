@@ -1,4 +1,5 @@
-import { cmd, CommandDoc, native, operand, pos, runs } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, operand, pos, runs } from './types';
 
 // Everyday commands a Linux learner meets early (and that the LPIC-1 and LinuC-1 objectives name):
 // finding help and files, who is logged in, power control, small text tools, terminals and editors.
@@ -6,7 +7,7 @@ import { cmd, CommandDoc, native, operand, pos, runs } from './types';
 const files = pos('対象のファイル', 'target file');
 const users = pos('ユーザー名', 'user name');
 
-export const basic: Record<string, CommandDoc> = {
+export const basic: Record<string, CommandSpec> = {
   // ---- help and documentation ---------------------------------------------------------------
   man: cmd('コマンドのマニュアルページを表示する', 'Show the manual page of a command', [
     ['-k', 'キーワードでマニュアルを検索する（`apropos` と同じ）', 'search the manual descriptions for a keyword (same as `apropos`)'],
@@ -188,7 +189,7 @@ export const basic: Record<string, CommandDoc> = {
     ['--no-wall', '警告を送らない（systemd）', 'do not send the wall message (systemd)'],
   ], { positional: [pos('ランレベル（`0`〜`6`）、`q`（設定の再読み込み）', 'run level (`0` to `6`), or `q` (reload the configuration)')] }),
   runlevel: cmd('直前と現在のランレベルを表示する', 'Print the previous and current run level'),
-  chroot: native('ルートディレクトリを変えてコマンドを実行する', 'Run a command with a different root directory', [
+  chroot: cmd('ルートディレクトリを変えてコマンドを実行する', 'Run a command with a different root directory', [
     ['--userspec', '実行するユーザーとグループ（`ユーザー:グループ`）', 'user and group to run as (`user:group`)', 'arg'],
     ['--groups', '追加するグループ（コンマ区切り）', 'supplementary groups (comma-separated)', 'arg'],
     ['--skip-chdir', '新しいルートの `/` に移動しない', 'do not change directory to `/`'],
@@ -221,7 +222,7 @@ export const basic: Record<string, CommandDoc> = {
     ['-e|--expression', '実行する式', 'expression to run', 'arg'],
     ['-f|--file', '実行するファイル', 'file to run', 'arg'],
   ]),
-  time: native('コマンドの実行時間と資源の使用量を測る（`/usr/bin/time`）', 'Measure the run time and resource use of a command (`/usr/bin/time`)', [
+  time: cmd('コマンドの実行時間と資源の使用量を測る（`/usr/bin/time`）', 'Measure the run time and resource use of a command (`/usr/bin/time`)', [
     ['-v|--verbose', '詳しく表示（最大メモリ量など）', 'verbose output (maximum memory use and more)'],
     ['-p|--portability', 'POSIX の書式で表示', 'print in the POSIX format'],
     ['-o|--output', '結果を指定したファイルに書く', 'write the result to the given file', 'arg'],

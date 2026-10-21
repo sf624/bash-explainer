@@ -1,4 +1,5 @@
-import { cmd, COMMAND_TEXT, CommandDoc, native, operand, OptSpec, persistent, pos, runs } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, COMMAND_TEXT, operand, OptSpec, persistent, pos, runs } from './types';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -38,9 +39,9 @@ const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a K
     create: cmd('リソースを作る', 'Create resources', kubeFiles, { positional: [resource] }),
     delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
     logs: cmd('Pod のログを表示する', "Print a pod's logs", [['-f|--follow', 'ログを流し続ける', 'stream the logs'], ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
-    exec: native('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kubeFiles, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    run: native('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    debug: native('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kubeFiles, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kubeFiles, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    debug: cmd('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kubeFiles, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
     'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kubeFiles, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
     rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kubeFiles),
     wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kubeFiles, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
@@ -82,7 +83,7 @@ const tfCommon: OptSpec[] = [
   ['-raw', '値だけを出力する（`output`）', 'print the raw value (`output`)'],
   ['-json', 'JSON で出力', 'JSON output'],
 ];
-const tf = (ja: string, en: string): CommandDoc => cmd(ja, en, [], { longSingleDash: true });
+const tf = (ja: string, en: string): CommandSpec => cmd(ja, en, [], { style: 'single-dash' });
 
 const awsCommon: OptSpec[] = [
   ['--region', 'リージョン（`ap-northeast-1`…）', 'region (`ap-northeast-1`…)', 'arg'],
@@ -110,13 +111,13 @@ const iptables: OptSpec[] = [
   ['-w|--wait', 'ロックが空くまで待つ', 'wait for the lock'],
 ];
 
-export const ops: Record<string, CommandDoc> = {
+export const ops: Record<string, CommandSpec> = {
   kubectl,
   uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
-    subcommands: { run: native('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
+    subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
   }),
   poetry: cmd('Python のパッケージ・プロジェクト管理ツール（Poetry）', 'Python package and project manager (Poetry)', [], {
-    subcommands: { run: native('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
+    subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
   }),
   helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmCommon, {
     subcommands: {
@@ -150,7 +151,7 @@ export const ops: Record<string, CommandDoc> = {
   }),
   kubeadm: cmd('Kubernetes のクラスターを構築する（`init`、`join`、`reset`）', 'Set up Kubernetes clusters (`init`, `join`, `reset`)', [['--config', '設定ファイル', 'configuration file', 'arg']]),
   terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', persistent(tfCommon), {
-    longSingleDash: true,
+    style: 'single-dash',
     subcommands: {
       init: tf('作業ディレクトリを準備する（プロバイダやモジュールを取得）', 'Prepare the working directory (download providers and modules)'),
       plan: tf('変更の計画を表示する（まだ変更しない）', 'Show the planned changes (nothing changes yet)'),
@@ -217,7 +218,7 @@ export const ops: Record<string, CommandDoc> = {
   }),
 
   // ---- JavaScript and Ruby tools ----
-  npx: native('npm のパッケージのコマンドを実行する（なければ一時的に取得）', "Run a package's command (fetching it if needed)", [
+  npx: cmd('npm のパッケージのコマンドを実行する（なければ一時的に取得）', "Run a package's command (fetching it if needed)", [
     ['--yes|-y', '取得の確認をしない', 'do not ask before fetching'], ['--package|-p', 'コマンドを含むパッケージ（`名前@版`）', 'package that provides the command (`name@version`)', 'arg'],
   ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
   pnpm: cmd('Node.js のパッケージマネージャ（pnpm）', 'Node.js package manager (pnpm)', [['--frozen-lockfile', 'pnpm-lock.yaml を書き換えない（CI 向け）', 'do not change pnpm-lock.yaml (for CI)'], ['-r|--recursive', 'ワークスペースのすべてのパッケージで', 'in every workspace package'], ['--filter|-F', '対象のパッケージ', 'packages to act on', 'arg']], {
@@ -242,7 +243,7 @@ export const ops: Record<string, CommandDoc> = {
   mkdocs: cmd('Markdown からドキュメントのサイトを作る（MkDocs）', 'Build documentation sites from Markdown (MkDocs)', [], {
     subcommands: { build: cmd('サイトを作る', 'Build the site', [['--strict', '警告をエラーにする', 'treat warnings as errors']]), serve: cmd('手元で表示する（変更に追従）', 'Serve locally (rebuilding on changes)'), 'gh-deploy': cmd('GitHub Pages に公開する', 'Deploy to GitHub Pages') },
   }),
-  rpmbuild: cmd('RPM パッケージを作る', 'Build RPM packages', [['-bb', 'バイナリのパッケージを作る', 'build binary packages'], ['-ba', 'バイナリとソースのパッケージを作る', 'build binary and source packages'], ['-v', '詳しく表示する', 'verbose'], ['--define', 'マクロを定義する', 'define a macro', 'arg']], { positional: [pos('spec ファイル', 'spec file')], longSingleDash: true }),
+  rpmbuild: cmd('RPM パッケージを作る', 'Build RPM packages', [['-bb', 'バイナリのパッケージを作る', 'build binary packages'], ['-ba', 'バイナリとソースのパッケージを作る', 'build binary and source packages'], ['-v', '詳しく表示する', 'verbose'], ['--define', 'マクロを定義する', 'define a macro', 'arg']], { positional: [pos('spec ファイル', 'spec file')], style: 'single-dash' }),
 
   // ---- Users ----
   usermod: cmd('ユーザーの設定を変える', 'Change a user', [
@@ -294,20 +295,20 @@ export const ops: Record<string, CommandDoc> = {
     ['-g|-globalDomain', 'すべてのアプリに共通の設定', 'the global domain, shared by all apps'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'],
     ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value'],
   ], {
-    longSingleDash: true,
+    style: 'single-dash',
     subcommands: {
-      write: cmd('設定を書く（`ドメイン キー -型 値`）', 'Write a setting (`domain key -type value`)', [['-g|-globalDomain', '共通の設定', 'the global domain'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'], ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value']], { positional: [pos('ドメイン（`com.apple.dock`…）', 'domain (`com.apple.dock`…)'), pos('キー', 'key'), pos('値', 'value')], longSingleDash: true }),
-      read: cmd('設定を読む', 'Read settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], longSingleDash: true }),
-      delete: cmd('設定を削除する', 'Delete settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], longSingleDash: true }),
+      write: cmd('設定を書く（`ドメイン キー -型 値`）', 'Write a setting (`domain key -type value`)', [['-g|-globalDomain', '共通の設定', 'the global domain'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'], ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value']], { positional: [pos('ドメイン（`com.apple.dock`…）', 'domain (`com.apple.dock`…)'), pos('キー', 'key'), pos('値', 'value')], style: 'single-dash' }),
+      read: cmd('設定を読む', 'Read settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], style: 'single-dash' }),
+      delete: cmd('設定を削除する', 'Delete settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], style: 'single-dash' }),
     },
   }),
   hdiutil: cmd('ディスクイメージ（.dmg）を操作する（macOS）', 'Work with disk images, .dmg (macOS)', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], {
-    longSingleDash: true,
+    style: 'single-dash',
     subcommands: {
-      attach: cmd('イメージをマウントする', 'Mount an image', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], { positional: [pos('.dmg ファイル', '.dmg file')], longSingleDash: true }),
+      attach: cmd('イメージをマウントする', 'Mount an image', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], { positional: [pos('.dmg ファイル', '.dmg file')], style: 'single-dash' }),
       mount: cmd('イメージをマウントする（`attach` と同じ）', 'Mount an image (same as `attach`)', [], { positional: [pos('.dmg ファイル', '.dmg file')] }),
-      detach: cmd('イメージを取り外す', 'Unmount an image', [['-force', '強制する', 'force']], { positional: [pos('マウント先', 'mount point')], longSingleDash: true }),
-      create: cmd('イメージを作る', 'Create an image', [['-volname', 'ボリューム名', 'volume name', 'arg'], ['-srcfolder', '中身にするフォルダ', 'folder to put in', 'arg'], ['-format', '形式（`UDZO`: 圧縮）', 'format (`UDZO`: compressed)', 'arg']], { longSingleDash: true }),
+      detach: cmd('イメージを取り外す', 'Unmount an image', [['-force', '強制する', 'force']], { positional: [pos('マウント先', 'mount point')], style: 'single-dash' }),
+      create: cmd('イメージを作る', 'Create an image', [['-volname', 'ボリューム名', 'volume name', 'arg'], ['-srcfolder', '中身にするフォルダ', 'folder to put in', 'arg'], ['-format', '形式（`UDZO`: 圧縮）', 'format (`UDZO`: compressed)', 'arg']], { style: 'single-dash' }),
     },
   }),
   pmset: cmd('電源の設定を表示・変更する（macOS）', 'Show or change power settings (macOS)', [['-g', '設定や状態を表示する（`-g batt` でバッテリー）', 'show settings or status (`-g batt`: battery)'], ['-a', 'すべての電源のときの設定', 'settings for all power sources'], ['-b', 'バッテリーのときの設定', 'settings on battery'], ['-c', '電源につないだときの設定', 'settings on charger']]),

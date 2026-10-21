@@ -1,5 +1,6 @@
+import type { CommandSpec } from '../argv/spec';
 import type { YqFlavor } from '../embedded/yq';
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import { cmd, OptSpec, pos } from './types';
 
 const formats = (kind: 'input' | 'output') => ({
   json: { ja: 'JSON', en: 'JSON' }, j: { ja: 'JSON', en: 'JSON' }, yaml: { ja: 'YAML', en: 'YAML' }, y: { ja: 'YAML', en: 'YAML' },
@@ -32,7 +33,7 @@ const V4_OPTIONS: OptSpec[] = [
 const V4_EXPR = { positional: [pos('yq の式（jq に似た記法）', 'yq expression (jq-like)'), pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)')], positionalLang: ['yq4' as const] };
 
 /** mikefarah/yq v4: `yq [eval] EXPR FILE…`. */
-const mikefarah4: CommandDoc = cmd('YAML（JSON・XML・TOML なども）を jq に似た式で抽出・変換する（mikefarah/yq v4）', 'Query and edit YAML (also JSON, XML, TOML…) with jq-like expressions (mikefarah/yq v4)', V4_OPTIONS, {
+const mikefarah4: CommandSpec = cmd('YAML（JSON・XML・TOML なども）を jq に似た式で抽出・変換する（mikefarah/yq v4）', 'Query and edit YAML (also JSON, XML, TOML…) with jq-like expressions (mikefarah/yq v4)', V4_OPTIONS, {
   ...V4_EXPR,
   subcommands: {
     e: cmd('式を各ドキュメントに順に適用する（`eval`）', 'apply the expression to each document (`eval`)', V4_OPTIONS, V4_EXPR),
@@ -43,7 +44,7 @@ const mikefarah4: CommandDoc = cmd('YAML（JSON・XML・TOML なども）を jq 
 });
 
 /** kislyuk/yq: `yq [jq options] FILTER FILE…`, a jq wrapper. */
-const kislyuk: CommandDoc = cmd('YAML を JSON に変換して jq で処理する（kislyuk/yq。式は jq そのもの。出力は既定で JSON）', 'Convert YAML to JSON and process it with jq (kislyuk/yq; the filter is plain jq; output is JSON by default)', [
+const kislyuk: CommandSpec = cmd('YAML を JSON に変換して jq で処理する（kislyuk/yq。式は jq そのもの。出力は既定で JSON）', 'Convert YAML to JSON and process it with jq (kislyuk/yq; the filter is plain jq; output is JSON by default)', [
   ['-y|--yaml-output|--yml-output', '結果を YAML に戻して出力する', 'convert the result back to YAML'],
   ['-Y|--yaml-roundtrip|--yml-roundtrip', 'タグやスタイルを保ったまま YAML で出力する', 'output YAML keeping tags and styles'],
   ['-i|--in-place', '結果で入力ファイルを上書きする', 'edit the files in place'],
@@ -75,7 +76,7 @@ const path = pos('パス（`a.b[0].c`、`a.*`、`a.(name==x)` など。jq の式
 const file = pos('YAML ファイル', 'YAML file');
 
 /** mikefarah/yq v3: `yq r FILE PATH`, `yq w FILE PATH VALUE`… */
-const mikefarah3: CommandDoc = cmd('YAML をパスで読み書きする（mikefarah/yq v3。v4 とは記法が違う）', 'Read and write YAML by path (mikefarah/yq v3; different syntax from v4)', V3_GLOBAL, {
+const mikefarah3: CommandSpec = cmd('YAML をパスで読み書きする（mikefarah/yq v3。v4 とは記法が違う）', 'Read and write YAML by path (mikefarah/yq v3; different syntax from v4)', V3_GLOBAL, {
   subcommands: {
     r: cmd('パスの値を読む（read）', 'read the value at a path', [...V3_GLOBAL, V3_DOC, ['-p|--printMode', '表示内容（`v` 値・`p` パス・`pv` 両方）', 'what to print (`v` values, `p` paths, `pv` both)', 'arg'], ['-l|--length', '長さを表示する', 'print the length'], ['-c|--collect', '結果を配列にまとめる', 'collect results into an array'], ['-D|--defaultValue', '見つからないときに表示する値', 'value printed when nothing matches', 'arg'], ['-X|--explodeAnchors', 'アンカーを展開する', 'explode anchors'], ['-e|--exitStatus', '見つからなければ失敗の終了ステータス', 'exit with an error if nothing matches']], { positional: [file, path], positionalLang: [undefined, 'yq3path'] }),
     w: cmd('パスに値を書き込む（write）', 'write a value at a path', [...V3_GLOBAL, V3_DOC, V3_INPLACE, ['-s|--script', '更新内容を書いたスクリプトファイル', 'update script file', 'arg'], ['--tag', 'YAML タグ', 'YAML tag', 'arg'], ['--style', '書き方のスタイル', 'style', 'arg']], { positional: [file, path, pos('書き込む値', 'value to write')], positionalLang: [undefined, 'yq3path'] }),
@@ -91,4 +92,4 @@ for (const [short, long] of [['r', 'read'], ['w', 'write'], ['d', 'delete'], ['m
   mikefarah3.subcommands![long] = mikefarah3.subcommands![short];
 }
 
-export const YQ_DOCS: Record<YqFlavor, CommandDoc> = { mikefarah4, kislyuk, mikefarah3 };
+export const YQ_SPECS: Record<YqFlavor, CommandSpec> = { mikefarah4, kislyuk, mikefarah3 };

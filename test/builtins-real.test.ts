@@ -5,7 +5,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { commandSpec } from '../src/analyzer';
+import { lookupCommand } from '../src/analyzer';
 import { ArgvParse, interpret } from '../src/argv/interpret';
 import { argWords } from './support/argwords';
 
@@ -14,7 +14,7 @@ const hasBash = spawnSync('bash', ['--norc', '-c', 'true']).status === 0;
 const bash = (script: string, input = ''): string => spawnSync('bash', ['--norc', '-c', script], { input, encoding: 'utf8', timeout: 10000 }).stdout;
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
   const { name, words, texts } = argWords(line);
-  return { parse: interpret(commandSpec(name)!, words, { name, lookup: commandSpec }), words: words.map((w, i) => w.value ?? texts[i]) };
+  return { parse: interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }), words: words.map((w, i) => w.value ?? texts[i]) };
 };
 /** The words the interpreter reads as operands named `names` (all operands when none are given). */
 function operands(line: string, ...names: string[]): string[] {
@@ -63,7 +63,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       // (Alone, these are declaration commands; their words are read with the builtin's spec all the same.)
       const [kw, ...rest] = line.split(' ');
       const { words, texts } = argWords(`: ${rest.join(' ')}`);
-      const parse = interpret(commandSpec(kw)!, words, { name: kw, lookup: commandSpec });
+      const parse = interpret(lookupCommand(kw)!, words, { name: kw, lookup: lookupCommand });
       const names = parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.name === 'NAME' ? [texts[word].replace(/=.*/, '')] : []));
       assert.ok(names.length, line);
       const script = line.startsWith('local') ? `f() { ${line}; declare -p ${names.join(' ')}; }; f` : `${line}; declare -p ${names.join(' ')}`;

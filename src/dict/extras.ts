@@ -1,4 +1,5 @@
-import { CommandDoc, cmd, pos } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, mergeOptions, optionOf, pos } from './types';
 import { extraFiles } from './extrasFiles';
 import { extraAdmin } from './extrasAdmin';
 
@@ -8,10 +9,10 @@ import { extraAdmin } from './extrasAdmin';
 
 const unit = pos('ユニット名（`nginx.service`…）', 'unit name (`nginx.service`…)');
 const pkg = pos('パッケージ名', 'package name');
-const unitSub = (ja: string, en: string): CommandDoc => cmd(ja, en, [], { positional: [unit] });
-const pkgSub = (ja: string, en: string): CommandDoc => cmd(ja, en, [], { positional: [pkg] });
+const unitSub = (ja: string, en: string): CommandSpec => cmd(ja, en, [], { positional: [unit] });
+const pkgSub = (ja: string, en: string): CommandSpec => cmd(ja, en, [], { positional: [pkg] });
 
-const dnfLike = (): Record<string, CommandDoc> => ({
+const dnfLike = (): Record<string, CommandSpec> => ({
   info: pkgSub('パッケージの詳細を表示する', 'Show package details'),
   search: pkgSub('名前や説明からパッケージを検索する', 'Search packages by name or description'),
   list: cmd('パッケージを一覧表示する（`installed`、`available`、`updates`）', 'List packages (`installed`, `available`, `updates`)'),
@@ -29,7 +30,7 @@ const dnfLike = (): Record<string, CommandDoc> => ({
   'distro-sync': cmd('リポジトリの版にそろえる', 'Sync installed packages to the repository versions'),
 });
 
-const containerExtra = (): Record<string, CommandDoc> => ({
+const containerExtra = (): Record<string, CommandSpec> => ({
   stats: cmd('コンテナの資源の使用状況を表示する', 'Show live resource usage of containers', [['--no-stream', '1回だけ表示して終わる', 'print once and exit']]),
   create: cmd('コンテナを作る（起動はしない）', 'Create a container without starting it', [['--name', 'コンテナ名', 'container name', 'arg']]),
   restart: cmd('コンテナを再起動する', 'Restart containers', [['-t|--time', '停止を待つ秒数', 'seconds to wait before killing', 'arg']]),
@@ -38,7 +39,7 @@ const containerExtra = (): Record<string, CommandDoc> => ({
   kill: cmd('コンテナにシグナルを送って強制終了する', 'Kill containers by signal', [['-s|--signal', '送るシグナル', 'signal to send', 'arg']]),
 });
 
-export const extraSubcommands: Record<string, Record<string, CommandDoc>> = {
+export const extraSubcommands: Record<string, Record<string, CommandSpec>> = {
   systemctl: {
     'is-failed': unitSub('ユニットが失敗状態かどうか確かめる', 'Check whether the unit failed'),
     'list-units': cmd('読み込まれているユニットを一覧表示する', 'List the loaded units'),
@@ -141,19 +142,19 @@ export const extraSubcommands: Record<string, Record<string, CommandDoc>> = {
     generate: cmd('systemd のユニットや Kubernetes のマニフェストを生成する', 'Generate systemd units or Kubernetes manifests'),
   },
   openssl: {
-    enc: cmd('共通鍵で暗号化・復号する', 'Encrypt or decrypt with a symmetric cipher', [['-aes-256-cbc', 'AES-256 (CBC) を使う', 'use AES-256 (CBC)'], ['-d', '復号する', 'decrypt'], ['-a|-base64', 'Base64 で入出力する', 'use Base64'], ['-salt', 'ソルトを使う', 'use a salt'], ['-pbkdf2', '鍵導出に PBKDF2 を使う', 'use PBKDF2 for key derivation'], ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-k', 'パスワード', 'password', 'arg']], { longSingleDash: true }),
-    verify: cmd('証明書を検証する', 'Verify certificates', [['-CAfile', '信頼する CA 証明書のファイル', 'trusted CA certificates file', 'arg'], ['-untrusted', '中間証明書のファイル', 'intermediate certificates file', 'arg']], { longSingleDash: true }),
-    pkcs12: cmd('PKCS#12 ファイルを作る・読む', 'Create or read PKCS#12 files', [['-export', '作る', 'create a PKCS#12 file'], ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-inkey', '秘密鍵', 'private key file', 'arg'], ['-nodes', '秘密鍵を暗号化しない', 'do not encrypt private keys'], ['-nokeys', '鍵を出力しない', 'do not output private keys'], ['-clcerts', 'クライアント証明書だけ', 'client certificates only']], { longSingleDash: true }),
-    ca: cmd('簡易の認証局(CA)として証明書を発行する', 'Act as a simple certificate authority', [['-config', '設定ファイル', 'configuration file', 'arg'], ['-in', '署名要求(CSR)', 'certificate signing request', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-days', '有効日数', 'validity in days', 'arg'], ['-batch', '質問しない', 'no prompts']], { longSingleDash: true }),
-    genpkey: cmd('秘密鍵を作る（汎用）', 'Generate a private key (generic)', [['-algorithm', '鍵のアルゴリズム（`RSA`、`EC`）', 'key algorithm (`RSA`, `EC`)', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-pkeyopt', '鍵のオプション（`rsa_keygen_bits:4096`）', 'key option (`rsa_keygen_bits:4096`)', 'arg']], { longSingleDash: true }),
-    rsa: cmd('RSA 鍵を処理・変換する', 'Process and convert RSA keys', [['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-pubout', '公開鍵を出力する', 'output the public key'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', '鍵そのものは出力しない', 'do not output the key']], { longSingleDash: true }),
-    ecparam: cmd('楕円曲線のパラメータや鍵を作る', 'Generate elliptic curve parameters or keys', [['-name', '曲線の名前（`prime256v1`）', 'curve name (`prime256v1`)', 'arg'], ['-genkey', '鍵を作る', 'generate a key'], ['-out', '出力ファイル', 'output file', 'arg']], { longSingleDash: true }),
-    passwd: cmd('パスワードのハッシュを作る', 'Compute password hashes', [['-6', 'SHA-512 (crypt) を使う', 'use SHA-512 crypt'], ['-5', 'SHA-256 (crypt) を使う', 'use SHA-256 crypt'], ['-1', 'MD5 (crypt) を使う', 'use MD5 crypt'], ['-apr1', 'Apache の MD5 形式を使う', 'use the Apache MD5 format'], ['-salt', 'ソルト', 'salt', 'arg'], ['-stdin', '標準入力から読む', 'read from stdin']], { longSingleDash: true }),
-    s_server: cmd('テスト用の TLS サーバーを動かす', 'Run a test TLS server', [['-accept', '待ち受けるポート', 'port to listen on', 'arg'], ['-cert', '証明書', 'certificate file', 'arg'], ['-key', '秘密鍵', 'private key file', 'arg'], ['-www', '状態のページを返す', 'serve a status page']], { longSingleDash: true }),
-    crl: cmd('証明書失効リスト(CRL)を処理する', 'Process certificate revocation lists (CRLs)', [['-in', '入力ファイル', 'input file', 'arg'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', 'CRL そのものは出力しない', 'do not output the CRL']], { longSingleDash: true }),
-    ciphers: cmd('使える暗号スイートを一覧表示する', 'List the available cipher suites', [['-v', '詳しく表示する', 'verbose']], { longSingleDash: true }),
+    enc: cmd('共通鍵で暗号化・復号する', 'Encrypt or decrypt with a symmetric cipher', [['-aes-256-cbc', 'AES-256 (CBC) を使う', 'use AES-256 (CBC)'], ['-d', '復号する', 'decrypt'], ['-a|-base64', 'Base64 で入出力する', 'use Base64'], ['-salt', 'ソルトを使う', 'use a salt'], ['-pbkdf2', '鍵導出に PBKDF2 を使う', 'use PBKDF2 for key derivation'], ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-k', 'パスワード', 'password', 'arg']], { style: 'single-dash' }),
+    verify: cmd('証明書を検証する', 'Verify certificates', [['-CAfile', '信頼する CA 証明書のファイル', 'trusted CA certificates file', 'arg'], ['-untrusted', '中間証明書のファイル', 'intermediate certificates file', 'arg']], { style: 'single-dash' }),
+    pkcs12: cmd('PKCS#12 ファイルを作る・読む', 'Create or read PKCS#12 files', [['-export', '作る', 'create a PKCS#12 file'], ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-inkey', '秘密鍵', 'private key file', 'arg'], ['-nodes', '秘密鍵を暗号化しない', 'do not encrypt private keys'], ['-nokeys', '鍵を出力しない', 'do not output private keys'], ['-clcerts', 'クライアント証明書だけ', 'client certificates only']], { style: 'single-dash' }),
+    ca: cmd('簡易の認証局(CA)として証明書を発行する', 'Act as a simple certificate authority', [['-config', '設定ファイル', 'configuration file', 'arg'], ['-in', '署名要求(CSR)', 'certificate signing request', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-days', '有効日数', 'validity in days', 'arg'], ['-batch', '質問しない', 'no prompts']], { style: 'single-dash' }),
+    genpkey: cmd('秘密鍵を作る（汎用）', 'Generate a private key (generic)', [['-algorithm', '鍵のアルゴリズム（`RSA`、`EC`）', 'key algorithm (`RSA`, `EC`)', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-pkeyopt', '鍵のオプション（`rsa_keygen_bits:4096`）', 'key option (`rsa_keygen_bits:4096`)', 'arg']], { style: 'single-dash' }),
+    rsa: cmd('RSA 鍵を処理・変換する', 'Process and convert RSA keys', [['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-pubout', '公開鍵を出力する', 'output the public key'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', '鍵そのものは出力しない', 'do not output the key']], { style: 'single-dash' }),
+    ecparam: cmd('楕円曲線のパラメータや鍵を作る', 'Generate elliptic curve parameters or keys', [['-name', '曲線の名前（`prime256v1`）', 'curve name (`prime256v1`)', 'arg'], ['-genkey', '鍵を作る', 'generate a key'], ['-out', '出力ファイル', 'output file', 'arg']], { style: 'single-dash' }),
+    passwd: cmd('パスワードのハッシュを作る', 'Compute password hashes', [['-6', 'SHA-512 (crypt) を使う', 'use SHA-512 crypt'], ['-5', 'SHA-256 (crypt) を使う', 'use SHA-256 crypt'], ['-1', 'MD5 (crypt) を使う', 'use MD5 crypt'], ['-apr1', 'Apache の MD5 形式を使う', 'use the Apache MD5 format'], ['-salt', 'ソルト', 'salt', 'arg'], ['-stdin', '標準入力から読む', 'read from stdin']], { style: 'single-dash' }),
+    s_server: cmd('テスト用の TLS サーバーを動かす', 'Run a test TLS server', [['-accept', '待ち受けるポート', 'port to listen on', 'arg'], ['-cert', '証明書', 'certificate file', 'arg'], ['-key', '秘密鍵', 'private key file', 'arg'], ['-www', '状態のページを返す', 'serve a status page']], { style: 'single-dash' }),
+    crl: cmd('証明書失効リスト(CRL)を処理する', 'Process certificate revocation lists (CRLs)', [['-in', '入力ファイル', 'input file', 'arg'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', 'CRL そのものは出力しない', 'do not output the CRL']], { style: 'single-dash' }),
+    ciphers: cmd('使える暗号スイートを一覧表示する', 'List the available cipher suites', [['-v', '詳しく表示する', 'verbose']], { style: 'single-dash' }),
     list: cmd('使えるアルゴリズムなどを一覧表示する', 'List algorithms and commands'),
-    pkey: cmd('公開鍵・秘密鍵を処理・変換する', 'Process and convert public and private keys', [['-in', '入力ファイル', 'input file', 'arg'], ['-pubout', '公開鍵を出力する', 'output the public key'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', '鍵そのものは出力しない', 'do not output the key']], { longSingleDash: true }),
+    pkey: cmd('公開鍵・秘密鍵を処理・変換する', 'Process and convert public and private keys', [['-in', '入力ファイル', 'input file', 'arg'], ['-pubout', '公開鍵を出力する', 'output the public key'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', '鍵そのものは出力しない', 'do not output the key']], { style: 'single-dash' }),
   },
   ip: {
     rule: cmd('ルーティングポリシーのルールを扱う', 'Handle routing policy rules'),
@@ -168,13 +169,14 @@ export const extraSubcommands: Record<string, Record<string, CommandDoc>> = {
 };
 
 /** Merge the extra options and subcommands into the entries of `commands`. What the main entry already has is kept. */
-export function applyExtras(commands: Record<string, CommandDoc>): void {
-  for (const [key, specs] of Object.entries({ ...extraFiles, ...extraAdmin })) {
-    const doc = commands[key];
-    doc.options = { ...cmd('', '', specs).options, ...doc.options };
+export function applyExtras(commands: Record<string, CommandSpec>): void {
+  for (const [key, opts] of Object.entries({ ...extraFiles, ...extraAdmin })) {
+    const spec = commands[key];
+    // (`cmd` gives every entry a list of options.)
+    spec.options = mergeOptions(opts.map(optionOf), spec.options!);
   }
   for (const [key, subs] of Object.entries(extraSubcommands)) {
-    const doc = commands[key];
-    doc.subcommands = { ...subs, ...doc.subcommands };
+    const spec = commands[key];
+    spec.subcommands = { ...subs, ...spec.subcommands };
   }
 }

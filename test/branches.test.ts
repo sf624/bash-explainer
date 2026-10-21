@@ -4,7 +4,7 @@ import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
-import { customCommandDoc } from '../src/dict/custom';
+import { customCommandSpec } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
 import { expansionOps, redirects } from '../src/dict/syntax';
 import { documentIssues, ShellDocument } from '../src/document';
@@ -106,11 +106,11 @@ describe('branches no other test takes', () => {
   });
 
   it('custom commands: settings without options or arguments, and options without a description', () => {
-    assert.deepStrictEqual(customCommandDoc({ summary: 'x' }), { summary: { ja: 'x', en: 'x' }, options: {} });
-    const doc = customCommandDoc({ summary: 'x', options: { '-a': 'all', '-b': { takesValue: true }, '-c': 7, '-d': { description: 'd' } }, arguments: 'nope' })!;
-    assert.deepStrictEqual(Object.keys(doc.options!), ['-a', '-d']);
-    assert.strictEqual(doc.options!['-d'].arg, undefined);
-    assert.strictEqual(doc.positional, undefined);
+    assert.deepStrictEqual(customCommandSpec({ summary: 'x' }), { summary: { ja: 'x', en: 'x' }, options: [] });
+    const spec = customCommandSpec({ summary: 'x', options: { '-a': 'all', '-b': { takesValue: true }, '-c': 7, '-d': { description: 'd' } }, arguments: 'nope' })!;
+    assert.deepStrictEqual(spec.options!.map((o) => o.names[0]), ['-a', '-d']);
+    assert.strictEqual(spec.options![1].value, undefined);
+    assert.strictEqual(spec.operands, undefined);
   });
 
   it('redirections: copies of high descriptors, closing, and here-documents', () => {

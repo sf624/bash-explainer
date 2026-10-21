@@ -1,4 +1,5 @@
-import { CommandDoc, cmd, OptSpec, pos } from './types';
+import type { CommandSpec } from '../argv/spec';
+import { cmd, OptSpec, pos } from './types';
 
 // Network tools and server administration from the LPIC-1/2 and LinuC-1/2 objectives: interface
 // and name configuration, diagnostics, packet capture, firewalls, DNS, web, Samba and VPN servers.
@@ -48,7 +49,7 @@ const dnsKey: OptSpec[] = [
   ['-f', '鍵の種類（`KSK` など）', 'key flag (`KSK` and so on)', 'arg'],
 ];
 
-export const netadmin: Record<string, CommandDoc> = {
+export const netadmin: Record<string, CommandSpec> = {
   // ---- interfaces and addressing ------------------------------------------------------------
   nmcli: cmd('NetworkManager を操作する', 'Control NetworkManager', [
     ['-t|--terse', '機械で読みやすい出力', 'terse, script-friendly output'],
@@ -437,5 +438,5 @@ export const netadmin: Record<string, CommandDoc> = {
     ['-bV', 'バージョンと設定ファイルを表示', 'show the version and configuration file'],
     ['-bd', 'デーモンとして動かす', 'run as a daemon'],
     ['-d', 'デバッグ表示', 'debug output'],
-  ], { longSingleDash: true }),
+  ], { style: 'single-dash' }),
 };

@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { commandSpec } from '../src/analyzer';
+import { lookupCommand } from '../src/analyzer';
 import { ArgvParse, ArgWord, interpret } from '../src/argv/interpret';
 import { argWords } from './support/argwords';
 
@@ -18,7 +18,7 @@ const run = (line: string, input = ''): { out: string; err: string } => {
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
   const { name, words, texts } = argWords(line);
   // (`{}` is a word of its own; its value is not taken as known.)
-  return { parse: interpret(commandSpec(name)!, words, { name, lookup: commandSpec }), words: words.map((w: ArgWord, i) => w.value ?? texts[i]) };
+  return { parse: interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }), words: words.map((w: ArgWord, i) => w.value ?? texts[i]) };
 };
 /** The words of the command that the line runs, as the interpreter reads them (the first command slot). */
 function ran(line: string): string[] {
