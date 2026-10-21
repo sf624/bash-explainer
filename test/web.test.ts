@@ -164,6 +164,38 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('links each row and note to its section of the Bash manual, opened in a new tab', async () => {
+    const ctx = await browser!.newContext();
+    // The manual is not fetched here: the tab that opens gets a stub.
+    await ctx.route('https://www.gnu.org/**', (r) => r.fulfill({ contentType: 'text/html', body: 'manual' }));
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('exit 300');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('exit 300'));
+    const links = (sel: string) => panel().locator(sel).evaluateAll((as) => as.map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('title')]));
+    const manual = 'https://www.gnu.org/software/bash/manual/html_node/';
+    assert.deepStrictEqual(await links('#notes .refs a'), [['§3.7.5', `${manual}Exit-Status.html`, '_blank', 'Bash manual 3.7.5: Exit Status']]);
+    assert.deepStrictEqual(await links('#tree > li > .row .refs a'), [
+      ['§4.1', `${manual}Bourne-Shell-Builtins.html`, '_blank', 'Bash manual 4.1: Bourne Shell Builtins'],
+      ['§4.4', `${manual}Special-Builtins.html`, '_blank', 'Bash manual 4.4: Special Builtins'],
+    ]);
+    // The links end the row, after its explanation, on the same line.
+    const box = await panel().locator('#tree > li > .row').first().evaluate((row) => {
+      const r = row.getBoundingClientRect(), refs = row.querySelector('.refs')!.getBoundingClientRect(), text = row.querySelector('.text')!.getBoundingClientRect();
+      return { inside: refs.right <= r.right + 0.5 && refs.left >= text.right, sameLine: Math.abs(refs.top - text.top) < 8 };
+    });
+    assert.deepStrictEqual(box, { inside: true, sameLine: true });
+    // A click opens the page in a new tab.
+    const [tab] = await Promise.all([ctx.waitForEvent('page'), panel().locator('#notes .refs a').click()]);
+    await tab.waitForLoadState();
+    assert.strictEqual(tab.url(), `${manual}Exit-Status.html`);
+    await ctx.close();
+  });
+
   it('folds a tree row on a click anywhere in it, and still selects its text in the editor', async () => {
     const ctx = await browser!.newContext();
     const page = await ctx.newPage();

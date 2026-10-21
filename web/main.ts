@@ -541,7 +541,7 @@ window.addEventListener('message', (e) => {
       return selectSpan(m.span);
     case 'copy': {
       if (!shown) return;
-      const md = toPlainMarkdown(shown.explanation, view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`);
+      const md = toPlainMarkdown(shown.explanation, view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`, lang);
       void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
       return;
     }

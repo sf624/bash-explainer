@@ -3,7 +3,8 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { examplesMarkdown, lineSegments, placeExamples, toMarkdown } from '../src/ui/render';
+import { examplesMarkdown, lineSegments, noteRefs, placeExamples, toMarkdown, toPlainMarkdown } from '../src/ui/render';
+import { panelUpdate } from '../src/ui/panelView';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -118,5 +119,36 @@ describe('dialect in the hover', () => {
     const md = toMarkdown(ex, 'en');
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
     assert.match(md, /> ⚠ `\[\[ \]\]` is not POSIX sh/);
+  });
+});
+
+describe('links to the Bash manual', () => {
+  const exitStatus = 'https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html';
+
+  it('ends a note and a token row of the hover with their sections, small', () => {
+    const { md } = hover('exit 300');
+    assert.ok(md.includes(`> ℹ An exit status is 0–255, so \`300\` becomes 44 (the value modulo 256) <small>Bash manual [3.7.5](${exitStatus} "Exit Status")</small>`), md);
+    assert.match(md, /— Exit the shell or script \(shell builtin\) <small>Bash manual \[4\.1\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Bourne-Shell-Builtins\.html "Bourne Shell Builtins"\), \[4\.4\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Special-Builtins\.html "Special Builtins"\)<\/small>$/m);
+    // A program and its words are not parts of bash: no link.
+    const grep = hover('grep -q x').md.split('\n').filter((l) => l.startsWith('- ') || l.startsWith('  - '));
+    assert.ok(grep.length && grep.every((l) => !l.includes('<small>')), grep.join('\n'));
+  });
+
+  it('links the sections in the plain Markdown, in the language of the explanation', () => {
+    const tree = parser.parse('exit 300');
+    const en = toPlainMarkdown(new Analyzer('en').explainLine(tree, 0), 'exit 300', 'a.sh:1');
+    assert.ok(en.includes(`(the value modulo 256) (Bash manual [3.7.5](${exitStatus} "Exit Status"))`), en);
+    const ja = toPlainMarkdown(new Analyzer('ja').explainLine(tree, 0), 'exit 300', 'a.sh:1', 'ja');
+    assert.ok(ja.includes(` (Bash マニュアル [3.7.5](${exitStatus} "Exit Status"))`), ja);
+  });
+
+  it('gives the panel the label, title and page of every section shown', () => {
+    const src = 'exit 300';
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 0);
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', colors: 'vscode' });
+    assert.deepStrictEqual(Object.keys(msg.manual).sort(), ['3.7.5', '4.1', '4.4']);
+    assert.deepStrictEqual(msg.manual['3.7.5'], { label: 'Bash manual 3.7.5', title: 'Exit Status', url: exitStatus });
+    assert.deepStrictEqual(noteRefs(ex, ex.notes[0]), ['3.7.5']);
+    assert.strictEqual(noteRefs(ex, 'not a note'), undefined);
   });
 });

@@ -17,6 +17,8 @@
   let shownLine = '';
   /** UI strings from the extension. */
   let labels = /** @type {any} */ ({});
+  /** The sections of the manual the rows and notes cite: { '3.7.2': { label, title, url } }. */
+  let manual = /** @type {Record<string, { label: string, title: string, url: string }>} */ ({});
   /** Editable examples by id: where to show the result of a rerun. */
   /** @type {Map<number, { spec: any, layer: HTMLElement, results: HTMLElement, empty: string }>} */
   const editors = new Map();
@@ -67,6 +69,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    manual = msg.manual ?? {};
     $('settings').textContent = `⚙ ${msg.settingsLabel}`;
     $('copy').textContent = labels.copy;
     // The quick reference stays open while the cursor moves; keep its button saying how to go back.
@@ -91,12 +94,35 @@
     $('notes').replaceChildren(...ex.notes.map((n) => {
       const p = document.createElement('p');
       p.className = 'note';
-      p.append(...inline(n));
+      p.append(...inline(n), ...refLinks(ex.facts?.find((f) => f.text === n)?.refs));
       return p;
     }));
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
+  }
+
+  /**
+   * The sections of the manual a row or a note is about, as small links (§3.7.2) to their pages. A link opens in
+   * the browser: VS Code opens a webview's links outside it, and the web page in a new tab.
+   */
+  function refLinks(/** @type {string[] | undefined} */ refs) {
+    const known = (refs ?? []).filter((id) => manual[id]);
+    if (!known.length) return [];
+    const box = document.createElement('span');
+    box.className = 'refs';
+    known.forEach((id, i) => {
+      const m = manual[id];
+      const a = document.createElement('a');
+      a.href = m.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = `§${id}`;
+      a.title = `${m.label}: ${m.title}`;
+      if (i) box.append(' ');
+      box.append(a);
+    });
+    return [box];
   }
 
   // ---------------------------------------------------------------- dialect (regex101's flavor)
@@ -269,7 +295,7 @@
     const text = document.createElement('span');
     text.className = 'text';
     text.append(...inline(token.explanation));
-    row.append(twisty, label, text);
+    row.append(twisty, label, text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.

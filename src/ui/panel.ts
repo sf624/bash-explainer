@@ -126,7 +126,7 @@ export class PanelController implements vscode.Disposable {
     if (!ed || ed.document.isClosed) return;
     if (m.type === 'copy') {
       const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-      const md = toPlainMarkdown(this.service.explain(ed.document, line), ed.document.lineAt(line).text, `${fileName(ed.document)}:${line + 1}`);
+      const md = toPlainMarkdown(this.service.explain(ed.document, line), ed.document.lineAt(line).text, `${fileName(ed.document)}:${line + 1}`, this.service.lang);
       void vscode.env.clipboard.writeText(md).then(() => vscode.window.showInformationMessage(ui[this.service.lang].panel.copied));
       return;
     }

@@ -1,9 +1,10 @@
-import { LineExplanation, Span } from '../analyzer';
+import { LineExplanation, Span, Token } from '../analyzer';
 import { Shell, SHELL_NAMES } from '../dialect';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
-import { ExamplePlacement, placeExamples, ui } from './render';
+import { ExamplePlacement, noteRefs, placeExamples, ui } from './render';
+import { manualLabel, SECTIONS } from '../manual';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
 
@@ -34,6 +35,20 @@ export interface PanelLine {
   colors: 'vscode' | 'classic';
 }
 
+/**
+ * The sections of the manual the rows and notes cite, for their links: the label ("Bash manual 3.7.2"), the
+ * section's title and its page.
+ */
+function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { label: string; title: string; url: string }> {
+  const ids = new Set<string>(ex.notes.flatMap((n) => noteRefs(ex, n) ?? []));
+  const walk = (t: Token): void => {
+    for (const id of t.refs ?? []) ids.add(id);
+    t.children.forEach(walk);
+  };
+  ex.items.forEach(walk);
+  return Object.fromEntries([...ids].map((id) => [id, { label: manualLabel(lang, [id]), title: SECTIONS.get(id)!.title, url: SECTIONS.get(id)!.url }]));
+}
+
 /** The message that shows a line's explanation in the panel. */
 export function panelUpdate(p: PanelLine) {
   const { lang, explanation: ex } = p;
@@ -53,6 +68,7 @@ export function panelUpdate(p: PanelLine) {
     lineLabel: t.line(p.line + 1) + (ex.shell ? ` · ${t.forShell(SHELL_NAMES[ex.shell])}` : ''),
     lineText: p.lineText,
     explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
+    manual: manualLinks(lang, ex),
     examplesFirst: p.placement === 'first',
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     colors: p.colors,
