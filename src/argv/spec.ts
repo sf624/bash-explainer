@@ -15,8 +15,12 @@ export interface CommandSpec {
   style?: 'gnu' | 'posix' | 'single-dash' | 'none';
   /** `+x` turns an option off (`set +e`). */
   plusOptions?: boolean;
-  /** A long option may be written as a unique prefix of its name (`--pres` for `--preserve-status`), as getopt_long allows. */
-  longPrefixes?: boolean;
+  /**
+   * A long option may be written as a prefix of its name. `true`: a unique prefix of a `--` name (`--pres` for
+   * `--preserve-status`), as getopt_long allows. `'first'`: any prefix of a name, which selects the first option
+   * in the list that has such a name, also when written with `--` (iproute2: `ip -stat`, `ip -b` is `-batch`).
+   */
+  longPrefixes?: boolean | 'first';
   /** Whether `--name=value` gives a long option its value (getopt_long; the default). jq has no such form: `--arg=x` is unknown. */
   longEquals?: boolean;
   /** `-f=x` is `-f` with the value `x`, not `=x` (dpkg's own parser). */
@@ -38,8 +42,12 @@ export interface CommandSpec {
   /** What `--` does: end the options (the default), nothing (`echo`), or start words of another pattern. */
   dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] };
   subcommands?: Record<string, SubcommandSpec>;
-  /** A unique prefix of a subcommand's name selects it (`ip a` is `ip address`). */
-  subcommandPrefixes?: boolean;
+  /**
+   * A prefix of a subcommand's name (or alias) selects it: a unique one (`true`), or any one, which selects the
+   * first subcommand in the list that it starts (`'first'`, as iproute2 reads `ip a` as `ip address` and `ip m`
+   * as `ip maddress`).
+   */
+  subcommandPrefixes?: boolean | 'first';
   /** The operands are an expression that patterns cannot describe; a parser of its own reads them. */
   operandParser?: 'find-expression';
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */

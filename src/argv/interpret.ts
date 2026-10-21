@@ -5,7 +5,7 @@
 // operands with the spec's patterns, and read the words of a command slot as a command of its own.
 import { isExpressionStart } from '../embedded/find';
 import type { Text } from '../i18n';
-import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from './spec';
+import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
 /** A word of the command line, as the program will see it. */
 export interface ArgWord {
@@ -297,7 +297,7 @@ class Reader {
     const blocked = (o: { unlessMarked?: string }): boolean => !!o.unlessMarked && given.marks.has(o.unlessMarked);
     const mark = (o: { marks?: string }): void => { if (o.marks) given.marks.add(o.marks); };
     if (!open) {
-      const exact = findOption(options, text, !!spec.longPrefixes);
+      const exact = findOption(options, text, spec.longPrefixes);
       if (exact) {
         if (blocked(exact)) return -1;
         const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables ? { disables } : {}) };
@@ -329,7 +329,7 @@ class Reader {
     const long = text.startsWith('--');
     if (eq > 0 && ((long && spec.longEquals !== false) || (style === 'single-dash' && findOption(options, text.slice(0, eq), false)))) {
       const flag = text.slice(0, eq);
-      const opt = findOption(options, flag, !!spec.longPrefixes);
+      const opt = findOption(options, flag, spec.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
       if (!opt) { roles.set(i, { role: 'unknown-option', flag, value }); return i; }
@@ -460,8 +460,15 @@ interface OptionState {
   end: number;
 }
 
-/** The option named `flag`; with `prefixes`, a long option of which `flag` is a unique prefix (`--pres`). */
-function findOption(options: OptionSpec[], flag: string, prefixes: boolean): OptionSpec | undefined {
+/**
+ * The option named `flag`. With `prefixes`, a long option of which `flag` is a unique prefix (`--pres`), or
+ * with `'first'`, the first option with a name that `flag` (or `flag` without one of two dashes) starts.
+ */
+function findOption(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): OptionSpec | undefined {
+  if (prefixes === 'first') {
+    const word = flag.startsWith('--') ? flag.slice(1) : flag;
+    return word.length < 2 || word[0] !== '-' ? undefined : options.find((o) => o.names.some((n) => n.startsWith(word)));
+  }
   const exact = options.find((o) => o.names.includes(flag));
   if (exact || !prefixes || !flag.startsWith('--') || flag.length < 3) return exact;
   const found = options.filter((o) => o.names.some((n) => n.startsWith(flag)));
@@ -471,7 +478,9 @@ function findOption(options: OptionSpec[], flag: string, prefixes: boolean): Opt
 /** The subcommand a word names: its name and spec. */
 function subcommand(spec: CommandSpec, word: string): [string, CommandSpec] | undefined {
   const subs = Object.entries(spec.subcommands ?? {});
-  const exact = subs.find(([name, s]) => name === word || s.aliases?.includes(word));
+  const names = ([name, s]: [string, SubcommandSpec]): string[] => [name, ...(s.aliases ?? [])];
+  if (spec.subcommandPrefixes === 'first') return word ? subs.find((s) => names(s).some((n) => n.startsWith(word))) : undefined;
+  const exact = subs.find((s) => names(s).includes(word));
   if (exact || !spec.subcommandPrefixes || !word) return exact;
   const found = subs.filter(([name]) => name.startsWith(word));
   return found.length === 1 ? found[0] : undefined;

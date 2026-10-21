@@ -156,16 +156,6 @@ export const extraSubcommands: Record<string, Record<string, CommandSpec>> = {
     list: cmd('使えるアルゴリズムなどを一覧表示する', 'List algorithms and commands'),
     pkey: cmd('公開鍵・秘密鍵を処理・変換する', 'Process and convert public and private keys', [['-in', '入力ファイル', 'input file', 'arg'], ['-pubout', '公開鍵を出力する', 'output the public key'], ['-text', '内容を文字で表示', 'print in text form'], ['-noout', '鍵そのものは出力しない', 'do not output the key']], { style: 'single-dash' }),
   },
-  ip: {
-    rule: cmd('ルーティングポリシーのルールを扱う', 'Handle routing policy rules'),
-    tunnel: cmd('IP トンネルを扱う', 'Handle IP tunnels'),
-    maddr: cmd('マルチキャストアドレスを扱う', 'Handle multicast addresses'),
-    monitor: cmd('ネットワークの変化を見張る', 'Watch for network changes'),
-    netns: cmd('ネットワーク名前空間を扱う（`add`、`exec`、`list`、`delete`）', 'Handle network namespaces (`add`, `exec`, `list`, `delete`)'),
-    xfrm: cmd('IPsec の設定を扱う', 'Handle IPsec policies and states'),
-    mroute: cmd('マルチキャストのルーティングを表示する', 'Show multicast routing'),
-    vrf: cmd('VRF（仮想ルーティング）を扱う', 'Handle VRFs (virtual routing)'),
-  },
 };
 
 /** Merge the extra options and subcommands into the entries of `commands`. What the main entry already has is kept. */

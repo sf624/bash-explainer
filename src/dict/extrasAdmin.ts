@@ -262,16 +262,6 @@ export const extraAdmin: Record<string, OptSpec[]> = {
     ['--flush', '`/run` のジャーナルを `/var` に書き出す', 'flush `/run` journals to `/var`'],
     ['--rotate', 'ジャーナルのファイルを切り替える', 'rotate the journal files'],
   ],
-  ip: [
-    ['-s|-stats|-statistics', '統計も表示する', 'show statistics'],
-    ['-d|-details', '詳細を表示する', 'show details'],
-    ['-o|-oneline', '1つの項目を1行で表示する', 'one record per line'],
-    ['-r|-resolve', '名前を引いて表示する', 'resolve addresses to names'],
-    ['-c|-color', '色を付ける', 'colorize the output'],
-    ['-n|-netns', '操作するネットワーク名前空間', 'network namespace to use', 'arg'],
-    ['-f|-family', 'アドレスファミリ（`inet`、`inet6`、`link`）', 'protocol family (`inet`, `inet6`, `link`)', 'arg'],
-    ['-a|-all', 'すべてのオブジェクトに実行する', 'execute for all objects'],
-  ],
   ss: [
     ['-s|--summary', '接続数の要約を表示', 'show a summary of socket counts'],
     ['-x|--unix', 'UNIX ドメインソケットだけ', 'UNIX domain sockets only'],
