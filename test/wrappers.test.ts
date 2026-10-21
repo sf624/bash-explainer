@@ -154,7 +154,7 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     assert.strictEqual(explain('timeout 5 cd /tmp').items[0].children.find((t) => t.label === 'cd')?.kind, 'builtin');
   });
   it('says nothing for builtins that are programs too, and for the keyword time', () => {
-    for (const src of ['sudo echo hi', 'sudo printf x', 'sudo test -f x', 'sudo [ -f x ]', 'sudo kill 1', 'sudo pwd', 'sudo true', 'sudo false', 'sudo ls', 'time cd /x', 'time myfunc', 'command cd /x', 'exec cd /x']) {
+    for (const src of ['sudo echo hi', 'sudo printf x', 'sudo test -f x', 'sudo [ -f x ]', 'sudo kill 1', 'sudo pwd', 'sudo true', 'sudo false', 'sudo ls', 'time cd /x', 'time myfunc', 'command cd /x', 'builtin cd /x', 'eval myfunc', 'eval cd /x']) {
       assert.deepStrictEqual(at(FN + src, 1), [], src);
     }
     assert.deepStrictEqual(at('sudo myfunc', 0), [], 'a name that is no function');
@@ -185,6 +185,57 @@ describe('a wrapper cannot run a shell function or builtin', () => {
   });
   (hasBash && spawnSync('sudo', ['-n', 'true']).status === 0 ? it : it.skip)('agrees with sudo: it cannot run cd', () => {
     assert.notStrictEqual(bash('sudo -n cd /').status, 0);
+  });
+});
+
+describe('the pitfalls follow from how the command is run', () => {
+  const FN = 'myfunc() { echo x; }\n';
+  const at = (src: string, lang: 'en' | 'ja' = 'en') => notes(FN + src, lang, 1);
+  it('exec and the other wrappers that start a program: no function, no builtin without a program', () => {
+    for (const [src, who] of [['exec myfunc', 'exec'], ['npx myfunc', 'npx'], ['uv run myfunc', 'uv run'], ['poetry run myfunc', 'poetry run'], ['systemd-cat myfunc', 'systemd-cat'], ['/usr/bin/time myfunc', 'time']]) {
+      assert.match(at(src)[0], new RegExp(`^⚠ Pitfall: \`${who}\` starts \`myfunc\` as a separate program, so it cannot run a shell function`), src);
+    }
+    assert.match(at('exec cd /x')[0], /^⚠ Pitfall: `exec` starts `cd` as a separate program, so it cannot run a shell builtin/);
+    // Builtins that no program has the name of.
+    for (const src of ['env disown', 'xargs :', 'sudo help', 'nohup times']) assert.match(at(src)[0], /cannot run a shell builtin/, src);
+  });
+  it('in a container: the function is not there', () => {
+    for (const [src, who] of [['docker run img myfunc', 'docker run'], ['docker exec ctr myfunc', 'docker exec'], ['docker compose run svc myfunc', 'docker compose run'], ['podman run img myfunc', 'podman run'], ['kubectl exec pod -- myfunc', 'kubectl exec']]) {
+      const n = at(src);
+      assert.strictEqual(n.length, 1, src);
+      assert.strictEqual(n[0], `⚠ Pitfall: \`${who}\` runs \`myfunc\` inside the container, and a function from this script is not available in the container. Write out its body instead`);
+    }
+    assert.strictEqual(at('docker run img myfunc', 'ja')[0], '⚠ 落とし穴: `docker run` は `myfunc` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます');
+    // Builtins depend on the image: nothing is said.
+    assert.deepStrictEqual(at('docker run img cd /x'), []);
+  });
+  it('a new shell: the function is not there, unless bash gets it exported', () => {
+    for (const [src, who] of [["bash -c 'myfunc a'", 'bash -c'], ["sh -c 'myfunc'", 'sh -c'], ["bash -xc 'myfunc'", 'bash -c'], ["flock /l -c 'myfunc'", 'flock -c'], ["flock /l --command 'myfunc'", 'flock -c']]) {
+      const n = at(src);
+      assert.strictEqual(n.length, 1, src);
+      assert.strictEqual(n[0], `⚠ Pitfall: \`${who}\` runs the command in a new shell, which does not have this script's function \`myfunc\`. Write out its body, or pass the function with \`export -f myfunc\` first (only when the new shell is bash)`, src);
+    }
+    assert.strictEqual(at("bash -c 'myfunc'", 'ja')[0], '⚠ 落とし穴: `bash -c` は新しいシェルでコマンドを実行するため、このスクリプトの関数 `myfunc` は使えません。関数の中身を直接書くか、先に `export -f myfunc` で関数を渡します（新しいシェルが bash のときだけ）');
+    for (const src of ["export -f myfunc; bash -c 'myfunc'", "declare -fx myfunc; bash -c 'myfunc'", "export -f other myfunc; find . -exec bash -c 'myfunc \"$1\"' _ {} \\;", "bash -c 'cd /x'", "bash -c \"$cmd\"", "bash -c 'ls'"]) {
+      assert.deepStrictEqual(at(src), [], src);
+    }
+  });
+  it('the current shell: eval, command and builtin run functions and builtins', () => {
+    for (const src of ['eval myfunc', "eval 'myfunc a'", 'command cd /x', 'builtin cd /x', 'eval export A=1']) assert.deepStrictEqual(at(src), [], src);
+  });
+  (hasBash ? it : it.skip)('agrees with bash', () => {
+    // exec starts a program: `exec: cd: not found`, `exec: f: not found`.
+    assert.strictEqual(bash('exec cd /tmp').status, 127);
+    assert.strictEqual(bash('f(){ echo x; }; exec f').status, 127);
+    // A builtin with no program of its name: env and xargs cannot run it.
+    assert.strictEqual(bash('env disown').status, 127);
+    assert.strictEqual(bash('echo a | xargs :').status, 127);
+    // bash -c finds a function only when it is exported.
+    assert.strictEqual(bash("f(){ echo x; }; bash -c f").status, 127);
+    assert.strictEqual(bash("f(){ echo x; }; export -f f; bash -c f").out, 'x\n');
+    assert.strictEqual(bash("f(){ echo x; }; declare -fx f; bash -c f").out, 'x\n');
+    // The current shell runs both.
+    assert.strictEqual(bash("f(){ echo x; }; eval f; command cd /tmp && builtin cd / && pwd").out, 'x\n/\n');
   });
 });
 

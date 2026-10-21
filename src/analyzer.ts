@@ -10,7 +10,7 @@ import { commands } from './dict/commands';
 import { CommandDoc } from './dict/types';
 import { fromCommandDoc } from './argv/fromdoc';
 import { ArgRole, ArgvParse, CommandRole, interpret, ValueRole } from './argv/interpret';
-import type { CommandSlot, CommandSpec, OperandSpec } from './argv/spec';
+import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
@@ -163,9 +163,6 @@ const BLOCK_OWNERS = types('program', 'compound_statement', 'do_group', 'subshel
 /** Does the word hold a variable, command or arithmetic expansion (even inside double quotes)? */
 const hasExpansionNode = (w: SyntaxNode): boolean => descendants(w, ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']).length > 0;
 /** Programs that start another program from their arguments (not the builtins `command`, `exec` and `builtin`). */
-const WRAPPER_PROGRAMS = new Set(['sudo', 'doas', 'env', 'nohup', 'timeout', 'nice', 'xargs', 'find', 'time', 'chroot', 'flock', 'setsid', 'watch', 'strace', 'ltrace', 'stdbuf', 'ionice', 'unshare', 'nsenter', 'caffeinate', 'runcon', 'systemd-run', 'perf']);
-/** Builtins with no program of the same name: a wrapper cannot run them. (`echo`, `printf`, `test`, `[`, `kill`, `pwd`, `true` and `false` exist as programs too.) */
-const SHELL_ONLY = new Set(['cd', 'export', 'source', '.', 'alias', 'unalias', 'set', 'unset', 'shopt', 'read', 'ulimit', 'umask', 'exit', 'return', 'shift', 'declare', 'local', 'readonly', 'typeset', 'eval', 'trap', 'wait', 'jobs', 'fg', 'bg', 'history', 'pushd', 'popd', 'dirs', 'hash', 'type', 'let', 'getopts', 'mapfile', 'readarray', 'exec', 'command', 'builtin']);
 const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -259,7 +256,8 @@ export class Analyzer {
   private examples: Example[] = [];
   /** The command whose arguments are being explained (for option-dependent embedded languages). */
   /** The command whose arguments are being explained (set while they are, which is when the helpers that read it run). */
-  private argCtx: { cmd: string; args: SyntaxNode[] } | undefined;
+  /** The command whose arguments are explained, its words, and whether the shell reads them again (`eval`). */
+  private argCtx: { cmd: string; args: SyntaxNode[]; rereads?: boolean } | undefined;
 
   constructor(private lang: Lang) {}
 
@@ -1482,8 +1480,8 @@ export class Analyzer {
     const assigned: string[] = [];
     // `set +o pipefail`: the values of an option turned off say so.
     let disables = false;
-    // ssh: the words joined into the remote command have the text of its first word.
-    let joined: OperandSpec | undefined;
+    // ssh: the words joined into the remote command have the text of its first word (eval's have none).
+    let joined: string | undefined;
     const ordinals = new Map<OperandSpec, number>();
     try {
       for (const { word, role } of parse.roles) {
@@ -1537,17 +1535,19 @@ export class Analyzer {
           }
           case 'command':
             if (role.slot.joinsWords) {
-              joined = role.item!;
-              this.remoteNotes(role.slot, nodes.slice(word, parse.end));
-              out.push(this.positional(a, this.t(joined.text)));
+              // ssh sends the words joined to the remote shell; eval joins them and reads them again here, so they are plain words.
+              joined = role.slot.run === 'current-shell' ? undefined : this.t(role.item!.text);
+              if (role.slot.run === 'current-shell') this.argCtx!.rereads = true;
+              this.slotNotes(role, this.via(parse, spec, role), nodes.slice(word, parse.end), assigned);
+              out.push(this.positional(a, joined));
             } else if (!role.parse) {
               // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
-              if (role.slot.env === 'reset') this.remoteNotes(role.slot, [a]);
+              this.slotNotes(role, this.via(parse, spec, role), [a], assigned);
               out.push(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false));
-            } else out.push(this.wrapped(nodes, word, role, assigned, parse));
+            } else out.push(this.wrapped(nodes, word, role, assigned, parse, spec));
             break;
           case 'joined':
-            out.push(this.positional(a, this.t(joined!.text)));
+            out.push(this.positional(a, joined));
             break;
           case 'expression':
             // find's expression, read as a whole from its first word.
@@ -1738,13 +1738,12 @@ export class Analyzer {
   }
 
   /** Words forming a command run by another command (sudo, xargs, find -exec…): the command, with its words read by its spec. */
-  private wrapped(nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], parent: ArgvParse): Token {
+  private wrapped(nodes: SyntaxNode[], word: number, role: CommandRole, assigned: string[], parent: ArgvParse, spec: CommandSpec): Token {
     const parse = role.parse!;
     const words = nodes.slice(word, parse.end);
     const first = nodes[word];
     // `find -exec cmd {} ;`: the words up to the terminator.
-    const via = role.of ? `${parent.command} ${role.of}` : parent.command;
-    this.wrapperNotes(via, words, assigned);
+    this.slotNotes(role, this.via(parent, spec, role), words, assigned);
     const name = first.text;
     const explanation = role.spec ? this.t(role.spec.summary) : this.s(`コマンド \`${name}\``, `Command \`${name}\``);
     const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
@@ -2842,65 +2841,90 @@ export class Analyzer {
   }
 
   /**
-   * Pitfalls of a command run by a wrapper (`sudo`, `xargs`…): the wrapper starts it as a separate program, so a
-   * function or a builtin that only changes the shell cannot run, and `$NAME` of its words is read before the wrapper sets it.
+   * How the pitfalls name what runs a command (`sudo`, `find -exec`, `su -c`, `bash -c`): the command's name
+   * without its directory, and the option the command belongs to, as the option's first name.
    */
-  private wrapperNotes(via: string, words: SyntaxNode[], assigned: string[]): void {
+  private via(parse: ArgvParse, spec: CommandSpec, role: CommandRole): string {
+    const name = parse.command.split('/').pop()!;
+    // (`bash -c`: the string is the operand that `-c` makes a command.)
+    const of = role.of ?? (role.slot.run === 'shell-string' && !role.slot.joinsWords ? '-c' : undefined);
+    return of ? `${name} ${spec.options?.find((o) => o.names.includes(of))?.names[0] ?? of}` : name;
+  }
+
+  /**
+   * Pitfalls of a command that another one runs (`words`, from its first word), which follow from how its slot runs
+   * it. A separate program (`exec`: sudo, xargs, find -exec…) cannot run a shell function or a builtin that
+   * only changes the shell, and `$NAME` of its words is read before the wrapper sets `NAME`; in a container,
+   * the script's functions are not there. A new shell (`shell-string`: bash -c, su -c, ssh) does not have the
+   * script's functions, and the words ssh joins are expanded here before they are sent. The current shell
+   * (`current-shell`: eval, command, builtin) runs both.
+   */
+  private slotNotes(role: CommandRole, via: string, words: SyntaxNode[], assigned: string[]): void {
     if (this.opts.pitfalls === false) return;
-    const wrapper = via.split('/').pop()!;
-    if (!WRAPPER_PROGRAMS.has(wrapper.split(' ')[0])) return;
+    const { slot } = role;
     const first = words[0];
     const name = first.text;
     const isFn = isPlainWord(first) && this.functions.has(name);
-    if (isPlainWord(first) && (isFn || SHELL_ONLY.has(name))) {
-      const fix = isFn
-        ? this.s(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
-        : name === 'cd'
-          ? this.s(`サブシェル \`(cd … && …)\` か、\`${wrapper} sh -c 'cd … && …'\` を使います`, `Use a subshell \`(cd … && …)\`, or \`${wrapper} sh -c 'cd … && …'\``)
-          : this.s(`\`${wrapper} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${wrapper} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
-      this.extraNotes.push(this.s(
-        `⚠ 落とし穴: \`${wrapper}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix}`,
-        `⚠ Pitfall: \`${wrapper}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix}`));
+    if (slot.run === 'exec' && slot.where === 'container') {
+      if (isFn) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`${via}\` は \`${name}\` をコンテナの中で実行します。このスクリプトの関数はコンテナの中にはないので使えません。関数の中身を直接書きます`,
+          `⚠ Pitfall: \`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`));
+      }
+    } else if (slot.run === 'exec') {
+      if (isPlainWord(first) && (isFn || (role.spec?.builtin && !role.spec.alsoProgram))) {
+        const fix = isFn
+          ? this.s(`\`export -f ${name}\` してから \`bash -c '${name} "$@"' _ …\` のようにシェル経由で呼びます`, `Run \`export -f ${name}\`, then call it through a shell: \`bash -c '${name} "$@"' _ …\``)
+          : name === 'cd'
+            ? this.s(`サブシェル \`(cd … && …)\` か、\`${via} sh -c 'cd … && …'\` を使います`, `Use a subshell \`(cd … && …)\`, or \`${via} sh -c 'cd … && …'\``)
+            : this.s(`\`${via} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${via} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix}`,
+          `⚠ Pitfall: \`${via}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix}`));
+      }
+    } else if (slot.run === 'shell-string' && slot.where === 'remote') {
+      const risky = words.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
+      if (risky) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: \`ssh\` に渡すコマンドのうち \`${risky.text}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
+          `⚠ Pitfall: the local shell expands \`${risky.text}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``));
+      }
+      if (isFn) {
+        this.extraNotes.push(this.s(
+          `⚠ 落とし穴: リモートのシェルには、このスクリプトの関数 \`${name}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${name}); ${name}"\` のように定義ごと送ります`,
+          `⚠ Pitfall: the remote shell does not have this script's function \`${name}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${name}); ${name}"\``));
+      }
+    } else if (slot.run === 'shell-string') {
+      // The first word of the string, when it is known (`su -c 'f arg'`).
+      const lit = literalContent(first)?.text;
+      const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
+      // bash takes the functions exported to it (`export -f f`); a shell started afresh (`su -c`) has none.
+      if (fn && this.functions.has(fn) && (slot.env === 'reset' || !this.exportedFunctions().has(fn))) {
+        this.extraNotes.push(slot.env === 'reset'
+          ? this.s(
+            `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
+            `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`)
+          : this.s(
+            `⚠ 落とし穴: \`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、先に \`export -f ${fn}\` で関数を渡します（新しいシェルが bash のときだけ）`,
+            `⚠ Pitfall: \`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`));
+      }
     }
     for (const v of assigned) {
       const use = words.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
       if (use) {
         this.extraNotes.push(this.s(
-          `⚠ 落とし穴: \`${use.text}\` は、\`${wrapper}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${wrapper} ${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
-          `⚠ Pitfall: the current shell expands \`${use.text}\` before \`${wrapper}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${wrapper} ${v}=… sh -c '… "\$${v}"'\``));
+          `⚠ 落とし穴: \`${use.text}\` は、\`${via}\` が \`${v}\` を設定する前に今のシェルが展開します（今の値で、なければ空）。設定した値を使うなら \`${via} ${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
+          `⚠ Pitfall: the current shell expands \`${use.text}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… sh -c '… "\$${v}"'\``));
         break;
       }
     }
   }
 
-  /**
-   * `ssh host cmd` and `su -c 'cmd'` hand a command to another shell (`slot`): the script's functions are not there,
-   * and the words joined for ssh are expanded here, by the local shell, before they are sent.
-   */
-  private remoteNotes(slot: CommandSlot, command: SyntaxNode[]): void {
-    if (this.opts.pitfalls === false) return;
-    if (!slot.joinsWords) {
-      const lit = literalContent(command[0])?.text;
-      const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
-      if (fn && this.functions.has(fn)) {
-        this.extraNotes.push(this.s(
-          `⚠ 落とし穴: \`su -c\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書きます`,
-          `⚠ Pitfall: \`su -c\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body`));
-      }
-      return;
-    }
-    const risky = command.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
-    if (risky) {
-      this.extraNotes.push(this.s(
-        `⚠ 落とし穴: \`ssh\` に渡すコマンドのうち \`${risky.text}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
-        `⚠ Pitfall: the local shell expands \`${risky.text}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``));
-    }
-    const first = command[0];
-    if (isPlainWord(first) && this.functions.has(first.text)) {
-      this.extraNotes.push(this.s(
-        `⚠ 落とし穴: リモートのシェルには、このスクリプトの関数 \`${first.text}\` はありません。中身を直接書くか、\`ssh host "$(declare -f ${first.text}); ${first.text}"\` のように定義ごと送ります`,
-        `⚠ Pitfall: the remote shell does not have this script's function \`${first.text}\`. Write out its body, or send the definition too: \`ssh host "$(declare -f ${first.text}); ${first.text}"\``));
-    }
+  /** The functions the script exports to the shells it starts (`export -f f`, `declare -fx f`). */
+  private exportedFunctions(): Set<string> {
+    const out = new Set<string>();
+    for (const m of this.source.matchAll(/\b(?:export\s+-f|declare\s+-(?:fx|xf))((?:[ \t]+[A-Za-z_][\w-]*)+)/g)) for (const n of m[1].trim().split(/\s+/)) out.add(n);
+    return out;
   }
 
   // ---------------------------------------------------------------- tests
@@ -3218,7 +3242,7 @@ export class Analyzer {
   private braceVarNote(text: string): string {
     const m = /\{[^{},]*\.\.[^{},]*\}/.exec(text);
     if (!m || !m[0].includes('$')) return '';
-    if (this.argCtx?.cmd === 'eval') {
+    if (this.argCtx?.rereads) {
       return this.s(
         `。シェルは先に変数を置き換えるので、\`eval\` に渡る文字列は \`{1..3}\` のような形になり、\`eval\` がそれを読み直すときにはじめてブレース展開が連番になる`,
         `. The shell replaces the variable first, so \`eval\` gets a string like \`{1..3}\`, and only when \`eval\` reads it again is the brace expanded to a range`);
