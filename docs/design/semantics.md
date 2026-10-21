@@ -711,7 +711,7 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 After B6, src/analyzer.ts lays out tokens and examples and renders facts; the meaning lives in src/argv/ and src/semantics/. The expected size of the analyzer is under half of today's.
 
-## 7. Risks and open questions
+## 7. Risks and decisions
 
 Risks:
 
@@ -720,14 +720,14 @@ Risks:
 - **Backtracking operand patterns** can be slow on long argument lists. Patterns are short, and `*`/`+` items are few; the matcher caps the work and falls back to `unmatched`.
 - **customCommands** in users' settings use today's shape. A4 keeps a converter for one release.
 
-Open questions:
+Decisions (2026-10-21, by the maintainer):
 
-1. Should CI build bash-ast (from its repository, at a pinned commit) and run the differential test, or should it stay a local test for the maintainer? Building it needs Rust and bash's sources; the result is used only as a program in CI, never shipped.
-2. Inputs with extglob cannot be compared, since bash-ast parses with extglob off. Is skipping them enough, or should the test split such inputs at top-level statements and compare the rest?
-3. Should GNU long options be matched by a unique prefix (`--pres` for `--preserve-status`), as getopt_long does? It is right for GNU tools, and wrong for tools that do not use getopt_long. A per-spec switch, off by default?
-4. May the structure of options (names and arity, not descriptions) be imported from withfig/autocomplete, which is MIT, with a notice in THIRD_PARTY_NOTICES.md? It would cover many arity gaps at once; the texts would still be our own.
-5. When a state is `unknown` after a branch (`shopt -s globstar` in one branch of an `if`), should the explanation say "may", or say nothing as today?
-6. A function's body runs with the state of its caller. This design walks it from the state at its definition, merged with `unknown`. Should it rather merge the states of its call sites (more precise, more work)?
-7. Which manual should the links point to: the current online manual (gnu.org, which changes with bash releases), or a fixed version (5.2)? In Japanese, link to the English manual, or to no manual?
-8. Should notes show the section number in the text ("(Bash manual 3.7.3)"), or only as a link in renderers that support links?
-9. Should the PARTIAL and MISSING items be fixed in the old code meanwhile, or wait for the step that covers them (4.6)?
+1. **bash-ast in CI:** no. The differential test is local; it is skipped when the binary is missing (CI has none).
+2. **Inputs with extglob:** skipped from the comparison.
+3. **Unique-prefix long options:** a per-spec switch, off by default; on for GNU tools that use getopt_long.
+4. **withfig/autocomplete (MIT):** the structure of options (names and arity) may be imported, with a notice in THIRD_PARTY_NOTICES.md. The texts stay our own.
+5. **State unknown after a branch:** the explanation says it depends ("may"), not nothing.
+6. **Function bodies:** walked from the state at the definition, merged with `unknown`. Call-site merging can come later.
+7. **Manual links:** a fixed version (bash 5.2). Japanese explanations link to the English manual.
+8. **Section numbers:** a link where the renderer supports links (panel, hover); the CLI writes "(Bash manual 3.7.3)" in the text.
+9. **PARTIAL and MISSING items:** wait for the step that covers them. Only errors (explanations that contradict bash) are fixed in the old code meanwhile.
