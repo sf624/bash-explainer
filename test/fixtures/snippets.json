@@ -864,6 +864,7 @@
  "shopt -p globstar\nls **/*.c",
  "shopt -s dotglob nocaseglob\nls *.txt",
  "shopt -s dotglob; ls *",
+ "shopt -s dotglob; ls .*",
  "shopt -s expand_aliases\nalias ll=\"ls -l\"\nll",
  "shopt -s expand_aliases; alias hi=\"echo A\"; echo \"$(hi)\"",
  "shopt -s extglob\nrm !(keep).log",
