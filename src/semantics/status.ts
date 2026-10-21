@@ -308,5 +308,6 @@ export function setsErrexit(n: SyntaxNode): boolean {
   // (Options end at the first word that is not one: `set -- -e` sets the positional parameters.)
   const end = words.findIndex((w, i) => !/^-[A-Za-z]/.test(w) && !/^[-+][A-Za-z]*o$/.test(words[i - 1] ?? ''));
   const options = end < 0 ? words : words.slice(0, end);
-  return options.some((w, i) => /^-[A-Za-z]*e/.test(w) || (w === 'errexit' && /^-[A-Za-z]*o$/.test(options[i - 1] ?? '')));
+  // (`errexit` is never the first: the options start with `-`.)
+  return options.some((w, i) => /^-[A-Za-z]*e/.test(w) || (w === 'errexit' && /^-[A-Za-z]*o$/.test(options[i - 1]!)));
 }

@@ -4341,7 +4341,6 @@ export class Analyzer {
     // (A word is always in a statement.)
     let stmt = n.parent!;
     while (!STATEMENTS.has(stmt.type) || (stmt.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(stmt.parent!.type))) stmt = stmt.parent!;
-    if (ancestor(n, (x) => x === stmt || x.type === 'command_substitution' || x.type === 'process_substitution') !== stmt) return '';
     const ctx = this.status.errexit(stmt);
     if (ctx.active !== 'on' || !ctx.checked || ctx.stops !== 'script') return '';
     const rule = this.status.status(stmt);
