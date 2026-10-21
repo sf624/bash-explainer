@@ -30,7 +30,8 @@ export type ArgRole =
   | { role: 'cluster'; letters: ArgRole[] }
   /** An option recognized by its form (`kill -TERM`, `head -5`); `open` for `-` and an expansion (`head -$n`). */
   | { role: 'pattern-option'; flag: string; pattern: PatternOption; text: Text; open?: boolean }
-  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole }
+  /** `ambiguous`: the long options a prefix could be (`timeout --v`), which the tool refuses. */
+  | { role: 'unknown-option'; flag: string; part?: Range; value?: ValueRole; ambiguous?: string[] }
   /** An option whose letters are known only at run time (`-$opts`, `-r$x`): `prefix` is what is known. */
   | { role: 'open-option'; prefix: string }
   | ValueRole
@@ -336,7 +337,7 @@ class Reader {
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
       if (opt && !open) given.values.push({ names: opt.names, text: text.slice(eq + 1) });
-      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value }); return i; }
+      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguity(options, flag, spec.longPrefixes) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
       mark(opt);
@@ -344,7 +345,7 @@ class Reader {
     }
     if (long || style === 'single-dash') {
       if (open) return openOption();
-      roles.set(i, { role: 'unknown-option', flag: text });
+      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguity(options, text, spec.longPrefixes) });
       given.flags.push(text);
       return i;
     }
@@ -479,6 +480,13 @@ function findOption(options: OptionSpec[], flag: string, prefixes: boolean | 'fi
   if (exact || !prefixes || !flag.startsWith('--') || flag.length < 3) return exact;
   const found = options.filter((o) => o.names.some((n) => n.startsWith(flag)));
   return found.length === 1 ? found[0] : undefined;
+}
+
+/** The long options a prefix could be, when `longPrefixes` allows only a unique one and several start with it (`timeout --v`). */
+function ambiguity(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): { ambiguous?: string[] } {
+  if (prefixes !== true || !flag.startsWith('--') || flag.length < 3) return {};
+  const found = options.flatMap((o) => o.names.filter((n) => n.startsWith(flag)).slice(0, 1));
+  return found.length > 1 ? { ambiguous: found } : {};
 }
 
 /** The subcommand a word names: its name and spec. */

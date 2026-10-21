@@ -1570,7 +1570,11 @@ export class Analyzer {
   }
 
   /** The text of an option not in the dictionary. */
-  private unknownOption(command: string): string {
+  private unknownOption(command: string, ambiguous?: string[]): string {
+    if (ambiguous) {
+      const names = ambiguous.map((n) => `\`${n}\``).join(this.s('、', ', '));
+      return this.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${command.split(' ')[0]} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${command.split(' ')[0]} refuses it`);
+    }
     return this.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
   }
 
@@ -1594,7 +1598,7 @@ export class Analyzer {
         ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
         : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
     }
-    if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command));
+    if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command, role.ambiguous));
     const flag = dash(role.flag);
     // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
     const listing = parse.command === 'set' && flag === '-o' && role.missing;
@@ -1617,7 +1621,7 @@ export class Analyzer {
       : undefined;
     const emb = value.spec?.lang && valueLit ? this.embeddedText(valueLit, value.spec.lang, a) : undefined;
     const extra = emb?.note ? ` — ${emb.note}` : '';
-    const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command);
+    const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command, role.ambiguous);
     return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []);
   }
 

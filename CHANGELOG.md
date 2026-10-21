@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A long option that is the start of several options, as `timeout --v`, `env --ig` and `xargs --max`, is shown as ambiguous, with the options it could be (`--verbose`, `--version`), and says that the tool refuses it. Before, it was "Option (not in the dictionary)".
 - `env -S'-i A=1' printenv A` and `env -S-i A=1 cmd` read the words after the `-S` string as env reads them when the string holds only options and assignments: `A=1` is a variable and `cmd` the command. Before, they were arguments of a command "made from the string". With a command in the string (`env -S'-i A=1 printenv' x`), `x` is still its argument.
 - In `ps`, a bare number is a process ID, and it ends the line: procps reads every word after it as a process ID, and `ps -o pid= 1 u` and `ps 1 -e` fail with "process ID list syntax error". The explanation marks those words as not allowed. Before, `1` was a plain word, and `u` and `-e` were read as options.
 - The value of an option written in the same word as quotes, as in `dpkg-query -Wf='${Package}'` and `tar -C'/tmp' -xf a.tar`, is shown without the closing quote (`${Package}`, `/tmp`), and its mark ends before the quote. Before, the label kept the quote (`${Package}'`).
