@@ -400,6 +400,7 @@
  "cmd 2>&1",
  "cmd >/dev/null",
  "command",
+ "command -v git",
  "coproc W { cat; }",
  "coproc cat",
  "cp $src \"$dst\"",

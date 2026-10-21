@@ -591,6 +591,9 @@ describe('argv converter: dictionary entries to specs', () => {
     assert.deepStrictEqual(roles('x run A=1 ls', spec), ['run: subcommand run', '  A=1: NAME=VALUE (assignment)', '  ls: command exec ls']);
     // An entry without options.
     assert.deepStrictEqual(fromCommandDoc({ summary: tx('s', 's') }).options, []);
+    // A spec written directly: a name given twice means what it means last, as in `cmd`.
+    assert.deepStrictEqual(native('n', 'n', [['-q', 'q', 'quiet'], ['-a|--all', 'a', 'all'], ['-p|--project', 'p', 'project'], ['-p|--publish', 'p', 'publish', 'arg'], ['-a', 'a', 'again'], ['-q', 'q', 'quiet again']]).spec!.options!.map((o) => `${o.names.join('|')} ${o.text.en}`),
+      ['--all all', '--project project', '-p|--publish publish', '-a again', '-q quiet again']);
     // A bundle without options of its own uses the `-x` options.
     assert.strictEqual(fromCommandDoc(cmd('y', 'y', [], { bundle: {} }), 'y').oldStyle!.letters, undefined);
   });
