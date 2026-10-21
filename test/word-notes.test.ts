@@ -135,3 +135,33 @@ describe('word notes: globs', () => {
     assert.doesNotMatch(expl('echo > a.log', '> a.log'), /glob/);
   });
 });
+
+describe('word notes: after the review', () => {
+  it('says that globbing may be off on a glob word as on an expansion of the same line', () => {
+    const src = 'if a; then set -f; fi\necho *.c $x';
+    assert.match(all(explain(src).items).find((t) => t.label === '*.c')!.explanation, /globbing is off on some paths, after `set -f` \(there it stays as written\)/);
+    assert.match(expl(src, '$x'), /globbing is off on some paths/);
+    assert.match(all(explain(src, 'ja').items).find((t) => t.label === '*.c')!.explanation, /グロブ展開が無効になる経路もある/);
+  });
+
+  it('says nothing of dotglob on a pattern that starts with `.`', () => {
+    assert.doesNotMatch(all(explain('shopt -s dotglob; ls .*').items).find((t) => t.label === '.*')!.explanation, /dotglob/);
+    assert.match(all(explain('shopt -s dotglob; ls *').items).find((t) => t.label === '*')!.explanation, /dotglob/);
+  });
+
+  it('says that an unquoted expansion in a pattern is a pattern', () => {
+    assert.match(expl('case $x in $p) ;; esac', '$p'), /\. Unquoted here, its value is read as a pattern \(`\*`, `\?` and `\[…\]` in it match; quote it to compare text\)$/);
+    assert.strictEqual(bash("x='a b'; p='a*'; case $x in $p) echo pattern;; esac; case $x in \"$p\") echo text;; *) echo no;; esac"), 'pattern\nno\n');
+    assert.match(expl('[[ $x == $p ]]', '$p', 'ja'), /値はパターンとして読まれる/);
+    assert.match(expl('[[ $x =~ $re ]]', '$re'), /\. Unquoted here, its value is read as a regex$/);
+    assert.match(expl('[[ $x =~ $re ]]', '$re', 'ja'), /値は正規表現として読まれる$/);
+    assert.strictEqual(bash('x=abc; re="a.c"; [[ $x =~ $re ]] && echo regex; [[ $x =~ "$re" ]] || echo text'), 'regex\ntext\n');
+    assert.doesNotMatch(expl('[[ $x == "$p" ]]', '$p'), /pattern/);
+    assert.doesNotMatch(expl('[[ $x == $p ]]', '$x'), /pattern/);
+  });
+
+  it('expands a tilde after a `:` of an assignment that starts with an expansion', () => {
+    assert.deepStrictEqual(labels('PATH=$PATH:~/bin', '~'), ['Tilde expansion (after `:`): `~` becomes the home directory (`$HOME`)']);
+    assert.strictEqual(bash('P=/p; PATH2=$P:~/bin; echo $PATH2'), '/p:/home/w/bin\n');
+  });
+});
