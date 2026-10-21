@@ -1171,5 +1171,59 @@
       "end": {},
       "status": 0
     }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "f() { :; }; x=1 f; y=2 export z=3; w=4 eval :; v=5 command :; u=6 builtin export t=7",
+    "posix": true,
+    "note": "in POSIX mode an assignment before a special builtin stays (not before a function, `command` or `builtin`: bash 5.2)",
+    "facts": {
+      "end": {
+        "variables": {
+          "t": {
+            "attrs": "x",
+            "value": "\"7\""
+          },
+          "w": {
+            "attrs": "x",
+            "value": "\"4\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "x",
+            "value": "\"3\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "f() { :; }; x=1 f; y=2 export z=3; w=4 eval :; v=5 command :; u=6 builtin export t=7",
+    "facts": {
+      "end": {
+        "variables": {
+          "t": {
+            "attrs": "x",
+            "value": "\"7\""
+          },
+          "z": {
+            "attrs": "x",
+            "value": "\"3\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
   }
 ]

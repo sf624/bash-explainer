@@ -68,6 +68,8 @@ export interface FunctionState {
   readonly exported: Tri;
   /** `readonly -f`. */
   readonly readonly: Tri;
+  /** The `unset -f` that removed it (with `state` off). */
+  readonly removed?: SyntaxNode;
 }
 
 export interface AliasState {
@@ -75,6 +77,15 @@ export interface AliasState {
   /** What it stands for: the text after `=`, without its quotes. */
   readonly value: string;
   /** The `alias` command. */
+  readonly at: SyntaxNode;
+}
+
+/** A name the command search treats apart: a builtin turned off (`enable -n`), or a path remembered (`hash -p`). */
+export interface CommandEntry {
+  readonly state: Tri;
+  /** `hash -p`: the path. */
+  readonly value: string;
+  /** The command that made it so. */
   readonly at: SyntaxNode;
 }
 
@@ -209,6 +220,10 @@ export interface ShellState {
   readonly variables: NameMap<VariableState>;
   readonly functions: NameMap<FunctionState>;
   readonly aliases: NameMap<AliasState>;
+  /** The builtins `enable -n` turned off (`on`: off as a builtin). */
+  readonly disabled: NameMap<CommandEntry>;
+  /** The names `hash -p` gave a path (assigning PATH, `hash -r` and `hash -d` forget them). */
+  readonly hashed: NameMap<CommandEntry>;
 }
 
 export interface StateModel {
@@ -313,7 +328,9 @@ const optionRoles = (parse: ArgvParse): Extract<ArgRole, { role: 'option' }>[] =
 type Kind = keyof ShellState;
 type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 
-const EMPTY: ShellState = { set: NameMap.empty(), shopt: NameMap.empty(), variables: NameMap.empty(), functions: NameMap.empty(), aliases: NameMap.empty() };
+const EMPTY: ShellState = {
+  set: NameMap.empty(), shopt: NameMap.empty(), variables: NameMap.empty(), functions: NameMap.empty(), aliases: NameMap.empty(), disabled: NameMap.empty(), hashed: NameMap.empty(),
+};
 
 const later = (a: SyntaxNode, b: SyntaxNode): SyntaxNode => (b.startIndex > a.startIndex ? b : a);
 const tri = (a: Tri, b: Tri): Tri => (a === b ? a : 'unknown');
@@ -354,7 +371,7 @@ function mergeFunction(a: FunctionState | undefined, b: FunctionState | undefine
   return { state: tri(a.state, b.state), def: later(a.def, b.def), exported: tri(a.exported, b.exported), readonly: tri(a.readonly, b.readonly) };
 }
 
-function mergeAlias(a: AliasState | undefined, b: AliasState | undefined): AliasState {
+function mergeAlias<T extends AliasState | CommandEntry>(a: T | undefined, b: T | undefined): T {
   if (!a || !b) {
     const x = (a ?? b)!;
     return { ...x, state: tri(x.state, 'off') };
@@ -371,6 +388,8 @@ export function merge(states: ShellState[], posix = false): ShellState {
     variables: NameMap.merge(a.variables, b.variables, (_k, x, y) => mergeVariable(x, y)),
     functions: NameMap.merge(a.functions, b.functions, (_k, x, y) => mergeFunction(x, y)),
     aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
+    disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
+    hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeAlias(x, y)),
   }));
 }
 
@@ -383,7 +402,9 @@ function sameState(a: ShellState, b: ShellState): boolean {
   return a === b || (NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
     && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
-    && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value)));
+    && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
+    && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)
+    && NameMap.same(a.hashed, b.hashed, (x, y) => x === y || (x.state === y.state && x.value === y.value)));
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -522,7 +543,7 @@ class Walker {
 
   /** `st` with the names in `keys` (`kind name`) taken as unknown. */
   private widen(st: ShellState, keys: Set<string>): ShellState {
-    const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
+    const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
     for (const key of keys) {
       const kind = key.slice(0, key.indexOf(' ')) as Kind;
       const name = key.slice(kind.length + 1);
@@ -537,6 +558,9 @@ class Walker {
         const defs = this.functionDefs.get(name)!;
         if (!f) changes.functions.set(name, { state: 'unknown', def: defs[defs.length - 1], exported: 'unknown', readonly: 'unknown' });
         else if (f.state !== 'unknown') changes.functions.set(name, { ...f, state: 'unknown' });
+      } else if (kind === 'disabled' || kind === 'hashed') {
+        const e = st[kind].get(name);
+        if (e?.state !== 'unknown') changes[kind].set(name, { state: 'unknown', value: e?.value ?? '', at: e?.at ?? this.lastAt.get(key)! });
       } else {
         const a = st.aliases.get(name);
         const defs = this.aliasDefs.get(name);
@@ -550,6 +574,7 @@ class Walker {
     return {
       set: st.set.withAll(changes.set), shopt: st.shopt.withAll(changes.shopt), variables: st.variables.withAll(changes.variables),
       functions: st.functions.withAll(changes.functions), aliases: st.aliases.withAll(changes.aliases),
+      disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed),
     };
   }
 
@@ -750,8 +775,10 @@ class Walker {
   private functionDefinition(n: SyntaxNode, st: ShellState): ShellState {
     const name = field(n, 'name')!.text;
     const prev = st.functions.get(name);
-    // A readonly function cannot be defined again.
+    // A readonly function cannot be defined again; in POSIX mode, nor can one named like a special builtin (bash
+    // stops the script there).
     if (prev?.state === 'on' && prev.readonly === 'on') return st;
+    if (builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on') return st;
     this.changeAtDefinition.set(n, this.changeCount);
     // Under `set -a`, a function defined is exported.
     const all = option(st, 'set', 'allexport');
@@ -945,6 +972,28 @@ class Walker {
           if (prev) st = this.put(st, 'aliases', a!, { ...prev, state: 'off' });
         }
         return st;
+      case 'enable': {
+        // (`enable -f`, `-d`: loadable builtins, not followed.)
+        if (has('-f') || has('-d') || has('-p') || has('-a') || has('-s')) return st;
+        for (const o of operands) {
+          const b = staticWordValue(o);
+          if (b) st = this.put(st, 'disabled', b, { state: has('-n') ? 'on' : 'off', value: '', at: n });
+        }
+        return st;
+      }
+      case 'hash': {
+        if (has('-r')) st = this.forgetHashed(st);
+        const path = valueOf('-p');
+        const forget = valueOf('-d');
+        if (forget) st = this.unhash(st, forget, n);
+        for (const o of operands) {
+          const b = staticWordValue(o);
+          if (!b) continue;
+          if (path) st = this.put(st, 'hashed', b, { state: 'on', value: staticWordValue(path) ?? '', at: n });
+          else if (has('-d')) st = this.unhash(st, o, n);
+        }
+        return st;
+      }
       case 'read': {
         const array = valueOf('-a');
         if (array) return this.setNamed(st, array, n, true);
@@ -969,6 +1018,18 @@ class Walker {
       }
     }
     return st;
+  }
+
+  /** Every path `hash -p` gave is forgotten (`hash -r`, an assignment to PATH). */
+  private forgetHashed(st: ShellState): ShellState {
+    for (const [k, e] of st.hashed) if (e.state !== 'off') st = this.put(st, 'hashed', k, { ...e, state: 'off' });
+    return st;
+  }
+
+  private unhash(st: ShellState, w: SyntaxNode, at: SyntaxNode): ShellState {
+    const name = staticWordValue(w);
+    const e = name ? st.hashed.get(name) : undefined;
+    return e ? this.put(st, 'hashed', name!, { ...e, state: 'off', at }) : st;
   }
 
   /** Whether `name` is read here as bash's builtin (the others are programs, or other shells' builtins). */
@@ -1123,15 +1184,17 @@ class Walker {
   }
 
   private unset(words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
-    const all = words.map((w) => ({ node: w, text: (w.type === 'variable_name' ? w.text : staticWordValue(w)) ?? w.text }));
-    const flags = all.filter((w) => /^-[fvn]+$/.test(w.text)).map((w) => w.text).join('');
+    // The options and the names, read with unset's spec.
+    const ws = words.filter((w) => !w.type.endsWith('redirect'));
+    const parse = interpret(builtins.unset, ws.map(argWord), { name: 'unset' });
+    const flags = optionRoles(parse).map((r) => r.flag.slice(1)).join('');
+    const all = parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => ({ node: ws[word], text: (ws[word].type === 'variable_name' ? ws[word].text : staticWordValue(ws[word])) ?? ws[word].text }));
     // (`unset -fv` is an error: nothing is unset.)
     if (flags.includes('f') && flags.includes('v')) return st;
     for (const { node, text } of all) {
-      if (/^-/.test(text)) continue;
       const fn = st.functions.get(text);
       if (flags.includes('f')) {
-        if (fn) st = this.put(st, 'functions', text, { ...fn, state: 'off' });
+        if (fn) st = this.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
         continue;
       }
       // `unset 'a[1]'` removes an element.
@@ -1139,7 +1202,7 @@ class Walker {
       const v = st.variables.get(text);
       // With no -v, a name with no variable is a function.
       if (!flags.includes('v') && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
-        st = this.put(st, 'functions', text, { ...fn, state: 'off' });
+        st = this.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
         continue;
       }
       // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
@@ -1213,6 +1276,8 @@ class Walker {
   private setVariable(st: ShellState, name: string, at: SyntaxNode, value: string | undefined, plain = false, array = false, source?: SyntaxNode): ShellState {
     const prev = st.variables.get(name);
     st = this.put(st, 'variables', name, { declared: 'on', set: 'on', attrs: prev?.attrs ?? {}, value, ...(source ? { source } : {}), at });
+    // Assigning PATH empties the table of remembered paths.
+    if (name === 'PATH') st = this.forgetHashed(st);
     if (name === 'POSIXLY_CORRECT' && !plain && this.bash && option(st, 'set', 'posix') !== 'on') st = this.setPosix(st, true, at, true);
     if (name === 'GLOBIGNORE' && this.bash) st = this.globignore(st, value);
     const all = option(st, 'set', 'allexport');
