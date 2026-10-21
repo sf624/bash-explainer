@@ -1,0 +1,427 @@
+[
+  {
+    "manual": "4.3.1",
+    "snippet": "false; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "false || true; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "false && true; @PROBE:a@",
+    "note": "a failure left of && does not exit",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "true && false; @PROBE:a@",
+    "note": "the last command of the list does",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "if false; then :; fi; while false; do :; done; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "! true; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "false | true; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "set -o pipefail; false | true; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "true | false; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; f || :; @PROBE:after@",
+    "note": "set -e is ignored in all of a function called left of ||",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; if f; then @PROBE:then@; fi",
+    "facts": {
+      "ran": [
+        "in",
+        "then"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { false; @PROBE:in@; }; f; @PROBE:after@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "f() { [ -f nofile ] && echo found; }; f; @PROBE:after@",
+    "note": "the function returns the status of the failed test",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(false); @PROBE:a@",
+    "note": "an assignment has the status of its last command substitution",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "echo $(false); @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "f() { local x=$(false); @PROBE:a@; }; f",
+    "note": "local returns its own status",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=$(false; @PROBE:in@); @PROBE:after@",
+    "note": "command substitution does not inherit -e in bash mode",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.2",
+    "snippet": "shopt -s inherit_errexit; x=$(false; @PROBE:in@); @PROBE:after@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "x=$(false; @PROBE:in@); @PROBE:after@",
+    "posix": true,
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.3",
+    "snippet": "(false; @PROBE:in@); @PROBE:after@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.3",
+    "snippet": "{ false; @PROBE:in@; }; @PROBE:after@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "i=0; (( i++ )); @PROBE:a@",
+    "note": "(( )) is 1 when the value is 0",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "let i=0; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.5.2",
+    "snippet": "[[ -z x ]]; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.4",
+    "snippet": "false & wait $!; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.2",
+    "snippet": "nope_not_a_command; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 127,
+      "stderr": "SCRIPT: line 1: nope_not_a_command: command not found"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "trap '@PROBE:trap@' ERR; false; @PROBE:a@",
+    "facts": {
+      "ran": [
+        "trap"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.5",
+    "snippet": "false; @PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.5",
+    "snippet": "exit 256",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.5",
+    "snippet": "exit -1",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 255
+    }
+  },
+  {
+    "manual": "3.7.5",
+    "snippet": "bash -c 'kill -TERM $$'",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 143,
+      "stderr": "Terminated"
+    }
+  },
+  {
+    "manual": "3.7.5",
+    "snippet": "touch noexec; ./noexec",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 126,
+      "stderr": "SCRIPT: line 1: ./noexec: Permission denied"
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "readonly r=1\nr=2\n@PROBE:a@",
+    "errexit": false,
+    "note": "an assignment error with no command name abandons the rest of its line, not the script",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "readonly r=1; r=2; @PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: r: readonly variable"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "readonly r=1\nr=2\n@PROBE:a@",
+    "errexit": false,
+    "posix": true,
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "readonly r=1\nr=2 true\n@PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "readonly r=1\nr=2 true\n@PROBE:a@",
+    "errexit": false,
+    "posix": true,
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 2: r: readonly variable"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o nosuch\n@PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: set: nosuch: invalid option name"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "set -o nosuch\n@PROBE:a@",
+    "errexit": false,
+    "posix": true,
+    "note": "an error in a special builtin ends a script in POSIX mode",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: set: nosuch: invalid option name"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": ". ./nofile\n@PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ./nofile: No such file or directory"
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": ". ./nofile\n@PROBE:a@",
+    "errexit": false,
+    "posix": true,
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: ./nofile: No such file or directory"
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": ": ${x?unset}; @PROBE:a@",
+    "errexit": false,
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unset"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "cd /nonexistent; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: cd: /nonexistent: No such file or directory"
+    }
+  }
+]
