@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The value of an option written in the same word as quotes, as in `dpkg-query -Wf='${Package}'` and `tar -C'/tmp' -xf a.tar`, is shown without the closing quote (`${Package}`, `/tmp`), and its mark ends before the quote. Before, the label kept the quote (`${Package}'`).
 - `sh` knows `-s`, `-i`, `-l`, `-n`, `-v`, `-a`, `-C`, `-f`, `-b`, `-m` and `-p`, as dash and `bash --posix` do. In `sh -s a b` and `sh -i`, they are options. Before, they were "Option (not in the dictionary)".
 - `jobs -x echo %1` explains `echo %1` as a command, with its own words, as `-x` runs it. Before, `echo` and `%1` were job specs.
 - In `shopt -o errexit`, `shopt -so pipefail` and the like, the names are explained as `set -o` options (before: plain words with the text of a `shopt` name).
