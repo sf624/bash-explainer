@@ -625,6 +625,50 @@ describe('pipelines and aliases', () => {
   });
 });
 
+describe('the state along the script (src/semantics/state.ts)', () => {
+  const notes = (src: string, line: number, opts = {}) => new Analyzer('en').explainLine(parser.parse(src), line, undefined, opts).notes;
+  it('says "may" when only some paths turn an option on', () => {
+    assert.ok(notes('if a; then shopt -s globstar; fi\nls **/*.ts', 1).some((n) => /only after `shopt -s globstar`, and only some paths before here \(a branch or a loop\) turn it on/.test(n)));
+    assert.ok(!notes('if a; then shopt -s globstar; fi\nls **/*.ts', 1, { pitfalls: false }).some((n) => /globstar/.test(n)));
+    assert.ok(notes('if a; then shopt -s extglob; fi\nrm !(keep).log', 1).some((n) => /unless `shopt -s extglob` comes first .*, and only some paths before here/.test(n)));
+    assert.match(find(explain('if a; then shopt -s expand_aliases; fi\nalias ll="ls -l"\nll', 2), 'll').explanation, /replaced by `ls -l`, but only when `shopt -s expand_aliases` is on/);
+    assert.match(find(explain('if a; then IFS=,; fi\necho $x', 1), '$x', 'variable').explanation, /set on line 1 to a value not known here/);
+  });
+  it('a subshell keeps its changes', () => {
+    assert.doesNotMatch(find(explain('( shopt -s dotglob )\nls *', 1), '*').explanation, /dotglob/);
+    assert.ok(!/array/.test(find(explain('( a=(1 2) ); echo $a'), '$a', 'variable').explanation));
+    assert.match(find(explain('( later() { :; } ); later'), 'later', 'command').explanation, /external command/);
+    assert.match(find(explain("( p='3*4' ); p='1+2'; ( p='5*6' ); echo $(( $p * 2 ))"), '$p', 'variable').explanation, /here `1\+2`/);
+    // `shopt -u lastpipe` in a subshell leaves it on outside.
+    assert.ok(!notes('shopt -s lastpipe\n( shopt -u lastpipe )\necho 1 | read v; echo "$v"', 2).some((n) => /pipeline/.test(n)));
+  });
+  it('a function changes the state where it is called, not where it is defined', () => {
+    assert.match(find(explain('setup() { set -f; }\necho *.md', 1), '*.md').explanation, /Glob pattern/);
+    assert.match(find(explain('setup() { set -f; }\nsetup\necho *.md', 2), '*.md').explanation, /has turned globbing off/);
+    assert.ok(notes('setup() { shopt -s extglob; }\nls !(x).txt', 1).some((n) => /extended globs like/.test(n)));
+    assert.match(find(explain('k() { IFS=-; }\nk\necho $x', 2), '$x', 'variable').explanation, /set to `-` on line 1/);
+    assert.match(find(explain('f() { local IFS=,; echo $v; }'), '$v', 'variable').explanation, /set to `,` on line 1/);
+    assert.match(find(explain('mk() { alias mm=make; }\nmm', 1), 'mm').explanation, /external command/);
+    assert.doesNotMatch(find(explain('cnt() { declare -A m; }\nm[a+b]=1', 1), 'm[a+b]=1').explanation, /associative/);
+    assert.doesNotMatch(find(explain('f() { local -i z; }\nz=5', 1), 'z=5').explanation, /integer/);
+    assert.doesNotMatch(find(explain('f() { local -n r=$1; }\ng() { r=5; }', 1), 'r=5').explanation, /nameref/);
+  });
+  it('an option counts from where it runs', () => {
+    assert.match(find(explain('x=1 :\nset -o posix\ny=2 :'), 'x=1').explanation, /only for this command/);
+    assert.match(find(explain('x=1 :\nset -o posix\ny=2 :', 2), 'y=2').explanation, /POSIX special builtin/);
+    assert.match(find(explain('#!/bin/bash --posix\nx=1 :', 1), 'x=1').explanation, /POSIX special builtin/);
+    assert.match(find(explain('awk --posix 1\nx=1 :', 1), 'x=1').explanation, /only for this command/);
+    // Aliases expand only when expand_aliases was on when the line was read.
+    assert.ok(notes('alias ll="ls -l"\nll\nshopt -s expand_aliases', 1).some((n) => /bash does not expand aliases in scripts/.test(n)));
+    // A function exported only after the command that needs it.
+    assert.ok(notes('f() { :; }\nbash -c f\nexport -f f', 1).some((n) => /does not have this script's function `f`/.test(n)));
+    assert.ok(!notes('f() { :; }\nexport -f f\nbash -c f', 2).some((n) => /function `f`/.test(n)));
+    assert.ok(notes('bash -c f\nf() { :; }', 0).some((n) => /does not have this script's function `f`/.test(n)));
+    // The definition in effect, when a function is defined twice.
+    assert.match(find(explain('f() { :; }\nf() { :; }\nf', 2), 'f').explanation, /defined on line 2/);
+  });
+});
+
 describe('syntax the other tests do not reach', () => {
   const ex = (src: string, line = 0) => all(explain(src, line).items).map((t) => `${t.label}: ${t.explanation}`).join('\n');
   const cases: [string, RegExp, number?][] = [
