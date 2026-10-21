@@ -53,8 +53,11 @@ export interface CommandSpec {
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
   builtin?: 'special' | 'regular';
-  /** A builtin that is also a program (`echo`, `kill`, `test`): a wrapper that starts programs runs the program. */
-  alsoProgram?: boolean;
+  /**
+   * The program of a builtin's name (coreutils echo, procps kill): a path (`/bin/kill`) or a wrapper that starts
+   * a program (`env echo`) runs it, and its options may differ from the builtin's.
+   */
+  program?: CommandSpec;
 }
 
 export type SubcommandSpec = CommandSpec & { aliases?: string[] };

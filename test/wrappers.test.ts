@@ -165,6 +165,15 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     assert.match(about('sudo cd /root', 'cd'), /runs `cd`: /);
     assert.match(about('timeout 5 cd /tmp', 'cd'), /runs `cd`: /);
     assert.strictEqual(explain('timeout 5 cd /tmp').items[0].children.find((t) => t.label === 'cd')?.kind, 'builtin');
+    // A builtin with a program of its name: the program runs (coreutils echo, procps kill), as it does at a path.
+    for (const [src, label] of [['env echo hi', 'echo'], ['sudo kill -9 1', 'kill'], ['exec test -f x', 'test']]) {
+      const t = all(explain(src).items).find((x) => x.label === label)!;
+      assert.strictEqual(t.kind, 'command', src);
+      assert.match(t.explanation, /the (coreutils|procps) program/, src);
+    }
+    assert.strictEqual(explain('/bin/kill -s TERM 1').items[0].kind, 'command');
+    assert.match(explain('/bin/kill -s TERM 1').items[0].explanation, /procps/);
+    assert.strictEqual(explain('/bin/cd /tmp').items[0].explanation, 'Run the program or script at `/bin/cd`');
   });
   it('says nothing for builtins that are programs too, and for the keyword time', () => {
     for (const src of ['sudo echo hi', 'sudo printf x', 'sudo test -f x', 'sudo [ -f x ]', 'sudo kill 1', 'sudo pwd', 'sudo true', 'sudo false', 'sudo ls', 'time cd /x', 'time myfunc', 'command cd /x', 'builtin cd /x', 'eval myfunc', 'eval cd /x']) {

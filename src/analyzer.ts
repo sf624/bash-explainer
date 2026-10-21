@@ -2883,7 +2883,8 @@ export class Analyzer {
           `⚠ Pitfall: \`${via}\` runs \`${name}\` inside the container, and a function from this script is not available in the container. Write out its body instead`));
       }
     } else if (slot.run === 'exec') {
-      if (isPlainWord(first) && (isFn || (role.spec?.builtin && !role.spec.alsoProgram))) {
+      // (A builtin with a program of its name runs the program: the slot gave its spec.)
+      if (isPlainWord(first) && (isFn || role.spec?.builtin)) {
         const blocker = this.functionBlocker(slot, via);
         const fix = isFn && blocker
           ? this.s(`関数の中身を直接書くか、\`${via} bash -c "$(declare -f ${name}); ${name}"\` のように定義ごと渡します（\`${blocker.via}\` は環境の関数を渡さないので、\`export -f\` は効きません）`,
@@ -4054,6 +4055,8 @@ function readDeclaration(d: SyntaxNode): { roles: Map<SyntaxNode, ArgRole>; on: 
 export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
+  // `/bin/kill`: a path runs the program of a builtin's name.
+  if (base !== name && Object.prototype.hasOwnProperty.call(builtins, base) && builtins[base].program) return builtins[base].program;
   if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];
   if (base === 'egrep' || base === 'fgrep') return commands.grep;
   if (base === 'gawk' || base === 'mawk' || base === 'nawk') return commands.awk;

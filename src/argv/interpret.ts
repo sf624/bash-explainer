@@ -267,7 +267,9 @@ class Reader {
   /** The role of the first word of a command run by this one, with the words up to `end` read by its spec. */
   private command(slot: CommandSlot, at: number, end: number, of?: string): CommandRole {
     const name = this.words[at].value;
-    const spec = name === undefined ? undefined : this.ctx.lookup?.(name);
+    const found = name === undefined ? undefined : this.ctx.lookup?.(name);
+    // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
+    const spec = slot.run === 'exec' && found?.program ? found.program : found;
     return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', []), ...(of ? { of } : {}) };
   }
 
