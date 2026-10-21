@@ -11,8 +11,10 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
 
 const hasBash = spawnSync('bash', ['--norc', '-c', 'true']).status === 0;
+/** The C locale: the tests match bash's messages in English. */
+const ENV = { ...process.env, LC_ALL: 'C' };
 /** What bash prints for `script` (stdout), with `input` on stdin. */
-const bash = (script: string, input = ''): string => spawnSync('bash', ['--norc', '-c', script], { input, encoding: 'utf8', timeout: 10000 }).stdout;
+const bash = (script: string, input = ''): string => spawnSync('bash', ['--norc', '-c', script], { input, env: ENV, encoding: 'utf8', timeout: 10000 }).stdout;
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
   const { name, words, texts } = argWords(line);
   return { parse: interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }), words: words.map((w, i) => w.value ?? texts[i]) };
@@ -112,7 +114,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       const named = r.role === 'pattern-option' ? /^-(?:sig)?(.*)$/i.exec(word)![1] : r.role === 'option' && r.flag === word ? word.slice(1) : word.slice(2);
       // Job control keeps SIGINT for the background job (bash ignores it there otherwise), and only
       // a refused signal is followed by `kill -9`, so no second signal races the first.
-      const out = spawnSync('bash', ['--norc', '-c', `set -m; sleep 5 & kill ${word} $! 2>&1 || kill -9 $!; wait $!; echo $?`], { encoding: 'utf8' }).stdout;
+      const out = spawnSync('bash', ['--norc', '-c', `set -m; sleep 5 & kill ${word} $! 2>&1 || kill -9 $!; wait $!; echo $?`], { env: ENV, encoding: 'utf8' }).stdout;
       const valid = spawnSync('bash', ['--norc', '-c', `kill -l ${named}`]).status === 0;
       assert.strictEqual(/invalid signal/.test(out), !valid, word);
       // The process ends with 128 + the signal's number.
@@ -127,7 +129,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     assert.strictEqual(bash('f() { return -- 4; }; f; echo $?'), '4\n');
     for (const line of ['shift -1', 'break -1', 'continue -x']) {
       assert.deepStrictEqual(operands(line), [line.split(' ')[1]], line);
-      assert.match(spawnSync('bash', ['--norc', '-c', `for i in 1; do ${line}; done`], { encoding: 'utf8' }).stderr, /out of range|numeric argument/, line);
+      assert.match(spawnSync('bash', ['--norc', '-c', `for i in 1; do ${line}; done`], { env: ENV, encoding: 'utf8' }).stderr, /out of range|numeric argument/, line);
     }
   });
 

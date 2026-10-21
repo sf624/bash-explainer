@@ -11,8 +11,13 @@ import { ArgvParse, ArgWord, interpret } from '../src/argv/interpret';
 import { argWords } from './support/argwords';
 
 const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
+/** The C locale: the tests match the tools' messages in English. */
+const ENV = { ...process.env, LC_ALL: 'C' };
+/** The builds whose options the rows follow (`--version` says which); a BSD or macOS build is skipped. */
+const BUILDS: Record<string, RegExp> = { timeout: /GNU coreutils/, env: /GNU coreutils/, nice: /GNU coreutils/, flock: /util-linux/, xargs: /GNU findutils/ };
+const usable = (tool: string): boolean => has(tool) && (!BUILDS[tool] || BUILDS[tool].test(spawnSync(tool, ['--version'], { env: ENV, encoding: 'utf8' }).stdout ?? ''));
 const run = (line: string, input = ''): { out: string; err: string } => {
-  const r = spawnSync('bash', ['--norc', '-c', line], { input, encoding: 'utf8', timeout: 10000 });
+  const r = spawnSync('bash', ['--norc', '-c', line], { input, env: ENV, encoding: 'utf8', timeout: 10000 });
   return { out: r.stdout, err: r.stderr };
 };
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
@@ -89,7 +94,7 @@ describe('wrappers agree with the real tools', () => {
     ],
   };
   for (const [tool, rows] of Object.entries(ROWS)) {
-    (has(tool) ? it : it.skip)(`${tool}: the words of the command it runs`, () => {
+    (usable(tool) ? it : it.skip)(`${tool}: the words of the command it runs`, () => {
       for (const line of rows) {
         const words = ran(line);
         assert.deepStrictEqual(words.slice(0, 2), ['printf', '%s,'], line);
@@ -98,7 +103,7 @@ describe('wrappers agree with the real tools', () => {
     });
   }
 
-  (has('xargs') ? it : it.skip)('xargs: the words of the command, and the input after them (or in place of `{}`)', () => {
+  (usable('xargs') ? it : it.skip)('xargs: the words of the command, and the input after them (or in place of `{}`)', () => {
     for (const line of ['xargs printf %s, -0', 'xargs -n 1 printf %s, a', 'xargs -r printf %s, -r', 'xargs -I{} printf %s, {} b', 'xargs -i printf %s, {} b', 'xargs -d , printf %s, a', 'xargs -L 1 printf %s, -L']) {
       const words = ran(line).slice(2);
       const replaces = /-I\{\}|-i /.test(line);
@@ -125,7 +130,7 @@ describe('wrappers agree with the real tools', () => {
     }
   });
 
-  (has('flock') ? it : it.skip)('flock -c: the string runs in a shell', () => {
+  (usable('flock') ? it : it.skip)('flock -c: the string runs in a shell', () => {
     const line = `flock ${lock} -c 'printf %s, x'`;
     const { parse } = parseOf(line);
     assert.deepStrictEqual(parse.roles.map((r) => r.role.role), ['operand', 'option', 'command']);
