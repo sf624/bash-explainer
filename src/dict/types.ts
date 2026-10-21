@@ -18,25 +18,10 @@ export interface OptDoc {
   lang?: EmbeddedLang;
   /** The option supplies what is otherwise the first positional argument (`grep -e`, `sed -e`). */
   fillsPositional?: boolean;
-  /** What the option means instead when one of these options is given (`-i` is `--info` with `-q`). */
-  inMode?: { when: string; text: Text };
   /** The option takes the next word as its value only when that word matches this pattern (`journalctl -b -1`). */
   nextIf?: string;
   /** The option takes a value only when it is attached (`-i.bak`, `-F:`); it never consumes the next word. */
   attachedOnly?: boolean;
-}
-
-/**
- * The first argument may be options bundled without a dash (`tar xzf a.tgz`, `ps aux`, `ar rcs lib.a x.o`).
- * It is read that way only when it is made of nothing but known letters (and digits).
- */
-export interface BundleDoc {
-  /** Meaning of each letter as written without a dash. Default: the command's `-x` options. */
-  options?: Record<string, OptDoc>;
-  /** The word must hold at least one of these letters (the operation), which keeps ordinary words out. */
-  needs?: string;
-  /** What the bundle is called (default: old-style options). */
-  style?: Text;
 }
 
 /**
@@ -69,8 +54,6 @@ export interface CommandDoc {
   subcommands?: Record<string, CommandDoc>;
   /** Options are single words that never combine (find, java-style `-name`). */
   longSingleDash?: boolean;
-  /** The first argument may be dashless bundled options. A letter with `arg` takes the following words in order. */
-  bundle?: BundleDoc;
   /**
    * The command spec, written directly (`native`): the analyzer reads the arguments with it, and the fields
    * above, other than `summary` and `subcommands`, are not used. Builtins are written this way (`builtin`).
@@ -106,11 +89,6 @@ export function cmd(
   return { summary: tx(ja, en), options, ...extra };
 }
 
-/** The meanings of dashless letters, written like options but without the dash: `['c', 'ja', 'en']`. */
-export function letters(opts: OptSpec[]): Record<string, OptDoc> {
-  return cmd('', '', opts).options!;
-}
-
 export const pos = (ja: string, en: string): Text => tx(ja, en);
 
 /** `cp a b` copies to `b`, `cp a b c dir` into `dir`: the last argument is the destination, unless an option names it. */
@@ -142,6 +120,19 @@ export function native(ja: string, en: string, opts: (OptSpec | OptionSpec)[], r
     return names.length ? [{ ...o, names }] : [];
   }).reverse();
   return { summary, spec: { summary, options, ...rest } };
+}
+
+/** The meanings of dashless letters (`tar xzf`, `ar rcs`), written like options but without the dash: `['c', 'ja', 'en']`. */
+export function letters(opts: OptSpec[]): Record<string, OptionSpec> {
+  return Object.fromEntries(opts.map((o) => [o[0], optionOf(o)]));
+}
+
+/** The same letters as options with a dash (`ar -rcs`). */
+export const dashed = (opts: OptSpec[]): OptSpec[] => opts.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec);
+
+/** Operands written in order: each optional, and the last one repeats (unless the item says otherwise). */
+export function args(...items: OperandSpec[]): Pick<CommandSpec, 'operands'> {
+  return { operands: [{ pattern: items.map((o, i) => ({ repeat: i === items.length - 1 ? '*' : '?', ...o })) }] };
 }
 
 export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');

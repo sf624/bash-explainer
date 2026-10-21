@@ -34,27 +34,6 @@ const iptablesExtra = (): OptSpec[] => [
 ];
 
 export const extraAdmin: Record<string, OptSpec[]> = {
-  dpkg: [
-    ['-c|--contents', '.deb に含まれるファイルを一覧表示', 'list the files inside a .deb'],
-    ['-I|--info', '.deb の情報を表示', 'show information about a .deb'],
-    ['-x|--extract', '.deb の中身を指定のディレクトリに展開する', 'extract the files of a .deb into a directory'],
-    ['-X|--vextract', '.deb の中身を展開し、ファイル名を表示する', 'extract the files of a .deb and list them'],
-    ['-b|--build', 'ディレクトリから .deb を作る', 'build a .deb from a directory'],
-    ['--unpack', '展開だけして設定はしない', 'unpack the package without configuring it'],
-    ['-C|--audit', '正しく入っていないパッケージを調べる', 'search for packages broken or half-installed'],
-    ['-V|--verify', '入れたファイルが変更されていないか検証する', 'verify the installed files'],
-    ['--get-selections', 'パッケージの選択状態を一覧表示する', 'list the package selections'],
-    ['--set-selections', '標準入力の選択状態を設定する', 'set the package selections from stdin'],
-    ['--force-all', 'すべての問題を無視して強制的に実行する（注意）', 'force everything despite problems (careful)'],
-    ['--force-depends', '依存関係の問題を無視して実行する（注意）', 'ignore dependency problems (careful)'],
-    ['--compare-versions', '2つの版を比べる（`1.0 lt 2.0`）', 'compare two versions (`1.0 lt 2.0`)'],
-    ['-p|--print-avail', '取得できるパッケージの情報を表示', 'show information of an available package'],
-    ['-W|--show', '指定の書式でパッケージを表示', 'show packages in a given format'],
-    ['--simulate|--no-act|--dry-run', '実際には何もしない', 'do not change anything'],
-    ['--root', '代わりのルートディレクトリ', 'install into the given root directory', 'arg'],
-    ['--force-confold', '設定ファイルが違うとき、現在のものを残す', 'keep the current configuration files when they differ'],
-    ['--force-confnew', '設定ファイルが違うとき、新しいものを使う', 'use the new configuration files when they differ'],
-  ],
   mount: [
     ['-v|--verbose', '詳しく表示する', 'verbose'],
     ['-w|--rw|--read-write', '読み書きできるようにマウントする', 'mount read-write'],

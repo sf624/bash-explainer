@@ -11,7 +11,7 @@ import { netadmin } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
 import { applyExtras } from './extras';
-import { ASSIGNMENTS, CommandDoc, cmd, lastIsDestination, letters, native, operand, OptSpec, pos, runs } from './types';
+import { args, ASSIGNMENTS, CommandDoc, cmd, dashed, lastIsDestination, letters, native, operand, OptSpec, pos, runs } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -423,7 +423,7 @@ export const core: Record<string, CommandDoc> = {
     ['--spider', 'ダウンロードせず、ファイルがあるかだけ確かめる', 'only check that the file exists, do not download'],
     ['--version', '版を表示する', 'print the version'],
   ], { positional: [pos('ダウンロードする URL', 'URL to download')] }),
-  tar: cmd('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
+  tar: native('tar アーカイブを作成・展開する', 'Create or extract tar archives', [
     ['-c|--create', 'アーカイブを作る', 'create an archive'],
     ['-x|--extract', 'アーカイブを展開する', 'extract an archive'],
     ['-t|--list', 'アーカイブの中身を一覧表示', 'list contents'],
@@ -450,7 +450,32 @@ export const core: Record<string, CommandDoc> = {
     ['-b|--blocking-factor', '1ブロックの大きさ（512 バイトの倍数）', 'block size, in units of 512 bytes', 'arg'],
     ['-T|--files-from', '対象のファイル名を書いたファイル', 'file that lists the names to process', 'arg'],
     ['-X|--exclude-from', '除外するパターンを書いたファイル', 'file that lists patterns to exclude', 'arg'],
-  ], { bundle: { needs: 'cxtrudA' } }),
+    ['--delete', 'アーカイブからファイルを削除する', 'delete files from the archive'],
+    ['--same-permissions', '展開時にパーミッションをそのまま復元する', 'restore permissions exactly when extracting'],
+    ['--same-owner', '展開時に所有者を復元する（root の既定）', 'restore the owner when extracting (root default)'],
+    ['--no-same-owner', '展開時に所有者を復元しない', 'do not restore the owner'],
+    ['--wildcards', 'メンバー名をワイルドカードとして扱う', 'treat member names as wildcard patterns'],
+    ['-Z|--compress', 'compress で圧縮する', 'filter through compress'],
+    ['--zstd', 'zstd で圧縮・展開する', 'filter through zstd'],
+    ['--lzma', 'lzma で圧縮・展開する', 'filter through lzma'],
+    ['-I|--use-compress-program', '圧縮に使うプログラム', 'compression program to use', 'arg'],
+    ['-N|--newer|--after-date', '指定した日時より新しいファイルだけ', 'only files newer than the given date', 'arg'],
+    ['--one-file-system', '他のファイルシステムに入らない', 'stay on one file system'],
+    ['--numeric-owner', '所有者を名前でなく数値の ID で記録・復元する', 'use numeric user and group IDs'],
+    ['--owner', 'アーカイブする所有者を上書きする', 'force the given owner in the archive', 'arg'],
+    ['--group', 'アーカイブするグループを上書きする', 'force the given group in the archive', 'arg'],
+    ['--remove-files', 'アーカイブに入れた後で元のファイルを削除する（注意）', 'remove the files after adding them (careful)'],
+    ['--totals', '終了時に書き込んだバイト数を表示', 'print the total bytes written'],
+    ['-W|--verify', '書き込み後に検証する', 'verify the archive after writing'],
+    ['--acls', 'ACL を保存・復元する', 'save and restore ACLs'],
+    ['--xattrs', '拡張属性を保存・復元する', 'save and restore extended attributes'],
+    ['--selinux', 'SELinux のコンテキストを保存・復元する', 'save and restore SELinux contexts'],
+    ['-S|--sparse', '疎なファイルを効率よく扱う', 'handle sparse files efficiently'],
+    ['--no-recursion', 'ディレクトリの中に入らない', 'do not recurse into directories'],
+    ['-g|--listed-incremental', '増分バックアップ用のスナップショットファイル', 'snapshot file for incremental backups', 'arg'],
+    ['-V|--label', 'アーカイブのラベル', 'archive label', 'arg'],
+    ['-w|--interactive', '操作の前に確認する', 'ask for confirmation before each action'],
+  ], { oldStyle: { needs: 'cxtrudA' } }),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
     ['-d|--decompress', '展開する', 'decompress'],
     ['-c|--stdout', '結果を標準出力に出す（元ファイルを残す）', 'write to stdout, keep originals'],
@@ -699,15 +724,40 @@ export const core: Record<string, CommandDoc> = {
     ['-M|--monochrome-output', '色を付けない', 'no colours'],
     ['-L', 'モジュールを探すディレクトリ', 'directory to search for modules', 'arg'],
   ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'] }),
-  ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
+  ps: native('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
     ['-f', '詳細形式で表示', 'full format'],
     ['-p', '指定した PID のみ', 'only these PIDs', 'arg'],
     ['-o', '表示する列を指定', 'output columns', 'arg'],
+    ['-a', '端末を持つ他のユーザーのプロセスも表示', 'all processes with a terminal, except session leaders'],
+    ['-x', '端末を持たないプロセスも表示', 'also processes without a terminal'],
+    ['-u', 'ユーザーで絞る、または BSD 形式のユーザー向け表示', 'select by user, or the BSD user-oriented format', 'arg'],
+    ['-l', '長い形式で表示', 'long format'],
+    ['-j', 'ジョブの形式で表示', 'jobs format'],
+    ['-L', 'スレッドも表示', 'show threads'],
+    ['-T', 'スレッドを表示する', 'show threads'],
+    ['-H', 'プロセスの階層を字下げで表示', 'show the process hierarchy'],
+    ['-C', 'コマンド名で絞る', 'select by command name', 'arg'],
+    ['-U', '実ユーザーで絞る', 'select by real user', 'arg'],
+    ['-G', '実グループで絞る', 'select by real group', 'arg'],
+    ['-g', 'グループで絞る', 'select by group', 'arg'],
+    ['-t', '端末で絞る', 'select by terminal', 'arg'],
+    ['-N', '条件を反転する', 'negate the selection'],
+    ['-F', '追加項目も含めた詳しい形式で表示', 'extra full format'],
+    ['-w', '出力の幅を広げる（`-ww` で無制限）', 'wide output (`-ww`: unlimited)'],
+    ['-m', 'スレッドも続けて表示', 'show threads after the process'],
+    ['-r', '実行中のプロセスだけ', 'only running processes'],
+    ['--forest', 'プロセスの木を ASCII アートで表示', 'draw the process tree as ASCII art'],
+    ['--sort', '並べ替えの項目（`-%cpu`、`-rss`）', 'sort key (`-%cpu`, `-rss`)', 'arg'],
+    ['--no-headers|--no-heading', '見出しを表示しない', 'do not print headers'],
+    ['--ppid', '親プロセスの PID で絞る', 'select by parent PID', 'arg'],
+    ['--pid', 'PID で絞る', 'select by PID', 'arg'],
+    ['--user', 'ユーザーで絞る', 'select by user', 'arg'],
+    ['--group', 'グループで絞る', 'select by group', 'arg'],
   ], {
-    bundle: {
+    oldStyle: {
       style: tx('BSD 形式のオプション（ハイフンなし。`-` 付きの UNIX 形式とは意味が違うものがある）', 'BSD-style options (no dash; some mean something else than the UNIX forms with `-`)'),
-      options: letters([
+      letters: letters([
         ['a', '端末につながったプロセスを、ほかのユーザーのものも含めて表示（`x` と合わせて全プロセス）', "show processes that have a terminal, other users' included (with `x`: all processes)"],
         ['x', '端末につながっていないプロセスも表示', 'also show processes that have no terminal'],
         ['u', 'ユーザー名・CPU・メモリの使用率などを並べたユーザー向けの形式で表示', 'user-oriented format (user, CPU and memory share…)'],
@@ -740,29 +790,29 @@ export const core: Record<string, CommandDoc> = {
       ]),
     },
   }),
-  ar: cmd('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
-    ...arLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  ar: native('静的ライブラリ（.a）などのアーカイブを作る・取り出す', 'Create, modify and extract archives such as static libraries (.a)', [
+    ...dashed(arLetters),
   ], {
-    bundle: { options: letters(arLetters), needs: 'dmpqrstx' },
-    positional: [pos('アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), pos('対象のメンバー（ファイル）', 'member file')],
+    oldStyle: { letters: letters(arLetters), needs: 'dmpqrstx' },
+    ...args(operand('ARCHIVE', 'アーカイブ（`libfoo.a`）。`a`・`b`・`i` を付けたときは先に基準にするメンバー', 'archive (`libfoo.a`); with `a`, `b` or `i`, the member to place relative to comes first'), operand('MEMBER', '対象のメンバー（ファイル）', 'member file')),
   }),
-  jar: cmd('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
-    ...jarLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  jar: native('Java のアーカイブ（.jar）を作る・取り出す', 'Create, list and extract Java archives (.jar)', [
+    ...dashed(jarLetters),
   ], {
-    bundle: { options: letters(jarLetters), needs: 'ctxui' },
-    positional: [pos('アーカイブに入れる（または取り出す）ファイル', 'files to put in (or take out of) the archive')],
+    oldStyle: { letters: letters(jarLetters), needs: 'ctxui' },
+    ...args(operand('FILE', 'アーカイブに入れる（または取り出す）ファイル', 'files to put in (or take out of) the archive')),
   }),
-  dump: cmd('ファイルシステムをバックアップする', 'Back up a file system', [
-    ...dumpLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  dump: native('ファイルシステムをバックアップする', 'Back up a file system', [
+    ...dashed(dumpLetters),
   ], {
-    bundle: { options: letters(dumpLetters), needs: '0123456789SWw' },
-    positional: [pos('バックアップするファイルシステムまたはディレクトリ', 'file system or directory to back up')],
+    oldStyle: { letters: letters(dumpLetters), needs: '0123456789SWw' },
+    ...args(operand('FILE_SYSTEM', 'バックアップするファイルシステムまたはディレクトリ', 'file system or directory to back up')),
   }),
-  restore: cmd('dump で取ったバックアップから復元する', 'Restore from a backup made by dump', [
-    ...restoreLetters.map(([n, ...r]): OptSpec => ['-' + n, ...r] as OptSpec),
+  restore: native('dump で取ったバックアップから復元する', 'Restore from a backup made by dump', [
+    ...dashed(restoreLetters),
   ], {
-    bundle: { options: letters(restoreLetters), needs: 'CrRxti' },
-    positional: [pos('復元するファイル', 'files to restore')],
+    oldStyle: { letters: letters(restoreLetters), needs: 'CrRxti' },
+    ...args(operand('FILE', '復元するファイル', 'files to restore')),
   }),
   pgrep: cmd('名前に一致するプロセスの PID を表示する', 'Find PIDs by process name', [['-f', 'コマンドライン全体で照合', 'match the full command line']], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')] }),
   pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [['-f', 'コマンドライン全体で照合', 'match the full command line']], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')] }),

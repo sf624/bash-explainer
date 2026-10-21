@@ -22,26 +22,8 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   if (doc.longSingleDash) spec.style = 'single-dash';
   // jq reads `--arg NAME VALUE` only as separate words: `--arg=x` is an unknown option.
   if (name === 'jq') spec.longEquals = false;
-  if (/^dpkg(-query|-deb)?$/.test(name)) spec.shortEquals = true;
   const patterns = patternOptions(name);
   if (patterns.length) spec.patternOptions = patterns;
-  // `rpm -qi`: an option means something else when another is given (a mode).
-  const modes = new Set<string>();
-  for (const [opt, o] of optionPairs(doc.options ?? {}, options)) {
-    if (!o.inMode) continue;
-    modes.add(o.inMode.when);
-    opt.inMode = { [o.inMode.when]: o.inMode.text };
-  }
-  for (const when of modes) for (const opt of options) if (opt.names.some((n) => names(when).includes(n))) opt.selects = when;
-  if (modes.size) spec.modes = [...modes].map((m) => ({ name: m }));
-  if (doc.bundle) {
-    const b = doc.bundle;
-    spec.oldStyle = {
-      ...(b.options ? { letters: Object.fromEntries(Object.entries(b.options).map(([ch, o]) => [ch, convertOption([ch], o)])) } : {}),
-      ...(b.needs ? { needs: b.needs } : {}),
-      ...(b.style ? { style: b.style } : {}),
-    };
-  }
   spec.operands = operandAlts(doc, name);
   if (doc.subcommands) {
     // (A subcommand written as a spec is used as it is.)
@@ -55,11 +37,6 @@ function convertOptions(opts: Record<string, OptDoc>): OptionSpec[] {
   const byDoc = new Map<OptDoc, string[]>();
   for (const [n, o] of Object.entries(opts)) byDoc.set(o, [...(byDoc.get(o) ?? []), n]);
   return [...byDoc].map(([o, ns]) => convertOption(ns, o));
-}
-
-/** Each option with the OptDoc it came from. */
-function optionPairs(opts: Record<string, OptDoc>, options: OptionSpec[]): [OptionSpec, OptDoc][] {
-  return options.map((opt) => [opt, opts[opt.names[0]]]);
 }
 
 function convertOption(ns: string[], o: OptDoc): OptionSpec {
