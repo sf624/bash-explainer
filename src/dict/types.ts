@@ -26,6 +26,7 @@ export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSp
       : { name: 'VALUE', ...extra };
   } else if (flags.includes('attached')) opt.value = { name: 'VALUE', how: 'attached-only', optional: true, ...extra };
   else if (nextIf) opt.value = { name: 'VALUE', optional: true, next: new RegExp(nextIf), ...extra };
+  else if (lang || values) throw new Error(`${names}: a language or values, but no value`);
   return opt;
 }
 
