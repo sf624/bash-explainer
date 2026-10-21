@@ -27,12 +27,14 @@ import { corpus } from './support/corpus';
 interface Known { input: string; command: string; word: string; old: string; new: string; reason: string }
 const knownFile = path.join(__dirname, 'fixtures/argv-shadow-known.json');
 
-/** A word's role, for comparing: a key, and the text the explanation starts with (when there is one). */
-interface Canon { key: string; text?: string }
-const show = (c: Canon | undefined): string => (c ? c.key + (c.text ? ` «${c.text.length > 70 ? `${c.text.slice(0, 70)}…` : c.text}»` : '') : 'none');
-/** The keys are the same, and the old text starts with the new one (`*`: the old walk wrote a text of its own, not compared). */
+/** A word's role, for comparing: a key, the text the explanation starts with, and the language of an operand or value. */
+interface Canon { key: string; text?: string; lang?: string }
+const show = (c: Canon | undefined): string =>
+  (c ? c.key + (c.text ? ` «${c.text.length > 70 ? `${c.text.slice(0, 70)}…` : c.text}»` : '') + (c.lang ? ` [${c.lang}]` : '') : 'none');
+/** The keys and languages are the same, and the old text starts with the new one. */
 const agree = (o: Canon | undefined, n: Canon | undefined): boolean =>
-  (o?.key ?? 'none') === (n?.key ?? 'none') && (o?.text === '*' || (n?.text === undefined ? o?.text === undefined : o?.text !== undefined && o.text.startsWith(n.text)));
+  (o?.key ?? 'none') === (n?.key ?? 'none') && o?.lang === n?.lang
+  && (n?.text === undefined ? o?.text === undefined : o?.text !== undefined && o.text.startsWith(n.text));
 
 const base = (name: string): string => name.slice(name.lastIndexOf('/') + 1);
 const isPlain = (n: SyntaxNode): boolean => n.type === 'word' || n.type === 'number';
@@ -45,39 +47,50 @@ function lookup(name: string): CommandSpec | undefined {
   }
   return specs.get(name);
 }
+const dash = (flag: string): string => flag.replace(/^\+/, '-');
 
 // ---------------------------------------------------------------- the interpreter's roles
 
-function canonNew(parse: ArgvParse, words: ArgWord[], raw: string[], out: Map<number, Canon>): void {
+function canonNew(parse: ArgvParse, words: ArgWord[], raw: string[], out: Map<number, Canon>, coarse = false): void {
   const letter = (r: ArgRole): string => (r.role === 'option' ? r.flag.slice(1) + (r.value ? '=' : '') : r.role === 'unknown-option' ? `${r.flag.slice(1)}?${r.value ? '=' : ''}` : '');
   for (const { word, role } of parse.roles) {
-    const set = (key: string, text?: string): void => { out.set(word, { key, ...(text !== undefined ? { text } : {}) }); };
+    const set = (key: string, text?: string, lang?: string): void => { out.set(word, { key, ...(text !== undefined ? { text } : {}), ...(lang ? { lang } : {}) }); };
+    // (A declaration's options are compared by their words only.)
+    if (coarse) { set(['operand', 'value'].includes(role.role) ? 'arg' : `opt:${raw[word]}`); continue; }
     switch (role.role) {
-      case 'option': set(`opt:${role.flag}${role.value ? '=' : ''}`, role.disables ? undefined : role.text.en); break;
+      case 'option':
+        if (role.disables) set(`opt:${dash(role.flag)}(off)${role.missing ? '(no value)' : ''}`);
+        else set(`opt:${role.flag}${role.value ? '=' : ''}${role.missing ? '(no value)' : ''}`, role.missing ? undefined : role.text.en);
+        break;
       case 'unknown-option': set(`opt:${role.flag}?${role.value ? '=' : ''}`); break;
+      case 'open-option': set('opt:open'); break;
       case 'cluster': set(`opt:-${role.letters.map(letter).join('')}`); break;
-      case 'pattern-option': set(`opt:${role.flag}`, role.text.en); break;
-      case 'value': set(`val:${role.of}`); break;
+      case 'pattern-option': set(`opt:${raw[word]}`, role.text.en); break;
+      case 'value': set(`val:${dash(role.of)}#${role.index}`, undefined, role.spec?.lang); break;
       case 'old-style': set(`old:${role.letters.map((l) => (l as { flag: string }).flag).join('')}`); break;
       case 'end-of-options': set('end'); break;
       case 'terminator': set('term'); break;
+      case 'joined': set('joined'); break;
+      case 'expression': set('skip'); break;
       case 'operand': {
         // (A job spec may be a glob to the shell, `%?foo`: the source text says what it is.)
         const v = words[word].value ?? raw[word];
+        const lang = role.spec?.lang;
         if (role.assignment && role.spec!.assignment) set('assign');
-        else if (role.assignment) set('arg', role.spec!.assignmentText!.en);
+        else if (role.assignment) set('arg', role.spec!.assignmentText!.en, lang);
         else if (role.spec?.type === 'job' && /^%./.test(v)) set('job');
         else if (role.spec?.type === 'shell-option' && v in shoptOptions) set('shopt');
-        else set('arg', role.spec?.text.en);
+        else set('arg', role.spec?.text.en, lang);
         break;
       }
       case 'subcommand': set(`sub:${role.name}`); canonNew(role.parse, words, raw, out); break;
       case 'command':
-        if (role.slot.run === 'shell-string') { set('shell-string'); break; }
-        set('cmd');
+        if (role.slot.joinsWords) { set('cmd:shell-string'); break; }
+        if (!role.parse) { set('shell-string'); break; }
+        set(`cmd:${role.slot.run}`);
         // find's expression is read by a parser of its own (not compared).
         if (role.name && base(role.name) === 'find') for (let k = word + 1; k < words.length; k++) out.set(k, { key: 'skip' });
-        else canonNew(role.parse!, words, raw, out);
+        else canonNew(role.parse, words, raw, out);
         break;
     }
   }
@@ -87,25 +100,39 @@ function canonNew(parse: ArgvParse, words: ArgWord[], raw: string[], out: Map<nu
 
 const UNKNOWN = /^Option \(not in the dictionary/;
 
+/** The language the walk gave each word it explained as an operand or a value (recorded from `positional`). */
+const langs = new Map<SyntaxNode, string | undefined>();
+
+/** Whether the value of `flag` is a command string in the spec (`bash -c`, `su -c`, `flock FILE -c`). */
+function shellValue(spec: CommandSpec | undefined, flag: string): boolean {
+  if (spec?.operands?.some((a) => a.pattern.some((x) => x.name === 'COMMAND_STRING')) && flag === '-c') return true;
+  const opt = spec?.options?.find((o) => o.names.includes(flag));
+  return !!opt && !Array.isArray(opt.value) && !!opt.value?.command;
+}
+
 /** The roles of the words `nodes`, read from the tokens the analyzer made for them (`args`). */
-function canonOld(tokens: Token[], nodes: SyntaxNode[], doc: CommandDoc | undefined, out: Map<number, Canon>, offset = 0): void {
+function canonOld(tokens: Token[], nodes: SyntaxNode[], doc: CommandDoc | undefined, name: string, out: Map<number, Canon>, offset = 0): void {
+  const spec = doc && fromCommandDoc(doc, base(name));
   const at = (t: Token): number => nodes.findIndex((n) => n.startPosition.row === t.span.start.line && n.startPosition.column === t.span.start.character);
   for (const t of tokens) {
     const k = at(t);
     assert.ok(k >= 0, `no word for the token ${t.label}`);
     const word = nodes[k];
-    const set = (key: string, text?: string): void => { out.set(offset + k, { key, ...(text !== undefined ? { text } : {}) }); };
+    const set = (key: string, text?: string): void => {
+      const lang = langs.get(word);
+      out.set(offset + k, { key, ...(text !== undefined ? { text } : {}), ...(lang && /^(arg|val:)/.test(key) ? { lang } : {}) });
+    };
     const e = t.explanation;
     if ((t.kind === 'command' || t.kind === 'builtin') && /^runs `/.test(e)) {
-      set('cmd');
-      const name = word.text;
-      if (base(name) === 'find') { for (let j = k + 1; j < nodes.length; j++) out.set(offset + j, { key: 'skip' }); continue; }
-      canonOld(t.children, nodes.slice(k + 1), lookupCommand(name), out, offset + k + 1);
+      set(`cmd:${['command', 'builtin'].includes(base(name)) ? 'current-shell' : 'exec'}`);
+      const inner = word.text;
+      if (base(inner) === 'find') { for (let j = k + 1; j < nodes.length; j++) out.set(offset + j, { key: 'skip' }); continue; }
+      canonOld(t.children, nodes.slice(k + 1), lookupCommand(inner), inner, out, offset + k + 1);
       continue;
     }
     if (t.kind === 'subcommand') { set(`sub:${word.text}`); continue; }
     if (t.kind === 'option') {
-      const text = word.text.replace(/^\+/, '-');
+      const text = dash(word.text);
       if (/^End of options/.test(e)) { set('end'); continue; }
       if (/^--?[^=]*=/.test(text) && / \(value: `/.test(e)) {
         const flag = text.slice(0, text.indexOf('='));
@@ -120,19 +147,34 @@ function canonOld(tokens: Token[], nodes: SyntaxNode[], doc: CommandDoc | undefi
       }
       const value = t.children.find((c) => c.kind === 'argument' && c.span.start.line === t.span.start.line);
       const flag = value ? text.slice(0, value.span.start.character - t.span.start.character) : text;
+      // A value the option needs, with no word left for it (`set -o` alone lists the settings).
+      // (A command string is an operand in the spec: `bash -c` with nothing after it has no value missing.)
+      const missing = !value && !!doc?.options?.[flag]?.arg && k + 1 >= nodes.length && !shellValue(spec, flag);
       if (UNKNOWN.test(e)) set(`opt:${flag}?${value ? '=' : ''}`);
-      else set(`opt:${flag}${value ? '=' : ''}`, /^(Undo|turn it off|`[+-]o` alone)/.test(e) ? '*' : e);
+      else if (/^(Undo|turn it off)/.test(e)) set(`opt:${flag}(off)`);
+      else if (/^`\+o` alone/.test(e)) set(`opt:${flag}(off)(no value)`);
+      else set(`opt:${flag}${value ? '=' : ''}${missing ? '(no value)' : ''}`, missing ? undefined : e);
       continue;
     }
-    const of = /^(?:Value|Name) for `([^`]+)`/.exec(e)?.[1];
-    if (t.kind === 'argument' && of) { set(doc?.shellC && of === '-c' ? 'shell-string' : `val:${of}`); continue; }
+    const value = /^(Value|Name) for `([^`]+)`/.exec(e);
+    if (t.kind === 'argument' && value) {
+      const of = value[2];
+      const index = value[1] === 'Value' && (doc?.options?.[of]?.argCount ?? 1) > 1 ? 1 : 0;
+      set(shellValue(spec, of) ? 'shell-string' : `val:${of}#${index}`);
+      continue;
+    }
     // `set -o pipefail`: a value the dictionary knows is explained as `pipefail: …`.
     const prev = out.get(offset + k - 1)?.key;
     const valued = Object.entries(doc?.options ?? {}).find(([, o]) => o.values && Object.hasOwn(o.values, word.text))?.[0];
-    if (t.kind === 'argument' && e.startsWith(`${word.text}: `) && valued && /^(opt|val):/.test(prev ?? '')) { set(`val:${valued}`); continue; }
+    if (t.kind === 'argument' && e.startsWith(`${word.text}: `) && valued && /^(opt|val):/.test(prev ?? '')) { set(`val:${valued}#0`); continue; }
     if (/^Sets the variable `/.test(e)) { set('assign'); continue; }
     if (/^Job spec: /.test(e)) { set('job'); continue; }
     if (/^Shell option `/.test(e)) { set('shopt'); continue; }
+    // ssh: the old walk calls every word after the host the remote command, which the spec joins into one string.
+    if (base(name) === 'ssh' && e.startsWith('remote command')) {
+      set(/^cmd:/.test(prev ?? '') || prev === 'joined' ? 'joined' : 'cmd:shell-string');
+      continue;
+    }
     // (Words with no text of their own are explained by what they are: a word, a concatenation…)
     set('arg', t.kind === 'argument' && !/^(Word|Concatenation)\b/.test(e) ? e : undefined);
   }
@@ -141,18 +183,45 @@ function canonOld(tokens: Token[], nodes: SyntaxNode[], doc: CommandDoc | undefi
 // ---------------------------------------------------------------- the comparison
 
 interface Diff { input: string; command: string; word: string; old: string; new: string }
+interface Counts { commands: number; words: number; skipped: Record<string, number> }
 
-/** Compares the two readings of every simple command of a script; returns the differences. */
-function compareScript(input: string, text: string, counts: { commands: number; words: number; skipped: Record<string, number> }): Diff[] {
+type Walk = {
+  args(doc: CommandDoc | undefined, args: SyntaxNode[], name: string): Token[];
+  declaration(n: SyntaxNode): Token;
+  positional(a: SyntaxNode, desc: string | undefined, lang?: string): Token;
+};
+
+/** Compares the old and the new roles of the words `args` of a command; adds the differences to `diffs`. */
+function compareWords(input: string, c: SyntaxNode, args: SyntaxNode[], old: Map<number, Canon>, now: Map<number, Canon>, counts: Counts, diffs: Diff[]): void {
+  counts.commands++;
+  for (let k = 0; k < args.length; k++) {
+    const o = old.get(k);
+    const n = now.get(k);
+    if (o?.key === 'skip' || n?.key === 'skip') continue;
+    counts.words++;
+    if (process.env.ARGV_SHADOW_TRACE) console.log(`${args[k].text}\t${show(o)}\t${show(n)}`);
+    if (agree(o, n)) continue;
+    diffs.push({ input, command: c.text.replace(/\s*\\\n\s*/g, ' ').slice(0, 100), word: args[k].text, old: show(o), new: show(n) });
+  }
+}
+
+/** Compares the two readings of every simple command and declaration of a script; returns the differences. */
+function compareScript(input: string, text: string, counts: Counts): Diff[] {
   const tree = parser.parse(text);
   const analyzer = new Analyzer('en');
   // explainLine sets up what the walk reads (the script's text, functions, arrays…).
   analyzer.explainLine(tree, 0);
-  const walk = analyzer as unknown as { args(doc: CommandDoc | undefined, args: SyntaxNode[], name: string): Token[] };
+  const walk = analyzer as unknown as Walk;
   const functions = new Set(descendants(tree.root, ['function_definition']).map((f) => field(f, 'name')?.text));
   const aliases = new Set([...text.matchAll(/\balias\s+([^\s=]+)=/g)].map((m) => m[1]));
   const skip = (why: string): void => { counts.skipped[why] = (counts.skipped[why] ?? 0) + 1; };
   const diffs: Diff[] = [];
+  const read = (spec: CommandSpec, args: SyntaxNode[], name: string, coarse = false): Map<number, Canon> => {
+    const words = args.map(argWord);
+    const now = new Map<number, Canon>();
+    canonNew(interpret(spec, words, { name, lookup }), words, args.map((a) => a.text), now, coarse);
+    return now;
+  };
   for (const c of descendants(tree.root, ['command'])) {
     const nameNode = field(c, 'name');
     if (!nameNode) continue;
@@ -174,26 +243,30 @@ function compareScript(input: string, text: string, counts: { commands: number; 
     const distro = Object.hasOwn(distroAliases, name) && !lookupCommand(name) ? distroAliases[name] : undefined;
     const doc = distro ? (distro.command ? lookupCommand(distro.command) : undefined) : lookupCommand(name);
     const old = new Map<number, Canon>();
-    canonOld(walk.args(doc, args, name), args, doc, old);
-    const words = args.map(argWord);
-    const spec = doc ? fromCommandDoc(doc, base(name)) : { summary: { ja: '', en: '' } };
-    const now = new Map<number, Canon>();
-    canonNew(interpret(spec, words, { name, lookup }), words, args.map((a) => a.text), now);
-    counts.commands++;
-    for (let k = 0; k < args.length; k++) {
-      const o = old.get(k);
-      const n = now.get(k);
-      if (o?.key === 'skip' || n?.key === 'skip') continue;
-      counts.words++;
-      if (process.env.ARGV_SHADOW_TRACE) console.log(`${args[k].text}\t${show(o)}\t${show(n)}`);
-      if (agree(o, n)) continue;
-      diffs.push({ input, command: c.text.replace(/\s*\\\n\s*/g, ' ').slice(0, 100), word: args[k].text, old: show(o), new: show(n) });
-    }
+    canonOld(walk.args(doc, args, name), args, doc, name, old);
+    compareWords(input, c, args, old, read(doc ? fromCommandDoc(doc, base(name)) : { summary: { ja: '', en: '' } }, args, name), counts, diffs);
+  }
+  // `declare -a x`, `local -r y=1`: the walk reads them with its own code; options and names are compared.
+  for (const d of descendants(tree.root, ['declaration_command'])) {
+    const args = d.namedChildren.filter((x) => !x.type.endsWith('redirect'));
+    if (!args.length) continue;
+    const kw = d.children[0].type;
+    const at = (n: SyntaxNode): Token | undefined => walk.declaration(d).children.find((t) => t.span.start.line === n.startPosition.row && t.span.start.character === n.startPosition.column);
+    const old = new Map<number, Canon>();
+    args.forEach((a, k) => { const t = at(a); if (t) old.set(k, { key: t.kind === 'option' ? `opt:${a.text}` : 'arg' }); });
+    compareWords(input, d, args, old, read(lookup(kw)!, args, kw, true), counts, diffs);
   }
   return diffs;
 }
 
 const parser = createUnbashParser();
+
+/** Lines from the review of the interpreter, each checked with the real tool: where the walk reads them otherwise, a known difference says so. */
+const REVIEWED = [
+  'kill -9 -1', 'kill -s TERM -1', 'kill -$sig $pid', 'head -$n f', 'ls -$opts', 'ls -l$x d', 'ssh host ls -l', 'ssh -p 22 host -t ls -l',
+  'flock /tmp/l -n true', 'bash +x s.sh', 'chmod --reference=r u+x', 'nice --5 make', "dpkg-query -W -f='${Package}' bash",
+  'jq --arg=x y .', "jq -c '$ARGS' in.json --args a", 'jq -n -f prog.jq --args a', 'echo -e -E x', 'bash -ex script.sh -x', 'ls "-l" "--all"', 'let -1+2',
+];
 
 /**
  * More inputs: the string literals of the tests that are a command line of a command in the dictionary
@@ -229,17 +302,26 @@ describe('argv shadow: the interpreter against the analyzer\'s walk', () => {
     const fresh: string[] = [];
     let knownCount = 0;
     const seen = new Set(snippets.map((s) => s.text));
+    // Record the language the walk gives each operand and value.
+    const proto = Analyzer.prototype as unknown as Walk;
+    const positional = proto.positional;
+    proto.positional = function (this: Walk, a, desc, lang) { langs.set(a, lang); return positional.call(this, a, desc, lang); };
     const inputs = [
       ...files.map((f) => ({ key: f.name, text: f.text })),
       ...snippets.map((s) => ({ key: s.text, text: s.text })),
       ...testLines().filter((t) => !seen.has(t)).map((t) => ({ key: t, text: t })),
+      ...REVIEWED.map((t) => ({ key: t, text: t })),
     ];
-    for (const input of inputs) {
-      for (const d of compareScript(input.key, input.text, counts)) {
-        const k = known.find((e) => e.input === d.input && e.command === d.command && e.word === d.word && e.old === d.old && e.new === d.new);
-        if (k) { used.add(k); knownCount++; continue; }
-        fresh.push(JSON.stringify(d));
+    try {
+      for (const input of inputs) {
+        for (const d of compareScript(input.key, input.text, counts)) {
+          const k = known.find((e) => e.input === d.input && e.command === d.command && e.word === d.word && e.old === d.old && e.new === d.new);
+          if (k) { used.add(k); knownCount++; continue; }
+          fresh.push(JSON.stringify(d));
+        }
       }
+    } finally {
+      proto.positional = positional;
     }
     console.log(`      argv shadow: ${counts.commands} commands, ${counts.words} words compared; skipped ${JSON.stringify(counts.skipped)}; ${knownCount} known differences, ${fresh.length} new`);
     const stale = known.filter((k) => !used.has(k)).map((k) => `stale: ${JSON.stringify(k)}`);
