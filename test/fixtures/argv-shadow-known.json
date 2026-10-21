@@ -1,0 +1,58 @@
+[
+ {
+  "input": "coverage.sh",
+  "command": "eval set -- \"$OPTS\"",
+  "word": "--",
+  "old": "end",
+  "new": "arg",
+  "reason": "old walk wrong — the interpreter is right, verified with the real tool: bash passes a `--` after the first word of `eval` on to the string it runs (`bash -c 'eval set -- -x; echo $#'` prints 1, and xtrace stays off)"
+ },
+ {
+  "input": "hosts/README.md",
+  "command": "sh -s -- --prefix \"$HOME/.local\"",
+  "word": "--prefix",
+  "old": "arg «Script to run»",
+  "new": "arg «Argument to the script»",
+  "reason": "old walk wrong — the interpreter is right, verified with the real tool: with `-s` every operand is a positional parameter, not a script (`echo 'echo \"[$1]\"' | sh -s -- --prefix x` prints `[--prefix]`)"
+ },
+ {
+  "input": "dpkg-query -W -f='${Package} ${Version}\\n'",
+  "command": "dpkg-query -W -f='${Package} ${Version}\\n'",
+  "word": "-f='${Package} ${Version}\\n'",
+  "old": "arg «package name (`name=version` pins a version)»",
+  "new": "opt:-f= «output format for `-W` (`${Package} ${Version}\\n`…)»",
+  "reason": "old walk wrong — the interpreter is right, verified with the real tool: quote removal makes the word `-f=${Package} ${Version}\\n`, the option `-f` with its value (`dpkg-query -W -f='${Package} ${Version}\\n' bash` prints `bash 5.2.21-2ubuntu4`), not a package name"
+ },
+ {
+  "input": "tar \"xf\" a.tar",
+  "command": "tar \"xf\" a.tar",
+  "word": "\"xf\"",
+  "old": "arg",
+  "new": "old:xf",
+  "reason": "old walk wrong — the interpreter is right, verified with the real tool: quote removal makes `\"xf\"` the old-style letters `xf` (`tar \"tf\" a.tar` lists the archive like `tar tf a.tar`)"
+ },
+ {
+  "input": "tar \"xf\" a.tar",
+  "command": "tar \"xf\" a.tar",
+  "word": "a.tar",
+  "old": "arg",
+  "new": "val:f",
+  "reason": "old walk wrong — the interpreter is right, verified with the real tool: quote removal makes `\"xf\"` the old-style letters `xf` (`tar \"tf\" a.tar` lists the archive like `tar tf a.tar`)"
+ },
+ {
+  "input": "su - user",
+  "command": "su - user",
+  "word": "-",
+  "old": "opt:- «Run a login shell (same as `-l`)»",
+  "new": "opt:- «as a login shell (fresh environment)»",
+  "reason": "text only — the same role: the old walk writes a text of its own for `su -`; the interpreter uses the dictionary entry `-|-l|--login`"
+ },
+ {
+  "input": "su - root",
+  "command": "su - root",
+  "word": "-",
+  "old": "opt:- «Run a login shell (same as `-l`)»",
+  "new": "opt:- «as a login shell (fresh environment)»",
+  "reason": "text only — the same role: the old walk writes a text of its own for `su -`; the interpreter uses the dictionary entry `-|-l|--login`"
+ }
+]
