@@ -70,6 +70,12 @@ function args(...items: OperandSpec[]): Rest {
   return { operands: [{ pattern: items.map((o, i) => ({ repeat: i === items.length - 1 ? '*' : '?', ...o })) }] };
 }
 
+/**
+ * The one operand of `exit`, `return`, `shift`, `break` and `continue`, a number. They take no options:
+ * `exit -1` exits with 255, and `shift -1` says the count is out of range (`--` still ends the options).
+ */
+const numeric = (o: OperandSpec): Rest => ({ style: 'none', ...args(o) });
+
 /** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
 function declarationDoc(name: string, flags: Record<string, Text>, rest: Rest = {}): CommandDoc {
   const t = declarationCommands[name];
@@ -88,6 +94,8 @@ const SIGNALS = 'HUP|INT|QUIT|ILL|TRAP|ABRT|BUS|FPE|KILL|USR1|SEGV|USR2|PIPE|ALR
  * options and patterns that give a signal mark the line, and those that look like one are taken only before.
  */
 const SIGNAL_GIVEN = { marks: 'signal', unlessMarked: 'signal' };
+/** `TERM` in any case: `[Tt][Ee][Rr][Mm]`. */
+const anyCase = (s: string): string => s.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`);
 const KILL_PATTERNS: PatternOption[] = [
   {
     pattern: /^-(\d+)$/, ...SIGNAL_GIVEN,
@@ -95,7 +103,8 @@ const KILL_PATTERNS: PatternOption[] = [
     open: tx('展開した名前か番号のシグナルを送る（`-s 名前` と同じ）', 'Send the signal the expansion names (same as `-s NAME`)'),
   },
   {
-    pattern: new RegExp(`^-(?:SIG)?(${SIGNALS})$`, 'i'), ...SIGNAL_GIVEN,
+    // A name in any case, with or without `SIG`; but bash reads `-s` and a letter as `-s NAME` (`-sigterm`, `-stop`: the signal `igterm`, `top`).
+    pattern: new RegExp(`^-(?!s[A-Za-z])(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`), ...SIGNAL_GIVEN,
     text: ([, s]) => tx(`送るシグナル \`${s.toUpperCase()}\`（\`-s ${s.toUpperCase()}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${s.toUpperCase()}\` (same as \`-s ${s.toUpperCase()}\`; \`kill -l\` lists them)`),
   },
 ];
@@ -144,9 +153,9 @@ export const builtins: Record<string, CommandDoc> = {
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
   ], { alsoProgram: true }),
-  logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], args(operand('STATUS', '終了ステータス', 'exit status'))),
-  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], args(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))),
-  return: special('関数から戻る', 'Return from a function', [], args(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return'))),
+  logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], numeric(operand('STATUS', '終了ステータス', 'exit status'))),
+  exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))),
+  return: special('関数から戻る', 'Return from a function', [], numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return'))),
   set: special('シェルオプションや位置パラメータを設定する', 'Set shell options or positional parameters', [
     ['-e', 'コマンドが失敗したら即座にスクリプトを終了する', 'exit immediately if a command fails'],
     ['-u', '未定義の変数を参照したらエラーにする', 'treat unset variables as an error'],
@@ -215,7 +224,7 @@ export const builtins: Record<string, CommandDoc> = {
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
   ], { builtin: 'special', style: 'posix', operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
-  shift: special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], args(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)'))),
+  shift: special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)'))),
   getopts: b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
     operand('OPTSTRING', '受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)', { lang: 'getopts' }),
     operand('NAME', '見つけたオプションの文字を入れる変数名', 'variable that receives the option letter'),
@@ -361,8 +370,8 @@ export const builtins: Record<string, CommandDoc> = {
     ['-p', '1行に1つずつ表示する', 'print one entry per line'],
     ['-v', '番号を付けて1行に1つずつ表示する', 'print one entry per line with its index'],
   ]),
-  break: special('ループを抜ける', 'Exit from a loop', [], args(operand('N', '抜けるループの段数', 'number of loop levels'))),
-  continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], args(operand('N', '対象のループの段数', 'number of loop levels'))),
+  break: special('ループを抜ける', 'Exit from a loop', [], numeric(operand('N', '抜けるループの段数', 'number of loop levels'))),
+  continue: special('ループの次の繰り返しに進む', 'Skip to the next loop iteration', [], numeric(operand('N', '対象のループの段数', 'number of loop levels'))),
   unset: special('変数や関数を削除する', 'Unset variables or functions', [
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],

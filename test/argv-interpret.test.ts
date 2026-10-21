@@ -225,7 +225,9 @@ describe('argv interpreter: commands of the dictionary', () => {
     assert.ok(op.role === 'operand' && op.spec?.type === 'job');
     assert.deepStrictEqual(roles('kill -9 1').slice(0, 1), ['-9: -9 force kill (SIGKILL)']);
     assert.deepStrictEqual(roles('kill -15 1').slice(0, 1), ['-15: pattern Send signal number 15 (same as `-n 15`; `kill -l 15` prints its name)']);
-    assert.deepStrictEqual(roles('kill -sigint 1').slice(0, 1), ['-sigint: pattern Send the signal `INT` (same as `-s INT`; `kill -l` lists them)']);
+    assert.deepStrictEqual(roles('kill -SIGint 1').slice(0, 1), ['-SIGint: pattern Send the signal `INT` (same as `-s INT`; `kill -l` lists them)']);
+    // bash reads `-s` and a letter as `-s NAME`: `-sigint` names the signal `igint`.
+    assert.deepStrictEqual(roles('kill -sigint 1').slice(0, 1), ['-sigint: -s=2 signal name to send']);
     // `-l`: the operands are signals.
     const l = parseOf('kill -l 15').roles[1].role;
     assert.ok(l.role === 'operand' && l.spec?.type === undefined && /signal/.test(l.spec!.text.en));
