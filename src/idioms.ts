@@ -180,6 +180,71 @@ const IDIOMS: Idiom[] = [
     ja: '`while read … done < <(コマンド)`: コマンドの出力を1行ずつ読んで処理する。`コマンド | while read …` と違い、ループがカレントシェルで動くので、中で代入した変数がループのあとも残る。最後の行の末尾に改行がないと、その行は読まれずに終わる（`|| [ -n "$line" ]` を足せば読める）',
     en: '`while read … done < <(command)`: reads the output of a command line by line. Unlike `command | while read …`, the loop runs in the current shell, so variables set in it are still there after the loop. A last line with no newline at its end is skipped, unless `|| [ -n "$line" ]` is added',
   },
+  {
+    test: /^while getopts /,
+    ja: '`while getopts`: 短いオプション（`-a`、値つきの `-b 値`）を1つずつ読む。オプションの文字は変数に、値は `$OPTARG` に入る。最初のオプションでない語で読み取りが止まるので、オプションは引数より前に置く',
+    en: '`while getopts`: reads short options (`-a`, `-b value`) one at a time: the letter goes to the variable, the value to `$OPTARG`. It stops at the first word that is not an option, so options must come before the operands',
+  },
+  {
+    test: /^shift "?\$\(\( ?OPTIND ?- ?1 ?\)\)"?/,
+    ja: '`shift $((OPTIND-1))`: `getopts` で読み終えたオプションを取り除き、`$1` を最初の引数にする。関数の中で `getopts` を使うなら、先に `local OPTIND=1` としておく（さもないと2回目の呼び出しが前回の続きから始まり、何も読まない）',
+    en: '`shift $((OPTIND-1))`: drops the options `getopts` has read, so `$1` is the first operand. In a function that uses `getopts`, set `local OPTIND=1` first, or a second call starts where the first stopped and reads nothing',
+  },
+  {
+    test: /^while getopt( |$)/,
+    ja: '`getopt`（`s` なし）は組み込みの `getopts` とは別の外部コマンドで、整えた引数を表示して終わる。1つずつ読むループにはならない（組み込みは `getopts`）',
+    en: '`getopt` (no `s`) is an external program, not the builtin `getopts`: it prints the rewritten arguments and exits, so it cannot drive a loop that reads one option at a time (the builtin is `getopts`)',
+  },
+  {
+    test: /\$\(getopt .*"\$@"\)/,
+    ja: '`getopt`（GNU/util-linux）: 引数を整えた形に書き直す（`-ab` は `-a -b` に、`--long=値` は `--long 値` に分け、最後に `--` を付ける）。あとの `case` が `$1` だけ見ればよくなる。終了ステータスを見ること（不正なオプションなら失敗する）。`local args=$(getopt …)` では失敗が隠れる',
+    en: '`getopt` (GNU/util-linux): rewrites the arguments into a fixed form (`-ab` becomes `-a -b`, `--long=v` becomes `--long v`, and `--` ends them), so a `case` only has to look at `$1`. Check its exit status (it fails on a bad option); `local args=$(getopt …)` hides the failure',
+  },
+  {
+    test: /^eval set -- /,
+    ja: '`eval set -- "$args"`: `getopt` が整えた引数（クォート済み）を、このスクリプトの位置パラメータ `$1 $2 …` に入れ直す。`"$args"` は必ずダブルクォートで囲む',
+    en: '`eval set -- "$args"`: puts the arguments that `getopt` rewrote (and quoted) back into `$1 $2 …`. Keep `"$args"` in double quotes',
+  },
+  {
+    test: /^while (\[\[? "?\$#"? (-gt 0|-ne 0|!= 0|> 0) \]\]?|\(\( ?\$# ?(> ?0)? ?\)\))( |;|$)/,
+    ja: '引数を先頭から順に読むループ（ふつうは `case` で `$1` を調べ、最後に `shift` で1つ進める）。値をとるオプションは `shift 2` が要る。`shift` を忘れると、ループが終わらない',
+    en: 'a loop over the arguments (usually a `case` on `$1`, then `shift` to move on). An option that takes a value needs `shift 2`; without any `shift` the loop never ends',
+  },
+  {
+    test: /\bread (-\w+ )*-\w*d ?(''|"")/,
+    ja: '`read -d \'\'`: NUL（バイト 0）までを1項目として読む。`find -print0` と組み合わせると、空白や改行を含む名前も安全に扱える。区切りは `-d \'\'` と書く（`-d \'\\0\'` では区切りが `\\` になり、何も読めない）',
+    en: '`read -d \'\'`: reads up to a NUL byte as one item. With `find -print0`, names containing spaces or newlines are safe. Write the delimiter as `-d \'\'` (`-d \'\\0\'` makes `\\` the delimiter, and nothing is read)',
+  },
+  {
+    test: /\bfind .* -print0\b/,
+    ja: '`find -print0`: 名前を改行でなく NUL で区切って出力する。受け取る側も NUL を読むこと（`xargs -0`、`read -d \'\'`）。改行区切りのままだと、空白や改行を含む名前が壊れる',
+    en: '`find -print0`: separates the names with a NUL byte instead of a newline. The reader must read NUL too (`xargs -0`, `read -d \'\'`); with newlines, names containing spaces or newlines break',
+  },
+  {
+    test: /\bxargs (-[^\s0]\S*( [^-\s]\S*)? )*(-0\S*|--null)( |$)/,
+    ja: '`xargs -0`: 入力を NUL 区切りで読む（`find -print0` と組み合わせる）。付けないと、空白やクォートを含む名前が分割されたり壊れたりする',
+    en: '`xargs -0`: reads its input separated by NUL bytes (pair it with `find -print0`). Without it, names with spaces or quotes are split or mangled',
+  },
+  {
+    test: /^until /,
+    ja: '`until コマンド`: コマンドが失敗する間、くり返す（成功したら止まる。`while` の逆）。何かの準備ができるのを待つときに使う。回数や時間の上限がないと、永久に終わらないことがある',
+    en: '`until command`: repeats while the command fails and stops when it succeeds (the opposite of `while`). Used to wait for something to be ready. With no limit on tries or time, it can run forever',
+  },
+  {
+    test: /(^|[|&;] ?)(mapfile|readarray)( |$)/,
+    ja: '`mapfile`（`readarray`）: 入力の各行を配列の要素に入れる。`-t` で行末の改行を取り除く（付けないと各要素が改行で終わる）。`コマンド | mapfile` は配列が消える（サブシェルで動く）ので、`mapfile -t 配列 < <(コマンド)` と書く',
+    en: '`mapfile` (`readarray`): reads each line of the input into an array element. `-t` strips the trailing newline (without it, each element ends with one). `command | mapfile` loses the array (it runs in a subshell); write `mapfile -t arr < <(command)`',
+  },
+  {
+    test: /^\[\[? -[ef] "?\$\{?\w+\}?"? \]\]? \|\| continue$/,
+    ja: '存在しない名前を飛ばす。`for f in *.txt` で何にも一致しないと、bash は `*.txt` をそのまま残し、ループが存在しない名前で1回まわる。その対策（`shopt -s nullglob` でも防げる）',
+    en: 'skips a name that does not exist. When `for f in *.txt` matches nothing, bash keeps `*.txt` as it is and the loop runs once with that text. This guards against it (`shopt -s nullglob` does too)',
+  },
+  {
+    test: /\bread (-\w+ )*-\w*p ?(['"]).*\b[yY](es)?\/[nN](o)?\b/,
+    ja: 'はい／いいえの確認。`[y/N]` の大文字は、Enter だけのときの既定値という慣習で、空の答えをその既定値として扱うのは続くコードの役目。`-p` の表示は、標準入力が端末のときだけ出る',
+    en: 'a yes/no question. The capital letter in `[y/N]` is only a convention for the default on a bare Enter: the code after it must treat an empty answer that way. The `-p` prompt is shown only when stdin is a terminal',
+  },
 ];
 
 /** Notes for the idioms found in the given statements, without duplicates. */

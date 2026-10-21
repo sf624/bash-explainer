@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- More idioms get a note, with the one thing people get wrong: `while getopts` and `shift $((OPTIND-1))`, `getopt` with `eval set -- "$args"`, the `while [ $# -gt 0 ]` loop over the arguments, `read -d ''`, `find -print0`, `xargs -0`, `until`, `mapfile`/`readarray`, `[ -e "$f" ] || continue` after a glob, and a `read -p '… [y/N] '` question. `while getopt` (no `s`) says that `getopt` is another program. Before, these had no note.
 - The example of `xargs -0 -n 1 -I{} rm -f {}` runs `rm -f` once for each NUL-separated name. Before, it showed one run with all three names joined by NUL bytes. The same holds for `-d` with `-I`.
 - The options of `git` before the subcommand are read one word each, as git reads them: `git -pP log` and `git -C. log` are unknown options, as git says ("unknown option: -pP"). Before, `-pP` was `-p` and `-P`, and `-C.` was `-C` with the value `.`. The options of a subcommand still cluster (`git commit -am x`).
 - In `ip - 3 link`, the lone `-` is the option `-loops`, as iproute2 reads it (it takes the first option the word starts). Before, `-` was a plain argument.
