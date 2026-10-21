@@ -4,6 +4,7 @@ html:not(.bx-settings) #settings {
 }
 
 body {
+  margin: 0;
   background: var(--vscode-editor-background);
 }
 
@@ -19,4 +20,88 @@ body:not(.colors-classic) {
   --c-pattern: light-dark(#811F3F, #D16969);
   --c-variable: light-dark(#001080, #9CDCFE);
   --c-comment: light-dark(#008000, #6A9955);
+}
+
+/* The panel's header, as a pane header of the page: a bar across the frame, with small buttons. */
+header {
+  margin: -0.5rem -1rem 0.5rem;
+  padding: 6px 12px 6px 1rem;
+  min-height: 40px;
+  background: var(--page-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.tools {
+  gap: 4px;
+}
+
+.tools button {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--vscode-foreground);
+  transition: background-color 0.15s;
+}
+
+@media (hover: hover) {
+  .tools button:hover {
+    color: var(--vscode-foreground);
+    text-decoration: none;
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
+/* Without a mouse, no underline either after a tap. */
+@media (hover: none) {
+  .tools button:hover {
+    color: var(--vscode-foreground);
+    text-decoration: none;
+  }
+}
+
+.tools button:focus-visible,
+.tools select:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 0;
+}
+
+.tools label:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tools select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 26px;
+  padding: 0 24px 0 8px;
+  border-radius: 6px;
+  background: var(--vscode-dropdown-background) var(--select-arrow) no-repeat right 6px center / 12px 12px;
+  cursor: pointer;
+}
+
+pre#line {
+  border-radius: 8px;
+}
+
+/* A phone: the header in as few rows as it can, its controls still big enough to tap. */
+@media (max-width: 520px) {
+  /* It scrolls away with the explanation, which then has the whole frame. */
+  header {
+    position: static;
+    font-size: 12px;
+  }
+
+  .tools {
+    gap: 0 2px;
+  }
+
+  .tools button {
+    padding: 8px 6px;
+  }
+
+  .tools select {
+    min-height: 32px;
+  }
 }

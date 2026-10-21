@@ -42,7 +42,7 @@ const PANEL_HTML = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src data:; base-uri 'none'; form-action 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="theme-init.js"></script>
 <link rel="stylesheet" href="theme.css">
