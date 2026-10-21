@@ -43,3 +43,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 ## Stacked PRs
 
 - `test/fixtures/snippets.json` is generated from the tests: when PRs are stacked, regenerate it at every level, since CI checks each level.
+
+## The semantic model
+
+- The shell state along a script (set and shopt options, variables and their attributes, functions, aliases) comes from `shellState(tree, shell).at(node)` in `src/semantics/state.ts`, with a `run` and a `parse` state; the analyzer does not scan the script for state. test/state-probes.test.ts compares it with bash on `test/fixtures/probes/state.json`; a fact it does not follow goes in the row's `gaps`, with the reason.
