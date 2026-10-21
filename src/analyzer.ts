@@ -1709,6 +1709,7 @@ export class Analyzer {
     let desc: string | undefined;
     if (isFn) desc = this.s(`関数への引数 $${role.index + 1}`, `Argument $${role.index + 1} to the function`);
     else if (item?.type === 'shell-option' && a.text in shoptOptions) desc = this.s(`シェルオプション \`${a.text}\`: `, `Shell option \`${a.text}\`: `) + this.t(shoptOptions[a.text as keyof typeof shoptOptions]);
+    else if (item?.values && Object.hasOwn(item.values, a.text)) desc = this.s(`シェルオプション \`${a.text}\`: `, `Shell option \`${a.text}\`: `) + this.t(item.values[a.text]);
     else if (role.assignment) desc = this.t(item!.assignmentText!);
     else if (role.each) desc = this.eachText(a, role.each);
     else if (item) desc = this.t(item.text).replace('`$N`', `\`$${n}\``);

@@ -249,7 +249,13 @@ export const builtins: Record<string, CommandSpec> = {
     ['-q', '何も表示せず、終了ステータスで状態を返す', 'quiet; report via exit status'],
     ['-p', '再入力できる形（`shopt -s 名前`）で表示する', 'print in a reusable form (`shopt -s name`)'],
     ['-o', '`shopt` のオプションではなく、`set -o` のオプション名を対象にする', 'work on the `set -o` option names instead of the `shopt` ones'],
-  ], args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option' }))),
+  ], {
+    operands: [
+      // With `-o` the names are those of `set -o`.
+      { when: { option: ['-o'] }, pattern: [operand('OPTNAME', '`set -o` のオプション名（例: errexit, pipefail, noglob）', '`set -o` option name (e.g. errexit, pipefail, noglob)', { repeat: '*', values: shellOptions })] },
+      ...args(operand('OPTNAME', 'オプション名（例: nullglob, globstar, extglob）', 'option name (e.g. nullglob, globstar, extglob)', { type: 'shell-option' })).operands!,
+    ],
+  }),
   print: b('引数を表示する（ksh・mksh・zsh の組み込み。bash にはない。`echo` と違いオプションの扱いが決まっている）', 'Print the arguments (a ksh, mksh and zsh builtin, not in bash; unlike `echo` its options are well defined)', [
     ['-n', '最後に改行を出さない', 'do not print a trailing newline'],
     ['-r', '`\\` によるエスケープを解釈しない', 'do not interpret `\\` escapes'],
