@@ -27,14 +27,24 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   } else spec.options = options;
   // `bash -c 'cmd'`: `-c` says that the first operand is a command string; it takes no value of its own.
   if (doc.shellC) for (const o of options) if (o.names.includes('-c')) delete o.value;
+  // `kill -9 -1`: only the first signal is one; then a word like `-1` is a PID (bash's `saw_signal`).
+  if (name === 'kill') {
+    for (const o of options) {
+      if (o.names.some((n) => ['-s', '-n', '-9', '-0'].includes(n))) o.marks = 'signal';
+      if (o.names.some((n) => ['-9', '-0'].includes(n))) o.unlessMarked = 'signal';
+    }
+  }
   if (doc.longSingleDash) spec.style = 'single-dash';
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word is text to print. `let` has no options: `let -a` is an expression.
   else if (name === 'echo' || name === 'let') spec.style = 'none';
-  // Builtins read options up to their first operand; so do wrappers (getopt with `+`) and shells. But
-  // `flock FILE -c CMD` reads `-c` after the file (a command after the file still ends the options).
-  else if ((doc.builtin || doc.wraps || doc.shellC) && name !== 'flock') spec.style = 'posix';
+  // Builtins read options up to their first operand; so do wrappers (getopt with `+`) and shells.
+  // (ssh reads options again after the host, up to the command: the gnu style with a command slot.)
+  else if (doc.builtin || doc.wraps || doc.shellC) spec.style = 'posix';
   if (doc.builtin) spec.builtin = SPECIAL_BUILTINS.has(name) ? 'special' : 'regular';
-  if (name === 'set') spec.plusOptions = true;
+  if (['set', 'declare', 'typeset', 'local'].includes(name) || doc.shellC) spec.plusOptions = true;
+  // jq reads `--arg NAME VALUE` only as separate words: `--arg=x` is an unknown option.
+  if (name === 'jq') spec.longEquals = false;
+  if (/^dpkg(-query|-deb)?$/.test(name)) spec.shortEquals = true;
   const patterns = patternOptions(name);
   if (patterns.length) spec.patternOptions = patterns;
   if (name === 'echo') spec.dashDash = 'literal';
@@ -48,6 +58,12 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   }
   for (const when of modes) for (const opt of options) if (opt.names.some((n) => names(when).includes(n))) opt.selects = when;
   if (modes.size) spec.modes = [...modes].map((m) => ({ name: m }));
+  // `echo -e`: backslash escapes are read; the last of `-e` and `-E` decides.
+  if (name === 'echo') {
+    spec.modes = [{ name: 'escapes' }, { name: 'plain', default: true }];
+    spec.lastModeWins = true;
+    for (const o of options) if (o.names[0] === '-e' || o.names[0] === '-E') o.selects = o.names[0] === '-e' ? 'escapes' : 'plain';
+  }
   if (doc.bundle) {
     const b = doc.bundle;
     spec.oldStyle = {
@@ -82,11 +98,16 @@ function convertOption(ns: string[], o: OptDoc, command: string): OptionSpec {
   else if (o.arg) {
     // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
     const how = command === 'set' ? { how: 'next-only' as const } : {};
-    opt.value = o.argCount === 2
-      ? [{ name: 'NAME', ...how }, { name: 'VALUE', ...how, ...extra }]
-      : { name: 'VALUE', ...how, ...extra, ...(command === 'su' && ns.includes('-c') ? { command: { run: 'shell-string', env: 'reset' } as CommandSlot } : {}) };
+    const n = o.argCount ?? 1;
+    // `su -c 'cmd'`, `flock FILE -c 'cmd'`: the value is a command string.
+    const shell: CommandSlot | undefined = command === 'su' ? { run: 'shell-string', env: 'reset' } : command === 'flock' ? { run: 'shell-string', env: 'exported' } : undefined;
+    opt.value = n > 1
+      ? Array.from({ length: n }, (_, k): ValueSpec => ({ name: n === 2 ? ['NAME', 'VALUE'][k] : `VALUE${k + 1}`, ...how, ...(k === n - 1 ? extra : {}) }))
+      : { name: 'VALUE', ...how, ...extra, ...(shell && ns.includes('-c') ? { command: shell } : {}) };
   } else if (o.attachedOnly) opt.value = { name: 'VALUE', how: 'attached-only', optional: true, ...extra };
   else if (o.nextIf) opt.value = { name: 'VALUE', optional: true, next: new RegExp(o.nextIf), ...extra };
+  // `jq . in.json --args a`: the operands after the option are values, not files.
+  if (o.restOperands) opt.laterOperands = { name: 'ARG', text: o.restOperands, repeat: '*' };
   return opt;
 }
 
@@ -100,13 +121,25 @@ function patternOptions(name: string): PatternOption[] {
       text: ([, n]) => (base === 'git' ? tx(`${n} 件だけ（\`-n ${n}\` と同じ）`, `only ${n} (same as \`-n ${n}\`)`)
         : base === 'nice' ? tx(`優先度の調整値 ${n}（\`-n ${n}\` の古い書き方。負の値は \`--${n}\` で、権限が必要）`, `niceness adjustment ${n} (old way to write \`-n ${n}\`; a negative value is \`--${n}\` and needs privileges)`)
           : tx(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`)),
+      open: base === 'git' ? tx('展開した数の件数だけ（`-n 数` と同じ）', 'only as many as the expansion gives (same as `-n N`)')
+        : base === 'nice' ? tx('展開した値を優先度の調整値にする（`-n 値` の古い書き方）', 'niceness adjustment given by the expansion (old way to write `-n N`)')
+          : tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
     });
   }
+  // `nice --5`: an adjustment of -5.
+  if (name === 'nice') {
+    out.push({ pattern: /^--(\d+)$/, text: ([, n]) => tx(`優先度の調整値 -${n}（\`-n -${n}\` の古い書き方。負の値には権限が必要）`, `niceness adjustment -${n} (old way to write \`-n -${n}\`; a negative value needs privileges)`) });
+  }
   if (name === 'kill') {
+    const signal = { marks: 'signal', unlessMarked: 'signal' };
     out.push(
-      { pattern: /^-(\d+)$/, text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-n ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-n ${n}\`; \`kill -l ${n}\` prints its name)`) },
       {
-        pattern: new RegExp(`^-(?:SIG)?(${SIGNALS})$`, 'i'),
+        pattern: /^-(\d+)$/, ...signal,
+        text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-n ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-n ${n}\`; \`kill -l ${n}\` prints its name)`),
+        open: tx('展開した名前か番号のシグナルを送る（`-s 名前` と同じ）', 'Send the signal the expansion names (same as `-s NAME`)'),
+      },
+      {
+        pattern: new RegExp(`^-(?:SIG)?(${SIGNALS})$`, 'i'), ...signal,
         text: ([, s]) => tx(`送るシグナル \`${s.toUpperCase()}\`（\`-s ${s.toUpperCase()}\` と同じ。\`kill -l\` で一覧）`, `Send the signal \`${s.toUpperCase()}\` (same as \`-s ${s.toUpperCase()}\`; \`kill -l\` lists them)`),
       },
     );
@@ -114,15 +147,16 @@ function patternOptions(name: string): PatternOption[] {
   return out;
 }
 
-/** The operand alternatives: by count (`positionalBy`), by option (`positionalWith`, `fills`, `restOperands`), then the default. */
-function operandAlts(doc: CommandDoc, name: string): OperandAlt[] {
+/** The operand alternatives: by count (`positionalBy`), by option (`positionalWith`, `fills`), then the default; none when nothing describes them. */
+function operandAlts(doc: CommandDoc, name: string): OperandAlt[] | undefined {
   const texts = doc.positional ?? [];
   const opts = Object.entries(doc.options ?? {});
   const job = JOB_COMMANDS.has(name);
   const type: ValueType | undefined = job ? 'job' : name === 'let' ? 'arith' : name === 'shopt' ? 'shell-option' : undefined;
+  // (`typed`: the type and language of the positional arguments, which an option may change: `kill -l`, `chmod --reference`.)
   const item = (i: number, t: Text, repeat?: OperandSpec['repeat'], typed = true): OperandSpec => {
     const itemType = typed ? type : undefined;
-    const lang = name === 'let' ? 'arith' : doc.positionalLang?.[i];
+    const lang = !typed ? undefined : name === 'let' ? 'arith' : doc.positionalLang?.[i];
     return {
       name: `ARG${i + 1}`, text: t, ...(repeat ? { repeat } : {}), ...(itemType ? { type: itemType } : {}), ...(lang ? { lang } : {}),
       ...(i > 0 && /^(g|m|n)?awk$/.test(name) ? { assignmentText: AWK_ASSIGNMENT } : {}),
@@ -141,11 +175,22 @@ function operandAlts(doc: CommandDoc, name: string): OperandAlt[] {
   };
   if (doc.shellC) return SHELL_OPERANDS;
   const alts: OperandAlt[] = [];
+  // ssh reads options again after the host; the words after it are joined into one string for the remote shell.
+  if (name === 'ssh') {
+    return [{
+      pattern: [
+        item(0, texts[0]),
+        { name: 'COMMAND', text: texts[1], repeat: '?', command: { run: 'shell-string', where: 'remote', joinsWords: true } },
+      ],
+    }];
+  }
   if (doc.wraps) {
     const slot: CommandSlot = name === 'command' ? { run: 'current-shell', lookup: 'no-functions' }
       : name === 'builtin' ? { run: 'current-shell', lookup: 'builtins-only' }
         : name === 'exec' ? { run: 'exec', replacesShell: true } : { run: 'exec' };
     const skip = Array.from({ length: doc.wrapSkip ?? 0 }, (_, i) => item(i, texts[Math.min(i, texts.length - 1)], '?'));
+    // `flock FILE -c CMD`: options end at the file, but `-c` right after it is still read.
+    if (name === 'flock') alts.push({ pattern: [item(0, texts[0]), { name: '-c', text: COMMAND_TEXT, option: '-c' }, { name: 'COMMAND_STRING', text: COMMAND_TEXT, command: { run: 'shell-string', env: 'exported' } }] });
     alts.push({
       pattern: [
         ...(doc.assigns ? [{ name: 'NAME=VALUE', text: tx('コマンドの環境に入れる変数', 'variable for the command'), assignment: true, repeat: '*' as const }] : []),
@@ -155,16 +200,16 @@ function operandAlts(doc: CommandDoc, name: string): OperandAlt[] {
     });
     return alts;
   }
-  for (const rule of doc.positionalBy ?? []) alts.push({ ...condition(rule), pattern: byCount(rule, item) });
+  for (const rule of doc.positionalBy ?? []) {
+    const when = condition(rule);
+    alts.push({ ...when, pattern: byCount(rule, (i, t, repeat) => item(i, t, repeat, !when.when)) });
+  }
   for (const [o, list] of Object.entries(doc.positionalWith ?? {})) alts.push({ when: { option: names(o) }, pattern: listed(list, 0, !job) });
   const fills = opts.filter(([, o]) => o.fillsPositional).map(([n]) => n);
   if (fills.length) alts.push({ when: { option: fills }, pattern: listed(texts, 1) });
-  for (const [n, o] of opts) {
-    if (o.restOperands) alts.push({ when: { option: [n] }, pattern: [item(0, texts[0], '?'), item(1, o.restOperands, '*')] });
-  }
-  if (name === 'echo') alts.push({ when: { option: ['-e'] }, pattern: [{ ...item(0, texts[0], '*'), lang: 'echo' }] });
-  alts.push({ pattern: listed(texts) });
-  return alts;
+  if (name === 'echo') alts.push({ when: { mode: 'escapes' }, pattern: [{ ...item(0, texts[0], '*'), lang: 'echo' }] });
+  if (texts.length) alts.push({ pattern: listed(texts) });
+  return alts.length ? alts : undefined;
 }
 
 const AWK_ASSIGNMENT = tx(

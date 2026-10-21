@@ -17,14 +17,23 @@ export interface CommandSpec {
   plusOptions?: boolean;
   /** A long option may be written as a unique prefix of its name (`--pres` for `--preserve-status`), as getopt_long allows. */
   longPrefixes?: boolean;
+  /** Whether `--name=value` gives a long option its value (getopt_long; the default). jq has no such form: `--arg=x` is unknown. */
+  longEquals?: boolean;
+  /** `-f=x` is `-f` with the value `x`, not `=x` (dpkg's own parser). */
+  shortEquals?: boolean;
   options?: OptionSpec[];
   /** Options recognized by their form (`kill -TERM`, `-15`; `head -5`; `nice -10`), tried when no option has the word as its name. */
   patternOptions?: PatternOption[];
   /** Modes chosen by an option anywhere on the line (`rpm -q`). */
   modes?: ModeSpec[];
+  /** The mode is that of the last option given that selects one (`echo -e -E` reads no escapes), not the first of `modes`. */
+  lastModeWins?: boolean;
   /** Dashless letters in the first word (`tar cvzf`, `ps aux`). */
   oldStyle?: OldStyleSpec;
-  /** What the operands mean: the first alternative whose condition holds and whose pattern fits. */
+  /**
+   * What the operands mean: the first alternative whose condition holds and whose pattern fits. Absent: the
+   * operands are not described (any number, with no meaning given).
+   */
   operands?: OperandAlt[];
   /** What `--` does: end the options (the default), nothing (`echo`), or start words of another pattern. */
   dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] };
@@ -52,6 +61,15 @@ export interface OptionSpec {
   inMode?: Record<string, Text>;
   /** The words up to one of the terminators form a command (`find -exec … ;`). */
   until?: { terminators: string[]; slot: CommandSlot };
+  /**
+   * The operands after this option that the pattern gives to its last, repeating item are these instead
+   * (`jq '.' in.json --args a`: `in.json` is a file, `a` a positional value).
+   */
+  laterOperands?: OperandSpec;
+  /** Giving this option marks the line with this name (`kill -s`: a signal is given). */
+  marks?: string;
+  /** Once the line is marked with this name, a word that looks like this option is an operand (`kill -9 -1`: `-1` is a PID). */
+  unlessMarked?: string;
 }
 
 export interface ValueSpec {
@@ -73,14 +91,21 @@ export interface ValueSpec {
   lang?: EmbeddedLang;
   /** The meaning of particular values (`set -o pipefail`). */
   values?: Record<string, Text>;
-  /** The value is a command (`su -c 'cmd'`). */
+  /** The value is a command, read as a `command` role (`su -c 'cmd'`). */
   command?: CommandSlot;
 }
 
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'
   | 'variable' | 'function' | 'arith' | 'pattern' | 'shell-option';
 
-export interface PatternOption { pattern: RegExp; text: (m: RegExpMatchArray) => Text }
+export interface PatternOption {
+  pattern: RegExp;
+  text: (m: RegExpMatchArray) => Text;
+  /** The text for a `-` followed by an expansion (`head -$n`, `kill -$sig`), whose value is known only at run time. */
+  open?: Text;
+  marks?: string;
+  unlessMarked?: string;
+}
 
 export interface ModeSpec { name: string; default?: boolean }
 
@@ -113,6 +138,8 @@ export interface OperandSpec {
   assignment?: boolean;
   /** A `NAME=value` word here is an assignment with this meaning instead (awk's operands). */
   assignmentText?: Text;
+  /** Only a word that names this option of the command fits, and it is read as that option (`flock FILE -c CMD`). */
+  option?: string;
 }
 
 export type Condition = { option: string[] } | { mode: string } | { not: Condition };
@@ -128,6 +155,9 @@ export interface CommandSlot {
   lookup?: 'no-functions' | 'builtins-only';
   /** `exec cmd`: nothing after it runs. */
   replacesShell?: boolean;
-  /** ssh joins the words into one string for the remote shell. */
+  /**
+   * The words left are joined into one string for the shell (ssh): with `shell-string`, the slot takes every
+   * word left, like `exec`, instead of one word.
+   */
   joinsWords?: boolean;
 }
