@@ -420,7 +420,7 @@ class Evaluator {
 
   /** The value of variable `name`: a string, null when unset, undefined when not known here. */
   variable(name: string, node: SyntaxNode): string | null | undefined {
-    if (name === '_') return afterAssignment(node) ? '' : undefined;
+    if (name === '_') return underscoreValue(node, this.model);
     if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name)) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
@@ -708,22 +708,24 @@ function replacementOf(text: string, ev: Evaluator): string | undefined {
 }
 
 /** Whether the simple command before `n` is only an assignment (it sets `$_` to nothing). */
-function afterAssignment(n: SyntaxNode): boolean {
+function afterAssignment(n: SyntaxNode, model: StateModel): boolean {
   let root = n;
   while (root.parent) root = root.parent;
   let prev: SyntaxNode | undefined;
+  // (A command in a subshell that `n` is not in sets the subshell's `$_`, and a function body runs elsewhere.)
+  const here = model.env(n).links;
   for (const c of descendants(root, ['command', 'variable_assignment', 'declaration_command'])) {
     // (The assignments of a command or a declaration are its words: `declare x=1` sets `$_` to `x=1`.)
     if (c.endIndex > n.startIndex || (c.type === 'variable_assignment' && (c.parent?.type === 'command' || c.parent?.type === 'declaration_command'))) continue;
-    if (ancestor(c, (x) => ['command_substitution', 'process_substitution', 'subshell', 'function_definition'].includes(x.type))) continue;
+    if (ancestor(c, (x) => x.type === 'function_definition') || model.env(c).links.some((l) => !here.includes(l))) continue;
     if (!prev || c.endIndex >= prev.endIndex) prev = c;
   }
   return !!prev && (prev.type === 'variable_assignment' || (prev.type === 'command' && !field(prev, 'name')?.text));
 }
 
 /** The value of `$_` where `n` is: empty after a command that is only an assignment; undefined otherwise. */
-export function underscoreValue(n: SyntaxNode): string | undefined {
-  return afterAssignment(n) ? '' : undefined;
+export function underscoreValue(n: SyntaxNode, model: StateModel): string | undefined {
+  return afterAssignment(n, model) ? '' : undefined;
 }
 
 const ASSIGNED = /([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*)/g;
