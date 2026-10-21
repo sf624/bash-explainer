@@ -581,6 +581,34 @@ body.resizing iframe {
   display: none;
 }
 
+/* The read-mode switch is for touch screens (no soft keyboard elsewhere); the keyboard is crossed out while it is on. */
+.touch-only {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-only {
+    display: inline-flex;
+  }
+}
+
+#readmode {
+  position: relative;
+}
+
+#readmode .slash {
+  position: absolute;
+  display: none;
+}
+
+#readmode[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+#readmode[aria-pressed="true"] .slash {
+  display: block;
+}
+
 /* ---- Sizes ------------------------------------------------------------------------------------ */
 
 /* No room for the tagline, then for the button to install. */

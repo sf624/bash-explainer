@@ -47,6 +47,7 @@ const TEXT = {
     lang: 'Language',
     sample: 'Load the sample',
     share: 'Copy a link to this script',
+    readMode: 'Read mode: tapping the script does not open the keyboard',
     shared: 'Link copied. The script is in the part after #, which browsers do not send to the server.',
     copied: 'Copied the explanation as Markdown.',
     problems: 'Problems',
@@ -88,6 +89,7 @@ const TEXT = {
     lang: '言語',
     sample: 'サンプルを読み込む',
     share: 'このスクリプトへのリンクをコピー',
+    readMode: '閲覧モード: スクリプトをタップしてもキーボードを出さない',
     shared: 'リンクをコピーしました。スクリプトは # より後ろに入っていて、ブラウザはこの部分をサーバーに送りません。',
     copied: '解説を Markdown でコピーしました。',
     problems: '問題',
@@ -224,6 +226,16 @@ const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
   dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
 const languageMode = new Compartment();
+/** Read mode (for touch screens): the editor says it takes no text input, so a tap places the cursor without the soft keyboard. */
+const inputMode = new Compartment();
+const READ_KEY = 'bash-explainer-read-mode';
+let readMode = false;
+try {
+  readMode = localStorage.getItem(READ_KEY) === '1';
+} catch {
+  // Without storage the mode lasts until the page is closed.
+}
+const inputModeFor = (on: boolean) => EditorView.contentAttributes.of(on ? { inputmode: 'none' } : {});
 const modeFor = (k: Kind) => (MODES[k] ? StreamLanguage.define(MODES[k]!) : []);
 
 /** The part of the line the pointer is on in the panel. */
@@ -403,7 +415,7 @@ const view = new EditorView({
     extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      languageMode.of(modeFor(kind)), syntaxHighlighting(highlightStyle), editorTheme,
+      languageMode.of(modeFor(kind)), inputMode.of(inputModeFor(readMode)), syntaxHighlighting(highlightStyle), editorTheme,
       highlightField, Prec.highest(shading), ...(panelOnly ? [] : [problems, lintGutter()]),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) {
@@ -693,7 +705,7 @@ function applyLanguage(): void {
   put('settings-label', t.settings);
   put('drawer-title', t.menu);
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
-  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize]]) {
+  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize]]) {
     const el = document.getElementById(id);
     el?.setAttribute('aria-label', name);
     if (id !== 'splitter') el?.setAttribute('title', name);
@@ -810,6 +822,21 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   defaults: () => mergeSettings(),
   canSave: () => canSave,
   codes: () => codesSeen,
+});
+function showReadMode(): void {
+  // The compare page has no such button.
+  document.getElementById('readmode')?.setAttribute('aria-pressed', String(readMode));
+}
+showReadMode();
+on('readmode', 'click', () => {
+  readMode = !readMode;
+  view.dispatch({ effects: inputMode.reconfigure(inputModeFor(readMode)) });
+  showReadMode();
+  try {
+    localStorage.setItem(READ_KEY, readMode ? '1' : '0');
+  } catch {
+    // Not kept.
+  }
 });
 on('settings-open', 'click', () => settingsDialog?.show());
 if (dialogElement) setUpSheet(dialogElement);
