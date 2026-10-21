@@ -849,7 +849,7 @@ describe('a subcommand', () => {
     assert.strictEqual((t.explanation.match(/シェルから見れば/g) ?? []).length, 1);
   });
   it('is not made for an argument that is not in the dictionary', () => {
-    assert.deepStrictEqual(all(explain('git remote add origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
+    assert.deepStrictEqual(all(explain('git remote frobnicate origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
   });
 });
 
