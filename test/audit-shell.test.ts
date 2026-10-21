@@ -12,8 +12,11 @@ const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)])
 function explain(src: string, line = 0, lang: 'ja' | 'en' = 'en') {
   return new Analyzer(lang).explainLine(parser.parse(src), line);
 }
+/** The innermost token whose label, or the source text it covers, is `label` (a construct is labelled with its skeleton). */
 function find(src: string, label: string, lang: 'ja' | 'en' = 'en', line = 0): Token {
-  const t = all(explain(src, line, lang).items).filter((x) => x.label === label).pop();
+  const lines = src.split('\n');
+  const text = (x: Token) => x.span.start.line === x.span.end.line ? lines[x.span.start.line].slice(x.span.start.character, x.span.end.character) : undefined;
+  const t = all(explain(src, line, lang).items).filter((x) => x.label === label || text(x) === label).pop();
   assert.ok(t, `no token ${label} in ${src}`);
   return t;
 }
