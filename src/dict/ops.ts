@@ -1,4 +1,4 @@
-import { cmd, COMMAND_TEXT, CommandDoc, native, operand, OptSpec, pos, runs } from './types';
+import { cmd, COMMAND_TEXT, CommandDoc, native, operand, OptSpec, persistent, pos, runs } from './types';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -9,44 +9,48 @@ const device = pos('デバイス（`/dev/sda1`…）', 'device (`/dev/sda1`…)'
 
 // ---- Kubernetes ---------------------------------------------------------------------------------
 
-/** Options most kubectl subcommands take. */
-const kube: OptSpec[] = [
+/** Options of kubectl, which its subcommands take too (a subcommand's own option of the same name wins: `logs -c`). */
+const kube: OptSpec[] = persistent([
   ['-n|--namespace', '対象の名前空間', 'namespace', 'arg'],
   ['-A|--all-namespaces', 'すべての名前空間', 'all namespaces'],
   ['--context', '使う kubeconfig のコンテキスト（クラスター）', 'kubeconfig context (cluster) to use', 'arg'],
   ['--kubeconfig', '使う kubeconfig のファイル', 'kubeconfig file to use', 'arg'],
   ['-o|--output', '出力形式（`yaml`、`json`、`wide`、`name`、`jsonpath=…`）', 'output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'arg'],
   ['-l|--selector', 'ラベルで絞る（`app=web`）', 'filter by label (`app=web`)', 'arg'],
-  ['-f|--filename', 'マニフェストのファイルやディレクトリ（`-` で標準入力）', 'manifest file or directory (`-`: stdin)', 'arg'],
-  ['-k|--kustomize', '指定した kustomization のディレクトリ', 'the given kustomization directory', 'arg'],
   ['-w|--watch', '変化を見張り続ける', 'keep watching for changes'],
   ['--dry-run', '実際には変更しない（`client`、`server`）', 'do not change anything (`client`, `server`)', 'arg'],
   ['--timeout', '待つ時間の上限（`60s`）', 'how long to wait (`60s`)', 'arg'],
+]);
+
+/** The manifests to act on: options of the subcommands that take resources (not `logs`, where `-f` follows). */
+const kubeFiles: OptSpec[] = [
+  ['-f|--filename', 'マニフェストのファイルやディレクトリ（`-` で標準入力）', 'manifest file or directory (`-`: stdin)', 'arg'],
+  ['-k|--kustomize', '指定した kustomization のディレクトリ', 'the given kustomization directory', 'arg'],
 ];
 
 const resource = pos('リソースの種類と名前（`pod/web`、`deployment web`…）', 'resource type and name (`pod/web`, `deployment web`…)');
 
-const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a Kubernetes cluster', kube, {
+const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a Kubernetes cluster', [...kube, ...kubeFiles], {
   subcommands: {
-    get: cmd('リソースを一覧表示する', 'List resources', kube, { positional: [resource] }),
-    describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', kube, { positional: [resource] }),
-    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kube, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
-    create: cmd('リソースを作る', 'Create resources', kube, { positional: [resource] }),
-    delete: cmd('リソースを削除する', 'Delete resources', [...kube, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
-    logs: cmd('Pod のログを表示する', "Print a pod's logs", [...kube.filter(([n]) => !/^-[fk]\b/.test(n)), ['-f|--follow', 'ログを流し続ける', 'stream the logs'], ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
-    exec: native('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kube, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    run: native('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kube, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    debug: native('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kube, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kube, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
-    rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kube),
-    wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kube, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
+    get: cmd('リソースを一覧表示する', 'List resources', kubeFiles, { positional: [resource] }),
+    describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', kubeFiles, { positional: [resource] }),
+    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kubeFiles, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
+    create: cmd('リソースを作る', 'Create resources', kubeFiles, { positional: [resource] }),
+    delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
+    logs: cmd('Pod のログを表示する', "Print a pod's logs", [['-f|--follow', 'ログを流し続ける', 'stream the logs'], ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
+    exec: native('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kubeFiles, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    run: native('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    debug: native('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kubeFiles, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kubeFiles, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
+    rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kubeFiles),
+    wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kubeFiles, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
     config: cmd('kubeconfig を操作する（`use-context`、`current-context`…）', 'Manage kubeconfig (`use-context`, `current-context`…)'),
-    'cluster-info': cmd('クラスターの情報を表示する', 'Show cluster information', kube),
-    scale: cmd('レプリカ数を変える', 'Change the number of replicas', [...kube, ['--replicas', 'レプリカ数', 'number of replicas', 'arg']], { positional: [resource] }),
-    patch: cmd('リソースの一部を書き換える', 'Change part of a resource', [...kube, ['-p|--patch', '書き換える内容（JSON か YAML）', 'the patch (JSON or YAML)', 'arg'], ['--type', '書き換え方（`merge`、`json`、`strategic`）', 'patch type (`merge`, `json`, `strategic`)', 'arg']], { positional: [resource] }),
-    label: cmd('ラベルを付ける', 'Set labels', kube, { positional: [resource] }),
-    annotate: cmd('注釈を付ける', 'Set annotations', kube, { positional: [resource] }),
-    version: cmd('クライアントとサーバーの版を表示する', 'Show client and server versions', kube),
+    'cluster-info': cmd('クラスターの情報を表示する', 'Show cluster information', kubeFiles),
+    scale: cmd('レプリカ数を変える', 'Change the number of replicas', [...kubeFiles, ['--replicas', 'レプリカ数', 'number of replicas', 'arg']], { positional: [resource] }),
+    patch: cmd('リソースの一部を書き換える', 'Change part of a resource', [...kubeFiles, ['-p|--patch', '書き換える内容（JSON か YAML）', 'the patch (JSON or YAML)', 'arg'], ['--type', '書き換え方（`merge`、`json`、`strategic`）', 'patch type (`merge`, `json`, `strategic`)', 'arg']], { positional: [resource] }),
+    label: cmd('ラベルを付ける', 'Set labels', kubeFiles, { positional: [resource] }),
+    annotate: cmd('注釈を付ける', 'Set annotations', kubeFiles, { positional: [resource] }),
+    version: cmd('クライアントとサーバーの版を表示する', 'Show client and server versions', kubeFiles),
   },
 });
 
@@ -78,7 +82,7 @@ const tfCommon: OptSpec[] = [
   ['-raw', '値だけを出力する（`output`）', 'print the raw value (`output`)'],
   ['-json', 'JSON で出力', 'JSON output'],
 ];
-const tf = (ja: string, en: string): CommandDoc => cmd(ja, en, tfCommon, { longSingleDash: true });
+const tf = (ja: string, en: string): CommandDoc => cmd(ja, en, [], { longSingleDash: true });
 
 const awsCommon: OptSpec[] = [
   ['--region', 'リージョン（`ap-northeast-1`…）', 'region (`ap-northeast-1`…)', 'arg'],
@@ -145,7 +149,7 @@ export const ops: Record<string, CommandDoc> = {
     },
   }),
   kubeadm: cmd('Kubernetes のクラスターを構築する（`init`、`join`、`reset`）', 'Set up Kubernetes clusters (`init`, `join`, `reset`)', [['--config', '設定ファイル', 'configuration file', 'arg']]),
-  terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', tfCommon, {
+  terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', persistent(tfCommon), {
     longSingleDash: true,
     subcommands: {
       init: tf('作業ディレクトリを準備する（プロバイダやモジュールを取得）', 'Prepare the working directory (download providers and modules)'),
@@ -162,35 +166,35 @@ export const ops: Record<string, CommandDoc> = {
       version: tf('版を表示する', 'Show the version'),
     },
   }),
-  aws: cmd('AWS CLI（サービスとコマンドの組み合わせで操作する: `aws s3 cp`）', 'AWS CLI (a service and a command: `aws s3 cp`)', awsCommon, {
+  aws: cmd('AWS CLI（サービスとコマンドの組み合わせで操作する: `aws s3 cp`）', 'AWS CLI (a service and a command: `aws s3 cp`)', persistent(awsCommon), {
     subcommands: {
-      s3: cmd('S3 のファイルを操作する（`cp`、`sync`、`ls`、`rm`）', 'Work with S3 files (`cp`, `sync`, `ls`, `rm`)', [...awsCommon, ['--recursive', 'ディレクトリごと', 'recursively'], ['--delete', '転送元にないものを削除する（`sync`）', 'delete files missing from the source (`sync`)'], ['--exclude', '除外するパターン', 'exclude pattern', 'arg'], ['--include', '含めるパターン', 'include pattern', 'arg']]),
-      sts: cmd('認証情報を扱う（`get-caller-identity` で今の身元）', 'Security tokens (`get-caller-identity`: who am I)', awsCommon),
-      ec2: cmd('EC2（仮想マシン、ネットワーク）を操作する', 'Work with EC2 (virtual machines, networks)', awsCommon),
-      ecr: cmd('ECR（コンテナのレジストリ）を操作する（`get-login-password`）', 'Work with ECR, the container registry (`get-login-password`)', awsCommon),
-      eks: cmd('EKS（Kubernetes）を操作する（`update-kubeconfig`）', 'Work with EKS, Kubernetes (`update-kubeconfig`)', [...awsCommon, ['--name', 'クラスター名', 'cluster name', 'arg']]),
-      ssm: cmd('Systems Manager（パラメータやコマンド実行）を操作する', 'Work with Systems Manager (parameters, commands)', awsCommon),
-      iam: cmd('IAM（ユーザーと権限）を操作する', 'Work with IAM (users and permissions)', awsCommon),
-      configure: cmd('認証情報と既定の設定を登録・表示する', 'Set or show credentials and defaults', awsCommon),
-      cloudformation: cmd('CloudFormation のスタックを操作する', 'Work with CloudFormation stacks', awsCommon),
-      lambda: cmd('Lambda の関数を操作する', 'Work with Lambda functions', awsCommon),
-      logs: cmd('CloudWatch Logs を操作する（`tail`）', 'Work with CloudWatch Logs (`tail`)', awsCommon),
+      s3: cmd('S3 のファイルを操作する（`cp`、`sync`、`ls`、`rm`）', 'Work with S3 files (`cp`, `sync`, `ls`, `rm`)', [['--recursive', 'ディレクトリごと', 'recursively'], ['--delete', '転送元にないものを削除する（`sync`）', 'delete files missing from the source (`sync`)'], ['--exclude', '除外するパターン', 'exclude pattern', 'arg'], ['--include', '含めるパターン', 'include pattern', 'arg']]),
+      sts: cmd('認証情報を扱う（`get-caller-identity` で今の身元）', 'Security tokens (`get-caller-identity`: who am I)', []),
+      ec2: cmd('EC2（仮想マシン、ネットワーク）を操作する', 'Work with EC2 (virtual machines, networks)', []),
+      ecr: cmd('ECR（コンテナのレジストリ）を操作する（`get-login-password`）', 'Work with ECR, the container registry (`get-login-password`)', []),
+      eks: cmd('EKS（Kubernetes）を操作する（`update-kubeconfig`）', 'Work with EKS, Kubernetes (`update-kubeconfig`)', [['--name', 'クラスター名', 'cluster name', 'arg']]),
+      ssm: cmd('Systems Manager（パラメータやコマンド実行）を操作する', 'Work with Systems Manager (parameters, commands)', []),
+      iam: cmd('IAM（ユーザーと権限）を操作する', 'Work with IAM (users and permissions)', []),
+      configure: cmd('認証情報と既定の設定を登録・表示する', 'Set or show credentials and defaults', []),
+      cloudformation: cmd('CloudFormation のスタックを操作する', 'Work with CloudFormation stacks', []),
+      lambda: cmd('Lambda の関数を操作する', 'Work with Lambda functions', []),
+      logs: cmd('CloudWatch Logs を操作する（`tail`）', 'Work with CloudWatch Logs (`tail`)', []),
     },
   }),
-  gcloud: cmd('Google Cloud CLI（`gcloud グループ コマンド`）', 'Google Cloud CLI (`gcloud group command`)', gcloudCommon, {
+  gcloud: cmd('Google Cloud CLI（`gcloud グループ コマンド`）', 'Google Cloud CLI (`gcloud group command`)', persistent(gcloudCommon), {
     subcommands: {
-      auth: cmd('認証する（`login`、`activate-service-account`、`configure-docker`）', 'Authenticate (`login`, `activate-service-account`, `configure-docker`)', gcloudCommon),
-      config: cmd('設定を表示・変更する（`set project`…）', 'Show or change settings (`set project`…)', gcloudCommon),
-      container: cmd('GKE（Kubernetes）を操作する（`clusters get-credentials`…）', 'Work with GKE, Kubernetes (`clusters get-credentials`…)', gcloudCommon),
-      compute: cmd('Compute Engine（仮想マシン、ネットワーク）を操作する', 'Work with Compute Engine (virtual machines, networks)', gcloudCommon),
-      run: cmd('Cloud Run を操作する（`deploy`）', 'Work with Cloud Run (`deploy`)', gcloudCommon),
-      storage: cmd('Cloud Storage のファイルを操作する（`cp`、`ls`、`rm`）', 'Work with Cloud Storage files (`cp`, `ls`, `rm`)', gcloudCommon),
-      artifacts: cmd('Artifact Registry を操作する', 'Work with Artifact Registry', gcloudCommon),
-      builds: cmd('Cloud Build を操作する（`submit`）', 'Work with Cloud Build (`submit`)', gcloudCommon),
-      iam: cmd('IAM（権限）を操作する', 'Work with IAM (permissions)', gcloudCommon),
-      projects: cmd('プロジェクトを操作する', 'Work with projects', gcloudCommon),
-      dns: cmd('Cloud DNS を操作する', 'Work with Cloud DNS', gcloudCommon),
-      secrets: cmd('Secret Manager を操作する', 'Work with Secret Manager', gcloudCommon),
+      auth: cmd('認証する（`login`、`activate-service-account`、`configure-docker`）', 'Authenticate (`login`, `activate-service-account`, `configure-docker`)', []),
+      config: cmd('設定を表示・変更する（`set project`…）', 'Show or change settings (`set project`…)', []),
+      container: cmd('GKE（Kubernetes）を操作する（`clusters get-credentials`…）', 'Work with GKE, Kubernetes (`clusters get-credentials`…)', []),
+      compute: cmd('Compute Engine（仮想マシン、ネットワーク）を操作する', 'Work with Compute Engine (virtual machines, networks)', []),
+      run: cmd('Cloud Run を操作する（`deploy`）', 'Work with Cloud Run (`deploy`)', []),
+      storage: cmd('Cloud Storage のファイルを操作する（`cp`、`ls`、`rm`）', 'Work with Cloud Storage files (`cp`, `ls`, `rm`)', []),
+      artifacts: cmd('Artifact Registry を操作する', 'Work with Artifact Registry', []),
+      builds: cmd('Cloud Build を操作する（`submit`）', 'Work with Cloud Build (`submit`)', []),
+      iam: cmd('IAM（権限）を操作する', 'Work with IAM (permissions)', []),
+      projects: cmd('プロジェクトを操作する', 'Work with projects', []),
+      dns: cmd('Cloud DNS を操作する', 'Work with Cloud DNS', []),
+      secrets: cmd('Secret Manager を操作する', 'Work with Secret Manager', []),
     },
   }),
   gsutil: cmd('Cloud Storage を操作する（古い CLI。今は `gcloud storage`）', 'Work with Cloud Storage (older CLI; today `gcloud storage`)', [['-m', '並列に処理する', 'run in parallel'], ['-q', '表示を減らす', 'quiet']], {

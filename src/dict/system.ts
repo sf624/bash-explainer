@@ -1,5 +1,5 @@
 import { tx } from '../i18n';
-import { args, cmd, CommandDoc, native, operand, OptSpec, pos } from './types';
+import { args, cmd, CommandDoc, native, operand, OptSpec, persistent, pos } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -198,14 +198,14 @@ export const system: Record<string, CommandDoc> = {
     ['-q|--query', '指定した変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only the given variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
     ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use the given Debian host architecture', 'arg'],
   ]),
-  apk: cmd('Alpine Linux のパッケージ管理', 'Alpine Linux package manager', apkCommon, {
+  apk: cmd('Alpine Linux のパッケージ管理', 'Alpine Linux package manager', persistent(apkCommon), {
     subcommands: {
-      add: cmd('パッケージをインストールする', 'Install packages', apkCommon, { positional: [pos('パッケージ名（`名前=版` で版を指定）', 'package name (`name=version` pins a version)')] }),
-      del: cmd('パッケージ（または `--virtual` の名前）を削除する', 'Remove packages (or a `--virtual` name)', apkCommon, { positional: [pkg] }),
-      update: cmd('パッケージの一覧を取り直す', 'Refresh the package index', apkCommon),
-      upgrade: cmd('入っているパッケージを更新する', 'Upgrade installed packages', apkCommon),
-      info: cmd('パッケージの情報を表示する', 'Show package information', apkCommon, { positional: [pkg] }),
-      search: cmd('パッケージを検索する', 'Search for packages', apkCommon, { positional: [pos('検索語', 'search term')] }),
+      add: cmd('パッケージをインストールする', 'Install packages', [], { positional: [pos('パッケージ名（`名前=版` で版を指定）', 'package name (`name=version` pins a version)')] }),
+      del: cmd('パッケージ（または `--virtual` の名前）を削除する', 'Remove packages (or a `--virtual` name)', [], { positional: [pkg] }),
+      update: cmd('パッケージの一覧を取り直す', 'Refresh the package index', []),
+      upgrade: cmd('入っているパッケージを更新する', 'Upgrade installed packages', []),
+      info: cmd('パッケージの情報を表示する', 'Show package information', [], { positional: [pkg] }),
+      search: cmd('パッケージを検索する', 'Search for packages', [], { positional: [pos('検索語', 'search term')] }),
     },
   }),
   dnf: cmd('Fedora / RHEL のパッケージ管理', 'Fedora/RHEL package manager', rpmCommon, { subcommands: rpmSubs() }),
@@ -422,10 +422,10 @@ export const system: Record<string, CommandDoc> = {
     ['-n', '名前を付けず値だけ', 'values only, no names'], ['-w', '値を書き込む（`名前=値`）', 'write a value (`name=value`)'],
     ['-a', 'すべて表示する', 'show all'], ['-p', '設定ファイル（既定は `/etc/sysctl.conf`）から読み込む', 'load from a file (default `/etc/sysctl.conf`)'],
   ], { positional: [pos('パラメータ名（`hw.memsize`、`net.ipv4.ip_forward`…）', 'parameter name (`hw.memsize`, `net.ipv4.ip_forward`…)')] }),
-  systemctl: cmd('systemd のサービスを操作する', 'Control systemd services', [
+  systemctl: cmd('systemd のサービスを操作する', 'Control systemd services', persistent([
     ['--user', '自分のユーザーのサービスを操作する', "control the user's own services"], ['-q|--quiet', '表示を減らす（`is-active` を条件判定に使うとき）', 'less output (when `is-active` is used as a test)'],
     ['--now', '`enable` と同時に起動（`disable` なら停止）', 'also start with `enable` (stop with `disable`)'], ['--no-pager', 'ページャを使わない', 'do not use a pager'],
-  ], {
+  ]), {
     subcommands: {
       start: cmd('サービスを起動する', 'Start a service', [], { positional: [pos('サービス名', 'service name')] }),
       stop: cmd('サービスを停止する', 'Stop a service', [], { positional: [pos('サービス名', 'service name')] }),

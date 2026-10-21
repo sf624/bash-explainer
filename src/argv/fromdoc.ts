@@ -6,11 +6,11 @@ import { Text, tx } from '../i18n';
 import type { CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from './spec';
 
 /** Commands that read `-N` as `-n N` (`head -5`). */
-const COUNT_COMMANDS = new Set(['head', 'tail', 'git log', 'git show']);
+const COUNT_COMMANDS = new Set(['head', 'tail']);
 
 const names = (list: string): string[] => list.split('|');
 
-/** The spec of a dictionary entry; `name` is the command's name (`git log` for a subcommand), which some rules depend on. */
+/** The spec of a dictionary entry; `name` is the command's name, which some rules depend on (none applies to a subcommand). */
 export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   const spec: CommandSpec = { summary: doc.summary };
   const options = convertOptions(doc.options ?? {});
@@ -27,7 +27,7 @@ export function fromCommandDoc(doc: CommandDoc, name = ''): CommandSpec {
   spec.operands = operandAlts(doc, name);
   if (doc.subcommands) {
     // (A subcommand written as a spec is used as it is.)
-    spec.subcommands = Object.fromEntries(Object.entries(doc.subcommands).map(([sub, d]) => [sub, d.spec ?? fromCommandDoc(d, `${name} ${sub}`)]));
+    spec.subcommands = Object.fromEntries(Object.entries(doc.subcommands).map(([sub, d]) => [sub, d.spec ?? fromCommandDoc(d)]));
   }
   return spec;
 }
@@ -40,7 +40,7 @@ function convertOptions(opts: Record<string, OptDoc>): OptionSpec[] {
 }
 
 function convertOption(ns: string[], o: OptDoc): OptionSpec {
-  const opt: OptionSpec = { names: ns, text: o.text };
+  const opt: OptionSpec = { names: ns, text: o.text, ...(o.persistent ? { persistent: true } : {}) };
   const extra: Partial<ValueSpec> = { ...(o.lang ? { lang: o.lang } : {}), ...(o.values ? { values: o.values } : {}) };
   if (o.untilTerminator) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
   else if (o.arg) {
@@ -58,14 +58,11 @@ function convertOption(ns: string[], o: OptDoc): OptionSpec {
 /** The options recognized by their form, which the analyzer knows by the command's name. */
 function patternOptions(name: string): PatternOption[] {
   const out: PatternOption[] = [];
-  const base = name.split(' ')[0];
   if (COUNT_COMMANDS.has(name)) {
     out.push({
       pattern: /^-(\d+)$/,
-      text: ([, n]) => (base === 'git' ? tx(`${n} 件だけ（\`-n ${n}\` と同じ）`, `only ${n} (same as \`-n ${n}\`)`)
-        : tx(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`)),
-      open: base === 'git' ? tx('展開した数の件数だけ（`-n 数` と同じ）', 'only as many as the expansion gives (same as `-n N`)')
-        : tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
+      text: ([, n]) => tx(`${n} 行（\`-n ${n}\` の古い書き方）`, `${n} line${n === '1' ? '' : 's'} (old way to write \`-n ${n}\`)`),
+      open: tx('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
     });
   }
   return out;
