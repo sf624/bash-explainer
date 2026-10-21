@@ -149,10 +149,19 @@ describe('ip agrees with the real ip', () => {
     ['ip -fam inet a s lo', 'ip -family inet address show lo'],
     ['ip - 3 a s lo', 'ip -loops 3 address show lo'],
   ];
+  // The counters of `ip -s` move while the test runs (any traffic on lo), so the two runs of a statistics row
+  // compare the counter lines with their digits and spacing masked. The rest of the output is compared as it is.
+  const maskCounters = (text: string): string => text
+    .split('\n')
+    .map((l, i, all) => (i > 0 && /^\s*(RX|TX):/.test(all[i - 1]) ? l.replace(/\d+/g, '#').replace(/\s+/g, ' ') : l))
+    .join('\n');
   for (const [line, full] of PREFIXES) {
     ip(`${line}: reads as ${full}`, () => {
-      const r = run(line);
-      assert.strictEqual(r.out + r.err, run(full).out + run(full).err, line);
+      const output = (l: string) => {
+        const r = run(l);
+        return /(^| )--?stat/.test(l) ? maskCounters(r.out + r.err) : r.out + r.err;
+      };
+      assert.strictEqual(output(line), output(full), line);
       // The same subcommands and options, by name.
       const names = (l: string) => roles(l).map((x) => (x.role.role === 'subcommand' ? x.role.name : x.role.role === 'option' ? x.role.spec.names.at(-1) : x.word));
       const ours = names(line);
