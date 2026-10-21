@@ -939,7 +939,7 @@ export class Analyzer {
         'Send stdout to stderr (the usual way to print an error message)');
     }
     const children = dests.filter((d) => !isPlainWord(d)).flatMap((d) => this.sub(d));
-    if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression')) expl += this.redirectTargetNote(dests[0]);
+    if (dests.length === 1 && (isPlainWord(dests[0]) || dests[0].type === 'brace_expression') && /[*?[{]/.test(dests[0].text)) expl += this.redirectTargetNote(dests[0]);
     return this.tok(n, 'redirect', expl, children);
   }
 
@@ -3398,7 +3398,12 @@ export class Analyzer {
    * mode (`echo x=~/y`). Not in `--o=~` or a quoted `"~"`.
    */
   private tilde(n: SyntaxNode): Token | undefined {
-    const tildes = (this.wordAt(n)?.tildes ?? []).filter((t) => t.node === n && this.tildeTarget(t.user));
+    // (Most words have no tilde: they need not ask the model.)
+    if (!n.text.includes('~')) return undefined;
+    const w = this.wordAt(n);
+    /* c8 ignore next -- a guard: the plain words explained here are all in a word's place (an argument, a value, a pattern…). */
+    if (!w) return undefined;
+    const tildes = w.tildes.filter((t) => t.node === n && this.tildeTarget(t.user));
     if (!tildes.length) return undefined;
     const [first] = tildes;
     if (tildes.length === 1 && first.start === 0) {

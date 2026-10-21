@@ -151,7 +151,9 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
     case 'herestring_redirect': return 'herestring';
     case 'heredoc_redirect': return w.type === 'heredoc_body' ? 'heredoc-body' : undefined;
     case 'subscript': return w.field === 'index' ? 'subscript' : undefined;
-    case 'expansion': return w.type === 'regex' ? 'param-pattern' : w.type === 'variable_name' || w.type === 'subscript' ? undefined : 'param-word';
+    // (The offset and length of `${x:o:l}` are arithmetic.)
+    case 'expansion': return w.type === 'regex' ? 'param-pattern' : w.type === 'variable_name' || w.type === 'subscript' ? undefined
+      : parseExpansion(p.text)?.op === ':' ? 'arith' : 'param-word';
     case 'extended_test': return 'cond-operand';
   }
   if (!EXPRESSIONS.has(p.type)) return undefined;
