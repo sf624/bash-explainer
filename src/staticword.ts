@@ -91,19 +91,77 @@ export function decodedText(n: SyntaxNode): string {
   return levels.reduce((text, inDouble) => text.replace(inDouble ? /\\([$`\\"])/g : /\\([$`\\])/g, '$1'), n.text);
 }
 
+/** A tilde prefix bash expands: `parts[part].text.slice(start, end)` (`~`, `~+`, `~user`), at the start or after `=` or `:`. */
+export interface TildeSpot { part: number; start: number; end: number; user: string; after: '' | '=' | ':' }
+
+/** Whether the character at `i` is escaped by a backslash. */
+function escaped(text: string, i: number): boolean {
+  let k = 0;
+  while (i - k - 1 >= 0 && text[i - k - 1] === '\\') k++;
+  return k % 2 === 1;
+}
+
+/**
+ * The tilde prefixes bash expands in a word, given as its parts (`plain`: unquoted text of the source, as a `word`
+ * node). `start`: at the start of the word; `assignment`: also after each unquoted `:` (manual 3.4); `argument`: in a
+ * word that looks like an assignment (`x=~/a:~/b`, `a[1]=~`, `n+=~`), also after the `=` and after each unquoted `:`
+ * (bash mode). A prefix runs to the first `/` (or `:`, after `=` and `:` and in an assignment) and must be all unquoted
+ * text: `~"x"`, `~$u`, `x="a:"~/b` and `x=a:"~/b"` have none.
+ */
+export function tildeSpots(parts: readonly { text: string; plain: boolean }[], mode: 'start' | 'assignment' | 'argument'): TildeSpot[] {
+  const out: TildeSpot[] = [];
+  const at = (p: number, i: number, after: TildeSpot['after'], colon: boolean): void => {
+    const text = parts[p].text;
+    const m = (colon ? /^~([^/:]*)/ : /^~([^/]*)/).exec(text.slice(i))!;
+    const end = i + m[0].length;
+    if ((end === text.length && p < parts.length - 1) || /[\\'"$`]/.test(m[1])) return;
+    out.push({ part: p, start: i, end, user: m[1], after });
+  };
+  const first = parts[0];
+  const plain = !!first?.plain;
+  let from: number | undefined;
+  if (mode === 'assignment') {
+    if (plain && first.text[0] === '~') at(0, 0, '', true);
+    from = 0;
+  } else if (plain) {
+    if (first.text[0] === '~') at(0, 0, '', false);
+    const m = mode === 'argument' ? /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/.exec(first.text) : null;
+    if (m) {
+      if (first.text[m[0].length] === '~') at(0, m[0].length, '=', true);
+      from = m[0].length;
+    }
+  }
+  if (from === undefined) return out;
+  parts.forEach((part, p) => {
+    if (!part.plain) return;
+    for (let i = part.text.indexOf(':', p === 0 ? from : 0); i >= 0; i = part.text.indexOf(':', i + 1)) {
+      if (part.text[i + 1] === '~' && !escaped(part.text, i)) at(p, i + 1, ':', true);
+    }
+  });
+  return out;
+}
+
+/** The parts of a word node, for `tildeSpots`. */
+export const tildeParts = (nodes: readonly SyntaxNode[]): { node: SyntaxNode; text: string; plain: boolean }[] =>
+  nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n])).map((n) => ({ node: n, text: n.text, plain: n.type === 'word' }));
+
 /**
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
- * depends on a variable, a command, a glob or a brace expansion. `assignment`: the word is the value of an
- * assignment, where globs and braces are plain text.
+ * depends on a variable, a command, a glob, a brace expansion or a tilde. `assignment`: the word is the value of an
+ * assignment, where globs and braces are plain text and a tilde also expands after a `:`.
  */
 export function staticWordValue(n: SyntaxNode, assignment = false): string | undefined {
+  if (tildeSpots(tildeParts([n]), assignment ? 'assignment' : 'start').length) return undefined;
+  return literalValue(n, assignment);
+}
+
+function literalValue(n: SyntaxNode, assignment: boolean): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
     case 'word': case 'number': {
-      // An unescaped glob, brace or tilde is not text yet. In the value of an assignment, globs and braces are text,
-      // and a tilde is expanded after a `:` too (manual 3.4).
-      if (assignment ? /(^|:)~/.test(text) : /(^|[^\\])(\\\\)*[*?[{]/.test(text) || /^~/.test(text)) return undefined;
+      // An unescaped glob or brace is not text yet; in the value of an assignment, they are text.
+      if (!assignment && /(^|[^\\])(\\\\)*[*?[{]/.test(text)) return undefined;
       return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
     }
     case 'raw_string': return text.slice(1, -1);
@@ -115,7 +173,7 @@ export function staticWordValue(n: SyntaxNode, assignment = false): string | und
     case 'concatenation': {
       let out = '';
       for (const c of n.namedChildren) {
-        const v = staticWordValue(c, assignment);
+        const v = literalValue(c, assignment);
         if (v === undefined) return undefined;
         out += v;
       }

@@ -10,7 +10,7 @@
 import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedText, staticWordValue } from '../staticword';
+import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 
@@ -20,7 +20,8 @@ export type WordContext =
   | 'cond-operand' | 'cond-pattern' | 'cond-regex'                    // [[ ]]
   | 'case-word' | 'case-pattern' | 'for-list'
   | 'redirect-target' | 'heredoc-body' | 'herestring'
-  | 'arith' | 'subscript'                                            // $(( )), (( )), a[i]
+  | 'arith' | 'subscript-indexed' | 'subscript-assoc'                // $(( )), (( )), a[i] (arithmetic), m[k] (a key)
+  | 'declaration-assignment'                                         // `x=1 declare y=$v`: a word of a declaration that is an assignment
   | 'param-word' | 'param-pattern';                                  // ${x:-word}, ${x#pattern}
 
 /** One row of the context table. */
@@ -28,9 +29,10 @@ export interface ContextRule {
   brace: boolean;
   /**
    * `start`: a tilde prefix at the start; `assignment`: also after each `:` (and the start is after `=`);
-   * `argument`: at the start, and in bash mode after the `=` and the `:` of a word that looks like an assignment.
+   * `argument`: at the start, and in bash mode after the `=` and the `:` of a word that looks like an assignment;
+   * `declaration`: as `argument`, in POSIX mode too (a declaration's assignment).
    */
-  tilde: 'none' | 'start' | 'assignment' | 'argument';
+  tilde: 'none' | 'start' | 'assignment' | 'argument' | 'declaration';
   /** Word splitting and pathname expansion of the unquoted parts (`inherit`: as the expansion around it). */
   split: boolean | 'inherit';
   glob: boolean | 'inherit';
@@ -57,16 +59,18 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
   // A declaration builtin's word that looks like an assignment is one (the parser gives it as such); the others are arguments.
   'declaration-argument': { ...ARGUMENT, manual: '4.2' },
   'assignment-value': { ...ONE, tilde: 'assignment', manual: '3.4' },
-  'cond-operand': { ...ONE, tilde: 'start', manual: '3.2.5.2' },
-  'cond-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.2.5.2' },
-  'cond-regex': { ...ONE, tilde: 'start', match: 'regex', manual: '3.2.5.2' },
-  'case-word': { ...ONE, tilde: 'start', manual: '3.2.5.2' },
-  'case-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.2.5.2' },
-  'redirect-target': { brace: true, tilde: 'start', split: true, glob: true, fields: 'one-or-error', posixLiteral: true, manual: '3.6' },
+  'cond-operand': { ...ONE, tilde: 'argument', manual: '3.2.5.2' },
+  'cond-pattern': { ...ONE, tilde: 'argument', match: 'pattern', manual: '3.2.5.2' },
+  'cond-regex': { ...ONE, tilde: 'argument', match: 'regex', manual: '3.2.5.2' },
+  'case-word': { ...ONE, tilde: 'argument', manual: '3.2.5.2' },
+  'case-pattern': { ...ONE, tilde: 'argument', match: 'pattern', manual: '3.2.5.2' },
+  'redirect-target': { brace: true, tilde: 'argument', split: true, glob: true, fields: 'one-or-error', posixLiteral: true, manual: '3.6' },
   herestring: { ...ONE, tilde: 'start', manual: '3.6.7' },
   'heredoc-body': { ...ONE, tilde: 'none', manual: '3.6.6' },
   arith: { ...ONE, tilde: 'none', manual: '6.5' },
-  subscript: { ...ONE, tilde: 'none', manual: '6.7' },
+  'subscript-indexed': { ...ONE, tilde: 'none', manual: '6.7' },
+  'subscript-assoc': { ...ONE, tilde: 'none', manual: '6.7' },
+  'declaration-assignment': { ...ONE, tilde: 'declaration', manual: '4.2' },
   'param-word': { brace: false, tilde: 'start', split: 'inherit', glob: 'inherit', fields: 'many', manual: '3.5.3' },
   'param-pattern': { ...ONE, tilde: 'start', match: 'pattern', manual: '3.5.3' },
 };
@@ -80,9 +84,22 @@ export interface ExpansionStep {
   kind: StepKind;
   applies: Applies;
   why?: StepWhy;
+  /** The section of the Bash manual (6.11 when POSIX mode is why). */
+  manual: string;
   /** Where it acts in the word (for split and glob: the unquoted expansions, and the words with glob characters). */
   parts: readonly SyntaxNode[];
 }
+
+/** The section of the Bash manual of each step. */
+export const STEP_MANUAL: Readonly<Record<StepKind, string>> = {
+  brace: '3.5.1', tilde: '3.5.2', parameter: '3.5.3', command: '3.5.4', arithmetic: '3.5.5', process: '3.5.6', split: '3.5.7', glob: '3.5.8', 'quote-removal': '3.5.9',
+};
+
+/**
+ * How bash may fail on a word: `fatal` ends a non-interactive shell (`set -u`, `${x:?}`, failglob), `command` fails the
+ * command only (an ambiguous redirection). `applies`: it does, or may (the value is not known here).
+ */
+export interface WordFailure { kind: 'fatal' | 'command'; applies: true | 'unknown' }
 
 /** A tilde prefix that is expanded: `node.text.slice(start, end)` is the prefix (`~`, `~+`, `~user`), after `after`. */
 export interface TildePrefix { node: SyntaxNode; start: number; end: number; user: string; after: '' | '=' | ':' }
@@ -92,7 +109,7 @@ export type IfsState = { kind: 'default' } | { kind: 'value'; value: string; at:
 
 /** The options of pathname expansion where a word is expanded (`default` read as bash's default). */
 export interface GlobState {
-  noglob: Tri; nullglob: Tri; failglob: Tri; dotglob: Tri; nocaseglob: Tri; extglob: Tri; globstar: Tri;
+  noglob: Tri; nullglob: Tri; failglob: Tri; dotglob: Tri; nocaseglob: Tri; extglob: Tri; globstar: Tri; globskipdots: Tri;
   /** GLOBIGNORE: unset (or empty), its value, or not known here. */
   globignore: { value: string } | 'unset' | 'unknown';
 }
@@ -113,6 +130,8 @@ export interface WordMeaning {
   state: ShellState;
   /** The text after quote removal, when nothing in it expands: then it is one field (or none, in a redirection, never). */
   value?: string;
+  /** How bash may fail on it, whatever the values (`set -u` with an expansion, failglob with a glob, a redirection target that may not be one word). */
+  failure?: WordFailure;
 }
 
 /** What happens to one expansion of a word (`$x` in `echo a$x`). */
@@ -132,14 +151,26 @@ const ARITH = new Set(['arithmetic_expansion', 'arithmetic_command', 'c_style_fo
 const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthesized_expression', 'ternary_expression', 'postfix_expression']);
 const PATTERN_OPS = new Set(['=', '==', '!=']);
 
+const ASSIGNMENT_WORD = /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/;
+const DECLARATIONS = new Set(['declare', 'typeset', 'local', 'export', 'readonly']);
+/**
+ * A plain command whose name is a declaration builtin after prefix assignments (`x=1 declare y=$v`, which the parser
+ * gives as a command): bash still reads its assignment words as assignments. Not behind `command`.
+ */
+function declaresHere(c: SyntaxNode): boolean {
+  return c.namedChildren.some((x) => x.type === 'variable_assignment') && DECLARATIONS.has(field(c, 'name')!.text);
+}
+
 /** The context of a word whose top node is `w` (not inside a concatenation or a string). */
 function contextOf(w: SyntaxNode): WordContext | undefined {
   const p = w.parent;
   if (!p) return undefined;
-  if (ancestor(w, (a) => ARITH.has(a.type)) && !ancestor(w, (a) => a.type === 'command_substitution' || a.type === 'expansion')) return 'arith';
+  // (The nearest of these decides: `$( (( $x )) )` is arithmetic, `$(( $(echo $x) ))` is not.)
+  if (ARITH.has(ancestor(w, (a) => ARITH.has(a.type) || a.type === 'command_substitution' || a.type === 'expansion')?.type ?? '')) return 'arith';
   switch (p.type) {
     case 'command_name': return 'command-name';
-    case 'command': return w.field === 'argument' ? 'argument' : undefined;
+    case 'command': return w.field !== 'argument' ? undefined : declaresHere(p) && ASSIGNMENT_WORD.test(w.type === 'concatenation' ? w.namedChildren[0].text : w.text) && /^(word|concatenation)$/.test(w.type)
+      && (w.type === 'word' || w.namedChildren[0].type === 'word') ? 'declaration-assignment' : 'argument';
     case 'unset_command': case 'test_command': return 'argument';
     case 'declaration_command': return 'declaration-argument';
     case 'variable_assignment': return w.field === 'value' ? 'assignment-value' : undefined;
@@ -150,7 +181,7 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
     case 'file_redirect': return w.field === 'destination' ? 'redirect-target' : undefined;
     case 'herestring_redirect': return 'herestring';
     case 'heredoc_redirect': return w.type === 'heredoc_body' ? 'heredoc-body' : undefined;
-    case 'subscript': return w.field === 'index' ? 'subscript' : undefined;
+    case 'subscript': return w.field === 'index' ? 'subscript-indexed' : undefined;
     // (The offset and length of `${x:o:l}` are arithmetic.)
     case 'expansion': return w.type === 'regex' ? 'param-pattern' : w.type === 'variable_name' || w.type === 'subscript' ? undefined
       : parseExpansion(p.text)?.op === ':' ? 'arith' : 'param-word';
@@ -201,7 +232,7 @@ function globOf(st: ShellState, posix: boolean): GlobState {
   const gi = st.variables.get('GLOBIGNORE');
   return {
     noglob: opt('set', 'noglob'), nullglob: opt('shopt', 'nullglob'), failglob: opt('shopt', 'failglob'), dotglob: opt('shopt', 'dotglob'),
-    nocaseglob: opt('shopt', 'nocaseglob'), extglob: opt('shopt', 'extglob'), globstar: opt('shopt', 'globstar'),
+    nocaseglob: opt('shopt', 'nocaseglob'), extglob: opt('shopt', 'extglob'), globstar: opt('shopt', 'globstar'), globskipdots: opt('shopt', 'globskipdots'),
     globignore: !gi || gi.set === 'off' || gi.value === '' ? 'unset' : gi.set === 'on' && gi.value !== undefined ? { value: gi.value } : 'unknown',
   };
 }
@@ -239,47 +270,12 @@ function plainWords(nodes: readonly SyntaxNode[]): SyntaxNode[] {
     .filter((n) => n.type === 'word' || n.type === 'extglob_pattern' || n.type === 'brace_expression');
 }
 
-/** The tilde prefixes of a word, as its context and the mode read them (manual 3.5.2). */
+/** The tilde prefixes of a word, as its context and the mode read them (manual 3.5.2; src/staticword.ts `tildeSpots`). */
 function tildesOf(nodes: readonly SyntaxNode[], rule: ContextRule, posix: Tri): TildePrefix[] {
   if (rule.tilde === 'none') return [];
-  const parts = nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n]));
-  const first = parts[0];
-  if (first.type !== 'word') return [];
-  const text = first.text;
-  const last = parts.length === 1;
-  const out: TildePrefix[] = [];
-  /** The prefix at `i` (a `~`), up to a `/` (or a `:` too, in an assignment): only when it is all in this word. */
-  const at = (i: number, after: TildePrefix['after'], colon: boolean): void => {
-    const m = (colon ? /^~([^/:]*)/ : /^~([^/]*)/).exec(text.slice(i))!;
-    const end = i + m[0].length;
-    if (end === text.length && !last) return;
-    if (/[\\'"$`]/.test(m[1])) return;
-    out.push({ node: first, start: i, end, user: m[1], after });
-  };
-  const colons = (from: number): void => {
-    for (let i = text.indexOf(':', from); i >= 0; i = text.indexOf(':', i + 1)) if (text[i + 1] === '~' && !escaped(text, i)) at(i + 1, ':', true);
-  };
-  if (rule.tilde === 'assignment') {
-    if (text[0] === '~') at(0, '', true);
-    colons(0);
-    return out;
-  }
-  if (text[0] === '~') at(0, '', false);
-  if (rule.tilde === 'argument' && posix !== 'on') {
-    const m = /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/.exec(text);
-    if (m) {
-      if (text[m[0].length] === '~') at(m[0].length, '=', true);
-      colons(m[0].length);
-    }
-  }
-  return out;
-}
-
-/** Whether the character at `i` is escaped by a backslash. */
-function escaped(text: string, i: number): boolean {
-  let k = 0;
-  while (i - k - 1 >= 0 && text[i - k - 1] === '\\') k++;
-  return k % 2 === 1;
+  const parts = tildeParts(nodes);
+  const mode = rule.tilde === 'declaration' ? 'argument' : rule.tilde === 'argument' ? (posix === 'on' ? 'start' : 'argument') : rule.tilde;
+  return tildeSpots(parts, mode).map((t) => ({ node: parts[t.part].node, start: t.start, end: t.end, user: t.user, after: t.after }));
 }
 
 /** Whether a word has a brace expansion bash expands (`{a,b}`, `{1..3}`). */
@@ -308,8 +304,11 @@ export function wordMeaning(n: SyntaxNode, model: StateModel): WordMeaning | und
   return meaning;
 }
 
-function build(nodes: SyntaxNode[], context: WordContext, model: StateModel): WordMeaning {
+function build(nodes: SyntaxNode[], found: WordContext, model: StateModel): WordMeaning {
   const st = model.at(nodes[0]).run;
+  // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic.
+  const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
+  const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found;
   const posix = on(option(st, 'set', 'posix'), 'set', 'posix', false);
   const rule = CONTEXTS[context];
   const glob = globOf(st, posix === 'on');
@@ -319,24 +318,40 @@ function build(nodes: SyntaxNode[], context: WordContext, model: StateModel): Wo
   const steps: ExpansionStep[] = [];
   const brace = rule.brace && hasBrace(nodes);
   const braceOpt = on(option(st, 'set', 'braceexpand'), 'set', 'braceexpand', false);
-  steps.push({ kind: 'brace', applies: brace && (braceOpt === 'unknown' ? 'unknown' : braceOpt === 'on'), ...(brace && braceOpt !== 'on' ? { why: 'braceexpand-off' as const } : !rule.brace ? { why: 'context' as const } : {}), parts: brace ? plainWords(nodes) : [] });
-  steps.push({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] });
+  steps.push(mk({ kind: 'brace', applies: brace && (braceOpt === 'unknown' ? 'unknown' : braceOpt === 'on'), ...(brace && braceOpt !== 'on' ? { why: 'braceexpand-off' as const } : !rule.brace ? { why: 'context' as const } : {}), parts: brace ? plainWords(nodes) : [] }));
+  steps.push(mk({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] }));
   for (const kind of ['parameter', 'command', 'arithmetic', 'process'] as const) {
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
-    steps.push({ kind, applies: parts.length > 0, parts });
+    steps.push(mk({ kind, applies: parts.length > 0, parts }));
   }
   const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st };
   const unquoted = expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e));
   const someQuoted = expansions.some(nearestQuote);
-  steps.push(splitStep(meaning, unquoted, someQuoted));
+  steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   const globWords = plainWords(nodes).filter((w) => isGlob(w.text));
-  steps.push(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted));
+  steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
   const quoted = nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text));
-  steps.push({ kind: 'quote-removal', applies: quoted, parts: [] });
+  steps.push(mk({ kind: 'quote-removal', applies: quoted, parts: [] }));
   const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
   if (literal) meaning.value = nodes.map((x) => staticWordValue(x) ?? '').join('');
+  const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));
+  if (failure) meaning.failure = failure;
   return meaning;
 }
+
+/** How bash may fail on a word, from its steps and the options (B5 reads it). */
+function failureOf(w: WordMeaning, parameters: boolean): WordFailure | undefined {
+  const step = (k: StepKind) => w.steps.find((s) => s.kind === k)!;
+  const nounset = on(option(w.state, 'set', 'nounset'), 'set', 'nounset', false);
+  if ((parameters && nounset !== 'off') || /\$\{[^}]*:?\?/.test(w.nodes.map((n) => n.text).join(''))
+    || (step('glob').applies !== false && w.glob.failglob !== 'off')) return { kind: 'fatal', applies: 'unknown' };
+  if (w.rule.fields === 'one-or-error' && ['brace', 'split', 'glob'].some((k) => step(k as StepKind).applies !== false)) return { kind: 'command', applies: 'unknown' };
+  return undefined;
+}
+
+type Step = Omit<ExpansionStep, 'manual'>;
+/** A step with its section of the manual. */
+const mk = (s: Step): ExpansionStep => ({ ...s, manual: s.why === 'posix-mode' ? '6.11' : STEP_MANUAL[s.kind] });
 
 /** Whether the context splits or globs: the table's answer, the outer expansion's for `${x:-word}`, and POSIX mode. */
 function contextAllows(w: WordMeaning, kind: 'split' | 'glob'): { applies: Applies; why?: StepWhy; quoted?: boolean } {
@@ -359,7 +374,7 @@ function contextFor(rule: ContextRule, posix: Tri, kind: 'split' | 'glob'): { ap
   return { applies: true };
 }
 
-function splitStep(w: WordMeaning, unquoted: SyntaxNode[], someQuoted: boolean): ExpansionStep {
+function splitStep(w: WordMeaning, unquoted: SyntaxNode[], someQuoted: boolean): Step {
   const ctx = contextAllows(w, 'split');
   if (ctx.applies === false) return { kind: 'split', applies: false, why: ctx.why, parts: [] };
   if (!unquoted.length) return { kind: 'split', applies: false, ...(someQuoted ? { why: 'quoted' as const } : {}), parts: [] };
@@ -368,7 +383,7 @@ function splitStep(w: WordMeaning, unquoted: SyntaxNode[], someQuoted: boolean):
   return { kind: 'split', applies, ...(ctx.why ? { why: ctx.why } : {}), parts: unquoted };
 }
 
-function globStep(w: WordMeaning, parts: SyntaxNode[], someQuoted: boolean): ExpansionStep {
+function globStep(w: WordMeaning, parts: SyntaxNode[], someQuoted: boolean): Step {
   const ctx = contextAllows(w, 'glob');
   if (ctx.applies === false) return { kind: 'glob', applies: false, why: ctx.why, parts: [] };
   if (!parts.length) return { kind: 'glob', applies: false, ...(someQuoted ? { why: 'quoted' as const } : {}), parts: [] };
@@ -384,8 +399,8 @@ export function partMeaning(part: SyntaxNode, model: StateModel): PartMeaning | 
   const quoted = nearestQuote(part);
   const step = (kind: 'split' | 'glob'): ExpansionStep => {
     const s = word.steps.find((x) => x.kind === kind)!;
-    if (quoted) return { kind, applies: false, why: 'quoted', parts: [] };
-    return s.parts.includes(part) || s.applies === false ? s : { kind, applies: false, parts: [] };
+    if (quoted) return mk({ kind, applies: false, why: 'quoted', parts: [] });
+    return s.parts.includes(part) || s.applies === false ? s : mk({ kind, applies: false, parts: [] });
   };
   return { word, quoted, split: step('split'), glob: step('glob') };
 }
@@ -404,7 +419,12 @@ export interface WordEnv {
 }
 
 /** The fields of a word; `error` when bash fails on it; neither when they are not known here. */
-export interface Fields { fields?: string[]; error?: 'ambiguous-redirect' | 'no-match' | 'unbound' | 'parameter-null' }
+export interface Fields {
+  fields?: string[];
+  error?: 'ambiguous-redirect' | 'no-match' | 'unbound' | 'parameter-null';
+  /** How bash fails on it: surely with `error`; may when the fields are not known and the word may fail (`WordMeaning.failure`). */
+  failure?: WordFailure;
+}
 
 /** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
 interface Piece { text: string; quoted: boolean; expanded: boolean }
@@ -436,7 +456,7 @@ class Evaluator {
     if (['a', 'A', 'n'].some((l) => attribute(st, name, l) !== 'off')) return undefined;
     // Not static text: the word of the assignment, expanded where it ran.
     if (v.value === undefined && v.source && !this.expanding.has(v.source) && ['i', 'l', 'u'].every((l) => attribute(st, name, l) === 'off')) {
-      return fieldsAt(v.source, this.model, this.env, new Set([...this.expanding, v.source])).fields?.[0];
+      return sourceValue(v.source, this.model, this.env, this.expanding);
     }
     return v.value;
   }
@@ -546,7 +566,10 @@ class Evaluator {
     }
     const pattern = patternOf(part('pattern'), this);
     if (pattern === undefined) return undefined;
-    const re = globToRegex(pattern, 'value');
+    // nocasematch makes `${x/p/r}` ignore case (not `#` and `%`).
+    const nocase = op[0] === '/' ? on(option(this.w.state, 'shopt', 'nocasematch'), 'shopt', 'nocasematch', false) : 'off';
+    if (nocase === 'unknown') return undefined;
+    const re = globToRegex(pattern, 'value', { nocase: nocase === 'on' });
     /* c8 ignore next -- a guard: a pattern without extended globs always converts. */
     if (!re) return undefined;
     const test = (s: string): boolean => re.test(s);
@@ -598,10 +621,10 @@ class Evaluator {
     return this.unbound === 'unknown' ? undefined : out('');
   }
 
-  /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known. */
+  /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known (`~+` and `~-` not after a `cd` anywhere). */
   tilde(user: string): string | undefined {
     const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
-    if (!name) return undefined;
+    if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0]))) return undefined;
     if (name === 'PWD') return this.env?.pwd;
     const v = this.w.state.variables.get(name);
     if (v) return v.set === 'on' ? v.value : undefined;
@@ -760,6 +783,34 @@ function unreliableNames(n: SyntaxNode): Set<string> {
 
 const DEFAULT_IFS = ' \t\n';
 
+/** How deep the values of assignments are expanded through each other (`a=$b; b=$c; …`); deeper is not known here. */
+const MAX_SOURCE_DEPTH = 32;
+const NO_ENV = {};
+const sourceCache = new WeakMap<StateModel, WeakMap<object, Map<SyntaxNode, string | undefined>>>();
+/** The value the word of an assignment gave, where it ran: cached per model, environment and word. */
+function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>): string | undefined {
+  let byEnv = sourceCache.get(model);
+  if (!byEnv) sourceCache.set(model, (byEnv = new WeakMap()));
+  let cache = byEnv.get(env ?? NO_ENV);
+  if (!cache) byEnv.set(env ?? NO_ENV, (cache = new Map()));
+  if (cache.has(source)) return cache.get(source);
+  if (expanding.size >= MAX_SOURCE_DEPTH) return undefined;
+  const v = fieldsAt(source, model, env, new Set([...expanding, source])).fields?.[0];
+  cache.set(source, v);
+  return v;
+}
+
+const cdCache = new WeakMap<SyntaxNode, boolean>();
+// (Every `command` node has a name: the adapter gives the others as assignments or redirected statements.)
+/** Whether the script changes its directory anywhere (`cd`, `pushd`, `popd`): the model does not follow it. */
+function changesDirectory(n: SyntaxNode): boolean {
+  let root = n;
+  while (root.parent) root = root.parent;
+  let v = cdCache.get(root);
+  if (v === undefined) cdCache.set(root, (v = descendants(root, ['command']).some((c) => ['cd', 'pushd', 'popd'].includes(field(c, 'name')!.text))));
+  return v;
+}
+
 /** The fields of the word that holds `n` where it runs (`fields`), bash's error on it (`error`), or neither when they are not known here. */
 export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fields {
   return fieldsAt(n, model, env, new Set());
@@ -768,28 +819,29 @@ export function wordFields(n: SyntaxNode, model: StateModel, env?: WordEnv): Fie
 function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>): Fields {
   const w = wordMeaning(n, model);
   if (!w) return {};
+  const unknown: Fields = w.failure ? { failure: w.failure } : {};
   const ev = new Evaluator(w, model, env, unreliableNames(w.nodes[0]), expanding);
   try {
     const alternatives = braceAlternatives(w);
-    if (!alternatives) return {};
+    if (!alternatives) return unknown;
     const fields: string[] = [];
     for (const nodes of alternatives) {
       const pieces = piecesOf(w, nodes, ev);
-      if (!pieces) return {};
+      if (!pieces) return unknown;
       const split = splitPieces(w, pieces);
-      if (!split) return {};
+      if (!split) return unknown;
       for (const f of split) {
         const g = globField(w, f, env);
-        if (!g) return {};
+        if (!g) return unknown;
         fields.push(...g);
       }
     }
-    if (w.rule.fields === 'one-or-error' && fields.length !== 1) return { error: 'ambiguous-redirect' };
+    if (w.rule.fields === 'one-or-error' && fields.length !== 1) return { error: 'ambiguous-redirect', failure: { kind: 'command', applies: true } };
     return { fields };
   } catch (e) {
     /* c8 ignore next */
     if (!(e instanceof Failure)) throw e;
-    return { error: e.error };
+    return { error: e.error, failure: { kind: 'fatal', applies: true } };
   }
 }
 
@@ -901,18 +953,31 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   if (!isGlob(pattern)) return [text];
   if (step.applies === false) return [text];
   const g = w.glob;
-  if (step.applies === 'unknown' || !env?.files) return undefined;
+  if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
   if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
-  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob].includes('unknown') || g.globignore === 'unknown') return undefined;
-  const ignore = g.globignore === 'unset' ? [] : g.globignore.value.split(':').filter(Boolean).map((p) => globToRegex(p, 'file', { dotglob: true }));
+  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob, g.globskipdots].includes('unknown') || g.globignore === 'unknown') return undefined;
+  // `./*.log`: the names under the current directory, with `./` before them; `sub/../*` is not followed.
+  const prefix = /^(?:\.\/)*/.exec(pattern)![0];
+  const rest = pattern.slice(prefix.length);
+  if (rest.split('/').some((seg) => seg === '.' || seg === '..') || (g.globskipdots === 'off' && rest.includes('/'))) return undefined;
+  const matched = matchFiles(w, rest, env.files);
+  if (!matched) return undefined;
+  if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');
+  if (matched.length) return matched.map((m) => prefix + m).sort();
+  if (g.failglob === 'on') throw new Failure('no-match');
+  return g.nullglob === 'on' ? [] : [text];
+}
+
+/** The names of `files` (with `.` and `..` when globskipdots is off) that `pattern` matches, without those GLOBIGNORE leaves out. */
+function matchFiles(w: WordMeaning, pattern: string, files: readonly string[]): string[] | undefined {
+  const g = w.glob;
+  const ignore = g.globignore === 'unset' ? [] : (g.globignore as { value: string }).value.split(':').filter(Boolean).map((p) => globToRegex(p, 'file', { dotglob: true }));
   const opts = { dotglob: g.dotglob === 'on', nocase: g.nocaseglob === 'on', globstar: g.globstar === 'on' && hasGlobstar(pattern) };
   const re = globToRegex(pattern, 'file', opts);
   if (!re) return undefined;
   // A directory with its slash: for a pattern that ends with `/`, and for `dir/**` (`**` matches nothing after `dir/`).
   const slashed = pattern.endsWith('/') || (opts.globstar && /.\/\*\*$/.test(pattern));
-  const names = env.files.flatMap((p) => (p.endsWith('/') ? [...(pattern.endsWith('/') ? [] : [p.slice(0, -1)]), ...(slashed ? [p] : [])] : [p]));
-  const matches = names.filter((p) => re.test(p) && !ignore.some((r) => r?.test(p))).sort();
-  if (matches.length) return matches;
-  if (g.failglob === 'on') throw new Failure('no-match');
-  return g.nullglob === 'on' ? [] : [text];
+  const names = files.flatMap((p) => (p.endsWith('/') ? [...(pattern.endsWith('/') ? [] : [p.slice(0, -1)]), ...(slashed ? [p] : [])] : [p]));
+  if (g.globskipdots === 'off') names.push('.', '..');
+  return names.filter((p) => re.test(p) && !ignore.some((r) => r?.test(p))).sort();
 }

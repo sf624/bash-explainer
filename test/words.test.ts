@@ -6,6 +6,7 @@ import { shellState, type StateModel } from '../src/semantics/state';
 import { CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
+import { staticWordValue } from '../src/staticword';
 import { BOX, FILES, PROBE_ENV, probeSkipReason, runProbe } from './support/probe';
 
 const parser = createUnbashParser();
@@ -34,7 +35,9 @@ const step = (src: string, text: string, kind: string, nth = 0, posix = false) =
 };
 const fieldsOf = (src: string, text: string, env: WordEnv | null = ENV, nth = 0, posix = false) => {
   const { node, model } = find(src, text, nth, posix);
-  return wordFields(node, model, env ?? undefined);
+  // (The failures are checked on their own.)
+  const { failure: _, ...rest } = wordFields(node, model, env ?? undefined);
+  return rest;
 };
 
 describe('words: contexts', () => {
@@ -47,7 +50,7 @@ describe('words: contexts', () => {
       ['case $x in $p) ;; esac', '$x', 'case-word'], ['case $x in $p) ;; esac', '$p', 'case-pattern'], ['for i in $l; do :; done', '$l', 'for-list'],
       ['select i in $l; do :; done', '$l', 'for-list'], ['cat > $o', '$o', 'redirect-target'], ['cat <<< $h', '$h', 'herestring'],
       ['cat <<E\n$h\nE', '$h', 'heredoc-body'], ['echo $(( $n + 1 ))', '$n', 'arith'], ['(( $n ))', '$n', 'arith'], ['for ((i=$n; i<3; i++)); do :; done', '$n', 'arith'],
-      ['a[$i]=1', '$i', 'subscript'], ['echo ${a[$i]}', '$i', 'subscript'], ['echo ${u:-$w}', '$w', 'param-word'], ['echo ${s:$i:2}', '$i', 'arith'], ['echo ${u#x}', 'x', 'param-pattern'],
+      ['a[$i]=1', '$i', 'subscript-indexed'], ['echo ${a[$i]}', '$i', 'subscript-indexed'], ['echo ${u:-$w}', '$w', 'param-word'], ['echo ${s:$i:2}', '$i', 'arith'], ['echo ${u#x}', 'x', 'param-pattern'],
       ['echo "a$x"', '$x', 'argument'], ['echo $(( $(echo $n) ))', '$n', 'argument'],
       ['$c a', '$c', undefined],
       // Not words: a name, the variable of a loop, a function's name, a descriptor, a here-document's delimiter.
@@ -116,12 +119,12 @@ describe('words: steps', () => {
     const { node, model } = find('echo "$a"$b', '$b');
     assert.deepStrictEqual([partMeaning(node, model)!.split.applies, partMeaning(node, model)!.quoted], [true, false]);
     const a = find('echo "$a"$b', '$a');
-    assert.deepStrictEqual(partMeaning(a.node, a.model)!.split, { kind: 'split', applies: false, why: 'quoted', parts: [] });
+    assert.deepStrictEqual(partMeaning(a.node, a.model)!.split, { kind: 'split', applies: false, why: 'quoted', parts: [], manual: '3.5.7' });
     // (A part that is no expansion: neither step acts on it.)
     const r = find('echo a$x', 'a');
-    assert.deepStrictEqual(partMeaning(r.node, r.model)!.split, { kind: 'split', applies: false, parts: [] });
+    assert.deepStrictEqual(partMeaning(r.node, r.model)!.split, { kind: 'split', applies: false, parts: [], manual: '3.5.7' });
     const q = find('echo <(ls)', '<(ls)');
-    assert.deepStrictEqual(partMeaning(q.node, q.model)!.split, { kind: 'split', applies: false, parts: [] });
+    assert.deepStrictEqual(partMeaning(q.node, q.model)!.split, { kind: 'split', applies: false, parts: [], manual: '3.5.7' });
     const p = find('echo ${u:-$w}', '${u:-$w}');
     assert.deepStrictEqual(partMeaning(p.node, p.model)!.glob.applies, true);
   });
@@ -388,4 +391,98 @@ describe('words: fields', () => {
       assert.deepStrictEqual(fields!.map((f) => (target.type === 'herestring_redirect' ? `${f}\n` : f)), [run.records[0][1]]);
     });
   }
+});
+
+describe('words: after the review', () => {
+  it('expands a tilde after each `:` of an assignment, whatever starts the word', () => {
+    const tildes = (src: string, text: string, posix = false) => meaning(src, text, 0, posix).tildes.map((t) => [t.node.text, t.start, t.after]);
+    assert.deepStrictEqual(tildes('PATH=$PATH:~/bin:~/x', '$PATH:~/bin:~/x'), [[':~/bin:~/x', 1, ':'], [':~/bin:~/x', 7, ':']]);
+    assert.deepStrictEqual(tildes('x="a:"~/b', '"a:"~/b'), []);
+    assert.deepStrictEqual(tildes('x=a"b":~/c', 'a"b":~/c'), [[':~/c', 1, ':']]);
+    assert.deepStrictEqual(tildes('x=a:"~/b"', 'a:"~/b"'), []);
+    assert.deepStrictEqual(tildes('echo x=$P:~/bin', 'x=$P:~/bin'), [[':~/bin', 1, ':']]);
+    assert.deepStrictEqual(tildes('echo $P:~/bin', '$P:~/bin'), []);
+    assert.strictEqual(staticWordValue(find('x="a"~/b', '"a"~/b').node, true), 'a~/b');
+    assert.strictEqual(staticWordValue(find('x=a:~/b', 'a:~/b').node, true), undefined);
+    assert.strictEqual(staticWordValue(find('echo a"b"~', 'a"b"~').node), 'ab~');
+  });
+
+  it('expands a tilde after `=` in `case`, `[[ ]]` and redirection targets in bash mode, and in declarations always', () => {
+    const after = (src: string, text: string, posix = false) => meaning(src, text, 0, posix).tildes.map((t) => t.after);
+    assert.deepStrictEqual(after('case a=~/d in x) ;; esac', 'a=~/d'), ['=']);
+    assert.deepStrictEqual(after('case x in a=~/d) ;; esac', 'a=~/d'), ['=']);
+    assert.deepStrictEqual(after('[[ a=~/e == b=~/f ]]', 'b=~/f'), ['=']);
+    assert.deepStrictEqual(after('cat > a=~/b', 'a=~/b'), ['=']);
+    assert.deepStrictEqual(after('cat > a=~/b', 'a=~/b', true), []);
+    assert.deepStrictEqual(after('cat <<< a=~/b', 'a=~/b'), []);
+    assert.deepStrictEqual(after('x=1 declare y=~/a:~/b', 'y=~/a:~/b', true), ['=', ':']);
+  });
+
+  it('reads `x=1 declare y=$v` as a declaration, and arithmetic in `$( (( )) )`', () => {
+    assert.strictEqual(context('x=1 declare y=$v z', 'y=$v'), 'declaration-assignment');
+    assert.strictEqual(context('x=1 declare y=$v z', 'z'), 'argument');
+    assert.strictEqual(context('x=1 declare "y"=$v', '"y"=$v'), 'argument');
+    assert.strictEqual(context('declare y=$v', '$v'), 'assignment-value');
+    assert.strictEqual(context('x=1 command declare y=$v', 'y=$v'), 'argument');
+    assert.strictEqual(context('x=1 echo y=$v', 'y=$v'), 'argument');
+    assert.deepStrictEqual(step('x=1 declare y=$v', 'y=$v', 'split'), [false, 'context']);
+    assert.strictEqual(context('[[ $( (( $x )) ) ]]', '$x'), 'arith');
+    assert.strictEqual(context('echo $(( $(echo $x) ))', '$x'), 'argument');
+  });
+
+  it('tells an associative subscript from an indexed one', () => {
+    assert.strictEqual(meaning('declare -A m; m[$k]=1', '$k').context, 'subscript-assoc');
+    assert.strictEqual(meaning('m[$k]=1', '$k').context, 'subscript-indexed');
+  });
+
+  it('gives each step its section of the manual', () => {
+    const w = meaning('echo $x', '$x');
+    assert.deepStrictEqual(w.steps.map((s) => s.manual), ['3.5.1', '3.5.2', '3.5.3', '3.5.4', '3.5.5', '3.5.6', '3.5.7', '3.5.8', '3.5.9']);
+    assert.strictEqual(meaning('cat > $o', '$o', 0, true).steps.find((s) => s.kind === 'split')!.manual, '6.11');
+  });
+
+  it('says how bash may fail on a word', () => {
+    const failure = (src: string, text: string, env: WordEnv | null = ENV) => {
+      const { node, model } = find(src, text);
+      return [wordMeaning(node, model)!.failure, wordFields(node, model, env ?? undefined).failure];
+    };
+    assert.deepStrictEqual(failure('set -u; echo $nope', '$nope'), [{ kind: 'fatal', applies: 'unknown' }, { kind: 'fatal', applies: true }]);
+    assert.deepStrictEqual(failure('set -u; echo "$NOPE"', '"$NOPE"'), [{ kind: 'fatal', applies: 'unknown' }, { kind: 'fatal', applies: 'unknown' }]);
+    assert.deepStrictEqual(failure('echo ${u:?m}', '${u:?m}'), [{ kind: 'fatal', applies: 'unknown' }, { kind: 'fatal', applies: true }]);
+    assert.deepStrictEqual(failure('shopt -s failglob; echo *.zz', '*.zz'), [{ kind: 'fatal', applies: 'unknown' }, { kind: 'fatal', applies: true }]);
+    assert.deepStrictEqual(failure("x='a b'; cat > $x", '$x'), [{ kind: 'command', applies: 'unknown' }, { kind: 'command', applies: true }]);
+    assert.deepStrictEqual(failure('cat > $x', '$x', null), [{ kind: 'command', applies: 'unknown' }, { kind: 'command', applies: 'unknown' }]);
+    assert.deepStrictEqual(failure('cat > a', 'a'), [undefined, undefined]);
+    assert.deepStrictEqual(failure('echo $x *', '$x'), [undefined, undefined]);
+  });
+
+  it('expands a long chain of assignments without running out of stack', function () {
+    this.timeout(20000);
+    const lines = ['a0=x'];
+    for (let i = 1; i <= 1000; i++) lines.push(`a${i}=$a${i - 1}`);
+    lines.push('echo "$a1000" "$a20"');
+    const tree = parser.parse(lines.join('\n'));
+    const model = shellState(tree, 'bash');
+    const words = descendants(tree.root, ['string']);
+    const t = Date.now();
+    assert.deepStrictEqual(wordFields(words[0], model, ENV), {});
+    assert.deepStrictEqual(wordFields(words[1], model, ENV).fields, ['x']);
+    // Every word, as the explanations ask for them, reuses what was expanded.
+    for (const w of descendants(tree.root, ['simple_expansion'])) wordFields(w, model, ENV);
+    assert.ok(Date.now() - t < 3000, `${Date.now() - t} ms`);
+  });
+
+  it('expands sources without an environment, and knows commands with no name', () => {
+    assert.deepStrictEqual(fieldsOf('y=a; x=$y; echo "$x"', '"$x"', null).fields, ['a']);
+    assert.deepStrictEqual(fieldsOf('x=1 > f; echo ~+', '~+').fields, ['/BOX']);
+  });
+
+  it('knows nocasematch in `${x/p/r}`, and globskipdots', () => {
+    assert.deepStrictEqual(fieldsOf('shopt -s nocasematch; x=ABC; echo ${x/b/-} ${x#a}', '${x/b/-}').fields, ['A-C']);
+    assert.deepStrictEqual(fieldsOf('shopt -s nocasematch; x=ABC; echo ${x#a}', '${x#a}').fields, ['ABC']);
+    assert.deepStrictEqual(fieldsOf('if a; then shopt -s nocasematch; fi; x=ABC; echo ${x/b/-}', '${x/b/-}'), {});
+    assert.deepStrictEqual(fieldsOf('if a; then shopt -u globskipdots; fi; echo .*', '.*'), {});
+    assert.deepStrictEqual(fieldsOf('shopt -u globskipdots; echo sub/.*', 'sub/.*'), {});
+    assert.deepStrictEqual(fieldsOf('shopt -s extglob; echo ./!(a)*', './!(a)*'), {});
+  });
 });
