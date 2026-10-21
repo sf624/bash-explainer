@@ -8,6 +8,7 @@ import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { settingTexts } from '../src/settings';
 import { PANEL_BODY } from '../src/ui/panelView';
 
 const root = path.join(__dirname, '..');
@@ -27,7 +28,14 @@ function commit(): string {
     return 'unknown';
   }
 }
-const version: string = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+const json = (file: string) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+const pkg = json('package.json');
+const version: string = pkg.version;
+/** The descriptions of the settings, for the settings dialog: those VS Code shows. */
+const settingText = {
+  en: settingTexts(pkg.contributes.configuration, json('package.nls.json')),
+  ja: settingTexts(pkg.contributes.configuration, json('package.nls.ja.json')),
+};
 
 /** The panel page shown in the frame: the extension's panel markup and script, as they are. */
 const PANEL_HTML = `<!DOCTYPE html>
@@ -65,6 +73,7 @@ async function main(): Promise<void> {
       __CHANNEL__: JSON.stringify(channel),
       __PR__: JSON.stringify(pr),
       __COMMIT__: JSON.stringify(channel === 'release' ? '' : commit()),
+      __SETTING_TEXT__: JSON.stringify(settingText),
       // The web page's shell sample is test/fixtures/sample.sh, the tour of every feature (web/samples.ts).
       __SAMPLE_SH__: JSON.stringify(fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8')),
     },

@@ -28,6 +28,7 @@
   <label><span id="lang-label">Language</span> <select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
   <label><span id="channel-label">Version</span> <select id="channel"></select></label>
   <label><span id="theme-label">Theme</span> <select id="theme"></select></label>
+  <button id="settings-open" type="button" aria-haspopup="dialog"><span aria-hidden="true">⚙</span> <span id="settings-label">Settings</span></button>
   <button id="sample" type="button">Load the sample</button>
   <button id="share" type="button">Copy a link to this script</button>
   <span id="status" role="status"></span>
@@ -42,6 +43,7 @@
   </section>
   <iframe id="panel" src="panel.html" title="Explanation"></iframe>
 </main>
+<dialog id="settings-dialog" aria-labelledby="settings-title"></dialog>
 <footer>
   <p id="privacy">Your script stays in this browser: it is parsed and explained here, with no server and no AI.</p>
   <p><span id="version"></span> · <a id="dev-link" class="dev-link" href="next/" hidden></a><span id="dev-sep" hidden> · </span><a href="LICENSE.txt">MIT License</a> · <a id="notices" href="THIRD_PARTY_NOTICES.txt">Third-party notices</a></p>

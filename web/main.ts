@@ -20,12 +20,14 @@ import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
 import { extractShell } from '../src/hosts';
-import { Lang } from '../src/i18n';
+import { Lang, resolveLang } from '../src/i18n';
+import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
+import { SettingsDialog } from './settings-dialog';
 
 declare const __VERSION__: string;
 declare const __CHANNEL__: 'release' | 'next' | 'pr';
@@ -71,6 +73,7 @@ const TEXT = {
     cannot: 'This version cannot be compared (it has no panel-only view).',
     otherNames: { release: 'Release', next: 'main' },
     kinds: { shell: 'Shell script' } as Partial<Record<Kind, string>>,
+    settings: 'Settings',
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -107,6 +110,7 @@ const TEXT = {
     cannot: 'このバージョンは比較できません（パネルだけの表示がありません）。',
     otherNames: { release: 'リリース版', next: 'main' },
     kinds: { shell: 'シェルスクリプト' } as Partial<Record<Kind, string>>,
+    settings: '設定',
   },
 };
 
@@ -120,6 +124,8 @@ interface CopyInfo { channel: 'release' | 'next' | 'pr'; version: string; pr: st
 /** What the compare page sends to a copy in panel mode: everything the page would have read from its own editor. */
 interface CopyState {
   text: string; kind: Kind; line: number; col: number; lang: Lang; theme: Theme; choice: { shell?: Shell; yq?: string };
+  /** The settings that differ from the defaults (copies built before the settings dialog read `choice` only). */
+  settings?: Record<string, unknown>;
 }
 /** From the compare page to a copy. */
 type ToCopy = { type: 'bx-state' } & CopyState;
@@ -144,16 +150,34 @@ function savedTheme(): Theme {
 }
 let theme: Theme = savedTheme();
 
+// ---- Settings: those of the VS Code extension that apply here (src/settings.ts) ----------------
+
+const SETTINGS_KEY = 'bash-explainer-settings';
+/** Whether the page can keep the settings (localStorage may be unavailable or throw). */
+let canSave = true;
+/** The saved settings; the defaults when there are none, or no storage. */
+function savedSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return mergeSettings(raw ? readSettings(JSON.parse(raw), 'saved').settings : {});
+  } catch {
+    canSave = false;
+    return mergeSettings();
+  }
+}
+/** In panel mode the page around sends the settings; a copy keeps none of its own. */
+let settings: Settings = savedSettings();
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
 
 // ---- State ----------------------------------------------------------------------------------
 
 const shared = readHash();
-let lang: Lang = shared.lang ?? (navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en');
+let lang: Lang = shared.lang ?? resolveLang(settings.language, navigator.language);
 let kind: Kind = shared.kind ?? 'shell';
-/** The shell and yq chosen in the panel ('auto' when unset). */
-const choice: { shell?: Shell; yq?: string } = {};
+/** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
+const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
 const parser = createUnbashParser();
 const analyzers = new Map<Lang, Analyzer>();
 let parsed: { text: string; kind: Kind; doc: ShellDocument } | undefined;
@@ -179,7 +203,7 @@ function shellDocument(): ShellDocument | undefined {
 
 function shells(): Shells {
   const head = view.state.doc.sliceString(0, view.state.doc.line(Math.min(50, view.state.doc.lines)).to);
-  return { forced: choice.shell, detected: detectShell(head, kindInfo(kind).fileName) };
+  return { forced: forcedShell(settings), detected: detectShell(head, kindInfo(kind).fileName) };
 }
 
 // ---- Editor ---------------------------------------------------------------------------------
@@ -236,10 +260,17 @@ function pos(state: EditorState, line: number, col: number): number {
   return Math.min(l.from + Math.max(0, col), l.to);
 }
 
+/** The warning codes in the script, offered in the settings dialog. */
+let codesSeen: string[] = [];
+
 const problems = linter((v): Diagnostic[] => {
   const doc = shellDocument();
   if (!doc) return [];
-  const list = documentIssues(doc, lang, shells());
+  // diagnostics.enabled, and diagnostics.embedded for the shell code in other files.
+  const all = documentIssues(doc, lang, shells());
+  codesSeen = [...new Set(all.map((i) => i.code))].sort();
+  const off = !settings['diagnostics.enabled'] || (kind !== 'shell' && !settings['diagnostics.embedded']);
+  const list = off ? [] : all.filter((i) => !settings['diagnostics.ignore'].includes(i.code));
   showProblems(list);
   return list.map((i) => ({
     from: pos(v.state, i.startLine, i.startCol),
@@ -308,6 +339,8 @@ let stateReceived = false;
 // The panel says 'ready' when it starts; it may have done so before this script ran.
 function panelLoaded(): void {
   panelReady = true;
+  // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode).
+  if (!panelOnly) frame?.contentDocument?.documentElement.classList.add('bx-settings');
   toPanel({ type: 'theme', theme });
   updatePanel();
 }
@@ -342,14 +375,11 @@ function updatePanel(): void {
   if (!doc) return;
   const line = view.state.doc.lineAt(view.state.selection.main.head).number - 1;
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, {
-    yqFlavor: choice.yq ?? 'auto',
-    examples: { enabled: true, disabled: [] },
-  });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, explainOptions(settings));
   shown = { explanation, line };
   toPanel(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
-    choice, detected: s.detected, placement: 'first',
+    choice: choice(), detected: s.detected, placement: settings['examples.placement'],
   }));
 }
 
@@ -383,9 +413,10 @@ window.addEventListener('message', (e) => {
     case 'override':
       // The compare page keeps the choice for both copies.
       if (panelOnly) return toParent({ type: 'bx-choice', key: m.key, value: m.value });
-      choice[m.key] = m.value === 'auto' ? undefined : (m.value as Shell);
-      updatePanel();
-      return recheck();
+      // The page has one script: the choice in the panel's header is the setting.
+      return setChoice(m.key, m.value);
+    case 'openSettings':
+      return settingsDialog?.show();
     case 'highlight':
       if (panelOnly) return toParent({ type: 'bx-highlight', span: m.span });
       view.dispatch({ effects: setHighlight.of(m.span ? spanRange(m.span) : null) });
@@ -410,8 +441,8 @@ function applyState(m: CopyState): void {
   const langChanged = newLang !== lang;
   lang = newLang;
   kind = KINDS.some((k) => k.kind === m.kind) ? m.kind : 'shell';
-  choice.shell = m.choice?.shell;
-  choice.yq = m.choice?.yq;
+  // The page around sends its settings; from one built before they existed, the shell and yq only.
+  settings = mergeSettings(m.settings ? readSettings(m.settings, 'page').settings : { shell: m.choice?.shell ?? 'auto', 'yq.flavor': (m.choice?.yq ?? 'auto') as Settings['yq.flavor'] });
   if (m.text !== view.state.doc.toString()) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: m.text } });
   view.dispatch({ selection: { anchor: pos(view.state, m.line, m.col) } });
   stateReceived = true;
@@ -463,7 +494,7 @@ function sendState(): void {
   const l = view.state.doc.lineAt(head);
   const m: ToCopy = {
     type: 'bx-state', text: view.state.doc.toString(), kind, line: l.number - 1, col: head - l.from, lang, theme,
-    choice: { shell: choice.shell, yq: choice.yq },
+    choice: choice(), settings: changedSettings(settings, 'web'),
   };
   for (const c of copies) if (c.info) c.frame.contentWindow?.postMessage(m, location.origin);
 }
@@ -487,9 +518,7 @@ if (compare) {
         view.dispatch({ effects: setHighlight.of(m.span ? spanRange(m.span) : null) });
         return;
       case 'bx-choice':
-        choice[m.key] = m.value === 'auto' ? undefined : (m.value as Shell);
-        sendState();
-        return recheck();
+        return setChoice(m.key, m.value);
     }
   });
   for (const c of copies) {
@@ -556,6 +585,7 @@ function applyLanguage(): void {
   put('lang-label', t.lang);
   put('sample', t.sample);
   put('share', t.share);
+  put('settings-label', t.settings);
   put('privacy', t.privacy);
   put('notices', t.notices);
   put('editor-head', t.editor);
@@ -621,21 +651,59 @@ $<HTMLSelectElement>('theme').addEventListener('change', (e) => {
   pushTheme();
 });
 
+// The language menu is the `language` setting.
 $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
-  lang = (e.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en';
-  applyLanguage();
-  // The panel keeps its quick reference once loaded: start it again in the new language.
-  reloadPanel();
-  if (compare) updatePanel();
-  recheck();
+  changeSettings({ ...settings, language: (e.target as HTMLSelectElement).value === 'ja' ? 'ja' : 'en' });
 });
+
+/** Applies new settings, keeps them, and shows them in the toolbar, the panel and the dialog. */
+function changeSettings(next: Settings): void {
+  // A link's language stays until the setting itself changes.
+  const languageChanged = next.language !== settings.language;
+  settings = next;
+  try {
+    const changed = changedSettings(settings, 'web');
+    if (Object.keys(changed).length) localStorage.setItem(SETTINGS_KEY, JSON.stringify(changed));
+    else localStorage.removeItem(SETTINGS_KEY);
+  } catch {
+    // They then last until the page is closed.
+  }
+  const newLang = resolveLang(settings.language, navigator.language);
+  if (languageChanged && newLang !== lang) {
+    lang = newLang;
+    applyLanguage();
+    // The panel keeps its quick reference once loaded: start it again in the new language.
+    reloadPanel();
+    if (compare) updatePanel();
+  } else {
+    updatePanel();
+  }
+  recheck();
+}
+
+/** The shell or yq chosen in the panel's header ('auto' clears it). */
+function setChoice(key: 'shell' | 'yq', value: string): void {
+  const next = { ...settings, [key === 'shell' ? 'shell' : 'yq.flavor']: value };
+  // Only values the setting takes (a copy of another version may offer others).
+  if (readSettings(changedSettings(next), 'panel').warnings.length) return;
+  changeSettings(next);
+  settingsDialog?.refresh();
+}
+
+const dialogElement = document.getElementById('settings-dialog') as HTMLDialogElement | null;
+const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
+  get: () => settings,
+  set: changeSettings,
+  lang: () => lang,
+  defaults: () => mergeSettings(),
+  canSave: () => canSave,
+  codes: () => codesSeen,
+});
+on('settings-open', 'click', () => settingsDialog?.show());
 
 $<HTMLSelectElement>('kind').addEventListener('change', (e) => {
   const before = kindInfo(kind);
   kind = (e.target as HTMLSelectElement).value as Kind;
-  // A shell or yq chosen in the panel was for the previous file.
-  choice.shell = undefined;
-  choice.yq = undefined;
   view.dispatch({ effects: languageMode.reconfigure(modeFor(kind)) });
   // An untouched sample gives way to the sample of the new kind; the user's own text stays.
   const text = view.state.doc.toString();
