@@ -80,7 +80,7 @@ The move was made in steps, each a PR with the test suite as the safety net. Mos
 
 ### Known gaps to cover in the unbash adapter
 
-These come from a survey of unbash 6.0.0. The adapter fills them; most are small.
+These come from a survey of unbash 6.0.0 (6.0.1 only changed ANSI-C byte escapes). The adapter fills them; most are small.
 
 - **No positions for comments, keywords and operators.** The token scanner recovers them (estimated at 400–700 lines with tests).
 - **`[ ]` and `test` are plain commands.** The adapter makes `[ … ]` a `test_command` with its words as a flat list; testexpr does the grouping.
