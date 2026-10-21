@@ -107,6 +107,69 @@ const KILL_PATTERNS: PatternOption[] = [
   },
 ];
 
+/** procps kill: `-N` is `-s N`, and a name may start with `s` (`/bin/kill -stop` sends STOP). */
+const PROCPS_KILL_PATTERNS: PatternOption[] = [
+  { ...KILL_PATTERNS[0], text: ([, n]) => tx(`送るシグナルの番号 ${n}（\`-s ${n}\` と同じ。\`kill -l ${n}\` で名前がわかる）`, `Send signal number ${n} (same as \`-s ${n}\`; \`kill -l ${n}\` prints its name)`) },
+  { ...KILL_PATTERNS[1], pattern: new RegExp(`^-(?:${anyCase('SIG')})?(${anyCase(SIGNALS)})$`) },
+];
+
+/** What echo reads, as the builtin and as the program of coreutils, which read the same words. */
+const ECHO_OPTIONS: OptionSpec[] = [
+  { names: ['-n'], text: tx('末尾の改行を出力しない', 'do not print the trailing newline') },
+  { names: ['-e'], text: tx('`\\n` などのバックスラッシュエスケープを解釈する', 'interpret backslash escapes like `\\n`'), selects: 'escapes' },
+  { names: ['-E'], text: tx('バックスラッシュエスケープを解釈しない（既定）', 'do not interpret escapes (default)'), selects: 'plain' },
+];
+const ECHO_READING: Rest = {
+  style: 'none', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true,
+  operands: [
+    { when: { mode: 'escapes' }, pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' })] },
+    { pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*' })] },
+  ],
+};
+const TEST_OPTIONS: OptSpec[] = [
+  ['-z', '文字列が空なら真', 'true if the string is empty'], ['-n', '文字列が空でなければ真', 'true if the string is not empty'],
+  ['-e', 'ファイルが存在すれば真', 'true if the file exists'], ['-f', '通常のファイルなら真', 'true if it is a regular file'],
+  ['-d', 'ディレクトリなら真', 'true if it is a directory'], ['-s', 'ファイルが空でなければ真', 'true if the file is not empty'],
+  ['-r', '読めるなら真', 'true if readable'], ['-w', '書けるなら真', 'true if writable'], ['-x', '実行できるなら真', 'true if executable'],
+  ['-L|-h', 'シンボリックリンクなら真', 'true if it is a symbolic link'],
+  ['-eq', '数値として等しい', 'numerically equal'], ['-ne', '数値として等しくない', 'numerically not equal'],
+  ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
+];
+const TEST_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返す（`[ ]` と同じ）', 'Evaluate a conditional expression; exit 0 if true (same as `[ ]`)'] as const;
+
+/**
+ * The programs named like builtins (coreutils, procps), which a path (`/bin/kill`) or a wrapper that starts a
+ * program (`env echo`, `sudo kill`) runs instead of the builtin. Their options may differ: procps kill has no
+ * `-n` and no job specs, printf has no `-v`, and pwd reads `-P` by default.
+ */
+const PROGRAMS: Record<string, CommandSpec> = {
+  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils のプログラム）', 'Print arguments to stdout, separated by spaces (the coreutils program)', ECHO_OPTIONS, ECHO_READING),
+  printf: cmd('書式を指定して文字列を出力する（coreutils のプログラム。`-v` はない）', 'Print formatted output (the coreutils program, which has no `-v`)', [], {
+    style: 'none', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
+  }),
+  pwd: cmd('カレントディレクトリのパスを表示する（coreutils のプログラム。既定は `-P`）', 'Print the current directory (the coreutils program; `-P` is the default)', [
+    ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
+    ['-L|--logical', '環境変数 `PWD` の論理パスを表示', 'print the logical path from `PWD`'],
+    ['--help', 'ヘルプを表示する', 'show help'], ['--version', 'バージョンを表示する', 'print the version'],
+  ]),
+  kill: cmd('プロセスにシグナルを送る（procps のプログラム。既定は TERM、ジョブ指定は使えない）', 'Send a signal to a process (the procps program; default TERM, no job specs)', [
+    { names: ['-s', '--signal'], text: tx('送るシグナル', 'signal to send'), value: { name: 'SIGNAL', type: 'signal' }, marks: 'signal' },
+    ['-q|--queue', 'シグナルと一緒に送る整数', 'integer to send with the signal', 'arg'],
+    ['-l|--list', 'シグナル名の一覧を表示（`--list=シグナル` なら名前と番号を直す）', 'list signal names (`--list=SIG` translates one)', 'attached'],
+    ['-L|--table', 'シグナルの一覧を表にして表示', 'list the signals in a table'],
+    ['-h|--help', 'ヘルプを表示する', 'show help'], ['-V|--version', 'バージョンを表示する', 'print the version'],
+  ], {
+    style: 'posix', patternOptions: PROCPS_KILL_PATTERNS,
+    operands: [
+      { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
+      ...args(operand('PID', '対象のプロセス ID', 'target PID')).operands!,
+    ],
+  }),
+  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { style: 'single-dash' }),
+  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { style: 'none' }),
+  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { style: 'none' }),
+};
+
 export const builtins: Record<string, CommandSpec> = {
   export: declarationSpec('export', exportFlags, { builtin: 'special' }),
   readonly: declarationSpec('readonly', readonlyFlags, { builtin: 'special' }),
@@ -116,20 +179,10 @@ export const builtins: Record<string, CommandSpec> = {
   local: declarationSpec('local', declarationFlags, { plusOptions: true }),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
-  echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', [
-    ['-n', '末尾の改行を出力しない', 'do not print the trailing newline'],
-    { names: ['-e'], text: tx('`\\n` などのバックスラッシュエスケープを解釈する', 'interpret backslash escapes like `\\n`'), selects: 'escapes' },
-    { names: ['-E'], text: tx('バックスラッシュエスケープを解釈しない（既定）', 'do not interpret escapes (default)'), selects: 'plain' },
-  ], {
-    alsoProgram: true, style: 'none', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true,
-    operands: [
-      { when: { mode: 'escapes' }, pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' })] },
-      { pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*' })] },
-    ],
-  }),
+  echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     ['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'],
-  ], { alsoProgram: true, ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
+  ], { program: PROGRAMS.printf, ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
   read: b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
     ['-r', 'バックスラッシュをエスケープ文字として扱わない（ほぼ常に付けるべき）', 'do not treat backslashes as escapes (almost always wanted)'],
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],
@@ -150,7 +203,7 @@ export const builtins: Record<string, CommandSpec> = {
   pwd: b('カレントディレクトリのパスを表示する', 'Print the current directory', [
     ['-P', 'シンボリックリンクを解決した物理パスを表示', 'print the physical path'],
     ['-L', 'シンボリックリンクを含んだ論理パスを表示（既定）', 'print the logical path, with symlinks (default)'],
-  ], { alsoProgram: true }),
+  ], { program: PROGRAMS.pwd }),
   logout: b('ログインシェルを終了する（ログインシェル以外ではエラー）', 'Exit a login shell (an error in other shells)', [], numeric(operand('STATUS', '終了ステータス', 'exit status'))),
   exit: special('シェル（スクリプト）を終了する', 'Exit the shell or script', [], numeric(operand('STATUS', '終了ステータス（0 が成功、省略時は直前のコマンドのステータス）', 'exit status (0 = success; default: status of last command)'))),
   return: special('関数から戻る', 'Return from a function', [], numeric(operand('STATUS', '戻り値となる終了ステータス', 'exit status to return'))),
@@ -242,21 +295,13 @@ export const builtins: Record<string, CommandSpec> = {
     ['-l|-L', 'シグナル一覧を表示（番号や名前を渡すと、もう一方に直す）', 'list signals (given a number or a name, print the other one)'],
     { names: ['-0'], text: tx('プロセスが存在するか確認するだけ', 'only check whether the process exists'), ...SIGNAL_GIVEN },
   ], {
-    alsoProgram: true, patternOptions: KILL_PATTERNS,
+    program: PROGRAMS.kill, patternOptions: KILL_PATTERNS,
     operands: [
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
       ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,
     ],
   }),
-  test: b('条件式を評価し、真なら 0、偽なら 1 を返す（`[ ]` と同じ）', 'Evaluate a conditional expression; exit 0 if true (same as `[ ]`)', [
-    ['-z', '文字列が空なら真', 'true if the string is empty'], ['-n', '文字列が空でなければ真', 'true if the string is not empty'],
-    ['-e', 'ファイルが存在すれば真', 'true if the file exists'], ['-f', '通常のファイルなら真', 'true if it is a regular file'],
-    ['-d', 'ディレクトリなら真', 'true if it is a directory'], ['-s', 'ファイルが空でなければ真', 'true if the file is not empty'],
-    ['-r', '読めるなら真', 'true if readable'], ['-w', '書けるなら真', 'true if writable'], ['-x', '実行できるなら真', 'true if executable'],
-    ['-L|-h', 'シンボリックリンクなら真', 'true if it is a symbolic link'],
-    ['-eq', '数値として等しい', 'numerically equal'], ['-ne', '数値として等しくない', 'numerically not equal'],
-    ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
-  ], { alsoProgram: true, style: 'single-dash' }),
+  test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, style: 'single-dash' }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
     ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
@@ -273,8 +318,8 @@ export const builtins: Record<string, CommandSpec> = {
   ]),
   setopt: b('zsh のオプションを有効にする', 'Turn zsh options on', [], args(operand('OPTION', 'オプション名（`local_options`、`extended_glob`…）', 'option name (`local_options`, `extended_glob`…)'))),
   unsetopt: b('zsh のオプションを無効にする', 'Turn zsh options off', [], args(operand('OPTION', 'オプション名', 'option name'))),
-  true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { alsoProgram: true }),
-  false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { alsoProgram: true }),
+  true: b('何もせず成功（終了ステータス 0）を返す', 'Do nothing and succeed (exit 0)', [], { program: PROGRAMS.true }),
+  false: b('何もせず失敗（終了ステータス 1）を返す', 'Do nothing and fail (exit 1)', [], { program: PROGRAMS.false }),
   ':': special('何もしないコマンド（常に成功）。無限ループ `while :` や引数の展開だけしたい時に使う', 'No-op that always succeeds; used in `while :` or to evaluate expansions'),
   alias: b('コマンドの別名を定義する', 'Define a command alias', [
     ['-p', '定義済みの別名を再入力できる形で表示する', 'print the aliases in a reusable form'],

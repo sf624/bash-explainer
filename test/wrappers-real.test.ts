@@ -152,6 +152,34 @@ describe('wrappers agree with the real tools', () => {
     assert.match(run("env -S 'printf %s,' x y").out, /^x,y,$/);
   });
 
+  // A path, or a wrapper that starts a program, runs the program named like a builtin, whose options differ.
+  (usable('env') && /procps/.test(spawnSync('kill', ['-V'], { env: ENV, encoding: 'utf8' }).stdout ?? '') ? it : it.skip)('the programs named like builtins: coreutils and procps', () => {
+    /** The role of the word `word` of the command the line runs (the line itself when it is a path). */
+    const roleIn = (line: string, word: string) => {
+      const { parse, words } = parseOf(line);
+      const cmd = parse.roles.find((r) => r.role.role === 'command')?.role;
+      const p = cmd && cmd.role === 'command' ? cmd.parse! : parse;
+      return p.roles.find((r) => words[r.word] === word)!.role;
+    };
+    // procps kill has no `-n`, and takes no job spec.
+    assert.match(run('env kill -n 9 999999').err, /invalid argument n/);
+    assert.strictEqual(roleIn('env kill -n 9 999999', '-n').role, 'unknown-option');
+    assert.strictEqual(roleIn('/bin/kill -s TERM 999999', '-s').role, 'option');
+    assert.match(run('env kill %1').err, /failed to parse argument: '%1'/);
+    const pid = roleIn('env kill %1', '%1');
+    assert.ok(pid.role === 'operand' && pid.spec?.name === 'PID' && pid.spec.type === undefined);
+    // coreutils printf has no `-v`: it is the format.
+    assert.strictEqual(run('env printf -v x').out, '-v');
+    const format = roleIn('env printf -v x', '-v');
+    assert.ok(format.role === 'operand' && format.spec?.name === 'FORMAT');
+    // coreutils echo reads `-e` as bash's does.
+    assert.strictEqual(run("/bin/echo -e 'a\\tb'").out, 'a\tb\n');
+    assert.strictEqual(roleIn('/bin/echo -e x', '-e').role, 'option');
+    // coreutils pwd has long options.
+    assert.strictEqual(run('/bin/pwd --logical').err, '');
+    assert.strictEqual(roleIn('/bin/pwd --logical', '--logical').role, 'option');
+  });
+
   (has('bash') ? it : it.skip)('bash and sh: `$0`, the arguments, and the script', () => {
     const script = path.join(os.tmpdir(), `bash-explainer-args-${process.pid}.sh`);
     fs.writeFileSync(script, 'printf %s, "$@"');
