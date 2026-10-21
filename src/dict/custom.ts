@@ -64,7 +64,8 @@ function options(c: Record<string, unknown>): OptionSpec[] {
     // The old shape: `-o|--output` names several spellings of one option, as in the built-in dictionary.
     for (const [names, v] of Object.entries((c as OldCustomCommand).options!)) add(names.split('|').map((n) => n.trim()), v);
   }
-  return mergeOptions(out);
+  // (A name given twice means what it says last.)
+  return out.reduce<OptionSpec[]>((list, o) => mergeOptions(list, [o]), []);
 }
 
 function operands(c: Record<string, unknown>): OperandSpec[] {

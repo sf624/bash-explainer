@@ -15,6 +15,7 @@
 - In `trap 1 2` and `trap 1 INT`, every word is a signal reset to its default, as bash reads a signal number first. Before, `1` was the command to run.
 - `declare`, `local`, `export`, `readonly` and `typeset` read their options up to the first name or `--`, as bash does. `declare -- x=1` says `--` ends the options (before: "Option"). In `declare -x -- -i` and `declare y -i`, `-i` is a name, which bash rejects (before: the integer attribute, and a later `y=1` was explained as arithmetic).
 - The summary of a command names its deepest subcommand: `git stash push` and `docker compose -f x run` (before: `git stash` and `docker compose`).
+- `locate -r REGEXP` takes the regular expression as its value, as mlocate and plocate do, and `--regex` reads the patterns as extended regular expressions. Before, `-r` was the same as `--regex`, and the regular expression was a pattern.
 
 ## 0.6.0
 
