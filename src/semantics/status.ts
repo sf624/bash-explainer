@@ -30,7 +30,7 @@ export type StatusRule =
   | { readonly kind: 'test' }
   /** Lists, `{ }`, `( )`, `if`, `case`, loops, `time`: the status of the last command run (0 when none ran). */
   | { readonly kind: 'last-run' }
-  /** `exit N` and `return N`: N modulo 256. */
+  /** `exit N` and `return N`: N modulo 256 (with a word that is not a number, the rule is `command`). */
   | { readonly kind: 'given'; readonly by: 'exit' | 'return'; readonly value: number }
   /** `exit` and `return` with no number: the status of the command before. */
   | { readonly kind: 'previous'; readonly by: 'exit' | 'return' }
@@ -149,7 +149,7 @@ class Statuses implements StatusModel {
   }
 
   status(n: SyntaxNode): StatusRule {
-    if (backgrounded(n) || n.type === 'coproc_statement') return { kind: 'background', job: this.own(n.type === 'coproc_statement' ? n.namedChildren[n.namedChildren.length - 1] ?? n : n) };
+    if (backgrounded(n) || n.type === 'coproc_statement') return { kind: 'background', job: this.own(n.type === 'coproc_statement' ? n.namedChildren[n.namedChildren.length - 1] : n) };
     return this.own(n);
   }
 
@@ -160,7 +160,9 @@ class Statuses implements StatusModel {
         const args = fields(n, 'argument');
         if (name === 'exit' || name === 'return') {
           const v = args[0]?.text;
-          return v !== undefined && /^-?\d+$/.test(v) ? { kind: 'given', by: name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'previous', by: name };
+          if (v === undefined) return { kind: 'previous', by: name };
+          // (`exit $code`: the value is not known here.)
+          return /^-?\d+$/.test(v) ? { kind: 'given', by: name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
         }
         if (name === 'let') return { kind: 'arith' };
         if (name === 'wait') {
@@ -216,10 +218,13 @@ class Statuses implements StatusModel {
     const errexit = optionOn(st, 'set', 'errexit');
     const ignored = this.ignored(n) ?? undefined;
     const active: Tri = errexit === 'off' || ignored?.sure ? 'off' : errexit === 'unknown' || ignored ? 'unknown' : 'on';
-    const p = processOf(this.state.env(n));
+    // (The shell that checks a `( )` is the one around it.)
+    const p = processOf({ links: this.state.env(n).links.filter((l) => !(l.kind === 'subshell' && l.at === n && l.why === 'parentheses')) });
     const stops = !p.sure ? 'unknown' : p.kind === 'main' ? 'script' : 'subshell';
     const stage = n.parent?.type === 'pipeline' && STATEMENTS.has(n.type);
-    const checked = CHECKED.has(n.type) && !stage && !backgrounded(n);
+    // (An assignment in a declaration, before a command or among others is part of that statement.)
+    const part = n.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(n.parent!.type);
+    const checked = CHECKED.has(n.type) && !stage && !part && !backgrounded(n);
     const ctx: ErrexitContext = { errexit, ...(ignored ? { ignored } : {}), active, checked, stops };
     this.errexitMemo.set(n, ctx);
     return ctx;
@@ -294,4 +299,14 @@ export function lastStatements(n: SyntaxNode): SyntaxNode[] {
     return body ? lastStatements(body) : [n];
   }
   return [n];
+}
+
+/** Whether `n` is a `set` command that turns errexit on (`set -e`, `set -euo pipefail`, `set -o errexit`). */
+export function setsErrexit(n: SyntaxNode): boolean {
+  if (n.type !== 'command' || commandName(n) !== 'set') return false;
+  const words = fields(n, 'argument').map((w) => w.text);
+  // (Options end at the first word that is not one: `set -- -e` sets the positional parameters.)
+  const end = words.findIndex((w, i) => !/^-[A-Za-z]/.test(w) && !/^[-+][A-Za-z]*o$/.test(words[i - 1] ?? ''));
+  const options = end < 0 ? words : words.slice(0, end);
+  return options.some((w, i) => /^-[A-Za-z]*e/.test(w) || (w === 'errexit' && /^-[A-Za-z]*o$/.test(options[i - 1] ?? '')));
 }

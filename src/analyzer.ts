@@ -55,10 +55,11 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
-import { type EnvLink, type ExecEnv, lastStage, ownSubshells, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
+import { type EnvLink, type ExecEnv, lastStage, ownSubshells, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
+import { type Ignored, lastStatements, setsErrexit, statusModel, type StatusModel } from './semantics/status';
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -233,6 +234,8 @@ export class Analyzer {
   private context: ContextEntry[] = [];
   /** The shell state along the script (src/semantics/state.ts). */
   private state!: StateModel;
+  /** Exit statuses and errexit (src/semantics/status.ts). */
+  private status!: StatusModel;
   /** Notes produced while explaining (e.g. the effect of several redirections). */
   private extraNotes: string[] = [];
   /** Context of the current explainLine call. */
@@ -261,6 +264,7 @@ export class Analyzer {
     this.shell = shell;
     // (`#!/bin/bash --posix` starts bash in POSIX mode.)
     this.state = shellState(tree, shell, { posix: /^#![^\n]*\s--posix\b/.test(root.text) });
+    this.status = statusModel(this.state, shell);
     this.context = [];
     this.slotEnvs = new Map();
     this.extraNotes = [];
@@ -274,7 +278,7 @@ export class Analyzer {
       ...(shell && shell !== 'bash' ? { shell } : {}),
       items,
       context: this.context,
-      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line)])],
+      notes: [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.errexitNotes(root, line), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusPitfalls(root, line)])],
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -1165,6 +1169,12 @@ export class Analyzer {
     const m = /^\(\(\s*([A-Za-z_]\w*(?:\[[^\]]*\])?)(\+\+|--)\s*\)\)$/.exec(n.text);
     if (!m || this.opts.pitfalls === false) return;
     const [, v, op] = m;
+    // (Where bash ignores `set -e`, `((i++)) || true`, the status still is 1 but the script goes on.)
+    if (this.status.errexit(n).ignored?.sure) {
+      this.extraNotes.push(this.s(`⚠ 落とし穴: \`((${v}${op}))\` の値は${op === '++' ? '増やす' : '減らす'}前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる`,
+        `⚠ Pitfall: the value of \`((${v}${op}))\` is the value before the ${op === '++' ? 'increment' : 'decrement'}, so the exit status is 1 when \`${v}\` is 0`));
+      return;
+    }
     this.extraNotes.push(op === '++'
       ? this.s(`⚠ 落とし穴: \`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
         `⚠ Pitfall: the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`)
@@ -1174,13 +1184,11 @@ export class Analyzer {
 
   /** `exit 256` and `return 300`: the status is taken modulo 256. */
   private statusRangeNote(n: SyntaxNode): void {
-    const name = field(n, 'name')?.text;
-    if (name !== 'exit' && name !== 'return') return;
-    const arg = fields(n, 'argument')[0];
-    if (!arg || !/^-?\d+$/.test(arg.text)) return;
-    const v = Number(arg.text);
+    const rule = this.status.status(n);
+    if (rule.kind !== 'given') return;
+    const v = Number(fields(n, 'argument')[0].text);
     if (v >= 0 && v <= 255) return;
-    const status = ((v % 256) + 256) % 256;
+    const status = rule.value;
     this.extraNotes.push(this.s(`ℹ 終了ステータスは 0〜255 なので、\`${v}\` は 256 で割った余りの ${status} になる`, `ℹ An exit status is 0–255, so \`${v}\` becomes ${status} (the value modulo 256)`));
   }
 
@@ -2592,6 +2600,120 @@ export class Analyzer {
       return this.s(`\`${t}\` は ${ja}`, `\`${t}\` is ${en}`);
     });
     return parts.length ? this.s(`。拡張グロブ: ${parts.join('、')}`, `. Extended glob: ${parts.join('; ')}`) : '';
+  }
+
+  /** Where bash ignores `set -e` (src/semantics/status.ts), in words: `in the condition of \`if\``, `on the left side of \`||\``… */
+  private ignoredWhere(ig: Ignored): string {
+    switch (ig.why) {
+      case 'condition': {
+        const kw = ig.at.type === 'if_statement' ? 'if' : ig.at.children[0].type;
+        return this.s(`\`${kw}\` の条件（行 ${ig.at.startPosition.row + 1}）`, `in the condition of \`${kw}\` (line ${ig.at.startPosition.row + 1})`);
+      }
+      case 'and-or': {
+        const op = ig.at.children.find((c) => c.type === '&&' || c.type === '||')!.type;
+        return this.s(`\`${op}\` の左側`, `on the left side of \`${op}\``);
+      }
+      case 'negated': return this.s('`!` のあと', 'after `!`');
+      case 'called-in-condition': {
+        const name = field(ig.at, 'name')!.text;
+        return this.s(`\`set -e\` が無視される所から呼ばれる関数（行 ${ig.at.startPosition.row + 1} の \`${name}\`）の中`, `in a function called where \`set -e\` is ignored (\`${name}\` on line ${ig.at.startPosition.row + 1})`);
+      }
+    }
+  }
+
+  /**
+   * Where `set -e` does less than it seems (src/semantics/status.ts): a `set -e` that runs where bash ignores it; a
+   * function, `( )` or `{ }` of several commands run where it is ignored; a `$( )` of several commands, where bash
+   * turns it off. Said only with errexit on, where a failure in the middle would otherwise stop the script.
+   */
+  private errexitNotes(root: SyntaxNode, line: number): string[] {
+    const notes: string[] = [];
+    const statements = (n: SyntaxNode) => n.namedChildren.filter((c) => STATEMENTS.has(c.type));
+    for (const n of onLine(root, ['command', 'subshell', 'compound_statement', 'command_substitution', 'function_definition'], line)) {
+      if (n.startPosition.row !== line) continue;
+      if (n.type === 'command_substitution') {
+        // (The state of the `$( )` node is the one around it; its commands have the one inside.)
+        const inner = statements(n);
+        if (inner.length < 2 || this.status.errexit(n).errexit !== 'on' || this.status.errexit(inner[0]).errexit !== 'off' || inner.some(setsErrexit)) continue;
+        notes.push(this.s(`ℹ bash は \`$( )\` の中では \`set -e\` を切る（\`shopt -s inherit_errexit\` が無いとき）。\`${shorten(inner[0].text, 30)}\` が失敗しても、あとのコマンドは実行される`,
+          `ℹ bash turns \`set -e\` off inside \`$( )\` (without \`shopt -s inherit_errexit\`): if \`${shorten(inner[0].text, 30)}\` fails, the commands after it still run`));
+        continue;
+      }
+      const ctx = this.status.errexit(n);
+      if (n.type === 'command' && setsErrexit(n) && ctx.ignored) {
+        const ig = ctx.ignored;
+        const where = this.ignoredWhere(ig);
+        if (ig.why === 'called-in-condition') {
+          const name = field(ig.at, 'name')!.text;
+          notes.push(ig.sure
+            ? this.s(`ℹ この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（行 ${ig.at.startPosition.row + 1}）から呼ばれる`, `ℹ This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (line ${ig.at.startPosition.row + 1})`)
+            : this.s(`ℹ \`${name}\` は \`set -e\` が無視される所（行 ${ig.at.startPosition.row + 1}）からも呼ばれ、そのときこの \`set -e\` は呼び出しが終わるまで効かない`, `ℹ \`${name}\` is also called where \`set -e\` is ignored (line ${ig.at.startPosition.row + 1}); there this \`set -e\` takes effect only when the call returns`));
+        } else {
+          notes.push(ctx.stops === 'subshell'
+            ? this.s(`ℹ この \`set -e\` は効かない: このサブシェルは ${where}にあり、そこでは \`set -e\` が無視される`, `ℹ This \`set -e\` has no effect: this subshell runs ${where}, where \`set -e\` is ignored`)
+            : this.s(`ℹ この \`set -e\` は、それを含むコマンドが終わるまで効かない: ${where}では \`set -e\` が無視される`, `ℹ This \`set -e\` takes effect only when the command that holds it ends: \`set -e\` is ignored ${where}`));
+        }
+        continue;
+      }
+      // A function called only there, or a group of commands: a failure before its last command does not stop it.
+      // Said where a command before the last is a plain one, whose failure `set -e` would otherwise catch.
+      const plain = (body: SyntaxNode) => statements(body).slice(0, -1).some((c) => {
+        const b = c.type === 'redirected_statement' ? field(c, 'body') : c;
+        return (b?.type === 'command' || b?.type === 'pipeline') && ['command', 'pipeline'].includes(this.status.status(b).kind);
+      });
+      if (n.type === 'function_definition') {
+        const body = field(n, 'body');
+        const first = body && statements(body)[0];
+        const ig = first && this.status.errexit(first).ignored;
+        if (!body || !ig?.sure || ig.why !== 'called-in-condition' || this.status.errexit(ig.at).errexit !== 'on' || !plain(body) || statements(body).some(setsErrexit)) continue;
+        const name = field(n, 'name')!.text;
+        notes.push(this.s(`ℹ \`${name}\` は \`set -e\` が無視される所（行 ${ig.at.startPosition.row + 1}）からしか呼ばれないので、その中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
+          `ℹ \`${name}\` is called only where \`set -e\` is ignored (line ${ig.at.startPosition.row + 1}), so it is ignored in all of its body too: a command that fails in the middle does not stop it`));
+        continue;
+      }
+      if (n.type === 'command' || ctx.errexit !== 'on' || !ctx.ignored?.sure || ctx.ignored.why === 'called-in-condition') continue;
+      // (A `set -e` in the group has its own note.)
+      if (!plain(n) || statements(n).some(setsErrexit)) continue;
+      const what = n.type === 'subshell' ? '`( )`' : '`{ }`';
+      notes.push(this.s(`ℹ ${this.ignoredWhere(ctx.ignored)}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
+        `ℹ \`set -e\` is ignored in this ${what}, since it runs ${this.ignoredWhere(ctx.ignored)}: a command that fails in the middle does not stop it`));
+    }
+    return notes;
+  }
+
+  /**
+   * Failures that `set -e` does not see, or that it sees where few expect (src/semantics/status.ts): `local x=$(cmd)`
+   * (the builtin's status), a pipeline without pipefail, and a function whose last command is `test && cmd`.
+   */
+  private statusPitfalls(root: SyntaxNode, line: number): string[] {
+    const notes: string[] = [];
+    for (const n of onLine(root, ['declaration_command', 'pipeline', 'list'], line)) {
+      if (n.startPosition.row !== line) continue;
+      const rule = this.status.status(n);
+      if (rule.kind === 'masked') {
+        // The keyword: local, export, declare, readonly or typeset.
+        const kw = rule.by;
+        const v = field(ancestor(rule.substitutions[0], (x) => x.type === 'variable_assignment')!, 'name')!.text;
+        notes.push(this.s(`⚠ 落とし穴: \`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
+          `⚠ Pitfall: the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``));
+      } else if (rule.kind === 'pipeline' && !rule.negated && rule.pipefail === 'off' && this.status.errexit(n).active === 'on' && this.shell !== 'sh' && this.shell !== 'dash') {
+        // (sh and dash have no pipefail to suggest.)
+        const last = rule.stages[rule.stages.length - 1];
+        notes.push(this.s(`⚠ 落とし穴: \`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${shorten(last.text, 30)}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない`,
+          `⚠ Pitfall: without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${shorten(last.text, 30)}\`) alone, so \`set -e\` does not stop the script when a command before it fails`));
+      } else if (n.type === 'list' && n.children.some((c) => c.type === '&&') && !n.children.some((c) => c.type === '||')) {
+        // The last command of a function: the function returns the status of the left side when it fails.
+        const def = ancestor(n, (x) => x.type === 'function_definition');
+        const body = def && field(def, 'body');
+        if (!body || !lastStatements(body).includes(n)) continue;
+        const call = [...this.state.calls.get(def)?.keys() ?? []].find((c) => this.status.errexit(c).active === 'on' && this.status.errexit(c).checked);
+        if (!call) continue;
+        const name = field(def, 'name')!.text;
+        notes.push(this.s(`⚠ 落とし穴: これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、\`set -e\` により行 ${call.startPosition.row + 1} の呼び出しでスクリプトが止まる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
+          `⚠ Pitfall: this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${call.startPosition.row + 1}. Write \`if …; then …; fi\`, or end the function with \`return 0\``));
+      }
+    }
+    return notes;
   }
 
   /**
@@ -4206,8 +4328,32 @@ export class Analyzer {
     const t = this.tok(n, 'substitution', this.s(
       `コマンド置換 ${backtick ? '`` `…` ``（旧式。`$(…)` 推奨）' : '`$(…)`'}: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える`,
       `Command substitution ${backtick ? '`` `…` `` (legacy; prefer `$(…)`)' : '`$(…)`'}: runs the command and is replaced by its stdout (trailing newlines removed)`,
-    ), this.subs(n.namedChildren));
+    ) + this.substitutionStatus(n), this.subs(n.namedChildren));
     return t;
+  }
+
+  /**
+   * Under `set -e`, whether a failure in `$( )` stops the script (src/semantics/status.ts): it does in an assignment
+   * with no command, which takes the status of its last substitution; it does not in a command's words, where the
+   * command's own status counts (a declaration builtin's is said by a pitfall).
+   */
+  private substitutionStatus(n: SyntaxNode): string {
+    // (A word is always in a statement.)
+    let stmt = n.parent!;
+    while (!STATEMENTS.has(stmt.type) || (stmt.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(stmt.parent!.type))) stmt = stmt.parent!;
+    if (ancestor(n, (x) => x === stmt || x.type === 'command_substitution' || x.type === 'process_substitution') !== stmt) return '';
+    const ctx = this.status.errexit(stmt);
+    if (ctx.active !== 'on' || !ctx.checked || ctx.stops !== 'script') return '';
+    const rule = this.status.status(stmt);
+    if (rule.kind === 'last-substitution') {
+      return rule.at === n
+        ? this.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（コマンドの無い代入は、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (an assignment with no command takes the status of its last command substitution)')
+        : this.s('。これが失敗しても `set -e` では止まらない（代入の終了ステータスは最後のコマンド置換のもの）', '. If it fails, `set -e` does not stop the script (an assignment takes the status of its last command substitution)');
+    }
+    // (In the command's name, it is not an argument: `"$(cmd)" a`.)
+    if (rule.kind !== 'command' || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
+    const name = shorten(field(stmt, 'name')!.text, 20);
+    return this.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
   }
 
   private processSubstitution(n: SyntaxNode): Token {

@@ -170,18 +170,6 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         }
         break;
       }
-      case 'declaration_command': {
-        // `local x=$(cmd)`: the status of local hides the status of cmd.
-        // The keyword: local, export, declare, readonly or typeset.
-        const kw = n.children[0].text;
-        const assign = n.namedChildren.find((c) => c.type === 'variable_assignment' && field(c, 'value')?.type === 'command_substitution');
-        if (assign) {
-          const v = field(assign, 'name')!.text;
-          add(`\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
-            `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``);
-        }
-        break;
-      }
     }
   };
   visit(root);
