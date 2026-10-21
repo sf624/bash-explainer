@@ -688,6 +688,38 @@ interface StateModel { env(n: SyntaxNode): ExecEnv; calls: ReadonlyMap<SyntaxNod
 
 Not followed yet: what runs inside a string (`bash -c 'a | b'`, `( eval 'cd /x' )`, `echo | eval 'exit 1'`: the string is not read for its environment, and the analyzer does not explain it as a script), the commands that never run after `exec cmd`, sudo's policy (`env_keep`, `-E` with a policy that keeps functions), a shell that is not bash (`SlotLink.shell` says which; `export -f` reaches only bash: B3), and the state changes of an `eval` string or a trap action.
 
+### 4.9 As built: words (B4)
+
+```ts
+// src/semantics/words.ts
+export type WordContext = 'command-name' | 'argument' | 'assignment-value' | 'array-element' | 'declaration-argument'
+  | 'cond-operand' | 'cond-pattern' | 'cond-regex' | 'case-word' | 'case-pattern' | 'for-list'
+  | 'redirect-target' | 'heredoc-body' | 'herestring' | 'arith' | 'subscript' | 'param-word' | 'param-pattern';
+export const CONTEXTS: Record<WordContext, ContextRule>;  // { brace, tilde, split, glob, match?, fields, posixLiteral?, manual }
+export interface WordMeaning {
+  nodes: SyntaxNode[];            // one, but the parts of the right side of `[[ x == $p* ]]`
+  context: WordContext; rule: ContextRule;
+  steps: ExpansionStep[];         // brace, tilde, parameter, command, arithmetic, process, split, glob, quote-removal
+  tildes: TildePrefix[];          // the prefixes bash expands, with `after: '' | '=' | ':'`
+  ifs: IfsState; glob: GlobState; // where it runs: IFS, and noglob, nullglob, failglob, dotglob, nocaseglob, extglob, globstar, GLOBIGNORE
+  posix: Tri; state: ShellState;
+  value?: string;                 // after quote removal, when nothing in it expands
+}
+export function wordOf(n): { nodes; context } | undefined;   // the word that holds an expansion, a string, a word
+export function wordMeaning(n, model: StateModel): WordMeaning | undefined;   // cached per model
+export function partMeaning(part, model): { word; quoted; split: ExpansionStep; glob: ExpansionStep } | undefined;
+export function wordFields(n, model, env?: WordEnv): { fields?: string[]; error?: 'ambiguous-redirect' | 'no-match' | 'unbound' | 'parameter-null' };
+```
+
+- `ExpansionStep.applies` is `true`, `false` (with `why`: `context`, `quoted`, `noglob`, `ifs-empty`, `posix-mode`, `braceexpand-off`) or `unknown` when the state it depends on is unknown (`set -f` on some paths, an IFS set to a value not known here, POSIX mode on some paths). The analyzer says "may" then.
+- The rows differ from the table of 4.3 where bash does: an array element has a tilde at its start only (`a=(x=~/y)` keeps it); a declaration word that the parser does not give as an assignment (`declare "c"=$x`) is an argument, split and globbed; a redirection target is neither split nor globbed in POSIX mode, but its braces expand; the operands of `${…}` (`param-word`) are split and globbed as the expansion around them. The subscript rows are one (`subscript`): the steps are the same.
+- Tildes: at the start of a word; in an assignment, also after each `:`; in an argument that looks like an assignment (`x=~/a:~/b`, `a[1]=~`, `n+=~`), after the `=` and each `:`, in bash mode only. A prefix that is not all in the plain word (`~"x"`, `~$u`, `{~\x,y}`) is not one.
+- `wordFields` gives the fields when they follow from what the model knows: quotes, brace expansion of a plain word, tildes, `$x` and `${x}`, `${#x}`, `${!x}`, `${x:-w}` and the other defaults, `${x:o:l}`, `${x#p}` and `%`, `${x/p/r}` (not with an unquoted `&`), `${x^^}` and `,,`, constant arithmetic, word splitting with the IFS in effect, and pathname expansion with the options in effect. What the model does not know, it gives as unknown: positional parameters, arrays, namerefs, command output, arithmetic with names, the user database (`~user`). A variable set by `(( ))`, `let` or `${x:=w}` anywhere in the script is unknown too, since the state does not follow those. The environment, the current directory and the files are inputs (`WordEnv`): the analyzer gives none, the probes give bash's.
+- A variable whose value is not static text has its `source` in the state (4.7): the value word of the plain assignment that set it, on every path to here (a merge keeps it only when both sides have the same one). `wordFields` expands that word where it ran (`w=$z`, `declare y=$x`, `PATH=~/bin:$PATH`), with a guard against cycles.
+- The state model changed with it: an assignment's static value keeps globs and braces as text (`x=*.txt` is `*.txt`); a GLOBIGNORE that is not empty turns dotglob on and `unset GLOBIGNORE` turns it off, as bash does (an empty GLOBIGNORE leaves it); `declare "c"=$x` declares `c`, with a value not known here.
+
+Deferred: `${x}` and unquoted `$(…)` do not say yet that they are split (only `$x` does); arrays and positional parameters in `wordFields` (B1 does not follow their values); the shells other than bash (zsh does not split an unquoted `$x`); case-insensitive matching (`nocasematch`) and the pattern of `[[ == ]]` and `case` as a fact of the model (the analyzer still reads it from the tree); a glob in a word that also has a tilde after `=` (`a[1]=~/e` is explained for its tilde only); `valueNote` reading the model's `value`.
+
 ## 5. C: the bash-ast differential test
 
 ### 5.1 What it compares
@@ -800,7 +832,7 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 
 **B3. Name resolution and assignments.** `NameResolution`, `AssignmentMeaning`, special builtins and POSIX mode; `commandHeadFor` renders from it. The name-keyed cases left in src/analyzer.ts go here or in B1: the flag texts of the declaration commands (their words are read with the builtin's spec, but the texts come from the tables of src/dict/syntax.ts chosen by the name), `unset` (its own node, with regular expressions for `-f` and `-n`), `head.name === 'test'` (the expression reading), the positions of `read -a NAME` and of mapfile's array in the scans of `explainLine` (by name and word position, not by the interpreter), the `set -o posix` regular expression of the special-builtin assignment note, the `set` scan for noglob, and `exportedFunctions`, a regular expression over the whole source that ignores where the export is (before or after the use, in a function or not). Probe: `type -t` at the place of the command, under bash and `bash --posix`. Size: 500–700.
 
-**B4. Words.** The context table and `WordMeaning`; `splitNote`, `noSplit`, `valueNote`, `globOff`, `afterAssignment`, `tilde` and the quoting notes render from it. Probe: bash prints the fields of a word in its context (`printf '<%s>'` in a temporary directory with known files and `IFS`), compared with `fields` and with the static value. Size: 800–1,200.
+**B4. Words.** The context table and `WordMeaning`; `splitNote`, `noSplit`, `valueNote`, `globOff`, `afterAssignment`, `tilde` and the quoting notes render from it. Probe: bash prints the fields of a word in its context (`printf '<%s>'` in a temporary directory with known files and `IFS`), compared with `fields` and with the static value. Size: 800–1,200. Done: the table and `WordMeaning` are in src/semantics/words.ts (4.9); the analyzer's `splitNote`, `globOff`, `tilde` and the note on `$_` render from it, and `noSplit`, `ifsAt` and `afterAssignment` are gone. test/word-probes.test.ts compares `wordFields` with every row of words.json (55 rows; a marker the model gives as unknown is in the row's `gaps`, with the reason), and test/words.test.ts compares a here-string and a here-document with bash. `valueNote` and the text of double-quoted strings still read src/staticword.ts, which the model uses for `value` too.
 
 **B5. Status and errexit.** `StatusRule`, `ErrexitContext`, and their facts. Probe: bash runs the snippet with `set -e` and a marker after it. Size: 300–500.
 
