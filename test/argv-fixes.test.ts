@@ -35,12 +35,14 @@ const FIXED: [string, string, Kind, string][] = [
   ['chmod --reference=ref.txt target.txt', 'target.txt', 'argument', 'target file'],
   ['chmod --reference=r u+x', 'u+x', 'argument', 'target file'],
   // After the host, the first operand starts the remote command, and the words after it are its own
-  // (`ssh -G localhost ls -l` still shows the user of the login, so `-l` is not ssh's).
-  ['ssh host ls -la', '-la', 'argument', 'remote command'],
-  ['ssh host ls -l', '-l', 'argument', 'remote command'],
-  ['ssh -p 22 host -t ls -l', '-l', 'argument', 'remote command'],
-  ['ssh and su -c: the remote shell', '-c:', 'argument', 'remote command'],
-  ['ssh and su -c: the remote shell', 'the', 'argument', 'remote command'],
+  // (`ssh -G localhost ls -l` still shows the user of the login, so `-l` is not ssh's): the joined words are read
+  // as the script the remote shell runs.
+  ['ssh host ls -la', 'ls -la', 'argument', 'remote command'],
+  ['ssh host ls -la', '-la', 'option', 'Combined short options `-l` `-a`'],
+  ['ssh host ls -l', '-l', 'option', 'long format'],
+  ['ssh -p 22 host -t ls -l', '-l', 'option', 'long format'],
+  ['ssh and su -c: the remote shell', '-c:', 'option', 'run the given command with the shell'],
+  ['ssh and su -c: the remote shell', 'su -c: the remote shell', 'argument', 'remote command'],
   // Only the first signal is one; then `-1` is a process group (`bash -c 'kill -9 -999999'` and
   // `bash -c 'kill -s TERM -999999'` say `(-999999) - No such process`; bash kill.def, `saw_signal`).
   ['kill -9 -1', '-1', 'argument', 'target PID or job spec'],

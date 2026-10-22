@@ -112,6 +112,7 @@ echo "${s:$i:2}"
 [ "$a" -eq 1 -a "$b" -eq 2 ]
 [ ! a = b -a -f c ]
 [ -a file ]
+sudo sh -c 'printf "%s\n" "$1" > /etc/motd' sh "$msg"
 cat <<-'EOF'
 	tabs are removed, and $nothing expands
 	EOF

@@ -369,13 +369,23 @@ function items(roles: readonly RoleAt[], w: Words, split?: boolean): Item[] {
 }
 
 /**
+ * Whether a slot runs a string as a script (docs/design/semantics.md, 4.13): another shell's (`bash -c`, ssh), or this
+ * shell's, now (`eval`) or later (a trap's action). `sudo -s cmd` escapes its words, which are then a command.
+ */
+export function runsString(slot: CommandSlot): boolean {
+  return !slot.escapesWords && (slot.run === 'shell-string' || !!slot.later || (slot.run === 'current-shell' && !!slot.joinsWords));
+}
+
+/**
  * Where each command that a command's words run through a slot runs (`sudo env -i bash -c 'f'`: `env` under
  * sudo, `bash` under env, and the string under `bash -c`), keyed by its first word (or its string). `env` is
  * where the command itself runs; `parse` reads its words `nodes` with `spec`; `lookup` gives the spec of a
- * command a slot runs, for find's expression. A command named in an `env -S` value has no word of its own, so it
- * is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the string, under bash under env).
+ * command a slot runs, for find's expression. `strings` gets the words of each string a slot runs as a script
+ * (`runsString`): one word, or the words it joins (`eval a b`, `ssh host ls -l`), by the first. A command named in an
+ * `env -S` value has no word of its own, so it is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the
+ * string, under bash under env).
  */
-export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined): Map<SyntaxNode, ExecEnv> {
+export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, all: readonly Item[]): void => {
     // A command named in an `env -S` value reads the rest of the line: the roles after it are its own.
@@ -385,7 +395,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
     const assigns: string[] = [];
     const unsets: string[] = [];
     const flags = list.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
-    for (const { word, role, w, split } of list) {
+    for (const [idx, { word, role, w, split }] of list.entries()) {
       // (`-e x`, or `--env=x` in the option's word.)
       const value = role.role === 'value' ? role : role.role === 'option' ? role.value : undefined;
       if (value?.spec?.setsEnv) {
@@ -407,6 +417,8 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         if (!split) out.set(w.node(word), inner);
+        // (The words a slot joins are those after it that it marks `joined`.)
+        if (!split && runsString(role.slot)) strings?.set(w.node(word), [w.node(word), ...(role.slot.joinsWords ? all.slice(idx + 1).filter((i) => i.role.role === 'joined').map((i) => w.node(i.word)) : [])]);
         // (A command named in an `env -S` value also reads the rest of the line.)
         if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, [...items(role.parse.roles, w, split), ...(split ? all.slice(k + 1) : [])]);
       } else if (role.role === 'expression' && word === p.expression && s.expressionSpec) {

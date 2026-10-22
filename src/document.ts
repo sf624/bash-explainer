@@ -1,10 +1,10 @@
-import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
+import { Analyzer, ExplainOptions, LineExplanation, nestedScripts } from './analyzer';
 import { dialectIssues, Shell } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import type { SyntaxTree } from './syntax/tree';
+import type { Point, SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -50,8 +50,9 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
   }
   const crlf = crlfIssue(doc.tree, lang);
   const shell = shells.forced ?? shells.detected;
-  if (!shell || shell === 'bash') return crlf;
-  return [...crlf, ...dialectIssues(doc.tree, shell, lang).map((i): DocumentIssue => {
+  const nested = nestedIssues(doc, lang, shell);
+  if (!shell || shell === 'bash') return [...crlf, ...nested];
+  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell, lang).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
@@ -60,6 +61,34 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
   })];
+}
+
+/**
+ * The dialect issues of the strings run as scripts by a shell other than bash (`sh -c '[[ … ]]'`, an `eval` string in
+ * an sh script), at their places in the document (docs/design/semantics.md, 4.13).
+ */
+function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined): DocumentIssue[] {
+  const out: DocumentIssue[] = [];
+  const text = doc.tree.text;
+  const at = (i: number) => {
+    const before = text.slice(0, i);
+    return { line: before.split('\n').length - 1, col: i - before.lastIndexOf('\n') - 1 };
+  };
+  for (const { script, source } of nestedScripts(doc.tree, shell)) {
+    if (!script.shell || script.shell === 'bash') continue;
+    // (The issues give places as positions in the string's text.)
+    const lines = script.tree.text.split('\n');
+    const index = (p: Point) => lines.slice(0, p.row).reduce((n, l) => n + l.length + 1, 0) + p.column;
+    for (const i of dialectIssues(script.tree, script.shell, lang)) {
+      const start = at(source(index(i.place.startPosition), false));
+      const end = at(source(index(i.place.endPosition), true));
+      out.push({
+        code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message,
+        startLine: start.line, startCol: start.col, endLine: start.line, endCol: end.line === start.line ? end.col : doc.lines[start.line].length,
+      });
+    }
+  }
+  return out;
 }
 
 const CRLF: [string, string] = [

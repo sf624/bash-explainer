@@ -522,6 +522,15 @@ describe('robustness', () => {
     assert.match(explain('ls -l', 0, 'en').items[0].explanation, /List directory/);
   });
 
+  it('explains a pipeline of kislyuk yq step by step, and a name the parser leaves outside any word', () => {
+    // (kislyuk/yq prints JSON: each step of `.a | keys` is shown as JSON.)
+    const yq = new Analyzer('en').explainLine(parser.parse("yq '.a | keys' x.yaml"), 0, undefined, { yqFlavor: 'kislyuk' });
+    assert.ok(yq.examples.some((e) => e.sections.length > 2));
+    // (`$tmp` in a function name that does not parse: no word context, no note on splitting.)
+    const t = parser.parse('function c$tmp"; }\nread -rp "Continue? " ans');
+    assert.doesNotThrow(() => new Analyzer('en').explainLine(t, 0));
+  });
+
   it('explains every line of the sample script without throwing', async () => {
     const fs = await import('fs');
     const src = fs.readFileSync(path.join(root, 'test/fixtures/sample.sh'), 'utf8');
