@@ -847,6 +847,15 @@ describe('the web page in a browser', function () {
       assert.strictEqual(await panel().locator('header').isHidden(), true, `${width}px`);
       assert.strictEqual(await panel().locator('header button:visible, header select:visible, #where:visible').count(), 0);
       assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
+      // The editor shows the start of its lines: not scrolled sideways, the first character right of the gutter.
+      const start = (await page.evaluate(`(() => {
+        const line = document.querySelector('.cm-line');
+        const r = document.createRange();
+        r.setStart(line.firstChild, 0);
+        r.setEnd(line.firstChild, 1);
+        return [document.querySelector('.cm-scroller').scrollLeft, r.getBoundingClientRect().left, document.querySelector('.cm-gutters').getBoundingClientRect().right, line.textContent.slice(0, 2)];
+      })()`)) as [number, number, number, string];
+      assert.ok(start[0] === 0 && start[1] >= start[2] - 0.5 && start[3] === '#!', `${width}px: ${start}`);
       const wide = width >= 1200;
       const via = async (top: string, menu: string) => {
         if (wide) return page.locator(top).click();
