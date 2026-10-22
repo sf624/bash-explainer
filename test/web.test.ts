@@ -1176,7 +1176,7 @@ describe('the web page in a browser', function () {
       assert.strictEqual(await kind.getAttribute('aria-expanded'), 'true');
       assert.strictEqual(await list.isVisible(), true);
       assert.strictEqual(await list.getAttribute('role'), 'listbox');
-      assert.strictEqual(await list.locator('[role="option"]').count(), 8);
+      assert.strictEqual(await list.locator('[role="option"]').count(), 9);
       assert.strictEqual(await list.locator('[aria-selected="true"]').innerText(), 'Shell script');
       // The list is in the window.
       const lb = (await list.boundingBox())!;
@@ -1315,12 +1315,18 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await select.isVisible(), true);
     assert.strictEqual(await select.getAttribute('aria-label'), 'File');
     assert.strictEqual(await select.inputValue(), 'shell');
-    assert.strictEqual(await select.locator('option').count(), 8);
+    assert.strictEqual(await select.locator('option').count(), 9);
     assert.strictEqual(await page.evaluate("document.querySelector('#drawer .field select').id"), 'kind-menu');
     assert.ok((await select.boundingBox())!.height >= 40);
     await select.selectOption('dockerfile');
     await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
     assert.strictEqual(await select.inputValue(), 'dockerfile');
+    // The last kind, bats, and its sample.
+    await select.selectOption('bats');
+    await until('the bats sample', text, (t) => /^@test /m.test(t));
+    assert.strictEqual(await select.inputValue(), 'bats');
+    await select.selectOption('dockerfile');
+    await until('the Dockerfile sample again', text, (t) => /^FROM /m.test(t));
     // The language: the label and the names of the kinds.
     await choose(page, '#lang', 'ja');
     await until('ja label', async () => (await select.getAttribute('aria-label')) ?? '', (t) => t === 'ファイル');
