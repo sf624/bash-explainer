@@ -8,6 +8,10 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - `test/fixtures/playground.sh` (gitignored, created from `sample.sh` by the F5 pre-launch task when missing) and `test/fixtures/hosts/*` are the maintainer's playground for trying explanations in VS Code; edits there are theirs.
 - Japanese strings in `src/`, and README.ja.md, follow [docs/japanese-style.md](docs/japanese-style.md); a test checks them.
 
+## Changelog
+
+- CHANGELOG.md is read by users (GitHub Release notes, the Marketplace); README "Contributing" has its format. Write one bullet per user-visible change under `### New`, `### Changed` or `### Fixed` of `## Unreleased`; when a change is a fix of a kind already listed (one more construct explained as bash does, one more tool option), extend that bullet instead of adding one. No tests, CI, refactors or design (the semantic model, specs) unless users see the effect, and then describe the effect. Keep compatibility notes (deprecated or changed settings, removed features, minimum VS Code version) explicit.
+
 ## Tests and coverage
 
 - Every line and branch of `src/` must be taken by the unit tests (`coverage-floors.json` is empty). Measure as CI does: Node.js 24 and `npm run coverage` (it sets `TZ=UTC`), then `npm run coverage:check`.
