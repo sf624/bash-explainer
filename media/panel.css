@@ -65,9 +65,9 @@ header {
   background: var(--vscode-editor-background);
 }
 
-/* Scrolled under: a soft edge below. */
+/* Scrolled under: a thin rule below (a shadow, so the layout does not move). */
 #top.stuck {
-  box-shadow: 0 0.6rem 0.6rem -0.2rem rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 0 var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
 }
 
 #where {
