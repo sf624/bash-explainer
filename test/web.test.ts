@@ -1267,6 +1267,38 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('opens the settings with a swipe from the right edge on a phone, closes them with a swipe back, and never opens both sheets', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const settings = () => page.locator('#settings-dialog').evaluate((d) => (d as unknown as { open: boolean }).open);
+    const menu = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
+    const cdp = await ctx.newCDPSession(page);
+    const swipe = async (from: number, to: number) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from, y: 500 }] });
+      for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from + ((to - from) * i) / 8, y: 500 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    assert.strictEqual(await page.locator('#edge-right').isVisible(), true);
+    await swipe(356, 220);
+    await until('the settings open', settings, (v) => v);
+    assert.strictEqual(await menu(), false);
+    // A swipe from the left edge does not open the menu over them (the dialog is modal).
+    await swipe(4, 140);
+    assert.strictEqual(await menu(), false);
+    // A swipe back to the right closes them.
+    await swipe(120, 340);
+    await until('the settings closed', settings, (v) => !v);
+    // The left edge still opens the menu, and the right edge then does nothing.
+    await swipe(4, 140);
+    await until('the menu open', menu, (v) => v);
+    await swipe(356, 220);
+    assert.strictEqual(await settings(), false);
+    await ctx.close();
+  });
+
   it('resizes the editor and the explanation with the divider: a drag, the keys, a double click; the size is kept', async () => {
     const ctx = await browser!.newContext({ viewport: { width: 1280, height: 720 } });
     const page = await ctx.newPage();

@@ -1003,6 +1003,10 @@ function showReadTip(): void {
 showReadTip();
 window.addEventListener('resize', placeReadTip);
 on('readtip-close', 'click', () => hideReadTip(true));
+function openSettings(): void {
+  if (settingsDialog?.open || drawer?.open) return;
+  settingsDialog?.show();
+}
 on('settings-open', 'click', () => settingsDialog?.show());
 if (dialogElement) setUpSheet(dialogElement);
 
@@ -1018,6 +1022,8 @@ on('menu-close', 'click', () => drawer?.close());
 if (drawer) setUpSheet(drawer, 'left');
 const edge = document.getElementById('edge');
 if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
+const edgeRight = document.getElementById('edge-right');
+if (edgeRight) setUpEdgeSwipe(edgeRight, openSettings, 'right');
 // The menu's items do what the top bar's buttons do, and close the menu first.
 for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']]) {
   on(item, 'click', () => {
