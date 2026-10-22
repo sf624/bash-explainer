@@ -1372,6 +1372,9 @@ describe('the web page in a browser', function () {
     const value = () => page.locator('#problems-resize').getAttribute('aria-valuenow');
     const rows = () => page.locator('#problem-list li').first().isVisible();
     assert.match(await page.locator('#problems-toggle').innerText(), /problems\s+\d+/i);
+    // The backtick spans of a message are code, not raw backticks.
+    assert.ok(!(await page.locator('#problem-list').innerText()).includes('`'));
+    assert.strictEqual(await page.locator('#problem-list li').first().locator('.message code').first().innerText(), '[[ ]]');
     assert.strictEqual(await page.locator('#problems-resize').getAttribute('role'), 'separator');
     assert.strictEqual(await page.locator('#problems-toggle').getAttribute('aria-expanded'), 'true');
     const first = await list();

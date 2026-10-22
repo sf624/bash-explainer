@@ -372,6 +372,14 @@ const editorTheme = EditorView.theme({
 /** A problem's message without the ⚠ / ℹ it starts with in the explanations. */
 const plain = (message: string) => message.replace(/^[⚠ℹ]\uFE0F?\s*/u, '');
 
+/** Text with its `backtick` spans as <code> nodes, as the panel shows them (DOM nodes, never HTML). */
+function withCode(text: string): Node[] {
+  return text.split(/(`[^`]+`)/).filter(Boolean).map((part) => {
+    if (!(part.startsWith('`') && part.endsWith('`') && part.length > 1)) return document.createTextNode(part);
+    return Object.assign(document.createElement('code'), { textContent: part.slice(1, -1) });
+  });
+}
+
 /** Line and column (0-based) to a position in the editor, clamped to the document. */
 function pos(state: EditorState, line: number, col: number): number {
   const l = state.doc.line(Math.max(1, Math.min(line + 1, state.doc.lines)));
@@ -753,7 +761,12 @@ function showProblems(list: DocumentIssue[]): void {
   $('problem-list').replaceChildren(...list.map((i) => {
     const li = document.createElement('li');
     const span = (cls: string, text: string) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
-    li.append(span(`icon ${i.severity}`, i.severity === 'warning' ? '⚠' : 'ℹ'), span('where', t.line(i.startLine + 1)), span('message', plain(i.message)), span('code', i.code));
+    const message = (text: string) => {
+      const m = span('message', '');
+      m.append(...withCode(text));
+      return m;
+    };
+    li.append(span(`icon ${i.severity}`, i.severity === 'warning' ? '⚠' : 'ℹ'), span('where', t.line(i.startLine + 1)), message(plain(i.message)), span('code', i.code));
     li.addEventListener('click', () => {
       view.dispatch({ selection: { anchor: pos(view.state, i.startLine, i.startCol), head: pos(view.state, i.endLine, i.endCol) }, scrollIntoView: true });
       focusUnlessTouch();
