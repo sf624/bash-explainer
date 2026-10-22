@@ -636,13 +636,16 @@ describe('argv interpreter: subcommands found as cobra does', () => {
       opt('-n|--namespace', 'namespace', { persistent: true, value: { name: 'NS' } }),
       opt('--debug', 'debug', { persistent: true }),
       opt('--level', 'level', { persistent: true, value: { name: 'L', optional: true } }),
+      opt('--version', 'version'),
+      opt('-c|--config', 'config', { value: { name: 'FILE' } }),
     ],
     subcommands: {
       get: { summary: t('get'), options: [opt('-o|--output', 'output', { value: { name: 'FORMAT' } }), opt('-w|--watch', 'watch')], operands: [{ pattern: [item('NAME', { repeat: '*' })] }] },
       pr: {
-        summary: t('pr'), options: [opt('-R|--repo', 'repo', { persistent: true, value: { name: 'REPO' } })],
+        summary: t('pr'), options: [opt('-R|--repo', 'repo', { persistent: true, value: { name: 'REPO' } }), opt('-c|--closed', 'closed')],
         subcommands: { list: { summary: t('list'), options: [opt('-L', 'limit', { value: { name: 'N' } })] } },
       },
+      ls: { summary: t('ls') },
     },
   };
   const of = (line: string) => roles(line, tool);
@@ -672,8 +675,20 @@ describe('argv interpreter: subcommands found as cobra does', () => {
     assert.deepStrictEqual(of('tool -x'), ['-x: -x?']);
     assert.deepStrictEqual(of('tool -n'), ['-n: -n (no value) namespace']);
     assert.deepStrictEqual(of('tool $v get'), ['$v: operand', 'get: operand']);
-    assert.deepStrictEqual(of('tool -- get'), ['--: end of options', 'get: subcommand get']);
+    assert.deepStrictEqual(of('tool -- get'), ['--: end of options', 'get: operand']);
     assert.deepStrictEqual(of('tool nope get'), ['nope: operand', 'get: operand']);
+    // cobra skips empty words.
+    assert.deepStrictEqual(of("tool '' get x"), ["'': operand", 'get: subcommand get', '  x: NAME']);
+  });
+
+  it("searches the words before the subcommand again with the subcommand's options, as cobra does", () => {
+    // (`pr` does not know `--version`, a flag of the program only: cobra takes `list` as its value, runs `pr`, and refuses `--version`.)
+    assert.deepStrictEqual(of('tool --version pr list'), ['--version: --version?', 'pr: subcommand pr', '  list: operand']);
+    assert.deepStrictEqual(of('tool --repo o/r pr list'), ['--repo: --repo repo', 'o/r: value 0 of --repo REPO', 'pr: subcommand pr', '  list: subcommand list']);
+    // (`pr` reads `-c` with no value, so cobra's next word is `list`, before `pr`: it is not shown as a subcommand.)
+    assert.deepStrictEqual(of('tool -c list pr'), ['-c: -c closed', 'list: operand', 'pr: subcommand pr']);
+    // (A subcommand with no options of its own: the persistent ones only, and `--version` is refused.)
+    assert.deepStrictEqual(of('tool --debug --version ls'), ['--debug: --debug debug', '--version: --version?', 'ls: subcommand ls']);
   });
 });
 
@@ -709,7 +724,7 @@ describe('argv interpreter: a value whose words are read in its place (env -S)',
   it('splits as GNU env does (compared with env itself in test/wrappers-real.test.ts)', () => {
     const split = (s: string) => {
       const r = splitEnvString(s);
-      return 'error' in r ? `${r.error}: ${r.at}` : r.words.map((w) => (w.value !== undefined ? w.value : `${w.prefix}…${w.count ? `{${w.count.min},${w.count.max}}` : ''}`));
+      return 'error' in r ? `${r.error}: ${r.at}` : 'unknown' in r ? 'unknown' : r.words.map((w) => (w.value !== undefined ? w.value : `${w.prefix}…${w.count ? `{${w.count.min},${w.count.max}}` : ''}`));
     };
     assert.deepStrictEqual(split(' a\tb  c '), ['a', 'b', 'c']);
     assert.deepStrictEqual(split(String.raw`a\_b "c\_d" 'e\_f' 'g\\h\'i'`), ['a', 'b', 'c d', String.raw`e\_f`, "g\\h'i"]);
@@ -723,5 +738,10 @@ describe('argv interpreter: a value whose words are read in its place (env -S)',
     assert.strictEqual(split('a\\x'), 'sequence: \\x');
     assert.strictEqual(split('"\\c"'), 'c-in-quotes: \\c');
     assert.strictEqual(split('a $B'), 'dollar: $B');
+    // `#` after a word of `${…}` only starts a comment when the variables are unset.
+    assert.strictEqual(split('${A}#x y'), 'unknown');
+    assert.strictEqual(split('${A}${B}#'), 'unknown');
+    assert.deepStrictEqual(split('a${A}#x ""${B}#y'), ['a…', '…']);
+    assert.deepStrictEqual(roles("env -S'${A}#x' cmd").slice(1), ['cmd: ARG']);
   });
 });

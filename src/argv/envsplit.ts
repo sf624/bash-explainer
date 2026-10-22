@@ -10,9 +10,10 @@ export type EnvSplitError = 'quote' | 'backslash-end' | 'sequence' | 'c-in-quote
  * the text (only `\\` and `\'` are escapes in it), `"…"` reads the escapes (`\_` is a space there); `#` at the
  * start of a word and `\c` end the string. `${NAME}` is replaced by the variable's value in the environment env
  * started with, which is not known here: such a word has only its known start, and one made of nothing else
- * may vanish (an unset variable gives no word).
+ * may vanish (an unset variable gives no word). A `#` right after such a word starts a comment only when the
+ * variables are unset (`${A}#x`), so the words are not known then (`unknown`).
  */
-export function splitEnvString(s: string): { words: ArgWord[] } | { error: EnvSplitError; at: string } {
+export function splitEnvString(s: string): { words: ArgWord[] } | { error: EnvSplitError; at: string } | { unknown: true } {
   const words: ArgWord[] = [];
   let cur: ArgWord | undefined;
   let sep = true;
@@ -55,8 +56,9 @@ export function splitEnvString(s: string): { words: ArgWord[] } | { error: EnvSp
         while (i < s.length && ' \t\n\v\f\r'.includes(s[i])) i++;
         continue;
       case '#':
-        if (!sep) break;
-        break scan;
+        if (sep) break scan;
+        if (cur!.count) return { unknown: true };
+        break;
       case '\\': {
         if (sq && s[i + 1] !== '\\' && s[i + 1] !== "'") break;
         const n = s[++i];

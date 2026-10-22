@@ -219,6 +219,17 @@ describe('wrappers agree with the real tools', () => {
       assert.strictEqual('error' in r && r.error, error, line);
       assert.strictEqual(runs(line).argv, undefined, line);
     }
+    // `#` after a word made of `${…}` starts a comment only when the variables are unset: not known here.
+    for (const str of ['${NOPE}#x y', '${HOME}#x y']) {
+      const line = `env -S'${str}'`;
+      assert.ok('unknown' in splitEnvString(parseOf(line).words[0].slice(2)), line);
+    }
+    assert.deepStrictEqual(verbose("env -S'${NOPE}#x y'").split, []);
+    assert.deepStrictEqual(verbose("env -S'${HOME}#x y'").split, ['/h#x', 'y']);
+    // A shebang `#!/usr/bin/env -i bash`: env gets `-i bash` as one word, reads ` ` as an option, and fails.
+    const shebang = verbose("env '-i bash' x");
+    assert.strictEqual(shebang.status, 125);
+    assert.match(shebang.err, /invalid option -- ' '/);
   });
 
   (usable('env') ? it : it.skip)('env -S: env reads the words of the string in its place, then the rest of the line', () => {
@@ -236,6 +247,8 @@ describe('wrappers agree with the real tools', () => {
       "env -S'-u HOME -S\"B=2 printf %s,\"' x", "env -S'printf %s, \\c' x", "env -S'printf #%s,' x", "env -S'printf\\_%s,' x",
       // The shebang form: the kernel gives the whole rest as one word.
       "env '-S printf %s, -e' x", "env '-S -i printf %s,' x",
+      // `-` is `-i`, in the string too.
+      'env -S- printf %s, x', "env -S'- A=1' printf %s, x",
     ];
     for (const line of LINES) {
       const real = verbose(line);

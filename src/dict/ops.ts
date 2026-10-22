@@ -1,5 +1,6 @@
 import type { CommandSpec } from '../argv/spec';
 import { cmd, COMMAND_TEXT, operand, OptSpec, persistent, pos, runs } from './types';
+import { tx } from '../i18n';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
 // Google Cloud), node bootstrap and debugging scripts, dotfiles and container builds.
@@ -34,6 +35,15 @@ const kube: OptSpec[] = persistent([
   ['--cache-dir', 'キャッシュのディレクトリ', 'cache directory', 'arg'],
   ['--match-server-version', 'クライアントとサーバーの版が同じでなければ失敗する', 'fail unless the client and server versions match'],
   ['--warnings-as-errors', 'サーバーからの警告をエラーとして扱う', 'treat warnings from the server as errors'],
+  ['--disable-compression', 'サーバーへの要求で応答の圧縮を使わない', 'do not compress the responses of the server'],
+  ['--as-uid', '指定した UID になりすまして操作する', 'act as the given UID (impersonation)', 'arg'],
+  ['--tls-server-name', 'サーバーの証明書を確かめるときに使う名前', 'server name to check the server certificate with', 'arg'],
+  ['--username', 'API サーバーへの基本認証のユーザー名', 'user name for basic authentication to the API server', 'arg'],
+  ['--password', 'API サーバーへの基本認証のパスワード', 'password for basic authentication to the API server', 'arg'],
+  ['--profile', '採るプロファイルの種類（`none`、`cpu`、`heap`…）', 'profile to capture (`none`, `cpu`, `heap`…)', 'arg'],
+  ['--profile-output', 'プロファイルを書くファイル', 'file to write the profile to', 'arg'],
+  ['--log-flush-frequency', 'ログを書き出す間隔の上限', 'longest time between log flushes', 'arg'],
+  ['--vmodule', 'ファイルごとのログの詳しさ（`パターン=N,…`）', 'log verbosity per file (`pattern=N,…`)', 'arg'],
 ]);
 
 /** Options that several subcommands have (each lists the ones it takes, as `kubectl SUBCOMMAND --help` does). */
@@ -41,7 +51,9 @@ const kubeOutput: OptSpec = ['-o|--output', '出力形式（`yaml`、`json`、`w
 const kubeSelector: OptSpec = ['-l|--selector', 'ラベルで絞る（`app=web`）', 'filter by label (`app=web`)', 'arg'];
 const kubeAll: OptSpec = ['-A|--all-namespaces', 'すべての名前空間', 'all namespaces'];
 const kubeWatch: OptSpec = ['-w|--watch', '変化を見張り続ける', 'keep watching for changes'];
-const kubeDryRun: OptSpec = ['--dry-run', '実際には変更しない（`client`、`server`）', 'do not change anything (`client`, `server`)', 'arg'];
+// `--dry-run` takes its value only as `--dry-run=client` (alone it means `unchanged`, which kubectl rejects).
+const kubeDryRun: OptSpec = ['--dry-run', '実際には変更しない（`--dry-run=client`、`--dry-run=server`）', 'do not change anything (`--dry-run=client`, `--dry-run=server`)', 'attached'];
+const kubeWait: OptSpec = ['--wait', 'リソースの処理が終わるまで待つ（`--wait=false` で待たない）', 'wait until the resources are done (`--wait=false`: do not wait)'];
 const kubeTimeout: OptSpec = ['--timeout', '待つ時間の上限（`60s`）', 'how long to wait (`60s`)', 'arg'];
 
 /** The manifests to act on: options of the subcommands that take resources (not `logs`, where `-f` follows). */
@@ -57,9 +69,13 @@ const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a K
   subcommands: {
     get: cmd('リソースを一覧表示する', 'List resources', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeWatch], { positional: [resource] }),
     describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', [...kubeFiles, kubeSelector, kubeAll], { positional: [resource] }),
-    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kubeFiles, kubeOutput, kubeSelector, kubeDryRun, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
+    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kubeFiles, kubeOutput, kubeSelector, kubeDryRun, kubeTimeout, kubeWait, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
     create: cmd('リソースを作る', 'Create resources', [...kubeFiles, kubeOutput, kubeDryRun], { positional: [resource] }),
-    delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, kubeSelector, kubeAll, kubeDryRun, kubeTimeout, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
+    delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun, kubeTimeout, kubeWait,
+      ['--all', '種類のリソースをすべて', 'every resource of the type'],
+      ['--force', '終了を待たずにすぐ削除する（危険）', 'delete at once, without waiting for the end (dangerous)'],
+      ['--grace-period', '終了を待つ秒数（`0` ですぐ。`--force` とともに）', 'seconds to wait for the end (`0`: at once, with `--force`)', 'arg'],
+      ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
     logs: cmd('Pod のログを表示する', "Print a pod's logs", [['-f|--follow', 'ログを流し続ける', 'stream the logs'], kubeSelector, ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
     exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kubeFiles, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
     run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, kubeOutput, kubeDryRun, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--env', '環境変数を設定（`名前=値`）', 'set an environment variable (`NAME=value`)', 'arg setenv'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
@@ -74,6 +90,31 @@ const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a K
     label: cmd('ラベルを付ける', 'Set labels', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun], { positional: [resource] }),
     annotate: cmd('注釈を付ける', 'Set annotations', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun], { positional: [resource] }),
     version: cmd('クライアントとサーバーの版を表示する', 'Show client and server versions', [kubeOutput]),
+    top: cmd('Pod やノードの CPU とメモリの使用量を表示する（`pod`、`node`）', 'Show the CPU and memory use of pods or nodes (`pod`, `node`)', [], {
+      subcommands: {
+        pod: { ...cmd('Pod の CPU とメモリの使用量を表示する', 'Show the CPU and memory use of pods', [kubeAll, kubeSelector,
+          ['--containers', 'Pod の中のコンテナごとに表示する', 'show each container of the pods'],
+          ['--sort-by', '並べる基準（`cpu`、`memory`）', 'sort by (`cpu`, `memory`)', 'arg'],
+          ['--no-headers', '見出しの行を出さない', 'print no header line']], { positional: [pos('Pod の名前', 'pod name')] }), aliases: ['pods', 'po'] },
+        node: { ...cmd('ノードの CPU とメモリの使用量を表示する', 'Show the CPU and memory use of nodes', [kubeSelector,
+          ['--sort-by', '並べる基準（`cpu`、`memory`）', 'sort by (`cpu`, `memory`)', 'arg'],
+          ['--no-headers', '見出しの行を出さない', 'print no header line']], { positional: [pos('ノードの名前', 'node name')] }), aliases: ['nodes', 'no'] },
+      },
+    }),
+    'api-resources': cmd('サーバーが扱うリソースの種類を一覧表示する', 'List the resource types the server supports', [
+      ['-o|--output', '出力形式（`wide`、`name`）', 'output format (`wide`, `name`)', 'arg'],
+      ['--namespaced', '名前空間に属する種類だけ（`--namespaced=false` で属さないもの）', 'only the namespaced types (`--namespaced=false`: the others)'],
+      ['--api-group', '指定した API グループの種類だけ', 'only the types of the given API group', 'arg'],
+      ['--verbs', '指定した操作ができる種類だけ（`list,get`）', 'only the types that support the given verbs (`list,get`)', 'arg'],
+    ]),
+    events: cmd('イベントを一覧表示する', 'List events', [kubeOutput, kubeAll, kubeWatch,
+      ['--for', '指定したリソースのイベントだけ（`pod/web`）', 'only the events of the given resource (`pod/web`)', 'arg'],
+      ['--types', '指定した種類のイベントだけ（`Warning`、`Normal`）', 'only events of the given types (`Warning`, `Normal`)', 'arg']]),
+    explain: cmd('リソースの種類とその項目の説明を表示する（`pods.spec.containers`）', 'Show the documentation of a resource type and its fields (`pods.spec.containers`)', [
+      ['--recursive', '下の項目をすべて表示する', 'show every field below'],
+      ['--api-version', '説明する API の版', 'API version to document', 'arg'],
+      ['--output', '形式（`plaintext`、`plaintext-openapiv2`）', 'format (`plaintext`, `plaintext-openapiv2`)', 'arg'],
+    ], { positional: [pos('リソースの種類と項目（`pods.spec`）', 'resource type and field (`pods.spec`)')] }),
   },
 });
 
@@ -120,7 +161,7 @@ const tfCommon: OptSpec[] = [
   ['-raw', '値だけを出力する（`output`）', 'print the raw value (`output`)'],
   ['-json', 'JSON で出力', 'JSON output'],
 ];
-const tf = (ja: string, en: string): CommandSpec => cmd(ja, en, [], { style: 'single-dash' });
+const tf = (ja: string, en: string): CommandSpec => cmd(ja, en, tfCommon, { style: 'single-dash' });
 
 const awsCommon: OptSpec[] = [
   ['--region', 'リージョン（`ap-northeast-1`…）', 'region (`ap-northeast-1`…)', 'arg'],
@@ -188,14 +229,19 @@ export const ops: Record<string, CommandSpec> = {
     },
   }),
   kubeadm: cmd('Kubernetes のクラスターを構築する（`init`、`join`、`reset`）', 'Set up Kubernetes clusters (`init`, `join`, `reset`)', [['--config', '設定ファイル', 'configuration file', 'arg']]),
-  // `-chdir` and the version and help options are terraform's own, before the subcommand only.
+  // Before the subcommand terraform takes only `-chdir=DIR` (with `=`), and the version and help options; any
+  // other option there stops it ("Invalid flags before the subcommand"). The subcommands take the options.
   terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', [
-    ['-chdir', '指定したディレクトリで実行する（サブコマンドより前に書く）', 'run in the given directory (written before the subcommand)', 'arg'],
+    ['-chdir', '指定したディレクトリで実行する（`-chdir=ディレクトリ` と `=` で書き、サブコマンドより前に置く。`-chdir ディレクトリ` は terraform がエラーにする）', 'run in the given directory (written `-chdir=DIR`, with `=`, before the subcommand; terraform rejects `-chdir DIR`)', 'attached'],
     ['-version|-v|--version', '版を表示する', 'print the version'],
-    ['-help|-h|--help', 'ヘルプを表示する', 'show help'],
-    ...persistent(tfCommon),
+    ...persistent([['-help|-h|--help', 'ヘルプを表示する', 'show help']]),
   ], {
     style: 'single-dash',
+    patternOptions: [{
+      pattern: /^-(?!chdir=)./,
+      text: () => tx('⚠ サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help` だけで、ほかは「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
+        '⚠ an option before the subcommand: terraform takes only `-chdir=…`, `-version` and `-help` there, and stops with "Invalid flags before the subcommand" on any other; write it after the subcommand'),
+    }],
     subcommands: {
       init: tf('作業ディレクトリを準備する（プロバイダやモジュールを取得）', 'Prepare the working directory (download providers and modules)'),
       plan: tf('変更の計画を表示する（まだ変更しない）', 'Show the planned changes (nothing changes yet)'),
