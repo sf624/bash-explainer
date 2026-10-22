@@ -197,6 +197,18 @@ describe('the web page in a browser', function () {
     const g = await geometry();
     assert.ok(g.below, JSON.stringify(g));
     await until('the edge', () => panel().locator('#line').evaluate((e) => e.classList.contains('stuck')), (v) => v);
+    // Nothing scrolled under it shows above it, not even at its rounded corners.
+    const above = await panel().evaluate(`(() => {
+      const line = document.getElementById('line');
+      const r = line.getBoundingClientRect();
+      const out = [];
+      for (let y = 0; y <= r.top + 3; y++) for (let x = 0; x < innerWidth; x += 2) {
+        const e = document.elementFromPoint(x, y);
+        if (e && e !== document.body && e !== document.documentElement && !line.contains(e)) out.push(x + ',' + y + ' ' + e.tagName + '.' + e.className);
+      }
+      return out.slice(0, 5);
+    })()`) as string[];
+    assert.deepStrictEqual(above, []);
     // Hovering a token of the sticky line still lights a segment and its row.
     await panel().locator('#line .seg').first().hover();
     assert.ok((await panel().locator('.seg.active').count()) > 0);

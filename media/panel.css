@@ -84,6 +84,19 @@ pre#line {
   box-shadow: 0 0 0 0.5rem var(--vscode-editor-background);
 }
 
+/* While it is stuck, a square cover from the top edge to just below the block's top: the ring above
+   is rounded at the corners and would let the rows scrolled under it show through there. */
+html.line-stuck body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(0.5rem + 4px);
+  background: var(--vscode-editor-background);
+  z-index: 1;
+}
+
 /* Scrolled under: a soft edge below. */
 pre#line.stuck {
   box-shadow: 0 0 0 0.5rem var(--vscode-editor-background), 0 0.6rem 0.6rem 0.2rem rgba(0, 0, 0, 0.18);
