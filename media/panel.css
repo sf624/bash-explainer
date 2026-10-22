@@ -12,33 +12,6 @@
   --c-muted: var(--vscode-descriptionForeground, #888);
 }
 
-/* The setting `bashExplainer.colors`: `classic` (the class colors-classic on the body) keeps the variables above, the panel's own palette. Otherwise: the colours VS Code's default themes give shell code (Dark Modern and Light Modern, with Dark+, Light+): the same as the web page's editor, from web/editor-colors.ts (a test compares them). High contrast themes keep the variables above. */
-body.vscode-dark:not(.vscode-high-contrast):not(.colors-classic) {
-  --c-command: #DCDCAA;
-  --c-option: #569CD6;
-  --c-argument: #CE9178;
-  --c-number: #B5CEA8;
-  --c-keyword: #C586C0;
-  --c-operator: #D4D4D4;
-  --c-redirect: #D4D4D4;
-  --c-pattern: #D16969;
-  --c-variable: #9CDCFE;
-  --c-comment: #6A9955;
-}
-
-body.vscode-light:not(.vscode-high-contrast-light):not(.colors-classic) {
-  --c-command: #795E26;
-  --c-option: #0000FF;
-  --c-argument: #A31515;
-  --c-number: #098658;
-  --c-keyword: #AF00DB;
-  --c-operator: #000000;
-  --c-redirect: #000000;
-  --c-pattern: #811F3F;
-  --c-variable: #001080;
-  --c-comment: #008000;
-}
-
 body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);

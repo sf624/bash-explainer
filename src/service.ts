@@ -40,10 +40,6 @@ export class ExplainService implements vscode.Disposable {
     return v === 'last' || v === 'bottom' ? v : 'first';
   }
 
-  get colors(): 'vscode' | 'classic' {
-    return this.config.get<string>('colors', 'vscode') === 'classic' ? 'classic' : 'vscode';
-  }
-
   get lang(): Lang {
     return resolveLang(this.config.get<string>('language'), vscode.env.language);
   }

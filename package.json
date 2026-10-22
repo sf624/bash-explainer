@@ -325,19 +325,6 @@
           "default": false,
           "markdownDescription": "%config.highlight.enabled%"
         },
-        "bashExplainer.colors": {
-          "type": "string",
-          "enum": [
-            "vscode",
-            "classic"
-          ],
-          "enumDescriptions": [
-            "%config.colors.vscode%",
-            "%config.colors.classic%"
-          ],
-          "default": "vscode",
-          "markdownDescription": "%config.colors%"
-        },
         "bashExplainer.languages": {
           "type": "array",
           "items": {

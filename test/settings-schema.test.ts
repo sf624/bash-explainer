@@ -146,6 +146,8 @@ describe('the settings module', () => {
       ],
     });
     assert.deepStrictEqual(importSettings('{"hover.enabled": false}', 'lsp').settings, { 'hover.enabled': false });
+    // A setting of a build that had it (bashExplainer.colors, before 0.7.0) is unknown like any other key.
+    assert.deepStrictEqual(importSettings('{"bashExplainer.colors": "classic"}', 'web'), { settings: {}, ignored: [{ key: 'colors', reason: 'unknown' }] });
     assert.throws(() => importSettings('[1]', 'web'), /expected an object of settings/);
     assert.throws(() => importSettings('{', 'web'), SyntaxError);
   });

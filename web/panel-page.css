@@ -8,20 +8,6 @@ body {
   background: var(--vscode-editor-background);
 }
 
-/* The colours of the shell's tokens follow the page's theme (color-scheme), the same as the editor's: web/editor-colors.ts. */
-body:not(.colors-classic) {
-  --c-command: light-dark(#795E26, #DCDCAA);
-  --c-option: light-dark(#0000FF, #569CD6);
-  --c-argument: light-dark(#A31515, #CE9178);
-  --c-number: light-dark(#098658, #B5CEA8);
-  --c-keyword: light-dark(#AF00DB, #C586C0);
-  --c-operator: light-dark(#000000, #D4D4D4);
-  --c-redirect: light-dark(#000000, #D4D4D4);
-  --c-pattern: light-dark(#811F3F, #D16969);
-  --c-variable: light-dark(#001080, #9CDCFE);
-  --c-comment: light-dark(#008000, #6A9955);
-}
-
 /* The page around has the header's controls in its top bar and menu. */
 html.bx-web header {
   display: none;
