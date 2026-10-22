@@ -3084,5 +3084,34 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { @PROBE:a@; }; x=1 f; @PROBE:b@",
+    "note": "the assignments before a function call are exported while it runs",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
   }
 ]

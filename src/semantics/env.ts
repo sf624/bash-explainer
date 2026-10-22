@@ -30,11 +30,15 @@ export type ShellKind = 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh' | 'unknown';
 /**
  * A command run through a command slot: `at` is its first word (or the shell string); `via` names the slot (`bash -c`,
  * `sudo`); `assigns`, the variables the slot's command sets for it (`env x=1 cmd`, `docker run -e x`; `*` for a
- * file of them); `env`, what reaches it (the slot's, or the one its options give); `shell`, the shell a string runs in.
+ * file of them); `unsets`, those it removes (`env -u x cmd`); `env`, what reaches it (the slot's, or the one its options
+ * give); `shell`, the shell a string runs in, and `invocation`, the options that shell is started with (`bash -e -O
+ * extglob -c`), as written: each flag (`-e`, `+O`), with its value (`extglob`, undefined when not known here).
  */
 export interface SlotLink {
   readonly kind: 'slot'; readonly slot: CommandSlot; readonly via: string; readonly at: SyntaxNode; readonly assigns: readonly string[];
+  readonly unsets?: readonly string[];
   readonly env: NonNullable<CommandSlot['env']>; readonly shell?: ShellKind;
+  readonly invocation?: readonly { readonly flag: string; readonly value?: string }[];
 }
 /** A place a function is called from: the command, where it runs, and whether the function is surely defined there. */
 export interface CallSite { readonly at: SyntaxNode; readonly env: ExecEnv; readonly sure: boolean }
@@ -346,6 +350,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
   const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, words: readonly SyntaxNode[]): void => {
     // (`env x=1 cmd`, `docker run -e x img cmd`: the assignments come before the command.)
     const assigns: string[] = [];
+    const unsets: string[] = [];
     const flags = p.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
     for (const { word, role } of p.roles) {
       // (`-e x`, or `--env=x` in the option's word.)
@@ -354,13 +359,20 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
         const text = argWord(words[word]).value?.slice(value.attached);
         assigns.push(value.spec.setsEnv === 'file' || text === undefined ? '*' : text.replace(/=[\s\S]*$/, ''));
       }
+      if (value?.spec?.unsetsEnv) {
+        const text = argWord(words[word]).value?.slice(value.attached);
+        if (text !== undefined) unsets.push(text);
+      }
       if (role.role === 'operand' && role.spec?.assignment) assigns.push(words[word].text.slice(0, words[word].text.indexOf('=')));
       else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, words);
       else if (role.role === 'command') {
         const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (/^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown');
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns, env, ...(shell ? { shell } : {}) });
+        // (The options of a shell started by its name: not those of `su -l -c` or of `watch`.)
+        const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(p, words) : [];
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns, env, ...(unsets.length ? { unsets } : {}),
+          ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
         out.set(words[word], inner);
         if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, words);
       } else if (role.role === 'expression' && word === p.expression && s.expressionSpec) {
@@ -371,6 +383,22 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
     }
   };
   visit(env, parse, spec, nodes);
+  return out;
+}
+
+/**
+ * The options a shell is started with (`bash -e -o pipefail -O extglob -c S`): each option of its parse `p` as
+ * written, with the value it takes (`-o NAME`, `-O NAME`).
+ */
+function shellInvocation(p: ArgvParse, words: readonly SyntaxNode[]): { flag: string; value?: string }[] {
+  const out: { flag: string; value?: string }[] = [];
+  for (const { word, role } of p.roles) {
+    for (const r of role.role === 'cluster' ? role.letters : [role]) {
+      if (r.role === 'option' && !r.spec.value) out.push({ flag: r.flag });
+      else if (r.role === 'option' && r.value) out.push({ flag: r.flag, value: argWord(words[word]).value?.slice(r.value.attached) });
+      else if (r.role === 'value') out.push({ flag: r.of, value: argWord(words[word]).value });
+    }
+  }
   return out;
 }
 

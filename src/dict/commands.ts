@@ -1,4 +1,4 @@
-import { shellOptions } from './builtins';
+import { shellOptions, shoptOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
@@ -719,7 +719,7 @@ export const core: Record<string, CommandSpec> = {
   // env's `-S` splits its value into the command and its first arguments; the operands after it are more arguments.
   env: cmd('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
     ['-i|--ignore-environment', '空の環境から始める', 'start with an empty environment'],
-    ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg'],
+    ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg unsetenv'],
     // env reads the words of the string in its place, then the rest of the line (src/argv/envsplit.ts).
     { names: ['-S', '--split-string'], text: tx('文字列を空白で分けて、env の引数としてその場で読む（オプション、`名前=値`、実行するコマンドとその引数。shebang で使う）', "split a string into words and read them in its place as env's arguments (options, `NAME=value`, the command to run and its arguments; useful in shebang lines)"), value: { name: 'STRING', splice: 'env' } },
     ['-C|--chdir', '先に移動するディレクトリ', 'change to the given directory first', 'arg'],
@@ -1005,6 +1005,8 @@ export const core: Record<string, CommandSpec> = {
     ['-x', '実行するコマンドを表示', 'trace commands'],
     ['-n', '構文チェックのみ', 'syntax check only'],
     ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
+    ['-O', '名前で `shopt` のオプションを有効にする（`+O` で無効）', 'enable a `shopt` option by name (`+O` disables it)', 'arg', shoptOptions],
+    ['--posix', 'POSIX モードで起動する（`set -o posix` と同じ）', 'start in POSIX mode (as `set -o posix`)'],
     ['-l|--login', 'ログインシェルとして起動', 'act as a login shell'],
     ['-i', '対話シェルとして起動', 'act as an interactive shell'],
     ['-s', 'コマンドを標準入力から読む', 'read commands from stdin'],
