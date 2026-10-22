@@ -84,10 +84,13 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
 }
 
 /**
- * A side sheet, a modal dialog along the right edge: Esc and a click beside it close it (the browser
- * keeps the focus inside while it is open), and so does a swipe to the right on a touch screen.
+ * A side sheet, a modal dialog along the right edge (the left one for the menu): Esc and a click beside it
+ * close it (the browser keeps the focus inside while it is open), and so does a swipe towards its edge on a
+ * touch screen.
  */
-export function setUpSheet(sheet: HTMLDialogElement): void {
+export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'right'): void {
+  // Towards the sheet's own edge is positive.
+  const sign = side === 'right' ? 1 : -1;
   sheet.addEventListener('click', (e) => {
     if (e.target === sheet) sheet.close();
   });
@@ -97,16 +100,16 @@ export function setUpSheet(sheet: HTMLDialogElement): void {
   });
   sheet.addEventListener('pointermove', (e) => {
     if (!start || e.pointerId !== start.id) return;
-    const dx = e.clientX - start.x;
+    const dx = sign * (e.clientX - start.x);
     // Sideways more than down: the sheet follows the finger; a scroll of its content does not move it.
     if (dx > 10 && dx > Math.abs(e.clientY - start.y)) {
       sheet.classList.add('dragging');
-      sheet.style.transform = `translateX(${dx}px)`;
+      sheet.style.transform = `translateX(${sign * dx}px)`;
     }
   });
   const end = (e: PointerEvent) => {
     if (!start || e.pointerId !== start.id) return;
-    const dx = e.clientX - start.x;
+    const dx = sign * (e.clientX - start.x);
     start = undefined;
     sheet.classList.remove('dragging');
     sheet.style.transform = '';
@@ -116,8 +119,11 @@ export function setUpSheet(sheet: HTMLDialogElement): void {
   sheet.addEventListener('pointercancel', end);
 }
 
-/** A swipe to the left from the strip along the right edge (touch screens only) calls `open`. */
-export function setUpEdgeSwipe(edge: HTMLElement, open: () => void): void {
+/**
+ * A swipe away from the screen's edge, from the strip along it (touch screens only), calls `open`. The strip
+ * only listens: it never cancels a touch, so the browser's own back gesture at the edge is left alone.
+ */
+export function setUpEdgeSwipe(edge: HTMLElement, open: () => void, side: 'left' | 'right' = 'right'): void {
   let start: { x: number; y: number; id: number } | undefined;
   edge.addEventListener('pointerdown', (e) => {
     start = { x: e.clientX, y: e.clientY, id: e.pointerId };
@@ -125,7 +131,7 @@ export function setUpEdgeSwipe(edge: HTMLElement, open: () => void): void {
   });
   edge.addEventListener('pointermove', (e) => {
     if (!start || e.pointerId !== start.id) return;
-    const dx = start.x - e.clientX;
+    const dx = side === 'right' ? start.x - e.clientX : e.clientX - start.x;
     if (dx > 40 && dx > 2 * Math.abs(e.clientY - start.y)) {
       start = undefined;
       open();

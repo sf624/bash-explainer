@@ -22,6 +22,11 @@ body:not(.colors-classic) {
   --c-comment: light-dark(#008000, #6A9955);
 }
 
+/* The page around has the header's controls in its top bar and menu. */
+html.bx-web header {
+  display: none;
+}
+
 /* The panel's header, as a pane header of the page: a bar across the frame, with small buttons. */
 header {
   margin: -0.5rem -1rem 0.5rem;
