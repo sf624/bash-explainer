@@ -284,7 +284,7 @@ async function record(page, scenario, frameDir) {
     for (let i = 0; i < 60; i++) {
       const b = await ex.boundingBox();
       if (b.y - 40 < hb.y + hb.height + 6 || b.y + b.height + 60 < vh - 22) break;
-      await page.mouse.wheel(0, 30);
+      await page.mouse.wheel(0, 60);
       await sleep(45);
     }
     await sleep(1000);
@@ -307,7 +307,7 @@ async function record(page, scenario, frameDir) {
     // Back in the editor, a hover explains a single word.
     await moveTo(...startMouse.demo, 700);
     await hoverWord(2, 'pipefail', 800);
-    await sleep(2400);
+    await sleep(1800);
     await stop();
   } else if (scenario === 'hover') {
     const stop = start();
@@ -373,7 +373,9 @@ function encode(scenario, frameDir) {
       '-vf', quote('crop=iw:ih*0.53:0:0,scale=1000:-1:flags=lanczos'), quote(path.join(IMAGES, 'inline.png'))]);
     return;
   }
-  const filter = 'fps=10,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=192:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle';
+  // The demo scrolls a page of small text; without dithering, its frames compress about three times better.
+  const dither = scenario === 'demo' ? 'dither=none' : 'dither=bayer:bayer_scale=5';
+  const filter = `fps=10,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=192:stats_mode=diff[p];[b][p]paletteuse=${dither}:diff_mode=rectangle`;
   run(FFMPEG, ['-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'list.txt',
     '-vf', quote(filter), '-loop', '0', quote(path.join(IMAGES, `${scenario}.gif`))], { cwd: frameDir });
 }
