@@ -2612,5 +2612,205 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "x='a[i++]'; i=0; f() { local -A a; (( y = x )); }; f; (( z = x ))",
+    "note": "the index of an element runs unless the array is associative",
+    "gaps": {
+      "end.variables.y": "the values of arrays are not followed",
+      "end.variables.z": "the values of arrays are not followed"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"a[i++]\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "x='a[k]'; k='j=5'; f() { local -A a; (( y = x )); }; f; (( z = x ))",
+    "note": "the index of an element runs unless the array is associative",
+    "gaps": {
+      "end.variables.y": "the values of arrays are not followed",
+      "end.variables.z": "the values of arrays are not followed"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "j": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"j=5\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"a[k]\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.7",
+    "snippet": "declare -A a; x='a[k]'; k='j=5'; (( y = x )); unset a; (( z = x ))",
+    "note": "the index of an element runs unless the array is associative",
+    "gaps": {
+      "end.variables.y": "the values of arrays are not followed",
+      "end.variables.z": "the values of arrays are not followed"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "j": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"j=5\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"a[k]\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "n=$(echo 'q=1+'); let y=1 z=n w=5",
+    "note": "let stops at the first argument that fails",
+    "gaps": {
+      "end.variables.w": "a value not known is read as an expression, which may fail: what is assigned after it may be",
+      "end.variables.z": "a value not known is read as an expression, which may fail: what is assigned after it may be"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "n": {
+            "attrs": "-",
+            "value": "\"q=1+\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: let: q=1+: syntax error: operand expected (error token is \"+\")"
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "n=$(echo 'q=1+'); for (( y = n; z = 5; )); do break; done; v=1",
+    "note": "when the initializer fails, the condition and the update do not run",
+    "gaps": {
+      "end.variables.y": "a value not known is read as an expression, which may fail: what is assigned after it may be",
+      "end.variables.z": "a value not known is read as an expression, which may fail: what is assigned after it may be"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "n": {
+            "attrs": "-",
+            "value": "\"q=1+\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: q=1+: syntax error: operand expected (error token is \"+\")"
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "x=2; e='((x'; (( y = e )); f='2-((x'; (( g = f, h = 1 ))\nlet 'k = ((2'; m='))(())'; (( p = m )); q=1",
+    "note": "parentheses must match",
+    "gaps": {
+      "end.variables.g": "a text whose parentheses do not match fails where bash gets to it, after the assignments before it, which are not followed",
+      "end.variables.h": "a text whose parentheses do not match fails where bash gets to it, after the assignments before it, which are not followed",
+      "end.variables.k": "a text whose parentheses do not match fails where bash gets to it, after the assignments before it, which are not followed",
+      "end.variables.p": "a text whose parentheses do not match fails where bash gets to it, after the assignments before it, which are not followed",
+      "end.variables.y": "a text whose parentheses do not match fails where bash gets to it, after the assignments before it, which are not followed"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "e": {
+            "attrs": "-",
+            "value": "\"((x\""
+          },
+          "f": {
+            "attrs": "-",
+            "value": "\"2-((x\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"))(())\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: ((x: missing `)' (error token is \"x\")"
+    }
   }
 ]

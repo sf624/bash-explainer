@@ -497,8 +497,9 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'none', 'unknown']);
     assert.strictEqual(attribute(end('v=1; let "a[1] = $v"'), 'a', 'a'), 'on');
     assert.deepStrictEqual(after('let "n++ + $1" "++q + $1"', 'n', 'q'), ['unknown', 'unknown']);
-    // An unquoted expansion in an argument of `let` is split and globbed.
-    assert.deepStrictEqual(after('v=1; w="1 + 2"; let x=$v y=$w z="$w"', 'x', 'y', 'z'), ['set=1', 'unknown', 'set=3']);
+    // An unquoted expansion in an argument of `let` is split and globbed; `let` stops at an argument that fails
+    // (bash: `+` alone does, and z is not set), so what those after it assign may be.
+    assert.deepStrictEqual(after('v=1; w="1 + 2"; let x=$v y=$w z="$w"', 'x', 'y', 'z'), ['set=1', 'unknown', 'unknown']);
     assert.deepStrictEqual(after('i=0; (( a[i++] = 2, a[j += 2] = 3 ))', 'i', 'j'), ['set=1', 'set=2']);
   });
   it('says what it cannot be sure of as unknown, not as a value or an error', () => {
@@ -544,7 +545,8 @@ describe('shell state: arithmetic', () => {
     // (Each value reads the one before twice, and assigns: 2 ** 30 steps.)
     const values = ['v0=\'c++\'', ...Array.from({ length: 30 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
     let start = Date.now();
-    assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u', 'c'), ['unknown', 'unknown', 'unknown', 'set=1', 'unknown']);
+    // (`u`: an argument of `let` not followed may fail, which stops `let`.)
+    assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u', 'c'), ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
     assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
     // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may).
     start = Date.now();
