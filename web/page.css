@@ -695,6 +695,15 @@ body.resizing .problems-resize {
   }
 }
 
+/* A sheet sliding out (closeSheet in layout.ts) goes the way a swipe takes it, and the backdrop fades. */
+.sheet.closing {
+  pointer-events: none;
+}
+
+.sheet.closing::backdrop {
+  opacity: 0;
+}
+
 /* A sheet being swiped away follows the finger. */
 .sheet.dragging {
   transition: none;

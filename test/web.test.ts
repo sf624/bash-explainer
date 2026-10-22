@@ -1022,6 +1022,7 @@ describe('the web page in a browser', function () {
       })()`);
       assert.deepStrictEqual(clipped, [], lang);
       await page.locator('#menu-close').tap();
+      await until('the menu closed', () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), (v) => !v);
     }
     // The top bar is one row, and its controls are big enough to tap.
     const bar = await page.evaluate('document.querySelector(".top").getBoundingClientRect().height') as number;
@@ -1513,7 +1514,7 @@ describe('the web page in a browser', function () {
     assert.match(await page.locator('#version').innerText(), /^Bash Explainer \d+\.\d+\.\d+/);
     // Esc closes it, and the focus goes back to the button.
     await page.keyboard.press('Escape');
-    assert.strictEqual(await open(), false);
+    await until('the menu closed', open, (v) => !v);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
     // A swipe from the left edge opens it, a swipe back to the left closes it (real touches).
     const cdp = await ctx.newCDPSession(page);
@@ -1529,10 +1530,10 @@ describe('the web page in a browser', function () {
     // A tap beside it closes it too; the × does.
     await page.locator('#menu-open').tap();
     await page.mouse.click(380, 400);
-    assert.strictEqual(await open(), false);
+    await until('the menu closed', open, (v) => !v);
     await page.locator('#menu-open').tap();
     await page.locator('#menu-close').tap();
-    assert.strictEqual(await open(), false);
+    await until('the menu closed', open, (v) => !v);
     // Its items do what the buttons did: the sample, the link. The gear opens the settings.
     await page.locator('#settings-open').tap();
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
@@ -1585,6 +1586,82 @@ describe('the web page in a browser', function () {
     await swipe(356, 220);
     assert.strictEqual(await settings(), false);
     await ctx.close();
+  });
+
+  it('slides the menu and the settings out when they are closed with ×, Esc or the backdrop on a phone, and at once with reduced motion or on a wide screen', async () => {
+    const { devices } = await import('playwright-core');
+    const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 844 }, locale: 'en-US' };
+    for (const [name, dialog, opener, closer, sign] of [['menu', '#drawer', '#menu-open', '#menu-close', -1], ['settings', '#settings-dialog', '#settings-open', '#settings-dialog .settings-x', 1]] as const) {
+      const start = async (options: Parameters<Browser['newContext']>[0]) => {
+        const ctx = await browser!.newContext(options);
+        const page = await ctx.newPage();
+        await page.goto(base);
+        await page.locator('.cm-line').first().waitFor();
+        const isOpen = () => page.locator(dialog).evaluate((d) => (d as unknown as { open: boolean }).open);
+        await page.locator(opener).click();
+        await until(`${name} open`, isOpen, (v) => v);
+        await page.waitForTimeout(500);
+        return { ctx, page, isOpen };
+      };
+      for (const how of ['x', 'escape', 'backdrop'] as const) {
+        // The settings fill the screen of a phone: no backdrop to tap.
+        if (how === 'backdrop' && name === 'settings') continue;
+        const { ctx, page, isOpen } = await start(phone);
+        const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
+        // Watch the sheet's position and the backdrop's opacity from inside the page, frame by frame.
+        await page.evaluate(`(() => {
+          const d = document.querySelector(${JSON.stringify(dialog)});
+          window.__frames = [];
+          const tick = () => {
+            window.__frames.push({ x: d.getBoundingClientRect().x, open: d.open, back: getComputedStyle(d, '::backdrop').opacity });
+            if (d.open) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        })()`);
+        if (how === 'x') await page.locator(closer).click();
+        else if (how === 'escape') await page.keyboard.press('Escape');
+        else await page.mouse.click(sign > 0 ? 5 : 385, 400);
+        // Not closed right after: it is on its way.
+        assert.strictEqual(await isOpen(), true, `${name} ${how}: still open right after`);
+        await until(`${name} ${how} closed`, isOpen, (v) => !v);
+        const frames = (await page.evaluate('window.__frames')) as { x: number; open: boolean; back: string }[];
+        const xs = frames.filter((f) => f.open).map((f) => f.x);
+        // It moved towards its own edge in several steps, never back, and the backdrop faded.
+        assert.ok(xs.some((v) => sign * (v - home) > 20 && sign * (v - home) < 300), `${name} ${how}: intermediate ${xs}`);
+        for (let i = 1; i < xs.length; i++) assert.ok(sign * (xs[i] - xs[i - 1]) >= -0.5, `${name} ${how}: monotonic ${xs}`);
+        assert.ok(frames.some((f) => f.open && Number(f.back) < 1 && Number(f.back) > 0), `${name} ${how}: backdrop fades ${JSON.stringify(frames.map((f) => f.back))}`);
+        // Afterwards: nothing left over, and the focus is back on the opener.
+        assert.strictEqual(await page.locator(dialog).evaluate((d) => d.classList.contains('closing') || (d as unknown as { style: { transform: string } }).style.transform !== ''), false);
+        assert.strictEqual(await page.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(opener)})`), true, `${name} ${how}: focus`);
+        // It opens again.
+        await page.locator(opener).click();
+        await until(`${name} reopened`, isOpen, (v) => v);
+        await ctx.close();
+      }
+      {
+        // A second close while sliding out is ignored; opened again while sliding out, it comes back and stays open.
+        const { ctx, page, isOpen } = await start(phone);
+        const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
+        await page.evaluate(`(() => {
+          const c = document.querySelector(${JSON.stringify(closer)});
+          c.click();
+          c.click();
+          document.querySelector(${JSON.stringify(opener)}).click();
+        })()`);
+        await page.waitForTimeout(700);
+        assert.strictEqual(await isOpen(), true, `${name}: reopened while sliding out`);
+        assert.strictEqual(await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x), home);
+        assert.strictEqual(await page.locator(dialog).evaluate((d) => d.classList.contains('closing')), false);
+        await ctx.close();
+      }
+      for (const [label, options] of [['reduced motion', { ...phone, reducedMotion: 'reduce' as const }], ['a wide screen', { viewport: { width: 1280, height: 800 }, locale: 'en-US' }]] as const) {
+        const { ctx, page, isOpen } = await start(options);
+        await page.locator(closer).click();
+        // Closed in the same task as the click.
+        assert.strictEqual(await isOpen(), false, `${name}, ${label}: closes at once`);
+        await ctx.close();
+      }
+    }
   });
 
   it('resizes the editor and the explanation with the divider: a drag, the keys, a double click; the size is kept', async () => {
