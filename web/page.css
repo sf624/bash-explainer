@@ -501,7 +501,7 @@ body.resizing .problems-resize {
   visibility: hidden;
 }
 
-/* A strip along the left edge of a touch screen: a swipe from it opens the menu. */
+/* Strips along the edges of a touch screen: a swipe from the left one opens the menu, from the right one the settings. */
 .edge {
   display: none;
 }
@@ -516,6 +516,11 @@ body.resizing .problems-resize {
     z-index: 5;
     width: 12px;
     touch-action: none;
+  }
+
+  .edge-right {
+    left: auto;
+    right: 0;
   }
 }
 
@@ -905,6 +910,7 @@ html.view-panel .noscript,
 html.view-panel .source,
 html.view-panel .splitter,
 html.view-panel .edge,
+html.view-panel .edge-right,
 html.view-panel #status {
   display: none;
 }
