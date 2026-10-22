@@ -443,6 +443,32 @@ describe('nested scripts: the explanation', () => {
     assert.match(all(explain(src, 0, 'ja').items).map((t) => t.explanation).join('\n'), /文字列の中の文字列が深すぎる/);
   });
 
+  it('says why a function or an extended glob may not be there, as the string is run', () => {
+    const pitfalls = (src: string, line = 0) => explain(src, line).notes.filter((n) => /Pitfall/.test(n));
+    // A function the string defines itself is there; one of the script it calls is not, also after its first word.
+    assert.deepStrictEqual(pitfalls(`eval 'h() { :; }'; bash -c 'h() { :; }; h'`), []);
+    assert.deepStrictEqual(pitfalls(`f() { :; }\nbash -c 'f() { echo; }; f'`, 1), []);
+    assert.strictEqual(pitfalls(`f() { :; }\nbash -c 'echo; f'`, 1).length, 1);
+    // (`sh` may be dash; startup files may define it.)
+    const call = (src: string) => all(explain(src).items).filter((t) => t.kind === 'function' && t.label === 'f').pop()!.explanation;
+    assert.match(call(`f() { :; }; export -f f; sh -c 'f'`), /But `sh` is dash on Debian and Ubuntu/);
+    assert.match(call(`f() { :; }; bash -lc 'f'`), /it is defined there only if the files it reads at startup/);
+    assert.match(explain(`f() { :; }; bash -lc 'f'`, 0, 'ja').items.flatMap((t) => all([t])).map((t) => t.explanation).join('\n'), /起動時に読むファイル/);
+    // An extended glob in a trap's action is read when the signal comes; another shell starts with extglob off.
+    assert.ok(explain(`shopt -u extglob; trap 'echo @(a|b)' INT; shopt -s extglob`).notes.some((n) => /a trap's action is read when its signal comes/.test(n)));
+    assert.ok(explain(`shopt -s extglob; bash -c 'echo @(a|b)'`).notes.some((n) => /The new shell starts with `extglob` off/.test(n)));
+    assert.ok(!explain(`bash -O extglob -c 'echo @(a|b)'`).notes.some((n) => /extglob/.test(n)));
+  });
+
+  it('says on the word with the expansion why joined words are not read', () => {
+    const tokens = all(explain(`eval set -- "$OPTS"`).items);
+    assert.ok(!/holds an expansion/.test(tokens.find((t) => t.label === 'set')!.explanation));
+    assert.match(tokens.find((t) => t.label === '"$OPTS"')!.explanation, /It holds an expansion/);
+    assert.match(all(explain(`eval echo *`).items).find((t) => t.label === '*')!.explanation, /It holds an expansion/);
+    // (`"$@"` in single quotes is text: the words after the string are what the spec says.)
+    assert.match(all(explain(`bash -c 'f "$@"' _ a`).items).find((t) => t.label === '_')!.explanation, /^Becomes `\$0`, the name in place of a script name \(shown in error messages\); not an argument$/);
+  });
+
   it('adds the notes and examples of the string to the line', () => {
     // The dialect notes of the shell that reads it, its pitfalls, and its examples, anchored inside the string.
     assert.ok(explain(`sh -c '[[ -f x ]]'`).notes.some((n) => /`\[\[ \]\]` is not POSIX sh/.test(n)));
@@ -469,5 +495,23 @@ describe('nested scripts: the issues of a string another shell reads', () => {
     assert.deepStrictEqual(issues(`sh -c '[[ a\n  ]]'`), ['dbracket 0:7-0:11 [[ a']);
     // Not for bash, nor for a shell that is not known.
     assert.deepStrictEqual(issues(`bash -c '[[ a ]]'; su -c '[[ a ]]'; eval '[[ a ]]'`), []);
+    // (A string in an sh string's eval, and in a bash string that starts sh.)
+    assert.deepStrictEqual(issues(`sh -c "eval '[[ a ]]'"`), ['dbracket 0:13-0:20 [[ a ]]']);
+    assert.deepStrictEqual(issues(`bash -c "eval 'sh -c \\"[[ a ]]\\"'"`).length, 1);
+  });
+
+  it('takes a time linear in the strings, however many variables the script exports', () => {
+    const time = (n: number, line: (i: number) => string) => {
+      const src = Array.from({ length: n }, (_, i) => line(i)).join('\n');
+      const tree = parser.parse(src);
+      const t = Date.now();
+      documentIssues({ lines: src.split('\n'), tree }, 'en', {});
+      return Date.now() - t;
+    };
+    for (const line of [(i: number) => `export v${i}=1; bash -c 'echo $v${i}; x=2'`, (i: number) => `sh -c '[[ -n $x${i} ]] && echo ok'`]) {
+      time(200, line);
+      const t = time(2000, line);
+      assert.ok(t < 1000, `${t} ms for 2000 lines: ${line(0)}`);
+    }
   });
 });

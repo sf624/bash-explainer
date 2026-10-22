@@ -4,6 +4,7 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
+import type { NestedScript } from './semantics/nested';
 import type { Point, SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
@@ -69,16 +70,19 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
  */
 function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined): DocumentIssue[] {
   const out: DocumentIssue[] = [];
-  const text = doc.tree.text;
+  const starts = lineStarts(doc.tree.text);
   const at = (i: number) => {
-    const before = text.slice(0, i);
-    return { line: before.split('\n').length - 1, col: i - before.lastIndexOf('\n') - 1 };
+    const line = lineOf(starts, i);
+    return { line, col: i - starts[line] };
   };
-  for (const { script, source } of nestedScripts(doc.tree, shell)) {
+  // (The strings in a string are read only when one may be read by a shell other than bash: another shell it starts,
+  // or its own `eval` and traps when it is not bash. Reading them builds the string's model.)
+  const descend = (s: NestedScript) => /\b(?:sh|dash|zsh|ksh|watch)\b/.test(s.text) || (!!s.shell && s.shell !== 'bash' && /\b(?:eval|trap)\b/.test(s.text));
+  for (const { script, source } of nestedScripts(doc.tree, shell, descend)) {
     if (!script.shell || script.shell === 'bash') continue;
     // (The issues give places as positions in the string's text.)
-    const lines = script.tree.text.split('\n');
-    const index = (p: Point) => lines.slice(0, p.row).reduce((n, l) => n + l.length + 1, 0) + p.column;
+    const rows = lineStarts(script.tree.text);
+    const index = (p: Point) => rows[p.row] + p.column;
     for (const i of dialectIssues(script.tree, script.shell, lang)) {
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
@@ -89,6 +93,25 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
     }
   }
   return out;
+}
+
+/** Where each line of `text` starts. */
+function lineStarts(text: string): number[] {
+  const out = [0];
+  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) out.push(i + 1);
+  return out;
+}
+
+/** The line (from 0) that offset `i` is on, given where the lines start. */
+function lineOf(starts: readonly number[], i: number): number {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= i) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 const CRLF: [string, string] = [

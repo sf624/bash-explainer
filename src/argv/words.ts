@@ -34,7 +34,9 @@ const plainPart = (c: SyntaxNode): boolean => c.type === 'word' || c.type === 'n
  */
 export function countOf(n: SyntaxNode): ArgWord['count'] {
   const parts = n.type === 'concatenation' ? n.namedChildren : [n];
-  if (parts.some((c) => UNQUOTED_EXPANSION.has(c.type)) || /"\$@"|"\$\{[^}]*\[@\]\}"/.test(n.text)) return { min: 0 };
+  // (Only in double quotes: `'"$@"'` is text.)
+  const many = (c: SyntaxNode): boolean => c.type === 'string' && c.namedChildren.some((e) => e.text === '$@' || /^\$\{[^}]*\[@\]\}$/.test(e.text));
+  if (parts.some((c) => UNQUOTED_EXPANSION.has(c.type) || many(c))) return { min: 0 };
   if (parts.every(plainPart)) {
     let words: string[] | undefined;
     try {

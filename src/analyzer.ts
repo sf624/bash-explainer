@@ -47,7 +47,7 @@ import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
-import { decodedText, splitElement, staticWordValue, unquoteWord } from './staticword';
+import { decodedText, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
 import { bracketEnd } from './bracket';
 import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import {
@@ -243,6 +243,8 @@ const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !=
 const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
 
 export class Analyzer {
+  /** The kind of string this analyzer explains, when it explains a string read as a script (`scriptTokens`). */
+  private nested: NestedScript['kind'] | undefined;
   private line: number | null = null;
   private shell: Shell | undefined;
   private context: ContextEntry[] = [];
@@ -1575,7 +1577,13 @@ export class Analyzer {
       : res.shadows === 'program'
         ? this.s(`（同じ名前のコマンドの代わりに動く。コマンドは \`command ${name}\` で呼べる）`, ` (it runs instead of the command of that name; \`command ${name}\` runs the command)`)
         : '';
-    const may = res.sure ? '' : res.maybe === 'branch'
+    const may = res.sure ? '' : res.maybe === 'import'
+      ? this.s('。ただし、`sh` は Debian や Ubuntu では dash で、dash は bash がエクスポートした関数を読まないので、そこでは同じ名前のコマンドが動く',
+        '. But `sh` is dash on Debian and Ubuntu, and dash does not read the functions bash exports: there the command of that name runs')
+      : res.maybe === 'startup'
+      ? this.s('。ただし、この関数は新しいシェルに渡されないので、定義されているのは起動時に読むファイル（`-l`、`-i`、`BASH_ENV`）が定義する場合だけで、そうでなければ同じ名前のコマンドが動く',
+        '. But this function is not passed to the new shell: it is defined there only if the files it reads at startup (`-l`, `-i`, `BASH_ENV`) define it; otherwise the command of that name runs')
+      : res.maybe === 'branch'
       ? this.s('。ただし、ここまでに定義されているのは一部の経路（分岐など）だけで、そうでなければ同じ名前のコマンドが動く',
         '. But only some paths before here (a branch…) define it; on the others the command of that name runs')
       : this.s('。ただし、それはこれが動くときに定義されていればで、定義はスクリプトのあとの部分の一部の経路にしかない',
@@ -1734,6 +1742,8 @@ export class Analyzer {
     let joined: string | undefined;
     // The joined words are one token, when they are read as a script.
     let joinedWhole = false;
+    // Joined words not read as a script: the word that holds an expansion says why (`eval set -- "$args"`).
+    let joinedNote: { at: SyntaxNode; note: string } | undefined;
     const ordinals = new Map<OperandSpec, number>();
     try {
       for (const { word, role } of parse.roles) {
@@ -1797,7 +1807,9 @@ export class Analyzer {
               this.slotNotes(role, this.slotEnvs.get(a)!, words, assigned);
               const script = this.scriptTokens(words, this.slotEnvs.get(a)!);
               joinedWhole = words.length > 1 && !!script.tokens.length;
-              out.push(joinedWhole ? this.joinedScript(words, joined, script) : this.withScript(this.positional(a, joined), script));
+              const at = script.note && !script.tokens.length ? words.find((w) => !staticWordText(w)) ?? a : a;
+              if (at !== a) joinedNote = { at, note: script.note! };
+              out.push(joinedWhole ? this.joinedScript(words, joined, script) : this.withScript(this.positional(a, joined), at === a ? script : { tokens: [] }));
             } else if (!role.parse) {
               // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
               this.slotNotes(role, this.slotEnvs.get(a)!, [a], assigned);
@@ -1805,7 +1817,7 @@ export class Analyzer {
             } else out.push(this.wrapped(nodes, word, role, assigned));
             break;
           case 'joined':
-            if (!joinedWhole) out.push(this.positional(a, joined));
+            if (!joinedWhole) out.push(a === joinedNote?.at ? this.withScript(this.positional(a, joined), { tokens: [], note: joinedNote.note }) : this.positional(a, joined));
             break;
           case 'expression':
             // find's expression, read as a whole from its first word.
@@ -2035,7 +2047,8 @@ export class Analyzer {
    * (`cp *.txt dir`): `desc` when they give one word each, `other` when they give more.
    */
   private uncertainText(desc: string, other: string, parse: ArgvParse, nodes: SyntaxNode[]): string {
-    const many = parse.roles.filter((r) => r.role.role === 'operand' && countOf(nodes[r.word])?.max !== countOf(nodes[r.word])?.min);
+    // (Any word may be the one: `bash -c $cmd _ a`, where the string is unquoted.)
+    const many = parse.roles.filter((r) => countOf(nodes[r.word])?.max !== countOf(nodes[r.word])?.min);
     const list = many.map((r) => `\`${nodes[r.word].text}\``).join(this.s('・', ', '));
     return this.s(`${list} が1語に展開されるなら${desc}、2語以上なら${other}`, `${desc} when ${list} expands to a single word; ${other} when it expands to more`);
   }
@@ -2822,7 +2835,10 @@ export class Analyzer {
     if (top !== use && this.shoptAt(top).extglob !== 'on' && this.shoptAt(use).extglob === 'on') {
       return [this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }))];
     }
-    return [this.say(fact(this.lang, state === 'unknown' ? 'extglob-maybe-on' : state === 'off' ? 'extglob-turned-off' : 'extglob-not-found', { use: use.text }))];
+    // (A trap's action is read when its signal comes; another shell starts with its own options.)
+    const id = state === 'unknown' ? (this.nested === 'later' ? 'extglob-maybe-on-trap' : 'extglob-maybe-on')
+      : state === 'off' ? 'extglob-turned-off' : this.nested === 'child' ? 'extglob-not-in-new-shell' : 'extglob-not-found';
+    return [this.say(fact(this.lang, id, { use: use.text }))];
   }
 
   /**
@@ -3306,9 +3322,19 @@ export class Analyzer {
       }
     } else if (slot.run === 'shell-string') {
       this.unpassedVariables(env, words);
-      // The first word of the string, when it is known (`su -c 'f arg'`).
-      const lit = literalContent(first)?.text;
-      const fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
+      // The commands of the string that name a function of this script, when the string is read as a script
+      // (src/semantics/state.ts), but not one the string defines itself (`bash -c 'f() { …; }; f'`); otherwise the
+      // first word of the string, when it is known (`su -c 'f arg'`).
+      const script = this.state.script(words, env);
+      let fn: string | undefined;
+      if (!('why' in script)) {
+        const own = new Set(descendants(script.tree.root, ['function_definition']).map((d) => field(d, 'name')!.text));
+        fn = descendants(script.tree.root, ['command']).map((c) => staticWordValue(field(c, 'name')!.namedChildren[0]))
+          .find((n) => n !== undefined && !own.has(n) && this.state.definitions.functions.has(n));
+      } else {
+        const lit = literalContent(first)?.text;
+        fn = lit ? /^\s*([A-Za-z_][\w-]*)/.exec(lit)?.[1] : undefined;
+      }
       // What the string's first word runs in the new shell (src/semantics/names.ts): this script's function only
       // when every link passes the exported functions (not `su -c`, `env -i bash -c f`, `sudo bash -c f`) and the
       // shell reads them (bash, not dash). (A function exported on some paths only is taken as exported.)
@@ -3757,6 +3783,7 @@ export class Analyzer {
         : this.s('。文字列の中の文字列が深すぎるので、スクリプトとしては解説しない', '. Strings nested this deep are not explained as scripts') };
     }
     const inner = new Analyzer(this.lang);
+    inner.nested = script.kind;
     const tree = script.tree;
     const rows = tree.text.split('\n');
     const lines: Token[][] = [];
@@ -4573,7 +4600,7 @@ const isProgram = (name: string): boolean => {
  * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range).
  * For the dialect checks of the strings (src/document.ts).
  */
-export function nestedScripts(tree: SyntaxTree, shell?: Shell): { script: NestedScript; source: (i: number, end: boolean) => number }[] {
+export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script: NestedScript) => boolean = () => true): { script: NestedScript; source: (i: number, end: boolean) => number }[] {
   const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
   const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
     for (const cmd of descendants(t.root, ['command'])) {
@@ -4588,7 +4615,8 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell): { script: Nested
         if ('why' in script) continue;
         const inner = (i: number, end: boolean) => source(scriptSourceIndex(script, i, end), end);
         out.push({ script, source: inner });
-        visit(script.tree, script.model, inner);
+        // (Reading the strings in it builds its model: not done when the caller does not need them.)
+        if (descend(script)) visit(script.tree, script.model, inner);
       }
     }
   };
