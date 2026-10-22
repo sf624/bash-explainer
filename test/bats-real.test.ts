@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
-import { explainHostedLine, extractShell } from '../src/hosts';
+import { batsTestName, explainHostedLine, extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const BATS = path.join(__dirname, '..', 'node_modules', 'bats', 'bin', 'bats');
@@ -18,9 +18,9 @@ const usable = fs.existsSync(BATS) && spawnSync('bash', ['--norc', '-c', 'true']
  * Runs bats on a file and gives the TAP lines of its tests: in a process group of its own, killed whole on a
  * timeout, with FUNCNEST set so that a runaway recursion stops.
  */
-function runBats(file: string, timeout = 30000): Promise<string[]> {
+function runBats(file: string, locale = 'C', timeout = 30000): Promise<{ tap: string[]; out: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(BATS, ['--tap', file], { cwd: path.dirname(file), detached: true, env: { ...process.env, FUNCNEST: '20', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(BATS, ['--tap', file], { cwd: path.dirname(file), detached: true, env: { ...process.env, FUNCNEST: '20', LC_ALL: locale }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     child.stdout.on('data', (d: Buffer) => { out += d; });
@@ -32,7 +32,7 @@ function runBats(file: string, timeout = 30000): Promise<string[]> {
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
     child.on('close', () => {
       clearTimeout(timer);
-      resolve(out.split('\n').filter((l) => /^(not )?ok \d/.test(l)));
+      resolve({ tap: out.split('\n').filter((l) => /^(not )?ok \d/.test(l)), out: out + err });
     });
   });
 }
@@ -77,6 +77,12 @@ const ROWS: Row[] = [
     next: ['[ -z "${X-}" ] && [ -z "${Y-}" ]', '! type f'],
   },
   {
+    title: 'bats rewrites @test in a here-document or a string too, but bash reads it as text there',
+    head: ['cat <<EOF >/dev/null', '@test "inner" {', 'EOF', "x='", '@test "in string" {', "'"],
+    body: ['[ -n "$x" ]'],
+    bats: 'ok',
+  },
+  {
     title: 'set -e is ignored on the left of && and in a condition',
     body: ['false && true', 'if false; then :; fi', 'true'],
     bats: 'ok',
@@ -86,6 +92,23 @@ const ROWS: Row[] = [
     body: ['! true', 'true'],
     bats: 'ok',
     says: { 0: ['bats-negation-ignored'] },
+  },
+  {
+    title: '`! cmd | cmd` that is not the last command does not fail the test',
+    body: ['! echo x | grep -q x', 'true'],
+    bats: 'ok',
+    says: { 0: ['bats-negation-ignored'] },
+  },
+  {
+    title: '`run ! bats_pipe cmd \\| cmd` fails the test when the pipeline succeeds',
+    head: ['bats_require_minimum_version 1.5.0'],
+    body: ['run ! bats_pipe echo x \\| grep -q x', 'true'],
+    bats: 'not ok',
+  },
+  {
+    title: '`! { cmd; } || false` fails the test',
+    body: ['! { true; } || false', 'true'],
+    bats: 'not ok',
   },
   {
     title: '`! cmd` as the last command fails the test',
@@ -134,6 +157,23 @@ const ROWS: Row[] = [
     says: { 0: ['bats-run-in-pipeline'] },
   },
   {
+    title: '`… | run cmd`: run reads the pipe, but its $status and $output are lost',
+    body: ['status=7 output=old', 'echo hi | run cat', '[ "$status" = 7 ] && [ "$output" = old ]'],
+    bats: 'ok',
+    says: { 1: ['bats-run-in-pipeline-stage'] },
+  },
+  {
+    title: '`… | run cmd` with lastpipe: the last stage runs in the test, and keeps $output',
+    body: ['shopt -s lastpipe', 'echo hi | run cat', '[ "$output" = hi ]'],
+    bats: 'ok',
+  },
+  {
+    title: '`run` with an option it does not know fails the test',
+    head: ['bats_require_minimum_version 1.5.0'],
+    body: ['run -x true', 'true'],
+    bats: 'not ok',
+  },
+  {
     title: '`run bats_pipe cmd \\| cmd` runs the pipeline under run',
     body: ["run bats_pipe printf 'a\\nb\\n' \\| grep b", '[ "$output" = b ]', '[ "$status" -eq 0 ]'],
     bats: 'ok',
@@ -154,6 +194,19 @@ const ROWS: Row[] = [
     body: ['[ "$(greet)" = hello ]', '[ "$LOADED" = 1 ]'],
     bats: 'ok',
     files: { 'helper.bash': 'LOADED=1\ngreet() { echo hello; }\n' },
+  },
+  {
+    title: 'load of a missing file in setup fails only the test it runs for',
+    head: ['setup() {', '  if [ "$BATS_TEST_DESCRIPTION" != "${BATS_TEST_DESCRIPTION%, next}" ]; then return; fi', '  load no_such_helper', '}'],
+    body: ['true'],
+    bats: 'not ok',
+    next: ['true'],
+  },
+  {
+    title: 'load of a missing file at the top stops the whole file',
+    head: ['load no_such_helper'],
+    body: ['true'],
+    bats: 'not ok',
   },
 ];
 
@@ -176,13 +229,28 @@ describe('bats files agree with the real bats', function () {
       const file = path.join(dir, `row${i}.bats`);
       for (const [name, text] of Object.entries(row.files ?? {})) fs.writeFileSync(path.join(dir, name), text);
       fs.writeFileSync(file, [...source(row, i), ''].join('\n'));
-      const out = await runBats(file);
+      const out = (await runBats(file)).tap;
       tap.push(out[0] ?? '(no result)');
       if (row.next) assert.match(out[1] ?? '', /^ok 2 /, `the next test of row ${i}: ${out[1]}`);
     }
   });
   after(() => {
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('names a test as bats does in a UTF-8 locale', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'name.bats');
+    fs.writeFileSync(file, '@test "café ü-x" {\n  echo "name=$BATS_TEST_NAME" >&3\n}\n');
+    const { out } = await runBats(file, 'C.UTF-8');
+    assert.match(out, new RegExp(`^name=${batsTestName('café ü-x')}$`, 'm'));
+  });
+
+  it('warns (BW02) about any option of run without bats_require_minimum_version 1.5.0', async function () {
+    if (!usable) return this.skip();
+    const file = path.join(dir, 'bw02.bats');
+    fs.writeFileSync(file, '@test "a" {\n  run -- true\n}\n');
+    assert.match((await runBats(file)).out, /BW02: Using flags on `run` requires at least BATS_VERSION=1\.5\.0/);
   });
 
   for (const [i, row] of ROWS.entries()) {

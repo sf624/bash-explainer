@@ -70,6 +70,8 @@ export interface CommandSpec {
   operandParser?: 'find-expression' | 'test-expression';
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
+  /** What an option the spec does not list does, when the command refuses every other option (bats `run`: an error). */
+  unknownOption?: Text;
   builtin?: 'special' | 'regular';
   /**
    * What a builtin does to the shell that runs it: changes its state (`cd`, `set`, `export`, `read`) or ends it
@@ -219,7 +221,12 @@ export type Condition = { option: string[] } | { mode: string } | { operand: num
 
 /** How the words of a command slot are run. */
 export interface CommandSlot {
-  run: 'exec' | 'shell-string' | 'current-shell';
+  /**
+   * A program (`exec`), a new shell reading a string (`shell-string`), the current shell (`current-shell`: eval,
+   * command), or a subshell of it (`subshell`: bats `run`, which runs its command in `$( )`: the command sees the
+   * shell's functions and variables, and what it changes is gone when it ends).
+   */
+  run: 'exec' | 'shell-string' | 'current-shell' | 'subshell';
   /** Default 'local'. */
   where?: 'local' | 'remote' | 'container';
   /**

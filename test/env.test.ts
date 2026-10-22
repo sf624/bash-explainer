@@ -10,6 +10,8 @@ import type { Shell } from '../src/dialect';
 import { type CallLink, type ExecEnv, lastStage, type SlotLink, type SubshellLink, processOf, reachOf, slotEnvs, subshellReasons, whereOf } from '../src/semantics/env';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import type { CommandSpec } from '../src/argv/spec';
+import { BATS_COMMANDS } from '../src/dict/bats';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
 
 const parser = createUnbashParser();
@@ -32,11 +34,11 @@ const kind = (src: string, text: string, shell?: Shell): string => {
 const whys = (src: string, text: string): string[] => at(src, text).env.links.map((l) => (l.kind === 'subshell' ? l.why + (l.sure ? '' : '?') : l.kind));
 
 /** The environments of the commands that the words of the command `text` run through slots, by the slot's first word. */
-function slots(src: string, text: string): Map<string, ExecEnv> {
+function slots(src: string, text: string, spec?: CommandSpec): Map<string, ExecEnv> {
   const { node, env } = at(src, text);
   const name = field(node, 'name')!.text;
   const words = fields(node, 'argument');
-  const spec = lookupCommand(name)!;
+  spec ??= lookupCommand(name)!;
   const parse = interpret(spec, words.map(argWord), { name, lookup: lookupCommand });
   return new Map([...slotEnvs(env, parse, spec, words, lookupCommand)].map(([w, e]) => [w.text, e]));
 }
@@ -126,6 +128,9 @@ describe('execution environments: command slots', () => {
     // eval and command run in this shell.
     const c = slots('command eval f', 'command eval f').get('f')!;
     assert.deepStrictEqual([processOf(c).kind, reachOf(c).functions], ['main', 'all']);
+    // bats' run runs its command in a subshell (`$( )`), which has all of the script.
+    const r = slots('run ! f x', 'run ! f x', BATS_COMMANDS.run).get('f')!;
+    assert.deepStrictEqual([processOf(r).kind, processOf(r).link?.kind, reachOf(r).functions, reachOf(r).variables], ['subshell', 'slot', 'all', 'all']);
     // su keeps the environment, unless it starts a login shell; docker run -e passes a variable.
     assert.deepStrictEqual(reachOf(slots("su -c 'f' bob", "su -c 'f' bob").get("'f'")!).functions, 'exported');
     for (const src of ["su - -c 'f' bob", "su -l -c 'f' bob", "su --login -c 'f'"]) assert.strictEqual(reachOf(slots(src, src).get("'f'")!).functions, 'none', src);

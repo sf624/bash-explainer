@@ -3,7 +3,7 @@ import { fact, type Fact } from './messages';
 import { resolveName } from './semantics/names';
 import { shellState } from './semantics/state';
 import { lastStatements, statusModel } from './semantics/status';
-import { STATEMENTS } from './semantics/env';
+import { processOf, STATEMENTS } from './semantics/env';
 import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
@@ -23,6 +23,21 @@ function runCommand(n: SyntaxNode): SyntaxNode[] {
     if (words[i++].text === '--') break;
   }
   return words.slice(i);
+}
+
+const testLines = new WeakMap<SyntaxTree, number[]>();
+
+/**
+ * The lines of `candidates` (where bats rewrote `@test`) on which bash reads a function definition: not those inside
+ * a here-document or a quoted string, which bats rewrites too but bash takes as text.
+ */
+export function batsTests(tree: SyntaxTree, candidates: readonly number[]): number[] {
+  let out = testLines.get(tree);
+  if (!out) {
+    const rows = new Set(descendants(tree.root, ['function_definition']).map((d) => d.startPosition.row));
+    testLines.set(tree, (out = candidates.filter((l) => rows.has(l))));
+  }
+  return out;
 }
 
 /**
@@ -45,20 +60,28 @@ export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: numb
     for (const s of body.namedChildren.filter((c) => STATEMENTS.has(c.type))) {
       // (Bash ignores `set -e` for a statement of the body only when it is `! cmd` itself.)
       if (s.startPosition.row !== line || last.includes(s) || status.errexit(s).ignored?.at !== s) continue;
-      out.push(fact(lang, 'bats-negation-ignored', { cmd: shorten(s.namedChildren.find((c) => STATEMENTS.has(c.type))!.text) }));
+      // (`run !` runs one command: a pipeline needs bats_pipe, a group neither.)
+      const inner = s.namedChildren.find((c) => STATEMENTS.has(c.type))!;
+      const form = inner.type === 'command' ? 'command' : inner.type === 'pipeline' ? 'pipeline' : 'other';
+      out.push(fact(lang, 'bats-negation-ignored', { cmd: shorten(inner.text), form }));
     }
   }
-  // `run cmd | …`: the pipe gets run's output, which is none, and run's variables are set in a subshell.
+  // `run cmd | …`: the pipe gets run's output, which is none, and run's variables are set in a subshell; `… | run
+  // cmd`: run reads the pipe, but sets its variables in a subshell too (unless lastpipe runs the last stage here).
   for (const p of descendants(tree.root, ['pipeline'])) {
-    // (`run cmd 2>&1 | …`: the command with its redirection; `>f | …` has none.)
-    const first = p.namedChildren[0];
-    const cmd = first.type === 'redirected_statement' ? field(first, 'body') : first;
-    if (p.startPosition.row !== line || cmd?.type !== 'command' || field(cmd, 'name')!.text !== 'run') continue;
-    // (A function of the file named `run` is not bats' own.)
-    if (resolveName(state, 'run', cmd).kind === 'function') continue;
-    const words = runCommand(cmd);
-    if (!words.length) continue;
-    out.push(fact(lang, 'bats-run-in-pipeline', { cmd: shorten(words.map((w) => w.text).join(' ')) }));
+    if (p.startPosition.row !== line) continue;
+    p.namedChildren.filter((c) => STATEMENTS.has(c.type)).forEach((stage, k) => {
+      // (`run cmd 2>&1 | …`: the command with its redirection; `>f | …` has none.)
+      const cmd = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
+      if (cmd?.type !== 'command' || field(cmd, 'name')!.text !== 'run') return;
+      // (A function of the file named `run` is not bats' own.)
+      if (resolveName(state, 'run', cmd).kind === 'function') return;
+      const words = runCommand(cmd);
+      if (!words.length) return;
+      const text = shorten(words.map((w) => w.text).join(' '));
+      if (k === 0) out.push(fact(lang, 'bats-run-in-pipeline', { cmd: text }));
+      else if (processOf(state.env(stage)).kind === 'subshell') out.push(fact(lang, 'bats-run-in-pipeline-stage', { cmd: text }));
+    });
   }
   return out;
 }

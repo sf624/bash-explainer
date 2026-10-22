@@ -7,7 +7,7 @@ import { shellState } from './semantics/state';
 import { statusModel } from './semantics/status';
 import type { CommandSpec } from './argv/spec';
 import { BATS_COMMANDS } from './dict/bats';
-import { batsFacts } from './bats';
+import { batsFacts, batsTests } from './bats';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile' | 'bats';
@@ -26,7 +26,10 @@ export interface ShellRegion {
   warnPipefail?: boolean;
   /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */
   commands?: Record<string, CommandSpec>;
-  /** The lines of the tests a test runner turns into functions (bats: `@test "…" {`). */
+  /**
+   * The lines a test runner turns into functions (bats: `@test "…" {`), also inside a here-document or a string,
+   * where bats rewrites them too.
+   */
   tests?: number[];
 }
 
@@ -151,13 +154,13 @@ export function extractShell(kind: HostKind, text: string): Extracted {
 const BATS_TEST = /^([ \t]*)(@test[ \t]+)(.*[^ \t])[ \t]+\{(.*)$/;
 
 /**
- * The name bats gives the function of a test (bats_encode_test_name): `test_` and the description, with a space as
- * `_`, and any other character that is not an ASCII letter or digit as `-` and its code in hex (bats keeps the letters of
- * the locale, as `[[:alnum:]]` matches them). (When every character is
- * a letter, a digit, a space, `_` or `-`, `_` and `-` are written so too: `-5f`, `-2d`.)
+ * The name bats gives the function of a test (bats_encode_test_name), as in a UTF-8 locale: `test_` and the
+ * description, with a space as `_`, a letter or a digit as it is (`[[:alnum:]]`, which takes `é` too), and any other
+ * character as `-` and its code point in hex (`_` is `-5f`, `-` is `-2d`). The name depends on the locale: in the C
+ * locale, `é` is not a letter, and each of its UTF-8 bytes is written in hex (`-c3-a9`).
  */
 export function batsTestName(description: string): string {
-  return 'test_' + [...description].map((c) => (c === ' ' ? '_' : /[A-Za-z0-9]/.test(c) ? c : `-${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)).join('');
+  return 'test_' + [...description].map((c) => (c === ' ' ? '_' : /[\p{L}\p{N}]/u.test(c) ? c : `-${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)).join('');
 }
 
 const batsTestMeaning = (name: string): [string, string] => [
@@ -188,7 +191,8 @@ function batsTestLine(ex: LineExplanation, extracted: Extracted, original: strin
 
 /** `@test "x"`, as written on the line of a test. */
 const testText = (line: string): string => {
-  const [, , keyword, quoted] = BATS_TEST.exec(line)!;
+  // (A line split at LF only still has the CR of a CRLF, which bats takes off.)
+  const [, , keyword, quoted] = BATS_TEST.exec(line.replace(/\r$/, ''))!;
   return keyword + quoted;
 };
 
@@ -210,7 +214,7 @@ function bats(b: Builder): void {
     const to = from + keyword.length + quoted.length;
     const brace = line.length - body.length - 1;
     const o = b.plain(i, 0, from);
-    o.insert(name, from, to, [`テストの名前: bats はこれから関数名 \`${name}\` を作る`, `the name of the test: bats makes the function name \`${name}\` of it`]);
+    o.insert(name, from, to, [`テストの名前: bats はこの名前から関数名 \`${name}\` を作る`, `the name of the test: bats makes the function name \`${name}\` of it`]);
     o.insert('()', to, to);
     o.copy(line, to, brace + 1);
     // `@test "x" { }`: bash needs a command in the braces, and bats puts `:;` there.
@@ -1238,14 +1242,16 @@ export function explainHostedLine(
   if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
     notes.push(pick(PIPEFAIL));
   }
-  if (region.tests) {
-    const facts = batsFacts(tree, region.tests, line, lang, opts.pitfalls !== false);
+  // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
+  const tests = region.tests && batsTests(tree, region.tests);
+  if (tests) {
+    const facts = batsFacts(tree, tests, line, lang, opts.pitfalls !== false);
     notes.push(...facts.map((f) => f.text));
     if (facts.length) ex.facts = [...(ex.facts ?? []), ...facts];
   }
   ex.notes.unshift(...notes);
   const out = remapExplanation(ex, extracted, original, lang);
-  if (region.tests) batsTestLine(out, extracted, original, region.tests, lang);
+  if (tests) batsTestLine(out, extracted, original, tests, lang);
   return out;
 }
 
