@@ -46,6 +46,12 @@ async function choose(page: Page, id: string, value: string): Promise<void> {
   await page.evaluate("document.getElementById('drawer')?.close()").catch(() => undefined);
 }
 
+/** Presses an item of the page's menu (the panel's own header is not shown on the page). */
+async function menuItem(page: Page, id: string): Promise<void> {
+  await page.locator('#menu-open').click();
+  await page.locator(id).click();
+}
+
 describe('the web page in a browser', function () {
   this.timeout(120000);
   let browser: Browser | undefined;
@@ -252,14 +258,14 @@ describe('the web page in a browser', function () {
     await parent().locator('> .row > .text').click();
     assert.strictEqual(await folded(), true);
     await parent().evaluate((li) => ((li as any).mark = 1));
-    await panel().locator('#shell').selectOption('dash');
+    await choose(page, '#shell', 'dash');
     await until('the panel drawn again', () => parent().evaluate((li) => !(li as any).mark), (redrawn) => redrawn);
     assert.strictEqual(await folded(), true);
     assert.strictEqual(await twisty(), '▸');
     // "Expand all" and "Collapse all" still work.
-    await panel().locator('#toggle').click();
+    await menuItem(page, '#menu-collapse');
     assert.strictEqual(await panel().locator('#tree .collapsed').count(), 0);
-    await panel().locator('#toggle').click();
+    await menuItem(page, '#menu-collapse');
     assert.strictEqual(await folded(), false);
     assert.strictEqual(await panel().locator('#tree .collapsed').count() > 0, true);
     await ctx.close();
@@ -583,7 +589,7 @@ describe('the web page in a browser', function () {
     // The shell: the script is checked for sh, and the panel's own menu says so.
     await page.locator('#setting-shell').selectOption('sh');
     await until('the problem', () => page.locator('#problem-list').innerText(), (t) => /dbracket/.test(t));
-    await until('the panel\'s shell', () => panel().locator('#shell').inputValue(), (v) => v === 'sh');
+    await until('the panel\'s shell', () => page.locator('#shell').inputValue(), (v) => v === 'sh');
     // A warning code left out.
     await page.locator('#setting-diagnostics-ignore').fill('dbracket');
     await page.locator('#setting-diagnostics-ignore-add').click();
@@ -598,10 +604,10 @@ describe('the web page in a browser', function () {
     await page.locator('#settings-done').click();
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), false);
     await choose(page, '#lang', 'en');
-    // The panel's ⚙ button opens the dialog too, and a shell chosen in the panel is the setting.
-    await until('the panel in English', () => panel().locator('#settings').isVisible(), (v) => v);
-    await panel().locator('#shell').selectOption('dash');
-    await panel().locator('#settings').click();
+    // The panel's header is not shown on the page; a shell chosen in the menu is the setting.
+    assert.strictEqual(await panel().locator('header').isHidden(), true);
+    await choose(page, '#shell', 'dash');
+    await page.locator('#settings-open').click();
     await until('the dialog', () => page.locator('#settings-dialog').isVisible(), (v) => v);
     assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'dash');
     assert.strictEqual(await page.locator('#setting-language').inputValue(), 'en');
@@ -615,7 +621,7 @@ describe('the web page in a browser', function () {
     });
     await page.reload();
     await until('the panel after the reload', () => Promise.resolve(panel()), (f) => !!f);
-    await until('the shell after the reload', () => panel().locator('#shell').inputValue(), (v) => v === 'dash');
+    await until('the shell after the reload', () => page.locator('#shell').inputValue(), (v) => v === 'dash');
     await page.locator('#settings-open').click();
     assert.strictEqual(await page.locator('#setting-notes-pitfalls').isChecked(), false);
     assert.strictEqual(await page.locator('#setting-examples-disabled-regex').isChecked(), true);
@@ -766,7 +772,7 @@ describe('the web page in a browser', function () {
     // Without storage, a change still applies for as long as the page is open.
     await page.locator('#setting-shell').selectOption('dash');
     const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
-    await until('the panel\'s shell', () => panel.locator('#shell').inputValue(), (v) => v === 'dash');
+    await until('the menu\'s shell', () => page.locator('#shell').inputValue(), (v) => v === 'dash');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
@@ -806,6 +812,7 @@ describe('the web page in a browser', function () {
         const c = document.createElement('canvas').getContext('2d');
         const bad = [];
         for (const s of document.querySelectorAll('.top select, #drawer select')) {
+          if (!s.clientWidth) continue;
           const cs = getComputedStyle(s);
           c.font = cs.font;
           const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
@@ -825,6 +832,81 @@ describe('the web page in a browser', function () {
     const small = await page.evaluate('[...document.querySelectorAll(".top select, .top button")].filter((e) => e.getClientRects().length && e.getBoundingClientRect().height < 40).map((e) => e.id)');
     assert.deepStrictEqual(small, []);
     await ctx.close();
+  });
+
+  it('has no panel header on the page: its controls are in the top bar (1200px) and the menu (360px and up)', async () => {
+    for (const [width, height] of [[360, 740], [1200, 800]]) {
+      const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
+      await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      await until('the explanation', async () => (await panel()?.locator('#line').textContent().catch(() => '')) ?? '', (t) => t.length > 0);
+      // The header (the title row and its buttons) is not there to see or to tab to, and the page does not scroll sideways.
+      assert.strictEqual(await panel().locator('header').isHidden(), true, `${width}px`);
+      assert.strictEqual(await panel().locator('header button:visible, header select:visible, #where:visible').count(), 0);
+      assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
+      const wide = width >= 1200;
+      const via = async (top: string, menu: string) => {
+        if (wide) return page.locator(top).click();
+        await page.locator('#menu-open').click();
+        return page.locator(menu).click();
+      };
+      assert.strictEqual(await page.locator('#collapse').isVisible(), wide);
+      assert.strictEqual(await page.locator('#shell-top').isVisible(), wide);
+      if (wide) {
+        // Still one row of 48px, with nothing hanging out of the bar.
+        const bar = (await page.evaluate('(() => { const t = document.querySelector(".top"); return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth]; })()')) as [number, boolean];
+        assert.deepStrictEqual(bar, [48, true]);
+        const names = await page.evaluate('["collapse", "copy-md", "ref", "shell-top"].map((id) => document.getElementById(id).getAttribute("aria-label"))');
+        assert.deepStrictEqual(names, ['Collapse all', 'Copy as Markdown', 'Quick reference', 'Shell']);
+      }
+
+      // Shell: the setting, as the panel's select was.
+      if (wide) await page.locator('#shell-top').selectOption('dash');
+      else await choose(page, '#shell', 'dash');
+      await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));
+      assert.strictEqual(await page.locator('#shell').inputValue(), 'dash');
+      assert.strictEqual(await page.locator('#shell-top').inputValue(), 'dash');
+
+      // Collapse all, then Expand all.
+      await page.locator('.cm-line').nth(7).click();
+      await until('a tree', () => panel().locator('#tree li li').count(), (n) => n > 0);
+      await via('#collapse', '#menu-collapse');
+      await until('collapsed', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
+      assert.strictEqual(await page.locator('#collapse').getAttribute('aria-label'), 'Expand all');
+      assert.strictEqual(await page.locator('#menu-collapse-label').textContent(), 'Expand all');
+      await via('#collapse', '#menu-collapse');
+      await until('expanded', () => panel().locator('#tree .collapsed').count(), (n) => n === 0);
+
+      // Copy as Markdown.
+      await page.evaluate('navigator.clipboard.writeText("")');
+      await via('#copy-md', '#menu-copy');
+      const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
+      assert.match(md, /`/);
+
+      // Quick reference, and back.
+      await via('#ref', '#menu-ref');
+      await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
+      assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'true');
+      assert.strictEqual(await page.locator('#menu-ref-label').textContent(), '← Back to the explanation');
+      await via('#ref', '#menu-ref');
+      await until('the explanation again', () => panel().locator('#main').isVisible(), (v) => v);
+
+      // Keyboard access: the menu's items are buttons in the tab order.
+      await page.locator('#menu-open').focus();
+      await page.keyboard.press('Enter');
+      await page.locator('#menu-copy').focus();
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-copy');
+      await page.evaluate("document.getElementById('drawer').close()");
+
+      // Japanese names.
+      await choose(page, '#lang', 'ja');
+      await until('ja names', async () => (await page.locator('#menu-copy-label').textContent()) ?? '', (t) => t === 'Markdown でコピー');
+      assert.strictEqual(await page.locator('#shell-label').textContent(), 'シェル');
+      await ctx.close();
+    }
   });
 
   it('read mode: on a phone a tap places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
@@ -973,7 +1055,7 @@ describe('the web page in a browser', function () {
     }
   });
 
-  it('has a menu that opens with its button or a swipe from the right edge, closes with Esc, × or a swipe, and holds what the toolbar and the footer had', async () => {
+  it('has a menu that opens from the left with its button (at the left end of the top bar) or a swipe from the left edge, closes with Esc, × or a swipe, and holds what the toolbar and the footer had', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser!.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
     const page = await ctx.newPage();
@@ -990,7 +1072,11 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await open(), true);
     // The focus stays in the menu.
     assert.strictEqual(await page.evaluate("!!document.activeElement.closest('#drawer')"), true);
-    for (const id of ['#lang', '#theme', '#channel', '#menu-settings', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
+    // The menu has no Settings entry (the gear is in the top bar), and sits along the left edge.
+    assert.strictEqual(await page.locator('#menu-settings').count(), 0);
+    const sheet = await until('the sheet in place', async () => (await page.locator('#drawer').boundingBox())!, (b) => Math.abs(b.x) < 0.5);
+    assert.ok(sheet.width < 390, JSON.stringify(sheet));
+    for (const id of ['#lang', '#theme', '#channel', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
       assert.strictEqual(await page.locator(id).isVisible(), true, id);
     }
     assert.match(await page.locator('#version').innerText(), /^Bash Explainer \d+\.\d+\.\d+/);
@@ -998,28 +1084,26 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Escape');
     assert.strictEqual(await open(), false);
     assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
-    // A swipe from the right edge opens it, a swipe to the right closes it (real touches).
+    // A swipe from the left edge opens it, a swipe back to the left closes it (real touches).
     const cdp = await ctx.newCDPSession(page);
     const swipe = async (from: number, to: number) => {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from, y: 500 }] });
       for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from + ((to - from) * i) / 8, y: 500 }] });
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     };
-    await swipe(386, 250);
+    await swipe(4, 140);
     await until('the menu open', open, (v) => v);
-    await swipe(150, 380);
+    await swipe(250, 20);
     await until('the menu closed', open, (v) => !v);
     // A tap beside it closes it too; the × does.
     await page.locator('#menu-open').tap();
-    await page.mouse.click(10, 400);
+    await page.mouse.click(380, 400);
     assert.strictEqual(await open(), false);
     await page.locator('#menu-open').tap();
     await page.locator('#menu-close').tap();
     assert.strictEqual(await open(), false);
-    // Its items do what the buttons did: the settings, the sample, the link.
-    await page.locator('#menu-open').tap();
-    await page.locator('#menu-settings').tap();
-    assert.strictEqual(await open(), false);
+    // Its items do what the buttons did: the sample, the link. The gear opens the settings.
+    await page.locator('#settings-open').tap();
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
     await page.locator('#settings-done').tap();
     await page.locator('.cm-content').click();
@@ -1118,7 +1202,7 @@ describe('the web page in a browser', function () {
     const text = (sel: string, p?: Page) => async () => (await panel(p)?.locator(sel).textContent().catch(() => '')) ?? '';
 
     await page.goto(base);
-    await until('the first explanation', text('#where'), (t) => t.includes('Line 8'));
+    await until('the first explanation', text('#line'), (t) => t.length > 0);
 
     // From here on, the browser has no network at all.
     await ctx.setOffline(true);
@@ -1163,7 +1247,7 @@ describe('the web page in a browser', function () {
     assert.notStrictEqual(ph.color, parent.color);
 
     // Another shell: the problems and their quick fixes.
-    await panel().locator('#shell').selectOption('dash');
+    await choose(page, '#shell', 'dash');
     await until('the problems for dash', () => page.locator('#problem-list').innerText(), (t) => t.includes('dbracket'));
 
     // A link to the script, opened online in a new page: the script travels after '#' only.
@@ -1180,7 +1264,7 @@ describe('the web page in a browser', function () {
 
     // Japanese, which reloads the panel from the page's own files.
     await choose(page2, '#lang', 'ja');
-    await until('the Japanese panel', text('#where', page2), (t) => t.includes('行目'));
+    await until('the Japanese menu', async () => (await page2.locator('#shell-label').textContent()) ?? '', (t) => t === 'シェル');
 
     await ctx.close();
     assert.deepStrictEqual(elsewhere, [], 'requests to other sites');

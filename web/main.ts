@@ -26,7 +26,7 @@ import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettin
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
-import { toPlainMarkdown } from '../src/ui/render';
+import { toPlainMarkdown, ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 import { narrow, setUpEdgeSwipe, setUpSheet, setUpSplitter } from './layout';
 import { SettingsDialog } from './settings-dialog';
@@ -459,6 +459,7 @@ function panelLoaded(): void {
   // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode).
   if (!panelOnly) frame?.contentDocument?.documentElement.classList.add('bx-settings');
   toPanel({ type: 'theme', theme });
+  if (!panelOnly) watchPanelActions();
   updatePanel();
 }
 frame?.addEventListener('load', panelLoaded);
@@ -494,10 +495,101 @@ function updatePanel(): void {
   const s = shells();
   const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, explainOptions(settings));
   shown = { explanation, line };
-  toPanel(panelUpdate({
+  const message = panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'], colors: settings.colors,
-  }));
+  });
+  toPanel(message);
+  if (!panelOnly) watchPanelActions();
+  showDialect(message.dialect);
+}
+
+// ---- The panel's header controls, which the web page has in its top bar and menu ------------------
+// The panel's own header is not shown on the page (web/panel-page.css). Its shell and yq choices are
+// the setting; "Collapse all" and "Quick reference" press the panel's buttons, which keep the state.
+
+type Dialect = ReturnType<typeof panelUpdate>['dialect'];
+
+/** Fills the shell and yq selects of the top bar and the menu the way the panel's header was. */
+function showDialect(d: Dialect): void {
+  const tp = ui[lang].panel;
+  for (const [key, options, value, label] of [['shell', d.shells, d.shell, tp.shell], ['yq', d.yqs, d.yq, tp.yq]] as const) {
+    for (const id of [key, `${key}-top`]) {
+      const select = document.getElementById(id) as HTMLSelectElement | null;
+      if (!select) continue;
+      select.replaceChildren(...(options ?? []).map(([v, text]) => new Option(text, v)));
+      select.value = value;
+      put(`${id}-label`, label);
+      select.setAttribute('aria-label', label);
+      select.title = label;
+    }
+    // The yq choice only matters on the lines that run yq.
+    for (const id of [`${key}-box`, `${key}-top-box`]) {
+      const box = document.getElementById(id);
+      if (box && key === 'yq') box.hidden = !options;
+    }
+  }
+}
+
+for (const key of ['shell', 'yq'] as const) {
+  for (const id of [key, `${key}-top`]) on(id, 'change', (e) => setChoice(key, (e.target as HTMLSelectElement).value));
+}
+
+/** A button of the panel's header (it is there, hidden). */
+const panelButton = (id: 'toggle' | 'ref') => frame?.contentDocument?.getElementById(id) ?? null;
+
+/** Names the fold and quick reference buttons as the panel's own buttons say (they turn into "Expand all" and "Back"). */
+function showPanelActions(): void {
+  const tp = ui[lang].panel;
+  const open = frame?.contentDocument?.getElementById('reference')?.hidden === false;
+  const names: [string, string, string][] = [
+    ['collapse', 'menu-collapse', panelButton('toggle')?.textContent || tp.collapseAll],
+    ['ref', 'menu-ref', panelButton('ref')?.textContent || tp.reference],
+  ];
+  for (const [button, item, name] of names) {
+    document.getElementById(button)?.setAttribute('aria-label', name);
+    document.getElementById(button)?.setAttribute('title', name);
+    put(`${item}-label`, name);
+  }
+  for (const id of ['ref', 'menu-ref']) document.getElementById(id)?.setAttribute('aria-pressed', String(open));
+  for (const [button, name] of [['copy-md', tp.copy]]) {
+    document.getElementById(button)?.setAttribute('aria-label', name);
+    document.getElementById(button)?.setAttribute('title', name);
+  }
+  put('menu-copy-label', tp.copy);
+  for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
+    for (const id of [key, `${key}-top`]) {
+      put(`${id}-label`, label);
+      document.getElementById(id)?.setAttribute('aria-label', label);
+    }
+  }
+}
+
+/** The panel's buttons change their own text; follow it. */
+let panelWatch: MutationObserver | undefined;
+let watched: Document | undefined;
+function watchPanelActions(): void {
+  const doc = frame?.contentDocument;
+  if (!doc || doc === watched || !doc.getElementById('toggle')) return;
+  watched = doc;
+  panelWatch?.disconnect();
+  panelWatch = new MutationObserver(showPanelActions);
+  for (const id of ['toggle', 'ref']) panelWatch.observe(doc.getElementById(id)!, { childList: true });
+  showPanelActions();
+}
+
+function copyMarkdown(): void {
+  if (!shown) return;
+  const md = toPlainMarkdown(shown.explanation, view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`, lang);
+  void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
+}
+
+for (const [id, act] of [['collapse', () => panelButton('toggle')?.click()], ['menu-collapse', () => panelButton('toggle')?.click()], ['copy-md', copyMarkdown], ['menu-copy', copyMarkdown], ['ref', () => panelButton('ref')?.click()], ['menu-ref', () => panelButton('ref')?.click()]] as const) {
+  on(id, 'click', () => {
+    // The menu's item closes the menu first, as the others do.
+    if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
+    act();
+  });
 }
 
 /** Focusing the editor opens the soft keyboard on a phone: do it only with a mouse or a pen. */
@@ -541,12 +633,8 @@ window.addEventListener('message', (e) => {
     case 'reveal':
       if (panelOnly) return toParent({ type: 'bx-reveal', span: m.span });
       return selectSpan(m.span);
-    case 'copy': {
-      if (!shown) return;
-      const md = toPlainMarkdown(shown.explanation, view.state.doc.line(shown.line + 1).text, `${kindInfo(kind).fileName}:${shown.line + 1}`, lang);
-      void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
-      return;
-    }
+    case 'copy':
+      return copyMarkdown();
   }
 });
 
@@ -706,10 +794,10 @@ function applyLanguage(): void {
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
   put('menu-share-label', t.share);
-  put('menu-settings-label', t.settings);
   put('menu-install-label', t.install);
   put('settings-label', t.settings);
   put('drawer-title', t.menu);
+  showPanelActions();
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
   for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize]]) {
     const el = document.getElementById(id);
@@ -896,11 +984,11 @@ function openMenu(): void {
 }
 on('menu-open', 'click', openMenu);
 on('menu-close', 'click', () => drawer?.close());
-if (drawer) setUpSheet(drawer);
+if (drawer) setUpSheet(drawer, 'left');
 const edge = document.getElementById('edge');
-if (edge) setUpEdgeSwipe(edge, openMenu);
+if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
 // The menu's items do what the top bar's buttons do, and close the menu first.
-for (const [item, target] of [['menu-settings', 'settings-open'], ['menu-sample', 'sample'], ['menu-share', 'share']]) {
+for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']]) {
   on(item, 'click', () => {
     drawer?.close();
     $(target).click();

@@ -9,4 +9,13 @@
     getState: () => undefined,
     setState: () => undefined,
   });
+  // The page around has these controls in its top bar and its menu, so the panel's header is not shown.
+  // (The copies on the compare page, in panel mode, have no top bar: their panels keep it.)
+  try {
+    if (window.parent !== window && new URLSearchParams(window.parent.location.search).get('view') !== 'panel') {
+      document.documentElement.classList.add('bx-web');
+    }
+  } catch {
+    // Not the same origin: leave the header.
+  }
 })();

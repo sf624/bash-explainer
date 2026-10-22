@@ -204,6 +204,12 @@ button {
   margin-left: auto;
 }
 
+.pick select {
+  max-width: 11rem;
+  min-height: 30px;
+  font-size: 12.5px;
+}
+
 .actions .sep {
   width: 1px;
   height: 20px;
@@ -393,7 +399,7 @@ body.resizing iframe {
   visibility: hidden;
 }
 
-/* A strip along the right edge of a touch screen: a swipe from it opens the menu. */
+/* A strip along the left edge of a touch screen: a swipe from it opens the menu. */
 .edge {
   display: none;
 }
@@ -403,7 +409,7 @@ body.resizing iframe {
     display: block;
     position: fixed;
     top: var(--bar-h);
-    right: 0;
+    left: 0;
     bottom: 0;
     z-index: 5;
     width: 12px;
@@ -466,6 +472,20 @@ body.resizing iframe {
   }
 }
 
+/* The menu comes from the left; the settings from the right. */
+.sheet.menu {
+  inset: 0 auto 0 0;
+  border-left: 0;
+  border-right: 1px solid var(--vscode-panel-border);
+  border-radius: 0 12px 12px 0;
+}
+
+@starting-style {
+  .sheet.menu[open] {
+    transform: translateX(-100%);
+  }
+}
+
 /* A sheet being swiped away follows the finger. */
 .sheet.dragging {
   transition: none;
@@ -522,6 +542,11 @@ body.resizing iframe {
   gap: 12px;
   padding: 4px 8px;
   color: var(--vscode-foreground);
+}
+
+.field[hidden],
+.pick[hidden] {
+  display: none;
 }
 
 .field select {
@@ -659,6 +684,17 @@ body.resizing iframe {
   .tagline {
     visibility: hidden;
   }
+}
+
+/* The explanation's own controls (shell, fold, copy, quick reference) are in the menu until there is room for them here. */
+@media (max-width: 1199px) {
+  .desk-only {
+    display: none !important;
+  }
+}
+
+#ref[aria-pressed="true"] {
+  background: var(--accent-soft);
 }
 
 @media (max-width: 900px) {
