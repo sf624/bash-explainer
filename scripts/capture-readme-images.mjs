@@ -90,7 +90,8 @@ const baseSettings = {
   'bashExplainer.panel.autoOpen': false,
 };
 const scenarioSettings = {
-  demo: {},
+  // Examples after the rows they belong to, so the first view is the tree and the example comes after scrolling.
+  demo: { 'bashExplainer.examples.placement': 'last' },
   hover: {},
   panel: { 'bashExplainer.hover.enabled': false, 'bashExplainer.panel.autoOpen': true },
   inline: { 'bashExplainer.hover.enabled': false, 'bashExplainer.inline.enabled': true },
