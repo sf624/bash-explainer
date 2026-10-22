@@ -43,6 +43,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 - To check whether something runs in a subshell, compare `$BASHPID` with `$$`; `$BASH_SUBSHELL` stays 0 in some subshells (`echo $BASH_SUBSHELL | cat`).
 - A script that is generated (a differential or fuzz harness) or may recurse runs in a cgroup with `FUNCNEST` set, and is killed as a process group on a timeout: `systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 -p TasksMax=500 …`, spawned `detached` and stopped with `process.kill(-pid)`. A generated `f() { ( f ); }` once forked until it filled the machine's memory, because the timeout killed only the outer `bash`.
+- A tool can print differently when it runs under an agent: gh prints its full help after a usage error when `AI_AGENT` or `CLAUDECODE` is set, and only a short usage otherwise (as in CI). A comparison that passes locally can fail in CI; try it with those variables unset too.
 - Feed a tool's stdin through `test/support/run.ts` (a file, not a pipe), so a tool that stops reading early cannot fail with EPIPE.
 - In the web tests, type with `keyboard.insertText` (keys typed one by one can arrive out of order in CI), and wait for CodeMirror's selection layer, which is drawn on the next frame.
 
