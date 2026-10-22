@@ -22,7 +22,12 @@ export function ansiCValue(body: string): string | undefined {
       if (code > 0x10ffff || (code > 0x7f && (num[1] || num[4]))) return undefined;
       out += String.fromCodePoint(code);
     } else if (c === 'c' && i + 1 < body.length) {
-      out += String.fromCharCode(body[++i].charCodeAt(0) & 0x1f);
+      // (`\c?` is DEL; `\c\\` reads the escaped backslash; `\c@` is NUL, which ends the string.)
+      const ch = body[++i];
+      if (ch === '\\' && body[i + 1] === '\\') i++;
+      const code = ch === '?' ? 0x7f : ch.charCodeAt(0) & 0x1f;
+      if (code === 0) return out;
+      out += String.fromCharCode(code);
     } else out += Object.hasOwn(ANSI_ESCAPES, c) ? ANSI_ESCAPES[c] : '\\' + c;
   }
   return out;
@@ -168,7 +173,8 @@ function literalValue(n: SyntaxNode, assignment: boolean): string | undefined {
     case 'ansi_c_string': return ansiCValue(text.slice(2, -1));
     case 'string':
       if (!n.namedChildren.every((c) => c.type === 'string_content')) return undefined;
-      return text.slice(1, -1).replace(/\\\n/g, '').replace(/\\([$`"\\])/g, '$1');
+      // (One pass: in `"a\\<newline>"` the backslash is escaped, and the newline stays.)
+      return text.slice(1, -1).replace(/\\([$`"\\\n])/g, (_m, c: string) => (c === '\n' ? '' : c));
     case 'command_substitution': return emptySubstitution(n) ? '' : undefined;
     case 'concatenation': {
       let out = '';
@@ -180,6 +186,73 @@ function literalValue(n: SyntaxNode, assignment: boolean): string | undefined {
       return out;
     }
     default: return undefined;
+  }
+}
+
+/**
+ * The static value of a word as `staticWordValue` gives it (not in an assignment), with the source range of each of
+ * its characters: character `i` comes from `starts[i]` to `ends[i]` in the tree's text (`\$` in double quotes is two
+ * characters of source for one of text). Undefined when the value is not known, or inside backquotes, where bash
+ * removes another level of backslashes first.
+ */
+export interface MappedText { text: string; starts: number[]; ends: number[] }
+
+export function staticWordText(n: SyntaxNode): MappedText | undefined {
+  if (decodedText(n) !== n.text || tildeSpots(tildeParts([n]), 'start').length) return undefined;
+  const out: MappedText = { text: '', starts: [], ends: [] };
+  return mappedValue(n, out) ? out : undefined;
+}
+
+function mappedValue(n: SyntaxNode, out: MappedText): boolean {
+  const src = n.text;
+  const put = (text: string, start: number, end: number): void => {
+    out.text += text;
+    for (let k = 0; k < text.length; k++) {
+      out.starts.push(n.startIndex + start);
+      out.ends.push(n.startIndex + end);
+    }
+  };
+  // `\x` is `x` (in double quotes only before `$`, a backquote, `"` and `\`); a backslash-newline is removed.
+  const unescape = (from: number, to: number, escapes: RegExp): void => {
+    for (let i = from; i < to; i++) {
+      if (src[i] === '\\' && src[i + 1] === '\n' && i + 1 < to) i++;
+      else if (src[i] === '\\' && i + 1 < to && escapes.test(src[i + 1])) put(src[++i], i - 1, i + 1);
+      else put(src[i], i, i + 1);
+    }
+  };
+  switch (n.type) {
+    case 'word': case 'number':
+      if (/(^|[^\\])(\\\\)*[*?[{]/.test(src)) return false;
+      unescape(0, src.length, /[\s\S]/);
+      return true;
+    case 'raw_string':
+      for (let i = 1; i < src.length - 1; i++) put(src[i], i, i + 1);
+      return true;
+    case 'string':
+      if (!n.namedChildren.every((c) => c.type === 'string_content')) return false;
+      unescape(1, src.length - 1, /[$`"\\]/);
+      return true;
+    case 'ansi_c_string': {
+      // Each escape decoded on its own (`ansiCValue`), over the source of the escape.
+      const body = src.slice(2, -1);
+      for (let i = 0; i < body.length; i++) {
+        let len = 1;
+        if (body[i] === '\\' && i + 1 < body.length) {
+          const num = /^(?:x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3})/.exec(body.slice(i + 1));
+          len = 1 + (num ? num[0].length : body[i + 1] === 'c' && i + 2 < body.length ? (body.startsWith('\\\\', i + 2) ? 3 : 2) : 1);
+        }
+        const piece = ansiCValue(body.slice(i, i + len));
+        if (piece === undefined) return false;
+        // (A NUL ends the string: bash cuts it there.)
+        if (!piece.length) return true;
+        put(piece, i + 2, i + 2 + len);
+        i += len - 1;
+      }
+      return true;
+    }
+    case 'command_substitution': return emptySubstitution(n);
+    case 'concatenation': return n.namedChildren.every((c) => mappedValue(c, out));
+    default: return false;
   }
 }
 

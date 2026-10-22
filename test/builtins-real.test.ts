@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Analyzer, lookupCommand, Token } from '../src/analyzer';
-import { ArgvParse, interpret } from '../src/argv/interpret';
+import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
 import { shellOptions } from '../src/dict/builtins';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
@@ -23,7 +23,9 @@ const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
 /** The words the interpreter reads as operands named `names` (all operands when none are given). */
 function operands(line: string, ...names: string[]): string[] {
   const { parse, words } = parseOf(line);
-  return parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && (!names.length || names.includes(role.spec?.name ?? '')) ? [words[word]] : []));
+  // (trap's action is a command slot: a string this shell runs later.)
+  const name = (role: ArgRole): string | undefined => (role.role === 'operand' ? role.spec?.name ?? '' : role.role === 'command' ? role.item?.name : undefined);
+  return parse.roles.flatMap(({ word, role }) => (name(role) !== undefined && (!names.length || names.includes(name(role)!)) ? [words[word]] : []));
 }
 /** What `printf %s, …` prints for these words. */
 const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
@@ -198,7 +200,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       const signals = operands(line, 'SIGNAL');
       // `trap - INT` resets: nothing is left to print.
       const listed = bash(`trap ':' INT; ${line}; trap -p`).trim().split('\n').filter(Boolean).map((l) => l.replace(/^trap -- .* /, ''));
-      if (operands(line, 'ACTION')[0] === '-') assert.deepStrictEqual(listed, [], line);
+      if (operands(line, 'RESET').length) assert.deepStrictEqual(listed, [], line);
       else assert.deepStrictEqual(listed.filter((s) => s !== 'SIGINT' || signals.includes('INT')).sort(), signals.map((s) => `SIG${s}`).sort(), line);
     }
     // `trap INT`: one word is a signal, reset to its default.

@@ -3,8 +3,7 @@ import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, usesVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
 import { ancestor, descendants, field, fields, token } from './syntax/tree';
-import type { BashParser, NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
-import { createUnbashParser } from './syntax/adapters/unbash';
+import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
@@ -57,7 +56,7 @@ import {
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { attribute, docLine, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
 import { statusModel, type StatusModel } from './semantics/status';
@@ -184,9 +183,6 @@ const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_comm
 
 /** Nodes inside an expansion's argument that get their own explanation. */
 const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
-
-/** Reads the strings that another shell runs (`bash -c '…'`). */
-let stringParser: BashParser | undefined;
 
 const plural = (n: number, word: string) => `${word}${n === 1 ? '' : 's'}`;
 
@@ -333,8 +329,8 @@ export class Analyzer {
   }
 
   private lineRef(n: SyntaxNode): string {
-    const a = n.startPosition.row + 1;
-    const b = effEndRow(n) + 1;
+    const a = docLine(n) + 1;
+    const b = a + effEndRow(n) - n.startPosition.row;
     if (a === b) return '';
     return this.s(`（行 ${a}〜${b}）`, ` (lines ${a}–${b})`);
   }
@@ -560,11 +556,11 @@ export class Analyzer {
       const operator = `${/<<-?/.exec(h.text)![0]}${delim}`;
       // The end line itself can be inside the range of the body (with `<<-` it is indented with tabs).
       if (end && end.startPosition.row === line) {
-        notes.push(this.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${h.startPosition.row + 1} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${h.startPosition.row + 1}.`));
+        notes.push(this.s(`\`${end.text.trim()}\` はヒアドキュメント（行 ${(docLine(h) + 1)} の \`${operator}\`）の終わりを示す行です。`, `\`${end.text.trim()}\` marks the end of the here-document started by \`${operator}\` on line ${(docLine(h) + 1)}.`));
       } else if (body && intersects(body, line) && body.startPosition.row <= line && h.startPosition.row < line) {
         notes.push(this.s(
-          `この行はヒアドキュメント（行 ${h.startPosition.row + 1} の \`${operator}\`）の本文です。`,
-          `This line is part of the here-document started by \`${operator}\` on line ${h.startPosition.row + 1}.`,
+          `この行はヒアドキュメント（行 ${(docLine(h) + 1)} の \`${operator}\`）の本文です。`,
+          `This line is part of the here-document started by \`${operator}\` on line ${(docLine(h) + 1)}.`,
         ));
       }
     }
@@ -1158,8 +1154,8 @@ export class Analyzer {
       expl = this.s(`\`${nm}\` は参照（nameref）になる: 値 \`${value.text}\` を名前とする変数の別名で、\`${nm}\` への代入や参照は、その変数に対して行われる`,
         `\`${nm}\` becomes a nameref: another name for the variable whose name is the value \`${value.text}\`; assigning to or reading \`${nm}\` then acts on that variable`);
     } else if (!decl && ref?.state === 'on' && op === '=') {
-      expl += this.s(`。ただし \`${nm}\` は行 ${ref.at.startPosition.row + 1} で nameref として宣言されているので、参照先の変数に代入される`,
-        `. But \`${nm}\` is declared a nameref on line ${ref.at.startPosition.row + 1}, so this sets the variable it points to`);
+      expl += this.s(`。ただし \`${nm}\` は行 ${(docLine(ref.at) + 1)} で nameref として宣言されているので、参照先の変数に代入される`,
+        `. But \`${nm}\` is declared a nameref on line ${(docLine(ref.at) + 1)}, so this sets the variable it points to`);
     }
     // An integer variable (`declare -i n`) takes the value of an arithmetic expression, and `+=` adds.
     const integer = name.type !== 'subscript' && value && value.type !== 'array' && attribute(st, nm, 'i') === 'on';
@@ -1545,7 +1541,7 @@ export class Analyzer {
   /** A note on a definition of `name` that does not run here (a function defined later, in a subshell, removed). */
   private missedNote(name: string, missed: Missed | undefined): void {
     if (missed?.kind !== 'function') return;
-    const line = missed.def.startPosition.row + 1;
+    const line = (docLine(missed.def) + 1);
     const runs = tx(`組み込みコマンドや外部コマンドの \`${name}\` が動きます`, `the builtin or program \`${name}\` runs`);
     switch (missed.why) {
       case 'later':
@@ -1558,7 +1554,7 @@ export class Analyzer {
         this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs })));
         return;
       case 'unset':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-removed-by-unset', { name, line: missed.by!.startPosition.row + 1, runs })));
+        this.extraNotes.push(this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs })));
         return;
       case 'posix-special':
         this.extraNotes.push(this.say(fact(this.lang, 'special-builtin-before-function', { name, line })));
@@ -1569,7 +1565,7 @@ export class Analyzer {
   /** "Call the function `f` defined on line N", with what it hides and whether it is sure. */
   private functionCall(res: Extract<NameResolution, { kind: 'function' }>): string {
     const { name } = res;
-    const line = res.fn.def.startPosition.row + 1;
+    const line = (docLine(res.fn.def) + 1);
     const shadows = res.shadows === 'builtin'
       ? this.s(`（同じ名前の組み込みコマンドの代わりに動く。組み込みは \`builtin ${name}\` で呼べる）`, ` (it runs instead of the builtin of that name; \`builtin ${name}\` runs the builtin)`)
       : res.shadows === 'program'
@@ -1602,7 +1598,7 @@ export class Analyzer {
     if (res.kind === 'alias' && known) res = this.resolve(name, nameNode, { quoted: true });
     if (res.kind === 'alias') {
       const { alias } = res;
-      const line = alias.at.startPosition.row + 1;
+      const line = (docLine(alias.at) + 1);
       // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
       const chain = res.target?.kind === 'alias'
         ? this.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
@@ -1642,7 +1638,7 @@ export class Analyzer {
     this.missedNote(name, missed);
     // After `source`, a name the dictionary does not know may be a function of the file read.
     if (res.kind === 'file' && res.sourced) {
-      const line = res.sourced.startPosition.row + 1;
+      const line = (docLine(res.sourced) + 1);
       return {
         name, kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`\`${name}\` を実行する。行 ${line} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
@@ -1654,7 +1650,7 @@ export class Analyzer {
       const path = res.hashed?.value;
       const spec = lookupCommand(path || name);
       const program = spec?.builtin ? spec.program : spec;
-      const by = (res.hashed ?? res.disabled)!.at.startPosition.row + 1;
+      const by = (docLine((res.hashed ?? res.disabled)!.at) + 1);
       const why = res.hashed
         ? this.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
         : this.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
@@ -1784,7 +1780,10 @@ export class Analyzer {
             break;
           }
           case 'command':
-            if (role.slot.joinsWords && !role.slot.escapesWords) {
+            if (role.slot.later) {
+              // A trap's action: a string this shell runs later, with its expansions then.
+              out.push(this.positional(a, this.t(role.item!.text) + this.trapNote(a)));
+            } else if (role.slot.joinsWords && !role.slot.escapesWords) {
               // ssh sends the words joined to the remote shell; eval joins them and reads them again here, so they are plain words.
               joined = role.slot.run === 'current-shell' ? undefined : this.t(role.item!.text);
               if (role.slot.run === 'current-shell') this.argCtx!.rereads = true;
@@ -2019,8 +2018,6 @@ export class Analyzer {
       const roles = role.several.map((o) => this.t(o.text)).join(this.s('、', ', then '));
       desc = this.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
     } else if (desc && role.otherwise) desc = this.uncertainText(desc, this.t(role.otherwise.text), parse, nodes);
-    // `trap 'cmd' INT`: when the command runs, and so when its expansions are.
-    if (parse.command === 'trap' && item?.name === 'ACTION' && desc) desc += this.trapNote(a);
     return this.positional(a, desc, isFn ? undefined : item?.lang);
   }
 
@@ -2066,12 +2063,12 @@ export class Analyzer {
         // (`enable -n echo; command echo`: the program.)
         kind = 'command';
         const program = role.spec?.program;
-        const line = res.disabled.at.startPosition.row + 1;
+        const line = (docLine(res.disabled.at) + 1);
         explanation = this.s(`外部コマンド \`${name}\`（行 ${line} の \`enable -n\` で組み込みは無効）${program ? `: ${this.t(program.summary)}` : ''}`,
           `the external command \`${name}\` (\`enable -n\` on line ${line} turned the builtin off)${program ? `: ${this.t(program.summary)}` : ''}`);
       }
       if (missed?.kind === 'function' && (missed.why === 'command' || missed.why === 'builtin')) {
-        explanation += this.s(`（行 ${missed.def.startPosition.row + 1} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${missed.def.startPosition.row + 1})`);
+        explanation += this.s(`（行 ${(docLine(missed.def) + 1)} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${(docLine(missed.def) + 1)})`);
       }
     }
     const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
@@ -3220,23 +3217,21 @@ export class Analyzer {
    * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one that comes from the environment.
    */
   private unpassedVariables(env: ExecEnv, words: SyntaxNode[]): void {
-    const text = words.flatMap((w) => descendants(w, ['raw_string'])).map((r) => r.text.slice(1, -1)).join('\n');
-    // The string, read as the script it is: the variables it reads, and what it has set itself before each read.
-    stringParser ??= createUnbashParser();
-    const inner = stringParser.parse(text);
-    const own = shellState(inner);
+    // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
+    // reached it there (passed by the slots, or set by the string itself before the read).
+    const script = this.state.script(words, env);
+    if ('why' in script) return;
     const cmd = ancestor(words[0], (x) => x.type === 'command')!;
-    const given = [...cmd.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')!.text),
-      ...env.links.flatMap((l) => (l.kind === 'slot' ? l.assigns : []))];
     const st = this.state.at(cmd).run;
     const { variables, blocker } = reachOf(env);
     const remote = whereOf(env) === 'remote';
-    // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value.)
-    const reads = descendants(inner.root, ['simple_expansion', 'expansion']).filter((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(e.text));
+    // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value. A file of variables may give any.)
+    if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
+    const reads = descendants(script.tree.root, ['simple_expansion', 'expansion']).filter((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(e.text));
     for (const e of reads) {
       const v = e.text.replace(/\W/g, '');
       const x = st.variables.get(v);
-      if (!x || x.set !== 'on' || wellKnownVariables[v] || given.includes(v) || given.includes('*') || own.at(e).run.variables.has(v)) continue;
+      if (!x || x.set !== 'on' || wellKnownVariables[v] || script.model.at(e).run.variables.has(v)) continue;
       const exported = x.attrs.x?.state ?? 'off';
       if (variables === 'none') {
         this.extraNotes.push(this.say(remote
@@ -3708,7 +3703,7 @@ export class Analyzer {
     const ambiguous = word.rule.fields === 'one-or-error'
       ? { ja: '。結果がちょうど1語にならないとエラー（ambiguous redirect）', en: '; a result that is not exactly one word is an error (ambiguous redirect)' } : { ja: '', en: '' };
     const ifs = word.ifs;
-    const line = ifs.kind === 'default' ? 0 : ifs.at.startPosition.row + 1;
+    const line = ifs.kind === 'default' ? 0 : (docLine(ifs.at) + 1);
     // What globbing does, after each way of splitting: [ja, en] for off (`set -f`), may (on some paths) and on.
     const after = {
       split: { off: ['る（`set -f` でグロブ展開は無効）', ' (globbing is off after `set -f`)'], may: ['る（`set -f` でグロブ展開が無効になる経路もある）', ' (globbing is off on some paths, after `set -f`)'], on: ['、グロブ展開もされる', ' and globbed'] },
@@ -3739,7 +3734,10 @@ export class Analyzer {
 
   /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
   private trapNote(a: SyntaxNode): string {
-    const vars = [...new Set(a.text.match(/\$\{?[A-Za-z_]\w*\}?|\$\(|`/g) ?? [])].map((v) => (v === '$(' || v === '`' ? '$(…)' : v));
+    // (In double quotes, the expansions the parser finds: `\$x` is text.)
+    const found = a.type === 'raw_string' ? a.text.match(/\$\{?[A-Za-z_]\w*\}?|\$\(|`/g) ?? []
+      : descendants(a, ['simple_expansion', 'expansion', 'command_substitution']).map((e) => (e.type === 'command_substitution' ? '$(' : e.text));
+    const vars = [...new Set(found)].map((v) => (v === '$(' || v === '`' ? '$(…)' : v));
     if (!vars.length) return '';
     const shown = [...new Set(vars)].map((v) => `\`${v}\``).join(this.s('、', ', '));
     if (a.type === 'raw_string') {

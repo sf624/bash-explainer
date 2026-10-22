@@ -15,6 +15,7 @@ import { builtins } from '../dict/builtins';
 import { field, type SyntaxNode } from '../syntax/tree';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
+import { docIndex } from './state';
 
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
 export const RESERVED = new Set(['!', '[[', ']]', '{', '}', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in',
@@ -101,7 +102,9 @@ export interface ResolveOptions {
   program?: (name: string) => boolean;
 }
 
-const contains = (a: SyntaxNode, b: SyntaxNode): boolean => a.startIndex <= b.startIndex && b.endIndex <= a.endIndex;
+// (Nodes of strings read as scripts are compared by where they are in the document: docIndex.)
+const contains = (a: SyntaxNode, b: SyntaxNode): boolean => docIndex(a) <= docIndex(b) && docIndex(b, true) <= docIndex(a, true);
+const before = (a: SyntaxNode, b: SyntaxNode): boolean => docIndex(a, true) <= docIndex(b);
 
 /**
  * Why the function `name` the script defines somewhere is not defined at `at` (`fn`: its state there, absent or
@@ -111,9 +114,9 @@ function missedFunction(model: StateModel, name: string, at: SyntaxNode, fn: Fun
   if (fn?.removed) return { kind: 'function', def: fn.def, why: 'unset', by: fn.removed };
   const defs = model.definitions.functions.get(name);
   if (!defs) return undefined;
-  const before = defs.filter((d) => d.endIndex <= at.startIndex);
-  if (!before.length) return { kind: 'function', def: defs[0], why: 'later' };
-  const def = before[before.length - 1];
+  const earlier = defs.filter((d) => before(d, at));
+  if (!earlier.length) return { kind: 'function', def: defs[0], why: 'later' };
+  const def = earlier[earlier.length - 1];
   for (let x: SyntaxNode | null = def; x && !contains(x, at); x = x.parent) {
     if (subshellReasons(x).length) return { kind: 'function', def, why: 'subshell', by: x };
     if (x !== def && x.type === 'function_definition') return { kind: 'function', def, why: 'in-function', by: x };
@@ -127,7 +130,7 @@ function missedAlias(model: StateModel, name: string, at: SyntaxNode, alias: Ali
   if (alias && alias.state === 'off') return { kind: 'alias', def: alias.at, why: 'unset' };
   const defs = model.definitions.aliases.get(name);
   if (!defs || alias) return undefined;
-  if (defs.every((d) => d.endIndex > unit)) return { kind: 'alias', def: defs[0], why: defs[0].startIndex < at.startIndex ? 'same-unit' : 'later' };
+  if (defs.every((d) => docIndex(d, true) > unit)) return { kind: 'alias', def: defs[0], why: docIndex(defs[0]) < docIndex(at) ? 'same-unit' : 'later' };
   return undefined;
 }
 
@@ -135,7 +138,7 @@ function missedAlias(model: StateModel, name: string, at: SyntaxNode, alias: Ali
 function sourcedBefore(model: StateModel, at: SyntaxNode): { sourced?: SyntaxNode } {
   let body = false;
   for (let x = at.parent; x; x = x.parent) if (x.type === 'function_definition') body = true;
-  const s = model.sources.find((c) => body || c.startIndex < at.startIndex);
+  const s = model.sources.find((c) => body || docIndex(c) < docIndex(at));
   return s ? { sourced: s } : {};
 }
 
@@ -207,7 +210,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
       const target = first !== undefined ? resolve(model, first, at, opts, place, inner) : undefined;
       return { kind: 'alias', name, alias, sure, ...(target ? { target } : {}), ...(sure ? {} : { otherwise: resolve(model, name, at, opts, place, inner) }) };
     }
-    else missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases' } : missedAlias(model, name, at, alias, model.unit(at).startIndex);
+    else missed = alias && alias.state !== 'off' ? { kind: 'alias', def: alias.at, why: 'expand_aliases' } : missedAlias(model, name, at, alias, docIndex(model.unit(at)));
   }
 
   // Functions: not for `command` and `builtin`, nor in a program; in another shell, only those it gets.
@@ -241,7 +244,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   if (special === 'unknown') sure = false;
   const shadows = builtin.kind === 'builtin' ? 'builtin' as const : opts.program?.(name) ? 'program' as const : undefined;
   // (Not sure: defined on some paths before here, or only after it in the text, in a body that runs later.)
-  const maybe = sure ? {} : { maybe: model.definitions.functions.get(name)!.some((d) => d.endIndex <= at.startIndex) ? 'branch' as const : 'later' as const };
+  const maybe = sure ? {} : { maybe: model.definitions.functions.get(name)!.some((d) => before(d, at)) ? 'branch' as const : 'later' as const };
   return { kind: 'function', name, fn: defined, sure, ...maybe, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
 }
 

@@ -790,7 +790,7 @@ export const core: Record<string, CommandSpec> = {
     style: 'posix',
     operands: [
       { when: { option: ['-x', '--exec'] }, pattern: [runs()] },
-      { pattern: [runs({ run: 'shell-string', joinsWords: true, env: 'exported' })] },
+      { pattern: [runs({ run: 'shell-string', joinsWords: true, env: 'exported', shell: 'sh' })] },
     ],
   }),
   which: cmd('コマンドの実行ファイルのパスを表示する', 'Show the full path of a command'),

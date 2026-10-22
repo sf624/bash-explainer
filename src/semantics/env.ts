@@ -114,6 +114,8 @@ export interface WalkFacts {
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
   readonly root: SyntaxNode;
   readonly shell?: Shell;
+  /** Where the root of a tree runs: the model's own (a string another shell runs: the slot's chain), or that of a string `eval` runs. */
+  base(root: SyntaxNode): ExecEnv;
 }
 
 /** The function definition whose body holds `n`, if any. */
@@ -137,7 +139,7 @@ export class EnvModel {
     const hit = this.memo.get(n);
     if (hit) return hit;
     const p = n.parent;
-    const base = !p ? MAIN_SHELL : p.type === 'function_definition' && n === field(p, 'body') ? this.body(p) : this.at(p);
+    const base = !p ? this.walk.base(n) : p.type === 'function_definition' && n === field(p, 'body') ? this.body(p) : this.at(p);
     const own = this.own(n);
     const env = own.length ? { links: [...base.links, ...own] } : base;
     this.memo.set(n, env);
@@ -357,7 +359,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
       else if (role.role === 'command') {
         const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
-        const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : /^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown';
+        const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (/^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown');
         const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns, env, ...(shell ? { shell } : {}) });
         out.set(words[word], inner);
         if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, words);
