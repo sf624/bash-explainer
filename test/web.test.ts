@@ -1275,6 +1275,13 @@ describe('the web page in a browser', function () {
         assert.ok(m.brand[0] >= m.boxes[0][3] - 0.5 && m.boxes[1][2] >= m.brand[1] - 0.5, where);
         for (let i = 1; i < m.boxes.length; i++) assert.ok(m.boxes[i][2] >= m.boxes[i - 1][3] - 0.5, `${where}: ${m.boxes[i][0]}`);
         if (scheme === 'light' && (width === 320 || width === 390)) {
+          // The menu's selects share one column (same left edge and width), and no kind name is cut.
+          await page.locator('#menu-open').tap();
+          const cols = (await page.evaluate(`(() => { const c = document.createElement('canvas').getContext('2d'); return [...document.querySelectorAll('#drawer .field select')].filter((s) => s.clientWidth).map((s) => { const r = s.getBoundingClientRect(); const cs = getComputedStyle(s); c.font = cs.font; const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); return [s.id, Math.round(r.left * 10) / 10, Math.round(r.width * 10) / 10, Math.max(...[...s.options].map((o) => c.measureText(o.text).width)) <= room]; }); })()`)) as [string, number, number, boolean][];
+          assert.ok(cols.length >= 5 && cols.every(([, l, w, fits]) => l === cols[0][1] && w === cols[0][2] && fits), `${where}: ${JSON.stringify(cols)}`);
+          await page.locator('#menu-close').tap();
+        }
+        if (scheme === 'light' && (width === 320 || width === 390)) {
           // The copy and the link work from the menu.
           await page.evaluate('navigator.clipboard.writeText("")');
           await page.locator('.cm-line').nth(7).tap();
