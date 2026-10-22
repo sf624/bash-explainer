@@ -913,6 +913,30 @@ describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design
     assert.strictEqual(blind(`y=1; [ "$y" = 1 ] && :; ${trap}`), '`trap` of a string the walk does not read');
     assert.strictEqual(blind(`y=1; [ "$y" = 1 ] && :; eval 'eval y=1'`), undefined);
   });
+  it('says nothing that a string, a trap or a case may make otherwise (bash 5.2)', () => {
+    // A subscript that may fail in an eval string may end the line around eval: bash leaves `y` at `before`.
+    assert.strictEqual(decided("y=before; eval 'a[1/0]=1'; y=after\n[ \"$y\" = before ] && :"), undefined);
+    assert.strictEqual(decided("f() { eval 'a[1/0]=1; x=2'; y=after; }; f; z=after\n[ \"$z\" = after ] && :"), undefined);
+    // A trap's action that may end what a signal interrupts (an error that ends the line, `return`): nothing is trusted.
+    assert.ok(blind("declare -i q=0; trap \"q='1+'\" USR1; kill -USR1 $$; y=after\n[ \"$y\" = after ] && :"));
+    assert.ok(blind("y=0; trap 'return' USR1; f() { kill -USR1 $$; y=f; }; f; [ \"$y\" = 0 ] && :"));
+    assert.ok(blind("trap 'break' INT; for i in 1; do :; done"));
+    // (Not one set in code that never runs; nor its own loop, function or `exit`: it ends there.)
+    assert.strictEqual(blind("x=1; if [ \"$x\" = 2 ]; then trap 'return' INT; fi"), undefined);
+    for (const src of ["trap 'for i in 1; do break; done' INT", "g() { return; }; trap g INT", "trap 'exit 1' INT", "trap 'return' EXIT"]) {
+      assert.strictEqual(blind(`${src}; x=1; [ "$x" = 1 ] && :`), undefined, src);
+    }
+    // No condition in a trap's action is decided: an EXIT trap runs at `${u:?}`, a set -u error or a signal too.
+    const tree = parser.parse("cleanup=no; trap 'if [ \"$cleanup\" = yes ]; then :; fi' EXIT; sleep 1; cleanup=yes");
+    const model = shellState(tree);
+    const action = nestedScripts(tree).pop()!.script;
+    assert.strictEqual(model.condition(descendants(action.tree.root, ['if_statement'])[0]), undefined);
+    assert.strictEqual(model.dead(descendants(action.tree.root, ['command'])[0]), false);
+    // An undecided `case` runs a list after `;;&` or `;&` also from the state the one before left: bash has `y=yes`.
+    assert.strictEqual(decided('y=after; case "$1" in *) y=yes ;;& *) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), undefined);
+    assert.strictEqual(decided('y=after; case "$1" in a) ;; *) y=yes ;& b) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), undefined);
+    assert.strictEqual(decided('y=after; case "$1" in *) y=yes ;; *) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), 'true y=after');
+  });
   it('trusts in another shell no more than in the script that starts it', () => {
     /** What the first list of the last string of `src` (`bash -c`) decides. */
     const inner = (src: string): string | undefined => {
