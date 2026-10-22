@@ -32,6 +32,7 @@ export type MissReason =
   | 'same-unit'        // an alias defined on the line, or in the compound command, that holds this
   | 'subshell'         // defined in a subshell, which has ended
   | 'in-function'      // defined by a function that has not run before this
+  | 'never-runs'       // defined in code that never runs: a branch decided against it, or after a jump (docs/design/semantics.md, 4.14)
   | 'unset'            // removed by `unset -f` (or `unalias`)
   | 'expand_aliases'   // aliases are not expanded in a bash script without `shopt -s expand_aliases`
   | 'quoted'           // a quoted or escaped name is not an alias (`\\ls`, `"ls"`)
@@ -125,6 +126,7 @@ function missedFunction(model: StateModel, name: string, at: SyntaxNode, fn: Fun
     if (subshellReasons(x).length) return { kind: 'function', def, why: 'subshell', by: x };
     if (x !== def && x.type === 'function_definition') return { kind: 'function', def, why: 'in-function', by: x };
   }
+  if (model.dead(def)) return { kind: 'function', def, why: 'never-runs' };
   /* c8 ignore next 2 -- a definition that ran before, in this shell, is in the state (on, unknown, or removed) */
   return undefined;
 }

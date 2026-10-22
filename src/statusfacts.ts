@@ -9,7 +9,7 @@ import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
-import type { StateModel } from './semantics/state';
+import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
 import { ancestor, descendants, field, fields, type SyntaxNode } from './syntax/tree';
 
@@ -144,6 +144,76 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         add(n, { id: end ? 'function-last-test-returns-status' : 'function-last-test-stops-script', params: { name, line: row(call) } });
         break;
       }
+    }
+  }
+  for (const [n, spec] of conditionFacts(root, state)) add(n, spec);
+  return out;
+}
+
+/**
+ * The variables a decision read, in words: "`$x` is `2`", "`$y` is empty", "`$z` is not set". Undefined when it read
+ * none (a condition of literals says nothing: its meaning is plain) or a value that does not fit in a note.
+ */
+function readWords(d: Decision): Words | undefined {
+  if (!d.reads.size || [...d.reads.values()].some((v) => v?.includes('`'))) return undefined;
+  const parts = [...d.reads].map(([k, v]) => (v === null
+    ? { ja: `\`$${k}\` は未設定`, en: `\`$${k}\` is not set` }
+    : v === '' ? { ja: `\`$${k}\` は空`, en: `\`$${k}\` is empty` } : { ja: `\`$${k}\` は \`${shorten(v)}\``, en: `\`$${k}\` is \`${shorten(v)}\`` }));
+  // (A space after code, before the Japanese that follows: "`$x` は `2` なので".)
+  const ja = parts.map((p) => p.ja).join('、');
+  return { ja: ja.endsWith('`') ? `${ja} ` : ja, en: parts.map((p) => p.en).join(', ') };
+}
+
+/** Whether `n` is in the condition of an `if`, `elif`, `while` or `until` that is itself decided (its note says it). */
+function inDecidedCondition(n: SyntaxNode, state: StateModel): boolean {
+  for (let x = n.parent; x; x = x.parent) {
+    if (!['if_statement', 'elif_clause', 'while_statement'].includes(x.type) || !state.condition(x)) continue;
+    const end = x.children.find((c) => c.type === 'then' || c.field === 'body');
+    if (end && n.endIndex <= end.startIndex) return true;
+  }
+  return false;
+}
+
+/**
+ * The notes on conditions the state model decides (docs/design/semantics.md, 4.14) from values the script set: a
+ * branch that never runs, a loop that never runs or never ends by its condition, the side of `&&` or `||` that never
+ * runs, the branches of a `case` that run.
+ */
+function conditionFacts(root: SyntaxNode, state: StateModel): [SyntaxNode, FactSpec][] {
+  const out: [SyntaxNode, FactSpec][] = [];
+  for (const n of descendants(root, ['if_statement', 'elif_clause', 'while_statement', 'c_style_for_statement', 'list', 'case_statement'])) {
+    const d = state.condition(n);
+    const values = d && readWords(d);
+    if (!values) continue;
+    switch (n.type) {
+      case 'if_statement': case 'elif_clause': {
+        const top = n.type === 'if_statement' ? n : n.parent!;
+        // (The kinds of the branches after it, as they are written: `elif`, `else`.)
+        const after = top.namedChildren.filter((c) => (c.type === 'elif_clause' || c.type === 'else_clause') && c.startIndex > n.startIndex);
+        const rest = { kinds: [...new Set(after.map((c) => (c.type === 'elif_clause' ? 'elif' : 'else')))], count: after.length };
+        // (With an `if` and an `elif` on one line, say which condition.)
+        const row = (x: SyntaxNode): number => x.startPosition.row;
+        const shared = top.namedChildren.some((c) => c.type === 'elif_clause' && c !== n && row(c) === row(n)) || (n !== top && row(top) === row(n));
+        const which = shared ? (n === top ? 'if' : 'elif') : '';
+        out.push([n, d!.outcome === 'true' ? { id: 'condition-always-true', params: { values, rest, which } } : { id: 'condition-always-false', params: { values, which } }]);
+        break;
+      }
+      case 'list': {
+        const op = n.children.find((c) => c.type === '&&' || c.type === '||')!.type;
+        if ((d!.outcome === 'true') === (op === '||') && !inDecidedCondition(n, state)) out.push([n, { id: 'and-or-right-never-runs', params: { values, op } }]);
+        break;
+      }
+      case 'case_statement': {
+        const items = n.namedChildren.filter((c) => c.type === 'case_item');
+        const runs = d!.outcome ? d!.outcome.split(',').map((i) => items[Number(i)]) : [];
+        const names = runs.map((item) => `\`${fields(item, 'value').map((v) => v.text).join('|')})\``);
+        // ("`a)`, `b)` and `c)`"; in Japanese, joined by と.)
+        const en = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+        out.push([n, runs.length ? { id: 'case-runs-only', params: { values, branches: { ja: names.join(' と '), en }, several: names.length > 1 } } : { id: 'case-runs-none', params: { values } }]);
+        break;
+      }
+      default:
+        out.push([n, { id: d!.outcome === 'true' ? 'loop-never-ends' : 'loop-never-runs', params: { values } }]);
     }
   }
   return out;

@@ -74,6 +74,9 @@ export const MESSAGES = {
   'function-defined-in-uncalled-function': entry<{ name: string; line: number; by: string; runs: Words }>('note', ['3.3'], ({ name, line, by, runs }) => [
     `\`${name}\` は行 ${line} で関数 \`${by}\` の中で定義され、その関数がここより前に実行されないので、まだ関数ではありません（${runs.ja}）`,
     `\`${name}\` is defined on line ${line} inside the function \`${by}\`, which has not run before this, so it is not a function yet (${runs.en})`]),
+  'function-defined-in-dead-branch': entry<{ name: string; line: number; runs: Words }>('note', ['3.3', '3.2.5.2'], ({ name, line, runs }) => [
+    `\`${name}\` は行 ${line} で関数として定義されますが、そこは実行されないコード（条件が成り立たない分岐か、\`break\`・\`continue\`・\`return\`・\`exit\` の後）なので、関数ではありません（${runs.ja}）`,
+    `\`${name}\` is defined as a function on line ${line}, but in code that never runs before this (a branch whose condition is never met, or after \`break\`, \`continue\`, \`return\` or \`exit\`), so it is not the function (${runs.en})`]),
   'function-removed-by-unset': entry<{ name: string; line: number; runs: Words }>('note', ['3.3', '4.1'], ({ name, line, runs }) => [
     `関数 \`${name}\` は行 ${line} の \`unset\` で削除されているので、ここでは関数ではありません（${runs.ja}）`,
     `The function \`${name}\` was removed by \`unset\` on line ${line}, so it is not a function here (${runs.en})`]),
@@ -99,6 +102,30 @@ export const MESSAGES = {
   'postfix-decrement-status': entry<{ v: string }>('pitfall', ['6.5', '4.3.1'], ({ v }) => [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
     `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`]),
+
+  // ---------------------------------------------------------------- conditions decided by the values above (3.2.4, 3.2.5; src/statusfacts.ts)
+  // (`which`: `if` or `elif` when both are on the line, else empty: "this condition".)
+  'condition-always-false': entry<{ values: Words; which: string }>('note', ['3.2.5.2'], ({ values, which }) => [
+    `ここでは ${values.ja}なので、${which ? `\`${which}\` の条件` : 'この条件'}は常に偽になり、\`then\` の後のコマンドは実行されない`,
+    `${values.en} here, so ${which ? `the \`${which}\` condition` : 'this condition'} is always false: the commands after its \`then\` never run`]),
+  'condition-always-true': entry<{ values: Words; rest: { kinds: string[]; count: number }; which: string }>('note', ['3.2.5.2'], ({ values, rest, which }) => [
+    `ここでは ${values.ja}なので、${which ? `\`${which}\` の条件` : 'この条件'}は常に真になり、${rest.count ? `後の分岐（${rest.kinds.map((k) => `\`${k}\``).join('・')}）は実行されない` : '`then` の後のコマンドは必ず実行される'}`,
+    `${values.en} here, so ${which ? `the \`${which}\` condition` : 'this condition'} is always true: ${rest.count ? `${rest.count > 1 ? 'the branches' : 'the branch'} after it (${rest.kinds.map((k) => `\`${k}\``).join(', ')}) never ${rest.count > 1 ? 'run' : 'runs'}` : 'the commands after its `then` always run'}`]),
+  'loop-never-runs': entry<{ values: Words }>('note', ['3.2.5.1'], ({ values }) => [
+    `ここでは ${values.ja}なので、ループは最初の判定で終わり、本体は一度も実行されない`,
+    `${values.en} here, so the loop stops at its first test: its body never runs`]),
+  'loop-never-ends': entry<{ values: Words }>('note', ['3.2.5.1'], ({ values }) => [
+    `ここでは ${values.ja}なので、条件ではこのループは終わらない。終わるのは \`break\`・\`return\`・\`exit\`、シグナルかエラーのときだけ`,
+    `${values.en} here, so the condition never stops this loop: it ends only through \`break\`, \`return\`, \`exit\`, a signal or an error`]),
+  'and-or-right-never-runs': entry<{ values: Words; op: string }>('note', ['3.2.4'], ({ values, op }) => [
+    `ここでは ${values.ja}なので、\`${op}\` の左側は常に${op === '&&' ? '失敗' : '成功'}し、右側のコマンドは実行されない`,
+    `${values.en} here, so the left side of \`${op}\` always ${op === '&&' ? 'fails' : 'succeeds'}: the command after it never runs`]),
+  'case-runs-only': entry<{ values: Words; branches: Words; several: boolean }>('note', ['3.2.5.2'], ({ values, branches, several }) => [
+    `ここでは ${values.ja}なので、この \`case\` で実行されるのは ${branches.ja} の分岐だけ`,
+    `${values.en} here, so only ${branches.en} of this \`case\` ${several ? 'run' : 'runs'}`]),
+  'case-runs-none': entry<{ values: Words }>('note', ['3.2.5.2'], ({ values }) => [
+    `ここでは ${values.ja}なので、この \`case\` のどのパターンにも一致せず、どの分岐も実行されない`,
+    `${values.en} here, so no pattern of this \`case\` matches: none of its branches runs`]),
 
   // ---------------------------------------------------------------- aliases (6.6)
   'alias-not-expanded-in-script': entry<{ name: string; value: string }>('pitfall', ['6.6', '4.3.2'], ({ name, value }) => [

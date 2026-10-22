@@ -364,6 +364,48 @@ describe('the notes on status and errexit', () => {
     }
   });
 
+  it('says which branch never runs when the values the script set decide the condition', () => {
+    // Each checked with bash 5.2: the branch said never to run does not (test/fixtures/probes/state.json has the rows).
+    const one = (src: string, line: number, re: RegExp, lang: 'en' | 'ja' = 'en') => assert.ok(notes(src, line, lang).some((n) => re.test(n)), `${src}\n${notes(src, line, lang).join('\n')}`);
+    one('x=1\nif [ "$x" = 2 ]; then :; fi', 1, /^ℹ `\$x` is `1` here, so this condition is always false: the commands after its `then` never run$/);
+    one('x=1\nif [ "$x" = 2 ]; then :; fi', 1, /^ℹ ここでは `\$x` は `1` なので、この条件は常に偽になり、`then` の後のコマンドは実行されない$/, 'ja');
+    // (Only the branches that are there are named.)
+    one('x=1\nif [ "$x" = 1 ]; then :; else :; fi', 1, /always true: the branch after it \(`else`\) never runs$/);
+    one('x=1\nif [ "$x" = 1 ]; then :; else :; fi', 1, /常に真になり、後の分岐（`else`）は実行されない$/, 'ja');
+    one('x=1\nif [ "$x" = 1 ]; then :; elif [ -f a ]; then :; elif [ -f b ]; then :; fi', 1, /always true: the branches after it \(`elif`\) never run$/);
+    one('x=1\nif [ "$x" = 1 ]; then :; elif [ -f a ]; then :; else :; fi', 1, /always true: the branches after it \(`elif`, `else`\) never run$/);
+    one('x=1\nif [ "$x" = 1 ]; then :; fi', 1, /always true: the commands after its `then` always run/);
+    one('x=1\nif [ "$x" = 2 ]; then :\nelif [[ $x == 1 ]]; then :; fi', 2, /so this condition is always true: the commands after its `then` always run/);
+    // (An `if` and an `elif` on one line: each says which.)
+    one('x=1\nif [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 1, /so the `if` condition is always false/);
+    one('x=1\nif [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 1, /so the `elif` condition is always true/);
+    one('x=1\nif [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 1, /`elif` の条件は常に真/, 'ja');
+    one('x=; y=a\nif [ -n "$x" ] || [ "$y" = b ]; then :; fi', 1, /`\$x` is empty, `\$y` is `a` here, so this condition is always false/);
+    one('x=; y=a\nif [ -n "$x" ] || [ "$y" = b ]; then :; fi', 1, /`\$x` は空、`\$y` は `a` なので/, 'ja');
+    one('readonly u\n[ -n "$u" ] && echo set', 1, /`\$u` is not set here, so the left side of `&&` always fails: the command after it never runs/);
+    one('x=1\n[ "$x" = 1 ] || echo no', 1, /the left side of `\|\|` always succeeds/);
+    one('false\n[ $? -eq 0 ] && echo ok', 1, /`\$\?` is `1` here/);
+    one('n=0\nwhile [ "$n" -gt 0 ]; do :; done', 1, /`\$n` is `0` here, so the loop stops at its first test: its body never runs/);
+    one('go=1\nwhile [ "$go" = 1 ]; do sleep 1; done', 1, /so the condition never stops this loop: it ends only through `break`, `return`, `exit`, a signal or an error/);
+    one('go=1\nwhile [ "$go" = 1 ]; do sleep 1; done', 1, /条件ではこのループは終わらない/, 'ja');
+    one('m=ab\ncase $m in a) ;; a*|b) ;& c) ;; esac', 1, /`\$m` is `ab` here, so only `a\*\|b\)` and `c\)` of this `case` run$/);
+    one('m=ab\ncase $m in a) ;; a*|b) ;& c) ;; esac', 1, /`a\*\|b\)` と `c\)` の分岐だけ/, 'ja');
+    one('m=ab\ncase $m in a*) ;; c) ;; esac', 1, /so only `a\*\)` of this `case` runs$/);
+    one('m=ab\ncase $m in a) ;; esac', 1, /so no pattern of this `case` matches: none of its branches runs/);
+    one('if false; then f() { :; }; fi\nf', 1, /`f` is defined as a function on line 1, but in code that never runs before this \(a branch whose condition is never met, or after `break`, `continue`, `return` or `exit`\), so it is not the function/);
+    one('for i in a; do break; f() { :; }; done\nf', 1, /`f` is defined as a function on line 1, but in code that never runs before this/);
+    // The value the state has after `break` (not the one after it in the body, which never runs).
+    one('for i in a; do x=1; break; x=2; done\nif [ "$x" = 2 ]; then :; fi', 1, /`\$x` is `1` here, so this condition is always false/);
+    one('f() { x=1; [ a = a ] && return; x=2; }\nf; [ "$x" = 1 ] || echo no', 1, /`\$x` is `1` here, so the left side of `\|\|` always succeeds/);
+    // Nothing: literals only (their meaning is plain), the environment, files, values that differ between calls, a side that
+    // always runs, a value with a backquote; and one note for a condition in a decided one.
+    for (const [src, line] of [['if false; then :; fi', 0], ['while true; do break; done', 0], ['if [ "$HOME" = / ]; then :; fi', 0], ['[ -f x ] && :', 0],
+      ['f() { [ "$m" = a ] && :; }\nm=a; f; m=b; f', 0], ['x=1\n[ "$x" = 1 ] && :', 1], ['x="a`b"\n[ "$x" = 1 ] && :', 1]] as const) {
+      assert.ok(!notes(src, line).some((n) => /here, so/.test(n)), src);
+    }
+    assert.strictEqual(notes('x=1\nif [ "$x" = 2 ] && [ "$x" = 3 ]; then :; fi', 1).filter((n) => /here, so/.test(n)).length, 1);
+  });
+
   it('drops the `((i++))` pitfall where set -e is surely ignored', () => {
     assert.ok(!notes('((i++)) || true', 0).some((n) => /i\+\+/.test(n)));
     assert.ok(!notes('if ((i--)); then :; fi', 0, 'ja').some((n) => /i--/.test(n)));
