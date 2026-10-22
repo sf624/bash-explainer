@@ -13,6 +13,8 @@ export const STORAGE_KEYS = {
   readTipSeen: 'bash-explainer-read-tip-seen',
   /** The share of the editor in the page, side by side and one above the other. */
   split: 'bash-explainer-split',
+  /** The height of the Problems list under the editor, and whether it is folded away. */
+  problems: 'bash-explainer-problems',
 } as const;
 
 /** Removes everything the page keeps. Without storage there is nothing to remove. */

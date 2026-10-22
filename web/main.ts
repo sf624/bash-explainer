@@ -28,7 +28,7 @@ import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown, ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
-import { narrow, setUpEdgeSwipe, setUpSheet, setUpSplitter } from './layout';
+import { narrow, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { SettingsDialog } from './settings-dialog';
 import { clearStoredData, STORAGE_KEYS } from './storage';
 
@@ -83,6 +83,7 @@ const TEXT = {
     close: 'Close',
     github: 'Source code on GitHub',
     resize: 'Resize the script and the explanation',
+    resizeProblems: 'Resize the Problems list',
   },
   ja: {
     tagline: 'シェルスクリプトを1行ずつ解説します。知りたい行にカーソルを置いてください。',
@@ -126,6 +127,7 @@ const TEXT = {
     close: '閉じる',
     github: 'GitHub のソースコード',
     resize: 'スクリプトと解説の大きさを変える',
+    resizeProblems: '問題の一覧の高さを変える',
   },
 };
 
@@ -746,7 +748,8 @@ if (compare) {
 function showProblems(list: DocumentIssue[]): void {
   const t = TEXT[lang];
   $('problems').hidden = list.length === 0;
-  $('problems-title').textContent = `${t.problems} (${list.length})`;
+  $('problems-title').textContent = t.problems;
+  $('problems-count').textContent = String(list.length);
   $('problem-list').replaceChildren(...list.map((i) => {
     const li = document.createElement('li');
     const span = (cls: string, text: string) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
@@ -803,10 +806,10 @@ function applyLanguage(): void {
   put('drawer-title', t.menu);
   showPanelActions();
   // The buttons drawn as icons say what they do to screen readers and in a tooltip.
-  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize]]) {
+  for (const [id, name] of [['sample', t.sample], ['share', t.share], ['readmode', t.readMode], ['settings-open', t.settings], ['menu-open', t.menu], ['menu-close', t.close], ['github', t.github], ['splitter', t.resize], ['problems-resize', t.resizeProblems]]) {
     const el = document.getElementById(id);
     el?.setAttribute('aria-label', name);
-    if (id !== 'splitter') el?.setAttribute('title', name);
+    if (!id.endsWith('resize') && id !== 'splitter') el?.setAttribute('title', name);
   }
   put('privacy', t.privacy);
   put('notices', t.notices);
@@ -939,6 +942,7 @@ function clearEverything(): void {
   view.dispatch({ effects: inputMode.reconfigure(inputModeFor(false)) });
   showReadMode();
   resetSplit?.();
+  resetProblems?.();
   showReadTip();
 }
 function showReadMode(): void {
@@ -1026,6 +1030,9 @@ for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']
 
 const splitElement = document.getElementById('split');
 const resetSplit = splitElement && !panelOnly ? setUpSplitter(splitElement, $('splitter'), () => view.requestMeasure()) : undefined;
+const resetProblems = splitElement && !panelOnly
+  ? setUpProblems($('source'), $('problems'), $('problems-resize'), $('problems-toggle'), () => view.requestMeasure())
+  : undefined;
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'center' }) }));
 
