@@ -873,6 +873,60 @@ describe('the web page in a browser', function () {
     await desk.close();
   });
 
+  it('read-mode tip: shown once on a phone, closed by the button or by using the switch, never on a desktop', async () => {
+    const { devices } = await import('playwright-core');
+    const phone = { ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' };
+    const ctx = await browser!.newContext(phone);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const tip = page.locator('#readtip');
+    assert.strictEqual(await tip.isVisible(), true);
+    assert.match(await tip.innerText(), /Tap here to turn off editing/);
+    const close = page.locator('#readtip-close');
+    assert.strictEqual(await close.getAttribute('aria-label'), 'Close');
+    // Inside the window, the arrow over the switch, and no horizontal scroll.
+    const geo = await page.evaluate('(() => { const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); const x = parseFloat(getComputedStyle(document.querySelector("#readtip")).getPropertyValue("--arrow-x")); return { l: t.left, r: t.right, top: t.top, bottom: b.bottom, arrow: t.left + x, mid: b.left + b.width / 2, ok: document.documentElement.scrollWidth <= document.documentElement.clientWidth }; })()') as { l: number; r: number; top: number; bottom: number; arrow: number; mid: number; ok: boolean };
+    assert.ok(geo.l >= 0 && geo.r <= 360 && geo.ok && geo.top >= geo.bottom, JSON.stringify(geo));
+    assert.ok(Math.abs(geo.arrow - geo.mid) < 1, JSON.stringify(geo));
+    await close.tap();
+    assert.strictEqual(await tip.isVisible(), false);
+    await page.reload();
+    await page.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await tip.isVisible(), false);
+    await ctx.close();
+    // Using the switch also counts as seeing it.
+    const ctx2 = await browser!.newContext(phone);
+    const p2 = await ctx2.newPage();
+    await p2.goto(base);
+    await p2.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), true);
+    await p2.locator('#readmode').tap();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), false);
+    await p2.reload();
+    await p2.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), false);
+    await ctx2.close();
+    // Without storage it shows, and the button hides it for the session.
+    const ctx3 = await browser!.newContext({ ...phone, locale: 'ja-JP' });
+    await ctx3.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const p3 = await ctx3.newPage();
+    await p3.goto(base);
+    await p3.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p3.locator('#readtip').isVisible(), true);
+    assert.match(await p3.locator('#readtip').innerText(), /ここをタップ/);
+    await p3.locator('#readtip-close').tap();
+    assert.strictEqual(await p3.locator('#readtip').isVisible(), false);
+    await ctx3.close();
+    // Not on a desktop.
+    const desk = await browser!.newContext({ viewport: { width: 1200, height: 800 } });
+    const d = await desk.newPage();
+    await d.goto(base);
+    await d.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await d.locator('#readtip').isVisible(), false);
+    await desk.close();
+  });
+
   it('fits the window on phones and desktops: the page never scrolls, the editor and the explanation scroll inside', async () => {
     const { devices } = await import('playwright-core');
     const sizes = [

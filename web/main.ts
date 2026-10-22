@@ -48,6 +48,7 @@ const TEXT = {
     sample: 'Load the sample',
     share: 'Copy a link to this script',
     readMode: 'Read mode: tapping the script does not open the keyboard',
+    readTip: 'Tap here to turn off editing, so the keyboard stays hidden while you tap lines to read their explanations.',
     shared: 'Link copied. The script is in the part after #, which browsers do not send to the server.',
     copied: 'Copied the explanation as Markdown.',
     problems: 'Problems',
@@ -90,6 +91,7 @@ const TEXT = {
     sample: 'サンプルを読み込む',
     share: 'このスクリプトへのリンクをコピー',
     readMode: '閲覧モード: スクリプトをタップしてもキーボードを出さない',
+    readTip: 'ここをタップすると編集をオフにできる。キーボードを出さずに、行をタップして解説を読める。',
     shared: 'リンクをコピーしました。スクリプトは # より後ろに入っていて、ブラウザはこの部分をサーバーに送りません。',
     copied: '解説を Markdown でコピーしました。',
     problems: '問題',
@@ -696,6 +698,10 @@ function applyLanguage(): void {
   document.documentElement.lang = lang;
   put('tagline', compare ? t.compareTagline : t.tagline);
   put('install', t.install);
+  put('readtip-text', t.readTip);
+  document.getElementById('readtip-close')?.setAttribute('aria-label', t.close);
+  document.getElementById('readtip-close')?.setAttribute('title', t.close);
+  placeReadTip();
   put('kind-label', t.kind);
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
@@ -829,6 +835,7 @@ function showReadMode(): void {
 }
 showReadMode();
 on('readmode', 'click', () => {
+  hideReadTip(true);
   readMode = !readMode;
   view.dispatch({ effects: inputMode.reconfigure(inputModeFor(readMode)) });
   showReadMode();
@@ -838,6 +845,45 @@ on('readmode', 'click', () => {
     // Not kept.
   }
 });
+
+// The first-run tip for the read-mode switch: shown while the switch is (a coarse pointer), until it has
+// been closed or the switch used. It is kept in storage; without storage it shows again on the next visit.
+const TIP_KEY = 'bash-explainer-read-tip-seen';
+function readTipSeen(): boolean {
+  try {
+    return localStorage.getItem(TIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+/** Points the arrow of the bubble at the middle of the switch. */
+function placeReadTip(): void {
+  const tip = document.getElementById('readtip');
+  const btn = document.getElementById('readmode');
+  if (!tip || !btn || tip.hidden) return;
+  const b = btn.getBoundingClientRect();
+  tip.style.setProperty('--arrow-x', `${b.left + b.width / 2 - tip.getBoundingClientRect().left}px`);
+}
+function hideReadTip(remember: boolean): void {
+  const tip = document.getElementById('readtip');
+  if (tip) tip.hidden = true;
+  if (!remember) return;
+  try {
+    localStorage.setItem(TIP_KEY, '1');
+  } catch {
+    // Not kept: it shows again next time.
+  }
+}
+{
+  const tip = document.getElementById('readtip');
+  const btn = document.getElementById('readmode');
+  if (tip && btn && window.matchMedia('(pointer: coarse)').matches && !readTipSeen()) {
+    tip.hidden = false;
+    placeReadTip();
+    window.addEventListener('resize', placeReadTip);
+  }
+}
+on('readtip-close', 'click', () => hideReadTip(true));
 on('settings-open', 'click', () => settingsDialog?.show());
 if (dialogElement) setUpSheet(dialogElement);
 

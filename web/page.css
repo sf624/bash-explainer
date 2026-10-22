@@ -609,6 +609,49 @@ body.resizing iframe {
   display: block;
 }
 
+/* The first-run tip for the read-mode switch: a bubble under the top bar, its arrow (--arrow-x, set by the script) at the switch. */
+.tip {
+  position: fixed;
+  top: calc(var(--bar-h) + 8px);
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: min(19rem, calc(100vw - 16px));
+  padding: 8px 4px 8px 12px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip p {
+  flex: 1;
+  min-width: 0;
+  margin: 4px 0 0;
+}
+
+.tip::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--arrow-x, calc(100% - 24px));
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-top: 1px solid var(--vscode-focusBorder);
+  border-left: 1px solid var(--vscode-focusBorder);
+  background: var(--vscode-editor-background);
+  transform: rotate(45deg);
+}
+
 /* ---- Sizes ------------------------------------------------------------------------------------ */
 
 /* No room for the tagline, then for the button to install. */
