@@ -195,7 +195,7 @@ const shared = readHash();
 let lang: Lang = shared.lang ?? resolveLang(settings.language, navigator.language);
 let kind: Kind = shared.kind ?? 'shell';
 /** What the file kind's button shows on a narrow screen, where the whole name has no room. */
-const SHORT_KIND: Record<Kind, string> = { shell: 'sh', dockerfile: 'Docker', makefile: 'make', yaml: 'YAML', npm: 'npm', markdown: 'md', python: 'py', jenkinsfile: 'Jenkins' };
+const SHORT_KIND: Record<Kind, string> = { shell: 'sh', dockerfile: 'Docker', makefile: 'make', yaml: 'YAML', npm: 'npm', markdown: 'md', python: 'py', jenkinsfile: 'Jenkins', bats: 'bats' };
 const kindButton = document.getElementById('kind');
 const kindList = document.getElementById('kind-list');
 /** The file kind: a button with a list (the compare page has it too). */

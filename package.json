@@ -63,7 +63,8 @@
     "onLanguage:json",
     "onLanguage:python",
     "onLanguage:groovy",
-    "onLanguage:jenkinsfile"
+    "onLanguage:jenkinsfile",
+    "onLanguage:bats"
   ],
   "contributes": {
     "commands": [
@@ -346,7 +347,8 @@
               "packageJson",
               "markdown",
               "python",
-              "jenkinsfile"
+              "jenkinsfile",
+              "bats"
             ],
             "enumDescriptions": [
               "%config.embedded.files.dockerfile%",
@@ -355,7 +357,8 @@
               "%config.embedded.files.packageJson%",
               "%config.embedded.files.markdown%",
               "%config.embedded.files.python%",
-              "%config.embedded.files.jenkinsfile%"
+              "%config.embedded.files.jenkinsfile%",
+              "%config.embedded.files.bats%"
             ]
           },
           "uniqueItems": true,
@@ -366,7 +369,8 @@
             "packageJson",
             "markdown",
             "python",
-            "jenkinsfile"
+            "jenkinsfile",
+            "bats"
           ],
           "markdownDescription": "%config.embedded.files%"
         },
@@ -685,6 +689,7 @@
     "@vscode/test-electron": "3.1.0",
     "@vscode/test-web": "0.0.81",
     "@vscode/vsce": "2.32.0",
+    "bats": "1.13.0",
     "c8": "12.0.0",
     "esbuild": "0.28.2",
     "istanbul-lib-coverage": "3.2.2",

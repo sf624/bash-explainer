@@ -128,4 +128,25 @@ os.system(f"tar -czf {name}.tar.gz dist/")
 }
 `,
   },
+  {
+    kind: 'bats',
+    name: 'bats',
+    fileName: 'test.bats',
+    cursorLine: 5,
+    sample: `#!/usr/bin/env bats
+bats_require_minimum_version 1.5.0
+
+@test "greets by name" {
+  run ./greet.sh Ada
+  [ "$status" -eq 0 ]
+  [ "\${lines[0]}" = "Hello, Ada" ]
+}
+
+@test "fails without a name" {
+  run ! ./greet.sh
+  ! grep -q Ada greet.log
+  run ./greet.sh --help | grep -q Usage
+}
+`,
+  },
 ];

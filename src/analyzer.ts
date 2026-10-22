@@ -121,6 +121,8 @@ export interface ExplainOptions {
   pitfalls?: boolean;
   /** The `bashExplainer.customCommands` setting: commands the dictionary does not know. */
   customCommands?: Record<string, unknown>;
+  /** Commands the host file defines for its scripts (a bats file: `run`, `load`…), read before the dictionary. */
+  hostCommands?: Record<string, CommandSpec>;
 }
 
 export interface LineExplanation {
@@ -1679,7 +1681,7 @@ export class Analyzer {
     if (custom) {
       return { name, spec: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
-    const spec = lookupCommand(name);
+    const spec = this.hostCommand(name) ?? lookupCommand(name);
     if (spec) {
       const builtin = !!spec.builtin;
       return {
@@ -1724,9 +1726,15 @@ export class Analyzer {
     return { tokens: this.render(parse, spec, args, args, isFn), parse };
   }
 
-  /** The spec of a command a wrapper runs: from the customCommands setting, or the dictionary. */
+  /** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary. */
   private specFor(name: string): CommandSpec | undefined {
-    return customCommandSpec(this.opts.customCommands?.[name.split('/').pop()!]) ?? lookupCommand(name);
+    return customCommandSpec(this.opts.customCommands?.[name.split('/').pop()!]) ?? this.hostCommand(name) ?? lookupCommand(name);
+  }
+
+  /** A command the host defines (a function of bats, which a path does not name). */
+  private hostCommand(name: string): CommandSpec | undefined {
+    const host = this.opts.hostCommands;
+    return host && Object.hasOwn(host, name) ? host[name] : undefined;
   }
 
   /**

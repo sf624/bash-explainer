@@ -59,5 +59,6 @@
   "config.embedded.files.packageJson": "package.json scripts",
   "config.embedded.files.markdown": "Markdown code blocks",
   "config.embedded.files.python": "Python's subprocess and os.system",
-  "config.embedded.files.jenkinsfile": "Jenkinsfile sh steps"
+  "config.embedded.files.jenkinsfile": "Jenkinsfile sh steps",
+  "config.embedded.files.bats": "bats test files (.bats)"
 }
