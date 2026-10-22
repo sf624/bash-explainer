@@ -335,6 +335,7 @@ npm run test:integration:web   # VS Code for the Web でも同様に（`npx play
 - 依存パッケージを変えたら `npm run notices` を実行して、ビルドに実際に含まれるものから [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を作り直してください。古いままのときや、まだ確認していないライセンスのものが入ったときは、テストが失敗します。
 - 日本語の解説は [docs/japanese-style.md](docs/japanese-style.md) の決まりに合わせてください（テストで確かめます）。
 - コマンドを追加するには [`src/dict/commands.ts`](src/dict/commands.ts) に `cmd(日本語の説明, 英語の説明, [オプション…], { positional: […] })` を追加します。説明は自分の言葉で書いてください。man ページや `--help` の出力などの文書から写してはいけません。それらのライセンス（GPL や GFDL が多い）は、このプロジェクトのライセンスと異なるためです。
+- `CHANGELOG.md` は利用者向けです。GitHub Release の本文と Marketplace の Changelog タブにそのまま出ます。項目は `## Unreleased` の下の `### New`、`### Changed`、`### Fixed` に書きます。利用者に見える変更ごとに短い箇条を一つ書き、今どう見えるかを書きます（前との違いは一言で添えます）。同じ種類の小さな修正は一つの箇条にまとめ、各節は十数個までにします。テスト、CI、リファクタリング、内部の設計は書きません。各バージョンの末尾には `[All changes](…/compare/vPREV...vX.Y.Z)` のリンクを置きます。
 - リリースするには、`package.json` と `cli/package.json` の `version` を上げて `CHANGELOG.md` に節を追加し、`v<version>` のタグを push します。[Release ワークフロー](.github/workflows/release.yml) がテストとパッケージ作成を行い、`release` 環境での承認を待ってから、VS Code Marketplace、Open VSX、npm に公開し、GitHub Release の作成、GitHub Action が使う `v0` タグの付け替え、ブラウザ版の更新を行います。手順と、最初に一度だけ必要な設定は [docs/publishing.md](docs/publishing.md) を参照してください。
 
 ## ライセンス
