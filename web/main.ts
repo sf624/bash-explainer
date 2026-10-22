@@ -19,7 +19,7 @@ import { detectShell, Shell } from '../src/dialect';
 import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { rerun } from '../src/examples/rerun';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
-import { CLASSIC_COLOURS, Colors, paletteColour } from './editor-colors';
+import { CLASSIC_COLOURS, kindColour } from './editor-colors';
 import { extractShell } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -184,7 +184,6 @@ function savedSettings(): Settings {
 }
 /** In panel mode the page around sends the settings; a copy keeps none of its own. */
 let settings: Settings = savedSettings();
-applyColors(settings.colors);
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
@@ -329,29 +328,20 @@ function shade(): void {
   view.dispatch({ effects: setShadings.of(shadings()) });
 }
 
-// The colours are variables on the page (`--bx-<kind>`, set by applyColors from the `colors` setting): the shell's
-// kinds, and the host files' modes (Dockerfile, YAML, Makefile, …) by the kind that means the same.
-const bx = (kind: string) => `var(--bx-${kind})`;
+// The colours of the panel (editor-colors.ts): the shell's kinds, and the host files' modes (Dockerfile, YAML,
+// Makefile, …) by the kind that means the same.
 const highlightStyle = HighlightStyle.define([
-  { tag: [tags.keyword, tags.controlKeyword], color: bx('keyword') },
-  { tag: tags.operator, color: bx('operator') },
-  { tag: [tags.string, tags.special(tags.string)], color: bx('string') },
-  { tag: tags.comment, color: bx('comment'), fontStyle: 'var(--bx-comment-style)' },
-  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: bx('variable') },
-  { tag: [tags.number, tags.bool, tags.atom], color: bx('number') },
-  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: bx('function') },
-  { tag: tags.meta, color: bx('meta') },
+  { tag: [tags.keyword, tags.controlKeyword], color: kindColour('keyword') },
+  { tag: tags.operator, color: kindColour('operator') },
+  { tag: [tags.string, tags.special(tags.string)], color: kindColour('string') },
+  { tag: tags.comment, color: kindColour('comment'), fontStyle: 'italic' },
+  { tag: [tags.variableName, tags.special(tags.variableName), tags.definition(tags.variableName)], color: kindColour('variable') },
+  { tag: [tags.number, tags.bool, tags.atom], color: kindColour('number') },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName), tags.propertyName, tags.attributeName], color: kindColour('function') },
+  { tag: tags.meta, color: CLASSIC_COLOURS.muted },
 ]);
 
-/** Sets the editor's colours from the `colors` setting: the VS Code default themes' (light and dark) or the panel's classic ones. */
-function applyColors(colors: Colors): void {
-  const style = document.documentElement.style;
-  for (const k of HIGHLIGHT_KINDS) style.setProperty(`--bx-${k}`, paletteColour(k, colors));
-  style.setProperty('--bx-meta', colors === 'classic' ? CLASSIC_COLOURS.muted : 'light-dark(#0000FF, #569CD6)');
-  style.setProperty('--bx-comment-style', colors === 'classic' ? 'italic' : 'normal');
-}
-
-const shellColours = Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: bx(k), ...(k === 'comment' ? { fontStyle: 'var(--bx-comment-style)' } : {}) }]));
+const shellColours = Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' ? { fontStyle: 'italic' } : {}) }]));
 
 const editorTheme = EditorView.theme({
   '&': { height: '100%', color: 'var(--vscode-editor-foreground)', backgroundColor: 'var(--vscode-editor-background)', fontSize: 'var(--vscode-editor-font-size)' },
@@ -364,7 +354,7 @@ const editorTheme = EditorView.theme({
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--vscode-editor-foreground)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 120, 212, 0.3)' },
   '.cm-bx-highlight': { backgroundColor: 'var(--vscode-editor-findMatchHighlightBackground)', borderRadius: '2px' },
-  // The shell's colours: those of VS Code's shell grammar and default themes (editor-colors.ts).
+  // The shell's colours: the panel's (editor-colors.ts).
   ...shellColours,
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
 });
@@ -511,7 +501,7 @@ function updatePanel(): void {
   shown = { explanation, line };
   const message = panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
-    choice: choice(), detected: s.detected, placement: settings['examples.placement'], colors: settings.colors,
+    choice: choice(), detected: s.detected, placement: settings['examples.placement'],
   });
   toPanel(message);
   if (!panelOnly) watchPanelActions();
@@ -898,7 +888,6 @@ function changeSettings(next: Settings): void {
   // A link's language stays until the setting itself changes.
   const languageChanged = next.language !== settings.language;
   settings = next;
-  applyColors(settings.colors);
   view.dispatch({ effects: wrapMode.reconfigure(wrapFor(settings['editor.wrap'])) });
   try {
     const changed = changedSettings(settings, 'web');

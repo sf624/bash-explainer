@@ -651,8 +651,10 @@ describe('the web page in a browser', function () {
     await blocked.close();
   });
 
-  it('colours the editor and the panel alike, in the VS Code palette or the classic one (the colors setting), light and dark', async () => {
+  it('colours the editor and the panel alike, in the panel\'s palette, light and dark', async () => {
     const ctx = await browser!.newContext({ locale: 'en-US', colorScheme: 'light' });
+    // Settings kept by a build that had the colors setting (before 0.7.0): the key is ignored.
+    await ctx.addInitScript("try { if (!localStorage.getItem('bash-explainer-settings')) localStorage.setItem('bash-explainer-settings', JSON.stringify({ colors: 'vscode' })); } catch {}");
     const page = await ctx.newPage();
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -663,29 +665,20 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('grep -rn "x" f 2>&1');
     const colour = (loc: ReturnType<Page['locator']>) => (loc.first().evaluate(new Function('e', 'return getComputedStyle(e).color') as never) as Promise<string>);
-    const both = async () => [
-      await until('the option in the editor', () => colour(page.locator('.cm-bx-option')), (c) => !!c),
-      await until('the option in the panel', async () => (await panel().locator('.kind-option').count() ? colour(panel().locator('.kind-option')) : ''), (c) => !!c),
+    const both = async (kind: string) => [
+      await until(`the ${kind} in the editor`, () => colour(page.locator(`.cm-bx-${kind}`)), (c) => !!c),
+      await until(`the ${kind} in the panel`, async () => (await panel().locator(`.kind-${kind}`).count() ? colour(panel().locator(`.kind-${kind}`)) : ''), (c) => !!c),
     ];
-    // VS Code's default themes: Light Modern, then Dark Modern.
-    assert.deepStrictEqual(await both(), ['rgb(0, 0, 255)', 'rgb(0, 0, 255)']);
+    // VS Code's chart colours: orange options and blue commands, light, then dark.
+    assert.deepStrictEqual(await both('option'), ['rgb(194, 107, 0)', 'rgb(194, 107, 0)']);
+    assert.deepStrictEqual(await both('command'), ['rgb(26, 133, 255)', 'rgb(26, 133, 255)']);
     await page.emulateMedia({ colorScheme: 'dark' });
-    assert.deepStrictEqual(await both(), ['rgb(86, 156, 214)', 'rgb(86, 156, 214)']);
-    assert.strictEqual(await colour(page.locator('.cm-bx-command')), 'rgb(220, 220, 170)');
-    // Classic: the panel's own palette in both, orange options and blue commands (the dark chart colours).
+    await until('the dark option', async () => (await both('option')).join('|'), (c) => c === 'rgb(209, 134, 22)|rgb(209, 134, 22)');
+    assert.deepStrictEqual(await both('command'), ['rgb(55, 148, 255)', 'rgb(55, 148, 255)']);
+    // No palette to choose in the settings.
     await page.locator('#settings-open').click();
-    assert.strictEqual(await page.locator('#setting-colors').inputValue(), 'vscode');
-    await page.locator('#setting-colors').selectOption('classic');
-    await until('the classic option', async () => (await both()).join('|'), (c) => c === 'rgb(209, 134, 22)|rgb(209, 134, 22)');
-    assert.strictEqual(await colour(page.locator('.cm-bx-command')), 'rgb(55, 148, 255)');
-    assert.strictEqual(await colour(panel().locator('.kind-command')), 'rgb(55, 148, 255)');
+    assert.strictEqual(await page.locator('#setting-colors, [data-key="colors"]').count(), 0);
     await page.locator('#settings-done').click();
-    // It is kept for the next visit, and back to the default.
-    await page.reload();
-    await until('the editor', () => colour(page.locator('.cm-bx-option')), (c) => c === 'rgb(209, 134, 22)');
-    await page.locator('#settings-open').click();
-    await page.locator('#setting-colors').selectOption('vscode');
-    await until('the VS Code option', () => colour(page.locator('.cm-bx-option')), (c) => c === 'rgb(86, 156, 214)');
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
@@ -698,8 +691,6 @@ describe('the web page in a browser', function () {
       await page.locator('#settings-open').click();
       const body = await page.locator('.settings-body').innerText();
       assert.ok(!/#bashExplainer|\]\(|\*\*|`/.test(body), `${locale}: raw Markdown left in the dialog`);
-      // The name of the setting is in code style.
-      assert.strictEqual(await page.locator('[data-key="colors"] .setting-desc code', { hasText: 'bashExplainer.highlight.enabled' }).count(), 1);
       await ctx.close();
     }
   });

@@ -16,9 +16,8 @@ export const LEGEND: { tokenTypes: string[]; tokenModifiers: string[] } = { toke
 
 /**
  * Each kind as a standard type and modifiers. The colours come from the TextMate scopes that package.json
- * (`semanticTokenScopes`) gives each type: scopes of VS Code's shell grammar, so that the default themes show the
- * colours of web/editor-colors.ts. A heredoc's delimiter is a string and a substitution's delimiters are a variable,
- * as there. An `error` gets no token: the grammar's colour stays, and the diagnostics say what is wrong.
+ * (`semanticTokenScopes`) gives each type: scopes of VS Code's shell grammar, so that the user's theme colours them
+ * as it colours that grammar. A heredoc's delimiter is a string and a substitution's delimiters are a variable. An `error` gets no token: the grammar's colour stays, and the diagnostics say what is wrong.
  */
 export const TOKEN_OF: Record<HighlightKind, [TokenType, ...TokenModifier[]] | null> = {
   comment: ['comment'],
