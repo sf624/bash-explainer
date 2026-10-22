@@ -124,6 +124,12 @@ export const MESSAGES = {
   'extglob-not-found': entry<{ use: string }>('pitfall', ['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``]),
+  'extglob-maybe-on-trap': entry<{ use: string }>('pitfall', ['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
+    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。トラップの文字列はシグナルが来たときに読まれるので、\`extglob\` が有効になる前に来れば構文エラーになります`,
+    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and a trap's action is read when its signal comes: if that is before \`extglob\` is on, it is a syntax error`]),
+  'extglob-not-in-new-shell': entry<{ use: string }>('pitfall', ['3.5.8.1', '4.3.2', '3.7.3'], ({ use }) => [
+    `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。新しいシェルは \`extglob\` が無効の状態で始まり、このスクリプトの \`shopt\` は引き継がれません。文字列の中で、グロブより前の行で \`shopt -s extglob\` するか、\`bash -O extglob -c\` で起動します`,
+    `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). The new shell starts with \`extglob\` off: this script's \`shopt\` does not reach it. Turn it on in the string, on a line before the glob, or start the shell with \`bash -O extglob -c\``]),
   'globstar-maybe-on': entry<{ on: string }>('pitfall', ['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
     `\`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`]),

@@ -70,8 +70,12 @@ export type NameResolution =
    */
   | {
     kind: 'function'; name: string; fn: FunctionState; sure: boolean; shadows?: 'builtin' | 'program'; otherwise?: NameResolution; missed?: Missed;
-    /** Not sure because a definition before here is on some paths only (`branch`), or comes after it in the text, in a body that runs later (`later`). */
-    maybe?: 'branch' | 'later';
+    /**
+     * Not sure because a definition before here is on some paths only (`branch`), or comes after it in the text, in a
+     * body that runs later (`later`); in another shell, because `sh` may be dash, which reads no exported function
+     * (`import`), or because only its startup files would define it (`startup`: `bash -l`, BASH_ENV).
+     */
+    maybe?: 'branch' | 'later' | 'import' | 'startup';
   }
   /** A builtin; `special` for the POSIX special builtins. `disabled`: `enable -n` on some paths only. */
   | { kind: 'builtin'; name: string; special: boolean; missed?: Missed; disabled?: CommandEntry }
@@ -244,7 +248,9 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
   if (special === 'unknown') sure = false;
   const shadows = builtin.kind === 'builtin' ? 'builtin' as const : opts.program?.(name) ? 'program' as const : undefined;
   // (Not sure: defined on some paths before here, or only after it in the text, in a body that runs later.)
-  const maybe = sure ? {} : { maybe: model.definitions.functions.get(name)!.some((d) => before(d, at)) ? 'branch' as const : 'later' as const };
+  // (In another shell, a function of the script that `sh` may not read, or that only its startup files would define.)
+  const maybe = sure ? {} : { maybe: defined.imported === 'sh' ? 'import' as const : defined.imported ? 'startup' as const
+    : model.definitions.functions.get(name)!.some((d) => before(d, at)) ? 'branch' as const : 'later' as const };
   return { kind: 'function', name, fn: defined, sure, ...maybe, ...(shadows ? { shadows } : {}), ...(sure ? {} : { otherwise: builtin }), ...(missed ? { missed } : {}) };
 }
 

@@ -72,6 +72,11 @@ export interface FunctionState {
   readonly readonly: Tri;
   /** The `unset -f` that removed it (with `state` off). */
   readonly removed?: SyntaxNode;
+  /**
+   * In another shell, a function of the script it may have: given to `sh`, which may be dash (`sh`), or one only its
+   * startup files would define (`startup`).
+   */
+  readonly imported?: 'sh' | 'startup';
 }
 
 export interface AliasState {
@@ -859,7 +864,7 @@ class Walker {
       const fns = new Map<string, FunctionState>();
       for (const [name, f] of outer.functions) {
         if (f.state === 'off' || f.exported === 'off') continue;
-        fns.set(name, { state: f.state === 'on' && f.exported === 'on' && bashLike === 'on' ? 'on' : 'unknown', def: f.def, exported: 'on', readonly: 'off' });
+        fns.set(name, { state: f.state === 'on' && f.exported === 'on' && bashLike === 'on' ? 'on' : 'unknown', def: f.def, exported: 'on', readonly: 'off', ...(bashLike === 'unknown' ? { imported: 'sh' as const } : {}) });
         // (Its body is walked where this shell calls it.)
         this.collectDefinitions(f.def);
       }
@@ -896,7 +901,7 @@ class Walker {
       const vars = new Map<string, VariableState>();
       for (const [name, v] of outer.variables) if (!st.variables.has(name)) vars.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: v.at });
       const fns = new Map<string, FunctionState>();
-      for (const [name, f] of outer.functions) if (!st.functions.has(name)) fns.set(name, { state: 'unknown', def: f.def, exported: 'unknown', readonly: 'off' });
+      for (const [name, f] of outer.functions) if (!st.functions.has(name)) fns.set(name, { state: 'unknown', def: f.def, exported: 'unknown', readonly: 'off', imported: 'startup' });
       st = { ...st, variables: st.variables.withAll(vars), functions: st.functions.withAll(fns) };
     }
     return st;
