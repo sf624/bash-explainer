@@ -634,7 +634,7 @@ body.resizing iframe {
   display: block;
 }
 
-/* The first-run tip for the read-mode switch: a bubble under the top bar, its arrow (--arrow-x, set by the script) at the switch. */
+/* The first-run tip for the read-mode switch: a bubble under the switch (top, set by the script, which also sets --arrow-x for its arrow). */
 .tip {
   position: fixed;
   top: calc(var(--bar-h) + 8px);
