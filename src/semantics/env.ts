@@ -11,7 +11,7 @@
 // - A slot link comes from a command slot (src/argv/spec.ts) that runs a command: a program (`sudo cmd`, `xargs
 //   cmd`), another shell (`bash -c`, `su -c`, `ssh host cmd`) or the current shell again (`eval`, `command`).
 //   What reaches the command is what every link on the way passes on (`env -i bash -c f`: no function).
-import type { ArgRole, ArgvParse, CommandRole } from '../argv/interpret';
+import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
@@ -340,63 +340,98 @@ export function slotName(parse: ArgvParse, spec: CommandSpec, role: CommandRole)
 const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
 
 /**
+ * The words the roles of a parse are numbered in: the command's own, or the words split from an `env -S` value,
+ * which have no node of their own: `node` is then the word that holds the value.
+ */
+interface Words { readonly args: readonly ArgWord[]; node(i: number): SyntaxNode; text(i: number): string }
+/** A role of a parse, with the words it is numbered in; `split`, when they are split from an `env -S` value. */
+interface Item { readonly word: number; readonly role: ArgRole; readonly w: Words; readonly split?: boolean }
+
+/** The words an `env -S` value of the role is split into, with their roles. */
+function splitOf(role: ArgRole): ValueRole['split'] {
+  const value = role.role === 'value' ? role : role.role === 'option' ? role.value : undefined;
+  if (value) return value.split;
+  return role.role === 'cluster' ? role.letters.map((l) => (l.role === 'option' ? l.value?.split : undefined)).find((s) => s) : undefined;
+}
+
+/**
+ * The roles of a parse, each followed by the roles of the words its `env -S` value splices in (`env -S'-i bash
+ * -e' -c s`: `-S`, then `-i` and `bash`; `-c` and `s`, which bash reads, are roles of the line after them).
+ */
+function items(roles: readonly RoleAt[], w: Words, split?: boolean): Item[] {
+  return roles.flatMap((r) => {
+    const s = splitOf(r.role);
+    const own: Item = { ...r, w, ...(split ? { split } : {}) };
+    if (!s) return [own];
+    const node = w.node(r.word);
+    return [own, ...items(s.roles, { args: s.words, node: () => node, text: (i) => s.words[i].value! }, true)];
+  });
+}
+
+/**
  * Where each command that a command's words run through a slot runs (`sudo env -i bash -c 'f'`: `env` under
  * sudo, `bash` under env, and the string under `bash -c`), keyed by its first word (or its string). `env` is
  * where the command itself runs; `parse` reads its words `nodes` with `spec`; `lookup` gives the spec of a
- * command a slot runs, for find's expression.
+ * command a slot runs, for find's expression. A command named in an `env -S` value has no word of its own, so it
+ * is not a key, but what it runs is (`env -S'-i bash -c' 'f'`: the string, under bash under env).
  */
 export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, nodes: readonly SyntaxNode[], lookup?: (name: string) => CommandSpec | undefined): Map<SyntaxNode, ExecEnv> {
   const out = new Map<SyntaxNode, ExecEnv>();
-  const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, words: readonly SyntaxNode[]): void => {
+  const visit = (outer: ExecEnv, p: ArgvParse, s: CommandSpec, all: readonly Item[]): void => {
+    // A command named in an `env -S` value reads the rest of the line: the roles after it are its own.
+    const k = all.findIndex((i) => i.split && i.role.role === 'command');
+    const list = k < 0 ? all : all.slice(0, k + 1);
     // (`env x=1 cmd`, `docker run -e x img cmd`: the assignments come before the command.)
     const assigns: string[] = [];
     const unsets: string[] = [];
-    const flags = p.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
-    for (const { word, role } of p.roles) {
+    const flags = list.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).flatMap((r) => (r.role === 'option' ? [r.flag, ...r.spec.names] : []));
+    for (const { word, role, w, split } of list) {
       // (`-e x`, or `--env=x` in the option's word.)
       const value = role.role === 'value' ? role : role.role === 'option' ? role.value : undefined;
       if (value?.spec?.setsEnv) {
-        const text = argWord(words[word]).value?.slice(value.attached);
+        const text = w.args[word].value?.slice(value.attached);
         assigns.push(value.spec.setsEnv === 'file' || text === undefined ? '*' : text.replace(/=[\s\S]*$/, ''));
       }
       if (value?.spec?.unsetsEnv) {
-        const text = argWord(words[word]).value?.slice(value.attached);
+        const text = w.args[word].value?.slice(value.attached);
         if (text !== undefined) unsets.push(text);
       }
-      if (role.role === 'operand' && role.spec?.assignment) assigns.push(words[word].text.slice(0, words[word].text.indexOf('=')));
-      else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, words);
+      if (role.role === 'operand' && role.spec?.assignment) assigns.push(w.text(word).slice(0, w.text(word).indexOf('=')));
+      else if (role.role === 'subcommand') visit(outer, role.parse, role.spec, items(role.parse.roles, w, split));
       else if (role.role === 'command') {
         const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
         const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (/^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown');
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`.)
-        const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(p, words) : [];
-        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: words[word], assigns, env, ...(unsets.length ? { unsets } : {}),
+        const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(all) : [];
+        const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(unsets.length ? { unsets } : {}),
           ...(shell ? { shell } : {}), ...(invocation.length ? { invocation } : {}) });
-        out.set(words[word], inner);
-        if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, words);
+        if (!split) out.set(w.node(word), inner);
+        // (A command named in an `env -S` value also reads the rest of the line.)
+        if (role.parse) visit(inner, role.parse, role.spec ?? NO_SPEC, [...items(role.parse.roles, w, split), ...(split ? all.slice(k + 1) : [])]);
       } else if (role.role === 'expression' && word === p.expression && s.expressionSpec) {
         // find's expression: its actions (`-exec cmd ;`) run commands.
-        const part = words.slice(word, p.end);
-        visit(outer, interpret(s.expressionSpec, part.map(argWord), { name: p.command, lookup }), s.expressionSpec, part);
+        const part: Words = { args: w.args.slice(word, p.end), node: (i) => w.node(word + i), text: (i) => w.text(word + i) };
+        const q = interpret(s.expressionSpec, [...part.args], { name: p.command, lookup });
+        visit(outer, q, s.expressionSpec, items(q.roles, part, split));
       }
     }
   };
-  visit(env, parse, spec, nodes);
+  visit(env, parse, spec, items(parse.roles, { args: nodes.map(argWord), node: (i) => nodes[i], text: (i) => nodes[i].text }));
   return out;
 }
 
 /**
- * The options a shell is started with (`bash -e -o pipefail -O extglob -c S`): each option of its parse `p` as
- * written, with the value it takes (`-o NAME`, `-O NAME`).
+ * The options a shell is started with (`bash -e -o pipefail -O extglob -c S`): each option of its parse (`all`,
+ * with the words of the line it reads after an `env -S` value) as written, with the value it takes (`-o NAME`).
  */
-function shellInvocation(p: ArgvParse, words: readonly SyntaxNode[]): { flag: string; value?: string }[] {
+function shellInvocation(all: readonly Item[]): { flag: string; value?: string }[] {
   const out: { flag: string; value?: string }[] = [];
-  for (const { word, role } of p.roles) {
+  for (const { word, role, w } of all) {
     for (const r of role.role === 'cluster' ? role.letters : [role]) {
       if (r.role === 'option' && !r.spec.value) out.push({ flag: r.flag });
-      else if (r.role === 'option' && r.value) out.push({ flag: r.flag, value: argWord(words[word]).value?.slice(r.value.attached) });
-      else if (r.role === 'value') out.push({ flag: r.of, value: argWord(words[word]).value });
+      else if (r.role === 'option' && r.value) out.push({ flag: r.flag, value: w.args[word].value?.slice(r.value.attached) });
+      else if (r.role === 'value') out.push({ flag: r.of, value: w.args[word].value });
     }
   }
   return out;

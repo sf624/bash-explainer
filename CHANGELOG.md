@@ -11,7 +11,7 @@
 
 - `env -S` strings are split as GNU env splits them (quotes, `\_`, `#` comments, `${NAME}`), and their words are read in place of the option, so `env -S'-i A=1 bash -e' script` shows `-i`, `A=1` and the command; a string env refuses gets a warning that it exits with status 125.
 - Options before a subcommand are read as the tool reads them (`docker -H h run`, `npm --prefix dir run build`, `yarn --cwd dir add`, `kubectl -o yaml get pods`, `gh -R o/r pr list`), and a tool's global options are told apart from its subcommands' (`kubectl logs -o` is not an option; terraform takes only `-chdir=DIR`, `-version` and `-help` before the subcommand).
-- The pitfall for a variable that another shell does not have (`bash -c`, `sudo`, `su -c`, `ssh`, `docker exec`) reads the string as that shell reads it, so `\$n` in `bash -c "echo \$n"` counts; `env -u x` removes `x`, and a shell that reads startup files (`bash -l`, an exported `BASH_ENV`) may have any name. Before, an escaped `\$n` was missed.
+- The pitfall for a variable that another shell does not have (`bash -c`, `sudo`, `su -c`, `ssh`, `docker exec`) reads the string as that shell reads it, so `\$n` in `bash -c "echo \$n"` counts; `env -u x` removes `x`, and a shell that reads startup files (`bash -l`, an exported `BASH_ENV`) may have any name. The shell and env's `-i`, `-u` and `NAME=value` count in an `env -S` string too (`env -S'-i bash -c' '…'`). Before, an escaped `\$n` was missed, and a shell started from an `env -S` string was not known.
 - `bash -O extglob -c '…'` and `bash --posix` are read as bash's options. Before, `-O` was not known and `extglob` was taken for the script to run.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
