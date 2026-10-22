@@ -4,6 +4,7 @@ import { resolveName } from './semantics/names';
 import { shellState } from './semantics/state';
 import { lastStatements, statusModel } from './semantics/status';
 import { processOf, STATEMENTS } from './semantics/env';
+import { BATS_COMMANDS } from './dict/bats';
 import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
@@ -48,7 +49,8 @@ export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: numb
   const out: Fact[] = [];
   if (tests.includes(line)) out.push(fact(lang, 'bats-test'));
   if (!pitfalls) return out;
-  const state = shellState(tree);
+  // (The model the analyzer reads for a bats file: bats' functions trust nothing.)
+  const state = shellState(tree, undefined, { host: Object.keys(BATS_COMMANDS) });
   const status = statusModel(state);
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
   for (const def of descendants(tree.root, ['function_definition'])) {

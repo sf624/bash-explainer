@@ -11,7 +11,8 @@
 //   function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`. Positional parameters and
 //   the variables bash sets itself never are.
 // - Nothing is trusted (`blind`) when the script runs what cannot be read: `source`, `eval` or `trap` of text not
-//   known, a command name not known (`$cmd`, `"$@"`), a builtin given a variable name not known (`read "$v"`),
+//   known, a command name not known (`$cmd`, `"$@"`), a function of the file's host that the walk does not read (bats'
+//   `run`, `load`: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
 //   indirection (`${!v}`), a DEBUG or RETURN trap, a trap's or a callback's function that changes options, functions
 //   or aliases; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never
 //   set: bash runs it as an expression, which may assign any variable).
@@ -127,7 +128,7 @@ class Scan {
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
 
-  constructor(root: SyntaxNode, private readonly stop: boolean) {
+  constructor(root: SyntaxNode, private readonly stop: boolean, private readonly host: ReadonlySet<string> = NO_HOST) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       n.children.forEach(defs);
@@ -140,6 +141,11 @@ class Scan {
       /* c8 ignore next -- only `StopScan` is thrown on purpose */
       if (!(e instanceof StopScan)) throw e;
     }
+  }
+
+  /** Whether the scan stopped at a reason to trust nothing. */
+  get stopped(): boolean {
+    return this.stop && this.blind !== undefined;
   }
 
   /**
@@ -472,6 +478,8 @@ class Scan {
       else this.blindFor('a command name not known');
       return;
     }
+    // A function the host file defines (bats' `run`, `load`): the walk does not read it, and it may set anything.
+    if (!this.functions.has(name) && this.host.has(name)) this.blindFor(`\`${name}\` is a function of the test runner (bats), which the model does not read`);
     if (this.functions.has(name)) {
       if (w.foreign) this.callbacks.add(name);
       else {
@@ -669,24 +677,30 @@ class Scan {
   }
 }
 
+const NO_HOST: ReadonlySet<string> = new Set();
 const trusts = new WeakMap<SyntaxNode, Trust>();
 /** The same, read to the end even when nothing is trusted: for the facts of its statements (`Walker.facts`). */
 const factTrusts = new WeakMap<SyntaxNode, Trust>();
 
 /**
- * The trust of the decisions over the script `root` (cached per tree). `stop`: the scan stops at the first reason to
- * trust nothing; off, it reads the whole tree, for the facts of its statements.
+ * The trust of the decisions over the script `root` (cached per tree, without a host). `stop`: the scan stops at the first reason to
+ * trust nothing; off, it reads the whole tree, for the facts of its statements. `host`: the functions the file's host
+ * defines (a bats file: `run`, `load`…), which the walk does not read: a call of one trusts nothing.
  */
-export function scriptTrust(root: SyntaxNode, stop = true): Trust {
+export function scriptTrust(root: SyntaxNode, stop = true, host: readonly string[] = []): Trust {
+  // (Not cached: the model that reads it is, per tree and host.)
+  if (host.length) return readTrust(new Scan(root, true, new Set(host)));
   const cache = stop ? trusts : factTrusts;
   const hit = cache.get(root);
   if (hit) return hit;
-  const scan = new Scan(root, stop);
-  if (stop && scan.blind !== undefined) {
-    const out = { ...BLIND, blind: scan.blind };
-    trusts.set(root, out);
-    return out;
-  }
+  const trust = readTrust(new Scan(root, stop));
+  cache.set(root, trust);
+  return trust;
+}
+
+/** The trust a scan gives. */
+function readTrust(scan: Scan): Trust {
+  if (scan.stopped) return { ...BLIND, blind: scan.blind! };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
   const trust: Trust = {
@@ -704,7 +718,6 @@ export function scriptTrust(root: SyntaxNode, stop = true): Trust {
     },
     mayFail: (n) => scan.fails.has(n),
   };
-  cache.set(root, trust);
   return trust;
 }
 

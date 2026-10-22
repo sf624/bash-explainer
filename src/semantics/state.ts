@@ -3509,18 +3509,21 @@ class Walker {
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
 /**
- * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`). Cached per tree. The tree of
- * a string read as a script (`StateModel.script`) has the model of that script: the outer one for `eval`.
+ * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`; `host`: the functions the
+ * file's host defines, which the walk does not read, so that a call of one trusts nothing: src/semantics/trust.ts).
+ * Cached per tree. The tree of a string read as a script (`StateModel.script`) has the model of that script: the
+ * outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: readonly string[] } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
-  const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}`;
+  const host = opts.host ?? [];
+  const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}${host.length ? ` host:${[...host].sort().join(' ')}` : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
-  const model = buildModel(tree, shell, !!opts.posix, 0, MAIN_SHELL, (w) => w.initial());
+  const model = buildModel(tree, shell, !!opts.posix, 0, MAIN_SHELL, (w) => w.initial(), undefined, host);
   byKey.set(key, model);
   return model;
 }
@@ -3530,11 +3533,11 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
 
 /**
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
- * `outer`: what the model of the script that starts this shell trusts.
+ * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host: readonly string[] = []): StateModel {
   const scripts = new Scripts(depth);
-  const own = scriptTrust(tree.root);
+  const own = scriptTrust(tree.root, true, host);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust);
   let initial!: ShellState;

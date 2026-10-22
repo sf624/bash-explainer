@@ -615,6 +615,21 @@ describe('bats', () => {
     for (const line of [2, 3, 4]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^⚠ 落とし穴: `set -e` は/);
   });
 
+  it("decides no condition after a call of bats' functions, which the model does not read", () => {
+    const decided = (lines: string[], line: number) => (bats(lines, line).facts ?? []).map((f) => f.id).filter((id) => id.startsWith('condition-'));
+    const cond = 'if [ "$x" = 1 ]; then echo x; fi';
+    // `load` may set `x`; `run` sets `$status`; `run bash -c 'x=2'` runs in a subshell, but is not read either.
+    assert.deepStrictEqual(decided(['x=1', 'load helper', cond], 3), []);
+    assert.deepStrictEqual(decided(['status=0', 'run false', 'if [ "$status" = 0 ]; then :; fi'], 3), []);
+    assert.deepStrictEqual(decided(['x=1', "run bash -c 'x=2'", cond], 3), []);
+    // Without them, or when the file defines its own `run`, conditions are decided as in any script.
+    assert.deepStrictEqual(decided(['x=1', cond], 2), ['condition-always-true']);
+    assert.deepStrictEqual(decided(['run() { :; }', 'x=1', 'run', cond], 4), ['condition-always-true']);
+    // In a shell script, `load` and `run` are programs, which cannot set the script's variables.
+    const plain = new Analyzer('en').explainLine(parser.parse(['x=1', 'load helper', cond].join('\n')), 2);
+    assert.deepStrictEqual((plain.facts ?? []).map((f) => f.id), ['condition-always-true']);
+  });
+
   it('warns about `run cmd | …`', () => {
     assert.deepStrictEqual(ids(explain('test.bats', 21)!), ['bats-run-in-pipeline']);
     assert.match(explain('test.bats', 21)!.notes.join('\n'), /Pitfall: the pipe gets the output of `run`, but `run` writes nothing: it keeps the output of `printf 'a\\nb\\n'` in `\$output`/);
