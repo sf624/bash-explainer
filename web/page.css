@@ -754,12 +754,20 @@ body.resizing .problems-resize {
 }
 
 .field {
-  display: flex;
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 4px 8px;
   color: var(--vscode-foreground);
+}
+
+/* On a narrow sheet the label goes above its select, so that every select has the same full width. */
+@media (max-width: 420px) {
+  .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }
 
 .phone-only {
@@ -767,8 +775,12 @@ body.resizing .problems-resize {
 }
 
 @media (max-width: 767px) {
-  .phone-only {
+  .menu-item.phone-only {
     display: flex !important;
+  }
+
+  .field.phone-only {
+    display: grid !important;
   }
 }
 
@@ -778,13 +790,7 @@ body.resizing .problems-resize {
 }
 
 .field select {
-  flex: 0 1 12rem;
   min-width: 0;
-}
-
-/* The names of the file kinds are the longest of the menu's selects. */
-#kind-menu {
-  flex-basis: 16rem;
 }
 
 .menu-item {
