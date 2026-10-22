@@ -194,12 +194,12 @@ export function setUpProblems(
 const closing = new WeakMap<HTMLDialogElement, () => void>();
 
 /**
- * Closes a side sheet. On a narrow screen it slides out towards its edge, and the backdrop fades (as after a
- * swipe), then the dialog closes; elsewhere, and with reduced motion, it closes at once.
+ * Closes a side sheet. At every width it slides out towards its edge, as it slid in, and the backdrop fades (as
+ * after a swipe), then the dialog closes; with reduced motion it closes at once.
  */
 export function closeSheet(sheet: HTMLDialogElement): void {
   if (!sheet.open || closing.has(sheet)) return;
-  if (!narrow.matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     sheet.close();
     return;
   }
@@ -251,7 +251,6 @@ export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'r
   });
   // Esc slides it out too.
   sheet.addEventListener('cancel', (e) => {
-    if (!narrow.matches) return;
     e.preventDefault();
     closeSheet(sheet);
   });
