@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 Explanations follow the script as bash runs it and cite the Bash manual; the web page is redesigned for phones and gets the extension's settings.
 
@@ -34,7 +34,7 @@ Explanations follow the script as bash runs it and cite the Bash manual; the web
 - A Dockerfile `RUN` warns about a pipe without `pipefail` unless `set -o pipefail` runs before the pipe; before, the word `pipefail` anywhere in the `RUN`, even in a comment, silenced it.
 - On the web page, the Problems list shows `code` as code instead of raw backticks.
 
-[All changes](https://github.com/sf624/bash-explainer/compare/v0.6.0...main)
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.6.0...v0.7.0)
 
 ## 0.6.0
 
