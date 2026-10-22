@@ -1848,7 +1848,8 @@ export class Analyzer {
   }
 
   /** The text of an option not in the dictionary. */
-  private unknownOption(command: string, ambiguous?: string[]): string {
+  private unknownOption(command: string, spec: CommandSpec, ambiguous?: string[]): string {
+    if (spec.unknownOption) return this.t(spec.unknownOption);
     if (ambiguous) {
       const names = ambiguous.map((n) => `\`${n}\``).join(this.s('、', ', '));
       return this.s(`あいまいなオプション（先頭が同じ長いオプションが複数ある: ${names}）。${command.split(' ')[0]} は受け付けない`, `Ambiguous option (it starts several long options: ${names}); ${command.split(' ')[0]} refuses it`);
@@ -1867,7 +1868,7 @@ export class Analyzer {
 
   /** The token of an option word: one option, `--name=value`, or short options together (`-rn`, `-n5`, `-F'|'`). */
   private optionToken(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>, spec: CommandSpec, parse: ArgvParse): Token {
-    if (role.role !== 'cluster' && role.value && !role.part) return this.equalsToken(a, role, parse);
+    if (role.role !== 'cluster' && role.value && !role.part) return this.equalsToken(a, role, spec, parse);
     if (role.role === 'cluster' || role.part) {
       const parts = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => this.letterParts(a, l, spec, parse));
       const flags = parts.filter((p) => p.kind === 'option');
@@ -1876,7 +1877,7 @@ export class Analyzer {
         ? this.s(`短いオプション ${flags.map((p) => `\`${p.label}\``).join(' ')} をまとめて指定`, `Combined short options ${flags.map((p) => `\`${p.label}\``).join(' ')}`)
         : flags[0].explanation, flags.length > 1 ? parts : parts.filter((p) => p.kind === 'argument'));
     }
-    if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command, role.ambiguous));
+    if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command, spec, role.ambiguous));
     const flag = dash(role.flag);
     // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
     const listing = parse.command === 'set' && flag === '-o' && role.missing;
@@ -1888,7 +1889,7 @@ export class Analyzer {
   }
 
   /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
-  private equalsToken(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, parse: ArgvParse): Token {
+  private equalsToken(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' }>, spec: CommandSpec, parse: ArgvParse): Token {
     const value = role.value!;
     const whole = literalContent(a);
     const litEq = whole?.text.indexOf('=') ?? -1;
@@ -1899,7 +1900,7 @@ export class Analyzer {
       : undefined;
     const emb = value.spec?.lang && valueLit ? this.embeddedText(valueLit, value.spec.lang, a) : undefined;
     const extra = emb?.note ? ` — ${emb.note}` : '';
-    const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command, role.ambiguous);
+    const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command, spec, role.ambiguous);
     return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra + this.splicedNote(value), emb?.tokens ?? []);
   }
 
@@ -1922,7 +1923,7 @@ export class Analyzer {
   private letterParts(a: SyntaxNode, l: ArgRole, spec: CommandSpec, parse: ArgvParse): Token[] {
     const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
     const flag = dash(letter.flag);
-    if (letter.role === 'unknown-option') return [this.part(a, letter, flag, this.unknownOption(parse.command))];
+    if (letter.role === 'unknown-option') return [this.part(a, letter, flag, this.unknownOption(parse.command, spec))];
     const parts = [this.part(a, letter, flag, letter.disables ? this.turnedOff(flag, this.t(letter.text)) : this.t(letter.text))];
     const value = letter.value;
     if (!value) return parts;

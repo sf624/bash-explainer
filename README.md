@@ -94,7 +94,7 @@ Explanations follow bash. When a script is written for another shell, Bash Expla
 | Markdown | code blocks marked `sh`, `bash`, `console`, …; the shell is the block's shebang, else the one the tag names (`sh` counts as bash) |
 | Python | `subprocess.run(…)`, `os.system(…)`, …; flags strings passed without `shell=True` and values pasted into a shell command |
 | Jenkinsfile | `sh '…'`, `sh "…"`, `sh '''…'''`, `sh(script: …)`; points out the `$name` and `${…}` that Groovy fills in before the shell runs |
-| bats (`.bats`, or a `bats` shebang) | the whole file as bash: `@test "…" {` as the test bats runs with `set -e`, and `run` (with `!`, `-N`, `--separate-stderr`), `load`, `skip`, `bats_pipe`; warns about `! cmd` that cannot fail a test and `run cmd \| …` |
+| bats (`.bats`, or a `bats` shebang) | the whole file as bash: `@test "…" {` as the test bats runs with `set -e`, and `run` (with `!`, `-N`, `--separate-stderr`), `load`, `skip`, `bats_pipe`; warns about `! cmd` that cannot fail a test and `run` in a pipeline |
 
 Each snippet is checked for the shell that runs it (`/bin/sh` for Dockerfiles and Makefiles unless `SHELL` says otherwise). Choose which kinds of files with `bashExplainer.embedded.files`.
 

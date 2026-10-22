@@ -9,7 +9,8 @@
 // - A function body runs where the function is called (the walk records the calls): its chain starts with a
 //   `call` link that holds the chains of its calls. A function no call reaches runs where it is defined.
 // - A slot link comes from a command slot (src/argv/spec.ts) that runs a command: a program (`sudo cmd`, `xargs
-//   cmd`), another shell (`bash -c`, `su -c`, `ssh host cmd`) or the current shell again (`eval`, `command`).
+//   cmd`), another shell (`bash -c`, `su -c`, `ssh host cmd`), the current shell again (`eval`, `command`) or a
+//   subshell of it (bats `run`).
 //   What reaches the command is what every link on the way passes on (`env -i bash -c f`: no function).
 import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
@@ -277,7 +278,8 @@ export function processOf(env: ExecEnv): { kind: ProcessKind; sure: boolean; lin
       out = !sub.length ? { kind: 'main', sure: out.sure && !l.unsure }
         : { kind: 'subshell', sure: sub.length === all.length && sub.every((p) => p.sure) && !l.unsure, link: l };
     } else if (l.kind === 'slot') {
-      if (l.slot.run !== 'current-shell') out = { kind: l.slot.run === 'exec' ? 'program' : 'shell', sure: true, link: l };
+      if (l.slot.run === 'subshell') out = { kind: 'subshell', sure: true, link: l };
+      else if (l.slot.run !== 'current-shell') out = { kind: l.slot.run === 'exec' ? 'program' : 'shell', sure: true, link: l };
     } else if (out.kind === 'main' || out.kind === 'subshell') {
       // (The innermost subshell gives the reason: `( cd ) &` is in `( )`.)
       out = { kind: 'subshell', sure: l.sure || (out.kind === 'subshell' && out.sure), link: l };
@@ -309,7 +311,8 @@ export function reachOf(env: ExecEnv, shellopts = false): { functions: Reach; va
   let aliases: Reach = 'all';
   let blocker: SlotLink | undefined;
   for (const l of env.links) {
-    if (l.kind !== 'slot' || l.slot.run === 'current-shell') continue;
+    // (The current shell, or a subshell of it, has all of it.)
+    if (l.kind !== 'slot' || l.slot.run === 'current-shell' || l.slot.run === 'subshell') continue;
     const away = l.slot.where === 'remote' || l.slot.where === 'container';
     if (functions !== 'none') functions = away || l.env !== 'exported' ? 'none' : 'exported';
     if (variables !== 'none') variables = away || l.env === 'reset' || l.env === 'none' ? 'none' : 'exported';
