@@ -191,6 +191,53 @@ export function setUpProblems(
   };
 }
 
+const closing = new WeakMap<HTMLDialogElement, () => void>();
+
+/**
+ * Closes a side sheet. On a narrow screen it slides out towards its edge, and the backdrop fades (as after a
+ * swipe), then the dialog closes; elsewhere, and with reduced motion, it closes at once.
+ */
+export function closeSheet(sheet: HTMLDialogElement): void {
+  if (!sheet.open || closing.has(sheet)) return;
+  if (!narrow.matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    sheet.close();
+    return;
+  }
+  const side = sheet.classList.contains('menu') ? -1 : 1;
+  let timer = 0;
+  const reset = () => {
+    sheet.removeEventListener('transitionend', onEnd);
+    sheet.removeEventListener('close', reset);
+    clearTimeout(timer);
+    closing.delete(sheet);
+    sheet.classList.remove('closing');
+    sheet.style.transform = '';
+  };
+  const finish = () => {
+    reset();
+    sheet.close();
+  };
+  const onEnd = (e: TransitionEvent) => {
+    if (e.target === sheet && e.propertyName === 'transform') finish();
+  };
+  // Opened again while sliding out: it slides back. Closed by other means meanwhile: nothing is left over.
+  closing.set(sheet, reset);
+  sheet.addEventListener('close', reset);
+  sheet.addEventListener('transitionend', onEnd);
+  // In case no transition runs (the sheet is already out of the screen), and as a safety net.
+  timer = window.setTimeout(finish, 500);
+  sheet.classList.add('closing');
+  sheet.style.transform = `translateX(${side * 100}%)`;
+}
+
+/** Called when a sheet is asked to open: if it is sliding out, it comes back and this returns true. */
+export function reopenSheet(sheet: HTMLDialogElement): boolean {
+  const cancel = closing.get(sheet);
+  if (!cancel) return false;
+  cancel();
+  return true;
+}
+
 /**
  * A side sheet, a modal dialog along the right edge (the left one for the menu): Esc and a click beside it
  * close it (the browser keeps the focus inside while it is open), and so does a swipe towards its edge on a
@@ -200,7 +247,13 @@ export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'r
   // Towards the sheet's own edge is positive.
   const sign = side === 'right' ? 1 : -1;
   sheet.addEventListener('click', (e) => {
-    if (e.target === sheet) sheet.close();
+    if (e.target === sheet) closeSheet(sheet);
+  });
+  // Esc slides it out too.
+  sheet.addEventListener('cancel', (e) => {
+    if (!narrow.matches) return;
+    e.preventDefault();
+    closeSheet(sheet);
   });
   let start: { x: number; y: number; id: number } | undefined;
   sheet.addEventListener('pointerdown', (e) => {
@@ -221,7 +274,12 @@ export function setUpSheet(sheet: HTMLDialogElement, side: 'left' | 'right' = 'r
     start = undefined;
     sheet.classList.remove('dragging');
     sheet.style.transform = '';
-    if (e.type === 'pointerup' && dx > 80) sheet.close();
+    if (e.type === 'pointerup' && dx > 80) {
+      // Slides out from where the finger let go.
+      sheet.style.transform = `translateX(${sign * dx}px)`;
+      void sheet.offsetWidth;
+      closeSheet(sheet);
+    }
   };
   sheet.addEventListener('pointerup', end);
   sheet.addEventListener('pointercancel', end);

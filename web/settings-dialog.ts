@@ -1,5 +1,6 @@
 // The settings dialog of the web page: the settings of the VS Code extension that have a meaning here
 // (src/settings.ts), one control each, applied at once. The page keeps them (localStorage).
+import { closeSheet, reopenSheet } from './layout';
 import { Lang } from '../src/i18n';
 import { checkValue, exportSettings, Ignored, importSettings, parseJsonc, Settings, SettingSpec, SettingText, SETTINGS, settingsFor } from '../src/settings';
 
@@ -173,7 +174,7 @@ export class SettingsDialog {
     });
     // A click on the backdrop (outside the box) closes it.
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) dialog.close();
+      if (e.target === dialog) closeSheet(dialog);
     });
   }
 
@@ -182,6 +183,7 @@ export class SettingsDialog {
   }
 
   show(): void {
+    if (reopenSheet(this.dialog)) return;
     this.clearing = undefined;
     this.render();
     this.dialog.showModal();
@@ -329,7 +331,7 @@ export class SettingsDialog {
     const groups = [...new Set(here.map((x) => x.group))];
     const close = el('button', { type: 'button', className: 'icon-btn settings-x', textContent: '×', title: t.close });
     close.setAttribute('aria-label', t.close);
-    close.addEventListener('click', () => this.dialog.close());
+    close.addEventListener('click', () => closeSheet(this.dialog));
     const reset = el('button', { type: 'button', id: 'settings-reset', textContent: t.reset });
     reset.addEventListener('click', () => {
       this.draft = undefined;

@@ -28,7 +28,7 @@ import { FromPanel, panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown, ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
-import { narrow, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
+import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { Picker } from './picker';
 import { SettingsDialog } from './settings-dialog';
 import { clearStoredData, STORAGE_KEYS } from './storage';
@@ -1009,6 +1009,7 @@ showReadTip();
 window.addEventListener('resize', placeReadTip);
 on('readtip-close', 'click', () => hideReadTip(true));
 function openSettings(): void {
+  if (dialogElement && reopenSheet(dialogElement)) return;
   if (settingsDialog?.open || drawer?.open) return;
   settingsDialog?.show();
 }
@@ -1019,11 +1020,12 @@ if (dialogElement) setUpSheet(dialogElement);
 
 const drawer = document.getElementById('drawer') as HTMLDialogElement | null;
 function openMenu(): void {
-  if (!drawer || drawer.open || settingsDialog?.open) return;
+  if (!drawer || settingsDialog?.open) return;
+  if (reopenSheet(drawer) || drawer.open) return;
   drawer.showModal();
 }
 on('menu-open', 'click', openMenu);
-on('menu-close', 'click', () => drawer?.close());
+on('menu-close', 'click', () => drawer && closeSheet(drawer));
 if (drawer) setUpSheet(drawer, 'left');
 const edge = document.getElementById('edge');
 if (edge) setUpEdgeSwipe(edge, openMenu, 'left');
