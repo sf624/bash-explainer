@@ -865,6 +865,14 @@ function applyLanguage(): void {
   }
   $<HTMLSelectElement>('lang').value = lang;
   kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
+  // The same choice as a select in the menu, for a phone.
+  const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
+  if (menuKind) {
+    menuKind.replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind)));
+    menuKind.value = kind;
+    menuKind.setAttribute('aria-label', t.kind);
+    put('kind-label', t.kind);
+  }
 }
 
 // The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow.
@@ -1049,9 +1057,17 @@ const resetProblems = splitElement && !panelOnly
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'center' }) }));
 
+on('kind-menu', 'change', (e) => {
+  const k = (e.target as HTMLSelectElement).value as Kind;
+  kindPicker?.show(k);
+  chooseKind(k);
+});
+
 function chooseKind(k: Kind): void {
   const before = kindInfo(kind);
   kind = k;
+  const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
+  if (menuKind) menuKind.value = k;
   view.dispatch({ effects: languageMode.reconfigure(modeFor(kind)) });
   // An untouched sample gives way to the sample of the new kind; the user's own text stays.
   const text = view.state.doc.toString();

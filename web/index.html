@@ -41,10 +41,10 @@
     <span class="sep desk-only" aria-hidden="true"></span>
     <button id="collapse" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-collapse"/></svg></button>
     <button id="ref" class="icon-btn" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-book"/></svg></button>
-    <button id="copy-md" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+    <button id="copy-md" class="icon-btn desk-bar" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
     <span class="sep" aria-hidden="true"></span>
     <button id="sample" class="icon-btn wide-only" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg></button>
-    <button id="share" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg></button>
+    <button id="share" class="icon-btn desk-bar" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg></button>
     <button id="readmode" class="icon-btn touch-only" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-keyboard"/></svg><svg class="slash" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg></button>
     <button id="settings-open" class="icon-btn" type="button" aria-haspopup="dialog"><svg aria-hidden="true"><use href="#i-gear"/></svg><span id="settings-label" class="sr-only">Settings</span></button>
     <span class="sep wide-only" aria-hidden="true"></span>
@@ -75,6 +75,7 @@
   </header>
   <div class="sheet-body">
     <section class="menu-group">
+      <label class="field phone-only"><span id="kind-label">File</span><select id="kind-menu"></select></label>
       <label class="field"><span id="lang-label">Language</span><select id="lang"><option value="en">English</option><option value="ja">日本語</option></select></label>
       <label class="field"><span id="shell-label">Shell</span><select id="shell"></select></label>
       <label id="yq-box" class="field" hidden><span id="yq-label">yq</span><select id="yq"></select></label>
@@ -82,7 +83,7 @@
       <label class="field"><span id="channel-label">Version</span><select id="channel"></select></label>
     </section>
     <section class="menu-group">
-      <button id="menu-copy" class="menu-item tiny-only" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="menu-copy-label">Copy as Markdown</span></button>
+      <button id="menu-copy" class="menu-item phone-only" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="menu-copy-label">Copy as Markdown</span></button>
       <button id="menu-sample" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="menu-sample-label">Load the sample</span></button>
       <button id="menu-share" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
     </section>

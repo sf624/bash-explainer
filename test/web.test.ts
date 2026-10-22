@@ -1032,8 +1032,8 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
-  it('has no panel header on the page: fold, quick reference and copy are in the top bar at every width (360px, 1280px), the shell in the menu or the top bar (1200px and up)', async () => {
-    for (const [width, height] of [[360, 740], [1280, 800]]) {
+  it('has no panel header on the page: fold, quick reference and copy are in the top bar from 768px up (on a phone the copy and the link are in the menu), the shell in the menu or the top bar (1200px and up)', async () => {
+    for (const [width, height] of [[768, 800], [1280, 800]]) {
       const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
       await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
       const page = await ctx.newPage();
@@ -1055,7 +1055,7 @@ describe('the web page in a browser', function () {
       })()`)) as [number, number, number, string];
       assert.ok(start[0] === 0 && start[1] >= start[2] - 0.5 && start[3] === '#!', `${width}px: ${start}`);
       const wide = width >= 1200;
-      // The three buttons are in the top bar, inside it, and not in the menu (the copy is there below 360px only).
+      // The three buttons are in the top bar, inside it, and not in the menu (the copy is there on a phone only).
       for (const id of ['#collapse', '#ref', '#copy-md']) {
         assert.strictEqual(await page.locator(id).isVisible(), true, `${id} at ${width}px`);
         assert.strictEqual(await page.locator(`.top ${id}`).count(), 1);
@@ -1153,8 +1153,8 @@ describe('the web page in a browser', function () {
     }
   });
 
-  it('chooses the file kind with a compact picker, by mouse and by keyboard, and the sample follows', async () => {
-    for (const [width, height] of [[360, 740], [1280, 800]]) {
+  it('chooses the file kind with a compact picker in the top bar (768px and up), by mouse and by keyboard, and the sample follows', async () => {
+    for (const [width, height] of [[768, 800], [1280, 800]]) {
       const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
       const page = await ctx.newPage();
       await page.goto(base);
@@ -1166,9 +1166,9 @@ describe('the web page in a browser', function () {
       assert.strictEqual(await kind.getAttribute('aria-haspopup'), 'listbox');
       assert.strictEqual(await kind.getAttribute('aria-expanded'), 'false');
       assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Shell script');
-      assert.strictEqual(await kind.innerText(), width < 768 ? 'sh' : 'Shell script');
+      assert.strictEqual(await kind.innerText(), 'Shell script');
       const box = (await kind.boundingBox())!;
-      assert.ok(box.height >= (width < 768 ? 40 : 30) && box.width >= 40, JSON.stringify(box));
+      assert.ok(box.height >= 30 && box.width >= 40, JSON.stringify(box));
       assert.strictEqual(await list.isVisible(), false);
 
       // By mouse: open, choose; the list closes, the sample is the new kind's.
@@ -1186,7 +1186,7 @@ describe('the web page in a browser', function () {
       assert.strictEqual(await kind.getAttribute('aria-expanded'), 'false');
       await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
       assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Dockerfile');
-      assert.strictEqual(await kind.innerText(), width < 768 ? 'Docker' : 'Dockerfile');
+      assert.strictEqual(await kind.innerText(), 'Dockerfile');
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
       // A press outside closes it without a change.
       await kind.click();
@@ -1238,43 +1238,111 @@ describe('the web page in a browser', function () {
     }
   });
 
-  it('fits the top bar on phones from 320px to 430px: every button is there (the copy is in the menu below 360px), at least 40px to tap, nothing overflows', async () => {
+  it('has the logo and the name in the top bar of a phone, and the file kind, the copy and the link in the menu; from 320px to 430px, in both themes, nothing overflows and every button is 40px or more', async () => {
     const { devices } = await import('playwright-core');
-    for (const width of [320, 360, 390, 430]) {
-      for (const kind of ['shell', 'jenkinsfile']) {
-        const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width, height: 740 }, locale: 'en-US' });
+    for (const scheme of ['light', 'dark'] as const) {
+      for (const width of [320, 360, 390, 430]) {
+        const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width, height: 740 }, locale: 'en-US', colorScheme: scheme });
         await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
         const page = await ctx.newPage();
-        // "Jenkins" is the longest short name of a kind.
-        await page.goto(`${base}#kind=${kind}`);
+        await page.goto(base);
         await page.locator('.cm-line').nth(2).waitFor();
-        const ids = ['menu-open', 'kind', 'collapse', 'ref', 'copy-md', 'share', 'readmode', 'settings-open'].filter((id) => width >= 360 || id !== 'copy-md');
+        // Read mode on, as on a phone in use.
+        await page.locator('#readtip-close').tap().catch(() => undefined);
+        await page.locator('#readmode').tap();
+        const ids = ['menu-open', 'collapse', 'ref', 'readmode', 'settings-open'];
         const m = (await page.evaluate(`(() => {
           const t = document.querySelector('.top');
           const boxes = ${JSON.stringify(ids)}.map((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); return [id, e.getClientRects().length > 0, r.left, r.right, r.width, r.height]; });
-          const s = document.querySelector('.picker-short');
-          return { h: t.getBoundingClientRect().height, bar: t.scrollWidth <= t.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, boxes, copy: document.getElementById('copy-md').getClientRects().length > 0, short: s.textContent, whole: s.scrollWidth <= s.clientWidth + 0.5 };
-        })()`)) as { h: number; bar: boolean; page: boolean; boxes: [string, boolean, number, number, number, number][]; copy: boolean; short: string; whole: boolean };
-        const where = `${width}px ${kind}`;
+          const name = document.querySelector('.brand-name'), brand = document.querySelector('.brand'), img = document.querySelector('.brand img');
+          const shown = (sel) => document.querySelector(sel).getClientRects().length > 0;
+          return { h: t.getBoundingClientRect().height, bar: t.scrollWidth <= t.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, boxes,
+            brand: [brand.getBoundingClientRect().left, brand.getBoundingClientRect().right, img.getBoundingClientRect().width], whole: name.scrollWidth <= name.clientWidth, text: name.textContent, rows: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
+            hidden: ['#kind', '#copy-md', '#share'].map((s) => shown(s)), href: brand.getAttribute('href') };
+        })()`)) as { h: number; bar: boolean; page: boolean; boxes: [string, boolean, number, number, number, number][]; brand: [number, number, number]; whole: boolean; text: string; rows: number; hidden: boolean[]; href: string };
+        const where = `${width}px ${scheme}`;
         assert.ok(m.h <= 49 && m.bar && m.page && m.whole, `${where}: ${JSON.stringify(m)}`);
-        assert.strictEqual(m.short, kind === 'shell' ? 'sh' : 'Jenkins');
-        assert.strictEqual(m.copy, width >= 360, where);
+        assert.strictEqual(m.text, 'Bash Explainer');
+        assert.strictEqual(m.href, './');
+        assert.ok(m.brand[2] >= 24, where);
+        // One line from 390px, two lines below it.
+        assert.strictEqual(m.rows, width >= 390 ? 1 : 2, where);
+        assert.deepStrictEqual(m.hidden, [false, false, false], where);
         for (const [id, shown, left, right, w, h] of m.boxes) {
           assert.ok(shown && left >= 0 && right <= width + 0.5 && w >= 40 && h >= 40, `${where}: ${id} ${[shown, left, right, w, h]}`);
         }
-        // In order, and not on each other.
+        // In order, and not on each other: the menu, the logo and name, then the buttons.
+        assert.ok(m.brand[0] >= m.boxes[0][3] - 0.5 && m.boxes[1][2] >= m.brand[1] - 0.5, where);
         for (let i = 1; i < m.boxes.length; i++) assert.ok(m.boxes[i][2] >= m.boxes[i - 1][3] - 0.5, `${where}: ${m.boxes[i][0]}`);
-        if (width < 360 && kind === 'shell') {
-          // Below 360px the copy is in the menu, and works from there.
+        if (scheme === 'light' && (width === 320 || width === 390)) {
+          // The copy and the link work from the menu.
           await page.evaluate('navigator.clipboard.writeText("")');
           await page.locator('.cm-line').nth(7).tap();
-          await menuItem(page, '#menu-copy');
+          await page.locator('#menu-open').tap();
+          await page.locator('#menu-copy').tap();
           assert.strictEqual(await page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), false);
           const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
           assert.match(md, /`/);
+          await page.evaluate('navigator.clipboard.writeText("")');
+          await page.locator('#menu-open').tap();
+          await page.locator('#menu-share').tap();
+          const link = await until('the link', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.includes('#'));
+          assert.ok(link.startsWith(base), link);
         }
         await ctx.close();
       }
+    }
+  });
+
+  it('chooses the file kind from the menu on a phone, the sample follows, and the names follow the language', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+    assert.strictEqual(await page.locator('#kind').isVisible(), false);
+    await page.locator('#menu-open').tap();
+    const select = page.locator('#kind-menu');
+    // The first control of the menu, named "File", with every kind.
+    assert.strictEqual(await select.isVisible(), true);
+    assert.strictEqual(await select.getAttribute('aria-label'), 'File');
+    assert.strictEqual(await select.inputValue(), 'shell');
+    assert.strictEqual(await select.locator('option').count(), 8);
+    assert.strictEqual(await page.evaluate("document.querySelector('#drawer .field select').id"), 'kind-menu');
+    assert.ok((await select.boundingBox())!.height >= 40);
+    await select.selectOption('dockerfile');
+    await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+    assert.strictEqual(await select.inputValue(), 'dockerfile');
+    // The language: the label and the names of the kinds.
+    await choose(page, '#lang', 'ja');
+    await until('ja label', async () => (await select.getAttribute('aria-label')) ?? '', (t) => t === 'ファイル');
+    assert.strictEqual(await page.locator('#kind-label').textContent(), 'ファイル');
+    assert.strictEqual(await select.locator('option[value="shell"]').textContent(), 'シェルスクリプト');
+    assert.strictEqual(await select.inputValue(), 'dockerfile');
+    await ctx.close();
+  });
+
+  it('does not move the focus to the quick reference\'s search field on a touch screen (no on-screen keyboard), and does with a mouse', async () => {
+    const { devices } = await import('playwright-core');
+    for (const touch of [true, false]) {
+      const ctx = await browser!.newContext(touch ? { ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' } : { viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      if (touch) await page.locator('#ref').tap();
+      else await page.locator('#ref').click();
+      await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
+      const focused = () => panel().evaluate('document.activeElement && document.activeElement.id');
+      if (touch) {
+        await page.waitForTimeout(300);
+        assert.notStrictEqual(await focused(), 'ref-search');
+        assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
+      } else {
+        await until('the search field', async () => String(await focused()), (id) => id === 'ref-search');
+      }
+      await ctx.close();
     }
   });
 
@@ -1348,7 +1416,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await btn.getAttribute('aria-pressed'), 'false');
     assert.match((await btn.getAttribute('aria-label'))!, /^Read mode/);
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
-    const fits = async () => page.evaluate('(() => { const t = document.querySelector(".top"); const k = document.querySelector("#kind").getBoundingClientRect(); return [t.getBoundingClientRect().height, k.width, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; })()') as Promise<[number, number, boolean]>;
+    const fits = async () => page.evaluate('(() => { const t = document.querySelector(".top"); const k = document.querySelector(".brand").getBoundingClientRect(); return [t.getBoundingClientRect().height, k.width, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; })()') as Promise<[number, number, boolean]>;
     await btn.tap();
     assert.strictEqual(await btn.getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
@@ -1493,11 +1561,11 @@ describe('the web page in a browser', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     const open = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
-    // On a phone the top bar has the file kind, the fold, the quick reference, the copy, the link, the settings
-    // and the menu; the rest is in the menu.
+    // On a phone the top bar has the menu, the logo and name, the fold, the quick reference, read mode and the
+    // settings; the file kind, the copy, the link and the rest are in the menu.
     const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
-    assert.deepStrictEqual(await shown(['#kind', '#collapse', '#ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
-      [['#kind', true], ['#collapse', true], ['#ref', true], ['#copy-md', true], ['#share', true], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
+    assert.deepStrictEqual(await shown(['#kind', '.brand', '#collapse', '#ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
+      [['#kind', false], ['.brand', true], ['#collapse', true], ['#ref', true], ['#copy-md', false], ['#share', false], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
     assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
     assert.strictEqual(await page.locator('#share').getAttribute('aria-label'), 'Copy a link to this script');
     await page.locator('#menu-open').tap();
@@ -1508,7 +1576,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await page.locator('#menu-settings').count(), 0);
     const sheet = await until('the sheet in place', async () => (await page.locator('#drawer').boundingBox())!, (b) => Math.abs(b.x) < 0.5);
     assert.ok(sheet.width < 390, JSON.stringify(sheet));
-    for (const id of ['#lang', '#theme', '#channel', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
+    for (const id of ['#kind-menu', '#menu-copy', '#lang', '#theme', '#channel', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
       assert.strictEqual(await page.locator(id).isVisible(), true, id);
     }
     assert.match(await page.locator('#version').innerText(), /^Bash Explainer \d+\.\d+\.\d+/);
