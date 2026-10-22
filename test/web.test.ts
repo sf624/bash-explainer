@@ -186,10 +186,15 @@ describe('the web page in a browser', function () {
       const rows = [...document.querySelectorAll('#tree .row')].map((r) => r.getBoundingClientRect());
       return { lineTop: line.top, scrollY: window.scrollY, max: document.documentElement.scrollHeight - innerHeight, below: rows.some((r) => r.top >= line.bottom && r.bottom <= innerHeight) };
     })()`) as Promise<{ lineTop: number; scrollY: number; max: number; below: boolean }>;
-    assert.ok((await geometry()).max > 50, 'the explanation scrolls');
-    await panel().evaluate('window.scrollTo(0, 100000)');
-    const g = await until('scrolled', geometry, (x) => x.scrollY > 0);
-    assert.strictEqual(Math.round(g.lineTop), 0);
+    const start = await geometry();
+    assert.ok(start.max > 50, 'the explanation scrolls');
+    // It does not move at all, not even for the first pixels (it sticks where it starts).
+    for (const y of [3, 20, 100000]) {
+      await panel().evaluate(`window.scrollTo(0, ${y})`);
+      const at = await until('scrolled', geometry, (x) => x.scrollY > 0);
+      assert.ok(Math.abs(at.lineTop - start.lineTop) < 0.5, JSON.stringify({ y, start, at }));
+    }
+    const g = await geometry();
     assert.ok(g.below, JSON.stringify(g));
     await until('the edge', () => panel().locator('#line').evaluate((e) => e.classList.contains('stuck')), (v) => v);
     // Hovering a token of the sticky line still lights a segment and its row.

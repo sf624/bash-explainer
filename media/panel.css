@@ -77,8 +77,9 @@ pre#line {
   max-height: 40vh;
   white-space: pre;
   margin: 0 0 0.75rem;
+  /* Sticks where it starts (under the body's top padding), so on the web page, where the header is hidden, it does not move at all. */
   position: sticky;
-  top: 0;
+  top: 0.5rem;
   z-index: 2;
   box-shadow: 0 0 0 0.5rem var(--vscode-editor-background);
 }

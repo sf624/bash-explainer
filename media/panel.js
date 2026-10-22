@@ -357,7 +357,7 @@
   function syncLine() {
     const pre = $('line');
     document.documentElement.style.setProperty('--line-h', `${pre.offsetHeight}px`);
-    pre.classList.toggle('stuck', pre.getBoundingClientRect().top <= 0 && window.scrollY > 0);
+    pre.classList.toggle('stuck', window.scrollY > 0 && pre.getBoundingClientRect().top <= parseFloat(getComputedStyle(pre).top) + 0.5);
   }
   window.addEventListener('scroll', syncLine, { passive: true });
   window.addEventListener('resize', syncLine);
