@@ -263,6 +263,53 @@ describe('nested scripts: the model', () => {
     assert.strictEqual(start(`g() { bash -c ':'; }; x=1 g`).variables.get('x')?.set, 'on');
   });
 
+  it('starts the shell an env -S string names, with the env options around it, as bash and env do', function () {
+    // Each script ends with a string that prints `x` (or `unset`) and `$-`; the model's start state of that string
+    // must say the same.
+    const cases = [
+      `export x=1; env -S'bash -c' S`,
+      `export x=1; env -S'-u x bash -c' S`,
+      `export x=1; env -S'-u x' bash -c S`,
+      `export x=1; env -u x -S'bash -c' S`,
+      `export x=1; env -S'-i bash -c' S`,
+      `export x=1; env -i -S'bash -c' S`,
+      `export x=1; env -S'-i' bash -c S`,
+      `export x=1; env -iS'bash -c' S`,
+      `x=1; env -S'x=2 bash -c' S`,
+      `export x=1; env -S'-u x x=2 bash -c' S`,
+      `export x=1; env -u x -S'x=2' bash -c S`,
+      `x=1; env -S'-i x=2' bash -c S`,
+      `x=1 env -S'-i bash -c' S`,
+      `env -S'bash -e' -c S`,
+      `env -S'bash -e -c' S`,
+      `env -S'bash' -e -c S`,
+      `env -S'-u x bash -o nounset -c' S`,
+      `env -S"bash -c" S`,
+      `env --split-string='-i bash -c' S`,
+    ];
+    const string = `'printf "%s %s" "\${x-unset}" "$-"'`;
+    for (const c of cases) {
+      const src = c.replace(/S$/, string);
+      const tree = parser.parse(src);
+      const model = shellState(tree);
+      new Analyzer('en').explainLine(tree, 0);
+      const strings = descendants(tree.root, ['raw_string']);
+      const s = cached(model, strings[strings.length - 1]);
+      assert.deepStrictEqual([s.shell, s.known], [undefined, true], c);
+      const st = s.model.at(s.tree.root.namedChildren[0]).run;
+      const x = st.variables.get('x');
+      const flags = ([['errexit', 'e'], ['nounset', 'u']] as const).filter(([o]) => option(st, 'set', o) === 'on').map(([, l]) => l).join('');
+      const model_ = `${x?.set === 'on' ? x.value ?? 'set' : x === undefined || x.set === 'off' ? 'unset' : '?'} ${flags}`;
+      if (!hasBash) continue;
+      const r = spawnSync('bash', ['--norc', '--noprofile', '-c', src], { encoding: 'utf8', timeout: 10000, env: { ...process.env, FUNCNEST: '20', x: undefined } });
+      const [value, dash] = r.stdout.split(' ');
+      // (`$-` also has `h`, `B` and `c`; the model follows errexit and nounset here.)
+      const bash = `${x?.set === 'on' && x.value === undefined && value !== 'unset' ? 'set' : value} ${['e', 'u'].filter((l) => dash.includes(l)).join('')}`;
+      assert.strictEqual(model_, bash, c);
+    }
+    if (!hasBash) this.skip();
+  });
+
   it('reads a string of 200000 characters', () => {
     const long = `x=${'a'.repeat(200000)}`;
     const tree = parser.parse(`eval '${long}'; bash -c '${long}'`);
@@ -333,6 +380,10 @@ describe('nested scripts: the pitfall of a variable another shell does not get',
     assert.deepStrictEqual(notes(`n=1\ndocker run --env-file f img sh -c 'echo $n'`, 1), []);
     // A double-quoted string is expanded here: not read for the variables of another shell.
     assert.deepStrictEqual(notes(`n=1\nbash -c "echo $n"`, 1), []);
+    // (The shell and env's options in an `env -S` string count as they do written out.)
+    assert.match(notes(`n=1\nenv -S'bash -c' 'echo $n'`, 1).join(), /not exported/);
+    assert.deepStrictEqual(notes(`n=1\nenv -S'-i n=2 bash -c' 'echo $n'`, 1), []);
+    assert.match(notes(`export n=1\nenv -S'-i sh -c' 'echo $n'`, 1).join(), /passes none/);
   });
 });
 
