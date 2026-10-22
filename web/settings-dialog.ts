@@ -113,11 +113,32 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
   return e;
 }
 
-/** The Markdown of a description, as text and code spans (`code`, **bold**). */
-function rich(text: string): Node[] {
-  return text.split(/(`[^`]*`|\*\*[^*]*\*\*)/).filter(Boolean).map((part) => {
+/**
+ * The Markdown of a description, as text and code spans (`code`, **bold**), with VS Code's own syntax
+ * read as well: `#bashExplainer.key#` (a link to a setting, also inside a code span) is the name of
+ * the setting in code style, and a link that scrolls to it when the dialog has that setting;
+ * `[text](https://…)` is a link, and `[text](command:…)` (which only VS Code can follow) is its text.
+ */
+export function rich(text: string): Node[] {
+  const setting = (key: string): Node => {
+    const code = el('code', { textContent: `bashExplainer.${key}` });
+    if (!settingsFor('web').some((x) => x.key === key)) return code;
+    const a = el('a', { href: `#setting-${key.replace(/\./g, '-')}`, className: 'setting-link' }, code);
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const row = document.querySelector<HTMLElement>(`.setting[data-key="${key}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      row?.querySelector<HTMLElement>('input, select, textarea, fieldset')?.focus();
+    });
+    return a;
+  };
+  return text.split(/(`[^`]*`|\*\*[^*]*\*\*|#bashExplainer\.[\w.]+#|\[[^\]]*\]\([^)]*\))/).filter(Boolean).map((part) => {
+    const key = /^`?#bashExplainer\.([\w.]+)#`?$/.exec(part)?.[1];
+    if (key) return setting(key);
     if (part.startsWith('`')) return el('code', { textContent: part.slice(1, -1) });
     if (part.startsWith('**')) return el('strong', { textContent: part.slice(2, -2) });
+    const link = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(part);
+    if (link) return /^https?:/.test(link[2]) ? el('a', { href: link[2], textContent: link[1], target: '_blank', rel: 'noopener' }) : document.createTextNode(link[1]);
     return document.createTextNode(part);
   });
 }
