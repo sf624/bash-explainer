@@ -29,6 +29,7 @@ import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown, ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 import { narrow, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
+import { Picker } from './picker';
 import { SettingsDialog } from './settings-dialog';
 import { clearStoredData, STORAGE_KEYS } from './storage';
 
@@ -193,6 +194,12 @@ const kindInfo = (k: Kind) => KINDS.find((x) => x.kind === k) ?? KINDS[0];
 const shared = readHash();
 let lang: Lang = shared.lang ?? resolveLang(settings.language, navigator.language);
 let kind: Kind = shared.kind ?? 'shell';
+/** What the file kind's button shows on a narrow screen, where the whole name has no room. */
+const SHORT_KIND: Record<Kind, string> = { shell: 'sh', dockerfile: 'Docker', makefile: 'make', yaml: 'YAML', npm: 'npm', markdown: 'md', python: 'py', jenkinsfile: 'Jenkins' };
+const kindButton = document.getElementById('kind');
+const kindList = document.getElementById('kind-list');
+/** The file kind: a button with a list (the compare page has it too). */
+const kindPicker = kindButton instanceof HTMLButtonElement && kindList ? new Picker(kindButton, kindList, (v) => chooseKind(v as Kind)) : undefined;
 /** The shell and yq of the settings, as the panel's header shows them (undefined: auto). */
 const choice = () => ({ shell: forcedShell(settings), yq: settings['yq.flavor'] === 'auto' ? undefined : settings['yq.flavor'] });
 const parser = createUnbashParser();
@@ -546,20 +553,16 @@ const panelButton = (id: 'toggle' | 'ref') => frame?.contentDocument?.getElement
 function showPanelActions(): void {
   const tp = ui[lang].panel;
   const open = frame?.contentDocument?.getElementById('reference')?.hidden === false;
-  const names: [string, string, string][] = [
-    ['collapse', 'menu-collapse', panelButton('toggle')?.textContent || tp.collapseAll],
-    ['ref', 'menu-ref', panelButton('ref')?.textContent || tp.reference],
+  const names: [string, string][] = [
+    ['collapse', panelButton('toggle')?.textContent || tp.collapseAll],
+    ['ref', panelButton('ref')?.textContent || tp.reference],
+    ['copy-md', tp.copy],
   ];
-  for (const [button, item, name] of names) {
-    document.getElementById(button)?.setAttribute('aria-label', name);
-    document.getElementById(button)?.setAttribute('title', name);
-    put(`${item}-label`, name);
-  }
-  for (const id of ['ref', 'menu-ref']) document.getElementById(id)?.setAttribute('aria-pressed', String(open));
-  for (const [button, name] of [['copy-md', tp.copy]]) {
+  for (const [button, name] of names) {
     document.getElementById(button)?.setAttribute('aria-label', name);
     document.getElementById(button)?.setAttribute('title', name);
   }
+  document.getElementById('ref')?.setAttribute('aria-pressed', String(open));
   put('menu-copy-label', tp.copy);
   for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
     for (const id of [key, `${key}-top`]) {
@@ -588,7 +591,8 @@ function copyMarkdown(): void {
   void navigator.clipboard.writeText(md).then(() => status(TEXT[lang].copied));
 }
 
-for (const [id, act] of [['collapse', () => panelButton('toggle')?.click()], ['menu-collapse', () => panelButton('toggle')?.click()], ['copy-md', copyMarkdown], ['menu-copy', copyMarkdown], ['ref', () => panelButton('ref')?.click()], ['menu-ref', () => panelButton('ref')?.click()]] as const) {
+// Below 360px the copy is in the menu only (web/page.css), for the top bar's other buttons to keep their size.
+for (const [id, act] of [['collapse', () => panelButton('toggle')?.click()], ['copy-md', copyMarkdown], ['menu-copy', copyMarkdown], ['ref', () => panelButton('ref')?.click()]] as const) {
   on(id, 'click', () => {
     // The menu's item closes the menu first, as the others do.
     if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
@@ -800,7 +804,6 @@ function applyLanguage(): void {
   document.getElementById('readtip-close')?.setAttribute('aria-label', t.close);
   document.getElementById('readtip-close')?.setAttribute('title', t.close);
   placeReadTip();
-  put('kind-label', t.kind);
   put('lang-label', t.lang);
   put('menu-sample-label', t.sample);
   put('menu-share-label', t.share);
@@ -861,7 +864,7 @@ function applyLanguage(): void {
     $('dev-link').hidden = false;
   }
   $<HTMLSelectElement>('lang').value = lang;
-  $<HTMLSelectElement>('kind').replaceChildren(...KINDS.map((k) => new Option(t.kinds[k.kind] ?? k.name, k.kind, false, k.kind === kind)));
+  kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);
 }
 
 // The colours are CSS variables (theme.css): the attribute switches them, the editor and the panel follow.
@@ -1044,9 +1047,9 @@ const resetProblems = splitElement && !panelOnly
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'center' }) }));
 
-$<HTMLSelectElement>('kind').addEventListener('change', (e) => {
+function chooseKind(k: Kind): void {
   const before = kindInfo(kind);
-  kind = (e.target as HTMLSelectElement).value as Kind;
+  kind = k;
   view.dispatch({ effects: languageMode.reconfigure(modeFor(kind)) });
   // An untouched sample gives way to the sample of the new kind; the user's own text stays.
   const text = view.state.doc.toString();
@@ -1054,7 +1057,7 @@ $<HTMLSelectElement>('kind').addEventListener('change', (e) => {
   shade();
   updatePanel();
   recheck();
-});
+}
 
 on('sample', 'click', () => {
   const info = kindInfo(kind);

@@ -32,15 +32,16 @@
 <header class="top">
   <button id="menu-open" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="drawer"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
   <a class="brand" href="./" aria-label="Bash Explainer"><img src="icon.png" alt="" width="26" height="26"><span class="brand-name">Bash Explainer</span></a>
-  <label class="kind"><span id="kind-label" class="sr-only">File</span><select id="kind"></select></label>
+  <div class="kind"><button id="kind" class="picker" type="button"><span class="picker-name"></span><span class="picker-short" aria-hidden="true"></span><svg class="chev" aria-hidden="true" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button><ul id="kind-list" class="picker-list"></ul></div>
   <p class="tagline" id="tagline">Explains shell scripts line by line. Move the cursor to a line to see what it does.</p>
   <div class="actions">
     <label class="pick desk-only"><span id="shell-top-label" class="sr-only">Shell</span><select id="shell-top"></select></label>
     <label id="yq-top-box" class="pick desk-only" hidden><span id="yq-top-label" class="sr-only">yq</span><select id="yq-top"></select></label>
-    <button id="collapse" class="icon-btn desk-only" type="button"><svg aria-hidden="true"><use href="#i-collapse"/></svg></button>
-    <button id="copy-md" class="icon-btn desk-only" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
-    <button id="ref" class="icon-btn desk-only" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-book"/></svg></button>
     <span class="sep desk-only" aria-hidden="true"></span>
+    <button id="collapse" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-collapse"/></svg></button>
+    <button id="ref" class="icon-btn" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-book"/></svg></button>
+    <button id="copy-md" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg></button>
+    <span class="sep" aria-hidden="true"></span>
     <button id="sample" class="icon-btn wide-only" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg></button>
     <button id="share" class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg></button>
     <button id="readmode" class="icon-btn touch-only" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-keyboard"/></svg><svg class="slash" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg></button>
@@ -80,11 +81,7 @@
       <label class="field"><span id="channel-label">Version</span><select id="channel"></select></label>
     </section>
     <section class="menu-group">
-      <button id="menu-collapse" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-collapse"/></svg><span id="menu-collapse-label">Collapse all</span></button>
-      <button id="menu-copy" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="menu-copy-label">Copy as Markdown</span></button>
-      <button id="menu-ref" class="menu-item" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-book"/></svg><span id="menu-ref-label">Quick reference</span></button>
-    </section>
-    <section class="menu-group">
+      <button id="menu-copy" class="menu-item tiny-only" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg><span id="menu-copy-label">Copy as Markdown</span></button>
       <button id="menu-sample" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-sample"/></svg><span id="menu-sample-label">Load the sample</span></button>
       <button id="menu-share" class="menu-item" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg><span id="menu-share-label">Copy a link to this script</span></button>
     </section>

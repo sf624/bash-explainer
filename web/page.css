@@ -176,13 +176,108 @@ button {
 }
 
 .kind {
+  position: relative;
   display: flex;
   min-width: 0;
 }
 
-.kind select {
+/* The file kind: a button drawn as a select, with the whole name (a short one on a phone), and its list. */
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   max-width: 15rem;
+  padding: 0 8px 0 10px;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-short {
+  display: none;
+}
+
+.picker .chev {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.picker[aria-expanded="true"] {
+  border-color: var(--vscode-focusBorder);
+}
+
+.picker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: max(100%, 13rem);
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - var(--bar-h) - 16px);
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+}
+
+.picker-list[hidden] {
+  display: none;
+}
+
+.picker-list [role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The chosen kind has a check mark after its name. */
+.picker-list [aria-selected="true"] {
+  font-weight: 600;
+}
+
+.picker-list [aria-selected="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--vscode-focusBorder);
+}
+
+.picker-list [role="option"]:focus {
+  outline: none;
+  background: var(--accent-soft);
+}
+
+.picker-list [role="option"]:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .picker-list [role="option"]:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
 }
 
 .tagline {
@@ -793,7 +888,8 @@ body.resizing .problems-resize {
   }
 }
 
-/* The explanation's own controls (shell, fold, copy, quick reference) are in the menu until there is room for them here. */
+/* The shell and yq are in the menu until there is room for them here; the fold, the quick reference
+   and the copy are in the top bar at every width. */
 @media (max-width: 1199px) {
   .desk-only {
     display: none !important;
@@ -811,31 +907,63 @@ body.resizing .problems-resize {
 }
 
 /* Phones and narrow windows: the explanation below the script, and the top bar's main controls only
-   (the file kind, the link, the settings, the menu), each 44px wide to tap; the rest is in the menu. */
+   (the menu, the file kind with a short name, the fold, the quick reference, the copy, the link, read
+   mode, the settings), 44px to tap, down to 40px wide when the bar is short of room; the rest is in the menu. */
 @media (max-width: 767px) {
   :root {
     --gutter: 14px;
   }
 
   .top {
-    gap: 6px;
-    padding: 0 4px 0 10px;
+    gap: 2px;
+    padding: 0 4px;
   }
 
   .brand-name,
-  .wide-only {
+  .wide-only,
+  .actions .sep {
     display: none;
   }
 
+  /* The kind keeps its short name whole (the longest, "Jenkins", fits at 320px); the buttons narrow instead. */
   .kind {
-    flex: 1 1 auto;
+    flex: none;
   }
 
-  .kind select {
-    width: 100%;
-    max-width: none;
+  .picker {
+    gap: 2px;
+    min-width: 40px;
     min-height: 40px;
-    font-size: 14px;
+    padding: 0 4px 0 5px;
+    font-size: 12px;
+  }
+
+  .picker-name {
+    display: none;
+  }
+
+  .picker-short {
+    display: inline;
+  }
+
+  .picker .chev {
+    width: 10px;
+    height: 10px;
+  }
+
+  .picker-list [role="option"] {
+    min-height: 44px;
+  }
+
+  .actions {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 0;
+  }
+
+  .top .icon-btn {
+    flex: 0 1 44px;
+    min-width: 40px;
   }
 
   .tagline {
@@ -900,6 +1028,28 @@ body.resizing .problems-resize {
   #settings-dialog {
     width: 100vw;
     border-radius: 0;
+  }
+}
+
+/* A phone: no room for the logo beside the buttons. */
+@media (max-width: 479px) {
+  .brand {
+    display: none;
+  }
+}
+
+/* Below 360px the copy as Markdown is in the menu (the top bar keeps 40px for each of its buttons). */
+.menu-item.tiny-only {
+  display: none;
+}
+
+@media (max-width: 359px) {
+  .top #copy-md {
+    display: none;
+  }
+
+  .menu-item.tiny-only {
+    display: flex;
   }
 }
 

@@ -46,6 +46,12 @@ async function choose(page: Page, id: string, value: string): Promise<void> {
   await page.evaluate("document.getElementById('drawer')?.close()").catch(() => undefined);
 }
 
+/** Chooses the file kind with the top bar's picker, by mouse. */
+async function pickKind(page: Page, kind: string): Promise<void> {
+  await page.locator('#kind').click();
+  await page.locator(`#kind-list [data-value="${kind}"]`).click();
+}
+
 /** Presses an item of the page's menu (the panel's own header is not shown on the page). */
 async function menuItem(page: Page, id: string): Promise<void> {
   await page.locator('#menu-open').click();
@@ -349,9 +355,9 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await folded(), true);
     assert.strictEqual(await twisty(), '▸');
     // "Expand all" and "Collapse all" still work.
-    await menuItem(page, '#menu-collapse');
+    await page.locator('#collapse').click();
     assert.strictEqual(await panel().locator('#tree .collapsed').count(), 0);
-    await menuItem(page, '#menu-collapse');
+    await page.locator('#collapse').click();
     assert.strictEqual(await folded(), false);
     assert.strictEqual(await panel().locator('#tree .collapsed').count() > 0, true);
     await ctx.close();
@@ -588,7 +594,7 @@ describe('the web page in a browser', function () {
     await page.keyboard.insertText('\necho "typed"');
     await until('the typed line coloured', () => pieces('echo "typed"'), (p) => p.some((x) => x.startsWith('"typed"|cm-bx-string')));
     // A Dockerfile: its own mode for FROM and RUN, ours for the shell code after RUN.
-    await page.locator('#kind').selectOption('dockerfile');
+    await pickKind(page, 'dockerfile');
     page.once('dialog', (d) => void d.accept()); // replace the typed script with the sample
     await page.locator('#sample').click();
     const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get|cm-bx-command')));
@@ -1025,8 +1031,8 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
-  it('has no panel header on the page: its controls are in the top bar (1200px) and the menu (360px and up)', async () => {
-    for (const [width, height] of [[360, 740], [1200, 800]]) {
+  it('has no panel header on the page: fold, quick reference and copy are in the top bar at every width (360px, 1280px), the shell in the menu or the top bar (1200px and up)', async () => {
+    for (const [width, height] of [[360, 740], [1280, 800]]) {
       const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
       await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
       const page = await ctx.newPage();
@@ -1048,20 +1054,22 @@ describe('the web page in a browser', function () {
       })()`)) as [number, number, number, string];
       assert.ok(start[0] === 0 && start[1] >= start[2] - 0.5 && start[3] === '#!', `${width}px: ${start}`);
       const wide = width >= 1200;
-      const via = async (top: string, menu: string) => {
-        if (wide) return page.locator(top).click();
-        await page.locator('#menu-open').click();
-        return page.locator(menu).click();
-      };
-      assert.strictEqual(await page.locator('#collapse').isVisible(), wide);
-      assert.strictEqual(await page.locator('#shell-top').isVisible(), wide);
-      if (wide) {
-        // Still one row of 48px, with nothing hanging out of the bar.
-        const bar = (await page.evaluate('(() => { const t = document.querySelector(".top"); return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth]; })()')) as [number, boolean];
-        assert.deepStrictEqual(bar, [48, true]);
-        const names = await page.evaluate('["collapse", "copy-md", "ref", "shell-top"].map((id) => document.getElementById(id).getAttribute("aria-label"))');
-        assert.deepStrictEqual(names, ['Collapse all', 'Copy as Markdown', 'Quick reference', 'Shell']);
+      // The three buttons are in the top bar, inside it, and not in the menu (the copy is there below 360px only).
+      for (const id of ['#collapse', '#ref', '#copy-md']) {
+        assert.strictEqual(await page.locator(id).isVisible(), true, `${id} at ${width}px`);
+        assert.strictEqual(await page.locator(`.top ${id}`).count(), 1);
       }
+      assert.strictEqual(await page.locator('#menu-collapse, #menu-ref').count(), 0);
+      await page.locator('#menu-open').click();
+      assert.strictEqual(await page.locator('#menu-copy').isVisible(), false);
+      await page.evaluate("document.getElementById('drawer').close()");
+      assert.strictEqual(await page.locator('#shell-top').isVisible(), wide);
+      // Still one row of 48px, with nothing hanging out of the bar.
+      const bar = (await page.evaluate('(() => { const t = document.querySelector(".top"); return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth]; })()')) as [number, boolean];
+      assert.deepStrictEqual(bar, [48, true]);
+      const names = await page.evaluate('["collapse", "copy-md", "ref"].map((id) => [document.getElementById(id).getAttribute("aria-label"), document.getElementById(id).title])');
+      assert.deepStrictEqual(names, [['Collapse all', 'Collapse all'], ['Copy as Markdown', 'Copy as Markdown'], ['Quick reference', 'Quick reference']]);
+      if (wide) assert.strictEqual(await page.locator('#shell-top').getAttribute('aria-label'), 'Shell');
 
       // Shell: the setting, as the panel's select was.
       if (wide) await page.locator('#shell-top').selectOption('dash');
@@ -1073,39 +1081,175 @@ describe('the web page in a browser', function () {
       // Collapse all, then Expand all.
       await page.locator('.cm-line').nth(7).click();
       await until('a tree', () => panel().locator('#tree li li').count(), (n) => n > 0);
-      await via('#collapse', '#menu-collapse');
+      await page.locator('#collapse').click();
       await until('collapsed', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
-      assert.strictEqual(await page.locator('#collapse').getAttribute('aria-label'), 'Expand all');
-      assert.strictEqual(await page.locator('#menu-collapse-label').textContent(), 'Expand all');
-      await via('#collapse', '#menu-collapse');
+      await until('the name', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Expand all');
+      assert.strictEqual(await page.locator('#collapse').getAttribute('title'), 'Expand all');
+      await page.locator('#collapse').click();
       await until('expanded', () => panel().locator('#tree .collapsed').count(), (n) => n === 0);
 
       // Copy as Markdown.
       await page.evaluate('navigator.clipboard.writeText("")');
-      await via('#copy-md', '#menu-copy');
+      await page.locator('#copy-md').click();
       const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
       assert.match(md, /`/);
 
       // Quick reference, and back.
-      await via('#ref', '#menu-ref');
+      await page.locator('#ref').click();
       await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
       assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'true');
-      assert.strictEqual(await page.locator('#menu-ref-label').textContent(), '← Back to the explanation');
-      await via('#ref', '#menu-ref');
+      await until('the name', async () => (await page.locator('#ref').getAttribute('aria-label')) ?? '', (t) => t === '← Back to the explanation');
+      await page.locator('#ref').click();
       await until('the explanation again', () => panel().locator('#main').isVisible(), (v) => v);
+      assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'false');
 
-      // Keyboard access: the menu's items are buttons in the tab order.
-      await page.locator('#menu-open').focus();
+      // Keyboard access: the buttons are in the tab order and work with Enter and Space.
+      await page.locator('#collapse').focus();
       await page.keyboard.press('Enter');
-      await page.locator('#menu-copy').focus();
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-copy');
-      await page.evaluate("document.getElementById('drawer').close()");
+      await until('collapsed by the keyboard', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
+      await page.keyboard.press('Space');
+      await until('the reference by the keyboard', () => panel().locator('#reference').isVisible(), (v) => v);
+      // (The quick reference takes the focus to its search field.)
+      await page.locator('#ref').focus();
+      await page.keyboard.press('Enter');
+      await until('the explanation by the keyboard', () => panel().locator('#main').isVisible(), (v) => v);
+      await page.locator('#ref').focus();
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'copy-md');
 
       // Japanese names.
       await choose(page, '#lang', 'ja');
-      await until('ja names', async () => (await page.locator('#menu-copy-label').textContent()) ?? '', (t) => t === 'Markdown でコピー');
+      await until('ja names', async () => (await page.locator('#copy-md').getAttribute('aria-label')) ?? '', (t) => t === 'Markdown でコピー');
+      assert.strictEqual(await page.locator('#copy-md').getAttribute('title'), 'Markdown でコピー');
       assert.strictEqual(await page.locator('#shell-label').textContent(), 'シェル');
       await ctx.close();
+    }
+  });
+
+  it('chooses the file kind with a compact picker, by mouse and by keyboard, and the sample follows', async () => {
+    for (const [width, height] of [[360, 740], [1280, 800]]) {
+      const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const kind = page.locator('#kind');
+      const list = page.locator('#kind-list');
+      const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+      // A button that says what it opens, with the kind as its name; a short name on a phone, the whole one on a desktop.
+      assert.strictEqual(await kind.getAttribute('aria-haspopup'), 'listbox');
+      assert.strictEqual(await kind.getAttribute('aria-expanded'), 'false');
+      assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Shell script');
+      assert.strictEqual(await kind.innerText(), width < 768 ? 'sh' : 'Shell script');
+      const box = (await kind.boundingBox())!;
+      assert.ok(box.height >= (width < 768 ? 40 : 30) && box.width >= 40, JSON.stringify(box));
+      assert.strictEqual(await list.isVisible(), false);
+
+      // By mouse: open, choose; the list closes, the sample is the new kind's.
+      await kind.click();
+      assert.strictEqual(await kind.getAttribute('aria-expanded'), 'true');
+      assert.strictEqual(await list.isVisible(), true);
+      assert.strictEqual(await list.getAttribute('role'), 'listbox');
+      assert.strictEqual(await list.locator('[role="option"]').count(), 8);
+      assert.strictEqual(await list.locator('[aria-selected="true"]').innerText(), 'Shell script');
+      // The list is in the window.
+      const lb = (await list.boundingBox())!;
+      assert.ok(lb.x >= 0 && lb.x + lb.width <= width && lb.y + lb.height <= height, JSON.stringify(lb));
+      await list.locator('[data-value="dockerfile"]').click();
+      assert.strictEqual(await list.isVisible(), false);
+      assert.strictEqual(await kind.getAttribute('aria-expanded'), 'false');
+      await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+      assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Dockerfile');
+      assert.strictEqual(await kind.innerText(), width < 768 ? 'Docker' : 'Dockerfile');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
+      // A press outside closes it without a change.
+      await kind.click();
+      await page.mouse.click(width - 5, height - 5);
+      assert.strictEqual(await list.isVisible(), false);
+      assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Dockerfile');
+
+      // By keyboard: the focus goes to the chosen one, the arrows move, Escape closes without a change
+      // and gives the focus back, Enter chooses.
+      await kind.focus();
+      await page.keyboard.press('ArrowDown');
+      assert.strictEqual(await list.isVisible(), true);
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'dockerfile');
+      await page.keyboard.press('ArrowDown');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'makefile');
+      await page.keyboard.press('Escape');
+      assert.strictEqual(await list.isVisible(), false);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
+      assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Dockerfile');
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await list.isVisible(), true);
+      await page.keyboard.press('End');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'jenkinsfile');
+      await page.keyboard.press('ArrowUp');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'python');
+      await page.keyboard.press('Home');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'shell');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      assert.strictEqual(await list.isVisible(), false);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
+      await until('the Makefile sample', text, (t) => !/^FROM /m.test(t) && /^\S+:/m.test(t));
+      assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Makefile');
+      // Tab closes the list and goes on from the button.
+      await page.keyboard.press('Space');
+      assert.strictEqual(await list.isVisible(), true);
+      await page.keyboard.press('Tab');
+      assert.strictEqual(await list.isVisible(), false);
+      assert.notStrictEqual(await page.evaluate('document.activeElement.id'), 'kind');
+
+      // The names follow the language.
+      await choose(page, '#lang', 'ja');
+      await until('ja name', async () => (await kind.getAttribute('aria-label')) ?? '', (t) => t === 'ファイル: Makefile');
+      await kind.click();
+      assert.strictEqual(await list.getAttribute('aria-label'), 'ファイル');
+      assert.strictEqual(await list.locator('[data-value="shell"]').innerText(), 'シェルスクリプト');
+      await ctx.close();
+    }
+  });
+
+  it('fits the top bar on phones from 320px to 430px: every button is there (the copy is in the menu below 360px), at least 40px to tap, nothing overflows', async () => {
+    const { devices } = await import('playwright-core');
+    for (const width of [320, 360, 390, 430]) {
+      for (const kind of ['shell', 'jenkinsfile']) {
+        const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width, height: 740 }, locale: 'en-US' });
+        await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.slice(0, -1) });
+        const page = await ctx.newPage();
+        // "Jenkins" is the longest short name of a kind.
+        await page.goto(`${base}#kind=${kind}`);
+        await page.locator('.cm-line').nth(2).waitFor();
+        const ids = ['menu-open', 'kind', 'collapse', 'ref', 'copy-md', 'share', 'readmode', 'settings-open'].filter((id) => width >= 360 || id !== 'copy-md');
+        const m = (await page.evaluate(`(() => {
+          const t = document.querySelector('.top');
+          const boxes = ${JSON.stringify(ids)}.map((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); return [id, e.getClientRects().length > 0, r.left, r.right, r.width, r.height]; });
+          const s = document.querySelector('.picker-short');
+          return { h: t.getBoundingClientRect().height, bar: t.scrollWidth <= t.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, boxes, copy: document.getElementById('copy-md').getClientRects().length > 0, short: s.textContent, whole: s.scrollWidth <= s.clientWidth + 0.5 };
+        })()`)) as { h: number; bar: boolean; page: boolean; boxes: [string, boolean, number, number, number, number][]; copy: boolean; short: string; whole: boolean };
+        const where = `${width}px ${kind}`;
+        assert.ok(m.h <= 49 && m.bar && m.page && m.whole, `${where}: ${JSON.stringify(m)}`);
+        assert.strictEqual(m.short, kind === 'shell' ? 'sh' : 'Jenkins');
+        assert.strictEqual(m.copy, width >= 360, where);
+        for (const [id, shown, left, right, w, h] of m.boxes) {
+          assert.ok(shown && left >= 0 && right <= width + 0.5 && w >= 40 && h >= 40, `${where}: ${id} ${[shown, left, right, w, h]}`);
+        }
+        // In order, and not on each other.
+        for (let i = 1; i < m.boxes.length; i++) assert.ok(m.boxes[i][2] >= m.boxes[i - 1][3] - 0.5, `${where}: ${m.boxes[i][0]}`);
+        if (width < 360 && kind === 'shell') {
+          // Below 360px the copy is in the menu, and works from there.
+          await page.evaluate('navigator.clipboard.writeText("")');
+          await page.locator('.cm-line').nth(7).tap();
+          await menuItem(page, '#menu-copy');
+          assert.strictEqual(await page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), false);
+          const md = await until('the copy', () => page.evaluate('navigator.clipboard.readText()') as Promise<string>, (t) => t.length > 0);
+          assert.match(md, /`/);
+        }
+        await ctx.close();
+      }
     }
   });
 
@@ -1184,7 +1328,7 @@ describe('the web page in a browser', function () {
     assert.strictEqual(await btn.getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
     const [h, w, ok] = await fits();
-    assert.ok(h <= 49 && w > 100 && ok, String([h, w, ok]));
+    assert.ok(h <= 49 && w >= 40 && ok, String([h, w, ok]));
     // A tap in the editor moves the cursor, and the explanation follows.
     const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
     const lineOf = () => page.evaluate('document.querySelector(".cm-activeLine") && [...document.querySelectorAll(".cm-line")].indexOf(document.querySelector(".cm-activeLine"))') as Promise<number>;
@@ -1324,10 +1468,11 @@ describe('the web page in a browser', function () {
     await page.goto(base);
     await page.locator('.cm-line').first().waitFor();
     const open = () => page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open);
-    // On a phone the top bar has the file kind, the link, the settings and the menu; the rest is in the menu.
+    // On a phone the top bar has the file kind, the fold, the quick reference, the copy, the link, the settings
+    // and the menu; the rest is in the menu.
     const shown = async (ids: string[]) => Promise.all(ids.map(async (id) => [id, await page.locator(id).isVisible()]));
-    assert.deepStrictEqual(await shown(['#kind', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
-      [['#kind', true], ['#share', true], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
+    assert.deepStrictEqual(await shown(['#kind', '#collapse', '#ref', '#copy-md', '#share', '#settings-open', '#menu-open', '#sample', '#github', '#install']),
+      [['#kind', true], ['#collapse', true], ['#ref', true], ['#copy-md', true], ['#share', true], ['#settings-open', true], ['#menu-open', true], ['#sample', false], ['#github', false], ['#install', false]]);
     assert.strictEqual(await page.locator('#menu-open').getAttribute('aria-label'), 'Menu');
     assert.strictEqual(await page.locator('#share').getAttribute('aria-label'), 'Copy a link to this script');
     await page.locator('#menu-open').tap();
