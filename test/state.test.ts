@@ -412,37 +412,89 @@ describe('shell state: arithmetic', () => {
     return !v ? 'none' : v.set === 'on' ? `set${v.value === undefined ? '' : `=${v.value}`}` : v.set;
   });
   it('gives no value when an operand is not known', () => {
-    assert.deepStrictEqual(after('x=$y; a=(1); z=a; q=w\n(( b = x, c = a, e = Z, f = -Z, g = Z += 1, i = $q, j = "3" ))', 'b', 'c', 'e', 'f', 'g', 'i', 'j'),
-      ['set', 'set', 'set', 'set', 'set', 'set=0', 'set=3']);
     // A text pasted that is not known may change the expression: what it seems to assign may be.
     assert.deepStrictEqual(after('(( h = $1 )); (( k = $(echo 1), l = 2 )); m=1; (( m = 2, n = ${#m} ))', 'h', 'k', 'l', 'm', 'n'), ['unknown', 'unknown', 'unknown', 'set', 'unknown']);
-    assert.deepStrictEqual(after('[ "$1" ] && x=1\narr=(1); (( a = x, c = 2 ** 200, d = 1 << 64 )); (( e = $(( Z )) )); (( f = $nope )); (( g = $arr ))', 'a', 'c', 'd', 'e', 'f', 'g'), ['set', 'set', 'set', 'unknown', 'none', 'unknown']);
+    // (`f = ` is a syntax error.)
+    assert.deepStrictEqual(after('arr=(1); q=w; (( c = 2 ** 200, d = 1 << 64 )); (( e = $(( Z )) )); (( f = $nope )); (( g = $arr )); (( i = $q, j = "3" ))', 'c', 'd', 'e', 'f', 'g', 'i', 'j'),
+      ['set', 'set', 'unknown', 'unknown', 'unknown', 'set=0', 'set=3']);
     // (An error in a subshell's expansion stays there.)
     assert.deepStrictEqual(after(': $(( a = 1, 1 / 0 )) | cat', 'a'), ['none']);
     // (A shift by a negative count or by 64 or more depends on the machine; a nameref to an element is not followed.)
-    assert.deepStrictEqual(after('declare -n e=\'a[1]\'; (( a = 1 << -1, b = 1 << 64, c = 1 >> -1, d = 1 >> 64, f = e ))', 'a', 'b', 'c', 'd', 'f'), ['set', 'set', 'set', 'set', 'set']);
+    assert.deepStrictEqual(after('declare -n e=\'a[1]\'; (( a = 1 << -1, b = 1 << 64, c = 1 >> -1, d = 1 >> 64, f = e ))', 'a', 'b', 'c', 'd', 'f'), ['set', 'set', 'set', 'set', 'unknown']);
     assert.deepStrictEqual(after('declare x; declare -n r; (( a = x, b = 1 && 2, c = 0 || 3, d = 1 ? 4 : 4, e = r ))', 'a', 'b', 'c', 'd', 'e'), ['set=0', 'set=1', 'set=1', 'set=4', 'set=0']);
-    // Errors bash reports: a missing operand, a name that leads back to itself.
-    assert.deepStrictEqual(after('z=y; y=z; (( a = 1, l = 1 + )); (( b = 1, m = z )); for (( c = 1, i = ; ; )); do break; done', 'a', 'l', 'b', 'm', 'c', 'i'),
-      ['set=1', 'none', 'set=1', 'none', 'set=1', 'none']);
+    // A name that leads back to itself is an error.
+    assert.deepStrictEqual(after('z=y; y=z; (( b = 1, m = z ))', 'b', 'm'), ['set=1', 'none']);
+  });
+  it('reads a value not known as an expression that may fail or assign: what is assigned after it may be', () => {
+    // (bash runs the value: `x='z = 9'` sets z; `x=/home` is an error, which ends the expression.)
+    assert.deepStrictEqual(after('x=$y; a=(1)\n(( b = 1, c = x, d = 2 )); (( e = a[0] )); (( f = HOME )); read n; (( g = n ))', 'b', 'c', 'd', 'e', 'f', 'g'),
+      ['set=1', 'unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
+    // A variable set before stays set, to a value not known (bash: 0).
+    assert.deepStrictEqual(after('total=0; while read n; do (( total += n )); done', 'total'), ['set']);
+    // Values that are numbers: an integer variable, one bash changes itself.
+    assert.deepStrictEqual(after('declare -i n=$1; (( a = n, b = RANDOM, c = 1, d = -n ))', 'a', 'b', 'c', 'd'), ['set', 'set', 'set=1', 'set']);
+    // (Also a value read from a value.)
+    assert.deepStrictEqual(after('x=HOME; (( a = 1, b = x, c = 2 )); (( d = x ))', 'a', 'b', 'c', 'd'), ['set=1', 'unknown', 'unknown', 'unknown']);
+  });
+  it('says nothing sure of a name not set once a file was sourced, a string run or a trap set', () => {
+    // (bash: y=4 each time; foo=3 comes from the file, the string, the trap.)
+    assert.deepStrictEqual(after('(( a = foo + 1 )); source ./c.sh; (( b = foo + 1 ))', 'a', 'b'), ['set=1', 'unknown']);
+    assert.deepStrictEqual(after('. ./c.sh; (( b = foo + 1 ))', 'b'), ['unknown']);
+    assert.deepStrictEqual(after('eval "$cmd"; (( b = foo + 1 ))', 'b'), ['unknown']);
+    assert.deepStrictEqual(after('trap \'foo=3\' USR1; (( b = foo + 1 ))', 'b'), ['unknown']);
+    // (Resetting a trap, or ignoring a signal, runs nothing.)
+    assert.deepStrictEqual(after('trap - USR1; trap \'\' INT; (( b = foo + 1 ))', 'b'), ['set=1']);
+    // A value read before is not taken again for one that may have changed.
+    assert.deepStrictEqual(after('x=\'foo + 1\'; (( a = x )); source ./c.sh; (( b = x ))', 'a', 'b'), ['set=1', 'unknown']);
+  });
+  it('reads ++ and -- as bash does', () => {
+    // After a name, `x++`; before one, `++x`; elsewhere, a sign (bash: y=8 z=8 w=8 v=4, 4 and x=3).
+    assert.deepStrictEqual(after('x=-3; (( y = 5-$x ))', 'y'), ['set=8']);
+    assert.deepStrictEqual(after('(( y = 5 --3, z = 5 ++ 3, w = 5 -- (3), v = 7 ---3 ))', 'y', 'z', 'w', 'v'), ['set=8', 'set=8', 'set=8', 'set=4']);
+    assert.deepStrictEqual(after('x=2; (( y = 1 +++x ))', 'y', 'x'), ['set=4', 'set=3']);
+    // (bash: `x---3` is `x-- - 3`.)
+    assert.deepStrictEqual(after('x=2; (( y = x++ + ++x, z = x---3, a[1]++, w = ++ x ))', 'y', 'z', 'w', 'x'), ['set=6', 'set=1', 'set=4', 'set=4']);
+    // (`++5` is two signs; inside a subscript too.)
+    assert.deepStrictEqual(after('(( y = ++5, a[5--3] = 1 ))', 'y'), ['set=5']);
+    // bash fails on `++x++`; the parser reads `x++ 3` and `x ++y` otherwise.
+    assert.deepStrictEqual(after('x=2; (( y = ++x++ )); (( z = x++ 3 )); (( w = x ++y ))', 'y', 'z', 'w', 'x'), ['unknown', 'unknown', 'unknown', 'set']);
+  });
+  it('takes a syntax error as not known: bash has made the assignments before it', () => {
+    // (bash: y=1; y=3 z unset; y=1 z=1; a=1 c=1; y=0 twice.)
+    assert.deepStrictEqual(after('(( y = 1 2 ))', 'y'), ['unknown']);
+    assert.deepStrictEqual(after('(( y = 3, , z = 4 ))', 'y', 'z'), ['unknown', 'unknown']);
+    assert.deepStrictEqual(after('(( y = 1, z = 1 2 ))', 'y', 'z'), ['unknown', 'unknown']);
+    assert.deepStrictEqual(after('(( a = 1, l = 1 + )); for (( c = 1, i = ; ; )); do break; done', 'a', 'l', 'c', 'i'), ['unknown', 'unknown', 'unknown', 'unknown']);
+    // A missing operand of `?:`.
+    assert.deepStrictEqual(after('y=0; (( y = 1 ? 2 : )); z=0; (( z = 1 ? : 3 ))', 'y', 'z'), ['set', 'set']);
+    // Text left in a value read (bash: an error); base 64's `@` next to other terms (bash: y=63).
+    assert.deepStrictEqual(after('v=\'$z\'; (( w = v )); (( y = 64#@ + 1 ))', 'w', 'y'), ['unknown', 'unknown']);
   });
   it('may assign on a side the condition does not decide', () => {
-    assert.deepStrictEqual(after('(( Z ? v = 1 : (w = 2), Z && (o = 2), Z || (p = 3), q = Z && 1, r = 1 && Z ))', 'v', 'w', 'o', 'p', 'q', 'r'), ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'set']);
-    assert.deepStrictEqual(after('(( Z ? 1 : 2, Z && 1 ))', 'Z'), ['none']);
+    assert.deepStrictEqual(after('declare -i u=$1; (( u ? v = 1 : (w = 2), u && (o = 2), u || (p = 3), q = u && 1, r = 1 && u ))', 'v', 'w', 'o', 'p', 'q', 'r'), ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'set']);
+    assert.deepStrictEqual(after('declare -i u=$1; (( u ? 1 : 2, u && 1 ))', 'u'), ['set']);
     // An operand of `${…}` may not be expanded.
     assert.deepStrictEqual(after('s=abc; echo ${s:$(( k = 1 ))} ${s:-$(( 2 ))}', 'k'), ['unknown']);
     // A command whose name is not known may be a program, which makes its redirections in its own process.
     assert.deepStrictEqual(after('$cmd > f$(( a = 1 )); $cmd > ${b:=x}; ls > ${c:=x}; { $cmd; } > f$(( d = 1 )); command > f$(( e = 1 ))', 'a', 'b', 'c', 'd', 'e'),
       ['unknown', 'unknown', 'none', 'set=1', 'set=1']);
+    // (`command -v` and `-pv` only look the name up.)
+    assert.deepStrictEqual(after('command -pv ls > f$(( a = 1 )); command -V ls > f$(( b = 1 ))', 'a', 'b'), ['set=1', 'set=1']);
     // An array that may be associative: its subscript may be arithmetic.
     assert.deepStrictEqual(after('[ "$1" ] && declare -A m\ni=0; (( m[i++] = 1 ))', 'i'), ['set']);
     // An error there discards the command: what came before it may have been assigned.
     assert.deepStrictEqual(after('s=abc; echo ${s:$(( a = 1, 1 / 0 ))}; $cmd > f$(( b = 1, 1 / 0 )); echo $(( c = 1, 1 / 0 ))', 'a', 'b', 'c'), ['unknown', 'unknown', 'set=1']);
   });
+  it('expands the value of an assignment before its subscript', () => {
+    // (Not with `declare`, which expands its words in order: bash gives j=0, then j=1.)
+    assert.deepStrictEqual(after('i=0; arr[$(( i++ ))]=$(( j = i ))', 'i', 'j'), ['set=1', 'set=0']);
+    assert.deepStrictEqual(after('i=0; declare arr[$(( i++ ))]=$(( j = i ))', 'i', 'j'), ['set=1', 'set=1']);
+  });
   it('reads what it can of arithmetic the parser does not read', () => {
     // (Assigning to `$x`, or to a number, is not followed.)
     assert.deepStrictEqual(after('(( $x = 1, 1++ ))', 'x'), ['none']);
-    assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['none', 'none', 'none', 'none']);
+    // (bash: none of them is set; `**=` is no operator.)
+    assert.deepStrictEqual(after('let "a[1] = $v" "b += $v"\nlet \'c **= 2\' \'d = (\'', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'none', 'unknown']);
     assert.strictEqual(attribute(end('v=1; let "a[1] = $v"'), 'a', 'a'), 'on');
     assert.deepStrictEqual(after('let "n++ + $1" "++q + $1"', 'n', 'q'), ['unknown', 'unknown']);
     // An unquoted expansion in an argument of `let` is split and globbed.
@@ -451,7 +503,7 @@ describe('shell state: arithmetic', () => {
   });
   it('says what it cannot be sure of as unknown, not as a value or an error', () => {
     // A side bash may not take: an error there may not happen.
-    assert.deepStrictEqual(after('(( Z ? (a = 1 / 0) : 2, b = 1 )); (( Z && (c = 08), d = 1 ))', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'unknown', 'unknown']);
+    assert.deepStrictEqual(after('declare -i u=$1; (( u ? (a = 1 / 0) : 2, b = 1 )); (( u && (c = 08), d = 1 ))', 'a', 'b', 'c', 'd'), ['unknown', 'unknown', 'unknown', 'unknown']);
     assert.deepStrictEqual(after('[ "$1" ] && declare -A m\n(( m[1 / 0] = 1, e = 1 ))', 'e'), ['unknown']);
     // Variables bash changes itself.
     assert.deepStrictEqual(after('RANDOM=1; SECONDS=5; (( r = RANDOM, s = SECONDS + 1 )); (( t = $RANDOM ))', 'r', 's', 't'), ['set', 'set', 'unknown']);
@@ -459,27 +511,68 @@ describe('shell state: arithmetic', () => {
     // text assigns before it may change.
     assert.deepStrictEqual(after('(( a = $(echo 1) )); (( b = $\'1\' )); (( c = "\\1" )); i=0; x=\'i = 1, y = a[$i]\'; (( d = x ))', 'a', 'b', 'c', 'd', 'i', 'y'),
       ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'unknown']);
-    assert.deepStrictEqual(after('j=0; x=\'k = 1, y = a[$j]\'; (( d = x ))', 'k', 'y', 'd'), ['set=1', 'set', 'set']);
-    assert.deepStrictEqual(after('j=0; x=\'k++, ++l, y = a[$j]\'; (( d = x ))', 'k', 'l', 'y', 'd'), ['set=1', 'set=1', 'set', 'set']);
-    assert.deepStrictEqual(after('x=\'k = 1, a[$(( 1 ))]\'; (( d = x )); y=\'m = 1, a[$m]\'; (( Z ? y : 0 ))', 'd', 'k', 'm'), ['unknown', 'unknown', 'unknown']);
+    // (An element read is a value not known: bash gives y=0 d=0.)
+    assert.deepStrictEqual(after('j=0; x=\'k = 1, y = a[$j]\'; (( d = x ))', 'k', 'y', 'd'), ['set=1', 'unknown', 'unknown']);
+    assert.deepStrictEqual(after('j=0; x=\'k++, ++l, y = a[$j]\'; (( d = x ))', 'k', 'l', 'y', 'd'), ['set=1', 'set=1', 'unknown', 'unknown']);
+    assert.deepStrictEqual(after('declare -i u=$1; x=\'k = 1, a[$(( 1 ))]\'; (( d = x )); y=\'m = 1, a[$m]\'; (( u ? y : 0 ))', 'd', 'k', 'm'), ['unknown', 'unknown', 'unknown']);
     // (An array that may be associative, whose subscript changes nothing.)
     assert.deepStrictEqual(after('[ "$1" ] && declare -A m\n(( m[1] = 1, e = 1 ))', 'e'), ['set=1']);
     // An expansion in a subscript of a text read as arithmetic, after one (bash: an error); an empty `$(( ))` is 0; an
     // error in the expansion of an argument of `let` discards the command.
-    assert.deepStrictEqual(after('let \'y = a[1] + $b\'; (( z = 2 + $(( )) )); let w=1 v=$(( 1 / 0 ))', 'y', 'z', 'w'), ['none', 'set=2', 'none']);
+    assert.deepStrictEqual(after('let \'y = a[1] + $b\'; (( z = 2 + $(( )) )); let w=1 v=$(( 1 / 0 ))', 'y', 'z', 'w'), ['unknown', 'set=2', 'none']);
     // (A `$(( ))` in an argument of `let` runs once, with the words: bash gives n=1, x=0.)
     assert.deepStrictEqual(after('n=0; let x=$(( n++ )) "y = $(( 1 ))"', 'n', 'x', 'y'), ['set=1', 'unknown', 'unknown']);
-    // A chain of values deeper than followed here; a name read again once something changed.
+    // A chain of values deeper than followed here (also when its start was read before); a name read again once
+    // something changed.
     const chain = (n: number): string => ['v0=1', ...Array.from({ length: n }, (_, i) => `v${i + 1}=v${i}`)].join('; ');
     assert.deepStrictEqual(after(`${chain(150)}; (( y = v150 ))`, 'y'), ['unknown']);
+    assert.deepStrictEqual(after(`${chain(150)}; (( x = v60 )); (( y = v150 ))`, 'x', 'y'), ['set=1', 'unknown']);
     assert.deepStrictEqual(after(`${chain(90)}; (( y = v90 ))`, 'y'), ['set=1']);
     assert.deepStrictEqual(after('i=0; x=\'i++ < 5 ? x : 7\'; (( y = x ))', 'i', 'y'), ['set=6', 'set=7']);
+    // A value read again is taken again once what it reads has changed (also past the values remembered of it), or
+    // when it reads a nameref.
+    assert.deepStrictEqual(after('x=\'y + 1\'; y=1; (( a = x )); y=5; (( b = x )); (( c = x ))', 'a', 'b', 'c'), ['set=2', 'set=6', 'set=6']);
+    const changes = Array.from({ length: 10 }, (_, i) => `y=${i}; (( a = x ))`).join('; ');
+    assert.deepStrictEqual(after(`x='y + 1'; ${changes}; y=0; (( b = x ))`, 'a', 'b'), ['set=10', 'set=1']);
+    assert.deepStrictEqual(after('w=5; declare -n r=w; x=\'r + 1\'; (( a = x )); w=6; (( b = x ))', 'a', 'b'), ['set=6', 'set=7']);
+    // What is not known stays so (bash: an error).
+    assert.deepStrictEqual(after('x=\'$1\'; (( a = x )); (( b = x ))', 'a', 'b'), ['unknown', 'unknown']);
+    // What may be assigned is looked for in the values the expression reads, also through a nameref.
+    assert.deepStrictEqual(after('x=\'a[1] = 2, i++, ++j\'; declare -n r=x; (( y = $1 + r ))', 'a', 'i', 'j', 'y'), ['unknown', 'unknown', 'unknown', 'unknown']);
   });
-  it('gives up on an expression too long to follow, quickly', () => {
-    // (Each value reads the one before twice: 2 ** 30 steps.)
-    const values = ['v0=1', ...Array.from({ length: 30 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
-    const start = Date.now();
-    assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u'), ['unknown', 'unknown', 'unknown', 'set=1']);
+  it('gives up on an expression too long or too deep to follow, quickly', () => {
+    // (Each value reads the one before twice, and assigns: 2 ** 30 steps.)
+    const values = ['v0=\'c++\'', ...Array.from({ length: 30 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
+    let start = Date.now();
+    assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u', 'c'), ['unknown', 'unknown', 'unknown', 'set=1', 'unknown']);
+    assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
+    // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may).
+    start = Date.now();
+    assert.deepStrictEqual(after(`${values}\n${'(( y = v30 ))\n'.repeat(60)}(( z = 1 ))`, 'z'), ['unknown']);
     assert.ok(Date.now() - start < 3000, `took ${Date.now() - start} ms`);
+    // Values nested deeper than followed here (bash: 1), or than the stack of the parser.
+    const deep = ['v0=1', ...Array.from({ length: 100 }, (_, i) => `v${i + 1}='${'('.repeat(40)}v${i}${')'.repeat(40)}'`)].join('\n');
+    assert.deepStrictEqual(after(`${deep}\n(( y = v100 ))`, 'y'), ['unknown']);
+    assert.deepStrictEqual(after(`x='${'('.repeat(100_000)}1${')'.repeat(100_000)}'; (( y = x ))`, 'y'), ['unknown']);
+  });
+  it('follows scripts that read values many times in linear time', () => {
+    const time = (src: string): number => {
+      const start = Date.now();
+      end(src);
+      return Date.now() - start;
+    };
+    const lines = (n: number, line: string): string => Array.from({ length: n }, () => line).join('\n');
+    const doubling = ['v0=1', ...Array.from({ length: 60 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('\n');
+    const elements = ['v0=1', ...Array.from({ length: 60 }, (_, i) => `v${i + 1}='a[v${i}] + a[v${i}]'`)].join('\n');
+    const chain = ['v0=1', ...Array.from({ length: 1000 }, (_, i) => `v${i + 1}=v${i}`)].join('\n');
+    let loops = '(( z++ ))';
+    for (let d = 0; d < 18; d++) loops = `for (( i${d} = 0; i${d} < 3; i${d}++ )); do (( t += i${d} )); ${loops}; done`;
+    for (const src of [`${doubling}\n${lines(2000, '(( y = v60 ))')}`, `${doubling}\n${lines(2000, 'let y=v60 z=v59')}`, `${elements}\n${lines(2000, '(( y = v60 ))')}`,
+      `${chain}\n${lines(2000, '(( y = v1000 ))')}`, loops]) {
+      const ms = time(src);
+      assert.ok(ms < 1000, `took ${ms} ms: ${src.slice(0, 40)}`);
+    }
+    // (Each loop starts from the values its last walk ended with: an inner loop may not run.)
+    assert.deepStrictEqual(after(loops, 't', 'z', 'i0', 'i17'), ['unknown', 'unknown', 'unknown', 'set']);
   });
 });

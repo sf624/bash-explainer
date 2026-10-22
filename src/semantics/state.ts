@@ -307,16 +307,98 @@ class ArithError {
 class ExpansionError {
   constructor(readonly st: ShellState) {}
 }
-/** What arithmetic does is not known here (a text pasted that is not known, a value read that is not known, too long to follow). */
-class ArithUnknown {}
+/**
+ * What arithmetic does is not known here: a text pasted or a value read that is not known, text the parser may read
+ * otherwise than bash (a syntax error: bash has made the assignments before it), too long or too deep to follow.
+ */
+class ArithUnknown {
+  /** `deep`: past `ARITH_DEPTH`; `limit`: past another limit, which depends on what ran before. */
+  constructor(readonly why?: 'deep' | 'limit') {}
+}
 /** How deep the values of variables are run in arithmetic, each as an expression (`y=x`, `x='z + 1'`): deeper is not followed (bash fails past 1024). */
 const ARITH_DEPTH = 100;
 /** How many steps an expression may take here (`v1='v0+v0'`, `v2='v1+v1'`… doubles at each level): more is not followed. */
 const ARITH_STEPS = 10_000;
+/** How many steps all the arithmetic of a script may take here: past them, what the rest of it assigns may be set, to values not known. */
+const ARITH_WALK_STEPS = 500_000;
+/** How deeply operators may nest in arithmetic here, through the values read (`v1='((v0))'`…): deeper is not followed. */
+const ARITH_NESTING = 1000;
+/** How many values of a variable read as an expression are remembered, each with what it read (`arithValue`). */
+const ARITH_MEMO = 8;
 /** What may be pasted into an arithmetic expression; bash expands it first. (A single-quoted text is not: it is an error.) */
 const PASTES = ['simple_expansion', 'expansion', 'arithmetic_expansion', 'command_substitution', 'process_substitution', 'string', 'ansi_c_string', 'translated_string'];
 /** Variables whose values bash changes itself (when they are read, or as time goes): not known here. */
 export const DYNAMIC = /^(?:RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|EPOCHREALTIME|BASHPID|BASH_COMMAND|BASH_SUBSHELL|BASH_LINENO|BASH_SOURCE|BASH_ARGC|BASH_ARGV|BASH_ARGV0|FUNCNAME|HISTCMD|PIPESTATUS|GROUPS|DIRSTACK)$/;
+/** Those of `DYNAMIC` whose values are numbers (`EPOCHREALTIME` has a dot). */
+const NUMERIC_DYNAMIC = /^(?:RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|BASHPID|BASH_SUBSHELL|BASH_LINENO|BASH_ARGC|HISTCMD|PIPESTATUS|GROUPS)$/;
+/** The key of `set -u` among the reads of a value (no variable has this name). */
+const NOUNSET = '-u';
+/** What a value read as an expression has read so far: the variables (and `set -u`), whether it can be remembered, how deep it went. */
+interface ArithReads { deps: Map<string, unknown>; pure: boolean; depth: number; unsure: boolean }
+/**
+ * A value read as an expression, remembered with what it read and how deep it went: its value; or `unknown` (`deep`:
+ * it went deeper than `ARITH_DEPTH` from where it was read, `depth` is then at least what it needs); `unsure`: it read
+ * a value not known.
+ */
+interface ArithRemembered { deps: ReadonlyMap<string, unknown>; depth: number; value?: bigint; unknown: false | 'always' | 'deep'; unsure: boolean }
+
+/**
+ * `text` with each `++` and `--` that bash reads as a sign followed by another one spaced apart, as bash's lexer
+ * reads them: after a name (and its subscript), `x++` increments it; before a name (spaces aside), `++x` does;
+ * elsewhere it is a sign, and the second character is read again (`5--3` is `5- -3`, 8; `7 ---3` is `7 - - -3`, 4;
+ * `1 +++x` is `1 + ++x`). Gives how many are left outside subscripts, or undefined where bash fails (`++x++`).
+ */
+function incDecText(text: string): { text: string; ops: number } | undefined {
+  const name = /[A-Za-z_]\w*/y;
+  const number = /\d[\w@#]*/y;
+  let out = '';
+  let ops = 0;
+  let depth = 0;
+  // What came before: a name (or its subscript), a name after `++` or `--`, those, or anything else.
+  let prev: 'name' | 'counted' | 'incdec' | 'other' = 'other';
+  for (let i = 0; i < text.length;) {
+    const c = text[i];
+    const m = /\d/.test(c) ? number : name;
+    m.lastIndex = i;
+    const word = m.exec(text)?.[0];
+    if (word !== undefined) {
+      out += word;
+      i += word.length;
+      prev = m === number ? 'other' : prev === 'incdec' ? 'counted' : 'name';
+    } else if ((c === '+' || c === '-') && text[i + 1] === c) {
+      // (bash fails on `++x++`: once incremented, `x` is a number.)
+      if (prev === 'counted') return undefined;
+      if (prev === 'name' || /^\s*[A-Za-z_]/.test(text.slice(i + 2))) {
+        out += c + c;
+        i += 2;
+        if (!depth) ops++;
+        prev = prev === 'name' ? 'other' : 'incdec';
+      } else {
+        out += `${c} `;
+        i += 1;
+        prev = 'other';
+      }
+    } else {
+      out += c;
+      i += 1;
+      if (c === '[') depth++;
+      else if (c === ']' && depth) depth--;
+      if (!/\s/.test(c)) prev = c === ']' ? 'name' : 'other';
+    }
+  }
+  return { text: out, ops };
+}
+
+/** Whether `v` is a nameref, or may be one. */
+const isNameref = (v: VariableState | undefined): boolean => v?.attrs.n !== undefined && v.attrs.n.state !== 'off';
+
+/** How many `++` and `--` the parser read in `n`, outside subscripts. */
+function incDecCount(n: SyntaxNode): number {
+  if (n.type === 'subscript') return 0;
+  const own = (n.type === 'postfix_expression' || n.type === 'unary_expression') && n.children.some((c) => !c.named && (c.type === '++' || c.type === '--')) ? 1 : 0;
+  return n.namedChildren.reduce((sum, c) => sum + incDecCount(c), own);
+}
+
 /** The source text from the first of `nodes` to the end of the last one. */
 function arithSource(nodes: readonly SyntaxNode[]): string {
   let root = nodes[0];
@@ -799,14 +881,14 @@ class Walker {
       case 'while_statement': {
         const body = field(n, 'body');
         const cond = n.children.filter((c) => c !== body);
-        return this.loop(st, (s) => this.sequence(cond, s), (s) => this.sequence(body?.children ?? [], s), true);
+        return this.loop(n, st, (s) => this.sequence(cond, s), (s) => this.sequence(body?.children ?? [], s), true);
       }
       case 'for_statement': case 'select_statement': return this.forStatement(n, st);
       case 'c_style_for_statement': {
         // The initializer, then the condition, the body and the update, again and again; the loop ends after a condition.
         for (const c of n.namedChildren) if (c.type !== 'do_group') this.substitutions(c, st);
         const part = (f: 'initializer' | 'condition' | 'update') => (s: ShellState): ShellState => this.arithRun((x) => this.arithScript(fields(n, f), x).st, s);
-        return this.loop(part('initializer')(st), part('condition'), (s) => part('update')(this.sequence(field(n, 'body')?.children ?? [], s)), true);
+        return this.loop(n, part('initializer')(st), part('condition'), (s) => part('update')(this.sequence(field(n, 'body')?.children ?? [], s)), true);
       }
       case 'function_definition': return this.functionDefinition(n, st);
     }
@@ -842,7 +924,14 @@ class Walker {
    * `n` is one of them). An error in an arithmetic expansion discards the rest of the command (`ExpansionError`).
    */
   private defaults(n: SyntaxNode, st: ShellState, program: Tri = 'off'): ShellState {
-    for (const e of descendants(n, ['expansion', 'arithmetic_expansion'])) {
+    let found = descendants(n, ['expansion', 'arithmetic_expansion']);
+    // An assignment expands its value before its subscript (`a[$(( i++ ))]=$(( j = i ))` gives j=0; not with `declare`).
+    const value = n.type === 'variable_assignment' ? field(n, 'value') : undefined;
+    if (value) {
+      const inValue = (e: SyntaxNode): boolean => e.startIndex >= value.startIndex && e.endIndex <= value.endIndex;
+      found = [...found.filter(inValue), ...found.filter((e) => !inValue(e))];
+    }
+    for (const e of found) {
       let skip = false;
       let maybe = false;
       for (let x = e; x !== n; x = x.parent!) {
@@ -899,7 +988,7 @@ class Walker {
     let fn = true;
     while (name === 'command') {
       const i = args.findIndex((a) => !/^-/.test(staticWordValue(a) ?? '-'));
-      if (i < 0 || args.slice(0, i).some((a) => /^-[^p]*[vV]/.test(a.text))) return 'off';
+      if (i < 0 || args.slice(0, i).some((a) => /^-\w*[vV]/.test(a.text))) return 'off';
       name = staticWordValue(args[i]);
       args = args.slice(i + 1);
       fn = false;
@@ -915,25 +1004,45 @@ class Walker {
    * Runs an arithmetic expression of the script (`(( ))`, a part of `for (( ))`, `$(( ))`), whose parts are `nodes`:
    * first its expansions, as bash does (`$x`, `${x}`, `$(( ))` and double quotes; `$x` is the value before the
    * expression runs, and a `$(( ))` in it runs then), then the text they give. Gives the state after it, and its value
-   * when known; throws `ArithError` where bash fails. When what it does is not known here (a text pasted that is not
-   * known, a value read that is not known, too long to follow), the names it seems to assign may be set, to values
-   * not known.
+   * when known; throws `ArithError` where bash fails. When what it does is not known here (`ArithUnknown`), the names
+   * it seems to assign may be set, to values not known (`mayAssign`).
    */
   private arithScript(nodes: readonly SyntaxNode[], st: ShellState): { st: ShellState; value?: bigint } {
     return nodes.length ? this.arithGuard(arithSource(nodes), st, nodes[0], () => this.arithEval(nodes, st)) : { st, value: 0n };
   }
 
-  /** How many steps the expression being run has taken (`ARITH_STEPS`). */
+  /** How many steps the expression being run has taken (`ARITH_STEPS`), and all the arithmetic of the script (`ARITH_WALK_STEPS`). */
   private arithSteps = 0;
+  private arithWalkSteps = 0;
+  /** How deeply the operators being run nest (`ARITH_NESTING`). */
+  private arithNesting = 0;
+  /**
+   * Whether the expression being run has read a value not known here (`HOME`, an element of an array): bash runs it as
+   * an expression too, which may fail, so what the expression assigns after it may be (`n='z = 9'` would also set z).
+   */
+  private unsure = false;
 
-  /** Runs `run`, an expression whose text is `source`, from `st`; when what it does is not known, see `arithMaybe`. */
+  /** Sets `unsure`, also for the value being read, if any. */
+  private markUnsure(): void {
+    this.unsure = true;
+    const top = this.arithReads[this.arithReads.length - 1];
+    if (top) top.unsure = true;
+  }
+
+  /**
+   * Runs `run`, an expression whose text is `source`, from `st`: each expression of the script starts here, with a
+   * count of its steps of its own. When what it does is not known, see `mayAssign`.
+   */
   private arithGuard(source: string, st: ShellState, at: SyntaxNode, run: () => { st: ShellState; value?: bigint }): { st: ShellState; value?: bigint } {
     this.arithSteps = 0;
+    this.unsure = false;
     try {
+      if (this.arithWalkSteps > ARITH_WALK_STEPS) throw new ArithUnknown('limit');
       return run();
     } catch (e) {
-      if (!(e instanceof ArithUnknown)) throw e;
-      return { st: this.arithMaybe(source, st, at) };
+      // (A text nested too deeply for the stack of JavaScript, in the parser or here, is not followed either.)
+      if (!(e instanceof ArithUnknown) && !(e instanceof RangeError)) throw e;
+      return { st: this.mayAssign(source, st, at) };
     }
   }
 
@@ -941,7 +1050,7 @@ class Walker {
   private arithEval(nodes: readonly SyntaxNode[], st: ShellState): { st: ShellState; value?: bigint } {
     if (!nodes.length) return { st, value: 0n };
     const x = this.arithExpand(nodes, st, false);
-    return this.arithText(x.text, x.st, nodes[0], false, x.text !== arithSource(nodes));
+    return this.arithText(x.text, x.st, nodes[0], false);
   }
 
   /**
@@ -960,6 +1069,7 @@ class Walker {
     nodes.forEach(visit);
     let text = '';
     let at = from;
+    // How many brackets are open before the expansion: in `a[$i] + $j`, `$i` is in a subscript (depth 1), `$j` is not (0).
     let depth = 0;
     for (const p of pastes) {
       const plain = source.slice(at - from, p.startIndex - from);
@@ -1032,14 +1142,46 @@ class Walker {
     return { st, text };
   }
 
+  /**
+   * `let` with the arguments `operands`: they are expanded (an error there discards the command, see `defaults`), then
+   * each is run as an expression (`x*=3` is one, unless a file matches it). What one whose text is not known here
+   * seems to assign may be set.
+   */
+  private letCommand(operands: readonly SyntaxNode[], st: ShellState): ShellState {
+    const texts = operands.map((o) => {
+      try {
+        const x = this.letText(o, st);
+        st = x.st;
+        return x.text;
+      } catch (e) {
+        /* c8 ignore next -- `letText` throws `ArithUnknown` only */
+        if (!(e instanceof ArithUnknown)) throw e;
+        return undefined;
+      }
+    });
+    operands.forEach((o, i) => {
+      const text = texts[i];
+      if (text === undefined) {
+        // (What its `$(( ))` assign was made with the words.)
+        st = this.mayAssign(descendants(o, ['arithmetic_expansion']).reduce((t, a) => t.replace(a.text, ''), o.text), st, o);
+        return;
+      }
+      const from = st;
+      st = this.arithGuard(o.text, st, o, () => this.arithText(text, from, o, true)).st;
+    });
+    return st;
+  }
+
   /** The value of the variable `name` as text; null when it is unset (and `set -u` is off), undefined when not known here. */
   private variableText(st: ShellState, name: string): string | null | undefined {
+    this.noteRead(st, name);
     const target = this.resolve(st, name);
     if (!target || DYNAMIC.test(target)) return undefined;
     const v = st.variables.get(target);
     const unset = ['off', 'default'].includes(option(st, 'set', 'nounset')) ? null : undefined;
-    // (A name the script has not set may come from the environment: by custom, those are in capitals.)
-    if (!v) return /^[A-Z_][A-Z0-9_]*$/.test(target) ? undefined : unset;
+    // (A name the script has not set may come from the environment: by custom, those are in capitals. Once a file
+    // was sourced, a string run with `eval` or a trap set, it may come from there.)
+    if (!v) return /^[A-Z_][A-Z0-9_]*$/.test(target) || this.opaque ? undefined : unset;
     if (v.declared === 'unknown' || v.set === 'unknown' || ['a', 'A'].some((l) => (v.attrs[l]?.state ?? 'off') !== 'off')) return undefined;
     return v.set === 'off' ? unset : v.value;
   }
@@ -1048,21 +1190,53 @@ class Walker {
    * The names `text` seems to assign (`x = 1`, `i++`), also through the values of the variables it names (`x='i = 1'`),
    * which may be set from `st`, to values not known here.
    */
-  private arithMaybe(text: string, st: ShellState, at: SyntaxNode): ShellState {
+  private mayAssign(text: string, st: ShellState, at: SyntaxNode): ShellState {
+    const targets = new Set<string>();
+    for (const m of text.matchAll(ARITH_ASSIGNED)) targets.add(`${m[1] ?? m[3] ?? m[4]}${m[2] ? '[' : ''}`);
+    for (const name of new Set(text.match(/[A-Za-z_]\w*/g))) for (const t of this.valueAssigns(st, name)) targets.add(t);
     let after = st;
-    const texts = [text];
-    const seen = new Set<string>();
-    for (let t = texts.pop(); t !== undefined; t = texts.pop()) {
-      for (const m of t.matchAll(ARITH_ASSIGNED)) {
-        after = this.assign(after, m[1] ?? m[3] ?? m[4], !!m[2], { append: false, text: undefined, array: false }, at, false);
-      }
-      for (const name of t.match(/[A-Za-z_]\w*/g) ?? []) {
-        const value = seen.has(name) ? undefined : this.variableText(st, name);
-        seen.add(name);
-        if (value) texts.push(value);
-      }
-    }
+    for (const t of targets) after = this.assign(after, t.replace('[', ''), t.endsWith('['), { append: false, text: undefined, array: false }, at, false);
     return after === st ? st : merge([st, after], this.posix);
+  }
+
+  /** What the values reached from the variable `name` seem to assign, each remembered with the variables it read. */
+  private assignsMemo = new Map<string, { deps: ReadonlyMap<string, unknown>; targets: ReadonlySet<string> }>();
+
+  /**
+   * What the value of the variable `name` seems to assign, read as an expression, and the values of the variables it
+   * names, in turn (see `mayAssign`): each name, followed by `[` for an element.
+   */
+  private valueAssigns(st: ShellState, name: string): ReadonlySet<string> {
+    const hit = this.assignsMemo.get(name);
+    if (hit && this.sameReads(st, hit.deps)) return hit.targets;
+    const deps = new Map<string, unknown>([[NOUNSET, option(st, 'set', 'nounset')]]);
+    const targets = new Set<string>();
+    const texts: string[] = [];
+    const seen = new Set<string>();
+    let pure = true;
+    const read = (n: string): void => {
+      if (seen.has(n)) return;
+      seen.add(n);
+      const v = st.variables.get(n);
+      deps.set(n, v);
+      // (A nameref reads other variables: not remembered.)
+      if (isNameref(v)) pure = false;
+      const text = this.variableText(st, n);
+      if (text) texts.push(text);
+    };
+    read(name);
+    for (let t = texts.pop(); t !== undefined; t = texts.pop()) {
+      for (const m of t.matchAll(ARITH_ASSIGNED)) targets.add(`${m[1] ?? m[3] ?? m[4]}${m[2] ? '[' : ''}`);
+      for (const n of t.match(/[A-Za-z_]\w*/g) ?? []) read(n);
+    }
+    if (pure) this.assignsMemo.set(name, { deps, targets });
+    return targets;
+  }
+
+  /** Whether the variables (and `set -u`) in `deps` are the same in `st`. */
+  private sameReads(st: ShellState, deps: ReadonlyMap<string, unknown>): boolean {
+    for (const [k, v] of deps) if ((k === NOUNSET ? option(st, 'set', 'nounset') : st.variables.get(k)) !== v) return false;
+    return true;
   }
 
   /** Runs arithmetic (`run`) from `st`: an error stops it, with what was assigned before it. */
@@ -1076,8 +1250,8 @@ class Walker {
     }
   }
 
-  /** Runs `run`, whose effect is not sure (a side bash may not take): an error in it is not known either. */
-  private arithMay(run: () => { st: ShellState; value?: bigint }): { st: ShellState; value?: bigint } {
+  /** Runs `run`, a side of an expression bash may not take: an error in it may not happen, so it is not known. */
+  private unsureSide(run: () => { st: ShellState; value?: bigint }): { st: ShellState; value?: bigint } {
     try {
       return run();
     } catch (e) {
@@ -1098,19 +1272,33 @@ class Walker {
    * value when known; throws `ArithError` where bash fails, `ArithUnknown` where it is not known.
    */
   private arith(e: SyntaxNode, st: ShellState, at: SyntaxNode): { st: ShellState; value?: bigint } {
-    if (++this.arithSteps > ARITH_STEPS) throw new ArithUnknown();
-    const sub = (x: SyntaxNode | undefined, s: ShellState): { st: ShellState; value?: bigint } => (x ? this.arith(x, s, at) : { st: s });
+    if (++this.arithSteps > ARITH_STEPS || ++this.arithWalkSteps > ARITH_WALK_STEPS || this.arithNesting >= ARITH_NESTING) throw new ArithUnknown('limit');
+    this.arithNesting++;
+    try {
+      return this.arithNode(e, st, at);
+    } finally {
+      this.arithNesting--;
+    }
+  }
+
+  /** `arith` of `e`, once its steps are counted. */
+  private arithNode(e: SyntaxNode, st: ShellState, at: SyntaxNode): { st: ShellState; value?: bigint } {
+    const sub = (x: SyntaxNode, s: ShellState): { st: ShellState; value?: bigint } => this.arith(x, s, at);
     switch (e.type) {
       case 'number': return { st, value: this.literal(e.text, st) };
       case 'variable_name': return this.arithValue(st, e.text, at);
       case 'word':
-        // A name in `for (( ))`; an index the parser keeps as text (`a[i++]`), read again. Anything else the parser
-        // could not read is an error.
+        // A name in `for (( ))`; an index the parser keeps as text (`a[i++]`), read again. Anything else is text the
+        // parser could not read (`ArithUnknown`).
         if (NAME.test(e.text)) return this.arithValue(st, e.text, at);
         if (e.field === 'index') return this.arithText(e.text, st, at, false);
-        throw new ArithError(st);
-      // (The values of arrays are not followed.)
-      case 'subscript': return { st: this.subscriptIndex(e, st, at) };
+        throw new ArithUnknown();
+      // An element of an array, once its index has run: its value is not followed (see `unsure`).
+      case 'subscript': {
+        const after = this.subscriptIndex(e, st, at);
+        this.markUnsure();
+        return { st: after };
+      }
       case 'parenthesized_expression': {
         // (Its expressions are separated by commas: the last one gives the value.)
         let r: { st: ShellState; value?: bigint } = { st };
@@ -1120,23 +1308,28 @@ class Walker {
       case 'postfix_expression': case 'unary_expression': {
         const op = e.children.find((c) => !c.named)!.type;
         const operand = e.namedChildren[0];
-        if ((op === '++' || op === '--') && ['variable_name', 'subscript', 'word'].includes(operand.type)) {
+        if (op === '++' || op === '--') {
+          // (`incDecText` leaves no `++` or `--` before or after what is not a name: bash reads those as signs, or fails.)
+          /* c8 ignore next */
+          if (!['variable_name', 'subscript', 'word'].includes(operand.type)) throw new ArithUnknown();
           // `i++` is the value before, `++i` the value after.
           const r = this.arithAssign(operand, op === '++' ? '+=' : '-=', 1n, st, at);
           return { st: r.st, value: e.type === 'postfix_expression' ? r.old : r.value };
         }
         const r = sub(operand, st);
-        // (`1++` is an error; `++1` and `--1` are two signs.)
-        if (e.type === 'postfix_expression') throw new ArithError(r.st);
         const v = r.value;
         return { st: r.st, value: v === undefined ? undefined : op === '-' ? wrap(-v) : op === '!' ? BigInt(v === 0n) : op === '~' ? ~v : v };
       }
       case 'ternary_expression': {
-        const c = sub(field(e, 'condition'), st);
-        if (c.value !== undefined) return sub(field(e, c.value !== 0n ? 'consequence' : 'alternative'), c.st);
+        const consequence = field(e, 'consequence');
+        const alternative = field(e, 'alternative');
+        // (An operand missing is a syntax error: `1 ? 2 :`.)
+        if (!consequence || !alternative) throw new ArithUnknown();
+        const c = sub(field(e, 'condition')!, st);
+        if (c.value !== undefined) return sub(c.value !== 0n ? consequence : alternative, c.st);
         // (Not known which branch: what either assigns may be.)
-        const a = this.arithMay(() => sub(field(e, 'consequence'), c.st));
-        const b = this.arithMay(() => sub(field(e, 'alternative'), c.st));
+        const a = this.unsureSide(() => sub(consequence, c.st));
+        const b = this.unsureSide(() => sub(alternative, c.st));
         return { st: merge([a.st, b.st], this.posix), value: a.value === b.value ? a.value : undefined };
       }
       case 'binary_expression': {
@@ -1144,13 +1337,13 @@ class Walker {
         const left = field(e, 'left')!;
         const right = field(e, 'right');
         // (An operand missing is a syntax error: `1 +`.)
-        if (!right) throw new ArithError(st);
+        if (!right) throw new ArithUnknown();
         if (ARITH_ASSIGN.has(op)) return this.arithAssign(left, op, right, st, at);
         const l = sub(left, st);
         if (op === '&&' || op === '||') {
           // The right side runs only when the left one does not decide.
           if (l.value !== undefined && (l.value !== 0n) === (op === '||')) return { st: l.st, value: BigInt(op === '||') };
-          const r = l.value === undefined ? this.arithMay(() => sub(right, l.st)) : sub(right, l.st);
+          const r = l.value === undefined ? this.unsureSide(() => sub(right, l.st)) : sub(right, l.st);
           if (l.value === undefined) return { st: r.st === l.st ? l.st : merge([l.st, r.st], this.posix) };
           return { st: r.st, value: r.value === undefined ? undefined : BigInt(r.value !== 0n) };
         }
@@ -1160,8 +1353,8 @@ class Walker {
         return { st: r.st, value: v === undefined ? undefined : wrap(v) };
       }
     }
-    // An expansion left (`$z` from a value), quotes, a word the parser could not read: an error.
-    throw new ArithError(st);
+    // An expansion left (`$z` from a value), quotes: bash fails, but where is not followed (`ArithUnknown`).
+    throw new ArithUnknown();
   }
 
   /** The value of a constant (`010` is 8, `2#101` is 5); an invalid one (`08`, `0xG`) is an error. */
@@ -1176,7 +1369,7 @@ class Walker {
     const assoc = attribute(st, field(target, 'name')!.text, 'A');
     if (assoc === 'on') return st;
     if (assoc === 'unknown') {
-      const after = this.arithMay(() => ({ st: this.arithList(fields(target, 'index'), st, at) })).st;
+      const after = this.unsureSide(() => ({ st: this.arithList(fields(target, 'index'), st, at) })).st;
       return after === st ? st : merge([st, after], this.posix);
     }
     return this.arithList(fields(target, 'index'), st, at);
@@ -1203,51 +1396,145 @@ class Walker {
     const by = op === '=' ? undefined : ARITH_OPS[op.slice(0, -1)];
     const v = r.value === undefined ? undefined : !by ? r.value : old === undefined ? undefined : by(old, r.value);
     const value = v === undefined ? undefined : wrap(v);
-    return { st: this.assign(st, name, subscript, { append: false, text: value === undefined ? undefined : String(value), array: false }, at, false), value, old };
+    const after = this.assign(st, name, subscript, { append: false, text: value === undefined ? undefined : String(value), array: false }, at, false);
+    return { st: this.unsure && after !== st ? merge([st, after], this.posix) : after, value, old };
   }
 
   /** The variables whose values are being read as expressions, with the state each was read in. */
   private readonly arithReading: { name: string; st: ShellState }[] = [];
+  /** The values read as expressions that are constants (`1 + 2`), or null. */
+  private readonly constants = new Map<string, bigint | null>();
+  /** What each value being read as an expression has read so far (see `arithValue`). */
+  private readonly arithReads: ArithReads[] = [];
+  /** The values of variables read as expressions, by name, with what each read (`ARITH_MEMO`, most recent first). */
+  private arithMemo = new Map<string, ArithRemembered[]>();
+  /** Whether a file was sourced, a string run with `eval` or a trap set: a name the script has not set may be set. */
+  private opaque = false;
+
+  /** `opaque` from now on: what was remembered of values read as expressions may be otherwise. */
+  private turnOpaque(): void {
+    if (this.opaque) return;
+    this.opaque = true;
+    this.arithMemo = new Map();
+    this.assignsMemo = new Map();
+  }
+
+  /** Notes that the value being read as an expression (if any) depends on the variable `name` and on `set -u`. */
+  private noteRead(st: ShellState, name: string): void {
+    const top = this.arithReads[this.arithReads.length - 1];
+    if (!top) return;
+    const v = st.variables.get(name);
+    top.deps.set(name, v);
+    top.deps.set(NOUNSET, option(st, 'set', 'nounset'));
+    // (A nameref reads other variables: not remembered.)
+    if (isNameref(v)) top.pure = false;
+  }
+
+  /** The value of `name` remembered for `st`: one whose reads are the same in `st`. */
+  private remembered(st: ShellState, name: string): ArithRemembered | undefined {
+    return this.arithMemo.get(name)?.find((m) => this.sameReads(st, m.deps));
+  }
 
   /**
    * The value of the variable `name` in arithmetic: an unset or empty one is 0; a value is an expression, run where
    * it is read (`y=x` gives x's value, `y='z = 4'` sets z), with the expansions in its subscripts. `at`: where its
-   * assignments are made.
+   * assignments are made. A value read that changes nothing is remembered with what it read, so that a value read
+   * again (`v2='v1 + v1'`) is not run again, unless those have changed.
    */
   private arithValue(st: ShellState, name: string, at: SyntaxNode): { st: ShellState; value?: bigint } {
     const value = this.variableText(st, name);
-    if (value === undefined) return { st };
+    if (value === undefined) {
+      // A value not known is an expression too, unless it is surely a number (see `unsure`).
+      const target = this.resolve(st, name);
+      if (!target || !(NUMERIC_DYNAMIC.test(target) || attribute(st, target, 'i') === 'on')) this.markUnsure();
+      return { st };
+    }
     const text = (value ?? '').trim();
     if (text === '') return { st, value: 0n };
-    const constant = evalArithWrapping(text);
-    if (constant) return { st, value: constant.value };
+    let constant = this.constants.get(text);
+    if (constant === undefined) this.constants.set(text, (constant = evalArithWrapping(text)?.value ?? null));
+    if (constant !== null) return { st, value: constant };
+    const seen = this.remembered(st, name);
+    const up = this.arithReads[this.arithReads.length - 1];
+    const fits = seen && this.arithReading.length + seen.depth <= ARITH_DEPTH;
+    if (seen && (seen.unknown !== 'deep' || !fits)) {
+      if (up) {
+        for (const [k, v] of seen.deps) up.deps.set(k, v);
+        up.depth = Math.max(up.depth, seen.depth + 1);
+      }
+      if (seen.unknown === 'always') throw new ArithUnknown();
+      if (!fits) throw new ArithUnknown('deep');
+      if (seen.unsure) this.markUnsure();
+      return { st, value: seen.value };
+    }
     // A name read again with nothing changed since leads back to itself for ever: bash fails at its recursion
     // limit. (With something changed, `x='i++ < 5 ? x : 0'`, it may end: followed so deep only.)
     if (this.arithReading.some((r) => r.name === name && r.st === st)) throw new ArithError(st);
-    if (this.arithReading.length >= ARITH_DEPTH) throw new ArithUnknown();
+    if (this.arithReading.length >= ARITH_DEPTH) throw new ArithUnknown('deep');
+    const from = this.arithReading.length;
+    const reads: ArithReads = { deps: new Map(), pure: true, depth: 1, unsure: false };
     this.arithReading.push({ name, st });
+    this.arithReads.push(reads);
+    this.noteRead(st, name);
+    let r: { st: ShellState; value?: bigint };
     try {
-      return this.arithText(text, st, at, true);
+      r = this.arithText(text, st, at, true);
+    } catch (e) {
+      // What is not known stays so with the same reads, from as deep (`deep`); not when steps so far made it so.
+      if (e instanceof ArithUnknown && e.why !== 'limit') {
+        if (e.why === 'deep') reads.depth = ARITH_DEPTH - from + 1;
+        this.remember(name, reads, undefined, e.why === 'deep' ? 'deep' : 'always');
+      }
+      throw e;
     } finally {
       this.arithReading.pop();
+      this.arithReads.pop();
+      if (up) {
+        for (const [k, v] of reads.deps) up.deps.set(k, v);
+        up.pure &&= reads.pure;
+        up.unsure ||= reads.unsure;
+        up.depth = Math.max(up.depth, reads.depth + 1);
+      }
     }
+    if (r.st === st && reads.pure) this.remember(name, reads, r.value, false);
+    return r;
   }
+
+  private remember(name: string, reads: ArithReads, value: bigint | undefined, unknown: ArithRemembered['unknown']): void {
+    const list = this.arithMemo.get(name) ?? [];
+    list.unshift({ deps: reads.deps, depth: reads.depth, value, unknown, unsure: reads.unsure });
+    if (list.length > ARITH_MEMO) list.pop();
+    this.arithMemo.set(name, list);
+  }
+
+  /** Each arithmetic text read, once per model: its text for the parser (`incDecText`), its nodes, whether bash reads them so; null when bash fails on it. */
+  private readonly arithTrees = new Map<string, { text: string; cmd: readonly SyntaxNode[]; valid: boolean } | null>();
 
   /**
    * Runs an arithmetic expression given as text, at `at`; `brackets`: its subscripts are still to be expanded (a
-   * variable's value, an argument of `let`). Text it cannot read is an error; not known when it has text pasted
-   * (`pasted`), which bash may read otherwise (a key of an associative array).
+   * variable's value, an argument of `let`). Text the parser may read otherwise than bash (a syntax error, a `++` it
+   * splits otherwise) is not known: bash makes the assignments before the error.
    */
-  private arithText(text: string, st: ShellState, at: SyntaxNode, brackets: boolean, pasted = false): { st: ShellState; value?: bigint } {
-    let cmd = this.parseText(`(( ${text} ))`).root.namedChildren;
+  private arithText(text: string, st: ShellState, at: SyntaxNode, brackets: boolean): { st: ShellState; value?: bigint } {
+    let tree = this.arithTrees.get(text);
+    if (tree === undefined) {
+      const lexed = incDecText(text);
+      if (lexed) {
+        aliasParser ??= createUnbashParser();
+        const cmd = aliasParser.parse(`(( ${lexed.text} ))`).root.namedChildren;
+        tree = { text: lexed.text, cmd, valid: cmd.length === 1 && cmd[0].type === 'arithmetic_command' && !hasError(cmd[0]) && incDecCount(cmd[0]) === lexed.ops };
+      } else tree = null;
+      this.arithTrees.set(text, tree);
+    }
+    if (!tree) throw new ArithUnknown();
+    const { cmd } = tree;
     if (brackets && cmd.length === 1 && cmd[0].type === 'arithmetic_command' && cmd[0].namedChildren.length) {
       const x = this.arithExpand(cmd[0].namedChildren, st, true);
-      if (x.text !== text) return this.arithText(x.text, x.st, at, false, true);
+      if (x.text !== tree.text) return this.arithText(x.text, x.st, at, false);
     }
-    if (cmd.length !== 1 || cmd[0].type !== 'arithmetic_command' || hasError(cmd[0])) throw pasted ? new ArithUnknown() : new ArithError(st);
-    cmd = cmd[0].namedChildren;
+    if (!tree.valid) throw new ArithUnknown();
     let r: { st: ShellState; value?: bigint } = { st, value: 0n };
-    for (const e of cmd) r = this.arith(e, r.st, at);
+    for (const e of cmd[0].namedChildren) r = this.arith(e, r.st, at);
     return r;
   }
 
@@ -1278,12 +1565,32 @@ class Walker {
     return merge(ends, this.posix);
   }
 
+  /** For each loop walked, what its passes changed and the state they started from in the end (see `loop`). */
+  private readonly loopsWalked = new Map<SyntaxNode, { keys: Set<string>; entry: ShellState }>();
+  /** How many loops are being walked. */
+  private loopDepth = 0;
+
   /**
-   * A loop: the condition, then the body, again and again until the state at the start of the body no longer
-   * changes. A `while` ends after its condition; a `for`, after the body or before it (an empty list).
+   * The loop `n`: the condition, then the body, again and again until the state at the start of the body no longer
+   * changes. A `while` ends after its condition; a `for`, after the body or before it (an empty list). A loop walked
+   * before in a loop being walked starts from what it changed then, as it was in the end: in nested loops, whose
+   * values change at each pass, each walk then takes one pass, not as many as the loops around it take.
    */
-  private loop(st: ShellState, cond: (s: ShellState) => ShellState, body: (s: ShellState) => ShellState, endsWithCondition: boolean, atLeastOnce = false): ShellState {
+  private loop(n: SyntaxNode, st: ShellState, cond: (s: ShellState) => ShellState, body: (s: ShellState) => ShellState, endsWithCondition: boolean, atLeastOnce = false): ShellState {
+    const before = this.loopDepth ? this.loopsWalked.get(n) : undefined;
     let entry = st;
+    if (before) {
+      const was = { ...st };
+      for (const key of before.keys) {
+        const kind = key.slice(0, key.indexOf(' ')) as Kind;
+        const name = key.slice(kind.length + 1);
+        (was as Record<Kind, NameMap<unknown>>)[kind] = (was[kind] as NameMap<unknown>).with(name, before.entry[kind].get(name));
+      }
+      entry = merge([st, was], this.posix);
+    }
+    const keys = new Set<string>();
+    this.collecting.push(keys);
+    this.loopDepth++;
     let end = st;
     for (let pass = 0; pass < 5; pass++) {
       end = body(cond(entry));
@@ -1291,6 +1598,9 @@ class Walker {
       if (sameState(next, entry)) break;
       entry = next;
     }
+    this.loopDepth--;
+    this.collecting.pop();
+    this.loopsWalked.set(n, { keys, entry });
     return endsWithCondition ? cond(entry) : atLeastOnce ? end : entry;
   }
 
@@ -1307,7 +1617,7 @@ class Walker {
     const known = n.type === 'for_statement' && values.length > 0 && words.every((w) => w !== undefined);
     const each = known && new Set(words).size === 1 ? words[0] : undefined;
     // (A list of known words runs the body at least once.)
-    const end = this.loop(st, (s) => s, (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), false, known);
+    const end = this.loop(n, st, (s) => s, (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), false, known);
     return known ? assign(end, words[words.length - 1]) : end;
   }
 
@@ -1486,7 +1796,7 @@ class Walker {
     if (name === 'command' || name === 'builtin') {
       const i = args.findIndex((a) => !/^-/.test(staticWordValue(a) ?? '-'));
       const next = i < 0 ? undefined : staticWordValue(args[i]);
-      if (next === undefined || args.slice(0, i).some((a) => /^-[^p]*[vV]/.test(a.text))) return st;
+      if (next === undefined || args.slice(0, i).some((a) => /^-\w*[vV]/.test(a.text))) return st;
       return this.builtin(next, args.slice(i + 1), n, st);
     }
     if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args), n, st);
@@ -1505,6 +1815,8 @@ class Walker {
         // runs, from the shell that set it). Its changes to the state are not followed.
         const words = name === 'eval' ? args.filter((a, i) => i > 0 || a.text !== '--') : parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name === 'ACTION').map((r) => args[r.word]);
         const text = words.map((w) => staticWordValue(w));
+        // (A trap that runs something may run between any two commands.)
+        if (name === 'eval' || (words.length && text.some((t) => t !== '' && t !== '-'))) this.turnOpaque();
         if (!words.length || text.some((t) => t === undefined)) return st;
         if (name === 'eval') this.runText(text.join(' '), n, st);
         else {
@@ -1513,32 +1825,11 @@ class Walker {
         }
         return st;
       }
-      case 'let':
-        // The arguments are expanded, then each is run as an expression (`x*=3` is one, unless a file matches it); what
-        // one not known here seems to assign may be set.
-        return this.arithRun((s) => {
-          const texts = operands.map((o) => {
-            this.arithSteps = 0;
-            try {
-              const x = this.letText(o, s);
-              s = x.st;
-              return x.text;
-            } catch {
-              // (`letText` throws `ArithUnknown` only.)
-              return undefined;
-            }
-          });
-          operands.forEach((o, i) => {
-            const text = texts[i];
-            const from = s;
-            // (What its `$(( ))` assign is made with the words.)
-            s = text === undefined ? this.arithMaybe(descendants(o, ['arithmetic_expansion']).reduce((t, a) => t.replace(a.text, ''), o.text), s, o) : this.arithGuard(o.text, s, o, () => this.arithText(text, from, o, true, text !== o.text)).st;
-          });
-          return s;
-        }, st);
+      case 'let': return this.arithRun((s) => this.letCommand(operands, s), st);
       case 'source': case '.':
         // (The file is not read: what it defines is not known here.)
         this.sources.push(this.aliasHost ?? n);
+        this.turnOpaque();
         return st;
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
       case 'shopt': {
