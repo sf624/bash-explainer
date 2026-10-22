@@ -464,7 +464,8 @@
     if (open) {
       if (!reference) vscode.postMessage({ type: 'reference' });
       else renderReference();
-      $('ref-search').focus();
+      // Not on a touch screen: focusing the field would open the on-screen keyboard over the list.
+      if (window.matchMedia('(pointer: fine)').matches) $('ref-search').focus();
     }
   });
   $('ref-search').addEventListener('input', () => renderReference());

@@ -762,6 +762,16 @@ body.resizing .problems-resize {
   color: var(--vscode-foreground);
 }
 
+.phone-only {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  .phone-only {
+    display: flex !important;
+  }
+}
+
 .field[hidden],
 .pick[hidden] {
   display: none;
@@ -770,6 +780,11 @@ body.resizing .problems-resize {
 .field select {
   flex: 0 1 12rem;
   min-width: 0;
+}
+
+/* The names of the file kinds are the longest of the menu's selects. */
+#kind-menu {
+  flex-basis: 16rem;
 }
 
 .menu-item {
@@ -935,40 +950,23 @@ body.resizing .problems-resize {
     padding: 0 4px;
   }
 
-  .brand-name,
   .wide-only,
+  .desk-bar,
   .actions .sep {
     display: none;
   }
 
-  /* The kind keeps its short name whole (the longest, "Jenkins", fits at 320px); the buttons narrow instead. */
+  /* The file kind is in the menu on a phone, and the logo and the name take its place in the bar. */
   .kind {
-    flex: none;
-  }
-
-  .picker {
-    gap: 2px;
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0 4px 0 5px;
-    font-size: 12px;
-  }
-
-  .picker-name {
     display: none;
   }
 
-  .picker-short {
-    display: inline;
-  }
-
-  .picker .chev {
-    width: 10px;
-    height: 10px;
-  }
-
-  .picker-list [role="option"] {
-    min-height: 44px;
+  .brand {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 6px;
+    margin-inline: 4px;
+    font-size: 15px;
   }
 
   .actions {
@@ -1047,25 +1045,31 @@ body.resizing .problems-resize {
   }
 }
 
-/* A phone: no room for the logo beside the buttons. */
+/* The copy and the link are in the menu on every phone. Below 480px the logo is 24px and the name 14px;
+   below 390px the name goes on two lines (13px), to leave the four buttons 40px or more each. */
 @media (max-width: 479px) {
   .brand {
-    display: none;
+    flex: none;
+    gap: 6px;
+    margin-inline: 2px;
+  }
+
+  .brand img {
+    width: 24px;
+    height: 24px;
+  }
+
+  .brand-name {
+    font-size: 14px;
   }
 }
 
-/* Below 360px the copy as Markdown is in the menu (the top bar keeps 40px for each of its buttons). */
-.menu-item.tiny-only {
-  display: none;
-}
-
-@media (max-width: 359px) {
-  .top #copy-md {
-    display: none;
-  }
-
-  .menu-item.tiny-only {
-    display: flex;
+@media (max-width: 389px) {
+  .brand-name {
+    width: min-content;
+    font-size: 13px;
+    line-height: 1.15;
+    white-space: normal;
   }
 }
 
