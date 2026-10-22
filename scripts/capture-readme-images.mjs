@@ -90,8 +90,7 @@ const baseSettings = {
   'bashExplainer.panel.autoOpen': false,
 };
 const scenarioSettings = {
-  // Examples after the rows they belong to, so the first view is the tree and the example comes after scrolling.
-  demo: { 'bashExplainer.examples.placement': 'last' },
+  demo: {},
   hover: {},
   panel: { 'bashExplainer.hover.enabled': false, 'bashExplainer.panel.autoOpen': true },
   inline: { 'bashExplainer.hover.enabled': false, 'bashExplainer.inline.enabled': true },
@@ -258,8 +257,8 @@ async function record(page, scenario, frameDir) {
   await setCursor(mx, my);
 
   if (scenario === 'demo') {
-    // The cursor waits on the pipeline of line 8; the panel is opened as a user would, from the editor title bar.
-    await hoverWord(8, 'grep', 10);
+    // The cursor waits on the grep of line 13 (its example sits below several rows of the tree); the panel is opened as a user would, from the editor title bar.
+    await hoverWord(13, 'grep', 10);
     await click();
     await moveTo(...startMouse.demo, 10);
     const stop = start();
@@ -277,7 +276,7 @@ async function record(page, scenario, frameDir) {
     const pb = await f.locator('#main').boundingBox();
     await moveTo(pb.x + pb.width * 0.6, 560, 700);
     await sleep(2800);
-    // Then scroll down to the worked example of the whole pipeline, inside the same tree.
+    // Then scroll down to the worked example, which sits in the same tree under the pattern it is about.
     // Stop with the example's heading just under the panel's header, or once all of it shows.
     const [, vh] = viewport.demo;
     const hb = await f.locator('header').boundingBox();
@@ -288,13 +287,15 @@ async function record(page, scenario, frameDir) {
       await sleep(45);
     }
     await sleep(1000);
-    // Make the fourth input line ("RROR") match: grep keeps it, so tail's last 5 lines change.
+    // Make the input line "RROR" match: grep then keeps it, so the matching lines change.
     const ab = await area.boundingBox();
+    const row = await area.evaluate((el) => el.value.split('\n').indexOf('RROR'));
+    if (row < 0) throw new Error('the example input has no RROR line');
     const { top, line } = await area.evaluate((el) => {
       const cs = getComputedStyle(el);
       return { top: parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth), line: parseFloat(cs.lineHeight) };
     });
-    await moveTo(ab.x + 14, ab.y + top + line * 3.5, 800);
+    await moveTo(ab.x + 14, ab.y + top + line * (row + 0.5), 800);
     await sleep(200);
     await click();
     await page.keyboard.press('Home');
@@ -302,7 +303,7 @@ async function record(page, scenario, frameDir) {
     await page.keyboard.type('E', { delay: 120 });
     await sleep(800);
     // Step aside so the pointer does not hide the result.
-    await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * 3.5, 500);
+    await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * (row + 0.5), 500);
     await sleep(1800);
     // Back in the editor, a hover explains a single word.
     await moveTo(...startMouse.demo, 700);
