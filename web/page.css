@@ -56,6 +56,13 @@ a {
   stroke-linejoin: round;
 }
 
+/* GitHub's mark: filled, in its own colour only (black or white), at the size of the other icons. */
+.icon-btn svg.gh-mark,
+.menu-item svg.gh-mark {
+  fill: var(--github-mark);
+  stroke: none;
+}
+
 /* ---- Controls --------------------------------------------------------------------------------- */
 
 select,

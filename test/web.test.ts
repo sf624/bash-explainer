@@ -1128,6 +1128,30 @@ describe('the web page in a browser', function () {
     }
   });
 
+  it("links to the repository with GitHub's mark, black on a light page and white on a dark one, at the size of the other icons", async () => {
+    for (const scheme of ['light', 'dark'] as const) {
+      const ctx = await browser!.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: 'en-US' });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').first().waitFor();
+      const look = (sel: string) => page.evaluate(`(() => { const s = document.querySelector('${sel} svg'); const cs = getComputedStyle(s); const r = s.getBoundingClientRect(); return [cs.fill, cs.stroke, Math.round(r.width), Math.round(r.height), s.querySelector('use').getAttribute('href')]; })()`);
+      const fill = scheme === 'light' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)';
+      assert.deepStrictEqual(await look('#github'), [fill, 'none', 18, 18, '#i-github']);
+      assert.strictEqual(await page.locator('#github').getAttribute('aria-label'), 'GitHub repository');
+      assert.strictEqual(await page.locator('#github').getAttribute('href'), 'https://github.com/sf624/bash-explainer');
+      // The same size as the other buttons, and smaller than the page's own logo.
+      const [gh, share, logo] = await Promise.all(['#github', '#share', '.brand img'].map(async (s) => (await page.locator(s).boundingBox())!));
+      assert.ok(gh.width === share.width && gh.height === share.height && logo.height > 18, JSON.stringify([gh, share, logo]));
+      await page.locator('#menu-open').click();
+      assert.deepStrictEqual(await look('#menu-github'), [fill, 'none', 18, 18, '#i-github']);
+      await page.evaluate("document.getElementById('drawer').close()");
+      // In Japanese too.
+      await choose(page, '#lang', 'ja');
+      await until('ja name', async () => (await page.locator('#github').getAttribute('aria-label')) ?? '', (t) => t === 'GitHub リポジトリ');
+      await ctx.close();
+    }
+  });
+
   it('chooses the file kind with a compact picker, by mouse and by keyboard, and the sample follows', async () => {
     for (const [width, height] of [[360, 740], [1280, 800]]) {
       const ctx = await browser!.newContext({ viewport: { width, height }, locale: 'en-US' });
