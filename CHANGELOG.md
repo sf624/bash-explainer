@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- A shebang that runs `env` says what runs: `#!/usr/bin/env -S bash -e` runs `bash -e` with the script, and `#!/usr/bin/env bash -e` warns that Linux passes `bash -e` to env as one word, which fails.
+
+### Fixed
+
+- `env -S` strings are split as GNU env splits them (quotes, `\_`, `#` comments, `${NAME}`), and their words are read in place of the option, so `env -S'-i A=1 bash -e' script` shows `-i`, `A=1` and the command; a string env refuses gets a warning that it exits with status 125.
+- Options before a subcommand are read as the tool reads them (`docker -H h run`, `npm --prefix dir run build`, `yarn --cwd dir add`, `kubectl -o yaml get pods`, `gh -R o/r pr list`), and a tool's global options are told apart from its subcommands' (`kubectl logs -o` is not an option; terraform takes only `-chdir=DIR`, `-version` and `-help` before the subcommand).
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
+
 ## 0.7.0
 
 Explanations follow the script as bash runs it and cite the Bash manual; the web page is redesigned for phones and gets the extension's settings.
@@ -16,7 +29,6 @@ Explanations follow the script as bash runs it and cite the Bash manual; the web
 - The command-line tool reads a settings file with the keys of VS Code's `settings.json` (`--config`, `$BASH_EXPLAINER_CONFIG` or `~/.config/bash-explainer/settings.json`), with `--set key=value`, `--no-config` and `--print-config`. The Language Server takes every setting that applies to it, and reads the same file. Before, only the language, the shell and the examples could be set.
 - The web page has a settings sheet (the gear) with the extension's settings that apply there, including notes, warnings, kinds of examples and your own commands. Settings can be exported as a `settings.json` file for VS Code or the command-line tool, and imported back; "Clear stored data" forgets everything the page keeps in the browser.
 - On a touch screen, the web page has a read mode: taps move the cursor without opening the keyboard (a tip points to it the first time). A new "Wrap long lines" setting avoids sideways scrolling, and the Problems list can be resized and folded.
-- A shebang that runs `env` says what runs: `#!/usr/bin/env -S bash -e` runs `bash -e` with the script, and `#!/usr/bin/env bash -e` warns that Linux passes `bash -e` to env as one word, which fails.
 
 ### Changed
 
@@ -29,8 +41,8 @@ Explanations follow the script as bash runs it and cite the Bash manual; the web
 ### Fixed
 
 - Explanations match bash in more places: `~` after `=` and `:` in assignments and assignment-like arguments, `nullglob` / `failglob` / `GLOBIGNORE`, `set -f` on some paths, ambiguous redirection targets (`> *.log`), no globbing in `x=*.txt`, no word splitting in `<<< $x` or `${s:$i}`, unquoted patterns in `case` and `[[ ]]`, `a=(x)y`, and `$_`.
-- Words a command passes to another command are read as that command reads them: `ssh host ls -l`, `flock f -n true`, `bash -ex script.sh -x`, `sh -s -- --prefix x`, `env -S`, `sudo -i cmd` and `watch cmd`. `env -S` strings are split as GNU env splits them (quotes, `\_`, `#` comments, `${NAME}`), and their words are read in place of the option, so `env -S'-i A=1 bash -e' script` shows `-i`, `A=1` and the command; a string env refuses gets a warning that it exits with status 125. Options written with quotes or expansions (`ls "-l"`, `ls -$opts`) are options; abbreviated long options are read when the tool accepts them, and ambiguous ones are shown as such.
-- Options of specific tools are read as the tools read them, among them `git`'s global options, `ip`'s abbreviations, `ps`, `kill`, `trap`, `declare`, `pushd`, `exit -1`, `command -v`, `timeout`, `locate -r`, `ar` and `/bin/echo` or other builtins run by path. Options before a subcommand are read as the tool reads them (`docker -H h run`, `npm --prefix dir run build`, `yarn --cwd dir add`, `kubectl -o yaml get pods`, `gh -R o/r pr list`), and a tool's global options are told apart from its subcommands' (`kubectl logs -o` is not an option; terraform takes only `-chdir=DIR`, `-version` and `-help` before the subcommand).
+- Words a command passes to another command are read as that command reads them: `ssh host ls -l`, `flock f -n true`, `bash -ex script.sh -x`, `sh -s -- --prefix x`, `env -S`, `sudo -i cmd` and `watch cmd`. Options written with quotes or expansions (`ls "-l"`, `ls -$opts`) are options; abbreviated long options are read when the tool accepts them, and ambiguous ones are shown as such.
+- Options of specific tools are read as the tools read them, among them `git`'s global options, `ip`'s abbreviations, `ps`, `kill`, `trap`, `declare`, `pushd`, `exit -1`, `command -v`, `timeout`, `locate -r`, `ar` and `/bin/echo` or other builtins run by path.
 - Editing an example's input in the VS Code panel updates the output again when the command has a variable (such as `"$f"`). The `xargs -0 -I{}` example runs once per name, and `jq 'def g(x'` no longer stops the explanation.
 - A Dockerfile `RUN` warns about a pipe without `pipefail` unless `set -o pipefail` runs before the pipe; before, the word `pipefail` anywhere in the `RUN`, even in a comment, silenced it.
 - On the web page, the Problems list shows `code` as code instead of raw backticks.
