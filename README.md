@@ -176,7 +176,7 @@ The panel works like regex101:
 - **Edit the examples.** Change the input of a worked example — grep and `[[ =~ ]]` test strings, sed, awk, jq, perl, `sort`, `cut`, `xargs`, whole pipelines — and the output updates as you type.
 - **See what matched.** Matches are highlighted in the input, each capture group in its own colour, the same colour as the group in the explanation; a table shows what `\1`, `\2`, … captured.
 - **Switch the shell or yq** for the current file from the header, and see the explanation and warnings change.
-- **Fold** the explanation tree, **copy** it as Markdown for a review or a document, and open the searchable **quick reference** of expansions, redirections, tests, variables and commands.
+- **Fold** the explanation tree, **copy** it as Markdown for a review or a document, and open the searchable **quick reference** of expansions, redirections, tests, variables and commands. On the web page, these three are buttons in the top bar (on a screen narrower than 360px, the copy is in the menu).
 
 ### Commands
 
