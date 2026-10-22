@@ -170,6 +170,42 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('keeps the source line of the panel at the top while the explanation scrolls, and is capped', async () => {
+    const ctx = await browser!.newContext({ viewport: { width: 1280, height: 420 } });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('grep -rn "ERROR $USER" ./src 2>&1 | sort | uniq -c | sort -rn | head -n 5 | tee out.txt');
+    await page.keyboard.press('Control+Home');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('ERROR'));
+    const geometry = () => panel().evaluate(`(() => {
+      const line = document.getElementById('line').getBoundingClientRect();
+      const rows = [...document.querySelectorAll('#tree .row')].map((r) => r.getBoundingClientRect());
+      return { lineTop: line.top, scrollY: window.scrollY, max: document.documentElement.scrollHeight - innerHeight, below: rows.some((r) => r.top >= line.bottom && r.bottom <= innerHeight) };
+    })()`) as Promise<{ lineTop: number; scrollY: number; max: number; below: boolean }>;
+    assert.ok((await geometry()).max > 50, 'the explanation scrolls');
+    await panel().evaluate('window.scrollTo(0, 100000)');
+    const g = await until('scrolled', geometry, (x) => x.scrollY > 0);
+    assert.strictEqual(Math.round(g.lineTop), 0);
+    assert.ok(g.below, JSON.stringify(g));
+    await until('the edge', () => panel().locator('#line').evaluate((e) => e.classList.contains('stuck')), (v) => v);
+    // Hovering a token of the sticky line still lights a segment and its row.
+    await panel().locator('#line .seg').first().hover();
+    assert.ok((await panel().locator('.seg.active').count()) > 0);
+    // The block shows the cursor's own line only, so it is one line tall; a very long line scrolls inside the box, and the box is capped at 40% of the panel anyway.
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText(`echo ${'word '.repeat(120)}| sort`);
+    await page.keyboard.press('Control+Home');
+    const long = await until('the long line', () => panel().evaluate(`(() => { const l = document.getElementById('line'); return { h: l.getBoundingClientRect().height, sw: l.scrollWidth, cw: l.clientWidth, max: parseFloat(getComputedStyle(l).maxHeight), inner: innerHeight }; })()`) as Promise<{ h: number; sw: number; cw: number; max: number; inner: number }>, (x) => x.sw > x.cw);
+    assert.ok(long.h < 80, JSON.stringify(long));
+    assert.ok(Math.abs(long.max - long.inner * 0.4) < 1, JSON.stringify(long));
+    await ctx.close();
+  });
+
   it('links each row and note to its section of the Bash manual, opened in a new tab', async () => {
     const ctx = await browser!.newContext();
     // The manual is not fetched here: the tab that opens gets a stub.

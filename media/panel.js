@@ -353,6 +353,15 @@
   $('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
   /** Colour each character of the line by the deepest token covering it. */
+  // The line is sticky (panel.css): tell the CSS how tall it is, and whether rows are under it.
+  function syncLine() {
+    const pre = $('line');
+    document.documentElement.style.setProperty('--line-h', `${pre.offsetHeight}px`);
+    pre.classList.toggle('stuck', pre.getBoundingClientRect().top <= 0 && window.scrollY > 0);
+  }
+  window.addEventListener('scroll', syncLine, { passive: true });
+  window.addEventListener('resize', syncLine);
+
   function renderLine(text, line, items) {
     const owner = new Array(text.length).fill(-1);
     const depthAt = new Array(text.length).fill(-1);
@@ -375,6 +384,7 @@
 
     const pre = $('line');
     pre.replaceChildren();
+    requestAnimationFrame(syncLine);
     segments = [];
     let i = 0;
     while (i < text.length) {

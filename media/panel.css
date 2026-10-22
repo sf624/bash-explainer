@@ -57,15 +57,35 @@ header {
   color: var(--vscode-foreground);
 }
 
+/* The line stays at the top while the explanation scrolls under it. It is opaque (the code block's
+   tint over the panel's background), and a ring of the background colour around it hides the rows
+   that pass beside and above it. A tall statement (shown whole) scrolls inside its box, so the tree
+   keeps room. --line-h (panel.js) is its height, for scrolling a row into view below it. */
+html {
+  scroll-padding-top: calc(var(--line-h, 0px) + 0.75rem);
+}
+
 pre#line {
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
-  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  background:
+    linear-gradient(var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1)), var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1))),
+    var(--vscode-editor-background);
   padding: 0.6rem 0.8rem;
   border-radius: 4px;
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 40vh;
   white-space: pre;
   margin: 0 0 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 0 0 0.5rem var(--vscode-editor-background);
+}
+
+/* Scrolled under: a soft edge below. */
+pre#line.stuck {
+  box-shadow: 0 0 0 0.5rem var(--vscode-editor-background), 0 0.6rem 0.6rem 0.2rem rgba(0, 0, 0, 0.18);
 }
 
 .seg {
