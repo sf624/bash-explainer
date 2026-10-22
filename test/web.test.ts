@@ -196,7 +196,7 @@ describe('the web page in a browser', function () {
     }
     const g = await geometry();
     assert.ok(g.below, JSON.stringify(g));
-    await until('the edge', () => panel().locator('#line').evaluate((e) => e.classList.contains('stuck')), (v) => v);
+    await until('the edge', () => panel().locator('#top').evaluate((e) => e.classList.contains('stuck')), (v) => v);
     // Nothing scrolled under it shows above it, not even at its rounded corners.
     const above = await panel().evaluate(`(() => {
       const line = document.getElementById('line');
@@ -204,7 +204,7 @@ describe('the web page in a browser', function () {
       const out = [];
       for (let y = 0; y <= r.top + 3; y++) for (let x = 0; x < innerWidth; x += 2) {
         const e = document.elementFromPoint(x, y);
-        if (e && e !== document.body && e !== document.documentElement && !line.contains(e)) out.push(x + ',' + y + ' ' + e.tagName + '.' + e.className);
+        if (e && e !== document.body && e !== document.documentElement && e.id !== 'top' && !line.contains(e)) out.push(x + ',' + y + ' ' + e.tagName + '.' + e.className);
       }
       return out.slice(0, 5);
     })()`) as string[];
@@ -408,6 +408,48 @@ describe('the web page in a browser', function () {
     await page.evaluate(`document.getElementById('f').contentWindow.postMessage({ type: 'bx-state', text: 'echo one\\nsort -u a.txt\\n', kind: 'shell', line: 1, col: 0, lang: 'en', theme: 'auto', choice: {}, settings: { 'bashExplainer.examples.enabled': false } }, location.origin)`);
     await until('no example', () => inner().locator('#main').innerText(), (t) => !/Example/.test(t));
     assert.strictEqual(await inner().locator('#settings').isHidden(), true);
+    await ctx.close();
+  });
+
+  it('keeps the header and the source line of the panel together at the top where the header shows (VS Code)', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(`${base}stub`);
+    await page.evaluate(`window.got = []; window.addEventListener('message', (e) => window.got.push(e.data));
+      document.body.insertAdjacentHTML('beforeend', '<iframe id="f" src="${base}pr/123/?view=panel" style="width:300px;height:420px"></iframe>');`);
+    await until('the handshake', () => page.evaluate('window.got.find((m) => m.type === "bx-ready") || null') as Promise<unknown>, (m) => !!m);
+    const text = 'grep -rn "ERROR $USER" ./src 2>&1 | sort | uniq -c | sort -rn | head -n 5 | tee out.txt\n';
+    await page.evaluate(`document.getElementById('f').contentWindow.postMessage({ type: 'bx-state', text: ${JSON.stringify(text)}, kind: 'shell', line: 0, col: 0, lang: 'en', theme: 'auto', choice: {} }, location.origin)`);
+    const inner = () => page.frames().find((x) => x.url().endsWith('/pr/123/panel.html') && x !== page.mainFrame())!;
+    await until('the line explained', async () => (await inner()?.locator('#line').textContent().catch(() => '')) ?? '', (t) => t.includes('ERROR'));
+    const geometry = () => inner().evaluate(`(() => {
+      const h = document.querySelector('header').getBoundingClientRect();
+      const l = document.getElementById('line').getBoundingClientRect();
+      const lh = parseFloat(getComputedStyle(document.querySelector('.where')).lineHeight) || 20;
+      return { hTop: h.top, hBottom: h.bottom, hHeight: h.height, lTop: l.top, scrollY: window.scrollY, max: document.documentElement.scrollHeight - innerHeight, lh };
+    })()`) as Promise<{ hTop: number; hBottom: number; hHeight: number; lTop: number; scrollY: number; max: number; lh: number }>;
+    const start = await geometry();
+    assert.ok(start.max > 50, 'the explanation scrolls');
+    assert.ok(start.hHeight > start.lh * 2.2, `the header wraps to two rows: ${JSON.stringify(start)}`);
+    assert.ok(Math.abs(start.lTop - start.hBottom) < 9, JSON.stringify(start));
+    for (const y of [3, 20, 100000]) {
+      await inner().evaluate(`window.scrollTo(0, ${y})`);
+      const at = await until('scrolled', geometry, (x) => x.scrollY > 0);
+      assert.ok(Math.abs(at.hTop - start.hTop) < 0.5, JSON.stringify({ y, start, at }));
+      assert.ok(Math.abs(at.lTop - start.lTop) < 0.5, JSON.stringify({ y, start, at }));
+      assert.ok(Math.abs(at.lTop - at.hBottom - (start.lTop - start.hBottom)) < 1, JSON.stringify({ y, start, at }));
+    }
+    const above = await inner().evaluate(`(() => {
+      const line = document.getElementById('line');
+      const r = line.getBoundingClientRect();
+      const out = [];
+      for (let y = 0; y <= r.bottom; y++) for (let x = 0; x < innerWidth; x += 2) {
+        const e = document.elementFromPoint(x, y);
+        if (e && e !== document.body && e !== document.documentElement && e.id !== 'top' && !line.contains(e) && !document.querySelector('header').contains(e)) out.push(x + ',' + y + ' ' + e.tagName + '.' + e.className);
+      }
+      return out.slice(0, 5);
+    })()`) as string[];
+    assert.deepStrictEqual(above, []);
     await ctx.close();
   });
 

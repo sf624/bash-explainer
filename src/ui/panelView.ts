@@ -78,7 +78,8 @@ export function panelUpdate(p: PanelLine) {
 }
 
 /** The panel's markup, inside <body> and before its script. */
-export const PANEL_BODY = `<header>
+export const PANEL_BODY = `<div id="top">
+<header>
   <div class="where"><span id="where"></span><span id="context"></span></div>
   <div class="tools">
     <label id="shell-box" hidden><span id="shell-label"></span> <select id="shell"></select></label>
@@ -89,8 +90,9 @@ export const PANEL_BODY = `<header>
     <button id="settings" type="button"></button>
   </div>
 </header>
+<pre id="line"></pre>
+</div>
 <main id="main">
-  <pre id="line"></pre>
   <div id="notes"></div>
   <ul id="tree"></ul>
   <div id="examples"></div>
