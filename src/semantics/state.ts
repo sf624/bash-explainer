@@ -171,6 +171,29 @@ export class NameMap<V> implements ReadonlyMap<string, V> {
     for (const [k, v] of this.entries()) f(v, k, this);
   }
 
+  /**
+   * The map of the values `f` gives (a name it gives none of is left out). `memo` keeps what each bucket gives, so
+   * maps that share buckets share the work and the result; `f` must depend on its arguments only.
+   */
+  mapped<W>(f: (k: string, v: V) => W | undefined, memo: WeakMap<object, ReadonlyMap<string, W>>): NameMap<W> {
+    let size = 0;
+    const buckets = this.buckets.map((b) => {
+      if (!b) return undefined;
+      let m = memo.get(b);
+      if (!m) {
+        const out = new Map<string, W>();
+        for (const [k, v] of b) {
+          const w = f(k, v);
+          if (w !== undefined) out.set(k, w);
+        }
+        memo.set(b, (m = out));
+      }
+      size += m.size;
+      return m.size ? m : undefined;
+    });
+    return new NameMap(buckets, size);
+  }
+
   /** The two maps merged with `f` for the names whose values are not the same object. */
   static merge<V>(a: NameMap<V>, b: NameMap<V>, f: (k: string, x: V | undefined, y: V | undefined) => V): NameMap<V> {
     if (a === b) return a;
@@ -680,15 +703,47 @@ function childModel(script: NestedScript): StateModel {
   const cmd = ancestor(first, (x) => x.type === 'command')!;
   const name = field(cmd, 'name')!;
   // The names the command's assignments and its slots give, but those a slot after them does not pass on
-  // (`x=1 env -i bash -c …`: `x` is not there; `env -i x=1 bash -c …`: it is).
-  let given = cmd.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex).map((c) => field(c, 'name')!.text);
+  // (`x=1 env -i bash -c …`: `x` is not there; `env -i x=1 bash -c …`: it is), and those a slot removes (`env -u x`).
+  const given = new Set(cmd.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex).map((c) => field(c, 'name')!.text));
+  const removed = new Set<string>();
   // (The links after the command's own place are its slots.)
-  for (const l of script.env.links.slice(script.outer.env(cmd).links.length) as SlotLink[]) {
+  const links = script.env.links.slice(script.outer.env(cmd).links.length) as SlotLink[];
+  for (const l of links) {
     if (l.slot.run === 'current-shell') continue;
-    if (l.env === 'reset' || l.env === 'none' || (l.slot.where ?? 'local') !== 'local') given = [];
-    given = [...given, ...l.assigns];
+    if (l.env === 'reset' || l.env === 'none' || (l.slot.where ?? 'local') !== 'local') given.clear();
+    for (const u of l.unsets ?? []) {
+      given.delete(u);
+      removed.add(u);
+    }
+    for (const g of l.assigns) {
+      given.add(g);
+      removed.delete(g);
+    }
   }
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, given, first));
+  const pass = { given: [...given], removed, invocation: links[links.length - 1].invocation ?? [] };
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, pass, first));
+}
+
+/**
+ * What of a variable of the script reaches another shell (`Walker.childStart`): undefined when it does not (not
+ * exported, unset, an array, or IFS, which a shell sets itself when it starts). Kept per bucket of the script's
+ * variables, which the states along the script share, so that many strings cost little (`NameMap.mapped`).
+ */
+/** What the slots on the way give another shell besides the script's exported names (`childModel`). */
+interface ChildPass {
+  readonly given: readonly string[];
+  readonly removed: ReadonlySet<string>;
+  readonly invocation: readonly { readonly flag: string; readonly value?: string }[];
+}
+
+const passedMemo = new WeakMap<object, ReadonlyMap<string, VariableState>>();
+function passed(name: string, v: VariableState): VariableState | undefined {
+  const x = v.attrs.x?.state ?? 'off';
+  const array = ['a', 'A'].map((l) => v.attrs[l]?.state ?? 'off');
+  if (x === 'off' || v.set === 'off' || array.includes('on') || name === 'IFS') return undefined;
+  return x === 'on' && v.set === 'on' && !array.includes('unknown')
+    ? { declared: 'on', set: 'on', attrs: { x: v.attrs.x! }, ...(v.value !== undefined ? { value: v.value } : {}), at: v.at }
+    : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at };
 }
 
 class Walker {
@@ -783,29 +838,23 @@ class Walker {
   /**
    * The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13): the variables of `outer` that
    * reach it through `env` (exported, with a value: an array is not passed), and those the slots set (`given`); the
-   * exported functions, when it is bash and every link passes them; the set options, when SHELLOPTS is exported.
+   * exported functions, when it is bash and every link passes them; the set options with an exported SHELLOPTS, the
+   * shopt options with an exported BASHOPTS (bash); then the options it is started with (`bash -e -O extglob -c`). A
+   * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has.
    */
-  childStart(outer: ShellState, env: ExecEnv, given: readonly string[], at: SyntaxNode): ShellState {
+  childStart(outer: ShellState, env: ExecEnv, pass: ChildPass, at: SyntaxNode): ShellState {
     let st = this.initial();
-    const exported = (x: Attribute | undefined): Tri => x?.state ?? 'off';
-    const reach = reachOf(env, exported(outer.variables.get('SHELLOPTS')?.attrs.x) === 'on');
-    // (`sh` may be bash, which reads exported functions and SHELLOPTS, or dash, which reads neither.)
+    const exported = (name: string): boolean => (outer.variables.get(name)?.attrs.x?.state ?? 'off') === 'on';
+    const reach = reachOf(env, exported('SHELLOPTS'));
+    // (`sh` may be bash, which reads exported functions, SHELLOPTS and BASHOPTS, or dash, which reads none.)
     const bashLike: Tri = this.bash ? 'on' : this.shell === 'sh' ? 'unknown' : 'off';
     if (reach.variables !== 'none') {
-      const vars = new Map<string, VariableState>();
-      for (const [name, v] of outer.variables) {
-        const x = exported(v.attrs.x);
-        const array = [attribute(outer, name, 'a'), attribute(outer, name, 'A')];
-        // (A shell sets IFS itself when it starts; an array is not passed.)
-        if (x === 'off' || v.set === 'off' || array.includes('on') || name === 'IFS') continue;
-        vars.set(name, x === 'on' && v.set === 'on' && !array.includes('unknown')
-          ? { declared: 'on', set: 'on', attrs: { x: v.attrs.x! }, ...(v.value !== undefined ? { value: v.value } : {}), at: v.at }
-          : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at });
-      }
-      st = { ...st, variables: st.variables.withAll(vars) };
+      let vars = outer.variables.mapped(passed, passedMemo);
+      for (const name of pass.removed) vars = vars.with(name, undefined);
+      st = { ...st, variables: vars };
     }
     // (`env -i x=1 bash -c …` passes `x`.)
-    for (const name of given) if (NAME.test(name)) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: { x: { state: 'on', at } }, at }) };
+    for (const name of pass.given) if (NAME.test(name)) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: { x: { state: 'on', at } }, at }) };
     if (reach.functions === 'exported' && bashLike !== 'off') {
       const fns = new Map<string, FunctionState>();
       for (const [name, f] of outer.functions) {
@@ -816,11 +865,39 @@ class Walker {
       }
       st = { ...st, functions: st.functions.withAll(fns) };
     }
-    // (bash turns on the options SHELLOPTS names; it turns none off.)
-    if (reach.options !== 'none' && bashLike !== 'off') {
+    // (bash turns on the options SHELLOPTS and BASHOPTS name; it turns none off.)
+    const inherit = (kind: 'set' | 'shopt', on: boolean): void => {
+      if (!on || bashLike === 'off') return;
       const opts = new Map<string, OptionState>();
-      for (const [name, o] of outer.set) if (o === 'on' || o === 'unknown') opts.set(name, o === 'on' && bashLike === 'on' ? 'on' : 'unknown');
-      st = { ...st, set: st.set.withAll(opts) };
+      for (const [name, o] of outer[kind]) if (o === 'on' || o === 'unknown') opts.set(name, o === 'on' && bashLike === 'on' ? 'on' : 'unknown');
+      st = { ...st, [kind]: st[kind].withAll(opts) };
+    };
+    // The options it is started with: `-e`, `+x`, `-o pipefail`, `-O extglob` (bash), `--posix`; `-l` and `-i` read
+    // startup files.
+    let startup = false;
+    for (const { flag, value } of pass.invocation) {
+      const on = flag[0] === '-';
+      const letter = flag.slice(1);
+      if (flag === '--posix') st = this.setPosix(st, true, at);
+      else if (['-l', '--login', '-i'].includes(flag)) startup = true;
+      else if (/^[-+]o$/.test(flag) && value) st = value === 'posix' ? this.setPosix(st, on, at) : { ...st, set: st.set.with(value, on ? 'on' : 'off') };
+      else if (/^[-+]O$/.test(flag) && value) st = { ...st, shopt: st.shopt.with(value, on ? 'on' : 'off') };
+      else if (SET_LETTERS[letter]) st = { ...st, set: st.set.with(SET_LETTERS[letter], on ? 'on' : 'off') };
+    }
+    // (Then bash turns on the options an exported SHELLOPTS and BASHOPTS name, also those turned off above.)
+    inherit('set', reach.options !== 'none');
+    inherit('shopt', reachOf(env, exported('BASHOPTS')).options !== 'none');
+    // bash runs the file an exported BASH_ENV names before the string: what it sets is not known here, as for the
+    // startup files.
+    const bashEnv = st.variables.get('BASH_ENV');
+    if (this.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;
+    if (startup) {
+      this.turnOpaque();
+      const vars = new Map<string, VariableState>();
+      for (const [name, v] of outer.variables) if (!st.variables.has(name)) vars.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: v.at });
+      const fns = new Map<string, FunctionState>();
+      for (const [name, f] of outer.functions) if (!st.functions.has(name)) fns.set(name, { state: 'unknown', def: f.def, exported: 'unknown', readonly: 'off' });
+      st = { ...st, variables: st.variables.withAll(vars), functions: st.functions.withAll(fns) };
     }
     return st;
   }
@@ -1858,7 +1935,8 @@ class Walker {
       for (const a of temporaries) {
         const name = field(a, 'name')!.text;
         if (!frame.saved.has(name)) frame.saved.set(name, entry.variables.get(name));
-        entry = this.assignNode(a, entry);
+        // (bash exports them to the commands the body runs.)
+        entry = this.giveAttribute(this.assignNode(a, entry), name, 'x', a);
       }
       exit = this.walkBody(def, entry, frame);
     } else {

@@ -17,8 +17,8 @@ export type OptSpec = [string, string, string, string?] | [string, string, strin
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
-  const setsEnv = flags.includes('setenv') ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
-  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}) };
+  const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
   else if (flags.includes('arg')) {

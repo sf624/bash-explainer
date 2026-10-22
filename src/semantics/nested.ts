@@ -52,8 +52,11 @@ export function scriptText(words: readonly SyntaxNode[]): MappedText | undefined
       out.ends.push(w.startIndex);
     }
     out.text += part.text;
-    out.starts.push(...part.starts);
-    out.ends.push(...part.ends);
+    // (One by one: spreading a long string's ranges into `push` overflows the stack.)
+    for (let k = 0; k < part.starts.length; k++) {
+      out.starts.push(part.starts[k]);
+      out.ends.push(part.ends[k]);
+    }
   }
   return out;
 }

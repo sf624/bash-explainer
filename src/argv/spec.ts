@@ -150,6 +150,8 @@ export interface ValueSpec {
    * command's own words (`env -S'-i A=1 bash -e'`: GNU env's rules, src/argv/envsplit.ts).
    */
   splice?: 'env';
+  /** The value removes an environment variable from what the command a slot runs gets (`env -u NAME`). */
+  unsetsEnv?: boolean;
 }
 
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'

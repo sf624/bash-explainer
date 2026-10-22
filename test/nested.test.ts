@@ -222,6 +222,57 @@ describe('nested scripts: the model', () => {
     assert.strictEqual(option(st(4), 'set', 'errexit'), 'unknown');
   });
 
+  it('starts another shell with its options, without what a slot removes, and with what its startup files may set', () => {
+    const start = (src: string) => {
+      const tree = parser.parse(src);
+      const model = shellState(tree);
+      new Analyzer('en').explainLine(tree, 0);
+      const strings = descendants(tree.root, ['raw_string']);
+      const s = cached(model, strings[strings.length - 1]);
+      return s.model.at(s.tree.root.namedChildren[0]).run;
+    };
+    // (`env -u x` removes `x`; an assignment after it gives it again.)
+    assert.strictEqual(start(`export x=1; env -u x bash -c ':'`).variables.get('x'), undefined);
+    assert.strictEqual(start(`export x=1; env --unset=x bash -c ':'`).variables.get('x'), undefined);
+    assert.strictEqual(start(`export x=1; env -u x x=2 bash -c ':'`).variables.get('x')?.set, 'on');
+    // (Options as the shell is started: `-e`, `-o NAME`, `+o NAME`, `-O NAME`, `--posix`.)
+    assert.strictEqual(option(start(`bash -ec ':'`), 'set', 'errexit'), 'on');
+    assert.strictEqual(option(start(`bash -e +e -c ':'`), 'set', 'errexit'), 'off');
+    assert.strictEqual(option(start(`set -e; export SHELLOPTS; bash +e -c ':'`), 'set', 'errexit'), 'on');
+    assert.strictEqual(option(start(`bash -o pipefail -u -c ':'`), 'set', 'pipefail'), 'on');
+    assert.strictEqual(option(start(`bash -o pipefail -u -c ':'`), 'set', 'nounset'), 'on');
+    assert.strictEqual(option(start(`bash -o pipefail +o pipefail -c ':'`), 'set', 'pipefail'), 'off');
+    assert.strictEqual(option(start(`bash -O extglob -c ':'`), 'shopt', 'extglob'), 'on');
+    assert.strictEqual(option(start(`bash --posix -c ':'`), 'set', 'posix'), 'on');
+    assert.strictEqual(option(start(`bash -o posix -c ':'`), 'shopt', 'inherit_errexit'), 'on');
+    assert.strictEqual(option(start(`bash -onounset -c ':'`), 'set', 'nounset'), 'on');
+    // (An option after the string is an argument.)
+    assert.strictEqual(option(start(`bash -c ':' -e`), 'set', 'errexit'), 'default');
+    // (An exported BASHOPTS turns on the shopt options it names, after the options given: `+O` does not turn them off.)
+    assert.strictEqual(option(start(`shopt -s extglob; export BASHOPTS; bash +O extglob -c ':'`), 'shopt', 'extglob'), 'on');
+    assert.strictEqual(option(start(`shopt -s extglob; bash -c ':'`), 'shopt', 'extglob'), 'default');
+    assert.strictEqual(option(start(`shopt -s extglob; export BASHOPTS; sh -c ':'`), 'shopt', 'extglob'), 'unknown');
+    // (Startup files, or the file BASH_ENV names, may set any name.)
+    assert.strictEqual(start(`x=1; bash -c ':'`).variables.get('x'), undefined);
+    for (const src of [`x=1; bash -lc ':'`, `x=1; bash -i -c ':'`, `x=1; export BASH_ENV=f; bash -c ':'`, `x=1; BASH_ENV=f bash -c ':'`]) {
+      assert.strictEqual(start(src).variables.get('x')?.set, 'unknown', src);
+    }
+    assert.strictEqual(start(`x=1; export BASH_ENV=; bash -c ':'`).variables.get('x'), undefined);
+    assert.strictEqual(start(`f() { :; }; bash -lc ':'`).functions.get('f')?.state, 'unknown');
+    // (The assignments before a function call are exported while it runs.)
+    assert.strictEqual(start(`g() { bash -c ':'; }; x=1 g`).variables.get('x')?.set, 'on');
+  });
+
+  it('reads a string of 200000 characters', () => {
+    const long = `x=${'a'.repeat(200000)}`;
+    const tree = parser.parse(`eval '${long}'; bash -c '${long}'`);
+    const model = shellState(tree);
+    assert.strictEqual(model.end.variables.get('x')?.value?.length, 200000);
+    new Analyzer('en').explainLine(tree, 0);
+    const s = cached(model, descendants(tree.root, ['raw_string'])[1]);
+    assert.strictEqual(s.text.length, long.length);
+  });
+
   it('runs a trap set by a trap action, and widens between the sides of && too', () => {
     const tree = parser.parse(`x=5; trap "trap 'y=\\$x' USR1" INT\ntrap 'z=2' USR1; z=3 && echo "$z"`);
     const model = shellState(tree);
