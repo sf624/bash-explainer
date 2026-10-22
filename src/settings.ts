@@ -1,7 +1,8 @@
 // The settings of Bash Explainer: the keys VS Code lists in package.json (contributes.configuration),
 // their types and defaults, and where each one has a meaning: VS Code, the web page, the command-line
 // tool and the Language Server. test/settings-schema.test.ts keeps this list and package.json equal,
-// so that a new VS Code setting cannot be forgotten on the other surfaces.
+// so that a new VS Code setting cannot be forgotten on the other surfaces. A setting of one surface
+// only, 'web', is not in package.json (VS Code has its own for it) and carries its own description.
 // Pure code: the web page bundles it, so it reads no file itself.
 import { EXAMPLE_KINDS, ExplainOptions } from './analyzer';
 import { Shell } from './dialect';
@@ -34,6 +35,7 @@ export interface Settings {
   'panel.autoOpen': boolean;
   'highlight.enabled': boolean;
   colors: 'vscode' | 'classic';
+  'editor.wrap': boolean;
   languages: string[];
   'embedded.files': string[];
   customCommands: Record<string, unknown>;
@@ -61,6 +63,8 @@ export interface SettingSpec {
   surfaces: readonly Surface[];
   /** Why it has none on the other surfaces (for the docs and the tests). */
   elsewhere?: string;
+  /** The description, [Japanese, English], of a setting that is not in package.json (those of the web page only). */
+  description?: [string, string];
 }
 
 const ALL: readonly Surface[] = ['vscode', 'web', 'cli', 'lsp'];
@@ -123,6 +127,14 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'colors', type: 'string', default: 'vscode', enum: ['vscode', 'classic'], group: 'display', title: ['トークンの色', 'Token colours'], surfaces: ['vscode', 'web'],
     elsewhere: 'The command-line tool and the Language Server draw no colours of their own (the editor colours code by its theme, or by the semantic tokens of highlight.enabled).',
+  },
+  {
+    key: 'editor.wrap', type: 'boolean', default: false, group: 'display', title: ['長い行の折り返し', 'Wrap long lines'], surfaces: ['web'],
+    description: [
+      'エディタで、長い行をウィンドウの幅で折り返します。オフのときは、長い行は横にスクロールします。',
+      'Wraps long lines in the editor at the width of the window. When off, a long line scrolls sideways.',
+    ],
+    elsewhere: 'Only the web page has its own editor; VS Code has `editor.wordWrap`, and the command-line tool and the Language Server show no editor.',
   },
   {
     key: 'languages', type: 'array', default: ['shellscript'], group: 'files', title: ['対象の言語 ID', 'Language IDs'], surfaces: ['vscode', 'lsp'],
