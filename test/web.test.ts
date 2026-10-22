@@ -1209,9 +1209,9 @@ describe('the web page in a browser', function () {
       await page.keyboard.press('Enter');
       assert.strictEqual(await list.isVisible(), true);
       await page.keyboard.press('End');
-      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'jenkinsfile');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'bats');
       await page.keyboard.press('ArrowUp');
-      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'python');
+      assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'jenkinsfile');
       await page.keyboard.press('Home');
       assert.strictEqual(await page.evaluate('document.activeElement.dataset.value'), 'shell');
       await page.keyboard.press('ArrowDown');

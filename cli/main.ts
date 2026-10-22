@@ -16,7 +16,7 @@ import { readSettingsFile, settingsFile, SettingsFileError } from './settings-fi
 declare const __VERSION__: string;
 
 type Kind = 'shell' | HostKind;
-const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python', 'jenkinsfile'];
+const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python', 'jenkinsfile', 'bats'];
 type Format = 'text' | 'markdown' | 'json' | 'sarif' | 'github';
 
 const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
@@ -210,7 +210,7 @@ function readInputs(o: Options): Input[] {
     } catch (e) {
       throw new UsageError(`cannot read ${input.spec}: ${(e as NodeJS.ErrnoException).code ?? e}`);
     }
-    const kind = o.kind ?? (input.spec === '-' ? 'shell' : hostKind('', input.spec) ?? 'shell');
+    const kind = o.kind ?? (input.spec === '-' ? 'shell' : hostKind('', input.spec, text) ?? 'shell');
     // A shell script keeps its CRs: the parser reads them as blanks and the check warns about them.
     out.push({ name: input.spec, text: kind === 'shell' ? text : text.replace(/\r\n/g, '\n'), kind, lines: input.lines ?? o.lines });
   }

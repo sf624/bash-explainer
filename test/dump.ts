@@ -13,7 +13,7 @@ const root = path.join(__dirname, '..');
   const parser = createUnbashParser();
   const src = fs.readFileSync(file, 'utf8');
   // Dockerfiles, Makefiles, YAML, package.json and Markdown: explain only their shell parts.
-  const kind = hostKind('', file);
+  const kind = hostKind('', file, src);
   const extracted = kind && extractShell(kind, src);
   const tree = parser.parse(extracted ? extracted.text : src);
   const analyzer = new Analyzer(lang as 'ja' | 'en');

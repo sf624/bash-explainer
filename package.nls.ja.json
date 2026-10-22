@@ -59,5 +59,6 @@
   "config.embedded.files.packageJson": "package.json の scripts",
   "config.embedded.files.markdown": "Markdown のコードブロック",
   "config.embedded.files.python": "Python の subprocess・os.system",
-  "config.embedded.files.jenkinsfile": "Jenkinsfile の sh ステップ"
+  "config.embedded.files.jenkinsfile": "Jenkinsfile の sh ステップ",
+  "config.embedded.files.bats": "bats のテストファイル（.bats）"
 }

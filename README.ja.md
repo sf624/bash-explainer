@@ -39,7 +39,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | `echo "${file%.*}"` | `file=report.tar.gz` → `report.tar` |
 | `sed -E 's/^([a-z]+)=(.*)$/\2=\1/'` | 正規表現の部品ごとの意味と、入力例 `a=x` → 出力 `x=a` |
 | `#!/bin/sh` の中の `[[ -f $f ]]` | ⚠ dash では `[[ ]]` が動かないこと。`[ -f "$f" ]` へのクイックフィックス付き |
-| Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・Jenkinsfile・`package.json`・Python の中のシェルも同じように解説 |
+| Dockerfile の `RUN apt-get update && …` | Dockerfile・Makefile・CI の YAML・Jenkinsfile・`package.json`・Python・bats のテストの中のシェルも同じように解説 |
 
 ## 解説できるもの
 
@@ -94,6 +94,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 | Markdown | `sh`・`bash`・`console` などのコードブロック（シェルはブロック内の shebang、なければ言語名のシェル。`sh` は bash として読む） |
 | Python | `subprocess.run(…)`・`os.system(…)` など。`shell=True` なしの文字列や、シェルに値を埋め込む書き方を指摘 |
 | Jenkinsfile | `sh '…'`・`sh "…"`・`sh '''…'''`・`sh(script: …)`。シェルより先に Groovy が埋め込む `$名前` や `${…}` を指摘 |
+| bats（`.bats` か `bats` の shebang） | ファイル全体を bash として。`@test "…" {` は bats が `set -e` で実行するテストとして、`run`（`!`・`-N`・`--separate-stderr` も）・`load`・`skip`・`bats_pipe` も説明。テストを失敗させられない `! cmd` や `run cmd \| …` を指摘 |
 
 それぞれ、実際に実行するシェル向けの書き方になっているかも確認します（Dockerfile と Makefile は `SHELL` の指定がなければ `/bin/sh`）。対象にするファイルの種類は `bashExplainer.embedded.files` で選べます。
 
@@ -214,7 +215,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
-| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile` |
+| `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |
 | `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 | **辞書** | | |
 | `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |

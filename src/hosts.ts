@@ -5,9 +5,12 @@ import { descendants, type BashParser, type SyntaxNode, type SyntaxTree } from '
 import { createUnbashParser } from './syntax/adapters/unbash';
 import { shellState } from './semantics/state';
 import { statusModel } from './semantics/status';
+import type { CommandSpec } from './argv/spec';
+import { BATS_COMMANDS } from './dict/bats';
+import { batsFacts } from './bats';
 
 /** Kinds of files whose shell snippets are explained. */
-export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile';
+export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile' | 'bats';
 
 /** A run of lines holding shell code inside another kind of file. */
 export interface ShellRegion {
@@ -21,6 +24,10 @@ export interface ShellRegion {
   notes?: [string, string, string?][];
   /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
   warnPipefail?: boolean;
+  /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */
+  commands?: Record<string, CommandSpec>;
+  /** The lines of the tests a test runner turns into functions (bats: `@test "…" {`). */
+  tests?: number[];
 }
 
 /** Something the host replaces before the shell sees it (`$(CC)` in make, `${{ … }}` in GitHub Actions). */
@@ -49,9 +56,10 @@ export interface Extracted {
 /** Japanese text followed by more: a space after a closing backtick, so the code span ends. */
 const spaced = (ja: string) => (ja.endsWith('`') ? `${ja} ` : ja);
 
-/** Which kind of host a document is, from its language id and file name. */
-export function hostKind(languageId: string, fileName: string): HostKind | undefined {
+/** Which kind of host a document is, from its language id, its file name and, when given, its first line (a bats shebang). */
+export function hostKind(languageId: string, fileName: string, text?: string): HostKind | undefined {
   const base = fileName.split(/[\\/]/).pop()!;
+  if (languageId === 'bats' || /\.bats$/i.test(base) || (text !== undefined && BATS_SHEBANG.test(text))) return 'bats';
   if (languageId === 'dockerfile' || /^(Dockerfile|Containerfile)(\..*)?$|\.(dockerfile|containerfile)$/i.test(base)) return 'dockerfile';
   if (languageId === 'makefile' || /^(GNU)?makefile$|\.mk$/i.test(base)) return 'makefile';
   if (base === 'package.json') return 'npm';
@@ -61,6 +69,9 @@ export function hostKind(languageId: string, fileName: string): HostKind | undef
   if (languageId === 'jenkinsfile' || /^Jenkinsfile(\..*)?$|\.jenkinsfile$/i.test(base)) return 'jenkinsfile';
   return undefined;
 }
+
+/** `#!/usr/bin/env bats`, `#!/usr/local/bin/bats`: bats as the program of the first line. */
+const BATS_SHEBANG = /^#![^\n]*[ \t/]bats(?=[ \t\r\n]|$)/;
 
 /** Builds the shell text of one line from pieces of the original line and inserted text. */
 class LineOut {
@@ -129,8 +140,87 @@ export function extractShell(kind: HostKind, text: string): Extracted {
     case 'markdown': markdown(b); break;
     case 'python': python(b); break;
     case 'jenkinsfile': jenkinsfile(b); break;
+    case 'bats': bats(b); break;
   }
   return b.build();
+}
+
+// ---------------------------------------------------------------- bats
+
+/** A test of bats-core's preprocessor (bats-preprocess): `@test NAME {` and the rest of the line, the start of the body. */
+const BATS_TEST = /^([ \t]*)(@test[ \t]+)(.*[^ \t])[ \t]+\{(.*)$/;
+
+/**
+ * The name bats gives the function of a test (bats_encode_test_name): `test_` and the description, with a space as
+ * `_`, and any other character that is not an ASCII letter or digit as `-` and its code in hex (bats keeps the letters of
+ * the locale, as `[[:alnum:]]` matches them). (When every character is
+ * a letter, a digit, a space, `_` or `-`, `_` and `-` are written so too: `-5f`, `-2d`.)
+ */
+export function batsTestName(description: string): string {
+  return 'test_' + [...description].map((c) => (c === ' ' ? '_' : /[A-Za-z0-9]/.test(c) ? c : `-${c.codePointAt(0)!.toString(16).padStart(2, '0')}`)).join('');
+}
+
+const batsTestMeaning = (name: string): [string, string] => [
+  `bats のテスト: bats はこれを関数 \`${name}\` に書き換えて、テストを実行するときに呼ぶ`,
+  `bats test: bats rewrites it into the function \`${name}\`, which it calls to run the test`];
+
+/**
+ * The explanation of the line of a bats test, which bash reads as the definition of a function: the definition is
+ * the test as written (`@test "x" { … }`), and the context shows the test rather than the function.
+ */
+function batsTestLine(ex: LineExplanation, extracted: Extracted, original: string[], tests: readonly number[], lang: 'ja' | 'en'): void {
+  const shell = extracted.text.split('\n');
+  for (const c of ex.context) {
+    const name = tests.includes(c.line) ? /^\s*(\S+)\(\)/.exec(shell[c.line])![1] : undefined;
+    if (name && c.label.includes(`\`${name}\``)) c.label = testText(original[c.line]);
+  }
+  if (!tests.includes(ex.line)) return;
+  const name = /^\s*(\S+)\(\)/.exec(shell[ex.line])![1];
+  const def = ex.items.find((t) => t.kind === 'function' && t.span.start.line === ex.line)!;
+  const written = testText(original[ex.line]);
+  const lines = /\s*[（(](?:行|lines?) [^)）]*[)）]$/.exec(def.explanation)?.[0] ?? '';
+  def.explanation = batsTestMeaning(name)[lang === 'ja' ? 0 : 1] + lines;
+  def.summary = def.explanation;
+  def.label = def.label.replace(`${name}()`, written);
+  def.labelParts = def.labelParts!.map((p) => (p.text.startsWith(`${name}()`) ? { ...p, text: p.text.replace(`${name}()`, written) } : p));
+  ex.summary = def.explanation;
+}
+
+/** `@test "x"`, as written on the line of a test. */
+const testText = (line: string): string => {
+  const [, , keyword, quoted] = BATS_TEST.exec(line)!;
+  return keyword + quoted;
+};
+
+/**
+ * A bats test file: bash, with each `@test "description" {` rewritten into the function bats makes of it (as its
+ * preprocessor does, line for line), `test_description() {`. The function's name stands for `@test "description"`.
+ */
+function bats(b: Builder): void {
+  const tests: number[] = [];
+  for (let i = 0; i < b.lines.length; i++) {
+    const line = b.lines[i];
+    const m = BATS_TEST.exec(line);
+    if (!m) { b.plain(i); continue; }
+    const [, indent, keyword, quoted, body] = m;
+    // (One quote is taken off each end, as bats does.)
+    const description = quoted.replace(/^['"]/, '').replace(/['"]$/, '');
+    const name = batsTestName(description);
+    const from = indent.length;
+    const to = from + keyword.length + quoted.length;
+    const brace = line.length - body.length - 1;
+    const o = b.plain(i, 0, from);
+    o.insert(name, from, to, [`テストの名前: bats はこれから関数名 \`${name}\` を作る`, `the name of the test: bats makes the function name \`${name}\` of it`]);
+    o.insert('()', to, to);
+    o.copy(line, to, brace + 1);
+    // `@test "x" { }`: bash needs a command in the braces, and bats puts `:;` there.
+    if (/^\s*\}/.test(body)) o.insert(' :;', brace + 1, brace + 1);
+    o.copy(line, brace + 1, line.length);
+    tests.push(i);
+  }
+  // (The whole file is one region: bats runs it with bash.)
+  b.region(0, b.lines.length - 1, ['bats のテストファイル', 'bats test file']);
+  Object.assign(b.regions[0], { commands: BATS_COMMANDS, tests });
 }
 
 // ---------------------------------------------------------------- Dockerfile
@@ -1140,7 +1230,7 @@ export function explainHostedLine(
 ): LineExplanation | undefined {
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
-  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1] });
+  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1], ...(region.commands ? { hostCommands: region.commands } : {}) });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
@@ -1148,8 +1238,15 @@ export function explainHostedLine(
   if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
     notes.push(pick(PIPEFAIL));
   }
+  if (region.tests) {
+    const facts = batsFacts(tree, region.tests, line, lang, opts.pitfalls !== false);
+    notes.push(...facts.map((f) => f.text));
+    if (facts.length) ex.facts = [...(ex.facts ?? []), ...facts];
+  }
   ex.notes.unshift(...notes);
-  return remapExplanation(ex, extracted, original, lang);
+  const out = remapExplanation(ex, extracted, original, lang);
+  if (region.tests) batsTestLine(out, extracted, original, region.tests, lang);
+  return out;
 }
 
 /** A problem to show in the Problems panel, at original document positions. */

@@ -77,10 +77,12 @@ export function startLanguageServer(io: Io): void {
 
   /** What kind of document it is, or undefined when it has nothing for us. */
   function kindOf(doc: Doc): 'shell' | HostKind | undefined {
-    if (SHELL_LANGUAGES.has(doc.languageId) || settings.languages.includes(doc.languageId)) return 'shell';
-    const kind = hostKind(doc.languageId === 'make' ? 'makefile' : doc.languageId, fileName(doc.uri));
+    const found = hostKind(doc.languageId === 'make' ? 'makefile' : doc.languageId, fileName(doc.uri), doc.text);
     // The setting names package.json files `packageJson`.
-    return kind && settings['embedded.files'].includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
+    const kind = found && settings['embedded.files'].includes(found === 'npm' ? 'packageJson' : found) ? found : undefined;
+    // A bats file is one also in a shell language (a `.bats` file opened as a shell script).
+    if (kind !== 'bats' && (SHELL_LANGUAGES.has(doc.languageId) || settings.languages.includes(doc.languageId))) return 'shell';
+    return kind;
   }
 
   function parse(doc: Doc): ShellDocument | undefined {

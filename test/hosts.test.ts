@@ -486,3 +486,100 @@ describe('the shell of a Markdown code block', () => {
     assert.ok(codes('sh', undefined, 'sh').length > 0);
   });
 });
+
+describe('bats', () => {
+  /** The explanation of a line (1-based) of a bats file given as its lines. */
+  const bats = (lines: string[], line: number, lang: 'ja' | 'en' = 'en', opts: { pitfalls?: boolean } = {}) => {
+    const src = lines.join('\n');
+    const extracted = extractShell('bats', src);
+    return explainHostedLine(new Analyzer(lang), parser.parse(extracted.text), extracted, lines, line - 1, lang, undefined, opts)!;
+  };
+  const ids = (ex: { facts?: { id: string }[] }) => (ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('bats-'));
+
+  it('recognises a .bats file, the language id bats, and a bats shebang', () => {
+    assert.strictEqual(hostKind('plaintext', '/t/test.bats'), 'bats');
+    assert.strictEqual(hostKind('bats', 'x'), 'bats');
+    assert.strictEqual(hostKind('', 'x', '#!/usr/bin/env bats\n@test "a" { :; }'), 'bats');
+    assert.strictEqual(hostKind('shellscript', 'x', '#!/opt/bats/bin/bats --tap\n'), 'bats');
+    assert.strictEqual(hostKind('', 'x', '#!/opt/bats/bin/bash\n'), undefined);
+    assert.strictEqual(hostKind('', 'x', '#!/bin/sh\n# bats'), undefined);
+  });
+
+  it('rewrites @test into the function bats makes of it, column for column', () => {
+    const e = extractShell('bats', ['@test "a b-c_d" {', '  true', '}', "  @test 'x.y' { }", '@test x {echo'].join('\n'));
+    assert.deepStrictEqual(e.text.split('\n'), ['test_a_b-2dc-5fd() {', '  true', '}', '  test_x-2ey() { :; }', 'test_x() {echo']);
+    // A `{` in the body does not end the test's name.
+    assert.strictEqual(bats(['@test "a" { echo a{b,c}', '}'], 1).items[0].label, '@test "a" { ‹commands› }');
+    // bats reads `@test "a" { echo {x}` as the test `a" { echo` with the body `x}`, which is not a function to bash.
+    assert.strictEqual(extractShell('bats', '@test "a" { echo {x}\n}').text, 'test_a-22_-7b_echo() {x}\n}');
+    assert.deepStrictEqual(ids(bats(['@test "a" { echo {x}', '}'], 1)), ['bats-test']);
+    assert.deepStrictEqual(e.regions.map((r) => [r.start, r.end, r.label[1], r.tests]), [[0, 4, 'bats test file', [0, 3, 4]]]);
+    // The function's name stands for `@test "a b-c_d"`.
+    assert.strictEqual(e.maps[0][0], 0);
+    assert.strictEqual(e.maps[0]['test_a_b-2dc-5fd()'.length], '@test "a b-c_d"'.length);
+    assert.strictEqual(e.maps[3][2], 2);
+  });
+
+  it('explains a test as one, and says how bats runs it', () => {
+    const ex = explain('test.bats', 9)!;
+    assert.match(ex.summary, /^bats test: bats rewrites it into the function `test_addition_works`, which it calls to run the test \(lines 9–13\)$/);
+    const def = ex.items[0];
+    assert.strictEqual(def.label, '@test "addition works" { ‹commands› }');
+    assert.strictEqual(def.labelParts![0].text.startsWith('@test "addition works"'), true);
+    assert.deepStrictEqual(labels('test.bats', 9).slice(0, 2), ['@test "addition works" { ‹commands› }@0', '@test "addition works"@0']);
+    assert.match(def.children[0].explanation, /function name `test_addition_works`/);
+    assert.deepStrictEqual(ids(ex), ['bats-test']);
+    assert.match(ex.notes[0], /^ℹ bats runs each test in a process of its own, with `set -e` on/);
+    // Inside, the context is the test as written, not the function bash sees.
+    assert.deepStrictEqual(explain('test.bats', 10)!.context.map((c) => c.label), ['bats test file', '@test "addition works"', '{ } group']);
+    assert.deepStrictEqual(explain('test.bats', 5)!.context.map((c) => c.label), ['bats test file', 'function `setup`', '{ } group']);
+    // A test on one line has no line range.
+    assert.strictEqual(explain('test.bats', 26)!.summary, 'bats test: bats rewrites it into the function `test_empty`, which it calls to run the test');
+    assert.match(explain('test.bats', 9, 'ja')!.summary, /^bats のテスト: bats はこれを関数 `test_addition_works` に書き換えて/);
+  });
+
+  it('reads run, load, skip and the other functions of bats with their specs', () => {
+    const tokens = (line: number) => all(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
+    assert.deepStrictEqual(tokens(16).slice(0, 3), [
+      'command run: bats function: runs a command in a subsh',
+      'option !: fail, and so fail the test, unless the c',
+      'command cat: runs `cat`: Concatenate files and print ',
+    ]);
+    assert.match(tokens(17)[1], /^option -1: fail, and so fail the test, unless the /);
+    assert.match(tokens(18)[1], /^option --separate-stderr: keep stderr out of `\$output`/);
+    assert.match(tokens(5)[0], /^command load: bats function: reads the file/);
+    assert.match(tokens(6)[0], /^command bats_require_minimum_version: bats function/);
+    assert.match(tokens(29)[0], /^command skip: bats function: skips the rest/);
+    // run runs bats_pipe, whose words are not a command to the shell.
+    assert.deepStrictEqual(tokens(22).slice(0, 3).map((t) => t.split(':')[0]), ['command run', 'command bats_pipe', 'argument printf']);
+    // Outside a bats file, the names are ordinary commands.
+    const plain = new Analyzer('en').explainLine(parser.parse('run ! true'), 0);
+    assert.match(plain.items[0].explanation, /^Run the external command `run`/);
+    // A function of the file wins over bats' own.
+    assert.match(bats(['run() { :; }', '@test "a" {', '  run x', '}'], 3).items[0].explanation, /function/i);
+  });
+
+  it('warns about a `! cmd` that is not the last command of a test', () => {
+    assert.deepStrictEqual(ids(explain('test.bats', 20)!), ['bats-negation-ignored']);
+    assert.match(explain('test.bats', 20)!.notes.join('\n'), /Pitfall: `set -e` ignores the status of a command after `!`, so unless it is the last command of the test, `! grep -q x \/dev\/null` does not fail the test/);
+    // The last command of a test, a `!` in a condition or outside a test: no warning.
+    assert.deepStrictEqual(ids(explain('test.bats', 30)!), []);
+    const src = ['setup() {', '  ! true', '  :', '}', '@test "a" {', '  # c', '  if ! true; then :; fi', '  ! true && :', '  ! { true; } >/dev/null', '  :', '}'];
+    for (const line of [2, 7, 8]) assert.deepStrictEqual(ids(bats(src, line)), [], `line ${line}`);
+    assert.deepStrictEqual(ids(bats(src, 9)), ['bats-negation-ignored']);
+    assert.deepStrictEqual(ids(bats(src, 9, 'en', { pitfalls: false })), []);
+    // A long command is shortened.
+    assert.match(bats(['@test "a" {', '  ! grep -q some-long-pattern /some/long/path/to/a/file', '  :', '}'], 2).notes.join('\n'), /`! grep -q some-long-pattern \/so…` does not fail/);
+    assert.match(bats(src, 9, 'ja').notes.join('\n'), /落とし穴: `set -e` は `!` のあとのコマンドの結果を無視するので/);
+  });
+
+  it('warns about `run cmd | …`', () => {
+    assert.deepStrictEqual(ids(explain('test.bats', 21)!), ['bats-run-in-pipeline']);
+    assert.match(explain('test.bats', 21)!.notes.join('\n'), /Pitfall: the pipe gets the output of `run`, but `run` writes nothing: it keeps the output of `printf 'a\\nb\\n'` in `\$output`/);
+    const src = ['@test "a" {', '  run -- ! true 2>&1 | cat', '  run | cat', '  (run x) | cat', '  echo | run cat', '  run ! -1 cat 2>&1 | cat', '  >f | cat', '}'];
+    assert.match(bats(src, 2).notes.join('\n'), /output of `! true`/);
+    for (const line of [3, 4, 5, 7]) assert.deepStrictEqual(ids(bats(src, line)), [], `line ${line}`);
+    assert.match(bats(src, 6).notes.join('\n'), /output of `cat`/);
+    assert.deepStrictEqual(ids(bats(['run() { :; }', 'run x | cat'], 2)), []);
+  });
+});

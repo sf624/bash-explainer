@@ -55,8 +55,9 @@ export class ExplainService implements vscode.Disposable {
 
   /** The kind of host file, when embedded shell code is explained. */
   hostOf(doc: vscode.TextDocument): HostKind | undefined {
-    if (this.languages.includes(doc.languageId)) return undefined;
-    const kind = hostKind(doc.languageId, doc.fileName);
+    const kind = hostKind(doc.languageId, doc.fileName, doc.lineAt(0).text);
+    // A bats file is one also in a shell language (a `.bats` file opened as a shell script).
+    if (this.languages.includes(doc.languageId) && kind !== 'bats') return undefined;
     // The setting names package.json files `packageJson`.
     const files = this.config.get<string[]>('embedded.files', [...EMBEDDED_FILES]);
     return kind && files.includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
@@ -66,8 +67,8 @@ export class ExplainService implements vscode.Disposable {
   selector(): vscode.DocumentSelector {
     return [
       ...this.languages.map((language) => ({ language })),
-      ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile'].map((language) => ({ language })),
-      { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' },
+      ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile', 'bats'].map((language) => ({ language })),
+      { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' }, { pattern: '**/*.bats' },
     ];
   }
 
