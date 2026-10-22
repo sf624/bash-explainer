@@ -269,22 +269,24 @@ async function record(page, scenario, frameDir) {
     await sleep(300);
     await click();
     const f = await panelFrame();
-    await sleep(1600);
-    // The worked example of the whole pipeline sits under its row; scroll until all of it shows.
+    await sleep(500);
+    // First the explanation tree: the line's tokens, then its nested rows. Hold on it long enough to read.
     const ex = f.locator('.example').first();
     const area = ex.locator('textarea');
     const pb = await f.locator('#main').boundingBox();
     await moveTo(pb.x + pb.width * 0.6, 560, 700);
+    await sleep(2800);
+    // Then scroll down to the worked example of the whole pipeline, inside the same tree.
     // Stop with the example's heading just under the panel's header, or once all of it shows.
     const [, vh] = viewport.demo;
     const hb = await f.locator('header').boundingBox();
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       const b = await ex.boundingBox();
       if (b.y - 40 < hb.y + hb.height + 6 || b.y + b.height + 60 < vh - 22) break;
-      await page.mouse.wheel(0, 40);
-      await sleep(50);
+      await page.mouse.wheel(0, 30);
+      await sleep(45);
     }
-    await sleep(1600);
+    await sleep(1000);
     // Make the fourth input line ("RROR") match: grep keeps it, so tail's last 5 lines change.
     const ab = await area.boundingBox();
     const { top, line } = await area.evaluate((el) => {
@@ -300,11 +302,11 @@ async function record(page, scenario, frameDir) {
     await sleep(800);
     // Step aside so the pointer does not hide the result.
     await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * 3.5, 500);
-    await sleep(2400);
+    await sleep(1800);
     // Back in the editor, a hover explains a single word.
     await moveTo(...startMouse.demo, 700);
     await hoverWord(2, 'pipefail', 800);
-    await sleep(3200);
+    await sleep(2400);
     await stop();
   } else if (scenario === 'hover') {
     const stop = start();

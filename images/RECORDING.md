@@ -4,7 +4,7 @@ README.md and README.ja.md use these four files from this directory, recorded by
 
 | File | What it shows | Length |
 | --- | --- | --- |
-| `demo.gif` | The opening demo: panel (edit the example) → hover | about 17 s |
+| `demo.gif` | The opening demo: panel (the explanation tree, then scroll to the example and edit its input) → hover | about 17 s |
 | `hover.gif` | Hover mode | about 15 s |
 | `panel.gif` | Panel mode | about 17 s |
 | `inline.png` | Inline mode (still image) | — |
