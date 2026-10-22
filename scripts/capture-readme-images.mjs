@@ -373,9 +373,10 @@ function encode(scenario, frameDir) {
       '-vf', quote('crop=iw:ih*0.53:0:0,scale=1000:-1:flags=lanczos'), quote(path.join(IMAGES, 'inline.png'))]);
     return;
   }
-  // The demo scrolls a page of small text; without dithering, its frames compress about three times better.
+  // The demo scrolls a page of small text; it needs few colors and no dithering to stay small.
   const dither = scenario === 'demo' ? 'dither=none' : 'dither=bayer:bayer_scale=5';
-  const filter = `fps=10,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=192:stats_mode=diff[p];[b][p]paletteuse=${dither}:diff_mode=rectangle`;
+  const colors = scenario === 'demo' ? 64 : 192;
+  const filter = `fps=10,scale=1000:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${colors}:stats_mode=diff[p];[b][p]paletteuse=${dither}:diff_mode=rectangle`;
   run(FFMPEG, ['-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', 'list.txt',
     '-vf', quote(filter), '-loop', '0', quote(path.join(IMAGES, `${scenario}.gif`))], { cwd: frameDir });
 }
