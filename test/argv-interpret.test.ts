@@ -2,6 +2,7 @@
 // dictionary, the specs `cmd` builds (src/dict/types.ts), and the corners of the option grammar.
 import * as assert from 'assert';
 import { lookupCommand } from '../src/analyzer';
+import { splitEnvString } from '../src/argv/envsplit';
 import { ArgWord, interpret, InterpretContext, match } from '../src/argv/interpret';
 import type { CommandSpec, OperandSpec, OptionSpec } from '../src/argv/spec';
 import { byCount, cmd, mergeOptions, runs } from '../src/dict/types';
@@ -625,5 +626,102 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
     assert.strictEqual(lookupCommand('shopt')!.operands!.at(-1)!.pattern[0].type, 'shell-option');
     // `echo -e`: the operands are read with escapes.
     assert.strictEqual(parseOf('echo -e x').roles[1].role.role === 'operand' && (parseOf('echo -e x').roles[1].role as { spec: OperandSpec }).spec.lang, 'echo');
+  });
+});
+
+describe('argv interpreter: subcommands found as cobra does', () => {
+  const tool: CommandSpec = {
+    summary: t('tool'), cobra: true,
+    options: [
+      opt('-n|--namespace', 'namespace', { persistent: true, value: { name: 'NS' } }),
+      opt('--debug', 'debug', { persistent: true }),
+      opt('--level', 'level', { persistent: true, value: { name: 'L', optional: true } }),
+    ],
+    subcommands: {
+      get: { summary: t('get'), options: [opt('-o|--output', 'output', { value: { name: 'FORMAT' } }), opt('-w|--watch', 'watch')], operands: [{ pattern: [item('NAME', { repeat: '*' })] }] },
+      pr: {
+        summary: t('pr'), options: [opt('-R|--repo', 'repo', { persistent: true, value: { name: 'REPO' } })],
+        subcommands: { list: { summary: t('list'), options: [opt('-L', 'limit', { value: { name: 'N' } })] } },
+      },
+    },
+  };
+  const of = (line: string) => roles(line, tool);
+
+  it("reads a subcommand's own options before its name, and the program's after it", () => {
+    assert.deepStrictEqual(of('tool -o yaml get x'), ['-o: -o output', 'yaml: value 0 of -o FORMAT', 'get: subcommand get', '  x: NAME']);
+    assert.deepStrictEqual(of('tool -n p --debug get -w x -n q'), [
+      '-n: -n namespace', 'p: value 0 of -n NS', '--debug: --debug debug', 'get: subcommand get', '  -w: -w watch', '  x: NAME', '  -n: -n namespace', '  q: value 0 of -n NS',
+    ]);
+    // The subcommands of a subcommand are found the same way.
+    assert.deepStrictEqual(of('tool -R o/r pr -L 5 list'), [
+      '-R: -R repo', 'o/r: value 0 of -R REPO', 'pr: subcommand pr', '  -L: -L limit', '  5: value 0 of -L N', '  list: subcommand list',
+    ]);
+  });
+
+  it('takes the word after an option it does not know as its value, as cobra guesses', () => {
+    // (`-w` is known to `get` only: cobra takes `get` as its value, and `x` is not a subcommand.)
+    assert.deepStrictEqual(of('tool -w get x'), ['-w: -w?', 'get: value 0 of -w', 'x: operand']);
+    assert.deepStrictEqual(of('tool --foo get x'), ['--foo: --foo?', 'get: value 0 of --foo', 'x: operand']);
+    // Not with `=`, nor several letters, nor an option known here with no value or an optional one.
+    assert.deepStrictEqual(of('tool --watch=true get x'), ['--watch=true: --watch=8 watch', 'get: subcommand get', '  x: NAME']);
+    assert.deepStrictEqual(of('tool -wx get'), ['-wx: cluster -w watch | -x?', 'get: subcommand get']);
+    assert.deepStrictEqual(of('tool --level get x'), ['--level: --level level', 'get: subcommand get', '  x: NAME']);
+    // (cobra took `x` as the value of `-w` to find `get`; `get` then reads `-w` as its own flag, and `x` is an argument.)
+    assert.deepStrictEqual(of('tool -w x get'), ['-w: -w watch', 'x: operand', 'get: subcommand get']);
+    // Nothing to take at the end; a word not known, `--` and a word that names no subcommand end the search.
+    assert.deepStrictEqual(of('tool -x'), ['-x: -x?']);
+    assert.deepStrictEqual(of('tool -n'), ['-n: -n (no value) namespace']);
+    assert.deepStrictEqual(of('tool $v get'), ['$v: operand', 'get: operand']);
+    assert.deepStrictEqual(of('tool -- get'), ['--: end of options', 'get: subcommand get']);
+    assert.deepStrictEqual(of('tool nope get'), ['nope: operand', 'get: operand']);
+  });
+});
+
+describe('argv interpreter: a value whose words are read in its place (env -S)', () => {
+  it("reads the words of the string, then the rest of the line, as env's own", () => {
+    assert.deepStrictEqual(roles("env -S'-i A=1' printf x"), [
+      "-S'-i A=1': -S=2 split a string into words and read them in its place as env's arguments (options, `NAME=value`, the command to run and its arguments; useful in shebang lines)",
+      '  » -i: -i start with an empty environment', '  » A=1: NAME=VALUE (assignment)',
+      'printf: command exec printf', '  x: FORMAT',
+    ]);
+    const short = (line: string) => roles(line).map((l) => l.replace(/ split a string into words.*$/, ''));
+    // A command started in the string takes the words after it; they keep their place in the line.
+    assert.deepStrictEqual(short("env -S 'cmd -a' x"), ['-S: -S', "'cmd -a': value 0 of -S STRING", '  » cmd: command exec cmd (unknown)', '    » -a: -a?', 'x: operand']);
+    assert.deepStrictEqual(short("env -vS'cmd' x"), ["-vS'cmd': cluster -v print each step on stderr | -S=3", '  » cmd: command exec cmd (unknown)', 'x: operand']);
+    assert.deepStrictEqual(short("env --split-string='A=1' cmd"), ["--split-string='A=1': --split-string=15", '  » A=1: NAME=VALUE (assignment)', 'cmd: command exec cmd (unknown)']);
+    // An assignment ends the options: a later `-i` is the command (GNU env).
+    assert.deepStrictEqual(short("env -S'A=1 -i' cmd"), ["-S'A=1 -i': -S=2", '  » A=1: NAME=VALUE (assignment)', '  » -i: command exec -i (unknown)', 'cmd: operand']);
+    // A string in the string; a command run by another one; a word whose text is known at run time only.
+    assert.deepStrictEqual(short(`env -S'-S"cmd a"' b`), [`-S'-S"cmd a"': -S=2`, '  » -Scmd a: -S=2', '    » » cmd: command exec cmd (unknown)', '      » » a: operand', 'b: operand']);
+    assert.deepStrictEqual(short("sudo env -S'cmd' x"), ['env: command exec env', "  -S'cmd': -S=2", '    » cmd: command exec cmd (unknown)', '  x: operand']);
+    assert.deepStrictEqual(short("env -S'x${HOME}' y"), ["-S'x${HOME}': -S=2", '  » x…: command exec (unknown)', 'y: operand']);
+    // (`-S''` is `-S` alone: it takes the next word.)
+    assert.deepStrictEqual(short("env -S'' cmd"), ["-S'': -S", 'cmd: value 0 of -S STRING', '  » cmd: command exec cmd (unknown)']);
+  });
+
+  it('leaves a string it cannot split to the condition `unsplit`: not known, refused, missing', () => {
+    const short = (line: string) => roles(line).map((l) => l.replace(/ split a string into words.*$/, ''));
+    assert.deepStrictEqual(short('env -S"$v" cmd'), ['-S"$v": -S=2', 'cmd: ARG']);
+    assert.deepStrictEqual(short(`env -S'"a' cmd`), [`-S'"a': -S=2`, '  refused: quote "a', 'cmd: ARG']);
+    assert.deepStrictEqual(short('env -S'), ['-S: -S (no value)']);
+  });
+
+  it('splits as GNU env does (compared with env itself in test/wrappers-real.test.ts)', () => {
+    const split = (s: string) => {
+      const r = splitEnvString(s);
+      return 'error' in r ? `${r.error}: ${r.at}` : r.words.map((w) => (w.value !== undefined ? w.value : `${w.prefix}…${w.count ? `{${w.count.min},${w.count.max}}` : ''}`));
+    };
+    assert.deepStrictEqual(split(' a\tb  c '), ['a', 'b', 'c']);
+    assert.deepStrictEqual(split(String.raw`a\_b "c\_d" 'e\_f' 'g\\h\'i'`), ['a', 'b', 'c d', String.raw`e\_f`, "g\\h'i"]);
+    assert.deepStrictEqual(split(String.raw`a\"\#\$\'\\ \f\n\r\t\v`), ['a"#$\'\\', '\f\n\r\t\v']);
+    assert.deepStrictEqual(split(`'' a""b x#y #z`), ['', 'ab', 'x#y']);
+    assert.deepStrictEqual(split(String.raw`a\cb c`), ['a']);
+    assert.deepStrictEqual(split(`'a"b' "c'd"`), ['a"b', "c'd"]);
+    assert.deepStrictEqual(split('${A} x${B}y "${C}" \'${D}\''), ['…{0,1}', 'x…', '…', '${D}']);
+    assert.strictEqual(split('"a'), 'quote: "a');
+    assert.strictEqual(split('a\\'), 'backslash-end: \\');
+    assert.strictEqual(split('a\\x'), 'sequence: \\x');
+    assert.strictEqual(split('"\\c"'), 'c-in-quotes: \\c');
+    assert.strictEqual(split('a $B'), 'dollar: $B');
   });
 });

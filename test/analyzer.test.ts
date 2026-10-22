@@ -462,6 +462,45 @@ describe('robustness', () => {
     assert.match(explain('echo # hi').items[1].explanation, /Comment/);
   });
 
+  it('explains the shebangs that run env: Linux gives it the rest as one word, which only `-S` splits', () => {
+    const shebang = (line: string, lang: 'ja' | 'en' = 'en') => explain(line, 0, lang).items[0].explanation;
+    assert.match(shebang('#!/usr/bin/env -S bash -e'), /`env -S` splits the rest into words and runs `bash` with `-e` and the script's path as arguments$/);
+    assert.match(shebang('#!/usr/bin/env -S bash -e', 'ja'), /`env -S` が残りを単語に分け、`bash` を `-e` とスクリプトのパスを引数にして実行する$/);
+    assert.match(shebang('#!/usr/bin/env -vS bash'), /runs `bash` with the script's path as arguments$/);
+    assert.match(shebang('#!/usr/bin/env -S ${SHELL}'), /runs `…` with the script's path/);
+    assert.match(shebang('#!/usr/bin/env bash -e'), /⚠ On Linux the whole `bash -e` after the interpreter is one argument to env/);
+    assert.match(shebang('#!/usr/bin/env -S -i'), /names no command, so env runs the script's path as the command$/);
+    assert.match(shebang('#!/usr/bin/env -S"a'), /⚠ env cannot split this string and exits with status 125/);
+    for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e', '#!/usr/bin/env']) assert.match(shebang(line), /`$/, line);
+  });
+
+  it('explains the words env -S splits a string into, or why env refuses it', () => {
+    const value = (line: string, label: string, lang: 'ja' | 'en' = 'en') => {
+      const out: string[] = [];
+      const walk = (t: { label: string; explanation: string; children: unknown[] }) => { if (t.label === label) out.push(t.explanation); t.children.forEach((c) => walk(c as typeof t)); };
+      explain(line, 0, lang).items.forEach(walk);
+      return out[0];
+    };
+    assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e'), /env splits it into words and reads them here as its own arguments: `-i` \(start with an empty environment\), `A=1` \(variable for the command\), `bash` \(the command to run: .*\), `-e` \(exit on error\)$/);
+    assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e', 'ja'), /env はこれを単語に分けて、この位置で自分の引数として読む: `-i`（空の環境から始める）、`A=1`（コマンドの環境に入れる変数）/);
+    assert.match(value("env -S 'bash -e' s", "'bash -e'"), /`bash` \(the command to run/);
+    assert.match(value("env --split-string='-u HOME -- cmd' s", "--split-string='-u HOME -- cmd'"), /`-u` \(remove a variable\), `HOME` \(value for `-u`\), `--` \(end of options\), `cmd` \(the command to run\)$/);
+    assert.match(value("env -S'-vx' s", '-vx'), /`-vx` \(print each step on stderr, an option not in the dictionary\)$/);
+    assert.match(value("env -S'x${A}' s", 'x${A}'), /`x…` \(the value of `\$\{…\}` is known at run time\) \(the command to run\)$/);
+    assert.match(value('env --split-string= s', '--split-string='), /env splits it into no words$/);
+    assert.match(value("env -S'\"a' s", '"a'), /⚠ env refuses this string and exits with status 125, running nothing \(a quote is not closed\)$/);
+    assert.match(value("env -S'a\\' s", 'a\\'), /\(it ends in a backslash\)$/);
+    assert.match(value("env -S'a\\x' s", 'a\\x'), /\(`\\x` is not an escape it knows\)$/);
+    assert.match(value(`env -S'"\\c"' s`, '"\\c"'), /\(`\\c` is inside double quotes\)$/);
+    assert.match(value("env -S'$A' s", '$A', 'ja'), /（`\$` は `\$\{名前\}` の形でしか使えない）$/);
+    assert.match(value("env -S'printf %s,' x", 'printf %s,'), /`%s,` \(format string\)$/);
+    assert.match(value("env -S'foo a' s", 'foo a'), /`foo` \(the command to run\), `a` \(argument\)$/);
+    // A subcommand in the string.
+    assert.match(value("env -S'git log' x", 'git log'), /`log` \(subcommand: /);
+    // The later words keep their place: the command's arguments.
+    assert.match(value("env -S'bash -e' s", 's'), /script/i);
+  });
+
   it('returns nothing for blank lines', () => {
     const e = explain('echo a\n\necho b', 1);
     assert.deepStrictEqual(e.items, []);

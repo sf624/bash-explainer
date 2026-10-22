@@ -5,6 +5,7 @@
 // operands with the spec's patterns, and read the words of a command slot as a command of its own.
 import { isExpressionStart } from '../embedded/find';
 import type { Text } from '../i18n';
+import { EnvSplitError, splitEnvString } from './envsplit';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
 /** A word of the command line, as the program will see it. */
@@ -67,7 +68,17 @@ export type CommandRole = Extract<ArgRole, { role: 'command' }>;
  * The value of an option: `of` is the option's `flag` as written (`-f`, `--file`, `f` of `tar cf`), `index`
  * which of its values; `attached` is where it starts in the word, when it is written in the option's word.
  */
-export interface ValueRole { role: 'value'; of: string; option?: OptionSpec; spec?: ValueSpec; index: number; attached?: number }
+export interface ValueRole {
+  role: 'value'; of: string; option?: OptionSpec; spec?: ValueSpec; index: number; attached?: number;
+  /**
+   * A value that splices words (`env -S'-i bash -e'`): the words it is split into, and their roles, numbered
+   * from 0 in `words`. The words of the line after it are read after them (a command started in the string
+   * takes them as its arguments), and keep their roles in the parse.
+   */
+  split?: { words: ArgWord[]; roles: RoleAt[] };
+  /** Why the program refuses to split it (`env -S'"a'`: no closing quote), with the text at fault. */
+  refused?: { error: EnvSplitError; at: string };
+}
 
 /** Offsets in a word's text: start, and end (exclusive). */
 export type Range = [number, number];
@@ -109,7 +120,7 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /** Reads the words of a command (its arguments, without the name) with its spec. */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  return new Reader(words, ctx).read(spec, 0, words.length, ctx.name ?? '', []);
+  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false);
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
@@ -124,21 +135,27 @@ const counts = (w: ArgWord): [number, number] => {
 
 class Reader {
   private readonly maxSteps: number;
-  constructor(private readonly words: ArgWord[], private readonly ctx: InterpretContext) {
+  /** `spliced`: the words (the last of an option and its value) whose words this reader has spliced in after them. */
+  constructor(private readonly words: ArgWord[], private readonly ctx: InterpretContext, private readonly spliced: Set<number>) {
     this.maxSteps = ctx.maxSteps ?? 100000;
   }
 
-  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[]): ArgvParse {
-    const options = [...(spec.options ?? []), ...inherited];
+  /** `cobra`: the parent finds subcommands as cobra does (`CommandSpec.cobra`), so this spec does too. */
+  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean): ArgvParse {
+    const isCobra = cobra || !!spec.cobra;
+    let options = [...(spec.options ?? []), ...inherited];
+    // cobra: the options before the subcommand are the subcommand's own too (its own name wins).
+    const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, options, from, to) : undefined;
+    if (found?.options) options = [...found.options, ...options];
     const style = spec.style ?? 'gnu';
     const roles = new Map<number, ArgRole>();
-    const given: Given = { specs: [], flags: [], values: [], marks: new Set(), later: [] };
+    const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
     const operands: number[] = [];
     const parse: ArgvParse = { command, roles: [], unmatched: [], end: to };
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
-    const st: OptionState = { spec, options, roles, given, end };
+    const st: OptionState = { spec, options, roles, given, end, guess: isCobra && !!spec.subcommands };
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
@@ -160,13 +177,23 @@ class Reader {
       }
       if (!endOpts) {
         const used = this.option(st, i);
-        if (used >= 0) { i = used; continue; }
+        if (used >= 0) {
+          const split = this.splice(st, i, used);
+          // The words of the string are read in its place: the line is read again with them.
+          if (split) {
+            const composite = [...this.words.slice(0, used + 1), ...split, ...this.words.slice(used + 1)];
+            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used])).read(spec, from, to + split.length, command, inherited, cobra);
+            return unsplice(parse, used, split);
+          }
+          i = this.cobraValue(st, i, used);
+          continue;
+        }
       }
-      // An operand. The first one may name a subcommand, whose spec reads the rest.
-      const sub = !operands.length && value !== undefined ? subcommand(spec, value) : undefined;
+      // An operand. The first one may name a subcommand, whose spec reads the rest (or the one cobra finds).
+      const sub = (!operands.length || i === found?.at) && value !== undefined ? subcommand(spec, value) : undefined;
       if (sub) {
         const inherit = [...inherited, ...(spec.options ?? []).filter((o) => o.persistent)];
-        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit) });
+        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra) });
         end = i + 1;
         break;
       }
@@ -272,7 +299,57 @@ class Reader {
     const found = name === undefined ? undefined : this.ctx.lookup?.(name);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
-    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', []), ...(of ? { of } : {}) };
+    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false), ...(of ? { of } : {}) };
+  }
+
+  /**
+   * cobra's search for the subcommand (`stripFlags`): skip options, and the next word after an option that
+   * takes a value or is not known here (unless written with `=`, or as several letters), then the first word left
+   * is the subcommand, if it names one. Where it is, and its own options, to read the words before it with.
+   */
+  private cobraSubcommand(spec: CommandSpec, options: OptionSpec[], from: number, to: number): { at: number; options?: OptionSpec[] } | undefined {
+    for (let i = from; i < to; i++) {
+      const w = this.words[i].value;
+      if (w === undefined || w === '--') return undefined;
+      if (w.startsWith('-')) {
+        if (cobraTakesNext(w, options)) i++;
+        continue;
+      }
+      const sub = subcommand(spec, w);
+      return sub && { at: i, options: sub[1].options };
+    }
+    return undefined;
+  }
+
+  /**
+   * After the option at `i` (its last word `used`): cobra takes the next word as the value of an option it
+   * does not know, before the subcommand. Returns the last word used.
+   */
+  private cobraValue(st: OptionState, i: number, used: number): number {
+    const role = st.roles.get(i);
+    const w = this.words[i].value;
+    if (!st.guess || used !== i || i + 1 >= st.end || role?.role !== 'unknown-option' || w === undefined || !cobraTakesNext(w, st.options)) return used;
+    st.roles.set(i + 1, { role: 'value', of: role.flag, index: 0 });
+    return i + 1;
+  }
+
+  /**
+   * The words of an option's value that splices words (`env -S'…'`), when it is known and not spliced yet. A
+   * value not known, or refused, is recorded for the condition `unsplit`.
+   */
+  private splice(st: OptionState, i: number, used: number): ArgWord[] | undefined {
+    if (this.spliced.has(used)) return undefined;
+    const role = st.roles.get(i)!;
+    for (const o of role.role === 'cluster' ? role.letters : [role]) {
+      if (o.role !== 'option' || !valuesOf(o.spec)[0]?.splice) continue;
+      const value = o.value ?? (used > i ? st.roles.get(used) as ValueRole : undefined);
+      const text = o.value ? this.words[i].value?.slice(o.value.attached) : used > i ? this.words[used].value : undefined;
+      const r = text === undefined ? undefined : splitEnvString(text);
+      if (r && 'words' in r) return r.words;
+      if (r && value) value.refused = r;
+      st.given.unsplit.push(...o.spec.names);
+    }
+    return undefined;
   }
 
   /** In the gnu style, whether the last of these operands would start a command, which ends the options (`ssh host ls -l`). */
@@ -337,7 +414,6 @@ class Reader {
       const opt = findOption(options, flag, spec.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
-      if (opt && !open) given.values.push({ names: opt.names, text: text.slice(eq + 1) });
       if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, spec.longPrefixes)) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
@@ -384,7 +460,6 @@ class Reader {
         // `dpkg-query -f=FORMAT`: the value starts after the `=`.
         const at = st.spec.shortEquals && text[k + 1] === '=' ? k + 2 : k + 1;
         role.value = { role: 'value', of: as, option: opt, spec: first, index: 0, attached: at };
-        if (!open) st.given.values.push({ names: opt.names, text: text.slice(at) });
         valued = true;
         last = this.separateValues(st, opt, as, last, 1, role);
       } else if (first.how !== 'attached-only') last = this.separateValues(st, opt, as, last, 0, role);
@@ -423,7 +498,6 @@ class Reader {
       }
       if (v.optional && !(v.next && next.value !== undefined && v.next.test(next.value))) break;
       last++;
-      st.given.values.push({ names: opt.names, text: this.words[last].value });
       st.roles.set(last, v.command ? { role: 'command', slot: v.command, of: flag } : { role: 'value', of: flag, option: opt, spec: v, index });
     }
     return last;
@@ -454,10 +528,10 @@ class Reader {
 }
 
 /**
- * The options given so far, the flags as written (unknown ones too: a condition may name them), the values
- * written for them, the marks they set, and the options that change the operands after them.
+ * The options given so far, the flags as written (unknown ones too: a condition may name them), the marks they
+ * set, the options that change the operands after them, and the options whose value could not be split (`unsplit`).
  */
-interface Given { specs: OptionSpec[]; flags: string[]; values: { names: string[]; text?: string }[]; marks: Set<string>; later: { word: number; spec: OperandSpec }[] }
+interface Given { specs: OptionSpec[]; flags: string[]; marks: Set<string>; later: { word: number; spec: OperandSpec }[]; unsplit: string[] }
 
 interface OptionState {
   spec: CommandSpec;
@@ -466,6 +540,62 @@ interface OptionState {
   given: Given;
   /** The end of the words this command reads. */
   end: number;
+  /** cobra, before the subcommand: an option not known here takes the next word as its value. */
+  guess: boolean;
+}
+
+/** Whether cobra takes the word after this option as its value while it looks for the subcommand. */
+function cobraTakesNext(w: string, options: OptionSpec[]): boolean {
+  if (w.includes('=') || (!w.startsWith('--') && w.length !== 2)) return false;
+  const o = findOption(options, w);
+  return !o || valuesOf(o).some((v) => !v.optional);
+}
+
+/**
+ * The parse of a line into which the words `split` were spliced after the word `at`, in the numbers of the
+ * words without them: the roles of the split words go to the value's `split`, numbered from 0, and the words
+ * after them that a role started in the string reads (a command's arguments) come back to the line.
+ */
+function unsplice(parse: ArgvParse, at: number, split: ArgWord[]): ArgvParse {
+  const s = at + 1;
+  const e = s + split.length;
+  const inSplit = (j: number): boolean => j >= s && j < e;
+  /** The number of a word not in the split words (a parse of the line ends after them too). */
+  const back = (j: number): number => (j < s ? j : j - split.length);
+  const splitRoles: RoleAt[] = [];
+  const withParse = (role: ArgRole, f: (q: ArgvParse) => ArgvParse): ArgRole =>
+    (role.role === 'subcommand' || (role.role === 'command' && role.parse) ? { ...role, parse: f(role.parse!) } as ArgRole : role);
+  const line = (q: ArgvParse): ArgvParse => {
+    const roles: RoleAt[] = [];
+    for (const { word, role } of q.roles) {
+      if (inSplit(word)) splitRoles.push({ word: word - s, role: inString(role, roles) });
+      else roles.push({ word: back(word), role: withParse(role, line) });
+    }
+    roles.sort((a, b) => a.word - b.word);
+    // (Only env splices, so no find expression is read here.)
+    return { ...q, roles, end: back(q.end), unmatched: q.unmatched.filter((j) => !inSplit(j)).map(back) };
+  };
+  const inString = (role: ArgRole, hoist: RoleAt[]): ArgRole => withParse(role, (q) => {
+    const roles: RoleAt[] = [];
+    for (const { word, role: r } of q.roles) {
+      if (inSplit(word)) roles.push({ word: word - s, role: inString(r, hoist) });
+      else hoist.push({ word: back(word), role: withParse(r, line) });
+    }
+    return { ...q, roles, end: Math.min(q.end, e) - s, unmatched: q.unmatched.filter(inSplit).map((j) => j - s) };
+  });
+  const out = line(parse);
+  splitRoles.sort((a, b) => a.word - b.word);
+  const value = (v: ValueRole): ValueRole => ({ ...v, split: { words: split, roles: splitRoles } });
+  out.roles = out.roles.map((r) => {
+    if (r.word !== at) return r;
+    const role = r.role;
+    if (role.role === 'value') return { word: at, role: value(role) };
+    // (Else the value is in the option's word: `-S'…'`, `--split-string=…`, or the last letter of a cluster.)
+    if (role.role === 'option') return { word: at, role: { ...role, value: value(role.value!) } };
+    const letters = (role as Extract<ArgRole, { role: 'cluster' }>).letters;
+    return { word: at, role: { role: 'cluster', letters: letters.map((l) => (l.role === 'option' && l.value && valuesOf(l.spec)[0]?.splice ? { ...l, value: value(l.value) } : l)) } };
+  });
+  return out;
 }
 
 /**
@@ -512,7 +642,7 @@ function conditionHolds(c: Condition | undefined, given: Given, mode: string | u
   if (c === undefined) return true;
   if ('not' in c) return !conditionHolds(c.not, given, mode, operands);
   if ('mode' in c) return c.mode === mode;
-  if ('optionValue' in c) return given.values.some((v) => v.text !== undefined && v.names.some((n) => c.optionValue.includes(n)) && c.matches.test(v.text));
+  if ('unsplit' in c) return given.unsplit.some((n) => c.unsplit.includes(n));
   if ('operand' in c) {
     const value = operands[c.operand]?.value;
     return value !== undefined && c.matches.test(value);
