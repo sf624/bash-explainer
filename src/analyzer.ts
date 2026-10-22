@@ -57,6 +57,7 @@ import {
 import { LabelPart, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
 import { statusModel, type StatusModel } from './semantics/status';
@@ -64,8 +65,11 @@ import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
 import { type Fact, fact, factOf, MESSAGES } from './messages';
 
-/** The status facts of a script, by line, computed once per status model (both languages). */
-const statusFactCache = new WeakMap<StatusModel, Map<number, StatusFact[]>>();
+/**
+ * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
+ * runs are in the model of the script around them, in trees of their own.
+ */
+const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number, StatusFact[]>>>();
 
 export type Kind =
   | 'command' | 'subcommand' | 'builtin' | 'function' | 'keyword' | 'option' | 'argument' | 'operator'
@@ -1728,6 +1732,8 @@ export class Analyzer {
     let disables = false;
     // ssh: the words joined into the remote command have the text of its first word (eval's have none).
     let joined: string | undefined;
+    // The joined words are one token, when they are read as a script.
+    let joinedWhole = false;
     const ordinals = new Map<OperandSpec, number>();
     try {
       for (const { word, role } of parse.roles) {
@@ -1782,21 +1788,24 @@ export class Analyzer {
           case 'command':
             if (role.slot.later) {
               // A trap's action: a string this shell runs later, with its expansions then.
-              out.push(this.positional(a, this.t(role.item!.text) + this.trapNote(a)));
+              out.push(this.withScript(this.positional(a, this.t(role.item!.text) + this.trapNote(a)), this.scriptTokens([a], this.slotEnvs.get(a)!)));
             } else if (role.slot.joinsWords && !role.slot.escapesWords) {
               // ssh sends the words joined to the remote shell; eval joins them and reads them again here, so they are plain words.
               joined = role.slot.run === 'current-shell' ? undefined : this.t(role.item!.text);
               if (role.slot.run === 'current-shell') this.argCtx!.rereads = true;
-              this.slotNotes(role, this.slotEnvs.get(a)!, nodes.slice(word, parse.end), assigned);
-              out.push(this.positional(a, joined));
+              const words = nodes.slice(word, parse.end);
+              this.slotNotes(role, this.slotEnvs.get(a)!, words, assigned);
+              const script = this.scriptTokens(words, this.slotEnvs.get(a)!);
+              joinedWhole = words.length > 1 && !!script.tokens.length;
+              out.push(joinedWhole ? this.joinedScript(words, joined, script) : this.withScript(this.positional(a, joined), script));
             } else if (!role.parse) {
               // A command string (`bash -c 'cmd'`, `su -c 'cmd'`): the value of the option.
               this.slotNotes(role, this.slotEnvs.get(a)!, [a], assigned);
-              out.push(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false));
+              out.push(this.withScript(this.valueToken(a, { role: 'value', of: role.of ?? '-c', index: 0 }, false), this.scriptTokens([a], this.slotEnvs.get(a)!)));
             } else out.push(this.wrapped(nodes, word, role, assigned));
             break;
           case 'joined':
-            out.push(this.positional(a, joined));
+            if (!joinedWhole) out.push(this.positional(a, joined));
             break;
           case 'expression':
             // find's expression, read as a whole from its first word.
@@ -2712,8 +2721,10 @@ export class Analyzer {
 
   /** The notes (`pitfall: false`) and pitfalls on status and errexit of line `line` (src/semantics/status.ts). */
   private statusNotes(line: number, pitfall: boolean): string[] {
-    let byLine = statusFactCache.get(this.status);
-    if (!byLine) statusFactCache.set(this.status, (byLine = statusFacts(this.rootNode, this.state, this.status, this.shell)));
+    let byRoot = statusFactCache.get(this.status);
+    if (!byRoot) statusFactCache.set(this.status, (byRoot = new WeakMap()));
+    let byLine = byRoot.get(this.rootNode);
+    if (!byLine) byRoot.set(this.rootNode, (byLine = statusFacts(this.rootNode, this.state, this.status, this.shell)));
     return (byLine.get(line) ?? []).filter((f) => (MESSAGES[f.id].kind === 'pitfall') === pitfall).map((f) => this.say(factOf(this.lang, f)));
   }
 
@@ -3732,6 +3743,84 @@ export class Analyzer {
     return glob.why === 'noglob' ? (glob.applies === false ? 'off' : 'may') : 'on';
   }
 
+  /**
+   * The tokens of the string `words` hold, read as the script a slot runs (docs/design/semantics.md, 4.13): the
+   * items of each of its lines, explained with its shell and model and mapped to the source (a token per line when it
+   * has several). Its notes and examples join the line's. `note`: why it is not read, or that its shell is not known.
+   */
+  private scriptTokens(words: SyntaxNode[], env: ExecEnv): { tokens: Token[]; note?: string } {
+    const script = this.state.script(words, env);
+    // (A string no shell runs, `sudo eval s`, has the pitfall of its slot.)
+    if ('why' in script) {
+      return script.why === 'not-run' ? { tokens: [] } : { tokens: [], note: script.why === 'not-static'
+        ? this.s('。展開を含み、中身は実行するときに決まるので、スクリプトとしては解説しない', '. It holds an expansion, so its text is known only when it runs: it is not explained as a script')
+        : this.s('。文字列の中の文字列が深すぎるので、スクリプトとしては解説しない', '. Strings nested this deep are not explained as scripts') };
+    }
+    const inner = new Analyzer(this.lang);
+    const tree = script.tree;
+    const rows = tree.text.split('\n');
+    const lines: Token[][] = [];
+    for (let line = 0; line < rows.length; line++) {
+      const ex = inner.explainLine(tree, line, script.shell, this.opts);
+      // (A statement over several lines is explained whole on each of them: keep it, and its notes, on its first.)
+      const items = ex.items.filter((t) => t.span.start.line === line);
+      lines.push(items.map((t) => this.fromScript(t, script)));
+      if (!items.length) continue;
+      this.extraNotes.push(...ex.notes);
+      this.facts.push(...(ex.facts ?? []));
+      // (Every example of a line is anchored at its command: `tagExamples`.)
+      for (const e of ex.examples) this.examples.push({ ...e, anchor: this.scriptSpan(e.anchor!, script) });
+    }
+    const used = lines.map((items, i) => ({ items, i })).filter((l) => l.items.length);
+    const tokens = used.length === 1 ? used[0].items : used.map(({ items, i }): Token => ({
+      kind: 'block', label: shorten(rows[i].trim()), children: items,
+      explanation: this.s(`文字列の ${i + 1} 行目`, `Line ${i + 1} of the string`),
+      span: { start: items[0].span.start, end: items[items.length - 1].span.end },
+    }));
+    const note = script.known ? undefined
+      : this.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
+    return { tokens, ...(note ? { note } : {}) };
+  }
+
+  /** `t` with the tokens of a string read as a script under the token of its word (the quoted string, when `t` holds it). */
+  private withScript(t: Token, script: { tokens: Token[]; note?: string }): Token {
+    const only = t.children.length === 1 && sameSpan(t.children[0].span, t.span) ? t.children[0] : t;
+    // (The script's tokens take the place of the word's own parts, which cover the same text: `$'…'` escapes.)
+    if (script.tokens.length) only.children = sortTokens(script.tokens);
+    if (script.note) t.explanation += script.note;
+    return t;
+  }
+
+  /** One token for the words joined into a script (`eval echo $x`, `ssh host ls -l`), with the script's tokens. */
+  private joinedScript(words: SyntaxNode[], desc: string | undefined, script: { tokens: Token[]; note?: string }): Token {
+    const span: Span = { start: spanOf(words[0]).start, end: spanOf(words[words.length - 1]).end };
+    const text = this.source.slice(words[0].startIndex, words[words.length - 1].endIndex);
+    const joinedText = this.s('（単語を空白でつないだ文字列を、スクリプトとして読む）', ' (the words, joined with spaces, are read as a script)');
+    return {
+      kind: 'argument', label: shorten(text), span, children: script.tokens,
+      explanation: (desc ?? this.s('もう一度読んで実行する文字列', 'Text to read and run again')) + joinedText + (script.note ?? ''),
+    };
+  }
+
+  /** A token of a string read as a script, with its spans moved from the string's text to the source. */
+  private fromScript(t: Token, script: NestedScript): Token {
+    return { ...t, span: this.scriptSpan(t.span, script), children: t.children.map((c) => this.fromScript(c, script)) };
+  }
+
+  /**
+   * A span in the text of a string read as a script, in the source: from the start of its first character to the end
+   * of its last (`\$x` for `$x` in `"echo \$x"`).
+   */
+  private scriptSpan(sp: Span, script: NestedScript): Span {
+    const inner = lineStarts(script.tree.text);
+    const s = inner[sp.start.line] + sp.start.character;
+    const e = inner[sp.end.line] + sp.end.character;
+    const outer = lineStarts(this.source);
+    const start = posOf(outer, scriptSourceIndex(script, s, false));
+    // (An empty span ends where it starts.)
+    return { start, end: posOf(outer, scriptSourceIndex(script, e, e > s)) };
+  }
+
   /** The command string of `trap`: when its `$variables` are expanded depends on the quotes. */
   private trapNote(a: SyntaxNode): string {
     // (In double quotes, the expansions the parser finds: `\$x` is text.)
@@ -4479,6 +4568,34 @@ const isProgram = (name: string): boolean => {
   return !!spec && !spec.builtin;
 };
 
+/**
+ * Every string of `tree` that a command slot runs as a script (docs/design/semantics.md, 4.13), and those inside them,
+ * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range).
+ * For the dialect checks of the strings (src/document.ts).
+ */
+export function nestedScripts(tree: SyntaxTree, shell?: Shell): { script: NestedScript; source: (i: number, end: boolean) => number }[] {
+  const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
+  const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
+    for (const cmd of descendants(t.root, ['command'])) {
+      const name = staticWordValue(field(cmd, 'name')!.namedChildren[0]);
+      const spec = name === undefined ? undefined : lookupCommand(name);
+      const args = fields(cmd, 'argument');
+      if (!spec || !args.length) continue;
+      const strings = new Map<SyntaxNode, SyntaxNode[]>();
+      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings);
+      for (const [first, words] of strings) {
+        const script = model.script(words, envs.get(first)!);
+        if ('why' in script) continue;
+        const inner = (i: number, end: boolean) => source(scriptSourceIndex(script, i, end), end);
+        out.push({ script, source: inner });
+        visit(script.tree, script.model, inner);
+      }
+    }
+  };
+  visit(tree, shellState(tree, shell), (i) => i);
+  return out;
+}
+
 export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
   const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
@@ -4545,3 +4662,30 @@ function redirectParts(n: SyntaxNode): { op: string; dest: string } {
   const op = n.children.find((c) => !c.named)!.type;
   return { op, dest: fields(n, 'destination').map((d) => d.text).join(' ') };
 }
+
+/** The offset of the start of each line of `text` (kept for the last few texts). */
+const lineStartCache = new Map<string, number[]>();
+function lineStarts(text: string): number[] {
+  let starts = lineStartCache.get(text);
+  if (!starts) {
+    starts = [0];
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+    if (lineStartCache.size > 16) lineStartCache.clear();
+    lineStartCache.set(text, starts);
+  }
+  return starts;
+}
+
+/** The position of offset `i`, given the starts of the lines. */
+function posOf(starts: number[], i: number): Pos {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= i) lo = mid;
+    else hi = mid - 1;
+  }
+  return { line: lo, character: i - starts[lo] };
+}
+
+const sameSpan = (a: Span, b: Span): boolean => a.start.line === b.start.line && a.start.character === b.start.character && a.end.line === b.end.line && a.end.character === b.end.character;

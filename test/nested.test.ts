@@ -1,10 +1,12 @@
 // Nested scripts (docs/design/semantics.md, 4.13): a string that a command slot runs as a script (`eval S`,
 // `bash -c S`, `trap S INT`, `ssh host S`) is read as the script it is. This file tests its text and offsets (the
-// text against bash's quote removal), the model of each kind of string, and the pitfall that reads another shell's
-// model. The state the strings leave is compared with bash on the rows of test/fixtures/probes/state.json.
+// text against bash's quote removal), the model of each kind of string, the pitfall that reads another shell's model,
+// the explanation under the string's token, and the dialect issues of a string another shell reads. The state the
+// strings leave is compared with bash on the rows of test/fixtures/probes/state.json.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { Analyzer, lookupCommand } from '../src/analyzer';
+import { Analyzer, lookupCommand, type Token } from '../src/analyzer';
+import { documentIssues } from '../src/document';
 import type { Shell } from '../src/dialect';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
@@ -387,3 +389,85 @@ describe('nested scripts: the pitfall of a variable another shell does not get',
   });
 });
 
+describe('nested scripts: the explanation', () => {
+  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
+  const explain = (src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) => new Analyzer(lang).explainLine(parser.parse(src), line, shell);
+  /** The token labelled `label`, and the source text it spans. */
+  const spanned = (src: string, label: string, line = 0): { token: Token; text: string } => {
+    const token = all(explain(src, line).items).find((t) => t.label === label);
+    assert.ok(token, `no token ${label} in ${src}`);
+    const lines = src.split('\n');
+    const { start, end } = token.span;
+    const text = start.line === end.line ? lines[start.line].slice(start.character, end.character)
+      : [lines[start.line].slice(start.character), ...lines.slice(start.line + 1, end.line), lines[end.line].slice(0, end.character)].join('\n');
+    return { token, text };
+  };
+
+  it('puts the tokens of the string under its token, at the characters they come from', () => {
+    assert.strictEqual(spanned(`bash -c 'cd /x && make'`, 'make').text, 'make');
+    assert.strictEqual(spanned(`bash -c "echo \\$HOME"`, '$HOME').text, '\\$HOME');
+    assert.strictEqual(spanned(`eval 'echo '"\\$x"`, '$x').text, '\\$x');
+    const str = spanned(`bash -c 'ls -l'`, `'ls -l'`).token;
+    assert.ok(str.kind === 'argument' || str.kind === 'string');
+    assert.ok(all([str]).some((t) => t.label === 'ls'));
+    // A trap's action, and the words eval joins (one token over them).
+    assert.strictEqual(spanned(`trap 'rm -f "$tmp"' EXIT`, 'rm').text, 'rm -f "$tmp"');
+    const joined = spanned(`eval echo '|' wc -l`, `echo '|' wc -l`).token;
+    assert.match(joined.explanation, /^Text to read and run again \(the words, joined with spaces, are read as a script\)/);
+    assert.strictEqual(spanned(`eval echo '|' wc -l`, '|').text, '|');
+    // A string in a string.
+    assert.strictEqual(spanned(`bash -c "eval 'y=1; echo \\$y'"`, '$y').text, '\\$y');
+  });
+
+  it('gives a string of several lines a token per line', () => {
+    const src = `bash -c '\n  cd /x\n  make \\\n    all\n'`;
+    const lines = all(explain(src).items).filter((t) => t.kind === 'block');
+    assert.deepStrictEqual(lines.map((t) => [t.label, t.explanation]), [['cd /x', 'Line 2 of the string'], ['make \\', 'Line 3 of the string']]);
+    assert.strictEqual(spanned(src, 'make').text, 'make \\\n    all');
+    assert.deepStrictEqual(explain(src, 0, 'ja').items[0].children.flatMap((c) => all([c])).filter((t) => t.kind === 'block').map((t) => t.explanation), ['文字列の 2 行目', '文字列の 3 行目']);
+  });
+
+  it('says why a string is not read, and when its shell is not known', () => {
+    assert.match(spanned(`eval "$cmd"`, '"$cmd"').token.explanation, /It holds an expansion, so its text is known only when it runs: it is not explained as a script/);
+    assert.match(explain(`eval "$cmd"`, 0, 'ja').items[0].children[0].explanation, /展開を含み、中身は実行するときに決まるので、スクリプトとしては解説しない/);
+    assert.match(spanned(`su -c 'whoami'`, `'whoami'`).token.explanation, /The shell that runs it is not known here/);
+    // (No shell runs a string under `sudo eval`: the slot's pitfall says so, and the string is a plain argument.)
+    const sudo = explain(`sudo eval 'x=1'`);
+    assert.ok(!all(sudo.items).some((t) => t.kind === 'assignment' || /not explained/.test(t.explanation)));
+    assert.ok(sudo.notes.some((n) => /starts `eval` as a separate program/.test(n)));
+    assert.match(all(explain(`su -c 'whoami'`, 0, 'ja').items).find((t) => t.label === `'whoami'`)!.explanation, /bash として解説する/);
+    let src = 'x=1';
+    for (let i = 0; i < NESTED_DEPTH + 1; i++) src = `eval ${JSON.stringify(src).replace(/\$/g, '\\$')}`;
+    const deep = all(explain(src).items).filter((t) => /nested this deep/.test(t.explanation));
+    assert.strictEqual(deep.length, 1);
+    assert.match(all(explain(src, 0, 'ja').items).map((t) => t.explanation).join('\n'), /文字列の中の文字列が深すぎる/);
+  });
+
+  it('adds the notes and examples of the string to the line', () => {
+    // The dialect notes of the shell that reads it, its pitfalls, and its examples, anchored inside the string.
+    assert.ok(explain(`sh -c '[[ -f x ]]'`).notes.some((n) => /`\[\[ \]\]` is not POSIX sh/.test(n)));
+    assert.ok(explain(`trap 'rm -f $tmp' EXIT`).notes.some((n) => /`\$tmp` is not quoted/.test(n)));
+    const ex = explain(`bash -c "echo a | sed 's/a/b/'"`);
+    const pipeline = ex.examples.find((e) => e.kind === 'pipeline');
+    assert.ok(pipeline?.anchor);
+    assert.strictEqual(pipeline.anchor.start.character, 'bash -c "'.length);
+    // (An example with no anchor of its own is anchored at the string.)
+    const glob = explain(`bash -c 'echo *.txt'`).examples.find((e) => e.kind === 'glob');
+    assert.ok(glob?.anchor);
+  });
+});
+
+describe('nested scripts: the issues of a string another shell reads', () => {
+  const issues = (src: string, shell?: Shell) => documentIssues({ lines: src.split('\n'), tree: parser.parse(src) }, 'en', { detected: shell })
+    .map((i) => `${i.code} ${i.startLine}:${i.startCol}-${i.endLine}:${i.endCol} ${src.split('\n')[i.startLine].slice(i.startCol, i.endCol)}`);
+
+  it('reports them at their places in the document', () => {
+    assert.deepStrictEqual(issues(`sh -c '[[ -f x ]]'`), ['dbracket 0:7-0:17 [[ -f x ]]']);
+    assert.deepStrictEqual(issues(`bash -c "dash -c '[[ a ]]'"`), ['dbracket 0:18-0:25 [[ a ]]']);
+    assert.deepStrictEqual(issues(`x=1\neval '[[ a ]]'`, 'sh'), ['dbracket 1:6-1:13 [[ a ]]']);
+    // (An issue over several lines is shown on its first.)
+    assert.deepStrictEqual(issues(`sh -c '[[ a\n  ]]'`), ['dbracket 0:7-0:11 [[ a']);
+    // Not for bash, nor for a shell that is not known.
+    assert.deepStrictEqual(issues(`bash -c '[[ a ]]'; su -c '[[ a ]]'; eval '[[ a ]]'`), []);
+  });
+});

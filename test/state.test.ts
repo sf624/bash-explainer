@@ -233,6 +233,12 @@ describe('shell state: functions and aliases', () => {
 });
 
 describe('shell state: function bodies run at their calls', () => {
+  it('walks a body again when a function it does not call differs only in its object', () => {
+    // (`export -fn g` gives `g` a new state, the same as before: the second call of `f` reuses the first walk.)
+    const model = shellState(parser.parse('g() { :; }; f() { :; }; f; export -fn g; f'));
+    assert.deepStrictEqual([model.end.functions.get('g')?.exported, model.end.functions.get('g')?.readonly], ['off', 'off']);
+  });
+
   it('a body has the state of its call: functions defined and options set after the definition count', () => {
     const src = 'main() { setup; ls; }\nsetup() { shopt -s nullglob; }\nmain';
     assert.strictEqual(shopt(before(src, 'ls'), 'nullglob'), 'on');

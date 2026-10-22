@@ -889,6 +889,36 @@ Not followed yet (gaps): a trap set in a subshell (`( trap 'x=1' INT )`, `trap �
 
 **Recursion.** A string inside a string is read the same way, one level deeper; past `NESTED_DEPTH` it stays opaque. Each tree is parsed once per outer model, and the walk's guards against recursion (function calls) hold, so `f() { eval f; }; f` ends.
 
+#### As built
+
+```ts
+// src/semantics/nested.ts
+export const NESTED_DEPTH = 8;
+export interface NestedScript {
+  kind: 'current' | 'later' | 'child'; words: readonly SyntaxNode[]; text: string;
+  starts: readonly number[]; ends: readonly number[];   // the source range of each character of `text`
+  tree: SyntaxTree; shell: Shell | undefined; known: boolean; depth: number;
+  outer: StateModel; model: StateModel; env: ExecEnv;
+}
+export interface NotRead { why: 'not-static' | 'too-deep' }
+export function scriptText(words): MappedText | undefined;          // src/staticword.ts: staticWordText(word)
+export function scriptSourceIndex(script, i, end): number;
+// src/semantics/state.ts
+interface StateModel { …; script(words, env): NestedScript | NotRead }
+// src/semantics/env.ts
+export function runsString(slot: CommandSlot): boolean;
+export function slotEnvs(env, parse, spec, nodes, lookup?, strings?: Map<SyntaxNode, SyntaxNode[]>): Map<SyntaxNode, ExecEnv>;
+interface WalkFacts { …; base(root): ExecEnv }                      // where the root of a tree runs
+// src/analyzer.ts
+export function nestedScripts(tree, shell?): { script; source(i, end) }[];   // for src/document.ts
+// src/argv/spec.ts
+interface CommandSlot { …; later?: boolean; shell?: 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh' }
+```
+
+- A model keeps the strings it reads by their first word (`Scripts`), and the trees of `eval` and trap strings by root, so `EnvModel` gives their roots the slot's chain (`WalkFacts.base`). `shellState(tree)` of a string's tree is its model: the outer one for `eval` and a trap, so the analyzer that explains the string reads the states the walk gave its nodes. A string another shell runs gets its model when first asked (`childStart` builds its state).
+- The walk reads an `eval` or a trap string when it reaches the command (it reaches every command, so the analyzer finds them read). For a trap that is not EXIT only, it also walks the action at once, quietly (`quiet`: no node states, calls or walks of bodies are recorded, since the action runs later), for the names it changes; `sequence` widens them after each later statement. The status facts of the analyzer are kept per model and tree, since an `eval` string's tree shares the model of the script.
+- Limits: the names a trap's action changes are those of its walk where the `trap` is, so a function it calls that the script defines only after the `trap` adds nothing (`trap f INT; f() { x=1; }`: `x` is not taken as "may" after it); the status model does not run the strings (`bash -c 'false'` under `set -e`, the ERR trap: the rows of status.json keep their gaps); the calls a string another shell runs makes are in that shell's model, not in the script's `calls` (a row of env.json keeps its gap); `bash --posix -c` is read in bash mode; the words that `eval` joins become one token, so the quoting of each word is not explained apart; the walk's states of an `eval` in an alias's text are not shown (the analyzer explains the alias's use, not its text).
+- Tests: test/nested.test.ts (the text of a word against bash's quote removal, offsets, each kind of model, environments of nested roots, depth, the explanation and the issues); state.json has rows for `eval` (definite changes, in a function, a syntax error), another shell and a subshell (no change), and traps (may, and not for EXIT).
 
 ## 5. C: the bash-ast differential test
 

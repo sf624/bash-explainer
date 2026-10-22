@@ -6,6 +6,7 @@
 
 - A shebang that runs `env` says what runs: `#!/usr/bin/env -S bash -e` runs `bash -e` with the script, and `#!/usr/bin/env bash -e` warns that Linux passes `bash -e` to env as one word, which fails.
 - The shell state follows static `eval` strings and trap actions: `eval 'x=1'` sets `x` where `eval` runs, and what a trap's action sets "may" be set after the `trap`. Before, any name might have been set after an `eval` or a trap's action.
+- A string that a command runs as a script is explained as one: `bash -c '…'`, `sh -c`, `eval`, a trap's action, `su -c`, `ssh host '…'`, `watch '…'`, also under `sudo`, `xargs`, `find -exec`, `docker exec` and `kubectl exec`. Its commands and expansions appear under the string's token at their own characters (`$HOME` in `bash -c "echo \$HOME"` highlights `\$HOME`), its notes join the line's in the shell that runs it (an `sh -c` string gets the POSIX checks), and the Problems list shows its dialect issues. A string with an expansion (`eval "$cmd"`, the `"$args"` of `eval set -- "$args"`) says its text is known only when it runs. Before, such a string was one opaque argument.
 
 ### Fixed
 

@@ -129,7 +129,7 @@ describe('the command a wrapper runs', () => {
     assert.match(ran('sudo -u u cmd arg', 'cmd'), /runs `cmd`/);
     assert.match(ran('command ls -la', 'ls'), /runs `ls`/);
     assert.match(ran('find . -exec ls {} +', 'ls'), /runs `ls`/);
-    assert.strictEqual(about('ssh -p 22 user@host cmd arg', 'cmd'), 'remote command');
+    assert.match(about('ssh -p 22 user@host cmd arg', 'cmd arg'), /^remote command \(the words, joined with spaces, are read as a script\)/);
   });
 });
 
