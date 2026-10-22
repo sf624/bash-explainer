@@ -354,13 +354,12 @@
   $('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
   /** Colour each character of the line by the deepest token covering it. */
-  // The line is sticky (panel.css): tell the CSS how tall it is, and whether rows are under it.
+  // The header and the line are sticky together (#top, panel.css): tell the CSS how tall they are, and whether rows are under them.
   function syncLine() {
     const pre = $('line');
-    document.documentElement.style.setProperty('--line-h', `${pre.offsetHeight}px`);
-    const stuck = window.scrollY > 0 && pre.getBoundingClientRect().top <= parseFloat(getComputedStyle(pre).top) + 0.5;
-    pre.classList.toggle('stuck', stuck);
-    document.documentElement.classList.toggle('line-stuck', stuck);
+    const top = $('top');
+    document.documentElement.style.setProperty('--line-h', `${top.offsetHeight}px`);
+    top.classList.toggle('stuck', window.scrollY > 0);
   }
   window.addEventListener('scroll', syncLine, { passive: true });
   window.addEventListener('resize', syncLine);
@@ -461,6 +460,7 @@
     const open = $('reference').hidden;
     $('reference').hidden = !open;
     $('main').hidden = open;
+    $('line').hidden = open;
     $('ref').textContent = open ? labels.back : labels.reference;
     if (open) {
       if (!reference) vscode.postMessage({ type: 'reference' });

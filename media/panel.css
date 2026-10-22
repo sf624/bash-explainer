@@ -43,7 +43,7 @@ body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
   color: var(--vscode-foreground);
-  padding: 0.5rem 1rem 2rem;
+  padding: 0 1rem 2rem;
   line-height: 1.5;
 }
 
@@ -52,17 +52,31 @@ header {
   margin-bottom: 0.5rem;
 }
 
+/* The header and the line stay at the top together, header first, while the explanation scrolls
+   under them. The container is opaque, so nothing shows through around the line (its rounded
+   corners included), and it holds the body's top padding, so it does not move when a scroll
+   starts. A tall statement (shown whole) scrolls inside its box, so the tree keeps room.
+   --line-h (panel.js) is its height, for scrolling a row into view below it. */
+#top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.5rem 0 0.75rem;
+  background: var(--vscode-editor-background);
+}
+
+/* Scrolled under: a soft edge below. */
+#top.stuck {
+  box-shadow: 0 0.6rem 0.6rem -0.2rem rgba(0, 0, 0, 0.18);
+}
+
 #where {
   font-weight: 600;
   color: var(--vscode-foreground);
 }
 
-/* The line stays at the top while the explanation scrolls under it. It is opaque (the code block's
-   tint over the panel's background), and a ring of the background colour around it hides the rows
-   that pass beside and above it. A tall statement (shown whole) scrolls inside its box, so the tree
-   keeps room. --line-h (panel.js) is its height, for scrolling a row into view below it. */
 html {
-  scroll-padding-top: calc(var(--line-h, 0px) + 0.75rem);
+  scroll-padding-top: calc(var(--line-h, 0px) + 0.25rem);
 }
 
 pre#line {
@@ -76,30 +90,7 @@ pre#line {
   overflow: auto;
   max-height: 40vh;
   white-space: pre;
-  margin: 0 0 0.75rem;
-  /* Sticks where it starts (under the body's top padding), so on the web page, where the header is hidden, it does not move at all. */
-  position: sticky;
-  top: 0.5rem;
-  z-index: 2;
-  box-shadow: 0 0 0 0.5rem var(--vscode-editor-background);
-}
-
-/* While it is stuck, a square cover from the top edge to just below the block's top: the ring above
-   is rounded at the corners and would let the rows scrolled under it show through there. */
-html.line-stuck body::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: calc(0.5rem + 4px);
-  background: var(--vscode-editor-background);
-  z-index: 1;
-}
-
-/* Scrolled under: a soft edge below. */
-pre#line.stuck {
-  box-shadow: 0 0 0 0.5rem var(--vscode-editor-background), 0 0.6rem 0.6rem 0.2rem rgba(0, 0, 0, 0.18);
+  margin: 0;
 }
 
 .seg {
@@ -293,11 +284,7 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 0.3rem 0.8rem;
-  position: sticky;
-  top: 0;
-  z-index: 1;
   padding: 0.3rem 0;
-  background: var(--vscode-editor-background);
 }
 
 .tools {
