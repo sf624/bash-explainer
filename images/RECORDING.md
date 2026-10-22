@@ -65,11 +65,11 @@ The Linux `code` command asks, in WSL, whether to use the Windows VS Code instea
 
 ### What it records
 
-The settings are the same for every image: Dark Modern theme, 16px editor font, minimap, activity bar and sidebar hidden, and `"bashExplainer.language": "en"`. The window is 1280×720 (1280×840 for `demo.gif`, so that the whole example of line 8 fits in the panel; 1000×600 for `hover.gif`), recorded at 1.5× scale and written 1000px wide at 10 fps.
+The settings are the same for every image: Dark Modern theme, 16px editor font, minimap, activity bar and sidebar hidden, and `"bashExplainer.language": "en"`. The window is 1280×720 (1280×840 for `demo.gif`, so that the tree and the example of line 13 fit in the panel; 1000×600 for `hover.gif`), recorded at 1.5× scale and written 1000px wide at 10 fps.
 
 | Image | Settings | Steps |
 | --- | --- | --- |
-| `demo.gif` | defaults (hover on), `examples.placement: last` | With the cursor on line 8 (`grep -n "ERROR" … \| tail -n 5`), open the panel from the editor title bar. The panel first shows the explanation tree; scroll it to the example of the whole pipeline (after its rows), click into its input and turn `RROR` into `ERROR`: the lines after `grep` and the output of `tail` change. Then hover line 2 (`set -euo pipefail`). |
+| `demo.gif` | defaults (hover on) | With the cursor on line 13 (`grep -rn "ERROR" "$LOG_DIR" 2>/dev/null >> errors.txt`), open the panel from the editor title bar. The panel first shows the explanation tree; scroll down to the example under the pattern `"ERROR"`, click into its input and turn `RROR` into `ERROR`: the matching lines change. Then hover line 2 (`set -euo pipefail`). |
 | `hover.gif` | defaults (hover on) | Hover line 2 (`set -euo pipefail`), line 4 (`${1:-…}`) and line 7 (inside the loop; the header says "for loop"). |
 | `panel.gif` | `hover.enabled: false`, `panel.autoOpen: true` | Move down from line 1 to line 11 with the arrow keys, point at the `-exec` row of the tree, then go on to line 12. |
 | `inline.png` | `hover.enabled: false`, `inline.enabled: true` | Cursor on line 8, so its summary shows at the end of the line. Cropped to the editor lines. |

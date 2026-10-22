@@ -10,3 +10,4 @@ done
 
 find "$LOG_DIR" -name '*.log' -mtime +7 -exec rm -f {} \;
 tar -czf "backup-$(date +%F).tar.gz" -C "$LOG_DIR" .
+grep -rn "ERROR" "$LOG_DIR" 2>/dev/null >> errors.txt
