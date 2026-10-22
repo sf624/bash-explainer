@@ -22,10 +22,59 @@ function savedSplit(): { wide?: number; narrow?: number } {
   }
 }
 
+/** What a divider needs to know: its value and how to change it (see `attachDivider`). */
+interface DividerModel {
+  current(): number;
+  /** Sets a value (clamped by the model) or, with undefined, goes back to the default. */
+  set(v: number | undefined): void;
+  /** The value the pointer stands for. */
+  at(e: PointerEvent): number;
+  min(): number;
+  max(): number;
+  /** The arrow keys' step (with Shift: a fifth of it, at least 1). */
+  step: number;
+  /** True when the value grows towards the top or the left (the height of a list under the editor). */
+  inverted?: boolean;
+}
+
 /**
- * The divider: dragged with a pointer, moved with the arrow keys (Home and End for the ends), and
- * back to the default sizes with a double click or Enter.
+ * The behaviour of a divider: dragged with a pointer, moved with the arrow keys (Home and End for the
+ * ends), and back to the default with a double click or Enter.
  */
+function attachDivider(handle: HTMLElement, m: DividerModel): void {
+  /** Where in the divider it was taken, so that it does not jump to the pointer. */
+  let grab = 0;
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    grab = m.at(e) - m.current();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (handle.hasPointerCapture(e.pointerId)) m.set(m.at(e) - grab);
+  });
+  const stop = (e: PointerEvent) => {
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    document.body.classList.remove('resizing');
+  };
+  handle.addEventListener('pointerup', stop);
+  handle.addEventListener('pointercancel', stop);
+  handle.addEventListener('dblclick', () => m.set(undefined));
+  handle.addEventListener('keydown', (e) => {
+    const step = (e.shiftKey ? Math.max(1, m.step / 5) : m.step) * (m.inverted ? -1 : 1);
+    const moves: Record<string, number | undefined> = {
+      ArrowLeft: m.current() - step, ArrowUp: m.current() - step,
+      ArrowRight: m.current() + step, ArrowDown: m.current() + step,
+      Home: m.min(), End: m.max(), Enter: undefined,
+    };
+    if (!(e.key in moves)) return;
+    e.preventDefault();
+    m.set(moves[e.key]);
+  });
+}
+
+/** The divider between the editor and the explanation. */
 export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange: () => void): () => void {
   const saved = savedSplit();
   const key = () => (narrow.matches ? 'narrow' : 'wide');
@@ -37,49 +86,26 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
     // The divider of panes one above the other is horizontal.
     handle.setAttribute('aria-orientation', narrow.matches ? 'horizontal' : 'vertical');
   };
-  const set = (v: number | undefined) => {
-    if (v === undefined) delete saved[key()];
-    else saved[key()] = Math.min(MAX, Math.max(MIN, v));
-    apply();
-    onChange();
-    try {
-      localStorage.setItem(SPLIT_KEY, JSON.stringify(saved));
-    } catch {
-      // The sizes then last until the page is closed.
-    }
-  };
-  const at = (e: PointerEvent) => {
-    const r = split.getBoundingClientRect();
-    return narrow.matches ? ((e.clientY - r.top) / r.height) * 100 : ((e.clientX - r.left) / r.width) * 100;
-  };
-  /** Where in the divider it was taken, so that it does not jump to the pointer. */
-  let grab = 0;
-  handle.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    grab = at(e) - current();
-    handle.setPointerCapture(e.pointerId);
-    document.body.classList.add('resizing');
-  });
-  handle.addEventListener('pointermove', (e) => {
-    if (handle.hasPointerCapture(e.pointerId)) set(at(e) - grab);
-  });
-  const stop = (e: PointerEvent) => {
-    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
-    document.body.classList.remove('resizing');
-  };
-  handle.addEventListener('pointerup', stop);
-  handle.addEventListener('pointercancel', stop);
-  handle.addEventListener('dblclick', () => set(undefined));
-  handle.addEventListener('keydown', (e) => {
-    const step = e.shiftKey ? 1 : 5;
-    const moves: Record<string, number | undefined> = {
-      ArrowLeft: current() - step, ArrowUp: current() - step, ArrowRight: current() + step, ArrowDown: current() + step,
-      Home: MIN, End: MAX, Enter: undefined,
-    };
-    if (!(e.key in moves)) return;
-    e.preventDefault();
-    set(moves[e.key]);
+  attachDivider(handle, {
+    current,
+    set(v) {
+      if (v === undefined) delete saved[key()];
+      else saved[key()] = Math.min(MAX, Math.max(MIN, v));
+      apply();
+      onChange();
+      try {
+        localStorage.setItem(SPLIT_KEY, JSON.stringify(saved));
+      } catch {
+        // The sizes then last until the page is closed.
+      }
+    },
+    at(e) {
+      const r = split.getBoundingClientRect();
+      return narrow.matches ? ((e.clientY - r.top) / r.height) * 100 : ((e.clientX - r.left) / r.width) * 100;
+    },
+    min: () => MIN,
+    max: () => MAX,
+    step: 5,
   });
   narrow.addEventListener('change', apply);
   apply();
@@ -89,6 +115,79 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
     delete saved.narrow;
     apply();
     onChange();
+  };
+}
+
+/** The editor keeps this many pixels (about three lines) above the Problems list. */
+const EDITOR_MIN = 66;
+/** The list keeps at least its handle, its header and a row. */
+const LIST_MIN = 72;
+
+/**
+ * The Problems list under the editor: a divider above it changes its height (dragged, or with the arrow
+ * keys; a double click or Enter goes back to the default, a third of the editor's pane at most), and its
+ * header folds it away. Both are kept in this browser when it lets the page. Returns what resets them.
+ */
+export function setUpProblems(
+  pane: HTMLElement, box: HTMLElement, handle: HTMLElement, toggle: HTMLElement, onChange: () => void,
+): () => void {
+  let saved: { height?: number; collapsed?: boolean } = {};
+  try {
+    const v = JSON.parse(localStorage.getItem(STORAGE_KEYS.problems) ?? '{}');
+    if (v && typeof v === 'object') saved = v;
+  } catch {
+    // Not readable: the defaults.
+  }
+  const store = () => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.problems, JSON.stringify(saved));
+    } catch {
+      // The choice then lasts until the page is closed.
+    }
+  };
+  const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN);
+  const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
+  const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
+  const apply = () => {
+    const collapsed = !!saved.collapsed;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    box.classList.toggle('collapsed', collapsed);
+    handle.hidden = collapsed;
+    if (saved.height === undefined) box.style.removeProperty('--problems-height');
+    else box.style.setProperty('--problems-height', `${clamp(saved.height)}px`);
+    handle.setAttribute('aria-valuemin', String(LIST_MIN));
+    handle.setAttribute('aria-valuemax', String(max()));
+    if (!collapsed && !box.hidden) handle.setAttribute('aria-valuenow', String(Math.round(height())));
+    onChange();
+  };
+  attachDivider(handle, {
+    current: height,
+    set(v) {
+      if (v === undefined) delete saved.height;
+      else saved.height = clamp(v);
+      apply();
+      store();
+    },
+    at: (e) => pane.getBoundingClientRect().bottom - e.clientY,
+    min: () => LIST_MIN,
+    max,
+    step: 30,
+    inverted: true,
+  });
+  toggle.addEventListener('click', () => {
+    if (saved.collapsed) delete saved.collapsed;
+    else saved.collapsed = true;
+    apply();
+    store();
+  });
+  window.addEventListener('resize', apply);
+  narrow.addEventListener('change', apply);
+  // The list's own height changes as problems come and go (and with the pane): the handle tells it.
+  new ResizeObserver(apply).observe(box);
+  apply();
+  return () => {
+    saved = {};
+    apply();
   };
 }
 

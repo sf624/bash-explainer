@@ -320,19 +320,75 @@ body.resizing iframe {
 }
 
 #problems {
+  position: relative;
   flex: none;
+  display: flex;
+  flex-direction: column;
   max-height: 30%;
-  overflow: auto;
   border-top: 1px solid var(--vscode-panel-border);
-  padding: 0 0 6px;
   background: var(--page-background);
 }
 
+#problems[hidden] {
+  display: none;
+}
+
+/* A height chosen with the handle (the editor keeps its three lines or so). */
+#problems:not(.collapsed) {
+  height: var(--problems-height, auto);
+}
+
+#problems[style*="--problems-height"] {
+  max-height: calc(100% - 66px);
+}
+
+#problems.collapsed {
+  max-height: none;
+}
+
+#problems.collapsed #problem-list {
+  display: none;
+}
+
+/* The handle on the list's top edge: the same look as the divider between the panes, lying across. */
+.problems-resize {
+  position: absolute;
+  z-index: 2;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 9px;
+  cursor: row-resize;
+  touch-action: none;
+  transition: background-color 0.15s;
+}
+
+.problems-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.45;
+  transform: translate(-50%, -50%);
+}
+
+.problems-resize:hover,
+.problems-resize:focus-visible,
+body.resizing .problems-resize {
+  background: var(--accent-soft);
+}
+
+.problems-resize:focus-visible {
+  outline-offset: -2px;
+}
+
 #problems h2 {
-  position: sticky;
-  top: 0;
+  flex: none;
   margin: 0;
-  padding: 6px 12px 4px;
   background: var(--page-background);
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
@@ -341,10 +397,56 @@ body.resizing iframe {
   text-transform: uppercase;
 }
 
+#problems-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 12px 2px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+#problems-toggle:hover {
+  color: var(--vscode-foreground);
+}
+
+#problems-toggle .chev {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+
+#problems.collapsed .chev {
+  transform: rotate(-90deg);
+}
+
+#problems-toggle .count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+}
+
 #problem-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   list-style: none;
   margin: 0;
-  padding: 0 6px;
+  padding: 0 6px 6px;
 }
 
 #problem-list li {
@@ -778,6 +880,16 @@ body.resizing iframe {
 
   #problem-list li {
     padding-block: 8px;
+  }
+
+  /* A broader strip to take with a finger. */
+  .problems-resize {
+    top: -10px;
+    height: 20px;
+  }
+
+  #problems-toggle {
+    min-height: 40px;
   }
 
   #settings-dialog {
