@@ -1975,5 +1975,419 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
     }
+  },
+  {
+    "manual": "3.6",
+    "snippet": "n=0; ( : ) > f$(( n = 3 )); unset u; ( : ) > g${u:=3}",
+    "note": "a subshell makes its redirections in its own process",
+    "facts": {
+      "end": {
+        "variables": {
+          "n": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "(( \"u=1\" )); x='y=3'; (( \"$x\" )); v=2; (( w = \"$v\" + 1 ))",
+    "note": "double quotes in (( )) are removed, and the text they hold is read as arithmetic",
+    "facts": {
+      "end": {
+        "variables": {
+          "u": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"y=3\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "z=5; v='$z'; w=0; (( w = v )); let 'p=$z'; a=1; let 'a <<= 3 && $b'\ni=1; arr=(5 6); q='arr[$i]'; (( r = q )); j=0; let 's = arr[$j]'",
+    "note": "a text read as arithmetic (a value, an argument of let) has no expansions but in a subscript",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "arr": {
+            "attrs": "a",
+            "value": "([0]=\"5\" [1]=\"6\")"
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "j": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "q": {
+            "attrs": "-",
+            "value": "\"arr[\\$i]\""
+          },
+          "r": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"\\$z\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"0\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: $z: syntax error: operand expected (error token is \"$z\")"
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "x=-1; (( y = 2 $x )); x2=y2; (( $x2 = 3 )); y3=1; x3=y3; (( ${x3} += 1 )); e='y4=3'; (( $e ))\n(( h = $1 )); let k=$1 \"l = 1 + $1\"",
+    "note": "the text pasted by $x is read with the expression around it",
+    "gaps": {
+      "end.variables.h": "a text pasted that is not known here ($1) may make the expression fail, or change it: what it seems to assign may be set",
+      "end.variables.k": "a text pasted that is not known here ($1) may make the expression fail, or change it: what it seems to assign may be set",
+      "end.variables.l": "a text pasted that is not known here ($1) may make the expression fail, or change it: what it seems to assign may be set"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "e": {
+            "attrs": "-",
+            "value": "\"y4=3\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"-1\""
+          },
+          "x2": {
+            "attrs": "-",
+            "value": "\"y2\""
+          },
+          "x3": {
+            "attrs": "-",
+            "value": "\"y3\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y2": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "y3": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "y4": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 2: ((: h =  : syntax error: operand expected (error token is \"=  \")"
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "v0=1; v1=v0; v2=v1; v3=v2; v4=v3; v5=v4; v6=v5; v7=v6; v8=v7; v9=v8; v10=v9; v11=v10; v12=v11; v13=v12; v14=v13; v15=v14; v16=v15; v17=v16; v18=v17; v19=v18; v20=v19; v21=v20; v22=v21; v23=v22; v24=v23; v25=v24; v26=v25; v27=v26; v28=v27; v29=v28; v30=v29; v31=v30; v32=v31; v33=v32; (( y = v33 ))\ni=0; x='i++ < 5 ? x : 7'; (( y2 = x ))",
+    "note": "a value is read as an expression, each in turn, as deep as it goes; bash fails at 1024 levels",
+    "facts": {
+      "end": {
+        "variables": {
+          "i": {
+            "attrs": "-",
+            "value": "\"6\""
+          },
+          "v0": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "v1": {
+            "attrs": "-",
+            "value": "\"v0\""
+          },
+          "v10": {
+            "attrs": "-",
+            "value": "\"v9\""
+          },
+          "v11": {
+            "attrs": "-",
+            "value": "\"v10\""
+          },
+          "v12": {
+            "attrs": "-",
+            "value": "\"v11\""
+          },
+          "v13": {
+            "attrs": "-",
+            "value": "\"v12\""
+          },
+          "v14": {
+            "attrs": "-",
+            "value": "\"v13\""
+          },
+          "v15": {
+            "attrs": "-",
+            "value": "\"v14\""
+          },
+          "v16": {
+            "attrs": "-",
+            "value": "\"v15\""
+          },
+          "v17": {
+            "attrs": "-",
+            "value": "\"v16\""
+          },
+          "v18": {
+            "attrs": "-",
+            "value": "\"v17\""
+          },
+          "v19": {
+            "attrs": "-",
+            "value": "\"v18\""
+          },
+          "v2": {
+            "attrs": "-",
+            "value": "\"v1\""
+          },
+          "v20": {
+            "attrs": "-",
+            "value": "\"v19\""
+          },
+          "v21": {
+            "attrs": "-",
+            "value": "\"v20\""
+          },
+          "v22": {
+            "attrs": "-",
+            "value": "\"v21\""
+          },
+          "v23": {
+            "attrs": "-",
+            "value": "\"v22\""
+          },
+          "v24": {
+            "attrs": "-",
+            "value": "\"v23\""
+          },
+          "v25": {
+            "attrs": "-",
+            "value": "\"v24\""
+          },
+          "v26": {
+            "attrs": "-",
+            "value": "\"v25\""
+          },
+          "v27": {
+            "attrs": "-",
+            "value": "\"v26\""
+          },
+          "v28": {
+            "attrs": "-",
+            "value": "\"v27\""
+          },
+          "v29": {
+            "attrs": "-",
+            "value": "\"v28\""
+          },
+          "v3": {
+            "attrs": "-",
+            "value": "\"v2\""
+          },
+          "v30": {
+            "attrs": "-",
+            "value": "\"v29\""
+          },
+          "v31": {
+            "attrs": "-",
+            "value": "\"v30\""
+          },
+          "v32": {
+            "attrs": "-",
+            "value": "\"v31\""
+          },
+          "v33": {
+            "attrs": "-",
+            "value": "\"v32\""
+          },
+          "v4": {
+            "attrs": "-",
+            "value": "\"v3\""
+          },
+          "v5": {
+            "attrs": "-",
+            "value": "\"v4\""
+          },
+          "v6": {
+            "attrs": "-",
+            "value": "\"v5\""
+          },
+          "v7": {
+            "attrs": "-",
+            "value": "\"v6\""
+          },
+          "v8": {
+            "attrs": "-",
+            "value": "\"v7\""
+          },
+          "v9": {
+            "attrs": "-",
+            "value": "\"v8\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"i++ < 5 ? x : 7\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "y2": {
+            "attrs": "-",
+            "value": "\"7\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "c=-2; (( a |= 2#101 >= c /= c &= 2 )); i=0; (( (i++)++ )); j=0; (( (j = 1) = 3 )); k=0; (( m = ++(k = 2) ))",
+    "note": "assigning to what is no variable is an error, once its left side has run; ++ before what is no variable is two signs",
+    "facts": {
+      "end": {
+        "variables": {
+          "c": {
+            "attrs": "-",
+            "value": "\"-2\""
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "j": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "k": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "m": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: ((: a |= 2#101 >= c /= c &= 2 : attempted assignment to non-variable (error token is \"/= c &= 2 \")"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "unset u; unset ${u:=u}; w=1; unset ${w:=v}",
+    "note": "the default sets u, then unset unsets it",
+    "gaps": {
+      "end.variables.u": "the word unset is given is not known here: the variable its default sets may be the one it names",
+      "end.variables.w": "the word unset is given is not known here: the variable its default sets may be the one it names"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "w": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "n=0; enable -n echo; echo > f$(( n = 3 )); enable echo; m=0; echo > g$(( m = 3 ))",
+    "note": "a builtin turned off runs as a program, which makes its redirections in its own process",
+    "facts": {
+      "end": {
+        "variables": {
+          "m": {
+            "attrs": "-",
+            "value": "\"3\""
+          },
+          "n": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.5",
+    "snippet": "{ : $(( 1 / 0 )); x=1; }\nf() { : $(( 1 / 0 )); w=1; }; g() { f; v=1; }\ng\nu=1",
+    "note": "an error in an expansion discards the rest of the top-level command, also in a function it calls",
+    "gaps": {
+      "end.variables.x": "the rest of the top-level command after an expansion error is not followed",
+      "end.variables.w": "the rest of the top-level command after an expansion error is not followed",
+      "end.variables.v": "the rest of the top-level command after an expansion error is not followed"
+    },
+    "facts": {
+      "end": {
+        "variables": {
+          "u": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: 1 / 0 : division by 0 (error token is \"0 \")"
+    }
   }
 ]
