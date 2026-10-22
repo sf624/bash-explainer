@@ -562,6 +562,20 @@ describe('the web page in a browser', function () {
     await ctx.close();
   });
 
+  it('shows the descriptions of the settings without VS Code-only Markdown (#bashExplainer.key# links, command links)', async () => {
+    for (const locale of ['en-US', 'ja-JP']) {
+      const ctx = await browser!.newContext({ locale });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('#settings-open').click();
+      const body = await page.locator('.settings-body').innerText();
+      assert.ok(!/#bashExplainer|\]\(|\*\*|`/.test(body), `${locale}: raw Markdown left in the dialog`);
+      // The name of the setting is in code style.
+      assert.strictEqual(await page.locator('[data-key="colors"] .setting-desc code', { hasText: 'bashExplainer.highlight.enabled' }).count(), 1);
+      await ctx.close();
+    }
+  });
+
   it('wraps long lines in the editor when the editor.wrap setting is on: kept, exported, imported and reset', async () => {
     const ctx = await browser!.newContext({ locale: 'en-US', viewport: { width: 360, height: 740 } });
     const page = await ctx.newPage();
