@@ -8,6 +8,10 @@
 - The shell state follows static `eval` strings and trap actions: `eval 'x=1'` sets `x` where `eval` runs, and what a trap's action sets "may" be set after the `trap`. Before, any name might have been set after an `eval` or a trap's action.
 - A string that a command runs as a script is explained as one: `bash -c '…'`, `sh -c`, `eval`, a trap's action, `su -c`, `ssh host '…'`, `watch '…'`, also under `sudo`, `xargs`, `find -exec`, `docker exec` and `kubectl exec`. Its commands and expansions appear under the string's token at their own characters (`$HOME` in `bash -c "echo \$HOME"` highlights `\$HOME`), its notes join the line's in the shell that runs it (an `sh -c` string gets the POSIX checks), and the Problems list shows its dialect issues. A string with an expansion (`eval "$cmd"`, the `"$args"` of `eval set -- "$args"`) says its text is known only when it runs. Where something may not be there, the string says why: `sh` may be dash, a trap's action is read when its signal comes, and a new shell starts with `extglob` off. Before, such a string was one opaque argument.
 
+### Changed
+
+- A branch that cannot run, because its condition is decided by values the script itself set, no longer changes how the lines after it are explained: after `x=1; if [ "$x" = 2 ]; then set -f; fi`, a glob is a glob again, and after `if false; then f() { …; }; fi`, `f` is not the function. Code after `break`, `continue`, `return` or `exit` no longer counts either. Before, both sides of every branch counted, so such lines said "may" or "on some paths".
+
 ### Fixed
 
 - `env -S` strings are split as GNU env splits them (quotes, `\_`, `#` comments, `${NAME}`), and their words are read in place of the option, so `env -S'-i A=1 bash -e' script` shows `-i`, `A=1` and the command; a string env refuses gets a warning that it exits with status 125.
@@ -15,6 +19,7 @@
 - The pitfall for a variable that another shell does not have (`bash -c`, `sudo`, `su -c`, `ssh`, `docker exec`) reads the string as that shell reads it, so `\$n` in `bash -c "echo \$n"` counts; `env -u x` removes `x`, and a shell that reads startup files (`bash -l`, an exported `BASH_ENV`) may have any name. The shell and env's `-i`, `-u` and `NAME=value` count in an `env -S` string too (`env -S'-i bash -c' '…'`). Before, an escaped `\$n` was missed, and a shell started from an `env -S` string was not known.
 - `bash -O extglob -c '…'` and `bash --posix` are read as bash's options. Before, `-O` was not known and `extglob` was taken for the script to run.
 - `"$@"` inside single quotes is text, so the words after `bash -c 'f "$@"'` are no longer said to depend on how many words it gives.
+- Explanations match bash in more places: `x=1 ''` (a command name that is not found, so `x` is not set), and the variables that `exec {fd}>file`, `wait -p var` and `coproc name` set.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
 

@@ -584,3 +584,170 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after(loops, 't', 'z', 'i0', 'i17'), ['unknown', 'unknown', 'unknown', 'set']);
   });
 });
+
+describe('shell state: conditions (docs/design/semantics.md, 4.14)', () => {
+  /** What the condition of the `at`th node of type `type` decides, as `outcome reads`. */
+  const decided = (src: string, type: string, at = 0, shell?: Shell): string | undefined => {
+    const tree = parser.parse(src);
+    const d = shellState(tree, shell).condition(descendants(tree.root, [type])[at]);
+    return d && `${d.outcome} ${[...d.reads].map(([k, v]) => `${k}=${v}`).join(',')}`.trim();
+  };
+  it('records what each condition decides, with the variables it read', () => {
+    assert.strictEqual(decided('x=1; if [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 'if_statement'), 'false x=1');
+    assert.strictEqual(decided('x=1; if [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 'elif_clause'), 'true x=1');
+    assert.strictEqual(decided('if true; then :; elif [ a ]; then :; fi', 'elif_clause'), undefined);
+    assert.strictEqual(decided('w=ab; case $w in a) ;; a*) ;& b) ;; *) ;; esac', 'case_statement'), '1,2 w=ab');
+    assert.strictEqual(decided('n=0; while (( n > 0 )); do :; done', 'while_statement'), 'false n=0');
+    assert.strictEqual(decided('for ((;;)); do break; done', 'c_style_for_statement'), 'true');
+    assert.strictEqual(decided('unset u; [ -z "$u" ] || :', 'list'), 'true u=null');
+    assert.strictEqual(decided('false; [ $? = 1 ] && :', 'list'), 'true ?=1');
+    // Not decided: the environment, files, a name the script has not set, other shells, a part still missing.
+    assert.strictEqual(decided('[ "$HOME" = / ] && :', 'list'), undefined);
+    assert.strictEqual(decided('[ -f x ] && :', 'list'), undefined);
+    assert.strictEqual(decided('(( nope )) && :', 'list'), undefined);
+    assert.strictEqual(decided('[ a = a ] && :', 'list', 0, 'dash'), undefined);
+    assert.strictEqual(decided('[[ a && ]] || :', 'list'), undefined);
+  });
+  it('decides a body run at several calls only when every walk agrees; reads that differ are dropped', () => {
+    assert.strictEqual(decided('f() { if [ "$m" = a ]; then :; fi; }\nm=a; f; m=b; f', 'if_statement'), undefined);
+    assert.strictEqual(decided('f() { if [ "$m" = a ]; then :; fi; }\nm=b; f; m=c; f', 'if_statement'), 'false');
+    // A body not walked at every call (more entry states than are walked), or a loop whose passes did not settle.
+    assert.strictEqual(decided('f() { if [ a = b ]; then :; fi; }\nx=1; f; x=2; f; x=3; f; x=4; f; x=5; f', 'if_statement'), undefined);
+    assert.strictEqual(decided('z=1; v1=1 v2=1 v3=1 v4=1 v5=1 v6=1; while [ "$z" = 1 ]; do (( v6 = v5, v5 = v4, v4 = v3, v3 = v2, v2 = v1, v1 = 2 )); done', 'while_statement'), undefined);
+    assert.strictEqual(decided('z=1; while [ "$z" = 1 ]; do :; done', 'while_statement'), 'true z=1');
+  });
+  it('does not trust values after what it does not follow', () => {
+    assert.strictEqual(decided('x=1; eval "x=2"; [ "$x" = 1 ] && :', 'list'), undefined);
+    assert.strictEqual(decided('x=1; source f; [ "$x" = 1 ] && :', 'list'), undefined);
+    assert.strictEqual(decided('x=1; trap "x=2" USR1; [ "$x" = 1 ] && :', 'list'), undefined);
+    assert.strictEqual(decided('x=1; trap "x=2" EXIT; [ "$x" = 1 ] && :', 'list'), 'true x=1');
+    assert.strictEqual(decided('x=1; (( x )) && :; eval :; (( x )) && :', 'list', 1), undefined);
+    assert.strictEqual(decided('v="u + 1"; (( v )); (( v )) && :', 'list'), undefined);
+    // Variables the walk sets to values it does not know: `{x}>`, `wait -p`, coproc.
+    for (const src of ['x=1; exec {x}>/dev/null; [ "$x" = 1 ] && :', 'x=1; wait -p x; [ "$x" = 1 ] && :', 'x=1; coproc x { :; }; [ "$x" = 1 ] && :', 'x=1; { :; } {x}>/dev/null; [ "$x" = 1 ] && :']) {
+      assert.strictEqual(decided(src, 'list'), undefined, src);
+    }
+    assert.deepStrictEqual([attribute(end('coproc { :; }'), 'COPROC', 'a'), variable(end('coproc { :; }'), 'COPROC_PID')?.set], ['unknown', 'unknown']);
+  });
+  it('drops what a branch that never runs changes', () => {
+    assert.strictEqual(set(end('x=1; if [ "$x" = 2 ]; then set -f; fi'), 'noglob'), 'default');
+    assert.strictEqual(end('if false; then f() { :; }; fi').functions.get('f'), undefined);
+    assert.strictEqual(variable(end('x=1; [[ $x == 1 ]] || y=1; [ $x = 1 ] && z=1'), 'y'), undefined);
+    assert.strictEqual(variable(end('x=1; [[ $x == 1 ]] || y=1; [ $x = 1 ] && z=1'), 'z')?.set, 'on');
+    // A quoted empty command name is a command ("command not found"): its assignments are not the shell's.
+    assert.strictEqual(variable(end("x=1 ''"), 'x'), undefined);
+    assert.strictEqual(variable(end('x=1 $(:)'), 'x')?.value, '1');
+  });
+});
+
+describe('shell state: break, continue, return, exit (docs/design/semantics.md, 4.14)', () => {
+  const value = (src: string, name: string): string | undefined => {
+    const v = variable(end(src), name);
+    return v?.set === 'on' ? v.value : v ? `(${v.set})` : undefined;
+  };
+  /** Whether the first command `: M` of `src` runs only in dead code. */
+  const dead = (src: string, shell?: Shell): boolean => {
+    const tree = parser.parse(src);
+    return shellState(tree, shell).dead(descendants(tree.root, ['command']).find((c) => c.text === ': M')!);
+  };
+  it('leaves a loop at `break` and ends a pass at `continue`, with the state there', () => {
+    assert.strictEqual(value('for i in a; do x=1; break; x=2; done', 'x'), '1');
+    assert.strictEqual(value('for i in a b; do x=1; continue; x=2; done', 'x'), '1');
+    assert.strictEqual(value('for i in a; do x=1; break; done', 'i'), 'a');
+    assert.strictEqual(value('for i in a b; do for j in c d; do x=1; break 2; done; x=2; done', 'x'), '1');
+    assert.strictEqual(value('for i in a b; do for j in c d; do x=1; continue 2; done; x=2; done', 'x'), '1');
+    assert.strictEqual(value('for i in a; do for j in c; do x=1; break 9; done; x=2; done', 'x'), '1');
+    assert.strictEqual(value('x=0; while [ $x = 0 ]; do x=1; if [ $x = 1 ]; then break; fi; x=5; done', 'x'), '1');
+    assert.strictEqual(value('while true; do x=3; break; done', 'x'), '3');
+    assert.strictEqual(value('for ((;;)); do x=3; break; done', 'x'), '3');
+    assert.strictEqual(dead('for i in a; do break; : M; done'), true);
+    // A loop whose condition always holds ends only through a jump.
+    assert.strictEqual(dead('while true; do :; done; : M'), true);
+    assert.strictEqual(dead('x=1; until [ $x = 1 ]; do :; done; : M'), false);
+    // A count not known, or not a loop (a subshell, a function called in a loop): bash goes on.
+    assert.strictEqual(value('for i in a; do x=1; break $n; x=2; done', 'x'), undefined);
+    assert.strictEqual(value('for i in a; do x=1; break 0; x=2; done', 'x'), undefined);
+    assert.strictEqual(value('for i in a; do (break); x=2; done', 'x'), '2');
+    assert.strictEqual(value('f() { break; x=2; }; for i in a; do f; done', 'x'), '2');
+    assert.strictEqual(value('x=1; break; x=2', 'x'), '2');
+    assert.strictEqual(value('for i in a; do echo | break; x=2; done', 'x'), '2');
+    assert.strictEqual(value('shopt -s lastpipe; for i in a; do x=1; echo | break; x=2; done', 'x'), '1');
+    assert.strictEqual(value('[ -t 0 ] && shopt -s lastpipe; for i in a; do x=1; echo | break; x=2; done', 'x'), undefined);
+  });
+  it('ends a function body at `return`, and the script or the subshell at `exit`', () => {
+    assert.strictEqual(value('f() { x=1; return; x=2; }; f', 'x'), '1');
+    assert.strictEqual(value('f() { x=1; [ a = a ] && return; x=2; }; f', 'x'), '1');
+    assert.strictEqual(value('f() { for i in a; do x=1; return; done; x=2; }; f', 'x'), '1');
+    assert.strictEqual(value('f() { (x=1; return; y=1); x=2; }; f', 'x'), '2');
+    assert.strictEqual(value('x=1; return; x=2', 'x'), '2');
+    assert.strictEqual(value('x=1; (return; x=3); x=2', 'x'), '2');
+    assert.strictEqual(value('x=1; (exit); x=2', 'x'), '2');
+    // A last stage that may run in the shell (lastpipe not known): the jump may be made or not.
+    assert.strictEqual(value('[ -t 0 ] && shopt -s lastpipe; f() { x=1; echo | return; x=2; }; f', 'x'), undefined);
+    assert.strictEqual(dead('[ -t 0 ] && shopt -s lastpipe; f() { ( echo | return; : M ); }; f'), false);
+    assert.strictEqual(dead('f() { ( echo | return; : M ); }; f'), false);
+    assert.strictEqual(dead('shopt -s lastpipe; f() { ( echo | return; : M ); }; f'), true);
+    assert.strictEqual(value('x=1; exit; x=2', 'x'), '1');
+    assert.strictEqual(value('f() { x=1; exit; }; f; x=2', 'x'), '1');
+    assert.strictEqual(dead('x=1; [ $x = 1 ] && exit; : M'), true);
+    assert.strictEqual(dead('v=$(exit); : M'), false);
+    assert.strictEqual(dead('f() { exit; : M; }'), true);
+    // A trap's action runs outside the walk of the script.
+    assert.strictEqual(value('trap "x=1; return; exit" EXIT', 'x'), undefined);
+  });
+  it('stops at a command that surely fails under `set -e`, where its status is not tested', () => {
+    assert.strictEqual(dead('set -e; false; : M'), true);
+    assert.strictEqual(dead('set -e; ! true; : M'), false);
+    assert.strictEqual(dead('set -e; false || true; : M'), false);
+    assert.strictEqual(dead('set -e; true && false; : M'), true);
+    assert.strictEqual(dead('set -e; if false; then :; fi; : M'), false);
+    assert.strictEqual(dead('set -e; f() { false; : M; }; if f; then :; fi'), false);
+    assert.strictEqual(dead('set -e; false | true; : M'), false);
+    assert.strictEqual(dead('set -e; (( 0 )); : M'), true);
+    assert.strictEqual(dead('set -e; v=$(false; : M)'), false);
+    assert.strictEqual(dead('set -e; shopt -s inherit_errexit; v=$(false; : M)'), true);
+    assert.strictEqual(dead('set -e; [ -t 0 ] && shopt -s inherit_errexit; v=$(false; : M)'), false);
+  });
+});
+
+describe('shell state: what conditions are not decided from (docs/design/semantics.md, 4.14)', () => {
+  const decided = (src: string, type = 'list', at = 0, shell?: Shell): string | undefined => {
+    const tree = parser.parse(src);
+    return shellState(tree, shell).condition(descendants(tree.root, [type])[at])?.outcome;
+  };
+  it('does not trust values after a builtin sets or unsets a variable whose name is not known', () => {
+    for (const cmd of ['unset "$v"', 'unset -v ${v}', 'read $v', 'printf -v "$v" 2', 'mapfile -t $v', 'getopts a $v', 'export $v=2', 'declare "$v=2"',
+      'declare $v', 'declare -n r=$v; r=2', 'unset -n r; declare -n r=$v; unset r', 'wait -p $v']) {
+      assert.strictEqual(decided(`x=1; v=x; ${cmd}; [ "$x" = 1 ] && :`), undefined, cmd);
+    }
+    assert.strictEqual(decided('x=1; unset -f "$v"; [ "$x" = 1 ] && :'), 'true');
+    // Nor in a loop where it comes after the condition (the next pass reads it).
+    assert.strictEqual(decided('x=1; for i in a b; do [ "$x" = 1 ] && :; unset "$v"; done'), undefined);
+  });
+  it('does not decide in a body no call reaches, one that is exported, or one called by a name not known', () => {
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }'), undefined);
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f'), 'true');
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; export -f f; f'), undefined);
+    assert.strictEqual(decided('set -a; unset y; f() { [ -z "$y" ] && y=1; }; f'), undefined);
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; $c'), undefined);
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; eval "$c"'), undefined);
+    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; complete -F f x'), undefined);
+    assert.strictEqual(decided('unset y; $c; f() { [ -z "$y" ] && y=1; }; f'), 'true');
+  });
+  it('leaves out what bash does otherwise', () => {
+    assert.strictEqual(decided('shopt -s nocasematch; [[ A =~ a ]] && :'), undefined);
+    assert.strictEqual(decided('[[ A =~ a ]] && :'), 'false');
+    assert.strictEqual(decided("x=$'1\\r'; [[ $x -eq 1 ]] && :"), undefined);
+    assert.strictEqual(decided('[ @(a) = a ] && :'), undefined);
+    assert.strictEqual(decided('(( 1 )) && :', 'list', 0, 'dash'), undefined);
+    assert.strictEqual(decided('declare -c y=abc; [ "$y" = abc ] && :'), undefined);
+    assert.strictEqual(decided('x=1; f() { local x; [ "$x" = 1 ] && :; }; shopt -s localvar_inherit; f'), undefined);
+    assert.strictEqual(decided('x=1; f() { local x; [ -z "$x" ] && :; }; f'), 'true');
+    assert.strictEqual(decided('_=5; [ "$_" = 5 ] && :'), undefined);
+    assert.strictEqual(decided('PWD=/x; cd /; [ "$PWD" = /x ] && :'), undefined);
+    assert.strictEqual(decided('set -e; x=$( [ -o errexit ] && echo on )'), 'false');
+    // A read only in dead code is not one of a decision's reads.
+    const tree = parser.parse('x=1; y=2; if [ "$x" = 1 ] || [ "$y" = 2 ]; then :; fi');
+    assert.deepStrictEqual([...shellState(tree).condition(descendants(tree.root, ['if_statement'])[0])!.reads.keys()], ['x']);
+  });
+});

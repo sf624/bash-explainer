@@ -1039,6 +1039,7 @@
  "x=1 \\\n  && yq .a f.yml",
  "x=1 command bash -c ':'",
  "x=1; eval $'y=2\n(\nz=3'",
+ "x=1; y=2; if [ \"$x\" = 1 ] || [ \"$y\" = 2 ]; then :; fi",
  "x=5; trap \"trap 'y=\\$x' USR1\" INT\ntrap 'z=2' USR1; z=3 && echo \"$z\"",
  "x=`eval 'a\\$b'`",
  "xargs -s 10 echo",
