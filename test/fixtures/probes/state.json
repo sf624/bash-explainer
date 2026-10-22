@@ -1983,9 +1983,6 @@
     "manual": "3.5.5",
     "snippet": ": $(( 1 / 0 )) $(( y = 3 )); z=1",
     "note": "an error in an expansion discards the rest of the command, and of the line",
-    "gaps": {
-      "end.variables.z": "the rest of the line after an expansion error is not followed"
-    },
     "facts": {
       "end": {},
       "status": 0,
@@ -2389,11 +2386,6 @@
     "manual": "6.5",
     "snippet": "{ : $(( 1 / 0 )); x=1; }\nf() { : $(( 1 / 0 )); w=1; }; g() { f; v=1; }\ng\nu=1",
     "note": "an error in an expansion discards the rest of the top-level command, also in a function it calls",
-    "gaps": {
-      "end.variables.x": "the rest of the top-level command after an expansion error is not followed",
-      "end.variables.w": "the rest of the top-level command after an expansion error is not followed",
-      "end.variables.v": "the rest of the top-level command after an expansion error is not followed"
-    },
     "facts": {
       "end": {
         "variables": {
@@ -3191,6 +3183,10 @@
     "manual": "3.2.5.1",
     "snippet": "n=0; while (( n > 0 )); do w=1; done; until true; do u=1; done; for (( i = 5; i < 3; i++ )); do f=1; done\nk=1; while [ $k = 1 ]; do k=2; done",
     "note": "loops whose condition stops them at the first test; one whose condition changes",
+    "gaps": {
+      "end.variables.w": "a condition on a variable that arithmetic may assign is not decided (4.13: what decisions trust)",
+      "end.variables.f": "a condition on a variable that arithmetic may assign is not decided (4.13: what decisions trust)"
+    },
     "facts": {
       "end": {
         "variables": {

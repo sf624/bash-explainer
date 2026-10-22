@@ -31,6 +31,10 @@ import { ancestor, descendants, field, fields, hasError, type BashParser, type S
 import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv, unaryTest } from './conditions';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
+import { BLIND, scriptTrust, type Trust, withinTrust } from './trust';
+import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+
+export { ARITH_ASSIGNED, DYNAMIC, readDeclaration, type Declaration };
 
 export { lastStageInShell } from './env';
 
@@ -307,6 +311,8 @@ export interface StateModel {
   script(words: readonly SyntaxNode[], env: ExecEnv): NestedScript | NotRead;
   /** What the condition of `n` (an `if`, an `elif`, a loop, an `&&` or `||` list, a `case`) always decides, if anything. */
   condition(n: SyntaxNode): Decision | undefined;
+  /** Why no condition of the script is decided, if so (src/semantics/trust.ts): `source`, `$cmd`… */
+  readonly blind: string | undefined;
   /**
    * Whether the statement `n` runs only in code that never runs here: a branch whose condition is decided, or after
    * `break`, `continue`, `return` or `exit`.
@@ -356,16 +362,17 @@ const SIMPLE = ['command', 'declaration_command', 'unset_command', 'variable_ass
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
 /** The assignment operators of arithmetic (6.5). */
 const ARITH_ASSIGN = new Set(['=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '^=', '|=']);
-/** The names an arithmetic expression may assign (`x = 1`, `a[i] += 2`, `i++`, `--j`): its name in group 1, 3 or 4, a subscript in group 2. */
-export const ARITH_ASSIGNED = /(?<![\w$])(?:([A-Za-z_]\w*)\s*(\[[^\]]*\])?\s*(?:[-+*/%&^|]|<<|>>)?=(?!=)|([A-Za-z_]\w*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_]\w*))/g;
 const wrap = (v: bigint): bigint => BigInt.asIntN(64, v);
 /** An error in arithmetic (a division by 0, a readonly variable): bash stops the expression there; `st` has what was assigned before it. */
 class ArithError {
   constructor(readonly st: ShellState) {}
 }
-/** An error in an expansion (`$(( 1/0 ))`): bash discards the rest of the command; `st` has what was assigned before it. */
+/**
+ * An error in an expansion: `$(( 1/0 ))` discards the rest of the line (see `abort`), `${x?}` on an unset `x` ends the
+ * shell (`exit`). `st` has what was assigned before it; `sure`: the values that make it are trusted.
+ */
 class ExpansionError {
-  constructor(readonly st: ShellState) {}
+  constructor(readonly st: ShellState, readonly sure: boolean, readonly exit = false) {}
 }
 /**
  * What arithmetic does is not known here: a text pasted or a value read that is not known, text the parser may read
@@ -387,10 +394,6 @@ const ARITH_NESTING = 1000;
 const ARITH_MEMO = 8;
 /** What may be pasted into an arithmetic expression; bash expands it first. (A single-quoted text is not: it is an error.) */
 const PASTES = ['simple_expansion', 'expansion', 'arithmetic_expansion', 'command_substitution', 'process_substitution', 'string', 'ansi_c_string', 'translated_string'];
-/** Variables whose values bash changes itself (when they are read, or as time goes): not known here. */
-export const DYNAMIC = /^(?:_|RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|EPOCHREALTIME|BASHPID|BASH_COMMAND|BASH_SUBSHELL|BASH_LINENO|BASH_SOURCE|BASH_ARGC|BASH_ARGV|BASH_ARGV0|FUNCNAME|HISTCMD|PIPESTATUS|GROUPS|DIRSTACK)$/;
-/** Those of `DYNAMIC` whose values are numbers (`EPOCHREALTIME` has a dot). */
-const NUMERIC_DYNAMIC = /^(?:RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|BASHPID|BASH_SUBSHELL|BASH_LINENO|BASH_ARGC|HISTCMD|PIPESTATUS|GROUPS)$/;
 /** The key of `set -u` among the reads of a value (no variable has this name). */
 const NOUNSET = '-u';
 /** What a value read as an expression has read so far: the variables (and `set -u`), whether it can be remembered, how deep it went. */
@@ -492,41 +495,6 @@ const ARITH_OPS: Record<string, (a: bigint, b: bigint) => bigint | undefined> = 
 
 // ---------------------------------------------------------------------------------------------------
 // Declarations, read with their builtin's spec.
-
-export interface Declaration {
-  /** The role of each word (the options end at the first name or at `--`). */
-  roles: Map<SyntaxNode, ArgRole>;
-  /** The letters of the options turned on (`ix` of `declare -ix`), and of those turned off (`x` of `declare +x`). */
-  on: string;
-  off: string;
-}
-
-/** The words of a declaration command `builtin` read with its spec. */
-function readDeclarationWords(builtin: string, words: SyntaxNode[]): Declaration {
-  const parse = interpret(builtins[builtin], words.map(argWord), { name: builtin });
-  const roles = new Map(parse.roles.map(({ word, role }) => [words[word], role]));
-  let on = '';
-  let off = '';
-  for (const r of optionRoles(parse)) {
-    if (r.disables) off += r.flag.slice(1);
-    else on += r.flag.slice(1);
-  }
-  return { roles, on, off };
-}
-
-const declarations = new WeakMap<SyntaxNode, Declaration>();
-/** A declaration command (`declare -ix -- a=1 b`) read with its builtin's spec. */
-export function readDeclaration(d: SyntaxNode): Declaration {
-  const seen = declarations.get(d);
-  if (seen) return seen;
-  const out = readDeclarationWords(d.children[0].type, d.namedChildren.filter((c) => !c.type.endsWith('redirect')));
-  declarations.set(d, out);
-  return out;
-}
-
-/** The options of a parse, one per letter of a cluster. */
-const optionRoles = (parse: ArgvParse): Extract<ArgRole, { role: 'option' }>[] =>
-  parse.roles.flatMap((r) => (r.role.role === 'cluster' ? r.role.letters : [r.role])).filter((r): r is Extract<ArgRole, { role: 'option' }> => r.role === 'option');
 
 // ---------------------------------------------------------------------------------------------------
 // Merging states.
@@ -674,6 +642,11 @@ type Target =
   | { kind: 'loop'; dead: number; breaks: ShellState[]; continues: ShellState[] }
   | { kind: 'function'; dead: number; returns: ShellState[] }
   | { kind: 'program'; dead: number; exits: ShellState[] }
+  /**
+   * A line of top-level statements, or of a string `eval` or a trap runs: an expansion error discards the rest of it
+   * (`aborts`, see `abort`); one that may happen (`maybes`) may discard it, or the rest of a line around it.
+   */
+  | { kind: 'unit'; dead: number; aborts: ShellState[]; maybes: ShellState[] }
   | { kind: 'subshell' | 'maybe' };
 
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
@@ -801,7 +774,7 @@ function childModel(script: NestedScript): StateModel {
     }
   }
   const pass = { given: [...given], removed, invocation: links[links.length - 1].invocation ?? [] };
-  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, pass, first));
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, pass, first), modelTrusts.get(script.outer));
 }
 
 /**
@@ -851,7 +824,7 @@ class Walker {
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
-  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string }[]>();
+  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[] }[]>();
   /** What the walks of each function body changed. */
   private readonly changes = new Map<SyntaxNode, Set<string>>();
   /** The bodies being walked (a call of one of these is recursive). */
@@ -889,6 +862,13 @@ class Walker {
   private readonly targets: Target[] = [];
   /** How deep the walk is in a place where `set -e` does not stop the shell (a condition, the left side of `&&`, `!`). */
   private quiet = 0;
+  /** Nothing is trusted (src/semantics/trust.ts): no condition is decided, and every jump may be made or not. */
+  private readonly blind: boolean;
+  /**
+   * Why nothing should be trusted, found on the way: arithmetic read a variable that no path has set (its value may
+   * come from the environment, as text bash runs, which may assign anything). The script is then walked again, blind.
+   */
+  found: string | undefined;
 
   /** The names the actions of the traps set so far change (not EXIT's): a signal may run them between any two later statements. */
   private readonly trapKeys = new Set<string>();
@@ -898,8 +878,9 @@ class Walker {
    */
   private silent = 0;
 
-  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts) {
+  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts, private readonly trust: Trust) {
     this.bash = !shell || shell === 'bash';
+    this.blind = trust.blind !== undefined;
   }
 
   private put<K extends Kind>(st: ShellState, kind: K, name: string, value: Entry<K> | undefined): ShellState {
@@ -993,6 +974,8 @@ class Walker {
     if (this.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;
     if (startup) {
       this.turnOpaque();
+      // (What they run is not read: nothing is trusted.)
+      this.found ??= 'another shell runs its startup files first';
       const vars = new Map<string, VariableState>();
       for (const [name, v] of outer.variables) if (!st.variables.has(name)) vars.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: v.at });
       const fns = new Map<string, FunctionState>();
@@ -1031,16 +1014,9 @@ class Walker {
       if (x.parent === root && !unset.has(name) && !subshellReasons(x).length) this.sureLater.set(name, def);
     }
     // The units bash reads at once: the top-level statements that share a line.
-    const tops = root.namedChildren.filter((c) => STATEMENTS.has(c.type));
-    const unitStart = this.unitStart;
-    tops.forEach((t, i) => unitStart.set(t, i > 0 && tops[i - 1].endPosition.row === t.startPosition.row ? unitStart.get(tops[i - 1])! : t));
     const program: Target = { kind: 'program', dead: 0, exits: [] };
     this.targets.push(program);
-    let end = this.sequence(root.children, start, (t, st) => {
-      const unit = unitStart.get(t)!;
-      this.parseAt.set(t, unit === t ? reached(st) : this.parseAt.get(unit)!);
-      this.expand = this.parseAt.get(t)!;
-    });
+    let end = this.units(root.namedChildren.filter((c) => STATEMENTS.has(c.type)), start).end;
     this.targets.pop();
     // (The script also ends at an `exit`.)
     end = merge([end, ...program.exits], this.posix);
@@ -1141,16 +1117,45 @@ class Walker {
   }
 
   /**
+   * Runs `statements` (top-level ones, of the script or of a string it runs), a line at a time: the statements that
+   * share a line are read at once (their aliases and extglob count from the next line), and an expansion error
+   * discards the rest of the line (see `abort`). `sure`: the shell surely got to the last statement (see `sequence`).
+   */
+  private units(statements: readonly SyntaxNode[], st: ShellState): { end: ShellState; sure: boolean } {
+    let sure = true;
+    for (let i = 0; i < statements.length;) {
+      let j = i + 1;
+      while (j < statements.length && statements[j - 1].endPosition.row === statements[j].startPosition.row) j++;
+      const unit: Target = { kind: 'unit', dead: this.dead, aborts: [], maybes: [] };
+      this.targets.push(unit);
+      const first = statements[i];
+      for (const t of statements.slice(i, j)) {
+        this.unitStart.set(t, first);
+        this.parseAt.set(t, t === first ? reached(st) : this.parseAt.get(first)!);
+        this.expand = this.parseAt.get(t)!;
+        if (t !== statements[0] && !this.goesOn(st)) sure = false;
+        st = this.run(t, st);
+      }
+      this.targets.pop();
+      if (unit.aborts.length || unit.maybes.length) {
+        st = merge([st, ...unit.aborts, ...unit.maybes], this.posix);
+        sure = false;
+      }
+      i = j;
+    }
+    return { end: st, sure };
+  }
+
+  /**
    * Runs the statements among `nodes`, in order. Their status is the last one's, when the shell surely gets to it
    * (see `goesOn`); else it is not known.
    */
-  private sequence(nodes: readonly SyntaxNode[], st: ShellState, before?: (n: SyntaxNode, st: ShellState) => void): ShellState {
+  private sequence(nodes: readonly SyntaxNode[], st: ShellState): ShellState {
     let ran = false;
     let sure = true;
     for (const n of nodes) {
       if (!STATEMENTS.has(n.type)) continue;
       if (ran && !this.goesOn(st)) sure = false;
-      before?.(n, st);
       st = this.run(n, st);
       ran = true;
     }
@@ -1182,30 +1187,33 @@ class Walker {
   /**
    * `break` or `continue` (`count`: their N, undefined when not known), `return` or `exit`, run from `st`: the state
    * goes where the jump leads (the end of a loop or of its pass, of a function body, of the script), and the path does
-   * not go on. A jump that may fail (no loop, a count not known) or may be made in a subshell is both made and not.
+   * not go on. A jump that may fail (no loop, a count not known), may be made in a subshell, or is not `sure` (an
+   * error from values not trusted), or anywhere when nothing is trusted (`exit` may be a function a sourced file
+   * defined), is both made and not.
    */
-  private jump(kind: 'break' | 'continue' | 'return' | 'exit', count: number | undefined, st: ShellState): ShellState {
+  private jump(kind: 'break' | 'continue' | 'return' | 'exit', count: number | undefined, st: ShellState, sure = true): ShellState {
     st = withStatus(st, undefined);
     const collect = (t: { dead: number }, to: ShellState[]): void => {
       if (t.dead === this.dead) to.push(st);
     };
-    let maybe = false;
+    let maybe = !sure || this.blind;
     if (kind === 'break' || kind === 'continue') {
       // The loops it can leave: those of this function body and process (bash: "only meaningful in a loop" otherwise).
       const loops: Extract<Target, { kind: 'loop' }>[] = [];
-      let sure = 0;
+      let surely = 0;
       for (const t of [...this.targets].reverse()) {
         if (t.kind === 'maybe') maybe = true;
+        else if (t.kind === 'unit') continue;
         else if (t.kind !== 'loop') break;
         else {
           loops.push(t);
-          if (!maybe) sure++;
+          if (!maybe) surely++;
         }
       }
       const to = (t: Extract<Target, { kind: 'loop' }>): ShellState[] => (kind === 'break' ? t.breaks : t.continues);
       // (`break 5` in two loops leaves both.)
       const at = count === undefined ? undefined : Math.min(count, loops.length);
-      if (at !== undefined && at > 0 && at <= sure) {
+      if (at !== undefined && at > 0 && at <= surely) {
         collect(loops[at - 1], to(loops[at - 1]));
         return unreachable(st);
       }
@@ -1229,7 +1237,40 @@ class Walker {
       }
     }
     // (Outside the script's walk: a trap's action, a body no call reached.)
-    return kind === 'return' ? st : unreachable(st);
+    return kind === 'return' || maybe ? st : unreachable(st);
+  }
+
+  /**
+   * An error in an expansion (`$(( 1 / 0 ))`, from `st`): bash discards the rest of the line of top-level statements
+   * that holds it (`unit`), also from a function it calls, or ends the subshell. One that is not `sure` (from values
+   * not trusted, or that may not be expanded) may happen or not.
+   */
+  private abort(st: ShellState, sure: boolean): ShellState {
+    st = withStatus(st, undefined);
+    const ends = sure && !this.blind;
+    // (An error that may happen in a string `eval` runs may end the line of `eval` too: bash does so for an integer
+    // given text that is no expression, or a subscript that fails.)
+    for (let i = this.targets.length - 1; i >= 0; i--) {
+      const t = this.targets[i];
+      // (A last stage of a pipeline that may run in a subshell: it ends that, or the line.)
+      if (t.kind === 'subshell') return ends ? unreachable(st) : st;
+      if (t.kind === 'unit') {
+        if (t.dead === this.dead) (ends ? t.aborts : t.maybes).push(st);
+        if (ends) return unreachable(st);
+      }
+    }
+    // (Outside the script's walk: a trap's action, a body no call reached.)
+    return ends ? unreachable(st) : st;
+  }
+
+  /** The line an error here would end (see `abort`): none in a subshell, or outside the script's walk. */
+  private unitTarget(): Extract<Target, { kind: 'unit' }> | undefined {
+    for (let i = this.targets.length - 1; i >= 0; i--) {
+      const t = this.targets[i];
+      if (t.kind === 'subshell') return undefined;
+      if (t.kind === 'unit') return t;
+    }
+    return undefined;
   }
 
   /** Runs `run` where `set -e` does not stop the shell (a condition, the left side of `&&` or `||`, after `!`). */
@@ -1268,9 +1309,23 @@ class Walker {
   /** What the condition of `n` decided on every walk, if anything; `reads` is empty when its values differed between walks. */
   decision(n: SyntaxNode): Decision | undefined {
     const d = this.decisions.get(n);
-    if (!d || d.outcomes.size !== 1 || d.outcomes.has('?')) return undefined;
-    for (let x: SyntaxNode | null = n; x; x = x.parent) if (this.unwalked.has(x)) return undefined;
+    if (!d || d.outcomes.size !== 1 || d.outcomes.has('?') || !this.everywhere(n)) return undefined;
     return { outcome: [...d.outcomes][0], reads: d.mixed ? new Map() : d.reads };
+  }
+
+  /**
+   * Whether what the walks found at `n` holds wherever it runs: not when nothing is trusted, in a function body that
+   * may run where the walk does not see it (src/semantics/trust.ts: `closed`), in one not walked at some call, or in
+   * a loop whose passes did not settle.
+   */
+  everywhere(n: SyntaxNode): boolean {
+    /* c8 ignore next -- a guard: with nothing trusted, no condition is decided and no path ends, so nothing asks */
+    if (this.blind) return false;
+    // (A definition itself runs where it stands: its body is what may run elsewhere.)
+    for (let x: SyntaxNode | null = n.type === 'function_definition' ? n.parent : n; x; x = x.parent) {
+      if (this.unwalked.has(x) || (x.type === 'function_definition' && !this.trust.closed(field(x, 'name')!.text))) return false;
+    }
+    return true;
   }
 
   /** The children of `n` after its token `from` and before the first child of a type in `to`. */
@@ -1297,6 +1352,13 @@ class Walker {
       return st;
     }
     this.record(n, st);
+    // (Arithmetic the walk does not run: a subscript, an offset, `[[ x -eq y ]]`; a key of an array that must be
+    // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.)
+    for (const name of this.trust.arithNames(n) ?? []) this.unsetRead(st, name);
+    if (this.trust.mayFail(n)) this.abort(st, false);
+    for (const name of this.trust.associative(n) ?? []) {
+      if (!this.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.found ??= `\`${name}\` may not be associative where its subscript is read`;
+    }
     const outer = this.node;
     this.node = n;
     const reasons = subshellReasons(n);
@@ -1309,8 +1371,8 @@ class Walker {
       // (A trap's action may run after any statement, when its signal comes.)
       return this.trapKeys.size ? this.widen(out, this.trapKeys) : out;
     } catch (e) {
-      // (An expansion error discards the rest of the command; the rest of its line too, which is not followed.)
-      if (e instanceof ExpansionError) return withStatus(reasons.length ? st : e.st, undefined);
+      // (An expansion error in a subshell of its own, `$((1/0)) &`, ends it there.)
+      if (e instanceof ExpansionError) return reasons.length ? withStatus(st, undefined) : e.exit ? this.jump('exit', undefined, e.st, e.sure) : this.abort(e.st, e.sure);
       /* c8 ignore next -- only an expansion error is thrown on purpose */
       throw e;
     } finally {
@@ -1346,12 +1408,12 @@ class Walker {
         return this.orFunction('unset', st, (s) => this.unset(n.namedChildren, n, s));
       case 'variable_assignment':
         this.substitutions(n, st);
-        return this.assignNode(n, this.defaults(n, st));
+        return this.assignNode(n, this.defaults(n, st), true);
       case 'variable_assignments':
         for (const a of n.namedChildren) {
           this.record(a, st);
           this.substitutions(a, st);
-          st = this.assignNode(a, this.defaults(a, st));
+          st = this.assignNode(a, this.defaults(a, st), true);
         }
         return st;
       case 'test_command': case 'extended_test':
@@ -1394,7 +1456,7 @@ class Walker {
         // The right side runs when the left one succeeds (`&&`) or fails (`||`); when that is known, the other path is dead.
         const and = n.children.some((c) => c.type === '&&');
         const { value: after, reads } = this.reads(() => this.quietly(() => this.run(left, st)));
-        const ok = after.status === undefined ? undefined : after.status === 0;
+        const ok = after.status === undefined || this.blind ? undefined : after.status === 0;
         this.decide(n, ok === undefined ? undefined : String(ok), reads);
         if (ok !== undefined && ok !== and) {
           this.deadRun([right], after);
@@ -1412,7 +1474,8 @@ class Walker {
         const items = n.namedChildren.filter((c) => c.type === 'case_item');
         items.flatMap((item) => fields(item, 'value')).forEach((v, i) => {
           this.substitutions(v, st);
-          const after = this.defaults(v, st);
+          // (Like a word that may not be expanded: an error there may not happen.)
+          const after = this.defaults(v, st, i === 0 ? 'off' : 'unknown');
           st = i === 0 || after === st ? after : merge([st, after], this.posix);
         });
         const runs = this.caseRuns(n, items, before);
@@ -1528,17 +1591,44 @@ class Walker {
       if (program === 'unknown') maybe = true;
       let after: ShellState;
       if (e.type === 'arithmetic_expansion') {
+        // (Whether it read values decisions do not trust: see `markAssumed`.)
+        const assumed = this.assumed;
+        this.assumed = false;
         try {
-          after = this.arithScript(e.namedChildren, st).st;
+          const r = this.arithScript(e.namedChildren, st);
+          after = r.st;
+          // (A value not known may come from an error: a division by 0, text that is no expression.)
+          if (r.value === undefined || this.unsure) this.abort(st, false);
         } catch (err) {
           /* c8 ignore next -- only an arithmetic error is thrown on purpose */
           if (!(err instanceof ArithError)) throw err;
-          throw new ExpansionError(maybe ? merge([st, err.st], this.posix) : err.st);
+          throw new ExpansionError(maybe ? merge([st, err.st], this.posix) : err.st, !maybe && !this.assumed);
+        } finally {
+          this.assumed ||= assumed;
         }
-      } else after = this.defaultOf(e, st);
+      } else {
+        this.unsetError(e, st, maybe);
+        after = this.defaultOf(e, st);
+      }
       st = maybe && after !== st ? merge([st, after], this.posix) : after;
     }
     return st;
+  }
+
+  /**
+   * `${x?word}` of an unset `x` (`${x:?word}`: or empty) ends the shell (bash: "parameter null or not set"), when the
+   * state knows it is so; when that is not sure (a value decisions do not trust, a word that may not be expanded),
+   * the shell may end there.
+   */
+  private unsetError(e: SyntaxNode, st: ShellState, maybe: boolean): void {
+    const name = e.namedChildren[0];
+    const colon = e.children.some((c) => c.type === ':?');
+    if (name?.type !== 'variable_name' || !(colon || e.children.some((c) => c.type === '?'))) return;
+    const target = this.resolve(st, name.text);
+    const v = target === undefined ? undefined : st.variables.get(target);
+    if (!v || !(v.set === 'off' || (colon && v.set === 'on' && v.value === '')) || v.declared === 'unknown') return;
+    if (!maybe && this.trust.variable(name.text) && this.trust.variable(target!)) throw new ExpansionError(st, true, true);
+    this.jump('exit', undefined, st, false);
   }
 
   /** `${x:=word}` sets `x`. */
@@ -1697,6 +1787,7 @@ class Walker {
       case 'simple_expansion': case 'expansion': {
         const name = /^\$\{?([A-Za-z_]\w*|\?)\}?$/.exec(p.text)?.[1];
         const text = name === undefined ? undefined : name === '?' ? this.lastStatus(st) : this.variableText(st, name);
+        if (name !== undefined && name !== '?') this.unsetRead(st, name);
         if (text === undefined) throw new ArithUnknown();
         return { st, text: text ?? '' };
       }
@@ -1792,18 +1883,28 @@ class Walker {
       return unset;
     }
     if (v.declared === 'unknown' || v.set === 'unknown' || ['a', 'A'].some((l) => (v.attrs[l]?.state ?? 'off') !== 'off')) return undefined;
-    // (After `eval`, `source` or a trap, a value may have changed without the walk seeing it: not for conditions.)
-    if (this.untrusted) this.markAssumed();
     const text = v.set === 'off' ? unset : v.value;
-    // (A read in dead code is no reason for a decision.)
-    if (text !== undefined && !this.dead) for (const r of this.reading) r.set(name, text);
+    // (Decisions read only the variables the script cannot change unseen: see src/semantics/trust.ts. A read in dead
+    // code is no reason for a decision.)
+    if (!this.trust.variable(name) || !this.trust.variable(target)) this.markAssumed();
+    else if (text !== undefined && !this.dead) for (const r of this.reading) r.set(name, text);
     return text;
   }
 
   /**
-   * Sets `assumed`: the value was read from a name the script has not set, taken as unset, or after something the walk
-   * does not follow (`untrusted`); good enough for the state, but not to decide a condition. Also for the value being
-   * read as an expression, if any.
+   * Arithmetic reads `name` from `st`: when no path has set it (nor bash: `RANDOM`…), its value may come from the
+   * environment, as text bash runs as an expression, which may assign any variable: nothing is trusted (see `found`).
+   */
+  private unsetRead(st: ShellState, name: string): void {
+    if (this.dead || this.blind || this.found) return;
+    const target = this.resolve(st, name) ?? name;
+    if (!st.variables.get(target) && !NUMERIC_DYNAMIC.test(target)) this.found = `arithmetic reads \`${target}\`, which the script may not have set`;
+  }
+
+  /**
+   * Sets `assumed`: the value was read from a name the script has not set, taken as unset, or from a variable that
+   * decisions do not trust (src/semantics/trust.ts); good enough for the state, but not to decide a condition. Also for
+   * the value being read as an expression, if any.
    */
   private markAssumed(): void {
     this.assumed = true;
@@ -2039,23 +2140,6 @@ class Walker {
   /** Whether a file was sourced, a string run with `eval` or a trap set: a name the script has not set may be set. */
   private opaque = false;
 
-  /**
-   * Whether a file was sourced, a string run with `eval` or a trap set that may run before the next command: they may
-   * change any variable, so values are not trusted for deciding conditions (see `variableText`).
-   */
-  private untrusted = false;
-
-  /**
-   * `untrusted` from now on (after `eval`, `source`, a trap, or a builtin that sets or unsets a variable whose name is
-   * not known here: `unset "$v"`, `read $v`, `declare "$v=1"`): what was remembered of values read as expressions was trusted.
-   */
-  private distrust(): void {
-    if (this.untrusted) return;
-    this.untrusted = true;
-    this.arithMemo = new Map();
-    this.assignsMemo = new Map();
-  }
-
   /** `opaque` from now on: what was remembered of values read as expressions may be otherwise. */
   private turnOpaque(): void {
     if (this.opaque) return;
@@ -2088,6 +2172,7 @@ class Walker {
    */
   private arithValue(st: ShellState, name: string, at: SyntaxNode): { st: ShellState; value?: bigint } {
     const value = this.variableText(st, name);
+    this.unsetRead(st, name);
     if (value === undefined) {
       // A value not known is an expression too, unless it is surely a number (see `unsure`).
       const target = this.resolve(st, name);
@@ -2226,7 +2311,7 @@ class Walker {
         continue;
       }
       const { value: after, reads } = this.reads(() => this.quietly(() => this.sequence(b.cond, cur)));
-      const holds = after.status === undefined ? undefined : after.status === 0;
+      const holds = after.status === undefined || this.blind ? undefined : after.status === 0;
       this.decide(b.at, holds === undefined ? undefined : String(holds), reads);
       if (holds === false) this.deadRun(b.body, after);
       else ends.push(this.sequence(b.body, after));
@@ -2258,7 +2343,8 @@ class Walker {
     const before = this.loopDepth ? this.loopsWalked.get(n) : undefined;
     let entry = st;
     if (before) {
-      const was = { ...st };
+      // (With the status the passes started from, `$?`, which the body may change too.)
+      const was = { ...st, status: before.entry.status };
       for (const key of before.keys) {
         const kind = key.slice(0, key.indexOf(' ')) as Kind;
         const name = key.slice(kind.length + 1);
@@ -2273,13 +2359,12 @@ class Walker {
     const test = (s: ShellState): { st: ShellState; holds?: boolean } => {
       if (!holds) return { st: cond(s) };
       const { value, reads } = this.reads(() => this.quietly(() => cond(s)));
-      const h = holds(value.status);
+      const h = this.blind ? undefined : holds(value.status);
       this.decide(n, h === undefined ? undefined : String(h), reads);
       return { st: value, holds: h };
     };
     const pass = (s: ShellState): ShellState => update(merge([body(s), ...target.continues.splice(0)], this.posix));
     const keys = new Set<string>();
-    const trusted = !this.untrusted;
     this.collecting.push(keys);
     this.targets.push(target);
     this.loopDepth++;
@@ -2320,9 +2405,8 @@ class Walker {
       this.targets.pop();
       this.collecting.pop();
     }
-    // (Passes that did not settle may not cover every state the loop runs with, and a value the walk does not follow
-    // may have changed in a pass, to be read in the next: its conditions are not decided.)
-    if (!settled || (trusted && this.untrusted)) this.unwalked.add(n);
+    // (Passes that did not settle may not cover every state the loop runs with: its conditions are not decided.)
+    if (!settled) this.unwalked.add(n);
     this.loopsWalked.set(n, { keys, entry });
     return merge([exit(normal), ...target.breaks, ...target.continues], this.posix);
   }
@@ -2334,10 +2418,14 @@ class Walker {
       st = this.defaults(v, st);
     }
     const variable = field(n, 'variable');
-    const assign = (s: ShellState, value: string | undefined): ShellState => (variable ? this.setVariable(s, variable.text, variable, value) : s);
+    // (A readonly variable: bash fails at the first word, and the body does not run; it may be.)
+    const readonly = variable ? attribute(st, this.resolve(st, variable.text) ?? variable.text, 'r') : 'off';
+    // (An integer runs each word, which may fail: see `assignmentError`.)
+    if (variable && attribute(st, this.resolve(st, variable.text) ?? variable.text, 'i') !== 'off') this.abort(st, false);
+    const assign = (s: ShellState, value: string | undefined): ShellState => (variable && readonly !== 'on' ? this.setVariable(s, variable.text, variable, value) : s);
     // `for x in a b c`: x is each word in turn, then stays the last; with no `in`, the positional parameters.
     const words = values.map((v) => (v.type === 'word' || v.type === 'number' || v.type === 'raw_string' || v.type === 'string' ? staticWordValue(v) : undefined));
-    const known = n.type === 'for_statement' && values.length > 0 && words.every((w) => w !== undefined);
+    const known = n.type === 'for_statement' && values.length > 0 && words.every((w) => w !== undefined) && readonly === 'off';
     const each = known && new Set(words).size === 1 ? words[0] : undefined;
     // (A list of known words runs the body at least once.)
     return this.loop(n, st, { cond: (s) => s, body: (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), endsWithCondition: false, atLeastOnce: known,
@@ -2355,7 +2443,6 @@ class Walker {
     // Under `set -a`, a function defined is exported.
     const all = option(st, 'set', 'allexport');
     const exported: Tri = all === 'on' ? 'on' : all === 'unknown' ? tri(prev?.exported ?? 'off', 'on') : prev?.exported ?? 'off';
-    if (exported !== 'off') this.unwalked.add(n);
     return this.put(st, 'functions', name, { state: 'on', def: n, exported, readonly: prev?.readonly ?? 'off' });
   }
 
@@ -2372,9 +2459,10 @@ class Walker {
     }
     let exit: ShellState;
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
-      // A recursive call: what the body changed in its walks so far may change.
+      // A recursive call: what the body changed in its walks so far may change, and it may end the line (see `abort`).
       exit = this.widen(st, this.changes.get(def) ?? new Set());
       this.unwalked.add(def);
+      this.abort(st, false);
     } else if (temporaries.length) {
       const frame: Frame = { def, saved: new Map() };
       let entry = st;
@@ -2388,17 +2476,24 @@ class Walker {
     } else {
       const walks = this.walks.get(def) ?? [];
       if (!this.silent) this.walks.set(def, walks);
-      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not, with values
-      // trusted or not.)
-      const how = `${!!this.dead} ${!!this.quiet} ${this.untrusted}`;
+      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not.)
+      const how = `${!!this.dead} ${!!this.quiet}`;
       const seen = walks.find((w) => w.how === how && (w.entry === st || sameState(w.entry, st)));
-      if (seen) exit = seen.exit;
-      else if (walks.length >= WALKS_PER_FUNCTION) {
+      // (A walk reused gives again the states where an error in it ended the line: see `abort`.)
+      const unit = this.unitTarget();
+      if (seen) {
+        exit = seen.exit;
+        if (unit && unit.dead === this.dead) unit.aborts.push(...seen.aborts);
+        for (const m of seen.maybes) this.abort(m, false);
+      } else if (walks.length >= WALKS_PER_FUNCTION) {
         exit = this.widen(st, this.changes.get(def)!);
         this.unwalked.add(def);
+        this.abort(st, false);
       } else {
+        const from = unit?.aborts.length ?? 0;
+        const maybesFrom = unit?.maybes.length ?? 0;
         exit = this.walkBody(def, st, { def, saved: new Map() });
-        if (!this.silent) walks.push({ entry: st, exit, how });
+        if (!this.silent) walks.push({ entry: st, exit, how, aborts: unit?.aborts.slice(from) ?? [], maybes: unit?.maybes.slice(maybesFrom) ?? [] });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
@@ -2460,7 +2555,7 @@ class Walker {
     if (name === '' && !descendants(word, ['string', 'raw_string', 'ansi_c_string']).length && !['string', 'raw_string', 'ansi_c_string'].includes(word.type)) {
       for (const a of assignments) {
         this.record(a, st);
-        st = this.assignNode(a, this.defaults(a, st));
+        st = this.assignNode(a, this.defaults(a, st), true);
       }
       return withStatus(this.redirections(n, st, 'off'), undefined);
     }
@@ -2479,13 +2574,6 @@ class Walker {
       let kept = st;
       for (const a of assignments) kept = this.giveAttribute(this.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
       st = posix === 'on' ? kept : merge([st, kept], this.posix);
-    }
-    // A function named by a word that is not known here, or given to a command as an argument (`complete -F f`,
-    // `mapfile -C f`), may be called with values the walk does not see: its conditions are not decided.
-    if (name === undefined) this.callsAny(st);
-    for (const a of fields(n, 'argument')) {
-      const f = st.functions.get(staticWordValue(a) ?? '');
-      if (f && f.state !== 'off') this.unwalked.add(f.def);
     }
     if (name === undefined) return withStatus(st, this.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
@@ -2735,8 +2823,9 @@ class Walker {
         cur += p.text;
         has = true;
       } else {
-        // (An IFS the script set is not followed; the value of an expansion may be a glob.)
-        if (st.variables.get('IFS') || /[*?[]/.test(p.text)) return undefined;
+        // (An IFS the script set, or may set where the walk does not see it, is not followed; the value of an
+        // expansion may be a glob.)
+        if (st.variables.get('IFS') || !this.trust.variable('IFS') || /[*?[]/.test(p.text)) return undefined;
         for (const c of p.text) {
           if (c !== ' ' && c !== '\t' && c !== '\n') {
             cur += c;
@@ -2760,7 +2849,7 @@ class Walker {
   private caseRuns(n: SyntaxNode, items: readonly SyntaxNode[], st: ShellState): number[] | undefined {
     const nocase = option(st, 'shopt', 'nocasematch');
     const { value: runs, reads } = this.reads((): number[] | undefined => {
-      const word = this.bash && (nocase === 'off' || nocase === 'default') ? this.condValue(field(n, 'value')!, st) : undefined;
+      const word = this.bash && !this.blind && (nocase === 'off' || nocase === 'default') ? this.condValue(field(n, 'value')!, st) : undefined;
       if (word === undefined) return undefined;
       const out: number[] = [];
       for (let i = 0; i < items.length;) {
@@ -2802,11 +2891,6 @@ class Walker {
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */
-  /** A command that may call any function defined in `st` (`$cmd`, `eval "$s"`): their conditions are not decided. */
-  private callsAny(st: ShellState): void {
-    for (const [, f] of st.functions) if (f.state !== 'off') this.unwalked.add(f.def);
-  }
-
   private functionCalled(name: string, st: ShellState): FunctionState | undefined {
     const fn = st.functions.get(name);
     if (!fn || fn.state === 'off') return undefined;
@@ -2823,19 +2907,11 @@ class Walker {
     this.aliasHost ??= host;
     const { root, text, errors } = script.tree;
     const stop = errors.length ? text.slice(0, Math.min(...errors.map((e) => e.startIndex))).split('\n').length - 1 : Infinity;
-    const statements = root.children.filter((c) => c.endPosition.row < stop);
-    // (The statements that share a line are read at once, as in a script: aliases and extglob count from the next line.)
-    let last: SyntaxNode | undefined;
-    const end = this.sequence(statements, st, (t, now) => {
-      const unit = last && last.endPosition.row === t.startPosition.row ? this.unitStart.get(last)! : t;
-      this.unitStart.set(t, unit);
-      this.parseAt.set(t, unit === t ? now : this.parseAt.get(unit)!);
-      this.expand = this.parseAt.get(t)!;
-      last = t;
-    });
+    const statements = root.children.filter((c) => c.endPosition.row < stop && STATEMENTS.has(c.type));
+    const { end, sure } = this.units(statements, st);
     this.aliasHost = outer;
     this.expand = expand;
-    return end;
+    return statements.length && sure ? end : withStatus(end, undefined);
   }
 
   /**
@@ -2912,22 +2988,20 @@ class Walker {
     switch (name) {
       case 'eval': case 'trap': {
         // A static string of `eval` runs here, in this shell; a trap's action runs later, when the signal comes
-        // (docs/design/semantics.md, 4.13). A string not known here may set any name, and call any function.
+        // (docs/design/semantics.md, 4.13). A string not known here may set any name, and call any function: nothing
+        // is trusted then (src/semantics/trust.ts; also a string too deep, or one with a glob, which the walk does not read).
         const at = parse.roles.find((r) => r.role.role === 'command');
         if (!at) return st;
         const words = name === 'eval' ? args.slice(at.word) : [args[at.word]];
         const script = this.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
-        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
-        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        // (A trap but EXIT may run before the next command: variables are not trusted for deciding conditions after
-        // it, nor after `eval`.)
-        if (name === 'eval' || !signals.every(exit)) this.distrust();
         if ('why' in script) {
           this.turnOpaque();
-          this.callsAny(st);
+          if (!this.dead && !this.blind) this.found ??= `\`${name}\` of a string the walk does not read`;
           return st;
         }
         if (name === 'eval') return this.evalScript(script, n, st);
+        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
+        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
         if (!this.silent) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit) });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exit)) {
@@ -2958,7 +3032,6 @@ class Walker {
         // (The file is not read: what it defines is not known here.)
         if (!this.silent) this.sources.push(this.aliasHost ?? n);
         this.turnOpaque();
-        this.distrust();
         return st;
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
       case 'shopt': {
@@ -3021,7 +3094,6 @@ class Walker {
       }
       case 'mapfile': case 'readarray': {
         const array = operands[0] ? staticWordValue(operands[0]) : 'MAPFILE';
-        if (array === undefined) this.distrust();
         return array && NAME.test(array) ? this.giveAttribute(this.setVariable(st, array, n, undefined), array, 'a', n) : st;
       }
       case 'printf': {
@@ -3059,10 +3131,10 @@ class Walker {
   /** Sets the variable a word names (`v`, `a[1]`: an element), to a value not known here. */
   private setNamed(st: ShellState, w: SyntaxNode, at: SyntaxNode, array: boolean): ShellState {
     const name = staticWordValue(w);
-    // (A name not known here may be any variable's: see `distrust`.)
-    if (name === undefined) this.distrust();
     const m = /^([A-Za-z_]\w*)(\[.*\])?$/s.exec(name ?? '');
     if (!m) return st;
+    // (An integer runs the text it is given, which may fail: see `assignmentError`.)
+    if (attribute(st, this.resolve(st, m[1]) ?? m[1], 'i') !== 'off') this.abort(st, false);
     st = this.setVariable(st, m[1], at, undefined);
     return (array || m[2]) && attribute(st, m[1], 'A') === 'off' ? this.giveAttribute(st, m[1], 'a', at) : st;
   }
@@ -3130,11 +3202,7 @@ class Walker {
       // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command; `"c"=$x` (whose value is not known here).
       const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : staticWordValue(w);
       const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(w).replace(/=.*/s, '=')) ;
-      if (!m || (text === undefined && !m[3])) {
-        // (A name not known here may be any variable's: see `distrust`.)
-        if (text === undefined) this.distrust();
-        continue;
-      }
+      if (!m || (text === undefined && !m[3])) continue;
       out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: text === undefined ? undefined : m[4], array: false } } : {}) });
     }
     return out;
@@ -3149,8 +3217,6 @@ class Walker {
       const ro = builtin === 'readonly' || on.includes('r');
       for (const o of operands) {
         const fn = st.functions.get(o.name);
-        // (An exported function may be called by another bash, with other values: its conditions are not decided.)
-        if (fn && fn.state !== 'off' && exported === 'on') this.unwalked.add(fn.def);
         if (fn && fn.state !== 'off') st = this.put(st, 'functions', o.name, { ...fn, ...(exported ? { exported } : {}), ...(ro ? { readonly: 'on' as Tri } : {}) });
       }
       return st;
@@ -3213,8 +3279,10 @@ class Walker {
     st = this.put(st, 'variables', name, { declared: 'on', set, attrs, value: prev?.value, at: n });
     // (A variable readonly before the declaration keeps its value; `readonly r=1` sets it.)
     if (!o.assign || prev?.attrs.r?.state === 'on') return st;
-    // (The state of an assignment in a declaration has the attributes the declaration gives.)
+    // (The state of an assignment in a declaration has the attributes the declaration gives. A value that may not be a
+    // valid expression, given to an integer, may discard the rest of the line: see `assignmentError`.)
     if (o.node.type === 'variable_assignment') this.record(o.node, st);
+    if ((attrs.i?.state ?? 'off') !== 'off' && !o.subscript && (o.assign.text === undefined || evalArith(o.assign.text) === undefined)) this.abort(st, false);
     return this.assign(st, name, false, o.assign, o.node, nameref, true);
   }
 
@@ -3228,8 +3296,6 @@ class Walker {
     if (flags.includes('f') && flags.includes('v')) return st;
     for (const { node, text } of all) {
       if (node.type !== 'variable_name' && staticWordValue(node) === undefined) {
-        // (It may be any variable: see `distrust`.)
-        if (!flags.includes('f')) this.distrust();
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];
@@ -3253,7 +3319,6 @@ class Walker {
       }
       // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
       const target = flags.includes('n') ? text : this.resolve(st, text);
-      if (!target) this.distrust();
       if (!target || attribute(st, target, 'r') === 'on') continue;
       // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
       const top = this.frames[this.frames.length - 1];
@@ -3282,23 +3347,35 @@ class Walker {
     return name;
   }
 
-  private assignNode(a: SyntaxNode, st: ShellState): ShellState {
+  /** The assignment `a`; `statement`: one with no command (`x=1`, not `x=1 cmd`), where an error discards the rest of the line. */
+  private assignNode(a: SyntaxNode, st: ShellState, statement = false): ShellState {
     const nameNode = field(a, 'name')!;
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
-    return this.assign(st, subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
-      { append: a.children.some((c) => c.type === '+='), text: value ? staticWordValue(value, true) : '', array: value?.type === 'array', source: value }, a, false);
+    const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
+    const text = value ? staticWordValue(value, true) : '';
+    if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text);
+    return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false);
+  }
+
+  /**
+   * An assignment statement to a readonly variable, or of text that may not be a valid expression to an integer
+   * variable (`declare -i n; n=1/0`), is an error that discards the rest of the line, as an expansion error does
+   * (see `abort`): surely when the variable surely is readonly, else it may.
+   */
+  private assignmentError(st: ShellState, name: string, text: string | undefined): void {
+    const target = this.resolve(st, name);
+    const v = target === undefined ? undefined : st.variables.get(target);
+    const readonly = v?.attrs.r?.state ?? 'off';
+    if (readonly === 'on') throw new ExpansionError(st, true);
+    if (readonly === 'unknown' || ((v?.attrs.i?.state ?? 'off') !== 'off' && (text === undefined || evalArith(text) === undefined))) this.abort(st, false);
   }
 
   /** `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`. */
   private assign(st: ShellState, name: string, subscript: boolean, how: NonNullable<Operand['assign']>, at: SyntaxNode, nameref: boolean, declaring = false): ShellState {
     // Assigning to a nameref assigns to the variable it names.
     const target = nameref ? name : this.resolve(st, name);
-    // (Through a nameref whose target is not known: it may be any variable, see `distrust`.)
-    if (!target) {
-      this.distrust();
-      return st;
-    }
+    if (!target) return st;
     const prev = st.variables.get(target);
     // A readonly variable keeps its value.
     if (prev?.attrs.r?.state === 'on' && !declaring) return st;
@@ -3369,12 +3446,27 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   return model;
 }
 
-/** The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep. */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState): StateModel {
+/** What the decisions of each model trust (src/semantics/trust.ts): another shell's model trusts no more than its outer one. */
+const modelTrusts = new WeakMap<StateModel, Trust>();
+
+/**
+ * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
+ * `outer`: what the model of the script that starts this shell trusts.
+ */
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust): StateModel {
   const scripts = new Scripts(depth);
-  const w = new Walker(shell, posix, scripts);
-  const initial = start(w);
-  const end = w.program(tree.root, initial);
+  const own = scriptTrust(tree.root);
+  const trust = outer ? withinTrust(own, outer) : own;
+  let w = new Walker(shell, posix, scripts, trust);
+  let initial = start(w);
+  let end = w.program(tree.root, initial);
+  // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
+  const found = w.found;
+  if (found) {
+    w = new Walker(shell, posix, scripts, BLIND);
+    initial = start(w);
+    end = w.program(tree.root, initial);
+  }
   // (The model's `at` is defined below; the environments ask for it only later.)
   const envs = new EnvModel({
     run: (n) => model.at(n).run, calls: w.calls, root: tree.root, shell,
@@ -3393,6 +3485,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return scripts.read(words, 'child', () => env, slotShell(link));
     },
     end,
+    blind: found ?? trust.blind,
     env: (n) => envs.at(n),
     calls: w.calls,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
@@ -3405,7 +3498,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     },
     setWrites: (n) => w.setWrites.get(n) ?? new Map(),
     condition: (n) => w.decision(n),
-    dead: (n) => w.runAt(n) !== undefined && !w.live.has(n),
+    dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;
@@ -3426,5 +3519,6 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     },
   };
   scripts.model = model;
+  modelTrusts.set(model, found ? BLIND : trust);
   return model;
 }
