@@ -964,12 +964,13 @@ function readTipSeen(): boolean {
     return false;
   }
 }
-/** Points the arrow of the bubble at the middle of the switch. */
+/** Puts the bubble under the switch (below the banner too, on the development version and previews) and points its arrow at the middle of the switch. */
 function placeReadTip(): void {
   const tip = document.getElementById('readtip');
   const btn = document.getElementById('readmode');
   if (!tip || !btn || tip.hidden) return;
   const b = btn.getBoundingClientRect();
+  tip.style.top = `${b.bottom + 10}px`;
   tip.style.setProperty('--arrow-x', `${b.left + b.width / 2 - tip.getBoundingClientRect().left}px`);
 }
 function hideReadTip(remember: boolean): void {

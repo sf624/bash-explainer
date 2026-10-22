@@ -1039,6 +1039,9 @@ describe('the web page in a browser', function () {
     const geo = await page.evaluate('(() => { const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); const x = parseFloat(getComputedStyle(document.querySelector("#readtip")).getPropertyValue("--arrow-x")); return { l: t.left, r: t.right, top: t.top, bottom: b.bottom, arrow: t.left + x, mid: b.left + b.width / 2, ok: document.documentElement.scrollWidth <= document.documentElement.clientWidth }; })()') as { l: number; r: number; top: number; bottom: number; arrow: number; mid: number; ok: boolean };
     assert.ok(geo.l >= 0 && geo.r <= 360 && geo.ok && geo.top >= geo.bottom, JSON.stringify(geo));
     assert.ok(Math.abs(geo.arrow - geo.mid) < 1, JSON.stringify(geo));
+    // With the banner of the development version above the bar, the bubble moves down with the switch.
+    const below = await page.evaluate('(() => { document.getElementById("channel-banner").hidden = false; document.getElementById("banner-text").textContent = "Built from main at abc1234. Not released yet, may change."; window.dispatchEvent(new Event("resize")); const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); return { top: t.top, bottom: b.bottom }; })()') as { top: number; bottom: number };
+    assert.ok(below.bottom > 48 && below.top >= below.bottom, JSON.stringify(below));
     await close.tap();
     assert.strictEqual(await tip.isVisible(), false);
     await page.reload();
