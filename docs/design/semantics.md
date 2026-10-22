@@ -981,10 +981,13 @@ These replace the earlier deny-lists (`eval` or `source` before a condition, a b
 
 **Visible effects.** The state after a decided branch (variables, options, functions, aliases: what B2 to B5 read). `StateModel.condition(n)` gives, for an `if`, `elif`, loop, `&&`/`||` list or `case`, the decision every walk made and the variables it read (with their values). The analyzer adds a note (not a pitfall: a value set at the top of a script, `DEBUG=0`, is a common way to switch code off) when the decision reads a variable or `$?`; a condition of literals only (`while true`, `if false`) says nothing, as its meaning is plain:
 
-- "`$x` is `2` here, so this condition is always false: the commands after its `then` never run" (and "always true: the branches after it never run");
-- "… so the loop stops before its first pass: its body never runs", "… so the condition never stops this loop: it ends only through `break`, `return`, `exit` or a signal";
-- "… so the left side of `&&` always fails: the command after it never runs";
-- "… so only the branch `a)` of this `case` runs" (or none).
+- "`$x` is `2` here, so this condition is always false: the commands after its `then` never run" (and "always true: the branches after it never run"); with an `if` and an `elif` on one line, "the `if` condition", "the `elif` condition";
+- "… so the loop stops before its first pass: its body never runs", "… so the condition never stops this loop: it ends only through `break`, `return`, `exit`, a signal or an error";
+- "… so the left side of `&&` always fails: the command after it never runs" (only the side that never runs is said);
+- "… so only `a)` of this `case` runs", "… only `a)` and `b)` … run" (or none);
+- and B3's `Missed` gets `never-runs`: "`f` is defined as a function on line 1, but in code that never runs before this (a branch whose condition is never met, or after `break`, `continue`, `return` or `exit`), so it is not the function". `StateModel.dead(n)` says that a statement runs only in dead code.
+
+The notes are made in src/statusfacts.ts (`conditionFacts`), once per script, from `StateModel.condition`; a list inside the condition of a decided `if` or loop says nothing of its own (the `if` says it).
 
 **Bounds.** Deciding a condition is linear in its words (the general `test` expression and `[[ ]]` are walked once; patterns become one regular expression each); arithmetic keeps the budgets of 4.7. No new walk is added: dead branches are walked once, as every branch was before; the code after a jump is walked once, as dead code. A loop walked again inside an outer loop's walk starts from its last walk's state, `$?` included (without it, a pass that changes `$?` made every walk take two passes: nested loops doubled at each level). The trust predicate is one pass over the text; a script walked again with nothing trusted takes two walks. Loops nested 20 deep take milliseconds (a unit test).
 

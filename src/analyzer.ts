@@ -1559,6 +1559,9 @@ export class Analyzer {
       case 'in-function':
         this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs })));
         return;
+      case 'never-runs':
+        this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-dead-branch', { name, line, runs })));
+        return;
       case 'unset':
         this.extraNotes.push(this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs })));
         return;
