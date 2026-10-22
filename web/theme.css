@@ -129,6 +129,8 @@ body {
   --gutter: 7px;
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --hover-border: #a8a8a8;
+  /* GitHub's mark is black on a light page and white on a dark one, never another colour. */
+  --github-mark: #000;
   --accent-soft: rgba(0, 95, 184, 0.12);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.16);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%23616161' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -137,6 +139,7 @@ body {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --hover-border: #5a5a5a;
+    --github-mark: #fff;
     --accent-soft: rgba(0, 120, 212, 0.25);
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.5);
     --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%239d9d9d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -145,6 +148,7 @@ body {
 
 :root[data-theme="dark"] {
   --hover-border: #5a5a5a;
+  --github-mark: #fff;
   --accent-soft: rgba(0, 120, 212, 0.25);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.5);
   --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%239d9d9d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
