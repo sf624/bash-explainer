@@ -351,7 +351,10 @@ describe('nested scripts: the model', () => {
     const model = shellState(tree);
     // (The innermost string is too deep: what it sets is not known.)
     assert.strictEqual(model.end.variables.get('x'), undefined);
-    assert.strictEqual(shellState(parser.parse(`f() { eval f; }; f; y=1`)).end.variables.get('y')?.set, 'on');
+    // (The recursion may end the line, as bash does past FUNCNEST, or when it runs out of stack.)
+    assert.strictEqual(shellState(parser.parse(`f() { eval f; }; f; y=1`)).end.variables.get('y')?.set, 'unknown');
+    assert.strictEqual(shellState(parser.parse(`f() { eval f; }; f
+y=1`)).end.variables.get('y')?.set, 'on');
   });
 });
 

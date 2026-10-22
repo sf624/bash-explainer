@@ -10,7 +10,7 @@
 
 ### Changed
 
-- A branch that cannot run, because its condition is decided by values the script itself set, no longer changes how the lines after it are explained: after `x=1; if [ "$x" = 2 ]; then set -f; fi`, a glob is a glob again, and after `if false; then f() { …; }; fi`, `f` is not the function. Code after `break`, `continue`, `return` or `exit` no longer counts either. Before, both sides of every branch counted, so such lines said "may" or "on some paths".
+- A branch that cannot run, because its condition is decided by values the script itself set, no longer changes how the lines after it are explained: after `x=1; if [ "$x" = 2 ]; then set -f; fi`, a glob is a glob again, and after `if false; then f() { …; }; fi`, `f` is not the function. Code after `break`, `continue`, `return` or `exit` no longer counts either. Before, both sides of every branch counted, so such lines said "may" or "on some paths". A condition is decided only from variables that nothing but plain assignments (`x=1`, `export x=1`) writes anywhere in the script, and not at all in a script that runs what cannot be read (`source`, `eval "$s"`, `$cmd`): there, both sides still count.
 
 ### Fixed
 
@@ -19,7 +19,7 @@
 - The pitfall for a variable that another shell does not have (`bash -c`, `sudo`, `su -c`, `ssh`, `docker exec`) reads the string as that shell reads it, so `\$n` in `bash -c "echo \$n"` counts; `env -u x` removes `x`, and a shell that reads startup files (`bash -l`, an exported `BASH_ENV`) may have any name. The shell and env's `-i`, `-u` and `NAME=value` count in an `env -S` string too (`env -S'-i bash -c' '…'`). Before, an escaped `\$n` was missed, and a shell started from an `env -S` string was not known.
 - `bash -O extglob -c '…'` and `bash --posix` are read as bash's options. Before, `-O` was not known and `extglob` was taken for the script to run.
 - `"$@"` inside single quotes is text, so the words after `bash -c 'f "$@"'` are no longer said to depend on how many words it gives.
-- Explanations match bash in more places: `x=1 ''` (a command name that is not found, so `x` is not set), and the variables that `exec {fd}>file`, `wait -p var` and `coproc name` set.
+- Explanations match bash in more places: `x=1 ''` (a command name that is not found, so `x` is not set), the variables that `exec {fd}>file`, `wait -p var` and `coproc name` set, and an error in `$(( ))` (a division by 0) or an assignment to a readonly variable, which discards the rest of the line, also when it is in a function the line calls (before, only the rest of the command, or nothing).
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
 

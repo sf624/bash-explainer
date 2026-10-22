@@ -1,6 +1,7 @@
 // The shell state model (src/semantics/state.ts): what it says along small scripts. Its agreement with bash is
 // checked on the rows of test/fixtures/probes/state.json by test/state-probes.test.ts.
 import * as assert from 'assert';
+import { nestedScripts } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -111,7 +112,7 @@ describe('shell state: paths', () => {
 
 describe('shell state: variables', () => {
   it('follows assignments, attributes and unset', () => {
-    const st = end('a=1; a+=2; b+=x; c=$x; c+=1; d=(1 2); d[3]=4; e[1]=x; declare -A m; m[k]=v; m=(); declare -i n=2+3; n+=1; n=x; declare -l lo=AB; declare -u up=ab; i=; unset i; unset "d[1]"');
+    const st = end('a=1\na+=2\nb+=x\nc=$x\nc+=1\nd=(1 2)\nd[3]=4\ne[1]=x\ndeclare -A m\nm[k]=v\nm=()\ndeclare -i n=2+3\nn+=1\nn=x\ndeclare -l lo=AB\ndeclare -u up=ab\ni=\nunset i\nunset "d[1]"');
     assert.deepStrictEqual([variable(st, 'a')?.value, variable(st, 'b')?.value, variable(st, 'c')?.value, variable(st, 'n')?.value, variable(st, 'lo')?.value, variable(st, 'up')?.value], ['12', undefined, undefined, undefined, 'ab', 'AB']);
     assert.deepStrictEqual(['d', 'e', 'm'].map((v) => [attribute(st, v, 'a'), attribute(st, v, 'A')]), [['on', 'off'], ['on', 'off'], ['off', 'on']]);
     assert.deepStrictEqual([variable(st, 'i')?.set, variable(st, 'd')?.set], ['off', 'on']);
@@ -332,7 +333,7 @@ describe('shell state: more builtins', () => {
     assert.strictEqual(m.at(cmds[0]).parse.aliases.get('x'), undefined);
   });
   it('attributes bash refuses or keeps', () => {
-    const st = end('declare -a a; declare -A a; declare -A m; declare -a m; declare -r r=1; r=2; r+=3; unset r; set -a; arr=(1); arr2[1]=x; s=1; fn() { :; }');
+    const st = end('declare -a a\ndeclare -A a\ndeclare -A m\ndeclare -a m\ndeclare -r r=1\nr=2\nr+=3\nunset r\nset -a\narr=(1)\narr2[1]=x\ns=1\nfn() { :\n}');
     assert.deepStrictEqual([attribute(st, 'a', 'A'), attribute(st, 'm', 'a'), variable(st, 'r')?.value, attribute(st, 'arr', 'x'), attribute(st, 'arr2', 'x'), attribute(st, 's', 'x'), st.functions.get('fn')?.exported], ['off', 'off', '1', 'off', 'off', 'on', 'on']);
     assert.strictEqual(end('a && set -a; fn() { :; }').functions.get('fn')?.exported, 'unknown');
     assert.strictEqual(variable(end('declare -r r=1; declare r=2'), 'r')?.value, '1');
@@ -438,7 +439,7 @@ describe('shell state: arithmetic', () => {
     // A variable set before stays set, to a value not known (bash: 0).
     assert.deepStrictEqual(after('total=0; while read n; do (( total += n )); done', 'total'), ['set']);
     // Values that are numbers: an integer variable, one bash changes itself.
-    assert.deepStrictEqual(after('declare -i n=$1; (( a = n, b = RANDOM, c = 1, d = -n ))', 'a', 'b', 'c', 'd'), ['set', 'set', 'set=1', 'set']);
+    assert.deepStrictEqual(after('declare -i n=$1\n(( a = n, b = RANDOM, c = 1, d = -n ))', 'a', 'b', 'c', 'd'), ['set', 'set', 'set=1', 'set']);
     // (Also a value read from a value.)
     assert.deepStrictEqual(after('x=HOME; (( a = 1, b = x, c = 2 )); (( d = x ))', 'a', 'b', 'c', 'd'), ['set=1', 'unknown', 'unknown', 'unknown']);
   });
@@ -477,8 +478,9 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after('v=\'$z\'; (( w = v )); (( y = 64#@ + 1 ))', 'w', 'y'), ['unknown', 'unknown']);
   });
   it('may assign on a side the condition does not decide', () => {
-    assert.deepStrictEqual(after('declare -i u=$1; (( u ? v = 1 : (w = 2), u && (o = 2), u || (p = 3), q = u && 1, r = 1 && u ))', 'v', 'w', 'o', 'p', 'q', 'r'), ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'set']);
-    assert.deepStrictEqual(after('declare -i u=$1; (( u ? 1 : 2, u && 1 ))', 'u'), ['set']);
+    assert.deepStrictEqual(after('declare -i u=$1\n(( u ? v = 1 : (w = 2), u && (o = 2), u || (p = 3), q = u && 1, r = 1 && u ))', 'v', 'w', 'o', 'p', 'q', 'r'), ['unknown', 'unknown', 'unknown', 'unknown', 'set', 'set']);
+    // (u itself may be unset: `declare -i u=$1` may fail, which ends the line.)
+    assert.deepStrictEqual(after('declare -i u=$1\n(( u ? 1 : 2, u && 1 ))', 'u'), ['unknown']);
     // An operand of `${…}` may not be expanded.
     assert.deepStrictEqual(after('s=abc; echo ${s:$(( k = 1 ))} ${s:-$(( 2 ))}', 'k'), ['unknown']);
     // A command whose name is not known may be a program, which makes its redirections in its own process.
@@ -489,7 +491,8 @@ describe('shell state: arithmetic', () => {
     // An array that may be associative: its subscript may be arithmetic.
     assert.deepStrictEqual(after('[ "$1" ] && declare -A m\ni=0; (( m[i++] = 1 ))', 'i'), ['set']);
     // An error there discards the command: what came before it may have been assigned.
-    assert.deepStrictEqual(after('s=abc; echo ${s:$(( a = 1, 1 / 0 ))}; $cmd > f$(( b = 1, 1 / 0 )); echo $(( c = 1, 1 / 0 ))', 'a', 'b', 'c'), ['unknown', 'unknown', 'set=1']);
+    assert.deepStrictEqual(after('s=abc; echo ${s:$(( a = 1, 1 / 0 ))}; $cmd > f$(( b = 1, 1 / 0 )); echo $(( c = 1, 1 / 0 ))', 'a', 'b', 'c'), ['unknown', 'unknown', 'unknown']);
+    assert.deepStrictEqual(after('echo $(( c = 1, 1 / 0 ))', 'c'), ['set=1']);
   });
   it('expands the value of an assignment before its subscript', () => {
     // (Not with `declare`, which expands its words in order: bash gives j=0, then j=1.)
@@ -583,6 +586,23 @@ describe('shell state: arithmetic', () => {
     // (Each loop starts from the values its last walk ended with: an inner loop may not run.)
     assert.deepStrictEqual(after(loops, 't', 'z', 'i0', 'i17'), ['unknown', 'unknown', 'unknown', 'set']);
   });
+  it('walks loops nested 20 deep in linear time, whatever their bodies change (with `$?`)', () => {
+    const nest = (open: (i: number) => string, inner: string, close: string): string =>
+      Array.from({ length: 20 }, (_, i) => open(i)).join(' ') + ` ${inner} ` + Array.from({ length: 20 }, () => close).join(' ');
+    for (const src of [
+      nest(() => 'for i in 1 2; do', ':', 'done;'),
+      nest((i) => `for i${i} in 1 2; do v${i}=$i${i};`, ':', 'done;'),
+      nest((i) => `while read x${i}; do n=1;`, ':', 'done;'),
+      nest(() => 'while read x; do case $x in a)', 'k=1', ';; esac; done;'),
+      nest(() => 'for i in 1 2; do if [ "$i" = 1 ]; then k=$i; fi;', ':', 'done;'),
+      nest((i) => `k${i}=1; while [ "$k${i}" = 1 ]; do k${i}=2;`, ':', 'done;'),
+      `set -e; ${nest(() => 'for i in 1 2; do false || true;', ':', 'done;')}`,
+    ]) {
+      const start = Date.now();
+      end(src);
+      assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms: ${src.slice(0, 60)}`);
+    }
+  });
 });
 
 describe('shell state: conditions (docs/design/semantics.md, 4.14)', () => {
@@ -597,9 +617,10 @@ describe('shell state: conditions (docs/design/semantics.md, 4.14)', () => {
     assert.strictEqual(decided('x=1; if [ "$x" = 2 ]; then :; elif [[ $x == 1 ]]; then :; fi', 'elif_clause'), 'true x=1');
     assert.strictEqual(decided('if true; then :; elif [ a ]; then :; fi', 'elif_clause'), undefined);
     assert.strictEqual(decided('w=ab; case $w in a) ;; a*) ;& b) ;; *) ;; esac', 'case_statement'), '1,2 w=ab');
-    assert.strictEqual(decided('n=0; while (( n > 0 )); do :; done', 'while_statement'), 'false n=0');
+    assert.strictEqual(decided('n=0; while [ "$n" -gt 0 ]; do :; done', 'while_statement'), 'false n=0');
     assert.strictEqual(decided('for ((;;)); do break; done', 'c_style_for_statement'), 'true');
-    assert.strictEqual(decided('unset u; [ -z "$u" ] || :', 'list'), 'true u=null');
+    assert.strictEqual(decided('u=; [ -z "$u" ] || :', 'list'), 'true u=');
+    assert.strictEqual(decided('unset u; [ -z "$u" ] || :', 'list'), undefined);
     assert.strictEqual(decided('false; [ $? = 1 ] && :', 'list'), 'true ?=1');
     // Not decided: the environment, files, a name the script has not set, other shells, a part still missing.
     assert.strictEqual(decided('[ "$HOME" = / ] && :', 'list'), undefined);
@@ -620,9 +641,10 @@ describe('shell state: conditions (docs/design/semantics.md, 4.14)', () => {
     assert.strictEqual(decided('x=1; eval "x=2"; [ "$x" = 1 ] && :', 'list'), undefined);
     assert.strictEqual(decided('x=1; source f; [ "$x" = 1 ] && :', 'list'), undefined);
     assert.strictEqual(decided('x=1; trap "x=2" USR1; [ "$x" = 1 ] && :', 'list'), undefined);
-    assert.strictEqual(decided('x=1; trap "x=2" EXIT; [ "$x" = 1 ] && :', 'list'), 'true x=1');
-    assert.strictEqual(decided('x=1; (( x )) && :; eval :; (( x )) && :', 'list', 1), undefined);
-    assert.strictEqual(decided('v="u + 1"; (( v )); (( v )) && :', 'list'), undefined);
+    assert.strictEqual(decided('x=1; trap "x=2" EXIT; [ "$x" = 1 ] && :', 'list'), undefined);
+    assert.strictEqual(decided('x=1; trap "y=2" EXIT; [ "$x" = 1 ] && :', 'list'), 'true x=1');
+    assert.strictEqual(decided('x=1; eval :; [ "$x" = 1 ] && :', 'list'), 'true x=1');
+    assert.strictEqual(decided('v="u + 1"; u=1; (( v )); (( v )) && :', 'list'), undefined);
     // Variables the walk sets to values it does not know: `{x}>`, `wait -p`, coproc.
     for (const src of ['x=1; exec {x}>/dev/null; [ "$x" = 1 ] && :', 'x=1; wait -p x; [ "$x" = 1 ] && :', 'x=1; coproc x { :; }; [ "$x" = 1 ] && :', 'x=1; { :; } {x}>/dev/null; [ "$x" = 1 ] && :']) {
       assert.strictEqual(decided(src, 'list'), undefined, src);
@@ -691,7 +713,9 @@ describe('shell state: break, continue, return, exit (docs/design/semantics.md, 
     assert.strictEqual(value('f() { x=1; exit; }; f; x=2', 'x'), '1');
     assert.strictEqual(dead('x=1; [ $x = 1 ] && exit; : M'), true);
     assert.strictEqual(dead('v=$(exit); : M'), false);
-    assert.strictEqual(dead('f() { exit; : M; }'), true);
+    assert.strictEqual(dead('f() { exit; : M; }; f'), true);
+    // (A body no call reaches may be called from elsewhere, from where the walk does not see.)
+    assert.strictEqual(dead('f() { exit; : M; }'), false);
     // A trap's action runs outside the walk of the script.
     assert.strictEqual(value('trap "x=1; return; exit" EXIT', 'x'), undefined);
   });
@@ -725,14 +749,14 @@ describe('shell state: what conditions are not decided from (docs/design/semanti
     assert.strictEqual(decided('x=1; for i in a b; do [ "$x" = 1 ] && :; unset "$v"; done'), undefined);
   });
   it('does not decide in a body no call reaches, one that is exported, or one called by a name not known', () => {
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }'), undefined);
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f'), 'true');
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; export -f f; f'), undefined);
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }'), undefined);
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }; f'), 'true');
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }; export -f f; f'), undefined);
     assert.strictEqual(decided('set -a; unset y; f() { [ -z "$y" ] && y=1; }; f'), undefined);
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; $c'), undefined);
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; eval "$c"'), undefined);
-    assert.strictEqual(decided('unset y; f() { [ -z "$y" ] && y=1; }; f; complete -F f x'), undefined);
-    assert.strictEqual(decided('unset y; $c; f() { [ -z "$y" ] && y=1; }; f'), 'true');
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }; f; $c'), undefined);
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }; f; eval "$c"'), undefined);
+    assert.strictEqual(decided('y=; f() { [ -z "$y" ] && y=1; }; f; complete -F f x'), undefined);
+    assert.strictEqual(decided('y=; $c; f() { [ -z "$y" ] && y=1; }; f'), undefined);
   });
   it('leaves out what bash does otherwise', () => {
     assert.strictEqual(decided('shopt -s nocasematch; [[ A =~ a ]] && :'), undefined);
@@ -742,12 +766,164 @@ describe('shell state: what conditions are not decided from (docs/design/semanti
     assert.strictEqual(decided('(( 1 )) && :', 'list', 0, 'dash'), undefined);
     assert.strictEqual(decided('declare -c y=abc; [ "$y" = abc ] && :'), undefined);
     assert.strictEqual(decided('x=1; f() { local x; [ "$x" = 1 ] && :; }; shopt -s localvar_inherit; f'), undefined);
-    assert.strictEqual(decided('x=1; f() { local x; [ -z "$x" ] && :; }; f'), 'true');
+    assert.strictEqual(decided('x=1; f() { local x=; [ -z "$x" ] && :; }; f'), 'true');
     assert.strictEqual(decided('_=5; [ "$_" = 5 ] && :'), undefined);
     assert.strictEqual(decided('PWD=/x; cd /; [ "$PWD" = /x ] && :'), undefined);
     assert.strictEqual(decided('set -e; x=$( [ -o errexit ] && echo on )'), 'false');
     // A read only in dead code is not one of a decision's reads.
     const tree = parser.parse('x=1; y=2; if [ "$x" = 1 ] || [ "$y" = 2 ]; then :; fi');
     assert.deepStrictEqual([...shellState(tree).condition(descendants(tree.root, ['if_statement'])[0])!.reads.keys()], ['x']);
+  });
+});
+
+describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design/semantics.md 4.14)', () => {
+  /** What the first `&&` or `||` list (or the `at`th node of `type`) of `src` decides. */
+  const decided = (src: string, type = 'list', at = 0): string | undefined => {
+    const tree = parser.parse(src);
+    const d = shellState(tree).condition(descendants(tree.root, [type])[at]);
+    return d && `${d.outcome} ${[...d.reads].map(([k, v]) => `${k}=${v}`).join(',')}`.trim();
+  };
+  const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+  /** Whether the first command `: M` of `src` runs only in dead code. */
+  const dead = (src: string): boolean => {
+    const tree = parser.parse(src);
+    return shellState(tree).dead(descendants(tree.root, ['command']).find((c) => c.text === ': M')!);
+  };
+  it('trusts a variable that only plain assignments write', () => {
+    for (const write of ['x=1', 'x=; x+=1', 'export x=1', 'readonly x=1', 'declare -g x=1', 'declare -rx x=1', 'x=1; export x; readonly x', 'f() { local x=2; }; f']) {
+      assert.strictEqual(decided(`x=1; ${write}; [ "$x" = 1 ] && :`), 'true x=1', write);
+    }
+  });
+  it('does not trust a variable that something else may write, wherever it is in the script', () => {
+    for (const write of ['(( x = 2 ))', 'let x=2', 'echo $(( x ))', 'a[x]=1', 'echo ${a[x]}', 's=abc; echo ${s:x}', '[[ x -eq 1 ]]', 'declare -i n; n=x',
+      'read x', 'read -a x', 'mapfile x', 'printf -v x 1', 'getopts a x', 'wait -p x', 'unset x', "unset 'x[0]'", 'declare -n r=x', 'declare -i x=1',
+      'declare -l x=a', 'f() { local x; }; f', 'x[0]=1', 'x=(1)', 'x+=(1)', ': ${x:=1}', ': ${x=1}', 'for x in 1; do :; done', 'select x in 1; do break; done',
+      'coproc x { :; }', 'exec {x}>/dev/null', "trap 'x=2' INT", "trap 'x=2' EXIT", "eval 'x=2'", "alias a='x=2'", 'f() { x=2; }; trap f INT',
+      'f() { x=2; }; complete -F f c', 'f() { g; }; g() { x=2; }; trap f INT', 'f() { x=2; }; mapfile -C f a', '[[ -v a[x] ]]', '[ -v "a[x]" ]',
+      "test -v 'a[x]'", "declare -n 'r=x'", 'for x in a b; do :; done', 'x=(1 "$@")']) {
+      assert.strictEqual(decided(`x=1; [ "$x" = 1 ] && :; ${write}`), undefined, write);
+    }
+    // (A variable readonly with no value is not set: that is trusted too.)
+    assert.strictEqual(decided('readonly u; [ -z "$u" ] || :'), 'true u=null');
+    // Nor the IFS that splits an unquoted word, when a trap may set it.
+    assert.strictEqual(decided("x=a; trap 'IFS=a' INT; [ $x = a ] && :"), undefined);
+    assert.strictEqual(decided("x=a; trap 'y=a' INT; [ $x = a ] && :"), 'true x=a');
+    // Positional parameters and the variables bash sets itself are never trusted.
+    assert.strictEqual(decided('PWD=/; [ "$PWD" = / ] && :'), undefined);
+    assert.strictEqual(decided('REPLY=1; [ "$REPLY" = 1 ] && :'), undefined);
+  });
+  it('trusts nothing when the script runs what cannot be read', () => {
+    for (const src of ['source f', '. ./lib.sh', 'eval "$c"', '$c', '"$@"', 'cmd=eval; $cmd x=2', 'read "$v"', 'unset "$v"', 'declare "$v=1"', 'export $v',
+      'echo ${!v}', 'trap "$h" INT', 'trap : DEBUG', 'trap : RETURN', 'echo $(( $1 ))', 'echo $(( $(date +%s) ))', 'echo $(( n ))', 'read n; echo $(( n ))',
+      'f() { local -n r=$1; r=2; }; f x', 'declare -n r; r=x', 'f() { set -e; }; trap f INT', 'f() { g() { :; }; }; trap f INT', "trap 'set -f' INT", 'complete -F "$f" c']) {
+      assert.ok(blind(`x=1; [ "$x" = 1 ] && :; ${src}`), src);
+      assert.strictEqual(decided(`x=1; [ "$x" = 1 ] && :; ${src}`), undefined, src);
+    }
+    // Nor a condition of literals: `true` may be a function a sourced file defines.
+    assert.strictEqual(decided('true && :; source f'), undefined);
+    assert.strictEqual(dead('source f; exit; : M'), false);
+    // A variable arithmetic reads before any path sets it: its value may come from the environment.
+    assert.ok(blind('x=1; [ "$x" = 1 ] && :; echo $(( n )); n=1'));
+    assert.ok(blind('x=1; [ "$x" = 1 ] && :; for f in *; do a[n++]=$f; done; n=0'));
+    assert.strictEqual(blind('x=1; n=0; for f in *; do a[n++]=$f; done'), undefined);
+    assert.strictEqual(blind('for (( i = 0; i < 3; i++ )); do :; done; echo $(( RANDOM % 2 ))'), undefined);
+    // A command named by a variable the script sets to commands that change nothing, or to a function.
+    assert.strictEqual(decided('debug=false; x=1; $debug; [ "$x" = 1 ] && :'), 'true x=1');
+    assert.strictEqual(decided('run=echo; x=1; $run hi; [ "$x" = 1 ] && :'), 'true x=1');
+    assert.strictEqual(decided('f() { x=2; }; c=f; x=1; [ "$x" = 1 ] && :; $c'), undefined);
+  });
+  it('says nothing of a function body that may be run where the walk does not see it', () => {
+    // (The reviewer's cases: a call through `$cmd`, a sourced file, `export -f`.)
+    const body = 'x=0; f() { if [ "$x" = 1 ]; then g() { echo hi; }; : M; fi; g; }; f; x=1';
+    assert.strictEqual(decided(body, 'if_statement'), 'false x=0');
+    assert.strictEqual(dead(body), true);
+    for (const more of ['cmd=f; $cmd', '. ./lib.sh', 'export -f f', 'set -a', 'declare -fx f', 'export -f "$g"', 'complete -F f c', 'trap f INT', 'echo f']) {
+      assert.strictEqual(decided(`${body}; ${more}`, 'if_statement'), undefined, more);
+      assert.strictEqual(dead(`${body}; ${more}`), false, more);
+    }
+    // (Printing or naming it does not call it.)
+    for (const more of ['declare -f f', 'declare -f "$g"', 'type f', 'command -v f', 'h() { :; }; h; export -f h']) assert.strictEqual(dead(`${body}; ${more}`), true, more);
+    // One no call reaches (its definition itself runs where it stands).
+    assert.strictEqual(dead('f() { exit; : M; }'), false);
+    const tree = parser.parse('if false; then f() { :; }; fi');
+    assert.strictEqual(shellState(tree).dead(descendants(tree.root, ['function_definition'])[0]), true);
+    assert.strictEqual(dead('f() { exit; : M; }; f'), true);
+  });
+  it('ends the line at an expansion error from values it trusts, and may end it otherwise', () => {
+    // (bash discards the rest of the line, also in a function it calls; `${u:?}` ends the shell.)
+    assert.strictEqual(dead('echo $(( 1 / 0 )); : M'), true);
+    assert.strictEqual(dead('echo $(( 1 / 0 ))\n: M'), false);
+    assert.strictEqual(dead('f() { : $(( 1 / 0 )); : M; }; f'), true);
+    assert.strictEqual(dead('f() { : $(( 1 / 0 )); }; f; : M'), true);
+    // (Also through a walk of the body reused from an earlier call: the line after it runs.)
+    assert.strictEqual(dead('f() { echo $(( 1 / 0 )); }\nf || :\nif f; then :; fi\n: M'), false);
+    assert.strictEqual(dead('f() { echo $(( 1 / 0 )); }\nf || :\nif f; then :; fi; : M'), true);
+    assert.strictEqual(dead('u=; : ${u:?}\n: M'), true);
+    assert.strictEqual(dead('u=1; : ${u:?}\n: M'), false);
+    assert.strictEqual(dead('x=$( : $(( 1 / 0 )) ); : M'), false);
+    // (A word that may not be expanded: a pattern after the first, an operand of `${…}`, the right of `&&` in `[[ ]]`.)
+    assert.strictEqual(dead('case a in a) ;; $(( 1 / 0 ))) ;; esac; : M'), false);
+    assert.strictEqual(dead('u=; case a in a) ;; ${u:?}) ;; esac\n: M'), false);
+    assert.strictEqual(dead('x=1; : ${x:-$(( 1 / 0 ))}; : M'), false);
+    assert.strictEqual(dead('[[ -f x && $(( 1 / 0 )) ]]; : M'), false);
+    assert.strictEqual(decided('done=no; report() { echo "$(( 1 / 0 ))"; done=yes; }; report\nif [ "$done" = no ]; then :; fi', 'if_statement'), 'true done=no');
+    // An assignment statement to a readonly variable is an error too; through a builtin, it is not (bash goes on).
+    assert.strictEqual(dead('readonly x=1; x=2; : M'), true);
+    assert.strictEqual(dead('readonly x=1; f() { x=2; }; f; : M'), true);
+    assert.strictEqual(dead('readonly x=1; x=2\n: M'), false);
+    assert.strictEqual(dead('readonly x=1; export x=2; : M'), false);
+    assert.strictEqual(decided('[ -t 0 ] && readonly x=1; x=2; y=a\n[ "$y" = a ] && :', 'list', 1), undefined);
+    // So is a value that is no valid expression given to an integer: it may be.
+    assert.strictEqual(decided('declare -i n; n=1/0; y=a\n[ "$y" = a ] && :'), undefined);
+    assert.strictEqual(decided('declare -i n=1/0; y=a\n[ "$y" = a ] && :'), undefined);
+    assert.strictEqual(decided('declare -i n; n=2; y=a\n[ "$y" = a ] && :'), 'true y=a');
+    // (A readonly variable given to a function call keeps its value; through a nameref not known, nothing is said.)
+    assert.strictEqual(variable(end('readonly x=1; f() { :; }; x=2 f'), 'x')?.value, '1');
+    for (const src of ['declare -n r=$1; : ${r:?}; : M', 'declare -n r=$1; for r in a; do :; done; : M', 'declare -n r=$1; read r; : M']) assert.strictEqual(dead(src), false, src);
+    // An integer given each word of a loop, or a value read: it may fail.
+    assert.strictEqual(decided('declare -i n; y=a; for n in 1/0; do :; done; y=b\n[ "$y" = b ] && :'), undefined);
+    assert.strictEqual(decided('declare -i n; y=a; read n; y=b\n[ "$y" = b ] && :'), undefined);
+    // A loop on a readonly variable does not run its body (bash fails at the first word): the body may run.
+    assert.strictEqual(decided('readonly x=1; y=a; for x in 1; do y=b; done; [ "$y" = a ] && :'), undefined);
+    // From a value arithmetic may assign: the error may not happen.
+    assert.strictEqual(decided('total=0; sum=1; done=no; report() { echo "$(( sum / total ))"; done=yes; }; report\nif [ "$done" = no ]; then :; fi', 'if_statement'), undefined);
+    assert.strictEqual(dead('total=0; echo $(( 1 / total )); : M'), false);
+  });
+  it('reads the strings that eval and traps run (docs/design/semantics.md, 4.13) as bash runs them', () => {
+    // An error in a line of an eval string discards the rest of that line only: the shell goes on after eval.
+    assert.strictEqual(decided("eval 'echo $(( 1 / 0 ))'; y=2\n[ \"$y\" = 2 ] && :"), 'true y=2');
+    assert.strictEqual(dead("eval 'echo $(( 1 / 0 ))'; : M"), false);
+    assert.strictEqual(dead("eval 'echo $(( 1 / 0 )); exit'; : M"), false);
+    assert.strictEqual(dead("eval 'exit'; : M"), true);
+    // One that may happen may end the line of eval too (bash does for an integer given text that is no expression).
+    assert.strictEqual(decided("declare -i n; eval 'n=1/0'; y=2\n[ \"$y\" = 2 ] && :"), undefined);
+    // Jumps in an eval string leave the loop or the function around it.
+    assert.strictEqual(dead("for i in 1 2; do eval 'break'; : M; done"), true);
+    assert.strictEqual(dead("f() { eval 'return 3'; : M; }; f"), true);
+    // What eval and trap strings write is not trusted; a string the walk does not read (a glob in it, too deep) may
+    // do anything.
+    assert.strictEqual(decided("x=1; [ \"$x\" = 1 ] && :; eval 'x=2'"), undefined);
+    assert.strictEqual(decided("x=1; [ \"$x\" = 1 ] && :; trap 'x=2' INT"), undefined);
+    assert.ok(blind('x=1; [ "$x" = 1 ] && :; eval echo *'));
+    let deep = 'x=1';
+    for (let i = 0; i < 9; i++) deep = `eval ${JSON.stringify(deep).replace(/\$/g, '\\$')}`;
+    assert.strictEqual(blind(`y=1; [ "$y" = 1 ] && :; ${deep}`), '`eval` of a string the walk does not read');
+    let trap = 'trap : INT';
+    for (let i = 0; i < 8; i++) trap = `eval ${JSON.stringify(trap)}`;
+    assert.strictEqual(blind(`y=1; [ "$y" = 1 ] && :; ${trap}`), '`trap` of a string the walk does not read');
+    assert.strictEqual(blind(`y=1; [ "$y" = 1 ] && :; eval 'eval y=1'`), undefined);
+  });
+  it('trusts in another shell no more than in the script that starts it', () => {
+    /** What the first list of the last string of `src` (`bash -c`) decides. */
+    const inner = (src: string): string | undefined => {
+      const s = nestedScripts(parser.parse(src)).pop()!.script;
+      const d = s.model.condition(descendants(s.tree.root, ['list'])[0]);
+      return d && `${d.outcome} ${[...d.reads].map(([k, v]) => `${k}=${v}`).join(',')}`.trim();
+    };
+    assert.strictEqual(inner(`export x=1\nbash -c '[ "$x" = 1 ] && :'`), 'true x=1');
+    // (An alias may write it where the walk does not see it; startup files may do anything.)
+    assert.strictEqual(inner(`export x=1; alias a='x=2'\nbash -c '[ "$x" = 1 ] && :'`), undefined);
+    assert.strictEqual(inner(`export x=1; source f\nbash -c '[ "$x" = 1 ] && :'`), undefined);
+    assert.strictEqual(inner(`export x=1\nbash -l -c '[ "$x" = 1 ] && :'`), undefined);
   });
 });
