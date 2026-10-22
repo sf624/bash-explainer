@@ -7,7 +7,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { lookupCommand } from '../src/analyzer';
-import { ArgvParse, ArgWord, interpret } from '../src/argv/interpret';
+import { splitEnvString } from '../src/argv/envsplit';
+import { ArgRole, ArgvParse, ArgWord, interpret, ValueRole } from '../src/argv/interpret';
 import { argWords } from './support/argwords';
 
 const has = (tool: string): boolean => spawnSync('bash', ['--norc', '-c', `command -v ${tool}`]).status === 0;
@@ -152,23 +153,96 @@ describe('wrappers agree with the real tools', () => {
     });
   }
 
-  (usable('env') ? it : it.skip)("env -S: the string is the command and its first arguments; the operands are more", () => {
-    for (const line of ["env -S 'printf %s,' x y", "env --split-string='printf %s,' b", "env -S 'A=1 printf %s,' x -i", "env -S'-i A=1 printf %s,' x"]) {
-      assert.strictEqual(run(line).out, printed(operands(line, ['ARG'])), line);
-      assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
+  // `env -v` says how it splits a `-S` string ("into: 'a' & 'b'"), and the words of the command it runs
+  // ("arg[0]= 'a'"), before it tries to run it: the commands need not exist.
+  /** env's quoting of a word in its messages: `'a\'b'`, with C escapes. */
+  const unquoted = (q: string): string => q.slice(1, -1).replace(/\\(.)/g, (_, c: string) => ({ t: '\t', n: '\n', r: '\r', v: '\v', f: '\f' } as Record<string, string>)[c] ?? c);
+  const verbose = (line: string): { split: string[]; argv?: string[]; reset: boolean; status: number | null; err: string } => {
+    const r = spawnSync('bash', ['--norc', '-c', line.replace(/^env /, 'env -v ')], { env: { ...ENV, HOME: '/h' }, encoding: 'utf8', timeout: 10000 });
+    const lines = r.stderr.split('\n');
+    const split = lines.flatMap((l) => { const m = /^ (?:into:|    &)    ('.*')$/.exec(l); return m ? [unquoted(m[1])] : []; });
+    const exec = lines.findIndex((l) => l.startsWith('executing: '));
+    const argv = exec < 0 ? undefined : lines.slice(exec + 1).flatMap((l) => { const m = /^   arg\[\d+\]= ('.*')$/.exec(l); return m ? [unquoted(m[1])] : []; });
+    return { split, argv, reset: lines.includes('cleaning environ'), status: r.status, err: r.stderr };
+  };
+  /** The words of the command the line runs, as the interpreter reads them: after the line, or started in a `-S` string. */
+  const runs = (line: string): { argv?: string[]; reset: boolean } => {
+    const { parse, words } = parseOf(line);
+    const splitOf = (role: ArgRole): ValueRole | undefined => {
+      const value = role.role === 'value' ? role : role.role === 'option' ? role.value : role.role === 'cluster' ? role.letters.map((l) => (l.role === 'option' ? l.value : undefined)).find((v) => v?.split) : undefined;
+      return value?.split ? value : undefined;
+    };
+    // `rest`: the words after the string, which a command started in it takes.
+    const inSplit = (v: ValueRole, rest: string[]): { argv?: string[]; reset: boolean } | undefined => {
+      const ws = v.split!.words.map((w) => w.value ?? '?');
+      for (const { word, role } of v.split!.roles) {
+        if (role.role === 'command') return { argv: [...ws.slice(word), ...rest], reset: role.slot.env === 'reset' };
+        const inner = splitOf(role);
+        const r = inner && inSplit(inner, [...ws.slice(word + 1), ...rest]);
+        if (r) return r;
+      }
+      return undefined;
+    };
+    for (const { word, role } of parse.roles) {
+      if (role.role === 'command' && role.parse) return { argv: words.slice(word, role.parse.end), reset: role.slot.env === 'reset' };
+      const v = splitOf(role);
+      const r = v && inSplit(v, words.slice(word + 1));
+      if (r) return r;
     }
-    assert.match(run("env -S 'printf %s,' x y").out, /^x,y,$/);
-    // A string that ends in an option that takes a value, or has an option after an assignment, is not
-    // only options and assignments: the words after it are not read as env's own command.
-    assert.strictEqual(run("env -S'-u' HOME printf %s, x").out, 'x,');
-    assert.match(run("env -S'A=1 -i' printf %s, x").err, /'-i': No such file/);
-    for (const line of ["env -S'-u' HOME printf %s, x", "env -S'-iu' HOME printf %s, x", "env -S'A=1 -i' printf %s, x"]) {
-      assert.ok(!parseOf(line).parse.roles.some((r) => r.role.role === 'command'), line);
+    return { reset: false };
+  };
+
+  (usable('env') ? it : it.skip)('env -S: the words of the string, as GNU env splits it', () => {
+    // (HOME is `/h`; an unset variable gives no word.)
+    const STRINGS = [
+      'a b', '  a\tb  ', 'a\\_b', '"a\\_b"', "'a\\_b'", "'a\\\\b'", "'a\\'b'", 'a\\cb c', 'a #c d', 'a#c d', '"#x" y', '\\#a',
+      'a\\$b', '"a\\$b"', "'a\\$b'", '"a\\tb"', "'a\\tb'", 'a\\nb', "a''b", 'a""b', "'' x", 'x ""', '"a\\"b"', "\"a'b\"", 'a\\_#b', '"a" #b', 'a\\c',
+      'x ${HOME}', 'x ${HOME}y', 'x"${HOME}"', "x '${HOME}'", 'x ${NOPE} y', 'x ${NOPE}y', 'x "${NOPE}"', '-i A=1 a\\_b',
+    ];
+    for (const str of STRINGS) {
+      const line = `env -S'${str.replace(/'/g, "'\\''")}'`;
+      const real = verbose(line).split;
+      const r = splitEnvString(parseOf(line).words[0].slice(2));
+      assert.ok('words' in r, line);
+      // A word with `${…}` has its known start, and may vanish when the variable is unset.
+      const fixed = r.words.filter((w) => !w.count);
+      assert.ok(real.length >= fixed.length && real.length <= r.words.length, `${line}: ${JSON.stringify(real)} / ${JSON.stringify(r.words)}`);
+      const known = r.words.length === real.length ? r.words : fixed;
+      known.forEach((w, k) => assert.ok(w.value !== undefined ? real[k] === w.value : real[k].startsWith(w.prefix!), `${line} #${k}: ${real[k]} / ${JSON.stringify(w)}`));
     }
-    // `-i` counts before the first assignment only.
-    const resets = (line: string): string | undefined => parseOf(line).parse.roles.map((r) => r.role).find((r) => r.role === 'command' && r.slot.env === 'reset')?.role;
-    assert.strictEqual(resets("env -S'-i A=1' printf %s, x"), 'command');
-    assert.strictEqual(resets("env -S'A=1 -i' printf %s, x"), undefined);
+    // What env refuses: it exits with 125 and runs nothing.
+    const REFUSED: [string, string][] = [['"a', 'quote'], ["'a", 'quote'], ['a\\', 'backslash-end'], ['a\\x', 'sequence'], ['a\\ b', 'sequence'], ['"a\\cb"', 'c-in-quotes'], ['a $HOME', 'dollar'], ['${1}', 'dollar'], ['${A-x}', 'dollar'], ['x${HOME', 'dollar']];
+    for (const [str, error] of REFUSED) {
+      const line = `env -S'${str.replace(/'/g, "'\\''")}' printf %s, x`;
+      assert.strictEqual(verbose(line).status, 125, line);
+      const r = splitEnvString(parseOf(line).words[0].slice(2));
+      assert.strictEqual('error' in r && r.error, error, line);
+      assert.strictEqual(runs(line).argv, undefined, line);
+    }
+  });
+
+  (usable('env') ? it : it.skip)('env -S: env reads the words of the string in its place, then the rest of the line', () => {
+    const LINES = [
+      // The string is the command and its first arguments; the words after it are more.
+      "env -S 'printf %s,' x y", "env --split-string='printf %s,' b", "env -S 'A=1 printf %s,' x -i", "env -S'-i A=1 printf %s,' x",
+      // A string of options and assignments: the command is after it.
+      "env -S-i A=1 printf %s, a", "env -S'A=1' printf %s, -i", "env -S'-u HOME -i' B=2 printf %s, x", "env --split-string='-i A=1' printf %s, y",
+      // An option that takes a value takes the next word, after the string too.
+      "env -S'-u' HOME printf %s, x", "env -S'-iu' HOME printf %s, x", "env -S'-C' / printf %s, x",
+      // An assignment ends the options: a later `-i` is the command.
+      "env -S'A=1 -i' printf %s, x", "env -S'A=1 B=2' -i printenv",
+      // `-i` before the string, two strings, and `-S` in a cluster or inside the string.
+      "env -i -S'A=1' printf %s, x", "env -S'-i' -S'A=1 printf' %s, x", "env -vS'printf %s,' x", "env -iS'printf %s,' x",
+      "env -S'-u HOME -S\"B=2 printf %s,\"' x", "env -S'printf %s, \\c' x", "env -S'printf #%s,' x", "env -S'printf\\_%s,' x",
+      // The shebang form: the kernel gives the whole rest as one word.
+      "env '-S printf %s, -e' x", "env '-S -i printf %s,' x",
+    ];
+    for (const line of LINES) {
+      const real = verbose(line);
+      const ours = runs(line);
+      assert.deepStrictEqual(ours.argv, real.argv, `${line}: ${real.err}`);
+      assert.strictEqual(ours.reset, real.reset, line);
+    }
   });
 
   // A path, or a wrapper that starts a program, runs the program named like a builtin, whose options differ.

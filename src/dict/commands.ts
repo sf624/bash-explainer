@@ -190,15 +190,6 @@ const shellArgs = (ja: string, en: string): OperandSpec => operand('ARG', ja, en
 /** A word of digits only. */
 const BARE_NUMBER = /^\d+$/;
 /**
- * `env -S'…'`: env splits the string and reads its words as more of its own line. A string of options and
- * assignments only (`-i A=1`, `-u HOME`) leaves the command to the words after it. An option that takes a value
- * needs one in the string (`-S'-u' HOME` takes `HOME`), and an option after an assignment is the command.
- */
-const SPLIT_OPTION = String.raw`(?:-[a-zA-Z]*[uCSP]\s*\S+|--(?:unset|chdir|split-string|path)=\S*|-(?![a-zA-Z]*[uCSP](?:\s|$))\S*)`;
-const SPLIT_OPTIONS_ONLY = new RegExp(String.raw`^\s*(?:${SPLIT_OPTION}(?:\s+|$))*(?:[A-Za-z_]\w*=\S*(?:\s+|$))*$`);
-/** ... and an `-i` (or `-`) among the options, before the first assignment, clears the environment. */
-const SPLIT_RESET = new RegExp(String.raw`^(?=${SPLIT_OPTIONS_ONLY.source})\s*(?:${SPLIT_OPTION}\s+)*(?:-[a-zA-Z]*i[a-zA-Z]*|--ignore-environment|-)(?:\s|$)`);
-/**
  * The operands of a shell: `bash -c 'cmd' NAME ARG…` (the string runs in a new shell; `NAME` is its `$0`),
  * `bash -s ARG…`, and `bash SCRIPT ARG…` (`$N`: the number of the positional parameter).
  */
@@ -729,7 +720,8 @@ export const core: Record<string, CommandSpec> = {
   env: cmd('環境変数を設定してコマンドを実行する。引数なしなら環境変数を一覧表示', 'Run a command with a modified environment, or print the environment', [
     ['-i|--ignore-environment', '空の環境から始める', 'start with an empty environment'],
     ['-u|--unset', '指定した変数を除外', 'remove a variable', 'arg'],
-    ['-S|--split-string', '文字列を空白で分けて、実行するコマンドとその引数にする（shebang で使う）', 'split a string into the command to run and its arguments (useful in shebang lines)', 'arg'],
+    // env reads the words of the string in its place, then the rest of the line (src/argv/envsplit.ts).
+    { names: ['-S', '--split-string'], text: tx('文字列を空白で分けて、env の引数としてその場で読む（オプション、`名前=値`、実行するコマンドとその引数。shebang で使う）', "split a string into words and read them in its place as env's arguments (options, `NAME=value`, the command to run and its arguments; useful in shebang lines)"), value: { name: 'STRING', splice: 'env' } },
     ['-C|--chdir', '先に移動するディレクトリ', 'change to the given directory first', 'arg'],
     ['-0|--null', '各項目を改行でなく NUL で終える', 'end each output line with NUL'],
     ['-v|--debug', '処理の各段階を標準エラー出力に表示する', 'print each step on stderr'],
@@ -743,11 +735,9 @@ export const core: Record<string, CommandSpec> = {
     style: 'posix', longPrefixes: true,
     patternOptions: [{ pattern: /^-$/, text: () => tx('空の環境から始める（`-i` と同じ）', 'start with an empty environment (same as `-i`)') }],
     operands: [
-      // `env -S'-i A=1' cmd`: env splits the string and goes on reading its words, then the rest of the line, as one command line.
-      // A string of options and assignments only leaves the command to the words after it; one with a command ends it, and the words after it are its arguments.
-      { when: { optionValue: ['-S', '--split-string'], matches: SPLIT_RESET }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
-      { when: { optionValue: ['-S', '--split-string'], matches: SPLIT_OPTIONS_ONLY }, pattern: [ASSIGNMENTS, runs()] },
-      { when: { option: ['-S', '--split-string'] }, pattern: [operand('ARG', '`-S` の文字列から作るコマンドへの引数', 'argument to the command made from the string of `-S`', { repeat: '*' })] },
+      // `env -S'-i A=1' cmd`: the interpreter reads the words of the string in its place. A string it cannot
+      // split here (`-S"$cmd"`) may hold the command, so the words after it are only arguments.
+      { when: { unsplit: ['-S', '--split-string'] }, pattern: [operand('ARG', '`-S` の文字列から作るコマンドへの引数', 'argument to the command made from the string of `-S`', { repeat: '*' })] },
       { when: { option: ['-i', '--ignore-environment', '-'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'reset' })] },
       { pattern: [ASSIGNMENTS, runs()] },
     ],
@@ -1169,9 +1159,52 @@ export const core: Record<string, CommandSpec> = {
       config: cmd('設定を取得・変更する', 'Get or set configuration', [['--global', 'ユーザー全体の設定', 'user-wide config'], ['--get', '値を取得', 'get a value']]),
     },
   }),
-  docker: cmd('Docker コンテナを操作する', 'Manage Docker containers', [], { subcommands: dockerSubs }),
-  podman: cmd('Podman: Docker と互換のコンテナツール（デーモン不要、root なしでも動く）', 'Podman: a Docker-compatible container tool (no daemon, runs rootless)', [], { subcommands: dockerSubs }),
-  npm: cmd('Node.js のパッケージマネージャ', 'Node.js package manager', [], {
+  // docker's global options (`docker --help`) come before the subcommand only (cobra with TraverseChildren:
+  // `docker run -H x` is an unknown option of `run`).
+  docker: cmd('Docker コンテナを操作する', 'Manage Docker containers', [
+    ['-H|--host', '接続するデーモンのソケット（`unix:///…`、`tcp://ホスト:ポート`、`ssh://…`）', 'daemon socket to connect to (`unix:///…`, `tcp://host:port`, `ssh://…`)', 'arg'],
+    ['-c|--context', '接続に使うコンテキスト（`docker context use` の既定や DOCKER_HOST より優先）', 'context to connect with (overrides DOCKER_HOST and `docker context use`)', 'arg'],
+    ['--config', 'クライアントの設定ファイルのディレクトリ（既定は `~/.docker`）', 'directory of the client configuration (default `~/.docker`)', 'arg'],
+    ['-D|--debug', 'デバッグ出力を有効にする', 'enable debug output'],
+    ['-l|--log-level', 'ログの水準（`debug`、`info`、`warn`、`error`、`fatal`）', 'log level (`debug`, `info`, `warn`, `error`, `fatal`)', 'arg'],
+    ['--tls', 'TLS を使う（`--tlsverify` でも有効）', 'use TLS (implied by `--tlsverify`)'],
+    ['--tlsverify', 'TLS を使い、デーモンの証明書を検証する', 'use TLS and verify the daemon'],
+    ['--tlscacert', '信頼する CA 証明書のファイル', 'trusted CA certificate file', 'arg'],
+    ['--tlscert', 'クライアント証明書のファイル', 'client certificate file', 'arg'],
+    ['--tlskey', 'クライアントの秘密鍵のファイル', 'client key file', 'arg'],
+    ['-v|--version', '版を表示して終わる', 'print the version and exit'],
+  ], { subcommands: dockerSubs }),
+  // podman's global options (`podman --help`), which its subcommands take too.
+  podman: cmd('Podman: Docker と互換のコンテナツール（デーモン不要、root なしでも動く）', 'Podman: a Docker-compatible container tool (no daemon, runs rootless)', persistent([
+    ['-r|--remote', 'リモートの Podman サービスにつないで操作する', 'work through a remote Podman service'],
+    ['--url', 'リモートの Podman サービスの URL（`unix:///…`、`ssh://…`）', 'URL of the remote Podman service (`unix:///…`, `ssh://…`)', 'arg'],
+    ['-c|--connection', '使う接続の名前（`podman system connection` で登録したもの）', 'name of the connection to use (from `podman system connection`)', 'arg'],
+    ['--identity', 'リモートの接続に使う ssh の鍵', 'ssh key for the remote connection', 'arg'],
+    ['--log-level', 'ログの水準（`debug`、`info`、`warn`、`error`…）', 'log level (`debug`, `info`, `warn`, `error`…)', 'arg'],
+    ['--root', 'ストレージの保存先のディレクトリ', 'directory of the storage', 'arg'],
+    ['--runroot', '実行時の状態を置くディレクトリ', 'directory of the runtime state', 'arg'],
+    ['--storage-driver', 'ストレージのドライバ（`overlay`、`vfs`…）', 'storage driver (`overlay`, `vfs`…)', 'arg'],
+    ['--cgroup-manager', 'cgroup の管理方法（`systemd`、`cgroupfs`）', 'cgroup manager (`systemd`, `cgroupfs`)', 'arg'],
+  ]), { subcommands: dockerSubs }),
+  // npm reads its configuration options anywhere on the line (`npm --prefix dir run build`, `npm run build -w pkg`).
+  npm: cmd('Node.js のパッケージマネージャ', 'Node.js package manager', persistent([
+    ['-g|--global', 'グローバル（パッケージの置き場所全体）を対象にする', 'act on the global packages'],
+    ['-C|--prefix', '指定したディレクトリのプロジェクトを対象にする', 'act on the project in the given directory', 'arg'],
+    ['-w|--workspace', '対象のワークスペース（名前かディレクトリ）', 'workspace to act on (name or directory)', 'arg'],
+    ['-ws|--workspaces', 'すべてのワークスペースで', 'in every workspace'],
+    ['-iwr|--include-workspace-root', 'ワークスペースとともにルートのプロジェクトも', 'the root project too, with the workspaces'],
+    ['--registry', '使うレジストリの URL', 'URL of the registry to use', 'arg'],
+    ['--loglevel', 'ログの水準（`silent`、`error`、`warn`、`info`、`verbose`…）', 'log level (`silent`, `error`, `warn`, `info`, `verbose`…)', 'arg'],
+    ['-s|--silent', '何も表示しない（`--loglevel silent`）', 'print nothing (`--loglevel silent`)'],
+    ['-q|--quiet', '警告とエラーだけを表示する（`--loglevel warn`）', 'print only warnings and errors (`--loglevel warn`)'],
+    ['-f|--force', '確認や安全のための検査を省く', 'skip confirmations and safety checks'],
+    ['-y|--yes', '確認に「はい」と答える', 'answer yes to prompts'],
+    ['--userconfig', '使うユーザー設定ファイル（既定は `~/.npmrc`）', 'user configuration file (default `~/.npmrc`)', 'arg'],
+    ['--cache', 'キャッシュのディレクトリ', 'cache directory', 'arg'],
+    ['--ignore-scripts', 'package.json のスクリプトを実行しない', 'do not run package.json scripts'],
+    ['--dry-run', '実際には何も変えない', 'change nothing'],
+    ['--json', 'JSON で出力する', 'JSON output'],
+  ]), {
     subcommands: {
       install: cmd('依存パッケージをインストールする', 'Install dependencies', [['-D|--save-dev', '開発用依存として追加', 'save as a dev dependency'], ['-g|--global', 'グローバルにインストール', 'install globally']]),
       ci: cmd('lock ファイル通りにクリーンインストールする', 'Clean install from the lock file'),

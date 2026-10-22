@@ -1,6 +1,6 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them, and a short
 // rendering of its result for the tests.
-import type { ArgRole, ArgvParse, ArgWord } from '../../src/argv/interpret';
+import type { ArgRole, ArgvParse, ArgWord, ValueRole } from '../../src/argv/interpret';
 import { argWord } from '../../src/argv/words';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
 import { descendants, field } from '../../src/syntax/tree';
@@ -38,7 +38,18 @@ export function render(parse: ArgvParse, texts: string[], depth = 0): string[] {
   };
   for (const { word, role } of parse.roles) {
     out.push(`${'  '.repeat(depth)}${texts[word]}: ${one(role)}`);
+    // The words a value splices in (`env -S'…'`), marked `»`, or why the program refuses them.
+    const v = valueOf(role);
+    if (v?.split) out.push(...render({ command: '', roles: v.split.roles, end: 0, unmatched: [] }, v.split.words.map((w) => w.value ?? `${w.prefix}…`), depth + 1).map((l) => l.replace(/^(\s*)/, '$1» ')));
+    if (v?.refused) out.push(`${'  '.repeat(depth + 1)}refused: ${v.refused.error} ${v.refused.at}`);
     if ((role.role === 'subcommand' || role.role === 'command') && role.parse) out.push(...render(role.parse, texts, depth + 1));
   }
   return out;
+}
+
+/** An option's value, in its own word or attached (the letter of a cluster that has one). */
+function valueOf(r: ArgRole): ValueRole | undefined {
+  if (r.role === 'value') return r;
+  if (r.role === 'option' || r.role === 'unknown-option') return r.value;
+  return r.role === 'cluster' ? r.letters.map(valueOf).find((v) => v?.split || v?.refused) : undefined;
 }

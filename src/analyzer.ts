@@ -9,7 +9,7 @@ import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { ArgRole, ArgvParse, CommandRole, interpret, ValueRole } from './argv/interpret';
+import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
@@ -671,7 +671,7 @@ export class Analyzer {
       return this.tok(n, 'comment', this.s(
         `シバン（shebang）: このスクリプトを \`${interp}\` で実行することを指定する`,
         `Shebang: run this script with \`${interp}\``,
-      ));
+      ) + this.shebangEnv(interp));
     }
     const own = DIRECTIVE.exec(n.text);
     if (own) {
@@ -684,6 +684,38 @@ export class Analyzer {
       return this.tok(n, 'comment', this.s('ShellCheck への指示コメント（警告の抑制など）', 'ShellCheck directive (e.g. disable a warning)'));
     }
     return this.tok(n, 'comment', this.s('コメント: `#` から行末までは実行されない', 'Comment: everything after `#` is ignored'));
+  }
+
+  /**
+   * `#!/usr/bin/env -S bash -e`: Linux gives the interpreter the rest of the line as one argument, which
+   * `env -S` splits; without `-S`, env looks for a program named with the whole rest (`bash -e`).
+   */
+  private shebangEnv(interp: string): string {
+    const m = /^(?:\S*\/)?env[ \t]+(.*\S)$/.exec(interp);
+    if (!m) return '';
+    const rest = m[1];
+    const env = this.specFor('env')!;
+    // (One word: `rest` is not empty.)
+    const role = interpret(env, [{ value: rest }], { name: 'env', lookup: (name) => this.specFor(name) }).roles[0].role;
+    const letters = role.role === 'cluster' ? role.letters : [role];
+    const value = letters.map((l) => (l.role === 'option' ? l.value : undefined)).find((v) => v?.split || v?.refused);
+    if (value?.refused) {
+      return this.s('。⚠ env はこの文字列を分けられず、何も実行せずに終了ステータス 125 で終わる', '. ⚠ env cannot split this string and exits with status 125, running nothing');
+    }
+    if (!value) {
+      if (!/\s/.test(rest)) return '';
+      return this.s(
+        `。⚠ Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
+        `. ⚠ On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`);
+    }
+    const { words, roles } = value.split!;
+    const cmd = roles.find((r) => r.role.role === 'command');
+    const shown = (k: number): string => `\`${words[k].value ?? `${words[k].prefix}…`}\``;
+    if (!cmd) return this.s('。env -S の文字列にコマンドがないので、スクリプトのパスをコマンドとして実行する', '. The `env -S` string names no command, so env runs the script\'s path as the command');
+    const args = words.slice(cmd.word + 1).map((_, k) => shown(cmd.word + 1 + k));
+    return this.s(
+      `。\`env -S\` が残りを単語に分け、${shown(cmd.word)} を${args.length ? ` ${args.join(' ')} と` : ''}スクリプトのパスを引数にして実行する`,
+      `. \`env -S\` splits the rest into words and runs ${shown(cmd.word)} with ${args.length ? `${args.join(' ')} and ` : ''}the script's path as arguments`);
   }
 
   private block(n: SyntaxNode, kind: Kind, explanation: string): Token {
@@ -1831,7 +1863,7 @@ export class Analyzer {
     const emb = value.spec?.lang && valueLit ? this.embeddedText(valueLit, value.spec.lang, a) : undefined;
     const extra = emb?.note ? ` — ${emb.note}` : '';
     const text = role.role === 'option' ? this.t(role.text) : this.unknownOption(parse.command, role.ambiguous);
-    return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra, emb?.tokens ?? []);
+    return this.tok(a, 'option', text + this.s(`（値: \`${val}\`${known ? ' — ' + this.t(known) : ''}）`, ` (value: \`${val}\`${known ? ' — ' + this.t(known) : ''})`) + extra + this.splicedNote(value), emb?.tokens ?? []);
   }
 
   /** A letter of an option word (`-e` of `-euo`, `c` of `tar cf`), as a token over its character. */
@@ -1873,7 +1905,7 @@ export class Analyzer {
     }
     const known = value.spec?.values?.[val];
     const glued = lit && !isPlainWord(a);
-    raw.explanation = known ? `${val}: ${this.t(known)}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '');
+    raw.explanation = (known ? `${val}: ${this.t(known)}` : this.s(`\`${flag}\` の値`, `Value for \`${flag}\``) + (glued ? this.s(`（クォートを外すと \`${val}\`）`, ` (\`${val}\` after quote removal)`) : '')) + this.splicedNote(value);
     // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
     const lang = value.spec?.lang;
     const emb = lang && lit ? this.embeddedText(lit.offsets ? { text: val, offsets: lit.offsets.slice(value.attached) } : { text: val, base: lit.base! + value.attached! }, lang, a) : undefined;
@@ -1904,7 +1936,58 @@ export class Analyzer {
       const name = names[role.index];
       t.explanation = this.s(`\`${flag}\` の${name}`, `${name[0].toUpperCase()}${name.slice(1)} for \`${flag}\``) + (role.index === 0 ? this.s('（フィルタでは `$` を付けて使う）', ' (use it as `$name` in the filter)') : '');
     }
+    t.explanation += this.splicedNote(role);
     return t;
+  }
+
+  /**
+   * A value whose words the program reads in its place (`env -S'-i bash -e'`): the words and what each is, or
+   * why the program refuses it.
+   */
+  private splicedNote(v: ValueRole): string {
+    const program = this.argCtx!.cmd.split(' ')[0].split('/').pop()!;
+    if (v.refused) {
+      const at = v.refused.at;
+      const why: Record<typeof v.refused.error, string> = {
+        quote: this.s('閉じるクォートがない', 'a quote is not closed'),
+        'backslash-end': this.s('最後がバックスラッシュ', 'it ends in a backslash'),
+        sequence: this.s(`\`${at}\` は使えないエスケープ`, `\`${at}\` is not an escape it knows`),
+        'c-in-quotes': this.s('ダブルクォートの中に `\\c` がある', '`\\c` is inside double quotes'),
+        dollar: this.s('`$` は `${名前}` の形でしか使えない', '`$` is only allowed as `${NAME}`'),
+      };
+      return this.s(`。⚠ ${program} はこの文字列を受け付けず、何も実行せずに終了ステータス 125 で終わる（${why[v.refused.error]}）`,
+        `. ⚠ ${program} refuses this string and exits with status 125, running nothing (${why[v.refused.error]})`);
+    }
+    if (!v.split) return '';
+    const { words, roles } = v.split;
+    const shown = (k: number): string => {
+      const w = words[k];
+      return w.value !== undefined ? `\`${w.value}\`` : this.s(`\`${w.prefix}…\`（\`\${…}\` の値は実行時に決まる）`, `\`${w.prefix}…\` (the value of \`\${…}\` is known at run time)`);
+    };
+    const what = (role: ArgRole): string => {
+      switch (role.role) {
+        case 'option': return this.t(role.text);
+        case 'cluster': return role.letters.map(what).join(this.s('、', ', '));
+        case 'value': return this.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
+        case 'operand':
+          if (role.spec?.assignment) return this.s('コマンドの環境に入れる変数', 'variable for the command');
+          return role.spec ? this.t(role.spec.text) : this.s('引数', 'argument');
+        case 'command': return this.s('実行するコマンド', 'the command to run') + (role.spec ? `: ${this.t(role.spec.summary)}` : '');
+        case 'subcommand': return this.s('サブコマンド', 'subcommand') + `: ${this.t(role.spec.summary)}`;
+        case 'end-of-options': return this.s('オプションの終わり', 'end of options');
+        default: return this.s('辞書にないオプション', 'an option not in the dictionary');
+      }
+    };
+    const items: string[] = [];
+    const walk = (list: RoleAt[]): void => {
+      for (const { word, role } of list) {
+        items.push(`${shown(word)}${this.s(`（${what(role)}）`, ` (${what(role)})`)}`);
+        if ((role.role === 'command' || role.role === 'subcommand') && role.parse) walk(role.parse.roles);
+      }
+    };
+    walk(roles);
+    if (!items.length) return this.s(`。${program} はこれを単語に分けるが、何も残らない`, `. ${program} splits it into no words`);
+    return this.s(`。${program} はこれを単語に分けて、この位置で自分の引数として読む: ${items.join('、')}`, `. ${program} splits it into words and reads them here as its own arguments: ${items.join(', ')}`);
   }
 
   /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */

@@ -45,6 +45,14 @@ export interface CommandSpec {
   dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] };
   subcommands?: Record<string, SubcommandSpec>;
   /**
+   * The program finds its subcommands as cobra does (Go: kubectl, helm, gh): options may come before the
+   * subcommand's name, its own as well as the program's (`kubectl -o yaml get pods`). The subcommand is the
+   * first word that is not an option or its value, where an option not known at that level, written without
+   * `=`, takes the next word as its value (`-x VALUE`, `--name VALUE`), as cobra guesses. The subcommands
+   * of a subcommand are found the same way.
+   */
+  cobra?: boolean;
+  /**
    * A prefix of a subcommand's name (or alias) selects it: a unique one (`true`), or any one, which selects the
    * first subcommand in the list that it starts (`'first'`, as iproute2 reads `ip a` as `ip address` and `ip m`
    * as `ip maddress`).
@@ -137,6 +145,11 @@ export interface ValueSpec {
    * of them (`--env-file`).
    */
   setsEnv?: 'variable' | 'file';
+  /**
+   * The value is split into words that are read in its place, before the words after it, as more of the
+   * command's own words (`env -S'-i A=1 bash -e'`: GNU env's rules, src/argv/envsplit.ts).
+   */
+  splice?: 'env';
 }
 
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'
@@ -196,10 +209,11 @@ export interface OperandSpec {
 
 /**
  * When an alternative applies: an option is given, the mode is chosen, an operand (by its index among the
- * operands) has a known value that matches (`trap 1 2`: a number first makes every word a signal), an option is given
- * with a known value that matches (`env -S'-i A=1'`), or not.
+ * operands) has a known value that matches (`trap 1 2`: a number first makes every word a signal), an option
+ * whose value splices words was given with a value that could not be split (`env -S"$cmd"`: not known;
+ * `env -S'"a'`: refused), or not.
  */
-export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { optionValue: string[]; matches: RegExp } | { not: Condition };
+export type Condition = { option: string[] } | { mode: string } | { operand: number; matches: RegExp } | { unsplit: string[] } | { not: Condition };
 
 /** How the words of a command slot are run. */
 export interface CommandSlot {

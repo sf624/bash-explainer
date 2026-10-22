@@ -283,6 +283,15 @@ export const system: Record<string, CommandSpec> = {
   yarn: cmd('Node.js のパッケージマネージャ（Yarn）', 'Node.js package manager (Yarn)', [
     ['--frozen-lockfile|--immutable', 'yarn.lock を書き換えない（CI 向け。合わなければ失敗）', 'do not change yarn.lock (for CI; fail if it is out of date)'],
     ['--production', '開発用の依存を入れない', 'skip development dependencies'],
+    ...persistent([
+      ['--cwd', '指定したディレクトリで実行する', 'run in the given directory', 'arg'],
+      ['-s|--silent', '余計な出力をしない（Yarn 1）', 'print less (Yarn 1)'],
+      ['--verbose', '詳しく表示する（Yarn 1）', 'verbose output (Yarn 1)'],
+      ['--offline', 'ネットワークを使わず、キャッシュだけを使う（Yarn 1）', 'use only the cache, not the network (Yarn 1)'],
+      ['--non-interactive', '対話的な確認をしない（Yarn 1）', 'do not prompt (Yarn 1)'],
+      ['--network-timeout', 'ネットワークの要求を待つ時間の上限（ミリ秒。Yarn 1）', 'how long to wait for a network request (milliseconds; Yarn 1)', 'arg'],
+      ['--ignore-engines', 'package.json の `engines` の検査を省く（Yarn 1）', 'skip the `engines` check of package.json (Yarn 1)'],
+    ]),
   ], {
     subcommands: {
       install: cmd('依存をインストールする', 'Install dependencies', [['--frozen-lockfile|--immutable', 'yarn.lock を書き換えない（CI 向け）', 'do not change yarn.lock (for CI)'], ['--production', '開発用の依存を入れない', 'skip development dependencies']]),
@@ -375,7 +384,9 @@ export const system: Record<string, CommandSpec> = {
   ], { positional: [pos('ソースファイル', 'source file')], style: 'single-dash' }),
 
   // ---- GitHub ----
-  gh: cmd('GitHub CLI', 'GitHub CLI', ghRepo, {
+  // gh finds its subcommand as cobra does: `gh -R o/r pr list` gives `-R` to `pr`.
+  gh: cmd('GitHub CLI', 'GitHub CLI', [['--version', '版を表示する', 'print the version'], ['-h|--help', 'ヘルプを表示する', 'show help']], {
+    cobra: true,
     subcommands: {
       api: cmd('GitHub の API を呼び出す', 'Call the GitHub API', [
         ['--jq|-q', '結果を指定した jq の式で絞る', 'filter the result with the given jq expression', 'arg lang:jq'],

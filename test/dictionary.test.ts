@@ -229,6 +229,45 @@ describe('the dictionary', () => {
     for (const line of lines) assert.deepStrictEqual(unknown(line), [], line);
   });
 
+  it("finds the subcommand after the tool's own options, and reads them as the tool's", () => {
+    /** `label: explanation` of the tokens, the command's own left out. */
+    const parts = (src: string, lang: 'en' | 'ja' = 'en') => tokens(src, lang).slice(1).filter((t) => t.kind !== 'string').map((t) => `${t.label}: ${t.explanation.replace(/ \(to the shell it is an argument.*$/, '')}`);
+    assert.deepStrictEqual(parts('kubectl -n prod get pods -o wide'), [
+      '-n: namespace', 'prod: Value for `-n`', 'get: Subcommand `kubectl get`: List resources',
+      'pods: resource type and name (`pod/web`, `deployment web`…)', '-o: output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'wide: Value for `-o`',
+    ]);
+    assert.deepStrictEqual(parts('kubectl --context=x -n y logs -f pod'), [
+      '--context=x: kubeconfig context (cluster) to use (value: `x`)', '-n: namespace', 'y: Value for `-n`', "logs: Subcommand `kubectl logs`: Print a pod's logs",
+      '-f: stream the logs', 'pod: pod (or `deploy/name`)',
+    ]);
+    // cobra: a subcommand's own option may come before its name.
+    assert.deepStrictEqual(parts('kubectl -o yaml get pods').slice(0, 3), ['-o: output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'yaml: Value for `-o`', 'get: Subcommand `kubectl get`: List resources']);
+    assert.deepStrictEqual(parts('helm --kube-context x upgrade --install r chart -n ns'), [
+      '--kube-context: kubeconfig context (cluster) to use', 'x: Value for `--kube-context`', 'upgrade: Subcommand `helm upgrade`: Upgrade a release (`--install`: install if missing)',
+      '--install: install if missing', 'r: release name', 'chart: chart', '-n: namespace', 'ns: Value for `-n`',
+    ]);
+    assert.deepStrictEqual(parts('docker --host tcp://h run --rm -it alpine sh').slice(0, 4), [
+      '--host: daemon socket to connect to (`unix:///…`, `tcp://host:port`, `ssh://…`)', 'tcp://h: Value for `--host`', 'run: Subcommand `docker run`: Run a new container', '--rm: remove the container on exit',
+    ]);
+    assert.match(parts('docker --host tcp://h run --rm -it alpine sh').at(-1)!, /^sh: runs `sh`/);
+    // docker's global options come before the subcommand only.
+    assert.match(tokens('docker run -H x alpine').find((t) => t.label === '-H')!.explanation, /not in the dictionary/);
+    assert.deepStrictEqual(parts('git -C repo -c user.name=x commit -m m'), [
+      '-C: run as if started in the given directory', 'repo: Value for `-C`', '-c: run with one setting overridden (`-c name=value`)', 'user.name=x: Value for `-c`',
+      'commit: Subcommand `git commit`: Record staged changes', '-m: commit message', 'm: Value for `-m`',
+    ]);
+    assert.deepStrictEqual(parts('terraform -chdir=infra plan'), [
+      '-chdir=infra: run in the given directory (written before the subcommand) (value: `infra`)', 'plan: Subcommand `terraform plan`: Show the planned changes (nothing changes yet)',
+    ]);
+    assert.match(tokens('terraform plan -chdir=x').find((t) => t.label === '-chdir=x')!.explanation, /not in the dictionary/);
+    assert.deepStrictEqual(parts('gh -R o/r pr list').slice(0, 3), ['-R: repository (`owner/name`)', 'o/r: Value for `-R`', 'pr: Subcommand `gh pr`: Work with pull requests (`create`, `view`, `checkout`, `merge`, `list`…)']);
+    assert.deepStrictEqual(parts('npm --prefix dir run build').slice(0, 3), ['--prefix: act on the project in the given directory', 'dir: Value for `--prefix`', 'run: Subcommand `npm run`: Run a package.json script']);
+    assert.deepStrictEqual(parts('npm -ws test'), ['-ws: in every workspace', 'test: Subcommand `npm test`: Run the test script']);
+    assert.deepStrictEqual(parts('yarn --cwd dir add x').slice(0, 3), ['--cwd: run in the given directory', 'dir: Value for `--cwd`', 'add: Subcommand `yarn add`: Add dependencies']);
+    assert.deepStrictEqual(parts('podman --remote ps -a').slice(0, 2), ['--remote: work through a remote Podman service', 'ps: Subcommand `podman ps`: List containers']);
+    assert.match(parts('kubectl -n prod get pods', 'ja')[2], /^get: サブコマンド `kubectl get`/);
+  });
+
   it('explains options added to older commands, also after a subcommand', () => {
     assert.match(tokens('ls -i --group-directories-first').find((t) => t.label === '-i')!.explanation, /inode/);
     assert.match(tokens('systemctl status -l nginx').find((t) => t.label === '-l')!.explanation, /ellipsize/);
@@ -242,6 +281,8 @@ describe('the dictionary', () => {
     assert.match(tokens('kubectl config --kubeconfig k.yaml view').find((t) => t.label === '--kubeconfig')!.explanation, /kubeconfig file/);
     assert.match(tokens('kubectl logs -f web').find((t) => t.label === '-f')!.explanation, /stream/);
     assert.match(tokens('kubectl logs -k web').find((t) => t.label === '-k')!.explanation, /not in the dictionary/);
+    // `-o` is an option of the subcommands that print resources, not a global one (`kubectl options`).
+    assert.match(tokens('kubectl logs -o json web').find((t) => t.label === '-o')!.explanation, /not in the dictionary/);
     assert.match(tokens('docker compose logs -p proj -f web').find((t) => t.label === '-p')!.explanation, /project name/);
     assert.match(tokens('docker compose run -p 80:80 web').find((t) => t.label === '-p')!.explanation, /publish|port/i);
     assert.match(tokens('ulimit -Hn 4096').find((t) => t.label === '-H')!.explanation, /hard limit/);
@@ -316,10 +357,9 @@ describe('the specs of the dictionary', () => {
       (spec.operands ?? []).forEach((alt, k) => {
         const optionWords = (o: OptionSpec | undefined): string[] => (o ? [o.names[0], ...[o.value ?? []].flat().filter((v) => !v.optional).map(() => 'V')] : []);
         const find = (pred: (o: OptionSpec) => boolean) => (spec.options ?? []).find(pred);
-        // (A condition on an option's value: the option with a value the condition matches.)
-        const valued = alt.when && 'optionValue' in alt.when ? alt.when : undefined;
-        const befores: string[][] = valued ? ['-i', 'A=1', 'w0rd'].filter((x) => valued.matches.test(x)).map((x) => [valued.optionValue[0], x]) : [];
-        const before = !alt.when || 'not' in alt.when || 'operand' in alt.when || valued ? []
+        // (An option whose value splices words, with a string the program refuses: an unclosed quote.)
+        const before = alt.when && 'unsplit' in alt.when ? [alt.when.unsplit[0], '"']
+          : !alt.when || 'not' in alt.when || 'operand' in alt.when ? []
           : 'option' in alt.when ? optionWords(find((o) => o.names.includes((alt.when as { option: string[] }).option[0])) ?? { names: alt.when.option, text: tx('', '') })
           : optionWords(find((o) => o.selects === (alt.when as { mode: string }).mode));
         const item = (o: (typeof alt.pattern)[number]) => (o.assignment ? 'A=1' : o.option ?? (o.command ? 'true' : 'w0rd'));
@@ -331,7 +371,7 @@ describe('the specs of the dictionary', () => {
           const c = alt.when && 'operand' in alt.when ? alt.when : undefined;
           return c ? ws.map((w, i) => (i === c.operand ? ['1', 'w0rd'].find((x) => c.matches.test(x))! : w)) : ws;
         };
-        const fits = (valued ? befores : [before]).some((b) => [once, each, twice].some((ws) => interpret(spec, [...b, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k));
+        const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k);
         if (!fits) unreachable.push(`${path} #${k}`);
       });
     });

@@ -1,6 +1,7 @@
 // Commands with subcommands, compared with the real tools: the subcommand git runs and the words it gets
 // after the global options (`GIT_TRACE`), `git log -N`, the options ip reads only before the object, and the
-// options systemctl reads after the verb. Tools that are missing are skipped.
+// options systemctl reads after the verb, and the subcommand gh finds after options (as cobra does). Tools that
+// are missing are skipped.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -200,6 +201,35 @@ describe('systemctl agrees with the real systemctl', () => {
         assert.ok(['option', 'cluster'].includes(role.role.role) && role.path === 'systemctl status', n);
         if (value) assert.strictEqual(roleOf(`systemctl status ${n}${value} nginx`, value.trim()).role.role, 'value', n);
       }
+    }
+  });
+});
+
+// gh finds its subcommand as cobra does: options before it, its own included, and an option it does not know
+// (without `=`) takes the next word as its value. `--help` prints the usage of the command found, offline.
+describe('gh agrees with the real gh', () => {
+  const ROWS = [
+    'gh -R o/r pr list', 'gh pr -R o/r list', 'gh --repo o/r pr', 'gh pr list -R o/r',
+    // An option gh does not know takes `pr` as its value: "unknown command".
+    'gh -x pr list', 'gh -w pr list', 'gh --foo pr list',
+    // ... unless written with `=`, or as several letters: then `pr` is found, and the option is refused.
+    'gh --foo=1 pr list', 'gh -xy pr list', 'gh -R o/r api',
+  ];
+  (has('gh') ? it : it.skip)('finds the subcommand gh runs, and refuses the same options', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'subcommands-gh-'));
+    try {
+      for (const line of ROWS) {
+        const r = run(`${line} --help`, os.tmpdir(), { ...ENV, GH_CONFIG_DIR: home, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' });
+        const text = r.out + r.err;
+        const found = /^USAGE\n {2}gh (\S+)/m.exec(text)?.[1];
+        const rs = roles(line);
+        const sub = rs.find((x) => x.role.role === 'subcommand' && x.path === 'gh')?.word;
+        if (/unknown command/.test(text)) assert.strictEqual(sub, undefined, `${line}: ${text}`);
+        else if (/unknown (shorthand )?flag/.test(text)) assert.ok(sub && rs.some((x) => x.role.role === 'unknown-option' || (x.role.role === 'cluster' && x.role.letters.some((l) => l.role === 'unknown-option'))), line);
+        else assert.strictEqual(sub, found, `${line}: ${text}`);
+      }
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 });

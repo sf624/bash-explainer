@@ -10,18 +10,39 @@ const device = pos('デバイス（`/dev/sda1`…）', 'device (`/dev/sda1`…)'
 
 // ---- Kubernetes ---------------------------------------------------------------------------------
 
-/** Options of kubectl, which its subcommands take too (a subcommand's own option of the same name wins: `logs -c`). */
+/**
+ * kubectl's global options (`kubectl options`), which every subcommand takes too (a subcommand's own option of
+ * the same name wins). kubectl finds its subcommand as cobra does, so a subcommand's own options may come
+ * before its name too (`kubectl -o yaml get pods`).
+ */
 const kube: OptSpec[] = persistent([
   ['-n|--namespace', '対象の名前空間', 'namespace', 'arg'],
-  ['-A|--all-namespaces', 'すべての名前空間', 'all namespaces'],
   ['--context', '使う kubeconfig のコンテキスト（クラスター）', 'kubeconfig context (cluster) to use', 'arg'],
   ['--kubeconfig', '使う kubeconfig のファイル', 'kubeconfig file to use', 'arg'],
-  ['-o|--output', '出力形式（`yaml`、`json`、`wide`、`name`、`jsonpath=…`）', 'output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'arg'],
-  ['-l|--selector', 'ラベルで絞る（`app=web`）', 'filter by label (`app=web`)', 'arg'],
-  ['-w|--watch', '変化を見張り続ける', 'keep watching for changes'],
-  ['--dry-run', '実際には変更しない（`client`、`server`）', 'do not change anything (`client`, `server`)', 'arg'],
-  ['--timeout', '待つ時間の上限（`60s`）', 'how long to wait (`60s`)', 'arg'],
+  ['--cluster', '使う kubeconfig のクラスター', 'kubeconfig cluster to use', 'arg'],
+  ['--user', '使う kubeconfig のユーザー', 'kubeconfig user to use', 'arg'],
+  ['-s|--server', 'API サーバーのアドレス', 'address of the API server', 'arg'],
+  ['--token', '認証に使うベアラートークン', 'bearer token for authentication', 'arg'],
+  ['--as', '指定したユーザーになりすまして操作する', 'act as the given user (impersonation)', 'arg'],
+  ['--as-group', '指定したグループになりすまして操作する', 'act as the given group (impersonation)', 'arg'],
+  ['--certificate-authority', 'CA 証明書のファイル', 'certificate authority file', 'arg'],
+  ['--client-certificate', 'クライアント証明書のファイル', 'client certificate file', 'arg'],
+  ['--client-key', 'クライアントの秘密鍵のファイル', 'client key file', 'arg'],
+  ['--insecure-skip-tls-verify', 'サーバーの証明書を検証しない（危険）', 'do not verify the server certificate (insecure)'],
+  ['--request-timeout', '1つの要求を待つ時間の上限（`0` は無制限）', 'how long to wait for one request (`0`: no limit)', 'arg'],
+  ['-v|--v', 'ログの詳しさ（`0`〜`9`）', 'log verbosity (`0` to `9`)', 'arg'],
+  ['--cache-dir', 'キャッシュのディレクトリ', 'cache directory', 'arg'],
+  ['--match-server-version', 'クライアントとサーバーの版が同じでなければ失敗する', 'fail unless the client and server versions match'],
+  ['--warnings-as-errors', 'サーバーからの警告をエラーとして扱う', 'treat warnings from the server as errors'],
 ]);
+
+/** Options that several subcommands have (each lists the ones it takes, as `kubectl SUBCOMMAND --help` does). */
+const kubeOutput: OptSpec = ['-o|--output', '出力形式（`yaml`、`json`、`wide`、`name`、`jsonpath=…`）', 'output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'arg'];
+const kubeSelector: OptSpec = ['-l|--selector', 'ラベルで絞る（`app=web`）', 'filter by label (`app=web`)', 'arg'];
+const kubeAll: OptSpec = ['-A|--all-namespaces', 'すべての名前空間', 'all namespaces'];
+const kubeWatch: OptSpec = ['-w|--watch', '変化を見張り続ける', 'keep watching for changes'];
+const kubeDryRun: OptSpec = ['--dry-run', '実際には変更しない（`client`、`server`）', 'do not change anything (`client`, `server`)', 'arg'];
+const kubeTimeout: OptSpec = ['--timeout', '待つ時間の上限（`60s`）', 'how long to wait (`60s`)', 'arg'];
 
 /** The manifests to act on: options of the subcommands that take resources (not `logs`, where `-f` follows). */
 const kubeFiles: OptSpec[] = [
@@ -31,40 +52,57 @@ const kubeFiles: OptSpec[] = [
 
 const resource = pos('リソースの種類と名前（`pod/web`、`deployment web`…）', 'resource type and name (`pod/web`, `deployment web`…)');
 
-const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a Kubernetes cluster', [...kube, ...kubeFiles], {
+const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a Kubernetes cluster', kube, {
+  cobra: true,
   subcommands: {
-    get: cmd('リソースを一覧表示する', 'List resources', kubeFiles, { positional: [resource] }),
-    describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', kubeFiles, { positional: [resource] }),
-    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kubeFiles, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
-    create: cmd('リソースを作る', 'Create resources', kubeFiles, { positional: [resource] }),
-    delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
-    logs: cmd('Pod のログを表示する', "Print a pod's logs", [['-f|--follow', 'ログを流し続ける', 'stream the logs'], ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
+    get: cmd('リソースを一覧表示する', 'List resources', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeWatch], { positional: [resource] }),
+    describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', [...kubeFiles, kubeSelector, kubeAll], { positional: [resource] }),
+    apply: cmd('マニフェストの内容にリソースを合わせる（なければ作る）', 'Make resources match the manifests (create them if missing)', [...kubeFiles, kubeOutput, kubeSelector, kubeDryRun, ['--server-side', 'サーバー側で適用する', 'apply on the server']]),
+    create: cmd('リソースを作る', 'Create resources', [...kubeFiles, kubeOutput, kubeDryRun], { positional: [resource] }),
+    delete: cmd('リソースを削除する', 'Delete resources', [...kubeFiles, kubeSelector, kubeAll, kubeDryRun, kubeTimeout, ['--ignore-not-found', 'なくてもエラーにしない', 'no error if it does not exist']], { positional: [resource] }),
+    logs: cmd('Pod のログを表示する', "Print a pod's logs", [['-f|--follow', 'ログを流し続ける', 'stream the logs'], kubeSelector, ['-c|--container', 'コンテナ', 'container', 'arg'], ['--tail', '末尾の行数', 'lines from the end', 'arg'], ['-p|--previous', '再起動する前のコンテナのログ', 'logs of the previous container instance']], { positional: [pos('Pod（`deploy/名前` も可）', 'pod (or `deploy/name`)')] }),
     exec: cmd('コンテナの中でコマンドを実行する（`--` の後がコマンド）', 'Run a command in a container (the command follows `--`)', [...kubeFiles, ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'コンテナ', 'container', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
-    run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--env', '環境変数を設定（`名前=値`）', 'set an environment variable (`NAME=value`)', 'arg setenv'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
+    run: cmd('Pod を起動する（`--` の後がコンテナで実行するコマンド）', 'Start a pod (the command to run in the container follows `--`)', [...kubeFiles, kubeOutput, kubeDryRun, ['--image', 'コンテナイメージ', 'container image', 'arg'], ['--env', '環境変数を設定（`名前=値`）', 'set an environment variable (`NAME=value`)', 'arg setenv'], ['--rm', '終了したら Pod を削除する', 'delete the pod when it exits'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['--restart', '再起動の方針（`Never`、`OnFailure`、`Always`）', 'restart policy (`Never`, `OnFailure`, `Always`)', 'arg']], { operands: [{ pattern: [operand('NAME', 'Pod の名前', 'pod name', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
     debug: cmd('Pod にデバッグ用のコンテナを付けて起動する（`--` の後がそのコンテナで実行するコマンド）', 'Attach a debugging container to a pod (the command to run follows `--`)', [...kubeFiles, ['--image', 'デバッグ用のコンテナイメージ', 'image of the debugging container', 'arg'], ['-i|--stdin', '標準入力をつなぐ', 'pass stdin'], ['-t|--tty', '端末を割り当てる', 'allocate a TTY'], ['-c|--container', 'デバッグ用コンテナの名前', 'name of the debugging container', 'arg'], ['--target', '名前空間を共有するコンテナ', 'container whose process namespace to share', 'arg']], { operands: [{ pattern: [operand('POD', 'Pod', 'pod', { repeat: '*' })] }], dashDash: { then: [{ name: 'COMMAND', text: COMMAND_TEXT, command: { run: 'exec', where: 'container', env: 'none' } }] } }),
     'port-forward': cmd('手元のポートを Pod やサービスにつなぐ', 'Forward local ports to a pod or service', kubeFiles, { positional: [pos('Pod やサービス', 'pod or service'), pos('ポート（`手元:相手`）', 'ports (`local:remote`)')] }),
-    rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', kubeFiles),
-    wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kubeFiles, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
-    config: cmd('kubeconfig を操作する（`use-context`、`current-context`…）', 'Manage kubeconfig (`use-context`, `current-context`…)'),
+    rollout: cmd('デプロイの進み具合を操作する（`status`、`restart`、`undo`）', 'Manage rollouts (`status`, `restart`, `undo`)', [...kubeFiles, kubeOutput, kubeSelector, kubeWatch, kubeDryRun, kubeTimeout]),
+    wait: cmd('条件を満たすまで待つ（`--for=condition=Ready`）', 'Wait for a condition (`--for=condition=Ready`)', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeTimeout, ['--for', '待つ条件（`condition=Ready`、`delete`…）', 'condition to wait for (`condition=Ready`, `delete`…)', 'arg']], { positional: [resource] }),
+    config: cmd('kubeconfig を操作する（`use-context`、`current-context`…）', 'Manage kubeconfig (`use-context`, `current-context`…)', [kubeOutput]),
     'cluster-info': cmd('クラスターの情報を表示する', 'Show cluster information', kubeFiles),
-    scale: cmd('レプリカ数を変える', 'Change the number of replicas', [...kubeFiles, ['--replicas', 'レプリカ数', 'number of replicas', 'arg']], { positional: [resource] }),
-    patch: cmd('リソースの一部を書き換える', 'Change part of a resource', [...kubeFiles, ['-p|--patch', '書き換える内容（JSON か YAML）', 'the patch (JSON or YAML)', 'arg'], ['--type', '書き換え方（`merge`、`json`、`strategic`）', 'patch type (`merge`, `json`, `strategic`)', 'arg']], { positional: [resource] }),
-    label: cmd('ラベルを付ける', 'Set labels', kubeFiles, { positional: [resource] }),
-    annotate: cmd('注釈を付ける', 'Set annotations', kubeFiles, { positional: [resource] }),
-    version: cmd('クライアントとサーバーの版を表示する', 'Show client and server versions', kubeFiles),
+    scale: cmd('レプリカ数を変える', 'Change the number of replicas', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun, kubeTimeout, ['--replicas', 'レプリカ数', 'number of replicas', 'arg']], { positional: [resource] }),
+    patch: cmd('リソースの一部を書き換える', 'Change part of a resource', [...kubeFiles, kubeOutput, kubeDryRun, ['-p|--patch', '書き換える内容（JSON か YAML）', 'the patch (JSON or YAML)', 'arg'], ['--type', '書き換え方（`merge`、`json`、`strategic`）', 'patch type (`merge`, `json`, `strategic`)', 'arg']], { positional: [resource] }),
+    label: cmd('ラベルを付ける', 'Set labels', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun], { positional: [resource] }),
+    annotate: cmd('注釈を付ける', 'Set annotations', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeDryRun], { positional: [resource] }),
+    version: cmd('クライアントとサーバーの版を表示する', 'Show client and server versions', [kubeOutput]),
   },
 });
 
-const helmCommon: OptSpec[] = [
+/** helm's global options (`helm --help`), which every subcommand takes too; helm finds its subcommand as cobra does. */
+const helmGlobal: OptSpec[] = persistent([
   ['-n|--namespace', '対象の名前空間', 'namespace', 'arg'],
+  ['--kube-context', '使う kubeconfig のコンテキスト（クラスター）', 'kubeconfig context (cluster) to use', 'arg'],
+  ['--kubeconfig', '使う kubeconfig のファイル', 'kubeconfig file to use', 'arg'],
+  ['--debug', '詳しく表示する', 'verbose output'],
+  ['--kube-apiserver', 'API サーバーのアドレスとポート', 'address and port of the API server', 'arg'],
+  ['--kube-as-user', '指定したユーザーになりすまして操作する', 'act as the given user (impersonation)', 'arg'],
+  ['--kube-as-group', '指定したグループになりすまして操作する', 'act as the given group (impersonation)', 'arg'],
+  ['--kube-token', '認証に使うベアラートークン', 'bearer token for authentication', 'arg'],
+  ['--kube-ca-file', 'API サーバーの CA 証明書のファイル', 'certificate authority file of the API server', 'arg'],
+  ['--kube-insecure-skip-tls-verify', 'API サーバーの証明書を検証しない（危険）', 'do not verify the certificate of the API server (insecure)'],
+  ['--registry-config', 'レジストリの設定ファイル', 'registry configuration file', 'arg'],
+  ['--repository-config', 'リポジトリの一覧のファイル', 'file that lists the repositories', 'arg'],
+  ['--repository-cache', 'リポジトリの索引のキャッシュのディレクトリ', 'directory of the cached repository indexes', 'arg'],
+]);
+/** Options of the subcommands that install or render a chart. */
+const helmCommon: OptSpec[] = [
   ['-f|--values', '値のファイル（values.yaml）', 'values file', 'arg'],
   ['--set', '値を1つ上書きする（`キー=値`）', 'set one value (`key=value`)', 'arg'],
   ['--create-namespace', '名前空間がなければ作る', 'create the namespace if missing'],
   ['--version', 'チャートの版', 'chart version', 'arg'],
   ['--wait', 'リソースが準備できるまで待つ', 'wait until the resources are ready'],
   ['--timeout', '待つ時間の上限', 'how long to wait', 'arg'],
-  ['--kube-context', '使うクラスター', 'cluster context', 'arg'],
 ];
+const helmWait: OptSpec[] = [['--wait', 'リソースが消えるまで待つ', 'wait until the resources are deleted'], ['--timeout', '待つ時間の上限', 'how long to wait', 'arg']];
 
 // ---- Clouds ---------------------------------------------------------------------------------------
 
@@ -75,7 +113,6 @@ const tfCommon: OptSpec[] = [
   ['-var-file', '変数のファイル（`.tfvars`）', 'variables file (`.tfvars`)', 'arg'],
   ['-out', '計画を保存するファイル', 'file to save the plan in', 'arg'],
   ['-target', '指定したリソースだけを対象にする', 'only the given resource', 'arg'],
-  ['-chdir', '指定したディレクトリで実行する', 'run in the given directory', 'arg'],
   ['-backend-config', 'バックエンドの設定（`init`）', 'backend configuration (`init`)', 'arg'],
   ['-upgrade', 'プロバイダやモジュールを更新する（`init`）', 'upgrade providers and modules (`init`)'],
   ['-check', '整形が必要なら失敗する（`fmt`）', 'fail if formatting is needed (`fmt`)'],
@@ -119,17 +156,18 @@ export const ops: Record<string, CommandSpec> = {
   poetry: cmd('Python のパッケージ・プロジェクト管理ツール（Poetry）', 'Python package and project manager (Poetry)', [], {
     subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
   }),
-  helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmCommon, {
+  helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmGlobal, {
+    cobra: true,
     subcommands: {
       install: cmd('チャートを入れる（`名前 チャート`）', 'Install a chart (`name chart`)', helmCommon, { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),
       upgrade: cmd('リリースを更新する（`--install` でなければ入れる）', 'Upgrade a release (`--install`: install if missing)', [...helmCommon, ['-i|--install', 'なければ入れる', 'install if missing']], { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),
-      uninstall: cmd('リリースを削除する', 'Uninstall a release', helmCommon, { positional: [pos('リリース名', 'release name')] }),
+      uninstall: cmd('リリースを削除する', 'Uninstall a release', helmWait, { positional: [pos('リリース名', 'release name')] }),
       template: cmd('マニフェストを生成して表示する（クラスターには適用しない）', 'Render the manifests without applying them', helmCommon, { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),
-      lint: cmd('チャートを検査する', 'Check a chart', helmCommon, { positional: [pos('チャートのディレクトリ', 'chart directory')] }),
+      lint: cmd('チャートを検査する', 'Check a chart', helmCommon.slice(0, 2), { positional: [pos('チャートのディレクトリ', 'chart directory')] }),
       repo: cmd('チャートのリポジトリを管理する（`add`、`update`）', 'Manage chart repositories (`add`, `update`)'),
       dependency: cmd('チャートの依存を管理する（`update`、`build`）', "Manage a chart's dependencies (`update`, `build`)"),
       package: cmd('チャートを .tgz にまとめる', 'Package a chart into a .tgz'),
-      list: cmd('リリースを一覧表示する', 'List releases', [...helmCommon, ['-A|--all-namespaces', 'すべての名前空間', 'all namespaces']]),
+      list: cmd('リリースを一覧表示する', 'List releases', [['-A|--all-namespaces', 'すべての名前空間', 'all namespaces']]),
       push: cmd('チャートを OCI レジストリに送る', 'Push a chart to an OCI registry'),
       version: cmd('版を表示する', 'Show the version'),
     },
@@ -150,7 +188,13 @@ export const ops: Record<string, CommandSpec> = {
     },
   }),
   kubeadm: cmd('Kubernetes のクラスターを構築する（`init`、`join`、`reset`）', 'Set up Kubernetes clusters (`init`, `join`, `reset`)', [['--config', '設定ファイル', 'configuration file', 'arg']]),
-  terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', persistent(tfCommon), {
+  // `-chdir` and the version and help options are terraform's own, before the subcommand only.
+  terraform: cmd('Terraform: インフラをコードで管理する', 'Terraform: infrastructure as code', [
+    ['-chdir', '指定したディレクトリで実行する（サブコマンドより前に書く）', 'run in the given directory (written before the subcommand)', 'arg'],
+    ['-version|-v|--version', '版を表示する', 'print the version'],
+    ['-help|-h|--help', 'ヘルプを表示する', 'show help'],
+    ...persistent(tfCommon),
+  ], {
     style: 'single-dash',
     subcommands: {
       init: tf('作業ディレクトリを準備する（プロバイダやモジュールを取得）', 'Prepare the working directory (download providers and modules)'),
