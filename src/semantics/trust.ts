@@ -92,6 +92,9 @@ const joined = (values: Value[]): Value =>
 
 let foreignParser: BashParser | undefined;
 
+/** Thrown when the scan finds that nothing is trusted (see `Scan.blindFor`). */
+class StopScan {}
+
 class Scan {
   readonly writes = new Map<string, Write[]>();
   /** The foreign texts read, by function (see `foreign`). */
@@ -124,17 +127,28 @@ class Scan {
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
 
-  constructor(root: SyntaxNode) {
+  constructor(root: SyntaxNode, private readonly stop: boolean) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       n.children.forEach(defs);
     };
     defs(root);
-    this.visit(root, { fn: undefined, foreign: false }, root);
+    try {
+      this.visit(root, { fn: undefined, foreign: false }, root);
+      this.finish();
+    } catch (e) {
+      /* c8 ignore next -- only `StopScan` is thrown on purpose */
+      if (!(e instanceof StopScan)) throw e;
+    }
   }
 
+  /**
+   * Nothing is trusted, for `why`: the scan stops there (`StopScan`), since nothing it finds after would count, unless
+   * it is read for the facts of its statements (`stop` off).
+   */
   private blindFor(why: string): void {
     this.blind ??= why;
+    if (this.stop) throw new StopScan();
   }
 
   private write(name: string, w: Where, plain: boolean, value: Value, nameref = false): void {
@@ -584,7 +598,7 @@ class Scan {
   }
 
   /** What is left once the whole script is read: subscripts, integers, the values read as arithmetic, callbacks. */
-  finish(): void {
+  private finish(): void {
     for (const s of this.subscripts) {
       if (s.owner && !this.associative.has(s.array) && !/^\s*(?:\d+|@|\*|\$\(\([^()]*\)\))\s*$/.test(s.text)) this.fails.add(s.owner);
       if (!this.associative.has(s.array)) this.arithText(s.text, s.where, s.owner);
@@ -656,13 +670,23 @@ class Scan {
 }
 
 const trusts = new WeakMap<SyntaxNode, Trust>();
+/** The same, read to the end even when nothing is trusted: for the facts of its statements (`Walker.facts`). */
+const factTrusts = new WeakMap<SyntaxNode, Trust>();
 
-/** The trust of the decisions over the script `root` (cached per tree). */
-export function scriptTrust(root: SyntaxNode): Trust {
-  const hit = trusts.get(root);
+/**
+ * The trust of the decisions over the script `root` (cached per tree). `stop`: the scan stops at the first reason to
+ * trust nothing; off, it reads the whole tree, for the facts of its statements.
+ */
+export function scriptTrust(root: SyntaxNode, stop = true): Trust {
+  const cache = stop ? trusts : factTrusts;
+  const hit = cache.get(root);
   if (hit) return hit;
-  const scan = new Scan(root);
-  scan.finish();
+  const scan = new Scan(root, stop);
+  if (stop && scan.blind !== undefined) {
+    const out = { ...BLIND, blind: scan.blind };
+    trusts.set(root, out);
+    return out;
+  }
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
   const trust: Trust = {
@@ -680,7 +704,7 @@ export function scriptTrust(root: SyntaxNode): Trust {
     },
     mayFail: (n) => scan.fails.has(n),
   };
-  trusts.set(root, trust);
+  cache.set(root, trust);
   return trust;
 }
 

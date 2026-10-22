@@ -936,6 +936,20 @@ describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design
     assert.strictEqual(decided('y=after; case "$1" in *) y=yes ;;& *) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), undefined);
     assert.strictEqual(decided('y=after; case "$1" in a) ;; *) y=yes ;& b) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), undefined);
     assert.strictEqual(decided('y=after; case "$1" in *) y=yes ;; *) if [ "$y" = after ]; then :; fi ;; esac', 'if_statement'), 'true y=after');
+    // `;;&` goes on testing every pattern after it, not only the next one; `;&` runs the next list only (bash prints V).
+    assert.strictEqual(decided('y=0; case "$1" in a*) y=1 ;;& b) y=2 ;; *) if [ "$y" = 1 ]; then echo V; fi ;; esac', 'if_statement'), undefined);
+    assert.strictEqual(decided('y=0; case "$1" in a*) y=1 ;;& b) y=2 ;& c) y=3 ;; *) if [ "$y" = 1 ]; then echo V; fi ;; esac', 'if_statement'), undefined);
+    assert.strictEqual(decided('y=0; case "$1" in a) y=1 ;& b) y=2 ;; *) if [ "$y" = 1 ]; then echo V; fi ;; esac', 'if_statement'), 'false y=0');
+    // A function walked in a subshell, where its error ends the subshell, is walked again where it ends a line: bash
+    // goes on after the line of `if g`.
+    assert.strictEqual(dead('g() { echo $(( 1 / 0 )); }\n( g )\ng\n: M'), false);
+    assert.strictEqual(dead('g() { echo $(( 1 / 0 )); }\n( g || : )\nif g; then :; fi\n: M'), false);
+    // A compound assignment's subscript in an eval or trap string may fail too: bash discards the rest of the line.
+    assert.strictEqual(decided("y=before; eval 'a=([1/0]=1)'; y=after\n[ \"$y\" = after ] && :"), undefined);
+    assert.strictEqual(decided("y=before; eval 'a=( [1/0]=1 )'; y=after\n[ \"$y\" = after ] && :"), undefined);
+    assert.ok(blind("trap 'a=([1/0]=1)' USR1\ny=before; kill -USR1 $$; y=after"));
+    // (Also when the string alone reads a name it does not set: its scan still gives the facts of its statements.)
+    assert.strictEqual(decided("n=0; v=a; eval 'arr=([1 / n]=1)'; v=01\n[ \"$v\" = 01 ] && :"), undefined);
   });
   it('trusts in another shell no more than in the script that starts it', () => {
     /** What the first list of the last string of `src` (`bash -c`) decides. */

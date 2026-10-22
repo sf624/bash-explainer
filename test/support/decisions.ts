@@ -121,7 +121,10 @@ class Generator {
     const v = this.chance(0.98) ? this.pick(this.counters) : this.pick(this.plain);
     // (What writes text not known: mostly `r`, which arithmetic does not read.)
     const t = this.chance(0.9) ? 'r' : v;
-    switch (Math.floor(this.r() * 20)) {
+    switch (Math.floor(this.r() * 22)) {
+      // (A compound assignment's subscripts are arithmetic, which may fail.)
+      case 20: return `arr=([${this.pick([v, '1', `1 / ${v}`, '1/0'])}]=x)`;
+      case 21: return `arr=( [${v}]=x [${this.pick(['0', v])}+1]=y )`;
       case 0: return `(( ${v}++ ))`;
       case 1: return `let ${v}+=1`;
       case 2: return `arr[${v}++]=x`;
@@ -160,7 +163,7 @@ class Generator {
   private stmt(inLoop: number, inFn: boolean): string {
     const body = (): string => this.block(inLoop, inFn);
     const loopBody = (): string => this.block(inLoop + 1, inFn);
-    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 32))) {
+    switch (Math.floor(this.r() * (this.depth > 3 ? 8 : 34))) {
       case 0: case 1: case 2: return this.assign();
       case 3: case 4: return this.otherWrite();
       case 5: return this.cond();
@@ -180,13 +183,16 @@ class Generator {
       case 13: case 14: {
         const v = this.pick(this.plain);
         const id = this.probe('case_statement');
-        const k = 1 + Math.floor(this.r() * 3);
+        // (Up to 5 items, mixing the terminators.)
+        const k = 1 + Math.floor(this.r() * 5);
         const items: string[] = [];
         for (let i = 0; i < k; i++) {
           const end = i === k - 1 ? ';;' : this.pick([';;', ';;', ';&', ';;&']);
           items.push(`${this.pick(['a', 'a*', '"$mode"', '$flag', '[0-9]', '*', 'fast|slow', '@(a|b)', '?', 'A', '""', 'yes|no'])}) ⟦k:${id}:${i}⟧${body()} ${end}`);
         }
-        return `⟦s:${id}⟧⟦d:${id}⟧case ${this.word(v)} in ${items.join(' ')} esac⟦e:${id}⟧`;
+        // (A word not known, too: then every list may run, after those before it that end with `;&` or `;;&`.)
+        const word = this.chance(0.4) ? this.pick(['"$r"', '"$1"', '$(echo abc)']) : this.word(v);
+        return `⟦s:${id}⟧⟦d:${id}⟧case ${word} in ${items.join(' ')} esac⟦e:${id}⟧`;
       }
       case 15: case 16: {
         const until = this.chance(0.3);
@@ -216,7 +222,11 @@ class Generator {
       // Strings the walk runs (docs/design/semantics.md, 4.13): jumps, errors and conditions in them.
       case 29: return `eval '${this.pick([inLoop ? 'break' : ':', inLoop ? 'continue' : ':', inFn ? 'return 1' : ':', 'exit', 'echo $(( 1 / 0 )); mode=e', 'n=$(( 1 / n ))',
         'flag=e; [ "$mode" = a ] && flag=f', 'if [ "$v" = 1 ]; then mode=g; else exit; fi', 'q=1/0', 'q=2'])}'; ${this.mark()}`;
-      case 30: return `trap '${this.pick(['mode=t', 'flag=$mode', ':'])}' ${this.pick(['EXIT', 'USR1', 'INT'])}`;
+      // (Actions that may fail, return or break, and a signal that runs them.)
+      case 30: return `trap '${this.pick(['mode=t', 'flag=$mode', ':', 'arr=([1/0]=1)', 'echo $(( 1 / 0 ))', 'q=1+', 'return', 'break', 'flag=t; [ "$mode" = a ] && exit'])}' ${this.pick(['EXIT', 'USR1', 'USR1', 'INT'])}`;
+      // (Then an assignment on the same line, which an error there discards.)
+      case 31: return `kill -USR1 $$; ${this.assign()}`;
+      case 32: return `eval '${this.pick(['arr=([1/0]=1)', 'arr=( [n]=1 )', 'arr=([1 / n]=1); mode=c'])}'; ${this.assign()}`;
       default: return this.mark();
     }
   }
@@ -234,6 +244,8 @@ class Generator {
     if (this.chance(0.4)) lines.push('declare -A m=([a]=1); m[$mode]=2');
     // (An integer that eval strings give text: an error there may end the line of eval too.)
     if (this.chance(0.5)) lines.push('declare -i q=0');
+    // (So that `kill -USR1 $$` does not end the script, unless a trap the script sets resets it.)
+    if (this.chance(0.7)) lines.push("trap ':' USR1");
     for (const name of ['f', 'g']) {
       if (!this.chance(0.7)) continue;
       lines.push(`⟦D⟧${name}() { ${this.block(0, true)}; }⟦E⟧`);

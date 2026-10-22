@@ -664,9 +664,6 @@ const CALL_DEPTH = 64;
 let aliasParser: BashParser | undefined;
 const aliasTrees = new Map<string, SyntaxTree>();
 
-/** What the trust scan finds of the statements of each string's tree (`Walker.facts`). */
-const stringFacts = new WeakMap<SyntaxNode, Trust>();
-
 /** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
 const owners = new WeakMap<SyntaxTree, NestedScript>();
 /** The same, by the tree's root. */
@@ -1025,12 +1022,8 @@ class Walker {
   private facts(n: SyntaxNode): Trust {
     if (this.blind) return this.trust;
     const root = rootOf(n);
-    if (root === this.root) return this.trust;
-    let facts = stringFacts.get(root);
-    // (A string with no subscript `a[`, no `${`, no `[[` and no `-v` has no subscript, offset or test that reads
-    // arithmetic: it needs no scan.)
-    if (!facts) stringFacts.set(root, (facts = /\w\[|\$\{|\[\[|-v/.test(root.text) ? scriptTrust(root) : BLIND));
-    return facts;
+    // (Read to its end: a string's scan may find a reason to trust nothing, but its facts still hold.)
+    return root === this.root ? this.trust : scriptTrust(root, false);
   }
 
   /** The root of the tree the walk starts from. */
@@ -1544,12 +1537,18 @@ class Walker {
         }
         const ends: ShellState[] = [];
         let always = false;
-        // (A list after `;&` or `;;&` may also start from the state the one before left.)
-        let after: ShellState | undefined;
+        // A list may start from the entry state (its pattern is tested), from the end of the list just before it when
+        // that one ends with `;&` (bash runs the next list), or from the end of any list before it that ends with `;;&`
+        // (bash goes on testing the patterns after it).
+        const tested: ShellState[] = [];
+        let fallen: ShellState | undefined;
         for (const item of items) {
-          const end = this.sequence(item.children, after ? merge([st, after], this.posix) : st);
+          const from = [...tested, ...(fallen ? [fallen] : [])];
+          const end = this.sequence(item.children, from.length ? merge([st, ...from], this.posix) : st);
           ends.push(end);
-          after = item.children.some((c) => c.type === ';&' || c.type === ';;&') ? end : undefined;
+          const term = item.children.find((c) => c.type === ';&' || c.type === ';;&')?.type;
+          if (term === ';;&') tested.push(end);
+          fallen = term === ';&' ? end : undefined;
           // A `*)` branch takes every value that reaches it.
           if (fields(item, 'value').some((v) => v.text === '*')) always = true;
         }
@@ -2534,8 +2533,9 @@ class Walker {
     } else {
       const walks = this.walks.get(def) ?? [];
       if (!this.silent) this.walks.set(def, walks);
-      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not.)
-      const how = `${!!this.dead} ${!!this.quiet}`;
+      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not, where an
+      // error ends a line or a subshell.)
+      const how = `${!!this.dead} ${!!this.quiet} ${!!this.unitTarget()}`;
       const seen = walks.find((w) => w.how === how && (w.entry === st || sameState(w.entry, st)));
       // (A walk reused gives again the states where an error in it ended the line: see `abort`.)
       const unit = this.unitTarget();
