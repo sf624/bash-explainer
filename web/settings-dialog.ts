@@ -17,6 +17,12 @@ const TEXT = {
     unsaved: 'This browser does not let the page keep them: they last until the page is closed.',
     groups: { display: 'Display', checks: 'Checks', files: 'Files', dictionary: 'Dictionary' },
     reset: 'Reset to defaults',
+    clear: 'Clear stored data',
+    clearDesc: 'Removes everything this page keeps in this browser: the settings, the theme, the size of the panes, read mode and the first-run tips. They go back to their defaults at once.',
+    clearAsk: 'Clear all of it? This cannot be undone.',
+    clearYes: 'Clear',
+    clearNo: 'Cancel',
+    cleared: 'Cleared. Everything is back to its defaults.',
     close: 'Close',
     add: 'Add',
     remove: (v: string) => `Remove ${v}`,
@@ -51,6 +57,12 @@ const TEXT = {
     unsaved: 'このブラウザではページが設定を保存できません。ページを閉じるまで有効です。',
     groups: { display: '表示', checks: 'チェック', files: 'ファイル', dictionary: '辞書' },
     reset: '既定値に戻す',
+    clear: '保存したデータを消去',
+    clearDesc: 'このページがこのブラウザに保存しているものをすべて消します。設定、テーマ、画面の分割の大きさ、閲覧モード、初回のヒントです。すぐに既定の状態に戻ります。',
+    clearAsk: 'すべて消去しますか？ 元に戻せません。',
+    clearYes: '消去',
+    clearNo: 'キャンセル',
+    cleared: '消去しました。すべて既定の状態に戻りました。',
     close: '閉じる',
     add: '追加',
     remove: (v: string) => `${v} を削除`,
@@ -88,6 +100,8 @@ export interface SettingsHost {
   defaults(): Settings;
   /** Whether the page can keep the settings. */
   canSave(): boolean;
+  /** Removes everything the page keeps in the browser and returns the page to its defaults. */
+  clearAll(): void;
   /** Warning codes to suggest (those in the script now). */
   codes(): string[];
 }
@@ -116,6 +130,8 @@ export class SettingsDialog {
   private status?: { error: boolean; text: string; ignored?: Ignored[] };
   /** The paste box: open or not, and its text. */
   private paste = { open: false, text: '' };
+  /** Clearing the stored data: asked for, then done. */
+  private clearing: 'ask' | 'done' | undefined;
 
   constructor(dialog: HTMLDialogElement, private host: SettingsHost) {
     this.dialog = dialog;
@@ -145,6 +161,7 @@ export class SettingsDialog {
   }
 
   show(): void {
+    this.clearing = undefined;
     this.render();
     this.dialog.showModal();
     this.dialog.querySelector<HTMLElement>('.settings-body')?.scrollTo(0, 0);
@@ -251,6 +268,37 @@ export class SettingsDialog {
       details, status);
   }
 
+  /** The "Clear stored data" group: a button, then a confirmation in the dialog before anything is removed. */
+  private clear(lang: Lang): HTMLElement {
+    const t = TEXT[lang];
+    const button = (id: string, text: string, fn: () => void) => {
+      const b = el('button', { type: 'button', id, textContent: text });
+      b.addEventListener('click', fn);
+      return b;
+    };
+    const ask = (state: 'ask' | undefined) => {
+      this.clearing = state;
+      this.refresh();
+      document.getElementById(state ? 'settings-clear-yes' : 'settings-clear')?.focus();
+    };
+    const status = el('div', { id: 'settings-clear-status', className: 'settings-io-status' });
+    status.setAttribute('role', 'status');
+    const buttons = this.clearing === 'ask'
+      ? [el('span', { textContent: t.clearAsk }), button('settings-clear-yes', t.clearYes, () => {
+        this.draft = undefined;
+        this.host.clearAll();
+        this.clearing = 'done';
+        this.refresh();
+      }), button('settings-clear-no', t.clearNo, () => ask(undefined))]
+      : [button('settings-clear', t.clear, () => ask('ask'))];
+    if (this.clearing === 'done') status.append(el('p', { textContent: t.cleared }));
+    return el('section', { className: 'settings-group settings-clear' },
+      el('h3', { textContent: t.clear }),
+      el('p', { className: 'setting-desc', textContent: t.clearDesc }),
+      el('div', { className: 'settings-io-buttons' }, ...buttons),
+      status);
+  }
+
   private render(): void {
     const lang = this.host.lang();
     const t = TEXT[lang];
@@ -278,6 +326,7 @@ export class SettingsDialog {
         ...groups.map((g) => el('section', { className: 'settings-group' },
           el('h3', { textContent: t.groups[g] }),
           ...here.filter((x) => x.group === g).map((spec) => this.row(spec, s, texts[spec.key], lang)))),
+        this.clear(lang),
         el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
       ),
       el('footer', { className: 'settings-foot' }, reset, done),
