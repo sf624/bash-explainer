@@ -19,10 +19,11 @@
 //   script: not exported (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called
 //   from the text of an `eval`, `trap` or `alias`.
 //
-// The walk runs the static strings of `eval` and of traps (4.13), but this scan still reads them as foreign text: a
-// trap's action runs at any time, and what an `eval` string writes is read where the walk does not run its own
-// arithmetic (its subscripts, its offsets), which this scan finds only in the script's own statements. A string the
-// walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted (`Walker.found`).
+// The walk runs the static strings of `eval` and of traps (4.13), but this scan still reads them as foreign text (a
+// trap's action runs at any time). Its facts of statements (`arithNames`, `mayFail`, `associative`) are of the
+// script's own statements: for a string's, the walk asks the scan of that string's tree (`Walker.facts`). A string
+// the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
+// (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
 import { interpret } from '../argv/interpret';
 import { argWord, prefixOf } from '../argv/words';
@@ -93,6 +94,8 @@ let foreignParser: BashParser | undefined;
 
 class Scan {
   readonly writes = new Map<string, Write[]>();
+  /** The foreign texts read, by function (see `foreign`). */
+  private readonly foreignSeen = new Set<string>();
   /** Names read by arithmetic, and the statements that read them where the walk does not run the arithmetic. */
   readonly arith = new Set<string>();
   readonly pending = new Map<SyntaxNode, Set<string>>();
@@ -479,9 +482,8 @@ class Scan {
         this.blindFor('a file is sourced');
         return;
       case 'eval': {
-        // (The words the walk reads as the string: see `Walker.script`.)
-        const at = parse().roles.find((r) => r.role.role === 'command');
-        const text = at ? args.slice(at.word).map((a) => staticWordValue(a)) : [];
+        // (The words the walk reads as the string, after `--`: see `Walker.script`.)
+        const text = args.filter((a, i) => i > 0 || a.text !== '--').map((a) => staticWordValue(a));
         if (text.some((t) => t === undefined)) this.blindFor('eval of text not known');
         else this.foreign(text.join(' '), w);
         return;
@@ -572,6 +574,10 @@ class Scan {
 
   /** The text of an `eval`, a trap's action or an alias: read as part of the script, run from elsewhere. */
   private foreign(text: string, w: Where): void {
+    // (The same text from the same function reads the same: once is enough.)
+    const key = `${w.fn ?? ''}\n${text}`;
+    if (this.foreignSeen.has(key)) return;
+    this.foreignSeen.add(key);
     foreignParser ??= createUnbashParser();
     const tree = foreignParser.parse(text);
     this.visit(tree.root, { fn: w.fn, foreign: true }, tree.root);

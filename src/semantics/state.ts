@@ -363,6 +363,8 @@ const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_
 /** The assignment operators of arithmetic (6.5). */
 const ARITH_ASSIGN = new Set(['=', '+=', '-=', '*=', '/=', '%=', '<<=', '>>=', '&=', '^=', '|=']);
 const wrap = (v: bigint): bigint => BigInt.asIntN(64, v);
+/** Thrown when the walk finds a reason to trust nothing (`Walker.found`): what it found so far is dropped. */
+class WalkAgain {}
 /** An error in arithmetic (a division by 0, a readonly variable): bash stops the expression there; `st` has what was assigned before it. */
 class ArithError {
   constructor(readonly st: ShellState) {}
@@ -647,7 +649,12 @@ type Target =
    * (`aborts`, see `abort`); one that may happen (`maybes`) may discard it, or the rest of a line around it.
    */
   | { kind: 'unit'; dead: number; aborts: ShellState[]; maybes: ShellState[] }
-  | { kind: 'subshell' | 'maybe' };
+  | { kind: 'subshell' | 'maybe' }
+  /**
+   * A trap's action (`exitOnly`: of EXIT alone): a signal may run it between any two statements, so an error that may
+   * end the line around it, or a `return`, `break` or `continue` it does not hold, may leave any of them (see `escape`).
+   */
+  | { kind: 'trap'; exitOnly: boolean };
 
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
 const WALKS_PER_FUNCTION = 4;
@@ -656,6 +663,9 @@ const CALL_DEPTH = 64;
 
 let aliasParser: BashParser | undefined;
 const aliasTrees = new Map<string, SyntaxTree>();
+
+/** What the trust scan finds of the statements of each string's tree (`Walker.facts`). */
+const stringFacts = new WeakMap<SyntaxNode, Trust>();
 
 /** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
 const owners = new WeakMap<SyntaxTree, NestedScript>();
@@ -820,7 +830,7 @@ class Walker {
    */
   private sureLater = new Map<string, SyntaxNode>();
   /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
-  private readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; exit: boolean }[] = [];
+  private readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; exit: boolean; exitOnly: boolean; dead: boolean }[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
@@ -869,6 +879,12 @@ class Walker {
    * come from the environment, as text bash runs, which may assign anything). The script is then walked again, blind.
    */
   found: string | undefined;
+
+  /** Sets `found`, and stops the walk (`WalkAgain`): it is made again, with nothing trusted. */
+  private walkAgain(why: string): never {
+    this.found = why;
+    throw new WalkAgain();
+  }
 
   /** The names the actions of the traps set so far change (not EXIT's): a signal may run them between any two later statements. */
   private readonly trapKeys = new Set<string>();
@@ -975,7 +991,7 @@ class Walker {
     if (startup) {
       this.turnOpaque();
       // (What they run is not read: nothing is trusted.)
-      this.found ??= 'another shell runs its startup files first';
+      if (!this.blind) this.walkAgain('another shell runs its startup files first');
       const vars = new Map<string, VariableState>();
       for (const [name, v] of outer.variables) if (!st.variables.has(name)) vars.set(name, { declared: 'unknown', set: 'unknown', attrs: {}, at: v.at });
       const fns = new Map<string, FunctionState>();
@@ -1002,7 +1018,26 @@ class Walker {
     }
   }
 
+  /**
+   * What the trust scan found of the statement `n`: the script's scan for its own statements, the scan of a string
+   * (src/semantics/trust.ts reads the string as foreign text, whose nodes are not the walk's) for those of a string.
+   */
+  private facts(n: SyntaxNode): Trust {
+    if (this.blind) return this.trust;
+    const root = rootOf(n);
+    if (root === this.root) return this.trust;
+    let facts = stringFacts.get(root);
+    // (A string with no subscript `a[`, no `${`, no `[[` and no `-v` has no subscript, offset or test that reads
+    // arithmetic: it needs no scan.)
+    if (!facts) stringFacts.set(root, (facts = /\w\[|\$\{|\[\[|-v/.test(root.text) ? scriptTrust(root) : BLIND));
+    return facts;
+  }
+
+  /** The root of the tree the walk starts from. */
+  private root: SyntaxNode | undefined;
+
   program(root: SyntaxNode, start: ShellState): ShellState {
+    this.root = root;
     this.collectDefinitions(root);
     const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
       ...descendants(root, ['command']).filter((c) => this.commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
@@ -1058,7 +1093,7 @@ class Walker {
     for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
       const st = t.exit && this.topLevel(t.host) ? end : this.widen(t.st, after);
-      this.runScript(t.script, t.host, st);
+      this.trapAction(t.script, t.host, st, t.exitOnly, t.dead);
     }
   }
 
@@ -1201,15 +1236,21 @@ class Walker {
       // The loops it can leave: those of this function body and process (bash: "only meaningful in a loop" otherwise).
       const loops: Extract<Target, { kind: 'loop' }>[] = [];
       let surely = 0;
+      let trap: Extract<Target, { kind: 'trap' }> | undefined;
       for (const t of [...this.targets].reverse()) {
         if (t.kind === 'maybe') maybe = true;
         else if (t.kind === 'unit') continue;
-        else if (t.kind !== 'loop') break;
+        else if (t.kind === 'trap') {
+          trap = t;
+          break;
+        } else if (t.kind !== 'loop') break;
         else {
           loops.push(t);
           if (!maybe) surely++;
         }
       }
+      // (More loops than the trap's action holds: it may leave those a signal interrupts.)
+      if (trap && (count === undefined || count > loops.length)) this.escape(trap);
       const to = (t: Extract<Target, { kind: 'loop' }>): ShellState[] => (kind === 'break' ? t.breaks : t.continues);
       // (`break 5` in two loops leaves both.)
       const at = count === undefined ? undefined : Math.min(count, loops.length);
@@ -1223,7 +1264,10 @@ class Walker {
     for (let i = this.targets.length - 1; i >= 0; i--) {
       const t = this.targets[i];
       if (t.kind === 'maybe') maybe = true;
-      else if (t.kind === 'subshell') {
+      else if (t.kind === 'trap' && kind === 'return') {
+        this.escape(t);
+        return st;
+      } else if (t.kind === 'subshell') {
         // It ends the subshell: `return` only in a function (else it fails, and the subshell goes on).
         if (kind === 'return' && !this.targets.slice(0, i).some((x) => x.kind === 'function')) return st;
         return maybe ? st : unreachable(st);
@@ -1254,6 +1298,10 @@ class Walker {
       const t = this.targets[i];
       // (A last stage of a pipeline that may run in a subshell: it ends that, or the line.)
       if (t.kind === 'subshell') return ends ? unreachable(st) : st;
+      if (t.kind === 'trap') {
+        this.escape(t);
+        return st;
+      }
       if (t.kind === 'unit') {
         if (t.dead === this.dead) (ends ? t.aborts : t.maybes).push(st);
         if (ends) return unreachable(st);
@@ -1322,9 +1370,14 @@ class Walker {
     /* c8 ignore next -- a guard: with nothing trusted, no condition is decided and no path ends, so nothing asks */
     if (this.blind) return false;
     // (A definition itself runs where it stands: its body is what may run elsewhere.)
+    let root = n;
     for (let x: SyntaxNode | null = n.type === 'function_definition' ? n.parent : n; x; x = x.parent) {
       if (this.unwalked.has(x) || (x.type === 'function_definition' && !this.trust.closed(field(x, 'name')!.text))) return false;
+      root = x;
     }
+    // (Nor in a trap's action, or a string it runs: a signal, an error or `exit` may run it at any point, with values
+    // the walk does not see there.)
+    for (let s = this.scripts.byRoot.get(root); s; s = this.scripts.byRoot.get(rootOf(s.words[0]))) if (s.kind === 'later') return false;
     return true;
   }
 
@@ -1354,10 +1407,11 @@ class Walker {
     this.record(n, st);
     // (Arithmetic the walk does not run: a subscript, an offset, `[[ x -eq y ]]`; a key of an array that must be
     // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.)
-    for (const name of this.trust.arithNames(n) ?? []) this.unsetRead(st, name);
-    if (this.trust.mayFail(n)) this.abort(st, false);
-    for (const name of this.trust.associative(n) ?? []) {
-      if (!this.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.found ??= `\`${name}\` may not be associative where its subscript is read`;
+    const facts = this.facts(n);
+    for (const name of facts.arithNames(n) ?? []) this.unsetRead(st, name);
+    if (facts.mayFail(n)) this.abort(st, false);
+    for (const name of facts.associative(n) ?? []) {
+      if (!this.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
     }
     const outer = this.node;
     this.node = n;
@@ -1490,8 +1544,12 @@ class Walker {
         }
         const ends: ShellState[] = [];
         let always = false;
+        // (A list after `;&` or `;;&` may also start from the state the one before left.)
+        let after: ShellState | undefined;
         for (const item of items) {
-          ends.push(this.sequence(item.children, st));
+          const end = this.sequence(item.children, after ? merge([st, after], this.posix) : st);
+          ends.push(end);
+          after = item.children.some((c) => c.type === ';&' || c.type === ';;&') ? end : undefined;
           // A `*)` branch takes every value that reaches it.
           if (fields(item, 'value').some((v) => v.text === '*')) always = true;
         }
@@ -1896,9 +1954,9 @@ class Walker {
    * environment, as text bash runs as an expression, which may assign any variable: nothing is trusted (see `found`).
    */
   private unsetRead(st: ShellState, name: string): void {
-    if (this.dead || this.blind || this.found) return;
+    if (this.dead || this.blind) return;
     const target = this.resolve(st, name) ?? name;
-    if (!st.variables.get(target) && !NUMERIC_DYNAMIC.test(target)) this.found = `arithmetic reads \`${target}\`, which the script may not have set`;
+    if (!st.variables.get(target) && !NUMERIC_DYNAMIC.test(target)) this.walkAgain(`arithmetic reads \`${target}\`, which the script may not have set`);
   }
 
   /**
@@ -2914,6 +2972,27 @@ class Walker {
     return statements.length && sure ? end : withStatus(end, undefined);
   }
 
+  /** Runs a trap's action from `st` (see `runScript`), inside its `trap` target. */
+  private trapAction(script: NestedScript, host: SyntaxNode, st: ShellState, exitOnly: boolean, dead = false): void {
+    this.targets.push({ kind: 'trap', exitOnly });
+    // (A trap set in code that never runs is never set: its action is walked as dead code.)
+    if (dead) this.dead++;
+    try {
+      this.runScript(script, host, st);
+    } finally {
+      this.targets.pop();
+      if (dead) this.dead--;
+    }
+  }
+
+  /**
+   * What leaves a trap's action at `t` otherwise than by `exit`: the signal may come anywhere, so nothing is trusted
+   * (the walk is made again, blind). An EXIT trap's action runs as the shell ends: nothing is left to run.
+   */
+  private escape(t: Extract<Target, { kind: 'trap' }>): void {
+    if (!t.exitOnly && !this.dead && !this.blind) this.walkAgain("a trap's action may end what a signal interrupts (an error, `return`, `break` or `continue`)");
+  }
+
   /**
    * `eval`'s string, run where eval runs. The assignments before `eval` are its temporaries in bash mode: the string
    * sees them, exported, and they are gone after it (what the string assigns to them too); in POSIX mode they stay.
@@ -2996,19 +3075,19 @@ class Walker {
         const script = this.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
         if ('why' in script) {
           this.turnOpaque();
-          if (!this.dead && !this.blind) this.found ??= `\`${name}\` of a string the walk does not read`;
+          if (!this.dead && !this.blind) this.walkAgain(`\`${name}\` of a string the walk does not read`);
           return st;
         }
         if (name === 'eval') return this.evalScript(script, n, st);
         const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
         const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        if (!this.silent) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit) });
+        if (!this.silent) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exit)) {
           const keys = new Set<string>();
           this.collecting.push(keys);
           this.silent++;
-          this.runScript(script, this.aliasHost ?? n, st);
+          this.trapAction(script, this.aliasHost ?? n, st, false);
           this.silent--;
           this.collecting.pop();
           for (const k of keys) this.trapKeys.add(k);
@@ -3458,8 +3537,15 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   const own = scriptTrust(tree.root);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust);
-  let initial = start(w);
-  let end = w.program(tree.root, initial);
+  let initial!: ShellState;
+  let end!: ShellState;
+  try {
+    initial = start(w);
+    end = w.program(tree.root, initial);
+  } catch (e) {
+    /* c8 ignore next -- only `WalkAgain` is thrown out of a walk on purpose */
+    if (!(e instanceof WalkAgain)) throw e;
+  }
   // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
   const found = w.found;
   if (found) {

@@ -423,6 +423,7 @@
  "chown root f",
  "ci.yml",
  "circleci.yml",
+ "cleanup=no; trap 'if [ \"$cleanup\" = yes ]; then :; fi' EXIT; sleep 1; cleanup=yes",
  "cmd 2>&1",
  "cmd >/dev/null",
  "cnt() { declare -A m; }\nm[a+b]=1",

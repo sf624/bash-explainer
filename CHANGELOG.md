@@ -10,7 +10,7 @@
 
 ### Changed
 
-- A branch that cannot run, because its condition is decided by values the script itself set, no longer changes how the lines after it are explained: after `x=1; if [ "$x" = 2 ]; then set -f; fi`, a glob is a glob again, and after `if false; then f() { …; }; fi`, `f` is not the function. Code after `break`, `continue`, `return` or `exit` no longer counts either. Before, both sides of every branch counted, so such lines said "may" or "on some paths". A condition is decided only from variables that nothing but plain assignments (`x=1`, `export x=1`) writes anywhere in the script, and not at all in a script that runs what cannot be read (`source`, `eval "$s"`, `$cmd`): there, both sides still count.
+- A branch that cannot run, because its condition is decided by values the script itself set, no longer changes how the lines after it are explained: after `x=1; if [ "$x" = 2 ]; then set -f; fi`, a glob is a glob again, and after `if false; then f() { …; }; fi`, `f` is not the function. Code after `break`, `continue`, `return` or `exit` no longer counts either. Before, both sides of every branch counted, so such lines said "may" or "on some paths". A condition is decided only from variables that nothing but plain assignments (`x=1`, `export x=1`) writes anywhere in the script, and not at all in a script that runs what cannot be read (`source`, `eval "$s"`, `$cmd`, a trap whose action may `return` from where a signal comes): there, both sides still count. Conditions in a trap's action are never decided.
 
 ### Fixed
 
