@@ -385,7 +385,9 @@ export const system: Record<string, CommandSpec> = {
 
   // ---- GitHub ----
   // gh finds its subcommand as cobra does: `gh -R o/r pr list` gives `-R` to `pr`.
-  gh: cmd('GitHub CLI', 'GitHub CLI', [['--version', '版を表示する', 'print the version'], ['-h|--help', 'ヘルプを表示する', 'show help']], {
+  // (cobra's `-h` is added only after the search for the subcommand, so `gh -h pr` takes `pr` as its value, as an
+  // option not known there: gh shows its own help.)
+  gh: cmd('GitHub CLI', 'GitHub CLI', [['--version', '版を表示する', 'print the version'], ['--help', 'ヘルプを表示する', 'show help', 'persistent']], {
     cobra: true,
     subcommands: {
       api: cmd('GitHub の API を呼び出す', 'Call the GitHub API', [

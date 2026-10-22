@@ -471,6 +471,9 @@ describe('robustness', () => {
     assert.match(shebang('#!/usr/bin/env bash -e'), /⚠ On Linux the whole `bash -e` after the interpreter is one argument to env/);
     assert.match(shebang('#!/usr/bin/env -S -i'), /names no command, so env runs the script's path as the command$/);
     assert.match(shebang('#!/usr/bin/env -S"a'), /⚠ env cannot split this string and exits with status 125/);
+    // (Compared with env in test/wrappers-real.test.ts.)
+    assert.match(shebang('#!/usr/bin/env -i bash'), /⚠ On Linux the whole `-i bash` after the interpreter is one argument to env, which reads it as one run of options, so it does not run `bash`/);
+    assert.match(shebang('#!/usr/bin/env -i bash', 'ja'), /`bash` をコマンドとして実行しない/);
     for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e', '#!/usr/bin/env']) assert.match(shebang(line), /`$/, line);
   });
 
@@ -485,6 +488,7 @@ describe('robustness', () => {
     assert.match(value("env -S'-i A=1 bash -e' s", '-i A=1 bash -e', 'ja'), /env はこれを単語に分けて、この位置で自分の引数として読む: `-i`（空の環境から始める）、`A=1`（コマンドの環境に入れる変数）/);
     assert.match(value("env -S 'bash -e' s", "'bash -e'"), /`bash` \(the command to run/);
     assert.match(value("env --split-string='-u HOME -- cmd' s", "--split-string='-u HOME -- cmd'"), /`-u` \(remove a variable\), `HOME` \(value for `-u`\), `--` \(end of options\), `cmd` \(the command to run\)$/);
+    assert.match(value("env -S- s", '-'), /`-` \(start with an empty environment \(same as `-i`\)\)$/);
     assert.match(value("env -S'-vx' s", '-vx'), /`-vx` \(print each step on stderr, an option not in the dictionary\)$/);
     assert.match(value("env -S'x${A}' s", 'x${A}'), /`x…` \(the value of `\$\{…\}` is known at run time\) \(the command to run\)$/);
     assert.match(value('env --split-string= s', '--split-string='), /env splits it into no words$/);

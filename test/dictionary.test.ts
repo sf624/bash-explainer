@@ -257,8 +257,26 @@ describe('the dictionary', () => {
       'commit: Subcommand `git commit`: Record staged changes', '-m: commit message', 'm: Value for `-m`',
     ]);
     assert.deepStrictEqual(parts('terraform -chdir=infra plan'), [
-      '-chdir=infra: run in the given directory (written before the subcommand) (value: `infra`)', 'plan: Subcommand `terraform plan`: Show the planned changes (nothing changes yet)',
+      '-chdir=infra: run in the given directory (written `-chdir=DIR`, with `=`, before the subcommand; terraform rejects `-chdir DIR`) (value: `infra`)',
+      'plan: Subcommand `terraform plan`: Show the planned changes (nothing changes yet)',
     ]);
+    // terraform takes `-chdir` with `=` only, and no other option before the subcommand.
+    assert.deepStrictEqual(parts('terraform -chdir infra plan').slice(1), ['infra: Word `infra`', 'plan: Word `plan`']);
+    assert.match(parts('terraform -var-file=x plan')[0], /^-var-file=x: ⚠ an option before the subcommand: terraform takes only `-chdir=…`/);
+    assert.deepStrictEqual(parts('terraform plan -var-file=x -help'), ['plan: Subcommand `terraform plan`: Show the planned changes (nothing changes yet)', '-var-file=x: variables file (`.tfvars`) (value: `x`)', '-help: show help']);
+    // kubectl: the subcommands' own options, `--dry-run` with its value attached only, and boolean globals.
+    assert.deepStrictEqual(parts('kubectl delete pod web -o name').slice(3), ['-o: output format (`yaml`, `json`, `wide`, `name`, `jsonpath=…`)', 'name: Value for `-o`']);
+    assert.deepStrictEqual(parts('kubectl apply -f x --timeout=60s --wait').slice(3).map((p) => p.split(':')[0]), ['--timeout=60s', '--wait']);
+    assert.deepStrictEqual(parts('kubectl apply --dry-run -f x').slice(1, 3), ['--dry-run: do not change anything (`--dry-run=client`, `--dry-run=server`)', '-f: manifest file or directory (`-`: stdin)']);
+    assert.deepStrictEqual(parts('kubectl --disable-compression get pods').slice(1, 2), ['get: Subcommand `kubectl get`: List resources']);
+    assert.deepStrictEqual(parts('kubectl top po -A --containers').map((p) => p.split(':')[0]), ['top', 'po', '-A', '--containers']);
+    assert.match(parts('kubectl top node --sort-by cpu')[1], /^node: Subcommand `kubectl top node`/);
+    assert.deepStrictEqual(parts('kubectl events -A -w').slice(1), ['-A: all namespaces', '-w: keep watching for changes']);
+    assert.match(parts('kubectl api-resources -o wide')[1], /^-o: output format/);
+    assert.match(parts('kubectl explain pods.spec --recursive')[1], /^pods.spec: resource type and field/);
+    // gh: `--version` is not an option of `pr`, and cobra's `-h` is not known while it looks for the subcommand.
+    assert.match(parts('gh --version pr list')[0], /^--version: Option \(not in the dictionary/);
+    assert.deepStrictEqual(parts('gh -h pr').slice(1), ['pr: Value for `-h`']);
     assert.match(tokens('terraform plan -chdir=x').find((t) => t.label === '-chdir=x')!.explanation, /not in the dictionary/);
     assert.deepStrictEqual(parts('gh -R o/r pr list').slice(0, 3), ['-R: repository (`owner/name`)', 'o/r: Value for `-R`', 'pr: Subcommand `gh pr`: Work with pull requests (`create`, `view`, `checkout`, `merge`, `list`…)']);
     assert.deepStrictEqual(parts('npm --prefix dir run build').slice(0, 3), ['--prefix: act on the project in the given directory', 'dir: Value for `--prefix`', 'run: Subcommand `npm run`: Run a package.json script']);

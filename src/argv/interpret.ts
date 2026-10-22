@@ -120,7 +120,7 @@ const known = (w: ArgWord): string => w.value ?? w.prefix ?? '';
 
 /** Reads the words of a command (its arguments, without the name) with its spec. */
 export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretContext = {}): ArgvParse {
-  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false);
+  return new Reader(words, ctx, new Set()).read(spec, 0, words.length, ctx.name ?? '', [], false, []);
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
@@ -140,13 +140,18 @@ class Reader {
     this.maxSteps = ctx.maxSteps ?? 100000;
   }
 
-  /** `cobra`: the parent finds subcommands as cobra does (`CommandSpec.cobra`), so this spec does too. */
-  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean): ArgvParse {
+  /**
+   * `cobra`: the parent finds subcommands as cobra does (`CommandSpec.cobra`), so this spec does too; `before`:
+   * the words the parents read before their subcommands (options and values), which cobra searches again.
+   */
+  read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[]): ArgvParse {
     const isCobra = cobra || !!spec.cobra;
     let options = [...(spec.options ?? []), ...inherited];
-    // cobra: the options before the subcommand are the subcommand's own too (its own name wins).
-    const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, options, from, to) : undefined;
-    if (found?.options) options = [...found.options, ...options];
+    const search = options;
+    const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, search, before, from, to) : undefined;
+    // cobra reads every option with the flags of the command it runs: before the subcommand, its own (its name
+    // wins) and the persistent ones, but not the others of this level (`gh --version pr`: unknown flag).
+    if (found?.at !== undefined) options = [...found.options ?? [], ...options.filter((o) => o.persistent)];
     const style = spec.style ?? 'gnu';
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
@@ -155,7 +160,7 @@ class Reader {
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
-    const st: OptionState = { spec, options, roles, given, end, guess: isCobra && !!spec.subcommands };
+    const st: OptionState = { spec, options, roles, given, end, guess: isCobra && !!spec.subcommands, search };
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
@@ -182,18 +187,19 @@ class Reader {
           // The words of the string are read in its place: the line is read again with them.
           if (split) {
             const composite = [...this.words.slice(0, used + 1), ...split, ...this.words.slice(used + 1)];
-            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used])).read(spec, from, to + split.length, command, inherited, cobra);
+            const parse = new Reader(composite, this.ctx, new Set([...this.spliced, used])).read(spec, from, to + split.length, command, inherited, cobra, before);
             return unsplice(parse, used, split);
           }
           i = this.cobraValue(st, i, used);
           continue;
         }
       }
-      // An operand. The first one may name a subcommand, whose spec reads the rest (or the one cobra finds).
-      const sub = (!operands.length || i === found?.at) && value !== undefined ? subcommand(spec, value) : undefined;
+      // An operand. The first one may name a subcommand, whose spec reads the rest (or the one cobra finds,
+      // when its search did not stop at a word not known).
+      const sub = (found ? i === found.at : !operands.length) && value !== undefined ? subcommand(spec, value) : undefined;
       if (sub) {
         const inherit = [...inherited, ...(spec.options ?? []).filter((o) => o.persistent)];
-        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra) });
+        roles.set(i, { role: 'subcommand', name: sub[0], spec: sub[1], parse: this.read(sub[1], i + 1, to, `${command} ${sub[0]}`, inherit, isCobra, isCobra ? [...before, ...range(from, i)] : []) });
         end = i + 1;
         break;
       }
@@ -299,26 +305,34 @@ class Reader {
     const found = name === undefined ? undefined : this.ctx.lookup?.(name);
     // A slot that starts a program runs the program of a builtin's name (`env echo`: coreutils echo).
     const spec = slot.run === 'exec' && found?.program ? found.program : found;
-    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false), ...(of ? { of } : {}) };
+    return { role: 'command', slot, name, spec, parse: this.read(spec ?? EMPTY, at + 1, end, name ?? '', [], false, []), ...(of ? { of } : {}) };
   }
 
   /**
    * cobra's search for the subcommand (`stripFlags`): skip options, and the next word after an option that
    * takes a value or is not known here (unless written with `=`, or as several letters), then the first word left
-   * is the subcommand, if it names one. Where it is, and its own options, to read the words before it with.
+   * is the subcommand, if it names one. cobra searches the words its parents read before their subcommands
+   * (`before`) again, with this level's options (`gh --version pr list`: `pr` does not know `--version`, which
+   * takes `list`). Where the subcommand is, and its own options, to read the words before it with; `{}` when
+   * there is none (`kubectl -- get`, a first word that names none); `undefined` when a word not known stops the search.
    */
-  private cobraSubcommand(spec: CommandSpec, options: OptionSpec[], from: number, to: number): { at: number; options?: OptionSpec[] } | undefined {
-    for (let i = from; i < to; i++) {
-      const w = this.words[i].value;
-      if (w === undefined || w === '--') return undefined;
+  private cobraSubcommand(spec: CommandSpec, options: OptionSpec[], before: number[], from: number, to: number): { at?: number; options?: OptionSpec[] } | undefined {
+    const list = [...before, ...range(from, to)];
+    for (let k = 0; k < list.length; k++) {
+      const w = this.words[list[k]].value;
+      if (w === undefined) return undefined;
+      // `--` ends the search; cobra skips empty words.
+      if (w === '--') return {};
+      if (w === '') continue;
       if (w.startsWith('-')) {
-        if (cobraTakesNext(w, options)) i++;
+        if (cobraTakesNext(w, options)) k++;
         continue;
       }
-      const sub = subcommand(spec, w);
-      return sub && { at: i, options: sub[1].options };
+      const sub = list[k] >= from ? subcommand(spec, w) : undefined;
+      // (A subcommand among the parents' words would be read before its parent: it is not shown as one.)
+      return sub ? { at: list[k], options: sub[1].options } : {};
     }
-    return undefined;
+    return {};
   }
 
   /**
@@ -328,7 +342,7 @@ class Reader {
   private cobraValue(st: OptionState, i: number, used: number): number {
     const role = st.roles.get(i);
     const w = this.words[i].value;
-    if (!st.guess || used !== i || i + 1 >= st.end || role?.role !== 'unknown-option' || w === undefined || !cobraTakesNext(w, st.options)) return used;
+    if (!st.guess || used !== i || i + 1 >= st.end || role?.role !== 'unknown-option' || w === undefined || !cobraTakesNext(w, st.search)) return used;
     st.roles.set(i + 1, { role: 'value', of: role.flag, index: 0 });
     return i + 1;
   }
@@ -346,7 +360,7 @@ class Reader {
       const text = o.value ? this.words[i].value?.slice(o.value.attached) : used > i ? this.words[used].value : undefined;
       const r = text === undefined ? undefined : splitEnvString(text);
       if (r && 'words' in r) return r.words;
-      if (r && value) value.refused = r;
+      if (r && 'error' in r && value) value.refused = r;
       st.given.unsplit.push(...o.spec.names);
     }
     return undefined;
@@ -542,7 +556,11 @@ interface OptionState {
   end: number;
   /** cobra, before the subcommand: an option not known here takes the next word as its value. */
   guess: boolean;
+  /** The options cobra knows while it searches for the subcommand (this level's). */
+  search: OptionSpec[];
 }
+
+const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);
 
 /** Whether cobra takes the word after this option as its value while it looks for the subcommand. */
 function cobraTakesNext(w: string, options: OptionSpec[]): boolean {

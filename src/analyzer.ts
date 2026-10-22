@@ -704,6 +704,12 @@ export class Analyzer {
     }
     if (!value) {
       if (!/\s/.test(rest)) return '';
+      // `#!/usr/bin/env -i bash`: env reads the whole word as options (`-i`, then ` `: an invalid option).
+      if (rest.startsWith('-')) {
+        return this.s(
+          `。⚠ Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になり、env はそれを1つのオプションの並びとして読むので、\`${rest.split(/\s+/).pop()}\` をコマンドとして実行しない（多くは不正なオプションとして終了ステータス 125 で終わる）。分けるには \`env -S\` と書く`,
+          `. ⚠ On Linux the whole \`${rest}\` after the interpreter is one argument to env, which reads it as one run of options, so it does not run \`${rest.split(/\s+/).pop()}\` (it mostly fails with an invalid option and status 125); write \`env -S\` to split it`);
+      }
       return this.s(
         `。⚠ Linux ではインタープリタの後ろの \`${rest}\` 全体が env への1つの引数になるので、env はその名前のプログラムを探して失敗する。分けるには \`env -S\` と書く`,
         `. ⚠ On Linux the whole \`${rest}\` after the interpreter is one argument to env, which looks for a program of that name and fails; write \`env -S\` to split it`);
@@ -1966,7 +1972,7 @@ export class Analyzer {
     };
     const what = (role: ArgRole): string => {
       switch (role.role) {
-        case 'option': return this.t(role.text);
+        case 'option': case 'pattern-option': return this.t(role.text);
         case 'cluster': return role.letters.map(what).join(this.s('、', ', '));
         case 'value': return this.s(`\`${dash(role.of)}\` の値`, `value for \`${dash(role.of)}\``);
         case 'operand':

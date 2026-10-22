@@ -214,6 +214,10 @@ describe('gh agrees with the real gh', () => {
     'gh -x pr list', 'gh -w pr list', 'gh --foo pr list',
     // ... unless written with `=`, or as several letters: then `pr` is found, and the option is refused.
     'gh --foo=1 pr list', 'gh -xy pr list', 'gh -R o/r api',
+    // `--` ends the search, empty words are skipped, and cobra's `-h` is not known yet: it takes `pr`.
+    'gh -- pr list', "gh '' pr list", 'gh -h pr list', 'gh --help pr list',
+    // The words before a subcommand are searched again with its options: `pr` does not know `--version`.
+    'gh --version pr list', 'gh --json number pr list', 'gh pr -s open list', 'gh pr -w list',
   ];
   (has('gh') ? it : it.skip)('finds the subcommand gh runs, and refuses the same options', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'subcommands-gh-'));
@@ -221,12 +225,21 @@ describe('gh agrees with the real gh', () => {
       for (const line of ROWS) {
         const r = run(`${line} --help`, os.tmpdir(), { ...ENV, GH_CONFIG_DIR: home, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' });
         const text = r.out + r.err;
-        const found = /^USAGE\n {2}gh (\S+)/m.exec(text)?.[1];
+        // The command found, as its usage names it (`gh pr list`), and the subcommands we read.
+        const found = /^USAGE\n {2}gh ((?:[a-z][\w-]*(?: |$))*)/m.exec(text)?.[1].trim();
         const rs = roles(line);
-        const sub = rs.find((x) => x.role.role === 'subcommand' && x.path === 'gh')?.word;
-        if (/unknown command/.test(text)) assert.strictEqual(sub, undefined, `${line}: ${text}`);
-        else if (/unknown (shorthand )?flag/.test(text)) assert.ok(sub && rs.some((x) => x.role.role === 'unknown-option' || (x.role.role === 'cluster' && x.role.letters.some((l) => l.role === 'unknown-option'))), line);
-        else assert.strictEqual(sub, found, `${line}: ${text}`);
+        const chain = rs.filter((x) => x.role.role === 'subcommand');
+        const subs = chain.map((x) => x.word).join(' ');
+        if (/unknown command/.test(text)) assert.strictEqual(subs, '', `${line}: ${text}`);
+        else {
+          if (/unknown (shorthand )?flag/.test(text)) assert.ok(rs.some((x) => x.role.role === 'unknown-option' || (x.role.role === 'cluster' && x.role.letters.some((l) => l.role === 'unknown-option'))), line);
+          // (The dictionary may stop before gh does: `gh pr list`, with no `list` in it, is `pr`.)
+          const names = found!.split(' ').filter(Boolean);
+          assert.strictEqual(names.slice(0, chain.length).join(' '), subs, `${line}: ${text}`);
+          const last = chain.at(-1)?.role;
+          const deeper = names[chain.length];
+          if (deeper !== undefined) assert.ok(!(last?.role === 'subcommand' ? last.spec : lookupCommand('gh')!).subcommands?.[deeper], `${line}: ${deeper}`);
+        }
       }
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
