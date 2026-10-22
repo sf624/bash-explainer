@@ -1090,7 +1090,7 @@
     },
     "gaps": {
       "a": "the model does not decide which `case` branch runs",
-      "c": "the model does not evaluate `[[ ]]`"
+      "c": "the condition is not decided: a tilde after `=` in `[[ ]]` is not followed there"
     }
   },
   {

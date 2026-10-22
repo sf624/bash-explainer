@@ -25,9 +25,10 @@ import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
-import { staticWordValue } from '../staticword';
+import { ansiCValue, staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv, unaryTest } from './conditions';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 
@@ -254,6 +255,24 @@ export interface ShellState {
   readonly disabled: NameMap<CommandEntry>;
   /** The names `hash -p` gave a path (assigning PATH, `hash -r` and `hash -d` forget them). */
   readonly hashed: NameMap<CommandEntry>;
+  /** The exit status of the last command run (`$?`), when it is known (docs/design/semantics.md, 4.14). */
+  readonly status?: number;
+  /**
+   * Set on the state of a path that never gets here: after `break`, `continue`, `return` or `exit` (and an error
+   * under `set -e`). What runs from it is dead code; merging drops it.
+   */
+  readonly unreachable?: true;
+}
+
+/** What a condition always decides here (on every walk), and the variables it read: name → value (null: unset). */
+export interface Decision {
+  /**
+   * `if`, `elif`, `&&`, `||`: `true` when the condition (the left side) always succeeds, `false` when it always fails.
+   * A loop: `false` when it stops at its first test, `true` when it holds at every test. `case`: the indexes of the
+   * items whose lists run, in order, joined by commas (empty: none).
+   */
+  outcome: string;
+  reads: ReadonlyMap<string, string | null>;
 }
 
 export interface StateModel {
@@ -286,6 +305,13 @@ export interface StateModel {
    * `env` runs (docs/design/semantics.md, 4.13): its tree and the model its nodes are in. Kept by its first word.
    */
   script(words: readonly SyntaxNode[], env: ExecEnv): NestedScript | NotRead;
+  /** What the condition of `n` (an `if`, an `elif`, a loop, an `&&` or `||` list, a `case`) always decides, if anything. */
+  condition(n: SyntaxNode): Decision | undefined;
+  /**
+   * Whether the statement `n` runs only in code that never runs here: a branch whose condition is decided, or after
+   * `break`, `continue`, `return` or `exit`.
+   */
+  dead(n: SyntaxNode): boolean;
 }
 
 /** The options bash has on in a script (`bash --norc script`), and the ones POSIX mode adds. */
@@ -362,19 +388,19 @@ const ARITH_MEMO = 8;
 /** What may be pasted into an arithmetic expression; bash expands it first. (A single-quoted text is not: it is an error.) */
 const PASTES = ['simple_expansion', 'expansion', 'arithmetic_expansion', 'command_substitution', 'process_substitution', 'string', 'ansi_c_string', 'translated_string'];
 /** Variables whose values bash changes itself (when they are read, or as time goes): not known here. */
-export const DYNAMIC = /^(?:RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|EPOCHREALTIME|BASHPID|BASH_COMMAND|BASH_SUBSHELL|BASH_LINENO|BASH_SOURCE|BASH_ARGC|BASH_ARGV|BASH_ARGV0|FUNCNAME|HISTCMD|PIPESTATUS|GROUPS|DIRSTACK)$/;
+export const DYNAMIC = /^(?:_|RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|EPOCHREALTIME|BASHPID|BASH_COMMAND|BASH_SUBSHELL|BASH_LINENO|BASH_SOURCE|BASH_ARGC|BASH_ARGV|BASH_ARGV0|FUNCNAME|HISTCMD|PIPESTATUS|GROUPS|DIRSTACK)$/;
 /** Those of `DYNAMIC` whose values are numbers (`EPOCHREALTIME` has a dot). */
 const NUMERIC_DYNAMIC = /^(?:RANDOM|SRANDOM|SECONDS|LINENO|EPOCHSECONDS|BASHPID|BASH_SUBSHELL|BASH_LINENO|BASH_ARGC|HISTCMD|PIPESTATUS|GROUPS)$/;
 /** The key of `set -u` among the reads of a value (no variable has this name). */
 const NOUNSET = '-u';
 /** What a value read as an expression has read so far: the variables (and `set -u`), whether it can be remembered, how deep it went. */
-interface ArithReads { deps: Map<string, unknown>; pure: boolean; depth: number; unsure: boolean }
+interface ArithReads { deps: Map<string, unknown>; pure: boolean; depth: number; unsure: boolean; assumed: boolean }
 /**
  * A value read as an expression, remembered with what it read and how deep it went: its value; or `unknown` (`deep`:
  * it went deeper than `ARITH_DEPTH` from where it was read, `depth` is then at least what it needs); `unsure`: it read
- * a value not known.
+ * a value not known; `assumed`: it read a name the script has not set, taken as unset.
  */
-interface ArithRemembered { deps: ReadonlyMap<string, unknown>; depth: number; value?: bigint; unknown: false | 'always' | 'deep'; unsure: boolean }
+interface ArithRemembered { deps: ReadonlyMap<string, unknown>; depth: number; value?: bigint; unknown: false | 'always' | 'deep'; unsure: boolean; assumed: boolean }
 
 /**
  * `text` with each `++` and `--` that bash reads as a sign followed by another one spaced apart, as bash's lexer
@@ -505,11 +531,45 @@ const optionRoles = (parse: ArgvParse): Extract<ArgRole, { role: 'option' }>[] =
 // ---------------------------------------------------------------------------------------------------
 // Merging states.
 
-type Kind = keyof ShellState;
+type Kind = Exclude<keyof ShellState, 'status' | 'unreachable'>;
 type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 
 const EMPTY: ShellState = {
   set: NameMap.empty(), shopt: NameMap.empty(), variables: NameMap.empty(), functions: NameMap.empty(), aliases: NameMap.empty(), disabled: NameMap.empty(), hashed: NameMap.empty(),
+};
+
+/**
+ * Whether the redirection `r` cannot fail: to or from `/dev/null`, or a copy of fd 1 or 2 (`2>&1`, `>&2`), with an fd
+ * given as a number if any.
+ */
+function safeRedirect(r: SyntaxNode): boolean {
+  if (r.type !== 'file_redirect' || (field(r, 'descriptor') && field(r, 'descriptor')!.type !== 'file_descriptor')) return false;
+  const op = r.children.find((c) => !c.named)?.type;
+  const to = field(r, 'destination');
+  const target = to && staticWordValue(to);
+  if (target === '/dev/null') return ['>', '>>', '&>', '&>>', '>|', '<'].includes(op!);
+  return op === '>&' && (target === '1' || target === '2');
+}
+
+/** Text as written, without its backslashes (each quotes the character after it; one before a newline goes with it). */
+const unescape = (text: string): string => text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
+
+const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
+
+/** `st` with the status `status` (undefined: not known). */
+/** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
+const ERREXIT_STOPS = new Set(['command', 'test_command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
+
+const withStatus = (st: ShellState, status: number | undefined): ShellState => (st.status === status ? st : { ...st, status });
+
+/** `st` as the state of a path that never gets further (see `ShellState.unreachable`). */
+const unreachable = (st: ShellState): ShellState => ({ ...st, status: undefined, unreachable: true });
+
+/** `st` as a path that gets here (for walking dead code from it). */
+const reached = (st: ShellState): ShellState => {
+  if (!st.unreachable) return st;
+  const { unreachable: _, ...rest } = st;
+  return rest;
 };
 
 const later = (a: SyntaxNode, b: SyntaxNode): SyntaxNode => (b.startIndex > a.startIndex ? b : a);
@@ -562,7 +622,10 @@ function mergeAlias<T extends AliasState | CommandEntry>(a: T | undefined, b: T 
 
 /** The state after one of several paths, when any of them may have been taken. */
 export function merge(states: ShellState[], posix = false): ShellState {
-  return states.reduce((a, b) => (a === b ? a : {
+  // (A path that never gets here adds nothing; when none does, the result never gets here either.)
+  const paths = states.filter((s) => !s.unreachable);
+  if (!paths.length) return states[0];
+  return paths.reduce((a, b) => (a === b ? a : {
     set: NameMap.merge(a.set, b.set, (k, x, y) => mergeOption('set', k, x, y, posix)),
     shopt: NameMap.merge(a.shopt, b.shopt, (k, x, y) => mergeOption('shopt', k, x, y, posix)),
     variables: NameMap.merge(a.variables, b.variables, (_k, x, y) => mergeVariable(x, y)),
@@ -570,6 +633,7 @@ export function merge(states: ShellState[], posix = false): ShellState {
     aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
     disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
     hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeAlias(x, y)),
+    ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
   }));
 }
 
@@ -579,7 +643,7 @@ function sameState(a: ShellState, b: ShellState): boolean {
     const k = Object.keys(x.attrs);
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
   };
-  return a === b || (NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
+  return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
     && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
@@ -600,6 +664,17 @@ interface Operand {
   subscript: boolean;
   assign?: { append: boolean; text: string | undefined; array: boolean; source?: SyntaxNode };
 }
+
+/**
+ * Where `break`, `continue`, `return` and `exit` go (innermost last): a loop, a function body, the script; a
+ * subshell ends them (`maybe`: a pipeline's last stage that may run in the shell or in a subshell). `dead` is the
+ * depth of dead code where it was entered: a jump from deeper dead code is not collected.
+ */
+type Target =
+  | { kind: 'loop'; dead: number; breaks: ShellState[]; continues: ShellState[] }
+  | { kind: 'function'; dead: number; returns: ShellState[] }
+  | { kind: 'program'; dead: number; exits: ShellState[] }
+  | { kind: 'subshell' | 'maybe' };
 
 /** How many times a function body is walked with different states before the rest of its calls are guessed. */
 const WALKS_PER_FUNCTION = 4;
@@ -776,7 +851,7 @@ class Walker {
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
-  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState }[]>();
+  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string }[]>();
   /** What the walks of each function body changed. */
   private readonly changes = new Map<SyntaxNode, Set<string>>();
   /** The bodies being walked (a call of one of these is recursive). */
@@ -795,6 +870,25 @@ class Walker {
   /** The aliases being expanded (an alias is not expanded again inside itself). */
   private readonly expanding = new Set<string>();
   private readonly bash: boolean;
+  /** How deep the walk is in code that does not run here (a branch whose condition is decided): see `deadRun`. */
+  private dead = 0;
+  /** The nodes run on some walk that is not in dead code. */
+  readonly live = new Set<SyntaxNode>();
+  /** What each condition decided on each walk ('?': nothing), and the variables it read (`mixed`: with other values on other walks). */
+  private readonly decisions = new Map<SyntaxNode, { outcomes: Set<string>; reads: Map<string, string | null>; mixed: boolean }>();
+  /** The variables read by the conditions being decided, with their values (see `variableText`). */
+  private readonly reading: Map<string, string | null>[] = [];
+  /**
+   * The function definitions whose body a call did not walk (more entry states than `WALKS_PER_FUNCTION`, a recursive
+   * or too deep call) and the loops whose passes did not settle: the conditions in them are not decided.
+   */
+  private readonly unwalked = new Set<SyntaxNode>();
+  /** Whether the expression being run has read a name the script has not set, taken as unset (see `variableText`). */
+  private assumed = false;
+  /** Where jumps go (see `Target`). */
+  private readonly targets: Target[] = [];
+  /** How deep the walk is in a place where `set -e` does not stop the shell (a condition, the left side of `&&`, `!`). */
+  private quiet = 0;
 
   /** The names the actions of the traps set so far change (not EXIT's): a signal may run them between any two later statements. */
   private readonly trapKeys = new Set<string>();
@@ -802,7 +896,7 @@ class Walker {
    * Set while a trap's action is walked only for what it changes (`trap`): its nodes, the calls and the walks of the
    * bodies it calls are not recorded (the action runs later, with the state of then).
    */
-  private quiet = 0;
+  private silent = 0;
 
   constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts) {
     this.bash = !shell || shell === 'bash';
@@ -817,7 +911,8 @@ class Walker {
   }
 
   private record(n: SyntaxNode, st: ShellState): void {
-    if (this.quiet) return;
+    if (this.silent) return;
+    if (!this.dead) this.live.add(n);
     const states = this.runStates.get(n);
     if (!states) this.runStates.set(n, [st]);
     else if (!states.includes(st)) states.push(st);
@@ -939,11 +1034,16 @@ class Walker {
     const tops = root.namedChildren.filter((c) => STATEMENTS.has(c.type));
     const unitStart = this.unitStart;
     tops.forEach((t, i) => unitStart.set(t, i > 0 && tops[i - 1].endPosition.row === t.startPosition.row ? unitStart.get(tops[i - 1])! : t));
-    const end = this.sequence(root.children, start, (t, st) => {
+    const program: Target = { kind: 'program', dead: 0, exits: [] };
+    this.targets.push(program);
+    let end = this.sequence(root.children, start, (t, st) => {
       const unit = unitStart.get(t)!;
-      this.parseAt.set(t, unit === t ? st : this.parseAt.get(unit)!);
+      this.parseAt.set(t, unit === t ? reached(st) : this.parseAt.get(unit)!);
       this.expand = this.parseAt.get(t)!;
     });
+    this.targets.pop();
+    // (The script also ends at an `exit`.)
+    end = merge([end, ...program.exits], this.posix);
     this.runTraps(end);
     this.uncalled();
     return end;
@@ -961,6 +1061,8 @@ class Walker {
           const at = this.runAt(def);
           if (!at || this.walks.has(def)) continue;
           found = true;
+          // (It may be called from outside the script, with any values: its conditions are not decided.)
+          this.unwalked.add(def);
           const since = this.changeAtDefinition.get(def)!;
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
           this.walks.set(def, []);
@@ -1029,21 +1131,146 @@ class Walker {
         } else if (def && value !== undefined) changes.aliases.set(name, { state: 'unknown', value, at: def });
       }
     }
+    // (The status, and whether the path gets here, stay.)
     return {
+      ...st,
       set: st.set.withAll(changes.set), shopt: st.shopt.withAll(changes.shopt), variables: st.variables.withAll(changes.variables),
       functions: st.functions.withAll(changes.functions), aliases: st.aliases.withAll(changes.aliases),
       disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed),
     };
   }
 
-  /** Runs the statements among `nodes`, in order. */
+  /**
+   * Runs the statements among `nodes`, in order. Their status is the last one's, when the shell surely gets to it
+   * (see `goesOn`); else it is not known.
+   */
   private sequence(nodes: readonly SyntaxNode[], st: ShellState, before?: (n: SyntaxNode, st: ShellState) => void): ShellState {
+    let ran = false;
+    let sure = true;
     for (const n of nodes) {
       if (!STATEMENTS.has(n.type)) continue;
+      if (ran && !this.goesOn(st)) sure = false;
       before?.(n, st);
       st = this.run(n, st);
+      ran = true;
     }
-    return st;
+    return ran && sure ? st : withStatus(st, undefined);
+  }
+
+  /**
+   * Whether the shell surely goes on to the next statement after the one that left `st`: its status is known, and is 0
+   * where `set -e` may be on or a trap may be set (an ERR trap may exit). (A statement that may leave otherwise, `exit`,
+   * `return`, a function, has no known status.)
+   */
+  private goesOn(st: ShellState): boolean {
+    if (st.status === undefined) return false;
+    const errexit = option(st, 'set', 'errexit');
+    // (Where the status is tested, `set -e` does not stop the shell.)
+    return st.status === 0 || ((errexit === 'off' || errexit === 'default' || this.quiet > 0) && !this.opaque);
+  }
+
+  /** Runs `nodes` from `st` as code that does not run here: for the states of their nodes; what they change is dropped, and their conditions are not recorded. */
+  private deadRun(nodes: readonly SyntaxNode[], st: ShellState): void {
+    this.dead++;
+    try {
+      this.sequence(nodes, st);
+    } finally {
+      this.dead--;
+    }
+  }
+
+  /**
+   * `break` or `continue` (`count`: their N, undefined when not known), `return` or `exit`, run from `st`: the state
+   * goes where the jump leads (the end of a loop or of its pass, of a function body, of the script), and the path does
+   * not go on. A jump that may fail (no loop, a count not known) or may be made in a subshell is both made and not.
+   */
+  private jump(kind: 'break' | 'continue' | 'return' | 'exit', count: number | undefined, st: ShellState): ShellState {
+    st = withStatus(st, undefined);
+    const collect = (t: { dead: number }, to: ShellState[]): void => {
+      if (t.dead === this.dead) to.push(st);
+    };
+    let maybe = false;
+    if (kind === 'break' || kind === 'continue') {
+      // The loops it can leave: those of this function body and process (bash: "only meaningful in a loop" otherwise).
+      const loops: Extract<Target, { kind: 'loop' }>[] = [];
+      let sure = 0;
+      for (const t of [...this.targets].reverse()) {
+        if (t.kind === 'maybe') maybe = true;
+        else if (t.kind !== 'loop') break;
+        else {
+          loops.push(t);
+          if (!maybe) sure++;
+        }
+      }
+      const to = (t: Extract<Target, { kind: 'loop' }>): ShellState[] => (kind === 'break' ? t.breaks : t.continues);
+      // (`break 5` in two loops leaves both.)
+      const at = count === undefined ? undefined : Math.min(count, loops.length);
+      if (at !== undefined && at > 0 && at <= sure) {
+        collect(loops[at - 1], to(loops[at - 1]));
+        return unreachable(st);
+      }
+      for (const t of loops) collect(t, to(t));
+      return st;
+    }
+    for (let i = this.targets.length - 1; i >= 0; i--) {
+      const t = this.targets[i];
+      if (t.kind === 'maybe') maybe = true;
+      else if (t.kind === 'subshell') {
+        // It ends the subshell: `return` only in a function (else it fails, and the subshell goes on).
+        if (kind === 'return' && !this.targets.slice(0, i).some((x) => x.kind === 'function')) return st;
+        return maybe ? st : unreachable(st);
+      } else if (t.kind === 'function' && kind === 'return') {
+        collect(t, t.returns);
+        return maybe ? st : unreachable(st);
+      } else if (t.kind === 'program') {
+        if (kind === 'return') return st;
+        collect(t, t.exits);
+        return maybe ? st : unreachable(st);
+      }
+    }
+    // (Outside the script's walk: a trap's action, a body no call reached.)
+    return kind === 'return' ? st : unreachable(st);
+  }
+
+  /** Runs `run` where `set -e` does not stop the shell (a condition, the left side of `&&` or `||`, after `!`). */
+  private quietly<T>(run: () => T): T {
+    this.quiet++;
+    try {
+      return run();
+    } finally {
+      this.quiet--;
+    }
+  }
+
+  /** Runs `run` (a condition), with the variables it reads. */
+  private reads<T>(run: () => T): { value: T; reads: Map<string, string | null> } {
+    const reads = new Map<string, string | null>();
+    this.reading.push(reads);
+    try {
+      return { value: run(), reads };
+    } finally {
+      this.reading.pop();
+    }
+  }
+
+  /** Records what the condition of `n` decided on this walk (undefined: nothing), with what it read. */
+  private decide(n: SyntaxNode, outcome: string | undefined, reads: ReadonlyMap<string, string | null>): void {
+    if (this.dead) return;
+    let d = this.decisions.get(n);
+    if (!d) this.decisions.set(n, (d = { outcomes: new Set(), reads: new Map(), mixed: false }));
+    d.outcomes.add(outcome ?? '?');
+    for (const [k, v] of reads) {
+      if (d.reads.has(k) && d.reads.get(k) !== v) d.mixed = true;
+      d.reads.set(k, v);
+    }
+  }
+
+  /** What the condition of `n` decided on every walk, if anything; `reads` is empty when its values differed between walks. */
+  decision(n: SyntaxNode): Decision | undefined {
+    const d = this.decisions.get(n);
+    if (!d || d.outcomes.size !== 1 || d.outcomes.has('?')) return undefined;
+    for (let x: SyntaxNode | null = n; x; x = x.parent) if (this.unwalked.has(x)) return undefined;
+    return { outcome: [...d.outcomes][0], reads: d.mixed ? new Map() : d.reads };
   }
 
   /** The children of `n` after its token `from` and before the first child of a type in `to`. */
@@ -1059,22 +1286,48 @@ class Walker {
    * one: src/semantics/env.ts) drops what it changes.
    */
   run(n: SyntaxNode, st: ShellState): ShellState {
+    // (After a jump, the rest is dead code: walked from the state there, for the states of its nodes.)
+    if (st.unreachable) {
+      this.dead++;
+      try {
+        this.run(n, reached(st));
+      } finally {
+        this.dead--;
+      }
+      return st;
+    }
     this.record(n, st);
     const outer = this.node;
     this.node = n;
+    const reasons = subshellReasons(n);
+    if (reasons.length) this.targets.push({ kind: 'subshell' });
     try {
-      const after = this.runStatement(n, st);
+      const ran = this.runStatement(n, st);
+      const after = withStatus(ran, this.statusOf(n, st, ran));
+      // (A job and a coproc are started: 0.)
+      const out = this.errexit(n, st, reasons.length ? withStatus(st, reasons.includes('background') || reasons.includes('coproc') ? 0 : after.status) : after);
       // (A trap's action may run after any statement, when its signal comes.)
-      const out = subshellReasons(n).length ? st : after;
       return this.trapKeys.size ? this.widen(out, this.trapKeys) : out;
     } catch (e) {
       // (An expansion error discards the rest of the command; the rest of its line too, which is not followed.)
-      if (e instanceof ExpansionError) return subshellReasons(n).length ? st : e.st;
+      if (e instanceof ExpansionError) return withStatus(reasons.length ? st : e.st, undefined);
       /* c8 ignore next -- only an expansion error is thrown on purpose */
       throw e;
     } finally {
+      if (reasons.length) this.targets.pop();
       this.node = outer;
     }
+  }
+
+  /**
+   * The state after the statement `n`, run from `st` and leaving `after`: under `set -e` (surely on), a command that
+   * surely fails, where its status is not tested, ends the shell (the subshell).
+   */
+  private errexit(n: SyntaxNode, st: ShellState, after: ShellState): ShellState {
+    if (this.quiet || !after.status || !ERREXIT_STOPS.has(n.type) || option(st, 'set', 'errexit') !== 'on') return after;
+    // (The last stage of a pipeline: the pipeline's status counts.)
+    if (n.parent?.type === 'pipeline') return after;
+    return this.jump('exit', undefined, after);
   }
 
   private runStatement(n: SyntaxNode, st: ShellState): ShellState {
@@ -1104,10 +1357,14 @@ class Walker {
       case 'test_command': case 'extended_test':
         this.substitutions(n, st);
         return this.defaults(n, st);
-      case 'arithmetic_command':
+      case 'arithmetic_command': {
         this.substitutions(n, st);
-        return this.arithRun((s) => this.arithScript(n.namedChildren, s).st, this.defaults(n, st));
-      case 'negated_command': case 'time_statement': case 'compound_statement':
+        // (`(( ))` with nothing in it is not decided.)
+        const r = this.arithStatus(n.namedChildren, this.defaults(n, st));
+        return withStatus(r.st, n.namedChildren.length ? r.status : undefined);
+      }
+      case 'negated_command': return this.quietly(() => this.sequence(n.children, st));
+      case 'time_statement': case 'compound_statement':
         return this.sequence(n.children, st);
       case 'redirected_statement': {
         // A compound command makes its redirections first; a simple command expands its words first (see `redirections`),
@@ -1116,21 +1373,39 @@ class Walker {
         const body = field(n, 'body');
         const simple = !!body && SIMPLE.includes(body.type);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
-        if (!simple) st = this.expandAll(fields(n, 'redirect'), st, body?.type === 'subshell' ? 'on' : 'off');
+        if (!simple) st = this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, body?.type === 'subshell' ? 'on' : 'off'));
         st = this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
-        return body?.type.startsWith('variable_assignment') ? this.expandAll(fields(n, 'redirect'), st, 'off') : st;
+        return body?.type.startsWith('variable_assignment') ? withStatus(this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, 'off')), st.status) : st;
       }
-      case 'subshell': case 'coproc_statement':
+      case 'subshell':
         return this.sequence(n.children, st);
+      case 'coproc_statement': {
+        // `NAME` (`COPROC`) is an array of the coprocess's fds, and `NAME_PID` its PID; bash unsets them when the
+        // coprocess has ended (may be).
+        const name = field(n, 'name')?.text ?? 'COPROC';
+        st = this.sequence(n.children, st);
+        return merge([st, this.setVariable(this.giveAttribute(this.setVariable(st, name, n, undefined, false, true), name, 'a', n), `${name}_PID`, n, undefined)], this.posix);
+      }
       case 'pipeline': return this.pipeline(n, st);
       case 'list': {
         // (`a &&` while typing has no right side yet.)
         const [left, right] = n.namedChildren;
-        const after = this.run(left, st);
-        return right ? merge([after, this.run(right, after)], this.posix) : after;
+        if (!right) return this.run(left, st);
+        // The right side runs when the left one succeeds (`&&`) or fails (`||`); when that is known, the other path is dead.
+        const and = n.children.some((c) => c.type === '&&');
+        const { value: after, reads } = this.reads(() => this.quietly(() => this.run(left, st)));
+        const ok = after.status === undefined ? undefined : after.status === 0;
+        this.decide(n, ok === undefined ? undefined : String(ok), reads);
+        if (ok !== undefined && ok !== and) {
+          this.deadRun([right], after);
+          return after;
+        }
+        const r = this.run(right, after);
+        return ok === undefined ? merge([after, r], this.posix) : r;
       }
       case 'if_statement': return this.ifStatement(n, st);
       case 'case_statement': {
+        const before = st;
         this.substitutions(field(n, 'value')!, st);
         st = this.defaults(field(n, 'value')!, st);
         // The patterns are expanded in turn until one matches: the first one always, the others may be.
@@ -1140,6 +1415,16 @@ class Walker {
           const after = this.defaults(v, st);
           st = i === 0 || after === st ? after : merge([st, after], this.posix);
         });
+        const runs = this.caseRuns(n, items, before);
+        if (runs) {
+          // The lists that run, in order, each from the state the one before left; the others are dead.
+          let cur = withStatus(st, 0);
+          items.forEach((item, i) => {
+            if (runs.includes(i)) cur = this.sequence(item.children, cur);
+            else this.deadRun(item.children, st);
+          });
+          return cur;
+        }
         const ends: ShellState[] = [];
         let always = false;
         for (const item of items) {
@@ -1147,12 +1432,15 @@ class Walker {
           // A `*)` branch takes every value that reaches it.
           if (fields(item, 'value').some((v) => v.text === '*')) always = true;
         }
-        return merge(always ? ends : [st, ...ends], this.posix);
+        return merge(always ? ends : [withStatus(st, 0), ...ends], this.posix);
       }
       case 'while_statement': {
         const body = field(n, 'body');
         const cond = n.children.filter((c) => c !== body);
-        return this.loop(n, st, (s) => this.sequence(cond, s), (s) => this.sequence(body?.children ?? [], s), true);
+        // (`until` goes on while its condition fails.)
+        const until = n.children[0].type === 'until';
+        return this.loop(n, st, { cond: (s) => this.sequence(cond, s), body: (s) => this.sequence(body?.children ?? [], s), endsWithCondition: true,
+          holds: (status) => (status === undefined ? undefined : (status === 0) !== until) });
       }
       case 'for_statement': case 'select_statement': return this.forStatement(n, st);
       case 'c_style_for_statement': {
@@ -1160,16 +1448,32 @@ class Walker {
         for (const c of n.namedChildren) if (c.type !== 'do_group') this.substitutions(c, st);
         // (When the initializer may fail, bash runs neither the condition nor the update: what they assign may be.)
         let unsure = false;
-        const part = (f: 'initializer' | 'condition' | 'update') => (s: ShellState): ShellState => this.arithRun((x) => this.arithScript(fields(n, f), x, unsure).st, s);
+        const part = (f: 'initializer' | 'update') => (s: ShellState): ShellState => this.arithRun((x) => this.arithScript(fields(n, f), x, unsure).st, s);
+        // (An empty condition is true.)
+        const condition = (s: ShellState): ShellState => {
+          const nodes = fields(n, 'condition');
+          if (!nodes.length) return withStatus(s, 0);
+          const r = this.arithStatus(nodes, s, unsure);
+          return withStatus(r.st, r.status);
+        };
         this.unsure = false;
         const init = part('initializer')(st);
         unsure = this.unsure;
-        return this.loop(n, init, part('condition'), (s) => part('update')(this.sequence(field(n, 'body')?.children ?? [], s)), true);
+        return this.loop(n, init, { cond: condition, body: (s) => this.sequence(field(n, 'body')?.children ?? [], s), update: part('update'), endsWithCondition: true,
+          holds: (status) => (status === undefined ? undefined : status === 0) });
       }
       case 'function_definition': return this.functionDefinition(n, st);
     }
     /* c8 ignore next 2 -- every statement type is handled above */
     return st;
+  }
+
+  /** The state a command substitution `c` starts with: bash turns `set -e` off in it, unless inherit_errexit is on. */
+  private substitutionState(c: SyntaxNode, st: ShellState): ShellState {
+    const errexit = option(st, 'set', 'errexit');
+    const inherit = option(st, 'shopt', 'inherit_errexit');
+    if (c.type !== 'command_substitution' || !this.bash || errexit === 'off' || errexit === 'default' || inherit === 'on') return st;
+    return { ...st, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off') };
   }
 
   /** Walks the command and process substitutions in `n` (not those of statements under it): each is a subshell. */
@@ -1179,8 +1483,13 @@ class Walker {
       // A command substitution is read again when it runs: its aliases are those of the state then.
       const outer = this.expand;
       if (c.type === 'command_substitution') this.expand = st;
-      this.sequence(c.children, st);
-      this.expand = outer;
+      this.targets.push({ kind: 'subshell' });
+      try {
+        this.sequence(c.children, this.substitutionState(c, st));
+      } finally {
+        this.targets.pop();
+        this.expand = outer;
+      }
     };
     const visit = (x: SyntaxNode): void => {
       for (const c of x.children) {
@@ -1250,7 +1559,20 @@ class Walker {
    */
   private redirections(n: SyntaxNode, st: ShellState, program: Tri): ShellState {
     const outer = n.field === 'body' && n.parent!.type === 'redirected_statement' ? fields(n.parent!, 'redirect') : [];
-    return this.expandAll([...n.namedChildren.filter((c) => c.field === 'redirect'), ...outer], st, program);
+    const all = [...n.namedChildren.filter((c) => c.field === 'redirect'), ...outer];
+    return this.fdVariables(all, this.expandAll(all, st, program));
+  }
+
+  /**
+   * `{name}>file` puts the number of the fd it opens in `name`: set, to a value not known here (may be: a program makes
+   * its redirections in its own process).
+   */
+  private fdVariables(redirects: readonly SyntaxNode[], st: ShellState): ShellState {
+    for (const r of redirects) {
+      const name = /^\{([A-Za-z_]\w*)\}$/.exec(field(r, 'descriptor')?.text ?? '')?.[1];
+      if (name) st = merge([st, this.setVariable(st, name, r, undefined)], this.posix);
+    }
+    return st;
   }
 
   /**
@@ -1373,8 +1695,8 @@ class Walker {
   private pasteText(p: SyntaxNode, st: ShellState): { st: ShellState; text: string } {
     switch (p.type) {
       case 'simple_expansion': case 'expansion': {
-        const name = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(p.text)?.[1];
-        const text = name === undefined ? undefined : this.variableText(st, name);
+        const name = /^\$\{?([A-Za-z_]\w*|\?)\}?$/.exec(p.text)?.[1];
+        const text = name === undefined ? undefined : name === '?' ? this.lastStatus(st) : this.variableText(st, name);
         if (text === undefined) throw new ArithUnknown();
         return { st, text: text ?? '' };
       }
@@ -1463,9 +1785,30 @@ class Walker {
     const unset = ['off', 'default'].includes(option(st, 'set', 'nounset')) ? null : undefined;
     // (A name the script has not set may come from the environment: by custom, those are in capitals. Once a file
     // was sourced, a string run with `eval` or a trap set, it may come from there.)
-    if (!v) return /^[A-Z_][A-Z0-9_]*$/.test(target) || this.opaque ? undefined : unset;
+    if (!v) {
+      if (/^[A-Z_][A-Z0-9_]*$/.test(target) || this.opaque) return undefined;
+      // (Taken as unset here, but not for deciding conditions: see `markAssumed`.)
+      this.markAssumed();
+      return unset;
+    }
     if (v.declared === 'unknown' || v.set === 'unknown' || ['a', 'A'].some((l) => (v.attrs[l]?.state ?? 'off') !== 'off')) return undefined;
-    return v.set === 'off' ? unset : v.value;
+    // (After `eval`, `source` or a trap, a value may have changed without the walk seeing it: not for conditions.)
+    if (this.untrusted) this.markAssumed();
+    const text = v.set === 'off' ? unset : v.value;
+    // (A read in dead code is no reason for a decision.)
+    if (text !== undefined && !this.dead) for (const r of this.reading) r.set(name, text);
+    return text;
+  }
+
+  /**
+   * Sets `assumed`: the value was read from a name the script has not set, taken as unset, or after something the walk
+   * does not follow (`untrusted`); good enough for the state, but not to decide a condition. Also for the value being
+   * read as an expression, if any.
+   */
+  private markAssumed(): void {
+    this.assumed = true;
+    const top = this.arithReads[this.arithReads.length - 1];
+    if (top) top.assumed = true;
   }
 
   /**
@@ -1696,6 +2039,23 @@ class Walker {
   /** Whether a file was sourced, a string run with `eval` or a trap set: a name the script has not set may be set. */
   private opaque = false;
 
+  /**
+   * Whether a file was sourced, a string run with `eval` or a trap set that may run before the next command: they may
+   * change any variable, so values are not trusted for deciding conditions (see `variableText`).
+   */
+  private untrusted = false;
+
+  /**
+   * `untrusted` from now on (after `eval`, `source`, a trap, or a builtin that sets or unsets a variable whose name is
+   * not known here: `unset "$v"`, `read $v`, `declare "$v=1"`): what was remembered of values read as expressions was trusted.
+   */
+  private distrust(): void {
+    if (this.untrusted) return;
+    this.untrusted = true;
+    this.arithMemo = new Map();
+    this.assignsMemo = new Map();
+  }
+
   /** `opaque` from now on: what was remembered of values read as expressions may be otherwise. */
   private turnOpaque(): void {
     if (this.opaque) return;
@@ -1750,6 +2110,7 @@ class Walker {
       if (seen.unknown === 'always') throw new ArithUnknown();
       if (!fits) throw new ArithUnknown('deep');
       if (seen.unsure) this.markUnsure();
+      if (seen.assumed) this.markAssumed();
       return { st, value: seen.value };
     }
     // A name read again with nothing changed since leads back to itself for ever: bash fails at its recursion
@@ -1757,7 +2118,7 @@ class Walker {
     if (this.arithReading.some((r) => r.name === name && r.st === st)) throw new ArithError(st);
     if (this.arithReading.length >= ARITH_DEPTH) throw new ArithUnknown('deep');
     const from = this.arithReading.length;
-    const reads: ArithReads = { deps: new Map(), pure: true, depth: 1, unsure: false };
+    const reads: ArithReads = { deps: new Map(), pure: true, depth: 1, unsure: false, assumed: false };
     this.arithReading.push({ name, st });
     this.arithReads.push(reads);
     this.noteRead(st, name);
@@ -1778,6 +2139,7 @@ class Walker {
         for (const [k, v] of reads.deps) up.deps.set(k, v);
         up.pure &&= reads.pure;
         up.unsure ||= reads.unsure;
+        up.assumed ||= reads.assumed;
         up.depth = Math.max(up.depth, reads.depth + 1);
       }
     }
@@ -1787,7 +2149,7 @@ class Walker {
 
   private remember(name: string, reads: ArithReads, value: bigint | undefined, unknown: ArithRemembered['unknown']): void {
     const list = this.arithMemo.get(name) ?? [];
-    list.unshift({ deps: reads.deps, depth: reads.depth, value, unknown, unsure: reads.unsure });
+    list.unshift({ deps: reads.deps, depth: reads.depth, value, unknown, unsure: reads.unsure, assumed: reads.assumed });
     if (list.length > ARITH_MEMO) list.pop();
     this.arithMemo.set(name, list);
   }
@@ -1827,27 +2189,54 @@ class Walker {
   private pipeline(n: SyntaxNode, st: ShellState): ShellState {
     const stages = n.namedChildren.filter((c) => STATEMENTS.has(c.type));
     // (The stages but the last one are subshells.)
-    stages.slice(0, -1).forEach((s) => this.run(s, st));
+    const statuses = stages.slice(0, -1).map((s) => this.run(s, st).status);
     const here = lastStageInShell(st, this.shell);
-    const after = this.run(stages[stages.length - 1], st);
-    return here === 'on' ? after : here === 'unknown' ? merge([st, after], this.posix) : st;
+    // (A jump in the last stage, when it runs in a subshell, ends that subshell.)
+    if (here !== 'on') this.targets.push({ kind: here === 'off' ? 'subshell' : 'maybe' });
+    let after: ShellState;
+    try {
+      after = this.run(stages[stages.length - 1], st);
+    } finally {
+      if (here !== 'on') this.targets.pop();
+    }
+    statuses.push(after.status);
+    // Its status is the last stage's; with pipefail, the last one that is not 0.
+    const last = after.status;
+    const failed = statuses.some((x) => x === undefined) ? undefined : statuses.filter((x) => x !== 0).pop() ?? 0;
+    const pipefail = option(st, 'set', 'pipefail');
+    const status = pipefail === 'on' ? failed : pipefail === 'unknown' ? (failed === last ? last : undefined) : last;
+    return withStatus(here === 'on' ? after : here === 'unknown' ? merge([st, after], this.posix) : st, status);
   }
 
+  /**
+   * `if`: each condition in turn, until one holds. A condition whose status is known makes the other path dead: its
+   * `then` branch when it fails, the branches after it when it holds. With no `else`, the path where no condition held
+   * has status 0.
+   */
   private ifStatement(n: SyntaxNode, st: ShellState): ShellState {
     const ends: ShellState[] = [];
-    let cur = this.sequence(this.part(n, 'if', ['then']), st);
-    ends.push(this.sequence(this.part(n, 'then', ['elif_clause', 'else_clause', 'fi']), cur));
-    let hasElse = false;
-    for (const c of n.namedChildren) {
-      if (c.type === 'elif_clause') {
-        cur = this.sequence(this.part(c, 'elif', ['then']), cur);
-        ends.push(this.sequence(this.part(c, 'then', []), cur));
-      } else if (c.type === 'else_clause') {
-        hasElse = true;
-        ends.push(this.sequence(c.children, cur));
+    const branches = [{ at: n, cond: this.part(n, 'if', ['then']), body: this.part(n, 'then', ['elif_clause', 'else_clause', 'fi']) },
+      ...n.namedChildren.filter((c) => c.type === 'elif_clause').map((c) => ({ at: c, cond: this.part(c, 'elif', ['then']), body: this.part(c, 'then', []) }))];
+    let cur = st;
+    // Whether a path gets past the conditions so far.
+    let open = true;
+    for (const b of branches) {
+      if (!open) {
+        this.deadRun([...b.cond, ...b.body], cur);
+        continue;
       }
+      const { value: after, reads } = this.reads(() => this.quietly(() => this.sequence(b.cond, cur)));
+      const holds = after.status === undefined ? undefined : after.status === 0;
+      this.decide(b.at, holds === undefined ? undefined : String(holds), reads);
+      if (holds === false) this.deadRun(b.body, after);
+      else ends.push(this.sequence(b.body, after));
+      if (holds === true) open = false;
+      cur = after;
     }
-    if (!hasElse) ends.push(cur);
+    const otherwise = n.namedChildren.find((c) => c.type === 'else_clause');
+    if (otherwise && open) ends.push(this.sequence(otherwise.children, cur));
+    else if (otherwise) this.deadRun(otherwise.children, cur);
+    else if (open) ends.push(withStatus(cur, 0));
     return merge(ends, this.posix);
   }
 
@@ -1862,7 +2251,10 @@ class Walker {
    * before in a loop being walked starts from what it changed then, as it was in the end: in nested loops, whose
    * values change at each pass, each walk then takes one pass, not as many as the loops around it take.
    */
-  private loop(n: SyntaxNode, st: ShellState, cond: (s: ShellState) => ShellState, body: (s: ShellState) => ShellState, endsWithCondition: boolean, atLeastOnce = false): ShellState {
+  private loop(n: SyntaxNode, st: ShellState, { cond, body, update = (s) => s, endsWithCondition, atLeastOnce = false, holds, exit = (s) => s }: {
+    cond: (s: ShellState) => ShellState; body: (s: ShellState) => ShellState; update?: (s: ShellState) => ShellState; endsWithCondition: boolean;
+    atLeastOnce?: boolean; holds?: (status: number | undefined) => boolean | undefined; exit?: (s: ShellState) => ShellState;
+  }): ShellState {
     const before = this.loopDepth ? this.loopsWalked.get(n) : undefined;
     let entry = st;
     if (before) {
@@ -1874,20 +2266,65 @@ class Walker {
       }
       entry = merge([st, was], this.posix);
     }
+    // `break` leaves the loop (the states there are merged into the one after it); `continue` ends the pass.
+    const target: Extract<Target, { kind: 'loop' }> = { kind: 'loop', dead: this.dead, breaks: [], continues: [] };
+    // A condition whose status is known (`holds`) is recorded at each test; one that stops the loop at its first test
+    // makes the body dead.
+    const test = (s: ShellState): { st: ShellState; holds?: boolean } => {
+      if (!holds) return { st: cond(s) };
+      const { value, reads } = this.reads(() => this.quietly(() => cond(s)));
+      const h = holds(value.status);
+      this.decide(n, h === undefined ? undefined : String(h), reads);
+      return { st: value, holds: h };
+    };
+    const pass = (s: ShellState): ShellState => update(merge([body(s), ...target.continues.splice(0)], this.posix));
     const keys = new Set<string>();
+    const trusted = !this.untrusted;
     this.collecting.push(keys);
+    this.targets.push(target);
     this.loopDepth++;
     let end = st;
-    for (let pass = 0; pass < 5; pass++) {
-      end = body(cond(entry));
-      const next = merge([st, end], this.posix);
-      if (sameState(next, entry)) break;
-      entry = next;
+    let settled = false;
+    let stopped: ShellState | undefined;
+    let normal: ShellState;
+    try {
+      for (let i = 0; i < 5; i++) {
+        const c = test(entry);
+        if (i === 0 && c.holds === false) {
+          this.dead++;
+          try {
+            pass(c.st);
+          } finally {
+            this.dead--;
+          }
+          stopped = c.st;
+          settled = true;
+          break;
+        }
+        end = pass(c.st);
+        const next = merge([st, end], this.posix);
+        if (sameState(next, entry)) {
+          settled = true;
+          break;
+        }
+        entry = next;
+      }
+      if (stopped) normal = stopped;
+      else if (endsWithCondition) {
+        // (A condition that holds at every test never ends the loop: only a jump does.)
+        const last = test(entry);
+        normal = settled && last.holds === true ? unreachable(last.st) : last.st;
+      } else normal = atLeastOnce ? end : entry;
+    } finally {
+      this.loopDepth--;
+      this.targets.pop();
+      this.collecting.pop();
     }
-    this.loopDepth--;
-    this.collecting.pop();
+    // (Passes that did not settle may not cover every state the loop runs with, and a value the walk does not follow
+    // may have changed in a pass, to be read in the next: its conditions are not decided.)
+    if (!settled || (trusted && this.untrusted)) this.unwalked.add(n);
     this.loopsWalked.set(n, { keys, entry });
-    return endsWithCondition ? cond(entry) : atLeastOnce ? end : entry;
+    return merge([exit(normal), ...target.breaks, ...target.continues], this.posix);
   }
 
   private forStatement(n: SyntaxNode, st: ShellState): ShellState {
@@ -1903,8 +2340,8 @@ class Walker {
     const known = n.type === 'for_statement' && values.length > 0 && words.every((w) => w !== undefined);
     const each = known && new Set(words).size === 1 ? words[0] : undefined;
     // (A list of known words runs the body at least once.)
-    const end = this.loop(n, st, (s) => s, (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), false, known);
-    return known ? assign(end, words[words.length - 1]) : end;
+    return this.loop(n, st, { cond: (s) => s, body: (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), endsWithCondition: false, atLeastOnce: known,
+      exit: (s) => (known ? assign(s, words[words.length - 1]) : s) });
   }
 
   private functionDefinition(n: SyntaxNode, st: ShellState): ShellState {
@@ -1918,15 +2355,18 @@ class Walker {
     // Under `set -a`, a function defined is exported.
     const all = option(st, 'set', 'allexport');
     const exported: Tri = all === 'on' ? 'on' : all === 'unknown' ? tri(prev?.exported ?? 'off', 'on') : prev?.exported ?? 'off';
+    if (exported !== 'off') this.unwalked.add(n);
     return this.put(st, 'functions', name, { state: 'on', def: n, exported, readonly: prev?.readonly ?? 'off' });
   }
 
   /** The state after a call of `fn`, with the prefix assignments `temporaries` (`x=1 f`) set while it runs. */
   private call(fn: FunctionState, st: ShellState, temporaries: SyntaxNode[]): ShellState {
     const def = fn.def;
+    // (`$?` in the body is not followed: the walks are remembered by the state without it.)
+    st = withStatus(st, undefined);
     const site = this.aliasHost ?? this.node!;
     const sites = this.calls.get(def) ?? new Map<SyntaxNode, boolean>();
-    if (!this.quiet) {
+    if (!this.silent) {
       this.calls.set(def, sites);
       sites.set(site, (sites.get(site) ?? true) && fn.state === 'on');
     }
@@ -1934,6 +2374,7 @@ class Walker {
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
       // A recursive call: what the body changed in its walks so far may change.
       exit = this.widen(st, this.changes.get(def) ?? new Set());
+      this.unwalked.add(def);
     } else if (temporaries.length) {
       const frame: Frame = { def, saved: new Map() };
       let entry = st;
@@ -1946,13 +2387,18 @@ class Walker {
       exit = this.walkBody(def, entry, frame);
     } else {
       const walks = this.walks.get(def) ?? [];
-      if (!this.quiet) this.walks.set(def, walks);
-      const seen = walks.find((w) => w.entry === st || sameState(w.entry, st));
+      if (!this.silent) this.walks.set(def, walks);
+      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not, with values
+      // trusted or not.)
+      const how = `${!!this.dead} ${!!this.quiet} ${this.untrusted}`;
+      const seen = walks.find((w) => w.how === how && (w.entry === st || sameState(w.entry, st)));
       if (seen) exit = seen.exit;
-      else if (walks.length >= WALKS_PER_FUNCTION) exit = this.widen(st, this.changes.get(def)!);
-      else {
+      else if (walks.length >= WALKS_PER_FUNCTION) {
+        exit = this.widen(st, this.changes.get(def)!);
+        this.unwalked.add(def);
+      } else {
         exit = this.walkBody(def, st, { def, saved: new Map() });
-        if (!this.quiet) walks.push({ entry: st, exit });
+        if (!this.silent) walks.push({ entry: st, exit, how });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
@@ -1960,7 +2406,7 @@ class Walker {
 
   /** Walks the body of `def` from `entry`; its locals (in `frame`) and its `local -` options are restored after it. */
   private walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
-    if (!this.walks.has(def) && !this.quiet) this.walks.set(def, []);
+    if (!this.walks.has(def) && !this.silent) this.walks.set(def, []);
     const body = field(def, 'body');
     if (!body) return entry;
     let top = def;
@@ -1973,7 +2419,16 @@ class Walker {
     const changes = this.changes.get(def) ?? new Set<string>();
     this.changes.set(def, changes);
     this.collecting.push(changes);
-    let end = this.run(body, entry);
+    // (`return` ends the body: the states there are merged into the one at its end.)
+    const target: Target = { kind: 'function', dead: this.dead, returns: [] };
+    this.targets.push(target);
+    let end: ShellState;
+    try {
+      end = this.run(body, entry);
+    } finally {
+      this.targets.pop();
+    }
+    end = merge([end, ...target.returns], this.posix);
     this.frames.pop();
     this.stack.pop();
     this.expand = outer;
@@ -1999,13 +2454,15 @@ class Walker {
     const name = this.commandName(n);
     const nameNode = field(n, 'name')!;
     const assignments = n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < nameNode.startIndex);
-    // With no command name, the assignments are the shell's, made before the redirections.
-    if (name === '') {
+    // With no command name, the assignments are the shell's, made before the redirections; their status is that of
+    // the last command substitution. (A quoted empty name is a command: `x=1 ''` is "command not found".)
+    const word = nameNode.namedChildren[0];
+    if (name === '' && !descendants(word, ['string', 'raw_string', 'ansi_c_string']).length && !['string', 'raw_string', 'ansi_c_string'].includes(word.type)) {
       for (const a of assignments) {
         this.record(a, st);
         st = this.assignNode(a, this.defaults(a, st));
       }
-      return this.redirections(n, st, 'off');
+      return withStatus(this.redirections(n, st, 'off'), undefined);
     }
     // The words are expanded, then the values of the assignments, then the redirections are made.
     const before = st;
@@ -2013,7 +2470,6 @@ class Walker {
     st = this.redirections(n, this.expandAll(assignments, st), this.runsProgram(n, st));
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.forgetHashed(st);
-    const word = nameNode.namedChildren[0];
     const alias = name !== undefined && word.type === 'word' && word.text === name && !this.expanding.has(name) ? this.expand.aliases.get(name) : undefined;
     const expands = !this.bash ? 'on' : option(this.expand, 'shopt', 'expand_aliases');
     if (alias && alias.state !== 'off' && (expands === 'on' || expands === 'unknown')) return this.expandAlias(n, nameNode, name!, alias, expands, st);
@@ -2024,10 +2480,314 @@ class Walker {
       for (const a of assignments) kept = this.giveAttribute(this.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
       st = posix === 'on' ? kept : merge([st, kept], this.posix);
     }
-    if (name === undefined) return st;
+    // A function named by a word that is not known here, or given to a command as an argument (`complete -F f`,
+    // `mapfile -C f`), may be called with values the walk does not see: its conditions are not decided.
+    if (name === undefined) this.callsAny(st);
+    for (const a of fields(n, 'argument')) {
+      const f = st.functions.get(staticWordValue(a) ?? '');
+      if (f && f.state !== 'off') this.unwalked.add(f.def);
+    }
+    if (name === undefined) return withStatus(st, this.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
-    if (fn) return this.call(fn, st, assignments);
-    return this.builtin(name, fields(n, 'argument'), n, st);
+    if (fn) return withStatus(this.call(fn, st, assignments), undefined);
+    return withStatus(this.builtin(name, fields(n, 'argument'), n, st), this.simpleStatus(n, before));
+  }
+
+  /**
+   * The status of the simple command `n` run from `st`, when known: `true`, `:` and `false` (also as the value of a
+   * variable: `$debug`), `test`. Not with prefix assignments (one may fail), a redirection that may fail, or a word
+   * whose value is not known (its expansion may fail).
+   */
+  private simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
+    if (!this.bash || n.namedChildren.some((c) => c.type === 'variable_assignment') || !fields(n, 'redirect').every(safeRedirect)) return undefined;
+    const name = this.condFields(field(n, 'name')!.namedChildren[0], st);
+    if (name?.length !== 1 || st.functions.get(name[0]) || st.disabled.get(name[0])) return undefined;
+    const args = fields(n, 'argument');
+    if (name[0] === 'test') return this.testCommand(args, st);
+    if (!['true', 'false', ':'].includes(name[0]) || args.some((a) => !this.condFields(a, st))) return undefined;
+    return name[0] === 'false' ? 1 : 0;
+  }
+
+  /**
+   * The status of assignments alone (`x=1`, `assignments` of `n`) run from `st`: 0, when none of them can fail (no
+   * `$( )`, whose status it would be; no readonly or integer target, no `${x?}`, no expansion under `set -u`).
+   */
+  private assignmentStatus(n: SyntaxNode, assignments: readonly SyntaxNode[], st: ShellState): number | undefined {
+    if (descendants(n, SUBSTITUTIONS).length || descendants(n, ['expansion']).some((e) => e.children.some((c) => c.type === '?' || c.type === ':?'))) return undefined;
+    const nounset = option(st, 'set', 'nounset');
+    if (nounset !== 'off' && nounset !== 'default' && descendants(n, ['simple_expansion', 'expansion']).length) return undefined;
+    for (const a of assignments) {
+      const name = field(a, 'name')!.text;
+      const target = NAME.test(name) ? this.resolve(st, name) : undefined;
+      if (!target || attribute(st, target, 'r') !== 'off' || attribute(st, target, 'i') !== 'off') return undefined;
+    }
+    return 0;
+  }
+
+  /**
+   * The status of the statement `n`, run from `st` and leaving `after`, when known (docs/design/semantics.md, 4.14).
+   * Simple commands, `(( ))`, lists, `if`, `case` and pipelines set it themselves; a sequence of statements gives its
+   * last one's (see `sequence`).
+   */
+  private statusOf(n: SyntaxNode, st: ShellState, after: ShellState): number | undefined {
+    switch (n.type) {
+      case 'command': case 'arithmetic_command': case 'list': case 'if_statement': case 'case_statement': case 'pipeline':
+      case 'compound_statement': case 'subshell': case 'time_statement':
+        return after.status;
+      case 'negated_command': return after.status === undefined ? undefined : Number(after.status === 0);
+      case 'redirected_statement': return fields(n, 'redirect').every(safeRedirect) ? after.status : undefined;
+      case 'test_command': return st.functions.get('[') || st.disabled.get('[') ? undefined : this.testCommand(n.namedChildren, st);
+      case 'extended_test': {
+        const v = this.bash && n.namedChildren.length === 1 ? this.condExpr(n.namedChildren[0], st) : undefined;
+        return v === undefined ? undefined : Number(!v);
+      }
+      case 'variable_assignment': return this.assignmentStatus(n, [n], st);
+      case 'variable_assignments': return this.assignmentStatus(n, n.namedChildren, st);
+    }
+    return undefined;
+  }
+
+  /** `(( ))` or the condition of `for (( ))` (`nodes`) run from `st`: the state after it, and its status when known. */
+  private arithStatus(nodes: readonly SyntaxNode[], st: ShellState, unsure = false): { st: ShellState; status?: number } {
+    this.assumed = false;
+    try {
+      const r = this.arithScript(nodes, st, unsure);
+      // (Not when it read what it is unsure of, or a name the script has not set: see `variableText`; nor in a shell
+      // other than bash, where `(( ))` may not be arithmetic.)
+      return { st: r.st, status: !this.bash || r.value === undefined || this.unsure || this.assumed ? undefined : Number(r.value === 0n) };
+    } catch (e) {
+      if (e instanceof ArithError) return { st: e.st };
+      /* c8 ignore next -- only an arithmetic error is thrown on purpose */
+      throw e;
+    }
+  }
+
+  /** The status of `test` or `[` with the words `words` (without the `]`), run from `st`, when their values are known. */
+  private testCommand(words: readonly SyntaxNode[], st: ShellState): number | undefined {
+    if (!this.bash) return undefined;
+    const args: string[] = [];
+    for (const w of words) {
+      const f = this.condFields(w, st);
+      if (!f) return undefined;
+      args.push(...f);
+    }
+    return testStatus(args, this.testEnv(st));
+  }
+
+  /** The options of `st`, for the decisions of src/semantics/conditions.ts. */
+  private testEnv(st: ShellState): TestEnv {
+    return {
+      // (`-o name` only for an option the script set: a default may differ, `bash -e script`.)
+      option: (name) => {
+        const o = st.set.get(name);
+        return o === 'on' ? true : o === 'off' ? false : undefined;
+      },
+    };
+  }
+
+  /** Whether the expression `e` of `[[ ]]` is true, when it is known from `st`. */
+  private condExpr(e: SyntaxNode, st: ShellState): boolean | undefined {
+    switch (e.type) {
+      case 'parenthesized_expression': return this.condExpr(e.namedChildren[0], st);
+      case 'unary_expression': {
+        const op = field(e, 'operator')!;
+        const operand = e.namedChildren.filter((c) => c !== op)[0];
+        if (op.type === '!') {
+          const v = this.condExpr(operand, st);
+          return v === undefined ? undefined : !v;
+        }
+        const value = this.condValue(operand, st);
+        return value === undefined ? undefined : unaryTest(op.text, value, this.testEnv(st));
+      }
+      case 'binary_expression': {
+        const op = field(e, 'operator')!.text;
+        const left = field(e, 'left');
+        const right = field(e, 'right');
+        if (op === '&&' || op === '||') {
+          // The right side is read only when the left one does not decide.
+          const decides = op === '||';
+          const l = this.condExpr(left!, st);
+          if (l === decides) return decides;
+          const r = this.condExpr(right!, st);
+          return l === undefined && r !== decides ? undefined : r;
+        }
+        const value = this.condValue(left, st);
+        if (value === undefined) return undefined;
+        if (op === '==' || op === '=' || op === '!=') {
+          const nocase = option(st, 'shopt', 'nocasematch');
+          const pattern = nocase === 'off' || nocase === 'default' ? this.condPattern(right, st) : undefined;
+          const m = pattern === undefined ? undefined : patternMatches(value, pattern);
+          return m === undefined ? undefined : m === (op !== '!=');
+        }
+        if (op === '=~') {
+          // Only a regex of plain characters, maybe anchored: `^abc`, `abc$`, `abc`; not under nocasematch, which it follows.
+          const nocase = option(st, 'shopt', 'nocasematch');
+          const m = right && (nocase === 'off' || nocase === 'default') && ['regex', 'word', 'number'].includes(right.type) ? /^(\^?)([A-Za-z0-9_ ,:/-]*)(\$?)$/.exec(right.text) : null;
+          if (!m) return undefined;
+          return m[1] && m[3] ? value === m[2] : m[1] ? value.startsWith(m[2]) : m[3] ? value.endsWith(m[2]) : value.includes(m[2]);
+        }
+        if (INTEGER_TESTS.has(op)) {
+          // Arithmetic: decimal integers only (`010` is octal there, `x` a variable), with spaces, tabs and newlines around.
+          const other = this.condValue(right, st);
+          const int = (t: string | undefined): bigint | undefined => {
+            const m = t === undefined ? null : /^[ \t\n]*([+-]?(?:0|[1-9]\d{0,17}))[ \t\n]*$/.exec(t);
+            return m ? BigInt(m[1]) : undefined;
+          };
+          const a = int(value);
+          const b = int(other);
+          return a === undefined || b === undefined ? undefined : compareIntegers(op, a, b);
+        }
+        // `<` and `>` (the locale's order), the tests of files.
+        return undefined;
+      }
+    }
+    // A word alone: true when it is not empty.
+    const value = this.condValue(e, st);
+    return value === undefined ? undefined : value !== '';
+  }
+
+  /**
+   * The pieces of the word `w` of a condition, when its value is known from `st`: literal text as written
+   * (`raw`: its backslashes still quote), quoted text, and the values of `$name`, `${name}` and `$?`.
+   */
+  private condPieces(w: SyntaxNode | undefined, st: ShellState, quoted = false): { text: string; quoted: boolean; raw: boolean }[] | undefined {
+    if (!w) return undefined;
+    switch (w.type) {
+      case 'word': case 'extglob_pattern': case 'number':
+        // (Quotes and expansions are nodes of their own; text with them left is not followed, nor a tilde, which
+        // expands at the start and after `=` or `:`.)
+        return /[$`'"~]/.test(w.text) ? undefined : [{ text: w.text, quoted, raw: !quoted }];
+      case 'raw_string': return [{ text: w.text.slice(1, -1), quoted: true, raw: false }];
+      case 'ansi_c_string': {
+        const v = ansiCValue(w.text.slice(2, -1));
+        return v === undefined ? undefined : [{ text: v, quoted: true, raw: false }];
+      }
+      case 'string': {
+        const out: { text: string; quoted: boolean; raw: boolean }[] = [{ text: '', quoted: true, raw: false }];
+        for (const c of w.namedChildren) {
+          if (c.type === 'string_content') out.push({ text: c.text.replace(/\\\n/g, '').replace(/\\([$`"\\])/g, '$1'), quoted: true, raw: false });
+          else {
+            const p = c.type === 'simple_expansion' || c.type === 'expansion' ? this.condPieces(c, st, true) : undefined;
+            if (!p) return undefined;
+            out.push(...p);
+          }
+        }
+        return out;
+      }
+      case 'simple_expansion': case 'expansion': {
+        const name = /^\$(?:([A-Za-z_]\w*|\?)|\{([A-Za-z_]\w*|\?)\})$/.exec(w.text);
+        this.assumed = false;
+        const v = !name ? undefined : (name[1] ?? name[2]) === '?' ? this.lastStatus(st) : this.variableText(st, name[1] ?? name[2]);
+        // (Not a name the script has not set: see `variableText`.)
+        return v === undefined || this.assumed ? undefined : [{ text: v ?? '', quoted, raw: false }];
+      }
+      case 'concatenation': {
+        const out: { text: string; quoted: boolean; raw: boolean }[] = [];
+        for (const c of w.namedChildren) {
+          const p = this.condPieces(c, st, quoted);
+          if (!p) return undefined;
+          out.push(...p);
+        }
+        return out;
+      }
+    }
+    // Command substitution, arithmetic, the other parameters and expansions: not known here.
+    return undefined;
+  }
+
+  /** `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it. */
+  private lastStatus(st: ShellState): string | undefined {
+    if (st.status === undefined || descendants(this.node!, SUBSTITUTIONS).length) return undefined;
+    if (!this.dead) for (const r of this.reading) r.set('?', String(st.status));
+    return String(st.status);
+  }
+
+  /** The value of the word `w` in `[[ ]]` or of `case` (not split, not globbed), when known from `st`. */
+  private condValue(w: SyntaxNode | undefined, st: ShellState): string | undefined {
+    const pieces = this.condPieces(w, st);
+    return pieces?.map((p) => (p.raw ? unescape(p.text) : p.text)).join('');
+  }
+
+  /** The pattern of the word `w` (`[[ x == w ]]`, a `case` pattern), for `patternMatches`, when known from `st`. */
+  private condPattern(w: SyntaxNode | undefined, st: ShellState): string | undefined {
+    const pieces = this.condPieces(w, st);
+    // (Literal text keeps its backslashes, and so does the value of an unquoted `$p`: both are patterns.)
+    return pieces && patternText(pieces.map((p) => ({ text: p.text, quoted: p.quoted })));
+  }
+
+  /**
+   * The words the word `w` of `test` or `[` gives, when known from `st`: an unquoted expansion is split (with the
+   * default IFS only) and may give none; a glob, a brace or a tilde is not followed.
+   */
+  private condFields(w: SyntaxNode, st: ShellState): string[] | undefined {
+    const pieces = this.condPieces(w, st);
+    if (!pieces) return undefined;
+    const out: string[] = [];
+    let cur = '';
+    let has = false;
+    for (const p of pieces) {
+      if (p.raw) {
+        // (Nor an extended glob, which `shopt -s extglob` makes one: `@(a)`.)
+        if (/(^|[^\\])(\\\\)*[*?[{]/.test(p.text) || /[@!+]\(/.test(p.text)) return undefined;
+        cur += unescape(p.text);
+        has = true;
+      } else if (p.quoted) {
+        cur += p.text;
+        has = true;
+      } else {
+        // (An IFS the script set is not followed; the value of an expansion may be a glob.)
+        if (st.variables.get('IFS') || /[*?[]/.test(p.text)) return undefined;
+        for (const c of p.text) {
+          if (c !== ' ' && c !== '\t' && c !== '\n') {
+            cur += c;
+            has = true;
+          } else if (has) {
+            out.push(cur);
+            cur = '';
+            has = false;
+          }
+        }
+      }
+    }
+    if (has) out.push(cur);
+    return out;
+  }
+
+  /**
+   * The items of the `case` statement `n` whose lists run, in order, when the word and the patterns tried are known from
+   * `st` (bash: the patterns are tried in turn; `;;` ends, `;&` runs the next list, `;;&` tries the patterns after it).
+   */
+  private caseRuns(n: SyntaxNode, items: readonly SyntaxNode[], st: ShellState): number[] | undefined {
+    const nocase = option(st, 'shopt', 'nocasematch');
+    const { value: runs, reads } = this.reads((): number[] | undefined => {
+      const word = this.bash && (nocase === 'off' || nocase === 'default') ? this.condValue(field(n, 'value')!, st) : undefined;
+      if (word === undefined) return undefined;
+      const out: number[] = [];
+      for (let i = 0; i < items.length;) {
+        let found = -1;
+        for (let j = i; j < items.length && found < 0; j++) {
+          for (const v of fields(items[j], 'value')) {
+            const pattern = this.condPattern(v, st);
+            const m = pattern === undefined ? undefined : patternMatches(word, pattern);
+            if (m === undefined) return undefined;
+            if (m) {
+              found = j;
+              break;
+            }
+          }
+        }
+        if (found < 0) break;
+        let k = found;
+        out.push(k);
+        const end = (item: SyntaxNode): string | undefined => item.children.find((c) => c.type === ';&' || c.type === ';;&')?.type;
+        while (end(items[k]) === ';&' && k + 1 < items.length) out.push(++k);
+        if (end(items[k]) !== ';;&') break;
+        i = k + 1;
+      }
+      return out;
+    });
+    this.decide(n, runs?.join(','), reads);
+    return runs;
   }
 
   /**
@@ -2042,6 +2802,11 @@ class Walker {
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */
+  /** A command that may call any function defined in `st` (`$cmd`, `eval "$s"`): their conditions are not decided. */
+  private callsAny(st: ShellState): void {
+    for (const [, f] of st.functions) if (f.state !== 'off') this.unwalked.add(f.def);
+  }
+
   private functionCalled(name: string, st: ShellState): FunctionState | undefined {
     const fn = st.functions.get(name);
     if (!fn || fn.state === 'off') return undefined;
@@ -2121,7 +2886,7 @@ class Walker {
     const after = this.sequence(tree.root.children, st);
     this.aliasHost = host;
     this.expanding.delete(name);
-    return alias.state === 'on' && expands === 'on' ? after : merge([st, after], this.posix);
+    return alias.state === 'on' && expands === 'on' ? after : merge([withStatus(st, undefined), after], this.posix);
   }
 
   /** The builtin `name` run with `args`, when it changes the state. */
@@ -2147,36 +2912,53 @@ class Walker {
     switch (name) {
       case 'eval': case 'trap': {
         // A static string of `eval` runs here, in this shell; a trap's action runs later, when the signal comes
-        // (docs/design/semantics.md, 4.13). A string not known here may set any name.
+        // (docs/design/semantics.md, 4.13). A string not known here may set any name, and call any function.
         const at = parse.roles.find((r) => r.role.role === 'command');
         if (!at) return st;
         const words = name === 'eval' ? args.slice(at.word) : [args[at.word]];
         const script = this.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
+        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
+        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
+        // (A trap but EXIT may run before the next command: variables are not trusted for deciding conditions after
+        // it, nor after `eval`.)
+        if (name === 'eval' || !signals.every(exit)) this.distrust();
         if ('why' in script) {
           this.turnOpaque();
+          this.callsAny(st);
           return st;
         }
         if (name === 'eval') return this.evalScript(script, n, st);
-        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
-        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        if (!this.quiet) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit) });
+        if (!this.silent) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit) });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exit)) {
           const keys = new Set<string>();
           this.collecting.push(keys);
-          this.quiet++;
+          this.silent++;
           this.runScript(script, this.aliasHost ?? n, st);
-          this.quiet--;
+          this.silent--;
           this.collecting.pop();
           for (const k of keys) this.trapKeys.add(k);
         }
         return st;
       }
+      case 'cd': case 'pushd': case 'popd': {
+        // They set PWD and OLDPWD (when they succeed), to values not followed.
+        const moved = this.setVariable(this.setVariable(st, 'PWD', n, undefined), 'OLDPWD', n, undefined);
+        return merge([st, moved], this.posix);
+      }
       case 'let': return this.arithRun((s) => this.letCommand(operands, s), st);
+      case 'break': case 'continue': {
+        // `break N`: N loops (a count not known, or not a number above 0, may fail).
+        const words = args.filter((a, i) => i > 0 || a.text !== '--');
+        const count = words.length ? staticWordValue(words[0]) : '1';
+        return this.jump(name, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
+      }
+      case 'return': case 'exit': return this.jump(name, undefined, st);
       case 'source': case '.':
         // (The file is not read: what it defines is not known here.)
-        if (!this.quiet) this.sources.push(this.aliasHost ?? n);
+        if (!this.silent) this.sources.push(this.aliasHost ?? n);
         this.turnOpaque();
+        this.distrust();
         return st;
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
       case 'shopt': {
@@ -2225,6 +3007,11 @@ class Walker {
         }
         return st;
       }
+      case 'wait': {
+        // `-p name`: the ID of the job that ended (none when there was no job).
+        const v = valueOf('-p');
+        return v ? merge([st, this.setNamed(st, v, n, false)], this.posix) : st;
+      }
       case 'read': {
         const array = valueOf('-a');
         if (array) return this.setNamed(st, array, n, true);
@@ -2234,6 +3021,7 @@ class Walker {
       }
       case 'mapfile': case 'readarray': {
         const array = operands[0] ? staticWordValue(operands[0]) : 'MAPFILE';
+        if (array === undefined) this.distrust();
         return array && NAME.test(array) ? this.giveAttribute(this.setVariable(st, array, n, undefined), array, 'a', n) : st;
       }
       case 'printf': {
@@ -2270,7 +3058,10 @@ class Walker {
 
   /** Sets the variable a word names (`v`, `a[1]`: an element), to a value not known here. */
   private setNamed(st: ShellState, w: SyntaxNode, at: SyntaxNode, array: boolean): ShellState {
-    const m = /^([A-Za-z_]\w*)(\[.*\])?$/s.exec(staticWordValue(w) ?? '');
+    const name = staticWordValue(w);
+    // (A name not known here may be any variable's: see `distrust`.)
+    if (name === undefined) this.distrust();
+    const m = /^([A-Za-z_]\w*)(\[.*\])?$/s.exec(name ?? '');
     if (!m) return st;
     st = this.setVariable(st, m[1], at, undefined);
     return (array || m[2]) && attribute(st, m[1], 'A') === 'off' ? this.giveAttribute(st, m[1], 'a', at) : st;
@@ -2339,7 +3130,11 @@ class Walker {
       // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command; `"c"=$x` (whose value is not known here).
       const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : staticWordValue(w);
       const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(w).replace(/=.*/s, '=')) ;
-      if (!m || (text === undefined && !m[3])) continue;
+      if (!m || (text === undefined && !m[3])) {
+        // (A name not known here may be any variable's: see `distrust`.)
+        if (text === undefined) this.distrust();
+        continue;
+      }
       out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: text === undefined ? undefined : m[4], array: false } } : {}) });
     }
     return out;
@@ -2354,6 +3149,8 @@ class Walker {
       const ro = builtin === 'readonly' || on.includes('r');
       for (const o of operands) {
         const fn = st.functions.get(o.name);
+        // (An exported function may be called by another bash, with other values: its conditions are not decided.)
+        if (fn && fn.state !== 'off' && exported === 'on') this.unwalked.add(fn.def);
         if (fn && fn.state !== 'off') st = this.put(st, 'functions', o.name, { ...fn, ...(exported ? { exported } : {}), ...(ro ? { readonly: 'on' as Tri } : {}) });
       }
       return st;
@@ -2372,7 +3169,10 @@ class Walker {
     const local = this.frames.length > 0 && (builtin === 'local' || ((builtin === 'declare' || builtin === 'typeset') && !on.includes('g')));
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
-    for (const o of operands) {
+    // (An option the spec does not know, `declare -c`, may change the values assigned: they are not known.)
+    const unknown = words.some((w) => roles.get(w)?.role === 'unknown-option');
+    for (let o of operands) {
+      if (unknown && o.assign) o = { ...o, assign: { ...o.assign, text: undefined, source: undefined } };
       // `declare a[1]=x` makes `a` an array.
       if (o.subscript) {
         st = this.assign(st, o.name, true, o.assign ?? { append: false, text: undefined, array: false }, o.node, false, true);
@@ -2382,7 +3182,9 @@ class Walker {
       // A local variable starts afresh, hiding the one outside, from here to the end of the function.
       if (local && !frame.saved.has(name)) {
         frame.saved.set(name, st.variables.get(name));
-        st = this.put(st, 'variables', name, { declared: 'on', set: 'off', attrs: {}, at: n });
+        // (With localvar_inherit, it starts with the value and attributes of the one it hides: not followed.)
+        const inherit = option(st, 'shopt', 'localvar_inherit');
+        st = this.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: {}, at: n });
       }
       // `declare -g x` while `x` is local: the global one.
       const global = on.includes('g') ? this.frames.find((f) => f.saved.has(name)) : undefined;
@@ -2426,6 +3228,8 @@ class Walker {
     if (flags.includes('f') && flags.includes('v')) return st;
     for (const { node, text } of all) {
       if (node.type !== 'variable_name' && staticWordValue(node) === undefined) {
+        // (It may be any variable: see `distrust`.)
+        if (!flags.includes('f')) this.distrust();
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];
@@ -2449,6 +3253,7 @@ class Walker {
       }
       // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
       const target = flags.includes('n') ? text : this.resolve(st, text);
+      if (!target) this.distrust();
       if (!target || attribute(st, target, 'r') === 'on') continue;
       // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
       const top = this.frames[this.frames.length - 1];
@@ -2489,7 +3294,11 @@ class Walker {
   private assign(st: ShellState, name: string, subscript: boolean, how: NonNullable<Operand['assign']>, at: SyntaxNode, nameref: boolean, declaring = false): ShellState {
     // Assigning to a nameref assigns to the variable it names.
     const target = nameref ? name : this.resolve(st, name);
-    if (!target) return st;
+    // (Through a nameref whose target is not known: it may be any variable, see `distrust`.)
+    if (!target) {
+      this.distrust();
+      return st;
+    }
     const prev = st.variables.get(target);
     // A readonly variable keeps its value.
     if (prev?.attrs.r?.state === 'on' && !declaring) return st;
@@ -2595,6 +3404,8 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return w.unitStart.get(top) ?? top;
     },
     setWrites: (n) => w.setWrites.get(n) ?? new Map(),
+    condition: (n) => w.decision(n),
+    dead: (n) => w.runAt(n) !== undefined && !w.live.has(n),
     at(n) {
       let run: ShellState | undefined;
       let expand: ShellState | undefined;

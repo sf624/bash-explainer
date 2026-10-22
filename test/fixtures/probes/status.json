@@ -942,5 +942,72 @@
       "ran": [],
       "status": 1
     }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=; if [ -n \"$x\" ]; then set -e; fi; false; @PROBE:a@",
+    "errexit": false,
+    "note": "`set -e` in a branch that never runs",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=1; if [ -n \"$x\" ]; then set -e; fi; false; @PROBE:a@",
+    "errexit": false,
+    "note": "`set -e` in a branch that always runs",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=; [ -n \"$x\" ] && set -e; false; @PROBE:a@",
+    "errexit": false,
+    "note": "`set -e` on the right of `&&` that never runs",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=1; [ -z \"$x\" ] || set -o pipefail; false | true; @PROBE:a@",
+    "note": "pipefail set on the right of `||`, which always runs",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=a; case $x in b) set -e;; esac; false; @PROBE:a@",
+    "errexit": false,
+    "note": "`set -e` in a `case` branch that never runs",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "x=; while [ -n \"$x\" ]; do set -e; done; false; @PROBE:a@",
+    "errexit": false,
+    "note": "`set -e` in a loop that never runs",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
   }
 ]

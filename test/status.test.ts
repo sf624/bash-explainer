@@ -67,7 +67,7 @@ describe('status rules (src/semantics/status.ts)', () => {
     assert.deepStrictEqual(status('a | b', 'a | b'), { ...status('a | b', 'a | b'), pipefail: 'off', negated: false });
     const p = status('set -o pipefail; a | b', 'a | b');
     assert.ok(p.kind === 'pipeline' && p.pipefail === 'on');
-    const u = status('[ x ] && set -o pipefail; a | b', 'a | b');
+    const u = status('[ -f x ] && set -o pipefail; a | b', 'a | b');
     assert.ok(u.kind === 'pipeline' && u.pipefail === 'unknown');
     const n = status('! a | b', '! a | b');
     assert.ok(n.kind === 'pipeline' && n.negated && n.stages.length === 2);
@@ -113,7 +113,7 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
   it('reads errexit where the statement runs', () => {
     assert.strictEqual(ctx('false', 'false'), 'off');
     assert.strictEqual(ctx('set -e; false', 'false'), 'on');
-    assert.strictEqual(ctx('[ x ] && set -e; false', 'false'), 'unknown');
+    assert.strictEqual(ctx('[ -f x ] && set -e; false', 'false'), 'unknown');
   });
 
   it('ignores it in conditions, left of && and ||, after !', () => {
@@ -143,7 +143,7 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
   it('turns errexit off in `$( )` in bash, unless inherit_errexit or POSIX mode', () => {
     assert.strictEqual(ctx('set -e; x=$(a; b)', 'a'), 'off');
     assert.strictEqual(ctx('set -e; shopt -s inherit_errexit; x=$(a; b)', 'a'), 'on');
-    assert.strictEqual(ctx('set -e; [ x ] && shopt -s inherit_errexit; x=$(a; b)', 'a'), 'unknown');
+    assert.strictEqual(ctx('set -e; [ -f x ] && shopt -s inherit_errexit; x=$(a; b)', 'a'), 'unknown');
     assert.strictEqual(ctx('set -e; set -o posix; x=$(a; b)', 'a'), 'on');
     assert.strictEqual(errexit('set -e; x=$(a; b)', 'a', 'bash', true).active, 'on');
     assert.strictEqual(ctx('set -e; x=$(a; b)', 'a', 'sh'), 'on');
@@ -170,7 +170,7 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
     assert.strictEqual(e('set -e; a &', 'a'), 'job subshell');
     assert.strictEqual(e('set -e; coproc a', 'coproc a'), 'job script');
     assert.strictEqual(e('set -e; local x=1 y=2', 'x=1'), 'part-of-command script');
-    assert.strictEqual(e('set -e; [ x ] && shopt -s lastpipe; a | { b; c; }', 'b'), 'checked unknown');
+    assert.strictEqual(e('set -e; [ -f x ] && shopt -s lastpipe; a | { b; c; }', 'b'), 'checked unknown');
   });
 
   it('finds a word bash surely fails on, with what is known of the environment', () => {

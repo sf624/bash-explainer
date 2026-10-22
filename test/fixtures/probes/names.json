@@ -506,10 +506,6 @@
           "posix": "none"
         }
       }
-    },
-    "gaps": {
-      "1 f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "1 f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\""
     }
   },
   {
@@ -556,7 +552,7 @@
   {
     "manual": "3.2.5.2",
     "snippet": "if [ -n \"$HOME\" ]; then f() { :; }; fi; @PROBE:a@\nif [ -z \"$HOME\" ]; then g() { :; }; fi; @PROBE:b@",
-    "note": "a definition in an `if`: the model does not evaluate the condition",
+    "note": "a definition in an `if` whose condition reads the environment",
     "names": [
       "f",
       "g"
@@ -584,12 +580,12 @@
       }
     },
     "gaps": {
-      "a f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "b f bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "b g bash": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "a f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "b f posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\"",
-      "b g posix": "the model does not evaluate conditions: the function is defined on one path of the `if`, so it says \"may\""
+      "a f bash": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\"",
+      "b f bash": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\"",
+      "b g bash": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\"",
+      "a f posix": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\"",
+      "b f posix": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\"",
+      "b g posix": "the condition reads `$HOME`, which comes from the environment: the function is defined on one path of the `if`, so the model says \"may\""
     }
   },
   {
