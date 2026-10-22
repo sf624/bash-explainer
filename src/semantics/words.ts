@@ -13,7 +13,7 @@ import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { STATEMENTS } from './env';
-import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { ARITH_ASSIGNED, attribute, DYNAMIC, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -444,7 +444,8 @@ class Evaluator {
   /** The value of variable `name`: a string, null when unset, undefined when not known here. */
   variable(name: string, node: SyntaxNode): string | null | undefined {
     if (name === '_') return underscoreValue(node, this.model);
-    if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name)) return undefined;
+    // (Bash changes some values itself: `RANDOM`, `SECONDS`.)
+    if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name) || DYNAMIC.test(name)) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
     if (!v) {

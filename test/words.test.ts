@@ -208,6 +208,9 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf('x=1; (( x++ )); echo "$x"', '"$x"').fields, ['2']);
     assert.deepStrictEqual(fieldsOf('x=1; let x+=1; echo "$x"', '"$x"').fields, ['2']);
     assert.deepStrictEqual(fieldsOf('x=1; : $(( x *= 3 )); echo "$x"', '"$x"').fields, ['3']);
+    // Double quotes in `(( ))` are removed (bash prints 1); bash changes RANDOM itself.
+    assert.deepStrictEqual(fieldsOf('u=0; (( "u=1" )); echo $u', '$u').fields, ['1']);
+    assert.deepStrictEqual(fieldsOf('RANDOM=1; echo "$RANDOM"', '"$RANDOM"'), {});
     // (In the statement that assigns it, the state is the one before it.)
     assert.deepStrictEqual(fieldsOf('x=1; echo $(( ++x )) "$x"', '"$x"'), {});
     assert.deepStrictEqual(fieldsOf('x=1; echo $(( ++x )) "$(echo "$x")"', '"$x"'), {});
