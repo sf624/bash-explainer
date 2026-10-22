@@ -490,6 +490,8 @@ describe('nested scripts: the issues of a string another shell reads', () => {
   it('reports them at their places in the document', () => {
     assert.deepStrictEqual(issues(`sh -c '[[ -f x ]]'`), ['dbracket 0:7-0:17 [[ -f x ]]']);
     assert.deepStrictEqual(issues(`bash -c "dash -c '[[ a ]]'"`), ['dbracket 0:18-0:25 [[ a ]]']);
+    // (The shell an `env -S` string names reads the string after it; one written inside the value stays opaque.)
+    assert.deepStrictEqual(issues(`env -S'-i sh -c' '[[ a ]]'; env -S"sh -c '[[ a ]]'"`), ['dbracket 0:18-0:25 [[ a ]]']);
     assert.deepStrictEqual(issues(`x=1\neval '[[ a ]]'`, 'sh'), ['dbracket 1:6-1:13 [[ a ]]']);
     // (An issue over several lines is shown on its first.)
     assert.deepStrictEqual(issues(`sh -c '[[ a\n  ]]'`), ['dbracket 0:7-0:11 [[ a']);
