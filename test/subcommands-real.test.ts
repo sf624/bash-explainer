@@ -225,8 +225,9 @@ describe('gh agrees with the real gh', () => {
       for (const line of ROWS) {
         const r = run(`${line} --help`, os.tmpdir(), { ...ENV, GH_CONFIG_DIR: home, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' });
         const text = r.out + r.err;
-        // The command found, as its usage names it (`gh pr list`), and the subcommands we read.
-        const found = /^USAGE\n {2}gh ((?:[a-z][\w-]*(?: |$))*)/m.exec(text)?.[1].trim();
+        // The command found, as its usage names it (`gh pr list`), and the subcommands we read. gh prints the whole
+        // help (`USAGE`) after an error when it runs under an AI agent (`AI_AGENT`, `CLAUDECODE`), else a line `Usage:  gh …`.
+        const found = /^(?:USAGE\n {2}|Usage: {2})gh ((?:[a-z][\w-]*(?: |$))*)/m.exec(text)?.[1].trim();
         const rs = roles(line);
         const chain = rs.filter((x) => x.role.role === 'subcommand');
         const subs = chain.map((x) => x.word).join(' ');
@@ -234,6 +235,7 @@ describe('gh agrees with the real gh', () => {
         else {
           if (/unknown (shorthand )?flag/.test(text)) assert.ok(rs.some((x) => x.role.role === 'unknown-option' || (x.role.role === 'cluster' && x.role.letters.some((l) => l.role === 'unknown-option'))), line);
           // (The dictionary may stop before gh does: `gh pr list`, with no `list` in it, is `pr`.)
+          assert.notStrictEqual(found, undefined, `${line}: no usage in ${JSON.stringify(text)}`);
           const names = found!.split(' ').filter(Boolean);
           assert.strictEqual(names.slice(0, chain.length).join(' '), subs, `${line}: ${text}`);
           const last = chain.at(-1)?.role;
