@@ -131,6 +131,14 @@ describe('execution environments: command slots', () => {
     // bats' run runs its command in a subshell (`$( )`), which has all of the script.
     const r = slots('run ! f x', 'run ! f x', BATS_COMMANDS.run).get('f')!;
     assert.deepStrictEqual([processOf(r).kind, processOf(r).link?.kind, reachOf(r).functions, reachOf(r).variables], ['subshell', 'slot', 'all', 'all']);
+    // `run bash -c S`: the subshell passes everything on, and bash gets what is exported; `run eval S`: eval runs S
+    // in run's subshell.
+    const rb = slots("run bash -e -c 'f'", "run bash -e -c 'f'", BATS_COMMANDS.run);
+    const s2 = rb.get("'f'")! as ExecEnv;
+    assert.deepStrictEqual(s2.links.map((l) => (l.kind === 'slot' ? `${l.via}:${l.slot.run}:${l.shell ?? ''}:${(l.invocation ?? []).map((o) => o.flag).join('')}` : l.kind)), ['run:subshell::', 'bash -c:shell-string:bash:-e-c']);
+    assert.deepStrictEqual([processOf(s2).kind, reachOf(s2).functions, reachOf(s2).variables], ['shell', 'exported', 'exported']);
+    const re = slots("run eval 'f'", "run eval 'f'", BATS_COMMANDS.run).get("'f'")!;
+    assert.deepStrictEqual([re.links.map((l) => (l.kind === 'slot' ? l.slot.run : l.kind)), processOf(re).kind, reachOf(re).functions], [['subshell', 'current-shell'], 'subshell', 'all']);
     // su keeps the environment, unless it starts a login shell; docker run -e passes a variable.
     assert.deepStrictEqual(reachOf(slots("su -c 'f' bob", "su -c 'f' bob").get("'f'")!).functions, 'exported');
     for (const src of ["su - -c 'f' bob", "su -l -c 'f' bob", "su --login -c 'f'"]) assert.strictEqual(reachOf(slots(src, src).get("'f'")!).functions, 'none', src);

@@ -578,6 +578,14 @@ describe('bats', () => {
     assert.strictEqual(unknown[1].explanation, 'an option `run` does not know: bats says "unknown flag", and `run` fails');
     assert.match(unknown[0].explanation, /bats warns \(BW02\) unless `bats_require_minimum_version 1\.5\.0` comes first/);
     assert.match(all(explain('test.bats', 5)!.items)[0].explanation, /at the top of the file this stops the whole test file; in `setup` or a test, only that test fails/);
+    // A string run runs through bash -c is read in the new shell, which gets only what is exported.
+    const nested = ['f() { :; }', 'x=1', '@test "a" {', "  run bash -c 'echo $x; f'", "  run eval 'f'", '}'];
+    const viaBash = bats(nested, 4);
+    assert.match(viaBash.notes.join('\n'), /`x` is a variable of this script that is not exported/);
+    assert.match(viaBash.notes.join('\n'), /`bash -c` runs the command in a new shell, which does not have this script's function `f`/);
+    assert.deepStrictEqual(all(viaBash.items).filter((t) => t.label === 'f').map((t) => t.kind), ['command']);
+    // (`run eval S`: the walk of the model does not know bats' run yet, so S stays one word: docs/design/bats.md.)
+    assert.deepStrictEqual(all(bats(nested, 5).items).map((t) => t.label), ['run', 'eval', "'f'"]);
     // run runs bats_pipe, whose words are not a command to the shell.
     assert.deepStrictEqual(tokens(22).slice(0, 3).map((t) => t.split(':')[0]), ['command run', 'command bats_pipe', 'argument printf']);
     // Outside a bats file, the names are ordinary commands.
