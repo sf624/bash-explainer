@@ -30,6 +30,7 @@ import { toPlainMarkdown, ui } from '../src/ui/render';
 import { Kind, KINDS } from './samples';
 import { narrow, setUpEdgeSwipe, setUpSheet, setUpSplitter } from './layout';
 import { SettingsDialog } from './settings-dialog';
+import { clearStoredData, STORAGE_KEYS } from './storage';
 
 declare const __VERSION__: string;
 declare const __CHANNEL__: 'release' | 'next' | 'pr';
@@ -152,7 +153,7 @@ type FromCopy =
 
 const THEMES = ['auto', 'light', 'dark'] as const;
 type Theme = (typeof THEMES)[number];
-const THEME_KEY = 'bash-explainer-theme';
+const THEME_KEY = STORAGE_KEYS.theme;
 /** The saved choice, read by theme-init.js before the first paint too; Auto when storage is unavailable. */
 function savedTheme(): Theme {
   try {
@@ -166,7 +167,7 @@ let theme: Theme = savedTheme();
 
 // ---- Settings: those of the VS Code extension that apply here (src/settings.ts) ----------------
 
-const SETTINGS_KEY = 'bash-explainer-settings';
+const SETTINGS_KEY = STORAGE_KEYS.settings;
 /** Whether the page can keep the settings (localStorage may be unavailable or throw). */
 let canSave = true;
 /** The saved settings; the defaults when there are none, or no storage. */
@@ -230,7 +231,7 @@ const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
 const languageMode = new Compartment();
 /** Read mode (for touch screens): the editor says it takes no text input, so a tap places the cursor without the soft keyboard. */
 const inputMode = new Compartment();
-const READ_KEY = 'bash-explainer-read-mode';
+const READ_KEY = STORAGE_KEYS.readMode;
 let readMode = false;
 try {
   readMode = localStorage.getItem(READ_KEY) === '1';
@@ -916,7 +917,26 @@ const settingsDialog = dialogElement && new SettingsDialog(dialogElement, {
   defaults: () => mergeSettings(),
   canSave: () => canSave,
   codes: () => codesSeen,
+  clearAll: clearEverything,
 });
+
+/**
+ * Removes everything the page keeps in the browser and shows the defaults at once: the settings, the
+ * theme, read mode, the size of the panes and the first-run tip (again, on a touch screen).
+ */
+function clearEverything(): void {
+  clearStoredData();
+  changeSettings(mergeSettings());
+  theme = 'auto';
+  document.documentElement.removeAttribute('data-theme');
+  $<HTMLSelectElement>('theme').value = 'auto';
+  pushTheme();
+  readMode = false;
+  view.dispatch({ effects: inputMode.reconfigure(inputModeFor(false)) });
+  showReadMode();
+  resetSplit?.();
+  showReadTip();
+}
 function showReadMode(): void {
   // The compare page has no such button.
   document.getElementById('readmode')?.setAttribute('aria-pressed', String(readMode));
@@ -936,7 +956,7 @@ on('readmode', 'click', () => {
 
 // The first-run tip for the read-mode switch: shown while the switch is (a coarse pointer), until it has
 // been closed or the switch used. It is kept in storage; without storage it shows again on the next visit.
-const TIP_KEY = 'bash-explainer-read-tip-seen';
+const TIP_KEY = STORAGE_KEYS.readTipSeen;
 function readTipSeen(): boolean {
   try {
     return localStorage.getItem(TIP_KEY) === '1';
@@ -962,15 +982,17 @@ function hideReadTip(remember: boolean): void {
     // Not kept: it shows again next time.
   }
 }
-{
+/** Shows the tip, if there is a switch to point at and the tip was not seen. */
+function showReadTip(): void {
   const tip = document.getElementById('readtip');
   const btn = document.getElementById('readmode');
   if (tip && btn && window.matchMedia('(pointer: coarse)').matches && !readTipSeen()) {
     tip.hidden = false;
     placeReadTip();
-    window.addEventListener('resize', placeReadTip);
   }
 }
+showReadTip();
+window.addEventListener('resize', placeReadTip);
 on('readtip-close', 'click', () => hideReadTip(true));
 on('settings-open', 'click', () => settingsDialog?.show());
 if (dialogElement) setUpSheet(dialogElement);
@@ -998,7 +1020,7 @@ for (const [item, target] of [['menu-sample', 'sample'], ['menu-share', 'share']
 // ---- The divider between the editor and the explanation ------------------------------------------
 
 const splitElement = document.getElementById('split');
-if (splitElement && !panelOnly) setUpSplitter(splitElement, $('splitter'), () => view.requestMeasure());
+const resetSplit = splitElement && !panelOnly ? setUpSplitter(splitElement, $('splitter'), () => view.requestMeasure()) : undefined;
 // The cursor's line stays in view when the editor's pane changes size (the phone turned, the divider moved).
 narrow.addEventListener('change', () => view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: 'center' }) }));
 

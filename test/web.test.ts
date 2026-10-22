@@ -909,6 +909,65 @@ describe('the web page in a browser', function () {
     }
   });
 
+  it('clears everything the page stores from the settings dialog, after a confirmation, and applies the defaults and the tip at once', async () => {
+    // Every storage key is listed in web/storage.ts, which is what the dialog clears.
+    for (const file of fs.readdirSync(path.join(root, 'web')).filter((f) => /\.(ts|js)$/.test(f) && f !== 'storage.ts' && f !== 'theme-init.js')) {
+      assert.doesNotMatch(fs.readFileSync(path.join(root, 'web', file), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /'bash-explainer-[a-z-]+'/, file);
+    }
+    const { devices } = await import('playwright-core');
+    const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const stored = () => page.evaluate('Object.keys(localStorage).sort()') as Promise<string[]>;
+    // The tip shows the first time; closing it, the theme, the shell and read mode are kept.
+    await until('the tip', () => page.locator('#readtip').isVisible(), (v) => v);
+    await page.locator('#readtip-close').tap();
+    await page.locator('#readmode').tap();
+    await choose(page, '#theme', 'dark');
+    await choose(page, '#shell', 'dash');
+    await until('the keys', stored, (k) => k.includes('bash-explainer-settings') && k.includes('bash-explainer-theme') && k.includes('bash-explainer-read-mode') && k.includes('bash-explainer-read-tip-seen'));
+    assert.strictEqual(await page.locator('#readtip').isVisible(), false);
+
+    await page.locator('#settings-open').tap();
+    await page.locator('#settings-clear').tap();
+    // Asked first: a cancel changes nothing.
+    assert.match(await page.locator('#settings-dialog').innerText(), /This cannot be undone/);
+    await page.locator('#settings-clear-no').tap();
+    assert.strictEqual(await page.locator('#settings-clear').isVisible(), true);
+    assert.ok((await stored()).includes('bash-explainer-settings'));
+    await page.locator('#settings-clear').tap();
+    await page.locator('#settings-clear-yes').tap();
+    assert.match(await page.locator('#settings-clear-status').innerText(), /Cleared/);
+    // No reload: the dialog, the page and the storage are back to the defaults.
+    assert.deepStrictEqual(await stored(), []);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'auto');
+    assert.strictEqual(await page.locator('#shell').inputValue(), 'auto');
+    assert.strictEqual(await page.locator('#theme').inputValue(), 'auto');
+    assert.strictEqual(await page.evaluate('document.documentElement.getAttribute("data-theme")'), null);
+    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    await page.locator('#settings-done').tap();
+    await until('the tip again', () => page.locator('#readtip').isVisible(), (v) => v);
+    await ctx.close();
+
+    // The Japanese words, and no storage at all: nothing throws, the page still goes back to its defaults.
+    const bare = await browser!.newContext({ viewport: { width: 1280, height: 720 }, locale: 'ja-JP' });
+    await bare.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const p2 = await bare.newPage();
+    const errors: string[] = [];
+    p2.on('pageerror', (e) => errors.push(e.message));
+    await p2.goto(base);
+    await p2.locator('.cm-line').first().waitFor();
+    await p2.locator('#settings-open').click();
+    assert.strictEqual(await p2.locator('#settings-clear').textContent(), '保存したデータを消去');
+    await p2.locator('#settings-clear').click();
+    await p2.locator('#settings-clear-yes').click();
+    assert.match(await p2.locator('#settings-clear-status').innerText(), /消去しました/);
+    assert.deepStrictEqual(errors, []);
+    await bare.close();
+  });
+
   it('read mode: on a phone a tap places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
     const { devices } = await import('playwright-core');
     const ctx = await browser!.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });

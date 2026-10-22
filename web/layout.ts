@@ -4,7 +4,9 @@
 /** Phones and narrow windows: the explanation below the editor (page.css has the same width). */
 export const narrow = window.matchMedia('(max-width: 767px)');
 
-const SPLIT_KEY = 'bash-explainer-split';
+import { STORAGE_KEYS } from './storage';
+
+const SPLIT_KEY = STORAGE_KEYS.split;
 const MIN = 15;
 const MAX = 85;
 /** The editor's share of the page, in %, by default: half beside the explanation, a bit less above it. */
@@ -24,7 +26,7 @@ function savedSplit(): { wide?: number; narrow?: number } {
  * The divider: dragged with a pointer, moved with the arrow keys (Home and End for the ends), and
  * back to the default sizes with a double click or Enter.
  */
-export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange: () => void): void {
+export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange: () => void): () => void {
   const saved = savedSplit();
   const key = () => (narrow.matches ? 'narrow' : 'wide');
   const current = () => saved[key()] ?? byDefault();
@@ -81,6 +83,13 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
   });
   narrow.addEventListener('change', apply);
   apply();
+  // Back to the default sizes, as after the stored data was cleared.
+  return () => {
+    delete saved.wide;
+    delete saved.narrow;
+    apply();
+    onChange();
+  };
 }
 
 /**
