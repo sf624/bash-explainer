@@ -389,6 +389,16 @@ function incDecText(text: string): { text: string; ops: number } | undefined {
   return { text: out, ops };
 }
 
+/** Whether each `(` of `text` is closed by a `)` after it, and each `)` closes one. */
+function balanced(text: string): boolean {
+  let depth = 0;
+  for (const c of text) {
+    if (c === '(') depth++;
+    else if (c === ')' && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
 /** Whether `v` is a nameref, or may be one. */
 const isNameref = (v: VariableState | undefined): boolean => v?.attrs.n !== undefined && v.attrs.n.state !== 'off';
 
@@ -887,8 +897,13 @@ class Walker {
       case 'c_style_for_statement': {
         // The initializer, then the condition, the body and the update, again and again; the loop ends after a condition.
         for (const c of n.namedChildren) if (c.type !== 'do_group') this.substitutions(c, st);
-        const part = (f: 'initializer' | 'condition' | 'update') => (s: ShellState): ShellState => this.arithRun((x) => this.arithScript(fields(n, f), x).st, s);
-        return this.loop(n, part('initializer')(st), part('condition'), (s) => part('update')(this.sequence(field(n, 'body')?.children ?? [], s)), true);
+        // (When the initializer may fail, bash runs neither the condition nor the update: what they assign may be.)
+        let unsure = false;
+        const part = (f: 'initializer' | 'condition' | 'update') => (s: ShellState): ShellState => this.arithRun((x) => this.arithScript(fields(n, f), x, unsure).st, s);
+        this.unsure = false;
+        const init = part('initializer')(st);
+        unsure = this.unsure;
+        return this.loop(n, init, part('condition'), (s) => part('update')(this.sequence(field(n, 'body')?.children ?? [], s)), true);
       }
       case 'function_definition': return this.functionDefinition(n, st);
     }
@@ -1007,8 +1022,8 @@ class Walker {
    * when known; throws `ArithError` where bash fails. When what it does is not known here (`ArithUnknown`), the names
    * it seems to assign may be set, to values not known (`mayAssign`).
    */
-  private arithScript(nodes: readonly SyntaxNode[], st: ShellState): { st: ShellState; value?: bigint } {
-    return nodes.length ? this.arithGuard(arithSource(nodes), st, nodes[0], () => this.arithEval(nodes, st)) : { st, value: 0n };
+  private arithScript(nodes: readonly SyntaxNode[], st: ShellState, unsure = false): { st: ShellState; value?: bigint } {
+    return nodes.length ? this.arithGuard(arithSource(nodes), st, nodes[0], () => this.arithEval(nodes, st), unsure) : { st, value: 0n };
   }
 
   /** How many steps the expression being run has taken (`ARITH_STEPS`), and all the arithmetic of the script (`ARITH_WALK_STEPS`). */
@@ -1031,17 +1046,19 @@ class Walker {
 
   /**
    * Runs `run`, an expression whose text is `source`, from `st`: each expression of the script starts here, with a
-   * count of its steps of its own. When what it does is not known, see `mayAssign`.
+   * count of its steps of its own. When what it does is not known, see `mayAssign`; `unsure` is then set, since it may
+   * have failed. `unsure`: whether an expression before it in the same command may have failed (see `unsure`).
    */
-  private arithGuard(source: string, st: ShellState, at: SyntaxNode, run: () => { st: ShellState; value?: bigint }): { st: ShellState; value?: bigint } {
+  private arithGuard(source: string, st: ShellState, at: SyntaxNode, run: () => { st: ShellState; value?: bigint }, unsure = false): { st: ShellState; value?: bigint } {
     this.arithSteps = 0;
-    this.unsure = false;
+    this.unsure = unsure;
     try {
       if (this.arithWalkSteps > ARITH_WALK_STEPS) throw new ArithUnknown('limit');
       return run();
     } catch (e) {
       // (A text nested too deeply for the stack of JavaScript, in the parser or here, is not followed either.)
       if (!(e instanceof ArithUnknown) && !(e instanceof RangeError)) throw e;
+      this.unsure = true;
       return { st: this.mayAssign(source, st, at) };
     }
   }
@@ -1159,15 +1176,19 @@ class Walker {
         return undefined;
       }
     });
+    // (bash stops at the first operand that fails: once one may have, what those after it assign may be.)
+    let unsure = false;
     operands.forEach((o, i) => {
       const text = texts[i];
       if (text === undefined) {
         // (What its `$(( ))` assign was made with the words.)
         st = this.mayAssign(descendants(o, ['arithmetic_expansion']).reduce((t, a) => t.replace(a.text, ''), o.text), st, o);
+        unsure = true;
         return;
       }
       const from = st;
-      st = this.arithGuard(o.text, st, o, () => this.arithText(text, from, o, true)).st;
+      st = this.arithGuard(o.text, st, o, () => this.arithText(text, from, o, true), unsure).st;
+      unsure = this.unsure;
     });
     return st;
   }
@@ -1366,7 +1387,10 @@ class Walker {
 
   /** Runs the index of `target` (`a[i++]`): arithmetic, unless the array is associative (`m[i++]` is a key). */
   private subscriptIndex(target: SyntaxNode, st: ShellState, at: SyntaxNode): ShellState {
-    const assoc = attribute(st, field(target, 'name')!.text, 'A');
+    const name = field(target, 'name')!.text;
+    // (Whether the index runs depends on the array: a value read that reads it is remembered with it.)
+    this.noteRead(st, name);
+    const assoc = attribute(st, name, 'A');
     if (assoc === 'on') return st;
     if (assoc === 'unknown') {
       const after = this.unsureSide(() => ({ st: this.arithList(fields(target, 'index'), st, at) })).st;
@@ -1518,7 +1542,8 @@ class Walker {
   private arithText(text: string, st: ShellState, at: SyntaxNode, brackets: boolean): { st: ShellState; value?: bigint } {
     let tree = this.arithTrees.get(text);
     if (tree === undefined) {
-      const lexed = incDecText(text);
+      // (Parentheses left open would be closed by the `))` around the text: `((x` fails in bash, where it is 2 here.)
+      const lexed = balanced(text) ? incDecText(text) : undefined;
       if (lexed) {
         aliasParser ??= createUnbashParser();
         const cmd = aliasParser.parse(`(( ${lexed.text} ))`).root.namedChildren;
