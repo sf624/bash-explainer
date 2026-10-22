@@ -217,9 +217,42 @@ describe('the web page in a browser', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(`echo ${'word '.repeat(120)}| sort`);
     await page.keyboard.press('Control+Home');
+    await until('the long line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('word word'));
     const long = await until('the long line', () => panel().evaluate(`(() => { const l = document.getElementById('line'); return { h: l.getBoundingClientRect().height, sw: l.scrollWidth, cw: l.clientWidth, max: parseFloat(getComputedStyle(l).maxHeight), inner: innerHeight }; })()`) as Promise<{ h: number; sw: number; cw: number; max: number; inner: number }>, (x) => x.sw > x.cw);
     assert.ok(long.h < 80, JSON.stringify(long));
     assert.ok(Math.abs(long.max - long.inner * 0.4) < 1, JSON.stringify(long));
+    // Selecting a row scrolls the line sideways to its characters, as the editor does; and back.
+    const shown = (word: string) => panel().evaluate(`(() => {
+      const l = document.getElementById('line').getBoundingClientRect();
+      const s = [...document.querySelectorAll('#line .seg')].find((e) => e.textContent.trim() === ${JSON.stringify(word)}).getBoundingClientRect();
+      return { left: document.getElementById('line').scrollLeft, inside: s.left >= l.left && s.right <= l.right };
+    })()`) as Promise<{ left: number; inside: boolean }>;
+    assert.deepStrictEqual(await shown('echo'), { left: 0, inside: true });
+    await panel().locator('#tree code.label', { hasText: /^sort$/ }).first().click();
+    const end = await until('scrolled to sort', () => shown('sort'), (x) => x.inside);
+    assert.ok(end.left > 0, JSON.stringify(end));
+    await panel().locator('#tree code.label', { hasText: /^echo$/ }).first().click();
+    assert.deepStrictEqual(await until('scrolled back', () => shown('echo'), (x) => x.inside), { left: 0, inside: true });
+    await ctx.close();
+  });
+
+  it('folds a row over several lines without moving the cursor to its last line', async () => {
+    const ctx = await browser!.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('if [ -z "${1:-}" ]; then\n  echo none\nfi');
+    await page.keyboard.press('Control+Home');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('-z'));
+    // The if covers lines 1 to 3: a click folds it, and the cursor and the panel stay on line 1.
+    await panel().locator('#tree > li > .row .label').first().click();
+    await until('folded', () => panel().locator('#tree > li').first().evaluate((e) => e.classList.contains('collapsed')), (v) => v);
+    await page.waitForTimeout(300);
+    assert.match((await panel().locator('#line').textContent()) ?? '', /-z/);
+    assert.match(await page.locator('.cm-activeLine').innerText(), /^if \[/);
     await ctx.close();
   });
 

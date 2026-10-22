@@ -314,7 +314,8 @@
       if (!(e.target instanceof Element && e.target.closest('a, button, input, textarea, select'))) {
         if (token.children.length) toggle(li);
       }
-      vscode.postMessage({ type: 'reveal', span: token.span });
+      reveal(token);
+      revealInLine(index);
     });
     if (token.children.length) {
       const ul = document.createElement('ul');
@@ -403,7 +404,7 @@
         span.addEventListener('click', () => {
           if (selecting()) return;
           flat[idx].el.scrollIntoView({ block: 'nearest' });
-          vscode.postMessage({ type: 'reveal', span: flat[idx].token.span });
+          reveal(flat[idx].token);
         });
       }
       pre.append(span);
@@ -413,9 +414,14 @@
     if (!text.length) pre.textContent = ' ';
   }
 
-  /** Highlight a token in the tree, its characters in the line, and its range in the editor. */
-  function focus(idx) {
-    flat.forEach((f, i) => f.el.classList.toggle('active', i === idx));
+  /** Selects a token's range in the editor. Not one over several lines (an if, a loop, a function): the cursor would move to its last
+      line, and the panel with it, when one only meant to fold the row; the hover already shows that range. */
+  function reveal(token) {
+    if (token.span.start.line === token.span.end.line) vscode.postMessage({ type: 'reveal', span: token.span });
+  }
+
+  /** The rows of a token and of all its parts. */
+  function coveredBy(idx) {
     const covered = new Set();
     if (idx >= 0) {
       const mark = (t) => {
@@ -424,6 +430,27 @@
       };
       mark(flat[idx].token);
     }
+    return covered;
+  }
+
+  /** Scrolls the line sideways to a token's characters, as the editor does when the row is selected. */
+  function revealInLine(idx) {
+    const pre = $('line');
+    const covered = coveredBy(idx);
+    const shown = segments.filter((s) => covered.has(Number(s.dataset.idx)));
+    if (!shown.length) return;
+    const box = pre.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(pre).paddingLeft);
+    const left = Math.min(...shown.map((s) => s.getBoundingClientRect().left)) - box.left + pre.scrollLeft;
+    const right = Math.max(...shown.map((s) => s.getBoundingClientRect().right)) - box.left + pre.scrollLeft;
+    if (left - pad < pre.scrollLeft) pre.scrollLeft = left - pad;
+    else if (right + pad > pre.scrollLeft + pre.clientWidth) pre.scrollLeft = Math.min(left - pad, right + pad - pre.clientWidth);
+  }
+
+  /** Highlight a token in the tree, its characters in the line, and its range in the editor. */
+  function focus(idx) {
+    flat.forEach((f, i) => f.el.classList.toggle('active', i === idx));
+    const covered = coveredBy(idx);
     segments.forEach((s) => s.classList.toggle('active', covered.has(Number(s.dataset.idx))));
     vscode.postMessage({ type: 'highlight', span: idx >= 0 ? flat[idx].token.span : null });
   }

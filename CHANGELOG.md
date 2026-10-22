@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- In the explanation panel, a click on a row over several lines (an `if`, a loop, a `case`, a function), for example to fold it, leaves the cursor where it is. Before, it selected the whole statement in the editor, so the cursor jumped to its last line (`fi`, `done`, `esac`) and the panel went to that line.
+- In the explanation panel, a click on a row scrolls the source line at the top sideways to that part, as the editor does. Before, a long line stayed where it was, so the part could be out of sight.
 - On the web page, the messages in the Problems list show their `code` parts as code, as the explanation does. Before, they showed raw backticks ("`[[ ]]` is not POSIX sh").
 - In the explanation panel (VS Code and the web page), the current line's source, with its coloured tokens, stays fixed at the top while the explanation scrolls under it; hovering and clicking its tokens work as before, and a soft edge shows when rows pass under it. A row that a click scrolls into view stops below it. Before, the source scrolled away with the tree, so a long explanation lost the line it was about.
 - The web page has a new setting, "Wrap long lines" (`bashExplainer.editor.wrap`, in the settings dialog). On, long lines of the editor wrap at the width of the window, so they need no sideways scrolling, which helps on a phone; line numbers, the current line, the highlight shared with the explanation panel and taps in read mode work on the wrapped line as a whole. It is off by default, is kept in the browser, is part of export, import and "Reset to defaults", and is not in VS Code's settings (VS Code has `editor.wordWrap`). Before, long lines always scrolled sideways.
