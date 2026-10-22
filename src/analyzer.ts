@@ -283,7 +283,7 @@ export class Analyzer {
     this.line = line;
     this.shell = shell;
     // (`#!/bin/bash --posix` starts bash in POSIX mode.)
-    this.state = shellState(tree, shell, { posix: /^#![^\n]*\s--posix\b/.test(root.text) });
+    this.state = shellState(tree, shell, { posix: /^#![^\n]*\s--posix\b/.test(root.text), host: Object.keys(this.opts.hostCommands ?? {}) });
     this.status = statusModel(this.state, shell);
     this.context = [];
     this.slotEnvs = new Map();

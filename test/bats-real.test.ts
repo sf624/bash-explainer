@@ -208,6 +208,25 @@ const ROWS: Row[] = [
     body: ['true'],
     bats: 'not ok',
   },
+  // bats' functions change what a condition reads, and the model does not read them: no condition is decided.
+  {
+    title: 'load may set a variable a later condition reads',
+    head: ['x=1', 'load helper', 'if [ "$x" = 1 ]; then exit 3; fi'],
+    body: ['[ "$x" = 2 ]'],
+    bats: 'ok',
+    files: { 'helper.bash': 'x=2\n' },
+  },
+  {
+    title: 'run sets $status, which a later condition reads',
+    head: ['status=0', 'run false', 'if [ "$status" = 0 ]; then exit 3; fi'],
+    body: ['true'],
+    bats: 'ok',
+  },
+  {
+    title: "run's command runs in a subshell: `x=2` there does not reach the test",
+    body: ['x=1', "run bash -c 'x=2'", 'if [ "$x" = 1 ]; then true; else false; fi'],
+    bats: 'ok',
+  },
 ];
 
 /** The test file of a row: its head, its test, and the next test. */
@@ -269,6 +288,8 @@ describe('bats files agree with the real bats', function () {
         const ids = (ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('bats-'));
         const want = n === at || n === at + row.body.length + 2 ? ['bats-test'] : row.says?.[n - at - 1] ?? [];
         assert.deepStrictEqual(ids, want, `line ${n + 1}: ${text[n]}`);
+        // (No condition is decided in a bats file that calls bats' functions: the model does not read them.)
+        assert.deepStrictEqual((ex.facts ?? []).filter((f) => f.id.startsWith('condition-')), [], `line ${n + 1}: ${text[n]}`);
       }
     });
   }
