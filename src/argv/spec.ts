@@ -245,4 +245,11 @@ export interface CommandSlot {
    * (`sudo -s cmd args`), which are then read as a command; otherwise the shell reads the joined text afresh.
    */
   escapesWords?: boolean;
+  /**
+   * The string runs later, in the current shell (`trap 'cmd' INT`: when the signal comes). Like a `shell-string`
+   * slot, it takes one word, so the words after it stay operands.
+   */
+  later?: boolean;
+  /** The shell a `shell-string` slot starts, when the program's name does not say it (procps `watch` runs `sh -c`). */
+  shell?: 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh';
 }

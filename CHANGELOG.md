@@ -5,11 +5,13 @@
 ### New
 
 - A shebang that runs `env` says what runs: `#!/usr/bin/env -S bash -e` runs `bash -e` with the script, and `#!/usr/bin/env bash -e` warns that Linux passes `bash -e` to env as one word, which fails.
+- The shell state follows static `eval` strings and trap actions: `eval 'x=1'` sets `x` where `eval` runs, and what a trap's action sets "may" be set after the `trap`. Before, any name might have been set after an `eval` or a trap's action.
 
 ### Fixed
 
 - `env -S` strings are split as GNU env splits them (quotes, `\_`, `#` comments, `${NAME}`), and their words are read in place of the option, so `env -S'-i A=1 bash -e' script` shows `-i`, `A=1` and the command; a string env refuses gets a warning that it exits with status 125.
 - Options before a subcommand are read as the tool reads them (`docker -H h run`, `npm --prefix dir run build`, `yarn --cwd dir add`, `kubectl -o yaml get pods`, `gh -R o/r pr list`), and a tool's global options are told apart from its subcommands' (`kubectl logs -o` is not an option; terraform takes only `-chdir=DIR`, `-version` and `-help` before the subcommand).
+- The pitfall for a variable that another shell does not have (`bash -c`, `sudo`, `su -c`, `ssh`, `docker exec`) reads the string as that shell reads it, so `\$n` in `bash -c "echo \$n"` counts. Before, an escaped `\$n` was missed.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
 

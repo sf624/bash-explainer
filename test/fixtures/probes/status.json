@@ -243,7 +243,7 @@
   {
     "manual": "4.3.1",
     "snippet": "trap '@PROBE:trap@' ERR; false; @PROBE:a@",
-    "gaps": "trap actions are not read (4.7); ERR runs where set -e would stop the shell",
+    "gaps": "the status model does not run trap actions (4.11); ERR runs where set -e would stop the shell",
     "facts": {
       "ran": [
         "trap"
@@ -284,7 +284,7 @@
     "manual": "3.7.5",
     "snippet": "bash -c 'kill -TERM $$'",
     "errexit": false,
-    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
+    "gaps": "the status model does not run the string of `bash -c` (4.11, 4.13); set -e reaches it only through an exported SHELLOPTS (reachOf)",
     "facts": {
       "ran": [],
       "status": 143,
@@ -704,7 +704,7 @@
     "manual": "4.3.1",
     "snippet": "trap '@PROBE:trap@' ERR; false || true; if false; then :; fi; @PROBE:a@",
     "note": "ERR is not trapped where set -e is ignored",
-    "gaps": "trap actions are not read (4.7); ERR runs where set -e would stop the shell",
+    "gaps": "the status model does not run trap actions (4.11); ERR runs where set -e would stop the shell",
     "facts": {
       "ran": [
         "a"
@@ -840,7 +840,7 @@
     "manual": "4.3.1",
     "snippet": "bash -c 'false; @PROBE:in@'; @PROBE:after@",
     "note": "set -e does not reach another bash",
-    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
+    "gaps": "the status model does not run the string of `bash -c` (4.11, 4.13); set -e reaches it only through an exported SHELLOPTS (reachOf)",
     "facts": {
       "ran": [
         "in",
@@ -853,7 +853,7 @@
     "manual": "4.3.1",
     "snippet": "export SHELLOPTS; bash -c 'false; @PROBE:in@'; @PROBE:after@",
     "note": "unless SHELLOPTS is exported",
-    "gaps": "the string of `bash -c` is not run here (4.8); set -e reaches it only through an exported SHELLOPTS (reachOf)",
+    "gaps": "the status model does not run the string of `bash -c` (4.11, 4.13); set -e reaches it only through an exported SHELLOPTS (reachOf)",
     "facts": {
       "ran": [],
       "status": 1

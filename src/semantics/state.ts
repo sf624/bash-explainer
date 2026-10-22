@@ -27,8 +27,9 @@ import type { Shell } from '../dialect';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
-import { descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
-import { EnvModel, type ExecEnv, lastStageInShell, STATEMENTS, subshellReasons } from './env';
+import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
+import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 
 export { lastStageInShell } from './env';
 
@@ -252,6 +253,11 @@ export interface StateModel {
   readonly sources: readonly SyntaxNode[];
   /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
   unit(n: SyntaxNode): SyntaxNode;
+  /**
+   * The string `words` hold (one word, or words joined with spaces), read as the script that the slot at the end of
+   * `env` runs (docs/design/semantics.md, 4.13): its tree and the model its nodes are in. Kept by its first word.
+   */
+  script(words: readonly SyntaxNode[], env: ExecEnv): NestedScript | NotRead;
 }
 
 /** The options bash has on in a script (`bash --norc script`), and the ones POSIX mode adds. */
@@ -575,6 +581,116 @@ const CALL_DEPTH = 64;
 let aliasParser: BashParser | undefined;
 const aliasTrees = new Map<string, SyntaxTree>();
 
+/** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
+const owners = new WeakMap<SyntaxTree, NestedScript>();
+/** The same, by the tree's root. */
+const rootOwners = new WeakMap<SyntaxNode, NestedScript>();
+
+const rootOf = (n: SyntaxNode): SyntaxNode => {
+  let r = n;
+  while (r.parent) r = r.parent;
+  return r;
+};
+
+/**
+ * Where `n` starts (with `end`, ends) in the text of the document: a node of a string read as a script (4.13) is
+ * mapped through the strings it is read from. Nodes of different trees are compared, and lines are said, so.
+ */
+export function docIndex(n: SyntaxNode, end = false): number {
+  let i = end ? n.endIndex : n.startIndex;
+  for (let s = rootOwners.get(rootOf(n)); s; s = rootOwners.get(rootOf(s.words[0]))) i = scriptSourceIndex(s, i, end);
+  return i;
+}
+
+const lineStarts = new WeakMap<SyntaxNode, number[]>();
+/** The line (from 0) of the document where `n` starts. */
+export function docLine(n: SyntaxNode): number {
+  let root = rootOf(n);
+  for (let s = rootOwners.get(root); s; s = rootOwners.get(root)) root = rootOf(s.words[0]);
+  let starts = lineStarts.get(root);
+  if (!starts) {
+    starts = [];
+    for (let i = root.text.indexOf('\n'); i >= 0; i = root.text.indexOf('\n', i + 1)) starts.push(i);
+    lineStarts.set(root, starts);
+  }
+  const i = docIndex(n);
+  let lo = 0;
+  let hi = starts.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (starts[mid] < i) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The strings a model reads as scripts (`StateModel.script`), by their first word, and the trees of those that run in
+ * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model.
+ */
+class Scripts {
+  readonly byWord = new Map<SyntaxNode, NestedScript | NotRead>();
+  readonly byRoot = new Map<SyntaxNode, NestedScript>();
+  model!: StateModel;
+  constructor(readonly depth: number) {}
+
+  /** The string of `words`, read as a script of `kind`, run where `env` says, by the shell `shell` says. */
+  read(words: readonly SyntaxNode[], kind: NestedScript['kind'], env: () => ExecEnv, shell: { shell: Shell | undefined; known: boolean }): NestedScript | NotRead {
+    const hit = this.byWord.get(words[0]);
+    if (hit) return hit;
+    let root = words[0];
+    while (root.parent) root = root.parent;
+    // (A string in a string that this shell runs is one level deeper than that string.)
+    const depth = (this.byRoot.get(root)?.depth ?? this.depth) + 1;
+    const text = scriptText(words);
+    let out: NestedScript | NotRead;
+    if (!text) out = { why: 'not-static' };
+    else if (depth > NESTED_DEPTH) out = { why: 'too-deep' };
+    else {
+      aliasParser ??= createUnbashParser();
+      const tree = aliasParser.parse(text.text);
+      const scripts = this;
+      let model: StateModel | undefined;
+      let where: ExecEnv | undefined;
+      const script: NestedScript = {
+        kind, words, text: text.text, starts: text.starts, ends: text.ends, tree, ...shell, depth,
+        get outer() { return scripts.model; },
+        get env() { return (where ??= env()); },
+        get model() { return kind === 'child' ? (model ??= childModel(script)) : scripts.model; },
+      };
+      owners.set(tree, script);
+      rootOwners.set(tree.root, script);
+      if (kind !== 'child') this.byRoot.set(tree.root, script);
+      out = script;
+    }
+    this.byWord.set(words[0], out);
+    return out;
+  }
+}
+
+/**
+ * The model of a string another shell runs: a walk of its tree for that shell, from what reaches it of the script
+ * where the slot runs (exported variables and functions, the names the slots set, the set options with an exported
+ * SHELLOPTS). Its root runs where the slot does.
+ */
+function childModel(script: NestedScript): StateModel {
+  const first = script.words[0];
+  const outer = script.outer.at(first).run;
+  // (The string is a word of the command whose slot runs it: `bash -c S`, `sudo sh -c S`.)
+  const cmd = ancestor(first, (x) => x.type === 'command')!;
+  const name = field(cmd, 'name')!;
+  // The names the command's assignments and its slots give, but those a slot after them does not pass on
+  // (`x=1 env -i bash -c …`: `x` is not there; `env -i x=1 bash -c …`: it is).
+  let given = cmd.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex).map((c) => field(c, 'name')!.text);
+  // (The links after the command's own place are its slots.)
+  for (const l of script.env.links.slice(script.outer.env(cmd).links.length) as SlotLink[]) {
+    if (l.slot.run === 'current-shell') continue;
+    if (l.env === 'reset' || l.env === 'none' || (l.slot.where ?? 'local') !== 'local') given = [];
+    given = [...given, ...l.assigns];
+  }
+  return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, given, first));
+}
+
 class Walker {
   /** The states each node was run with (more than one in a loop or a function called more than once); merged when asked. */
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
@@ -596,7 +712,7 @@ class Walker {
    */
   private sureLater = new Map<string, SyntaxNode>();
   /** The actions of `trap`, run after the top level (an EXIT trap with its state at the end). */
-  private readonly traps: { text: string; host: SyntaxNode; st: ShellState; since: number; exit: boolean }[] = [];
+  private readonly traps: { script: NestedScript; host: SyntaxNode; st: ShellState; since: number; exit: boolean }[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   private aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
@@ -620,7 +736,15 @@ class Walker {
   private readonly expanding = new Set<string>();
   private readonly bash: boolean;
 
-  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean) {
+  /** The names the actions of the traps set so far change (not EXIT's): a signal may run them between any two later statements. */
+  private readonly trapKeys = new Set<string>();
+  /**
+   * Set while a trap's action is walked only for what it changes (`trap`): its nodes, the calls and the walks of the
+   * bodies it calls are not recorded (the action runs later, with the state of then).
+   */
+  private quiet = 0;
+
+  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts) {
     this.bash = !shell || shell === 'bash';
   }
 
@@ -633,6 +757,7 @@ class Walker {
   }
 
   private record(n: SyntaxNode, st: ShellState): void {
+    if (this.quiet) return;
     const states = this.runStates.get(n);
     if (!states) this.runStates.set(n, [st]);
     else if (!states.includes(st)) states.push(st);
@@ -655,18 +780,70 @@ class Walker {
     return st;
   }
 
-  program(root: SyntaxNode): ShellState {
+  /**
+   * The state another shell starts with (`bash -c`, docs/design/semantics.md 4.13): the variables of `outer` that
+   * reach it through `env` (exported, with a value: an array is not passed), and those the slots set (`given`); the
+   * exported functions, when it is bash and every link passes them; the set options, when SHELLOPTS is exported.
+   */
+  childStart(outer: ShellState, env: ExecEnv, given: readonly string[], at: SyntaxNode): ShellState {
+    let st = this.initial();
+    const exported = (x: Attribute | undefined): Tri => x?.state ?? 'off';
+    const reach = reachOf(env, exported(outer.variables.get('SHELLOPTS')?.attrs.x) === 'on');
+    // (`sh` may be bash, which reads exported functions and SHELLOPTS, or dash, which reads neither.)
+    const bashLike: Tri = this.bash ? 'on' : this.shell === 'sh' ? 'unknown' : 'off';
+    if (reach.variables !== 'none') {
+      const vars = new Map<string, VariableState>();
+      for (const [name, v] of outer.variables) {
+        const x = exported(v.attrs.x);
+        const array = [attribute(outer, name, 'a'), attribute(outer, name, 'A')];
+        // (A shell sets IFS itself when it starts; an array is not passed.)
+        if (x === 'off' || v.set === 'off' || array.includes('on') || name === 'IFS') continue;
+        vars.set(name, x === 'on' && v.set === 'on' && !array.includes('unknown')
+          ? { declared: 'on', set: 'on', attrs: { x: v.attrs.x! }, ...(v.value !== undefined ? { value: v.value } : {}), at: v.at }
+          : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at });
+      }
+      st = { ...st, variables: st.variables.withAll(vars) };
+    }
+    // (`env -i x=1 bash -c …` passes `x`.)
+    for (const name of given) if (NAME.test(name)) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: { x: { state: 'on', at } }, at }) };
+    if (reach.functions === 'exported' && bashLike !== 'off') {
+      const fns = new Map<string, FunctionState>();
+      for (const [name, f] of outer.functions) {
+        if (f.state === 'off' || f.exported === 'off') continue;
+        fns.set(name, { state: f.state === 'on' && f.exported === 'on' && bashLike === 'on' ? 'on' : 'unknown', def: f.def, exported: 'on', readonly: 'off' });
+        // (Its body is walked where this shell calls it.)
+        this.collectDefinitions(f.def);
+      }
+      st = { ...st, functions: st.functions.withAll(fns) };
+    }
+    // (bash turns on the options SHELLOPTS names; it turns none off.)
+    if (reach.options !== 'none' && bashLike !== 'off') {
+      const opts = new Map<string, OptionState>();
+      for (const [name, o] of outer.set) if (o === 'on' || o === 'unknown') opts.set(name, o === 'on' && bashLike === 'on' ? 'on' : 'unknown');
+      st = { ...st, set: st.set.withAll(opts) };
+    }
+    return st;
+  }
+
+  /** Records the function definitions and the `alias` commands under `root`. */
+  private collectDefinitions(root: SyntaxNode): void {
     for (const f of descendants(root, ['function_definition'])) {
-      const name = field(f, 'name')?.text;
-      if (name) this.functionDefs.set(name, [...(this.functionDefs.get(name) ?? []), f]);
+      const name = field(f, 'name')!.text;
+      const defs = this.functionDefs.get(name) ?? [];
+      if (!defs.includes(f)) this.functionDefs.set(name, [...defs, f]);
     }
     for (const c of descendants(root, ['command'])) {
       if (this.commandName(c) !== 'alias') continue;
       for (const a of fields(c, 'argument')) {
         const name = this.aliasOf(a)?.name;
-        if (name) this.aliasDefs.set(name, [...(this.aliasDefs.get(name) ?? []), c]);
+        const defs = name ? this.aliasDefs.get(name) ?? [] : [];
+        if (name && !defs.includes(c)) this.aliasDefs.set(name, [...defs, c]);
       }
     }
+  }
+
+  program(root: SyntaxNode, start: ShellState): ShellState {
+    this.collectDefinitions(root);
     const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
       ...descendants(root, ['command']).filter((c) => this.commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
     for (const def of descendants(root, ['function_definition'])) {
@@ -680,7 +857,7 @@ class Walker {
     const tops = root.namedChildren.filter((c) => STATEMENTS.has(c.type));
     const unitStart = this.unitStart;
     tops.forEach((t, i) => unitStart.set(t, i > 0 && tops[i - 1].endPosition.row === t.startPosition.row ? unitStart.get(tops[i - 1])! : t));
-    const end = this.sequence(root.children, this.initial(), (t, st) => {
+    const end = this.sequence(root.children, start, (t, st) => {
       const unit = unitStart.get(t)!;
       this.parseAt.set(t, unit === t ? st : this.parseAt.get(unit)!);
       this.expand = this.parseAt.get(t)!;
@@ -717,11 +894,11 @@ class Walker {
    * an EXIT trap set at the top level, from the state at the end.
    */
   private runTraps(end: ShellState): void {
-    for (const t of this.traps.splice(0)) {
+    // (An action may set a trap of its own: it is walked in the next round.)
+    for (let round = 0; round < NESTED_DEPTH && this.traps.length; round++) for (const t of this.traps.splice(0)) {
       const after = new Set([...this.lastChange].filter(([, i]) => i > t.since).map(([k]) => k));
       const st = t.exit && this.topLevel(t.host) ? end : this.widen(t.st, after);
-      this.expand = st;
-      this.runText(t.text, t.host, st);
+      this.runScript(t.script, t.host, st);
     }
   }
 
@@ -805,7 +982,9 @@ class Walker {
     this.node = n;
     try {
       const after = this.runStatement(n, st);
-      return subshellReasons(n).length ? st : after;
+      // (A trap's action may run after any statement, when its signal comes.)
+      const out = subshellReasons(n).length ? st : after;
+      return this.trapKeys.size ? this.widen(out, this.trapKeys) : out;
     } catch (e) {
       // (An expansion error discards the rest of the command; the rest of its line too, which is not followed.)
       if (e instanceof ExpansionError) return subshellReasons(n).length ? st : e.st;
@@ -1665,8 +1844,10 @@ class Walker {
     const def = fn.def;
     const site = this.aliasHost ?? this.node!;
     const sites = this.calls.get(def) ?? new Map<SyntaxNode, boolean>();
-    this.calls.set(def, sites);
-    sites.set(site, (sites.get(site) ?? true) && fn.state === 'on');
+    if (!this.quiet) {
+      this.calls.set(def, sites);
+      sites.set(site, (sites.get(site) ?? true) && fn.state === 'on');
+    }
     let exit: ShellState;
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
       // A recursive call: what the body changed in its walks so far may change.
@@ -1682,13 +1863,13 @@ class Walker {
       exit = this.walkBody(def, entry, frame);
     } else {
       const walks = this.walks.get(def) ?? [];
-      this.walks.set(def, walks);
+      if (!this.quiet) this.walks.set(def, walks);
       const seen = walks.find((w) => w.entry === st || sameState(w.entry, st));
       if (seen) exit = seen.exit;
       else if (walks.length >= WALKS_PER_FUNCTION) exit = this.widen(st, this.changes.get(def)!);
       else {
         exit = this.walkBody(def, st, { def, saved: new Map() });
-        walks.push({ entry: st, exit });
+        if (!this.quiet) walks.push({ entry: st, exit });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
@@ -1696,7 +1877,7 @@ class Walker {
 
   /** Walks the body of `def` from `entry`; its locals (in `frame`) and its `local -` options are restored after it. */
   private walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
-    if (!this.walks.has(def)) this.walks.set(def, []);
+    if (!this.walks.has(def) && !this.quiet) this.walks.set(def, []);
     const body = field(def, 'body');
     if (!body) return entry;
     let top = def;
@@ -1784,12 +1965,58 @@ class Walker {
     return builtins[name]?.builtin === 'special' && option(st, 'set', 'posix') === 'on' ? undefined : fn;
   }
 
-  /** Runs `text` as a script for the calls it makes, from `host` (an `eval`, a `trap`); the state it leaves is dropped. */
-  private runText(text: string, host: SyntaxNode, st: ShellState): void {
+  /**
+   * Runs a string this shell reads (`eval`, a trap's action) from `st`, from `host` (its calls are made there): bash
+   * reads it when it runs (its parse state is `st`), one line at a time, so the lines before a syntax error run.
+   */
+  private runScript(script: NestedScript, host: SyntaxNode, st: ShellState): ShellState {
     const outer = this.aliasHost;
+    const expand = this.expand;
     this.aliasHost ??= host;
-    this.sequence(this.parseText(text).root.children, st);
+    const { root, text, errors } = script.tree;
+    const stop = errors.length ? text.slice(0, Math.min(...errors.map((e) => e.startIndex))).split('\n').length - 1 : Infinity;
+    const statements = root.children.filter((c) => c.endPosition.row < stop);
+    // (The statements that share a line are read at once, as in a script: aliases and extglob count from the next line.)
+    let last: SyntaxNode | undefined;
+    const end = this.sequence(statements, st, (t, now) => {
+      const unit = last && last.endPosition.row === t.startPosition.row ? this.unitStart.get(last)! : t;
+      this.unitStart.set(t, unit);
+      this.parseAt.set(t, unit === t ? now : this.parseAt.get(unit)!);
+      this.expand = this.parseAt.get(t)!;
+      last = t;
+    });
     this.aliasHost = outer;
+    this.expand = expand;
+    return end;
+  }
+
+  /**
+   * `eval`'s string, run where eval runs. The assignments before `eval` are its temporaries in bash mode: the string
+   * sees them, exported, and they are gone after it (what the string assigns to them too); in POSIX mode they stay.
+   */
+  private evalScript(script: NestedScript, n: SyntaxNode, st: ShellState): ShellState {
+    // (`n` is the command that runs eval: `eval s`, `builtin eval s`.)
+    const name = field(n, 'name')!;
+    const temps = n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex);
+    if (!temps.length || option(st, 'set', 'posix') === 'on') return this.runScript(script, n, st);
+    const saved = new Map<string, VariableState | undefined>();
+    let entry = st;
+    for (const a of temps) {
+      const v = field(a, 'name')!.text;
+      if (!saved.has(v)) saved.set(v, entry.variables.get(v));
+      entry = this.giveAttribute(this.assignNode(a, entry), v, 'x', a);
+    }
+    let after = this.runScript(script, n, entry);
+    for (const [v, was] of saved) after = this.put(after, 'variables', v, was);
+    return after;
+  }
+
+  /** The string of `words`, which this shell runs: now (`eval`) or later (a trap's action). */
+  private script(words: SyntaxNode[], kind: 'current' | 'later', n: SyntaxNode, parse: ArgvParse, args: SyntaxNode[]): NestedScript | NotRead {
+    const name = parse.command;
+    const script = this.scripts.read(words, kind, () => slotEnvs(this.scripts.model.env(n), parse, builtins[name], args).get(words[0])!, { shell: this.shell, known: true });
+    if (!('why' in script)) this.collectDefinitions(script.tree.root);
+    return script;
   }
 
   private parseText(text: string): SyntaxTree {
@@ -1836,24 +2063,36 @@ class Walker {
     const has = (flag: string): boolean => letters.some((l) => l.flag === flag);
     switch (name) {
       case 'eval': case 'trap': {
-        // A static string of `eval`, or a trap's action: the functions it calls are called here (or when the trap
-        // runs, from the shell that set it). Its changes to the state are not followed.
-        const words = name === 'eval' ? args.filter((a, i) => i > 0 || a.text !== '--') : parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name === 'ACTION').map((r) => args[r.word]);
-        const text = words.map((w) => staticWordValue(w));
-        // (A trap that runs something may run between any two commands.)
-        if (name === 'eval' || (words.length && text.some((t) => t !== '' && t !== '-'))) this.turnOpaque();
-        if (!words.length || text.some((t) => t === undefined)) return st;
-        if (name === 'eval') this.runText(text.join(' '), n, st);
-        else {
-          const signals = parse.roles.filter((r) => r.role.role === 'operand' && r.role.spec?.name !== 'ACTION').map((r) => staticWordValue(args[r.word]) ?? '');
-          this.traps.push({ text: text.join(' '), host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some((x) => /^(SIG)?EXIT$|^0$/i.test(x)) });
+        // A static string of `eval` runs here, in this shell; a trap's action runs later, when the signal comes
+        // (docs/design/semantics.md, 4.13). A string not known here may set any name.
+        const at = parse.roles.find((r) => r.role.role === 'command');
+        if (!at) return st;
+        const words = name === 'eval' ? args.slice(at.word) : [args[at.word]];
+        const script = this.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
+        if ('why' in script) {
+          this.turnOpaque();
+          return st;
+        }
+        if (name === 'eval') return this.evalScript(script, n, st);
+        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
+        const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
+        if (!this.quiet) this.traps.push({ script, host: this.aliasHost ?? n, st, since: this.changeCount, exit: signals.some(exit) });
+        // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
+        if (!signals.every(exit)) {
+          const keys = new Set<string>();
+          this.collecting.push(keys);
+          this.quiet++;
+          this.runScript(script, this.aliasHost ?? n, st);
+          this.quiet--;
+          this.collecting.pop();
+          for (const k of keys) this.trapKeys.add(k);
         }
         return st;
       }
       case 'let': return this.arithRun((s) => this.letCommand(operands, s), st);
       case 'source': case '.':
         // (The file is not read: what it defines is not known here.)
-        this.sources.push(this.aliasHost ?? n);
+        if (!this.quiet) this.sources.push(this.aliasHost ?? n);
         this.turnOpaque();
         return st;
       case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
@@ -2221,19 +2460,46 @@ class Walker {
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
-/** The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`). Cached per tree. */
+/**
+ * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`). Cached per tree. The tree of
+ * a string read as a script (`StateModel.script`) has the model of that script: the outer one for `eval`.
+ */
 export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean } = {}): StateModel {
+  const owner = owners.get(tree);
+  if (owner) return owner.model;
   const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
-  const w = new Walker(shell, !!opts.posix);
-  const initial = w.initial();
-  const end = w.program(tree.root);
+  const model = buildModel(tree, shell, !!opts.posix, 0, MAIN_SHELL, (w) => w.initial());
+  byKey.set(key, model);
+  return model;
+}
+
+/** The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep. */
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState): StateModel {
+  const scripts = new Scripts(depth);
+  const w = new Walker(shell, posix, scripts);
+  const initial = start(w);
+  const end = w.program(tree.root, initial);
   // (The model's `at` is defined below; the environments ask for it only later.)
-  const envs = new EnvModel({ run: (n) => model.at(n).run, calls: w.calls, root: tree.root, shell });
+  const envs = new EnvModel({
+    run: (n) => model.at(n).run, calls: w.calls, root: tree.root, shell,
+    // (The root of a string this shell runs, `eval`'s, runs where the slot does; any other, where this tree does: a
+    // function another shell imports.)
+    base: (root) => scripts.byRoot.get(root)?.env ?? base,
+  });
   const model: StateModel = {
+    script(words, env) {
+      const hit = scripts.byWord.get(words[0]);
+      if (hit) return hit;
+      const link = env.links[env.links.length - 1] as SlotLink;
+      // The walk reads the strings this shell runs (`eval`, a trap's action) where it reaches them, and it reaches
+      // every command: one it has not read is run by no shell (`sudo eval s` starts no shell, so nothing runs it).
+      if (link.slot.run !== 'shell-string') return { why: 'not-run' };
+      return scripts.read(words, 'child', () => env, slotShell(link));
+    },
     end,
     env: (n) => envs.at(n),
     calls: w.calls,
@@ -2250,15 +2516,21 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
       let run: ShellState | undefined;
       let expand: ShellState | undefined;
       let top = n;
+      let root = n;
       for (let x: SyntaxNode | null = n; x; x = x.parent) {
         run ??= w.runAt(x);
         if (x.type === 'command_substitution' && x !== n) expand ??= w.runAt(x);
         if (x.parent) top = x;
+        root = x;
       }
+      // (A node of an `eval` or trap string the walk did not run, as after a syntax error: the state of its command.
+      // Some callers ask for a node that may be missing: `case x in` with no pattern.)
+      const script = run ? undefined : scripts.byRoot.get(root);
+      if (script) return model.at(script.words[0]);
       const parse = w.parseAt.get(top) ?? initial;
       return { run: run ?? initial, parse, expand: expand ?? parse };
     },
   };
-  byKey.set(key, model);
+  scripts.model = model;
   return model;
 }

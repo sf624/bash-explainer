@@ -124,8 +124,11 @@ export function interpret(spec: CommandSpec, words: ArgWord[], ctx: InterpretCon
 }
 
 const valuesOf = (o: OptionSpec): ValueSpec[] => (o.value === undefined ? [] : Array.isArray(o.value) ? o.value : [o.value]);
-/** An item that takes every word left: an `exec` or `current-shell` command, or a shell string joined from the words (ssh). */
-const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.run !== 'shell-string' || !!o.command.joinsWords);
+/**
+ * An item that takes every word left: an `exec` or `current-shell` command, or a shell string joined from the words
+ * (ssh). A `shell-string` slot and a `later` one (trap's action) take one word.
+ */
+const takesRest = (o: OperandSpec): boolean => !!o.command && (o.command.joinsWords || (o.command.run !== 'shell-string' && !o.command.later));
 /** The number of words a word gives: fewest (at least one, as the text shows it) and many. */
 const counts = (w: ArgWord): [number, number] => {
   if (!w.count) return [1, 1];

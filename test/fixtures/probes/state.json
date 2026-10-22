@@ -2512,14 +2512,12 @@
   {
     "manual": "4.2",
     "snippet": "echo foo=3 > c.sh; (( a = foo + 1 )); source ./c.sh; (( b = foo + 1 ))\neval 'bar=3'; (( c = bar + 1 )); trap 'baz=3' USR1; kill -USR1 $$; (( d = baz + 1 ))",
-    "note": "a file sourced, a string run with eval or a trap may set variables",
+    "note": "a file sourced may set variables; a string run with eval sets them there; a trap's action may, later",
     "gaps": {
       "end.variables.foo": "the file sourced is not read",
       "end.variables.b": "the file sourced is not read: a name the script has not set may be set there",
-      "end.variables.bar": "the string run with eval is not followed",
-      "end.variables.c": "the string run with eval is not followed: a name the script has not set may be set there",
-      "end.variables.baz": "the action of a trap is not followed",
-      "end.variables.d": "the action of a trap is not followed: a name the script has not set may be set there"
+      "end.variables.baz": "the action of a trap may run after any later statement: what it sets is unknown after it",
+      "end.variables.d": "the action of a trap may run after any later statement: `baz` may be set, to a value not known"
     },
     "facts": {
       "end": {
@@ -2811,6 +2809,280 @@
       },
       "status": 0,
       "stderr": "SCRIPT: line 1: ((: ((x: missing `)' (error token is \"x\")"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "eval 'a=1; f() { :; }; shopt -s extglob'; @PROBE:a@\nb=x; eval \"c=\\$b; export c\" 'd=$((2 + 3))'; @PROBE:b@",
+    "note": "a static string run with eval changes the shell where eval runs",
+    "facts": {
+      "a": {
+        "shopt": {
+          "extglob": true
+        },
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "shopt": {
+          "extglob": true
+        },
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"x\""
+          },
+          "c": {
+            "attrs": "x",
+            "value": "\"x\""
+          },
+          "d": {
+            "attrs": "x",
+            "value": "\"5\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "shopt": {
+          "extglob": true
+        },
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"x\""
+          },
+          "c": {
+            "attrs": "x",
+            "value": "\"x\""
+          },
+          "d": {
+            "attrs": "x",
+            "value": "\"5\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "f() { eval 'local x=1; y=2'; }; f; @PROBE:a@\neval 'z=1\nif'; @PROBE:b@",
+    "note": "eval in a function; a syntax error in the string: bash runs the lines before it",
+    "facts": {
+      "a": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: eval: line 5: syntax error: unexpected end of file"
+    }
+  },
+  {
+    "manual": "3.8",
+    "snippet": "export p=1; bash -c 'p=2; q=1; set -f'; sh -c 'r=1'; ( eval 's=1' ); @PROBE:a@",
+    "note": "another shell, or a subshell, changes nothing of the script",
+    "facts": {
+      "a": {
+        "variables": {
+          "p": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "end": {
+        "variables": {
+          "p": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "trap 'v=1; w=1' USR1; v=2; kill -USR1 $$; @PROBE:a@\ntrap 'u=1' EXIT; u=2; @PROBE:b@",
+    "note": "a trap's action may run between any two later commands; an EXIT trap only at the end",
+    "gaps": {
+      "a.variables.v": "the action of a trap may run after any later statement: `v` is unknown after it",
+      "a.variables.w": "the action of a trap may run after any later statement: `w` is unknown after it",
+      "b.variables.v": "the action of a trap may run after any later statement: `v` is unknown after it",
+      "b.variables.w": "the action of a trap may run after any later statement: `w` is unknown after it",
+      "end.variables.v": "the action of a trap may run after any later statement: `v` is unknown after it",
+      "end.variables.w": "the action of a trap may run after any later statement: `w` is unknown after it"
+    },
+    "facts": {
+      "a": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "b": {
+        "variables": {
+          "u": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "end": {
+        "variables": {
+          "u": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "w": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "shopt -s expand_aliases; eval $'alias ll=\"x=7\"\\nll'; @PROBE:a@\nx=1 eval 'x=2; y=$x; export z=3'; @PROBE:b@",
+    "note": "eval reads its string a line at a time (an alias counts from the next line); the assignments before eval are its temporaries",
+    "facts": {
+      "a": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"7\""
+          }
+        },
+        "aliases": {
+          "ll": "x=7"
+        }
+      },
+      "b": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "x",
+            "value": "\"3\""
+          }
+        },
+        "aliases": {
+          "ll": "x=7"
+        }
+      },
+      "end": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"7\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          },
+          "z": {
+            "attrs": "x",
+            "value": "\"3\""
+          }
+        },
+        "aliases": {
+          "ll": "x=7"
+        }
+      },
+      "status": 0
     }
   }
 ]

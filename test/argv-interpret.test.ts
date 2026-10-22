@@ -444,8 +444,9 @@ describe('argv interpreter: the option grammar', () => {
     // A condition on an operand's value: `trap 1 2` resets both signals; a value not known matches nothing.
     assert.deepStrictEqual(roles('trap 1 2'), ['1: SIGNAL', '2: SIGNAL']);
     assert.deepStrictEqual(roles('trap 1 INT'), ['1: SIGNAL', 'INT: SIGNAL']);
-    assert.deepStrictEqual(roles('trap "$x" INT'), ['"$x": ACTION', 'INT: SIGNAL']);
-    assert.deepStrictEqual(roles('trap 65 INT'), ['65: ACTION', 'INT: SIGNAL']);
+    // (The action is a string this shell runs later: a command slot.)
+    assert.deepStrictEqual(roles('trap "$x" INT'), ['"$x": command current-shell', 'INT: SIGNAL']);
+    assert.deepStrictEqual(roles('trap 65 INT'), ['65: command current-shell', 'INT: SIGNAL']);
     // `'first'` prefixes: the first name a word starts; an empty word starts none (`ip ''`: "Object "" is unknown").
     assert.deepStrictEqual(roles('ip m'), ['m: subcommand maddress']);
     assert.deepStrictEqual(roles("ip ''"), ["'': operand"]);

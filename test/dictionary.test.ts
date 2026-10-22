@@ -387,7 +387,7 @@ describe('the specs of the dictionary', () => {
         // (A condition on an operand's value: that operand is a word the condition matches.)
         const shaped = (ws: string[]): string[] => {
           const c = alt.when && 'operand' in alt.when ? alt.when : undefined;
-          return c ? ws.map((w, i) => (i === c.operand ? ['1', 'w0rd'].find((x) => c.matches.test(x))! : w)) : ws;
+          return c ? ws.map((w, i) => (i === c.operand ? ['1', '-', 'w0rd'].find((x) => c.matches.test(x))! : w)) : ws;
         };
         const fits = [once, each, twice].some((ws) => interpret(spec, [...before, ...shaped(ws)].map((value) => ({ value })), { name: path }).alternative === k);
         if (!fits) unreachable.push(`${path} #${k}`);
