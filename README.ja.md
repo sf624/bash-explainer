@@ -256,6 +256,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
 | `examples.placement`・`colors` | ✓ | | |
+| `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
 | `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
 | `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen` | | | |
 

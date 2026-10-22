@@ -229,6 +229,9 @@ const MODES: Partial<Record<Kind, StreamParser<unknown>>> = {
   dockerfile: dockerFile, yaml, npm: json, python, jenkinsfile: groovy,
 };
 const languageMode = new Compartment();
+/** Wrapping of long lines (the `editor.wrap` setting). */
+const wrapMode = new Compartment();
+const wrapFor = (on: boolean) => (on ? EditorView.lineWrapping : []);
 /** Read mode (for touch screens): the editor says it takes no text input, so a tap places the cursor without the soft keyboard. */
 const inputMode = new Compartment();
 const READ_KEY = STORAGE_KEYS.readMode;
@@ -418,7 +421,7 @@ const view = new EditorView({
     extensions: [
       lineNumbers(), highlightActiveLineGutter(), highlightActiveLine(), drawSelection(), history(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      languageMode.of(modeFor(kind)), inputMode.of(inputModeFor(readMode)), syntaxHighlighting(highlightStyle), editorTheme,
+      languageMode.of(modeFor(kind)), inputMode.of(inputModeFor(readMode)), wrapMode.of(wrapFor(settings['editor.wrap'])), syntaxHighlighting(highlightStyle), editorTheme,
       highlightField, Prec.highest(shading), ...(panelOnly ? [] : [problems, lintGutter()]),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) {
@@ -880,6 +883,7 @@ function changeSettings(next: Settings): void {
   const languageChanged = next.language !== settings.language;
   settings = next;
   applyColors(settings.colors);
+  view.dispatch({ effects: wrapMode.reconfigure(wrapFor(settings['editor.wrap'])) });
   try {
     const changed = changedSettings(settings, 'web');
     if (Object.keys(changed).length) localStorage.setItem(SETTINGS_KEY, JSON.stringify(changed));

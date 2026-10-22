@@ -15,13 +15,26 @@ const root = path.join(__dirname, '..');
 const json = (file: string) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 const configuration = json('package.json').contributes.configuration;
 const properties: Record<string, any> = configuration.properties;
+/** The settings VS Code lists in package.json (those of the web page only are not). */
+const VSCODE = SETTINGS.filter((s) => s.surfaces.includes('vscode'));
 
 describe('the settings module', () => {
   it('lists the settings of package.json, in the same order', () => {
-    assert.deepStrictEqual(SETTINGS.map((s) => PREFIX + s.key), Object.keys(properties));
+    assert.deepStrictEqual(VSCODE.map((s) => PREFIX + s.key), Object.keys(properties));
   });
 
-  for (const spec of SETTINGS) {
+  it('keeps a setting of the web page only out of package.json, with its own description', () => {
+    const webOnly = SETTINGS.filter((s) => !s.surfaces.includes('vscode'));
+    assert.deepStrictEqual(webOnly.map((s) => s.key), ['editor.wrap']);
+    for (const s of webOnly) {
+      assert.deepStrictEqual(s.surfaces, ['web']);
+      assert.ok(s.description![0] && s.description![1] && s.elsewhere);
+      assert.strictEqual(properties[PREFIX + s.key], undefined);
+    }
+    for (const s of VSCODE) assert.strictEqual(s.description, undefined);
+  });
+
+  for (const spec of VSCODE) {
     it(`agrees with package.json on ${spec.key}`, () => {
       const p = properties[PREFIX + spec.key];
       assert.strictEqual(spec.type, p.type);
@@ -48,7 +61,7 @@ describe('the settings module', () => {
   it('has a description in English and Japanese for each setting and each value', () => {
     for (const nls of [json('package.nls.json'), json('package.nls.ja.json')]) {
       const texts = settingTexts(configuration, nls);
-      assert.deepStrictEqual(Object.keys(texts), SETTINGS.map((s) => s.key));
+      assert.deepStrictEqual(Object.keys(texts), VSCODE.map((s) => s.key));
       for (const [key, t] of Object.entries(texts)) {
         assert.ok(t.description && !/^%.*%$/.test(t.description), key);
         for (const label of Object.values(t.values ?? {})) assert.ok(label && !/^%.*%$/.test(label), key);
@@ -60,7 +73,7 @@ describe('the settings module', () => {
   });
 
   it('gives each surface its settings', () => {
-    assert.strictEqual(settingsFor('vscode').length, SETTINGS.length);
+    assert.strictEqual(settingsFor('vscode').length, VSCODE.length);
     const web = settingsFor('web').map((s) => s.key);
     assert.ok(web.includes('customCommands') && web.includes('examples.placement') && !web.includes('panel.autoOpen'));
     assert.ok(!settingsFor('cli').some((s) => s.key === 'diagnostics.enabled'));

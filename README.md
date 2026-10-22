@@ -256,6 +256,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `examples.placement`, `colors` | ✓ | | |
+| `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
 | `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
 | `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen` | | | |
 

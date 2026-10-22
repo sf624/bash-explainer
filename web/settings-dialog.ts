@@ -12,7 +12,7 @@ declare const __SETTING_TEXT__: Record<Lang, Record<string, SettingText>>;
 const TEXT = {
   en: {
     title: 'Settings',
-    intro: 'The settings of the VS Code extension that apply on this page. They take effect at once.',
+    intro: 'The settings of the VS Code extension that apply on this page, and the page\'s own. They take effect at once.',
     saved: 'They are kept in this browser.',
     unsaved: 'This browser does not let the page keep them: they last until the page is closed.',
     groups: { display: 'Display', checks: 'Checks', files: 'Files', dictionary: 'Dictionary' },
@@ -52,7 +52,7 @@ const TEXT = {
   },
   ja: {
     title: '設定',
-    intro: 'VS Code 拡張の設定のうち、このページで使えるものです。変更はすぐに反映されます。',
+    intro: 'VS Code 拡張の設定のうち、このページで使えるものと、このページだけの設定です。変更はすぐに反映されます。',
     saved: '設定はこのブラウザに保存されます。',
     unsaved: 'このブラウザではページが設定を保存できません。ページを閉じるまで有効です。',
     groups: { display: '表示', checks: 'チェック', files: 'ファイル', dictionary: '辞書' },
@@ -325,7 +325,7 @@ export class SettingsDialog {
         this.io(lang),
         ...groups.map((g) => el('section', { className: 'settings-group' },
           el('h3', { textContent: t.groups[g] }),
-          ...here.filter((x) => x.group === g).map((spec) => this.row(spec, s, texts[spec.key], lang)))),
+          ...here.filter((x) => x.group === g).map((spec) => this.row(spec, s, texts[spec.key] ?? { description: spec.description![lang === 'ja' ? 0 : 1] }, lang)))),
         this.clear(lang),
         el('p', { className: 'settings-elsewhere' }, t.notHere, ' ', ...elsewhere.flatMap((x, i) => [i ? ', ' : '', el('code', { textContent: x.key })])),
       ),
