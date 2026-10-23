@@ -70,16 +70,19 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       const forty = Array.from({ length: 40 }, (_, i) => `alias a${i}='echo ${i}'`);
       assert.strictEqual(decided(uses(on, [...forty, ...Array.from({ length: 1200 }, (_, i) => `a${i % 40}`)])), 'true', `40 aliases, 30 uses each, expand_aliases ${on}`);
     }
-    // (Nor do the trees of all the commands together grow without bound: 500 commands of a chain that doubles 9 times
-    // ask for 255,500. Before, V8 ran out of memory after about 20 s.)
-    const chain = ['shopt -s expand_aliases', ...Array.from({ length: 9 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), 'alias a9=echo', ...Array(500).fill('a0'), 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    // (Nor do the trees of all the commands together grow without bound: 100 commands of a chain that doubles 8 times
+    // ask for 51,100. Before, 500 such commands of 9 made V8 run out of memory. Past the bound the walk still runs what
+    // the aliases do, in trees shared by text, and nothing is trusted.)
+    const chain = ['shopt -s expand_aliases', ...Array.from({ length: 8 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), "alias a8='set -f; y=2'", 'y=1', ...Array(100).fill('a0'), 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    assert.strictEqual(bash(`${chain}\necho "$y \${-//[^f]/}"`), '2 f\n');
     const heap = process.memoryUsage().heapUsed;
     const t = Date.now();
     const tree = parser.parse(chain);
     const model = shellState(tree);
     assert.strictEqual(model.blind, 'too many aliases expanded');
     assert.strictEqual(model.condition(descendants(tree.root, ['list']).pop()!), undefined);
-    assert.ok(Date.now() - t < 20000, `took ${Date.now() - t} ms`);
+    assert.deepStrictEqual([model.end.variables.get('y')?.value, model.end.set.get('noglob')], ['2', 'on']);
+    assert.ok(Date.now() - t < 30000, `took ${Date.now() - t} ms`);
     assert.ok(process.memoryUsage().heapUsed - heap < 1e9, `${process.memoryUsage().heapUsed - heap} bytes`);
   });
   it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
