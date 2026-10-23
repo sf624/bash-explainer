@@ -1,3 +1,4 @@
+import type { EmbeddedLang } from './embedded/types';
 import type { SyntaxNode } from './syntax/tree';
 
 /** The characters `$'…'` turns a one-letter escape into. */
@@ -301,4 +302,57 @@ export function elementClose(text: string): { close: number; plus: string } | un
 export function splitElement(text: string): { key: string; plus: string; value: string } | undefined {
   const e = elementClose(text);
   return e && { key: text.slice(1, e.close), plus: e.plus, value: text.slice(e.close + 2 + e.plus.length) };
+}
+
+/** A plain word or a number: no quotes, expansions or other parts. */
+export const isPlainWord = (n: SyntaxNode): boolean => n.type === 'word' || n.type === 'number';
+
+/**
+ * The text a command receives for a word, and where each of its characters sits in the word's
+ * source: either a fixed `base` offset, or per-character `offsets` when quotes are interleaved
+ * (`--pretty=format:'%h %s'`).
+ */
+export interface Literal {
+  text: string;
+  base?: number;
+  offsets?: number[];
+}
+
+/** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
+export function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined {
+  if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
+  // `echo -e "\e[1m"`: the shell keeps a backslash before any character but `$`, a backtick, `"` and `\`.
+  if (lang === 'echo') {
+    return a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[$`]|\\[\\"\n]/.test(a.text) ? { text: a.text.slice(1, -1), base: 1 } : undefined;
+  }
+  if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
+    return { text: a.text.slice(1, -1), base: 1 };
+  }
+  if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
+  // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
+  if (a.type === 'translated_string' && a.namedChildren.length === 1) {
+    const inner = literalContent(a.namedChildren[0]);
+    return inner && !inner.offsets ? { text: inner.text, base: inner.base! + 1 } : undefined;
+  }
+  if (a.type === 'concatenation' && a.startPosition.row === a.endPosition.row) {
+    let text = '';
+    const offsets: number[] = [];
+    for (const c of a.namedChildren) {
+      const lit = literalContent(c);
+      if (!lit || lit.offsets) return undefined;
+      const at = c.startIndex - a.startIndex + lit.base!;
+      for (let k = 0; k < lit.text.length; k++) offsets.push(at + k);
+      text += lit.text;
+    }
+    return { text, offsets };
+  }
+  return undefined;
+}
+
+/** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
+export function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
+  // A literal has a base or offsets, one for each character (tokens lie within its text).
+  if (!lit.offsets) return lit.base! + offset;
+  if (isEnd) return lit.offsets[offset - 1] + 1;
+  return lit.offsets[offset];
 }

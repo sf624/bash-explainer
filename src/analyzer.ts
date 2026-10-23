@@ -1,4 +1,4 @@
-import { Lang, ordinal, Text, tx } from './i18n';
+import { Lang, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, readsVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
@@ -14,20 +14,20 @@ import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
 import { givenOptions, has as hasOption, operands, values } from './argv/query';
 import { explainRegex, Flavor } from './embedded/regex';
-import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
+import { explainGlob, globIntro, GlobTarget, hasGlob } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
 import { jqExample, JqRun, Json, slurpLines, toJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { Interactive, jqStepSections, RerunSpec } from './examples/rerun';
-import { Operand, testCases } from './examples/runtime';
-import { braceExpand, extglobs, globExamples, globMatches, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
+import { globExample, patternExample, testExample } from './examples/patterns';
+import { braceExpand, extglobs, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { pictureNote, visible } from './ctlchars';
 import { commandExampleOf, dateExample, gitLogExample, interactive, ioExample, readExample } from './examples/commands';
 import { explainEscapes } from './embedded/format';
 import { describeFind, FindNode, parseFind, unquote } from './embedded/find';
-import { parseTest, TestExpr, testRange } from './testexpr';
+import { type BracketTest, type BracketWord, bracketShape, bracketTest, type TestExpr, type TestShape, testOfWords, testRange } from './testexpr';
 import { judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
 import { YQ_SPECS } from './dict/yq';
@@ -36,12 +36,11 @@ import { DIRECTIVE } from './directives';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { EMBEDDED, type EmbeddedContext } from './embedded/registry';
 import { dialectNotes, Shell } from './dialect';
-import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
-import { decodedText, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
-import { bracketEnd } from './bracket';
-import { describeGlob, ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
+import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from './arith';
+import { decodedText, isPlainWord, type Literal, literalContent, sourceIndex, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
+import { explainExpansion, type ExpansionHost } from './expansion-tokens';
 import {
-  binaryTestOps, extendedEqualOps, declarationCommands, fdName, cannotAssign, expansionOps, keywords, listOps,
+  binaryTestOps, extendedEqualOps, declarationCommands, fdName, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { labelText, skeleton } from './label';
@@ -82,12 +81,6 @@ const BLOCK_OWNERS = types('program', 'compound_statement', 'do_group', 'subshel
 const hasExpansionNode = (w: SyntaxNode): boolean => descendants(w, ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']).length > 0;
 const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
-/** Nodes inside an expansion's argument that get their own explanation. */
-const NESTED = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'string', 'raw_string']);
-
-const plural = (n: number, word: string) => `${word}${n === 1 ? '' : 's'}`;
-
-
 const effEndRow = (n: SyntaxNode) =>
   n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row ? n.endPosition.row - 1 : n.endPosition.row;
 const isMultiline = (n: SyntaxNode) => effEndRow(n) > n.startPosition.row;
@@ -114,15 +107,6 @@ function isBlockLike(n: SyntaxNode): boolean {
   return false;
 }
 
-/** Whether the node is in double quotes (a string, or a here-document), not counting those outside a `$(…)` around it. */
-function inDoubleQuotes(n: SyntaxNode): boolean {
-  for (let p = n.parent; p; p = p.parent) {
-    if (p.type === 'string' || p.type === 'heredoc_body') return true;
-    if (p.type === 'command_substitution' || p.type === 'process_substitution') return false;
-  }
-  return false;
-}
-
 const same = (a: SyntaxNode | null | undefined, b: SyntaxNode | null | undefined) => !!a && a === b;
 /** The nodes of these types under `n` that overlap `line`; one that ends where the line starts does not. */
 const onLine = (n: SyntaxNode, types: string[], line: number): SyntaxNode[] =>
@@ -134,10 +118,7 @@ const sibling = (n: SyntaxNode, by: number): SyntaxNode | undefined => {
 };
 const has = (list: readonly SyntaxNode[], n: SyntaxNode) => list.some((x) => x === n);
 
-const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
 /** A bracket expression is there when a `[` closes (`[]a]` is one: a `]` first is a member). */
-const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
-const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
 
 /** `braceExpand` of an unquoted word: undefined when it has no brace expansion, null when it gives too many words to list. */
 function braceExpansion(text: string): string[] | undefined | null {
@@ -190,7 +171,27 @@ export class Analyzer {
   /** What the current `explainLine` call reads and collects; made new by each call, so nothing of another line is left. */
   private cx!: LineContext;
 
-  constructor(private lang: Lang) {}
+  /** What the explanation of a `${…}` asks of the analyzer (src/expansion-tokens.ts). */
+  private readonly expansionHost: ExpansionHost;
+
+  constructor(private lang: Lang) {
+    const self = this;
+    this.expansionHost = {
+      lang,
+      get shell() { return self.cx.shell; },
+      s: (ja, en) => this.s(ja, en),
+      t: (text) => this.t(text),
+      tok: (n, kind, explanation, children, label) => this.tok(n, kind, explanation, children, label),
+      subs: (nodes) => this.subs(nodes),
+      full: (n) => this.full(n),
+      varDesc: (name) => this.varDesc(name),
+      variableNote: (n, name) => this.variableNote(n, name),
+      orderNote: (n, name) => this.orderNote(n, name),
+      isAssoc: (name, n) => this.isAssoc(name, n),
+      globChildren: (n, text, base) => this.globChildren(n, text, base),
+      example: (ex) => this.cx.examples.push(ex),
+    };
+  }
 
   explainLine(tree: SyntaxTree, line: number, shell?: Shell, opts: ExplainOptions = {}): LineExplanation {
     const root = tree.root;
@@ -2736,25 +2737,9 @@ export class Analyzer {
   }
 
   private globExample(n: SyntaxNode, pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
-    const opts = this.globOpts(mode === 'file' ? 'file' : 'none', n);
-    if (!hasGlobstar(pattern)) delete opts.globstar;
-    const ex = globExamples(pattern, mode, opts);
-    if (!ex) return;
     // A name that matches a pattern of GLOBIGNORE is left out.
     const ignore = mode === 'file' ? this.wordAt(n)?.glob.globignore : undefined;
-    if (ignore && typeof ignore === 'object') {
-      const pats = ignore.value.split(':').filter(Boolean);
-      const ignored = (name: string) => pats.some((p) => globMatches(p, name, 'file', { dotglob: true }));
-      ex.nonMatching.push(...ex.matching.filter(ignored));
-      ex.matching = ex.matching.filter((m) => !ignored(m));
-    }
-    // Values (find -name) always come with their labels.
-    const [yes, no] = labels ?? [this.s('一致するファイル名', 'Matching file names'), this.s('一致しないファイル名', 'Non-matching file names')];
-    this.cx.examples.push({ kind: 'glob',
-      title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((s) => s.lines.length),
-      // (The panel's matcher does not know GLOBIGNORE: no names to try then.)
-      ...(typeof ignore === 'object' ? {} : { interactive: this.interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], this.s('試す名前（1行に1つ）', 'Names to try (one per line)')) }),
-    });
+    this.pushExample(globExample(pattern, mode, this.globOpts(mode === 'file' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, this.lang));
   }
 
   private pushExample(ex: Example | undefined): void {
@@ -2774,67 +2759,12 @@ export class Analyzer {
   /** Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not: found with the matcher of `case`. */
   private patternExample(pats: SyntaxNode[], labels: [string, string]): void {
     const texts = pats.map((p) => this.unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
-    if (texts.some((t) => t === undefined)) return;
-    const all = texts as string[];
-    const matching: string[] = [];
-    const candidates: string[] = [];
-    const opts = this.globOpts('pattern', pats[0]);
-    for (const t of all) {
-      const ex = globExamples(t, 'value', opts);
-      if (!ex) return;
-      matching.push(...ex.matching.slice(0, all.length > 1 ? 1 : 3));
-      candidates.push(...ex.nonMatching);
-    }
-    const nonMatching = [...new Set(candidates)].filter((v) => !all.some((t) => globMatches(t, v, 'value', opts))).slice(0, 2);
-    this.cx.examples.push({ kind: 'glob',
-      title: this.s(`例（パターン \`${all.join('|')}\`）`, `Example (pattern \`${all.join('|')}\`)`),
-      sections: [{ label: labels[0], lines: [...new Set(matching)] }, { label: labels[1], lines: nonMatching }].filter((s) => s.lines.length),
-    });
+    this.pushExample(patternExample(texts, this.globOpts('pattern', pats[0]), labels, this.lang));
   }
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
   private testExample(n: SyntaxNode, bracket: TestShape | undefined | BracketTest, asKind?: '['): void {
-    const kind = asKind ?? n.children[0].type as '[' | '[[' | '((';
-    let shape: TestShape | undefined;
-    if (kind === '[') {
-      shape = bracket && 'words' in bracket ? bracketShape(bracket) : bracket;
-    } else if (n.namedChildren.length === 1) {
-      const expr = n.namedChildren[0];
-      if (expr.type === 'unary_expression') {
-        // `[[ -f` while typing: no operand yet.
-        const right = expr.namedChildren.find((c) => c.type !== 'test_operator');
-        if (right) shape = { op: field(expr, 'operator')!.text, right };
-      } else if (expr.type === 'binary_expression' && fields(expr, 'right').length === 1) {
-        shape = { left: field(expr, 'left')!, op: field(expr, 'operator')!.text, right: field(expr, 'right')! };
-      }
-    }
-    if (!shape) return;
-    const operand = (x: SyntaxNode): Operand | undefined => {
-      if (x.type === 'simple_expansion' || (x.type === 'expansion' && /^\$\{\w+\}$/.test(x.text))) return { var: x.text.replace(/^\$\{?|\}$/g, '') };
-      if (x.type === 'variable_name') return { var: x.text };
-      // The grammar reads the right side of `=`, `==` and `!=` as a pattern; `[ ]` compares it as text.
-      if (x.type === 'extglob_pattern' && (kind === '[' || /^[\w.@%+:,/-]+$/.test(x.text))) return { lit: x.text };
-      if (x.type === 'string' && x.namedChildren.length === 1 && x.namedChildren[0].type === 'simple_expansion' && x.text === `"${x.namedChildren[0].text}"`) return operand(x.namedChildren[0]);
-      const lit = literalContent(x);
-      return lit ? { lit: lit.text } : undefined;
-    };
-    const { left, op, right } = shape;
-    const cases = left
-      ? testCases(kind, op, operand(left), operand(right), right.type === 'string' || right.type === 'raw_string')
-      : testCases(kind, op, undefined, operand(right), right.type === 'string');
-    if (!cases) return;
-    // `$#` and `$?` cannot be assigned: say it in words.
-    const show = (vars: Record<string, string>) => Object.entries(vars).map(([k, v]) => (k === '#'
-      ? this.s(`引数が ${v} 個`, `${v} argument${v === '1' ? '' : 's'}`)
-      : k === '?' ? this.s(`直前のコマンドの終了ステータスが ${v}`, `the last command exits with ${v}`)
-        : /^\d+$/.test(k) ? `$${k}=${JSON.stringify(v)}` : `${k}=${JSON.stringify(v)}`)).join(' ');
-    this.cx.examples.push({ kind: 'test',
-      title: this.s('例', 'Example'),
-      sections: [
-        { label: this.s('真になる値', 'True when'), lines: cases.filter((c) => c.result).map((c) => show(c.vars)) },
-        { label: this.s('偽になる値', 'False when'), lines: cases.filter((c) => !c.result).map((c) => show(c.vars)) },
-      ].filter((sec) => sec.lines.length),
-    });
+    this.pushExample(testExample(n, bracket, asKind, this.lang));
   }
 
   /** An input → output example (sed, awk, perl, sort…; src/examples/commands.ts). */
@@ -3687,328 +3617,9 @@ export class Analyzer {
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
   }
 
-  /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
+  /** `${…}`: the overall meaning plus a worked example, broken down into its parts (src/expansion-tokens.ts). */
   private expansion(n: SyntaxNode): Token {
-    // `${#a-b}` and `${#a[1]b}`: the length of a name takes no operator. The parser reads `$#` with an operator; bash says "bad substitution".
-    const hash = n.children[1];
-    const op = field(n, 'operator');
-    if (n.type === 'expansion' && hash?.type === 'special_variable_name' && hash.text === '#' && op && /^[\w[]/.test(op.text)) {
-      return this.tok(n, 'error', this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${#` の後ろに変数名を書いたら、演算子は付けられない）', 'Parameter expansion: bash reports "bad substitution" (a `${#name}` length takes no operator)'));
-    }
-    // `${(f)var}`: parameter flags are zsh's; bash reads `(f)var` as a name and says "bad substitution" (with zsh as the shell, the dialect check marks the line as not parsed).
-    if (n.type === 'expansion' && n.text.startsWith('${(') && this.cx.shell !== 'zsh') {
-      return this.tok(n, 'error', this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${(` のパラメータフラグは zsh の書き方）', 'Parameter expansion: bash reports "bad substitution" (`${(f)var}` parameter flags are zsh syntax)'));
-    }
-    const summary = this.expansionSummary(n);
-    const text = n.text;
-    const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
-    if (!parsed) return summary;
-    summary.explanation += this.orderNote(n, parsed.name);
-    const special = this.specialExpansion(parsed, text);
-    if (special) {
-      summary.explanation = special;
-      if (!parsed.prefix && !parsed.op) summary.kind = 'variable';
-    }
-    const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
-    if (tf) summary.explanation = this.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
-    else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = this.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
-    if (parsed.op === ':') summary.explanation = this.s('パラメータ展開: ', 'Parameter expansion: ') + this.substringSummary(parsed);
-    const cases = exampleFor(parsed, this.lang, { quoted: inDoubleQuotes(n), assoc: this.isAssoc(parsed.name, n) });
-    // A `${…}` on one line is always on the line explained.
-    if (cases) {
-      this.cx.examples.push({ kind: 'expansion',
-        title: this.s(`\`${text}\` の例`, `Example for \`${text}\``),
-        // The title already names the expansion.
-        target: '',
-        anchor: summary.span,
-        sections: cases.map((c) => ({ label: c.when, lines: c.result ? [c.result] : [], empty: this.s('（空文字）', '(empty string)') })),
-      });
-    }
-    const row = n.startPosition.row;
-    const col = n.startPosition.column;
-    const mainOp = parsed.parts.find((p) => p.role === 'op');
-    summary.children = parsed.parts.flatMap((part) => {
-      const expl = this.expansionPart(parsed, part, part === mainOp, this.isAssoc(parsed.name, n));
-      if (!expl || !part.text) return [];
-      const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
-      const nested = this.nestedIn(n, col + part.start, col + part.end);
-      // The parts of a glob pattern (those with an expansion in them have only the expansions).
-      const globbed = part.role === 'pattern' && !nested.length ? this.globChildren(n, part.text, part.start) : [];
-      return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed] }];
-    });
-    return summary;
-  }
-
-  /** `${#}`, `${##}`, `${#@}`, `${#-x}`…: the special parameters with a `#` or an operator, which are easy to misread. Undefined for the other expansions. */
-  private specialExpansion(p: ParsedExpansion, text: string): string | undefined {
-    const shownName = `$${p.name}`;
-    if (p.prefix === '#' && !p.subscript && (p.name === '@' || p.name === '*')) {
-      return this.s(`位置パラメータの個数（\`$#\` と同じ。文字数ではない）`, 'Number of positional parameters (the same as `$#`, not a length in characters)');
-    }
-    if (p.prefix === '#' && !p.subscript && /^[#?$!0-]$/.test(p.name)) {
-      return p.name === '#'
-        ? this.s('`$#`（引数の個数）の文字数。引数が 10 個以上なら 2 になる', 'Length of `$#` (the number of arguments) in characters: 2 from ten arguments on')
-        : this.s(`\`${shownName}\` の文字数（長さ）`, `Length of \`${shownName}\` in characters`);
-    }
-    if (p.prefix === '!' && p.name === '#' && !p.subscript && !p.op) {
-      return this.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3)');
-    }
-    if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;
-    if (!p.op) return `\`\${${p.name}}\`: ${this.varDesc(p.name)}`;
-    const mainOp = p.parts.find((x) => x.role === 'op')!;
-    // `${@:2}` and `${@@Q}` have their own wording.
-    if (p.op === ':' || p.op === '@') return undefined;
-    return this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(expansionOps[p.op](shownName, text.slice(mainOp.end, -1)));
-  }
-
-  private substringSummary(p: ParsedExpansion): string {
-    const off = p.parts.find((x) => x.role === 'offset')!.text.trim();
-    const len = p.parts.find((x) => x.role === 'length')?.text.trim();
-    const name = p.name;
-    const o = intValue(off);
-    const l = len === undefined ? undefined : intValue(len);
-    if (slicesElements(p)) {
-      const args = p.name === '@' || p.name === '*';
-      const what = args ? this.s('位置パラメータ', 'the positional parameters') : this.s(`配列 \`${name}\` の要素`, `the elements of array \`${name}\``);
-      if (o !== undefined && o < 0) {
-        const from = args ? this.s(`最後から ${-o} 番目`, `the ${-o === 1 ? 'last one' : `${ordinal(-o)} from the end`}`) : this.s(`最大のインデックス + 1 から ${-o} 戻った位置`, `${-o} before one past the highest index`);
-        return this.s(`${what}を、${from}から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
-          `take ${len === undefined ? '' : `\`${len}\` of `}${what} starting at ${from}`);
-      }
-      return this.s(`${what}を、${args ? `\`$${off}\`` : `インデックス \`${off}\``} から${len === undefined ? '最後まで' : ` \`${len}\` 個`}取り出す`,
-        `take ${len === undefined ? '' : `\`${len}\` of `}${what} from ${args ? `\`$${off}\`` : `index \`${off}\``}${len === undefined ? ' on' : ''}`);
-    }
-    if (o === undefined || (len !== undefined && l === undefined)) {
-      return this.s(`\`${name}\` の部分文字列を取り出す（開始位置 \`${off}\`${len !== undefined ? `、長さ \`${len}\`` : ''}）`,
-        `take a substring of \`${name}\` (offset \`${off}\`${len !== undefined ? `, length \`${len}\`` : ''})`);
-    }
-    const fromJa = o < 0 ? `末尾から ${-o} 文字目` : ` ${o + 1} 文字目`;
-    const fromEn = o < 0 ? `${-o} ${plural(-o, 'character')} from the end` : `the ${ordinal(o + 1)} character`;
-    if (l === undefined && o < 0) return this.s(`\`${name}\` の末尾 ${-o} 文字を取り出す`, `take the last ${-o} ${plural(-o, 'character')} of \`${name}\``);
-    if (l === undefined) return this.s(`\`${name}\` の${fromJa}から最後までを取り出す`, `take \`${name}\` from ${fromEn} to the end`);
-    if (l! < 0) return this.s(`\`${name}\` の${fromJa}から、末尾の ${-l!} 文字を除いた位置までを取り出す`, `take \`${name}\` from ${fromEn} up to ${-l!} ${plural(-l!, 'character')} before the end`);
-    return this.s(`\`${name}\` の${fromJa}から ${l} 文字を取り出す`, `take ${l} ${plural(l!, 'character')} of \`${name}\` starting at ${fromEn}`);
-  }
-
-  /** Expansions, substitutions and strings inside a column range of a single-line node. */
-  private nestedIn(n: SyntaxNode, from: number, to: number): Token[] {
-    const found: SyntaxNode[] = [];
-    const visit = (x: SyntaxNode) => {
-      for (const c of x.namedChildren) {
-        const inside = c.startPosition.column >= from && c.endPosition.column <= to;
-        if (inside && NESTED.has(c.type)) found.push(c);
-        else visit(c);
-      }
-    };
-    visit(n);
-    return found.map((c) => this.full(c));
-  }
-
-  private expansionPart(p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc = false): [Kind, string] | undefined {
-    const t = part.text;
-    const s = this.s.bind(this);
-    switch (part.role) {
-      case 'prefix':
-        if (t === '#' && !p.subscript && (p.name === '@' || p.name === '*')) return ['operator', s('`#`: 位置パラメータの個数を返す', '`#`: gives the number of positional parameters')];
-        if (t === '#') return ['operator', s('`#`: 値の長さ（文字数、配列なら要素数）を返す', '`#`: gives the length (characters, or elements for an array)')];
-        if (p.op === '*' || p.op === '@') return ['operator', s('`!`: この名前で始まる変数名の一覧を返す', '`!`: lists variable names starting with this prefix')];
-        if (p.subscript === '@' || p.subscript === '*') return ['operator', s('`!`: 配列の値ではなくインデックス（キー）を返す', '`!`: gives the indices (keys) instead of the values')];
-        return ['operator', s('`!`: 間接参照。変数の値を別の変数名として使う', '`!`: indirection; use the value as another variable\'s name')];
-      case 'name': {
-        const d = this.varDesc(t);
-        if (p.prefix === '!' && (p.op === '*' || p.op === '@')) return ['variable', s(`変数名の接頭辞 \`${t}\``, `Variable name prefix \`${t}\``)];
-        if (p.subscript !== undefined) return ['variable', d ? s(`配列 \`${t}\`: ${d}`, `Array \`${t}\`: ${d}`) : s(`配列 \`${t}\``, `Array \`${t}\``)];
-        return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
-      }
-      case 'subscript': {
-        const idx = p.subscript!;
-        if ((idx === '@' || idx === '*') && p.prefix) return ['variable', s(`\`[${idx}]\`: 配列のすべての要素を対象にする`, `\`[${idx}]\`: applies to every element of the array`)];
-        if (idx === '@') return ['variable', s('`[@]`: すべての要素（`"${a[@]}"` とクォートすると各要素が別々の単語になる）', '`[@]`: every element (quoted, `"${a[@]}"` keeps each element a separate word)')];
-        if (idx === '*') return ['variable', s('`[*]`: すべての要素（`"${a[*]}"` とクォートすると、`IFS` の先頭の文字で区切った1つの文字列に連結される）', '`[*]`: every element (quoted, `"${a[*]}"` joins them into one string, separated by the first character of `IFS`)')];
-        if (p.name === 'BASH_REMATCH' && /^\d+$/.test(idx)) {
-          return ['variable', idx === '0'
-            ? s('インデックス 0: `=~` で一致した全体', 'Index 0: the whole text the `=~` matched')
-            : s(`インデックス ${idx}: 正規表現の ${idx} 番目の括弧 \`( )\` に一致した部分`, `Index ${idx}: the text matched by group ${idx}, the ${ordinal(Number(idx))} \`( )\` of the regex`)];
-        }
-        if (assoc) return ['variable', s(`キー \`${idx}\`（連想配列のキーは文字列で、計算されない）`, `Key \`${idx}\` (the keys of an associative array are strings, not evaluated)`)];
-        const i = evalArith(idx);
-        if (i !== undefined) {
-          // The index is an arithmetic expression: `1+1` is 2, `010` is 8.
-          const calc = String(i) === idx ? '' : s(`（算術式として計算すると ${i}）`, ` (an arithmetic expression: ${i})`);
-          return ['variable', i < 0
-            ? s(`インデックス ${idx}${calc}: 末尾から ${-i} 番目の要素`, `Index ${idx}${calc}: ${i === -1 ? 'the last element' : `the ${ordinal(-i)} element from the end`}`)
-            : s(`インデックス ${idx}${calc}: ${i + 1} 番目の要素（0 始まり）`, `Index ${idx}${calc}: the ${ordinal(i + 1)} element (0-based)`)];
-        }
-        return ['variable', s(`インデックス（連想配列ならキー） \`${idx}\``, `Index (or key, for associative arrays) \`${idx}\``)];
-      }
-      case 'op':
-        if (!isMainOp) {
-          return ['operator', t === ':'
-            ? s('`:` 開始位置と長さの区切り', '`:` separates the offset from the length')
-            : p.parts.find((x) => x.role === 'replacement')?.text
-              ? s('`/` パターンと置換後の文字列の区切り', '`/` separates the pattern from the replacement')
-              : s('`/` の後ろ（置換後の文字列）が空なので、一致した部分は削除される', 'Nothing follows this `/`, so the replacement is empty and matches are deleted')];
-        }
-        if (t === ':' && slicesElements(p)) return ['operator', s('`:`: 要素の一部を取り出す（`:開始位置:個数`）', '`:`: Take some of the elements (`:offset:count`)')];
-        if (p.prefix === '!') return ['operator', t === '@' ? s('`@`: 見つかった名前を別々の単語にする（`"$@"` と同じ形。変換の `@` ではない）', '`@`: one word per name (like `"$@"`; not the `@` transform)') : s('`*`: 見つかった名前を1つにつなげる（クォート内では `IFS` の先頭の文字で区切る）', '`*`: join the names (inside double quotes, with the first character of `IFS`)')];
-        if ((t === ':=' || t === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['operator', s(`\`${t}\`: 位置パラメータには代入できないので、既定値が必要な場面では bash がエラー「cannot assign in this way」にする`, `\`${t}\`: the arguments cannot be assigned to, so where the default would be needed bash fails with "cannot assign in this way"`)];
-        return ['operator', `\`${t}\`: ` + opMeaning[t][this.lang === 'ja' ? 0 : 1]];
-      case 'word': {
-        const op = p.op!;
-        if (op === ':-' || op === '-') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` の代わりに使う値`, `Default \`${t}\`: used instead of \`${p.name}\``)];
-        if ((op === ':=' || op === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['argument', s(`\`${t}\`: 代入されない（bash はエラーにする）`, `\`${t}\`: never assigned (bash reports an error)`)];
-        if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
-        if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
-        return ['string', s(`エラーメッセージ「${t}」`, `Error message "${t}"`)];
-      }
-      case 'pattern': {
-        const glob = globParts(t);
-        const casePat = /^[\^,~]/.test(p.op!);
-        const what = casePat ? s('変換する文字のパターン', 'Pattern of characters to convert') : s('パターン', 'Pattern');
-        // The pattern is matched against one character at a time.
-        const only = casePat ? (p.op!.length === 2
-          ? s('。文字を1つずつ調べ、一致した文字だけが変換される', '. Each character is tried on its own; only those that match are converted')
-          : s('。先頭の1文字がこれに一致したときだけ変換される', '. The first character is converted only if it matches')) : '';
-        if (!glob) {
-          // An extended glob (`+(a)`, `@(a|x)`) is a pattern of its own; only `$…` and backquotes are decided at run time.
-          if (!/\$|`/.test(t)) return ['pattern', `${what} \`${t}\`: ${globIntro(this.lang, 'value')}` + s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text') + only]
-          return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
-        }
-        return ['pattern', hasGlob(t) ? `${what} \`${t}\`: ${globIntro(this.lang, 'value')}${only}` : s(`${what} \`${t}\`（ワイルドカードを含まないので、この文字列そのものに一致）${only}`, `${what} \`${t}\` (no wildcards, so it matches exactly this text)${only}`)];
-      }
-      case 'replacement': {
-        // The quotes and backslashes are removed: `\}` is `}`.
-        const shown = unquoteWord(t) ?? t;
-        return ['string', t
-          ? s(`置換後の文字列 \`${shown}\``, `Replacement \`${shown}\``)
-          : s('置換後の文字列: 空（一致した部分を削除する）', 'Replacement: empty (the match is deleted)')];
-      }
-      case 'offset': {
-        const v = t.trim();
-        const num = intValue(v);
-        if (slicesElements(p)) {
-          const args = p.name === '@' || p.name === '*';
-          if (num !== undefined && num < 0) {
-            return ['number', args
-              ? s(`開始位置 ${v}: 最後から ${-num} 番目の引数から（負の値は最後から数える。\`$${v}\` という引数ではない）`, `Offset ${v}: from the ${-num === 1 ? 'last argument' : `${ordinal(-num)} argument from the end`} (a negative value counts from the end; it is not \`$${v}\`)`)
-              : s(`開始位置 ${v}: 最大のインデックス + 1 から ${-num} 戻った位置の要素から（要素数ではなくインデックスで数えるので、歯抜けの配列では最後から ${-num} 番目とは限らない）`, `Offset ${v}: from the element ${-num} before one past the highest index (counted by index, not by number of elements, so on a sparse array it is not always the ${ordinal(-num)} from the end)`)];
-          }
-          return ['number', args
-            ? s(`開始位置 ${v}: \`$${v}\` から（\`0\` なら \`$0\`）`, `Offset ${v}: from \`$${v}\` (\`0\` is \`$0\`)`)
-            : s(`開始位置 ${v}: インデックス ${v} の要素から`, `Offset ${v}: from the element at index ${v}`)];
-        }
-        if (num === undefined) {
-          // The `:` of a ternary is not the one before the length.
-          const ternary = v.includes('?') ? s('。`?` とペアの `:` は三項演算子の一部で、長さの区切りではない', '. The `:` that pairs with the `?` belongs to the ternary; it does not start the length') : '';
-          return ['number', s(`開始位置 \`${v}\`（算術式として評価される）${ternary}`, `Offset \`${v}\` (evaluated as arithmetic)${ternary}`)];
-        }
-        const o = num;
-        if (o < 0) {
-          return ['number', s(
-            `開始位置 ${o}: 末尾から ${-o} 文字目から（負の値は \`:-\` と区別するため、前に空白か括弧が必要）`,
-            `Offset ${o}: start ${-o} characters from the end (a space or parentheses is needed before a negative value, to tell it from \`:-\`)`)];
-        }
-        return ['number', s(`開始位置 ${o}: ${o + 1} 文字目から（0 始まり）`, `Offset ${o}: start at the ${ordinal(o + 1)} character (0-based)`)];
-      }
-      case 'length': {
-        const v = t.trim();
-        const l = intValue(v);
-        if (slicesElements(p)) return ['number', s(`長さ ${v}: ${v} 個の要素（負の値はエラー）`, `Length ${v}: ${v} ${v === '1' ? 'element' : 'elements'} (a negative value is an error)`)];
-        if (l === undefined) return ['number', s(`長さ \`${v}\`（算術式として評価される）`, `Length \`${v}\` (evaluated as arithmetic)`)];
-        return ['number', l < 0
-          ? s(`長さ ${l}: 末尾の ${-l} 文字を除いた位置まで`, `Length ${l}: up to ${-l} ${plural(-l, 'character')} before the end`)
-          : s(`長さ ${l}: ${l} 文字分`, `Length ${l}: ${l} ${plural(l, 'character')}`)];
-      }
-      // `transform`
-      default: {
-        const m = transformMeaning[t];
-        // Any letter can come after `@`; bash reports the ones it does not have as a bad substitution.
-        if (!m) return ['error', this.s(`\`${t}\`: bash にない変換（bad substitution になる）`, `\`${t}\`: not a transform bash has (bash reports "bad substitution")`)];
-        return ['operator', `\`${t}\`: ${m[this.lang === 'ja' ? 0 : 1]}`];
-      }
-    }
-  }
-
-  private expansionSummary(n: SyntaxNode): Token {
-    const kids = n.children;
-    const inner = n.text.slice(2, -1);
-    const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
-    const targetText = target?.text ?? inner;
-    const isArrayAll = target?.type === 'subscript' && /\[[@*]\]$/.test(targetText);
-    const prefixOp = kids[1] && !kids[1].named ? kids[1].type : '';
-
-    if (prefixOp === '#' && target) {
-      return this.tok(n, 'expansion', isArrayAll
-        ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` の要素数`, `Number of elements in array \`${targetText.replace(/\[.*/, '')}\``)
-          + (targetText.startsWith('BASH_REMATCH[') ? this.s('（正規表現の括弧のグループの数 + 1。要素 0 が一致した全体）', ' (the number of groups in the regex + 1: element 0 is the whole match)') : '')
-        : this.s(`変数 \`${targetText}\` の文字数（長さ）`, `Length of \`${targetText}\` in characters`));
-    }
-    // `${!prefix@}` / `${!prefix*}`: the names of the variables that start with the prefix (no indirection, no transform).
-    const names = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)([@*])$/.exec(inner) : null;
-    if (names) {
-      const [, pre, sign] = names;
-      const form = sign === '@'
-        ? this.s('各名前が別々の単語になる（ダブルクォートの中でも別々）', 'each name is a separate word, also inside double quotes')
-        : inDoubleQuotes(n)
-          ? this.s('ダブルクォートの中なので、`IFS` の先頭の文字で区切った1つの単語になる', 'inside double quotes they form one word, joined with the first character of `IFS`')
-          : this.s('クォートすると、`IFS` の先頭の文字で区切った1つの単語になる（クォートなしなら別々の単語）', 'quoted, they form one word joined with the first character of `IFS` (unquoted they are separate words)');
-      return this.tok(n, 'expansion', this.s(`変数名の一覧: \`${pre}\` で始まる名前の変数をすべて挙げる（\`${pre}\` という変数の値は使わない）。${form}`,
-        `Names of all variables starting with \`${pre}\` (the value of a variable \`${pre}\` is not used); ${form}`));
-    }
-    // `${!x@Q}`: indirection first, then the transform of the value found.
-    const indirectTransform = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)@([QEPAKaULuk])$/.exec(inner) : null;
-    if (indirectTransform) {
-      const [, v, letter] = indirectTransform;
-      const tf = transformMeaning[letter];
-      return this.tok(n, 'expansion', this.s(`間接参照: 変数 \`${v}\` の値を変数名とみなし、その変数の値を${tf[0]}`,
-        `Indirection: use the value of \`${v}\` as a variable name, then take that variable's value and ${tf[1]}`));
-    }
-    // `${!v:-x}`: indirection first, then the operator on the variable found. With `[@]` there is no key list: the value of the whole `a[@]` is taken as a name.
-    const indirectOp = prefixOp === '!' && target ? kids.find((c, i) => i > 1 && c.field === 'operator') : undefined;
-    if (indirectOp) {
-      const arg = n.text.slice(indirectOp.endIndex - n.startIndex, -1);
-      const make = expansionOps[indirectOp.type];
-      const then = make ? this.t(make('<name>', arg)) : '';
-      return this.tok(n, 'expansion', isArrayAll
-        ? this.s(`間接参照: インデックスの一覧ではなく、\`${targetText}\` の値を変数名として使う。要素が2つ以上あると bash は「invalid variable name」のエラーにする。それから、\`<name>\` について: ${then}`,
-          `Indirection: not the list of indices; the value of \`${targetText}\` is used as a variable name (bash fails with "invalid variable name" when there is more than one element). Then, for \`<name>\`: ${then}`)
-        : this.s(`間接参照: 変数 \`${targetText}\` の値を変数名 \`<name>\` とみなす。それから: ${then}`,
-          `Indirection: use the value of \`${targetText}\` as a variable name \`<name>\`. Then: ${then}`));
-    }
-    if (prefixOp === '!' && target) {
-      return this.tok(n, 'expansion', isArrayAll
-        ? this.s(`配列 \`${targetText.replace(/\[.*/, '')}\` のインデックス（キー）一覧`, `Indices (keys) of array \`${targetText.replace(/\[.*/, '')}\``)
-        : this.s(`間接参照: 変数 \`${targetText}\` の値を変数名とみなし、その変数の値を取り出す`, `Indirection: use the value of \`${targetText}\` as a variable name`));
-    }
-
-    const opIdx = kids.findIndex((c, i) => i > 0 && c.field === 'operator');
-    const base = target?.type === 'subscript' ? this.t(isArrayAll
-      ? { ja: `配列 \`${targetText.replace(/\[.*/, '')}\` の全要素`, en: `all elements of array \`${targetText.replace(/\[.*/, '')}\`` }
-      : { ja: `配列要素 \`${targetText}\``, en: `array element \`${targetText}\`` }) : undefined;
-    if (opIdx > 0) {
-      const op = kids[opIdx].type;
-      const close = kids[kids.length - 1];
-      // The grammar closes every `${` with `}`.
-      const arg = n.text.slice(kids[opIdx].endIndex - n.startIndex, close.startIndex - n.startIndex);
-      const make = expansionOps[op];
-      if (arg === '' && (op === ':-' || op === '-')) {
-        return this.tok(n, 'expansion', this.s(
-          `パラメータ展開: \`${targetText}\` が未設定なら空文字として扱う（\`set -u\` でもエラーにしないための定番）`,
-          `Parameter expansion: empty string if \`${targetText}\` is unset (avoids errors under \`set -u\`)`,
-        ));
-      }
-      if (make) {
-        const argNodes = kids.slice(opIdx + 1).filter((c) => c.named && !isPlainWord(c) && c.type !== 'regex');
-        // Positional parameters read better as `$2` than as a bare `2`.
-        const shownName = /^[1-9]\d*$/.test(targetText) ? `$${targetText}` : targetText;
-        return this.tok(n, 'expansion', this.s('パラメータ展開: ', 'Parameter expansion: ') + this.t(make(shownName, arg)), this.subs(argNodes));
-      }
-    }
-    const d = base ?? this.varDesc(targetText);
-    const note = base ? '' : this.variableNote(n, targetText);
-    return this.tok(n, 'variable', d
-      ? this.s(`\`\${${targetText}}\`: ${d}${note}`, `\`\${${targetText}}\`: ${d}${note}`)
-      : this.s(`変数 \`${targetText}\` の値に置き換わる（\`{}\` は変数名の範囲を明示する）${note}`, `Value of \`${targetText}\` (braces delimit the name)${note}`));
+    return explainExpansion(this.expansionHost, n);
   }
 
   private commandSubstitution(n: SyntaxNode): Token {
@@ -4062,99 +3673,6 @@ interface CommandHead {
   fn?: boolean;
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
   refs?: readonly string[];
-}
-
-/**
- * The text a command receives for a word, and where each of its characters sits in the word's
- * source: either a fixed `base` offset, or per-character `offsets` when quotes are interleaved
- * (`--pretty=format:'%h %s'`).
- */
-interface Literal {
-  text: string;
-  base?: number;
-  offsets?: number[];
-}
-
-/** The literal text inside a raw string, plain double-quoted string, plain word, or a concatenation of those. */
-/** A word `[` receives: the nodes that make it up (a pattern with a quoted part is several), and its text, null if it depends on an expansion. */
-interface BracketWord { nodes: SyntaxNode[]; text: string | null }
-interface BracketTest { words: BracketWord[]; expr: TestExpr }
-interface TestShape { left?: SyntaxNode; op: string; right: SyntaxNode }
-
-/**
- * Reads a `[ ]` as bash does, from its words alone: the grammar cannot tell the unary `-a file` / `-o option` from AND / OR,
- * so its groups are wrong with them. Undefined when bash would report an error (the tree is then used as it is).
- */
-function bracketTest(n: SyntaxNode): BracketTest | undefined {
-  // After the `[`, and before the `]` unless the test is not closed.
-  const leaves = n.children.slice(1);
-  if (leaves[leaves.length - 1]?.type === ']') leaves.pop();
-  return testOfWords(leaves);
-}
-
-/** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
-function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
-  const words: BracketWord[] = [];
-  for (const x of leaves) {
-    const last = words[words.length - 1];
-    if (last && last.nodes[last.nodes.length - 1].endIndex === x.startIndex) last.nodes.push(x);
-    else words.push({ nodes: [x], text: null });
-  }
-  for (const w of words) {
-    // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
-    const parts = w.nodes.map((x) => (x.type === 'number' || x.type === 'extglob_pattern' ? x.text : x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
-    w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
-  }
-  const expr = parseTest(words.map((w) => w.text));
-  return expr && { words, expr };
-}
-
-/** The operator and the operands of a `[ ]` that is a single comparison or unary test of one-node words. */
-function bracketShape(b: BracketTest | undefined): TestShape | undefined {
-  const e = b?.expr;
-  if (e?.type === 'unary' && b!.words[e.arg].nodes.length === 1) return { op: b!.words[e.op].text!, right: b!.words[e.arg].nodes[0] };
-  if (e?.type === 'binary' && b!.words[e.left].nodes.length === 1 && b!.words[e.right].nodes.length === 1) {
-    return { left: b!.words[e.left].nodes[0], op: b!.words[e.op].text!, right: b!.words[e.right].nodes[0] };
-  }
-  return undefined;
-}
-
-function literalContent(a: SyntaxNode, lang?: EmbeddedLang): Literal | undefined {
-  if (a.type === 'raw_string') return { text: a.text.slice(1, -1), base: 1 };
-  // `echo -e "\e[1m"`: the shell keeps a backslash before any character but `$`, a backtick, `"` and `\`.
-  if (lang === 'echo') {
-    return a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[$`]|\\[\\"\n]/.test(a.text) ? { text: a.text.slice(1, -1), base: 1 } : undefined;
-  }
-  if (a.type === 'string' && a.namedChildren.every((c) => c.type === 'string_content') && !/[\\$`]/.test(a.text)) {
-    return { text: a.text.slice(1, -1), base: 1 };
-  }
-  if (isPlainWord(a) && !/[\\'"$`]/.test(a.text)) return { text: a.text, base: 0 };
-  // `$"…"` is a double-quoted string (a translation, when the locale has one for it).
-  if (a.type === 'translated_string' && a.namedChildren.length === 1) {
-    const inner = literalContent(a.namedChildren[0]);
-    return inner && !inner.offsets ? { text: inner.text, base: inner.base! + 1 } : undefined;
-  }
-  if (a.type === 'concatenation' && a.startPosition.row === a.endPosition.row) {
-    let text = '';
-    const offsets: number[] = [];
-    for (const c of a.namedChildren) {
-      const lit = literalContent(c);
-      if (!lit || lit.offsets) return undefined;
-      const at = c.startIndex - a.startIndex + lit.base!;
-      for (let k = 0; k < lit.text.length; k++) offsets.push(at + k);
-      text += lit.text;
-    }
-    return { text, offsets };
-  }
-  return undefined;
-}
-
-/** Position in the node's source of character `offset` of a literal (an end offset maps past the previous character). */
-function sourceIndex(lit: Literal, offset: number, isEnd: boolean): number {
-  // A literal has a base or offsets, one for each character (tokens lie within its text).
-  if (!lit.offsets) return lit.base! + offset;
-  if (isEnd) return lit.offsets[offset - 1] + 1;
-  return lit.offsets[offset];
 }
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;

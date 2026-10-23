@@ -1,3 +1,6 @@
+import { literalContent } from './staticword';
+import type { SyntaxNode } from './syntax/tree';
+
 /**
  * How `[ … ]` and `test` read their arguments, as bash's test.c does.
  * The model keeps the arguments of a `[ ]` as flat words, because the unary `-a file` / `-o option` cannot be told from the binary
@@ -129,4 +132,47 @@ export function parseTest(w: (string | null)[]): TestExpr | undefined {
     /* c8 ignore next */
     throw e;
   }
+}
+
+/** A word `[` receives: the nodes that make it up (a pattern with a quoted part is several), and its text, null if it depends on an expansion. */
+export interface BracketWord { nodes: SyntaxNode[]; text: string | null }
+export interface BracketTest { words: BracketWord[]; expr: TestExpr }
+export interface TestShape { left?: SyntaxNode; op: string; right: SyntaxNode }
+
+/**
+ * Reads a `[ ]` as bash does, from its words alone: the grammar cannot tell the unary `-a file` / `-o option` from AND / OR,
+ * so its groups are wrong with them. Undefined when bash would report an error (the tree is then used as it is).
+ */
+export function bracketTest(n: SyntaxNode): BracketTest | undefined {
+  // After the `[`, and before the `]` unless the test is not closed.
+  const leaves = n.children.slice(1);
+  if (leaves[leaves.length - 1]?.type === ']') leaves.pop();
+  return testOfWords(leaves);
+}
+
+/** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
+export function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
+  const words: BracketWord[] = [];
+  for (const x of leaves) {
+    const last = words[words.length - 1];
+    if (last && last.nodes[last.nodes.length - 1].endIndex === x.startIndex) last.nodes.push(x);
+    else words.push({ nodes: [x], text: null });
+  }
+  for (const w of words) {
+    // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
+    const parts = w.nodes.map((x) => (x.type === 'number' || x.type === 'extglob_pattern' ? x.text : x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
+    w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
+  }
+  const expr = parseTest(words.map((w) => w.text));
+  return expr && { words, expr };
+}
+
+/** The operator and the operands of a `[ ]` that is a single comparison or unary test of one-node words. */
+export function bracketShape(b: BracketTest | undefined): TestShape | undefined {
+  const e = b?.expr;
+  if (e?.type === 'unary' && b!.words[e.arg].nodes.length === 1) return { op: b!.words[e.op].text!, right: b!.words[e.arg].nodes[0] };
+  if (e?.type === 'binary' && b!.words[e.left].nodes.length === 1 && b!.words[e.right].nodes.length === 1) {
+    return { left: b!.words[e.left].nodes[0], op: b!.words[e.op].text!, right: b!.words[e.right].nodes[0] };
+  }
+  return undefined;
 }
