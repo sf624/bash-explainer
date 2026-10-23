@@ -616,13 +616,18 @@ describe('bats', () => {
     for (const line of [2, 3, 4]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^⚠ 落とし穴: `set -e` は/);
   });
 
-  it("decides no condition after a call of bats' functions, which the model does not read", () => {
+  it("reads bats' functions by their specs for the conditions it decides", () => {
     const decided = (lines: string[], line: number) => (bats(lines, line).facts ?? []).map((f) => f.id).filter((id) => id.startsWith('condition-'));
     const cond = 'if [ "$x" = 1 ]; then echo x; fi';
-    // `load` may set `x`; `run` sets `$status`; `run bash -c 'x=2'` runs in a subshell, but is not read either.
+    // `load` may set `x` (a file the model does not read); `run` sets `$status`, `$output`, `$lines` (and may set `$stderr`).
     assert.deepStrictEqual(decided(['x=1', 'load helper', cond], 3), []);
-    assert.deepStrictEqual(decided(['status=0', 'run false', 'if [ "$status" = 0 ]; then :; fi'], 3), []);
-    assert.deepStrictEqual(decided(['x=1', "run bash -c 'x=2'", cond], 3), []);
+    assert.deepStrictEqual(decided(['x=1', 'bats_load_library lib', cond], 3), []);
+    for (const v of ['status', 'output', 'lines', 'stderr', 'BATS_RUN_COMMAND']) assert.deepStrictEqual(decided([`${v}=0`, 'run false', `if [ "$${v}" = 0 ]; then :; fi`], 3), [], v);
+    // `run bash -c 'x=2'` runs in a subshell, and `skip` sets nothing (test/bats-real.test.ts, against bats).
+    assert.deepStrictEqual(decided(['x=1', "run bash -c 'x=2'", cond], 3), ['condition-always-true']);
+    assert.deepStrictEqual(decided(['x=1', '@test "a" {', '  skip', '}', cond], 5), ['condition-always-true']);
+    // (`command run` runs no function, so not bats' run.)
+    assert.deepStrictEqual(decided(['status=0', 'command run false', 'if [ "$status" = 0 ]; then :; fi'], 3), ['condition-always-true']);
     // Without them, or when the file defines its own `run`, conditions are decided as in any script.
     assert.deepStrictEqual(decided(['x=1', cond], 2), ['condition-always-true']);
     assert.deepStrictEqual(decided(['run() { :; }', 'x=1', 'run', cond], 4), ['condition-always-true']);

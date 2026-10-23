@@ -52,6 +52,8 @@ interface Row {
   files?: Record<string, string>;
   /** The body of a second test, run after the first, which bats passes. */
   next?: string[];
+  /** The conditions decided on lines of the head (0-based): the facts' ids. No other line has one. */
+  decides?: Record<number, string[]>;
 }
 
 const ROWS: Row[] = [
@@ -208,7 +210,8 @@ const ROWS: Row[] = [
     body: ['true'],
     bats: 'not ok',
   },
-  // bats' functions change what a condition reads, and the model does not read them: no condition is decided.
+  // bats' functions are read by their specs: `load` runs a file the model does not read, so no condition is decided
+  // after it, and `run` sets `$status`, which no condition is decided from.
   {
     title: 'load may set a variable a later condition reads',
     head: ['x=1', 'load helper', 'if [ "$x" = 1 ]; then exit 3; fi'],
@@ -226,6 +229,28 @@ const ROWS: Row[] = [
     title: "run's command runs in a subshell: `x=2` there does not reach the test",
     body: ['x=1', "run bash -c 'x=2'", 'if [ "$x" = 1 ]; then true; else false; fi'],
     bats: 'ok',
+  },
+  // The other functions set nothing a condition reads: a file that calls them gets the decisions it has without them.
+  {
+    title: "run's command runs in a subshell: a condition after it is decided",
+    head: ['x=1', "run bash -c 'x=2'", 'if [ "$x" = 1 ]; then :; else exit 3; fi'],
+    body: ['true'],
+    bats: 'ok',
+    decides: { 2: ['condition-always-true'] },
+  },
+  {
+    title: 'skip in a test does not keep a condition of the file from being decided',
+    head: ['x=1', 'if [ "$x" = 2 ]; then exit 3; fi'],
+    body: ['skip "not yet"', 'false'],
+    bats: 'skip',
+    decides: { 1: ['condition-always-false'] },
+  },
+  {
+    title: 'bats_require_minimum_version and bats_pipe set nothing a condition reads',
+    head: ['bats_require_minimum_version 1.5.0', 'x=1', 'if [ "$x" = 2 ]; then exit 3; fi'],
+    body: ["run bats_pipe printf 'a\\n' \\| cat", '[ "$output" = a ]'],
+    bats: 'ok',
+    decides: { 2: ['condition-always-false'] },
   },
 ];
 
@@ -288,8 +313,8 @@ describe('bats files agree with the real bats', function () {
         const ids = (ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('bats-'));
         const want = n === at || n === at + row.body.length + 2 ? ['bats-test'] : row.says?.[n - at - 1] ?? [];
         assert.deepStrictEqual(ids, want, `line ${n + 1}: ${text[n]}`);
-        // (No condition is decided in a bats file that calls bats' functions: the model does not read them.)
-        assert.deepStrictEqual((ex.facts ?? []).filter((f) => f.id.startsWith('condition-')), [], `line ${n + 1}: ${text[n]}`);
+        // (The conditions decided, on the lines of the head the row names; none elsewhere.)
+        assert.deepStrictEqual((ex.facts ?? []).map((f) => f.id).filter((id) => id.startsWith('condition-')), row.decides?.[n - 1] ?? [], `line ${n + 1}: ${text[n]}`);
       }
     });
   }

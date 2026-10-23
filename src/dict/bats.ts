@@ -23,14 +23,22 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
     }],
     unknownOption: tx('`run` が知らないオプション: bats は「unknown flag」のエラーにして、`run` は失敗する', 'an option `run` does not know: bats says "unknown flag", and `run` fails'),
     operands: [{ pattern: [runs({ run: 'subshell' })] }],
+    // (bats-core 1.13, lib/bats-core/test_functions.bash: `stderr` and `stderr_lines` are set with --separate-stderr, else unset.)
+    shellEffect: {
+      does: 'changes',
+      always: [{ name: 'status', sets: 'string' }, { name: 'output', sets: 'string' }, { name: 'lines', sets: 'lines' }, { name: 'BATS_RUN_COMMAND', sets: 'string' },
+        { name: 'stderr', sets: 'string', maybe: true }, { name: 'stderr_lines', sets: 'lines', maybe: true }],
+    },
   }),
   load: cmd('bats の関数: テストファイルのディレクトリ（または絶対パス）からファイル `NAME.bash`（なければ `NAME`）を読み込み、今のシェルで実行する（`source` と同じ）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: reads the file `NAME.bash` (or else `NAME`) from the directory of the test file (or an absolute path) and runs it in the current shell, as `source` does. If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
     operands: [{ pattern: [operand('NAME', '読み込むファイル（`.bash` は省ける）', 'file to read (`.bash` may be left out)', { type: 'file' })] }],
+    shellEffect: { does: 'changes', runsFile: true },
   }),
   bats_load_library: cmd('bats の関数: ライブラリを `$BATS_LIB_PATH` のディレクトリ（とテストファイルのディレクトリ）から探して読み込む（ファイルか、ディレクトリの `load.bash`）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: finds a library in the directories of `$BATS_LIB_PATH` (and that of the test file) and reads it (a file, or the `load.bash` of a directory). If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
     operands: [{ pattern: [operand('NAME', 'ライブラリの名前（`bats-assert` など）', 'name of the library (`bats-assert`…)')] }],
+    shellEffect: { does: 'changes', runsFile: true },
   }),
   skip: cmd('bats の関数: テストの残りを実行せず、テストを「スキップ」として報告する（setup の中ならそのテストを）',
     'bats function: skips the rest of the test and reports it as skipped (in setup, the test it runs before)', [], {

@@ -23,9 +23,9 @@ export function commandName(c: SyntaxNode): string | undefined {
   return staticWordValue(field(c, 'name')!.namedChildren[0]);
 }
 
-/** The words of a builtin read with its spec. */
-export function builtinParse(name: string, args: readonly SyntaxNode[]): ArgvParse {
-  return interpret(builtins[name], args.map(argWord), { name });
+/** The words of a builtin read with its spec (or `spec`: a function of the host, bats' `run`). */
+export function builtinParse(name: string, args: readonly SyntaxNode[], spec = builtins[name]): ArgvParse {
+  return interpret(spec, args.map(argWord), { name });
 }
 
 /**
@@ -38,8 +38,11 @@ export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[]
   return at ? { name: staticWordValue(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
 }
 
-/** A variable a builtin sets: the word that names it (none for a default, `REPLY`), its name (undefined: not known here), how it sets it. */
-export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet }
+/**
+ * A variable a builtin sets: the word that names it (none for one the builtin knows: `REPLY`), its name (undefined: not
+ * known here), how it sets it; `maybe`: or not at all.
+ */
+export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet; maybe?: boolean }
 
 /** The name a word gives a builtin (from `at` in its value: `-vx`), or undefined when it is not known here. */
 export const wordName = (n: SyntaxNode, at = 0): string | undefined => (n.type === 'variable_name' ? n.text : staticWordValue(n)?.slice(at));
@@ -58,7 +61,8 @@ function givenValues(parse: ArgvParse): { word: number; at: number; spec: ValueS
 
 /**
  * The variables the builtin `spec` sets with the words `args` read as `parse` (`read -a NAME`, `printf -v NAME`,
- * `getopts OPTS NAME`, `mapfile NAME`, `wait -p NAME`), in order; its default (`REPLY`, `MAPFILE`) when no word names one.
+ * `getopts OPTS NAME`, `mapfile NAME`, `wait -p NAME`), in order; its default (`REPLY`, `MAPFILE`) when no word names one,
+ * and those it always sets (bats' `run`: `status`, `output`, `lines`).
  */
 export function variableWrites(spec: CommandSpec, parse: ArgvParse, args: readonly SyntaxNode[]): VariableWrite[] {
   const out: VariableWrite[] = [];
@@ -66,6 +70,7 @@ export function variableWrites(spec: CommandSpec, parse: ArgvParse, args: readon
   for (const { word, role } of parse.roles) if (role.role === 'operand' && role.spec?.sets) out.push({ node: args[word], name: wordName(args[word]), sets: role.spec.sets });
   const byDefault = spec.shellEffect?.byDefault;
   if (!out.length && byDefault) out.push({ node: undefined, name: byDefault.name, sets: byDefault.sets });
+  for (const v of spec.shellEffect?.always ?? []) out.push({ node: undefined, ...v });
   return out;
 }
 
