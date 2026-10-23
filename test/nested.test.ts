@@ -505,7 +505,8 @@ describe('nested scripts: the issues of a string another shell reads', () => {
     assert.deepStrictEqual(issues(`bash -c "eval 'sh -c \\"[[ a ]]\\"'"`).length, 1);
   });
 
-  it('takes a time linear in the strings, however many variables the script exports', () => {
+  it('takes a time linear in the strings, however many variables the script exports', function () {
+    this.timeout(60000);
     const time = (n: number, line: (i: number) => string) => {
       const src = Array.from({ length: n }, (_, i) => line(i)).join('\n');
       const tree = parser.parse(src);
@@ -513,10 +514,12 @@ describe('nested scripts: the issues of a string another shell reads', () => {
       documentIssues({ lines: src.split('\n'), tree }, 'en', {});
       return Date.now() - t;
     };
+    // (Ten times the lines take about ten times as long, measured in the same run: a fixed time fails on a loaded
+    // machine. Quadratic, they would take a hundred times as long.)
     for (const line of [(i: number) => `export v${i}=1; bash -c 'echo $v${i}; x=2'`, (i: number) => `sh -c '[[ -n $x${i} ]] && echo ok'`]) {
       time(200, line);
-      const t = time(2000, line);
-      assert.ok(t < 1000, `${t} ms for 2000 lines: ${line(0)}`);
+      const [few, many] = [time(200, line), time(2000, line)];
+      assert.ok(many < 25 * few + 500, `${few} ms for 200 lines, ${many} ms for 2000: ${line(0)}`);
     }
   });
 });
