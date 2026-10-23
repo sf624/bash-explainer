@@ -63,7 +63,8 @@ function redirects(rs: AstRedirect[] | undefined): Redir[] {
     // (for `{fd}>file` it prints no number, or a leftover one far out of range)
     fd: r.source_fd === undefined || r.source_fd > 0xffff ? null : r.source_fd,
     op: OPS[r.direction] ?? r.direction,
-    target: r.direction === 'close' ? '-' : String(r.target),
+    // (A process substitution as the target is printed again by bash, as in a word: `canon`.)
+    target: r.direction === 'close' ? '-' : r.direction === 'here_doc' ? String(r.target) : canon(String(r.target)),
   }));
 }
 

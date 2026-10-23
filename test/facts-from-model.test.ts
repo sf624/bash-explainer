@@ -205,6 +205,36 @@ describe('idioms follow the tree, not the spelling', () => {
     assert.match(idioms('exec 1> >(tee -a log) 2>&1'), /everything printed also goes to a log/);
     assert.match(idioms('sudo -u www-data xargs -0 rm -f'), /`xargs -0`/);
   });
+  it('knows the common spellings of each idiom, as bash runs them', function () {
+    if (!have) return this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-idioms-'));
+    try {
+      // `cd --`, `dirname --` and `&> /dev/null` on `cd`: still the script's directory.
+      const dirOf = '$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )';
+      fs.mkdirSync(path.join(dir, 'sub'));
+      fs.writeFileSync(path.join(dir, 'sub', 's.sh'), `echo "${dirOf}"\n`);
+      assert.strictEqual(bash('bash sub/s.sh', dir), `${fs.realpathSync(dir)}/sub\n`);
+      assert.match(idioms(`d=${dirOf}`), /absolute path of the directory/);
+      assert.doesNotMatch(idioms(`d=${dirOf}`), /moves to the directory/);
+      // `${#}` is `$#`; `(( $# != 0 ))` loops as `(( $# > 0 ))` does.
+      for (const cond of ['[ ${#} -gt 0 ]', '(( $# != 0 ))']) {
+        assert.strictEqual(bash(`set -- a b; while ${cond}; do printf '[%s]' "$1"; shift; done`), '[a][b]', cond);
+        assert.match(idioms(`while ${cond}; do shift; done`), /a loop over the arguments/, cond);
+      }
+      // `0` and `exit` name EXIT.
+      for (const sig of ['0', 'exit']) {
+        assert.strictEqual(bash(`trap 'echo bye' ${sig}; echo end`), 'end\nbye\n', sig);
+        assert.match(idioms(`trap cleanup ${sig}`), /runs clean-up/, sig);
+      }
+      assert.doesNotMatch(idioms('trap cleanup 1'), /runs clean-up/);
+      // `!=`: sourced or not, the same question.
+      fs.writeFileSync(path.join(dir, 'r.sh'), '[[ $BASH_SOURCE != $0 ]] && { echo sourced; return; }\necho direct\n');
+      assert.strictEqual(bash('bash r.sh; source r.sh', dir), 'direct\nsourced\n');
+      assert.match(idioms('[[ $BASH_SOURCE != $0 ]] && return'), /run directly rather than sourced/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('says nothing where bash does something else', function () {
     if (!have) return this.skip();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-idioms-'));

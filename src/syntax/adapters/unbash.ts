@@ -58,8 +58,8 @@ function extglobLike(t: string, alone: boolean, alternative: boolean, closedByPa
 
 class Converter {
   readonly errors: SyntaxError[] = [];
-  /** Where a word starts that `command` made the target of the redirection before it (`&> >(tee log)`). */
-  private readonly joinedTargets = new Set<number>();
+  /** Where the `&` is of a `&>` or `&>>` whose target is a process substitution (`&> >(tee log)`); see `parseScript`. */
+  private readonly bothOutputs = new Set<number>();
   private readonly lineStarts: number[] = [0];
   /** Ranges that are not code: heredoc bodies and their closing lines. */
   private readonly skip: (readonly [number, number])[] = [];
@@ -171,7 +171,7 @@ class Converter {
   // Script and statements
 
   run(): SyntaxTree {
-    const script = parse(this.text);
+    const script = this.parseScript();
     const root = this.node('program', 0, this.text.length);
     this.statements(root, script.commands, this.text.length);
     this.fill(root);
@@ -181,6 +181,31 @@ class Converter {
     this.seal(root, null);
     this.errors.sort((x, y) => x.startIndex - y.startIndex || x.endIndex - y.endIndex);
     return { text: this.original, root, errors: this.errors };
+  }
+
+  /**
+   * unbash reads `&> >(tee log)` (and `&>>`, `&> <(…)`) as a redirection with no target, then a word: after a
+   * compound command (`{ …; } &> >(tee log)`) that word is an unexpected token, and before a command name it is the
+   * name. bash redirects both outputs to the process substitution. Where unbash says such a redirection has no
+   * target, the `&` is read as a blank, so that unbash reads `> >(tee log)`; `redirect` puts the `&` back.
+   */
+  parseScript(): U.ParsedScript {
+    const first = parse(this.text);
+    const errors: U.ParseError[] = [];
+    const walk = (n: U.SyntaxNode): void => {
+      if (n.type === 'Script') {
+        if (n !== first && (n as U.ParsedScript).source !== undefined) return;
+        errors.push(...((n as U.ParsedScript).errors ?? []));
+      }
+      forEachChild(n, walk);
+    };
+    walk(first);
+    for (const e of errors) {
+      const op = e.message === 'expected redirect target' && /^[<>]\(/.test(this.text.slice(e.pos)) ? /&>>?[ \t]*$/.exec(this.text.slice(0, e.pos)) : null;
+      if (op) this.bothOutputs.add(op.index);
+    }
+    if (!this.bothOutputs.size) return first;
+    return parse(this.text.split('').map((c, i) => (this.bothOutputs.has(i) ? ' ' : c)).join(''));
   }
 
   /**
@@ -210,8 +235,6 @@ class Converter {
       const stops = /^expected command after/.test(e.message) && !/\S/.test(this.text.slice(e.pos));
       const unreadable = m || (!stops && /^unterminated extended glob|^expected command after '(if|then|elif|else|while|until|do|for|in)'/.test(e.message));
       if (!unreadable) {
-        // (The target unbash did not see, which `command` joined.)
-        if (e.message === 'expected redirect target' && this.joinedTargets.has(e.pos)) continue;
         if (!this.told(e)) this.untold(root, e);
         continue;
       }
@@ -407,21 +430,10 @@ class Converter {
 
   command(c: U.Command): Mut {
     type Item = U.Assignment | U.Word | U.Redirection;
-    // unbash reads `&> >(tee log)` (and `&>>`) as a redirection with no target and a word `>(tee log)`: bash
-    // redirects both outputs to the process substitution.
-    const joined = (items: readonly Item[]): Item[] => {
-      const out: Item[] = [];
-      for (const x of items) {
-        const r = out[out.length - 1];
-        if (x.type === 'Word' && /^[<>]\(/.test(x.text) && r?.type === 'Redirect' && !r.target) {
-          out[out.length - 1] = { ...r, target: x, end: x.end };
-          this.joinedTargets.add(x.pos);
-        } else out.push(x);
-      }
-      return out;
-    };
     const before: Item[] = [...c.prefix];
-    const after: Item[] = joined(c.suffix);
+    const after: Item[] = [...c.suffix];
+    // (`&> >(tee log) cmd` starts at the `&`, before unbash's start: see `parseScript`.)
+    const start = this.startOf(c);
     const isRedirect = (x: Item): x is U.Redirect | U.HereDoc => x.type === 'Redirect' || x.type === 'HereDoc';
     // Redirections after the last word are the statement's, not the command's; a here string stays in the command.
     let split = after.length;
@@ -439,7 +451,7 @@ class Converter {
         this.fill(body);
       }
       if (!outside.length) return body!;
-      const r = this.node('redirected_statement', Math.min(body?.startIndex ?? c.pos, outside[0].pos), c.end);
+      const r = this.node('redirected_statement', Math.min(body?.startIndex ?? start, this.startOf(outside[0])), c.end);
       // `>f x=1 >g`: a redirection written before the assignments comes first.
       for (const x of outside) if (body && x.pos < body.startIndex) this.add(r, this.redirect(x), 'redirect');
       if (body) this.add(r, body, 'body');
@@ -455,7 +467,7 @@ class Converter {
     else if (name === '[' && !before.length && this.text.slice(c.name.pos, c.name.end) === '[') node = this.testCommand(c, after);
     else {
       const last = args.length ? args[args.length - 1] : c.name;
-      node = this.node('command', c.pos, Math.max(last.end, c.name.end));
+      node = this.node('command', start, Math.max(last.end, c.name.end));
       for (const p of before) {
         if (p.type === 'Assignment') this.add(node, this.assignment(p));
         else this.add(node, this.redirect(p as U.Redirection), 'redirect');
@@ -965,14 +977,21 @@ class Converter {
 
   // Redirections
 
+  /** Where `x` starts, with the `&` of `&> >(tee log)` that `parseScript` hid from unbash. */
+  startOf(x: { pos: number }): number {
+    return this.bothOutputs.has(x.pos - 1) ? x.pos - 1 : x.pos;
+  }
+
   redirect(r: U.Redirection): Mut {
     const type = r.type === 'HereDoc' ? 'heredoc_redirect' : r.type === 'HereString' ? 'herestring_redirect' : 'file_redirect';
-    const n = this.node(type, r.pos, r.end);
+    // (`&> >(tee log)`, read as `> >(tee log)`: see `parseScript`.)
+    const amp = this.startOf(r) < r.pos;
+    const n = this.node(type, this.startOf(r), r.end);
     if (r.descriptor) {
       this.node('file_descriptor', r.descriptor.pos, r.descriptor.end, 'descriptor', n);
     }
-    const opStart = r.descriptor ? r.descriptor.end : r.pos;
-    this.tok(r.operator, opStart, n);
+    const opStart = r.descriptor ? r.descriptor.end : n.startIndex;
+    this.tok(amp ? `&${r.operator}` : r.operator, opStart, n);
     if (r.type === 'HereDoc') {
       if (r.delimiter) this.node('heredoc_start', r.delimiter.pos, r.delimiter.end, null, n);
       const closing = r.closing;
