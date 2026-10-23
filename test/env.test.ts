@@ -34,14 +34,39 @@ const kind = (src: string, text: string, shell?: Shell): string => {
 const whys = (src: string, text: string): string[] => at(src, text).env.links.map((l) => (l.kind === 'subshell' ? l.why + (l.sure ? '' : '?') : l.kind));
 
 /** The environments of the commands that the words of the command `text` run through slots, by the slot's first word. */
-function slots(src: string, text: string, spec?: CommandSpec): Map<string, ExecEnv> {
+function slots(src: string, text: string, spec?: CommandSpec, lookup: typeof lookupCommand = lookupCommand): Map<string, ExecEnv> {
   const { node, env } = at(src, text);
   const name = field(node, 'name')!.text;
   const words = fields(node, 'argument');
-  spec ??= lookupCommand(name)!;
-  const parse = interpret(spec, words.map(argWord), { name, lookup: lookupCommand });
-  return new Map([...slotEnvs(env, parse, spec, words, lookupCommand)].map(([w, e]) => [w.text, e]));
+  spec ??= lookup(name)!;
+  const parse = interpret(spec, words.map(argWord), { name, lookup });
+  return new Map([...slotEnvs(env, parse, spec, words, lookup)].map(([w, e]) => [w.text, e]));
 }
+
+describe('execution environments: the shell a program name stands for', () => {
+  // (Which names have a spec is lookupCommand's business; here every shell name has the `sh` one.)
+  const lookup: typeof lookupCommand = (n) => (/^(ksh93|mksh|busybox|posh|dash|zsh|bash|myshell)$/.test(n.split('/').pop()!) ? lookupCommand('sh') : lookupCommand(n));
+  const shellOf = (name: string): string | undefined => {
+    const src = `sudo ${name} -c 'f'`;
+    const e = slots(src, src, undefined, lookup).get("'f'")! as ExecEnv;
+    return (e.links.find((l) => l.kind === 'slot' && l.slot.run === 'shell-string') as SlotLink).shell;
+  };
+  it('reads ksh93, mksh, busybox, posh... as the shell they are, and an unknown program as unknown', () => {
+    assert.strictEqual(shellOf('ksh93'), 'ksh');
+    assert.strictEqual(shellOf('mksh'), 'mksh');
+    assert.strictEqual(shellOf('busybox'), 'ash');
+    assert.strictEqual(shellOf('posh'), 'sh');
+    assert.strictEqual(shellOf('/bin/dash'), 'dash');
+    assert.strictEqual(shellOf('bash'), 'bash');
+    assert.strictEqual(shellOf('myshell'), 'unknown');
+  });
+  it('a shell that is not bash does not get the exported functions', () => {
+    for (const sh of ['ksh93', 'mksh', 'busybox', 'dash', 'zsh']) {
+      const src = `f() { a; }; export -f f; sudo ${sh} -c 'f'`;
+      assert.strictEqual(reachOf(slots(src, src.slice(src.indexOf('sudo')), undefined, lookup).get("'f'")!).functions, 'none', sh);
+    }
+  });
+});
 
 describe('execution environments: subshells', () => {
   it('gives the reasons of the subshells around a node, outermost first', () => {
