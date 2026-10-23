@@ -189,10 +189,15 @@ describe('idioms follow the tree, not the spelling', () => {
     assert.doesNotMatch(idioms('command sh -c : >/dev/null 2>&1'), /checks quietly/);
     assert.doesNotMatch(idioms('type sh >/dev/null 2>&1'), /checks quietly/);
     assert.match(idioms('type -P sh >/dev/null 2>&1'), /checks quietly/);
-    // stderr through tee is not the log of what is printed; `>>` appends to the process substitution as `>` does not.
+    // stderr through tee is not the log of what is printed; `>>` and `&>>` send stdout through it as `>` and `&>` do.
     assert.match(idioms('exec &> >(tee -a log)'), /everything printed also goes to a log/);
     assert.doesNotMatch(idioms('exec 2> >(tee -a log)'), /everything printed/);
-    assert.doesNotMatch(idioms('exec >> >(tee -a log)'), /everything printed/);
+    for (const r of ['>', '>>', '1>>', '&>>']) {
+      assert.strictEqual(bash(`exec 3>&1; exec ${r} >(sed 's/^/L:/' >&3); echo hi; exec >&- 2>&-; wait $!`), 'L:hi\n', r);
+      assert.match(idioms(`exec ${r} >(tee -a log)`), /everything printed also goes to a log/, r);
+    }
+    assert.strictEqual(bash(`exec 3>&1; exec 2>> >(sed 's/^/L:/' >&3); echo hi; exec 2>&-; wait $!`), 'hi\n');
+    assert.doesNotMatch(idioms('exec 2>> >(tee -a log)'), /everything printed/);
     // A value in the option's word (`-p'…'`), and one known only when it runs.
     assert.match(idioms("read -rp'Sure [y/N] ' ans"), /a yes\/no question/);
     assert.doesNotMatch(idioms('read -r -d "$d" x'), /up to a NUL byte/);
