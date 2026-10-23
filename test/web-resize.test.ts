@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, stable, until } from './support/site';
+import { openSite, until } from './support/site';
 
 describe('the web page: resizing the panes and the Problems list', function () {
   this.timeout(120000);
@@ -206,8 +206,9 @@ describe('the web page: resizing the panes and the Problems list', function () {
     const after = (await p2.locator('#problems').boundingBox())!.height;
     assert.ok(Math.abs(before + 100 - after) < 8, `${before} → ${after}`);
     assert.strictEqual(await flat(), true);
-    // The list has its new size, and the toggle has stopped moving.
-    await stable('the layout', async () => [await p2.locator('#problems').boundingBox(), await p2.locator('#problems-toggle').boundingBox()]);
+    // Right after a CDP touch sequence Chromium drops the click of the next tap (measured: 50 and 100 ms fail,
+    // 150 and 300 ms pass), and nothing in the page shows it: a fixed wait.
+    await p2.waitForTimeout(300);
     await p2.locator('#problems-toggle').tap();
     assert.strictEqual(await p2.locator('#problem-list li').first().isVisible(), false);
     assert.strictEqual(await flat(), true);
