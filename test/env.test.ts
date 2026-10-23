@@ -45,23 +45,22 @@ function slots(src: string, text: string, spec?: CommandSpec, lookup: typeof loo
 
 describe('execution environments: the shell a program name stands for', () => {
   // (Which names have a spec is lookupCommand's business; here every shell name has the `sh` one.)
-  const lookup: typeof lookupCommand = (n) => (/^(ksh93|mksh|busybox|posh|dash|zsh|bash|myshell)$/.test(n.split('/').pop()!) ? lookupCommand('sh') : lookupCommand(n));
+  const lookup: typeof lookupCommand = (n) => (/^(ksh93|mksh|posh|dash|zsh|bash|myshell)$/.test(n.split('/').pop()!) ? lookupCommand('sh') : lookupCommand(n));
   const shellOf = (name: string): string | undefined => {
     const src = `sudo ${name} -c 'f'`;
     const e = slots(src, src, undefined, lookup).get("'f'")! as ExecEnv;
     return (e.links.find((l) => l.kind === 'slot' && l.slot.run === 'shell-string') as SlotLink).shell;
   };
-  it('reads ksh93, mksh, busybox, posh... as the shell they are, and an unknown program as unknown', () => {
+  it('reads ksh93, mksh, posh... as the shell they are, and an unknown program as unknown', () => {
     assert.strictEqual(shellOf('ksh93'), 'ksh');
     assert.strictEqual(shellOf('mksh'), 'mksh');
-    assert.strictEqual(shellOf('busybox'), 'ash');
     assert.strictEqual(shellOf('posh'), 'sh');
     assert.strictEqual(shellOf('/bin/dash'), 'dash');
     assert.strictEqual(shellOf('bash'), 'bash');
     assert.strictEqual(shellOf('myshell'), 'unknown');
   });
   it('a shell that is not bash does not get the exported functions', () => {
-    for (const sh of ['ksh93', 'mksh', 'busybox', 'dash', 'zsh']) {
+    for (const sh of ['ksh93', 'mksh', 'dash', 'zsh']) {
       const src = `f() { a; }; export -f f; sudo ${sh} -c 'f'`;
       assert.strictEqual(reachOf(slots(src, src.slice(src.indexOf('sudo')), undefined, lookup).get("'f'")!).functions, 'none', sh);
     }

@@ -358,7 +358,8 @@ function dockerfile(b: Builder): void {
       }
       // `RUN ["sh", "-c", "script"]`: the string after `-c` is a shell script.
       const c = words.findIndex((w, n) => n > 0 && /^-\w*c$/.test(w.value));
-      const target = shellFromName(prog);
+      // (`busybox` runs a shell only as the applet `sh` or `ash`: `busybox -c` is "applet not found".)
+      const target = prog.replace(/\d+(\.\d+)*$/, '') === 'busybox' && !/^a?sh$/.test(words[1]?.value ?? '') ? undefined : shellFromName(prog);
       if (target && c > 0 && words[c + 1]) {
         const script = words[c + 1];
         const o = (b.outs[script.line] ??= new LineOut());
