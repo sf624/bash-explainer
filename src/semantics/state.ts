@@ -24,6 +24,7 @@ import { arithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
+import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { ansiCValue, staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
@@ -32,7 +33,7 @@ import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv,
 import { builtinParse, commandName, DECLARATIONS, SET_LETTERS, setOptionWrites, variableWrites, wrapped } from './effects';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
-import { BLIND, scriptTrust, type Trust, withinTrust } from './trust';
+import { BLIND, type HostCommands, NO_HOST, scriptTrust, type Trust, withinTrust } from './trust';
 import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
 export { ARITH_ASSIGNED, DYNAMIC, readDeclaration, type Declaration };
@@ -892,7 +893,8 @@ class Walker {
    */
   private silent = 0;
 
-  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts, private readonly trust: Trust) {
+  constructor(private readonly shell: Shell | undefined, private readonly posix: boolean, private readonly scripts: Scripts, private readonly trust: Trust,
+    private readonly host: HostCommands = NO_HOST) {
     this.bash = !shell || shell === 'bash';
     this.blind = trust.blind !== undefined;
   }
@@ -2637,7 +2639,7 @@ class Walker {
     if (name === undefined) return withStatus(st, this.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
     if (fn) return withStatus(this.call(fn, st, assignments), undefined);
-    return withStatus(this.builtin(name, fields(n, 'argument'), n, st), this.simpleStatus(n, before));
+    return withStatus(this.builtin(name, fields(n, 'argument'), n, st, true), this.simpleStatus(n, before));
   }
 
   /**
@@ -3047,8 +3049,13 @@ class Walker {
     return alias.state === 'on' && expands === 'on' ? after : merge([withStatus(st, undefined), after], this.posix);
   }
 
-  /** The builtin `name` run with `args`, when it changes the state. */
-  private builtin(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
+  /**
+   * The builtin `name` run with `args`, when it changes the state; with `host`, also a function of the file's host
+   * (bats' `run`), read by its spec (not behind `command` and `builtin`, which run no function).
+   */
+  private builtin(name: string, args: SyntaxNode[], n: SyntaxNode, st: ShellState, host = false): ShellState {
+    const hosted = host && Object.hasOwn(this.host, name) ? this.host[name] : undefined;
+    if (hosted) return this.effects(hosted, builtinParse(name, args, hosted), args, n, st, true);
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
     // `command set -f`, `builtin shopt -s x`: the builtin runs (`command -v` only looks it up).
     if (name === 'command' || name === 'builtin') {
@@ -3058,16 +3065,7 @@ class Walker {
     if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args), n, st);
     if (name === 'unset') return this.unset(args, n, st);
     const parse = builtinParse(name, args);
-    // The variables it sets (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`), as its spec says.
-    for (const v of variableWrites(builtins[name], parse, args)) {
-      if (v.sets === 'lines') st = v.name && NAME.test(v.name) ? this.giveAttribute(this.setVariable(st, v.name, n, undefined), v.name, 'a', n) : st;
-      else if (v.sets === 'job-id') {
-        // (bash unsets it first, also an integer: `x=1; wait -p x` with no job leaves `x` unset.)
-        const cleared = v.name && NAME.test(v.name) && attribute(st, v.name, 'r') === 'off' ? this.put(st, 'variables', v.name, { declared: 'off', set: 'off', attrs: {}, at: n }) : st;
-        st = merge([cleared, this.setNamed(cleared, v.name, n, false)], this.posix);
-      }
-      else st = this.setNamed(st, v.name, n, v.sets === 'array');
-    }
+    st = this.effects(builtins[name], parse, args, n, st);
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
     const valueOf = (flag: string): SyntaxNode | undefined => {
       const r = parse.roles.find((x) => x.role.role === 'value' && x.role.of === flag);
@@ -3118,11 +3116,6 @@ class Walker {
         return this.jump(name, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
       }
       case 'return': case 'exit': return this.jump(name, undefined, st);
-      case 'source': case '.':
-        // (The file is not read: what it defines is not known here.)
-        if (!this.silent) this.sources.push(this.aliasHost ?? n);
-        this.turnOpaque();
-        return st;
       case 'set': return this.setCommand(st, parse, args);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
@@ -3176,6 +3169,29 @@ class Walker {
         const prev = st.variables.get('OPTARG');
         return this.put(st, 'variables', 'OPTARG', { declared: 'unknown', set: 'unknown', attrs: prev?.attrs ?? {}, at: n });
       }
+    }
+    return st;
+  }
+
+  /**
+   * What its spec says a builtin (or a function of the host: `hosted`) does, read from `parse`: the variables it sets
+   * (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`, bats' `run`), and a file it runs (`source`). The file of
+   * bats' `load` is taken to define helpers, not to change what the names of the file run: the walk goes on as it
+   * was (the trust scan trusts nothing after it, src/semantics/trust.ts).
+   */
+  private effects(spec: CommandSpec, parse: ArgvParse, args: SyntaxNode[], n: SyntaxNode, st: ShellState, hosted = false): ShellState {
+    for (const v of variableWrites(spec, parse, args)) {
+      // (`wait -p`: bash unsets the variable first, also an integer: `x=1; wait -p x` with no job leaves `x` unset.)
+      if (v.sets === 'job-id' && v.name && NAME.test(v.name) && attribute(st, v.name, 'r') === 'off') st = this.put(st, 'variables', v.name, { declared: 'off', set: 'off', attrs: {}, at: n });
+      const was = st;
+      if (v.sets === 'lines') st = v.name && NAME.test(v.name) ? this.giveAttribute(this.setVariable(st, v.name, n, undefined), v.name, 'a', n) : st;
+      else st = this.setNamed(st, v.name, n, v.sets === 'array');
+      if (v.maybe || v.sets === 'job-id') st = merge([was, st], this.posix);
+    }
+    if (spec.shellEffect?.runsFile && !hosted) {
+      // (The file is not read: what it defines is not known here.)
+      if (!this.silent) this.sources.push(this.aliasHost ?? n);
+      this.turnOpaque();
     }
     return st;
   }
@@ -3487,15 +3503,16 @@ const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
 /**
  * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`; `host`: the functions the
- * file's host defines, which the walk does not read, so that a call of one trusts nothing: src/semantics/trust.ts).
+ * file's host defines, bats' `run`…, which the walk reads by their specs, as builtins: src/semantics/effects.ts).
  * Cached per tree. The tree of a string read as a script (`StateModel.script`) has the model of that script: the
  * outer one for `eval`.
  */
-export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: readonly string[] } = {}): StateModel {
+export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
-  const host = opts.host ?? [];
-  const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}${host.length ? ` host:${[...host].sort().join(' ')}` : ''}`;
+  const host = opts.host ?? NO_HOST;
+  const names = Object.keys(host);
+  const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
@@ -3512,11 +3529,11 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
  * The model of `tree`, whose root runs in `base`, from the state `start` gives; `depth` levels of strings deep;
  * `outer`: what the model of the script that starts this shell trusts; `host`: as for `shellState`.
  */
-function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host: readonly string[] = []): StateModel {
+function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST): StateModel {
   const scripts = new Scripts(depth);
   const own = scriptTrust(tree.root, true, host);
   const trust = outer ? withinTrust(own, outer) : own;
-  let w = new Walker(shell, posix, scripts, trust);
+  let w = new Walker(shell, posix, scripts, trust, host);
   let initial!: ShellState;
   let end!: ShellState;
   try {
@@ -3529,7 +3546,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   // (Arithmetic read text not known on the way, or a string the walk does not read: walked again, with nothing trusted.)
   const found = w.found;
   if (found) {
-    w = new Walker(shell, posix, scripts, BLIND);
+    w = new Walker(shell, posix, scripts, BLIND, host);
     initial = start(w);
     end = w.program(tree.root, initial);
   }

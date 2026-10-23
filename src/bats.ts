@@ -3,6 +3,7 @@ import { fact, type Fact } from './messages';
 import { resolveName } from './semantics/names';
 import { shellState } from './semantics/state';
 import { lastStatements, statusModel } from './semantics/status';
+import { builtinParse, commandName } from './semantics/effects';
 import { processOf, STATEMENTS } from './semantics/env';
 import { BATS_COMMANDS } from './dict/bats';
 import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
@@ -16,14 +17,11 @@ const shorten = (text: string): string => {
   return one.length > 30 ? `${one.slice(0, 29)}…` : one;
 };
 
-/** The words of `run`'s command, after its options (`!`, `-N`, `--separate-stderr`…, `--`). */
+/** The words of `run`'s command, after its options (`!`, `-N`, `--separate-stderr`…, `--`), as its spec reads them. */
 function runCommand(n: SyntaxNode): SyntaxNode[] {
   const words = fields(n, 'argument');
-  let i = 0;
-  while (i < words.length && (words[i].text === '!' || words[i].text.startsWith('-'))) {
-    if (words[i++].text === '--') break;
-  }
-  return words.slice(i);
+  const at = builtinParse('run', words, BATS_COMMANDS.run).roles.find((r) => r.role.role === 'command');
+  return at ? words.slice(at.word) : [];
 }
 
 const testLines = new WeakMap<SyntaxTree, number[]>();
@@ -48,8 +46,8 @@ export function batsTests(tree: SyntaxTree, candidates: readonly number[]): numb
 export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: number, lang: Lang): Fact[] {
   const out: Fact[] = [];
   if (tests.includes(line)) out.push(fact(lang, 'bats-test'));
-  // (The model the analyzer reads for a bats file: bats' functions trust nothing.)
-  const state = shellState(tree, undefined, { host: Object.keys(BATS_COMMANDS) });
+  // (The model the analyzer reads for a bats file, which reads bats' functions by their specs.)
+  const state = shellState(tree, undefined, { host: BATS_COMMANDS });
   const status = statusModel(state);
   // `! cmd` in a test, not its last command: bash ignores `set -e` after `!`, so it fails nothing.
   for (const def of descendants(tree.root, ['function_definition'])) {
@@ -74,7 +72,7 @@ export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: numb
     p.namedChildren.filter((c) => STATEMENTS.has(c.type)).forEach((stage, k) => {
       // (`run cmd 2>&1 | …`: the command with its redirection; `>f | …` has none.)
       const cmd = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
-      if (cmd?.type !== 'command' || field(cmd, 'name')!.text !== 'run') return;
+      if (cmd?.type !== 'command' || commandName(cmd) !== 'run') return;
       // (A function of the file named `run` is not bats' own.)
       if (resolveName(state, 'run', cmd).kind === 'function') return;
       const words = runCommand(cmd);

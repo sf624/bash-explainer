@@ -83,6 +83,13 @@ export interface CommandSpec {
     does: 'changes' | 'exits'; when?: (call: BuiltinCall) => boolean;
     /** The variable it sets when no word names one (a value or an operand with `sets`): `read` sets REPLY, `mapfile` the array MAPFILE. */
     byDefault?: { name: string; sets: VariableSet };
+    /**
+     * Variables it sets whatever its words (bats' `run`: `status`, `output`, `lines`); `maybe`: or leaves as they were, or
+     * unsets (`run` sets `stderr` only with `--separate-stderr`).
+     */
+    always?: { name: string; sets: VariableSet; maybe?: boolean }[];
+    /** It reads a file and runs it in this shell (`source`, bats' `load`): what the file does is not known here. */
+    runsFile?: boolean;
     /** What it changes that the model follows besides variables: the shell's options (`set`, `shopt`), its aliases, the builtins enabled. */
     alters?: ('options' | 'aliases' | 'builtins')[];
   };

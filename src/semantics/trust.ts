@@ -11,8 +11,8 @@
 //   function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`. Positional parameters and
 //   the variables bash sets itself never are.
 // - Nothing is trusted (`blind`) when the script runs what cannot be read: `source`, `eval` or `trap` of text not
-//   known, a command name not known (`$cmd`, `"$@"`), a function of the file's host that the walk does not read (bats'
-//   `run`, `load`: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
+//   known, a command name not known (`$cmd`, `"$@"`), a file a function of the file's host runs (bats' `load`; the
+//   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
 //   indirection (`${!v}`), a DEBUG or RETURN trap, a trap's or a callback's function that changes options, functions
 //   or aliases; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never
 //   set: bash runs it as an expression, which may assign any variable).
@@ -26,7 +26,7 @@
 // the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
 // (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
-import { interpret } from '../argv/interpret';
+import type { CommandSpec } from '../argv/spec';
 import { argWord, prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
@@ -127,7 +127,7 @@ class Scan {
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
 
-  constructor(root: SyntaxNode, private readonly stop: boolean, private readonly host: ReadonlySet<string> = NO_HOST) {
+  constructor(root: SyntaxNode, private readonly stop: boolean, private readonly host: HostCommands = NO_HOST) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       n.children.forEach(defs);
@@ -454,20 +454,25 @@ class Scan {
     for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none');
   }
 
-  /** The command name of `c` and its words, past `command` and `builtin` (undefined: not known); `lookup`: `command -v`. */
-  private nameOf(c: SyntaxNode): { name: string | undefined; args: SyntaxNode[]; lookup: boolean } {
+  /**
+   * The command name of `c` and its words, past `command` and `builtin` (undefined: not known); `lookup`: `command -v`;
+   * `direct`: not behind them (so it may be a function).
+   */
+  private nameOf(c: SyntaxNode): { name: string | undefined; args: SyntaxNode[]; lookup: boolean; direct: boolean } {
     let name = commandName(c);
     let args = fields(c, 'argument');
+    let direct = true;
     while (name === 'command' || name === 'builtin') {
       const inner = wrapped(name, args);
-      if ('lookup' in inner) return { name, args, lookup: true };
+      if ('lookup' in inner) return { name, args, lookup: true, direct };
       ({ name, args } = inner);
+      direct = false;
     }
-    return { name, args, lookup: false };
+    return { name, args, lookup: false, direct };
   }
 
   private command(c: SyntaxNode, w: Where): void {
-    const { name, args, lookup } = this.nameOf(c);
+    const { name, args, lookup, direct } = this.nameOf(c);
     if (name === undefined) {
       // `$debug`, `"$run"`: a variable the script sets to command names (see `finish`).
       const m = /^("?)\$\{?([A-Za-z_]\w*)\}?\1$/.exec(field(c, 'name')!.namedChildren[0].text);
@@ -475,8 +480,6 @@ class Scan {
       else this.blindFor('a command name not known');
       return;
     }
-    // A function the host file defines (bats' `run`, `load`): the walk does not read it, and it may set anything.
-    if (!this.functions.has(name) && this.host.has(name)) this.blindFor(`\`${name}\` is a function of the test runner (bats), which the model does not read`);
     if (this.functions.has(name)) {
       if (w.foreign) this.callbacks.add(name);
       else {
@@ -488,17 +491,24 @@ class Scan {
     // A function named as an argument may be run by the command (`complete -F f`, `mapfile -C f`, `trap f INT`).
     const refs = !lookup && name !== 'unset' && name !== 'type' && !DECLARATIONS.has(name);
     if (refs) for (const a of args) if (this.functions.has(staticWordValue(a) ?? '')) this.callbacks.add(staticWordValue(a)!);
-    if (lookup || !builtins[name]) return;
-    const spec = builtins[name];
+    // (A function the host file defines, bats' `run`, is read by its spec as a builtin, unless the script defines its own.)
+    const hosted = direct && !this.functions.has(name) && Object.hasOwn(this.host, name) ? this.host[name] : undefined;
+    const spec = hosted ?? builtins[name];
+    if (lookup || !spec) return;
     if (spec.shellEffect?.alters) this.changed(w);
-    const parse = builtinParse(name, args);
+    if (spec.shellEffect?.runsFile) {
+      this.blindFor('a file is sourced');
+      return;
+    }
+    const parse = builtinParse(name, args, spec);
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
-    for (const v of variableWrites(spec, parse, args)) if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
+    for (const v of variableWrites(spec, parse, args)) {
+      if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
+      else this.write(v.name!, w, false, 'unknown');
+    }
     for (const f of callbacks(parse, args)) this.callback(f);
+    if (hosted) return;
     switch (name) {
-      case 'source': case '.':
-        this.blindFor('a file is sourced');
-        return;
       case 'eval': {
         // (The words the walk reads as the string, after `--`: see `Walker.script`.)
         const text = args.filter((a, i) => i > 0 || a.text !== '--').map((a) => staticWordValue(a));
@@ -638,23 +648,24 @@ class Scan {
   }
 }
 
-const NO_HOST: ReadonlySet<string> = new Set();
-const trusts = new WeakMap<SyntaxNode, Trust>();
-/** The same, read to the end even when nothing is trusted: for the facts of its statements (`Walker.facts`). */
-const factTrusts = new WeakMap<SyntaxNode, Trust>();
+/** The functions a file's host defines (bats' `run`, `load`…), by name, with their specs (src/dict/bats.ts). */
+export type HostCommands = Readonly<Record<string, CommandSpec>>;
+export const NO_HOST: HostCommands = {};
+/** The trusts read, per host and tree; for `stop` off, read to the end even when nothing is trusted: for the facts of its statements (`Walker.facts`). */
+const trusts = new WeakMap<HostCommands, { stop: WeakMap<SyntaxNode, Trust>; all: WeakMap<SyntaxNode, Trust> }>();
 
 /**
- * The trust of the decisions over the script `root` (cached per tree, without a host). `stop`: the scan stops at the first reason to
- * trust nothing; off, it reads the whole tree, for the facts of its statements. `host`: the functions the file's host
- * defines (a bats file: `run`, `load`…), which the walk does not read: a call of one trusts nothing.
+ * The trust of the decisions over the script `root` (cached per host and tree). `stop`: the scan stops at the first
+ * reason to trust nothing; off, it reads the whole tree, for the facts of its statements. `host`: the functions the
+ * file's host defines (a bats file: `run`, `load`…), read by their specs.
  */
-export function scriptTrust(root: SyntaxNode, stop = true, host: readonly string[] = []): Trust {
-  // (Not cached: the model that reads it is, per tree and host.)
-  if (host.length) return readTrust(new Scan(root, true, new Set(host)));
-  const cache = stop ? trusts : factTrusts;
+export function scriptTrust(root: SyntaxNode, stop = true, host = NO_HOST): Trust {
+  let caches = trusts.get(host);
+  if (!caches) trusts.set(host, (caches = { stop: new WeakMap(), all: new WeakMap() }));
+  const cache = stop ? caches.stop : caches.all;
   const hit = cache.get(root);
   if (hit) return hit;
-  const trust = readTrust(new Scan(root, stop));
+  const trust = readTrust(new Scan(root, stop, host));
   cache.set(root, trust);
   return trust;
 }
