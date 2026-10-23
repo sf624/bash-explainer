@@ -17,7 +17,10 @@ describe('xargs agrees with GNU xargs', () => {
       // Prefix the command with echo so xargs prints the command lines instead of running them.
       const real = run('xargs', [...opts, 'echo', ...(cmd.length ? cmd : ['echo'])], { input: ex.input }).stdout.toString().trim().split('\n').filter(Boolean);
       // (With -d, the newline ending the input stays in the last item; echo prints it, and the line split above drops it.)
-      assert.deepStrictEqual(runXargs([...opts, ...cmd], ex.input).map((c) => c.join(' ').trimEnd()), real);
+      const mine = runXargs([...opts, ...cmd], ex.input).map((c) => c.join(' ').trimEnd());
+      // With -P the runs finish in any order, so GNU xargs' output order is not specified: compare the same lines, sorted.
+      if (opts.some((o) => /^-P/.test(o) || o === '--max-procs' || o.startsWith('--max-procs='))) assert.deepStrictEqual([...mine].sort(), [...real].sort());
+      else assert.deepStrictEqual(mine, real);
     });
   }
   it('keeps the newline that ends the input in the last item of -d', () => {
