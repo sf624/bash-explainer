@@ -281,11 +281,9 @@ export class Analyzer {
   private examples: Example[] = [];
   /**
    * The command whose arguments are being explained (set while they are, which is when the helpers that read it
-   * run), its words, and whether the shell reads them again (`eval`).
-   */
-  /**
-   * The command whose words are explained: its name, its words, and their parse (`nodes` are the words the
-   * parse's indices count, of which `args` are this command's), which the explanations of embedded languages read.
+   * run): its name, its words, and their parse (`nodes` are the words the parse's indices count, of which `args`
+   * are this command's), which the explanations of embedded languages read; and whether the shell reads the
+   * words again (`rereads`, `eval`).
    */
   private argCtx: { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean } | undefined;
   /** Where the commands run by command slots run (src/semantics/env.ts), keyed by their first word or string. */
