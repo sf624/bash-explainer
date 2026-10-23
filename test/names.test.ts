@@ -416,26 +416,35 @@ describe('the analyzer says what a name runs', () => {
   });
 
   it('unset removes what bash removes: a variable if there is one, else a function (checked with bash)', () => {
-    const bash = (code: string): string => execFileSync('bash', ['-c', code]).toString();
+    const bash = (code: string, ...args: string[]): string => execFileSync('bash', ['-c', code, 'bash', ...args]).toString();
     const text = (src: string, line: number): string => all(explain(src, line).items[0]).join('\n');
-    // [script before the unset, unset arguments, what bash removes]
-    const rows: [string, string, 'function' | 'variable'][] = [
-      ['f() { :; }', 'f', 'function'], ['f() { :; }; f=1', 'f', 'variable'], ['f() { :; }; f=1', '-f f', 'function'],
-      ['f() { :; }; f=1', '-v f', 'variable'], ['f() { :; }', '-v f', 'variable'], ['f=1', 'f', 'variable'], [':', 'f', 'variable'],
+    // [script before the unset, unset arguments, what bash removes, what stays, the text]
+    type Row = [string, string, 'function' | 'variable', 'function' | 'variable' | '', RegExp];
+    const rows: Row[] = [
+      ['f() { :; }', 'f', 'function', '', /Remove the function `f`/],
+      ['f() { :; }; f=1', 'f', 'variable', 'function', /Unset the variable `f`/],
+      ['f() { :; }; f=1', '-f f', 'function', 'variable', /Remove the function `f`/],
+      ['f() { :; }; f=1', '-v f', 'variable', 'function', /Unset the variable `f`/],
+      ['f() { :; }', '-v f', 'variable', 'function', /Unset the variable `f`/],
+      ['f=1', 'f', 'variable', '', /Unset the variable `f`/],
+      [':', 'f', 'variable', '', /Unset the variable `f`/],
+      // (`-n` without a name reference: bash does not fall back to the function.)
+      ['f() { :; }', '-n f', 'variable', 'function', /Unset the name reference `f`/],
+      // (A variable that is only maybe set: the variable, or, if there is none, the function.)
+      ['f() { :; }; if [ -n "$1" ]; then f=1; fi', 'f', 'variable', 'function', /Unset the variable `f`.*If there is no such variable, the function `f`/],
     ];
-    for (const [before, args, removes] of rows) {
+    for (const [before, args, removes, stays, expected] of rows) {
       const code = `${before}\nunset ${args}\n`;
-      // What is left after the unset: the function f and the variable f.
-      const left = bash(`${code}declare -F f >/dev/null && echo function; [ "\${f+set}" = set ] && echo variable; true`);
-      const explained = text(code, 1);
-      if (removes === 'function') {
-        assert.ok(!left.includes('function'), code);
-        assert.match(explained, /Remove the function `f`/, code);
-      } else {
-        assert.ok(!left.includes('variable'), code);
-        assert.match(explained, /Unset the variable `f`/, code);
-      }
+      // What is left after the unset: the function f and the variable f (run with an argument, so the maybe-set variable is set).
+      const probe = `${code}declare -F f >/dev/null && echo function; [ "\${f+set}" = set ] && echo variable; true`;
+      const left = bash(probe, 'x');
+      assert.ok(!left.includes(removes), code);
+      // The other one is still there, where it existed before.
+      if (stays) assert.ok(left.includes(stays), code);
+      assert.match(text(code, code.split('\n').length - 2), expected, code);
     }
+    // Without the argument the maybe-set variable is not there, and bash removes the function.
+    assert.strictEqual(bash('f() { :; }; if [ -n "$1" ]; then f=1; fi; unset f; declare -F f >/dev/null && echo function; true'), '');
   });
 
   it('a pipeline stage that runs a function or an alias has no example of the program of that name', () => {
