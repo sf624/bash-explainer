@@ -1302,7 +1302,7 @@ export class Analyzer {
     for (const c of n.namedChildren) {
       if (redirsOut && c.type.endsWith('redirect')) continue;
       const role = roles.get(c)?.role;
-      if (role === 'end-of-options') children.push(this.tok(c, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
+      if (role === 'end-of-options') children.push(this.endOfOptions(c));
       else if (role && role !== 'operand') {
         // The texts of the builtin's spec: `declare +x v` turns an attribute off (its `offText`); `export` and
         // `readonly` have no `+` form and their own letters. (A letter with no text, or `+g`, says nothing.)
@@ -1322,6 +1322,11 @@ export class Analyzer {
     return t;
   }
 
+  /** The token of `--`, which ends the options of a builtin. */
+  private endOfOptions(n: SyntaxNode): Token {
+    return this.tok(n, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument'));
+  }
+
   private unset(n: SyntaxNode): Token {
     const call = this.builtinAsFunction(n, false);
     if (call) return call;
@@ -1331,14 +1336,17 @@ export class Analyzer {
     const letters = (r: ArgRole): Extract<ArgRole, { role: 'option' }>[] =>
       (r.role === 'cluster' ? r.letters : [r]).filter((l): l is Extract<ArgRole, { role: 'option' }> => l.role === 'option');
     const flags = kids.flatMap((c) => letters(roles.get(c)!).map((l) => l.flag));
-    const fn = flags.includes('-f');
-    const ref = !fn && flags.includes('-n');
+    // `unset` removes a variable if there is one, else a function (`-f`: a function, `-v`: a variable).
+    const st = this.state.at(n).run;
+    const asFunction = (name: string): boolean => flags.includes('-f')
+      || (!flags.includes('-v') && (st.variables.get(name)?.declared ?? 'off') === 'off' && (st.functions.get(name)?.state ?? 'off') !== 'off');
+    const ref = !flags.includes('-f') && flags.includes('-n');
     const children = kids.map((c) => {
       // (`-fv`: the letters together.)
       const opts = letters(roles.get(c)!);
       if (opts.length) return this.tok(c, 'option', opts.map((o) => this.t(o.text)).join(this.s('、', '; ')));
       if (c.type === 'variable_name' || isPlainWord(c)) {
-        return this.tok(c, 'variable', fn ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
+        return this.tok(c, 'variable', asFunction(c.text) ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
       }
       return this.explain(c);
     });
@@ -1768,7 +1776,7 @@ export class Analyzer {
         const a = nodes[word];
         switch (role.role) {
           case 'end-of-options':
-            out.push(this.tok(a, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument')));
+            out.push(this.endOfOptions(a));
             break;
           case 'option':
           case 'unknown-option':
@@ -2606,6 +2614,8 @@ export class Analyzer {
       const name = field(cmd, 'name');
       // (An incomplete `echo a |` has a stage with a name of no word.)
       if (!name || (name.namedChildren.length && !isPlainWord(name.namedChildren[0]))) return undefined;
+      // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
+      if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
       stages.push({ cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) });
     }
