@@ -1936,7 +1936,8 @@ export class Analyzer {
     const job = item?.type === 'job' && isPlainWord(a) ? jobSpec(a.text) : undefined;
     if (job) return this.tok(a, 'argument', this.s(`ジョブ指定: ${job.ja}`, `Job spec: ${job.en}`));
     let desc: string | undefined;
-    if (isFn) desc = this.s(`関数への引数 $${role.index + 1}`, `Argument $${role.index + 1} to the function`);
+    // (A function gets every word, also those that look like options: `f -g b` gives `b` as $2.)
+    if (isFn) desc = this.s(`関数への引数 $${word + 1}`, `Argument $${word + 1} to the function`);
     else if (item?.values && Object.hasOwn(item.values, a.text)) desc = this.t(item.values[a.text]);
     else if (role.assignment) desc = this.t(item!.assignmentText!);
     else if (role.each) desc = this.eachText(a, role.each);
