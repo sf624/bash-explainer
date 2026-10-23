@@ -743,11 +743,13 @@ function parentLine(b: Builder, at: number, indent: number): string | undefined 
 
 /** `runs-on:` of the job holding line `at`, when it names a runner (not a matrix expression). */
 function runsOn(b: Builder, at: number): string | undefined {
-  for (let j = at - 1; j >= 0; j--) {
+  // Keys have no order: `runs-on:` may stand above or below the step.
+  for (let j = 0; j < b.lines.length; j++) {
     const m = /^(\s*)runs-on\s*:\s*(.*)$/.exec(b.lines[j]);
     if (!m) continue;
-    // The job ended between there and here.
-    if (b.lines.slice(j + 1, at).some((l) => l.trim() && !l.trim().startsWith('#') && indentOf(l) < m[1].length)) return undefined;
+    // The job (or the document) ended between there and here.
+    const [from, to] = j < at ? [j + 1, at] : [at + 1, j];
+    if (b.lines.slice(from, to).some((l) => /^(---|\.\.\.)(\s|$)/.test(l) || (l.trim() && !l.trim().startsWith('#') && indentOf(l) < m[1].length))) continue;
     return m[2].includes('${{') ? undefined : m[2];
   }
   return undefined;

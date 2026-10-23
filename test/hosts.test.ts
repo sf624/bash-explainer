@@ -730,6 +730,13 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(shells(`defaults:\n  run:\n    shell: sh\n# c\n\n${one}`), ['sh']);
     assert.deepStrictEqual(shells(`${head}      - shell: sh\n# c\n        run: echo a\n`), ['sh']);
     assert.deepStrictEqual(shells(`${head}      - run: echo a\n# c\n        shell: sh\n`), ['sh']);
+    // runs-on: of a Windows job: found above or below the steps, and not from another document or job.
+    const win = (on: string, run = '      - run: echo a\n') => `jobs:\n  a:\n${on}    steps:\n${run}`;
+    assert.deepStrictEqual(shells(win('    runs-on: windows-latest\n')), []);
+    assert.deepStrictEqual(shells(`${win('')}    runs-on: windows-latest\n`), []);
+    assert.deepStrictEqual(shells(`${win('    runs-on: windows-latest\n')}---\n${one}`), ['bash']);
+    assert.deepStrictEqual(shells(`${one}---\n${win('    runs-on: windows-latest\n')}`), ['bash']);
+    assert.deepStrictEqual(shells(`${win('    runs-on: windows-latest\n')}  b:\n    steps:\n      - run: echo b\n`), ['bash']);
     // A shell: that is not under defaults: run: counts for nothing.
     assert.deepStrictEqual(shells(`shell: sh\n${one}`), ['bash']);
     assert.deepStrictEqual(shells(`run:\n  shell: sh\n${one}`), ['bash']);
