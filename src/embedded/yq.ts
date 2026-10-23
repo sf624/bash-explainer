@@ -1,6 +1,6 @@
 import type { Lang } from '../i18n';
 import type { HostId } from '../hosts';
-import { lex } from './jq';
+import { lex, ParseError } from './jq';
 import { JQ_ONLY, YQ_ONLY } from './yqfuncs';
 
 /** The three tools called `yq`. */
@@ -150,8 +150,11 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
     let idents: string[] = [];
     try {
       idents = lex(expr).filter((t) => t.type === 'ident' || t.type === 'fmt').map((t) => t.text);
-    } catch {
-      idents = [];
+    } catch (e) {
+      // An expression jq's lexer cannot read (an open string): no names to check (`idents` stays empty). Anything
+      // else is a bug, which shows.
+      /* c8 ignore next */
+      if (!(e instanceof ParseError)) throw e;
     }
     for (const id of new Set(idents)) {
       // `pick([...])` and `explode(.)` are yq's; jq has functions of these names that take other arguments.
@@ -286,8 +289,11 @@ export function yqSameAsJq(expr: string): boolean {
   let toks;
   try {
     toks = lex(expr);
-  } catch {
-    return false;
+  } catch (e) {
+    // An expression jq's lexer cannot read: not shown. Anything else is a bug, which shows.
+    if (e instanceof ParseError) return false;
+    /* c8 ignore next */
+    throw e;
   }
   if (toks.some((t) => t.type === 'fmt' || t.type === 'kw' && !['and', 'or', 'as'].includes(t.text))) return false;
   if (toks.some((t) => t.type === 'op' && t.text === '...')) return false;
