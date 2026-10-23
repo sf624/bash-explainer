@@ -10,3 +10,16 @@ runs:
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh
       shell: bash
+    # mikefarah/yq (MIT; a Go program, run as a separate program) for the yq examples, test/examples-outputs.test.ts:
+    # a pinned release, checked by its SHA-256, found through BASH_EXPLAINER_YQ4.
+    - env:
+        YQ_VERSION: v4.54.1
+        YQ_SHA256: 8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
+      run: |
+        dir="$RUNNER_TEMP/yq-mikefarah"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$dir/yq" "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64"
+        echo "$YQ_SHA256  $dir/yq" | sha256sum --check
+        chmod +x "$dir/yq"
+        echo "BASH_EXPLAINER_YQ4=$dir/yq" >> "$GITHUB_ENV"
+      shell: bash

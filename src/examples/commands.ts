@@ -43,7 +43,8 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
   const src = shownSource(all);
   const inPlace = src.each === 'in-place';
   const title = inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example');
-  const outLabel = inPlace ? s('書き換え後', 'After') : s('出力', 'Output');
+  // (`uniq IN OUT`, `sort -o OUT`: the output goes to the file, and nothing to the standard output.)
+  const outLabel = inPlace ? s('書き換え後', 'After') : src.writes ? s(`\`${src.writes}\` に書き込まれる内容`, `Written to \`${src.writes}\``) : s('出力', 'Output');
   // (awk's only program that reads nothing: `BEGIN` rules alone.)
   if (!src.streams.length) {
     return { kind, title, note: s('入力は読まない（`BEGIN` だけ）', 'Reads no input (`BEGIN` only)'), sections: [{ label: outLabel, lines: tabs(output), empty: s('（出力なし）', '(no output)') }] };
@@ -51,11 +52,13 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
   const { streams } = src;
   const contents = shareOut(src, sample);
   const reads = src.reads ? { reads: src.reads } : {};
-  // A tool that prints each file under a header (head, tail) is told their names, in the order it reads them.
-  const names = readOrder(src, streams.map((st) => [st.kind === 'file' ? st.name : 'standard input'])).map((n) => n[0] ?? 'standard input');
-  const run: RerunSpec = spec.kind === 'filter' && src.each === 'headers' ? { ...spec, files: names, ...reads } : { ...spec, ...reads };
+  // head and tail print each file under a header, and awk names the file it reads in `FILENAME`: they are told the
+  // names, in the order the tool reads the files.
+  const names = (stdin: string) => readOrder(src, streams.map((st) => [st.kind === 'file' ? st.name : stdin])).map((n) => n[0] ?? stdin);
+  const run: RerunSpec = spec.kind === 'filter' && src.each === 'headers' ? { ...spec, files: names('standard input'), ...reads }
+    : spec.kind === 'awk' && streams.some((st) => st.kind === 'file') ? { ...spec, files: names('-'), ...reads } : { ...spec, ...reads };
   // The output of what the files hold, unless they hold the sample as it is.
-  const asSample = contents.flat().length === sample.length && !src.reads && !streams.some(knownLines) && src.each !== 'headers';
+  const asSample = contents.flat().length === sample.length && !src.reads && !streams.some(knownLines) && !('files' in run);
   const shown = asSample ? output : rerun(run, contents, lang).sections[0].lines;
   const boxes = streams.map((st, i) => ({ label: streamLabel(st, lang), lines: contents[i] }));
   return { kind,

@@ -639,6 +639,28 @@ export function varyJson(v: Json, k: number): Json {
   return v;
 }
 
+/**
+ * How jq prints a value: `indent` spaces a level (2 by default; `--indent n`), a tab (`--tab`), or 0 for one line
+ * (`-c`, `--indent 0`); `sortKeys`: the keys of every object in order (`-S`).
+ */
+export interface JqFormat { indent: number | '\t'; sortKeys?: boolean }
+
+/** jq's default: two spaces a level. */
+export const JQ_PRETTY: JqFormat = { indent: 2 };
+
+function sortedKeys(v: Json): Json {
+  if (Array.isArray(v)) return v.map(sortedKeys);
+  if (isObj(v)) return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortedKeys(v[k])]));
+  return v;
+}
+
+/** The lines jq prints for a value in this format (`raw`: a string as it is, with `-r` or `-j`). */
+export function jqPrint(v: Json, format: JqFormat, raw = false): string[] {
+  if (raw && typeof v === 'string') return v.split('\n');
+  const x = format.sortKeys ? sortedKeys(v) : v;
+  return (format.indent === 0 ? JSON.stringify(x) : JSON.stringify(x, null, format.indent)).split('\n');
+}
+
 /** Compact JSON as `jq -c` prints it. */
 export function toJson(v: Json): string {
   return JSON.stringify(v);
@@ -679,6 +701,9 @@ function patVars(pats: Pat[]): string[] {
 
 class Evaluator {
   private steps = 0;
+
+  /** `queue`: the inputs not read yet, which `input` and `inputs` read (jq reads them from the files, or stdin). */
+  constructor(private queue?: Json[]) {}
 
   private tick(): void {
     if (++this.steps > 100000) throw new Unsupported('too many steps');
@@ -1308,7 +1333,10 @@ class Evaluator {
         };
         return [go(x)];
       }
-      case 'tostream/0': case 'input/0': case 'inputs/0': case 'now/0': case 'env/0': case 'input_filename/0':
+      // (`inputs` reads them all at once here: a filter that stops reading early, `first(inputs)`, is not followed.)
+      case 'inputs/0': if (this.queue) return this.queue.splice(0); throw new Unsupported(n.name);
+      case 'input/0': if (this.queue?.length) return [this.queue.shift()!]; throw new Unsupported(n.name);
+      case 'tostream/0': case 'now/0': case 'env/0': case 'input_filename/0':
       case 'debug/0': case 'stderr/0': case 'halt/0': case 'halt_error/0': case 'halt_error/1':
         throw new Unsupported(n.name);
     }
@@ -1316,14 +1344,17 @@ class Evaluator {
   }
 }
 
-/** Run a jq filter on one input; undefined if the filter uses something the runner does not support. */
-export function runJq(filter: string, input: Json, vars: Record<string, Json> = {}): { outputs: Json[] } | { error: string } | undefined {
+/**
+ * Run a jq filter on one input; undefined if the filter uses something the runner does not support. `queue`: the
+ * inputs after this one, which `input` and `inputs` read (and take out of it).
+ */
+export function runJq(filter: string, input: Json, vars: Record<string, Json> = {}, queue?: Json[]): { outputs: Json[] } | { error: string } | undefined {
   const node = parseJq(filter);
   if (!node) return undefined;
   const env: Env = { vars: new Map(Object.entries(vars).map(([k, v]) => [`$${k}`, v])), funcs: new Map() };
   env.vars.set('$__loc__', { file: '<top-level>', line: 1 });
   try {
-    return { outputs: new Evaluator().ev(node, input, env) };
+    return { outputs: new Evaluator(queue).ev(node, input, env) };
   } catch (e) {
     if (e instanceof JqError) return { error: e.message };
     if (e instanceof Unsupported) return undefined;
@@ -1386,6 +1417,9 @@ const ONE_ARGUMENT = new Set(['select', 'map', 'map_values', 'sort_by', 'group_b
 class Inferer {
   private vars = new Map<string, Shape>();
   private defs = new Map<string, Node>();
+
+  /** `inputs`: the shape of the values `input` and `inputs` read. */
+  constructor(private inputs = new Shape()) {}
 
   run(n: Node, s: Shape): Shape {
     switch (n.t) {
@@ -1522,6 +1556,7 @@ class Inferer {
     // jq has these only with an argument: `select` alone is not defined (`jq: error: select/0 is not defined`).
     if (!a.length && ONE_ARGUMENT.has(n.name)) throw new Unsupported(`${n.name}/0`);
     switch (n.name) {
+      case 'input': case 'inputs': return this.inputs;
       case 'select': this.cond(a[0], s); return s;
       case 'map': { const el = s.arr(); const out = new Shape(); out.kind = 'array'; out.elem = this.run(a[0], el); return out; }
       case 'map_values': this.run(a[0], s.kind === 'array' ? s.arr() : new Shape()); return s;
@@ -1711,6 +1746,61 @@ export interface JqFlags {
   join?: boolean;
   /** `-s` */
   slurp?: boolean;
+  /** How the results are printed (`-c`, `--tab`, `--indent`, `-S`); one line each when not given. */
+  format?: JqFormat;
+}
+
+/**
+ * The lines jq prints for its results: in `format`, one after another (with `-j` with no newline between them);
+ * `raw` (`-r`, `-j`) prints strings as they are. `cap`: at most this many results, then `…`.
+ */
+export function jqOutputLines(values: Json[], opts: JqFlags, cap = Infinity): string[] {
+  const format = opts.format ?? { indent: 0 };
+  const raw = !!(opts.raw || opts.join);
+  if (opts.join) return values.length ? values.map((v) => jqPrint(v, format, raw).join('\n')).join('').split('\n') : [];
+  const shown = values.length > cap ? values.slice(0, cap - 1) : values;
+  return [...shown.flatMap((v) => jqPrint(v, format, raw)), ...(shown.length < values.length ? ['…'] : [])];
+}
+
+/** The jq function of the filter that reads more inputs (`input`, `inputs`), if any. */
+export function jqReadsInputs(filter: string): 'input' | 'inputs' | undefined {
+  let found: 'input' | 'inputs' | undefined;
+  // A call anywhere in the parse, whatever node holds it.
+  const walk = (x: unknown): void => {
+    if (found || !x || typeof x !== 'object') return;
+    const n = x as { t?: string; name?: string; args?: unknown[] };
+    if (n.t === 'call' && (n.name === 'input' || n.name === 'inputs') && !n.args!.length) found = n.name;
+    else for (const v of Object.values(x)) walk(v);
+  };
+  walk(parseJq(filter));
+  return found;
+}
+
+/**
+ * Sample input of a filter, as jq reads it from a file: the `k`th value (from 0), like the others with its numbers
+ * and strings changed (`varyJson`). `nullInput`: the values `input` and `inputs` read, as `.` is null; `rawInput`
+ * (`-R`): lines, which jq reads as strings. Undefined when the filter cannot be read.
+ */
+export function jqSample(filter: string, opts: { nullInput?: boolean; rawInput?: boolean } = {}): ((k: number) => Json) | undefined {
+  const node = parseJq(filter);
+  // (The analyzer asks for filters its explanation has read: a guard.)
+  /* c8 ignore next */
+  if (!node) return undefined;
+  const shape = new Shape();
+  const inputs = opts.nullInput ? new Shape() : shape;
+  try {
+    new Inferer(inputs).run(node, shape);
+  } catch (e) {
+    if (e instanceof Unsupported) return undefined;
+    /* c8 ignore next */
+    throw e;
+  }
+  if (opts.rawInput) {
+    // A line is a string: one the filter fits, or plain text.
+    return inputs.kind === 'string' ? (k) => materialize(inputs, k) : (k) => `line ${k + 1}`;
+  }
+  const first = materialize(inputs, 0);
+  return (k) => varyJson(first, k);
 }
 
 /** The sample file of a slurped example: the values the filter's array is made of, one per line. */
@@ -1729,10 +1819,8 @@ export function jqExample(filter: string, opts: JqFlags & { vars?: Record<string
     const res = runJq(filter, input, opts.vars);
     if (!res) return undefined;
     if ('error' in res) return { input, outputs: [], values: [], error: res.error };
-    const raw = opts.raw || opts.join;
-    const shown = res.outputs.map((v) => (raw && typeof v === 'string' ? v : toJson(v)));
     // `-j` prints the outputs one right after another, with no newline at all.
-    const outputs = opts.join ? (shown.length ? [shown.join('')] : []) : shown.length > 5 ? [...shown.slice(0, 4), '…'] : shown;
+    const outputs = jqOutputLines(res.outputs, opts, 5);
     const steps = opts.join ? undefined : jqSteps(filter, input, opts.vars);
     return { input, ...(steps ? { steps } : {}), ...(opts.slurp ? { slurp: true } : {}), outputs, values: res.outputs.slice(0, 5) };
   };

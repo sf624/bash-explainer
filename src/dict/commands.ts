@@ -633,7 +633,7 @@ export const core: Record<string, CommandSpec> = {
     ['--output-error', '書き込みエラーの扱い（`warn`、`exit`…）', 'what to do on write errors (`warn`, `exit`…)', 'attached'],
     ['-a|--append', 'ファイルに追記する（上書きしない）', 'append instead of overwrite'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('書き出すファイル', 'file to write')], positionalIo: ['write'] }),
+  ], { parser: 'getopt_long', positional: [pos('書き出すファイル', 'file to write')] }),
   curl: cmd('URL を指定してデータを送受信する（HTTP リクエストなど）', 'Transfer data to or from a URL (HTTP requests etc.)', [
     ['-b|--cookie', '送るクッキー（文字列またはファイル）', 'cookies to send (string or file)', 'arg'],
     ['-c|--cookie-jar', 'クッキーを保存するファイル', 'file to save cookies to', 'arg'],

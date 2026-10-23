@@ -28,7 +28,7 @@ describe('editable examples', () => {
     assert.deepStrictEqual(r.sections[0].lines, ['bob at example.com']);
     assert.deepStrictEqual(r.marks![0].map((m) => m.group), [0, 1]);
     assert.deepStrictEqual(rerun(explain("awk '{ print $2 }' f").examples[0].interactive!.spec, [['a b', 'c d']], 'en').sections[0].lines, ['b', 'd']);
-    assert.deepStrictEqual(rerun(explain("jq '.a' f.json").examples[0].interactive!.spec, [['{"a": [1]}']], 'en').sections[0].lines, ['[1]']);
+    assert.deepStrictEqual(rerun(explain("jq '.a' f.json").examples[0].interactive!.spec, [['{"a": [1]}']], 'en').sections[0].lines, ['[', '  1', ']']);
     assert.match(rerun(explain("jq '.a' f.json").examples[0].interactive!.spec, [['{oops']], 'en').sections[0].lines[0], /not valid JSON/);
     assert.deepStrictEqual(rerun(explain('sort -rn nums.txt').examples[0].interactive!.spec, [['2', '10', '1']], 'en').sections[0].lines, ['10', '2', '1']);
     const pipe = explain('grep a f.txt | sort | uniq -c').examples.find((e) => e.interactive?.spec.kind === 'pipeline')!;

@@ -19,7 +19,7 @@ import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './exa
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipedOutput, pipelineExample, Stage } from './examples/pipeline';
 import { InputSource, inputSource, knownLines, NO_INPUT, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
-import { jqExample, JqRun, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
+import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
 import { sedExample } from './examples/sed';
 import { InputBox, Interactive, jqStepSections, RerunSpec } from './examples/rerun';
 import { globExample, patternExample, testExample } from './examples/patterns';
@@ -2149,17 +2149,27 @@ export class Analyzer {
           break;
         }
         const nullInput = this.given('-n');
-        const jqFlags = { raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput };
-        const runs = jqExample(text, { ...jqFlags, nullInput, vars: this.jqVars() });
-        // `-n`: jq reads no input (the filter's `input` and `inputs` would read it).
-        if (runs) this.jqExamples(runs, nullInput ? NO_INPUT : this.inputSource(), { kind: 'jq', filter: text, ...jqFlags, vars: this.jqVars() });
+        const rawInput = this.given('-R');
+        const format = this.jqFormat();
+        if (!format) break;
+        const spec: Extract<RerunSpec, { kind: 'jq' }> = {
+          kind: 'jq', filter: text, raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput, vars: this.jqVars(), format,
+          ...(nullInput ? { nullInput } : {}), ...(rawInput ? { rawInput } : {}),
+        };
+        // `-n`: jq reads no input, unless the filter's `input` or `inputs` reads it.
+        const readBy = jqReadsInputs(text);
+        this.jqExamples(spec, nullInput && !readBy ? NO_INPUT : this.inputSource(), readBy);
         break;
       }
       case 'awk': {
         const opts = this.awkOptions();
         const ex = opts && awkExample(text, opts);
+        if (!ex) break;
         // A program of `BEGIN` rules alone reads no input.
-        if (ex) this.ioExample(ex.input, ex.output, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns }, ex.readsInput ? this.inputSource() : NO_INPUT);
+        const src = ex.readsInput ? this.inputSource() : NO_INPUT;
+        // The names of the files a glob gives are not known, so neither is what `FILENAME` holds.
+        if (/\bFILENAME\b/.test(text) && src.streams.some((st) => st.kind === 'file' && st.many)) break;
+        this.ioExample(ex.input, ex.output, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns }, src);
         break;
       }
       case 'yq4':
@@ -2283,6 +2293,17 @@ export class Analyzer {
   }
 
   /**
+   * Whether mikefarah/yq's `-r` (`--unwrapScalar`) is on: it prints a string as it is, also in JSON. The last one given
+   * wins; `-r=false` turns it off, as pflag reads a bool (`0`, `f`, `false` in any case).
+   */
+  private unwrapScalar(): boolean {
+    const { parse, nodes } = this.cx.argCtx!;
+    const given = givenOptions(parse).filter(({ role }) => role.role === 'option' && role.spec.names.includes('-r'));
+    if (!given.length) return false;
+    return !/=(0|f|false)$/i.test(nodes[given[given.length - 1].word].text);
+  }
+
+  /**
    * The values given to the option `names` name, in order, with the option as written (`of`) and which of its
    * values each is; `text` is the value's text when it is plain text (also in the option's word: `-efoo`).
    */
@@ -2342,35 +2363,66 @@ export class Analyzer {
   private yqExample(filter: string, style: YamlStyle): void {
     // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
-    // (The last `-o` wins, as pflag reads it; a format that is not plain text is none the example follows.)
-    const given = this.optionValues('-o', '--output-format');
-    const format = given.length ? given[given.length - 1].text ?? '?' : undefined;
-    const json = style === 'mikefarah' ? format === 'json' || format === 'j' : !this.given('-y', '-Y');
-    if (style === 'mikefarah' && format && !json && format !== 'yaml' && format !== 'y') return;
-    const raw = style === 'mikefarah' ? !json : this.given('-r');
-    let runs = jqExample(filter, { raw, nullInput: this.given('-n'), vars: style === 'kislyuk' ? this.jqVars() : {} });
+    // `-n`: no input is read. With `-i`, mikefarah/yq rewrites the first file, and kislyuk/yq each file apart (`EachFile`).
+    const src = shownSource(this.given('-n') ? NO_INPUT : this.inputSource());
+    const inPlace = src.each === 'in-place';
+    // (The last `-o`, `-p` or `-I` wins, as pflag reads it.)
+    const last = (...names: string[]) => {
+      const given = this.optionValues(...names);
+      return given.length ? given[given.length - 1].text ?? '?' : undefined;
+    };
+    const formatOf = (name: string) => ({ json: 'json', j: 'json', yaml: 'yaml', y: 'yaml' } as Record<string, string>)[name];
+    let jsonIn = false;
+    let json: boolean;
+    let format: JqFormat | undefined;
+    if (style === 'mikefarah') {
+      // mikefarah/yq reads the format `-p` names, or the one of the first file's extension (YAML when it has none it
+      // knows), and prints the format `-o` names, or the one of the extension. Formats other than JSON and YAML are not followed.
+      const first = src.streams[0];
+      const ext = first?.kind === 'file' ? /\.([^./]+)$/.exec(first.name)?.[1].toLowerCase() : undefined;
+      const byExt = ext && ['xml', 'csv', 'tsv', 'toml', 'properties', 'props', 'ini', 'lua', 'hcl', 'env', 'kyaml'].includes(ext) ? '?' : ext === 'json' ? 'json' : 'yaml';
+      const p = last('-p', '--input-format');
+      const input = p === undefined ? byExt : formatOf(p);
+      const o = last('-o', '--output-format');
+      // (With `-p` and no `-o`, it prints YAML: v4.54 warns that it keeps this for backward compatibility.)
+      const output = o === undefined ? (p === undefined ? input : 'yaml') : formatOf(o);
+      if ((input !== 'json' && input !== 'yaml') || (output !== 'json' && output !== 'yaml')) return;
+      jsonIn = input === 'json';
+      json = output === 'json';
+      // `-I`: the indent of JSON (0: one line); the YAML of another indent is not followed.
+      const i = last('-I', '--indent');
+      const indent = i === undefined ? 2 : Number(i);
+      if (!Number.isInteger(indent) || indent < 0 || (!json && indent !== 2)) return;
+      format = { indent };
+    } else {
+      json = !this.given('-y', '-Y');
+      // kislyuk/yq passes `-c` and `-S` on to jq. (It has no `--indent`, the one way to an indent jq refuses.)
+      format = this.jqFormat()!;
+    }
+    const raw = style === 'mikefarah' ? !json || this.unwrapScalar() : this.given('-r');
+    let runs = jqExample(filter, { raw, nullInput: this.given('-n'), vars: style === 'kislyuk' ? this.jqVars() : {}, format });
     // Where jq stops with an error, mikefarah/yq is often lenient (it adds a string and a number), so show nothing.
     if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
     if (!runs?.length) return;
     const outLabel = this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`);
-    const show = (vs: Json[]) => (json ? vs.map((v) => (raw && typeof v === 'string' ? v : toJson(v))) : yqYamlOutput(vs, style));
-    // `-n`: no input is read. With `-i`, mikefarah/yq rewrites the first file, and kislyuk/yq each file apart (`EachFile`).
-    const src = shownSource(this.given('-n') ? NO_INPUT : this.inputSource());
-    const inPlace = src.each === 'in-place';
+    const printJson = (vs: Json[]) => vs.flatMap((v) => jqPrint(v, format!, raw));
+    const show = (vs: Json[]) => (json ? printJson(vs) : yqYamlOutput(vs, style));
+    // A JSON file is shown as jq's input is: short values on one line.
+    const inputLines = (v: Json) => (jsonIn ? (toJson(v).length <= 60 ? [toJson(v)] : JSON.stringify(v, null, 2).split('\n')) : yamlLines(v, style));
     if (src.streams.length > 1 || src.streams.some(knownLines) || src.reads) {
-      this.yqStreams(filter, style, src, runs[0].input, show, outLabel);
+      this.yqStreams(filter, style, src, runs[0].input, show, outLabel, json, inputLines);
       return;
     }
     try {
       runs.forEach((r, i) => {
-        const input = yamlLines(r.input, style);
+        const input = inputLines(r.input);
         const output = r.error ? [r.error] : show(r.values);
         this.cx.examples.push({ kind: 'yq',
           title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
           ...(src.streams.length ? {} : { note: this.s('入力は読まない（`.` は `null`）', 'Reads no input (`.` is `null`)') }),
           sections: [
             ...(src.streams.length ? [{ label: streamLabel(src.streams[0], this.lang), lines: input }] : []),
-            ...(r.steps && i === 0 ? jqStepSections(r.steps, output, this.lang, (vs) => (json ? vs.map(toJson) : yqYamlOutput(vs, style)))
+            ...(r.steps && i === 0 ? jqStepSections(r.steps, output, this.lang, (vs) => (json ? vs.flatMap((v) => jqPrint(v, format!)) : yqYamlOutput(vs, style)))
               : [r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: outLabel, lines: output, empty: this.s('（出力なし）', '(no output)') }]),
           ],
         });
@@ -2387,19 +2439,33 @@ export class Analyzer {
    * The examples of a jq filter: the runs on sample input (`jqExample`), shown as read from `src`. Several files, or
    * the text of a here-string, make one example, run again on what each holds (src/examples/rerun.ts).
    */
-  private jqExamples(runs: JqRun[], src: InputSource, spec: Extract<RerunSpec, { kind: 'jq' }>): void {
-    // Short JSON stays on one line; longer JSON is indented like jq prints it.
+  private jqExamples(spec: Extract<RerunSpec, { kind: 'jq' }>, src: InputSource, readBy: 'input' | 'inputs' | undefined): void {
+    // The input as written in a file: short JSON on one line, longer JSON indented.
     const fileLines = (v: Json): string[] => (toJson(v).length <= 60 ? [toJson(v)] : JSON.stringify(v, null, 2).split('\n'));
-    if (src.streams.length > 1 || src.streams.some(knownLines) || src.reads) {
-      const r = runs[0];
-      // A slurped sample is shared out among the files (when it has a value for each); otherwise each file holds a
-      // value like the sample. A file named twice is read twice (`reads`).
-      let k = 0;
-      const sample = r.slurp ? slurpLines(r.input) : [];
-      const contents = r.slurp && sample.length >= src.streams.length ? shareOut(src, sample)
-        : src.streams.map((st) => knownLines(st) ?? (r.slurp ? slurpLines(varyJson(r.input, k++)) : fileLines(varyJson(r.input, k++))));
-      const inputs: InputBox[] = src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: contents[i] }));
+    const { filter, nullInput, rawInput } = spec;
+    // Several files, the text of a here-string, lines read as strings, or inputs read by the filter: one example, run on what each file holds.
+    if (src.streams.length > 1 || src.streams.some(knownLines) || src.reads || rawInput || readBy) {
+      let contents: string[][];
+      const sample = jqSample(filter, { nullInput, rawInput });
+      if (!sample) return;
+      if (spec.slurp && !rawInput) {
+        // A slurped sample is shared out among the files, when it has a value for each; otherwise each holds values like it.
+        const [r] = jqExample(filter, { ...spec, vars: spec.vars }) ?? [];
+        if (!r) return;
+        let k = 0;
+        contents = slurpLines(r.input).length >= src.streams.length ? shareOut(src, slurpLines(r.input))
+          : src.streams.map((st) => knownLines(st) ?? slurpLines(varyJson(r.input, k++)));
+      } else {
+        // Each file holds a value like the sample (lines, with `-R`); a lone file read by `input` holds two.
+        let k = 0;
+        const each = rawInput || (readBy && !nullInput && src.streams.length === 1) ? 2 : 1;
+        contents = src.streams.map((st) => knownLines(st) ?? Array.from({ length: each }, () => sample(k++)).flatMap((v) => (rawInput ? [v as string] : fileLines(v))));
+      }
+      const inputs: InputBox[] = src.streams.map((st, i) => ({ label: streamLabel(st, this.lang, nullInput ? readBy : undefined), lines: contents[i] }));
+      // (A file named twice is read twice.)
       const it = this.interactive({ ...spec, ...(src.reads ? { reads: src.reads } : {}) }, inputs);
+      // (An input the filter cannot run on here, such as one too few for `input`: no example.)
+      if (it.result.sections.some((sec) => sec.lines.includes(this.s('（この入力では実行できません）', '(cannot run on this input)')))) return;
       this.cx.examples.push({ kind: 'jq',
         title: this.s('例', 'Example'),
         sections: [...inputs.map((b) => ({ ...b, empty: this.s('（空）', '(empty)') })), ...it.result.sections],
@@ -2407,7 +2473,8 @@ export class Analyzer {
       });
       return;
     }
-    runs.forEach((r, i) => {
+    const runs = jqExample(filter, { ...spec, nullInput });
+    runs?.forEach((r, i) => {
       const input = r.slurp ? slurpLines(r.input) : fileLines(r.input);
       const label = src.streams.length ? streamLabel(src.streams[0], this.lang) : '';
       this.cx.examples.push({ kind: 'jq',
@@ -2415,13 +2482,13 @@ export class Analyzer {
         ...(src.streams.length ? {} : { note: this.s('入力は読まない（`.` は `null`）', 'Reads no input (`.` is `null`)') }),
         sections: [
           ...(src.streams.length ? [{ label, lines: input }] : []),
-          ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.map(toJson))
+          ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.flatMap((v) => jqPrint(v, spec.format!)))
             : [r.error
               ? { label: this.s('エラー', 'Error'), lines: [r.error] }
               : { label: spec.join ? this.s('出力（改行なし）', 'Output (no newlines)') : this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
         ],
         // Only the first example can be edited; the second shows the missing-value case.
-        ...(i === 0 && src.streams.length ? { interactive: this.interactive(spec, [{ label, lines: r.slurp ? input : JSON.stringify(r.input, null, 2).split('\n') }]) } : {}),
+        ...(i === 0 && src.streams.length ? { interactive: this.interactive(spec, [{ label, lines: input }]) } : {}),
       });
     });
   }
@@ -2430,10 +2497,13 @@ export class Analyzer {
    * The yq example of several files, or of the text of a here-string (when it is JSON, which is YAML too): what yq
    * prints for each. `sample` is the value of the sample input; the other files hold values like it.
    */
-  private yqStreams(filter: string, style: YamlStyle, src: InputSource, sample: Json, show: (vs: Json[]) => string[], outLabel: string): void {
+  private yqStreams(filter: string, style: YamlStyle, src: InputSource, sample: Json, show: (vs: Json[]) => string[], outLabel: string, json: boolean, inputLines: (v: Json) => string[]): void {
     const vars = style === 'kislyuk' ? this.jqVars() : {};
     let k = 0;
     const docs: Json[][] = [];
+    // mikefarah/yq keeps the style of the YAML it reads: JSON text read as YAML prints in flow style (`[1]`), which
+    // the example does not follow.
+    if (style === 'mikefarah' && !json && src.streams.some(knownLines)) return;
     for (const st of src.streams) {
       const known = knownLines(st);
       try {
@@ -2456,16 +2526,34 @@ export class Analyzer {
       results.push(outs);
     }
     // mikefarah/yq prints the documents of each file apart, with `---` between files, in YAML.
-    const output = style === 'mikefarah' && !outLabel.includes('JSON')
+    const output = style === 'mikefarah' && !json
       ? results.flatMap((vs, i) => [...(i ? ['---'] : []), ...show(vs)])
       : show(results.flat());
     this.cx.examples.push({ kind: 'yq',
       title: this.s('例', 'Example'),
       sections: [
-        ...src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: knownLines(st) ?? yamlLines(docs[i][0], style) })),
+        ...src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: knownLines(st) ?? inputLines(docs[i][0]) })),
         { label: outLabel, lines: output, empty: this.s('（出力なし）', '(no output)') },
       ],
     });
+  }
+
+  /**
+   * How jq prints its results, from its options: two spaces a level, or one line (`-c`, `--indent 0`), a tab (`--tab`),
+   * `--indent n` (the last of them wins), the keys in order (`-S`). Undefined for an indent jq refuses or not known.
+   */
+  private jqFormat(): JqFormat | undefined {
+    const { parse, nodes } = this.cx.argCtx!;
+    const set = givenOptions(parse).flatMap(({ word, role }): [number, number | '\t' | undefined][] => {
+      const names = role.role === 'option' ? role.spec.names : [];
+      return names.includes('-c') ? [[word, 0]] : names.includes('--tab') ? [[word, '\t']] : [];
+    });
+    for (const { word } of values(parse, '--indent')) {
+      const n = Number(literalContent(nodes[word])?.text ?? NaN);
+      set.push([word, Number.isInteger(n) && n >= 0 && n <= 7 ? n : undefined]);
+    }
+    const indent = set.length ? set.sort((a, b) => a[0] - b[0])[set.length - 1][1] : 2;
+    return indent === undefined ? undefined : { indent, ...(this.given('-S') ? { sortKeys: true } : {}) };
   }
 
   /** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
@@ -2551,7 +2639,10 @@ export class Analyzer {
       stages.push(stage);
       const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
       files.push(readsFiles(parse, stage.words));
-      if (i === 0) src = this.inputSource(cmd, parse, args, this.specFor(name.text));
+      const source = this.inputSource(cmd, parse, args, this.specFor(name.text));
+      // A stage that writes its output to a file (`sort -o f`) hands nothing on.
+      if (source.writes) return undefined;
+      if (i === 0) src = source;
     }
     return { stages, files, readsFile, src: src! };
   }

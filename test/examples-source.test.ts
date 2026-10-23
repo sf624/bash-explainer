@@ -1,23 +1,10 @@
 // Where the worked examples say their input comes from (src/examples/source.ts), and whether the real tools, given
 // the files and the standard input the example shows, print what it shows.
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import type { Example } from '../src/analyzer';
 import { parseJsonValues, varyJson } from '../src/examples/jq';
 import { rerun } from '../src/examples/rerun';
+import { exampleOf, has, realOutput } from './support/examples';
 import { explain } from './support/explain';
-import { run } from './support/run';
-
-const has = (tool: string) => spawnSync(tool, ['--version']).status === 0;
-
-/** The example of the command on line 0: the whole pipeline's, or else the first that has an output. */
-function exampleOf(src: string, lang: 'en' | 'ja' = 'en'): Example | undefined {
-  const all = explain(src, 0, lang).examples;
-  return all.find((e) => /whole pipeline|パイプライン全体/.test(e.title)) ?? all.find((e) => e.sections.some((s) => /^(Output|出力|Error|After|書き換え後|Commands)/.test(s.label)));
-}
 
 const labels = (src: string, lang: 'en' | 'ja' = 'en') => exampleOf(src, lang)?.sections.map((s) => s.label);
 
@@ -35,7 +22,7 @@ describe('the input sections say what the command reads, and where from', () => 
     ['jq -n \'{a:1}\'', ['Output']],
     ['jq -n \'{a:1}\' < b.json', ['Output']],
     ["awk 'BEGIN { print 1 }' f", ['Output']],
-    ['uniq in.txt out.txt', ['Input: `in.txt` (sample contents)', 'Output']],
+    ['uniq in.txt out.txt', ['Input: `in.txt` (sample contents)', 'Written to `out.txt`']],
     ['xargs -a list.txt echo', ['Input: `list.txt` (sample contents)', 'Commands that run']],
     ['xargs echo < list.txt', ['Input: stdin (`list.txt`, sample contents)', 'Commands that run']],
     ['sort a b | uniq -c', ['Input: `a` (sample contents)', 'Input: `b` (sample contents)', 'After `sort a b`', 'Output (after `uniq -c`)']],
@@ -86,27 +73,6 @@ describe('the input sections say what the command reads, and where from', () => 
   });
 });
 
-/** Runs a line in a directory holding the files its example shows, with the standard input it shows; what it prints. */
-function realOutput(line: string, ex: Example): { got: string; want: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-source-'));
-  try {
-    let stdin = '';
-    // A file given as stdin that the command does not read, and so has no section.
-    for (const m of line.matchAll(/< (\w[\w.]*)/g)) fs.writeFileSync(path.join(dir, m[1]), 'not read\n');
-    const out = ex.sections[ex.sections.length - 1];
-    for (const sec of ex.sections.slice(0, -1)) {
-      const text = sec.lines.map((l) => l + '\n').join('');
-      const file = /^Input: (?:stdin \()?`([^`]+)`/.exec(sec.label)?.[1];
-      if (file) fs.writeFileSync(path.join(dir, file), text);
-      else if (sec.label === 'Input: stdin (sample contents)') stdin = text;
-    }
-    const r = run('bash', ['-c', line], { cwd: dir, input: stdin });
-    return { got: r.stdout.toString().replace(/\n$/, ''), want: out.lines.join('\n') };
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 describe('the examples of several files, or of a here-string, agree with the tools', () => {
   const lines: [string, string][] = [
     ['jq', 'jq -c . a.json < b.json'], ['jq', 'jq -c . - a.json < b.json'], ['jq', 'jq -c . a.json b.json'], ['jq', 'jq -c .name a.json b.json'],
@@ -139,11 +105,13 @@ describe('the examples of several files, or of a here-string, agree with the too
 describe('the sources of the edge cases', () => {
   it('reads the text a here-string gives to yq, when it is JSON', () => {
     const ex = (line: string) => explain(line).examples.find((e) => e.kind === 'yq');
-    assert.deepStrictEqual(ex("yq '.a' <<< '{\"a\":[1]}'")?.sections.map((s) => s.lines), [['{"a":[1]}'], ['- 1']]);
-    assert.deepStrictEqual(ex("yq -o json '.a' a.yml b.yml")?.sections.pop()?.lines.length, 2);
+    assert.deepStrictEqual(ex("yq -o json '.a' <<< '{\"a\":[1]}'")?.sections.map((s) => s.lines), [['{"a":[1]}'], ['[', '  1', ']']]);
+    assert.deepStrictEqual(ex("yq -y '.a' <<< '{\"a\":[1]}'")?.sections.map((s) => s.lines), [['{"a":[1]}'], ['- 1']]);
+    assert.deepStrictEqual(ex("yq -o json '.a' a.yml b.yml")?.sections.length, 3);
     assert.ok(ex("yq -y '.a' a.yml b.yml"));
-    // YAML that is not JSON, a filter that fails on the value given, or one too long to run: no example.
-    for (const line of ["yq '.a' <<< 'a: 1'", "yq '.a + 1' <<< '{\"a\":\"x\"}'", "yq 'reduce range(.n) as $x (0; . + 1)' <<< '{\"n\":1000000}'"]) assert.strictEqual(ex(line), undefined, line);
+    // YAML that is not JSON, JSON that mikefarah/yq prints in flow style, a filter that fails on the value given, or one
+    // too long to run: no example.
+    for (const line of ["yq '.a' <<< 'a: 1'", "yq -y '.a' <<< 'a: 1'", "yq '.a' <<< '{\"a\":[1]}'", "yq '.a + 1' <<< '{\"a\":\"x\"}'", "yq 'reduce range(.n) as $x (0; . + 1)' <<< '{\"n\":1000000}'"]) assert.strictEqual(ex(line), undefined, line);
   });
   it('knows the standard input of a here-document being typed, and of redirections it cannot name', () => {
     assert.deepStrictEqual(labels('jq . <<'), ['Input: stdin (here-document, sample contents)', 'Output']);
