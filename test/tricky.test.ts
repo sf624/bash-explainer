@@ -374,6 +374,16 @@ describe('tricky lines (round 2)', () => {
     assert.strictEqual(bash('x=1 y=$x; z=2 echo $z$y'), '1\n');
   });
 
+  it('says too many words for a brace expansion it cannot list, in an argument', () => {
+    const many = '{a..z}{a..z}{a..z}{a..z}';
+    assert.throws(() => braceExpand(many));
+    const ex = new Analyzer('en').explainLine(parser.parse(`echo ${many}`), 0);
+    assert.ok(!ex.examples.some((e) => /brace expansion/.test(e.title)));
+    assert.match(find(`echo ${many}`, many).explanation, /expands to many words/);
+    // bash itself expands it, so the case is not an error of the script.
+    assert.strictEqual(bash(`set -- ${many}; echo $#`), '456976\n');
+  });
+
   it('explains brace words', () => {
     assert.match(find('echo {a,b\\,c}', '{a,b\\,c}').explanation, /expands to 2 words: `a` `b,c` \(an escaped comma/);
     assert.match(find('echo {,}', '{,}').explanation, /empty words, which are dropped/);

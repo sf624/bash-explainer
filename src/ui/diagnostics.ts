@@ -10,6 +10,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
   private collection = vscode.languages.createDiagnosticCollection('bashExplainer');
   /** Quick fixes of each document, by diagnostic code and range. */
   private fixes = new Map<string, { code: string; range: vscode.Range; fix: Fix }[]>();
+  private registration: vscode.Disposable | undefined;
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private disposables: vscode.Disposable[] = [];
 
@@ -21,9 +22,15 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       vscode.workspace.onDidOpenTextDocument((d) => this.update(d)),
       vscode.workspace.onDidChangeTextDocument((e) => this.schedule(e.document)),
       vscode.workspace.onDidCloseTextDocument((d) => this.clear(d)),
-      vscode.languages.registerCodeActionsProvider({ language: 'shellscript' }, this, DiagnosticsController.metadata),
     );
+    this.register();
     this.refresh();
+  }
+
+  /** (Re-)register the quick fixes for the configured languages. */
+  register(): void {
+    this.registration?.dispose();
+    this.registration = vscode.languages.registerCodeActionsProvider(this.service.selector(), this, DiagnosticsController.metadata);
   }
 
   /** Recompute every open document (after a settings change). */
@@ -78,6 +85,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
 
   dispose(): void {
     this.timers.forEach((t) => clearTimeout(t));
+    this.registration?.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
 }

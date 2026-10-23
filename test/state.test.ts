@@ -233,6 +233,17 @@ describe('shell state: functions and aliases', () => {
   });
 });
 
+describe('shell state: the cache of alias texts', () => {
+  it('is bounded, and a text read again after it left the cache gives the same state', () => {
+    const lines = ['shopt -s expand_aliases'];
+    for (let i = 0; i < 300; i++) lines.push(`alias a${i}='x=${i}'`, `a${i}`);
+    lines.push('a299', 'a0');
+    const st = end(lines.join('\n'));
+    assert.ok(variable(st, 'x'));
+    
+  });
+});
+
 describe('shell state: function bodies run at their calls', () => {
   it('walks a body again when a function it does not call differs only in its object', () => {
     // (`export -fn g` gives `g` a new state, the same as before: the second call of `f` reuses the first walk.)

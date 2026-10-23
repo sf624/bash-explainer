@@ -395,7 +395,7 @@ SyntaxTree ──► ScriptModel (src/semantics/) ──► Analyzer: tokens, no
 ### 4.2 Types
 
 ```ts
-// src/semantics/model.ts
+// Proposed as src/semantics/model.ts; never built (the model is in the files of src/semantics/, see 4.5 and later)
 export interface ScriptModel {
   dialect: Dialect;
   commands: ReadonlyMap<SyntaxNode, SimpleCommandMeaning>;
@@ -806,7 +806,7 @@ export function conditionOf(n): SyntaxNode[] | undefined; export function lastSt
 // src/statusfacts.ts: statusFacts(root, state, status, shell) → the notes and pitfalls of every line, in ja and en
 ```
 
-- The design's `ErrexitContext.ignoredBecause` became `ignored`, with the node that causes it and `sure`. `'substitution'` is not a reason but an `errexitWhy`: in bash, a `$( )` starts with errexit off unless inherit_errexit is on (POSIX mode turns it on; other shells keep errexit), and so does a function called only there (`x=$(f)`; "may" when it is also called elsewhere); a `set` inside before the node counts from there. The status model computes this, not the walk of the state: a changed state in `$( )` made the walk run the functions called there again (a 3,000-line script took 7% longer). The walk records the options each `set` command writes (`StateModel.setWrites`), which `turnsErrexitOn` reads with errexit before the command. `#!/bin/bash -e` is not read (the state starts with errexit off: `bash script` ignores the shebang's options). `'modulo-256'` became `given`, and a `wait` and a job have their own rules.
+- The design's `ErrexitContext.ignoredBecause` became `ignored`, with the node that causes it and `sure`. `'substitution'` is not a reason but an `errexitWhy`: in bash, a `$( )` starts with errexit off unless inherit_errexit is on (POSIX mode turns it on; other shells keep errexit), and so does a function called only there (`x=$(f)`; "may" when it is also called elsewhere); a `set` inside before the node counts from there. The walk of the state turns errexit off in a `$( )` too (`substitutionState`), but it does not follow a `set` inside it or the functions called only there (a changed state per call made the walk run those functions again: a 3,000-line script took 7% longer); the status model does, in `errexitAt`, which also supplies `errexitWhy`. The walk records the options each `set` command writes (`StateModel.setWrites`), which `turnsErrexitOn` reads with errexit before the command. `#!/bin/bash -e` is not read (the state starts with errexit off: `bash script` ignores the shebang's options). `'modulo-256'` became `given`, and a `wait` and a job have their own rules.
 - Ignoring follows the manual's 4.3.1 and the probes: the condition of `if`, `elif`, `while`, `until`; every command of an and-or list but the last; `!`; and it reaches into `( )` and `$( )` there (`if (false; echo in)` prints `in`, also with inherit_errexit). A function body is ignored when every call (B2's `calls`) is: `sure: false` when some are, and the body then says "may". A call of the function from itself does not count. A `set -e` that is itself in the ignored place (`set -e && cmd`, `if set -e; then`) takes effect at once; only one inside a group or a function there waits for it to end.
 - `checked`: simple commands, assignments, `[ ]`, `[[ ]]`, `(( ))`, pipelines and `( )`. Lists and the other compound commands are not, so `{ false && true; }` does not stop the script but `( false && true )` and `f() { false && true; }; f` do. A pipeline's stages and a job are not either, nor an assignment that is part of a command. `stops` reads B2's `processOf`, but for a `( )` the shell that checks it is the one around it.
 - `expansionError` uses B4's `wordFields`: without the environment (the analyzer gives none) a variable may come from it, so it is surely an error only with the probes' environment. The analyzer does not render it yet.
@@ -1116,7 +1116,8 @@ Guarded by the same tests, plus a table per family in the tests that compare wit
 ```
 SyntaxTree (src/syntax/, unbash) ── checked against bash's parser (C, test/bash-ast.test.ts)
   ├─ argv: CommandSpec → interpret() → ArgvParse (A, src/argv/; command slots)
-  └─ semantics (B, src/semantics/): shellState → state.ts (B1), env.ts (B2) → names.ts (B3), words.ts (B4) → status.ts (B5)
+  └─ semantics (B, src/semantics/): shellState → state.ts (B1; with trust.ts, nested.ts, conditions.ts and vars.ts), env.ts (B2) → names.ts (B3), words.ts (B4) → status.ts (B5)
+       (B7: strings run as scripts, 4.13: nested.ts)
        └─ each compared with bash 5.2 by its probes (test/fixtures/probes/*.json)
 Analyzer (src/analyzer.ts): lays out tokens, labels and examples; renders the specs and the models;
   facts from src/messages.ts (statusfacts.ts, wordfacts.ts), sections from src/refs.ts and src/manual.ts (B6)

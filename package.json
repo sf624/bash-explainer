@@ -664,7 +664,6 @@
     "coverage": "TZ=UTC c8 mocha && node scripts/coverage-report.mjs",
     "coverage:check": "node scripts/coverage-check.mjs",
     "package": "node esbuild.mjs --production && vsce package",
-    "build:grammar": "node scripts/build-grammar.mjs",
     "build:web": "tsx scripts/build-web.ts",
     "build:cli": "tsx scripts/build-cli.ts",
     "notices": "tsx scripts/notices.ts",

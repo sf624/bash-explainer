@@ -662,7 +662,9 @@ const WALKS_PER_FUNCTION = 4;
 const CALL_DEPTH = 64;
 
 let aliasParser: BashParser | undefined;
+/** Trees of alias texts, least recently used first; bounded, as a long-lived process (LSP, web) sees many texts. */
 const aliasTrees = new Map<string, SyntaxTree>();
+const ALIAS_TREES = 256;
 
 /** The nested script whose tree each tree is (docs/design/semantics.md, 4.13): `shellState` gives its model. */
 const owners = new WeakMap<SyntaxTree, NestedScript>();
@@ -784,11 +786,6 @@ function childModel(script: NestedScript): StateModel {
   return buildModel(script.tree, script.shell, false, script.depth, script.env, (w) => w.childStart(outer, script.env, pass, first), modelTrusts.get(script.outer));
 }
 
-/**
- * What of a variable of the script reaches another shell (`Walker.childStart`): undefined when it does not (not
- * exported, unset, an array, or IFS, which a shell sets itself when it starts). Kept per bucket of the script's
- * variables, which the states along the script share, so that many strings cost little (`NameMap.mapped`).
- */
 /** What the slots on the way give another shell besides the script's exported names (`childModel`). */
 interface ChildPass {
   readonly given: readonly string[];
@@ -3024,11 +3021,13 @@ class Walker {
 
   private parseText(text: string): SyntaxTree {
     let tree = aliasTrees.get(text);
-    if (!tree) {
+    if (tree) aliasTrees.delete(text);
+    else {
       aliasParser ??= createUnbashParser();
       tree = aliasParser.parse(text);
-      aliasTrees.set(text, tree);
+      if (aliasTrees.size >= ALIAS_TREES) aliasTrees.delete(aliasTrees.keys().next().value!);
     }
+    aliasTrees.set(text, tree);
     return tree;
   }
 

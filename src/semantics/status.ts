@@ -257,7 +257,8 @@ class Statuses implements StatusModel {
   /**
    * errexit at `n` (`st`, its run state), and why. In bash, a `$( )` starts with errexit off unless inherit_errexit is
    * on (POSIX mode turns it on); a `set` inside it before `n` that turns errexit on or off counts from there. The
-   * walk of the state does not follow this (it would walk the functions called in `$( )` again), so it is done here.
+   * walk of the state turns errexit off in `$( )` (`substitutionState`) but does not follow a `set` inside it or the
+   * functions called only there (it would walk them again), so that, and the reason (`errexitWhy`), is done here.
    */
   private errexitAt(n: SyntaxNode, st: ShellState): { errexit: Tri; why: ErrexitContext['errexitWhy'] } {
     const own = optionOn(st, 'set', 'errexit');
@@ -356,12 +357,11 @@ class Statuses implements StatusModel {
 
 /** The nearest `( )`, `$( )` or function body around `n` (where `$!` was set), or the program. */
 function enclosingBlock(n: SyntaxNode): SyntaxNode {
-  for (let x = n.parent; x; x = x.parent) {
+  // (`n` is never the root: it is a statement or a word.)
+  for (let x = n.parent!; ; x = x.parent) {
     if (x.type === 'subshell' || x.type === 'command_substitution' || (x.parent?.type === 'function_definition' && x === field(x.parent, 'body'))) return x;
     if (!x.parent) return x;
   }
-  /* c8 ignore next */
-  return n;
 }
 
 /** The statements whose status is that of `n` when it ends (the last statements of a body: through lists, groups and `if`). */

@@ -82,6 +82,22 @@ describe('Bash Explainer in VS Code', function () {
     assert.strictEqual(doc.lineAt(1).text, 'if [ -f "$1" ]; then echo yes; fi');
   });
 
+  it('offers the quick fix in a language added to bashExplainer.languages', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'plaintext', content: '#!/bin/sh\nif [[ -f "$1" ]]; then echo yes; fi\n' });
+    await open(doc);
+    const original = config().inspect<string[]>('languages')?.globalValue;
+    await config().update('languages', ['shellscript', 'plaintext'], vscode.ConfigurationTarget.Global);
+    try {
+      const diagnostics = await until('the [[ ]] warning', () => vscode.languages.getDiagnostics(doc.uri), (d) => d.some((x) => x.code === 'dbracket'));
+      const range = diagnostics.find((x) => x.code === 'dbracket')!.range;
+      const actions = await until('the quick fix', () => vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, range), (a) => a.some((x) => !!x.edit && x.title.includes('[ ]')));
+      assert.ok(actions.length > 0);
+    } finally {
+      await config().update('languages', original, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
   it('explains the shell code in a Dockerfile', async () => {
     const { document: doc } = await open(fixture('hosts', 'Dockerfile'));
     const at = lineWith(doc, 'apk add');
