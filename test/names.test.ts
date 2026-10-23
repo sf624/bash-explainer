@@ -3,6 +3,7 @@
 // resolutions that `type -t` cannot show (`command`, `builtin`, slots, other shells), and the texts. Each
 // behaviour here was checked with bash 5.2 (and dash for `sh -c`).
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand } from '../src/analyzer';
@@ -412,5 +413,40 @@ describe('the analyzer says what a name runs', () => {
     assert.match(t('export -n v'), /remove the export property/);
     assert.match(t('readonly -f f'), /make functions read-only/);
     assert.match(t('declare +g v'), /\bOption\b/);
+  });
+
+  it('unset removes what bash removes: a variable if there is one, else a function (checked with bash)', () => {
+    const bash = (code: string): string => execFileSync('bash', ['-c', code]).toString();
+    const text = (src: string, line: number): string => all(explain(src, line).items[0]).join('\n');
+    // [script before the unset, unset arguments, what bash removes]
+    const rows: [string, string, 'function' | 'variable'][] = [
+      ['f() { :; }', 'f', 'function'], ['f() { :; }; f=1', 'f', 'variable'], ['f() { :; }; f=1', '-f f', 'function'],
+      ['f() { :; }; f=1', '-v f', 'variable'], ['f() { :; }', '-v f', 'variable'], ['f=1', 'f', 'variable'], [':', 'f', 'variable'],
+    ];
+    for (const [before, args, removes] of rows) {
+      const code = `${before}\nunset ${args}\n`;
+      // What is left after the unset: the function f and the variable f.
+      const left = bash(`${code}declare -F f >/dev/null && echo function; [ "\${f+set}" = set ] && echo variable; true`);
+      const explained = text(code, 1);
+      if (removes === 'function') {
+        assert.ok(!left.includes('function'), code);
+        assert.match(explained, /Remove the function `f`/, code);
+      } else {
+        assert.ok(!left.includes('variable'), code);
+        assert.match(explained, /Unset the variable `f`/, code);
+      }
+    }
+  });
+
+  it('a pipeline stage that runs a function or an alias has no example of the program of that name', () => {
+    const has = (src: string, line: number): boolean => explain(src, line).examples.some((e) => /pipeline/.test(e.title));
+    const bash = (code: string): string => execFileSync('bash', ['-c', code]).toString();
+    // The program sorts; the function reverses.
+    assert.strictEqual(bash("printf 'a\\nb\\n' | sort"), 'a\nb\n');
+    assert.strictEqual(bash("sort() { tac; }\nprintf 'a\\nb\\n' | sort"), 'b\na\n');
+    assert.ok(has("printf 'a\\nb\\n' | sort", 0));
+    assert.ok(!has("sort() { tac; }\nprintf 'a\\nb\\n' | sort", 1));
+    assert.ok(!has("shopt -s expand_aliases\nalias sort='sort -r'\nprintf 'a\\nb\\n' | sort", 2));
+    assert.ok(has("sort() { tac; }\nunset -f sort\nprintf 'a\\nb\\n' | sort", 2));
   });
 });

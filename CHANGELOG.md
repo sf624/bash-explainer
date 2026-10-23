@@ -24,6 +24,7 @@
 - Quick fixes (the rewrites offered for dialect warnings) are offered in every language of the `bashExplainer.languages` setting, and follow a change of that setting, as the hover does. Before, they were offered in `shellscript` documents only.
 - `"$@"` inside single quotes is text, so the words after `bash -c 'f "$@"'` are no longer said to depend on how many words it gives.
 - Explanations match bash in more places: `x=1 ''` (a command name that is not found, so `x` is not set), the variables that `exec {fd}>file`, `wait -p var` and `coproc name` set, and an error in `$(( ))` (a division by 0) or an assignment to a readonly variable, which discards the rest of the line, also when it is in a function the line calls (before, only the rest of the command, or nothing).
+- `unset f` says it removes the function when there is no variable `f`, as bash does. A pipeline whose stage is a function or an alias of the script (`sort() { tac; }; … | sort`) no longer shows the output of the program of that name as an example. Before, the first said "Unset the variable" and the second showed the output of the program, which the function does not give.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
 

@@ -188,21 +188,21 @@ Sizes are rough, in changed lines with tests: S under 300, M 300–1,000, L over
 
 1. **The PR lists the finding IDs it addresses**, in its description, with a link to this page.
 2. **A fresh reviewer** (a subagent that shares no context with the author) re-reads those findings, from the table below and from the step above, and confirms in the diff that each is resolved. For each ID the review names the test that shows it: a probe row, an example-table row compared with the real tool, a unit test, or a dump that is unchanged (a move) or changed only as the step says.
-3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #N`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
+3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #210`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
 4. **A step that finds a finding wrong, or only partly right,** says so in the table (`not a problem`, or a corrected note) instead of leaving it open.
 5. **A behaviour change not listed in the step** is either a fix of a contradiction (then it gets a test against the real tool, a CHANGELOG line and a line in the table's notes) or a regression to undo.
 
 ## Traceability
 
-Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #N`, `done`, `won't do` or `not a problem`.
+Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #210`, `done`, `won't do` or `not a problem`.
 
 | ID | Finding (short) | Verdict | Step | Status | Verified by |
 |---|---|---|---|---|---|
 | A1 | Example builders re-read argv with regexes; `grep -e -v foo`, `sed -ie … -e …` | confirmed (dump and GNU sed) | 1.1 | planned | |
 | A2 | wordfacts decides splitting from node types; `IFS=; set -f; cp $a b`; `X=1 echo "\$X"` | confirmed (dump); list at wordfacts.ts:47 | 2.3 | planned | |
 | A3 | pipe-subshell pitfall scans text; misses `((count++))`; fires on `echo '$n'` | confirmed (dump); `printf -v` missed only in a `{ }` stage | 2.3 | planned | |
-| A4 | Pipeline example ignores a function named like the command | confirmed (dump: `a b`, bash: `b a`) | 1.2 | planned | |
-| A5 | `unset f` says "variable" for a function; texts copied from `render()` | confirmed (bash `type f`: not found); unset() at 1318 | 1.2 | planned | |
+| A4 | Pipeline example ignores a function named like the command | confirmed (dump: `a b`, bash: `b a`) | 1.2 | PR #210 | test/names.test.ts "a pipeline stage that runs a function or an alias…" (bash: `b a`); sample.sh dump unchanged |
+| A5 | `unset f` says "variable" for a function; texts copied from `render()` | confirmed (bash `type f`: not found); unset() at 1318 | 1.2 | PR #210 | test/names.test.ts "unset removes what bash removes…" (7 rows against bash); the end-of-options text is one helper. Left: the flag texts of `declaration()`/`unset()` are not yet shared with `render()` | 
 | A6 | `notes.pitfalls` gated in 9 places; 2 ⚠ bypass it | confirmed (`[[ =~ ]]` and distro alias); missing-`then` is a syntax error: not a problem | 1.3 | planned | |
 | A7 | `--posix` by regex; lookupCommand/nestedScripts in analyzer; name checks | confirmed (nestedScripts at 4615, lookupCommand at 4639) | 1.1 (name checks), 1.4 (lookupCommand), 2.5 (`--posix`), 3.1 (nestedScripts, commandExampleFor) | planned | |
 | A8 | Three try/catch around braceExpand; c8 comment wrong | confirmed (2655, 2678, 2709–2720; catch reachable) | 1.5 | PR #208 | test/tricky.test.ts "says too many words for a brace expansion it cannot list" (one helper; its c8 ignore is on one guard) |
