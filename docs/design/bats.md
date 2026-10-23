@@ -10,7 +10,7 @@ Everything else is bash, so bats needs no new grammar: once `@test` is rewritten
 
 ## Design: a host kind
 
-bats is a new host kind (`src/hosts.ts`), like Dockerfile or Makefile. The extractor copies every line as it is, and rewrites `@test "x" {` into the function bats makes of it, with a position map: the function's name stands for `@test "x"`, so tokens map back to the original columns. The region carries the specs of the bats functions (`src/dict/bats.ts`), which the analyzer reads before the dictionary, and the lines of the tests.
+bats is a new host kind (`src/hosts/bats.ts`), like Dockerfile or Makefile. The extractor copies every line as it is, and rewrites `@test "x" {` into the function bats makes of it, with a position map: the function's name stands for `@test "x"`, so tokens map back to the original columns. The region carries the specs of the bats functions (`src/dict/bats.ts`), which the analyzer reads before the dictionary, and the lines of the tests.
 
 Why not the alternatives:
 
