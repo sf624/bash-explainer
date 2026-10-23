@@ -2,6 +2,7 @@
 // Readers of a command's words (the examples, the dialect check) ask these instead of reading the words again,
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
+import type { NameSpace, OperandSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
 type UnknownOptionRole = Extract<ArgRole, { role: 'unknown-option' }>;
@@ -66,4 +67,26 @@ export function operands(parse: ArgvParse, name?: string): GivenOperand[] {
     if (role.role === 'operand' && (name === undefined || role.spec?.name === name)) out.push({ word, role });
   }
   return out;
+}
+
+/**
+ * What the names of an operand of `type: 'variable'` with `acts` stand for in the parse, by the options its `names`
+ * lists (src/argv/spec.ts `NameOptions`): a variable, a function, the name reference itself; `either`, the variable if
+ * there is one, else the function (`unset NAME`); `none`, the options conflict and the builtin acts on no name
+ * (`unset -fv`).
+ */
+export function namespaceOf(parse: ArgvParse, item: OperandSpec): NameSpace | 'either' | 'none' {
+  // (Every operand that `acts` lists its names.)
+  const names = item.names!;
+  if (names.exclusive?.every((f) => has(parse, f))) return 'none';
+  for (const [flag, space] of names.options) if (has(parse, flag)) return space;
+  return names.orFunction ? 'either' : 'variable';
+}
+
+/** An operand that names what a builtin declares or unsets (`OperandSpec.acts`), with its word and what its names stand for. */
+export interface ActedName { word: number; acts: VariableAct; space: NameSpace | 'either' | 'none' }
+
+/** The operands of the parse that name what the builtin declares or unsets (`declare x`, `unset -f f`), in order. */
+export function actedNames(parse: ArgvParse): ActedName[] {
+  return parse.roles.flatMap(({ word, role }) => (role.role === 'operand' && role.spec?.acts ? [{ word, acts: role.spec.acts, space: namespaceOf(parse, role.spec) }] : []));
 }

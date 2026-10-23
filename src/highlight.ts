@@ -53,6 +53,9 @@ export const BUILTINS: ReadonlySet<string> = new Set([
   'source', 'suspend', 'test', 'times', 'trap', 'true', 'type', 'typeset', 'ulimit', 'umask', 'unalias', 'unset', 'wait',
 ]);
 
+/** The builtins whose operands name variables (or functions): `declare x`, `unset x`. */
+const NAMES_VARIABLES: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly', 'unset']);
+
 const KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'in', 'do', 'done', 'while', 'until', 'case', 'esac', 'select', 'function',
   'time', 'coproc', '!', '{', '}', '[[', ']]', '((', '))']);
 const SUBSTITUTIONS = new Set(['command_substitution', 'process_substitution', 'arithmetic_expansion']);
@@ -97,7 +100,6 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     let kind: HighlightKind | null;
     if (SUBSTITUTIONS.has(p)) kind = 'substitution';
     else if (REDIRECTS.has(p)) kind = 'redirect';
-    else if (p === 'declaration_command') kind = 'builtin';
     else if (p === 'string' || p === 'translated_string' || p === 'expansion' || p === 'simple_expansion' || p === 'subscript' || p === 'variable_assignment' || p === 'brace_expression') kind = null;
     else if (arith || EXPRESSIONS.has(p)) kind = p === 'arithmetic_command' && KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     else kind = KEYWORDS.has(t.type) ? 'keyword' : 'operator';
@@ -194,9 +196,11 @@ function words(w: SyntaxNode, set: Painter): void {
     set(w.startIndex, eq > 0 ? w.startIndex + eq : w.endIndex, 'option');
     return;
   }
-  // The names of `unset x y` are coloured as the names a declaration assigns, by the command's spelling.
-  if (p.type === 'command' && w.field === 'argument' && field(p, 'name')!.text === 'unset' && /^[A-Za-z_]\w*$/.test(w.text)) {
-    set(w.startIndex, w.endIndex, 'assignment');
+  // The names of `declare x` and `unset x y` are coloured as the names an assignment sets, by the command's
+  // spelling (`a` of `local a[1]`).
+  const named = p.type === 'command' && w.field === 'argument' && NAMES_VARIABLES.has(field(p, 'name')!.text) ? /^[A-Za-z_]\w*(?=$|\[.*\]$)/s.exec(w.text) : null;
+  if (named) {
+    set(w.startIndex, w.startIndex + named[0].length, 'assignment');
     return;
   }
   let at: SyntaxNode = w;
@@ -220,13 +224,13 @@ function isPattern(w: SyntaxNode): boolean {
 function isOption(w: SyntaxNode): boolean {
   if (!/^(--?[^-=\s]|--$)/.test(w.text) || w.text === '-') return false;
   const p = w.parent!;
-  if (p.type === 'declaration_command') return true;
   if (p.type !== 'command' || w.field !== 'argument') return false;
-  // `unset x -v y`: unset reads options up to its first name, as its spec says (by the command's spelling).
-  if (field(p, 'name')!.text === 'unset') {
+  // `unset x -v y`, `declare x -i`: these read options up to their first name, as their specs say (by the command's spelling).
+  const name = field(p, 'name')!.text;
+  if (NAMES_VARIABLES.has(name)) {
     const args = fields(p, 'argument');
     const at = args.indexOf(w);
-    return interpret(builtins.unset, args.map(argWord), { name: 'unset' }).roles.some((r) => r.word === at && r.role.role !== 'operand');
+    return interpret(builtins[name], args.map(argWord), { name }).roles.some((r) => r.word === at && r.role.role !== 'operand');
   }
   return !p.children.slice(0, p.children.indexOf(w)).some((a) => a.field === 'argument' && a.text === '--');
 }

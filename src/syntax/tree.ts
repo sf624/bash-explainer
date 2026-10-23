@@ -18,9 +18,9 @@ export type NodeType =
   | 'comment'
   | 'command'
   | 'command_name'
-  | 'declaration_command' // declare, typeset, local, export, readonly
+  | 'declaration_command' // no longer made (a `command` named `declare`…, with assignment arguments); the name goes in step 6 of docs/design/syntax-tree.md
   | 'unset_command' // no longer made (a `command` named `unset`); the name goes in step 6 of docs/design/syntax-tree.md
-  | 'variable_assignment'
+  | 'variable_assignment' // before a command's name, alone, or (field `argument`) an argument of a declaration builtin: `declare a=1`
   | 'variable_assignments' // more than one assignment with no command
   | 'negated_command' // ! pipeline
   | 'redirected_statement' // a compound statement (or a command, when the parser says so) with redirections
@@ -154,6 +154,14 @@ export function field(n: SyntaxNode, name: FieldName): SyntaxNode | undefined {
 /** All children under `name`, in order. */
 export function fields(n: SyntaxNode, name: FieldName): SyntaxNode[] {
   return n.children.filter((c) => c.field === name);
+}
+
+/**
+ * The assignments of a simple command made before its name runs (`x=1 cmd`, or all of them with no name), not the
+ * arguments of a declaration builtin that are assignments (`declare a=1`, field `argument`).
+ */
+export function prefixAssignments(n: SyntaxNode): SyntaxNode[] {
+  return n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.field !== 'argument');
 }
 
 /** The first token child with this text (`then`, `&&`…), or undefined. */

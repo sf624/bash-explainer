@@ -11,7 +11,7 @@
 import { canonicalName } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
-import { commandName } from './effects';
+import { commandName, DECLARATIONS } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
@@ -84,7 +84,7 @@ export interface ErrexitContext {
 }
 
 /** Statements whose own status `set -e` checks. */
-const CHECKED = new Set(['command', 'declaration_command', 'variable_assignment', 'variable_assignments',
+const CHECKED = new Set(['command', 'variable_assignment', 'variable_assignments',
   'extended_test', 'arithmetic_command', 'pipeline', 'negated_command', 'subshell']);
 
 /** A Tri for an option (`default`: off, but in POSIX mode for the options it turns on). */
@@ -188,18 +188,17 @@ class Statuses implements StatusModel {
           return /^-?\d+$/.test(v) ? { kind: 'given', by: name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
         }
         if (name === 'let') return { kind: 'arith' };
+        // `local x=$(cmd)`: the declaration's own status, whatever the substitution's.
+        if (DECLARATIONS.has(res.name)) {
+          const subs = args.filter((c) => c.type === 'variable_assignment').flatMap(outerSubstitutions);
+          if (subs.length) return { kind: 'masked', by: res.name, substitutions: subs };
+        }
         if (name === 'wait') {
           const all = !args.length;
           const job = args.length === 1 && args[0].text === '$!' ? this.lastJob(n) : undefined;
           return { kind: 'wait', all, ...(job ? { job } : {}) };
         }
         return { kind: 'command', functions: [] };
-      }
-      case 'declaration_command': {
-        const fn = resolveName(this.state, n.children[0].text, n.children[0], { shell: this.shell, command: true });
-        if (fn.kind === 'function') return { kind: 'command', functions: [fn.fn.def] };
-        const subs = n.namedChildren.filter((c) => c.type === 'variable_assignment').flatMap(outerSubstitutions);
-        return subs.length ? { kind: 'masked', by: n.children[0].text, substitutions: subs } : { kind: 'command', functions: [] };
       }
       case 'variable_assignment': case 'variable_assignments': {
         const subs = outerSubstitutions(n);
@@ -251,7 +250,7 @@ class Statuses implements StatusModel {
     // (An assignment in a declaration, before a command or among others is part of that statement.)
     const checked: ErrexitContext['checked'] = n.parent?.type === 'pipeline' && STATEMENTS.has(n.type) ? { why: 'pipeline-stage' }
       : backgrounded(n) || n.type === 'coproc_statement' ? { why: 'job' }
-      : n.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(n.parent!.type) ? { why: 'part-of-command' }
+      : n.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(n.parent!.type) ? { why: 'part-of-command' }
       : CHECKED.has(n.type) ? true : { why: 'compound' };
     const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops };
     this.errexitMemo.set(n, ctx);

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BUILTINS, documentHighlight, highlight, HighlightKind, hostedHighlight, lineSpans } from '../src/highlight';
@@ -66,6 +66,14 @@ describe('highlight', () => {
     // bash reads `-v` after a name as a name: `unset x -v y` unsets `x`, `-v` (no such variable) and `y`.
     assert.strictEqual(execFileSync('bash', ['-c', 'x=1 y=2; unset x -v y; echo "$?${x-u}${y-u}"']).toString(), '0uu\n');
     assert.deepEqual(spans('unset -v x -v y'), ['builtin:unset', 'option:-v', 'assignment:x', 'assignment:y']);
+  });
+
+  it('colours the options and names of a declaration as its spec reads them, by the spelling of the command (checked with bash)', () => {
+    // bash reads `-i` after a name as a name: not a valid identifier.
+    assert.match(spawnSync('bash', ['-c', 'declare x -i'], { encoding: 'utf8' }).stderr, /`-i': not a valid identifier/);
+    assert.deepEqual(spans('declare x -i; x=1 local -r a[1] b=2'), [
+      'builtin:declare', 'assignment:x', 'operator:;', 'assignment:x', 'builtin:local', 'option:-r', 'assignment:a', 'assignment:b',
+    ]);
   });
 
   it('colours tests', () => {

@@ -159,13 +159,3 @@ export function readDeclarationWords(builtin: string, words: SyntaxNode[]): Decl
   }
   return { roles, on, off };
 }
-
-const declarations = new WeakMap<SyntaxNode, Declaration>();
-/** A declaration command (`declare -ix -- a=1 b`) read with its builtin's spec. */
-export function readDeclaration(d: SyntaxNode): Declaration {
-  const seen = declarations.get(d);
-  if (seen) return seen;
-  const out = readDeclarationWords(d.children[0].type, d.namedChildren.filter((c) => !c.type.endsWith('redirect')));
-  declarations.set(d, out);
-  return out;
-}

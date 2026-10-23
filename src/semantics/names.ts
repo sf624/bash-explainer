@@ -14,10 +14,10 @@ import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
-import { interpret } from '../argv/interpret';
-import { has as hasOption } from '../argv/query';
-import { argWord } from '../argv/words';
-import { field, fields, type SyntaxNode } from '../syntax/tree';
+import type { ArgvParse } from '../argv/interpret';
+import { actedNames } from '../argv/query';
+import { field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
+import { builtinParse } from './effects';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
@@ -149,7 +149,7 @@ function sourcedBefore(model: StateModel, at: SyntaxNode): { sourced?: SyntaxNod
 }
 
 /** `PATH=… cmd`: an assignment to PATH before the name of the command `c`. */
-const pathPrefix = (c: SyntaxNode): boolean => c.type === 'command' && c.namedChildren.some((a) => a.type === 'variable_assignment' && field(a, 'name')!.text === 'PATH');
+const pathPrefix = (c: SyntaxNode): boolean => c.type === 'command' && prefixAssignments(c).some((a) => field(a, 'name')!.text === 'PATH');
 
 /** How a shell run through a slot takes the functions exported to it: bash does, the others (dash, zsh, ksh…) do not; `sh` may be dash. */
 function imports(shell: SlotLink['shell']): Tri {
@@ -294,12 +294,11 @@ export interface AssignmentMeaning {
  * it has no name, `dynamic` when the name is known only at run time and may expand to nothing.
  */
 export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameResolution | 'dynamic' | undefined): AssignmentMeaning[] {
-  const name = field(command, 'name');
-  const assignments = command.namedChildren.filter((c) => c.type === 'variable_assignment' && (!name || c.startIndex < name.startIndex));
+  const assignments = prefixAssignments(command);
   const posix = option(model.at(command).run, 'set', 'posix');
   const stays = res !== 'dynamic' && res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
   // (`x=1 unset x` removes that `x`: it does not stay.)
-  const unset = res !== 'dynamic' && res?.kind === 'builtin' && res.name === 'unset' ? temporariesUnset(fields(command, 'argument'), command) : undefined;
+  const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command) : undefined;
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
     const kept = stays && !unset?.has(name);
@@ -308,15 +307,16 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
 }
 
 /**
- * The variables that `unset` with the words `words` removes among the temporary ones that the assignments before the
- * command `n` make (`x=1 unset x`): bash removes that `x`, and the one from before stays, in POSIX mode too.
+ * The variables that the builtin `name` with the words `words` (read as `parse`, when given) unsets among the
+ * temporary ones that the assignments before the command `n` make (`x=1 unset x`), by its operands that unset names
+ * (`OperandSpec.acts`): bash removes that `x`, and the one from before stays, in POSIX mode too.
  */
-export function temporariesUnset(words: readonly SyntaxNode[], n: SyntaxNode): Set<string> {
-  const prefix = new Set(n.children.filter((c) => c.type === 'variable_assignment').map((a) => field(a, 'name')!.text));
+export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: SyntaxNode, parse?: ArgvParse): Set<string> {
+  const prefix = new Set(prefixAssignments(n).map((a) => field(a, 'name')!.text));
+  if (!prefix.size || !builtins[name]?.operands?.some((o) => o.pattern.some((p) => p.acts === 'unsets'))) return new Set();
   const ws = words.filter((w) => !w.type.endsWith('redirect'));
-  const parse = interpret(builtins.unset, ws.map(argWord), { name: 'unset' });
-  if (!prefix.size || hasOption(parse, '-f')) return new Set();
-  return new Set(parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
+  const names = actedNames(parse ?? builtinParse(name, ws)).filter((o) => o.acts === 'unsets' && o.space !== 'function' && o.space !== 'none');
+  return new Set(names.map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
 }
 
 /**

@@ -63,7 +63,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
   const turnsOn = (body: SyntaxNode): boolean => statements(body).some((c) => status.turnsErrexitOn(c));
   let pipefailSaid = !featureWorks('pipefail', shell);
 
-  for (const n of descendants(root, ['command', 'subshell', 'compound_statement', 'command_substitution', 'function_definition', 'declaration_command', 'pipeline', 'list'])) {
+  for (const n of descendants(root, ['command', 'subshell', 'compound_statement', 'command_substitution', 'function_definition', 'pipeline', 'list'])) {
     switch (n.type) {
       case 'command_substitution': {
         // (The state of the `$( )` node is the one around it; its commands have the one inside.)
@@ -74,6 +74,16 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         break;
       }
       case 'command': {
+        // `local x=$(cmd)`: the declaration's status hides the substitution's.
+        if (descendants(n, ['command_substitution']).length) {
+          const rule = status.status(n);
+          if (rule.kind === 'masked') {
+            // The keyword: local, export, declare, readonly or typeset.
+            const kw = rule.by;
+            const v = field(ancestor(rule.substitutions[0], (x) => x.type === 'variable_assignment')!, 'name')!.text;
+            add(n, { id: 'declaration-masks-status', params: { kw, v } });
+          }
+        }
         // (The cheap tests first: this runs on every command of the script.)
         if (state.setWrites(n).get('errexit') !== 'on' || !status.turnsErrexitOn(n)) break;
         const ctx = status.errexit(n);
@@ -109,16 +119,6 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const what = n.type === 'subshell' ? '`( )`' : '`{ }`';
         const w = where(ig);
         add(n, { id: 'errexit-group-where-ignored', params: { what, where: w } });
-        break;
-      }
-      case 'declaration_command': {
-        if (!descendants(n, ['command_substitution']).length) break;
-        const rule = status.status(n);
-        if (rule.kind !== 'masked') break;
-        // The keyword: local, export, declare, readonly or typeset.
-        const kw = rule.by;
-        const v = field(ancestor(rule.substitutions[0], (x) => x.type === 'variable_assignment')!, 'name')!.text;
-        add(n, { id: 'declaration-masks-status', params: { kw, v } });
         break;
       }
       case 'pipeline': {

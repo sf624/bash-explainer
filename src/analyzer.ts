@@ -2,7 +2,7 @@ import { Lang, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, readsVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
-import { ancestor, descendants, field, fields, token } from './syntax/tree';
+import { ancestor, descendants, field, fields, prefixAssignments, token } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
@@ -10,9 +10,9 @@ import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
 import { impliedWords, lookupCommand } from './dict/aliases';
 import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
-import type { CommandSpec, OperandSpec } from './argv/spec';
+import type { CommandSpec, OperandSpec, VariableAct } from './argv/spec';
 import { argWord, countOf } from './argv/words';
-import { givenOptions, has as hasOption, operands, values } from './argv/query';
+import { givenOptions, has as hasOption, namespaceOf, operands, values } from './argv/query';
 import { explainRegex, Flavor } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget, hasGlob } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
@@ -41,12 +41,12 @@ import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithW
 import { decodedText, isPlainWord, type Literal, literalContent, sourceIndex, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
 import { explainExpansion, type ExpansionHost } from './expansion-tokens';
 import {
-  binaryTestOps, extendedEqualOps, declarationCommands, fdName, keywords, listOps,
+  binaryTestOps, extendedEqualOps, fdName, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, docLine, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
+import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
@@ -520,7 +520,6 @@ export class Analyzer {
       case 'comment': return this.comment(n);
       case 'command': return this.command(n);
       case 'time_statement': return this.timeStatement(n);
-      case 'declaration_command': return this.redirectLayoutOf(n) ?? this.declaration(n);
       case 'variable_assignment': return skeletal(this.assignment(n), n, true);
       case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
       case 'pipeline': return this.pipeline(n);
@@ -844,7 +843,7 @@ export class Analyzer {
     const redirToks = this.subs(redirs);
     // Redirections in the middle of the words (`echo a > f b`, or `time cmd > f`) leave no single range for the
     // command: it stays one token that carries its redirections as children.
-    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'declaration_command', 'time_statement'].includes(body.type)) {
+    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'time_statement'].includes(body.type)) {
       const t = bodyToks[0];
       return { ...t, span: spanOf(n), children: sortTokens([...t.children, ...redirToks]) };
     }
@@ -874,7 +873,7 @@ export class Analyzer {
    * there are none, or one stands in the middle (`echo a > f b`).
    */
   private redirectLayout(body: SyntaxNode, outer: SyntaxNode[]): Layout | undefined {
-    if (body.type !== 'command' && body.type !== 'declaration_command') return undefined;
+    if (body.type !== 'command') return undefined;
     const redirs = sortNodes([...body.children.filter((c) => c.type.endsWith('redirect')), ...outer]);
     const words = body.children.filter((c) => !c.type.endsWith('redirect'));
     const first = words[0];
@@ -902,7 +901,7 @@ export class Analyzer {
     const effect = simulateRedirects(layout.redirs.map((r) => this.redirectInfo(r)), this.lang);
     if (effect) this.cx.extraNotes.push(effect);
     const before = this.cx.examples.length;
-    const inner = body.type === 'command' ? this.commandToken(body, true) : this.declaration(body, true);
+    const inner = this.commandToken(body, true);
     inner.span = layout.span;
     this.tagExamples(before, body, layout);
     const redirToks = this.subs(layout.redirs);
@@ -1059,7 +1058,8 @@ export class Analyzer {
     ), this.subs(n.namedChildren.filter((c) => !isPlainWord(c))));
   }
 
-  private assignment(n: SyntaxNode): Token {
+  /** An assignment; `decl`: an argument of a declaration that makes the name a nameref (`local -n r=$1`). */
+  private assignment(n: SyntaxNode, decl = false): Token {
     const name = field(n, 'name')!;
     const value = field(n, 'value');
     const op = n.children.find((c) => !c.named && (c.type === '=' || c.type === '+='))!.type;
@@ -1070,7 +1070,6 @@ export class Analyzer {
         ? this.s(`変数 \`${nm}\` に値を代入する（\`=\` の前後に空白は入れられない）`, `Assign a value to variable \`${nm}\` (no spaces around \`=\`)`)
         : this.s(`変数 \`${nm}\` に空文字を代入する`, `Set variable \`${nm}\` to the empty string`);
     // `local -n r=$1` makes `r` another name for the variable named by `$1`; every later `r=…` then sets that variable.
-    const decl = n.parent?.type === 'declaration_command' && readDeclaration(n.parent).on.includes('n');
     // (In a declaration, the state has the attributes it gives: they apply before the value is assigned.)
     const st = this.cx.state.at(n).run;
     const ref = st.variables.get(nm)?.attrs.n;
@@ -1175,60 +1174,13 @@ export class Analyzer {
   }
 
   /**
-   * `export() { …; }; export x=1`: a declaration builtin that the parser reads as its own node, when a function of its
-   * name runs instead (src/semantics/names.ts; in POSIX mode, `export` and `readonly`, special builtins, are found
-   * first). Its words are the function's arguments.
+   * An option of a declaration builtin: what each letter gives, from the builtin's spec. `declare +x v` turns an
+   * attribute off (its `offText`); `export` and `readonly` have no `+` form and their own letters. (A letter with no
+   * text, or `+g`, says nothing.)
    */
-  private builtinAsFunction(n: SyntaxNode, redirsOut: boolean): Token | undefined {
-    const head = n.children[0];
-    const res = this.resolve(head.type, n);
-    if (res.kind !== 'function') return undefined;
-    const words = n.namedChildren.filter((c) => !c.type.endsWith('redirect'));
-    const redirs = redirsOut ? [] : n.namedChildren.filter((c) => c.type.endsWith('redirect'));
-    const explanation = this.functionCall(res);
-    const t = this.tok(n, 'function', explanation, sortTokens([
-      this.tok(head, 'function', explanation), ...this.args(undefined, words, head.type, true).tokens, ...this.subs(redirs),
-    ]), head.type);
-    t.summary = `${head.type}: ${explanation}`;
-    t.refs = ['3.3'];
-    return t;
-  }
-
-  private declaration(n: SyntaxNode, redirsOut = false): Token {
-    const call = this.builtinAsFunction(n, redirsOut);
-    if (call) return call;
-    if (n.children[0].type === 'local' && !ancestor(n, (a) => a.type === 'function_definition')) {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
-    }
-    // declare, typeset, export, readonly or local, all in the dictionary.
-    const kw = n.children[0].type;
-    const base = declarationCommands[kw];
-    const children: Token[] = [];
-    // A declaration over several lines is explained whole (see sub), so every part counts.
-    // The options end at the first name or at `--`: `declare x -i` and `declare -- -i` are errors for the name `-i`.
-    const { roles, on } = readDeclaration(n);
-    const funcs = kw !== 'local' && /[fF]/.test(on);
-    for (const c of n.namedChildren) {
-      if (redirsOut && c.type.endsWith('redirect')) continue;
-      const role = roles.get(c)?.role;
-      if (role === 'end-of-options') children.push(this.endOfOptions(c));
-      else if (role && role !== 'operand') {
-        // The texts of the builtin's spec: `declare +x v` turns an attribute off (its `offText`); `export` and
-        // `readonly` have no `+` form and their own letters. (A letter with no text, or `+g`, says nothing.)
-        const r = roles.get(c)!;
-        const flags = (r.role === 'cluster' ? r.letters : [r]).flatMap((l) => (l.role !== 'option' ? [] : l.disables ? (l.spec.offText ? [l.spec.offText] : []) : [l.text]));
-        children.push(this.tok(c, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option')));
-      } else if (c.type === 'variable_name' || c.type === 'word') {
-        // With `-f` or `-F` the names are functions.
-        children.push(this.tok(c, 'variable', funcs
-          ? this.s(`関数 \`${c.text}\` を対象にする`, `Function \`${c.text}\``)
-          : this.s(`変数 \`${c.text}\` を対象にする`, `Variable \`${c.text}\``)));
-      } else children.push(...this.sub(c));
-    }
-    const t = this.tok(n, 'builtin', this.t(base) + this.s('（シェル組み込み）', ' (shell builtin)'), children, kw);
-    t.summary = `${kw}: ${t.explanation}`;
-    t.explanation += this.shellEffectNote(n, shellEffectOf(builtins[kw], [...roles]));
-    return t;
+  private declarationOption(a: SyntaxNode, role: Extract<ArgRole, { role: 'option' | 'unknown-option' | 'cluster' }>): Token {
+    const flags = (role.role === 'cluster' ? role.letters : [role]).flatMap((l) => (l.role !== 'option' ? [] : l.disables ? (l.spec.offText ? [l.spec.offText] : []) : [l.text]));
+    return this.tok(a, 'option', flags.length ? flags.map((f) => this.t(f)).join(this.s('、', ', ')) : this.s('オプション', 'Option'));
   }
 
   /** The token of `--`, which ends the options of a builtin. */
@@ -1376,6 +1328,9 @@ export class Analyzer {
       head.explanation = this.t(head.spec.summary);
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.cx.extraNotes.push(...yqNotes(verdict, this.lang));
+    }
+    if (head.kind === 'builtin' && head.name === 'local' && !ancestor(n, (a) => a.type === 'function_definition')) {
+      this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
     }
     const read = this.args(head.spec, args, head.runs ?? head.name, head.fn);
     let argToks = read.tokens;
@@ -1703,7 +1658,7 @@ export class Analyzer {
           case 'unknown-option':
           case 'cluster':
             disables = (role.role === 'cluster' ? role.letters[0] as { flag: string } : role).flag.startsWith('+');
-            out.push(this.optionToken(a, role, spec, parse));
+            out.push(DECLARATION_SPECS.has(spec) ? this.declarationOption(a, role) : this.optionToken(a, role, spec, parse));
             break;
           case 'pattern-option':
             out.push(this.tok(a, 'option', this.t(role.text), this.wordParts(a)));
@@ -1967,8 +1922,9 @@ export class Analyzer {
   private operandToken(nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean): Token {
     const a = nodes[word];
     const item = role.spec;
-    // `unset NAME`: what it removes, as bash decides it here.
-    if (item?.unsets) return this.unsetOperand(nodes, word, parse);
+    // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
+    if (item?.acts === 'unsets') return this.unsetOperand(nodes, word, namespaceOf(parse, item), parse);
+    if (item?.acts === 'declares') return this.declaredOperand(a, namespaceOf(parse, item));
     // `env FOO=1 cmd`: an assignment for the command, not the command.
     if (item?.assignment) {
       const name = a.text.slice(0, a.text.indexOf('='));
@@ -1992,15 +1948,39 @@ export class Analyzer {
   }
 
   /**
-   * An operand of `unset` (`OperandSpec.unsets`): a function with `-f`, a variable with `-v`, the name reference itself
-   * with `-n`, else the variable if there is one here, or the function (src/semantics/state.ts). `a[1]` is an element
-   * of an array, and a glob pattern too when it is not quoted. A variable that a prefix assignment of the command sets
-   * (`x=1 unset x`) is that temporary one: the variable from before stays.
+   * A name that a declaration builtin declares (`OperandSpec.acts`): `declare a=1` assigns it (a nameref's target with
+   * `-n`), `declare x` names the variable, `declare -f f` the function. A word that is not a plain name is explained
+   * as its word (`\declare "a"=$v`: an argument, split as any other).
    */
-  private unsetOperand(nodes: SyntaxNode[], word: number, parse: ArgvParse): Token {
+  private declaredOperand(a: SyntaxNode, space: ReturnType<typeof namespaceOf>): Token {
+    if (a.type === 'variable_assignment') {
+      const t = skeletal(this.assignment(a, space === 'nameref'), a, true);
+      t.refs = nodeSections(a);
+      return t;
+    }
+    if (a.type !== 'word') return this.explain(a);
+    const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(a.text);
+    if (space === 'function' || !element) {
+      return this.tok(a, 'variable', space === 'function' ? this.s(`関数 \`${a.text}\` を対象にする`, `Function \`${a.text}\``) : this.s(`変数 \`${a.text}\` を対象にする`, `Variable \`${a.text}\``));
+    }
+    const text = element[2] === '@' || element[2] === '*'
+      ? this.s(`配列 \`${element[1]}\` の全要素`, `All elements of array \`${element[1]}\``)
+      : this.s(`配列 \`${element[1]}\` の要素 \`[${element[2]}]\``, `Element \`[${element[2]}]\` of array \`${element[1]}\``);
+    // (Unquoted, it is a glob first: `declare a[1]` with a file `a1` here declares the variable `a1`.)
+    return this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? this.positional(a, this.nameGlob(a, a.text, text, 'declares')) : this.tok(a, 'variable', text);
+  }
+
+  /**
+   * An operand of `unset` (`OperandSpec.acts`): what its name stands for comes from the spec's options (`space`: a
+   * function with `-f`, a variable with `-v`, the name reference itself with `-n`), else the variable if there is one
+   * here, or the function (src/semantics/state.ts). `a[1]` is an element of an array, and a glob pattern too when it
+   * is not quoted. A variable that a prefix assignment of the command sets (`x=1 unset x`) is that temporary one: the
+   * variable from before stays.
+   */
+  private unsetOperand(nodes: SyntaxNode[], word: number, space: ReturnType<typeof namespaceOf>, parse: ArgvParse): Token {
     const a = nodes[word];
-    const fn = hasOption(parse, '-f');
-    if (fn && hasOption(parse, '-v')) {
+    const fn = space === 'function';
+    if (space === 'none') {
       // (Once for the command, at its first name.)
       if (parse.roles.find((r) => r.role.role === 'operand')!.word === word) this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-function-and-variable')));
       return this.positional(a, this.s('削除する名前（`-f` と `-v` を同時に指定しているので、何も削除されない）', 'Name to unset (with both `-f` and `-v`, nothing is unset)'));
@@ -2017,9 +1997,9 @@ export class Analyzer {
         ? this.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る）`, `Remove all the elements of the array \`${element[1]}\` (it stays, empty)`)
         : this.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま）`, `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices)`);
       // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
-      if (plain && hasGlob(a.text) && this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = this.unsetGlob(a, name, text);
+      if (plain && hasGlob(a.text) && this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = this.nameGlob(a, name, text, 'unsets');
     } else {
-      const temp = !hasOption(parse, '-n') && a.parent!.children.find((c) => c.type === 'variable_assignment' && field(c, 'name')?.text === name);
+      const temp = space !== 'nameref' && prefixAssignments(a.parent!).find((c) => field(c, 'name')?.text === name);
       if (temp) {
         text = this.s(`\`${temp.text}\` がこのコマンドのためだけに設定した変数 \`${name}\` を削除する（コマンドの前から \`${name}\` があれば、それはそのまま残る）`,
           `Unset the variable \`${name}\` that \`${temp.text}\` set for this command only (a \`${name}\` set before the command, if any, stays as it was)`);
@@ -2027,10 +2007,10 @@ export class Analyzer {
         // `unset` removes a variable if there is one, else a function (`-v`: a variable; with `-n`, bash keeps the function).
         const st = this.cx.state.at(a.parent!).run;
         const declared = st.variables.get(name)?.declared ?? 'off';
-        const kind = hasOption(parse, '-v', '-n') || (st.functions.get(name)?.state ?? 'off') === 'off' ? 'variable'
+        const kind = space !== 'either' || (st.functions.get(name)?.state ?? 'off') === 'off' ? 'variable'
           : declared === 'off' ? 'function' : declared === 'unknown' ? 'maybe' : 'variable';
         text = kind === 'function' ? this.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``)
-          : hasOption(parse, '-n') ? this.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${name}\` itself (the variable it points to stays)`)
+          : space === 'nameref' ? this.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${name}\` itself (the variable it points to stays)`)
             : this.s(`変数 \`${name}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${name}\` (it becomes undefined)`);
         if (kind === 'maybe') text += this.s(`。変数がなければ、代わりに関数 \`${name}\` を削除する`, `. If there is no such variable, the function \`${name}\` is removed instead`);
         // A read-only variable stays: bash refuses (status 1).
@@ -2048,24 +2028,26 @@ export class Analyzer {
   }
 
   /**
-   * `unset a[1]`, unquoted: a glob pattern first, as the glob options in effect say. A file that matches is unset
-   * instead of the element (`text`); with nullglob, a word that matches nothing goes away; with failglob, it is an error.
+   * `unset a[1]`, `declare a[1]`, unquoted: a glob pattern first, as the glob options in effect say. A file that
+   * matches is unset (declared) instead of the element (`text`); with nullglob, a word that matches nothing goes away;
+   * with failglob, it is an error.
    */
-  private unsetGlob(a: SyntaxNode, name: string, text: string): string {
+  private nameGlob(a: SyntaxNode, name: string, text: string, acts: VariableAct): string {
     const shopt = this.shoptAt(a);
     const quoted = `\`'${name}'\``;
+    const [ja, en, enDo] = acts === 'unsets' ? ['削除', 'unset', 'unset'] : ['宣言', 'declared', 'declare'];
     if (shopt.failglob === 'on') {
-      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を削除し、なければ failglob が有効なので \`no match\` のエラーになり何も削除されない。要素 \`${name}\` を削除するなら ${quoted} と書く`,
-        `Unquoted, this is a glob pattern: a file that matches it has its name unset, and when none matches, failglob makes it an error (\`no match\`) and nothing is unset. To unset the element \`${name}\`, write ${quoted}`);
+      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を${ja}し、なければ failglob が有効なので \`no match\` のエラーになり何も${ja}されない。要素 \`${name}\` を${ja}するなら ${quoted} と書く`,
+        `Unquoted, this is a glob pattern: a file that matches it has its name ${en}, and when none matches, failglob makes it an error (\`no match\`) and nothing is ${en}. To ${enDo} the element \`${name}\`, write ${quoted}`);
     }
     if (shopt.nullglob === 'on') {
-      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を削除し、なければ nullglob が有効なのでこの単語はなくなり何も削除されない。要素 \`${name}\` を削除するなら ${quoted} と書く`,
-        `Unquoted, this is a glob pattern: a file that matches it has its name unset, and when none matches, nullglob makes the word go away and nothing is unset. To unset the element \`${name}\`, write ${quoted}`);
+      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を${ja}し、なければ nullglob が有効なのでこの単語はなくなり何も${ja}されない。要素 \`${name}\` を${ja}するなら ${quoted} と書く`,
+        `Unquoted, this is a glob pattern: a file that matches it has its name ${en}, and when none matches, nullglob makes the word go away and nothing is ${en}. To ${enDo} the element \`${name}\`, write ${quoted}`);
     }
     const sometimes = shopt.failglob === 'unknown' || shopt.nullglob === 'unknown'
-      ? this.s('（nullglob や failglob が有効な経路では、一致しなければ何も削除されない）', ' (on the paths where nullglob or failglob is on, nothing is unset when none matches)') : '';
-    return text + this.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を削除する${sometimes}（${quoted} と書く）`,
-      `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is unset instead${sometimes} (write ${quoted})`);
+      ? this.s(`（nullglob や failglob が有効な経路では、一致しなければ何も${ja}されない）`, ` (on the paths where nullglob or failglob is on, nothing is ${en} when none matches)`) : '';
+    return text + this.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を${ja}する${sometimes}（${quoted} と書く）`,
+      `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is ${en} instead${sometimes} (write ${quoted})`);
   }
 
   /**
@@ -2162,6 +2144,14 @@ export class Analyzer {
       const t = this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
       if (glob) t.refs = ['3.5.8'];
       return t;
+    }
+    if (a.type === 'variable_assignment') {
+      // `declare() { …; }; declare a=$v`: bash's parser marks the word by the spelling of the name, so it is expanded
+      // as an assignment (the function gets `a=1 2` as one argument), but nothing is assigned.
+      const note = this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。代入はされない）',
+        ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; nothing is assigned)');
+      // (Only a function's words come here, and they have a description.)
+      return this.tok(a, 'argument', desc! + note, this.sub(field(a, 'value')));
     }
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
@@ -2727,7 +2717,7 @@ export class Analyzer {
       if (!name || (name.namedChildren.length && !isPlainWord(name.namedChildren[0]))) return undefined;
       // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
       if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
-      const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
+      const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && !x.type.endsWith('redirect'));
       const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40), ...(this.specFor(name.text)?.copies ? { copies: true } : {}) };
       stages.push(stage);
       const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
@@ -3914,7 +3904,7 @@ export class Analyzer {
         : '';
     }
     // In the arguments (not in an assignment) of a command that is run with the variable set for it only.
-    return field(cmd, 'name') && mine.type !== 'variable_assignment' && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
+    return field(cmd, 'name') && !(mine.type === 'variable_assignment' && mine.field !== 'argument') && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
       ? this.s(`。\`${name}=…\` はこのコマンドの実行中だけ有効で、引数の展開が先に行われるので、ここでは代入前の値（未設定なら空）になる`, `. \`${name}=…\` only applies while the command runs, and the arguments are expanded first, so this is the value from before the assignment (empty if unset)`)
       : '';
   }
@@ -3922,7 +3912,11 @@ export class Analyzer {
   private subscript(n: SyntaxNode): Token {
     const name = field(n, 'name')!.text;
     const idx = field(n, 'index')!.text;
-    if (idx === '@' || idx === '*') return this.tok(n, 'variable', this.s(`配列 \`${name}\` の全要素`, `All elements of array \`${name}\``));
+    // (A subscript explained alone is in arithmetic, which takes one element: `(( a[@] ))` fails.)
+    if (idx === '@' || idx === '*') {
+      return this.tok(n, 'error', this.s(`算術式では \`${n.text}\` は使えず、エラーになる（\`bad array subscript\`）。要素は \`${name}[0]\` のように1つずつ指定する`,
+        `Not allowed in arithmetic: \`${n.text}\` is an error (\`bad array subscript\`); name one element, such as \`${name}[0]\``));
+    }
     // The index is arithmetic (`a[0x1]` is element 1).
     const index = field(n, 'index')!;
     const num = this.arithNumber(index);
@@ -3952,7 +3946,7 @@ export class Analyzer {
   private substitutionStatus(n: SyntaxNode): string {
     // (A word is always in a statement.)
     let stmt = n.parent!;
-    while (!STATEMENTS.has(stmt.type) || (stmt.type === 'variable_assignment' && ['declaration_command', 'command', 'variable_assignments'].includes(stmt.parent!.type))) stmt = stmt.parent!;
+    while (!STATEMENTS.has(stmt.type) || (stmt.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(stmt.parent!.type))) stmt = stmt.parent!;
     const ctx = this.cx.status.errexit(stmt);
     if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
     const rule = this.cx.status.status(stmt);
@@ -4031,6 +4025,8 @@ function jobSpec(text: string): { ja: string; en: string } | undefined {
 }
 
 const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
+/** The specs of the declaration builtins, whose options are explained by the letters they give (`declarationOption`). */
+const DECLARATION_SPECS: ReadonlySet<CommandSpec> = new Set(['declare', 'typeset', 'local', 'export', 'readonly'].map((n) => builtins[n]));
 /** `+x` (an option turned off) is written as `-x` in texts. */
 const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */

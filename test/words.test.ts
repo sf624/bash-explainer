@@ -447,17 +447,27 @@ describe('words: after the review', () => {
     assert.deepStrictEqual(after('cat > a=~/b', 'a=~/b'), ['=']);
     assert.deepStrictEqual(after('cat > a=~/b', 'a=~/b', true), []);
     assert.deepStrictEqual(after('cat <<< a=~/b', 'a=~/b'), []);
-    assert.deepStrictEqual(after('x=1 declare y=~/a:~/b', 'y=~/a:~/b', true), ['=', ':']);
+    assert.deepStrictEqual(after('x=1 declare y=~/a:~/b', '~/a:~/b', true), ['', ':']);
+    assert.deepStrictEqual(after('alias y=~/a:~/b', 'y=~/a:~/b', true), ['=', ':']);
+    assert.deepStrictEqual(after('\\declare y=~/a:~/b', 'y=~/a:~/b', true), []);
   });
 
-  it('reads `x=1 declare y=$v` as a declaration, and arithmetic in `$( (( )) )`', () => {
-    assert.strictEqual(context('x=1 declare y=$v z', 'y=$v'), 'declaration-assignment');
-    assert.strictEqual(context('x=1 declare y=$v z', 'z'), 'argument');
-    assert.strictEqual(context('x=1 declare "y"=$v', '"y"=$v'), 'argument');
+  it('reads `x=1 declare y=$v` as a declaration, by the spelling of its first word, and arithmetic in `$( (( )) )`', () => {
+    // (bash 5.2: after `declare` written so, an assignment is one, not split; `\declare`, `command declare` split it.)
+    assert.strictEqual(context('x=1 declare y=$v z', '$v'), 'assignment-value');
+    assert.strictEqual(context('>o declare y=$v z', '$v'), 'assignment-value');
+    assert.strictEqual(context('x=1 declare y=$v z', 'z'), 'declaration-argument');
+    assert.strictEqual(context('x=1 declare "y"=$v', '"y"=$v'), 'declaration-argument');
     assert.strictEqual(context('declare y=$v', '$v'), 'assignment-value');
     assert.strictEqual(context('x=1 command declare y=$v', 'y=$v'), 'argument');
+    assert.strictEqual(context('\\declare y=$v', 'y=$v'), 'argument');
+    assert.strictEqual(context('"declare" y=$v', 'y=$v'), 'argument');
     assert.strictEqual(context('x=1 echo y=$v', 'y=$v'), 'argument');
-    assert.deepStrictEqual(step('x=1 declare y=$v', 'y=$v', 'split'), [false, 'context']);
+    // (`alias` is marked too: its definitions are not split. Not `\alias`.)
+    assert.strictEqual(context('alias y=$v', 'y=$v'), 'declaration-assignment');
+    assert.strictEqual(context('\\alias y=$v', 'y=$v'), 'argument');
+    assert.deepStrictEqual(step('x=1 declare y=$v', '$v', 'split'), [false, 'context']);
+    assert.deepStrictEqual(step('\\declare y=$v', 'y=$v', 'split'), [true]);
     assert.strictEqual(context('[[ $( (( $x )) ) ]]', '$x'), 'arith');
     assert.strictEqual(context('echo $(( $(echo $x) ))', '$x'), 'argument');
   });

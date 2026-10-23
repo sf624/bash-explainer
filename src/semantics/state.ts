@@ -36,7 +36,7 @@ export {
   attribute, type AliasState, type Attribute, type CommandEntry, defaultOn, type ErrexitWhy, type FunctionState, merge, NameMap, option,
   type OptionState, type ShellState, type Tri, type VariableState,
 } from './shellstate';
-export { ARITH_ASSIGNED, readDeclaration, type Declaration } from './vars';
+export { ARITH_ASSIGNED, type Declaration } from './vars';
 export { lastStageInShell } from './env';
 
 /** What a condition always decides here (on every walk), and the variables it read: name → value (null: unset). */

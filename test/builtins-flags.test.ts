@@ -1,5 +1,8 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -146,6 +149,7 @@ describe('[ ] and [[ ]] examples', () => {
 
 describe('declaration builtins as plain commands, and related fixes', () => {
   const one = (src: string, shell?: 'sh', lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), 0, shell).items[0];
+  const all = (t: Token): Token[] => [t, ...t.children.flatMap(all)];
   it('stay builtins after a prefix assignment', () => {
     for (const c of ['LC_ALL=C export X', 'V=1 declare -x Y', 'V=1 readonly Z', 'V=1 local W', 'V=1 typeset T']) {
       const t = one(c);
@@ -159,7 +163,52 @@ describe('declaration builtins as plain commands, and related fixes', () => {
       assert.match(one(c).children.find((x) => x.label === 'myfunc')!.explanation, /^Function `myfunc`/, c);
     }
     assert.match(one('export myvar').children[0].explanation, /^Variable/);
-    assert.match(one('local -f x').children[1].explanation, /^Variable/);
+    // (`local -f g` in a function prints the function `g`, as `declare -f g` does: bash 5.2.)
+    assert.match(one('local -f x').children[1].explanation, /^Function `x`/);
+    // (`export -n` unexports: the names are variables, not name references.)
+    assert.match(one('export -n r=v').children[1].explanation, /^Assign a value to variable `r`/);
+  });
+  it('an assignment after a name written as a declaration builtin is one, after prefix assignments and redirections too', () => {
+    // (bash 5.2 makes the arrays: test/fixtures/probes/state.json.)
+    for (const c of ['x=1 declare g=(1 2)', '>o declare g=(1 2)', 'x=1 >o local g=(1 2)']) {
+      const g = all(one(c)).find((t) => t.label === 'g=(1 2)')!;
+      assert.match(g.explanation, /^Assign a value to variable `g`/, c);
+      assert.match(g.children[0].explanation, /^Array/, c);
+    }
+    assert.strictEqual(bash('x=1 declare g=(1 2); >/dev/null declare h=(3); echo "${g[1]} $h"').stdout, '2 3\n');
+    // `\declare` and `command declare`: bash's parser rejects `g=(…)`, and splits `g=$v`.
+    assert.notStrictEqual(bash('\\declare g=(1 2)').status, 0);
+    assert.match(all(one('\\declare g=$v')).map((t) => t.explanation).join('\n'), /word-split and globbed/);
+    assert.strictEqual(bash('v="p q"; \\declare g=$v; echo "$g"').stdout, 'p\n');
+    // A word that runs the builtin is still explained as its options and names.
+    assert.match(all(one('command declare -x y')).find((t) => t.label === 'y')!.explanation, /^Variable `y`/);
+    // `x=1 local y` outside a function fails as `local y` does.
+    assert.match(new Analyzer('en').explainLine(parser.parse('x=1 local y'), 0).notes.join('\n'), /can only be used in a function/);
+    assert.match(bash('x=1 local y').stderr, /can only be used in a function/);
+  });
+  it('a name with a subscript is a glob first, unquoted', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decl-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'a1'), '');
+      // (With a file `a1` there, `declare a[1]` declares `a1`; quoted, it makes `a` an array.)
+      assert.strictEqual(bash(`cd ${dir} && declare a[1] && declare -p a1 a 2>&1 | head -1`).stdout, 'declare -- a1\n');
+      assert.strictEqual(bash(`cd ${dir} && declare 'a[1]' && declare -p a`).stdout, 'declare -a a\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+    assert.match(one('declare a[1]').children[0].explanation, /^Element `\[1\]` of array `a`\. Unquoted, it is a glob pattern first: if a file matches it, that file's name is declared instead \(write `'a\[1\]'`\)/);
+    const word = (src: string, label: string) => new Analyzer('en').explainLine(parser.parse(src), src.split('\n').length - 1).items.flatMap(all).find((t) => t.label === label)!.explanation;
+    assert.match(word('shopt -s nullglob; declare a[1]', 'a[1]'), /nullglob makes the word go away and nothing is declared/);
+    assert.match(word('shopt -s failglob; declare a[1]', 'a[1]'), /failglob makes it an error \(`no match`\) and nothing is declared/);
+    assert.match(word('[ "$x" ] && shopt -s nullglob\ndeclare a[1]', 'a[1]'), /on the paths where nullglob or failglob is on, nothing is declared/);
+    assert.match(word('set -f; declare a[@]', 'a[@]'), /^All elements of array `a`$/);
+    assert.match(one("declare 'a[1]'").children[0].explanation, /Single-quoted/);
+    assert.match(one('declare a[1]', undefined, 'ja').children[0].explanation, /その名前を宣言する/);
+  });
+  it('a function named like a declaration builtin gets the assignment word whole, and nothing is assigned', () => {
+    const f = new Analyzer('en').explainLine(parser.parse('declare() { :; }; declare d=$v'), 0).items.flatMap(all);
+    assert.match(f.find((t) => t.label === 'd=$v')!.explanation, /^Argument \$1 to the function \(the command name is spelled as a declaration builtin, so it is expanded as an assignment would be/);
+    assert.strictEqual(bash('declare() { echo "$#:$1"; }; v="p q"; declare d=$v; echo "[$d]"').stdout, '1:d=p q\n[]\n');
   });
   it('every declaration builtin is tagged, including unset', () => {
     for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.match(one(c).explanation, /\(shell builtin\)$/, c);
@@ -194,5 +243,16 @@ describe('declaration builtins as plain commands, and related fixes', () => {
   it('test examples', () => {
     const e = new Analyzer('en').explainLine(parser.parse('test -n "$x"'), 0);
     assert.strictEqual(e.examples[0].sections.length, 2);
+  });
+});
+
+describe('arithmetic takes one element of an array', () => {
+  it('`a[@]` and `a[*]` there are an error, as in bash', () => {
+    for (const e of ['a[@]', 'a[*]']) {
+      assert.match(bash(`a=(1 2); (( ${e} ))`).stderr, /bad array subscript/);
+      const t = new Analyzer('en').explainLine(parser.parse(`(( ${e} ))`), 0).items[0].children.find((c) => c.label === e)!;
+      assert.strictEqual(t.kind, 'error');
+      assert.match(t.explanation, /^Not allowed in arithmetic: `a\[.\]` is an error \(`bad array subscript`\)/);
+    }
   });
 });

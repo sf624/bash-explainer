@@ -25,7 +25,7 @@ export type WordContext =
   | 'case-word' | 'case-pattern' | 'for-list'
   | 'redirect-target' | 'heredoc-body' | 'herestring'
   | 'arith' | 'subscript-indexed' | 'subscript-assoc'                // $(( )), (( )), a[i] (arithmetic), m[k] (a key)
-  | 'declaration-assignment'                                         // `x=1 declare y=$v`: a word of a declaration that is an assignment
+  | 'declaration-assignment'                                         // `alias a=$v`: a word of `alias` that is an assignment
   | 'param-word' | 'param-pattern';                                  // ${x:-word}, ${x#pattern}
 
 /** One row of the context table. */
@@ -157,11 +157,18 @@ const PATTERN_OPS = new Set(['=', '==', '!=']);
 
 const ASSIGNMENT_WORD = /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/;
 /**
- * A plain command whose name is a declaration builtin after prefix assignments (`x=1 declare y=$v`, which the parser
- * gives as a command): bash still reads its assignment words as assignments. Not behind `command`.
+ * The context of an argument of a command whose first word is written as a declaration builtin or `alias` (not
+ * quoted or escaped, not behind `command`): bash's parser marks it, and expands a word that is an assignment as one
+ * (no splitting, no globbing). The model has those of a declaration as `variable_assignment` (their values are
+ * `assignment-value`); the others are `declaration-argument`. An alias definition stays a word:
+ * `declaration-assignment`.
  */
-function declaresHere(c: SyntaxNode): boolean {
-  return c.namedChildren.some((x) => x.type === 'variable_assignment') && DECLARATIONS.has(field(c, 'name')!.text);
+function declarationContext(c: SyntaxNode, w: SyntaxNode): WordContext | undefined {
+  const name = field(c, 'name')!.text;
+  if (DECLARATIONS.has(name)) return 'declaration-argument';
+  if (name !== 'alias') return undefined;
+  return ASSIGNMENT_WORD.test(w.type === 'concatenation' ? w.namedChildren[0].text : w.text) && /^(word|concatenation)$/.test(w.type)
+    && (w.type === 'word' || w.namedChildren[0].type === 'word') ? 'declaration-assignment' : undefined;
 }
 
 /** The context of a word whose top node is `w` (not inside a concatenation or a string). */
@@ -172,9 +179,7 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
   if (ARITH.has(ancestor(w, (a) => ARITH.has(a.type) || a.type === 'command_substitution' || a.type === 'expansion')?.type ?? '')) return 'arith';
   switch (p.type) {
     case 'command_name': return 'command-name';
-    case 'command': return w.field !== 'argument' ? undefined : declaresHere(p) && ASSIGNMENT_WORD.test(w.type === 'concatenation' ? w.namedChildren[0].text : w.text) && /^(word|concatenation)$/.test(w.type)
-      && (w.type === 'word' || w.namedChildren[0].type === 'word') ? 'declaration-assignment' : 'argument';
-    case 'declaration_command': return 'declaration-argument';
+    case 'command': return w.field !== 'argument' ? undefined : declarationContext(p, w) ?? 'argument';
     case 'variable_assignment': return w.field === 'value' ? 'assignment-value' : undefined;
     case 'array': return 'array-element';
     case 'for_statement': case 'select_statement': return w.field === 'value' ? 'for-list' : undefined;
@@ -842,9 +847,9 @@ function afterAssignment(n: SyntaxNode, model: StateModel): boolean {
   let prev: SyntaxNode | undefined;
   // (A command in a subshell that `n` is not in sets the subshell's `$_`, and a function body runs elsewhere.)
   const here = model.env(n).links;
-  for (const c of descendants(root, ['command', 'variable_assignment', 'declaration_command'])) {
+  for (const c of descendants(root, ['command', 'variable_assignment'])) {
     // (The assignments of a command or a declaration are its words: `declare x=1` sets `$_` to `x=1`.)
-    if (c.endIndex > n.startIndex || (c.type === 'variable_assignment' && (c.parent?.type === 'command' || c.parent?.type === 'declaration_command'))) continue;
+    if (c.endIndex > n.startIndex || (c.type === 'variable_assignment' && c.parent?.type === 'command')) continue;
     if (ancestor(c, (x) => x.type === 'function_definition') || model.env(c).links.some((l) => !here.includes(l))) continue;
     if (!prev || c.endIndex >= prev.endIndex) prev = c;
   }

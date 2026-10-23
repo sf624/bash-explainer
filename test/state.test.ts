@@ -7,9 +7,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
-import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
+import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants } from '../src/syntax/tree';
+import { descendants, fields } from '../src/syntax/tree';
+import { readDeclarationWords } from '../src/semantics/vars';
 
 const parser = createUnbashParser();
 const model = (src: string, shell?: Shell, posix = false): StateModel => shellState(parser.parse(src), shell, { posix });
@@ -165,7 +166,7 @@ describe('shell state: variables', () => {
     assert.deepStrictEqual([attribute(st, 'e', 'x'), attribute(st, 'f', 'x'), attribute(st, 'g', 'x'), attribute(st, 'g', 'i'), attribute(st, 'r', 'r'), attribute(st, 't', 'r')], ['on', 'off', 'on', 'off', 'on', 'on']);
     // (`declare "s=1"` assigns, as bash does; `$x` is not known.)
     assert.strictEqual(variable(st, 's')?.value, '1');
-    assert.deepStrictEqual(readDeclaration(parser.parse('declare -ix +r a').root.namedChildren[0]).on, 'ix');
+    assert.deepStrictEqual(readDeclarationWords('declare', fields(parser.parse('declare -ix +r a').root.namedChildren[0], 'argument')).on, 'ix');
   });
   it('a nameref passes its assignments on', () => {
     assert.strictEqual(variable(end('declare -n r=t; r=5'), 't')?.value, '5');

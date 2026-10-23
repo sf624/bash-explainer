@@ -592,9 +592,6 @@
         ]
       ],
       "status": 0
-    },
-    "gaps": {
-      "a": "a declaration word with an expansion that is not an assignment to the parser (`\"b=$x\"`, `\"c\"=$x`) gives a value the state does not follow"
     }
   },
   {
@@ -1249,6 +1246,21 @@
       "a": [
         [
           "a.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "v='p  q'; declare a=$v; x=1 declare b=$v; >/dev/null declare c=$v; \\declare d=$v; @PROBE:a@ \"$a\" \"$b\" \"$c\" \"$d\"",
+    "facts": {
+      "a": [
+        [
+          "p  q",
+          "p  q",
+          "p  q",
+          "p"
         ]
       ],
       "status": 0

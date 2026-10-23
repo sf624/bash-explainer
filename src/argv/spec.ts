@@ -240,6 +240,28 @@ export interface ValueSpec {
  */
 export type VariableSet = 'string' | 'array' | 'lines' | 'job-id';
 
+/**
+ * What a builtin does to the name an operand of `type: 'variable'` gives, beside setting its value (`sets`):
+ * `declares`, it declares the name, or assigns it with `NAME=value` (`declare`, `export`, `local`); `unsets`, it
+ * removes it (`unset`).
+ */
+export type VariableAct = 'declares' | 'unsets';
+
+/** What a name of a `VariableAct` operand stands for: a variable, a function, the name reference itself (not the variable it points to). */
+export type NameSpace = 'variable' | 'function' | 'nameref';
+
+/**
+ * The options that make the names of a `VariableAct` operand stand for something other than a variable
+ * (src/argv/query.ts `namespaceOf`): the first one given in this list wins (`unset -fn f`: the function).
+ */
+export interface NameOptions {
+  options: readonly (readonly [flag: string, space: NameSpace])[];
+  /** With none of `options`, the variable of that name if there is one, else the function (`unset NAME`). */
+  orFunction?: boolean;
+  /** Options that cannot be given together: then the builtin fails and acts on no name (`unset -fv`). */
+  exclusive?: readonly string[];
+}
+
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'
   | 'variable' | 'function' | 'arith' | 'pattern' | 'shell-option';
 
@@ -288,11 +310,12 @@ export interface OperandSpec {
   type?: ValueType;
   sets?: VariableSet;
   /**
-   * The operand names what the builtin removes (`unset NAME`): a function with `-f`, a variable with `-v`, the name
-   * reference itself with `-n`, and with none of them the variable if there is one, else the function. A name with
-   * a subscript (`a[1]`) is an element of an array; written unquoted, it is a glob pattern first.
+   * With `type: 'variable'`: what the builtin does to the name (`declare NAME[=VALUE]`, `unset NAME`), and the options
+   * that make it name a function or a name reference instead (`names`). A name with a subscript (`a[1]`) is an element
+   * of an array; written unquoted, it is a glob pattern first.
    */
-  unsets?: boolean;
+  acts?: VariableAct;
+  names?: NameOptions;
   lang?: EmbeddedLang;
   /** What the command does with the file the operand names (`IoUse`): `sort FILE` reads its input from it, `uniq IN OUT` writes OUT. */
   io?: IoUse;

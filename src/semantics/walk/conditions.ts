@@ -2,14 +2,13 @@
 // known (`[ ]`, `[[ ]]`, `true`, `(( ))`, assignments), the lists of a `case` that run, and what each condition decided.
 import { evalArith } from '../../arith';
 import { staticWordValue, substitutionNames } from '../../staticword';
-import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
+import { descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
 import type { Decision } from '../state';
-import { interpret } from '../../argv/interpret';
-import { has as hasOption } from '../../argv/query';
-import { argWord } from '../../argv/words';
+import { actedNames, namespaceOf } from '../../argv/query';
 import { builtins } from '../../dict/builtins';
+import { builtinParse } from '../effects';
 import { testSpec } from '../names';
 import { type ValueSource, wordIn } from '../words';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
@@ -75,7 +74,7 @@ export class WalkConditions {
    * whose value is not known (its expansion may fail).
    */
   simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
-    if (!this.w.bash || n.namedChildren.some((c) => c.type === 'variable_assignment') || !fields(n, 'redirect').every(safeRedirect)) return undefined;
+    if (!this.w.bash || prefixAssignments(n).length || !fields(n, 'redirect').every(safeRedirect)) return undefined;
     const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
     // (The walk builds the state that `resolveName` reads (src/semantics/names.ts), so it cannot ask it: it looks at
     // the functions and the `enable -n` of `st` itself. An alias does not get here: the walk runs its text instead,
@@ -96,13 +95,14 @@ export class WalkConditions {
    * when it is not known here (a word not known, an element, `-f`, a variable read-only on some paths only).
    */
   private unsetStatus(args: readonly SyntaxNode[], st: ShellState): number | undefined {
-    const parse = interpret(builtins.unset, args.map(argWord), { name: 'unset' });
-    if (hasOption(parse, '-f')) return hasOption(parse, '-v') ? 1 : undefined;
+    const parse = builtinParse('unset', args);
+    const space = namespaceOf(parse, builtins.unset.operands![0].pattern[0]);
+    if (space === 'none') return 1;
+    if (space === 'function') return undefined;
     let status = 0;
-    for (const { word, role } of parse.roles) {
-      if (role.role !== 'operand') continue;
+    for (const { word } of actedNames(parse)) {
       const name = staticWordValue(args[word]);
-      const target = name !== undefined && NAME.test(name) ? (hasOption(parse, '-n') ? name : this.w.builtins.resolve(st, name)) : undefined;
+      const target = name !== undefined && NAME.test(name) ? (space === 'nameref' ? name : this.w.builtins.resolve(st, name)) : undefined;
       const readonly = target === undefined ? 'unknown' : attribute(st, target, 'r');
       if (readonly === 'unknown') return undefined;
       if (readonly === 'on') status = 1;
@@ -316,6 +316,11 @@ export class WalkConditions {
   staticText(w: SyntaxNode, st: ShellState, assignment = false): string | undefined {
     const v = staticWordValue(w, assignment);
     return v !== undefined && substitutionNames(w).every((x) => this.builtinRuns(x, st)) ? v : undefined;
+  }
+
+  /** The fields of the word `w` of a command, from `st`, when they are known: `\declare a=$v` declares each. */
+  fieldsOf(w: SyntaxNode, st: ShellState): string[] | undefined {
+    return wordIn(w, st, this.values(st), 'fields', this.ifsFollowed(st));
   }
 
   /** Whether word splitting follows the IFS of `st` in a condition: not one the script set, or may set where the walk does not see it. */

@@ -2,9 +2,10 @@
 // assignments change in the state (`set`, `shopt`, `alias`, `enable`, `hash`, the declarations, `unset`, `read`…),
 // read with their specs (src/semantics/effects.ts).
 import { evalArithWrapping } from '../../arith';
-import { interpret, type ArgRole, type ArgvParse } from '../../argv/interpret';
+import type { ArgRole, ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
-import { argWord, prefixOf } from '../../argv/words';
+import { actedNames } from '../../argv/query';
+import { prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
@@ -237,11 +238,15 @@ export class WalkBuiltins {
           assign: { append: w.children.some((c) => c.type === '+='), text: value ? this.w.conditions.staticText(value, st, true) : '', array: value?.type === 'array', source: value } });
         continue;
       }
-      // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command; `"c"=$x` (whose value is not known here).
-      const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : this.w.conditions.staticText(w, st);
-      const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(w).replace(/=.*/s, '=')) ;
-      if (!m || (text === undefined && !m[3])) continue;
-      out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: text === undefined ? undefined : m[4], array: false } } : {}) });
+      // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `y=2` in `command declare y=2`; `"c"=$x`
+      // (whose value is not known here). It is expanded as any argument: `\declare a=$v` declares a name in each field.
+      const text = this.w.conditions.staticText(w, st) ?? (w.type === 'word' ? w.text : undefined);
+      const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [undefined];
+      for (const t of texts) {
+        const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(t ?? prefixOf(w).replace(/=.*/s, '='));
+        if (!m || (t === undefined && !m[3])) continue;
+        out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: t === undefined ? undefined : m[4], array: false } } : {}) });
+      }
     }
     return out;
   }
@@ -327,24 +332,26 @@ export class WalkBuiltins {
   unset(words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     // The options and the names, read with unset's spec.
     const ws = words.filter((w) => !w.type.endsWith('redirect'));
-    const parse = interpret(builtins.unset, ws.map(argWord), { name: 'unset' });
-    const flags = optionRoles(parse).map((r) => r.flag.slice(1)).join('');
-    const all = parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => ({ node: ws[word], text: staticWordValue(ws[word]) ?? ws[word].text }));
+    const parse = builtinParse('unset', ws);
+    const names = actedNames(parse);
+    // What the names stand for, by unset's options (its spec): the same for every name.
+    const space = names[0]?.space;
+    const all = names.map(({ word }) => ({ node: ws[word], text: staticWordValue(ws[word]) ?? ws[word].text }));
     // (`unset -fv` is an error: nothing is unset.)
-    if (flags.includes('f') && flags.includes('v')) return st;
-    const temporary = temporariesUnset(words, n);
+    if (space === 'none') return st;
+    const temporary = temporariesUnset('unset', ws, n, parse);
     for (const { node, text } of all) {
       if (staticWordValue(node) === undefined) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];
-          if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name' || flags.includes('f') || attribute(st, name.text, 'r') === 'on') continue;
+          if (!e.children.some((c) => c.type === ':=' || c.type === '=') || name?.type !== 'variable_name' || space === 'function' || attribute(st, name.text, 'r') === 'on') continue;
           st = merge([st, this.w.put(st, 'variables', name.text, { declared: 'off', set: 'off', attrs: {}, at: node })], this.w.posix);
         }
         continue;
       }
       const fn = st.functions.get(text);
-      if (flags.includes('f')) {
+      if (space === 'function') {
         if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
         continue;
       }
@@ -352,12 +359,12 @@ export class WalkBuiltins {
       if (text.includes('[') || temporary.has(text)) continue;
       const v = st.variables.get(text);
       // With no -v, a name with no variable is a function.
-      if (!flags.includes('v') && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
+      if (space === 'either' && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
         st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
         continue;
       }
       // A readonly variable stays; `unset r` of a nameref unsets the variable it names (`unset -n r`: the nameref).
-      const target = flags.includes('n') ? text : this.resolve(st, text);
+      const target = space === 'nameref' ? text : this.resolve(st, text);
       if (!target || attribute(st, target, 'r') === 'on') continue;
       // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
       const top = this.w.frames[this.w.frames.length - 1];

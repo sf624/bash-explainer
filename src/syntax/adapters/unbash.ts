@@ -463,22 +463,29 @@ class Converter {
       this.fill(r);
       return r;
     }
-    const name = c.name.value;
     const args = [...before, ...after];
-    let node: Mut;
-    if (DECLARATIONS.has(name) && !before.length) node = this.declaration(c, after);
-    else {
-      const last = args.length ? args[args.length - 1] : c.name;
-      node = this.node('command', start, Math.max(last.end, c.name.end));
-      for (const p of before) {
-        if (p.type === 'Assignment') this.add(node, this.assignment(p));
-        else this.add(node, this.redirect(p as U.Redirection), 'redirect');
-      }
-      const cn = this.node('command_name', c.name.pos, c.name.end, 'name', node);
-      this.add(cn, this.word(c.name, 'name'));
-      for (const s of after) this.item(node, s, (w) => this.add(node, this.word(w, 'argument'), 'argument'), 'argument');
-      this.fill(node);
+    const last = args.length ? args[args.length - 1] : c.name;
+    // (unbash ends a plain name after a line continuation that follows it: `declare\<newline> x`. The name is before it.)
+    let nameEnd = c.name.end;
+    if (!c.name.parts) while (this.text.slice(nameEnd - 2, nameEnd) === '\\\n') nameEnd -= 2;
+    // (A plain word has no parts to keep; unbash computes the parts of a word when they are read.)
+    const name: U.Word = nameEnd === c.name.end ? c.name : { ...c.name, end: nameEnd };
+    const node = this.node('command', start, Math.max(last === c.name ? nameEnd : last.end, nameEnd));
+    for (const p of before) {
+      if (p.type === 'Assignment') this.add(node, this.assignment(p));
+      else this.add(node, this.redirect(p as U.Redirection), 'redirect');
     }
+    const cn = this.node('command_name', name.pos, name.end, 'name', node);
+    this.add(cn, this.word(name, 'name'));
+    // bash's parser reads `name=value` (and `name=(…)`) as an assignment after a first word written as a declaration
+    // builtin (`declare`, not `\declare` or `command declare`): unbash gives those as assignments, and so does the
+    // model. (After `alias`, which bash also marks, the word defines an alias, not a variable: it stays a word.)
+    const declares = DECLARATIONS.has(this.text.slice(name.pos, name.end));
+    for (const s of after) {
+      if (s.type === 'Assignment' && declares) this.add(node, this.assignment(s), 'argument');
+      else this.item(node, s, (w) => this.add(node, this.word(w, 'argument'), 'argument'), 'argument');
+    }
+    this.fill(node);
     if (outside.length) return this.redirected(node, outside, c.end);
     return node;
   }
@@ -504,34 +511,6 @@ class Converter {
     if (a.type === 'Word') word(a);
     else if (a.type === 'Assignment') this.add(node, this.assignmentAsWord(a), field);
     else this.add(node, this.redirect(a), 'redirect');
-  }
-
-  declaration(c: U.Command, args: readonly (U.Assignment | U.Word | U.Redirection)[]): Mut {
-    const node = this.node('declaration_command', c.pos, Math.max(c.name!.end, ...args.map((a) => a.end)));
-    // (unbash ends the name after a line continuation that follows it: `declare\<newline> x`. The keyword is before it.)
-    let end = c.name!.end;
-    while (this.text.slice(end - 2, end) === '\\\n') end -= 2;
-    this.add(node, this.node(c.name!.value, c.name!.pos, end), null).named = false;
-    for (const a of args) {
-      if (a.type === 'Assignment') this.add(node, this.assignment(a));
-      else if (a.type === 'Word') this.add(node, IDENTIFIER.test(a.text) ? this.node('variable_name', a.pos, a.end) : this.subscriptName(a) ?? this.word(a, 'declaration'));
-      else this.add(node, this.redirect(a), 'redirect');
-    }
-    this.fill(node);
-    return node;
-  }
-
-  /** `a[1]` or `a[@]` as a name to declare: a subscript (unbash gives a word with a glob in it). Undefined for anything else. */
-  subscriptName(w: U.Word): Mut | undefined {
-    const m = /^([A-Za-z_]\w*)\[([^\]$"'`\\\s]+)\]$/.exec(w.text);
-    if (!m) return undefined;
-    const n = this.node('subscript', w.pos, w.end);
-    this.node('variable_name', w.pos, w.pos + m[1].length, 'name', n);
-    this.tok('[', w.pos + m[1].length, n);
-    const at = w.pos + m[1].length + 1;
-    this.node(NUMBER.test(m[2]) ? 'number' : 'word', at, at + m[2].length, 'index', n);
-    this.tok(']', w.end - 1, n);
-    return n;
   }
 
   assignment(a: U.Assignment): Mut {

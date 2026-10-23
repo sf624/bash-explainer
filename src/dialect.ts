@@ -5,7 +5,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { ancestor, descendants, field } from './syntax/tree';
+import { ancestor, descendants, field, prefixAssignments } from './syntax/tree';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -176,7 +176,7 @@ export function collectBehaviours(root: SyntaxNode, from: number, to: number): F
       && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
     // An unquoted `$var` used as a word of a command.
     if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
-    if (n.type === 'declaration_command' && n.children[0].text === 'typeset') {
+    if (n.type === 'command' && field(n, 'name')!.text === 'typeset') {
       const f = ancestor(n, (a) => a.type === 'function_definition');
       if (f && f.children[0].type !== 'function') add('typesetScope');
     }
@@ -229,12 +229,10 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       // (`[ a == b ]`, by its spelling.)
       if (writtenAsBracket(n) && bracketWords(n).words.some((w) => w.text === '==')) add('eqeqTest');
       const name = field(n, 'name')!;
-      commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && c.type !== 'variable_assignment'), add);
+      const prefix = prefixAssignments(n);
+      commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && !prefix.includes(c)), add);
       return;
     }
-    case 'declaration_command':
-      commandFeatures(n.children[0].text, n.children.slice(1), add);
-      return;
     case 'brace_expression': add('braceRange'); return;
     case 'coproc_statement': add('coproc'); return;
     case 'c_style_for_statement': add('cFor'); return;
