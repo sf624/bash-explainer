@@ -92,7 +92,7 @@ describe('the pitfall gate', () => {
   it('the distro-alias note of ll disappears with pitfalls off; a README keeps its ℹ note', () => {
     assert.ok(explainNotes('ll /tmp', 0, true).some((n) => /^⚠ System-dependent: `ll`/.test(n)));
     assert.deepStrictEqual(explainNotes('ll /tmp', 0, false).filter((n) => /System-dependent/.test(n)), []);
-    const readme = new Analyzer('en').explainLine(parser.parse('ll /tmp'), 0, undefined, { pitfalls: false, host: 'Markdown' }).notes;
+    const readme = new Analyzer('en').explainLine(parser.parse('ll /tmp'), 0, undefined, { pitfalls: false, host: { kind: 'markdown' } }).notes;
     assert.ok(readme.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
   });
   it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
