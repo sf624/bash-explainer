@@ -141,8 +141,14 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['case ab in a*) false ;;& *b) true;; esac', true], ['case ab in a*) false ;;& c) true;; esac', true], ['case $nope in a) false;; esac', false],
     ['case "a b" in "a "*) false;; esac', true], ['case a in [!b]) false;; esac', true],
     ['false || true', true], ['true && false', true], ['false && true', true], ['true || false', true], ['[ -f /nonexistent ] && true', false],
-    ['false; [ $? -eq 1 ]', true], ['false; (( $? == 1 ))', true], ['false; [ "$(true)" ] || [ $? = 1 ]', false], ['true | false; [ $? = 1 ]', true],
+    ['false; [ $? -eq 1 ]', true], ['false; (( $? == 1 ))', true], ['false; [ "$(true)" ] || [ $? = 1 ]', true], ['true | false; [ $? = 1 ]', true],
     ['f() { :; }; f; [ $? = 0 ]', false],
+    // Words read as bash expands them (src/semantics/words.ts): a pattern in parts, `${x:-w}`, `~`, `$(( ))`, braces, `set -f`.
+    ['p=a; [[ abc == $p* ]]', true], ['p=a; [[ abc == "$p"* ]]', true], ['p=a; [[ a* == "$p*" ]]', true], ['p=a; case abc in $p*) false;; esac', true],
+    ['p="\\*"; [[ "*" == $p ]]', true], ['p="\\*"; [[ a == $p ]]', true], ['x=a; [[ ${x:-b} == a ]]', true], ['[[ ${nope-b} == b ]]', false], ['x=abc; [ "${x#a}" = bc ]', true],
+    ['HOME=/h; [[ ~ == /h ]]', true], ['HOME=/h; [ ~/a = /h/a ]', true], ['[[ ~ == /h ]]', false], ['[[ $((1+2)) == 3 ]]', true], ['x=1; [[ $((x=2)) == 2 && $x == 2 ]]', false],
+    ['set -f; x="*"; [ $x = "*" ]', true], ['x="*"; [ $x = "*" ]', false], ['x=a; [ {a,b} = a ]', true], ['set +B; [ {a,b} = a ]', true], ['x="a b"; [ $x = "a b" ]', true],
+    ['IFS=:; x="a:b"; [ $x = a ]', false], ['x=; [[ a == b || ${x:?empty} == a ]]', false],
     // What the model does not follow, or must not decide.
     ['set -o pipefail; [ -f /nonexistent ] | true', false], ['set -o pipefail; true | true', true], ['if true; then false; elif true; then true; fi', true], ['[() { return 3; }; [ a ]', false],
     ['set +e; [[ -o errexit ]]', true], ['set -o posix; [ a \\< b ]', false], ['[ -f /nonexistent ] && set -o posix; [ a \\< b ]', false],

@@ -4,9 +4,6 @@
 import { globToRegex, hasExtglob } from '../examples/shellwords';
 import { parseTest, type TestExpr } from '../testexpr';
 
-/** A piece of a pattern: quoted text is literal; unquoted text is a pattern (as written, its backslashes included). */
-export interface PatternPiece { text: string; quoted: boolean }
-
 /** What a decision needs from the shell state: whether `set -o name` is on (undefined: not known). */
 export interface TestEnv {
   option(name: string): boolean | undefined;
@@ -126,11 +123,6 @@ function evaluate(e: TestExpr, w: readonly string[], env: TestEnv): boolean {
       throw new Unknown();
     }
   }
-}
-
-/** A glob of pieces, for `globToRegex`: quoted characters escaped. */
-export function patternText(pieces: readonly PatternPiece[]): string {
-  return pieces.map((p) => (p.quoted ? p.text.replace(/[\\*?[\]()|!@+]/g, '\\$&') : p.text)).join('');
 }
 
 /**
