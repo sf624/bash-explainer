@@ -48,11 +48,13 @@ describe('hover markdown', () => {
     // Dark themes keep the theme's chart colours, but red, too dark on a code block.
     assert.match(md('dark'), /<span style="color:var\(--vscode-charts-blue\);">echo<\/span>/);
     assert.match(md('dark'), /<span style="color:#ff5c65;">&#36;x<\/span>/);
-    // An error and a comment keep the theme's own colours, in every theme.
+    // An error takes our own colour in the light and dark themes, the theme's in high contrast; a comment the theme's.
     const bad = 'printf "%y" # c';
-    const md2 = toMarkdown(new Analyzer('en').explainLine(parser.parse(bad), 0), 'en', undefined, undefined, bad, 'first', 'light');
-    assert.match(md2, /<span style="color:var\(--vscode-errorForeground\);">%y<\/span>/);
-    assert.match(md2, /<span style="color:var\(--vscode-descriptionForeground\);">&#35;&nbsp;c<\/span>/);
+    const md2 = (theme: ThemeKind) => toMarkdown(new Analyzer('en').explainLine(parser.parse(bad), 0), 'en', undefined, undefined, bad, 'first', theme);
+    assert.match(md2('light'), /<span style="color:#d0020f;">%y<\/span>/);
+    assert.match(md2('dark'), /<span style="color:#fd6358;">%y<\/span>/);
+    assert.match(md2('highContrast'), /<span style="color:var\(--vscode-errorForeground\);">%y<\/span>/);
+    assert.match(md2('light'), /<span style="color:var\(--vscode-descriptionForeground\);">&#35;&nbsp;c<\/span>/);
     for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
       for (const s of [...md(theme).matchAll(/style="([^"]*)"/g)].map((m) => m[1])) assert.match(s, ALLOWED_STYLE, theme);
     }

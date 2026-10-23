@@ -44,8 +44,11 @@ describe('the colours of the editor', () => {
     // The colour each `.kind-*` takes: a variable.
     const kindVar = new Map<string, string>();
     for (const m of panel.matchAll(/^((?:\.kind-\w+(?:, )?)+) \{ color: var\((--c-[\w-]+)\); \}$/gm)) for (const k of m[1].split(', ')) kindVar.set(k.slice(6), m[2]);
-    assert.deepEqual([...kindVar.keys(), 'error'].sort(), Object.keys(PANEL_KIND_ROLE).sort());
+    assert.deepEqual([...kindVar.keys()].sort(), Object.keys(PANEL_KIND_ROLE).sort());
+    // An error takes the theme's error colour, as in the editor (but in light themes, see test/contrast.test.ts).
+    assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-errorForeground, #f14c4c)');
     for (const [kind, v] of kindVar) {
+      if (kind === 'error') continue;
       const role = PANEL_KIND_ROLE[kind as keyof typeof PANEL_KIND_ROLE];
       assert.equal(resolve(`var(${v})`), CLASSIC_COLOURS[CLASSIC_ROLE[role]], kind);
     }

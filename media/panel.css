@@ -12,11 +12,13 @@ body {
   --c-variable: var(--vscode-charts-red, #ff5c65);
   --c-comment: var(--vscode-descriptionForeground, #888);
   --c-muted: var(--vscode-descriptionForeground, #888);
+  --c-error: var(--vscode-errorForeground, #f14c4c);
 }
 
 /* Where the theme's chart colours are too light or too dark for text (below 4.5:1), our own: the values of
    src/ui/palette.ts, which the hover uses too (test/contrast.test.ts compares them and measures them).
-   Light themes: all six, darkened, as on the web page. Dark themes: red, which is 3.96:1 on a code block. */
+   Light themes: all six, darkened, as on the web page. Dark themes: red, which is 3.96:1 on a code block.
+   Both: the error colour (Light Modern's is 4.23:1 on a code block, Dark Modern's 4.22:1). */
 body.vscode-light {
   --c-command: #0161f8;
   --c-option: #9f5c00;
@@ -24,10 +26,12 @@ body.vscode-light {
   --c-keyword: #5f2489;
   --c-redirect: #645000;
   --c-variable: #d0020f;
+  --c-error: #d0020f;
 }
 
 body.vscode-dark {
   --c-variable: #ff5c65;
+  --c-error: #fd6358;
 }
 
 /* High contrast: VS Code gives a webview the theme's workbench colours, not its token colours, and its chart
@@ -238,7 +242,7 @@ code {
 .kind-redirect { color: var(--c-redirect); }
 .kind-variable, .kind-expansion, .kind-assignment, .kind-substitution { color: var(--c-variable); }
 .kind-comment { color: var(--c-comment); }
-.kind-error { color: var(--vscode-errorForeground, #f14c4c); }
+.kind-error { color: var(--c-error); }
 
 #empty {
   color: var(--c-muted);
