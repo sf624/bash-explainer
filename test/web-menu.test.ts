@@ -179,8 +179,8 @@ describe('the web page: the menu and the settings sheet', function () {
           c.click();
           document.querySelector(${JSON.stringify(opener)}).click();
         })()`);
-        const rest = () => page.locator(dialog).evaluate((d) => ({ open: (d as unknown as { open: boolean }).open, closing: d.classList.contains('closing'), x: d.getBoundingClientRect().x }));
-        await until(`${name}: the slide-out is over`, rest, (r) => !r.closing && (r.x === home || !r.open));
+        // Wait longer than the 500 ms safety timer of closeSheet (web/layout.ts): a timer left running by the reopening would close the sheet then.
+        await page.waitForTimeout(600);
         assert.strictEqual(await isOpen(), true, `${name}: reopened while sliding out`);
         assert.strictEqual(await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x), home);
         assert.strictEqual(await page.locator(dialog).evaluate((d) => d.classList.contains('closing')), false);
