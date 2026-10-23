@@ -13,7 +13,7 @@ import { perlExample, perlOptions } from './perlrun';
 import { Interactive, rerun, RerunSpec } from './rerun';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { commandExample, parseOptions } from './textfilters';
+import { commandExample, parseOptions, Unsupported as TextFiltersUnsupported } from './textfilters';
 
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
@@ -186,8 +186,11 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   let p;
   try {
     p = parseOptions(words, { flags: 'rse', values: 'aptu', long: {} });
-  } catch {
-    return undefined;
+  } catch (e) {
+    // An option the example does not model (`-n 3`): no example. Anything else is a bug, which shows.
+    if (e instanceof TextFiltersUnsupported) return undefined;
+    /* c8 ignore next */
+    throw e;
   }
   const array = p.opts.find(([o]) => o === 'a')?.[1];
   const names = (p.operands as string[]).length ? (p.operands as string[]) : array ? [] : ['REPLY'];
