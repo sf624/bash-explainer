@@ -1,9 +1,13 @@
 // The shell state model (src/semantics/state.ts): what it says along small scripts. Its agreement with bash is
 // checked on the rows of test/fixtures/probes/state.json by test/state-probes.test.ts.
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { nestedScripts } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
-import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shellState, ShellState, StateModel } from '../src/semantics/state';
+import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 
@@ -52,6 +56,41 @@ describe('shell state: options', () => {
     assert.strictEqual(shopt(end('set -o posix', 'dash'), 'expand_aliases'), 'default');
     assert.strictEqual(shopt(end('shopt -s nullglob; mapfile -t a', 'zsh'), 'nullglob'), 'default');
     assert.strictEqual(end('mapfile -t a', 'zsh').variables.size, 0);
+  });
+  it('reads POSIX mode from the shebang as the kernel, env and bash do', () => {
+    // The kernel gives the interpreter the rest of the line as one word; `env -S` splits it, and bash reads its
+    // long options before the short ones.
+    const rows: [string, boolean][] = [
+      ['#!/bin/bash --posix', true], ['#!/usr/bin/bash\t--posix  ', true], ['#! /bin/bash --posix', true], ['#!/usr/bin/env -S bash --posix', true],
+      ['#!/usr/bin/env -S bash --norc --posix', true], ['#!/usr/bin/env -S bash --posix -e', true],
+      ['#!/usr/bin/env -S bash -o posix', true], ['#!/usr/bin/env -S bash -eo posix', true], ['#!/usr/bin/env -S bash -ox posix', true], ['#!/usr/bin/env -S bash -oo pipefail posix', true], ['#!/usr/bin/env -S bash --norc -e -o posix', true],
+      ['#!/usr/bin/env -S POSIXLY_CORRECT=1 bash', true], ['#!/usr/bin/env -S POSIXLY_CORRECT= A=1 bash', true], ['#!/usr/bin/env -S A=1 bash', false],
+      ['#!/usr/bin/env -S bash +o posix', false], ['#!/usr/bin/env -S bash -o posix +o posix', false], ['#!/usr/bin/env -S bash -o pipefail', false], ['#!/bin/bash -o posix', false],
+      ['#!/bin/bash', false], ['#!/bin/bash --posix -e', false], ['#!/bin/bash -e --posix', false], ['#!/bin/bash --posixx', false],
+      ['#!/usr/bin/env bash --posix', false], ['#!/usr/bin/env -S bash -e --posix', false], ['#!/usr/bin/env --split-string bash --posix', false],
+      ['#!/usr/bin/env -S sh --posix', false], ['#!/usr/bin/env', false], ['# --posix', false],
+    ];
+    for (const [line, posix] of rows) {
+      const tree = parser.parse(`${line}\necho\n`);
+      assert.strictEqual(shebangPosix(tree.root), posix, line);
+      assert.strictEqual(set(shellState(tree).end, 'posix'), posix ? 'on' : 'default', line);
+    }
+    // (Given, the option wins; another shell reads no `--posix` from it.)
+    assert.strictEqual(set(model('#!/bin/bash --posix', undefined, false).end, 'posix'), 'default');
+    assert.strictEqual(set(end('#!/bin/bash --posix', 'zsh'), 'posix'), 'default');
+    // What bash does with each line, run by the kernel: in POSIX mode, or not (or it does not start).
+    if (process.platform !== 'linux' || !fs.existsSync('/bin/bash') || !fs.existsSync('/usr/bin/env')) return;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-shebang-'));
+    try {
+      rows.forEach(([line, posix], i) => {
+        const file = path.join(dir, `s${i}`);
+        fs.writeFileSync(file, `${line}\n[[ -o posix ]] && echo on\n`, { mode: 0o755 });
+        const r = spawnSync(file, [], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 });
+        assert.strictEqual(r.stdout.trim() === 'on', posix, `${line}: ${r.stdout}${r.stderr}`);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
   it('set -G is globstar in ksh only', () => {
     assert.strictEqual(set(end('set -G', 'ksh'), 'globstar'), 'on');

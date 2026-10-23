@@ -56,7 +56,8 @@ function compare(id: string, st: ShellState, facts: StateDiff, posix: boolean): 
     }
     if (!bash) {
       // Set by the script to what bash had already.
-      if (!(name in BASELINE_ATTRS) && name !== 'IFS') say(`variables.${name}`, v.set === 'on' ? 'set' : 'declared', has);
+      // (`bash --posix` sets POSIXLY_CORRECT before the script, as in the baseline of those rows.)
+      if (!(name in BASELINE_ATTRS) && name !== 'IFS' && !(posix && name === 'POSIXLY_CORRECT')) say(`variables.${name}`, v.set === 'on' ? 'set' : 'declared', has);
       continue;
     }
     if ((v.set === 'on') !== (has === 'set')) say(`variables.${name}.set`, v.set === 'on' ? 'set' : 'declared', has);

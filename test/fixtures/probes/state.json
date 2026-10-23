@@ -100,6 +100,35 @@
   },
   {
     "manual": "6.11",
+    "snippet": "#!/bin/bash --posix\n@PROBE:a@\nset +o posix",
+    "note": "`#!/bin/bash --posix` starts bash in POSIX mode, with POSIXLY_CORRECT; `set +o posix` leaves it",
+    "facts": {
+      "a": {
+        "shopt": {
+          "expand_aliases": true,
+          "inherit_errexit": true,
+          "shift_verbose": true
+        },
+        "set": {
+          "posix": true
+        },
+        "variables": {
+          "POSIXLY_CORRECT": {
+            "attrs": "-",
+            "value": "\"y\""
+          }
+        }
+      },
+      "end": {
+        "shopt": {
+          "inherit_errexit": true
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
     "snippet": "x=1 :; y=2 true",
     "posix": true,
     "note": "in POSIX mode, assignments before a special builtin persist",

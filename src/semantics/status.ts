@@ -10,11 +10,11 @@
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
 import { canonicalName } from '../dict/aliases';
 import type { Shell } from '../dialect';
-import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
-import { option, type ShellState, type StateModel, type Tri } from './state';
+import { type ErrexitWhy, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
 /** What the exit status of a statement is (manual 3.7.5). */
@@ -61,9 +61,10 @@ export interface ErrexitContext {
   readonly errexit: Tri;
   /**
    * Why errexit has that value: `default` (never turned on: `#!/bin/bash -e` is not read), `set` (a `set -e` before),
-   * `off-in-substitution` (bash turns it off in `$( )`), `inherit_errexit` or `posix` (kept in `$( )` by them).
+   * `off-in-substitution` (bash turns it off in `$( )`), `inherit_errexit` or `posix` (kept in `$( )` by them): the
+   * state's `errexitWhy`.
    */
-  readonly errexitWhy: 'default' | 'set' | 'off-in-substitution' | 'inherit_errexit' | 'posix';
+  readonly errexitWhy: 'default' | 'set' | ErrexitWhy;
   readonly ignored?: Ignored;
   /** Whether a failure of it stops the shell: errexit on, and not ignored. */
   readonly active: Tri;
@@ -143,8 +144,6 @@ export function statusModel(state: StateModel, shell?: Shell): StatusModel {
 class Statuses implements StatusModel {
   private readonly ignoreMemo = new Map<SyntaxNode, Ignored | null>();
   private readonly errexitMemo = new Map<SyntaxNode, ErrexitContext>();
-  /** The function definitions whose calls are being read (a function that calls itself). */
-  private readonly walking = new Set<SyntaxNode>();
   private callees: Map<SyntaxNode, SyntaxNode[]> | undefined;
 
   constructor(private readonly state: StateModel, private readonly shell?: Shell) {}
@@ -231,7 +230,9 @@ class Statuses implements StatusModel {
     const hit = this.errexitMemo.get(n);
     if (hit) return hit;
     const st = this.state.at(n).run;
-    const { errexit, why: errexitWhy } = this.errexitAt(n, st);
+    // (The walk of the state turns errexit off in `$( )` and in the functions called there, and says why.)
+    const errexit = optionOn(st, 'set', 'errexit');
+    const errexitWhy = st.errexitWhy ?? (option(st, 'set', 'errexit') === 'default' ? 'default' : 'set');
     const ignored = this.ignored(n) ?? undefined;
     const active: Tri = errexit === 'off' || ignored?.sure ? 'off' : errexit === 'unknown' || ignored ? 'unknown' : 'on';
     // (The shell that checks a `( )` is the one around it.)
@@ -245,49 +246,6 @@ class Statuses implements StatusModel {
     const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops };
     this.errexitMemo.set(n, ctx);
     return ctx;
-  }
-
-  /**
-   * errexit at `n` (`st`, its run state), and why. In bash, a `$( )` starts with errexit off unless inherit_errexit is
-   * on (POSIX mode turns it on); a `set` inside it before `n` that turns errexit on or off counts from there. The
-   * walk of the state turns errexit off in `$( )` (`substitutionState`) but does not follow a `set` inside it or the
-   * functions called only there (it would walk them again), so that, and the reason (`errexitWhy`), is done here.
-   */
-  private errexitAt(n: SyntaxNode, st: ShellState): { errexit: Tri; why: ErrexitContext['errexitWhy'] } {
-    const own = optionOn(st, 'set', 'errexit');
-    // The nearest `$( )` or function body around `n`.
-    const sub = ancestor(n, (a) => a.type === 'command_substitution' || (a.parent?.type === 'function_definition' && a === field(a.parent, 'body')));
-    const plain = { errexit: own, why: option(st, 'set', 'errexit') === 'default' ? 'default' as const : 'set' as const };
-    if (!sub || (this.shell && this.shell !== 'bash') || this.setBefore(sub, n)) return plain;
-    if (sub.type !== 'command_substitution') return this.fromCalls(sub.parent!, plain);
-    const outerSt = this.state.at(sub).run;
-    const outer = this.errexit(sub).errexit;
-    if (outer === 'off') return plain;
-    const inherit = option(outerSt, 'shopt', 'inherit_errexit');
-    if (inherit === 'on') return { errexit: outer, why: optionOn(outerSt, 'set', 'posix') === 'on' ? 'posix' : 'inherit_errexit' };
-    return { errexit: inherit === 'unknown' ? 'unknown' : 'off', why: 'off-in-substitution' };
-  }
-
-  /**
-   * errexit in the body of `def`, where its calls left it: off in a function called in `$( )` (`x=$(f)`), though the
-   * state, walked from the caller's, has it on. `plain` is what the state says.
-   */
-  private fromCalls(def: SyntaxNode, plain: { errexit: Tri; why: ErrexitContext['errexitWhy'] }): { errexit: Tri; why: ErrexitContext['errexitWhy'] } {
-    if (this.walking.has(def)) return plain;
-    this.walking.add(def);
-    try {
-      const sites = [...this.state.calls.get(def)?.keys() ?? []].map((c) => this.errexit(c));
-      if (!sites.some((c) => c.errexitWhy === 'off-in-substitution')) return plain;
-      const all = new Set(sites.map((c) => c.errexit));
-      return { errexit: all.size === 1 ? [...all][0] : 'unknown', why: 'off-in-substitution' };
-    } finally {
-      this.walking.delete(def);
-    }
-  }
-
-  /** Whether a `set` in `sub` before `n` turns errexit on or off (`$(set -e; cmd)`). */
-  private setBefore(sub: SyntaxNode, n: SyntaxNode): boolean {
-    return descendants(sub, ['command']).some((c) => c.startIndex < n.startIndex && this.state.setWrites(c).has('errexit'));
   }
 
   turnsErrexitOn(n: SyntaxNode): boolean {

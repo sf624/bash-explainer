@@ -718,6 +718,10 @@ describe('the state along the script (src/semantics/state.ts)', () => {
     assert.match(find(explain('x=1 :\nset -o posix\ny=2 :'), 'x=1').explanation, /only for this command/);
     assert.match(find(explain('x=1 :\nset -o posix\ny=2 :', 2), 'y=2').explanation, /POSIX special builtin/);
     assert.match(find(explain('#!/bin/bash --posix\nx=1 :', 1), 'x=1').explanation, /POSIX special builtin/);
+    // (The kernel passes `--posix -e` to bash as one word, which bash rejects; env looks for a program `bash --posix`.)
+    assert.match(find(explain('#!/bin/bash --posix -e\nx=1 :', 1), 'x=1').explanation, /only for this command/);
+    assert.match(find(explain('#!/usr/bin/env bash --posix\nx=1 :', 1), 'x=1').explanation, /only for this command/);
+    assert.match(find(explain('#!/usr/bin/env -S bash --posix\nx=1 :', 1), 'x=1').explanation, /POSIX special builtin/);
     assert.match(find(explain('awk --posix 1\nx=1 :', 1), 'x=1').explanation, /only for this command/);
     // Aliases expand only when expand_aliases was on when the line was read.
     assert.ok(notes('alias ll="ls -l"\nll\nshopt -s expand_aliases', 1).some((n) => /bash does not expand aliases in scripts/.test(n)));

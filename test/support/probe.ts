@@ -10,7 +10,8 @@
 //
 // Each run has a fresh temporary directory as its current directory, holding FILES; `bash --norc
 // --noprofile` (and `--posix` when asked) runs the snippet as a script file, with LC_ALL=C, a fixed PATH and
-// HOME, and no other environment (IFS is bash's default).
+// HOME, and no other environment (IFS is bash's default). A snippet that starts with `#!…/bash ARG` is run as the
+// kernel runs it, with ARG (the rest of the line, as one word) before the script's name.
 import { execFile, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -72,6 +73,14 @@ export function instrument(snippet: string): { script: string; markers: string[]
   return { script, markers };
 }
 
+/** The argument the kernel gives bash from the snippet's `#!` line (none without one); only bash may be named there. */
+function shebangArgs(snippet: string): string[] {
+  const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(snippet);
+  if (!m) return [];
+  if (!/(^|\/)bash$/.test(m[1])) throw new Error(`a probe's shebang runs bash: ${m[0]}`);
+  return m[2] ? [m[2]] : [];
+}
+
 const quote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
@@ -94,7 +103,7 @@ export function runProbe(snippet: string, body: string, opts: ProbeOptions = {})
   fs.writeFileSync(scriptFile, script);
   fs.writeFileSync(log, '');
   const fn = `() { ${body.replace(/\bLOG\b/g, quote(log))}\n}`;
-  const args = ['--norc', '--noprofile', ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
+  const args = ['--norc', '--noprofile', ...shebangArgs(snippet), ...(opts.posix ? ['--posix'] : []), ...(opts.errexit ? ['-e'] : []), scriptFile];
   const normalize = (s: string): string => s.split(box).join(BOX).split(scriptFile).join(SCRIPT);
   return new Promise((resolve) => {
     const child = execFile(PROBE_BASH, args, { cwd: box, env: { ...PROBE_ENV, 'BASH_FUNC___probe%%': fn }, timeout: opts.timeout ?? 5000, encoding: 'utf8', maxBuffer: 1 << 24 }, (_err, stdout, stderr) => {
