@@ -91,6 +91,12 @@ function passed(name: string, v: VariableState): VariableState | undefined {
     : { declared: 'unknown', set: 'unknown', attrs: { x: { state: 'unknown', at: v.attrs.x!.at } }, at: v.at };
 }
 
+/**
+ * Whether the assignment before a command name makes a variable for it: not one to an element (`n[0]=5 f`), which
+ * bash refuses ("not a valid identifier") before it runs the command, assigning nothing.
+ */
+const temporary = (a: SyntaxNode): boolean => field(a, 'name')!.type !== 'subscript';
+
 /** The walk of a tree (`program`), with its parts. */
 export class Walker {
   readonly arith = new WalkArith(this);
@@ -1265,7 +1271,7 @@ export class Walker {
     } else if (temporaries.length) {
       const frame: Frame = { def, saved: new Map() };
       let entry = st;
-      for (const a of temporaries) {
+      for (const a of temporaries.filter(temporary)) {
         const name = field(a, 'name')!.text;
         if (!frame.saved.has(name)) frame.saved.set(name, entry.variables.get(name));
         // (bash exports them to the commands the body runs.)
@@ -1423,14 +1429,16 @@ export class Walker {
     if (expanded) return expanded;
     // In POSIX mode, the assignments before a special builtin stay after it, exported.
     const posix = option(before, 'set', 'posix');
-    if (assignments.length && name && builtins[name]?.builtin === 'special' && (posix === 'on' || posix === 'unknown')) {
+    const special = assignments.length > 0 && !!name && builtins[name]?.builtin === 'special' && (posix === 'on' || posix === 'unknown');
+    if (special) {
       let kept = st;
-      for (const a of assignments) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
-      st = posix === 'on' ? kept : merge([st, kept], this.posix);
+      for (const a of assignments.filter(temporary)) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
+      st = posix === 'on' ? kept : merge([this.builtins.appendArith(assignments, n, st), kept], this.posix);
     }
     if (name === undefined) return withStatus(st, this.conditions.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
     if (fn) return withStatus(this.call(fn, st, assignments), undefined);
+    if (!special) st = this.builtins.appendArith(assignments, n, st);
     return withStatus(this.builtins.builtin(name, fields(n, 'argument'), n, st, true), this.conditions.simpleStatus(n, before));
   }
 
@@ -1501,7 +1509,7 @@ export class Walker {
     if (!temps.length || option(st, 'set', 'posix') === 'on') return this.runScript(script, n, st);
     const saved = new Map<string, VariableState | undefined>();
     let entry = st;
-    for (const a of temps) {
+    for (const a of temps.filter(temporary)) {
       const v = field(a, 'name')!.text;
       if (!saved.has(v)) saved.set(v, entry.variables.get(v));
       entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), v, 'x', a);

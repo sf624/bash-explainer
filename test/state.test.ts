@@ -547,7 +547,23 @@ describe('shell state: arithmetic', () => {
       ["declare -i n; f() { :; }; x=1; n='x=5' f", ['x'], '1', 'set=1'],
       ["declare -i n; x=1; n='x=5' eval :", ['x'], '1', 'set=1'],
       ["declare -i n=4; f() { :; }; x=1; n+='x=7' f", ['x', 'n'], '7 4', 'set=7 set=4'],
+      // (Before a builtin or a program too: only `+=` to an integer runs its text. Before, the model kept x=1.)
+      ...[['true', '7'], ['/bin/true', '7'], ['builtin eval :', '7'], ['command -v true >/dev/null', '7'], ['command', '7']].map(([cmd, x]): [string, string[], string, string] =>
+        [`declare -i n=4; x=1; n+='x=7' ${cmd}`, ['x', 'n'], `${x} 4`, `set=${x} set=4`]),
+      ["declare -i n=4; x=1; n+='x++' eval :", ['x', 'n'], '2 4', 'set=2 set=4'],
+      ["declare -i n=4; x=1; n+= true", ['x', 'n'], '1 4', 'set=1 set=4'],
+      ["declare -i n=4; x=1; n[0]+='x=7' true", ['x', 'n'], '1 4', 'set=1 set=4'],
+      ["m=4; x=1; m+='x=7' true", ['x', 'm'], '1 4', 'set=1 set=4'],
+      ["declare -i n=4; x=1; declare -n q=n; q+='x=7' true", ['x', 'n'], '7 4', 'set=7 set=4'],
+      ["declare -i n=4; x=1; declare -n z=\"$1\"; z+='x=7' true", ['x', 'n'], '1 4', 'set=1 set=4'],
+      // (An element before a function or `eval`: bash refuses it, "not a valid identifier", and runs the command.
+      // Before, the model failed on it.)
+      ["n=(1); f() { :; }; n[0]=5 f", ['n'], '1', 'set'],
+      ["n=(1); n[0]=5 eval :", ['n'], '1', 'set'],
     ];
+    // (In POSIX mode, before a special builtin, bash's error ends the script; the model keeps n.)
+    assert.strictEqual(bash('set -o posix; n=(1); n[0]=5 :\necho $n'), '');
+    assert.deepStrictEqual(after('set -o posix; n=(1); n[0]=5 :', 'n'), ['set']);
     for (const [src, names, theirs, ours] of rows) {
       assert.strictEqual(bash(`${src}\necho ${names.map((v) => `$${v}`).join(' ')}`), `${theirs}\n`, src);
       assert.strictEqual(after(src, ...names).join(' '), ours, src);
