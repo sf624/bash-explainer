@@ -188,13 +188,13 @@ Sizes are rough, in changed lines with tests: S under 300, M 300–1,000, L over
 
 1. **The PR lists the finding IDs it addresses**, in its description, with a link to this page.
 2. **A fresh reviewer** (a subagent that shares no context with the author) re-reads those findings, from the table below and from the step above, and confirms in the diff that each is resolved. For each ID the review names the test that shows it: a probe row, an example-table row compared with the real tool, a unit test, or a dump that is unchanged (a move) or changed only as the step says.
-3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #N`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
+3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #208`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
 4. **A step that finds a finding wrong, or only partly right,** says so in the table (`not a problem`, or a corrected note) instead of leaving it open.
 5. **A behaviour change not listed in the step** is either a fix of a contradiction (then it gets a test against the real tool, a CHANGELOG line and a line in the table's notes) or a regression to undo.
 
 ## Traceability
 
-Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #N`, `done`, `won't do` or `not a problem`.
+Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #208`, `done`, `won't do` or `not a problem`.
 
 | ID | Finding (short) | Verdict | Step | Status | Verified by |
 |---|---|---|---|---|---|
@@ -205,18 +205,18 @@ Verdicts are from the verification at 1f9b651. Line numbers are those of that co
 | A5 | `unset f` says "variable" for a function; texts copied from `render()` | confirmed (bash `type f`: not found); unset() at 1318 | 1.2 | planned | |
 | A6 | `notes.pitfalls` gated in 9 places; 2 ⚠ bypass it | confirmed (`[[ =~ ]]` and distro alias); missing-`then` is a syntax error: not a problem | 1.3 | planned | |
 | A7 | `--posix` by regex; lookupCommand/nestedScripts in analyzer; name checks | confirmed (nestedScripts at 4615, lookupCommand at 4639) | 1.1 (name checks), 1.4 (lookupCommand), 2.5 (`--posix`), 3.1 (nestedScripts, commandExampleFor) | planned | |
-| A8 | Three try/catch around braceExpand; c8 comment wrong | confirmed (2655, 2678, 2709–2720; catch reachable) | 1.5 | planned | |
+| A8 | Three try/catch around braceExpand; c8 comment wrong | confirmed (2655, 2678, 2709–2720; catch reachable) | 1.5 | PR #208 | test/tricky.test.ts "says too many words for a brace expansion it cannot list" (one helper; its c8 ignore is on one guard) |
 | A9 | Analyzer god class | confirmed (facts) | 3.1 | planned | |
 | A10 | idioms match statement text by regex | confirmed (idioms.ts:164, 174, 229) | 2.3 | planned | |
 | S1 | Builtin effects hand-coded in Walker.builtin and Scan.command; `-v` regex ×3; duplicates | confirmed (Walker.builtin 3048–3192, Scan.command 472–588, set -a 582–584; DECLARATIONS in trust.ts once) | 2.1 | planned | |
 | S2 | Second word evaluator in the walk; four variable catalogs | confirmed | 2.6 | planned | |
-| S3 | errexit done twice | corrected: the code agrees; status.ts:259–260 and semantics.md:809 are stale (CLAUDE.md is right). `errexitAt` is redundant for the value but supplies `errexitWhy` | 1.5 (docs), 2.5 (one source) | planned | |
+| S3 | errexit done twice | corrected: the code agrees; status.ts:259–260 and semantics.md:809 are stale (CLAUDE.md is right). `errexitAt` is redundant for the value but supplies `errexitWhy` | 1.5 (docs), 2.5 (one source) | PR #208 | docs only (status.ts comment, semantics.md 4.11); the single source stays for 2.5 |
 | S4 | bats: any host function call blinds the trust; host threaded; run re-parsed | confirmed (one `skip` blinds the whole file) | 2.1 | planned | |
 | S5 | Walker god class; hand-listed reuse key; `opaque` | corrected: about 50 fields, 19 mutable (not ~40 mutable) | 3.2 | planned | |
 | S6 | Unseen calls decided twice (env.ts counts names) | confirmed | 2.2 | planned | |
 | S7 | Trust scan re-derives structure from text; two parsers per string | confirmed | 2.2 | planned | |
-| S8 | `aliasTrees` cache never evicts | confirmed (grows with distinct alias texts) | 1.5 | planned | |
-| S9 | Stale doc (model.ts, layers diagram), c8 ignores, stray comment | corrected: words.ts:846–847 is a rethrow guard (needs a reason, stays); status.ts:363 is the unreachable one | 1.5 | planned | |
+| S8 | `aliasTrees` cache never evicts | confirmed (grows with distinct alias texts) | 1.5 | PR #208 | test/state.test.ts "the cache of alias texts" (300 alias texts, then a repeat) |
+| S9 | Stale doc (model.ts, layers diagram), c8 ignores, stray comment | corrected: words.ts:846–847 is a rethrow guard (needs a reason, stays); status.ts:363 is the unreachable one | 1.5 | PR #208 | docs and comments only; `enclosingBlock` has no unreachable return; coverage check |
 | D1 | Embedded languages read options from raw words; `grep --invert` | confirmed; `grep --invert` part is D3's | 1.1 (readers), 3.5 (prefixes) | planned | |
 | D2 | Second option-parser family in src/examples; `grep -efoo data.txt \| sort` input label | confirmed (dump) | 1.1 (`readsFileOperand` bug), 3.5 (the parsers) | planned | |
 | D3 | `longPrefixes` opt-in; `grep --invert` unknown; five flags describe a family | corrected: off by default is decision 3 of semantics.md; the gap is that getopt_long tools like grep lack it | 3.5 | planned | |
@@ -231,12 +231,12 @@ Verdicts are from the verification at 1f9b651. Line numbers are those of that co
 | D12 | sed and perl have two parsers each | proposal | — | won't do (for now) | see "Not planned" |
 | D13 | extras files patch other entries' options | confirmed | 3.5 | planned | |
 | D14 | hosts.ts per-CI flags → table; split | confirmed | 3.4 | planned | |
-| P1 | Code actions only for `shellscript` | corrected: only dialect diagnostics have fixes, so host files are not affected; a language id added in the setting is | 1.5 | planned | |
+| P1 | Code actions only for `shellscript` | corrected: only dialect diagnostics have fixes, so host files are not affected; a language id added in the setting is | 1.5 | PR #208 | integration/extension.itest.ts "offers the quick fix in a language added to bashExplainer.languages" (not run here: needs a downloaded VS Code) |
 | P2 | VS Code reads settings by hand | confirmed (`readSettings`/`explainOptions` exist in src/settings.ts) | 2.4 | planned | |
 | P3 | Document set-up copied four times; kind lists | confirmed | 2.4 | planned | |
 | P4 | Diagnostics policy re-applied per product | confirmed | 2.4 | planned | |
 | P5 | Four drifting `plain()` copies | confirmed; the drift is latent (the VS Code copy would keep a variation selector, but no message has one; the CLI also strips backticks) | 2.4 | planned | |
-| P6 | Dead npm script `build:grammar` | confirmed | 1.5 | planned | |
+| P6 | Dead npm script `build:grammar` | confirmed | 1.5 | PR #208 | package.json: the script is gone |
 | P7 | release.yml re-tests on Node 22, smaller suite; setup copied | corrected: 12 `npm ci` across four workflow files, not 7 jobs; the tag's commit already passed test.yml, so this is redundancy, not a hole | 3.7 | planned | |
 | P8 | Test helpers re-implemented; bash runners differ | corrected: flattening in 29 files, `explain` in about 20 | 3.6 | planned | |
 | P9 | web.test.ts large, 3 builds, fixed sleeps | corrected: 2,150 lines; sleeps at 259, 1455, 1788, 1837, 2046 | 3.6 | planned | |

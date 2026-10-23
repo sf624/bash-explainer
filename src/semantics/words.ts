@@ -844,6 +844,7 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
     if (w.rule.fields === 'one-or-error' && fields.length !== 1) return { error: 'ambiguous-redirect', failure: { kind: 'command', applies: true } };
     return { fields };
   } catch (e) {
+    // A rethrow guard: only `Failure` is thrown inside (a bug elsewhere must not become a wrong answer).
     /* c8 ignore next */
     if (!(e instanceof Failure)) throw e;
     return { error: e.error, failure: { kind: 'fatal', applies: true } };

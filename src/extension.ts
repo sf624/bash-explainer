@@ -58,7 +58,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplainer')) return;
-      if (e.affectsConfiguration('bashExplainer.languages')) hover.register();
+      if (e.affectsConfiguration('bashExplainer.languages')) { hover.register(); diagnostics.register(); }
       if (e.affectsConfiguration('bashExplainer.embedded.files')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();
       // Which documents have shell code depends on the languages and the kinds of files too.

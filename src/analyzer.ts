@@ -244,6 +244,18 @@ const isPlainWord = (n: SyntaxNode) => n.type === 'word' || n.type === 'number';
 const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
 const hasGlob = (s: string) => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
 
+/** `braceExpand` of an unquoted word: undefined when it has no brace expansion, null when it gives too many words to list. */
+function braceExpansion(text: string): string[] | undefined | null {
+  try {
+    return braceExpand(text);
+  } catch (e) {
+    // braceExpand throws nothing else; a guard against a bug there.
+    /* c8 ignore next */
+    if (!(e instanceof ShellWordsUnsupported)) throw e;
+    return null;
+  }
+}
+
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`scriptTokens`). */
   private nested: NestedScript['kind'] | undefined;
@@ -1043,12 +1055,7 @@ export class Analyzer {
     const w = this.wordAt(d);
     const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
     if (step('brace')!.applies === true) {
-      let words: string[] | undefined;
-      try {
-        words = braceExpand(d.text);
-      } catch {
-        words = undefined;
-      }
+      const words = braceExpansion(d.text);
       if (!words || words.length !== 1) return this.s('。ブレース展開で複数の単語になるので、bash は「ambiguous redirect」のエラーにする', '. Brace expansion makes several words of it, so bash reports "ambiguous redirect"');
     }
     const glob = step('glob')!;
@@ -2652,15 +2659,7 @@ export class Analyzer {
 
   /** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
   private braceWords(text: string): string[] | undefined {
-    try {
-      return braceExpand(text);
-      /* c8 ignore start */
-    } catch (e) {
-      // Too many words to list. (braceExpand throws nothing else.)
-      if (!(e instanceof ShellWordsUnsupported)) throw e;
-      return undefined;
-    }
-    /* c8 ignore stop */
+    return braceExpansion(text) ?? undefined;
   }
 
   /** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is (manual 3.5.1). */
@@ -2673,13 +2672,8 @@ export class Analyzer {
   private braceWordToken(n: SyntaxNode): Token | undefined {
     const text = this.unquotedWord(n);
     if (text === undefined) return undefined;
-    let words: string[] | undefined;
-    try {
-      words = braceExpand(text);
-    } catch (e) {
-      // Too many words to list. (braceExpand throws nothing else.)
-      /* c8 ignore next */
-      if (!(e instanceof ShellWordsUnsupported)) throw e;
+    const words = braceExpansion(text);
+    if (words === null) {
       return this.tok(n, 'expansion', this.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
     }
     if (!words) return undefined;
@@ -2705,22 +2699,15 @@ export class Analyzer {
   private wordExample(a: SyntaxNode): void {
     const text = this.unquotedWord(a);
     if (!text) return;
-    try {
-      const words = braceExpand(text);
-      if (words) {
-        this.examples.push({ kind: 'glob',
-          title: this.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
-          sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => w || "''") }],
-        });
-        return;
-      }
-      /* c8 ignore start */
-    } catch (e) {
-      // A guard: braceExpand throws nothing else.
-      if (!(e instanceof ShellWordsUnsupported)) throw e;
+    const words = braceExpansion(text);
+    if (words === null) return;
+    if (words) {
+      this.examples.push({ kind: 'glob',
+        title: this.s(`例（ブレース展開 \`${text}\`）`, `Example (brace expansion \`${text}\`)`),
+        sections: [{ label: this.s('展開後の単語', 'Resulting words'), lines: (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => w || "''") }],
+      });
       return;
     }
-    /* c8 ignore stop */
     if (isGlob(text) && !this.globOff(a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
