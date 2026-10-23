@@ -34,6 +34,7 @@
 - `unset f` says it removes the function when there is no variable `f`, as bash does. A pipeline whose stage is a function or an alias of the script (`sort() { tac; }; … | sort`) no longer shows the output of the program of that name as an example. Before, the first said "Unset the variable" and the second showed the output of the program, which the function does not give.
 - The ⚠ notes on words and pipelines follow what bash does here. After `IFS=; set -f`, `cp $a b` no longer says that `$a` is split (the token already said it is not); `X=1 echo "\$X"` no longer warns that `$X` is expanded first (`\$X` is text); a variable set by `((count++))`, `printf -v` or `mapfile` at the end of a pipeline, or by a function called there, is now reported as lost after it, and `echo '$n'` no longer counts as a later read. An alias of `rm` is taken for `rm`.
 - The "Idiom" notes are found with other spacing: `while  true ; do` is an endless loop, and `done <f` ends a `while read` loop over a file.
+- A script is explained in POSIX mode only when its shebang starts bash in it (`#!/bin/bash --posix`, or `#!/usr/bin/env -S` with `bash --posix`, `bash -o posix` or `POSIXLY_CORRECT=1 bash`), and `POSIXLY_CORRECT` is then set, as bash sets it. Before, `--posix` anywhere on the shebang line counted, also in `#!/bin/bash --posix -e` and `#!/usr/bin/env bash --posix`, where Linux passes the rest of the line as one word and bash does not start.
 
 [All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
 

@@ -299,8 +299,8 @@ export class Analyzer {
     this.rootNode = root;
     this.line = line;
     this.shell = shell;
-    // (`#!/bin/bash --posix` starts bash in POSIX mode.)
-    this.state = shellState(tree, shell, { posix: /^#![^\n]*\s--posix\b/.test(root.text), host: this.opts.hostCommands });
+    // (`#!/bin/bash --posix` starts bash in POSIX mode: the state reads it.)
+    this.state = shellState(tree, shell, { host: this.opts.hostCommands });
     this.status = statusModel(this.state, shell);
     this.context = [];
     this.slotEnvs = new Map();

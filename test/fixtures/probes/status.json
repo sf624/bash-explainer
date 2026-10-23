@@ -558,6 +558,29 @@
     }
   },
   {
+    "manual": "6.11",
+    "snippet": "#!/bin/bash --posix\nset -e; x=$(false; @PROBE:in@); @PROBE:after@",
+    "errexit": false,
+    "note": "`#!/bin/bash --posix` turns inherit_errexit on: the `$( )` stops at false",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "#!/bin/bash\nset -e; x=$(false; @PROBE:in@); @PROBE:after@",
+    "errexit": false,
+    "note": "without --posix it goes on",
+    "facts": {
+      "ran": [
+        "in",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "4.3.1",
     "snippet": "f() { false; @PROBE:in@; }; x=$(f); @PROBE:after@",
     "facts": {

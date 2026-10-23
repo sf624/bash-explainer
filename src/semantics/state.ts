@@ -264,11 +264,21 @@ export interface ShellState {
   /** The exit status of the last command run (`$?`), when it is known (docs/design/semantics.md, 4.14). */
   readonly status?: number;
   /**
+   * Why errexit has its value in the command substitution this state runs in, when that comes from the `$( )` and
+   * not from a `set` in it (manual 4.3.1, 6.11): bash turned it off there (`off-in-substitution`), or kept it on
+   * because inherit_errexit is on (`inherit_errexit`, or `posix`: POSIX mode turned it on). Function bodies called
+   * there carry it too; a `set -e` or `set +e` clears it.
+   */
+  readonly errexitWhy?: ErrexitWhy;
+  /**
    * Set on the state of a path that never gets here: after `break`, `continue`, `return` or `exit` (and an error
    * under `set -e`). What runs from it is dead code; merging drops it.
    */
   readonly unreachable?: true;
 }
+
+/** Why errexit has its value in a `$( )` (`ShellState.errexitWhy`). */
+export type ErrexitWhy = 'off-in-substitution' | 'inherit_errexit' | 'posix';
 
 /** What a condition always decides here (on every walk), and the variables it read: name → value (null: unset). */
 export interface Decision {
@@ -499,7 +509,7 @@ const ARITH_OPS: Record<string, (a: bigint, b: bigint) => bigint | undefined> = 
 // ---------------------------------------------------------------------------------------------------
 // Merging states.
 
-type Kind = Exclude<keyof ShellState, 'status' | 'unreachable'>;
+type Kind = Exclude<keyof ShellState, 'status' | 'unreachable' | 'errexitWhy'>;
 type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 
 const EMPTY: ShellState = {
@@ -602,7 +612,24 @@ export function merge(states: ShellState[], posix = false): ShellState {
     disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
     hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeAlias(x, y)),
     ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
+    ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
   }));
+}
+
+/** `st` without a reason for errexit from a `$( )`. */
+function withoutErrexitWhy(st: ShellState): ShellState {
+  if (!st.errexitWhy) return st;
+  const { errexitWhy: _, ...rest } = st;
+  return rest;
+}
+
+/**
+ * The reason errexit has its value after paths that give `a` and `b`: the same, or `off-in-substitution` when one
+ * of them is (a function called both in `$( )` and outside it); otherwise none.
+ */
+function mergeErrexitWhy(a: ErrexitWhy | undefined, b: ErrexitWhy | undefined): { errexitWhy?: ErrexitWhy } {
+  const why = a === b ? a : a === 'off-in-substitution' || b === 'off-in-substitution' ? 'off-in-substitution' : undefined;
+  return why ? { errexitWhy: why } : {};
 }
 
 /** Whether two states say the same (the nodes where things changed aside). */
@@ -611,7 +638,7 @@ function sameState(a: ShellState, b: ShellState): boolean {
     const k = Object.keys(x.attrs);
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
   };
-  return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
+  return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
     && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
@@ -836,6 +863,9 @@ class Walker {
   private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[] }[]>();
   /** What the walks of each function body changed. */
   private readonly changes = new Map<SyntaxNode, Set<string>>();
+  /** The state each body being walked started with, and the one to walk it again from (see `recurse`). */
+  private readonly bodyEntries = new Map<SyntaxNode, ShellState>();
+  private readonly recursed = new Map<SyntaxNode, ShellState>();
   /** The bodies being walked (a call of one of these is recursive). */
   private readonly stack: SyntaxNode[] = [];
   private readonly frames: Frame[] = [];
@@ -927,10 +957,12 @@ class Walker {
     return states?.[0];
   }
 
-  initial(): ShellState {
+  /** The state the script starts with; `root`: the node that sets POSIXLY_CORRECT in POSIX mode (`bash --posix` sets it to `y`). */
+  initial(root?: SyntaxNode): ShellState {
     let st = EMPTY;
     if (this.posix) {
       for (const kind of ['set', 'shopt'] as const) for (const name of POSIX_ON[kind]) st = { ...st, [kind]: st[kind].with(name, 'on') };
+      if (root) st = { ...st, variables: st.variables.with('POSIXLY_CORRECT', { declared: 'on', set: 'on', attrs: {}, value: 'y', at: root }) };
     } else if (this.shell && POSIX_SHELLS.has(this.shell)) {
       st = { ...st, set: st.set.with('posix', 'on') };
     }
@@ -1596,12 +1628,18 @@ class Walker {
     return st;
   }
 
-  /** The state a command substitution `c` starts with: bash turns `set -e` off in it, unless inherit_errexit is on. */
+  /**
+   * The state a command substitution `c` starts with: bash turns `set -e` off in it, unless inherit_errexit is on
+   * (POSIX mode turns it on). It says why (`errexitWhy`) when errexit is on or unknown around it.
+   */
   private substitutionState(c: SyntaxNode, st: ShellState): ShellState {
+    if (c.type !== 'command_substitution' || !this.bash) return st;
+    const rest = withoutErrexitWhy(st);
     const errexit = option(st, 'set', 'errexit');
+    if (errexit === 'off' || errexit === 'default') return rest;
     const inherit = option(st, 'shopt', 'inherit_errexit');
-    if (c.type !== 'command_substitution' || !this.bash || errexit === 'off' || errexit === 'default' || inherit === 'on') return st;
-    return { ...st, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off') };
+    if (inherit === 'on') return { ...rest, errexitWhy: option(st, 'set', 'posix') === 'on' ? 'posix' : 'inherit_errexit' };
+    return { ...rest, set: st.set.with('errexit', inherit === 'unknown' ? 'unknown' : 'off'), errexitWhy: 'off-in-substitution' };
   }
 
   /** Walks the command and process substitutions in `n` (not those of statements under it): each is a subshell. */
@@ -2525,6 +2563,7 @@ class Walker {
     if (this.stack.includes(def) || this.stack.length >= CALL_DEPTH) {
       // A recursive call: what the body changed in its walks so far may change, and it may end the line (see `abort`).
       exit = this.widen(st, this.changes.get(def) ?? new Set());
+      this.recurse(def, st);
       this.unwalked.add(def);
       this.abort(st, false);
     } else if (temporaries.length) {
@@ -2564,8 +2603,47 @@ class Walker {
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
   }
 
-  /** Walks the body of `def` from `entry`; its locals (in `frame`) and its `local -` options are restored after it. */
+  /**
+   * A recursive call of `def` with `st`: when errexit there (or why it has its value) is not what the walk of the body
+   * started with, the entry with errexit as on both paths, for `walkBody` to walk again.
+   */
+  private recurse(def: SyntaxNode, st: ShellState): void {
+    const entry = this.recursed.get(def) ?? this.bodyEntries.get(def);
+    if (!entry) return;
+    const errexit = mergeOption('set', 'errexit', entry.set.get('errexit'), st.set.get('errexit'), this.posix);
+    const { errexitWhy } = mergeErrexitWhy(entry.errexitWhy, st.errexitWhy);
+    if (errexit === (entry.set.get('errexit') ?? 'default') && errexitWhy === entry.errexitWhy) return;
+    this.recursed.set(def, { ...withoutErrexitWhy(entry), set: entry.set.with('errexit', errexit), ...(errexitWhy ? { errexitWhy } : {}) });
+  }
+
+  /**
+   * Walks the body of `def` from `entry` (`walkBodyOnce`). A recursive call in it, which is not walked, may run the
+   * body with errexit otherwise (`f() { cmd; x=$(f); }`: bash runs `cmd` with errexit on and off): then the body is
+   * walked again from `entry` with errexit as on both, until that adds nothing. Those walks only add run states to
+   * the nodes of the body: the state after the call is the one of the walk from the call's own entry.
+   */
   private walkBody(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
+    const saved = new Map(frame.saved);
+    let end: ShellState | undefined;
+    try {
+      for (;;) {
+        this.bodyEntries.set(def, entry);
+        this.recursed.delete(def);
+        const once = this.walkBodyOnce(def, entry, end ? { def, saved: new Map(saved) } : frame);
+        end ??= once;
+        const again = this.recursed.get(def);
+        if (!again) return end;
+        entry = again;
+      }
+    } finally {
+      // (A body is not walked inside its own walk: a call there is recursive.)
+      this.recursed.delete(def);
+      this.bodyEntries.delete(def);
+    }
+  }
+
+  /** Walks the body of `def` from `entry`; its locals (in `frame`) and its `local -` options are restored after it. */
+  private walkBodyOnce(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
     if (!this.walks.has(def) && !this.silent) this.walks.set(def, []);
     const body = field(def, 'body');
     if (!body) return entry;
@@ -3255,6 +3333,8 @@ class Walker {
       const writes = this.setWrites.get(this.node!) ?? new Map<string, 'on' | 'off'>();
       this.setWrites.set(this.node!, writes.set(name, on ? 'on' : 'off'));
       st = name === 'posix' ? this.setPosix(st, on, this.node!) : this.put(st, 'set', name, on ? 'on' : 'off');
+      // (errexit is now what this `set` made it.)
+      if (name === 'errexit') st = withoutErrexitWhy(st);
     }
     return st;
   }
@@ -3503,22 +3583,49 @@ class Walker {
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
 /**
- * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`; `host`: the functions the
- * file's host defines, bats' `run`…, which the walk reads by their specs, as builtins: src/semantics/effects.ts).
- * Cached per tree. The tree of a string read as a script (`StateModel.script`) has the model of that script: the
- * outer one for `eval`.
+ * Whether the shebang of the script starts bash in POSIX mode: `#!/bin/bash --posix` (the kernel passes the rest of
+ * the line as one argument, so `#!/bin/bash --posix -e` is an error, not POSIX mode), or through `env -S` (env splits
+ * it, as one word `-S`): `bash --posix` (bash reads its long options before the others), `bash -o posix`, or
+ * `POSIXLY_CORRECT=… bash`.
+ */
+export function shebangPosix(root: SyntaxNode): boolean {
+  const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
+  if (!m) return false;
+  const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
+  if (base(m[1]) === 'bash') return m[2] === '--posix';
+  const words = m[2].split(/[ \t]+/);
+  if (base(m[1]) !== 'env' || words[0] !== '-S') return false;
+  let i = 1;
+  let posix = false;
+  for (; /^\w+=/.test(words[i] ?? ''); i++) posix ||= words[i].startsWith('POSIXLY_CORRECT=');
+  if (base(words[i] ?? '') !== 'bash') return false;
+  for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) posix ||= words[i] === '--posix';
+  // (Then the short options: each `o` of a cluster takes the next word, `-ox posix` too.)
+  for (; /^[-+][a-zA-Z]+$/.test(words[i] ?? ''); i++) {
+    const cluster = words[i];
+    for (const letter of cluster.slice(1)) if (letter === 'o' && words[++i] === 'posix') posix = cluster[0] === '-';
+  }
+  return posix;
+}
+
+/**
+ * The shell state along `tree`, for `shell` (bash when absent; `posix`: `bash --posix`, read from the shebang when
+ * absent (`shebangPosix`); `host`: the functions the file's host defines, bats' `run`…, which the walk reads by their
+ * specs, as builtins: src/semantics/effects.ts). Cached per tree. The tree of a string read as a script
+ * (`StateModel.script`) has the model of that script: the outer one for `eval`.
  */
 export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: boolean; host?: HostCommands } = {}): StateModel {
   const owner = owners.get(tree);
   if (owner) return owner.model;
   const host = opts.host ?? NO_HOST;
   const names = Object.keys(host);
-  const key = `${shell ?? 'bash'}${opts.posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}`;
+  const posix = opts.posix ?? ((!shell || shell === 'bash') && shebangPosix(tree.root));
+  const key = `${shell ?? 'bash'}${posix ? ' --posix' : ''}${names.length ? ` host:${names.sort().join(' ')}` : ''}`;
   let byKey = models.get(tree);
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
-  const model = buildModel(tree, shell, !!opts.posix, 0, MAIN_SHELL, (w) => w.initial(), undefined, host);
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, (w) => w.initial(tree.root), undefined, host);
   byKey.set(key, model);
   return model;
 }

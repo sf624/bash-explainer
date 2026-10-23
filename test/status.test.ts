@@ -154,6 +154,24 @@ describe('errexit contexts (src/semantics/status.ts)', () => {
     assert.strictEqual(ctx('set -e; f() { a; b; }; f', 'a'), 'on');
     assert.strictEqual(ctx('set -e; f() { set -e; a; }; x=$(f)', 'a'), 'on');
     assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; x=$(f)', 'a'), 'off');
+    // (A recursive call in `$( )`: bash -ec 'f() { m1; …; x=$(f); }; f' runs m1 with errexit on, then off; also
+    // through another function, `f() { m1; x=$(g); }; g() { f; }`. Called only in `$( )`, it stays off.)
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; f', 'a'), 'unknown');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { f; }; f', 'a'), 'unknown');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { f; }; f', 'f'), 'off');
+    assert.strictEqual(ctx('set -e; f() { a; f; }; f', 'a'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { b; }; f', 'a'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; set +e; f; }; f', 'a'), 'unknown');
+    // (After the call, errexit is what the call left: on. bash -ec runs b, c and d with errexit on; in the cycle
+    // f → g → $(h) → f, g's c runs with it on and off.)
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; f; b', 'b'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; if f; then b; fi', 'b'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f) && c; }; f && b', 'b'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { h; }; h() { f; }; f; b', 'b'), 'on');
+    assert.strictEqual(ctx('set -e; f() { g; }; g() { c; x=$(h); }; h() { f; }; f; b', 'c'), 'unknown');
+    assert.strictEqual(ctx('set -e; f() { g; }; g() { c; x=$(h); }; h() { f; }; f; b', 'b'), 'on');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(f); }; f; set +e; d; set -e; f; b', 'd'), 'off');
+    assert.strictEqual(ctx('set -e; f() { a; x=$(g); }; g() { b; }; f', 'b'), 'off');
   });
 
   it('says which statements are checked, and which shell stops', () => {
@@ -206,6 +224,15 @@ describe('helpers of the status model', () => {
     assert.strictEqual(why('set -e; set -o posix; x=$(a)', 'a'), 'posix');
     assert.strictEqual(why('set -e; x=$(set -e; a)', 'a'), 'set');
     assert.strictEqual(why('x=$(a)', 'a'), 'default');
+    // (From the state: a function called in `$( )`, a `$( )` in one, `#!/bin/bash --posix`, a `$( )` in a `$( )` where errexit is off.)
+    assert.strictEqual(why('set -e; f() { a; }; x=$(f)', 'a'), 'off-in-substitution');
+    assert.strictEqual(why('set -e; f() { a; }; x=$(f); f', 'a'), 'off-in-substitution');
+    assert.strictEqual(why('set -e; f() { x=$(a); }; f', 'a'), 'off-in-substitution');
+    assert.strictEqual(why('set -e; shopt -s inherit_errexit; f() { a; }; x=$(f); shopt -u inherit_errexit; f', 'a'), 'set');
+    assert.strictEqual(why('set -e; shopt -s inherit_errexit; f() { a; }; x=$(f)', 'a'), 'inherit_errexit');
+    assert.strictEqual(why('#!/bin/bash --posix\nset -e; x=$(a)', 'a'), 'posix');
+    assert.strictEqual(why('set -e; x=$(y=$(a))', 'a'), 'set');
+    assert.strictEqual(why('set -e; x=$(if b; then set +e; fi; a)', 'a'), 'off-in-substitution');
   });
 
   it('finds the pipelines that hide a failure without pipefail', () => {
