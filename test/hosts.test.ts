@@ -622,6 +622,8 @@ describe('bats', () => {
     // `load` may set `x` (a file the model does not read); `run` sets `$status`, `$output`, `$lines` (and may set `$stderr`).
     assert.deepStrictEqual(decided(['x=1', 'load helper', cond], 3), []);
     assert.deepStrictEqual(decided(['x=1', 'bats_load_library lib', cond], 3), []);
+    // `bats_pipe` evals its pipeline here: with lastpipe, `read x` sets `x` (test/bats-real.test.ts).
+    assert.deepStrictEqual(decided(['x=1', 'bats_pipe echo 2 \\| read x', cond], 3), []);
     for (const v of ['status', 'output', 'lines', 'stderr', 'BATS_RUN_COMMAND']) assert.deepStrictEqual(decided([`${v}=0`, 'run false', `if [ "$${v}" = 0 ]; then :; fi`], 3), [], v);
     // `run bash -c 'x=2'` runs in a subshell, and `skip` sets nothing (test/bats-real.test.ts, against bats).
     assert.deepStrictEqual(decided(['x=1', "run bash -c 'x=2'", cond], 3), ['condition-always-true']);

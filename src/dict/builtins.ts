@@ -332,8 +332,8 @@ export const builtins: Record<string, CommandSpec> = {
       ...args(operand('ACTION', '実行するコマンド（`-` でリセット、空文字で無視）', 'command to run (`-` resets, empty string ignores)', { command: { run: 'current-shell', later: true } }), operand('SIGNAL', '対象のシグナル（EXIT, ERR, INT, TERM など）', 'signal (EXIT, ERR, INT, TERM…)')).operands!,
     ],
   }), (c) => (c.operands.length > 0 || has(c, '--')) && !has(c, '-p', '-l')),
-  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS), undefined, { runsFile: true }),
-  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS), undefined, { runsFile: true }),
+  source: actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（変数や関数が現在のシェルに残る）', 'Run a file in the current shell (its variables and functions persist)', [], SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
+  '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
     builtin: 'special', style: 'posix', operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],

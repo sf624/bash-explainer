@@ -1031,7 +1031,7 @@ class Walker {
     if (this.blind) return this.trust;
     const root = rootOf(n);
     // (Read to its end: a string's scan may find a reason to trust nothing, but its facts still hold.)
-    return root === this.root ? this.trust : scriptTrust(root, false);
+    return root === this.root ? this.trust : scriptTrust(root, false, this.host);
   }
 
   /** The root of the tree the walk starts from. */
@@ -3175,9 +3175,10 @@ class Walker {
 
   /**
    * What its spec says a builtin (or a function of the host: `hosted`) does, read from `parse`: the variables it sets
-   * (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`, bats' `run`), and a file it runs (`source`). The file of
-   * bats' `load` is taken to define helpers, not to change what the names of the file run: the walk goes on as it
-   * was (the trust scan trusts nothing after it, src/semantics/trust.ts).
+   * (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`, bats' `run`), and a file it runs (`source`). What a
+   * function of the host runs (the file of bats' `load`, the pipeline of `bats_pipe`) is taken to define helpers or
+   * to run tools, not to change what the names of the file run: the walk goes on as it was (the trust scan trusts
+   * nothing in the whole file then, so no condition of it is decided: src/semantics/trust.ts).
    */
   private effects(spec: CommandSpec, parse: ArgvParse, args: SyntaxNode[], n: SyntaxNode, st: ShellState, hosted = false): ShellState {
     for (const v of variableWrites(spec, parse, args)) {
@@ -3188,7 +3189,7 @@ class Walker {
       else st = this.setNamed(st, v.name, n, v.sets === 'array');
       if (v.maybe || v.sets === 'job-id') st = merge([was, st], this.posix);
     }
-    if (spec.shellEffect?.runsFile && !hosted) {
+    if (spec.shellEffect?.runsUnread && !hosted) {
       // (The file is not read: what it defines is not known here.)
       if (!this.silent) this.sources.push(this.aliasHost ?? n);
       this.turnOpaque();

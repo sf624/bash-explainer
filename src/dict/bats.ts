@@ -33,12 +33,12 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
   load: cmd('bats の関数: テストファイルのディレクトリ（または絶対パス）からファイル `NAME.bash`（なければ `NAME`）を読み込み、今のシェルで実行する（`source` と同じ）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: reads the file `NAME.bash` (or else `NAME`) from the directory of the test file (or an absolute path) and runs it in the current shell, as `source` does. If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
     operands: [{ pattern: [operand('NAME', '読み込むファイル（`.bash` は省ける）', 'file to read (`.bash` may be left out)', { type: 'file' })] }],
-    shellEffect: { does: 'changes', runsFile: true },
+    shellEffect: { does: 'changes', runsUnread: 'file' },
   }),
   bats_load_library: cmd('bats の関数: ライブラリを `$BATS_LIB_PATH` のディレクトリ（とテストファイルのディレクトリ）から探して読み込む（ファイルか、ディレクトリの `load.bash`）。見つからなければ、読み込んだシェルを `exit 1` で終える（ファイルの先頭ならテストファイル全体が止まり、`setup` やテストの中ならそのテストだけが失敗する）',
     'bats function: finds a library in the directories of `$BATS_LIB_PATH` (and that of the test file) and reads it (a file, or the `load.bash` of a directory). If it is missing, it ends the shell that runs it with `exit 1`: at the top of the file this stops the whole test file; in `setup` or a test, only that test fails', [], {
     operands: [{ pattern: [operand('NAME', 'ライブラリの名前（`bats-assert` など）', 'name of the library (`bats-assert`…)')] }],
-    shellEffect: { does: 'changes', runsFile: true },
+    shellEffect: { does: 'changes', runsUnread: 'file' },
   }),
   skip: cmd('bats の関数: テストの残りを実行せず、テストを「スキップ」として報告する（setup の中ならそのテストを）',
     'bats function: skips the rest of the test and reports it as skipped (in setup, the test it runs before)', [], {
@@ -60,5 +60,7 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
       text: ([, n]) => tx(`終了ステータスを、${n} 番目（0 から数える）のコマンドのものにする`, `take the exit status of command ${n} (counting from 0)`),
     }],
     operands: [{ pattern: [operand('COMMANDS', '`\\|` で区切ったコマンドと引数（`bats_pipe` がパイプラインにする）', 'commands and their arguments, separated by `\\|` (bats_pipe makes them a pipeline)', { repeat: '+' })] }],
+    // (It `eval`s the pipeline in the shell that calls it: with `lastpipe`, the last stage runs there, and may set anything.)
+    shellEffect: { does: 'changes', runsUnread: 'command-line' },
   }),
 };
