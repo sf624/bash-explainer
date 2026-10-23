@@ -3,7 +3,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
-import { Role, roleColour, ThemeKind } from './palette';
+import { errorColour, Role, roleColour, ThemeKind } from './palette';
 
 export const ui = {
   ja: {
@@ -128,7 +128,7 @@ const KIND_ROLE: Record<Kind, Role | 'comment' | 'error'> = {
 function kindColor(kind: Kind, theme: ThemeKind): string {
   const role = KIND_ROLE[kind];
   if (role === 'comment') return 'var(--vscode-descriptionForeground)';
-  if (role === 'error') return 'var(--vscode-errorForeground)';
+  if (role === 'error') return errorColour(theme);
   return roleColour(role, theme);
 }
 

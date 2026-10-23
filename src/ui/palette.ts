@@ -37,6 +37,17 @@ export const THEME_COLOURS: Record<ThemeKind, Partial<Record<Role, string>>> = {
   highContrastLight: { command: '#0148bc', option: '#794402', argument: '#015f15', operator: '#5f2489', redirect: '#453e01', variable: '#a20222' },
 };
 
+/**
+ * The colour of an error (a part that cannot be read), where the theme's `errorForeground` has too little contrast as text:
+ * Light Modern's #e51400 is 4.23:1 on a code block, Dark Modern's #f85149 4.22:1. In high contrast, the theme's.
+ */
+export const ERROR_COLOURS: Partial<Record<ThemeKind, string>> = { light: '#d0020f', dark: '#fd6358' };
+
+/** The CSS colour of an error in a theme kind. */
+export function errorColour(theme: ThemeKind): string {
+  return ERROR_COLOURS[theme] ?? 'var(--vscode-errorForeground)';
+}
+
 /** The CSS colour of a role in a theme kind: its own colour, or the theme's chart colour. */
 export function roleColour(role: Role, theme: ThemeKind): string {
   return THEME_COLOURS[theme][role] ?? `var(${CHART_VARIABLE[role]})`;

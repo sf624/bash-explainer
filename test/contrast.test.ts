@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Role, THEME_COLOURS, ThemeKind } from '../src/ui/palette';
+import { ERROR_COLOURS, Role, THEME_COLOURS, ThemeKind } from '../src/ui/palette';
 
 // The contrast of the colours of the roles (the parts of a line) with every background they are drawn on,
 // on the web page (web/theme.css) and in VS Code's panel and hover (media/panel.css, src/ui/palette.ts):
@@ -117,6 +117,7 @@ describe('the contrast of the colours of the roles', () => {
       check(`web ${kind}`, colours, backgrounds(vars), 4.5);
       // The web page's colours are the panel's own where it has them.
       for (const r of ROLES) if (THEME_COLOURS[kind][r]) assert.equal(vars[CHARTS[r]], THEME_COLOURS[kind][r], `${kind} ${r}`);
+      assert.equal(vars['--vscode-errorForeground'], ERROR_COLOURS[kind]);
     });
   }
 
@@ -138,10 +139,17 @@ describe('the contrast of the colours of the roles', () => {
       // media/panel.css has the colours of src/ui/palette.ts, and only those.
       const own = THEME_COLOURS[kind];
       const block = declared(panel, `body.${t.cls}`);
-      assert.deepEqual(block, Object.fromEntries(ROLES.filter((r) => own[r]).map((r) => [PANEL_VAR[r], own[r]])));
+      const error = ERROR_COLOURS[kind];
+      assert.deepEqual(block, {
+        ...Object.fromEntries(ROLES.filter((r) => own[r]).map((r) => [PANEL_VAR[r], own[r]])),
+        ...(error ? { '--c-error': error } : {}),
+      });
       // Where it has none, the theme's chart colour (the light and dark themes: Light Modern's and Dark Modern's).
       const colours = Object.fromEntries(ROLES.map((r) => [r, own[r] ?? t.base[CHARTS[r]]])) as Record<Role, string>;
       check(`VS Code ${kind}`, colours, t.bgs, t.min);
+      // The error colour: our own in the light and dark themes (the high contrast themes keep theirs).
+      if (error) check(`VS Code ${kind} error`, { error }, t.bgs, t.min);
+      else assert.ok(kind === 'highContrast' || kind === 'highContrastLight', kind);
       distinct(`VS Code ${kind}`, colours, 8);
     });
   }
