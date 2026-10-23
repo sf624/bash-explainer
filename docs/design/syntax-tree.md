@@ -144,19 +144,21 @@ From bash 5.2's `command.h`, and checked with bash-ast v0.3.3 on the inputs belo
 - `a=1 b=2`, `a=1`, `a=1 >o`, `>o`: a simple command with no words.
 - `echo a >o` and `>o echo a 2>e`: one simple command; its redirections are part of it.
 - `{ a; } >o`, `while …; done >o`, `( a ) 2>&1`: the redirections belong to the compound command (its own `redirects`).
-- `! a | b`: a pipeline with a negated flag. `time -p a | b`: a pipeline with a timing flag (bash-ast drops it). For `! a` alone, the flag is on the simple command.
+- `! a | b`: a pipeline with a negated flag. `time -p a | b`: a pipeline with a timing flag (bash-ast drops it). For `! a` alone, bash's source puts the flag on the simple command; bash-ast prints a pipeline of one stage with `negated: true`, and shape.ts builds the same. For `! { a; }`, bash-ast drops the negation. A bare `time` is an empty simple command.
 - `coproc N { a; }`: a `coproc` node, with the name and the body.
 - `declare a=(1 2) b`, `export X=1`, `local -r y=$z`: simple commands. bash-ast lists `a=(1 2)` under `assignments`, and `declare` and `b` under `words`.
 
-The last one has a real special case in bash's parser, at the word level. Take the first word of a simple command as written (not quoted, not escaped; after any prefix assignments; after alias expansion). When it names a builtin marked `ASSIGNMENT_BUILTIN` (`alias`, `declare`, `export`, `local`, `readonly`, `typeset`), the parser accepts `name=(…)` in the arguments. It accepts it after `eval` and `let` too. When the command runs, such arguments are expanded like assignments: no word splitting and no globbing. Checked with bash 5.2:
+The last one has a real special case in bash's parser, at the word level. Take the first word of a simple command as written (not quoted, not escaped; after any prefix assignments and redirections; after alias expansion). When it names a builtin marked `ASSIGNMENT_BUILTIN` (`alias`, `declare`, `export`, `local`, `readonly`, `typeset`), the parser accepts `name=(…)` in the arguments. When the command runs, such arguments are expanded like assignments: no word splitting and no globbing. After `eval` and `let`, only the parse changes: `a=(…)` is accepted as a word, but the words are expanded as usual. Checked with bash 5.2:
 
 | input | bash |
 |---|---|
-| `declare a=(1 2)`, `x=1 declare a=(1 2)`, `eval a=(1 2)`, `let a=(1+2)`, `alias a=(1 2)` | parsed |
+| `declare a=(1 2)`, `x=1 declare a=(1 2)`, `>o declare a=(1 2)`, `time declare a=(1 2)`, `! declare a=(1 2)`, `eval a=(1 2)`, `let a=(1+2)`, `alias a=(1 2)` | parsed. (`alias a=(1 2)` even makes the array `a`, then fails with `alias: a: not found`) |
 | `echo a=(1 2)`, `\declare a=(1 2)`, `command declare a=(1 2)`, `builtin declare a=(1 2)` | syntax error near `(` |
 | `v="1 2"` and then `declare a=$v`, `x=1 declare a=$v`, `local a=$v`, or (alias `d=declare`) `d a=$v` | `a` is `1 2` |
 | `\declare a=$v`, `"declare" a=$v`, `command declare a=$v`, `builtin declare a=$v`, `c=declare; $c a=$v` | split: `` `2': not a valid identifier `` |
 | a function `declare`, then `declare a=$v` | the function gets one argument, `a=1 2` |
+| `eval a=$v` | split: `eval` runs `a=1 2`, so `2: command not found`, and `a` stays unset |
+| `let a=$v` | split: `a` is `1` |
 
 So bash decides it from the text of the name, not from what the name runs. It is a fact of the syntax, and the adapter may keep it. But it marks words; it does not make a kind of command.
 
@@ -190,20 +192,18 @@ An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection 
 
 ```mermaid
 flowchart TB
+  subgraph bash["bash-ast"]
+    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
+    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+  end
   subgraph before["ours, before"]
     B1["list #amp;#amp;"] --> B2["variable_assignment<br/>x=…"]
     B2 --> B3["command_substitution"]
-    B3 --> B4["command<br/>grep -c foo f"]
+    B3 --> B4["command<br/>grep -c foo f<br/>(not in bash-ast:<br/>we supply it)"]
     B1 --> B5["test_command<br/>tokens [ and ]<br/>words #quot;$x#quot; -gt 0"]
   end
-  subgraph bash["bash-ast"]
-    A1["list (and)"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
-    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
-  end
-  B1 -.-> A1
-  B2 -. "differs: no command" .-> A2
-  B5 -. "differs: by its name" .-> A3
-  B4 -. "none: word text<br/>(we supply it)" .-x A2
+  A2 -. "differs: no command" .-> B2
+  A3 -. "differs: by its name" .-> B5
   classDef differs stroke:#c33,stroke-width:2px
   classDef supplied stroke-dasharray:4 3
   class B2,B5 differs
@@ -214,21 +214,19 @@ After the change, each command of bash-ast has one `command` of ours:
 
 ```mermaid
 flowchart TB
+  subgraph bash["bash-ast"]
+    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
+    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+  end
   subgraph after["ours, after"]
     C1["list #amp;#amp;"] --> C2["command<br/>(no name)"]
     C2 --> C3["variable_assignment<br/>x=…"]
     C3 --> C4["command_substitution"]
-    C4 --> C5["command<br/>grep -c foo f"]
+    C4 --> C5["command<br/>grep -c foo f<br/>(not in bash-ast:<br/>we supply it)"]
     C1 --> C6["command<br/>name [<br/>arguments #quot;$x#quot; -gt 0 ]"]
   end
-  subgraph bash["bash-ast"]
-    A1["list (and)"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
-    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
-  end
-  C1 -.-> A1
-  C2 -.-> A2
-  C6 -.-> A3
-  C5 -. "none: word text<br/>(we supply it)" .-x A2
+  A2 -.-> C2
+  A3 -.-> C6
   classDef supplied stroke-dasharray:4 3
   class C5 supplied
 ```
@@ -245,8 +243,8 @@ Checked with bash 5.2 and `npx tsx test/dump.ts`:
 | a function `[`, then `[ -f x ]` | the function | explained as a test. Wrong |
 | `enable -n [`, then `[ -f x ]` | `/usr/bin/[` | explained as a test, without saying it is the program. Acceptable |
 | alias `[=echo`, with `expand_aliases` | `echo` | explained as a test. Rare |
-| `[ -f x` | `[`, which fails with status 2 | a syntax error (`missing`): the dialect check reports it, and the walk of the shell state stops there |
-| `[ -d / && -d /tmp ]`, `[ -f x]` | `[ -d /`, then `-d /tmp ]`; a `[` with no `]` | a syntax error. bash-ast-known.json lists 8 such inputs and says unbash reports the error; in fact the adapter does |
+| `[ -f x` | `[`, which fails at run time: `[: missing ']'`, status 2 | explained as an ordinary test, with no note. The tree has an error the adapter adds (`missing ']'`, src/syntax/adapters/unbash.ts, `testCommand`). Nothing shows it for bash (the dialect check reports parse errors only for zsh), and the main walk goes on; only `runScript` (`eval` and trap strings) stops at an error |
+| `[ -d / && -d /tmp ]`, `[ -f x]` | `[ -d /`, then `-d /tmp ]`; a `[` with no `]` | the same added error. bash-ast-known.json lists 8 such inputs and says unbash reports the error; in fact the adapter does |
 
 The pitfalls already explain the run-time `missing ']'` of `[ -f x]` and `[ a && b ]`.
 
@@ -255,11 +253,17 @@ The pitfalls already explain the run-time `missing ']'` of `[ -f x]` and `[ a &&
 Each step is a PR. Each keeps every test passing, and the dump of sample.sh unchanged, except where an explanation was wrong. A fixed explanation gets a test against real bash (a row in an `examples-*` table, or a probe) and a CHANGELOG line under "Fixed".
 
 0. **The guard**: the token test (below), before any node changes.
-1. **`[` is a command.** The adapter drops `testCommand`: `[ … ]` is a `command` named `[`, and `]` is its last argument. A missing `]` is no longer a syntax error. The consumers ask `resolveName` what the name runs. When it is the builtin `[` or `test`, or a file `[`, testexpr groups the arguments (without a last `]`); a function or an alias is a plain call. Read today in analyzer.ts (`test`, the statements of a line, the `]` token, `bracketTest`), pitfalls.ts (its `test_command` case joins the checks of a command named `[`), conditions.ts (it already checks for a function `[`), status.ts, walker.ts (`ERREXIT_STOPS`, the conditions), env.ts (`STATEMENTS`), trust.ts, words.ts, highlight.ts (`[` and `]` as a builtin when `resolveName` says so), idioms.ts, label.ts, dialect.ts, refs.ts (sections from the name, through `SAME_AS`), wordfacts.ts; in the tests, syntax-adapter-unbash, shape.ts, testexpr, idioms and status. Fixes: `\[`, `"["`, `x=1 [`, `command [`, `builtin [` and `env [` are explained as a test; after a function `[`, as a call; `[ -f x` runs (the pitfall says `missing ']'`), and the state walk goes on. The 8 `[` entries leave bash-ast-known.json.
-2. **`unset` is a command.** What its arguments are (variables, functions with `-f`, `a[0]` subject to globbing) comes from its spec in `src/argv/`. Read today in walker.ts (the definitions it unsets), trust.ts, status.ts, words.ts, label.ts, highlight.ts, refs.ts and analyzer.ts. Check whether the walk unsets variables when a function named `unset` runs instead.
-3. **Declarations are commands.** The adapter keeps bash's rule above: after a first word written `declare`, `typeset`, `export`, `readonly`, `local` or `alias` (also after prefix assignments), an argument that is an assignment is a `variable_assignment` with field `argument`; after `eval` and `let`, `a=(…)` is one word. Which builtin runs, and what its options do, come from `resolveName` and the spec. Read today in analyzer.ts, label.ts, highlight.ts, dialect.ts (`typeset`), refs.ts, statusfacts.ts, status.ts, walker.ts, trust.ts and words.ts (`declaration-argument`). Fix: `x=1 declare g=(1 2)` explains the array (today it is a plain argument). Gap: an alias that expands to `declare`; the adapter cannot know aliases.
-4. **Assignments alone are commands.** `a=1` and `a=1 b=2` are a `command` with no `command_name`, with `variable_assignment` children, as prefix assignments already are. The explanation stays ("Several variable assignments"). Read today in analyzer.ts, status.ts, walker.ts, conditions.ts, trust.ts, env.ts, refs.ts and words.ts.
-5. **The redirections of a simple command are its children.** No `redirected_statement` around a `command`: `>o echo a 2>e` gives one `command` with both. `redirected_statement` stays around compound commands, and for `time >o`. This is the largest step: analyzer.ts (8 places), idioms.ts, status.ts, walker.ts (the redirections of a body), statusfacts.ts, bats.ts, label.ts, wordfacts.ts, conditions.ts, and 34 assertions in syntax-adapter-unbash.test.ts. The line end of a here-document moves with it.
+1. **`[` is a command.** The adapter drops `testCommand`: `[ … ]` is a `command` named `[`, and `]` is its last argument. A missing `]` is no longer a syntax error. The consumers ask `resolveName` what the name runs. When it is the builtin `[` or `test`, or a file `[`, testexpr groups the arguments (without a last `]`); a function or an alias is a plain call. Read today in src/analyzer.ts (`test`, the statements of a line, the `]` token, `bracketTest`), src/pitfalls.ts (its `test_command` case joins the checks of a command named `[`), src/semantics/walk/conditions.ts (the walk's conditions; it already checks for a function `[`), src/semantics/status.ts, src/semantics/walk/walker.ts (`ERREXIT_STOPS`, the conditions), src/semantics/env.ts (`STATEMENTS`), src/semantics/trust.ts, src/semantics/words.ts, src/highlight.ts, src/idioms.ts, src/label.ts, src/dialect.ts, src/refs.ts (sections from the name, through `SAME_AS`), src/wordfacts.ts; in the tests, syntax-adapter-unbash, shape.ts, testexpr, idioms and status. src/semantics/conditions.ts (what `test` gives for known words) reads words, not nodes, and stays. Fixes: `\[`, `"["`, `x=1 [`, `command [`, `builtin [` and `env [` are explained as a test; after a function `[`, as a call; `[ -f x` gets a note that `[` fails at run time (`missing ']'`, status 2), as the pitfalls already say for `[ -f x]` and `[ a && b ]`. The 8 `[` entries leave bash-ast-known.json.
+
+   **Highlighting.** src/highlight.ts and src/label.ts import no model today, and the web editor highlights on every edit. Asking `resolveName` there would need the shell state for each highlight. So highlight.ts keeps colouring `[` (and the last `]`) as a builtin by its spelling, as it does now: an unquoted `[` in command position. Only the explanation resolves the name. A function `[` is rare, and a colour is not a claim about what runs; the explanation is. Reusing the state the explanation computes would tie highlighting to the cursor line, and would make it slower in the editor.
+
+   **Cases to cover** (with bash): `[` alone (`missing ']'`, status 2) and `[ ]` (status 1); `time [ … ]`, `! [ … ]` and `[ ] | cat` (the wrappers and the pipeline around a command named `[`); `[ a = a ] <<EOF` (the here-document's body and its terminator line belong to the command, which ends where its line ends).
+2. **`unset` is a command.** What its arguments are (variables, functions with `-f`, `a[0]` subject to globbing) comes from its spec in `src/argv/`. Read today in src/semantics/walk/walker.ts (the definitions it unsets), src/semantics/trust.ts, src/semantics/status.ts, src/semantics/words.ts, src/label.ts, src/highlight.ts (a builtin by its spelling, as for `[`), src/refs.ts and src/analyzer.ts. Check whether the walk unsets variables when a function named `unset` runs instead.
+3. **Declarations are commands.** The adapter keeps bash's rule above: after a first word written `declare`, `typeset`, `export`, `readonly`, `local` or `alias`, an argument that is an assignment is a `variable_assignment` with field `argument`. The first word may follow prefix assignments and redirections (`x=1 declare`, `>o declare`); `time` and `!` are outside the command in our tree, so they need nothing. After `eval` and `let`, `a=(…)` is one word, expanded as usual. Which builtin runs, and what its options do, come from `resolveName` and the spec. Read today in src/analyzer.ts, src/label.ts, src/highlight.ts, src/dialect.ts (`typeset`), src/refs.ts, src/statusfacts.ts, src/semantics/status.ts, src/semantics/walk/walker.ts, src/semantics/trust.ts and src/semantics/words.ts (`declaration-argument`). Fix: `x=1 declare g=(1 2)` and `>o declare g=(1 2)` explain the array (today it is a plain argument). Gap: an alias that expands to `declare` (`alias d=declare`, then `d a=(1 2)`); the adapter cannot know aliases, so this stays a limit, listed in the README.
+
+   **The comparison.** bash-ast lists prefix assignments and assignment arguments together, in source order and with no positions: for `x=1 declare a=(1 2)` it gives `assignments: ["x=1", "a=(1 2)"]` and `words: ["declare"]`. shape.ts does the same with ours (every `variable_assignment`, and every word that looks like one, goes to `assignments`), so it checks their text and order but cannot tell the two kinds apart. The kind is checked against bash in test/word-probes.test.ts: whether a word is split (`declare a=$v`, `x=1 declare a=$v`, `>o declare a=$v`, `\declare a=$v`), and whether `a=(…)` parses.
+4. **Assignments alone are commands.** `a=1` and `a=1 b=2` are a `command` with no `command_name`, with `variable_assignment` children, as prefix assignments already are. The explanation stays ("Several variable assignments"). Read today in src/analyzer.ts, src/semantics/status.ts, src/semantics/walk/walker.ts, src/semantics/walk/conditions.ts, src/semantics/trust.ts, src/semantics/env.ts, src/refs.ts and src/semantics/words.ts.
+5. **The redirections of a simple command are its children.** No `redirected_statement` around a `command`: `>o echo a 2>e` gives one `command` with both. `redirected_statement` stays around compound commands, and for `time >o`. This is the largest step: src/analyzer.ts (8 places), src/idioms.ts, src/semantics/status.ts, src/semantics/walk/walker.ts (the redirections of a body), src/statusfacts.ts, src/bats.ts, src/label.ts, src/wordfacts.ts, src/semantics/walk/conditions.ts, and 34 assertions in syntax-adapter-unbash.test.ts. The line end of a here-document moves with it. A case to cover: `[ -f x 2>/dev/null ]`, a redirection between the arguments. bash-ast gives the words `[ -f x ]` and the redirection apart; ours is a `redirect` child among the arguments, which testexpr must skip.
 6. **Close.** Remove the old names from `NodeType`, from rule 3's table, and from the kind mapping in semantics.md (5.2). `SyntaxNode.type` is `NodeType | string`, so a leftover `=== 'test_command'` is no type error: a test fails if a removed name appears in `src/`. shape.ts makes a bash-ast `simple` only from a `command`, and fails on any other node.
 
 ### How it is checked
@@ -268,8 +272,13 @@ Each step is a PR. Each keeps every test passing, and the dump of sample.sh unch
 
 **Tokens refine commands.** Every explanation token has exactly one innermost enclosing command, and that command is one of bash's: tokens refine commands, and the relation from tokens to commands is many to one. A new test checks this with bash-ast, over the corpus of the shape test (the fixtures and snippets.json):
 
-- **Our commands** are the nodes that shape.ts turns into a shape node: simple commands, pipelines, and-or lists, sequences, compound commands, function definitions and coprocs. shape.ts records, for each path in the shape, the nodes it came from. A wrapper (`redirected_statement`, `negated_command`, `time_statement`) gets the same path as its body. Where the shapes agree, each path is also a command of bash-ast.
-- **The tokens** are those of `analyzer.explainLine` for each line: all items and their children (not `context`, not the examples). Their spans are rows and columns; turn them into offsets with the line starts of the text. A statement over several lines is explained whole on each of its lines, so keep each token once, by span and label.
+- **Our commands** are the nodes that shape.ts turns into a shape node: simple commands, pipelines, and-or lists, sequences, compound commands, function definitions and coprocs. shape.ts records, for each path in the shape, the nodes it came from. Where the shapes agree, each path is also a command of bash-ast. The wrappers follow what shape.ts builds:
+  - `redirected_statement`, and `time_statement` with a body, get the same path as their body.
+  - `negated_command` over a simple command (`! a`) gets the path of the pipeline of one stage that shape.ts makes, as bash-ast prints it; the command is that pipeline's stage. Over a pipeline, it gets the pipeline's path.
+  - `negated_command` over a compound command (`! { a; }`) gets the path of the compound command: bash-ast drops the negation, so the `!` token belongs to that command.
+  - A bare `time` (a `time_statement` with no body) is an empty simple command, with a path of its own.
+- **The input** is the text the shape test gives bash-ast. A host fixture (Dockerfile, Makefile, YAML…) is extracted text: the test explains that text with `explainLine`, not `explainHostedLine`, and gives bash-ast the same text. A CRLF input is read through the masked text (`tree.text`), for both.
+- **The tokens** are those of `analyzer.explainLine`: all items and their children (not `context`, not the examples). Their spans are rows and columns; turn them into offsets with the line starts of the text. A statement over several lines that is not a block is explained whole on each of its lines. To stay fast, the test explains such a statement once, on its first line, and skips its other lines (the rows come from the tree, as in `sub` in src/analyzer.ts); it keeps each token once, by span and label. Like the shape test, it prints its run time, and has the same timeout.
 - **For each token**, find the innermost of our commands whose range holds its span. It must exist, and no other command may overlap the span without holding it: a token must not cross the boundary between two commands. The path of that command must exist in bash-ast's shape.
 - **Exceptions.** Inside a `command_substitution` or a `process_substitution` (backquotes too), the innermost command is ours: bash-ast keeps the text as a word. The test still requires one innermost command, and that the substitution lies inside one word of a command of bash-ast. A token of an embedded language (jq, awk, sed…) must lie inside one word of one command. A `comment` belongs to no command, and is skipped. A token in a `heredoc_body` belongs to the command of its redirection: the body lies outside that command's range, so the test looks it up from the `heredoc_redirect`.
 - Inputs bash-ast rejects are skipped, and so are known differences at the path in question, as in the shape test.
@@ -277,7 +286,7 @@ Each step is a PR. Each keeps every test passing, and the dump of sample.sh unch
 The tokens of the example, after the change, each in the box of its innermost command. The two exceptions are dashed: the `grep` command in `$( )`, and the token of the regex (an embedded language).
 
 ```mermaid
-flowchart TB
+flowchart LR
   subgraph K1["list #amp;#amp; = bash-ast list (and)"]
     T0["operator: the whole list"]
     T8["operator #amp;#amp;"]
@@ -314,7 +323,7 @@ flowchart TB
   style K3 stroke-dasharray:4 3
 ```
 
-The test comes first (step 0), as a guard. Today's tree should mostly pass it: wrappers map to their body, and the shape test already agrees. What fails today is a finding. It goes in a list with a reason, as in bash-ast-known.json, and the steps above shrink that list. Each step then shows that no token lost its command.
+The test comes first (step 0), as a guard. Today's tree should mostly pass it: the wrappers map as above, and the shape test already agrees. What fails today is a finding. It goes in a list with a reason, as in bash-ast-known.json, and the steps above shrink that list. Each step then shows that no token lost its command.
 
 ### Risks
 
