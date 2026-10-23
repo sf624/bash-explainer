@@ -11,7 +11,7 @@ import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './ge
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
 import { perlExample, perlOptions } from './perlrun';
 import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
-import { InputSource, knownLines, shareOut, streamLabel } from './source';
+import { InputSource, knownLines, readOrder, shareOut, shownSource, streamLabel } from './source';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
@@ -31,27 +31,32 @@ const STDIN: InputSource = { streams: [{ kind: 'stdin', stdin: { from: 'unknown'
 
 /**
  * An input → output example (sed, awk, sort…) of the made-up lines `sample` and what the command makes of them,
- * `output`; tabs and control characters are made visible. `src`: what the command reads (src/examples/source.ts),
+ * `output`; tabs and control characters are made visible. `all`: what the command reads (src/examples/source.ts),
  * one section each, with the sample shared out among the files and the text the line gives (a here-string) used as
- * it is. A command that edits files in place shows the first one.
+ * it is. A command that works on each file apart or rewrites each shows the first one; one that prints each under a
+ * header (`EachFile`) shows them.
  */
-export function ioExample(sample: string[], output: string[], inPlace: boolean, spec: RerunSpec, lang: Lang, src: InputSource = STDIN): Example {
+export function ioExample(sample: string[], output: string[], spec: RerunSpec, lang: Lang, all: InputSource = STDIN): Example {
   const s = pick(lang);
   const tabs = (lines: string[]) => lines.map(visible);
   const kind = spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters';
+  const src = shownSource(all);
+  const inPlace = src.each === 'in-place';
   const title = inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example');
   const outLabel = inPlace ? s('書き換え後', 'After') : s('出力', 'Output');
   // (awk's only program that reads nothing: `BEGIN` rules alone.)
   if (!src.streams.length) {
     return { kind, title, note: s('入力は読まない（`BEGIN` だけ）', 'Reads no input (`BEGIN` only)'), sections: [{ label: outLabel, lines: tabs(output), empty: s('（出力なし）', '(no output)') }] };
   }
-  const streams = inPlace ? src.streams.slice(0, 1) : src.streams;
-  const contents = shareOut({ streams }, sample);
-  // head and tail print each file apart, under a header.
-  const files = spec.kind === 'filter' && (spec.cmd === 'head' || spec.cmd === 'tail')
-    ? { ...spec, files: streams.map((st) => (st.kind === 'file' ? st.name : 'standard input')) } : undefined;
-  const run = files ?? spec;
-  const shown = files || streams.some(knownLines) ? rerun(run, contents, lang).sections[0].lines : output;
+  const { streams } = src;
+  const contents = shareOut(src, sample);
+  const reads = src.reads ? { reads: src.reads } : {};
+  // A tool that prints each file under a header (head, tail) is told their names, in the order it reads them.
+  const names = readOrder(src, streams.map((st) => [st.kind === 'file' ? st.name : 'standard input'])).map((n) => n[0] ?? 'standard input');
+  const run: RerunSpec = spec.kind === 'filter' && src.each === 'headers' ? { ...spec, files: names, ...reads } : { ...spec, ...reads };
+  // The output of what the files hold, unless they hold the sample as it is.
+  const asSample = contents.flat().length === sample.length && !src.reads && !streams.some(knownLines) && src.each !== 'headers';
+  const shown = asSample ? output : rerun(run, contents, lang).sections[0].lines;
   const boxes = streams.map((st, i) => ({ label: streamLabel(st, lang), lines: contents[i] }));
   return { kind,
     interactive: interactive(run, boxes, lang),
@@ -63,8 +68,8 @@ export function ioExample(sample: string[], output: string[], inPlace: boolean, 
   };
 }
 
-/** What a command whose spec names `kind` does with these words (`read` has `readExample`); `inPlace`: perl's `-i` is given. */
-export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], inPlace: boolean, lang: Lang, src: InputSource = STDIN): Example | undefined {
+/** What a command whose spec names `kind` does with these words (`read` has `readExample`). */
+export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], lang: Lang, src: InputSource = STDIN): Example | undefined {
   const s = pick(lang);
   const values = words.map((w) => w.value);
   switch (kind) {
@@ -75,16 +80,18 @@ export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, word
       const parsed = perlOptions(values);
       const ex = parsed && perlExample(parsed.code, parsed.opts);
       if (!ex) return undefined;
-      if (ex.input.length) return ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts }, lang, src);
+      if (ex.input.length) return ioExample(ex.input, ex.output, { kind: 'perl', code: parsed!.code, opts: parsed!.opts }, lang, src);
       return { kind: 'perl', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible), empty: s('（出力なし）', '(no output)') }] };
     }
     default: {
       const ex = commandExample(kind, values);
       if (!ex) return undefined;
-      // Only the filters take input. Files of a glob or a variable may be any number: how head and tail print them is not known.
+      // Only the filters take input. Files of a glob or a variable may be any number: the headers of each are not known.
       if (ex.input) {
-        if ((kind === 'head' || kind === 'tail') && src.streams.some((st) => st.kind === 'file' && st.many)) return undefined;
-        return ioExample(ex.input, ex.output, false, { kind: 'filter', cmd: kind, words: values }, lang, src);
+        if (src.each === 'headers' && src.streams.some((st) => st.kind === 'file' && st.many)) return undefined;
+        // cat shows what it does when it joins several files (`cat a - b`); one alone it prints as it is.
+        if (kind === 'cat' && src.streams.length < 2 && !src.reads) return undefined;
+        return ioExample(ex.input, ex.output, { kind: 'filter', cmd: kind, words: values }, lang, src);
       }
       return { kind: 'textFilters', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible) }] };
     }

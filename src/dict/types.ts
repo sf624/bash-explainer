@@ -1,4 +1,4 @@
-import type { CommandSlot, CommandSpec, Condition, IoUse, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
+import type { CommandSlot, CommandSpec, Condition, EachFile, IoUse, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
@@ -9,14 +9,16 @@ import { Text, tx } from '../i18n';
  * command a slot runs an environment variable, or a file of them: `docker run -e`), `attached` (a value only in the same word:
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
  * `lang:<name>` (the value's language), `io:<use>` (what the command does with the file the value names, `IoUse`:
- * `sort -o` writes it) and `persistent` (subcommands take it too). The fifth item gives the
- * meaning of particular values (`set -o pipefail`).
+ * `sort -o` writes it), `each:<how>` (how the command works on its input files when the option is given, `EachFile`:
+ * `sed -i` rewrites each) and `persistent` (subcommands take it too). The fifth item gives the meaning of particular
+ * values (`set -o pipefail`).
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
 
 /** The option spec of a tuple (see `OptSpec`). */
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
-  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}) };
+  const each = /each:([\w-]+)/.exec(flags)?.[1] as EachFile | undefined;
+  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}), ...(each ? { eachFile: each } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;

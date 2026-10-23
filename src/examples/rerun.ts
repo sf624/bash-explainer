@@ -11,8 +11,14 @@ import { runSed } from './sed';
 import { globMatches, GlobMode, GlobOpts } from './shellwords';
 import { FILTERS, perFile } from './textfilters';
 
-/** Everything needed to run an example again on new input; plain data, so it can go to the webview and back. */
-export type RerunSpec =
+/**
+ * Everything needed to run an example again on new input; plain data, so it can go to the webview and back. `reads`:
+ * the box each read of the command takes, in order, when it reads a file twice (`sort a a`; `-1`: the standard input
+ * read again, which gives nothing more), from `InputSource.reads`.
+ */
+export type RerunSpec = RerunKind & { reads?: number[] };
+
+type RerunKind =
   | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values' }
   | { kind: 'glob'; pattern: string; mode: GlobMode; opts?: GlobOpts }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
@@ -94,10 +100,12 @@ const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefine
 
 /**
  * Run an example again on the given input lines, one list per box (`Interactive.inputs`). The files a command reads
- * as one stream are read one after another; the marks of a regex are per line of them all, in that order.
+ * as one stream are read one after another (in the order of `reads`, when a file is named twice); the marks of a regex
+ * are per line of them all, in that order.
  */
-export function rerun(spec: RerunSpec, inputs: string[][], lang: Lang): RerunResult {
+export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  const inputs = spec.reads ? spec.reads.map((i) => (i < 0 ? [] : boxes[i])) : boxes;
   const input = inputs.flat();
   const none = s('（出力なし）', '(no output)');
   const out = (lines: string[] | undefined, label = s('出力', 'Output')): RerunResult => ({

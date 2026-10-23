@@ -200,6 +200,29 @@ export function runner(stage: Stage): Runner | undefined {
   return f && ((input) => f(w, input));
 }
 
+/**
+ * What the stages print, when it is known: the first reads `given` (the text of a here-string or a here-document), or
+ * else prints without reading input (echo, printf, seq). Undefined when a stage cannot be followed, or runs commands
+ * (xargs), whose output is not known.
+ */
+export function pipedOutput(stages: Stage[], given?: string[]): string[] | undefined {
+  try {
+    let data = given ?? sourceOutput(stages[0]);
+    if (!data) return undefined;
+    for (const stage of given ? stages : stages.slice(1)) {
+      const run = stage.cmd === 'xargs' ? undefined : runner(stage);
+      if (!run) return undefined;
+      data = run(data);
+    }
+    return data;
+  } catch (e) {
+    if (e instanceof Unsupported || e instanceof ShellWordsUnsupported) return undefined;
+    // A bug in a runner: let it show.
+    /* c8 ignore next */
+    throw e;
+  }
+}
+
 /** Output of a stage that starts a pipeline without reading input (echo, printf, seq). */
 function sourceOutput(stage: Stage): string[] | undefined {
   const w = stage.words;
