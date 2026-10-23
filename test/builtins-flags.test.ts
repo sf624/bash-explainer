@@ -209,6 +209,10 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     const f = new Analyzer('en').explainLine(parser.parse('declare() { :; }; declare d=$v'), 0).items.flatMap(all);
     assert.strictEqual(f.find((t) => t.label === 'd=$v')!.explanation, 'Argument $1 to the function. The command name is spelled as a declaration builtin, so this word is expanded as an assignment would be: no word splitting, no globbing. Nothing is assigned');
     assert.strictEqual(bash('declare() { echo "$#:$1"; }; v="p q"; declare d=$v; echo "[$d]"').stdout, '1:d=p q\n[]\n');
+    // (With no value, the word is the name and `=`: nothing below it.)
+    const empty = new Analyzer('en').explainLine(parser.parse('declare() { :; }; declare e='), 0).items.flatMap(all).find((t) => t.label === 'e=')!;
+    assert.deepStrictEqual([empty.children, /Nothing is assigned$/.test(empty.explanation)], [[], true]);
+    assert.strictEqual(bash('declare() { echo "$#:$1"; }; declare e=; echo "[${e-unset}]"').stdout, '1:e=\n[unset]\n');
     // A function defined on some paths only, or later than a call that runs first: "if the function runs".
     const maybe = new Analyzer('en').explainLine(parser.parse('[ "$x" ] && declare() { :; }\ndeclare d=$v'), 1).items.flatMap(all);
     assert.match(maybe.find((t) => t.label === 'd=$v')!.explanation, /\. If the function runs, nothing is assigned; otherwise the builtin assigns it$/);

@@ -172,6 +172,15 @@ export function redirectionsOf(n: SyntaxNode): SyntaxNode[] {
   return fields(n, 'redirect');
 }
 
+/**
+ * The text of a simple command up to its last word (its name or last argument), without the redirections after it:
+ * `[ a = b ]` of `[ a = b ] >o`. (Those before or among the words stay: `>o [ a ]`, `[ -f x 2>/dev/null ]`.)
+ */
+export function wordsText(n: SyntaxNode): string {
+  const words = n.children.filter((c) => c.field === 'name' || c.field === 'argument');
+  return n.text.slice(0, words[words.length - 1].endIndex - n.startIndex);
+}
+
 /** A simple command with no name: assignments and redirections only (`a=1`, `a=1 >f b=2`, `>f`). */
 export function assignmentsOnly(n: SyntaxNode): boolean {
   return n.type === 'command' && !field(n, 'name');

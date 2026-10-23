@@ -1,4 +1,4 @@
-import { SyntaxNode, assignmentSpan, field, fields, redirectionsOf } from './syntax/tree';
+import { SyntaxNode, assignmentSpan, field, fields, redirectionsOf, wordsText } from './syntax/tree';
 import { writtenAsBracket } from './testexpr';
 
 /**
@@ -175,7 +175,10 @@ function sequence(n: SyntaxNode): LabelPart[] {
 }
 
 /** A command written `[ … ]` (by its spelling, as the colours: src/testexpr.ts): whole when short, else its brackets. */
-const bracket = (n: SyntaxNode): LabelPart[] => whole(n, () => [code('['), placeholder('expression'), code(']')]);
+export const bracket = (n: SyntaxNode): LabelPart[] => {
+  const text = wordsText(n);
+  return flat(text).length <= LABEL_LIMIT && !text.includes('\n') ? [code(flat(text))] : [code('['), placeholder('expression'), code(']')];
+};
 
 /** A test, an arithmetic command or an assignment: whole when short, else its brackets or name with a placeholder. */
 function whole(n: SyntaxNode, make: () => LabelPart[]): LabelPart[] {
@@ -208,7 +211,8 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
         const { inner, outer } = assignmentSpan(n);
         return [...assignmentParts(n, inner), ...outer.filter((c) => c.children.length).flatMap(redirectParts)];
       }
-      if (writtenAsBracket(n)) return bracket(n);
+      // (`[ a ] >o`: the redirections after `]`, as after any command's words.)
+      if (writtenAsBracket(n)) return [...bracket(n), ...redirectionsOf(n).filter((r) => r.startIndex >= n.startIndex + wordsText(n).length).flatMap(redirectParts)];
       // `>f echo x`: the redirections inside the node are the command's own.
       return [...stage(n), ...redirectionsOf(n).flatMap(redirectParts)];
     }

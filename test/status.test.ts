@@ -286,7 +286,7 @@ describe('the notes on status and errexit', () => {
     // bash -ec 'x=$(false); echo after' prints nothing; 'echo $(false); echo after' prints after.
     assert.ok(explanations('set -e\nx=$(false)', 1).some((e) => /Under `set -e` the script stops here if it fails/.test(e)));
     assert.ok(explanations('set -e\nx=$(false)', 1, 'ja').some((e) => /スクリプトはここで止まる/.test(e)));
-    assert.ok(explanations('set -e\nx=$(false)$(true)', 1).some((e) => /If it fails, `set -e` does not stop the script \(an assignment/.test(e)));
+    assert.ok(explanations('set -e\nx=$(false)$(true)', 1).some((e) => /If it fails, `set -e` does not stop the script \(a command with no name/.test(e)));
     assert.ok(explanations('set -e\necho "$(false)"', 1).some((e) => /the status is that of `echo`/.test(e)));
     assert.ok(explanations('set -e\nlocal x=$(false)', 1).every((e) => !/set -e/.test(e)));
     assert.ok(explanations('x=$(false)', 0).every((e) => !/set -e/.test(e)));

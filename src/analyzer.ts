@@ -2,7 +2,7 @@ import { Lang, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, readsVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
-import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, token } from './syntax/tree';
+import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, token, wordsText } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
@@ -44,7 +44,7 @@ import {
   binaryTestOps, extendedEqualOps, fdName, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
-import { labelText, skeleton } from './label';
+import { bracket as bracketLabel, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
 import { readDeclarationWords } from './semantics/vars';
@@ -1385,10 +1385,15 @@ export class Analyzer {
       : this.s('プログラム `[`（`test` と同じ）', 'The program `[` (the same as `test`)'), head.nameTokens)] : head.nameTokens;
     const t = this.tok(n, bracket ? 'test' : head.kind, head.explanation, sortTokens([
       ...prefix, ...nameToks, ...argToks, ...this.subs(redirs),
-    ]), bracket ? shorten(n.text) : shorten((word ?? nameNode).text));
-    t.summary = bracket ? this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`) : `${head.name}: ${head.explanation}`;
+    ]), bracket ? shorten(wordsText(n)) : shorten((word ?? nameNode).text));
+    t.summary = bracket ? this.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}`;
     if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
-    if (bracket) skeletal(t, n, true);
+    // (The test itself: `[ a = b ]` of `[ a = b ] >o`.)
+    const parts = bracket ? bracketLabel(n) : undefined;
+    if (parts?.some((p) => p.placeholder)) {
+      t.labelParts = parts;
+      t.label = labelText(parts);
+    }
     if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
     // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
     // words' values: `yq 'e'` names `e`.)
@@ -4018,8 +4023,8 @@ export class Analyzer {
       const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && /^(true|:)$/.test(last.namedChildren[last.namedChildren.length - 1].text);
       if (masked && rule.at === n) return '';
       return rule.at === n
-        ? this.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（コマンドの無い代入は、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (an assignment with no command takes the status of its last command substitution)')
-        : this.s('。これが失敗しても `set -e` では止まらない（代入の終了ステータスは最後のコマンド置換のもの）', '. If it fails, `set -e` does not stop the script (an assignment takes the status of its last command substitution)');
+        ? this.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（名前の無いコマンド、つまり代入やリダイレクトだけのコマンドは、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (a command with no name, only assignments or redirections, takes the status of its last command substitution)')
+        : this.s('。これが失敗しても `set -e` では止まらない（名前の無いコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
     }
     // (In the command's name, it is not an argument: `"$(cmd)" a`.)
     if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
