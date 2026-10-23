@@ -95,8 +95,8 @@ export interface CommandSpec {
   program?: CommandSpec;
   /**
    * The worked example of a run of the command (src/examples/commands.ts): the simulation of that tool, chosen by the
-   * spec rather than by the name, so that a path, an alias of the dictionary or a wrapped command gets it too, and a
-   * function of the same name does not.
+   * spec rather than by the name, so that a path (`/usr/bin/sort`) or a quoted name (`"seq"`) gets it too, and a
+   * function of the same name does not. A command that a wrapper runs (`sudo sort -r f`, `env seq 3`) gets none.
    */
   example?: CommandExampleKind;
 }

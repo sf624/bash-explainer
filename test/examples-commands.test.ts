@@ -27,6 +27,9 @@ describe('command examples are chosen by the spec', () => {
     assert.deepStrictEqual(kinds('"seq" 3'), ['textFilters']);
     assert.deepStrictEqual(kinds('/usr/bin/printf a'), ['printf']);
     assert.deepStrictEqual(kinds('sort() { tac; }\nsort -r f', 1), []);
+    // A command a wrapper runs gets none.
+    assert.deepStrictEqual(kinds('sudo sort -r f'), []);
+    assert.deepStrictEqual(kinds('env seq 3'), []);
     assert.deepStrictEqual(kinds('IFS=, read -r a b <<< "x,,y"'), ['read']);
   });
 });
