@@ -43,12 +43,11 @@ export function batsTests(tree: SyntaxTree, candidates: readonly number[]): numb
 
 /**
  * The facts of `line` of a bats file whose tests start on the lines `tests` (in the extracted text, where they are
- * functions). `pitfalls`: whether to say the pitfalls too.
+ * functions). The caller filters them by the `notes.pitfalls` setting (`said`).
  */
-export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: number, lang: Lang, pitfalls: boolean): Fact[] {
+export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: number, lang: Lang): Fact[] {
   const out: Fact[] = [];
   if (tests.includes(line)) out.push(fact(lang, 'bats-test'));
-  if (!pitfalls) return out;
   // (The model the analyzer reads for a bats file: bats' functions trust nothing.)
   const state = shellState(tree, undefined, { host: Object.keys(BATS_COMMANDS) });
   const status = statusModel(state);

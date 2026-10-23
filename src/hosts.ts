@@ -8,9 +8,13 @@ import { statusModel } from './semantics/status';
 import type { CommandSpec } from './argv/spec';
 import { BATS_COMMANDS } from './dict/bats';
 import { batsFacts, batsTests } from './bats';
+import { type Fact, type FactSpec, factOf, said } from './messages';
 
 /** Kinds of files whose shell snippets are explained. */
 export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' | 'python' | 'jenkinsfile' | 'bats';
+
+/** A note on every line of a region: [ja, en], or a catalog fact (its `code` makes it a warning in the Problems panel). */
+export type RegionNote = [ja: string, en: string] | { spec: FactSpec; code: string };
 
 /** A run of lines holding shell code inside another kind of file. */
 export interface ShellRegion {
@@ -20,8 +24,11 @@ export interface ShellRegion {
   label: [string, string];
   shell?: Shell;
   /** Notes shown on every line of the region. */
-  /** [ja, en, code]: a code makes the note a warning in the Problems panel. */
-  notes?: [string, string, string?][];
+  /**
+   * [ja, en], or a `spec`: a catalog fact (a pitfall is said only with `notes.pitfalls` on) whose `code` makes it a
+   * warning in the Problems panel.
+   */
+  notes?: RegionNote[];
   /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
   warnPipefail?: boolean;
   /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */
@@ -39,7 +46,7 @@ export interface HostSubstitution {
   text: string;
   meaning: [string, string];
   /** A warning about the substitution (e.g. untrusted input pasted into a script). */
-  warning?: [string, string];
+  warning?: FactSpec;
 }
 
 /**
@@ -124,7 +131,7 @@ class Builder {
     o.copy(this.lines[line], from, to);
     return o;
   }
-  region(start: number, end: number, label: [string, string], shell?: Shell, notes?: [string, string, string?][], warnPipefail?: boolean): void {
+  region(start: number, end: number, label: [string, string], shell?: Shell, notes?: RegionNote[], warnPipefail?: boolean): void {
     if (end >= start) this.regions.push({ start, end, label, shell, notes, warnPipefail });
   }
   build(): Extracted {
@@ -523,7 +530,7 @@ function jenkinsfile(b: Builder): void {
     // `#!/bin/bash`, `#!/usr/bin/env bash`: the last part of the path, or the word after env.
     const shebang = /^\s*#!\s*(?:\S*\/)?(\w+)(?:[ \t]+(\w+))?/.exec(script);
     const shell = shebang ? (shellFromShebang(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
-    const notes: [string, string, string?][] = [];
+    const notes: RegionNote[] = [];
     if (interpolate && /(^|[^\\])\$[A-Za-z_{]/.test(script)) {
       notes.push([
         '二重引用符の文字列では、`$名前` や `${…}` をシェルより先に Groovy が埋め込みます。シェルの変数として使うには `\\$HOME` のようにエスケープするか、単一引用符（`\'…\'`、`\'\'\'…\'\'\'`）にします。',
@@ -774,10 +781,7 @@ function githubLine(b: Builder, i: number, from: number, to: number): void {
       ? [`Azure Pipelines のテンプレート式で、パイプラインの展開時に \`${m[1]}\` の値に置き換わります`, `an Azure Pipelines template expression, replaced with the value of \`${m[1]}\` when the pipeline is expanded`]
       : githubMeaning(m[1]);
     o.insert(`\${${name}}`, m.index, m.index + m[0].length, meaning);
-    b.substitutions.push({ line: i, text: m[0], meaning, warning: !b.azure && UNTRUSTED.test(m[1]) ? [
-      `⚠ スクリプトインジェクションの危険: \`${m[1]}\` は外部の人が自由に書ける値で、そのままスクリプトに埋め込まれます（\`"; curl … | sh #\` のような値で任意のコマンドが実行される）。\`env:\` で環境変数に渡し、\`"$変数"\` として使ってください。`,
-      `⚠ Script injection risk: \`${m[1]}\` can be set by anyone and is pasted into the script as it is (a value like \`"; curl … | sh #\` runs arbitrary commands). Pass it through \`env:\` and use it as \`"$VAR"\`.`,
-    ] : undefined });
+    b.substitutions.push({ line: i, text: m[0], meaning, warning: !b.azure && UNTRUSTED.test(m[1]) ? { id: 'actions-script-injection', params: { expr: m[1] } } : undefined });
     at = m.index + m[0].length;
   }
   o.copy(line, at, to);
@@ -1014,20 +1018,13 @@ function python(b: Builder): void {
     }
     const script = pyScript(b, src, a0, z0, pos);
     if (!script) continue;
-    const notes: [string, string, string?][] = [];
+    const notes: RegionNote[] = [];
     if (!usesShell && /\s/.test(script.text.trim())) {
-      notes.push(shellArg === undefined || shellArg === 'False' ? [
-        '⚠ shell=True なしで文字列を渡すと、文字列全体が1つのプログラム名として扱われます（引数やパイプは使えず、多くの場合 FileNotFoundError）。`["cmd", "arg"]` のようなリストで渡すか、shell=True を付けます。',
-        '⚠ Without shell=True the whole string is taken as one program name (no arguments or pipes; usually FileNotFoundError). Pass a list like `["cmd", "arg"]`, or add shell=True.',
-        'pythonNoShell',
-      ] : ['shell= の値が式なので、この文字列をシェルが実行するかは実行時に決まります。', 'shell= is an expression, so whether a shell runs this string is decided at run time.']);
+      notes.push(shellArg === undefined || shellArg === 'False' ? { spec: { id: 'python-string-without-shell', params: {} }, code: 'pythonNoShell' } : [
+        'shell= の値が式なので、この文字列をシェルが実行するかは実行時に決まります。', 'shell= is an expression, so whether a shell runs this string is decided at run time.']);
     }
     if (usesShell && script.interpolated) {
-      notes.push([
-        '⚠ シェルインジェクションの危険: Python の値を埋め込んだ文字列をシェルが実行します。値に `;` や `$(…)` が含まれると任意のコマンドが実行されます。`shlex.quote()` でクォートするか、shell=True をやめてリストで渡してください。',
-        '⚠ Shell injection risk: the shell runs a string with Python values pasted in, so a value containing `;` or `$(…)` runs arbitrary commands. Quote it with `shlex.quote()`, or drop shell=True and pass a list.',
-        'pythonInjection',
-      ]);
+      notes.push({ spec: { id: 'python-shell-injection', params: {} }, code: 'pythonInjection' });
     }
     if (script.partial) notes.push(['文字列の後ろは Python のコードで組み立てられるため、解説しているのは文字列リテラルの部分だけです。', 'The rest of the string is built by Python code; only the string literal is explained.']);
     const sh = target === 'sh' ? '/bin/sh' : target;
@@ -1188,20 +1185,17 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
 }
 
 /** Notes for host syntax on a line (`$(CC)` is a make variable…). */
-export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja' | 'en'): string[] {
+export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja' | 'en', pitfalls?: boolean, facts?: Fact[]): string[] {
   const seen = new Set<string>();
   return extracted.substitutions
     .filter((s) => s.line === line && !seen.has(s.text) && seen.add(s.text))
     .flatMap((s) => [
-      ...(s.warning ? [lang === 'ja' ? s.warning[0] : s.warning[1]] : []),
+      ...(s.warning ? said([factOf(lang, s.warning)], pitfalls).map((f) => (facts?.push(f), f.text)) : []),
       lang === 'ja' ? `\`${s.text}\` は${/^[A-Za-z]/.test(s.meaning[0]) ? ' ' : ''}${s.meaning[0]}。` : `\`${s.text}\` is ${s.meaning[1]}.`,
     ]);
 }
 
-const PIPEFAIL: [string, string] = [
-  '⚠ パイプの途中のコマンドが失敗しても、RUN は最後のコマンドの結果だけで成功扱いになり、ビルドは止まりません。先に `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` と書くと失敗を検出できます。',
-  '⚠ If a command in the middle of the pipe fails, RUN still succeeds with the status of the last command, and the build goes on. Put `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` first to catch such failures.',
-];
+const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 
 let regionParser: BashParser | undefined;
 const regionTrees = new Map<string, SyntaxTree>();
@@ -1237,18 +1231,22 @@ export function explainHostedLine(
   const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1], ...(region.commands ? { hostCommands: region.commands } : {}) });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
-  const notes = [...(region.notes ?? []).map(pick), ...substitutionNotes(extracted, line, lang)];
+  // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
+  const hostFacts: Fact[] = [];
+  const spoken = (spec: FactSpec) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => x.text); };
+  const notes = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [pick(n)] : spoken(n.spec))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
   if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line], lang));
   if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
-    notes.push(pick(PIPEFAIL));
+    notes.push(...spoken(PIPEFAIL));
   }
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
   const tests = region.tests && batsTests(tree, region.tests);
   if (tests) {
-    const facts = batsFacts(tree, tests, line, lang, opts.pitfalls !== false);
+    const facts = said(batsFacts(tree, tests, line, lang), opts.pitfalls);
     notes.push(...facts.map((f) => f.text));
-    if (facts.length) ex.facts = [...(ex.facts ?? []), ...facts];
+    hostFacts.push(...facts);
   }
+  if (hostFacts.length) ex.facts = [...(ex.facts ?? []), ...hostFacts];
   ex.notes.unshift(...notes);
   const out = remapExplanation(ex, extracted, original, lang);
   if (tests) batsTestLine(out, extracted, original, tests, lang);
@@ -1283,19 +1281,19 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
       for (let line = region.start; line <= region.end; line++) {
         if (!pipeWithoutPipefail(extracted, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
-        out.push({ code: 'dockerPipefail', severity: 'warning', message: pick(PIPEFAIL), startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
+        out.push({ code: 'dockerPipefail', severity: 'warning', message: factOf(lang, PIPEFAIL).text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
       }
     }
     for (const n of region.notes ?? []) {
-      if (!n[2]) continue;
+      if (Array.isArray(n)) continue;
       const first = extracted.maps[region.start];
-      out.push({ code: n[2], severity: 'warning', message: pick(n), startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
+      out.push({ code: n.code, severity: 'warning', message: factOf(lang, n.spec).text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
     const c = Math.max(0, original[sub.line].indexOf(sub.text));
-    out.push({ code: 'injection', severity: 'warning', message: pick(sub.warning), startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
+    out.push({ code: 'injection', severity: 'warning', message: factOf(lang, sub.warning).text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
   }
   return out;
 }
