@@ -58,6 +58,8 @@ function extglobLike(t: string, alone: boolean, alternative: boolean, closedByPa
 
 class Converter {
   readonly errors: SyntaxError[] = [];
+  /** Where a word starts that `command` made the target of the redirection before it (`&> >(tee log)`). */
+  private readonly joinedTargets = new Set<number>();
   private readonly lineStarts: number[] = [0];
   /** Ranges that are not code: heredoc bodies and their closing lines. */
   private readonly skip: (readonly [number, number])[] = [];
@@ -208,6 +210,8 @@ class Converter {
       const stops = /^expected command after/.test(e.message) && !/\S/.test(this.text.slice(e.pos));
       const unreadable = m || (!stops && /^unterminated extended glob|^expected command after '(if|then|elif|else|while|until|do|for|in)'/.test(e.message));
       if (!unreadable) {
+        // (The target unbash did not see, which `command` joined.)
+        if (e.message === 'expected redirect target' && this.joinedTargets.has(e.pos)) continue;
         if (!this.told(e)) this.untold(root, e);
         continue;
       }
@@ -403,8 +407,21 @@ class Converter {
 
   command(c: U.Command): Mut {
     type Item = U.Assignment | U.Word | U.Redirection;
+    // unbash reads `&> >(tee log)` (and `&>>`) as a redirection with no target and a word `>(tee log)`: bash
+    // redirects both outputs to the process substitution.
+    const joined = (items: readonly Item[]): Item[] => {
+      const out: Item[] = [];
+      for (const x of items) {
+        const r = out[out.length - 1];
+        if (x.type === 'Word' && /^[<>]\(/.test(x.text) && r?.type === 'Redirect' && !r.target) {
+          out[out.length - 1] = { ...r, target: x, end: x.end };
+          this.joinedTargets.add(x.pos);
+        } else out.push(x);
+      }
+      return out;
+    };
     const before: Item[] = [...c.prefix];
-    const after: Item[] = [...c.suffix];
+    const after: Item[] = joined(c.suffix);
     const isRedirect = (x: Item): x is U.Redirect | U.HereDoc => x.type === 'Redirect' || x.type === 'HereDoc';
     // Redirections after the last word are the statement's, not the command's; a here string stays in the command.
     let split = after.length;

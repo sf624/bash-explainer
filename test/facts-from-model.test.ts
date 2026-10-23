@@ -137,7 +137,8 @@ describe('a variable set at the end of a pipeline is gone after it', () => {
 
 describe('idioms follow the tree, not the spelling', () => {
   const idioms = (src: string): string => {
-    const nodes = descendants(parser.parse(src).root, ['command', 'redirected_statement', 'list', 'pipeline', 'while_statement']);
+    // (The kinds of statement the analyzer collects on a line.)
+    const nodes = descendants(parser.parse(src).root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement']);
     return findIdioms(nodes, 'en').join('\n');
   };
   it('knows an endless loop however it is spaced or broken over lines', function () {
@@ -165,5 +166,70 @@ describe('idioms follow the tree, not the spelling', () => {
     assert.match(idioms('while  [ "$#" -gt 0 ]; do shift; done'), /a loop over the arguments/);
     assert.match(idioms('while getopts  ab: opt\ndo :; done'), /`while getopts`/);
     assert.doesNotMatch(idioms('while [ "$#" -gt 1 ]; do shift; done'), /a loop over the arguments/);
+  });
+  it('reads the words as bash makes them, in any order or spelling', function () {
+    if (!have) return this.skip();
+    // `; pwd` as well as `&& pwd`: both print the script's directory.
+    assert.match(idioms('d=$(cd "$(dirname "$0")"; pwd)'), /absolute path of the directory/);
+    assert.doesNotMatch(idioms('d=$(cd "$(dirname "$0")"; pwd)'), /moves to the directory/);
+    // `-d ''` before `-r` is still `read -r` with IFS empty.
+    assert.match(idioms('IFS= read -d "" -r x'), /`IFS= read -r`/);
+    assert.match(idioms('IFS="" read -r x'), /`IFS= read -r`/);
+    // stderr then stdout to /dev/null prints nothing, as `>/dev/null 2>&1` does.
+    assert.strictEqual(bash('command -v sh 2>/dev/null >/dev/null; echo "[$?]"'), '[0]\n');
+    assert.match(idioms('command -v sh 2>/dev/null >/dev/null'), /checks quietly/);
+    assert.doesNotMatch(idioms('command -v sh 2>/dev/null'), /checks quietly/);
+    // Each way of sending both outputs to /dev/null prints nothing; one left on the terminal does not.
+    for (const quiet of ['&>>/dev/null', '>&/dev/null', '2>/dev/null >&2', '2>/dev/null 1>&2', '>/dev/null 2>&1']) {
+      assert.strictEqual(bash(`command -v sh ${quiet}; type -P sh ${quiet}; command -v nosuch-cmd ${quiet}; echo end`), 'end\n', quiet);
+      assert.match(idioms(`command -v sh ${quiet}`), /checks quietly/, quiet);
+    }
+    for (const loud of ['>&"$f"', '>/dev/null 2>&3', '>/dev/null']) assert.doesNotMatch(idioms(`command -v sh ${loud}`), /checks quietly/, loud);
+    // `command sh` and `type sh` run or describe it: not the check.
+    assert.doesNotMatch(idioms('command sh -c : >/dev/null 2>&1'), /checks quietly/);
+    assert.doesNotMatch(idioms('type sh >/dev/null 2>&1'), /checks quietly/);
+    assert.match(idioms('type -P sh >/dev/null 2>&1'), /checks quietly/);
+    // stderr through tee is not the log of what is printed; `>>` appends to the process substitution as `>` does not.
+    assert.match(idioms('exec &> >(tee -a log)'), /everything printed also goes to a log/);
+    assert.doesNotMatch(idioms('exec 2> >(tee -a log)'), /everything printed/);
+    assert.doesNotMatch(idioms('exec >> >(tee -a log)'), /everything printed/);
+    // A value in the option's word (`-p'…'`), and one known only when it runs.
+    assert.match(idioms("read -rp'Sure [y/N] ' ans"), /a yes\/no question/);
+    assert.doesNotMatch(idioms('read -r -d "$d" x'), /up to a NUL byte/);
+    assert.match(idioms('[ "$0" = "$BASH_SOURCE" ]'), /run directly rather than sourced/);
+    assert.match(idioms('exec 1> >(tee -a log) 2>&1'), /everything printed also goes to a log/);
+    assert.match(idioms('sudo -u www-data xargs -0 rm -f'), /`xargs -0`/);
+  });
+  it('says nothing where bash does something else', function () {
+    if (!have) return this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-idioms-'));
+    try {
+      // `trap - EXIT`, `trap '' EXIT` and `trap -p EXIT` leave nothing to run at the exit; an action does run.
+      assert.strictEqual(bash("trap 'echo bye' EXIT; echo end"), 'end\nbye\n');
+      assert.match(idioms("trap 'echo bye' EXIT"), /runs clean-up/);
+      for (const t of ['trap - EXIT', "trap '' EXIT", 'trap -- - EXIT']) {
+        assert.strictEqual(bash(`trap 'echo bye' EXIT; ${t}; echo end`), 'end\n', t);
+        assert.doesNotMatch(idioms(t), /runs clean-up/, t);
+      }
+      // (`-p` prints the action set before, and sets none.)
+      assert.strictEqual(bash('trap -p EXIT; echo end'), 'end\n');
+      assert.doesNotMatch(idioms('trap -p EXIT'), /runs clean-up/);
+      // `-rd''` is the word `-rd`: `-d` takes the next word, so `f` is the delimiter and the line goes to REPLY.
+      assert.strictEqual(bash("printf 'abfcd\\0' | { read -rd'' f; echo \"[$REPLY][$f]\"; }"), '[ab][]\n');
+      assert.strictEqual(bash("printf 'abfcd\\0' | { read -rd '' f; echo \"[$f]\"; }"), '[abfcd]\n');
+      assert.doesNotMatch(idioms("read -rd'' f"), /up to a NUL byte/);
+      assert.match(idioms("read -rd '' f"), /up to a NUL byte/);
+      // In `[ ]`, `> 0` sends stdout to a file named 0, and `[ $# ]` is true even when `$#` is 0: the loop does not end.
+      assert.strictEqual(bash('set -- a; n=0; while [ $# > 0 ]; do shift; n=$((n+1)); [ $n = 3 ] && break; done; echo $n; ls', dir), '3\n0\n');
+      assert.strictEqual(bash('set -- a; n=0; while [ $# -gt 0 ]; do shift; n=$((n+1)); done; echo $n'), '1\n');
+      assert.doesNotMatch(idioms('while [ $# > 0 ]; do shift; done'), /a loop over the arguments/);
+      assert.match(idioms('while [[ $# > 0 ]]; do shift; done'), /a loop over the arguments/);
+      // Text in quotes is not run.
+      assert.strictEqual(bash("echo '$(mktemp)' IFS= read -r x"), '$(mktemp) IFS= read -r x\n');
+      assert.strictEqual(idioms("echo '$(mktemp)' IFS= read -r x"), '');
+      assert.match(idioms('t=$(mktemp)'), /`mktemp`/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
