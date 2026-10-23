@@ -60,8 +60,8 @@ const web = {
   system: declared(theme, '  :root:not([data-theme="light"])'),
 };
 
-// The editor's active line, drawn over the editor's background (web/main.ts).
-const activeLine = /'\.cm-activeLine': \{ backgroundColor: '([^']+)' \}/.exec(read('web', 'main.ts'))?.[1];
+// The editor's active line, drawn over the editor's background (web/editor.ts).
+const activeLine = /'\.cm-activeLine': \{ backgroundColor: '([^']+)' \}/.exec(read('web', 'editor.ts'))?.[1];
 
 const CHARTS: Record<Role, string> = {
   command: '--vscode-charts-blue', option: '--vscode-charts-orange', argument: '--vscode-charts-green',
