@@ -6,7 +6,7 @@ import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { literalContent } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
-import { type BracketTest, bracketShape, type TestShape } from '../testexpr';
+import type { TestShape } from '../testexpr';
 import { interactive } from './commands';
 import { type Operand, testCases } from './runtime';
 import { globExamples, globMatches, type GlobMode, type GlobOpts, hasGlobstar } from './shellwords';
@@ -60,12 +60,12 @@ export function patternExample(texts: (string | undefined)[], opts: GlobOpts, la
 }
 
 /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-export function testExample(n: SyntaxNode, bracket: TestShape | undefined | BracketTest, asKind: '[' | undefined, lang: Lang): Example | undefined {
+export function testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind: '[' | undefined, lang: Lang): Example | undefined {
   const s = pick(lang);
   const kind = asKind ?? n.children[0].type as '[' | '[[' | '((';
   let shape: TestShape | undefined;
   if (kind === '[') {
-    shape = bracket && 'words' in bracket ? bracketShape(bracket) : bracket;
+    shape = bracket;
   } else if (n.namedChildren.length === 1) {
     const expr = n.namedChildren[0];
     if (expr.type === 'unary_expression') {

@@ -333,13 +333,6 @@ class Scan {
       case 'unary_expression':
         if (field(n, 'operator')?.text === '-v') for (const c of n.namedChildren.slice(1)) this.testV(c, w);
         break;
-      case 'test_command': {
-        const words = n.namedChildren;
-        words.forEach((c, i) => {
-          if (i > 0 && staticWordValue(words[i - 1]) === '-v') this.testV(c, w);
-        });
-        break;
-      }
       case 'for_statement': case 'select_statement': {
         const variable = field(n, 'variable');
         if (variable) {

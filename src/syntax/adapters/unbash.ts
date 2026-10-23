@@ -468,7 +468,6 @@ class Converter {
     let node: Mut;
     if (DECLARATIONS.has(name) && !before.length) node = this.declaration(c, after);
     else if (name === 'unset' && !before.length) node = this.unset(c, after);
-    else if (name === '[' && !before.length && this.text.slice(c.name.pos, c.name.end) === '[') node = this.testCommand(c, after);
     else {
       const last = args.length ? args[args.length - 1] : c.name;
       node = this.node('command', start, Math.max(last.end, c.name.end));
@@ -540,21 +539,6 @@ class Converter {
     const node = this.node('unset_command', c.pos, Math.max(c.name!.end, ...args.map((a) => a.end)));
     this.tok(c.name!.value, c.name!.pos, node);
     for (const a of args) this.item(node, a, (w) => this.add(node, IDENTIFIER.test(w.text) ? this.node('variable_name', w.pos, w.end) : this.word(w, 'declaration')), null);
-    this.fill(node);
-    return node;
-  }
-
-  testCommand(c: U.Command, args: readonly (U.Assignment | U.Word | U.Redirection)[]): Mut {
-    const node = this.node('test_command', c.pos, Math.max(c.name!.end, ...args.map((a) => a.end)));
-    this.tok('[', c.name!.pos, node);
-    args.forEach((a, i) => {
-      if (i === args.length - 1 && a.type === 'Word' && a.text === ']') this.tok(']', a.pos, node);
-      else {
-        const pattern = i > 0 && ['=', '==', '!='].includes((args[i - 1] as U.Word).text);
-        this.item(node, a, (w) => this.addWord(node, w, pattern ? 'pattern' : 'flat', null), null);
-      }
-    });
-    if (!node.children.some((x) => x.type === ']')) this.missing(node, ']', node.endIndex);
     this.fill(node);
     return node;
   }

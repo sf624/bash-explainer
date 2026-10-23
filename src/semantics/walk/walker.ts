@@ -32,7 +32,7 @@ const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_
 /** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
 export const OPAQUE = 'opaque';
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
-const ERREXIT_STOPS = new Set(['command', 'test_command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
+const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
 
 const rootOf = (n: SyntaxNode): SyntaxNode => {
   let r = n;
@@ -732,7 +732,7 @@ export class Walker {
           st = this.builtins.assignNode(a, this.defaults(a, st), true);
         }
         return st;
-      case 'test_command': case 'extended_test':
+      case 'extended_test':
         this.substitutions(n, st);
         return this.defaults(n, st);
       case 'arithmetic_command': {

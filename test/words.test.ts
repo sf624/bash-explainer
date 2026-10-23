@@ -428,6 +428,17 @@ describe('words: after the review', () => {
     assert.strictEqual(staticWordValue(find('echo a"b"~', 'a"b"~').node), 'ab~');
   });
 
+  // (Checked with bash 5.2 and nullglob, in test/fixtures/probes/words.json: `[ a[ x\[y]` stay, `[]`, `a["b"]` are patterns.)
+  it('takes a `[` with no `]` after it as text, as bash does: no pattern', () => {
+    const value = (src: string, text: string) => staticWordValue(find(src, text).node);
+    assert.strictEqual(value('echo [ x', '['), '[');
+    assert.strictEqual(value('echo a[', 'a['), 'a[');
+    assert.strictEqual(value('echo x\\[y]', 'x\\[y]'), 'x[y]');
+    assert.strictEqual(value('echo []', '[]'), undefined);
+    assert.strictEqual(value('echo [a]', '[a]'), undefined);
+    assert.strictEqual(value('echo a["b"]', 'a["b"]'), undefined);
+  });
+
   it('expands a tilde after `=` in `case`, `[[ ]]` and redirection targets in bash mode, and in declarations always', () => {
     const after = (src: string, text: string, posix = false) => meaning(src, text, 0, posix).tildes.map((t) => t.after);
     assert.deepStrictEqual(after('case a=~/d in x) ;; esac', 'a=~/d'), ['=']);

@@ -1,4 +1,5 @@
-import { literalContent } from './staticword';
+import type { CommandSpec } from './argv/spec';
+import { literalContent, staticWordValue } from './staticword';
 import type { SyntaxNode } from './syntax/tree';
 
 /**
@@ -140,27 +141,46 @@ export interface BracketTest { words: BracketWord[]; expr: TestExpr }
 export interface TestShape { left?: SyntaxNode; op: string; right: SyntaxNode }
 
 /**
- * Reads a `[ ]` as bash does, from its words alone: the grammar cannot tell the unary `-a file` / `-o option` from AND / OR,
- * so its groups are wrong with them. Undefined when bash would report an error (the tree is then used as it is).
+ * Whether the simple command `n` is written `[ … ]`: its name is a plain `[`. A fact of the text only, for the
+ * colours, the labels and the style checks; what the name runs is the model's (src/semantics/names.ts, `testSpecOf`).
  */
-export function bracketTest(n: SyntaxNode): BracketTest | undefined {
-  // After the `[`, and before the `]` unless the test is not closed.
-  const leaves = n.children.slice(1);
-  if (leaves[leaves.length - 1]?.type === ']') leaves.pop();
-  return testOfWords(leaves);
+export function writtenAsBracket(n: SyntaxNode): boolean {
+  // (Quoted or escaped, `"["` and `\[`, it is written otherwise.)
+  return n.type === 'command' && n.children.find((c) => c.type === 'command_name')!.text === '[';
+}
+
+/** The words of a command written `[ … ]` (`writtenAsBracket`) between the brackets, and the last `]` if it has one. */
+export function bracketWords(n: SyntaxNode): { words: SyntaxNode[]; close?: SyntaxNode } {
+  const args = n.children.filter((c) => c.field === 'argument');
+  const last = args[args.length - 1];
+  return last?.text === ']' ? { words: args.slice(0, -1), close: last } : { words: args };
+}
+
+/**
+ * The arguments of a command that runs `test` or `[` (src/semantics/names.ts, `testSpecOf`, decides it), read as bash
+ * does: `words` are those of the expression, `close` the last `]` that `[` wants, `unclosed` when it is surely not
+ * there (no argument, or a last one whose text is known: bash fails at run time with `[: missing ']'`, status 2).
+ * `test` is the expression, undefined when bash would report an error in it (or with a last word not known).
+ */
+export interface CommandTest { words: SyntaxNode[]; close?: SyntaxNode; unclosed: boolean; test?: BracketTest }
+
+export function commandTest(spec: CommandSpec, args: SyntaxNode[]): CommandTest {
+  const closer = spec.closingOperand;
+  const last = args[args.length - 1];
+  const value = last && staticWordValue(last);
+  if (!closer) return { words: args, unclosed: false, test: testOfWords(args) };
+  if (value === closer) return { words: args.slice(0, -1), close: last, unclosed: false, test: testOfWords(args.slice(0, -1)) };
+  // (Without its `]`, the words are still read as the expression they were meant to be, as while it is typed.)
+  return { words: args, unclosed: !last || value !== undefined, test: testOfWords(args) };
 }
 
 /** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
 export function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
-  const words: BracketWord[] = [];
-  for (const x of leaves) {
-    const last = words[words.length - 1];
-    if (last && last.nodes[last.nodes.length - 1].endIndex === x.startIndex) last.nodes.push(x);
-    else words.push({ nodes: [x], text: null });
-  }
+  // (Each node is a whole word: an argument of the command.)
+  const words: BracketWord[] = leaves.map((x) => ({ nodes: [x], text: null }));
   for (const w of words) {
     // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
-    const parts = w.nodes.map((x) => (x.type === 'number' || x.type === 'extglob_pattern' ? x.text : x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
+    const parts = w.nodes.map((x) => (x.type === 'number' ? x.text :x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
     w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
   }
   const expr = parseTest(words.map((w) => w.text));

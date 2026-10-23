@@ -12,7 +12,7 @@ import { PROBE_ENV } from './support/probe';
 
 const parser = createUnbashParser();
 const TYPES = ['command', 'pipeline', 'list', 'negated_command', 'subshell', 'compound_statement', 'if_statement', 'while_statement', 'variable_assignment',
-  'variable_assignments', 'declaration_command', 'arithmetic_command', 'extended_test', 'test_command', 'redirected_statement', 'function_definition', 'coproc_statement',
+  'variable_assignments', 'declaration_command', 'arithmetic_command', 'extended_test', 'redirected_statement', 'function_definition', 'coproc_statement',
   'time_statement', 'case_statement', 'for_statement'];
 
 /** The model of `src`, and its first statement whose text is `text`. */

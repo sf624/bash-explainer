@@ -28,7 +28,7 @@ import { pictureNote, visible } from './ctlchars';
 import { commandExampleOf, dateExample, gitLogExample, interactive, ioExample, readExample } from './examples/commands';
 import { explainEscapes } from './embedded/format';
 import { describeFind, FindNode, parseFind, unquote } from './embedded/find';
-import { type BracketTest, type BracketWord, bracketShape, bracketTest, type TestExpr, type TestShape, testOfWords, testRange } from './testexpr';
+import { type BracketTest, bracketShape, type CommandTest, commandTest, type TestExpr, type TestShape, testRange } from './testexpr';
 import { judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
 import { YQ_SPECS } from './dict/yq';
@@ -49,7 +49,7 @@ import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, S
 import { attribute, docLine, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
-import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName } from './semantics/names';
+import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
@@ -204,7 +204,7 @@ export class Analyzer {
       context: [], slotEnvs: new Map(), extraNotes: [], facts: [], examples: [], argCtx: undefined,
     };
     const items = this.flatten(root);
-    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'], line)
+    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
     const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.cx.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang)), ...wordFacts(root, line, this.lang, this.cx.state, this.cx.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
@@ -531,7 +531,7 @@ export class Analyzer {
       case 'heredoc_redirect': return this.heredoc(n);
       case 'herestring_redirect': return this.herestring(n);
       case 'negated_command': return skeletal(this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren)), n);
-      case 'test_command': case 'extended_test': case 'arithmetic_command':
+      case 'extended_test': case 'arithmetic_command':
         if (n.type === 'arithmetic_command') this.postfixStatusNote(n);
         return this.test(n);
       case 'unary_expression': return this.unary(n);
@@ -1285,7 +1285,7 @@ export class Analyzer {
 
   /** When the line runs several commands, names the one each example is for in its title. */
   private titledExamples(root: SyntaxNode, line: number): Example[] {
-    const commands = onLine(root, ['command', 'test_command', 'extended_test', 'arithmetic_command'], line)
+    const commands = onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)
       .filter((c) => intersects(c, line));
     if (commands.length < 2) return this.cx.examples;
     return this.cx.examples.map((e) => {
@@ -1419,12 +1419,9 @@ export class Analyzer {
     }
     const read = this.args(head.spec, args, head.name, head.fn);
     let argToks = read.tokens;
-    // `test` reads its words as an expression, like `[ ]` (but its words are not between brackets).
-    const asTest = head.spec?.operandParser === 'test-expression' && !head.fn && args.length ? testOfWords(args) : undefined;
-    if (asTest) {
-      this.testExample(n, bracketShape(asTest), '[');
-      argToks = this.testTokens(n, asTest, asTest.expr);
-    }
+    // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
+    const bracket = head.test?.closingOperand !== undefined;
+    if (head.test) argToks = this.testArgs(n, commandTest(head.test, args), bracket) ?? argToks;
     // (A function of the script is not the command its name suggests: no example of that command.)
     if (!head.fn) {
       this.unreadStdin(n, read.parse, args, head.name);
@@ -1435,11 +1432,16 @@ export class Analyzer {
       this.wordExample(a);
       this.anchorExamples(before, a);
     }
-    const t = this.tok(n, head.kind, head.explanation, sortTokens([
-      ...prefix, ...head.nameTokens, ...argToks, ...this.subs(redirs),
-    ]), shorten((word ?? nameNode).text));
-    t.summary = `${head.name}: ${head.explanation}`;
-    if (head.refs?.length) t.refs = head.refs;
+    // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
+    const nameToks = bracket ? [this.tok(word ?? nameNode, head.kind, head.kind === 'builtin'
+      ? this.s('コマンド `[`（`test` の別名）', 'Command `[` (an alias of `test`)')
+      : this.s('プログラム `[`（`test` と同じ）', 'The program `[` (the same as `test`)'), head.nameTokens)] : head.nameTokens;
+    const t = this.tok(n, bracket ? 'test' : head.kind, head.explanation, sortTokens([
+      ...prefix, ...nameToks, ...argToks, ...this.subs(redirs),
+    ]), bracket ? shorten(n.text) : shorten((word ?? nameNode).text));
+    t.summary = bracket ? this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`) : `${head.name}: ${head.explanation}`;
+    if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
+    if (bracket) skeletal(t, n, true);
     if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
     // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
     // words' values: `yq 'e'` names `e`.)
@@ -1474,6 +1476,28 @@ export class Analyzer {
       if (!isPlainWord(word) && !head.nameTokens.length) head.nameTokens = this.sub(word);
     }
     return head;
+  }
+
+  /** `test` or `[`, when `res` runs one of them (src/semantics/names.ts): its spec, for `CommandHead.test`. */
+  private testOf(res: NameResolution): { test?: CommandSpec } {
+    const test = testSpecOf(res);
+    return test ? { test } : {};
+  }
+
+  /**
+   * The tokens of the arguments of `test` or `[` (`test`, from src/testexpr.ts): the expression, and the last `]` of `[`
+   * (`bracket`). Undefined when bash cannot read the expression of `test` (its words are then read with its spec).
+   */
+  private testArgs(n: SyntaxNode, test: CommandTest, bracket: boolean): Token[] | undefined {
+    if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close')));
+    let inner: Token[];
+    if (test.test) {
+      this.testExample(n, bracketShape(test.test), '[');
+      inner = this.testTokens(n, test.test, test.test.expr);
+    } else if (bracket) inner = this.subs(test.words);
+    else return undefined;
+    if (!test.close) return inner;
+    return [...inner, this.tok(test.close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
   }
 
   /** What the command name `name` runs at `at` (src/semantics/names.ts). */
@@ -1605,7 +1629,7 @@ export class Analyzer {
         ? this.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
         : this.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
       return {
-        name, ...(program ? { spec: program } : {}), kind: 'command', nameTokens: [], refs: ['3.7.2'],
+        name, ...(program ? { spec: program } : {}), ...this.testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${this.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${this.t(program.summary)}` : ''}`),
       };
     }
@@ -1618,8 +1642,11 @@ export class Analyzer {
     if (spec) {
       const builtin = !!spec.builtin;
       return {
-        name, spec, kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
-        explanation: this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : ''),
+        name, spec, ...this.testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
+        explanation: builtin && spec.closingOperand
+          ? this.s('コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）',
+            'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)')
+          : this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : ''),
       };
     }
     const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
@@ -2034,7 +2061,11 @@ export class Analyzer {
         explanation += this.s(`（行 ${(docLine(missed.def) + 1)} の同じ名前の関数は使わない）`, ` (not the function of that name, defined on line ${(docLine(missed.def) + 1)})`);
       }
     }
-    const children = this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.
+    const value = staticWordValue(first);
+    const test = value === undefined ? undefined : testSpecOf(this.resolve(value, first, { env: this.cx.slotEnvs.get(first) }));
+    const children = (test && this.testArgs(first.parent!, commandTest(test, words.slice(1)), test.closingOperand !== undefined))
+      ?? this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
     if (role.of) {
       // `{}` is replaced by find (and `xargs -I{}`) with each path.
       const mark = (ts: Token[]) => ts.forEach((t) => {
@@ -3002,7 +3033,7 @@ export class Analyzer {
   }
 
   /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false. */
-  private testExample(n: SyntaxNode, bracket: TestShape | undefined | BracketTest, asKind?: '['): void {
+  private testExample(n: SyntaxNode, bracket: TestShape | undefined, asKind?: '['): void {
     this.pushExample(testExample(n, bracket, asKind, this.lang));
   }
 
@@ -3158,25 +3189,12 @@ export class Analyzer {
     const before = this.cx.examples.length;
     // A test over several lines is explained whole (see sub), so it is always where the line starts.
     const open = n.children[0].type;
-    const bracket = open === '[' ? bracketTest(n) : undefined;
-    this.testExample(n, bracket);
+    this.testExample(n, undefined);
     const expl = open === '[['
       ? this.s('拡張条件式 `[[ ]]`: 条件を評価し、真なら成功(0)を返す（bash 専用。コマンドではなくシェルの構文なので、中で単語分割・グロブ展開が起きず、変数をクォートしなくても安全。`&&` `||` `<` `=~` も使える）',
         'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
-      : open === '(('
-        ? this.arithTestExplanation() + this.commaNote(n)
-        : this.s('コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）',
-          'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)');
-    const inner = bracket ? this.testTokens(n, bracket, bracket.expr) : open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren);
-    // `[` is a command and `]` its last argument: they get tokens of their own, around the condition.
-    const close = n.children[n.children.length - 1];
-    const children = open !== '['
-      ? inner
-      : [
-        this.tok(n.children[0], 'builtin', this.s('コマンド `[`（`test` の別名）', 'Command `[` (an alias of `test`)')),
-        ...inner,
-        ...(close.type === ']' ? [this.tok(close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))] : []),
-      ];
+      : this.arithTestExplanation() + this.commaNote(n);
+    const children = open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren);
     const t = this.tok(n, 'test', expl, children);
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
@@ -3210,13 +3228,11 @@ export class Analyzer {
       }
       case 'binary': {
         const op = words[e.op].text!;
-        // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; in `[ ]` any text is a word.
-        const plain = (w: BracketWord) => (x: SyntaxNode) => isPlainWord(x) || (x.type === 'extglob_pattern' && w.nodes.length === 1);
         const num = this.numericTestNote(op, [slice(e.left, e.left), slice(e.right, e.right)], false);
         return [make('test', this.s(
           `条件: \`${slice(e.left, e.left)}\` と \`${slice(e.right, e.right)}\` を比較 — ${this.t(binaryTestOps[op])}${num}`,
           `Condition: \`${slice(e.left, e.left)}\` vs \`${slice(e.right, e.right)}\` — ${this.t(binaryTestOps[op])}${num}`,
-        ), [...operandTokens(e.left, plain(words[e.left])), ...operandTokens(e.right, plain(words[e.right]))])];
+        ), [...operandTokens(e.left, isPlainWord), ...operandTokens(e.right, isPlainWord)])];
       }
       default:
         return [make('test', this.t(binaryTestOps[e.type === 'and' ? '-a' : '-o']), [...this.testTokens(n, b, e.left), ...this.testTokens(n, b, e.right)])];
@@ -3289,7 +3305,7 @@ export class Analyzer {
     for (let p = n.parent; p; p = p.parent) {
       if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
       if (p.type === 'arithmetic_command') return true;
-      if (p.type === 'test_command' || p.type === 'extended_test' || p.type === 'compound_statement') return false;
+      if (p.type === 'extended_test' || p.type === 'compound_statement') return false;
     }
     // Unary and binary expressions are always inside a test or arithmetic.
     /* c8 ignore next */
@@ -3892,7 +3908,7 @@ export class Analyzer {
         : this.s('。これが失敗しても `set -e` では止まらない（代入の終了ステータスは最後のコマンド置換のもの）', '. If it fails, `set -e` does not stop the script (an assignment takes the status of its last command substitution)');
     }
     // (In the command's name, it is not an argument: `"$(cmd)" a`.)
-    if (rule.kind !== 'command' || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
+    if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
     const name = shorten(field(stmt, 'name')!.text, 20);
     return this.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
   }
@@ -3912,6 +3928,8 @@ interface CommandHead {
   fn?: boolean;
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
   refs?: readonly string[];
+  /** The spec of `test` or `[`, when the name runs one of them (src/semantics/names.ts, `testSpecOf`). */
+  test?: CommandSpec;
 }
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;

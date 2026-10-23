@@ -16,7 +16,7 @@ export const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
   coproc_statement: ['3.2.6'],
   time_statement: ['3.2.3'], pipeline: ['3.2.3'], negated_command: ['3.2.3'],
   list: ['3.2.4'],
-  test_command: ['4.1', '6.4'], extended_test: ['3.2.5.2', '6.4'], arithmetic_command: ['3.2.5.2', '6.5'],
+  extended_test: ['3.2.5.2', '6.4'], arithmetic_command: ['3.2.5.2', '6.5'],
 };
 
 /** Other nodes, by type. */

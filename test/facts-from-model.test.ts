@@ -138,7 +138,7 @@ describe('a variable set at the end of a pipeline is gone after it', () => {
 describe('idioms follow the tree, not the spelling', () => {
   const idioms = (src: string): string => {
     // (The kinds of statement the analyzer collects on a line.)
-    const nodes = descendants(parser.parse(src).root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement']);
+    const nodes = descendants(parser.parse(src).root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'extended_test', 'while_statement']);
     return findIdioms(nodes, 'en').join('\n');
   };
   it('knows an endless loop however it is spaced or broken over lines', function () {

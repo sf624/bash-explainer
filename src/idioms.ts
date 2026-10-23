@@ -8,6 +8,7 @@ import { lookupCommand } from './dict/aliases';
 import { staticWordValue } from './staticword';
 import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
+import { bracketWords, writtenAsBracket } from './testexpr';
 
 export interface Redirect {
   op: string;
@@ -199,7 +200,7 @@ const quietCheck = (n: SyntaxNode): boolean => {
 const runDirectly = (n: SyntaxNode): boolean => {
   const b = n.type === 'extended_test' && n.namedChildren.length === 1 && n.namedChildren[0].type === 'binary_expression' ? n.namedChildren[0] : undefined;
   const [left, op, right] = b ? [field(b, 'left'), field(b, 'operator')!.text, field(b, 'right')]
-    : n.type === 'test_command' && n.namedChildren.length === 3 ? [n.namedChildren[0], staticWordValue(n.namedChildren[1]), n.namedChildren[2]] : [];
+    : testWords(n)?.length === 3 ? [testWords(n)![0], staticWordValue(testWords(n)![1]), testWords(n)![2]] : [];
   // (`!=` asks the same question: whether it is sourced.)
   if (!['=', '==', '!=', '-ef'].includes(op!)) return false;
   const source = (w: SyntaxNode | undefined) => isScriptPath(w) && parameterOf(w)!.name === 'BASH_SOURCE';
@@ -276,9 +277,10 @@ const argsLoop = (n: SyntaxNode): boolean => {
   const c = whileOf(n) && field(n, 'condition');
   const count = (w: SyntaxNode | undefined) => parameterOf(w)?.name === '#';
   const zero = (w: SyntaxNode | undefined) => staticWordValue(w!) === '0';
-  if (c?.type === 'test_command') {
-    const [left, op, right] = c.namedChildren;
-    return c.namedChildren.length === 3 && count(left) && ['-gt', '-ne', '!='].includes(staticWordValue(op)!) && zero(right);
+  const words = c && testWords(c);
+  if (words) {
+    const [left, op, right] = words;
+    return words.length === 3 && count(left) && ['-gt', '-ne', '!='].includes(staticWordValue(op)!) && zero(right);
   }
   const e = (c?.type === 'extended_test' || c?.type === 'arithmetic_command') && c.namedChildren.length === 1 ? c.namedChildren[0] : undefined;
   if (c?.type === 'arithmetic_command' && count(e)) return true;
@@ -291,8 +293,15 @@ const globGuard = (n: SyntaxNode): boolean => {
   const t = n.namedChildren[0];
   const u = t.type === 'extended_test' && t.namedChildren[0].type === 'unary_expression' ? t.namedChildren[0] : undefined;
   const [op, operand] = u ? [field(u, 'operator')!.text, u.namedChildren[1]]
-    : t.type === 'test_command' && t.namedChildren.length === 2 ? [staticWordValue(t.namedChildren[0]), t.namedChildren[1]] : [];
+    : testWords(t)?.length === 2 ? [staticWordValue(testWords(t)![0]), testWords(t)![1]] : [];
   return ['-e', '-f'].includes(op!) && /^\w+$/.test(parameterOf(operand)?.name ?? '');
+};
+
+/** The words of `[ … ]` (by its spelling, closed with `]`) between the brackets; undefined for any other node. */
+const testWords = (n: SyntaxNode): SyntaxNode[] | undefined => {
+  if (!writtenAsBracket(n)) return undefined;
+  const b = bracketWords(n);
+  return b.close ? b.words : undefined;
 };
 
 /** A statement's shape in the tree. */

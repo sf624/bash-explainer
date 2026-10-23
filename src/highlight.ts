@@ -5,6 +5,7 @@
 import type { ShellDocument } from './document';
 import type { Extracted } from './hosts';
 import type { SyntaxNode, SyntaxTree } from './syntax/tree';
+import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
 export type HighlightKind =
@@ -93,7 +94,7 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     let kind: HighlightKind | null;
     if (SUBSTITUTIONS.has(p)) kind = 'substitution';
     else if (REDIRECTS.has(p)) kind = 'redirect';
-    else if (p === 'test_command' || p === 'declaration_command' || p === 'unset_command') kind = 'builtin';
+    else if (p === 'declaration_command' || p === 'unset_command') kind = 'builtin';
     else if (p === 'string' || p === 'translated_string' || p === 'expansion' || p === 'simple_expansion' || p === 'subscript' || p === 'variable_assignment' || p === 'brace_expression') kind = null;
     else if (arith || EXPRESSIONS.has(p)) kind = p === 'arithmetic_command' && KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     else kind = KEYWORDS.has(t.type) ? 'keyword' : 'operator';
@@ -180,6 +181,11 @@ type Painter = (from: number, to: number, kind: HighlightKind | null) => void;
 /** A plain word: an option where a command takes one, or glob characters where the shell expands it. */
 function words(w: SyntaxNode, set: Painter): void {
   const p = w.parent!;
+  // The last `]` of `[ … ]` goes with the `[`, a builtin by its spelling (what runs is for the explanation to say).
+  if (writtenAsBracket(p) && bracketWords(p).close === w) {
+    set(w.startIndex, w.endIndex, 'builtin');
+    return;
+  }
   if (isOption(w)) {
     const eq = w.text.indexOf('=');
     set(w.startIndex, eq > 0 ? w.startIndex + eq : w.endIndex, 'option');
@@ -189,7 +195,7 @@ function words(w: SyntaxNode, set: Painter): void {
   while (at.parent!.type === 'concatenation') at = at.parent!;
   const q = at.parent!.type;
   const expanded = (q === 'command' && at.field === 'argument') || ((q === 'for_statement' || q === 'select_statement') && at.field === 'value')
-    || q === 'case_item' || q === 'test_command' || (p.type === 'file_redirect' && w.field === 'destination') || isPattern(at);
+    || q === 'case_item' || (p.type === 'file_redirect' && w.field === 'destination') || isPattern(at);
   if (expanded) glob(w, set);
 }
 
@@ -206,7 +212,7 @@ function isPattern(w: SyntaxNode): boolean {
 function isOption(w: SyntaxNode): boolean {
   if (!/^(--?[^-=\s]|--$)/.test(w.text) || w.text === '-') return false;
   const p = w.parent!;
-  if (p.type === 'test_command' || p.type === 'declaration_command') return true;
+  if (p.type === 'declaration_command') return true;
   if (p.type !== 'command' || w.field !== 'argument') return false;
   return !p.children.slice(0, p.children.indexOf(w)).some((a) => a.field === 'argument' && a.text === '--');
 }

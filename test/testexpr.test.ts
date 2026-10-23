@@ -235,7 +235,7 @@ function groups(t: Token): string {
 describe('[ ] in the analyzer groups as bash does', () => {
   const analyze = (src: string) => {
     const tree = parser.parse(src)!;
-    assert.strictEqual(tree.root.children[0].type, 'test_command', src);
+    assert.strictEqual(tree.root.children[0].type, 'command', src);
     return new Analyzer('en').explainLine(tree, 0, 'bash')!.items[0].children[1];
   };
   const cases: [string, string][] = [
@@ -300,7 +300,9 @@ describe('[ ] in the analyzer groups as bash does', () => {
     assert.deepStrictEqual([word.kind, word.label, word.explanation], ['argument', '-n', 'Word `-n`']);
     assert.strictEqual(analyze('[ -a file ]').explanation, 'Condition: `file` exists (same as `-e`, obsolescent)');
     assert.strictEqual(analyze('[ ! a ]').explanation, 'Negation: true if `a` is false');
-    assert.strictEqual(analyze('[ a = *"$y"*z ]').children.length, 3);
+    // (`*"$y"*z` is one word, with three parts.)
+    assert.strictEqual(analyze('[ a = *"$y"*z ]').children.length, 1);
+    assert.strictEqual(analyze('[ a = *"$y"*z ]').children[0].children.length, 3);
   });
 
   it('keeps the tree where the words are not a valid test, and for an empty one', () => {
@@ -309,4 +311,62 @@ describe('[ ] in the analyzer groups as bash does', () => {
       assert.doesNotThrow(() => new Analyzer('en').explainLine(tree, 0, 'bash'), src);
     }
   });
+});
+
+// A command that runs `[` (or `test`) is explained as the test, whatever its spelling, and a function `[` as a call:
+// what bash runs, which the status of each line shows (`f` is a file, `c` is not; the function returns 3).
+describe('a command named [ is explained as what bash runs', () => {
+  /** The explanation of the last line of `src`, and all its tokens. */
+  const explain = (src: string) => {
+    const tree = parser.parse(src)!;
+    const e = new Analyzer('en').explainLine(tree, src.split('\n').length - 1, 'bash');
+    const all: Token[] = [];
+    const walk = (t: Token) => { all.push(t); t.children.forEach(walk); };
+    e.items.forEach(walk);
+    return { e, all };
+  };
+  /** The exit status of `src` in bash, and what it wrote to stderr. */
+  const bash = (src: string) => {
+    const r = run('bash', ['-s'], { cwd: dir, input: src, env: { ...process.env, PATH: '/usr/bin:/bin' } });
+    return { status: r.status, stderr: r.stderr.toString() };
+  };
+  const cases: [src: string, runs: 'test' | 'program' | 'function', status: number][] = [
+    ['[ -f f ]', 'test', 0],
+    ['\\[ -f f ]', 'test', 0],
+    ['"[" -f c ]', 'test', 1],
+    ["'[' -f f ]", 'test', 0],
+    ['x=1 [ -f f ]', 'test', 0],
+    ['command [ -f f ]', 'test', 0],
+    ['builtin [ -f c ]', 'test', 1],
+    ['env [ -f f ]', 'program', 0],
+    ['/usr/bin/[ -f c ]', 'program', 1],
+    ['enable -n [\n[ -f f ]', 'program', 0],
+    ['time [ -f f ]', 'test', 0],
+    ['! [ -f f ]', 'test', 1],
+    ['[ -f c ] | cat', 'test', 0],
+    ['[() { return 3; }\n[ -f f ]', 'function', 3],
+    ['[() { return 3; }\nbuiltin [ -f f ]', 'test', 0],
+  ];
+  for (const [src, runs, status] of cases) {
+    it(JSON.stringify(src), () => {
+      assert.strictEqual(bash(src).status, status, 'bash');
+      const { all } = explain(src);
+      const conditions = all.filter((t) => t.explanation.startsWith('Condition: `'));
+      assert.strictEqual(conditions.length, runs === 'function' ? 0 : 1, 'the condition is explained');
+      assert.ok(!all.some((t) => t.explanation.includes('see `man `')), 'no manual page without a name');
+      if (runs === 'function') assert.ok(all.some((t) => t.kind === 'function' && t.explanation.startsWith('Call the function `[`')), 'the function');
+      if (runs === 'program') assert.ok(all.some((t) => /program|external command/.test(t.explanation)), 'the program');
+      if (runs !== 'function') assert.ok(all.some((t) => t.label === ']' && t.explanation.startsWith('The last argument passed to `[`')), 'the last `]`');
+    });
+  }
+  // Without its `]`, `[` fails when it runs (status 2): no syntax error, and a note says so.
+  for (const [src, status] of [['[ -f f', 2], ['[', 2], ['[ -f f]', 2], ['[ ]', 1], ['[ -f f ]', 0]] as const) {
+    it(`${JSON.stringify(src)}: status ${status}`, () => {
+      const real = bash(src);
+      assert.strictEqual(real.status, status);
+      assert.strictEqual(real.stderr.includes("missing `]'"), status === 2);
+      assert.deepStrictEqual(parser.parse(src)!.errors, []);
+      assert.strictEqual(explain(src).e.facts?.some((f) => f.id === 'bracket-missing-close') ?? false, status === 2);
+    });
+  }
 });

@@ -65,6 +65,11 @@ export interface CommandSpec {
    * (src/argv/interpret.ts), or test's (src/testexpr.ts, which the analyzer runs on `test`'s words as on `[ ]`).
    */
   operandParser?: 'find-expression' | 'test-expression';
+  /**
+   * With `test-expression`: the word its last argument must be, which ends the expression (`[` wants `]`). Without
+   * it, the command fails at run time (bash: `[: missing ']'`, status 2).
+   */
+  closingOperand?: string;
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
   /**
