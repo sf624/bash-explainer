@@ -697,6 +697,28 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(regionShells2('markdown', 'README.md', '```bash\n# shellcheck shell=busybox\necho a\n```\n'), ['ash']);
     assert.deepStrictEqual(regionShells2('markdown', 'README.md', '```bash\n# shellcheck shell=posh\necho a\n```\n'), ['sh']);
   });
+  it('reads a GitHub Actions step\'s shell: in any key order, and its defaults by precedence', () => {
+    const shells = (yml: string) => extractShell(hostKind('', 'ci.yml')!, yml).regions.map((r) => r.shell);
+    const head = 'jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n';
+    // shell: above run:, as the first key or after name:, and below run:.
+    assert.deepStrictEqual(shells(`${head}      - shell: sh\n        run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - name: x\n        shell: sh\n        run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - shell: sh\n        name: x\n        run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - name: x\n        run: echo a\n        shell: sh\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - run: echo a\n        shell: sh\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - shell: sh\n\n        run: echo a\n`), ['sh']);
+    // A neighbouring step's shell: is not this step's.
+    assert.deepStrictEqual(shells(`${head}      - shell: sh\n        run: echo a\n      - run: echo b\n`), ['sh', 'bash']);
+    assert.deepStrictEqual(shells(`${head}      - run: echo a\n      - shell: sh\n        run: echo b\n`), ['bash', 'sh']);
+    assert.deepStrictEqual(shells(`${head}      - name: y\n        run: echo a\n      - name: x\n        shell: sh\n        run: echo b\n`), ['bash', 'sh']);
+    // Precedence: step, then the job's defaults, then the workflow's.
+    const wf = 'defaults:\n  run:\n    shell: sh\n';
+    const job = '    defaults:\n      run:\n        shell: bash\n';
+    assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - run: echo a\n`), ['bash']);
+    assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - shell: sh\n        run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - shell: bash\n        run: echo a\n`), ['bash']);
+  });
   it('a region says what it is part of, apart from its label', () => {
     const ci = (file: string, src: string) => extractShell(hostKind('', file)!, src).regions.map((r) => r.host);
     assert.deepStrictEqual(ci('ci.yml', 'jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n'), [{ kind: 'yaml', ci: 'github' }]);

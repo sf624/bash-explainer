@@ -686,10 +686,14 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
   const level = indent;
   // Above, up to the line that starts the step (`- name: …`); none when `run:` starts it.
   const startsItem = (j: number) => /^\s*-\s/.test(b.lines[j]) && indentOf(b.lines[j].replace(/-\s+/, (d) => ' '.repeat(d.length))) === level;
+  // The column of a line's key, after any `- `.
+  const keyColumn = (j: number) => indentOf(b.lines[j].replace(/^(\s*)-\s+/, (d) => ' '.repeat(d.length)));
   if (!startsItem(at)) {
-    for (let j = at - 1; j >= 0 && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j--) {
+    // `shell:` may stand above `run:` in the same step, down to the line that starts the step.
+    for (let j = at - 1; j >= 0 && (keyColumn(j) >= level || !b.lines[j].trim()); j--) {
       const m = /^\s*(?:-\s+)?shell:\s*(\S+)/.exec(b.lines[j]);
-      if (m && indentOf(b.lines[j].replace(/-\s+/, (d) => ' '.repeat(d.length))) === level) return shellName(m[1]);
+      if (m && keyColumn(j) === level) return shellName(m[1]);
+      if (keyColumn(j) === level && startsItem(j)) break;
     }
   }
   for (let j = at + 1; j < b.lines.length && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j++) {
