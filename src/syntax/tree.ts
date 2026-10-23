@@ -23,7 +23,7 @@ export type NodeType =
   | 'variable_assignment' // before a command's name, in a command with no name (`a=1`), or (field `argument`) an argument of a declaration builtin: `declare a=1`
   | 'variable_assignments' // no longer made (a `command` with no name); the name goes in step 6 of docs/design/syntax-tree.md
   | 'negated_command' // ! pipeline
-  | 'redirected_statement' // a compound statement (or a command, when the parser says so) with redirections
+  | 'redirected_statement' // a compound statement with redirections (or `time >o`); a simple command's redirections are its children
   | 'pipeline'
   | 'list' // && and ||
   | 'time_statement' // time [-p] pipeline
@@ -164,9 +164,29 @@ export function prefixAssignments(n: SyntaxNode): SyntaxNode[] {
   return n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.field !== 'argument');
 }
 
-/** A simple command with no name: assignments only (`a=1`, `a=1 b=2`), and any redirections between them. */
+/**
+ * The redirections of a command, in source order: of a simple command, all of them, wherever they are written
+ * (`>o echo a 2>e`); of a `redirected_statement` (around a compound command, or `time >o`), those after its body.
+ */
+export function redirectionsOf(n: SyntaxNode): SyntaxNode[] {
+  return fields(n, 'redirect');
+}
+
+/** A simple command with no name: assignments and redirections only (`a=1`, `a=1 >f b=2`, `>f`). */
 export function assignmentsOnly(n: SyntaxNode): boolean {
   return n.type === 'command' && !field(n, 'name');
+}
+
+/**
+ * The children of a command with no name from its first assignment to its last, with the redirections between them
+ * (`a=1 >f b=2`), and the redirections outside them (`>f a=1 2>g`; all of them when there is no assignment, `>f`).
+ */
+export function assignmentSpan(n: SyntaxNode): { inner: SyntaxNode[]; outer: SyntaxNode[] } {
+  const assigns = prefixAssignments(n);
+  const from = assigns.length ? assigns[0].startIndex : Infinity;
+  const to = assigns.length ? assigns[assigns.length - 1].endIndex : -Infinity;
+  const inner = n.namedChildren.filter((c) => c.startIndex >= from && c.startIndex < to);
+  return { inner, outer: n.namedChildren.filter((c) => !inner.includes(c)) };
 }
 
 /** The first token child with this text (`then`, `&&`…), or undefined. */

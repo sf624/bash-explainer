@@ -6,7 +6,7 @@ import type { ArgvParse } from '../../argv/interpret';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../../syntax/tree';
 import { commandName, SET_LETTERS, wrapped } from '../effects';
 import { type ExecEnv, lastStageInShell, reachOf, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
@@ -722,12 +722,12 @@ export class Walker {
       case 'time_statement': case 'compound_statement':
         return this.sequence(n.children, st);
       case 'redirected_statement': {
-        // A compound command makes its redirections first; a simple command expands its words first (see `redirections`),
-        // and assignments alone are made before them (see `assignments`).
-        for (const r of fields(n, 'redirect')) this.substitutions(r, st);
-        const body = field(n, 'body');
+        // A compound command makes its redirections first; a simple command, whose redirections are its own, expands its
+        // words first (see `redirections`), and assignments alone are made before them (see `assignments`).
+        const redirs = redirectionsOf(n);
+        for (const r of redirs) this.substitutions(r, st);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
-        if (body?.type !== 'command') st = this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, body?.type === 'subshell' ? 'on' : 'off'));
+        st = this.fdVariables(redirs, this.expandAll(redirs, st, field(n, 'body')!.type === 'subshell' ? 'on' : 'off'));
         return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
       }
       case 'subshell':
@@ -951,12 +951,11 @@ export class Walker {
   }
 
   /**
-   * The redirections of the simple command `n`, made after its words are expanded: its own, and those of the
-   * `redirected_statement` it is the body of (`program`: whether they are made in a process of its own).
+   * The redirections of the simple command `n`, made after its words are expanded (`program`: whether they are made in
+   * a process of its own).
    */
   private redirections(n: SyntaxNode, st: ShellState, program: Tri): ShellState {
-    const outer = n.field === 'body' && n.parent!.type === 'redirected_statement' ? fields(n.parent!, 'redirect') : [];
-    const all = [...n.namedChildren.filter((c) => c.field === 'redirect'), ...outer];
+    const all = redirectionsOf(n);
     return this.fdVariables(all, this.expandAll(all, st, program));
   }
 
@@ -1384,7 +1383,7 @@ export class Walker {
    * redirections are made (their command substitutions run first). Its status is set by `statusOf`.
    */
   private assignments(n: SyntaxNode, st: ShellState): ShellState {
-    for (const r of fields(n, 'redirect')) this.substitutions(r, st);
+    for (const r of redirectionsOf(n)) this.substitutions(r, st);
     for (const a of prefixAssignments(n)) {
       this.record(a, st);
       this.substitutions(a, st);

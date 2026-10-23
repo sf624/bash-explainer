@@ -56,10 +56,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
     out.set(line, [...(out.get(line) ?? []), spec]);
   };
   // A command whose failure `set -e` would catch: a simple command or a pipeline (not an assignment, `local` or a test).
-  const plain = (body: SyntaxNode): boolean => statements(body).slice(0, -1).some((c) => {
-    const b = c.type === 'redirected_statement' ? field(c, 'body') : c;
-    return (b?.type === 'command' || b?.type === 'pipeline') && ['command', 'pipeline'].includes(status.status(b).kind);
-  });
+  const plain = (body: SyntaxNode): boolean => statements(body).slice(0, -1).some((c) => (c.type === 'command' || c.type === 'pipeline') && ['command', 'pipeline'].includes(status.status(c).kind));
   const turnsOn = (body: SyntaxNode): boolean => statements(body).some((c) => status.turnsErrexitOn(c));
   let pipefailSaid = !featureWorks('pipefail', shell);
 

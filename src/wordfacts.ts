@@ -5,7 +5,7 @@ import { args, commandName, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { partMeaning } from './semantics/words';
-import { field, prefixAssignments } from './syntax/tree';
+import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -80,15 +80,11 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
           const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
           if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }));
         }
-        break;
-      }
-      case 'redirected_statement': {
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
-        const body = field(n, 'body');
         // Only for files that need root: system directories, not your logs or /dev/null.
-        const toFile = n.namedChildren.some((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
+        const toFile = redirectionsOf(n).some((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
           && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(field(c, 'destination')?.text.replace(/^["']/, '') ?? ''));
-        if (body?.type === 'command' && commandName(body) === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'));
+        if (name === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'));
         break;
       }
       case 'for_statement': case 'select_statement': {

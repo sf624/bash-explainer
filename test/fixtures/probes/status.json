@@ -134,6 +134,42 @@
   },
   {
     "manual": "3.7.1",
+    "snippet": ">/dev/null$(false); @PROBE:a@",
+    "note": "a command with only redirections has the status of the last command substitution in them",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=1 >/dev/null$(false); @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": ">/dev/null$(false) x=$(true); @PROBE:a@",
+    "note": "with no command name, the assignments are made before the redirections, whose substitution runs last",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "x=$(false) >/dev/null$(true); @PROBE:a@",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.1",
     "snippet": "echo $(false); @PROBE:a@",
     "facts": {
       "ran": [

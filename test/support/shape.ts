@@ -111,7 +111,7 @@ function redirectAt(n: SyntaxNode): Redir[] {
   return [{ fd, op, target }];
 }
 
-/** The redirections among the children of a node (a `redirected_statement`, a command, a compound statement). */
+/** The redirections among the children of a node (a `redirected_statement`, a simple command). */
 function redirectsOf(n: SyntaxNode): Redir[] {
   return fields(n, 'redirect').flatMap(redirectOf);
 }
@@ -134,7 +134,8 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=/;
 function simpleOf(n: SyntaxNode, extra: Redir[]): Shape {
   const assignments: string[] = [];
   const parts: { text: string; start: number; end: number }[] = [];
-  const redirects: Redir[] = [...extra];
+  // (Every redirection of a simple command is its child, wherever it is written.)
+  const redirects: Redir[] = [...extra, ...redirectsOf(n)];
   const add = (c: SyntaxNode, text: string): void => {
     const last = parts[parts.length - 1];
     // pieces that touch are one word (`*"$a"*z` in a `[ ]`)
@@ -145,7 +146,7 @@ function simpleOf(n: SyntaxNode, extra: Redir[]): Shape {
   };
   for (const c of n.children) {
     if (c.type === 'variable_assignment') assignments.push(wordOf(c));
-    else if (c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect') redirects.push(...redirectOf(c));
+    else if (c.field === 'redirect') continue;
     else if (c.named && c.type !== 'comment' && c.type !== 'heredoc_body') add(c, wordOf(c));
   }
   // bash-ast lists any word that looks like an assignment (`awk OFS=, f`) under assignments, not words
@@ -197,8 +198,8 @@ function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
     case 'command':
       return simpleOf(n, extra);
     case 'redirected_statement': {
-      const body = n.children.find((c) => c.named && c.field === 'body');
-      if (!body) return { k: 'simple', line: n.startPosition.row + 1, assignments: [], words: [], redirects: [...extra, ...redirectsOf(n)] };
+      // (Around a compound command, or `time >o`: a simple command's redirections are its children.)
+      const body = n.children.find((c) => c.named && c.field === 'body')!;
       return fromNode(body, [...extra, ...redirectsOf(n)]);
     }
     case 'negated_command': {

@@ -11,7 +11,7 @@ import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
 import { resolveName } from './names';
@@ -863,9 +863,12 @@ export function underscoreValue(n: SyntaxNode, model: StateModel): string | unde
 }
 
 const unreliableCache = new WeakMap<SyntaxNode, Set<string>>();
+const unreliableInWordsCache = new WeakMap<SyntaxNode, Set<string>>();
 /**
  * The variables an arithmetic expression or a `${x:=word}` may assign in the statement that holds `n` (through
  * the substitutions around it): the state there is the one before the statement, so their values are not known.
+ * (A simple command expands its words, or makes its assignments, before its redirections: what those assign does
+ * not reach them.)
  */
 function unreliableNames(n: SyntaxNode): Set<string> {
   let top = n;
@@ -877,11 +880,16 @@ function unreliableNames(n: SyntaxNode): Set<string> {
       open = false;
     }
   }
-  let names = unreliableCache.get(top);
+  const redirs = top.type === 'command' ? redirectionsOf(top) : [];
+  const inside = (a: SyntaxNode, r: SyntaxNode) => a.startIndex >= r.startIndex && a.endIndex <= r.endIndex;
+  const skip = redirs.some((r) => inside(n, r)) ? [] : redirs;
+  const cache = skip.length ? unreliableInWordsCache : unreliableCache;
+  let names = cache.get(top);
   if (names) return names;
   names = new Set();
   // (Not `let`: its words are expanded before it runs.)
   for (const a of descendants(top, [...ARITH, 'expansion'])) {
+    if (skip.some((r) => inside(a, r))) continue;
     if (a.type === 'expansion') {
       const p = parseExpansion(a.text);
       if (p && (p.op === ':=' || p.op === '=')) names.add(p.name);
@@ -889,7 +897,7 @@ function unreliableNames(n: SyntaxNode): Set<string> {
     }
     for (const m of a.text.matchAll(ARITH_ASSIGNED)) names.add(m[1] ?? m[3] ?? m[4]);
   }
-  unreliableCache.set(top, names);
+  cache.set(top, names);
   return names;
 }
 

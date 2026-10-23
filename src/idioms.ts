@@ -6,7 +6,7 @@ import { has, values } from './argv/query';
 import { argWord } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import { staticWordValue } from './staticword';
-import { descendants, field, fields } from './syntax/tree';
+import { descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -164,17 +164,16 @@ const isPwd = (c: SyntaxNode | undefined): boolean => !!c && commandIs(c, 'pwd')
  */
 const scriptDirPath = (c: SyntaxNode): boolean => {
   if (!cdScriptDir(c)) return false;
-  // (Redirections of `cd` alone leave what `pwd` prints.)
-  const st = c.parent!.type === 'redirected_statement' ? c.parent! : c;
-  const p = st.parent!;
-  if (p.type === 'list') return p.namedChildren[0] === st && tokensOf(p)[0] === '&&' && isPwd(p.namedChildren[1]) && isSubstituted(p);
-  return p.type === 'command_substitution' && p.namedChildren.length === 2 && p.namedChildren[0] === st && isPwd(p.namedChildren[1]);
+  // (Redirections of `cd`, its own children, leave what `pwd` prints.)
+  const p = c.parent!;
+  if (p.type === 'list') return p.namedChildren[0] === c && tokensOf(p)[0] === '&&' && isPwd(p.namedChildren[1]) && isSubstituted(p);
+  return p.type === 'command_substitution' && p.namedChildren.length === 2 && p.namedChildren[0] === c && isPwd(p.namedChildren[1]);
 };
 
-/** Where stdout and stderr end up after a statement's redirections, when the targets are plain words. */
+/** Where stdout and stderr end up after a command's redirections, when the targets are plain words. */
 const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
   const to: { out?: string; err?: string } = {};
-  for (const r of fields(n, 'redirect').filter((x) => x.type === 'file_redirect')) {
+  for (const r of redirectionsOf(n).filter((x) => x.type === 'file_redirect')) {
     const fd = field(r, 'descriptor')?.text ?? '';
     const op = tokensOf(r)[0];
     // (A redirection being typed has no target yet.)
@@ -190,10 +189,9 @@ const outputsOf = (n: SyntaxNode): { out?: string; err?: string } => {
   return to;
 };
 /** `command -v jq >/dev/null 2>&1`, `type -P jq &>/dev/null`, `hash jq`, `which jq`: a check that prints nothing. */
-const quietCheck = (n: SyntaxNode): boolean => {
-  const c = n.type === 'redirected_statement' ? field(n, 'body')! : undefined;
-  if (!c || !(commandIs(c, 'which', 'hash') || (commandIs(c, 'command') && has(parseOf(c)!, '-v')) || (commandIs(c, 'type') && has(parseOf(c)!, '-P')))) return false;
-  const { out, err } = outputsOf(n);
+const quietCheck = (c: SyntaxNode): boolean => {
+  if (!(commandIs(c, 'which', 'hash') || (commandIs(c, 'command') && has(parseOf(c)!, '-v')) || (commandIs(c, 'type') && has(parseOf(c)!, '-P')))) return false;
+  const { out, err } = outputsOf(c);
   return out === '/dev/null' && err === '/dev/null';
 };
 /** `[[ "${BASH_SOURCE[0]}" == "$0" ]]`, `[ "$0" -ef "$BASH_SOURCE" ]`: whether the script is the one started. */
@@ -252,9 +250,8 @@ const exitTrap = (c: SyntaxNode): boolean => {
     && words.slice(at + 1).some((w) => w !== undefined && (w.toUpperCase() === 'EXIT' || (/^\s*[-+]?\d+\s*$/.test(w) && Number(w) === 0)));
 };
 /** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). `>>` and `&>>` do the same: a pipe has no end to append to. */
-const execTee = (n: SyntaxNode): boolean => {
-  const c = n.type === 'redirected_statement' ? field(n, 'body')! : undefined;
-  return !!c && commandIs(c, 'exec') && !argsOf(c).length && fields(n, 'redirect').some((r) => {
+const execTee = (c: SyntaxNode): boolean => {
+  return commandIs(c, 'exec') && !argsOf(c).length && redirectionsOf(c).some((r) => {
     const fd = field(r, 'descriptor')?.text ?? '';
     const dest = field(r, 'destination');
     return r.type === 'file_redirect' && (['&>', '&>>'].includes(tokensOf(r)[0]) || (['>', '>>'].includes(tokensOf(r)[0]) && (fd === '' || fd === '1')))
@@ -326,7 +323,7 @@ const endless = (n: SyntaxNode): boolean => {
 const readLoop = (process: boolean) => (n: SyntaxNode): boolean => {
   const body = n.type === 'redirected_statement' ? field(n, 'body') : undefined;
   if (body?.type !== 'while_statement') return false;
-  const redirects = n.namedChildren.filter((c) => c.type === 'file_redirect');
+  const redirects = redirectionsOf(n).filter((c) => c.type === 'file_redirect');
   const r = redirects.length === 1 ? redirects[0] : undefined;
   if (!r || !/^<(?!<)/.test(r.text) || (field(r, 'destination')?.type === 'process_substitution') !== process) return false;
   return descendants(body, ['command']).some((c) => nameOf(c) === 'read');

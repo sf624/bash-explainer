@@ -2,7 +2,7 @@
   "counts": {
     "skipped": { "extglob": 22, "dialect": 4, "error": 61, "bash-ast": 18 },
     "shapesDiffer": 0,
-    "inSubstitution": 170,
+    "inSubstitution": 177,
     "inHeredoc": 7
   },
   "findings": []

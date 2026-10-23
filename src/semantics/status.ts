@@ -11,7 +11,7 @@
 import { canonicalName } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
-import { assignmentsOnly, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { actedNames } from '../argv/query';
 import { builtinParse, commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
@@ -177,9 +177,10 @@ class Statuses implements StatusModel {
   private own(n: SyntaxNode): StatusRule {
     switch (n.type) {
       case 'command': {
-        // (A command with no name, `a=$(cmd)`, has the status of its last command substitution, or 0.)
+        // (A command with no name, `a=$(cmd)`, has the status of its last command substitution, or 0. bash assigns
+        // first, then expands the redirections: `>f$(exit 2) a=$(exit 1)` has the status 2.)
         if (assignmentsOnly(n)) {
-          const subs = outerSubstitutions(n);
+          const subs = [...prefixAssignments(n), ...redirectionsOf(n)].flatMap(outerSubstitutions);
           return { kind: 'last-substitution', ...(subs.length ? { at: subs[subs.length - 1] } : {}) };
         }
         const name = commandName(n);
@@ -226,10 +227,7 @@ class Statuses implements StatusModel {
         const stages = inner?.type === 'pipeline' ? inner.namedChildren.filter((c) => STATEMENTS.has(c.type)) : inner ? [inner] : [];
         return { kind: 'pipeline', stages, pipefail: optionOn(this.state.at(n).run, 'set', 'pipefail'), negated: true };
       }
-      case 'redirected_statement': {
-        const body = field(n, 'body');
-        return body ? this.own(body) : { kind: 'last-substitution' };
-      }
+      case 'redirected_statement': return this.own(field(n, 'body')!);
       case 'function_definition': return { kind: 'definition' };
     }
     return { kind: 'last-run' };
@@ -284,7 +282,7 @@ class Statuses implements StatusModel {
   expansionError(n: SyntaxNode, env?: WordEnv): { word: SyntaxNode; failure: WordFailure } | undefined {
     const visit = (x: SyntaxNode): { word: SyntaxNode; failure: WordFailure } | undefined => {
       for (const c of x.children) {
-        if (c.type === 'command_substitution' || c.type === 'process_substitution' || (STATEMENTS.has(c.type) && c !== n)) continue;
+        if (c.type === 'command_substitution' || c.type === 'process_substitution' || STATEMENTS.has(c.type)) continue;
         const w = wordOf(c);
         if (w && w.nodes[0] === c && (c.type === 'simple_expansion' || c.type === 'expansion' || descendants(c, ['simple_expansion', 'expansion']).length)) {
           const f = wordFields(c, this.state, env);
@@ -344,29 +342,25 @@ export function lastStatements(n: SyntaxNode): SyntaxNode[] {
     const stmts = n.namedChildren.filter((c) => STATEMENTS.has(c.type));
     return stmts.length ? lastStatements(stmts[stmts.length - 1]) : [];
   }
-  if (n.type === 'redirected_statement') {
-    const body = field(n, 'body');
-    return body ? lastStatements(body) : [n];
-  }
+  if (n.type === 'redirected_statement') return lastStatements(field(n, 'body')!);
   return [n];
 }
 
 /** A pipeline stage that cannot fail: `echo` or `printf` of words with no `$( )`, `cat` of a here-document or a here-string. */
 function cannotFail(stage: SyntaxNode): boolean {
-  const body = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
-  if (body?.type !== 'command' || descendants(body, ['command_substitution', 'process_substitution']).length) return false;
-  const name = commandName(body);
-  if (name === 'echo' || name === 'printf') return stage === body;
-  return name === 'cat' && !fields(body, 'argument').length && stage !== body
-    && fields(stage, 'redirect').every((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect');
+  if (stage.type !== 'command' || descendants(stage, ['command_substitution', 'process_substitution']).length) return false;
+  const name = commandName(stage);
+  const redirs = redirectionsOf(stage);
+  if (name === 'echo' || name === 'printf') return !redirs.length;
+  return name === 'cat' && !fields(stage, 'argument').length && redirs.length > 0
+    && redirs.every((r) => r.type === 'heredoc_redirect' || r.type === 'herestring_redirect');
 }
 
 /** A last stage that may stop reading before the end: `head`, `grep -q`, `grep -m N`, `sed …q`. */
 function closesEarly(stage: SyntaxNode): boolean {
-  const body = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
-  if (body?.type !== 'command') return false;
-  const name = commandName(body);
-  const args = fields(body, 'argument').map((a) => a.text);
+  if (stage.type !== 'command') return false;
+  const name = commandName(stage);
+  const args = fields(stage, 'argument').map((a) => a.text);
   return name === 'head' || (canonicalName(name ?? '') === 'grep' && args.some((a) => /^-[A-Za-z]*[qm]/.test(a) || /^--(quiet|silent|max-count)/.test(a)))
     || (name === 'sed' && args.some((a) => /q\d*['"]?$/.test(a)));
 }
