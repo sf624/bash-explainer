@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
@@ -13,9 +14,6 @@ import { netadmin } from '../src/dict/netadmin';
 import { monitor } from '../src/dict/monitor';
 import { macos } from '../src/dict/macos';
 import { ops } from '../src/dict/ops';
-import { extraFiles } from '../src/dict/extrasFiles';
-import { extraAdmin } from '../src/dict/extrasAdmin';
-import { extraSubcommands } from '../src/dict/extras';
 import { cmd } from '../src/dict/types';
 import type { CommandSpec, OptionSpec, ValueSpec } from '../src/argv/spec';
 import { interpret } from '../src/argv/interpret';
@@ -316,7 +314,7 @@ describe('the dictionary', () => {
     });
   });
 
-  it('defines each command in one base table only, and extras only for commands that exist', () => {
+  it('defines each command in one base table only', () => {
     const tables = { core, distro, system, basic, storage, admin, netadmin, monitor, macos, ops };
     const where = new Map<string, string[]>();
     for (const [table, entries] of Object.entries(tables)) {
@@ -324,8 +322,14 @@ describe('the dictionary', () => {
     }
     const twice = [...where].filter(([, t]) => t.length > 1).map(([n, t]) => `${n} (${t.join(', ')})`);
     assert.deepStrictEqual(twice, [], 'commands defined in more than one table');
-    const orphans = [...Object.keys(extraFiles), ...Object.keys(extraAdmin), ...Object.keys(extraSubcommands)].filter((n) => !where.has(n) && !Object.hasOwn(builtins, n));
-    assert.deepStrictEqual(orphans, [], 'extras for commands with no base entry');
+  });
+
+  it('keeps each command\'s options and subcommands in the file that defines it (no file patches other entries)', () => {
+    const dir = path.join(root, 'src', 'dict');
+    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => /^extras/.test(f)), [], 'extras files that merge options into other entries');
+    for (const f of fs.readdirSync(dir)) {
+      assert.ok(!/applyExtras|extras(Files|Admin)/.test(fs.readFileSync(path.join(dir, f), 'utf8')), `${f} refers to a file that patches entries`);
+    }
   });
 
   it('does not point at the value of an option with "この" or "this" (it reads as the current one)', () => {
