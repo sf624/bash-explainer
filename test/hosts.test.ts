@@ -718,6 +718,13 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - run: echo a\n`), ['bash']);
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - shell: sh\n        run: echo a\n`), ['sh']);
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - shell: bash\n        run: echo a\n`), ['bash']);
+    // Defaults written after steps: (job) or after jobs: (workflow), and not leaking to another job.
+    const steps = '    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n';
+    assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${job}`), ['bash']);
+    assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${job.replace('bash', 'sh')}  b:\n${steps}`), ['sh', 'bash']);
+    assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${wf}`), ['sh']);
+    assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${job}${wf}`), ['bash']);
+    assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${job.replace('bash', 'sh')}  b:\n${steps.replace('echo a', 'echo b')}${job}${wf.replace('shell: sh', 'shell: zsh')}`), ['sh', 'bash']);
   });
   it('a region says what it is part of, apart from its label', () => {
     const ci = (file: string, src: string) => extractShell(hostKind('', file)!, src).regions.map((r) => r.host);
