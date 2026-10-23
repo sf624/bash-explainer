@@ -88,8 +88,11 @@ export interface CommandSpec {
      * unsets (`run` sets `stderr` only with `--separate-stderr`).
      */
     always?: { name: string; sets: VariableSet; maybe?: boolean }[];
-    /** It reads a file and runs it in this shell (`source`, bats' `load`): what the file does is not known here. */
-    runsFile?: boolean;
+    /**
+     * It runs in this shell what the model does not read: a file (`source`, bats' `load`), or a command line it builds
+     * from its words (bats' `bats_pipe`, which `eval`s the pipeline it joins: with `lastpipe` its last stage runs here).
+     */
+    runsUnread?: 'file' | 'command-line';
     /** What it changes that the model follows besides variables: the shell's options (`set`, `shopt`), its aliases, the builtins enabled. */
     alters?: ('options' | 'aliases' | 'builtins')[];
   };

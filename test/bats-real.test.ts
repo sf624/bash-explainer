@@ -210,8 +210,8 @@ const ROWS: Row[] = [
     body: ['true'],
     bats: 'not ok',
   },
-  // bats' functions are read by their specs: `load` runs a file the model does not read, so no condition is decided
-  // after it, and `run` sets `$status`, which no condition is decided from.
+  // bats' functions are read by their specs: `load` runs a file the model does not read, so no condition of the file
+  // is decided, and `run` sets `$status`, which no condition is decided from.
   {
     title: 'load may set a variable a later condition reads',
     head: ['x=1', 'load helper', 'if [ "$x" = 1 ]; then exit 3; fi'],
@@ -246,11 +246,18 @@ const ROWS: Row[] = [
     decides: { 1: ['condition-always-false'] },
   },
   {
-    title: 'bats_require_minimum_version and bats_pipe set nothing a condition reads',
+    title: 'bats_require_minimum_version, and bats_pipe run by run (in a subshell), set nothing a condition reads',
     head: ['bats_require_minimum_version 1.5.0', 'x=1', 'if [ "$x" = 2 ]; then exit 3; fi'],
     body: ["run bats_pipe printf 'a\\n' \\| cat", '[ "$output" = a ]'],
     bats: 'ok',
     decides: { 2: ['condition-always-false'] },
+  },
+  {
+    // (bats_pipe evals the pipeline in the shell that calls it: with lastpipe, `read x` sets `x` there.)
+    title: 'bats_pipe called by the file runs a command line the model does not read: no condition of the file is decided',
+    head: ['shopt -s lastpipe', 'x=1', 'bats_pipe echo 2 \\| read x', 'if [ "$x" = 1 ]; then exit 3; fi'],
+    body: ['[ "$x" = 2 ]'],
+    bats: 'ok',
   },
 ];
 

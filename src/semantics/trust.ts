@@ -496,8 +496,9 @@ class Scan {
     const spec = hosted ?? builtins[name];
     if (lookup || !spec) return;
     if (spec.shellEffect?.alters) this.changed(w);
-    if (spec.shellEffect?.runsFile) {
-      this.blindFor('a file is sourced');
+    const unread = spec.shellEffect?.runsUnread;
+    if (unread) {
+      this.blindFor(unread === 'file' ? 'a file is sourced' : 'a command line the model does not read is run');
       return;
     }
     const parse = builtinParse(name, args, spec);
