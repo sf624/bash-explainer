@@ -254,14 +254,15 @@ export class WalkBuiltins {
 
   /**
    * The arrays `a=(…)` among the words of a command that does not declare them, after a name written as a declaration
-   * builtin or `alias` (a function named `declare`, `alias` itself): bash assigns them as the builtin `command` would
-   * (`declare`, `local` and `typeset` make them local in a function; the others global, with no attribute).
+   * builtin or `alias` (a function named `declare`, `alias` itself): bash assigns them as the builtin `command` would.
+   * `declare`, `local` and `typeset` read their options (`-g`, `-l`) and make them local in a function; `export`,
+   * `readonly` and `alias` assign the variable visible here (a local one, else the global one), with no attribute.
    */
   markedArrays(command: string, words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     const arrays = words.filter((w) => w.type === 'variable_assignment' && field(w, 'value')?.type === 'array');
     if (!arrays.length) return st;
-    const decl = readDeclarationWords('declare', arrays);
-    return this.declare('declare', arrays, ['declare', 'local', 'typeset'].includes(command) ? decl : { ...decl, on: 'g' }, n, st);
+    if (!['declare', 'local', 'typeset'].includes(command)) return arrays.reduce((s, a) => this.assignNode(a, s), st);
+    return this.declare(command, arrays, readDeclarationWords(command, [...words]), n, st);
   }
 
   declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {

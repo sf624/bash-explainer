@@ -47,6 +47,7 @@ import {
 import { labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
+import { readDeclarationWords } from './semantics/vars';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
@@ -1952,32 +1953,35 @@ export class Analyzer {
   /**
    * `a=…` passed to a command that does not declare it, after a name written as a declaration builtin or `alias`:
    * a function of that name (`isFn`; `maybe`: defined on some paths only) or `alias`. bash expands it as an assignment
-   * (not split), and gives it whole: nothing is assigned. `a=(…)` is assigned as an array (where the builtin would put
-   * it: in a function, `declare`, `local` and `typeset` make it local), and the command gets the name `a` only;
-   * `alias` then fails on that name (`alias: a: not found`). Checked with bash 5.2.
+   * (not split), and gives it whole: nothing is assigned. `a=(…)` is assigned as an array, and the command gets the
+   * name `a` only (`alias` then fails on it: `alias: a: not found`). `declare`, `local` and `typeset` assign it as the
+   * builtin would, with its options (`-g`: global; else local in a function); `export`, `readonly` and `alias`, to the
+   * variable visible here. Checked with bash 5.2.
    */
   private markedAssignment(a: SyntaxNode, desc: string, command: string, isFn: boolean | 'maybe'): Token {
     const name = field(a, 'name')!.text;
     const value = field(a, 'value');
-    let note: string;
+    const sentences: string[] = [];
     if (value?.type === 'array') {
-      const where = !isFn ? this.s('グローバル変数', 'a global variable')
-        : ['declare', 'local', 'typeset'].includes(command) ? this.s(`\`${command}\` と同じ場所（関数の中ならそのローカル変数）`, `where \`${command}\` would (in a function, a local variable of it)`)
-          : this.s('グローバル変数（属性なし）', 'a global variable, with no attribute');
-      const assigns = this.s(`bash は配列 \`${name}\` を${where}として代入し`, `bash assigns the array \`${name}\` (${where})`);
-      note = !isFn
-        ? this.s(`（${assigns}、\`alias\` には名前 \`${name}\` だけを渡すので、\`alias: ${name}: not found\` で失敗する）`, ` (${assigns} and passes only the name \`${name}\`, so \`alias\` fails: \`alias: ${name}: not found\`)`)
-        : isFn === 'maybe'
-          ? this.s(`（関数が動くなら、${assigns}、関数には名前 \`${name}\` だけを渡す。動かなければビルトインが代入する）`, ` (if the function runs, ${assigns} and passes it only the name \`${name}\`; otherwise the builtin assigns it)`)
-          : this.s(`（${assigns}、関数には名前 \`${name}\` だけを渡す）`, ` (${assigns} and passes the function only the name \`${name}\`)`);
+      // (`declare -g b=(…)`: the options count, as for the builtin.)
+      const global = readDeclarationWords('declare', fields(a.parent!, 'argument')).on.includes('g');
+      const assigns = !['declare', 'local', 'typeset'].includes(command)
+        ? this.s(`bash は配列 \`${name}\` を代入する。代入先はここで見える変数（関数のローカル変数があればそれ、なければグローバル変数）で、属性は付かない`,
+          `bash assigns the array \`${name}\`. It is the variable visible here: a local one if there is one, else the global one, with no attribute`)
+        : global ? this.s(`bash は \`${command} -g\` と同じく、配列 \`${name}\` をグローバル変数として代入する`, `bash assigns the array \`${name}\` as \`${command} -g\` would: a global variable`)
+          : this.s(`bash は \`${command}\` と同じく配列 \`${name}\` を代入する。関数の中ならそのローカル変数になる`, `bash assigns the array \`${name}\` as \`${command}\` would. In a function, it is a local variable`);
+      if (!isFn) {
+        sentences.push(assigns, this.s(`\`alias\` には名前 \`${name}\` だけが渡り、\`alias: ${name}: not found\` で失敗する`, `\`alias\` gets only the name \`${name}\`, and fails: \`alias: ${name}: not found\``));
+      } else {
+        sentences.push(isFn === 'maybe' ? this.s(`関数が動く場合、${assigns}`, `If the function runs, ${assigns}`) : assigns, this.s(`関数には名前 \`${name}\` だけが渡る`, `The function gets only the name \`${name}\``));
+        if (isFn === 'maybe') sentences.push(this.s('動かなければビルトインが代入する', 'Otherwise the builtin assigns it'));
+      }
     } else {
-      note = isFn === 'maybe'
-        ? this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。関数が動くなら代入はされず、動かなければビルトインが代入する）',
-          ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; if the function runs, nothing is assigned; otherwise the builtin assigns it)')
-        : this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。代入はされない）',
-          ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; nothing is assigned)');
+      sentences.push(this.s('コマンド名が宣言ビルトインの綴りなので、この語は代入と同じく展開される。単語分割もグロブ展開もされない', 'The command name is spelled as a declaration builtin, so this word is expanded as an assignment would be: no word splitting, no globbing'));
+      sentences.push(isFn === 'maybe' ? this.s('関数が動くなら代入はされず、動かなければビルトインが代入する', 'If the function runs, nothing is assigned; otherwise the builtin assigns it')
+        : this.s('代入はされない', 'Nothing is assigned'));
     }
-    return this.tok(a, 'argument', desc + note, this.sub(value));
+    return this.tok(a, 'argument', [desc, ...sentences].join(this.s('。', '. ')), this.sub(value));
   }
 
   /**

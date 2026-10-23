@@ -633,6 +633,7 @@
  "f() { :; }\nf x y",
  "f() { :; }\nf() { :; }\nf",
  "f() { :; }; bash -lc 'f'",
+ "f() { declare G=1; }\nf\ndeclare() { :; }\nf",
  "f() { echo hi; }",
  "f() { echo | while read -r l; do local q=1; done; echo $q; }",
  "f() { eval 'g() { :; }; n=$1'; }; f 1; x=1; f 2",
