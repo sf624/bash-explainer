@@ -142,6 +142,12 @@ export function docLine(n: SyntaxNode): number {
  * of the aliases the walk expands (an alias's text with the rest of a command). The trust scan reads the same trees
  * (`StringTrees`): each string is parsed once.
  */
+/**
+ * How many trees of aliases expanded at commands a model makes in all (`Scripts.expansion`): each alias whose text
+ * names another doubles them at each command that names it, and each tree is kept.
+ */
+export const ALIAS_TREES = 20_000;
+
 export class Scripts implements StringTrees {
   readonly byWord = new Map<SyntaxNode, NestedScript | NotRead>();
   readonly byRoot = new Map<SyntaxNode, NestedScript>();
@@ -150,6 +156,7 @@ export class Scripts implements StringTrees {
   private readonly aliases = new Map<SyntaxNode, SyntaxNode>();
   /** The trees of the aliases expanded at each command, by the command and the alias's text. */
   private readonly expansions = new Map<SyntaxNode, Map<string, SyntaxNode>>();
+  private expansionCount = 0;
   model!: StateModel;
   constructor(readonly depth: number) {}
 
@@ -172,11 +179,13 @@ export class Scripts implements StringTrees {
     return root;
   }
 
-  expansion(command: SyntaxNode, text: string): SyntaxNode {
+  expansion(command: SyntaxNode, text: string): SyntaxNode | undefined {
     let byText = this.expansions.get(command);
     if (!byText) this.expansions.set(command, (byText = new Map()));
     let root = byText.get(text);
     if (!root) {
+      if (this.expansionCount >= ALIAS_TREES) return undefined;
+      this.expansionCount++;
       // (The rest of the command: what follows its name, read with the alias's text, as bash reads it.)
       const rest = command.text.slice(field(command, 'name')!.endIndex - command.startIndex);
       byText.set(text, (root = parser().parse(text + rest).root));
