@@ -190,13 +190,13 @@ The manual groups commands by section, not by node: one section can hold several
 | `arithmetic_command`, `extended_test` | arithmetic, conditional | [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches |
 | `do_group` | none (the body of a loop) | [3.2.5.1](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html) | a part, not a command; keep |
 
-An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands; `$(grep -c foo f)` is only text in an assignment word. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
+An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands. `assignments` and `words` are two fields of one simple command, not two nodes: the first command has an assignment and no word, the second has words and no assignment. `$(grep -c foo f)` is only text in an assignment word. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
 
 ```mermaid
 flowchart TB
   subgraph bash["bash-ast"]
-    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
-    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple command 1<br/>assignments: x=$(grep -c foo f)<br/>words: (none)"]
+    A1 --> A3["simple command 2<br/>assignments: (none)<br/>words: [ #quot;$x#quot; -gt 0 ]"]
   end
   subgraph before["ours, before"]
     B1["list #amp;#amp;"] --> B2["variable_assignment<br/>x=…"]
@@ -217,15 +217,15 @@ After the change, each command of bash-ast has one `command` of ours:
 ```mermaid
 flowchart TB
   subgraph bash["bash-ast"]
-    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
-    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+    A1["list (and)<br/>= our list #amp;#amp;"] --> A2["simple command 1<br/>assignments: x=$(grep -c foo f)<br/>words: (none)"]
+    A1 --> A3["simple command 2<br/>assignments: (none)<br/>words: [ #quot;$x#quot; -gt 0 ]"]
   end
   subgraph after["ours, after"]
-    C1["list #amp;#amp;"] --> C2["command<br/>(no name)"]
+    C1["list #amp;#amp;"] --> C2["command (no name)<br/>= simple command 1"]
     C2 --> C3["variable_assignment<br/>x=…"]
     C3 --> C4["command_substitution"]
     C4 --> C5["command<br/>grep -c foo f<br/>(not in bash-ast:<br/>we supply it)"]
-    C1 --> C6["command<br/>name [<br/>arguments #quot;$x#quot; -gt 0 ]"]
+    C1 --> C6["command, name [<br/>= simple command 2<br/>arguments #quot;$x#quot; -gt 0 ]"]
   end
   A2 -.-> C2
   A3 -.-> C6
