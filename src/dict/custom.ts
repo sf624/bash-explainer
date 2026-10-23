@@ -27,7 +27,6 @@ interface OldCustomCommand {
   arguments?: unknown[];
 }
 
-const STYLES = ['gnu', 'posix', 'single-dash'];
 const REPEATS = ['?', '*', '+'];
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (s: string): Text => ({ ja: s, en: s });
@@ -36,7 +35,9 @@ const text = (s: string): Text => ({ ja: s, en: s });
 export function customCommandSpec(c: unknown): CommandSpec | undefined {
   if (!isObject(c) || typeof c.summary !== 'string') return undefined;
   const spec: CommandSpec = { summary: text(c.summary), options: options(c) };
-  if (typeof c.style === 'string' && STYLES.includes(c.style)) spec.style = c.style as CommandSpec['style'];
+  // (The setting keeps the names of 0.7: `posix` is `optionsFirst`, `single-dash` the parser of that name.)
+  if (c.style === 'posix') spec.optionsFirst = true;
+  if (c.style === 'single-dash') spec.parser = 'single-dash';
   const pattern = operands(c);
   if (pattern.length) spec.operands = [{ pattern }];
   if (isObject(c.subcommands)) {

@@ -1,39 +1,35 @@
 // The command spec: how a program reads its arguments (docs/design: "A: the command spec").
 // A spec says which words are options, which take values, what the operands mean, and where
 // another command starts. src/argv/interpret.ts reads a command's words with it.
+//
+// Some fields serve one entry. Each was reviewed (docs/design/refactor.md, D8) and is kept because it states a
+// fact of that tool that no general field can, as its comment says; a second tool with the same fact uses it too.
 import type { EmbeddedLang } from '../embedded/types';
 import type { Shell } from '../dialect';
 import type { Text } from '../i18n';
+import type { OptionParser } from './parsers';
 
 export interface CommandSpec {
   summary: Text;
+  /** The family of option parser the program uses: a preset of src/argv/parsers.ts (default `gnu`). */
+  parser?: OptionParser;
   /**
-   * How options are written. `gnu` (the default): short options cluster (`-xvf`), long ones start with `--`,
-   * and options may come after operands. `posix`: the same, but the first operand ends the options.
-   * `single-dash`: every option is one word (`-name`, `-var-file=x`) and never clusters. `none`: a word is an
-   * option only when each of its letters is a known option, and the first operand ends them (`echo -ne`; `echo -x` prints `-x`).
+   * The first operand ends the options: a word after it is an operand too (`timeout 5 cmd -x`). getopt_long with an
+   * optstring that starts with `+` (timeout, env, nice, xargs), POSIX getopt (bash's builtins), cobra's
+   * `SetInterspersed(false)` (`docker run IMAGE CMD`).
    */
-  style?: 'gnu' | 'posix' | 'single-dash' | 'none';
+  optionsFirst?: boolean;
   /** `+x` turns an option off (`set +e`). */
   plusOptions?: boolean;
-  /**
-   * A long option may be written as a prefix of its name. `true`: a unique prefix of a `--` name (`--pres` for
-   * `--preserve-status`), as getopt_long allows. `'first'`: any prefix of a name, which selects the first option
-   * in the list that has such a name, also when written with `--` (iproute2: `ip -stat`, `ip -b` is `-batch`).
-   */
-  longPrefixes?: boolean | 'first';
-  /** Whether `--name=value` gives a long option its value (getopt_long; the default). jq has no such form: `--arg=x` is unknown. */
-  longEquals?: boolean;
-  /** `false`: a short option is a whole word: no clusters (`-pP`), no attached value (`-C.`, `-c=x`); long options keep `--name=value` (git, before its subcommand). */
-  shortClusters?: boolean;
-  /** `-f=x` is `-f` with the value `x`, not `=x` (dpkg's own parser). */
-  shortEquals?: boolean;
   options?: OptionSpec[];
   /** Options recognized by their form (`kill -TERM`, `-15`; `head -5`; `nice -10`), tried when no option has the word as its name. */
   patternOptions?: PatternOption[];
   /** Modes chosen by an option anywhere on the line (`rpm -q`). */
   modes?: ModeSpec[];
-  /** The mode is that of the last option given that selects one (`echo -e -E` reads no escapes), not the first of `modes`. */
+  /**
+   * The mode is that of the last option given that selects one (`echo -e -E` reads no escapes), not the first of `modes`.
+   * (echo only: it turns escapes on and off as it reads each letter; rpm's and kill's modes are chosen by the option, wherever.)
+   */
   lastModeWins?: boolean;
   /** Dashless letters in the first word (`tar cvzf`, `ps aux`), or in any word (`ps -p 1 u`). */
   oldStyle?: OldStyleSpec;
@@ -46,14 +42,6 @@ export interface CommandSpec {
   dashDash?: 'end-options' | 'literal' | { then: OperandSpec[] };
   subcommands?: Record<string, SubcommandSpec>;
   /**
-   * The program finds its subcommands as cobra does (Go: kubectl, helm, gh): options may come before the
-   * subcommand's name, its own as well as the program's (`kubectl -o yaml get pods`). The subcommand is the
-   * first word that is not an option or its value, where an option not known at that level, written without
-   * `=`, takes the next word as its value (`-x VALUE`, `--name VALUE`), as cobra guesses. The subcommands
-   * of a subcommand are found the same way.
-   */
-  cobra?: boolean;
-  /**
    * A prefix of a subcommand's name (or alias) selects it: a unique one (`true`), or any one, which selects the
    * first subcommand in the list that it starts (`'first'`, as iproute2 reads `ip a` as `ip address` and `ip m`
    * as `ip maddress`).
@@ -61,7 +49,8 @@ export interface CommandSpec {
   subcommandPrefixes?: boolean | 'first';
   /**
    * A word that matches is an operand and ends the options and the old-style letters: every word after it is an
-   * operand too (procps `ps 1 u`: a bare number starts a list of process IDs, which ends the line).
+   * operand too (procps `ps 1 u`: a bare number starts a list of process IDs, which ends the line). (procps `ps`
+   * only: its own parser, which no preset describes.)
    */
   endsOptions?: RegExp;
   /**
@@ -71,7 +60,10 @@ export interface CommandSpec {
   operandParser?: 'find-expression' | 'test-expression';
   /** With `operandParser`: the spec the words of the expression are read with (find's tests and actions, `-name x`, `-exec … ;`). */
   expressionSpec?: CommandSpec;
-  /** What an option the spec does not list does, when the command refuses every other option (bats `run`: an error). */
+  /**
+   * What an option the spec does not list does, when the command refuses every other option (bats `run`: an error).
+   * (bats' `run` only: other entries do not list every option, so an unknown one is only "not in the dictionary".)
+   */
   unknownOption?: Text;
   builtin?: 'special' | 'regular';
   /**
@@ -117,7 +109,10 @@ export interface OptionSpec {
   text: Text;
   /** What it does written with a `+` (`declare +x`, `set +f`), with the command's `plusOptions`, when that differs from turning it on. */
   offText?: Text;
-  /** What it does when no word gives the value it takes (`set -o` alone lists the settings); `offText` written with a `+` (`set +o`). */
+  /**
+   * What it does when no word gives the value it takes (`set -o` alone lists the settings); `offText` written with a `+`
+   * (`set +o`). (`set -o` only: getopt makes a missing value an error, bash's `set` does not.)
+   */
   noValue?: { text: Text; offText: Text };
   /** The value the option takes; a list when it takes several words (`jq --arg NAME VALUE`). */
   value?: ValueSpec | ValueSpec[];
@@ -131,7 +126,9 @@ export interface OptionSpec {
   until?: { terminators: string[]; slot: CommandSlot };
   /**
    * The operands after this option that the pattern gives to its last, repeating item are these instead
-   * (`jq '.' in.json --args a`: `in.json` is a file, `a` a positional value).
+   * (`jq '.' in.json --args a`: `in.json` is a file, `a` a positional value). (jq's `--args` and `--jsonargs` only.
+   * An operand alternative with `when` cannot say it: the option changes only the operands after it, by position on
+   * the line, and the pattern's items do not know where the option stood.)
    */
   laterOperands?: OperandSpec;
   /** Giving this option marks the line with this name (`kill -s`: a signal is given). */
@@ -161,7 +158,10 @@ export interface ValueSpec {
   lang?: EmbeddedLang;
   /** The meaning of particular values (`set -o pipefail`). */
   values?: Record<string, Text>;
-  /** The meaning of particular values given to the option written with a `+`, when that differs from undoing them (`set +o noglob`). */
+  /**
+   * The meaning of particular values given to the option written with a `+`, when that differs from undoing them
+   * (`set +o noglob`). (`set +o` only, the one option with values that takes a `+`.)
+   */
   offValues?: Record<string, Text>;
   /** The value is a command, read as a `command` role (`su -c 'cmd'`). */
   command?: CommandSlot;
@@ -172,7 +172,8 @@ export interface ValueSpec {
   setsEnv?: 'variable' | 'file';
   /**
    * The value is split into words that are read in its place, before the words after it, as more of the
-   * command's own words (`env -S'-i A=1 bash -e'`: GNU env's rules, src/argv/envsplit.ts).
+   * command's own words (`env -S'-i A=1 bash -e'`: GNU env's rules, src/argv/envsplit.ts). (env only; the value
+   * names the splitting rules, so another tool's would be another value.)
    */
   splice?: 'env';
   /** The value removes an environment variable from what the command a slot runs gets (`env -u NAME`). */
@@ -238,7 +239,11 @@ export interface OperandSpec {
   matches?: RegExp;
   /** Only a `NAME=value` word fits: a variable for the command that follows (`env A=1 cmd`). */
   assignment?: boolean;
-  /** A `NAME=value` word here is an assignment with this meaning instead (awk's operands). */
+  /**
+   * A `NAME=value` word here is an assignment with this meaning instead (awk's operands; awk only so far). (Not
+   * `assignment`, which makes only such a word fit the item: awk's item takes files and assignments mixed, in any
+   * order, and `matches` would only filter, not give the other meaning.)
+   */
   assignmentText?: Text;
   /** Only a word that names this option of the command fits, and it is read as that option (`flock FILE -c CMD`). */
   option?: string;
@@ -272,7 +277,7 @@ export interface CommandSlot {
   lookup?: 'no-functions' | 'builtins-only';
   /**
    * With an option among `options`, `env` is this instead (`su -c`: the environment is kept; with `su -l -c`, it
-   * starts afresh).
+   * starts afresh). (`su -c` only: a value's slot has no alternatives of operands to put this `when` in.)
    */
   envWith?: { options: string[]; env: 'exported' | 'variables' | 'reset' | 'none' };
   /** `exec cmd`: nothing after it runs. */
@@ -285,6 +290,8 @@ export interface CommandSlot {
   /**
    * With `joinsWords`: each word is escaped before they are joined, so the shell reads the same words
    * (`sudo -s cmd args`), which are then read as a command; otherwise the shell reads the joined text afresh.
+   * (sudo's `-s` and `-i` only. `joinsWords` alone says the shell reads the joined text afresh, as ssh's remote
+   * shell does; sudo quotes each word first, which changes what runs, so the slot needs to say which it is.)
    */
   escapesWords?: boolean;
   /**

@@ -16,7 +16,7 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
     ['--separate-stderr', '標準エラー出力(fd 2)を `$output` に混ぜず、`$stderr` と配列 `$stderr_lines` に入れる', 'keep stderr out of `$output`, in `$stderr` and the array `$stderr_lines`'],
     ['--keep-empty-lines', '`$lines` に空行も残す（出力の末尾の改行も `$output` に残す）', 'keep empty lines in `$lines` (and trailing newlines in `$output`)'],
   ], {
-    style: 'posix',
+    optionsFirst: true,
     patternOptions: [{
       pattern: /^-(\d+)$/,
       text: ([, n]) => tx(`終了ステータスが ${n} でなければ \`run\` が失敗し、テストが失敗する`, `fail, and so fail the test, unless the exit status is ${n}`),
@@ -54,7 +54,7 @@ export const BATS_COMMANDS: Record<string, CommandSpec> = {
     'bats function: runs the commands separated by `\\|` joined by pipes. `run bats_pipe cmd \\| …` runs the whole pipeline under `run`. The exit status is that of the last command that failed (as with `set -o pipefail`). Since bats 1.10.0', [
     ['--returned-status', '終了ステータスを、この位置のコマンドのものにする（負の数は後ろから数える）', 'take the exit status of the command at this position (a negative number counts from the end)', 'arg'],
   ], {
-    style: 'posix',
+    optionsFirst: true,
     patternOptions: [{
       pattern: /^-(\d+)$/,
       text: ([, n]) => tx(`終了ステータスを、${n} 番目（0 から数える）のコマンドのものにする`, `take the exit status of command ${n} (counting from 0)`),

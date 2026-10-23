@@ -30,7 +30,7 @@ export const macos: Record<string, CommandSpec> = {
   pbcopy: cmd('標準入力をクリップボードにコピーする', 'Copy stdin to the clipboard'),
   pbpaste: cmd('クリップボードの内容を標準出力に出す', 'Print the clipboard to stdout', [
     ['-Prefer', '優先する形式（`txt`、`rtf`、`ps`）', 'preferred format (`txt`, `rtf`, `ps`)', 'arg'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
   say: cmd('テキストを音声で読み上げる', 'Speak text aloud', [
     ['-v', '声の名前（`-v ?` で一覧）', 'voice (`-v ?` lists them)', 'arg'],
     ['-r', '読み上げる速さ（1 分あたりの語数）', 'speaking rate (words per minute)', 'arg'],
@@ -46,11 +46,11 @@ export const macos: Record<string, CommandSpec> = {
     ['-u', 'ユーザーが操作したことにしてディスプレイを起こす', 'declare the user active and wake the display'],
     ['-t', '指定した秒数だけ防ぐ', 'prevent sleep for the given number of seconds', 'arg'],
     ['-w', '指定した PID のプロセスが終わるまで防ぐ', 'prevent sleep until the given PID exits', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   diskutil: cmd('ディスク・パーティション・ボリュームを管理する（macOS）', 'Manage disks, partitions and volumes (macOS)', [], {
     subcommands: {
-      list: cmd('ディスクとパーティションを一覧表示する', 'List disks and partitions', [['-plist', 'plist 形式で出力', 'output as a plist']], { style: 'single-dash' }),
-      info: cmd('ボリュームやディスクの詳細を表示する', 'Show details of a volume or disk', [['-all', 'すべてのディスク', 'all disks'], ['-plist', 'plist 形式で出力', 'output as a plist']], { positional: [volume], style: 'single-dash' }),
+      list: cmd('ディスクとパーティションを一覧表示する', 'List disks and partitions', [['-plist', 'plist 形式で出力', 'output as a plist']], { parser: 'single-dash' }),
+      info: cmd('ボリュームやディスクの詳細を表示する', 'Show details of a volume or disk', [['-all', 'すべてのディスク', 'all disks'], ['-plist', 'plist 形式で出力', 'output as a plist']], { positional: [volume], parser: 'single-dash' }),
       mount: cmd('ボリュームをマウントする', 'Mount a volume', [['readOnly', '読み取り専用で', 'mount read-only']], { positional: [volume] }),
       unmount: cmd('ボリュームをアンマウントする', 'Unmount a volume', [['force', '使用中でも強制的に', 'force it even if in use']], { positional: [volume] }),
       eject: cmd('ディスクを取り出す', 'Eject a disk', [], { positional: [volume] }),
@@ -100,7 +100,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-setwebproxy', 'HTTP プロキシを設定', 'set the web proxy'],
     ['-setwebproxystate', 'HTTP プロキシを有効・無効にする', 'turn the web proxy on or off'],
     ['-setsearchdomains', '検索ドメインを設定', 'set search domains'],
-  ], { style: 'single-dash', positional: [service, pos('設定する値', 'value to set')] }),
+  ], { parser: 'single-dash', positional: [service, pos('設定する値', 'value to set')] }),
   softwareupdate: cmd('macOS やソフトウェアのアップデートを調べて入れる', 'Check for and install macOS and software updates', [
     ['-l|--list', '利用できるアップデートを一覧表示', 'list available updates'],
     ['-i|--install', 'アップデートを入れる', 'install updates'],
@@ -119,12 +119,12 @@ export const macos: Record<string, CommandSpec> = {
     ['-count', '一致した数だけ表示', 'print only the number of matches'],
     ['-0', '結果を NUL で区切る', 'separate results with NUL'],
     ['-attr', '一緒に表示する属性', 'attribute to print', 'arg'],
-  ], { style: 'single-dash', positional: [pos('検索の式（`kMDItemKind == "PDF"`）', 'query (`kMDItemKind == "PDF"`)')] }),
+  ], { parser: 'single-dash', positional: [pos('検索の式（`kMDItemKind == "PDF"`）', 'query (`kMDItemKind == "PDF"`)')] }),
   mdls: cmd('ファイルの Spotlight メタデータを表示する', 'Show the Spotlight metadata of a file', [
     ['-name', '表示する属性', 'attribute to show', 'arg'],
     ['-raw', '値だけを出力', 'print only the value'],
     ['-nullMarker', '値がないときに出す文字列', 'string for missing values', 'arg'],
-  ], { style: 'single-dash', positional: [files] }),
+  ], { parser: 'single-dash', positional: [files] }),
   mdutil: cmd('Spotlight のインデックスを管理する', 'Manage the Spotlight index', [
     ['-s', 'インデックスの状態を表示', 'show indexing status'],
     ['-i', 'インデックスを有効・無効にする（`on` / `off`）', 'turn indexing on or off (`on` / `off`)', 'arg'],
@@ -180,7 +180,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-remove', 'キーを削除する', 'remove a key', 'arg'],
     ['-o', '出力先のファイル（`-` で標準出力）', 'output file (`-` for stdout)', 'arg'],
     ['-type', 'キーの値の型を表示', 'print the type of a key', 'arg'],
-  ], { style: 'single-dash', positional: [plist] }),
+  ], { parser: 'single-dash', positional: [plist] }),
   sips: cmd('画像を変換・リサイズ・調べる（macOS 標準）', 'Convert, resize and inspect images (built into macOS)', [
     ['-g|--getProperty', '属性を表示（`pixelWidth`、`all`…）', 'show a property (`pixelWidth`, `all`…)', 'arg'],
     ['-s|--setProperty', '属性を設定（`format png`）', 'set a property (`format png`)', 'arg'],
@@ -198,7 +198,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-xml', 'XML(plist)で出力', 'output XML (plist)'],
     ['-detailLevel', '詳しさ（`mini`、`basic`、`full`）', 'detail level (`mini`, `basic`, `full`)', 'arg'],
     ['-timeout', '待つ秒数', 'timeout in seconds', 'arg'],
-  ], { style: 'single-dash', positional: [pos('項目の種類（`SPHardwareDataType`、`SPNetworkDataType`…）', 'data type (`SPHardwareDataType`, `SPNetworkDataType`…)')] }),
+  ], { parser: 'single-dash', positional: [pos('項目の種類（`SPHardwareDataType`、`SPNetworkDataType`…）', 'data type (`SPHardwareDataType`, `SPNetworkDataType`…)')] }),
   dscl: cmd('ディレクトリサービス（ユーザー・グループ）を読み書きする（macOS）', 'Read and write directory service data: users and groups (macOS)', [
     ['-q', '表示を減らす', 'quiet'],
     ['-u', '認証に使うユーザー', 'authenticate as the given user', 'arg'],
@@ -212,13 +212,13 @@ export const macos: Record<string, CommandSpec> = {
     ['-append', '属性に値を追加する', 'append a value to an attribute'],
     ['-delete', '項目や属性を削除する', 'delete an entry or attribute'],
     ['-passwd', 'パスワードを設定する', 'set a password'],
-  ], { style: 'single-dash', positional: [pos('データソース（`.`: ローカル）', 'data source (`.`: local)'), pos('パス（`/Users/名前`）、属性や値', 'path (`/Users/name`), attributes and values')] }),
+  ], { parser: 'single-dash', positional: [pos('データソース（`.`: ローカル）', 'data source (`.`: local)'), pos('パス（`/Users/名前`）、属性や値', 'path (`/Users/name`), attributes and values')] }),
   dscacheutil: cmd('ディレクトリサービスと DNS のキャッシュを調べる・消去する', 'Query and flush the directory service and DNS caches', [
     ['-flushcache', 'キャッシュを破棄する', 'flush the cache'],
     ['-q', '問い合わせる（`host`、`user`、`group`）', 'query (`host`, `user`, `group`)', 'arg'],
     ['-cachedump', 'キャッシュの内容を表示', 'dump the cache'],
     ['-statistics', '統計を表示', 'show statistics'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
   lipo: cmd('Universal Binary（複数アーキテクチャ）を作る・調べる・分ける', 'Create, inspect and split universal (multi-architecture) binaries', [
     ['-info', '含まれるアーキテクチャを簡潔に表示', 'show the architectures briefly'],
     ['-detailed_info', '詳しい情報を表示', 'show detailed information'],
@@ -227,7 +227,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-thin', '1つのアーキテクチャだけ取り出す', 'extract one architecture', 'arg'],
     ['-extract', '指定のアーキテクチャを取り出す', 'extract architectures', 'arg'],
     ['-output', '出力ファイル', 'output file', 'arg'],
-  ], { style: 'single-dash', positional: [binary()] }),
+  ], { parser: 'single-dash', positional: [binary()] }),
   ioreg: cmd('I/O レジストリ（ハードウェアの情報）を表示する', 'Show the I/O Registry (hardware information)', [
     ['-l', 'プロパティも表示', 'show properties'],
     ['-w', '出力の幅（`0` で折り返さない）', 'output width (`0`: no wrapping)', 'arg'],
@@ -279,7 +279,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-output', '出力ファイル', 'output file', 'arg'],
     ['-stdin', '標準入力から読む', 'read from stdin'],
     ['-stdout', '標準出力に書く', 'write to stdout'],
-  ], { style: 'single-dash', positional: [files] }),
+  ], { parser: 'single-dash', positional: [files] }),
   pkgutil: cmd('インストーラのパッケージ(.pkg)と記録を調べる・展開する', 'Inspect and expand installer packages (.pkg) and their receipts', [
     ['--pkgs', 'インストール済みのパッケージ ID を一覧表示', 'list installed package IDs'],
     ['--files', 'パッケージが入れたファイルを一覧表示', 'list files the package installed', 'arg'],
@@ -295,7 +295,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-target', 'インストール先（`/`、ボリューム）', 'target (`/`, a volume)', 'arg'],
     ['-verbose', '詳しく表示する', 'verbose'],
     ['-dumplog', '詳しいログを出力', 'print the installer log'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
   security: cmd('キーチェーン・証明書・パスワードを操作する（macOS）', 'Work with keychains, certificates and passwords (macOS)', [], {
     subcommands: {
       'find-generic-password': cmd('キーチェーンのパスワードを探す', 'Find a password in the keychain', [['-s', 'サービス名', 'service name', 'arg'], ['-a', 'アカウント名', 'account name', 'arg'], ['-w', 'パスワードだけ出力する', 'print only the password']]),
@@ -322,7 +322,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-add_rpath', 'rpath を追加する', 'add an rpath', 'arg'],
     ['-delete_rpath', 'rpath を削除する', 'delete an rpath', 'arg'],
     ['-rpath', 'rpath を置き換える（古い 新しい）', 'replace an rpath (old new)', 'arg'],
-  ], { style: 'single-dash', positional: [binary()] }),
+  ], { parser: 'single-dash', positional: [binary()] }),
   vm_stat: cmd('仮想メモリの統計を表示する', 'Show virtual memory statistics', [], { positional: [pos('更新の間隔（秒）', 'interval in seconds')] }),
   xcodebuild: cmd('Xcode のプロジェクトをコマンドラインでビルド・テストする', 'Build and test Xcode projects from the command line', [
     ['-project', 'プロジェクトファイル(.xcodeproj)', 'project file (.xcodeproj)', 'arg'],
@@ -336,7 +336,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-list', 'スキームなどを一覧表示', 'list schemes and targets'],
     ['-showBuildSettings', 'ビルド設定を表示', 'show build settings'],
     ['-quiet', '警告とエラーだけ表示', 'only show warnings and errors'],
-  ], { style: 'single-dash', positional: [pos('動作（`build`、`test`、`clean`、`archive`）', 'action (`build`, `test`, `clean`, `archive`)')] }),
+  ], { parser: 'single-dash', positional: [pos('動作（`build`、`test`、`clean`、`archive`）', 'action (`build`, `test`, `clean`, `archive`)')] }),
   bless: cmd('起動ディスクを設定する（macOS）', 'Set the startup disk (macOS)', [
     ['--mount', '起動ボリュームのマウントポイント', 'mount point of the volume', 'arg'],
     ['--setBoot', '次の起動に使うように設定する', 'set it as the boot volume'],
@@ -355,7 +355,7 @@ export const macos: Record<string, CommandSpec> = {
     ['-settimezone', 'タイムゾーンを設定', 'set the time zone', 'arg'],
     ['-setcomputersleep', 'スリープまでの分数（`Never`）', 'minutes before sleep (`Never`)', 'arg'],
     ['-listtimezones', 'タイムゾーンを一覧表示', 'list time zones'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
   ipconfig: cmd('IP の設定情報を表示する（macOS）', 'Show IP configuration (macOS)', [], {
     subcommands: {
       getifaddr: cmd('インターフェースの IP アドレスを表示する', 'Print the IP address of an interface', [], { positional: [pos('インターフェース（`en0`）', 'interface (`en0`)')] }),

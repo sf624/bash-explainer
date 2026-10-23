@@ -135,11 +135,11 @@ export const admin: Record<string, CommandSpec> = {
     ['-t|--pty', '疑似端末をつなぐ', 'connect a pseudo-terminal'],
     ['-r|--remain-after-exit', '終了後もユニットを残す', 'keep the unit after it exits'],
     ['-G|--collect', '失敗してもユニットを残さず片付ける', 'unload the unit even if it failed'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   'systemd-cat': cmd('コマンドの出力や標準入力をジャーナルに送る', 'Send the output of a command, or stdin, to the journal', [
     ['-t|--identifier', 'ログの識別子', 'syslog identifier', 'arg'],
     ['-p|--priority', '優先度（`info`、`err`…）', 'priority (`info`, `err`…)', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   'systemd-delta': cmd('上書きされた systemd の設定ファイルの差分を一覧表示する', 'List systemd configuration files that override defaults', [
     ['-t|--type', '種類で絞る（`masked`、`overridden`、`extended`…）', 'filter by type (`masked`, `overridden`, `extended`…)', 'arg'],
     ['--diff', '差分を表示するかどうか（`true` / `false`）', 'whether to show the diff (`true` / `false`)', 'arg'],
@@ -195,7 +195,7 @@ export const admin: Record<string, CommandSpec> = {
     ['-x|--extract', '指定ディレクトリに展開する', 'extract into a directory'],
     ['-R|--raw-extract', '制御ファイルも含めて展開する', 'extract with the control files'],
     ['-b|--build', 'ディレクトリから .deb を作る', 'build a .deb from a directory'],
-  ], { shortEquals: true, ...args(operand('DEB', '.deb ファイル', '.deb file')) }),
+  ], { parser: 'dpkg', ...args(operand('DEB', '.deb ファイル', '.deb file')) }),
   alien: cmd('パッケージの形式（rpm、deb、tgz）を相互に変換する', 'Convert between package formats (rpm, deb, tgz)', [
     ['-d|--to-deb', 'deb に変換（既定）', 'convert to deb (default)'],
     ['-r|--to-rpm', 'rpm に変換', 'convert to rpm'],
@@ -640,7 +640,7 @@ export const admin: Record<string, CommandSpec> = {
     ['-t|--type', 'タイプ', 'type', 'arg'],
     ['-u|--user', 'ユーザー', 'user', 'arg'],
     ['-r|--role', 'ロール', 'role', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   semanage: cmd('SELinux のポリシーの設定（ポート・ファイル・ブール値）を管理する', 'Manage SELinux policy settings (ports, files, booleans)', [], {
     subcommands: {
       port: cmd('ポートのタイプを管理する（`-a -t http_port_t -p tcp 8080`）', 'Manage port types (`-a -t http_port_t -p tcp 8080`)', [['-a|--add', '追加', 'add'], ['-d|--delete', '削除', 'delete'], ['-l|--list', '一覧表示', 'list'], ['-t|--type', 'タイプ', 'type', 'arg'], ['-p|--proto', 'プロトコル', 'protocol', 'arg']]),

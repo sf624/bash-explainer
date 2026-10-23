@@ -145,10 +145,10 @@ const SERVICE = operand('SERVICE', 'サービス', 'service', { repeat: '?' });
 
 /** Subcommands shared by docker and podman. */
 const dockerSubs: Record<string, CommandSpec> = {
-  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { style: 'posix', operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
+  run: cmd('イメージから新しいコンテナを起動する', 'Run a new container', dockerRun, { optionsFirst: true, operands: [{ pattern: [IMAGE, runs(IN_CONTAINER)] }] }),
   build: cmd('Dockerfile からイメージをビルドする', 'Build an image from a Dockerfile', dockerBuild, { positional: [pos('ビルドのコンテキスト（ディレクトリ）', 'build context (directory)')] }),
   login: cmd('レジストリにログインする', 'Log in to a registry', [['-u|--username', 'ユーザー名', 'user name', 'arg'], ['-p|--password', 'パスワード（ログに残るので `--password-stdin` を推奨）', 'password (shows up in logs; prefer `--password-stdin`)', 'arg'], ['--password-stdin', 'パスワードを標準入力から読む', 'read the password from stdin']], { positional: [pos('レジストリ（省略時は Docker Hub）', 'registry (default: Docker Hub)')] }),
-  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['--env-file', '環境変数をファイルから読む', 'read environment variables from a file', 'arg envfile'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { style: 'posix', operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
+  exec: cmd('実行中のコンテナ内でコマンドを実行する', 'Run a command in a running container', [['-it', '対話的に端末付きで実行', 'interactive with a TTY'], ['-i|--interactive', '標準入力を開いたままにする', 'keep stdin open'], ['-t|--tty', '疑似端末を割り当てる', 'allocate a TTY'], ['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['--env-file', '環境変数をファイルから読む', 'read environment variables from a file', 'arg envfile'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg']], { optionsFirst: true, operands: [{ pattern: [operand('CONTAINER', 'コンテナ', 'container', { repeat: '?' }), runs(IN_CONTAINER)] }] }),
   ps: cmd('コンテナ一覧を表示する', 'List containers', [['-a|--all', '停止中のものも表示', 'show all containers'], ['-q|--quiet', 'ID だけ表示', 'only IDs'], ['-f|--filter', '条件で絞る（`label=…`、`status=running`…）', 'filter (`label=…`, `status=running`…)', 'arg'], ['--format', 'Go テンプレートで出力形式を指定（`{{.ID}}`…）', 'Go template for the output (`{{.ID}}`…)', 'arg']]),
   images: cmd('イメージ一覧を表示する', 'List images'),
   pull: cmd('イメージを取得する', 'Pull an image'),
@@ -162,8 +162,8 @@ const dockerSubs: Record<string, CommandSpec> = {
       down: cmd('コンテナとネットワークを止めて削除する', 'Stop and remove the containers and networks', [['-v|--volumes', 'ボリュームも削除', 'also remove volumes'], ['--rmi', 'イメージも削除（`all`、`local`）', 'also remove images (`all`, `local`)', 'arg']]),
       ps: cmd('コンテナの一覧を表示する', 'List the containers', [['-a|--all', '停止中のものも表示', 'show stopped ones too']]),
       logs: cmd('コンテナのログを表示する', 'Show the logs', [['-f|--follow', 'ログを追い続ける', 'follow log output'], ['--tail', '末尾の行数', 'lines from the end', 'arg']], { positional: [pos('サービス名', 'service name')] }),
-      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', dockerRun, { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
-      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { style: 'posix', operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      run: cmd('サービスのコンテナを1回だけ起動してコマンドを実行する', 'Run a one-off command in a new container of a service', dockerRun, { optionsFirst: true, operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
+      exec: cmd('実行中のサービスのコンテナ内でコマンドを実行する', 'Run a command in a running container of a service', [['-e|--env', '環境変数を設定（`名前=値`、または `名前` だけで値は環境から）', 'set an environment variable (`NAME=value`, or `NAME` alone to take its value from the environment)', 'arg setenv'], ['-w|--workdir', '作業ディレクトリ', 'working directory', 'arg'], ['-u|--user', 'コンテナ内で使うユーザー', 'user inside the container', 'arg'], ['-T|--no-TTY', '疑似端末を割り当てない', 'do not allocate a TTY'], ['-d|--detach', 'バックグラウンドで動かす', 'run in the background']], { optionsFirst: true, operands: [{ pattern: [SERVICE, runs(IN_CONTAINER)] }] }),
     },
   }),
   system: cmd('Docker 全体を操作する（`prune`: 使っていないものを削除する、`df`: 使用量）', 'Docker-wide commands (`prune`: remove unused data; `df`: disk usage)', [
@@ -352,7 +352,7 @@ export const core: Record<string, CommandSpec> = {
     ['-o|-or', 'OR 条件', 'logical OR'],
     ['-a|-and', 'AND 条件（既定）', 'logical AND (default)'],
     ['-L', 'シンボリックリンクをたどる', 'follow symbolic links'],
-  ], { style: 'single-dash', positional: [pos('探索を開始するディレクトリ', 'starting directory')] })),
+  ], { parser: 'single-dash', positional: [pos('探索を開始するディレクトリ', 'starting directory')] })),
   xargs: cmd('標準入力から読んだ値を引数にしてコマンドを実行する', 'Build and run a command with arguments read from stdin', [
     ['-0|--null', '入力を NUL 区切りとして読む（`find -print0` と組み合わせる）', 'input is NUL-separated (pair with `find -print0`)'],
     ['-n|--max-args', '1回のコマンド実行に渡す引数の最大数', 'max arguments per command', 'arg'],
@@ -375,7 +375,7 @@ export const core: Record<string, CommandSpec> = {
     ['--process-slot-var', '子プロセスごとに異なる番号を入れる環境変数の名前', 'name of a variable set to a different number in each child process', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
     ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
@@ -709,7 +709,7 @@ export const core: Record<string, CommandSpec> = {
     ['-a|--auth-type', '認証の方式（BSD）', 'authentication type (BSD)', 'arg'],
     ['-c|--login-class', 'ログインクラス（BSD）', 'login class (BSD)', 'arg'],
   ], {
-    style: 'posix', longPrefixes: true,
+    parser: 'getopt_long', optionsFirst: true,
     operands: [
       { when: { option: ['-s', '-i'] }, pattern: [ASSIGNMENTS, runs({ run: 'shell-string', joinsWords: true, escapesWords: true, env: 'reset' })] },
       { when: { option: ['-E', '--preserve-env'] }, pattern: [ASSIGNMENTS, runs({ run: 'exec', env: 'variables' })] },
@@ -732,7 +732,7 @@ export const core: Record<string, CommandSpec> = {
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
   ], {
-    style: 'posix', longPrefixes: true,
+    parser: 'getopt_long', optionsFirst: true,
     patternOptions: [{ pattern: /^-$/, text: () => tx('空の環境から始める（`-i` と同じ）', 'start with an empty environment (same as `-i`)') }],
     operands: [
       // `env -S'-i A=1' cmd`: the interpreter reads the words of the string in its place. A string it cannot
@@ -746,8 +746,8 @@ export const core: Record<string, CommandSpec> = {
     ['-u', '実行するユーザー', 'run as the given user', 'arg'],
     ['-n', 'パスワードを尋ねない（必要なら失敗）', 'never prompt for a password'],
     ['-s', 'ログインシェルでなく、ユーザーのシェルを起動する', 'run the user\'s shell'],
-  ], { style: 'posix', operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
-  nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [ASSIGNMENTS, runs()] }] }),
+  nohup: cmd('ログアウト(ハングアップ)してもコマンドが止まらないように実行する', 'Run a command immune to hangups (survives logout)', [], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   timeout: cmd('制限時間を超えたらコマンドを終了させる', 'Run a command with a time limit', [
     ['-s|--signal', 'タイムアウト時に送るシグナル', 'signal to send on timeout', 'arg'],
     ['-k|--kill-after', 'さらに指定した時間経っても終わらなければ KILL', 'also send KILL if it is still running after the given extra time', 'arg'],
@@ -756,14 +756,14 @@ export const core: Record<string, CommandSpec> = {
     ['-v|--verbose', '時間切れでシグナルを送ったら、標準エラー出力に知らせる', 'report on stderr when a signal is sent on timeout'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [operand('DURATION', '制限時間（`5`、`30s`、`2m`、`1h`）', 'time limit (`5`, `30s`, `2m`, `1h`)', { repeat: '?', type: 'duration' }), runs()] }] }),
   nice: cmd('優先度を変えてコマンドを実行する', 'Run a command with modified priority', [
     ['-n', '優先度の調整値', 'niceness adjustment', 'arg'],
     ['--adjustment', 'ニス値の増分', 'niceness increment', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
   ], {
-    style: 'posix', longPrefixes: true,
+    parser: 'getopt_long', optionsFirst: true,
     patternOptions: [
       {
         pattern: /^-(\d+)$/,
@@ -787,7 +787,7 @@ export const core: Record<string, CommandSpec> = {
     ['-p|--precise', '間隔を正確に保つ', 'run at precise intervals'],
   ], {
     // procps watch joins the words with spaces and runs them with `sh -c`; with -x it runs them as they are.
-    style: 'posix',
+    optionsFirst: true,
     operands: [
       { when: { option: ['-x', '--exec'] }, pattern: [runs()] },
       { pattern: [runs({ run: 'shell-string', joinsWords: true, env: 'exported', shell: 'sh' })] },
@@ -826,7 +826,7 @@ export const core: Record<string, CommandSpec> = {
     ['-C|--color-output', '色を付けて出力', 'colour the output'],
     ['-M|--monochrome-output', '色を付けない', 'no colours'],
     ['-L', 'モジュールを探すディレクトリ', 'directory to search for modules', 'arg'],
-  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'], longEquals: false /* `--arg=x` is an unknown option: jq reads values only as separate words */ }),
+  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'], parser: 'jq' /* `--arg=x` is an unknown option: jq reads values only as separate words */ }),
   ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
     ['-f', '詳細形式で表示', 'full format'],
@@ -1013,7 +1013,7 @@ export const core: Record<string, CommandSpec> = {
     ['--norc', '~/.bashrc を読まない', 'do not read ~/.bashrc'],
     ['--noprofile', 'ログイン時の設定ファイルを読まない', 'do not read the login profile files'],
   ], {
-    style: 'posix', plusOptions: true,
+    optionsFirst: true, plusOptions: true,
     operands: SHELL_OPERANDS,
   }),
   sh: cmd('POSIX シェルを起動する', 'Run the POSIX shell', [
@@ -1034,7 +1034,7 @@ export const core: Record<string, CommandSpec> = {
     ['-p', '実効ユーザー ID が実ユーザー ID と違っても、実効 ID を戻さない（setuid の権限を捨てない）', 'keep the effective user ID when it differs from the real one (do not drop setuid privileges)'],
     ['-o', '名前でオプションを有効にする（`set -o` と同じ）', 'enable an option by name (as `set -o`)', 'arg', shellOptions],
   ], {
-    style: 'posix', plusOptions: true,
+    optionsFirst: true, plusOptions: true,
     operands: SHELL_OPERANDS,
   }),
   perl: cmd('Perl を実行する（`-e` でその場のコードを実行。sed や awk の代わりのワンライナーによく使う）', 'Run Perl (`-e` runs code given on the command line; common for one-liners instead of sed/awk)', [
@@ -1086,7 +1086,7 @@ export const core: Record<string, CommandSpec> = {
     ['-h|--help', 'ヘルプを表示する', 'show help'],
   ], {
     // git's own options before the subcommand never cluster (`git -pP log`: "unknown option: -pP"), and `-C.` is not `-C .`.
-    shortClusters: false,
+    parser: 'git',
     subcommands: {
       submodule: cmd('サブモジュールを操作する（`update --init --recursive` で取得）', 'Manage submodules (`update --init --recursive` fetches them)', [['--init', 'まだ初期化していないものも初期化する', 'initialise those not yet initialised'], ['--recursive', '入れ子のサブモジュールも', 'nested submodules too'], ['--remote', '追跡するブランチの最新にする', "update to the tracked branch's latest"], ['--depth', '取得する履歴の深さ', 'history depth', 'arg']]),
       'show-ref': cmd('参照（ブランチやタグ）とそのコミットを一覧表示する', 'List references and their commits', [['--verify', 'この参照があるかを確かめる', 'check that this exact reference exists'], ['-q|--quiet', '何も表示せず、終了ステータスで返す', 'print nothing; report via the exit status'], ['--tags', 'タグだけ', 'tags only'], ['--heads', 'ブランチだけ', 'branches only']]),

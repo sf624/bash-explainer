@@ -126,10 +126,12 @@ describe('branches no other test takes', () => {
       subcommands: { up: { summary: 'u' }, bad: {} },
     })!;
     assert.deepStrictEqual(spec.options!.map((o) => `${o.names.join('|')} ${o.text.en}${o.value ? ' VALUE' : ''}`), ['--out o VALUE', '-n n', '-o again']);
-    assert.strictEqual(spec.style, 'posix');
+    assert.strictEqual(spec.optionsFirst, true);
+    assert.strictEqual(customCommandSpec({ summary: 'x', style: 'single-dash' })!.parser, 'single-dash');
     assert.deepStrictEqual(spec.operands![0].pattern.map((o) => `${o.name}${o.repeat ?? ''}`), ['SRC+', 'ARG2', 'ARG3']);
     assert.deepStrictEqual(Object.keys(spec.subcommands!), ['up']);
-    assert.strictEqual(customCommandSpec({ summary: 'x', style: 'none', subcommands: { bad: 1 } })!.style, undefined);
+    const none = customCommandSpec({ summary: 'x', style: 'none', subcommands: { bad: 1 } })!;
+    assert.deepStrictEqual([none.parser, none.optionsFirst], [undefined, undefined]);
     assert.strictEqual(customCommandSpec({ summary: 'x', style: 1, subcommands: [] })!.subcommands, undefined);
   });
 
