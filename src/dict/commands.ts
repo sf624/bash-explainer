@@ -426,7 +426,7 @@ export const core: Record<string, CommandSpec> = {
     ['-F', 'フィールド区切り文字を指定（既定は空白）', 'field separator (default: whitespace)', 'arg'],
     ['-v', 'awk の変数を設定（`-v name=value`）', 'set an awk variable (`-v name=value`)', 'arg'],
     ['-f', 'プログラムをファイルから読む', 'read the program from a file', 'arg io:read'],
-  ], {
+  ], { fileName: true,
     operands: [
       { when: { option: ['-f'] }, pattern: [AWK_FILES] },
       { pattern: [{ name: 'ARG1', text: pos('awk プログラム（`パターン { アクション }`）', 'awk program (`pattern { action }`)'), repeat: '?', lang: 'awk' }, AWK_FILES] },

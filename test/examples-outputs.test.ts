@@ -63,8 +63,13 @@ describe('mikefarah/yq examples print as yq does', () => {
     "yq -o json '.a' <<< '{\"a\":[1]}'", "yq -n '.a = 1'", "yq -o json '.name' f.yml", "yq '.items[] | select(.price > 10) | .name' f.json",
     // -r prints a string bare, also in JSON; -r=false turns it off.
     "yq -r '.name' f.json", "yq -o json -r '.name' f.yml", "yq -r=false '.name' f.json", "yq -o json -r=false '.name' f.yml", "yq --unwrapScalar '.name' f.json",
-    "yq -r '.name' f.yml",
+    "yq -r '.name' f.yml", "yq '.' a.yaml b.yaml", "yq '.name' a.yaml b.yaml",
+    // -i writes the result of every file into the first.
+    "yq -i '.a' a.yaml b.yaml", "yq -i '.a' a.yaml", "yq -i -o json '.' a.yaml b.yaml",
   ], yq ? { yq } : {});
+  it('says in Japanese which file -i rewrites', () => {
+    assert.deepStrictEqual(exampleOf("yq -i '.a' a.yaml b.yaml", 'ja')?.sections.pop()?.label, '書き換え後の `a.yaml`');
+  });
   it('gives no example for a format it does not follow', () => {
     for (const line of ["yq '.' f.xml", "yq -p csv '.' f", "yq -o xml '.' f.yml", "yq -I 4 '.' f.yml"]) assert.strictEqual(exampleOf(line), undefined, line);
   });

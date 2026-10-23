@@ -40,6 +40,8 @@ export interface InputSource {
   reads?: number[];
   /** How the command works on several files, when not as one stream (`EachFile`, from its spec and options). */
   each?: EachFile;
+  /** Its program can read the name of each file (`CommandSpec.fileName`: awk's `FILENAME`). */
+  fileName?: boolean;
   /** The file the command writes its output to instead of its standard output (`uniq IN OUT`, `sort -o OUT`). */
   writes?: string;
 }
@@ -119,6 +121,7 @@ export function inputSource(parse: ArgvParse, words: SourceWord[], stdin: Stdin,
     streams,
     ...(reads.length > streams.length ? { reads } : {}),
     ...(each ? { each } : {}),
+    ...(spec?.fileName ? { fileName: true } : {}),
     ...(!readsStdin && stdin.from !== 'unknown' ? { unread: stdin } : {}),
     ...writes,
   };

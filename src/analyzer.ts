@@ -2363,9 +2363,10 @@ export class Analyzer {
   private yqExample(filter: string, style: YamlStyle): void {
     // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
-    // `-n`: no input is read. With `-i`, mikefarah/yq rewrites the first file, and kislyuk/yq each file apart (`EachFile`).
+    // `-n`: no input is read. With `-i`, mikefarah/yq writes its result into the first file, and kislyuk/yq rewrites
+    // each file apart (`EachFile`).
     const src = shownSource(this.given('-n') ? NO_INPUT : this.inputSource());
-    const inPlace = src.each === 'in-place';
+    const inPlace = src.each === 'in-place' || src.each === 'into-first';
     // (The last `-o`, `-p` or `-I` wins, as pflag reads it.)
     const last = (...names: string[]) => {
       const given = this.optionValues(...names);
@@ -2404,13 +2405,16 @@ export class Analyzer {
     // Where jq stops with an error, mikefarah/yq is often lenient (it adds a string and a number), so show nothing.
     if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
     if (!runs?.length) return;
-    const outLabel = this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`);
+    const first = src.streams[0];
+    const outLabel = !inPlace ? this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`)
+      : src.streams.length > 1 && first.kind === 'file' ? this.s(`書き換え後の \`${first.name}\``, `\`${first.name}\` after`) : this.s('書き換え後', 'After');
+    const title = inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : this.s('例', 'Example');
     const printJson = (vs: Json[]) => vs.flatMap((v) => jqPrint(v, format!, raw));
     const show = (vs: Json[]) => (json ? printJson(vs) : yqYamlOutput(vs, style));
     // A JSON file is shown as jq's input is: short values on one line.
     const inputLines = (v: Json) => (jsonIn ? (toJson(v).length <= 60 ? [toJson(v)] : JSON.stringify(v, null, 2).split('\n')) : yamlLines(v, style));
     if (src.streams.length > 1 || src.streams.some(knownLines) || src.reads) {
-      this.yqStreams(filter, style, src, runs[0].input, show, outLabel, json, inputLines);
+      this.yqStreams(filter, style, src, runs[0].input, show, { title, outLabel }, json, inputLines);
       return;
     }
     try {
@@ -2418,7 +2422,7 @@ export class Analyzer {
         const input = inputLines(r.input);
         const output = r.error ? [r.error] : show(r.values);
         this.cx.examples.push({ kind: 'yq',
-          title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
+          title: inPlace || i === 0 ? title : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
           ...(src.streams.length ? {} : { note: this.s('入力は読まない（`.` は `null`）', 'Reads no input (`.` is `null`)') }),
           sections: [
             ...(src.streams.length ? [{ label: streamLabel(src.streams[0], this.lang), lines: input }] : []),
@@ -2497,7 +2501,7 @@ export class Analyzer {
    * The yq example of several files, or of the text of a here-string (when it is JSON, which is YAML too): what yq
    * prints for each. `sample` is the value of the sample input; the other files hold values like it.
    */
-  private yqStreams(filter: string, style: YamlStyle, src: InputSource, sample: Json, show: (vs: Json[]) => string[], outLabel: string, json: boolean, inputLines: (v: Json) => string[]): void {
+  private yqStreams(filter: string, style: YamlStyle, src: InputSource, sample: Json, show: (vs: Json[]) => string[], { title, outLabel }: { title: string; outLabel: string }, json: boolean, inputLines: (v: Json) => string[]): void {
     const vars = style === 'kislyuk' ? this.jqVars() : {};
     let k = 0;
     const docs: Json[][] = [];
@@ -2530,7 +2534,7 @@ export class Analyzer {
       ? results.flatMap((vs, i) => [...(i ? ['---'] : []), ...show(vs)])
       : show(results.flat());
     this.cx.examples.push({ kind: 'yq',
-      title: this.s('例', 'Example'),
+      title,
       sections: [
         ...src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: knownLines(st) ?? inputLines(docs[i][0]) })),
         { label: outLabel, lines: output, empty: this.s('（出力なし）', '(no output)') },

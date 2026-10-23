@@ -56,7 +56,7 @@ export function ioExample(sample: string[], output: string[], spec: RerunSpec, l
   // names, in the order the tool reads the files.
   const names = (stdin: string) => readOrder(src, streams.map((st) => [st.kind === 'file' ? st.name : stdin])).map((n) => n[0] ?? stdin);
   const run: RerunSpec = spec.kind === 'filter' && src.each === 'headers' ? { ...spec, files: names('standard input'), ...reads }
-    : spec.kind === 'awk' && streams.some((st) => st.kind === 'file') ? { ...spec, files: names('-'), ...reads } : { ...spec, ...reads };
+    : spec.kind === 'awk' && src.fileName && streams.some((st) => st.kind === 'file') ? { ...spec, files: names('-'), ...reads } : { ...spec, ...reads };
   // The output of what the files hold, unless they hold the sample as it is.
   const asSample = contents.flat().length === sample.length && !src.reads && !streams.some(knownLines) && !('files' in run);
   const shown = asSample ? output : rerun(run, contents, lang).sections[0].lines;
