@@ -815,7 +815,7 @@ class Walker {
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
   /** The `set` commands, with the options they turn on or off (on any walk). */
   readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
-  /** The variables each statement sets itself (on any walk), not those of the statements inside it. */
+  /** The variables each statement sets itself (on any walk), not those of the statements inside it, and not locals. */
   readonly varWrites = new Map<SyntaxNode, Set<string>>();
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
@@ -906,7 +906,8 @@ class Walker {
     const key = `${kind} ${name}`;
     this.lastChange.set(key, ++this.changeCount);
     this.lastAt.set(key, this.node!);
-    if (kind === 'variables') {
+    // (A local of a function being run is gone when it returns: not a write of the shell's own.)
+    if (kind === 'variables' && !this.frames.some((f) => f.saved.has(name))) {
       const set = this.varWrites.get(this.node!) ?? new Set<string>();
       this.varWrites.set(this.node!, set.add(name));
     }

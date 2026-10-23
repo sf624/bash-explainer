@@ -58,7 +58,7 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { LabelPart, labelText, skeleton } from './label';
-import { type EnvLink, type ExecEnv, lastStage, ownSubshells, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
+import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, readDeclaration, shellState, StateModel } from './semantics/state';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
@@ -2755,15 +2755,19 @@ export class Analyzer {
       // The redirections after the last stage (`… | while …; done > log`) are its own.
       const last = stage.type === 'redirected_statement' ? field(stage, 'body') ?? stage : stage;
       if (!LAST_STAGES.has(last.type)) continue;
-      // The variables the stage sets, from the model (`((n++))`, `read n`, `printf -v n`, `mapfile n` too); not `local`.
+      // The variables the stage sets in its own shell, from the model: not a local (the walk leaves it out of `writes`)
+      // and not what a subshell inside it sets (`subshellReasons`). A function called there sets what its body sets.
       const names = new Set<string>();
-      for (const m of [last, ...everyNode(last)]) {
-        if (m.type === 'declaration_command' && /^local\b/.test(m.text)) continue;
-        for (const v of this.state.writes(m)) names.add(v);
-        // A function called there sets what its body sets.
-        for (const [def, callers] of this.state.calls) {
-          if (callers.has(m)) for (const b of everyNode(def)) if (!(b.type === 'declaration_command' && /^local\b/.test(b.text))) for (const v of this.state.writes(b)) names.add(v);
+      const sets = (region: SyntaxNode): void => {
+        for (const m of [region, ...everyNode(region)]) {
+          let own = true;
+          for (let x: SyntaxNode | null = m; x && x !== region; x = x.parent) if (subshellReasons(x).length) own = false;
+          if (own) for (const v of this.state.writes(m)) names.add(v);
         }
+      };
+      sets(last);
+      for (const m of [last, ...everyNode(last)]) {
+        for (const [def, callers] of this.state.calls) if (callers.has(m)) sets(def);
       }
       if (!names.size) continue;
       // Used after the pipeline, in the same block.
