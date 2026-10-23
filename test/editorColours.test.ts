@@ -36,10 +36,10 @@ describe('the colours of the editor', () => {
     return Object.fromEntries([...m[1].matchAll(/(--c-[\w-]+):\s*([^;]+);/g)].map((d) => [d[1], d[2].trim()]));
   };
 
-  it('gives the panel the colours of the editor, in the variables of :root, for every kind of token', () => {
+  it('gives the panel the colours of the editor, in the variables of body, for every kind of token', () => {
     const root = path.join(__dirname, '..');
     const panel = fs.readFileSync(path.join(root, 'media', 'panel.css'), 'utf8');
-    const vars = declared(panel, /^:root \{([^}]*)\}/m);
+    const vars = declared(panel, /^body \{([^}]*)\}/m);
     const resolve = (v: string): string => (/^var\((--c-[\w-]+)\)$/.exec(v) ? resolve(vars[/^var\((--c-[\w-]+)\)$/.exec(v)![1]]) : v);
     // The colour each `.kind-*` takes: a variable.
     const kindVar = new Map<string, string>();
@@ -49,8 +49,10 @@ describe('the colours of the editor', () => {
       const role = PANEL_KIND_ROLE[kind as keyof typeof PANEL_KIND_ROLE];
       assert.equal(resolve(`var(${v})`), CLASSIC_COLOURS[CLASSIC_ROLE[role]], kind);
     }
-    // Nothing redefines them: no other palette, in VS Code's themes or on the web page.
+    // Nothing else redefines them: no other palette on the web page, and in VS Code only the theme kinds'
+    // own colours (`body.vscode-*`, compared with src/ui/palette.ts in test/contrast.test.ts).
     const page = fs.readFileSync(path.join(root, 'web', 'panel-page.css'), 'utf8');
-    for (const css of [panel, page]) assert.equal(css.match(/--c-command:/g)?.length ?? 0, css === panel ? 1 : 0);
+    const outsideThemes = panel.replace(/^body\.vscode-[\w-]+ \{[^}]*\}/gm, '');
+    for (const css of [outsideThemes, page]) assert.equal(css.match(/--c-command:/g)?.length ?? 0, css === outsideThemes ? 1 : 0);
   });
 });

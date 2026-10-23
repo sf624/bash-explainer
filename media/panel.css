@@ -1,4 +1,6 @@
-:root {
+/* The colours of the roles. They are set on body, with the theme kind's class VS Code gives it, so that the
+   ones made of others (--c-number) follow the theme's too. */
+body {
   --c-command: var(--vscode-charts-blue, #3794ff);
   --c-option: var(--vscode-charts-orange, #d18616);
   --c-argument: var(--vscode-charts-green, #89d185);
@@ -7,9 +9,47 @@
   --c-operator: var(--c-keyword);
   --c-redirect: var(--vscode-charts-yellow, #cca700);
   --c-pattern: var(--c-redirect);
-  --c-variable: var(--vscode-charts-red, #f14c4c);
+  --c-variable: var(--vscode-charts-red, #ff5c65);
   --c-comment: var(--vscode-descriptionForeground, #888);
   --c-muted: var(--vscode-descriptionForeground, #888);
+}
+
+/* Where the theme's chart colours are too light or too dark for text (below 4.5:1), our own: the values of
+   src/ui/palette.ts, which the hover uses too (test/contrast.test.ts compares them and measures them).
+   Light themes: all six, darkened, as on the web page. Dark themes: red, which is 3.96:1 on a code block. */
+body.vscode-light {
+  --c-command: #0161f8;
+  --c-option: #9f5c00;
+  --c-argument: #1f7c2b;
+  --c-keyword: #5f2489;
+  --c-redirect: #645000;
+  --c-variable: #d0020f;
+}
+
+body.vscode-dark {
+  --c-variable: #ff5c65;
+}
+
+/* High contrast: VS Code gives a webview the theme's workbench colours, not its token colours, and its chart
+   colours are those of the dark and light themes; the foreground alone would lose the roles. So our own,
+   at least 7:1 on the theme's black or white and on a code block, keeping the hues. HC light comes last:
+   VS Code may give it both classes. */
+body.vscode-high-contrast {
+  --c-command: #6badff;
+  --c-option: #f69d3d;
+  --c-argument: #89d185;
+  --c-keyword: #c796ee;
+  --c-redirect: #efd62f;
+  --c-variable: #ff888e;
+}
+
+body.vscode-high-contrast-light {
+  --c-command: #0148bc;
+  --c-option: #794402;
+  --c-argument: #015f15;
+  --c-keyword: #5f2489;
+  --c-redirect: #453e01;
+  --c-variable: #a20222;
 }
 
 body {

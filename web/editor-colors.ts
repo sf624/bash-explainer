@@ -31,7 +31,7 @@ export const CLASSIC_COLOURS = {
   argument: 'var(--vscode-charts-green, #89d185)',
   operator: 'var(--vscode-charts-purple, #b180d7)',
   redirect: 'var(--vscode-charts-yellow, #cca700)',
-  variable: 'var(--vscode-charts-red, #f14c4c)',
+  variable: 'var(--vscode-charts-red, #ff5c65)',
   muted: 'var(--vscode-descriptionForeground, #888)',
 } as const;
 

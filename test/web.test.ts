@@ -675,9 +675,9 @@ describe('the web page in a browser', function () {
       await until(`the ${kind} in the editor`, () => colour(page.locator(`.cm-bx-${kind}`)), (c) => !!c),
       await until(`the ${kind} in the panel`, async () => (await panel().locator(`.kind-${kind}`).count() ? colour(panel().locator(`.kind-${kind}`)) : ''), (c) => !!c),
     ];
-    // VS Code's chart colours: orange options and blue commands, light, then dark.
-    assert.deepStrictEqual(await both('option'), ['rgb(194, 107, 0)', 'rgb(194, 107, 0)']);
-    assert.deepStrictEqual(await both('command'), ['rgb(26, 133, 255)', 'rgb(26, 133, 255)']);
+    // The panel's palette (src/ui/palette.ts): orange options and blue commands, light, then dark.
+    assert.deepStrictEqual(await both('option'), ['rgb(159, 92, 0)', 'rgb(159, 92, 0)']);
+    assert.deepStrictEqual(await both('command'), ['rgb(1, 97, 248)', 'rgb(1, 97, 248)']);
     await page.emulateMedia({ colorScheme: 'dark' });
     await until('the dark option', async () => (await both('option')).join('|'), (c) => c === 'rgb(209, 134, 22)|rgb(209, 134, 22)');
     assert.deepStrictEqual(await both('command'), ['rgb(55, 148, 255)', 'rgb(55, 148, 255)']);
