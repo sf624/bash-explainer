@@ -136,3 +136,13 @@ export function patternMatches(subject: string, pattern: string): boolean | unde
   if (!re) return undefined;
   return re.test(subject);
 }
+
+/**
+ * A regex of `[[ =~ ]]` (its quoted characters escaped with a backslash: src/semantics/words.ts `wordIn`) that matches
+ * plain text, when it is one: letters, digits, ` _,:/-` and characters escaped (a backslash before a letter or a digit
+ * is an operator: `\w`, `\1`), maybe anchored at the start (`^`) and at the end (`$`).
+ */
+export function plainRegex(re: string | undefined): { start: boolean; text: string; end: boolean } | undefined {
+  const m = re === undefined ? null : /^(\^?)((?:[A-Za-z0-9_ ,:/-]|\\[^A-Za-z0-9])*)(\$?)$/.exec(re);
+  return m ? { start: m[1] !== '', text: m[2].replace(/\\([^])/g, '$1'), end: m[3] !== '' } : undefined;
+}

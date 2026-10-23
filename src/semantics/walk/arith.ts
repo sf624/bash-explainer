@@ -178,6 +178,27 @@ export class WalkArith {
     }
   }
 
+  /**
+   * The text given to an integer variable (`declare -i n; n='x = 5'`), run as arithmetic at `at`, as bash does: the
+   * state after it (what it assigns), and its value when known (not where bash fails, nor from a value it is unsure of).
+   * A constant is read at once (an assignment that arithmetic makes, `(( n = 3 ))`, gives one).
+   */
+  integer(text: string, st: ShellState, at: SyntaxNode): { st: ShellState; value?: bigint } {
+    const constant = evalArithWrapping(text);
+    if (constant) return { st, value: constant.value };
+    const { unsure } = this;
+    try {
+      const r = this.arithGuard(text, st, at, () => this.arithText(text, st, at, true));
+      return this.unsure ? { st: r.st } : r;
+    } catch (e) {
+      if (e instanceof ArithError) return { st: e.st };
+      /* c8 ignore next -- only an arithmetic error is thrown on purpose */
+      throw e;
+    } finally {
+      this.unsure = unsure;
+    }
+  }
+
   /** `arithScript` with no guard: `ArithUnknown` goes up to the expression of the script that holds it. */
   private arithEval(nodes: readonly SyntaxNode[], st: ShellState): { st: ShellState; value?: bigint } {
     if (!nodes.length) return { st, value: 0n };

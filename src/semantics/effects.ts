@@ -18,9 +18,12 @@ export const SET_LETTERS: Readonly<Record<string, string>> = {
   t: 'onecmd', u: 'nounset', v: 'verbose', x: 'xtrace', B: 'braceexpand', C: 'noclobber', E: 'errtrace', H: 'histexpand', P: 'physical', T: 'functrace',
 };
 
+const names = new WeakMap<SyntaxNode, string | null>();
 /** The static name of the simple command `c` (`'exit'` is `exit`), or undefined when it is not known here (`$cmd`). */
 export function commandName(c: SyntaxNode): string | undefined {
-  return staticWordValue(field(c, 'name')!.namedChildren[0]);
+  let name = names.get(c);
+  if (name === undefined) names.set(c, (name = staticWordValue(field(c, 'name')!.namedChildren[0]) ?? null));
+  return name ?? undefined;
 }
 
 /** The name of the simple command `c` when bash may read it as an alias: a plain word, with no quote or expansion. */

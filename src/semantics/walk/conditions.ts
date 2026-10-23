@@ -1,8 +1,9 @@
 // The conditions of the walk of the shell state (src/semantics/walk/walker.ts): the status of a statement when it is
 // known (`[ ]`, `[[ ]]`, `true`, `(( ))`, assignments), the lists of a `case` that run, and what each condition decided.
+import { evalArith } from '../../arith';
 import { staticWordValue, substitutionNames } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
-import { compareIntegers, patternMatches, testStatus, type TestEnv, unaryTest } from '../conditions';
+import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
 import type { Decision } from '../state';
 import { type ValueSource, wordIn } from '../words';
@@ -89,7 +90,10 @@ export class WalkConditions {
     for (const a of assignments) {
       const name = field(a, 'name')!.text;
       const target = NAME.test(name) ? this.w.builtins.resolve(st, name) : undefined;
-      if (!target || attribute(st, target, 'r') !== 'off' || attribute(st, target, 'i') !== 'off') return undefined;
+      if (!target || attribute(st, target, 'r') !== 'off') return undefined;
+      // (An integer runs its text: only a constant surely gives a number, `OPTIND=1`.)
+      const value = field(a, 'value');
+      if (attribute(st, target, 'i') !== 'off' && (!value || evalArith(this.staticText(value, st, true) ?? '') === undefined)) return undefined;
     }
     return 0;
   }
@@ -191,11 +195,12 @@ export class WalkConditions {
           return m === undefined ? undefined : m === (op !== '!=');
         }
         if (op === '=~') {
-          // Only a regex of plain characters, maybe anchored: `^abc`, `abc$`, `abc`; not under nocasematch, which it follows.
+          // A regex that matches plain text, maybe anchored (`^abc`, `abc$`), once expanded (`$p`; quoted characters
+          // are plain); not under nocasematch, which it follows.
           const nocase = option(st, 'shopt', 'nocasematch');
-          const m = right && (nocase === 'off' || nocase === 'default') && ['regex', 'word', 'number'].includes(right.type) ? /^(\^?)([A-Za-z0-9_ ,:/-]*)(\$?)$/.exec(right.text) : null;
+          const m = right && (nocase === 'off' || nocase === 'default') ? plainRegex(wordIn(right, st, this.values(st), 'regex')) : undefined;
           if (!m) return undefined;
-          return m[1] && m[3] ? value === m[2] : m[1] ? value.startsWith(m[2]) : m[3] ? value.endsWith(m[2]) : value.includes(m[2]);
+          return m.start && m.end ? value === m.text : m.start ? value.startsWith(m.text) : m.end ? value.endsWith(m.text) : value.includes(m.text);
         }
         if (INTEGER_TESTS.has(op)) {
           // Arithmetic: decimal integers only (`010` is octal there, `x` a variable), with spaces, tabs and newlines around.
@@ -235,7 +240,32 @@ export class WalkConditions {
     },
     tilde: (user) => (user === '' ? this.source.variable('HOME', this.w.node!) ?? undefined : undefined),
     builtinRuns: (name) => this.builtinRuns(name, this.valuesState),
+    arith: (n) => this.arithValue(n, this.valuesState),
   };
+
+  /**
+   * The value of the arithmetic expansion `n` in a word of a condition, run from `st` with the walk's arithmetic: when
+   * it assigns nothing, and reads only values decisions trust (see `variableText`). Undefined where bash fails on it.
+   */
+  private arithValue(n: SyntaxNode, st: ShellState): bigint | undefined {
+    const { assumed } = this.w;
+    const { unsure } = this.w.arith;
+    this.w.assumed = false;
+    try {
+      const r = this.w.arith.arithScript(n.namedChildren, st);
+      return r.st === st && !this.w.arith.unsure && !this.w.assumed ? r.value : undefined;
+      // A guard: the walk ran the expansion with the words of the statement (`defaults`), so an error in it ended the
+      // statement before its condition is read.
+      /* c8 ignore start */
+    } catch (e) {
+      if (e instanceof ArithError) return undefined;
+      throw e;
+      /* c8 ignore stop */
+    } finally {
+      this.w.assumed = assumed;
+      this.w.arith.unsure = unsure;
+    }
+  }
 
   /** The walk's values (`source`), read from `st`. */
   private values(st: ShellState): ValueSource {

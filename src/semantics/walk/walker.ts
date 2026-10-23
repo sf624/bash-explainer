@@ -16,7 +16,7 @@ import {
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
-import { alwaysNumeric, changedByBash, readDeclaration } from '../vars';
+import { alwaysNumeric, changedByBash, INTEGERS_AT_START, readDeclaration } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { WalkBuiltins } from './builtins';
@@ -219,12 +219,20 @@ export class Walker {
     return states?.[0];
   }
 
-  /** The state the script starts with; `root`: the node that sets POSIXLY_CORRECT in POSIX mode (`bash --posix` sets it to `y`). */
-  initial(root?: SyntaxNode): ShellState {
+  /**
+   * The state a shell starts with, as set at `at` (the root): bash's own integers (`OPTIND`, `RANDOM`…: what the script
+   * assigns them is arithmetic, `OPTIND='x=5'` sets x); in POSIX mode, its options and POSIXLY_CORRECT (`bash --posix`
+   * sets it to `y`).
+   */
+  initial(at: SyntaxNode): ShellState {
     let st = EMPTY;
+    if (this.bash) {
+      const attrs = { i: { state: 'on' as const, at } };
+      st = { ...st, variables: st.variables.withAll(new Map(INTEGERS_AT_START.map((name) => [name, { declared: 'on', set: 'on', attrs, at }]))) };
+    }
     if (this.posix) {
       for (const kind of ['set', 'shopt'] as const) for (const name of POSIX_ON[kind]) st = { ...st, [kind]: st[kind].with(name, 'on') };
-      if (root) st = { ...st, variables: st.variables.with('POSIXLY_CORRECT', { declared: 'on', set: 'on', attrs: {}, value: 'y', at: root }) };
+      st = { ...st, variables: st.variables.with('POSIXLY_CORRECT', { declared: 'on', set: 'on', attrs: {}, value: 'y', at }) };
     } else if (this.shell && POSIX_SHELLS.has(this.shell)) {
       st = { ...st, set: st.set.with('posix', 'on') };
     }
@@ -239,7 +247,7 @@ export class Walker {
    * shell that reads startup files (`-l`, `-i`, an exported BASH_ENV) may have any name the script has.
    */
   childStart(outer: ShellState, env: ExecEnv, pass: ChildPass, at: SyntaxNode): ShellState {
-    let st = this.initial();
+    let st = this.initial(at);
     const exported = (name: string): boolean => (outer.variables.get(name)?.attrs.x?.state ?? 'off') === 'on';
     const reach = reachOf(env, exported('SHELLOPTS'));
     // (`sh` may be bash, which reads exported functions, SHELLOPTS and BASHOPTS, or dash, which reads none.)
@@ -247,7 +255,8 @@ export class Walker {
     if (reach.variables !== 'none') {
       let vars = outer.variables.mapped(passed, passedMemo);
       for (const name of pass.removed) vars = vars.with(name, undefined);
-      st = { ...st, variables: vars };
+      // (bash sets its own at start, whatever the environment gives.)
+      st = { ...st, variables: vars.withAll(new Map(st.variables)) };
     }
     // (`env -i x=1 bash -c …` passes `x`.)
     for (const name of pass.given) if (NAME.test(name)) st = { ...st, variables: st.variables.with(name, { declared: 'on', set: 'on', attrs: { x: { state: 'on', at } }, at }) };
@@ -300,21 +309,25 @@ export class Walker {
     return st;
   }
 
-  /** Records the function definitions and the `alias` commands under `root`. */
-  private collectDefinitions(root: SyntaxNode): void {
-    for (const f of descendants(root, ['function_definition'])) {
+  /** Records the function definitions and the `alias` commands under `root`; gives the nodes of `types` there. */
+  private collectDefinitions(root: SyntaxNode, types = ['function_definition', 'command']): SyntaxNode[] {
+    const nodes = descendants(root, types);
+    for (const f of nodes) {
+      if (f.type !== 'function_definition') continue;
       const name = field(f, 'name')!.text;
       const defs = this.functionDefs.get(name) ?? [];
       if (!defs.includes(f)) this.functionDefs.set(name, [...defs, f]);
     }
-    this.aliases.collect(root);
+    this.aliases.collect(nodes);
+    return nodes;
   }
 
   program(root: SyntaxNode, start: ShellState): ShellState {
-    this.collectDefinitions(root);
-    const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
-      ...descendants(root, ['command']).filter((c) => commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
-    for (const def of descendants(root, ['function_definition'])) {
+    // (One pass over the tree: the definitions, and the names `unset` may remove.)
+    const nodes = this.collectDefinitions(root, ['function_definition', 'command', 'unset_command']);
+    const unset = new Set([...nodes.filter((u) => u.type === 'unset_command').flatMap((u) => u.namedChildren),
+      ...nodes.filter((c) => c.type === 'command' && commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
+    for (const def of nodes.filter((d) => d.type === 'function_definition')) {
       // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
       let x = def;
       while (x.parent?.type === 'list' && x.parent.namedChildren[0] === x) x = x.parent;

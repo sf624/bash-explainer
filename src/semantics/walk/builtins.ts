@@ -1,7 +1,7 @@
 // The builtin effects of the walk of the shell state (src/semantics/walk/walker.ts): what the builtins and the
 // assignments change in the state (`set`, `shopt`, `alias`, `enable`, `hash`, the declarations, `unset`, `read`…),
 // read with their specs (src/semantics/effects.ts).
-import { evalArith } from '../../arith';
+import { evalArithWrapping } from '../../arith';
 import { interpret, type ArgRole, type ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
 import { argWord, prefixOf } from '../../argv/words';
@@ -319,7 +319,7 @@ export class WalkBuiltins {
     // (The state of an assignment in a declaration has the attributes the declaration gives. A value that may not be a
     // valid expression, given to an integer, may discard the rest of the line: see `assignmentError`.)
     if (o.node.type === 'variable_assignment') this.w.record(o.node, st);
-    if ((attrs.i?.state ?? 'off') !== 'off' && !o.subscript && (o.assign.text === undefined || evalArith(o.assign.text) === undefined)) this.w.abort(st, false);
+    if ((attrs.i?.state ?? 'off') !== 'off' && !o.subscript && this.mayFail(o.assign.text, st, o.node)) this.w.abort(st, false);
     return this.assign(st, name, false, o.assign, o.node, nameref, true);
   }
 
@@ -391,7 +391,7 @@ export class WalkBuiltins {
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     const text = value ? this.w.conditions.staticText(value, st, true) : '';
-    if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text);
+    if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
     return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false);
   }
 
@@ -400,12 +400,17 @@ export class WalkBuiltins {
    * variable (`declare -i n; n=1/0`), is an error that discards the rest of the line, as an expansion error does
    * (see `abort`): surely when the variable surely is readonly, else it may.
    */
-  private assignmentError(st: ShellState, name: string, text: string | undefined): void {
+  private assignmentError(st: ShellState, name: string, text: string | undefined, at: SyntaxNode): void {
     const target = this.resolve(st, name);
     const v = target === undefined ? undefined : st.variables.get(target);
     const readonly = v?.attrs.r?.state ?? 'off';
     if (readonly === 'on') throw new ExpansionError(st, true);
-    if (readonly === 'unknown' || ((v?.attrs.i?.state ?? 'off') !== 'off' && (text === undefined || evalArith(text) === undefined))) this.w.abort(st, false);
+    if (readonly === 'unknown' || ((v?.attrs.i?.state ?? 'off') !== 'off' && this.mayFail(text, st, at))) this.w.abort(st, false);
+  }
+
+  /** Whether `text`, given to an integer at `at`, may fail: it is not known, or the walk's arithmetic gives it no value. */
+  private mayFail(text: string | undefined, st: ShellState, at: SyntaxNode): boolean {
+    return text === undefined || this.w.arith.integer(text, st, at).value === undefined;
   }
 
   /** `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`. */
@@ -424,9 +429,11 @@ export class WalkBuiltins {
     const is = (l: string): boolean => prev?.attrs[l]?.state === 'on';
     if (is('a') || is('A')) text = undefined;
     else if (is('i') && text !== undefined) {
-      const v = evalArith(text);
-      const old = prev?.value !== undefined ? evalArith(prev.value) : how.append ? undefined : 0;
-      text = v === undefined || old === undefined ? undefined : String(how.append ? old + v : v);
+      // (The text is run as arithmetic, with what it assigns: `n='x = 5'` sets x.)
+      const r = this.w.arith.integer(text, st, at);
+      st = r.st;
+      const old = prev?.value !== undefined ? evalArithWrapping(prev.value)?.value : how.append ? undefined : 0n;
+      text = r.value === undefined || old === undefined ? undefined : String(BigInt.asIntN(64, how.append ? old + r.value : r.value));
     } else if (how.append) text = prev?.set === 'on' && prev.value !== undefined && text !== undefined ? prev.value + text : prev?.set === 'off' ? text : undefined;
     if (text !== undefined && is('l')) text = text.toLowerCase();
     if (text !== undefined && is('u')) text = text.toUpperCase();

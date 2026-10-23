@@ -117,7 +117,7 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
   const rows: [string, boolean][] = [
     ['true', true], ['false', true], [':', true], ['! true', true], ['! false', true], ['true | false', true], ['false | true', true],
     ['set -o pipefail; false | true', true], ['set -o pipefail; false | true | true', true], ['[ -f x ] && set -o pipefail; false | true', false],
-    ['x=1', true], ['x=1 y=2', true], ['x=1 >/dev/null', true], ['x=$(false)', false], ['readonly r=1; r=2', false], ['declare -i n; n=x', false],
+    ['x=1', true], ['x=1 y=2', true], ['x=1 >/dev/null', true], ['x=$(false)', false], ['readonly r=1; r=2', false], ['declare -i n; n=x', false], ['declare -i n; n=3', true], ['OPTIND=1', true], ["OPTIND='1/0'", false],
     ['set -u; x=$nope', false], ['x=${nope?}', false],
     ['[ ]', true], ['[ a ]', true], ['[ -n "" ]', true], ['[ a = b ]', true], ['[ 1 -lt 2 ]', true], ['[ a -lt 2 ]', true], ['test a', true], ['test', true],
     ['x=; [ -n $x ]', true], ['x="a b"; [ -n $x ]', true], ['x="a b"; [ -n "$x" ]', true], ['x="*"; [ $x = a ]', false], ['IFS=:; x=a; [ $x = a ]', false],
@@ -126,7 +126,7 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['[ a ] 2>/dev/null', true], ['[ a ] 2>&1', true], ['[ $nope = a ]', false], ['NOPE=1; [ "$NOPE" = 1 ]', true], ['[ "$HOME" = 1 ]', false],
     ['[[ a ]]', true], ['[[ -z "" ]]', true], ['[[ a == a* ]]', true], ['[[ ab != a? ]]', true], ['[[ a == "a*" ]]', true], ['[[ a* == "a*" ]]', true],
     ['p="a*"; [[ ab == $p ]]', true], ['p="a*"; [[ ab == "$p" ]]', true], ['[[ 1 -eq 01 ]]', false], ['[[ 2 -gt 1 ]]', true], ['[[ " 2" -ge 3 ]]', true],
-    ['[[ a < b ]]', false], ['[[ abc =~ ^ab ]]', true], ['[[ abc =~ c$ ]]', true], ['[[ abc =~ bd ]]', true], ['[[ abc =~ ^abc$ ]]', true], ['[[ abc =~ a.c ]]', false], ['[[ 12 =~ 1 ]]', true], ['[[ abc =~ "b" ]]', false],
+    ['[[ a < b ]]', false], ['[[ abc =~ ^ab ]]', true], ['[[ abc =~ c$ ]]', true], ['[[ abc =~ bd ]]', true], ['[[ abc =~ ^abc$ ]]', true], ['[[ abc =~ a.c ]]', false], ['[[ 12 =~ 1 ]]', true], ['[[ abc =~ "b" ]]', true],
     ['[[ -o errexit ]]', false], ['set -e; [[ -o errexit ]]', true], ['set -o noglob; [ -o noglob ]', true], ['[[ ! ( a == b ) ]]', true],
     ['[[ -f /nonexistent || a ]]', true], ['[[ -f /nonexistent && a ]]', false], ['[[ 1 == 2 && $nope == 2 ]]', true], ['x=1; [[ $x == 1 && $nope == 2 ]]', false],
     ['[[ -f /nonexistent || "" ]]', false], ['[[ -f /nonexistent && "" ]]', true], ['[[ a = ~ ]]', false], ['[[ a=~/x == a ]]', false],
@@ -154,6 +154,14 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['shopt -s expand_aliases\nalias true="echo a"\n[ "$(true)" = "" ]', false], ['true() { echo a; }; x=$(true); [ "$x" = "" ]', false],
     ['true() { echo a; }; declare x=$(true); [ "$x" = "" ]', false],
     ['IFS=:; x="a:b"; [ $x = a ]', false], ['x=; [[ a == b || ${x:?empty} == a ]]', false],
+    // The right of `=~` once expanded (quoted characters are plain), and `$(( ))` with the walk's arithmetic.
+    ['p=b; [[ abc =~ $p ]]', true], ['p=b; [[ abc =~ "$p" ]]', true], ["p='^a'; [[ abc =~ $p ]]", true], ["p='^a'; [[ abc =~ \"$p\" ]]", true],
+    ['[[ a.c =~ a\\.c ]]', true], ['[[ abc =~ a\\.c ]]', true], ["p='a.c'; [[ abc =~ $p ]]", false], ["p='\\w'; [[ a =~ $p ]]", false], ['[[ a =~ \\w ]]', true],
+    ['[[ "a b" =~ "a "b$ ]]', true], ['p=b; [[ abc =~ ^a$p ]]', true], ['[[ abc =~ $nope ]]', false], ['x=c; [[ bc == b$x ]]', true],
+    ['false; [[ $(( $? + 1 )) == 2 ]]', true], ['true; [ $(( $? * 2 )) -eq 0 ]', true], ['false; case $(( $? + 1 )) in 2) false;; esac', true],
+    // (A name arithmetic reads is never trusted: src/semantics/trust.ts.)
+    ['n=2; [[ $(( n + 1 )) == 3 ]]', false],
+    ['[[ $(( nope + 1 )) == 1 ]]', false], ['[[ $(( 1 / 0 )) == 1 ]]', false], ['a=(1); [[ $(( a[0] )) == 1 ]]', false],
     // What the model does not follow, or must not decide.
     ['set -o pipefail; [ -f /nonexistent ] | true', false], ['set -o pipefail; true | true', true], ['if true; then false; elif true; then true; fi', true], ['[() { return 3; }; [ a ]', false],
     ['set +e; [[ -o errexit ]]', true], ['set -o posix; [ a \\< b ]', false], ['[ -f /nonexistent ] && set -o posix; [ a \\< b ]', false],
