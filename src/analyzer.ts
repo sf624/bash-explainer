@@ -2760,6 +2760,10 @@ export class Analyzer {
       for (const m of [last, ...everyNode(last)]) {
         if (m.type === 'declaration_command' && /^local\b/.test(m.text)) continue;
         for (const v of this.state.writes(m)) names.add(v);
+        // A function called there sets what its body sets.
+        for (const [def, callers] of this.state.calls) {
+          if (callers.has(m)) for (const b of everyNode(def)) if (!(b.type === 'declaration_command' && /^local\b/.test(b.text))) for (const v of this.state.writes(b)) names.add(v);
+        }
       }
       if (!names.size) continue;
       // Used after the pipeline, in the same block.
