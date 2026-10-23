@@ -3,10 +3,9 @@
 //  - compare (compare.html): the editor and two frames, each holding a copy of the page in panel mode;
 //  - panel (`?view=panel`): only the explanation panel. The script, the cursor and the rest come from the page around it.
 
-export type PageKind = 'editor' | 'compare' | 'panel';
+type PageKind = 'editor' | 'compare' | 'panel';
 
 export interface PageMode {
-  readonly page: PageKind;
   /** compare.html: the editor and two frames, each holding a copy of this page in panel mode. */
   readonly compare: boolean;
   /** `?view=panel`: the explanation panel only. */
@@ -15,8 +14,8 @@ export interface PageMode {
   readonly hasChrome: boolean;
 }
 
-export function pageMode(page: PageKind): PageMode {
-  return { page, compare: page === 'compare', panel: page === 'panel', hasChrome: page !== 'panel' };
+function pageMode(page: PageKind): PageMode {
+  return { compare: page === 'compare', panel: page === 'panel', hasChrome: page !== 'panel' };
 }
 
 function detect(): PageKind {

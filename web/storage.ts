@@ -3,7 +3,9 @@
 // 'bash-explainer-…' key anywhere else in web/).
 //
 // The page works without storage (a private window, blocked site data): every access to localStorage is in
-// this file, in one try/catch each, and a refusal leaves the page with what it has until it is closed.
+// this file, in one try/catch each, and a refusal leaves the page with what it has until it is closed. The one
+// exception is web/theme-init.js, a plain script that reads the theme before the first paint (and repeats its
+// key); test/web-storage.test.ts exempts it.
 
 export const STORAGE_KEYS = {
   /** The settings that differ from the defaults. */
