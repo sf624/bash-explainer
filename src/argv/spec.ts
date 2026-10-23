@@ -106,10 +106,22 @@ export interface CommandSpec {
    * function of the same name does not. A command that a wrapper runs (`sudo sort -r f`, `env seq 3`) gets none.
    */
   example?: CommandExampleKind;
+  /** How it works on several input files when not as one stream (`EachFile`): head and tail print each under a header. */
+  eachFile?: EachFile;
 }
 
+/**
+ * How a command works on several input files (operands and values with `io: 'input'`) when it does not read them as
+ * one stream, as cat, sort, sed and jq do (the default); the worked examples follow it (src/examples/source.ts).
+ * `headers`: it prints its result for each file apart, under a header `==> a <==` (head, tail). `apart`: it works on
+ * each apart (grep puts the name before each line, wc prints a line each and a total, `sed -s` counts the lines and
+ * finds `$` in each): the example shows the first file. `in-place`: it rewrites each file with
+ * its result (`sed -i`, `perl -i`, yq's `-i`): the example shows the first file and what it becomes.
+ */
+export type EachFile = 'headers' | 'apart' | 'in-place';
+
 /** The commands src/examples/commands.ts can run on sample input. */
-export type CommandExampleKind = 'printf' | 'xargs' | 'getopt' | 'perl' | 'read' | 'sort' | 'uniq' | 'cut' | 'tr' | 'head' | 'tail' | 'seq' | 'basename' | 'dirname';
+export type CommandExampleKind = 'printf' | 'xargs' | 'getopt' | 'perl' | 'read' | 'cat' | 'sort' | 'uniq' | 'cut' | 'tr' | 'head' | 'tail' | 'seq' | 'basename' | 'dirname';
 
 /**
  * A call of a builtin, as `shellEffect.when` reads it: the options given (`-p`, `+o`; `--` too), those given
@@ -151,6 +163,8 @@ export interface OptionSpec {
   marks?: string;
   /** Once the line is marked with this name, a word that looks like this option is an operand (`kill -9 -1`: `-1` is a PID). */
   unlessMarked?: string;
+  /** Given, the command works on its input files so (`EachFile`): `sed -s` reads each apart, `sed -i` and `perl -i` rewrite each. */
+  eachFile?: EachFile;
 }
 
 export interface ValueSpec {

@@ -44,12 +44,19 @@ describe('the input sections say what the command reads, and where from', () => 
     ["sed -i 's/a/b/' x y", ['Input: `x` (sample contents)', 'After']],
     ["sed -s '$d' x y", ['Input: `x` (sample contents)', 'Output']],
     ['date +%F', ['When it runs (made up, UTC)', 'Output']],
+    ["perl -pi -e 's/a/b/' x y", ['Input: `x` (sample contents)', 'After']],
+    ["yq -i '.a' x.yml y.yml", ['Input: `x.yml` (sample contents)', 'Output (YAML)']],
+    ["echo '{\"a\":1}' | jq .a", ['Input: stdin (output of the previous command)', 'Output']],
+    ["cat <<'E' | jq .a\n{\"a\":1}\nE", ['Input: stdin (output of the previous command)', 'Output']],
+    ['cat a - b < c', ['Input: `a` (sample contents)', 'Input: stdin (`c`, sample contents)', 'Input: `b` (sample contents)', 'Output']],
+    ['sort a a', ['Input: `a` (sample contents)', 'Output']],
   ];
   for (const [line, want] of cases) it(line, () => assert.deepStrictEqual(labels(line), want));
   it('in Japanese', () => {
     assert.deepStrictEqual(labels('jq . - a.json < b.json', 'ja'), ['入力: 標準入力（`b.json`、中身の例）', '入力: `a.json`（中身の例）', '出力']);
     assert.deepStrictEqual(labels('cat *.log | sort', 'ja')?.[0], '入力: `*.log` に一致するファイル（中身の例）');
     assert.deepStrictEqual(labels('curl -s u | jq .', 'ja')?.[0], '入力: 標準入力（前のコマンドの出力の例）');
+    assert.deepStrictEqual(labels('echo 1 | jq .', 'ja')?.[0], '入力: 標準入力（前のコマンドの出力）');
     assert.deepStrictEqual(labels("jq .a <<< '{\"a\":5}'", 'ja')?.[0], '入力: 標準入力（ヒアストリング）');
     assert.deepStrictEqual(labels('jq .a <<E\n{"a":5}\nE', 'ja')?.[0], '入力: 標準入力（ヒアドキュメント）');
     assert.deepStrictEqual(labels('jq .a <<E\n$x\nE', 'ja')?.[0], '入力: 標準入力（ヒアドキュメント、中身の例）');
@@ -108,6 +115,9 @@ describe('the examples of several files, or of a here-string, agree with the too
     ['head', 'head -n 1 - a < b'], ['sed', "sed 's/a/X/' a b"], ['sed', "sed -n '$p' a b"], ['sed', "sed 's/l/L/g' <<< hello"], ['sed', "sed 's/a/b/' <<'E'\nabc\naaa\nE"],
     ['gawk', "awk '{ print NR \": \" $0 }' a b"], ['gawk', "awk 'BEGIN { print 1 }' f"], ['gawk', "awk '{ print $2 }' <<< 'x y'"], ['cut', 'cut -d, -f2 a b'],
     ['tr', 'tr a-z A-Z <<< hello'], ['sort', 'sort a b | uniq -c'], ['sort', 'cat a b | sort -r'], ['sort', "sort <<< b | uniq"],
+    ['jq', "cat <<'E' | jq -c .a\n{\"a\":[1,2]}\nE"], ['jq', "echo '{\"a\":1}' | jq -c .a"],
+    ['sort', "sort <<< $'b\\na'"], ['sort', 'sort a a'], ['jq', 'jq -c . a.json a.json'], ['head', 'head -n 1 a a'], ['jq', 'jq -cs . a b'],
+    ['cat', 'cat a - b < c'], ['cat', 'cat a - - < c'], ['cat', 'cat a b'], ['jq', "jq -cs 'map(.a)' a b"], ['sort', "sort 0<<< $'b\\na' | uniq"], ['sort', "cat 0<<'E' | sort\nb\na\nE"],
   ];
   for (const [tool, line] of lines) {
     (has(tool) ? it : it.skip)(line, () => {
@@ -117,6 +127,13 @@ describe('the examples of several files, or of a here-string, agree with the too
       assert.strictEqual(got, want);
     });
   }
+  (has('jq') ? it : it.skip)('reads what the stages before it print, when they are known', () => {
+    const line = "printf '%s\\n' '{\"a\":2}' '{\"a\":1}' | sort | jq -c .a";
+    const ex = explain(line).examples.find((e) => e.kind === 'jq')!;
+    assert.deepStrictEqual(ex.sections.map((s) => s.lines), [['{"a":1}', '{"a":2}'], ['1', '2']]);
+    const { got, want } = realOutput(line, ex);
+    assert.strictEqual(got, want);
+  });
 });
 
 describe('the sources of the edge cases', () => {
@@ -134,6 +151,26 @@ describe('the sources of the edge cases', () => {
     assert.deepStrictEqual(labels('jq . <> f')?.[0], 'Input: stdin (`f`, sample contents)');
     assert.deepStrictEqual(labels('jq . <&3')?.[0], 'Input: stdin (sample contents)');
     assert.deepStrictEqual(labels('jq . 2< f')?.[0], 'Input: stdin (sample contents)');
+  });
+  it('gives every file a sample of its own, the same each time it is named', () => {
+    for (const line of ["sed 's/a/b/' a b", 'jq -s . a b', 'sort a b c d e f g h']) {
+      assert.ok(exampleOf(line)!.sections.every((s) => s.lines.length), line);
+    }
+    const sort = exampleOf('sort a a')!.interactive!;
+    assert.deepStrictEqual(sort.inputs.length, 1);
+    assert.deepStrictEqual(rerun(sort.spec, [['b', 'a']], 'en').sections[0].lines, ['a', 'a', 'b', 'b']);
+    const cat = exampleOf('cat a - - < c')!.interactive!;
+    assert.deepStrictEqual(rerun(cat.spec, [['x'], ['y']], 'en').sections[0].lines, ['x', 'y']);
+  });
+  it('shows cat only when it joins several files, and follows no pipeline that starts with a tool working on each file apart', () => {
+    for (const line of ['cat a', 'cat < a', 'cat -n a b']) assert.strictEqual(exampleOf(line), undefined, line);
+    for (const line of ['grep x a b | sort', 'wc -l a b | sort -n', 'head -n 1 a b | sort', 'cat a a | sort', "sed -s '$d' a b | sort"]) {
+      assert.ok(!explain(line).examples.some((e) => e.kind === 'pipeline'), line);
+    }
+    assert.ok(explain('cat a b | sort').examples.some((e) => e.kind === 'pipeline'));
+    // A here-document to another descriptor is not the input; the commands xargs runs print what is not known.
+    assert.ok(!explain('cat 3<<E | sort\nx\nE').examples.some((e) => e.kind === 'pipeline'));
+    assert.strictEqual(explain('echo a | xargs echo | jq .').examples.find((e) => e.kind === 'jq')?.sections[0].label, 'Input: stdin (sample output of the previous command)');
   });
   it('gives head and tail of files of a glob no example (how many is not known)', () => {
     for (const line of ['head -n 1 *.log', 'tail -n 1 - *.log']) assert.strictEqual(exampleOf(line), undefined, line);

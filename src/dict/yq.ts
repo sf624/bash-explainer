@@ -13,7 +13,7 @@ const formats = (kind: 'input' | 'output') => ({
 const V4_OPTIONS: OptSpec[] = [
   ['-o|--output-format', '出力形式（`json`・`yaml`・`xml`・`props`・`csv`・`tsv`・`toml`・`shell`・`lua` など。既定は入力と同じ）', 'output format (`json`, `yaml`, `xml`, `props`, `csv`, `tsv`, `toml`, `shell`, `lua`…; defaults to the input format)', 'arg', formats('output')],
   ['-p|--input-format', '入力形式（`json`・`xml`・`csv`・`toml`・`props`・`ini` など。既定は拡張子から判断）', 'input format (`json`, `xml`, `csv`, `toml`, `props`, `ini`…; guessed from the file extension)', 'arg', formats('input')],
-  ['-i|--inplace', '結果で最初のファイルを上書きする', 'update the first file in place'],
+  ['-i|--inplace', '結果で最初のファイルを上書きする', 'update the first file in place', 'each:in-place'],
   ['-n|--null-input', '入力を読まずに式だけで文書を作る', 'read no input; build a document from the expression'],
   ['-P|--prettyPrint', '`{a: 1}` のような書き方も通常のブロック形式に整える', 'pretty print (turn flow style like `{a: 1}` into block style)'],
   ['-I|--indent', 'インデントの幅（既定 2）', 'indentation width (default 2)', 'arg'],
@@ -48,7 +48,7 @@ const mikefarah4: CommandSpec = cmd('YAML（JSON・XML・TOML なども）を jq
 const kislyuk: CommandSpec = cmd('YAML を JSON に変換して jq で処理する（kislyuk/yq。式は jq そのもの。出力は既定で JSON）', 'Convert YAML to JSON and process it with jq (kislyuk/yq; the filter is plain jq; output is JSON by default)', [
   ['-y|--yaml-output|--yml-output', '結果を YAML に戻して出力する', 'convert the result back to YAML'],
   ['-Y|--yaml-roundtrip|--yml-roundtrip', 'タグやスタイルを保ったまま YAML で出力する', 'output YAML keeping tags and styles'],
-  ['-i|--in-place', '結果で入力ファイルを上書きする', 'edit the files in place'],
+  ['-i|--in-place', '結果で入力ファイルを上書きする', 'edit the files in place', 'each:in-place'],
   ['-w|--width', 'YAML 出力の折り返し幅', 'wrap width of YAML output', 'arg'],
   ['--indentless-lists|--indentless', 'YAML 出力でリストをインデントしない', 'do not indent lists in YAML output'],
   ['--explicit-start', 'YAML 出力の先頭に `---` を付ける', 'start YAML output with `---`'],
@@ -72,7 +72,7 @@ const V3_GLOBAL: OptSpec[] = [
   ['-v|--verbose', '詳しいログを出す', 'verbose'],
 ];
 const V3_DOC: OptSpec = ['-d|--doc', '対象のドキュメント番号（0 から。`*` で全部）', 'document index (from 0; `*` for all)', 'arg'];
-const V3_INPLACE: OptSpec = ['-i|--inplace', 'ファイルを上書きする', 'update the file in place'];
+const V3_INPLACE: OptSpec = ['-i|--inplace', 'ファイルを上書きする', 'update the file in place', 'each:in-place'];
 const path = pos('パス（`a.b[0].c`、`a.*`、`a.(name==x)` など。jq の式ではない）', 'path (`a.b[0].c`, `a.*`, `a.(name==x)`…; not a jq expression)');
 const file = pos('YAML ファイル', 'YAML file');
 

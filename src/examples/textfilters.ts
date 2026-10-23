@@ -512,8 +512,14 @@ export function runDirname(words: (string | undefined)[]): string[] {
 
 // ---------------------------------------------------------------- example input
 
+/** cat with no option: what it reads, as it is (an option it has, `-n`, is not followed). */
+function runCat(words: (string | undefined)[], input: string[]): string[] {
+  parseOptions('cat', words, {});
+  return input;
+}
+
 export const FILTERS: Record<string, (words: (string | undefined)[], input: string[]) => string[]> = {
-  sort: runSort, uniq: runUniq, cut: runCut, tr: runTr, head: runHead, tail: runTail,
+  cat: runCat, sort: runSort, uniq: runUniq, cut: runCut, tr: runTr, head: runHead, tail: runTail,
 };
 
 const WORDS = ['banana', 'apple', 'cherry', 'grape', 'melon', 'peach'];
@@ -636,7 +642,8 @@ export function commandExample(cmd: string, words: (string | undefined)[]): Comm
     if (cmd === 'dirname') return { output: runDirname(words) };
     const run = FILTERS[cmd];
     if (!run) return undefined;
-    const input = sampleInput(cmd, words);
+    // (cat's lines are any text; they are not a sample for the stages after it in a pipeline, as `sampleInput` gives.)
+    const input = cmd === 'cat' ? ['line 1', 'line 2', 'line 3', 'line 4'] : sampleInput(cmd, words);
     if (!input) return undefined;
     return { input, output: run(words, input) };
   } catch (e) {
