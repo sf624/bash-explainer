@@ -685,17 +685,26 @@ describe('shell state: arithmetic', () => {
     // What may be assigned is looked for in the values the expression reads, also through a nameref.
     assert.deepStrictEqual(after('x=\'a[1] = 2, i++, ++j\'; declare -n r=x; (( y = $1 + r ))', 'a', 'i', 'j', 'y'), ['unknown', 'unknown', 'unknown', 'unknown']);
   });
-  it('gives up on an expression too long or too deep to follow, quickly', () => {
+  it('gives up on an expression too long or too deep to follow, quickly', function () {
+    this.timeout(60000);
     // (Each value reads the one before twice, and assigns: 2 ** 30 steps.)
     const values = ['v0=\'c++\'', ...Array.from({ length: 30 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
-    let start = Date.now();
+    // (Followed, the 2 ** 30 steps would take minutes: the bound is far above the 0.2 s it takes, so that a loaded
+    // machine does not fail it.)
+    const start = Date.now();
     // (`u`: an argument of `let` not followed may fail, which stops `let`.)
     assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u', 'c'), ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
-    assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
-    // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may).
-    start = Date.now();
-    assert.deepStrictEqual(after(`${values}\n${'(( y = v30 ))\n'.repeat(60)}(( z = 1 ))`, 'z'), ['unknown']);
-    assert.ok(Date.now() - start < 3000, `took ${Date.now() - start} ms`);
+    assert.ok(Date.now() - start < 5000, `took ${Date.now() - start} ms`);
+    // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may):
+    // ten times the lines take about as long, measured in the same run (not against a fixed time, which a loaded
+    // machine may pass; followed, they would take ten times as long).
+    const timed = (lines: number): number => {
+      const t = Date.now();
+      assert.deepStrictEqual(after(`${values}\n${'(( y = v30 ))\n'.repeat(lines)}(( z = 1 ))`, 'z'), ['unknown']);
+      return Date.now() - t;
+    };
+    const [some, many] = [timed(60), timed(600)];
+    assert.ok(many < 3 * some + 500, `60 lines: ${some} ms, 600 lines: ${many} ms`);
     // Values nested deeper than followed here (bash: 1), or than the stack of the parser.
     const deep = ['v0=1', ...Array.from({ length: 100 }, (_, i) => `v${i + 1}='${'('.repeat(40)}v${i}${')'.repeat(40)}'`)].join('\n');
     assert.deepStrictEqual(after(`${deep}\n(( y = v100 ))`, 'y'), ['unknown']);
