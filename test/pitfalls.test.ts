@@ -5,6 +5,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pitfallNotes } from '../src/pitfalls';
 import { wordFacts } from '../src/wordfacts';
+import { Analyzer } from '../src/analyzer';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -71,4 +72,28 @@ describe('the spacing of [ ], against bash', () => {
       if (expected === 'fails') assert.ok(mistakes, cmd);
     });
   }
+});
+
+// The setting `notes.pitfalls` is applied where a note is said (Analyzer.say), by the pitfall kind of its catalog entry.
+describe('the pitfall gate', () => {
+  const explainNotes = (src: string, line: number, pitfalls: boolean) =>
+    new Analyzer('en').explainLine(parser.parse(src), line, undefined, { pitfalls }).notes;
+
+  it('the [[ =~ ]] backslash note disappears with pitfalls off; bash does read \\b as b', () => {
+    const src = '[[ $x =~ \\bfoo ]]';
+    assert.ok(explainNotes(src, 0, true).some((n) => /^⚠ In `\[\[ =~ \]\]`, an unquoted `\\b` loses its backslash/.test(n)));
+    assert.deepStrictEqual(explainNotes(src, 0, false).filter((n) => /⚠/.test(n)), []);
+    const r = spawnSync('bash', ['--norc', '--noprofile', '-c', "x=bfoo; [[ $x =~ \\bfoo ]] && echo match"], { encoding: 'utf8', env: { PATH: process.env.PATH, LC_ALL: 'C' } });
+    assert.strictEqual(r.stdout.trim(), 'match');
+  });
+  it('the distro-alias note of ll disappears with pitfalls off; a README keeps its ℹ note', () => {
+    assert.ok(explainNotes('ll /tmp', 0, true).some((n) => /^⚠ System-dependent: `ll`/.test(n)));
+    assert.deepStrictEqual(explainNotes('ll /tmp', 0, false).filter((n) => /System-dependent/.test(n)), []);
+    const readme = new Analyzer('en').explainLine(parser.parse('ll /tmp'), 0, undefined, { pitfalls: false, host: 'Markdown' }).notes;
+    assert.ok(readme.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
+  });
+  it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
+    const notes = explainNotes('if [ -f a ] then echo x; fi', 0, false);
+    assert.ok(notes.some((n) => /Syntax error: a `;` or a newline is needed before `then`/.test(n)), notes.join('|'));
+  });
 });
