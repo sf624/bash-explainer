@@ -3,8 +3,7 @@ import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, PANEL_BODY, panelUpdate } from './panelView';
-import { quickReference } from './reference';
-import { rerun } from '../examples/rerun';
+import { isPanelQuestion, panelReply } from './panelReply';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 export class PanelController implements vscode.Disposable {
@@ -114,14 +113,7 @@ export class PanelController implements vscode.Disposable {
     const ed = this.editor;
     if (m.type === 'ready') return this.post();
     if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
-    if (m.type === 'rerun') {
-      // The user edited the input of a worked example: run it again.
-      const lines = m.input.replace(/\n$/, '').split('\n');
-      return void this.panel?.webview.postMessage({ type: 'rerunResult', id: m.id, result: rerun(m.spec, lines, this.service.lang) });
-    }
-    if (m.type === 'reference') {
-      return void this.panel?.webview.postMessage({ type: 'reference', entries: quickReference(this.service.lang) });
-    }
+    if (isPanelQuestion(m)) return void this.panel?.webview.postMessage(panelReply(m, this.service.lang));
     if (!ed || ed.document.isClosed) return;
     if (m.type === 'copy') {
       const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);

@@ -4,7 +4,7 @@
 /** Phones and narrow windows: the explanation below the editor (page.css has the same width). */
 export const narrow = window.matchMedia('(max-width: 767px)');
 
-import { STORAGE_KEYS } from './storage';
+import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 
 const SPLIT_KEY = STORAGE_KEYS.split;
 const MIN = 15;
@@ -14,12 +14,7 @@ const byDefault = () => (narrow.matches ? 45 : 50);
 
 /** The shares chosen, side by side and one above the other, kept in this browser when it lets the page. */
 function savedSplit(): { wide?: number; narrow?: number } {
-  try {
-    const v = JSON.parse(localStorage.getItem(SPLIT_KEY) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  return readStoredObject(SPLIT_KEY);
 }
 
 /** What a divider needs to know: its value and how to change it (see `attachDivider`). */
@@ -93,11 +88,8 @@ export function setUpSplitter(split: HTMLElement, handle: HTMLElement, onChange:
       else saved[key()] = Math.min(MAX, Math.max(MIN, v));
       apply();
       onChange();
-      try {
-        localStorage.setItem(SPLIT_KEY, JSON.stringify(saved));
-      } catch {
-        // The sizes then last until the page is closed.
-      }
+      // When storage refuses, the sizes last until the page is closed.
+      writeStored(SPLIT_KEY, JSON.stringify(saved));
     },
     at(e) {
       const r = split.getBoundingClientRect();
@@ -131,20 +123,9 @@ const LIST_MIN = 72;
 export function setUpProblems(
   pane: HTMLElement, box: HTMLElement, handle: HTMLElement, toggle: HTMLElement, onChange: () => void,
 ): () => void {
-  let saved: { height?: number; collapsed?: boolean } = {};
-  try {
-    const v = JSON.parse(localStorage.getItem(STORAGE_KEYS.problems) ?? '{}');
-    if (v && typeof v === 'object') saved = v;
-  } catch {
-    // Not readable: the defaults.
-  }
-  const store = () => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.problems, JSON.stringify(saved));
-    } catch {
-      // The choice then lasts until the page is closed.
-    }
-  };
+  let saved = readStoredObject<{ height?: number; collapsed?: boolean }>(STORAGE_KEYS.problems);
+  // When storage refuses, the choice lasts until the page is closed.
+  const store = () => writeStored(STORAGE_KEYS.problems, JSON.stringify(saved));
   const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN);
   const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
