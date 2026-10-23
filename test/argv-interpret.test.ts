@@ -27,13 +27,12 @@ const item = (name: string, rest: Partial<OperandSpec> = {}): OperandSpec => ({ 
 
 describe('argv interpreter: the worked examples of the design', () => {
   const timeout: CommandSpec = {
-    summary: t('Run a command with a time limit'), style: 'posix',
+    summary: t('Run a command with a time limit'), parser: 'getopt_long', optionsFirst: true,
     options: [
       opt('-s|--signal', 'signal to send on timeout', { value: { name: 'SIGNAL', type: 'signal' } }),
       opt('-k|--kill-after', 'send KILL later', { value: { name: 'DURATION', type: 'duration' } }),
       opt('--preserve-status', 'exit with the status of the command'),
     ],
-    longPrefixes: true,
     operands: [{ pattern: [item('DURATION', { type: 'duration' }), item('COMMAND', { command: { run: 'exec' } })] }],
   };
 
@@ -328,7 +327,7 @@ describe('argv interpreter: the option grammar', () => {
       opt('--exec', 'exec', { until: { terminators: [';', '+'], slot: { run: 'exec' } } }),
       opt('--verbose', 'verbose'), opt('--version', 'version'),
     ],
-    longPrefixes: true,
+    parser: 'getopt_long',
     operands: [{ pattern: [item('FILE', { repeat: '*' })] }],
   };
 
@@ -384,7 +383,7 @@ describe('argv interpreter: the option grammar', () => {
   });
 
   it('reads single-dash options', () => {
-    const sd: CommandSpec = { summary: t('sd'), style: 'single-dash', options: [opt('-var-file', 'variables file', { value: { name: 'FILE' } }), opt('-v', 'v')] };
+    const sd: CommandSpec = { summary: t('sd'), parser: 'single-dash', options: [opt('-var-file', 'variables file', { value: { name: 'FILE' } }), opt('-v', 'v')] };
     assert.deepStrictEqual(roles('sd -var-file=x -var-file y -nope -no=1 -v$x a -vx$y', sd), [
       '-var-file=x: -var-file=10 variables file', '-var-file: -var-file variables file', 'y: value 0 of -var-file FILE', '-nope: -nope?', '-no=1: -no=1?', '-v$x: open -v', 'a: operand', '-vx$y: open -vx',
     ]);
@@ -574,7 +573,7 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
       ['-q|--query', 'q', 'query'], ['-i', 'i', 'install'], ['-f', 'f', 'file', 'arg fills'],
     ], {
       positional: [tx('a', 'pattern'), tx('b', 'file')],
-      subcommands: { run: cmd('r', 'run', [], { style: 'posix', operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
+      subcommands: { run: cmd('r', 'run', [], { optionsFirst: true, operands: [{ pattern: [{ name: 'NAME=VALUE', text: tx('v', 'v'), assignment: true, repeat: '*' }, runs()] }] }) },
     });
     assert.deepStrictEqual(spec.operands![0], { when: { option: ['-f'] }, pattern: [{ name: 'ARG2', text: tx('b', 'file'), repeat: '*' }] });
     assert.deepStrictEqual(roles('x -qi a', spec), ['-qi: cluster -q query | -i install', 'a: ARG1']);
@@ -632,7 +631,7 @@ describe('argv specs: the dictionary entries `cmd` builds', () => {
 
 describe('argv interpreter: subcommands found as cobra does', () => {
   const tool: CommandSpec = {
-    summary: t('tool'), cobra: true,
+    summary: t('tool'), parser: 'cobra',
     options: [
       opt('-n|--namespace', 'namespace', { persistent: true, value: { name: 'NS' } }),
       opt('--debug', 'debug', { persistent: true }),

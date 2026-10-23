@@ -39,7 +39,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-h|--help', 'ヘルプを表示する', 'show help'],
     ['-V|--version', 'バージョンを表示する', 'print the version'],
   ], {
-    style: 'posix', longPrefixes: true,
+    parser: 'getopt_long', optionsFirst: true,
     operands: [
       // `flock FILE -c CMD`: options end at the file, but `-c` right after it is still read.
       { pattern: [LOCK, { name: '-c', text: COMMAND_TEXT, option: '-c' }, { name: 'COMMAND_STRING', text: COMMAND_TEXT, command: { run: 'shell-string', env: 'exported' } }] },
@@ -50,7 +50,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-f|--fork', '常に fork して実行する', 'always fork'],
     ['-w|--wait', '子プロセスの終了を待ち、その終了ステータスを返す', 'wait for the child and return its exit status'],
     ['-c|--ctty', '制御端末を引き継ぐ', 'take over the controlling terminal'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   uuidgen: cmd('UUID を生成する', 'Generate a UUID', [
     ['-r|--random', 'ランダムな UUID(v4)', 'random UUID (v4)'],
     ['-t|--time', '時刻ベースの UUID(v1)', 'time-based UUID (v1)'],
@@ -70,7 +70,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-e|--error', '標準エラー出力のバッファ（`L`: 行単位、`0`: なし）', 'stderr buffering (`L`: line, `0`: none)', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { style: 'posix', longPrefixes: true, operands: [{ pattern: [runs()] }] }),
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   truncate: cmd('ファイルのサイズを変える（足りない分は 0 で埋める）', 'Make a file shorter or longer (new bytes are zeros)', [
     ['-s|--size', '新しいサイズ（`+` で増やす、`-` で減らす、`K` `M` `G` の単位）', 'new size (`+` grows, `-` shrinks; units `K` `M` `G`)', 'arg'],
     ['-c|--no-create', 'ファイルがなければ作らない', 'do not create the file'],
@@ -225,7 +225,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-c|--class', 'クラス（`1`: リアルタイム、`2`: ベストエフォート（既定）、`3`: ディスクが空いているときだけ）', 'class: `1` real time, `2` best effort (the default), `3` only when the disk is idle', 'arg'],
     ['-n|--classdata', 'クラス内の優先度（0〜7、小さいほど優先）', 'priority within the class (0 to 7, lower is higher)', 'arg'],
     ['-p|--pid', '動いているプロセスを対象にする', 'operate on a running PID', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   unshare: cmd('名前空間を切り離してコマンドを実行する', 'Run a command in new namespaces', [
     ['-m|--mount', 'マウント名前空間を分ける', 'new mount namespace'],
     ['-u|--uts', 'ホスト名の名前空間を分ける', 'new UTS (host name) namespace'],
@@ -236,7 +236,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-r|--map-root-user', '今のユーザーを新しい名前空間の root に対応づける', 'map the current user to root in the new namespace'],
     ['-f|--fork', '子プロセスとして実行する', 'fork before running the command'],
     ['--mount-proc', '新しい PID 名前空間用に `/proc` をマウントし直す', 'mount `/proc` for the new PID namespace'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   nsenter: cmd('他のプロセスの名前空間に入ってコマンドを実行する', "Run a command in another process's namespaces", [
     ['-t|--target', '名前空間を借りるプロセスの PID', 'PID whose namespaces to enter', 'arg'],
     ['-m|--mount', 'マウント名前空間に入る', 'enter the mount namespace'],
@@ -245,7 +245,7 @@ export const distro: Record<string, CommandSpec> = {
     ['-n|--net', 'ネットワーク名前空間に入る', 'enter the network namespace'],
     ['-p|--pid', 'PID 名前空間に入る', 'enter the PID namespace'],
     ['-a|--all', 'すべての名前空間に入る', 'enter all namespaces'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   script: cmd('端末での操作と出力をファイルに記録する', 'Record everything shown in the terminal to a file', [
     ['-q|--quiet', '開始・終了のメッセージを出さない', 'do not print start and done messages'],
     ['-a|--append', 'ファイルに追記する', 'append to the file'],

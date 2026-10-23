@@ -6,6 +6,7 @@
 import { isExpressionStart } from '../embedded/find';
 import type { Text } from '../i18n';
 import { EnvSplitError, splitEnvString } from './envsplit';
+import { type ParserRules, rulesOf } from './parsers';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 
 /** A word of the command line, as the program will see it. */
@@ -144,18 +145,18 @@ class Reader {
   }
 
   /**
-   * `cobra`: the parent finds subcommands as cobra does (`CommandSpec.cobra`), so this spec does too; `before`:
+   * `cobra`: the parent finds subcommands as cobra does (the `cobra` parser), so this spec does too; `before`:
    * the words the parents read before their subcommands (options and values), which cobra searches again.
    */
   read(spec: CommandSpec, from: number, to: number, command: string, inherited: OptionSpec[], cobra: boolean, before: number[]): ArgvParse {
-    const isCobra = cobra || !!spec.cobra;
+    const rules = rulesOf(spec, cobra);
+    const isCobra = cobra || rules.cobra;
     let options = [...(spec.options ?? []), ...inherited];
     const search = options;
     const found = isCobra && spec.subcommands ? this.cobraSubcommand(spec, search, before, from, to) : undefined;
     // cobra reads every option with the flags of the command it runs: before the subcommand, its own (its name
     // wins) and the persistent ones, but not the others of this level (`gh --version pr`: unknown flag).
     if (found?.at !== undefined) options = [...found.options ?? [], ...options.filter((o) => o.persistent)];
-    const style = spec.style ?? 'gnu';
     const roles = new Map<number, ArgRole>();
     const given: Given = { specs: [], flags: [], marks: new Set(), later: [], unsplit: [] };
     const operands: number[] = [];
@@ -163,7 +164,7 @@ class Reader {
     let endOpts = false;
     let afterDashes: number | undefined;
     let end = to;
-    const st: OptionState = { spec, options, roles, given, end, guess: isCobra && !!spec.subcommands, search };
+    const st: OptionState = { spec, rules, options, roles, given, end, guess: isCobra && !!spec.subcommands, search };
     for (let i = from; i < end; i++) {
       const w = this.words[i];
       const value = w.value;
@@ -206,8 +207,8 @@ class Reader {
         end = i + 1;
         break;
       }
-      // Options end at the first operand (posix), or where a command starts (gnu).
-      if (style === 'posix' || style === 'none' || this.startsCommand(st, [...operands, i]) || (spec.endsOptions && value !== undefined && spec.endsOptions.test(value))) endOpts = true;
+      // Options end at the first operand (`optionsFirst`), or where a command starts.
+      if (rules.optionsFirst || this.startsCommand(st, [...operands, i]) || (spec.endsOptions && value !== undefined && spec.endsOptions.test(value))) endOpts = true;
       operands.push(i);
     }
     parse.mode = chooseMode(spec, given);
@@ -369,7 +370,7 @@ class Reader {
     return undefined;
   }
 
-  /** In the gnu style, whether the last of these operands would start a command, which ends the options (`ssh host ls -l`). */
+  /** Whether the last of these operands would start a command, which ends the options (`ssh host ls -l`). */
   private startsCommand(st: OptionState, operands: number[]): boolean {
     const mode = chooseMode(st.spec, st.given);
     const words = operands.map((i) => this.words[i]);
@@ -385,18 +386,17 @@ class Reader {
    * last word used, or -1 when the word is not an option.
    */
   private option(st: OptionState, i: number): number {
-    const { spec, options, roles, given } = st;
+    const { spec, rules, options, roles, given } = st;
     const w = this.words[i];
     const open = w.value === undefined;
     const written = w.value ?? w.prefix;
     if (written === undefined) return -1;
     const disables = !!spec.plusOptions && /^\+./.test(written);
     const text = disables ? '-' + written.slice(1) : written;
-    const style = spec.style ?? 'gnu';
     const blocked = (o: { unlessMarked?: string }): boolean => !!o.unlessMarked && given.marks.has(o.unlessMarked);
     const mark = (o: { marks?: string }): void => { if (o.marks) given.marks.add(o.marks); };
     if (!open) {
-      const exact = findOption(options, text, spec.longPrefixes);
+      const exact = findOption(options, text, rules.longPrefixes);
       if (exact) {
         if (blocked(exact)) return -1;
         const role: ArgRole = { role: 'option', flag: written, spec: exact, text: exact.text, ...(disables ? { disables } : {}) };
@@ -421,25 +421,25 @@ class Reader {
     const openOption = (): number => { roles.set(i, { role: 'open-option', prefix: written }); return i; };
     if (open && (text === '-' || text === '--')) return openOption();
     if (text.length < 2 || text[0] !== '-' || text === '--') return -1;
-    // With no option grammar (`echo`), a word is an option only when every letter is one.
-    if (style === 'none') return open ? openOption() : this.cluster(st, i, written, text, false, disables, true);
+    // `echo`: a word is an option only when every letter is one.
+    if (rules.letters) return open ? openOption() : this.cluster(st, i, written, text, false, disables, true);
     // `--name=value`, and `-name=value` for single-dash options.
     const eq = text.indexOf('=');
     const long = text.startsWith('--');
-    if (eq > 0 && ((long && spec.longEquals !== false) || (style === 'single-dash' && findOption(options, text.slice(0, eq), false)))) {
+    if (eq > 0 && ((long && rules.longEquals) || (rules.singleDash && findOption(options, text.slice(0, eq), false)))) {
       const flag = text.slice(0, eq);
-      const opt = findOption(options, flag, spec.longPrefixes);
+      const opt = findOption(options, flag, rules.longPrefixes);
       const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
       given.flags.push(flag);
-      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, spec.longPrefixes)) }); return i; }
+      if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, rules.longPrefixes)) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
       given.specs.push(opt);
       mark(opt);
       return this.separateValues(st, opt, flag, i, 1);
     }
-    if (long || style === 'single-dash' || spec.shortClusters === false) {
+    if (long || rules.singleDash || !rules.shortClusters) {
       if (open) return openOption();
-      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguous(lookupOption(options, text, spec.longPrefixes)) });
+      roles.set(i, { role: 'unknown-option', flag: text, ...ambiguous(lookupOption(options, text, rules.longPrefixes)) });
       given.flags.push(text);
       return i;
     }
@@ -475,7 +475,7 @@ class Reader {
       if (first.how === 'next-only') { last = this.separateValues(st, opt, as, last, 0, role); continue; }
       if (k + 1 < text.length || open) {
         // `dpkg-query -f=FORMAT`: the value starts after the `=`.
-        const at = st.spec.shortEquals && text[k + 1] === '=' ? k + 2 : k + 1;
+        const at = st.rules.shortEquals && text[k + 1] === '=' ? k + 2 : k + 1;
         role.value = { role: 'value', of: as, option: opt, spec: first, index: 0, attached: at };
         valued = true;
         last = this.separateValues(st, opt, as, last, 1, role);
@@ -552,6 +552,8 @@ interface Given { specs: OptionSpec[]; flags: string[]; marks: Set<string>; late
 
 interface OptionState {
   spec: CommandSpec;
+  /** How the program reads options (its parser's rules). */
+  rules: ParserRules;
   options: OptionSpec[];
   roles: Map<number, ArgRole>;
   given: Given;
@@ -624,7 +626,7 @@ function unsplice(parse: ArgvParse, at: number, split: ArgWord[]): ArgvParse {
  * with `'first'`, the first option with a name that `flag` (or `flag` without one of two dashes) starts.
  * `candidates`: when a prefix starts several long options (`timeout --v`), one name of each, which the tool refuses.
  */
-function lookupOption(options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): { option?: OptionSpec; candidates?: string[] } {
+function lookupOption(options: OptionSpec[], flag: string, prefixes: ParserRules['longPrefixes'] = false): { option?: OptionSpec; candidates?: string[] } {
   if (prefixes === 'first') {
     const word = flag.startsWith('--') ? flag.slice(1) : flag;
     // (A lone `-` starts every option, so it is the first one: iproute2's `ip - 3 link` is `ip -loops 3 link`.)
@@ -636,7 +638,7 @@ function lookupOption(options: OptionSpec[], flag: string, prefixes: boolean | '
   return found.length === 1 ? { option: found[0] } : found.length > 1 ? { candidates: found.map((o) => o.names.find((n) => n.startsWith(flag))!) } : {};
 }
 
-const findOption = (options: OptionSpec[], flag: string, prefixes: boolean | 'first' = false): OptionSpec | undefined => lookupOption(options, flag, prefixes).option;
+const findOption = (options: OptionSpec[], flag: string, prefixes: ParserRules['longPrefixes'] = false): OptionSpec | undefined => lookupOption(options, flag, prefixes).option;
 
 /** The subcommand a word names: its name and spec. */
 function subcommand(spec: CommandSpec, word: string): [string, CommandSpec] | undefined {

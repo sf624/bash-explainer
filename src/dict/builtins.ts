@@ -86,7 +86,7 @@ type Rest = Omit<Partial<CommandSpec>, 'summary' | 'options'>;
 
 /** A builtin of bash: it reads options up to its first operand (`-` words after it are operands). */
 const b = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandSpec =>
-  cmd(ja, en, opts, { builtin: 'regular', style: 'posix', ...rest });
+  cmd(ja, en, opts, { builtin: 'regular', optionsFirst: true, ...rest });
 /** A POSIX special builtin: an assignment before it stays in POSIX mode, and an error in it exits a POSIX shell. */
 const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: Rest = {}): CommandSpec => b(ja, en, opts, { builtin: 'special', ...rest });
 
@@ -94,7 +94,7 @@ const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], re
  * The one operand of `exit`, `return`, `shift`, `break` and `continue`, a number. They take no options:
  * `exit -1` exits with 255, and `shift -1` says the count is out of range (`--` still ends the options).
  */
-const numeric = (o: OperandSpec): Rest => ({ style: 'none', ...args(o) });
+const numeric = (o: OperandSpec): Rest => ({ parser: 'letters', ...args(o) });
 
 /** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
 function declarationSpec(name: string, flags: Record<string, Text>, rest: Rest = {}, off: Record<string, Text> = {}): CommandSpec {
@@ -148,7 +148,7 @@ const ECHO_OPTIONS: OptionSpec[] = [
   { names: ['-E'], text: tx('バックスラッシュエスケープを解釈しない（既定）', 'do not interpret escapes (default)'), selects: 'plain' },
 ];
 const ECHO_READING: Rest = {
-  style: 'none', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true,
+  parser: 'letters', dashDash: 'literal', modes: [{ name: 'escapes' }, { name: 'plain', default: true }], lastModeWins: true,
   operands: [
     { when: { mode: 'escapes' }, pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*', lang: 'echo' })] },
     { pattern: [operand('TEXT', '表示する文字列', 'text to print', { repeat: '*' })] },
@@ -173,7 +173,7 @@ const TEST_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返�
 const PROGRAMS: Record<string, CommandSpec> = {
   echo: cmd('引数を空白区切りで標準出力に表示する（coreutils のプログラム）', 'Print arguments to stdout, separated by spaces (the coreutils program)', ECHO_OPTIONS, ECHO_READING),
   printf: cmd('書式を指定して文字列を出力する（coreutils のプログラム。`-v` はない）', 'Print formatted output (the coreutils program, which has no `-v`)', [], {
-    style: 'none', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
+    parser: 'letters', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),
   pwd: cmd('カレントディレクトリのパスを表示する（coreutils のプログラム。既定は `-P`）', 'Print the current directory (the coreutils program; `-P` is the default)', [
     ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
@@ -187,15 +187,15 @@ const PROGRAMS: Record<string, CommandSpec> = {
     ['-L|--table', 'シグナルの一覧を表にして表示', 'list the signals in a table'],
     ['-h|--help', 'ヘルプを表示する', 'show help'], ['-V|--version', 'バージョンを表示する', 'print the version'],
   ], {
-    style: 'posix', patternOptions: PROCPS_KILL_PATTERNS,
+    optionsFirst: true, patternOptions: PROCPS_KILL_PATTERNS,
     operands: [
       { when: { option: ['-l'] }, pattern: [operand('SIGNAL', '名前か番号に直すシグナル', 'signal to translate between name and number', { repeat: '*' })] },
       ...args(operand('PID', '対象のプロセス ID', 'target PID')).operands!,
     ],
   }),
-  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { style: 'single-dash', operandParser: 'test-expression' }),
-  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { style: 'none' }),
-  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { style: 'none' }),
+  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { parser: 'single-dash', operandParser: 'test-expression' }),
+  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { parser: 'letters' }),
+  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { parser: 'letters' }),
 };
 
 /**
@@ -336,13 +336,13 @@ export const builtins: Record<string, CommandSpec> = {
   '.': actsOnShell(special('ファイルを読み込み、現在のシェルで実行する（`source` と同じ）', 'Run a file in the current shell (same as `source`)', [], SOURCE_OPERANDS), undefined, { runsUnread: 'file' }),
   // The words are joined with spaces and read again as a command of this shell.
   eval: cmd('引数を連結して文字列をコマンドとして再解釈・実行する（注入に注意）', 'Concatenate arguments and execute the result as a command (beware of injection)', [], {
-    builtin: 'special', style: 'posix', operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
+    builtin: 'special', optionsFirst: true, operands: [{ pattern: [operand('STRING', 'もう一度読んで実行する文字列', 'text to read and run again', { repeat: '?', command: { run: 'current-shell', joinsWords: true } })] }],
   }),
   exec: cmd('現在のシェルを指定したコマンドで置き換える。引数なしならリダイレクトをシェル自体に適用', 'Replace the shell with the command; without a command, apply redirections to the shell itself', [
     ['-a', 'コマンドに 0 番目の引数（`$0`）として渡す名前', 'name to pass as the zeroth argument (`$0`) of the command', 'arg'],
     ['-c', '環境変数を空にしてコマンドを実行する', 'run the command with an empty environment'],
     ['-l', 'コマンドの 0 番目の引数の先頭に `-` を付ける（ログインシェルのように）', 'put a `-` in front of the zeroth argument (as a login shell has)'],
-  ], { builtin: 'special', style: 'posix', operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
+  ], { builtin: 'special', optionsFirst: true, operands: [{ pattern: [runs({ run: 'exec', replacesShell: true })] }] }),
   shift: actsOnShell(special('位置パラメータを左にずらす（$2 が $1 になる）', 'Shift positional parameters left ($2 becomes $1)', [], numeric(operand('N', 'ずらす数（省略時は 1）', 'how many (default 1)')))),
   getopts: actsOnShell(b('スクリプトのオプション引数を1つずつ解析する（`while getopts … ; do case … esac; done` の形で使い、次に読む位置は $OPTIND）', 'Parse script options one at a time (used as `while getopts …; do case … esac; done`; $OPTIND tracks the position)', [], args(
     operand('OPTSTRING', '受け付けるオプション文字（`:` 付きは引数を取る）', 'option letters (`:` means takes an argument)', { lang: 'getopts' }),
@@ -367,7 +367,7 @@ export const builtins: Record<string, CommandSpec> = {
       ...args(operand('PID', '対象のプロセス ID かジョブ指定（`%1`）', 'target PID or job spec (`%1`)', { type: 'job' })).operands!,
     ],
   }),
-  test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, style: 'single-dash', operandParser: 'test-expression' }),
+  test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, parser: 'single-dash', operandParser: 'test-expression' }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
     ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],
@@ -406,14 +406,14 @@ export const builtins: Record<string, CommandSpec> = {
     ['-V', 'コマンドの詳しい説明を表示', 'print a verbose description'],
     ['-p', '標準の PATH で検索する', 'use a default PATH'],
   ], {
-    builtin: 'regular', style: 'posix',
+    builtin: 'regular', optionsFirst: true,
     operands: [
       // `command -v git`: the names are looked up, and nothing runs.
       { when: { option: ['-v', '-V'] }, pattern: [operand('NAME', '調べる名前', 'name to look up', { repeat: '*' })] },
       { pattern: [runs({ run: 'current-shell', lookup: 'no-functions' })] },
     ],
   }),
-  builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', style: 'posix', operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
+  builtin: cmd('同名の関数があってもシェルのビルトインを実行する', 'Run the shell builtin even if a function has the same name', [], { builtin: 'regular', optionsFirst: true, operands: [{ pattern: [runs({ run: 'current-shell', lookup: 'builtins-only' })] }] }),
   hash: actsOnShell(b('コマンドのパスのキャッシュを操作する', 'Manage the command path cache', [
     ['-r', 'キャッシュを空にする（コマンドを移動・インストールした後に使う）', 'empty the cache (after moving or installing a command)'],
     ['-d', '指定した名前をキャッシュから削除する', 'forget the given name', 'arg'],
@@ -472,7 +472,7 @@ export const builtins: Record<string, CommandSpec> = {
   readarray: actsOnShell(b('標準入力の各行を配列に読み込む（mapfile と同じ）', 'Read lines from stdin into an array (same as mapfile)', MAPFILE_OPTIONS, MAPFILE_OPERANDS), undefined, MAPFILE_DEFAULT),
   // `let` has no options: `let -a` is an expression.
   let: b('算術式を評価する（例: `let i++`）', 'Evaluate arithmetic expressions (e.g. `let i++`)', [], {
-    style: 'none',
+    parser: 'letters',
     ...args(operand('EXPR', '算術式（引数ごとに1つ。左から順に評価され、前の結果が後ろの式から見える）',
       'arithmetic expression (one per argument, evaluated left to right, so later ones see earlier results)', { type: 'arith', lang: 'arith' })),
   }),

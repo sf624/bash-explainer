@@ -129,7 +129,7 @@ describe('wrappers agree with the real tools', () => {
   for (const tool of ['timeout', 'env', 'nice', 'xargs', 'stdbuf', 'flock', 'sudo']) {
     (usable(tool) ? it : it.skip)(`${tool}: every long option of --help, and the prefixes it finds ambiguous`, () => {
       const spec = lookupCommand(tool)!;
-      assert.ok(spec.longPrefixes, tool);
+      assert.strictEqual(spec.parser, 'getopt_long', tool);
       const ours = spec.options!.flatMap((o) => o.names);
       const theirs = longNames(spawnSync(tool, ['--help'], { env: ENV, encoding: 'utf8' }).stdout);
       assert.ok(theirs.length > 2, tool);

@@ -65,7 +65,7 @@ const kubeFiles: OptSpec[] = [
 const resource = pos('リソースの種類と名前（`pod/web`、`deployment web`…）', 'resource type and name (`pod/web`, `deployment web`…)');
 
 const kubectl = cmd('Kubernetes のクラスターを操作する', 'Control a Kubernetes cluster', kube, {
-  cobra: true,
+  parser: 'cobra',
   subcommands: {
     get: cmd('リソースを一覧表示する', 'List resources', [...kubeFiles, kubeOutput, kubeSelector, kubeAll, kubeWatch], { positional: [resource] }),
     describe: cmd('リソースの詳細とイベントを表示する', 'Show details and events of resources', [...kubeFiles, kubeSelector, kubeAll], { positional: [resource] }),
@@ -161,7 +161,7 @@ const tfCommon: OptSpec[] = [
   ['-raw', '値だけを出力する（`output`）', 'print the raw value (`output`)'],
   ['-json', 'JSON で出力', 'JSON output'],
 ];
-const tf = (ja: string, en: string): CommandSpec => cmd(ja, en, tfCommon, { style: 'single-dash' });
+const tf = (ja: string, en: string): CommandSpec => cmd(ja, en, tfCommon, { parser: 'single-dash' });
 
 const awsCommon: OptSpec[] = [
   ['--region', 'リージョン（`ap-northeast-1`…）', 'region (`ap-northeast-1`…)', 'arg'],
@@ -192,13 +192,13 @@ const iptables: OptSpec[] = [
 export const ops: Record<string, CommandSpec> = {
   kubectl,
   uv: cmd('Python のパッケージ・プロジェクト管理ツール（uv）', 'Python package and project manager (uv)', [], {
-    subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
+    subcommands: { run: cmd('環境を整えてからコマンドやスクリプトを実行する', 'Run a command or script in the project environment', [['--with', '一時的に加えるパッケージ', 'an extra package to add temporarily', 'arg'], ['--no-sync', '実行前に環境を同期しない', 'do not sync the environment first']], { optionsFirst: true, operands: [{ pattern: [runs()] }] }) },
   }),
   poetry: cmd('Python のパッケージ・プロジェクト管理ツール（Poetry）', 'Python package and project manager (Poetry)', [], {
-    subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { style: 'posix', operands: [{ pattern: [runs()] }] }) },
+    subcommands: { run: cmd('仮想環境の中でコマンドを実行する', 'Run a command in the virtual environment', [], { optionsFirst: true, operands: [{ pattern: [runs()] }] }) },
   }),
   helm: cmd('Kubernetes のパッケージ（チャート）を管理する', 'Kubernetes package (chart) manager', helmGlobal, {
-    cobra: true,
+    parser: 'cobra',
     subcommands: {
       install: cmd('チャートを入れる（`名前 チャート`）', 'Install a chart (`name chart`)', helmCommon, { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),
       upgrade: cmd('リリースを更新する（`--install` でなければ入れる）', 'Upgrade a release (`--install`: install if missing)', [...helmCommon, ['-i|--install', 'なければ入れる', 'install if missing']], { positional: [pos('リリース名', 'release name'), pos('チャート', 'chart')] }),
@@ -236,7 +236,7 @@ export const ops: Record<string, CommandSpec> = {
     ['-version|-v|--version', '版を表示する', 'print the version'],
     ...persistent([['-help|-h|--help', 'ヘルプを表示する', 'show help']]),
   ], {
-    style: 'single-dash',
+    parser: 'single-dash',
     patternOptions: [{
       pattern: /^-(?!chdir=)./,
       text: () => tx('⚠ サブコマンドより前のオプション。terraform がここで受け付けるのは `-chdir=…`、`-version`、`-help` だけで、ほかは「Invalid flags before the subcommand」で止まる。サブコマンドの後に書く',
@@ -310,7 +310,7 @@ export const ops: Record<string, CommandSpec> = {
   // ---- JavaScript and Ruby tools ----
   npx: cmd('npm のパッケージのコマンドを実行する（なければ一時的に取得）', "Run a package's command (fetching it if needed)", [
     ['--yes|-y', '取得の確認をしない', 'do not ask before fetching'], ['--package|-p', 'コマンドを含むパッケージ（`名前@版`）', 'package that provides the command (`name@version`)', 'arg'],
-  ], { style: 'posix', operands: [{ pattern: [runs()] }] }),
+  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   pnpm: cmd('Node.js のパッケージマネージャ（pnpm）', 'Node.js package manager (pnpm)', [['--frozen-lockfile', 'pnpm-lock.yaml を書き換えない（CI 向け）', 'do not change pnpm-lock.yaml (for CI)'], ['-r|--recursive', 'ワークスペースのすべてのパッケージで', 'in every workspace package'], ['--filter|-F', '対象のパッケージ', 'packages to act on', 'arg']], {
     subcommands: {
       install: cmd('依存をインストールする', 'Install dependencies', [['--frozen-lockfile', 'pnpm-lock.yaml を書き換えない（CI 向け）', 'do not change pnpm-lock.yaml (for CI)'], ['--prod|-P', '開発用の依存を入れない', 'skip development dependencies']]),
@@ -333,7 +333,7 @@ export const ops: Record<string, CommandSpec> = {
   mkdocs: cmd('Markdown からドキュメントのサイトを作る（MkDocs）', 'Build documentation sites from Markdown (MkDocs)', [], {
     subcommands: { build: cmd('サイトを作る', 'Build the site', [['--strict', '警告をエラーにする', 'treat warnings as errors']]), serve: cmd('手元で表示する（変更に追従）', 'Serve locally (rebuilding on changes)'), 'gh-deploy': cmd('GitHub Pages に公開する', 'Deploy to GitHub Pages') },
   }),
-  rpmbuild: cmd('RPM パッケージを作る', 'Build RPM packages', [['-bb', 'バイナリのパッケージを作る', 'build binary packages'], ['-ba', 'バイナリとソースのパッケージを作る', 'build binary and source packages'], ['-v', '詳しく表示する', 'verbose'], ['--define', 'マクロを定義する', 'define a macro', 'arg']], { positional: [pos('spec ファイル', 'spec file')], style: 'single-dash' }),
+  rpmbuild: cmd('RPM パッケージを作る', 'Build RPM packages', [['-bb', 'バイナリのパッケージを作る', 'build binary packages'], ['-ba', 'バイナリとソースのパッケージを作る', 'build binary and source packages'], ['-v', '詳しく表示する', 'verbose'], ['--define', 'マクロを定義する', 'define a macro', 'arg']], { positional: [pos('spec ファイル', 'spec file')], parser: 'single-dash' }),
 
   // ---- Users ----
   usermod: cmd('ユーザーの設定を変える', 'Change a user', [
@@ -385,20 +385,20 @@ export const ops: Record<string, CommandSpec> = {
     ['-g|-globalDomain', 'すべてのアプリに共通の設定', 'the global domain, shared by all apps'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'],
     ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value'],
   ], {
-    style: 'single-dash',
+    parser: 'single-dash',
     subcommands: {
-      write: cmd('設定を書く（`ドメイン キー -型 値`）', 'Write a setting (`domain key -type value`)', [['-g|-globalDomain', '共通の設定', 'the global domain'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'], ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value']], { positional: [pos('ドメイン（`com.apple.dock`…）', 'domain (`com.apple.dock`…)'), pos('キー', 'key'), pos('値', 'value')], style: 'single-dash' }),
-      read: cmd('設定を読む', 'Read settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], style: 'single-dash' }),
-      delete: cmd('設定を削除する', 'Delete settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], style: 'single-dash' }),
+      write: cmd('設定を書く（`ドメイン キー -型 値`）', 'Write a setting (`domain key -type value`)', [['-g|-globalDomain', '共通の設定', 'the global domain'], ['-bool', '真偽値', 'boolean value'], ['-int', '整数', 'integer value'], ['-float', '小数', 'floating-point value'], ['-string', '文字列', 'string value'], ['-array', '配列', 'array value'], ['-dict', '辞書', 'dictionary value']], { positional: [pos('ドメイン（`com.apple.dock`…）', 'domain (`com.apple.dock`…)'), pos('キー', 'key'), pos('値', 'value')], parser: 'single-dash' }),
+      read: cmd('設定を読む', 'Read settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], parser: 'single-dash' }),
+      delete: cmd('設定を削除する', 'Delete settings', [['-g|-globalDomain', '共通の設定', 'the global domain']], { positional: [pos('ドメイン', 'domain'), pos('キー', 'key')], parser: 'single-dash' }),
     },
   }),
   hdiutil: cmd('ディスクイメージ（.dmg）を操作する（macOS）', 'Work with disk images, .dmg (macOS)', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], {
-    style: 'single-dash',
+    parser: 'single-dash',
     subcommands: {
-      attach: cmd('イメージをマウントする', 'Mount an image', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], { positional: [pos('.dmg ファイル', '.dmg file')], style: 'single-dash' }),
+      attach: cmd('イメージをマウントする', 'Mount an image', [['-quiet', '表示しない', 'quiet'], ['-nobrowse', 'Finder に出さない', 'do not show in the Finder'], ['-mountpoint', 'マウント先', 'mount point', 'arg']], { positional: [pos('.dmg ファイル', '.dmg file')], parser: 'single-dash' }),
       mount: cmd('イメージをマウントする（`attach` と同じ）', 'Mount an image (same as `attach`)', [], { positional: [pos('.dmg ファイル', '.dmg file')] }),
-      detach: cmd('イメージを取り外す', 'Unmount an image', [['-force', '強制する', 'force']], { positional: [pos('マウント先', 'mount point')], style: 'single-dash' }),
-      create: cmd('イメージを作る', 'Create an image', [['-volname', 'ボリューム名', 'volume name', 'arg'], ['-srcfolder', '中身にするフォルダ', 'folder to put in', 'arg'], ['-format', '形式（`UDZO`: 圧縮）', 'format (`UDZO`: compressed)', 'arg']], { style: 'single-dash' }),
+      detach: cmd('イメージを取り外す', 'Unmount an image', [['-force', '強制する', 'force']], { positional: [pos('マウント先', 'mount point')], parser: 'single-dash' }),
+      create: cmd('イメージを作る', 'Create an image', [['-volname', 'ボリューム名', 'volume name', 'arg'], ['-srcfolder', '中身にするフォルダ', 'folder to put in', 'arg'], ['-format', '形式（`UDZO`: 圧縮）', 'format (`UDZO`: compressed)', 'arg']], { parser: 'single-dash' }),
     },
   }),
   pmset: cmd('電源の設定を表示・変更する（macOS）', 'Show or change power settings (macOS)', [['-g', '設定や状態を表示する（`-g batt` でバッテリー）', 'show settings or status (`-g batt`: battery)'], ['-a', 'すべての電源のときの設定', 'settings for all power sources'], ['-b', 'バッテリーのときの設定', 'settings on battery'], ['-c', '電源につないだときの設定', 'settings on charger']]),

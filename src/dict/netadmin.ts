@@ -438,5 +438,5 @@ export const netadmin: Record<string, CommandSpec> = {
     ['-bV', 'バージョンと設定ファイルを表示', 'show the version and configuration file'],
     ['-bd', 'デーモンとして動かす', 'run as a daemon'],
     ['-d', 'デバッグ表示', 'debug output'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
 };

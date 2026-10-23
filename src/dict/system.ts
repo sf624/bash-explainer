@@ -236,7 +236,7 @@ export const system: Record<string, CommandSpec> = {
     ['--root', '代わりのルートディレクトリ', 'install into the given root directory', 'arg'],
     ['--force-confold', '設定ファイルが違うとき、現在のものを残す', 'keep the current configuration files when they differ'],
     ['--force-confnew', '設定ファイルが違うとき、新しいものを使う', 'use the new configuration files when they differ'],
-  ], { shortEquals: true, ...args(operand('PACKAGE', 'パッケージ名または .deb ファイル', 'package name or .deb file')) }),
+  ], { parser: 'dpkg', ...args(operand('PACKAGE', 'パッケージ名または .deb ファイル', 'package name or .deb file')) }),
   'dpkg-query': cmd('入っている Debian パッケージの情報を問い合わせる', 'Query installed Debian packages', [
     ['-W|--show', 'パッケージを一覧表示する（`-f` で形式を指定）', 'show packages (format with `-f`)'],
     ['-f|--showformat', '`-W` の出力形式（`${Package} ${Version}\\n` など）', 'output format for `-W` (`${Package} ${Version}\\n`…)', 'arg'],
@@ -244,7 +244,7 @@ export const system: Record<string, CommandSpec> = {
     ['-L|--listfiles', 'パッケージが入れたファイルを一覧表示する', 'list the files a package installed'],
     ['-S|--search', '指定したファイルを入れたパッケージを探す', 'find the package that installed a file'],
     ['-s|--status', 'パッケージの状態を表示する', "show a package's status"],
-  ], { shortEquals: true, ...args({ name: 'PACKAGE', text: pkg }) }),
+  ], { parser: 'dpkg', ...args({ name: 'PACKAGE', text: pkg }) }),
   'dpkg-architecture': cmd('Debian のビルド用アーキテクチャの値を表示する', 'Print Debian build architecture values', [
     ['-q|--query', '指定した変数の値だけを表示する（`DEB_HOST_MULTIARCH`、`DEB_BUILD_GNU_TYPE`…）', 'print only the given variable (`DEB_HOST_MULTIARCH`, `DEB_BUILD_GNU_TYPE`…)', 'arg'],
     ['-a|--host-arch', '対象の Debian アーキテクチャを指定する', 'use the given Debian host architecture', 'arg'],
@@ -316,22 +316,22 @@ export const system: Record<string, CommandSpec> = {
         ['-ldflags', 'リンカに渡すフラグ（`-s -w` で小さく、`-X` で変数を埋め込む）', 'linker flags (`-s -w`: smaller; `-X`: set a variable)', 'arg'],
         ['-trimpath', 'ビルドした場所のパスを埋め込まない（再現可能なビルド）', 'leave out local paths (reproducible builds)'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
         ['-tags', 'ビルドタグ', 'build tags', 'arg'],
-      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], style: 'single-dash' }),
+      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], parser: 'single-dash' }),
       test: cmd('テストを実行する', 'Run tests', [
         ['-v', '各テストの結果を表示', 'verbose'], ['-run', '指定した正規表現に合うテストだけ', 'only tests matching the given regex', 'arg'], ['-race', 'データ競合の検出を有効にする', 'enable the race detector'],
         ['-count', '実行回数（`-count=1` でキャッシュを使わない）', 'run count (`-count=1` skips the cache)', 'arg'], ['-cover', 'カバレッジを表示', 'show coverage'], ['-timeout', '時間切れ', 'timeout', 'arg'],
         ['-json', '結果を JSON で出力', 'JSON output'], ['-c', 'テストのバイナリを作るだけで実行しない', 'compile the test binary, do not run it'], ['-o', 'テストのバイナリの出力先', 'test binary output', 'arg'],
         ['-tags', 'ビルドタグ', 'build tags', 'arg'], ['-ldflags', 'リンカに渡すフラグ', 'linker flags', 'arg'], ['-short', '時間のかかるテストを省く', 'skip long tests'],
-      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], style: 'single-dash' }),
-      run: cmd('ビルドしてすぐ実行する', 'Compile and run', [], { positional: [pos('main パッケージかファイル（`パス@版` も可）', 'main package or files (or `path@version`)'), pos('プログラムへの引数', 'argument to the program')], style: 'single-dash' }),
+      ], { positional: [pos('パッケージ（`./...` で配下すべて）', 'packages (`./...`: everything below)')], parser: 'single-dash' }),
+      run: cmd('ビルドしてすぐ実行する', 'Compile and run', [], { positional: [pos('main パッケージかファイル（`パス@版` も可）', 'main package or files (or `path@version`)'), pos('プログラムへの引数', 'argument to the program')], parser: 'single-dash' }),
       install: cmd('ビルドしてコマンドを `$GOPATH/bin` に入れる（`パス@版`）', 'Build and install commands into `$GOPATH/bin` (`path@version`)', [], { positional: [pos('パッケージ（`パス@版`）', 'package (`path@version`)')] }),
-      get: cmd('依存を追加・更新する（go.mod を書き換える）', 'Add or update dependencies (edits go.mod)', [['-u', '最新版に更新', 'update to the latest']], { positional: [pkg], style: 'single-dash' }),
-      mod: cmd('モジュール（go.mod）を操作する（`tidy`、`download`、`vendor`、`edit`）', 'Manage modules (`tidy`, `download`, `vendor`, `edit`)', [], { style: 'single-dash' }),
-      list: cmd('パッケージやモジュールを一覧表示する', 'List packages or modules', [['-m', 'パッケージでなくモジュールを', 'modules instead of packages'], ['-json', 'JSON で出力', 'JSON output'], ['-f', 'Go テンプレートで出力形式を指定', 'output format as a Go template', 'arg'], ['-e', 'エラーのあるパッケージも表示', 'include packages with errors'], ['-deps', '依存もすべて', 'include dependencies'], ['-find', '依存を解決せずに探すだけ', 'only find, do not resolve dependencies']], { positional: [pos('パッケージ（`./...`、`all`）', 'packages (`./...`, `all`)')], style: 'single-dash' }),
+      get: cmd('依存を追加・更新する（go.mod を書き換える）', 'Add or update dependencies (edits go.mod)', [['-u', '最新版に更新', 'update to the latest']], { positional: [pkg], parser: 'single-dash' }),
+      mod: cmd('モジュール（go.mod）を操作する（`tidy`、`download`、`vendor`、`edit`）', 'Manage modules (`tidy`, `download`, `vendor`, `edit`)', [], { parser: 'single-dash' }),
+      list: cmd('パッケージやモジュールを一覧表示する', 'List packages or modules', [['-m', 'パッケージでなくモジュールを', 'modules instead of packages'], ['-json', 'JSON で出力', 'JSON output'], ['-f', 'Go テンプレートで出力形式を指定', 'output format as a Go template', 'arg'], ['-e', 'エラーのあるパッケージも表示', 'include packages with errors'], ['-deps', '依存もすべて', 'include dependencies'], ['-find', '依存を解決せずに探すだけ', 'only find, do not resolve dependencies']], { positional: [pos('パッケージ（`./...`、`all`）', 'packages (`./...`, `all`)')], parser: 'single-dash' }),
       vet: cmd('怪しいコードを検査する', 'Report suspicious code', [], { positional: [pos('パッケージ', 'packages')] }),
       fmt: cmd('コードを整形する', 'Format code', [], { positional: [pos('パッケージ', 'packages')] }),
       generate: cmd('`//go:generate` のコマンドを実行する', 'Run `//go:generate` commands'),
-      tool: cmd('Go のツールや、go.mod に登録したツールを実行する（`go tool 名前`）', 'Run a Go tool, or a tool listed in go.mod (`go tool name`)', [], { style: 'single-dash' }),
+      tool: cmd('Go のツールや、go.mod に登録したツールを実行する（`go tool 名前`）', 'Run a Go tool, or a tool listed in go.mod (`go tool name`)', [], { parser: 'single-dash' }),
       version: cmd('Go の版を表示する', 'Print the Go version'),
       env: cmd('Go の環境変数を表示する', "Print Go's environment", [], { positional: [pos('変数名（`GOPATH`、`GOOS`…）', 'variable name (`GOPATH`, `GOOS`…)')] }),
     },
@@ -381,14 +381,14 @@ export const system: Record<string, CommandSpec> = {
     ['-Wextra', '追加の警告を有効にする', 'enable extra warnings'], ['-Werror', '警告をエラーにする', 'treat warnings as errors'],
     ['-shared', '共有ライブラリを作る', 'build a shared library'], ['-fPIC', '位置独立コードを作る（共有ライブラリ向け）', 'position-independent code (for shared libraries)'],
     ['-static', '静的にリンクする', 'link statically'], ['-dumpversion', 'コンパイラの版だけを表示する', 'print only the compiler version'], ['-dumpmachine', '対象のアーキテクチャを表示する', 'print the target triple'],
-  ], { positional: [pos('ソースファイル', 'source file')], style: 'single-dash' }),
+  ], { positional: [pos('ソースファイル', 'source file')], parser: 'single-dash' }),
 
   // ---- GitHub ----
   // gh finds its subcommand as cobra does: `gh -R o/r pr list` gives `-R` to `pr`.
   // (cobra's `-h` is added only after the search for the subcommand, so `gh -h pr` takes `pr` as its value, as an
   // option not known there: gh shows its own help.)
   gh: cmd('GitHub CLI', 'GitHub CLI', [['--version', '版を表示する', 'print the version'], ['--help', 'ヘルプを表示する', 'show help', 'persistent']], {
-    cobra: true,
+    parser: 'cobra',
     subcommands: {
       api: cmd('GitHub の API を呼び出す', 'Call the GitHub API', [
         ['--jq|-q', '結果を指定した jq の式で絞る', 'filter the result with the given jq expression', 'arg lang:jq'],
@@ -482,7 +482,7 @@ export const system: Record<string, CommandSpec> = {
   ]),
   sw_vers: cmd('macOS の版を表示する', 'Print the macOS version', [
     ['-productName', '製品名（`macOS`）', 'product name (`macOS`)'], ['-productVersion', '版（`14.5`…）', 'version (`14.5`…)'], ['-buildVersion', 'ビルド番号', 'build number'],
-  ], { style: 'single-dash' }),
+  ], { parser: 'single-dash' }),
   sysctl: cmd('カーネルのパラメータを表示・変更する', 'Show or change kernel parameters', [
     ['-n', '名前を付けず値だけ', 'values only, no names'], ['-w', '値を書き込む（`名前=値`）', 'write a value (`name=value`)'],
     ['-a', 'すべて表示する', 'show all'], ['-p', '設定ファイル（既定は `/etc/sysctl.conf`）から読み込む', 'load from a file (default `/etc/sysctl.conf`)'],
@@ -547,7 +547,7 @@ export const system: Record<string, CommandSpec> = {
     ['-j|-json', 'JSON で出力', 'JSON output'],
     ['-p|-pretty', 'JSON を読みやすく整える', 'pretty-print the JSON'],
     ['-br|-brief', '簡潔な表形式', 'brief table'],
-  ], { style: 'single-dash', longPrefixes: 'first', subcommandPrefixes: 'first', subcommands: IP_OBJECTS }),
+  ], { parser: 'iproute2', subcommandPrefixes: 'first', subcommands: IP_OBJECTS }),
   ss: cmd('ソケット（通信の接続や待ち受け）を表示する', 'Show sockets (connections and listeners)', [
     ['-t|--tcp', 'TCP', 'TCP'], ['-u|--udp', 'UDP', 'UDP'], ['-l|--listening', '待ち受け中のものだけ', 'listening sockets only'],
     ['-n|--numeric', '名前に変換せず数字で表示', 'numeric addresses and ports'], ['-p|--processes', '使っているプロセスも表示', 'show the processes using them'], ['-a|--all', 'すべて', 'all sockets'],
@@ -573,24 +573,24 @@ export const system: Record<string, CommandSpec> = {
     subcommands: {
       rand: cmd('ランダムなバイト列を作る（パスワードや鍵の生成）', 'Generate random bytes (passwords, keys)', [
         ['-base64', 'Base64 で出力', 'Base64 output'], ['-hex', '16進数で出力', 'hex output'], ['-out', '出力するファイル', 'output file', 'arg'],
-      ], { positional: [pos('バイト数', 'number of bytes')], style: 'single-dash' }),
+      ], { positional: [pos('バイト数', 'number of bytes')], parser: 'single-dash' }),
       x509: cmd('証明書を表示・変換する', 'Show or convert certificates', [
         ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-noout', '証明書そのものは出力しない', 'do not print the certificate itself'],
         ['-text', '内容を読める形で表示', 'print the contents as text'], ['-enddate', '有効期限を表示', 'print the expiry date'], ['-subject', 'サブジェクトを表示', 'print the subject'],
         ['-fingerprint', '指紋を表示', 'print the fingerprint'], ['-checkend', '指定した秒数以内に期限切れなら失敗する', 'fail if it expires within the given number of seconds', 'arg'],
-      ], { style: 'single-dash' }),
+      ], { parser: 'single-dash' }),
       req: cmd('証明書署名要求（CSR）や自己署名証明書を作る', 'Create certificate requests (CSR) or self-signed certificates', [
         ['-new', '新しい要求を作る', 'new request'], ['-x509', '要求の代わりに自己署名証明書を作る', 'make a self-signed certificate instead'], ['-nodes|-noenc', '秘密鍵を暗号化しない', 'do not encrypt the private key'],
         ['-newkey', '新しい鍵も作る（`rsa:2048`…）', 'also make a new key (`rsa:2048`…)', 'arg'], ['-keyout', '秘密鍵の出力先', 'where to write the private key', 'arg'],
         ['-out', '出力ファイル', 'output file', 'arg'], ['-days', '有効日数', 'days of validity', 'arg'], ['-subj', 'サブジェクト（`/CN=example.com`）', 'subject (`/CN=example.com`)', 'arg'],
-      ], { style: 'single-dash' }),
+      ], { parser: 'single-dash' }),
       s_client: cmd('TLS でサーバーにつないで証明書などを確かめる', 'Connect to a server over TLS to inspect it', [
         ['-connect', '接続先（`ホスト:ポート`）', 'where to connect (`host:port`)', 'arg'], ['-servername', 'SNI で名乗るホスト名', 'host name to send in SNI', 'arg'], ['-showcerts', '証明書チェーンをすべて表示', 'show the whole chain'],
-      ], { style: 'single-dash' }),
+      ], { parser: 'single-dash' }),
       dgst: cmd('ハッシュ値の計算や署名の検証をする', 'Hash, sign or verify', [
         ['-sha256', 'SHA-256', 'SHA-256'], ['-verify', '指定した公開鍵で署名を検証する', 'verify with the given public key', 'arg'], ['-signature', '署名のファイル', 'signature file', 'arg'], ['-sign', '指定した秘密鍵で署名する', 'sign with the given private key', 'arg'],
-      ], { positional: [files], style: 'single-dash' }),
-      genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], style: 'single-dash' }),
+      ], { positional: [files], parser: 'single-dash' }),
+      genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], parser: 'single-dash' }),
       version: cmd('OpenSSL の版を表示する', 'Print the OpenSSL version'),
     },
   }),
@@ -608,7 +608,7 @@ export const system: Record<string, CommandSpec> = {
   xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
     ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
     ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', '指定したバイト数だけ', 'stop after the given number of bytes', 'arg'], ['-s|-seek', '指定した位置から', 'start at the given offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
-  ], { positional: [files], style: 'single-dash' }),
+  ], { positional: [files], parser: 'single-dash' }),
   od: cmd('ファイルを8進数・16進数などでダンプする', 'Dump files in octal, hex and other formats', [
     ['-A|--address-radix', '位置の表示形式（`n` で表示しない、`x` 16進…）', 'offset format (`n`: none, `x`: hex…)', 'arg'],
     ['-t|--format', '出力形式（`x1`: 1バイトずつ16進、`c`: 文字…）', 'output format (`x1`: hex bytes, `c`: characters…)', 'arg'],
@@ -682,7 +682,7 @@ export const system: Record<string, CommandSpec> = {
     ['-d', '差分を表示（整形が必要なら失敗。CI 向け）', 'show diffs (fail if formatting is needed; for CI)'], ['-s', 'コードを簡略化する', 'simplify code'],
     ['-ci', '`case` の中身もインデントする', 'indent `case` bodies'], ['-bn', '`&&` や `|` を行頭に置く', 'put `&&` and `|` at line starts'],
     ['-ln|--language-dialect', 'シェルの種類（`bash`、`posix`、`mksh`）', 'dialect (`bash`, `posix`, `mksh`)', 'arg'],
-  ], { positional: [files], style: 'single-dash' }),
+  ], { positional: [files], parser: 'single-dash' }),
   aria2c: cmd('高速なダウンローダー（複数接続）', 'Fast downloader (several connections)', [
     ['-x|--max-connection-per-server', 'サーバーあたりの最大接続数', 'connections per server', 'arg'], ['-s|--split', '分割数', 'number of pieces', 'arg'],
     ['-o|--out', '保存するファイル名', 'output file name', 'arg'], ['-d|--dir', '保存するディレクトリ', 'output directory', 'arg'], ['-c|--continue', '途中から再開する', 'resume'], ['-q|--quiet', '表示しない', 'no output'],
