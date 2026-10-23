@@ -718,6 +718,22 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - run: echo a\n`), ['bash']);
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n${job}    steps:\n      - shell: sh\n        run: echo a\n`), ['sh']);
     assert.deepStrictEqual(shells(`${wf}jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - shell: bash\n        run: echo a\n`), ['bash']);
+    // Another document does not lend its defaults (after or before), and a marker ends the step search.
+    const one = 'jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n';
+    assert.deepStrictEqual(shells(`${one}---\n${wf}`), ['bash']);
+    assert.deepStrictEqual(shells(`${wf}---\n${one}`), ['bash']);
+    assert.deepStrictEqual(shells(`${one}...\n---\n${wf}`), ['bash']);
+    // Any key order inside run:, and comment lines at column 0 between the keys.
+    const wd = 'defaults:\n  run:\n    working-directory: x\n    shell: sh\n';
+    assert.deepStrictEqual(shells(`${wd}${one}`), ['sh']);
+    assert.deepStrictEqual(shells(`${one}${wd}`), ['sh']);
+    assert.deepStrictEqual(shells(`defaults:\n  run:\n    shell: sh\n# c\n\n${one}`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - shell: sh\n# c\n        run: echo a\n`), ['sh']);
+    assert.deepStrictEqual(shells(`${head}      - run: echo a\n# c\n        shell: sh\n`), ['sh']);
+    // A shell: that is not under defaults: run: counts for nothing.
+    assert.deepStrictEqual(shells(`shell: sh\n${one}`), ['bash']);
+    assert.deepStrictEqual(shells(`run:\n  shell: sh\n${one}`), ['bash']);
+    assert.deepStrictEqual(shells(`other:\n  run:\n    shell: sh\n${one}`), ['bash']);
     // Defaults written after steps: (job) or after jobs: (workflow), and not leaking to another job.
     const steps = '    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n';
     assert.deepStrictEqual(shells(`jobs:\n  a:\n${steps}${job}`), ['bash']);

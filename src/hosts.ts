@@ -688,29 +688,43 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
   const startsItem = (j: number) => /^\s*-\s/.test(b.lines[j]) && indentOf(b.lines[j].replace(/-\s+/, (d) => ' '.repeat(d.length))) === level;
   // The column of a line's key, after any `- `.
   const keyColumn = (j: number) => indentOf(b.lines[j].replace(/^(\s*)-\s+/, (d) => ' '.repeat(d.length)));
+  // Blank and comment-only lines say nothing about indentation; `---` and `...` end a YAML document.
+  const idle = (j: number) => !b.lines[j].trim() || b.lines[j].trim().startsWith('#');
+  const marker = (j: number) => /^(---|\.\.\.)(\s|$)/.test(b.lines[j]);
   if (!startsItem(at)) {
     // `shell:` may stand above `run:` in the same step, down to the line that starts the step.
-    for (let j = at - 1; j >= 0 && (keyColumn(j) >= level || !b.lines[j].trim()); j--) {
+    for (let j = at - 1; j >= 0 && (idle(j) || (keyColumn(j) >= level && !marker(j))); j--) {
+      if (idle(j)) continue;
       const m = /^\s*(?:-\s+)?shell:\s*(\S+)/.exec(b.lines[j]);
       if (m && keyColumn(j) === level) return shellName(m[1]);
       if (keyColumn(j) === level && startsItem(j)) break;
     }
   }
-  for (let j = at + 1; j < b.lines.length && (indentOf(b.lines[j]) >= level || !b.lines[j].trim()); j++) {
+  for (let j = at + 1; j < b.lines.length && (idle(j) || (indentOf(b.lines[j]) >= level && !marker(j))); j++) {
     const m = /^\s*shell:\s*(\S+)/.exec(b.lines[j]);
     if (m && indentOf(b.lines[j]) === level) return shellName(m[1]);
   }
   if (!githubLike) return undefined;
   // `defaults: run: shell:` for the workflow, or for the job that holds this step.
-  // Keys have no order: the defaults may stand above or below the step. The deepest (the job's) wins.
+  // Keys have no order: the defaults may stand above or below the step, and `shell:` anywhere in `run:`. The deepest (the job's) wins.
+  const parentOf = (j: number, col: number) => {
+    for (let i = j - 1; i >= 0; i--) if (!idle(i) && (indentOf(b.lines[i]) < col || marker(i))) return i;
+    return -1;
+  };
   let found: { k: number; shell: Shell | null } | undefined;
-  for (let d = 2; d < b.lines.length; d++) {
+  for (let d = 0; d < b.lines.length; d++) {
     const m = /^(\s*)shell:\s*(\S+)/.exec(b.lines[d]);
-    if (!m || !/^\s*run\s*:\s*$/.test(b.lines[d - 1]) || !/^\s*defaults\s*:\s*$/.test(b.lines[d - 2])) continue;
-    const k = indentOf(b.lines[d - 2]);
-    // A job's defaults apply only within the job.
-    const [from, to] = d < at ? [d + 1, at] : [at + 1, d - 2];
-    if (b.lines.slice(from, to).some((l) => l.trim() && indentOf(l) < k)) continue;
+    if (!m) continue;
+    const r = parentOf(d, m[1].length);
+    if (r < 0 || !/^\s*run\s*:\s*$/.test(b.lines[r])) continue;
+    const dl = parentOf(r, indentOf(b.lines[r]));
+    if (dl < 0 || !/^\s*defaults\s*:\s*$/.test(b.lines[dl])) continue;
+    const k = indentOf(b.lines[dl]);
+    // A job's defaults apply only within the job, and a document ends them.
+    const [from, to] = d < at ? [d + 1, at] : [at + 1, dl];
+    let apart = false;
+    for (let j = from; j < to; j++) if (marker(j) || (!idle(j) && indentOf(b.lines[j]) < k)) apart = true;
+    if (apart) continue;
     if (!found || k > found.k) found = { k, shell: shellName(m[2]) };
   }
   if (found) return found.shell;
