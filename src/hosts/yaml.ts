@@ -6,29 +6,53 @@ import { LineOut, Builder, spaced, indentOf } from './builder';
 /** Keys whose value is a shell script in common CI systems. */
 const YAML_KEYS = /^(run|script|before_script|after_script|bash|sh|cmds?|command)$/;
 
-/** What the YAML of the CI systems has in common: the label of a step. Which system a step belongs to is `stepCi`. */
-const CI_SYSTEMS: Record<HostCi, { label: (key: string) => [string, string] }> = {
-  azure: { label: (key) => [`Azure Pipelines の \`${key}:\` ステップ`, `Azure Pipelines \`${key}:\` step`] },
-  circleci: { label: () => ['CircleCI の `run` ステップ', 'CircleCI `run` step'] },
-  github: { label: () => ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step'] },
+/** What one CI system's YAML says about its steps. A file can match more than one system; `stepCi` picks per step. */
+interface CiSystem {
+  /** Whether the file looks like this system's. */
+  detect: (lines: string[]) => boolean;
+  /** The label of a step (ja, en). */
+  label: (key: string) => [string, string];
+  /** A step this system does not run as a shell script (`parent` is the line the key sits under). */
+  skips?: (lines: string[], key: string, parent: () => string | undefined) => boolean;
+  /** Whether a `command:` key holds a shell script (otherwise it is no step). */
+  commandIsShell: boolean;
+}
+
+const CI_SYSTEMS: Record<HostCi, CiSystem> = {
+  azure: {
+    detect: (lines) => lines.some((l) => /^\s*(pool|trigger)\s*:|^\s*-\s+task\s*:|vmImage\s*:/.test(l)),
+    label: (key) => [`Azure Pipelines の \`${key}:\` ステップ`, `Azure Pipelines \`${key}:\` step`],
+    // Azure Pipelines runs `script:` with cmd.exe on Windows agents.
+    skips: (lines, key) => key === 'script' && lines.some((l) => /vmImage\s*:\s*['"]?windows/i.test(l)),
+    commandIsShell: false,
+  },
+  circleci: {
+    detect: (lines) => !lines.some((l) => /^\s*runs-on\s*:/.test(l)) && lines.some((l) => /^version\s*:\s*['"]?2(\.\d)?['"]?\s*$/.test(l)),
+    label: () => ['CircleCI の `run` ステップ', 'CircleCI `run` step'],
+    commandIsShell: false,
+  },
+  github: {
+    detect: (lines) => lines.some((l) => /^\s*(runs-on|steps|jobs)\s*:/.test(l)),
+    label: () => ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step'],
+    // An action's input (`with: script:` of actions/github-script is JavaScript), not a shell script.
+    skips: (_lines, key, parent) => key !== 'run' && /^\s*with\s*:\s*$/.test(parent() ?? ''),
+    commandIsShell: true,
+  },
 };
 
-/** The CI system a step with this key belongs to, from what the file shows (`githubLike`, `circleci`) and Azure's variables. */
-function stepCi(b: Builder, at: number, indent: number, key: string, file: { githubLike: boolean; circleci: boolean }): HostCi | undefined {
-  if (b.azure && (key === 'script' || key === 'bash')) return 'azure';
+/** The CI system a step with this key belongs to, among the systems the file matches (`found`). */
+function stepCi(b: Builder, at: number, indent: number, key: string, found: readonly HostCi[]): HostCi | undefined {
+  if (found.includes('azure') && (key === 'script' || key === 'bash')) return 'azure';
   // CircleCI's `run:` with `command:` under it, or `run:` with the command itself.
   if (key === 'command' && /^\s*(-\s+)?run\s*:\s*$/.test(parentLine(b, at, indent) ?? '')) return 'circleci';
-  if (file.circleci && key === 'run') return 'circleci';
-  if (file.githubLike && key === 'run') return 'github';
+  if (found.includes('circleci') && key === 'run') return 'circleci';
+  if (found.includes('github') && key === 'run') return 'github';
   return undefined;
 }
 
 export function yaml(b: Builder): void {
-  const githubLike = b.lines.some((l) => /^\s*(runs-on|steps|jobs)\s*:/.test(l));
-  const circleci = !b.lines.some((l) => /^\s*runs-on\s*:/.test(l)) && b.lines.some((l) => /^version\s*:\s*['"]?2(\.\d)?['"]?\s*$/.test(l));
-  if (b.lines.some((l) => /^\s*(pool|trigger)\s*:|^\s*-\s+task\s*:|vmImage\s*:/.test(l))) b.azure = { vars: azureVariables(b.lines) };
-  // Azure Pipelines runs `script:` with cmd.exe on Windows agents.
-  const azureWindows = !!b.azure && b.lines.some((l) => /vmImage\s*:\s*['"]?windows/i.test(l));
+  const found = (Object.keys(CI_SYSTEMS) as HostCi[]).filter((id) => CI_SYSTEMS[id].detect(b.lines));
+  if (found.includes('azure')) b.azure = { vars: azureVariables(b.lines) };
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = /^(\s*(?:-\s+)?)([\w-]+)\s*:(?:\s+(.*))?$/.exec(line);
@@ -38,18 +62,16 @@ export function yaml(b: Builder): void {
     const rest = (m[3] ?? '').replace(/\s+#.*$/, '');
     // `defaults: run: shell:` holds no script.
     if (key === 'run' && !rest && /^\s*defaults\s*:/.test(b.lines[i - 1] ?? '')) continue;
-    // An action's input (`with: script:` of actions/github-script is JavaScript), not a shell script.
-    if (githubLike && key !== 'run' && /^\s*with\s*:\s*$/.test(parentLine(b, i, indent) ?? '')) continue;
+    if (found.some((id) => CI_SYSTEMS[id].skips?.(b.lines, key, () => parentLine(b, i, indent)))) continue;
     // CircleCI's `run:` with `name:` and `command:` under it: the command is found as its own key.
     if (key === 'run' && !rest) {
       const next = b.lines.slice(i + 1).find((l) => l.trim());
       if (next && indentOf(next) > indent && !/^\s*-\s/.test(next)) continue;
     }
-    if (key === 'script' && azureWindows) continue;
-    const shell = yamlShell(b, i, indent, key, githubLike);
+    const shell = yamlShell(b, i, indent, key, found);
     if (shell === null) continue;
     const first = b.regions.length;
-    const ci = stepCi(b, i, indent, key, { githubLike, circleci });
+    const ci = stepCi(b, i, indent, key, found);
     const label: [string, string] = ci ? CI_SYSTEMS[ci].label(key) : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
     if (/^[|>][-+]?\d*$/.test(rest)) {
@@ -89,8 +111,8 @@ function azureVariables(lines: string[]): Set<string> {
 }
 
 /** The shell of a step: `shell:` next to `run:` in GitHub Actions (bash by default), null if not a shell. */
-function yamlShell(b: Builder, at: number, indent: number, key: string, githubLike: boolean): Shell | undefined | null {
-  if (key === 'command' && !githubLike) return null;
+function yamlShell(b: Builder, at: number, indent: number, key: string, systems: readonly HostCi[]): Shell | undefined | null {
+  if (key === 'command' && !systems.some((id) => CI_SYSTEMS[id].commandIsShell)) return null;
   if (key === 'bash') return 'bash';
   if (key === 'sh') return 'sh';
   if (key !== 'run') return undefined;
@@ -116,7 +138,7 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
     const m = /^\s*shell:\s*(\S+)/.exec(b.lines[j]);
     if (m && indentOf(b.lines[j]) === level) return shellName(m[1]);
   }
-  if (!githubLike) return undefined;
+  if (!systems.includes('github')) return undefined;
   // `defaults: run: shell:` for the workflow, or for the job that holds this step.
   // Keys have no order: the defaults may stand above or below the step, and `shell:` anywhere in `run:`. The deepest (the job's) wins.
   const parentOf = (j: number, col: number) => {
