@@ -489,7 +489,12 @@ export class Analyzer {
   /** Why code runs in a subshell, from the link that starts it (src/semantics/env.ts): `( )`, `$( )`, `&`, a pipeline stage… */
   private subshellWhy(link: EnvLink, sure: boolean): string {
     if (link.kind === 'call') {
-      if (!sure) return this.s('関数の呼び出し元の一部', 'some of the places its function is called from');
+      if (!sure) {
+        // (Every call it sees is in a subshell, but it may be called where it does not see: src/semantics/trust.ts, `closed`.)
+        const seen = link.sites.every((x) => processOf(x.env).kind === 'subshell' && processOf(x.env).sure);
+        return seen ? this.s('関数の呼び出し元。スクリプトに見えない所からも呼ばれうる', 'where its function is called; what the script does not show may call it too')
+          : this.s('関数の呼び出し元の一部', 'some of the places its function is called from');
+      }
       // (Every call is in a subshell: named when they all give the same reason.)
       const whys = new Set(link.sites.map((x) => processOf(x.env)).map((p) => this.subshellWhy(p.link!, p.sure)));
       return whys.size === 1 ? this.s(`関数の呼び出し元: ${[...whys][0]}`, `where its function is called: ${[...whys][0]}`) : this.s('関数の呼び出し元', 'where its function is called');

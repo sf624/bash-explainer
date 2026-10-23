@@ -19,7 +19,9 @@
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
-//   trap or an alias (which may run anywhere), and nothing is blind.
+//   trap (which runs at any time) or an alias (the scan reads it where it is defined, and does not expand aliases
+//   inside other strings, so it cannot tell which uses the walk sees: `trap g EXIT` may call `f` through `g`), and
+//   nothing is blind.
 //
 // The walk runs the static strings of `eval` and of traps (4.13), and this scan reads the same trees (`StringTrees`:
 // the model's), as foreign text (a trap's action runs at any time; what a string assigns is not trusted). So the
