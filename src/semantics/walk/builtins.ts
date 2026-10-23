@@ -8,10 +8,9 @@ import { argWord, prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { descendants, field, type SyntaxNode } from '../../syntax/tree';
-import { builtinParse, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
+import { aliasOf, builtinParse, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { optionRoles, readDeclarationWords, type Declaration } from '../vars';
-import { aliasOf } from './aliases';
 import { ExpansionError, NAME, type Operand } from './shared';
 import type { Walker } from './walker';
 
@@ -56,14 +55,13 @@ export class WalkBuiltins {
         const words = name === 'eval' ? args.slice(at.word) : [args[at.word]];
         const script = this.w.script(words, name === 'eval' ? 'current' : 'later', n, parse, args);
         if ('why' in script) {
-          this.w.turnOpaque();
-          if (!this.w.dead && !this.w.blind) this.w.walkAgain(`\`${name}\` of a string the walk does not read`);
-          return st;
+          if (!this.w.mode.dead && !this.w.blind) this.w.walkAgain(`\`${name}\` of a string the walk does not read`);
+          return this.w.opaque(st);
         }
         if (name === 'eval') return this.w.evalScript(script, n, st);
         const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]) ?? '');
         const exit = (x: string) => /^(SIG)?EXIT$|^0$/i.test(x);
-        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.w.dead > 0 });
+        if (!this.w.silent) this.w.traps.push({ script, host: this.w.aliasHost ?? n, st, since: this.w.changeCount, exit: signals.some(exit), exitOnly: signals.every(exit), dead: this.w.mode.dead > 0 });
         // (What it changes, it may change after any later statement; an EXIT trap runs at the end only.)
         if (!signals.every(exit)) {
           const keys = new Set<string>();
@@ -165,7 +163,7 @@ export class WalkBuiltins {
     if (spec.shellEffect?.runsUnread && !hosted) {
       // (The file is not read: what it defines is not known here.)
       if (!this.w.silent) this.w.sources.push(this.w.aliasHost ?? n);
-      this.w.turnOpaque();
+      st = this.w.opaque(st);
     }
     return st;
   }

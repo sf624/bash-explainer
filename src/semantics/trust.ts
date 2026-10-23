@@ -19,24 +19,23 @@
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
 //   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
 //   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
-//   trap (which runs at any time) or an alias (the scan reads it where it is defined, and does not expand aliases
-//   inside other strings, so it cannot tell which uses the walk sees: `trap g EXIT` may call `f` through `g`), and
-//   nothing is blind.
+//   trap (which runs at any time) or an alias (bash also expands an alias after one whose text ends with a blank,
+//   which the walk does not follow, so the scan cannot tell which uses the walk sees: `trap g EXIT` may call `f`
+//   through `g`), and nothing is blind.
 //
-// The walk runs the static strings of `eval` and of traps (4.13), and this scan reads the same trees (`StringTrees`:
-// the model's), as foreign text (a trap's action runs at any time; what a string assigns is not trusted). So the
-// facts of statements (`arithNames`, `mayFail`, `associative`) are of the script's statements and of its strings'
-// alike (`Trust.reads`); only the tree of an alias's text with the rest of its command, which the walk parses as it
-// expands it, has a scan of its own (`treeFacts`). A string the walk does not read (an expansion in it, a glob, too
-// deep) makes it walk again with nothing trusted (`Walker.found`), as does a trap's action that may leave what a
-// signal interrupts.
+// The walk runs the static strings of `eval` and of traps (4.13), and the aliases it expands (an alias's text with the
+// rest of the command), and this scan reads the same trees (`StringTrees`: the model's), as foreign text (a trap's
+// action runs at any time; what a string assigns is not trusted; the rest of a command is read where the command is).
+// So the facts of statements (`arithNames`, `mayFail`, `associative`) are of every statement the walk runs. A string
+// the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
+// (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
 import type { CommandSpec } from '../argv/spec';
-import { argWord, prefixOf } from '../argv/words';
+import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue, substitutionNames } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
-import { builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
+import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
@@ -60,8 +59,6 @@ export interface Trust {
    * a plain number (`a[i]=x`, `${s:i}`). An error there discards the rest of the line.
    */
   mayFail(n: SyntaxNode): boolean;
-  /** Whether the facts of the statements of the tree `root` are here: the script's, and those of the strings it runs (`StringTrees`). */
-  reads(root: SyntaxNode): boolean;
 }
 
 const NAME = /^[A-Za-z_]\w*$/;
@@ -89,9 +86,14 @@ interface Write {
 /**
  * Where a node is: the function whose body holds it, whether it is in the text of an `eval`, a trap or an alias
  * (`foreign`), and whether the walk runs it where it stands (`now`: the script, or an `eval`'s string there, whose
- * calls are calls the walk sees; not a trap's action or an alias's text).
+ * calls are calls the walk sees; not a trap's action or an alias's text). In the tree of an alias expanded at a
+ * command (`StringTrees.expansion`), what starts at `rest.at` is the rest of the command, where the command is.
  */
-interface Where { fn: string | undefined; foreign: boolean; now: boolean }
+interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?: { at: number; where: Where } }
+
+/** How many trees of aliases expanded at commands the scan reads (each alias in an alias's text doubles them). */
+const ALIAS_EXPANSIONS = 1000;
+const NO_NAMES: ReadonlySet<string> = new Set();
 
 const identifiers = (text: string): string[] => text.match(IDENTIFIERS) ?? [];
 
@@ -119,13 +121,14 @@ function indirect(n: SyntaxNode): boolean {
 const joined = (values: Value[]): Value =>
   (values.every((v): v is Extract<Value, object> => typeof v === 'object') ? { names: values.flatMap((v) => v.names), text: '' } : 'unknown');
 
+/** An alias an `alias` command defines: its name and text, the word that gives them, and where the command is. */
+interface AliasDef { name: string; value: string; word: SyntaxNode; where: Where }
+
 /** Thrown when the scan finds that nothing is trusted (see `Scan.blindFor`). */
 class StopScan {}
 
 class Scan {
   readonly writes = new Map<string, Write[]>();
-  /** The trees read: the script's, and those of the strings it runs (see `foreign`); the facts of their statements are here. */
-  readonly roots = new Set<SyntaxNode>();
   /** Names read by arithmetic, and the statements that read them where the walk does not run the arithmetic. */
   readonly arith = new Set<string>();
   readonly pending = new Map<SyntaxNode, Set<string>>();
@@ -155,9 +158,13 @@ class Scan {
   blind: string | undefined;
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
+  /** The aliases the `alias` commands define (a name and its text), and the commands that may run one (see `aliases`). */
+  private readonly aliasDefs: AliasDef[] = [];
+  private readonly aliasCommands: { c: SyntaxNode; name: string; where: Where }[] = [];
+  /** The aliases each tree of an alias expanded at a command comes from (bash does not expand an alias in itself). */
+  private readonly expanding = new Map<SyntaxNode, ReadonlySet<string>>();
 
-  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly stop: boolean, private readonly host: HostCommands) {
-    this.roots.add(root);
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly host: HostCommands) {
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
@@ -166,6 +173,7 @@ class Scan {
     defs(root);
     try {
       this.visit(root, { fn: undefined, foreign: false, now: true });
+      this.aliases();
       this.finish();
     } catch (e) {
       /* c8 ignore next -- only `StopScan` is thrown on purpose */
@@ -173,18 +181,10 @@ class Scan {
     }
   }
 
-  /** Whether the scan stopped at a reason to trust nothing. */
-  get stopped(): boolean {
-    return this.stop && this.blind !== undefined;
-  }
-
-  /**
-   * Nothing is trusted, for `why`: the scan stops there (`StopScan`), since nothing it finds after would count, unless
-   * it is read for the facts of its statements (`stop` off).
-   */
-  private blindFor(why: string): void {
-    this.blind ??= why;
-    if (this.stop) throw new StopScan();
+  /** Nothing is trusted, for `why`: the scan stops there (`StopScan`), since nothing it finds after would count. */
+  private blindFor(why: string): never {
+    this.blind = why;
+    throw new StopScan();
   }
 
   private write(name: string, w: Where, plain: boolean, value: Value, nameref = false): void {
@@ -278,6 +278,7 @@ class Scan {
   }
 
   private visit(n: SyntaxNode, w: Where): void {
+    if (w.rest && n.startIndex >= w.rest.at) w = w.rest.where;
     switch (n.type) {
       case 'function_definition': {
         this.changed(w);
@@ -506,6 +507,8 @@ class Scan {
   }
 
   private command(c: SyntaxNode, w: Where): void {
+    const alias = aliasName(c);
+    if (alias !== undefined) this.aliasCommands.push({ c, name: alias, where: w });
     const { name, args, lookup, direct } = this.nameOf(c);
     if (name === undefined) {
       // `$debug`, `"$run"`: a variable the script sets to command names (see `finish`).
@@ -534,7 +537,6 @@ class Scan {
     const unread = spec.shellEffect?.runsUnread;
     if (unread) {
       this.blindFor(unread === 'file' ? 'a file is sourced' : 'a command line the model does not read is run');
-      return;
     }
     const parse = builtinParse(name, args, spec);
     // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
@@ -563,9 +565,12 @@ class Scan {
       }
       case 'alias':
         for (const a of args) {
+          // (Read where commands may run it: see `aliases`. One the walk does not take, by its name: its text alone.)
           const v = staticWordValue(a);
+          const def = v === undefined ? undefined : aliasOf(a);
           const m = v === undefined ? null : /^[^=]+=([\s\S]*)$/.exec(v);
-          if (m) this.foreign(this.strings.alias(a, m[1]), 'an alias of text not known', w);
+          if (def) this.aliasDefs.push({ ...def, word: a, where: w });
+          else if (m) this.foreign(this.strings.alias(a, m[1]), 'an alias of text not known', w);
           else if (v === undefined) this.blindFor('an alias of text not known');
         }
         return;
@@ -604,12 +609,48 @@ class Scan {
    * elsewhere (`now`: where it stands, an `eval`'s). None: its text is not known, for `why`.
    */
   private foreign(root: SyntaxNode | undefined, why: string, w: Where, now = false): void {
-    if (!root) {
-      this.blindFor(why);
-      return;
-    }
-    this.roots.add(root);
+    if (!root) this.blindFor(why);
     this.visit(root, { fn: w.fn, foreign: true, now: now && w.now });
+  }
+
+  /**
+   * The aliases, read where the walk may run them: at each command named like an alias the script defines, the tree of
+   * each text the alias may have there with the rest of the command (the walk's: `StringTrees.expansion`), with the
+   * commands in it in turn, but not in an alias it comes from. Its text is foreign (bash also expands an alias after
+   * one whose text ends with a blank, which the walk does not follow), and the rest of the command is read where the
+   * command is, now as part of that tree: the facts of its statements are the walk's. An alias no command names is
+   * read alone, as foreign text.
+   */
+  private aliases(): void {
+    const read = new Set<AliasDef>();
+    const done = new Map<SyntaxNode, Set<string>>();
+    let count = 0;
+    for (let more = true; more;) {
+      more = false;
+      // (The trees read add commands and definitions to both lists.)
+      for (let i = 0; i < this.aliasCommands.length; i++) {
+        const { c, name, where } = this.aliasCommands[i];
+        let root = c;
+        while (root.parent) root = root.parent;
+        const from = this.expanding.get(root) ?? NO_NAMES;
+        if (from.has(name)) continue;
+        const texts = done.get(c) ?? new Set<string>();
+        done.set(c, texts);
+        for (const d of this.aliasDefs) {
+          if (d.name !== name || texts.has(d.value)) continue;
+          if (++count > ALIAS_EXPANSIONS) this.blindFor('too many aliases expanded in aliases');
+          texts.add(d.value);
+          read.add(d);
+          more = true;
+          const tree = this.strings.expansion(c, d.value);
+          this.expanding.set(tree, new Set([...from, name]));
+          // (A command in an alias's text is foreign: so is the rest of it, in the tree of an alias expanded there.)
+          const { rest: _, ...outer } = where;
+          this.visit(tree, { fn: where.fn, foreign: true, now: false, rest: { at: d.value.length, where: outer } });
+        }
+      }
+    }
+    for (const d of this.aliasDefs) if (!read.has(d)) this.foreign(this.strings.alias(d.word, d.value), 'an alias of text not known', d.where);
   }
 
   /** What is left once the whole script is read: subscripts, integers, the values read as arithmetic, callbacks. */
@@ -639,7 +680,6 @@ class Scan {
       const writes = this.writes.get(name);
       if (!writes) {
         this.blindFor(`arithmetic reads \`${name}\`, which the script never sets`);
-        continue;
       }
       if (this.refUnknown.has(name)) this.blindFor(`arithmetic reads \`${name}\`, a nameref whose target is not known`);
       for (const w of writes) {
@@ -692,13 +732,15 @@ export const NO_HOST: HostCommands = {};
 /**
  * The trees of the strings the scan reads as part of the script: those of the model (`Scripts` in
  * src/semantics/state.ts), whose walk runs them. So each string is parsed once, and the facts of its statements are
- * the scan's (`Trust.reads`).
+ * the scan's.
  */
 export interface StringTrees {
   /** The root of the string that `words` make (`eval a b`, a trap's action); undefined when its text is not known. */
   script(words: readonly SyntaxNode[]): SyntaxNode | undefined;
-  /** The root of `text`, the value the word `word` of `alias` gives (the walk reads it with the rest of each command it starts: a tree of its own). */
+  /** The root of `text`, the value the word `word` of `alias` gives, read alone (for an alias no command names). */
   alias(word: SyntaxNode, text: string): SyntaxNode;
+  /** The root of the alias text `text` with the rest of the simple command `command`: the tree the walk runs where it expands the alias there. */
+  expansion(command: SyntaxNode, text: string): SyntaxNode;
 }
 
 /**
@@ -707,35 +749,15 @@ export interface StringTrees {
  * the file's host defines (a bats file: `run`, `load`…), read by their specs.
  */
 export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST): Trust {
-  return readTrust(new Scan(root, strings, true, host));
-}
-
-/** The facts of statements read, per host and tree (`treeFacts`). */
-const facts = new WeakMap<HostCommands, WeakMap<SyntaxNode, Trust>>();
-
-/**
- * The facts of the statements of a tree the script's scan did not read (`Trust.reads`): an alias's text with the rest
- * of the command it starts, which the walk parses as it expands it. Read to the end, also where it finds a reason to
- * trust nothing; cached per host and tree.
- */
-export function treeFacts(root: SyntaxNode, strings: StringTrees, host = NO_HOST): Trust {
-  let cache = facts.get(host);
-  if (!cache) facts.set(host, (cache = new WeakMap()));
-  let trust = cache.get(root);
-  if (!trust) cache.set(root, (trust = readTrust(new Scan(root, strings, false, host))));
-  return trust;
-}
-
-/** The trust a scan gives. */
-function readTrust(scan: Scan): Trust {
-  if (scan.stopped) return { ...BLIND, blind: scan.blind! };
+  const scan = new Scan(root, strings, host);
+  if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
-  const trust: Trust = {
-    blind: scan.blind,
-    variable: (name) => !scan.blind && NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
+  return {
+    blind: undefined,
+    variable: (name) => NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
       && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain),
-    closed: (name) => !scan.blind && !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
+    closed: (name) => !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
     arithNames: (n) => {
       const names = scan.pending.get(n);
       return names && [...names];
@@ -745,13 +767,11 @@ function readTrust(scan: Scan): Trust {
       return names && [...names];
     },
     mayFail: (n) => scan.fails.has(n),
-    reads: (root) => scan.roots.has(root),
   };
-  return trust;
 }
 
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
-export const BLIND: Trust = { blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, associative: () => undefined, mayFail: () => false, reads: () => false };
+export const BLIND: Trust = { blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, associative: () => undefined, mayFail: () => false };
 
 /**
  * What another shell's model trusts (`bash -c S`): its own script's trust, and no more than the outer model's, whose

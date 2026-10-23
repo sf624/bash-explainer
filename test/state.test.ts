@@ -288,6 +288,16 @@ describe('shell state: function bodies run at their calls', () => {
     const model = shellState(parser.parse('g() { :; }; f() { :; }; f; export -fn g; f'));
     assert.deepStrictEqual([model.end.functions.get('g')?.exported, model.end.functions.get('g')?.readonly], ['off', 'off']);
   });
+  it('a walk reused makes its changes again: a trap that calls the function may change what it sets after the `trap`', () => {
+    // (The trap's action calls `f` from the state the first call had: it reuses that walk. Before, it collected nothing,
+    // and `x` was 1 after the `trap`, where bash has 2 once the signal came.)
+    const src = 'f() { x=2; }; x=1; f; x=1; trap f USR1; kill -USR1 $$; echo "$x"';
+    assert.strictEqual(spawnSync('bash', ['-c', src], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 }).stdout, '2\n');
+    assert.deepStrictEqual([variable(end(src), 'x')?.set, variable(end(src), 'x')?.value], ['unknown', undefined]);
+    // (A walk is reused in the same modes only: here in dead code, where it records no decision, then where it runs.)
+    const tree = parser.parse('x=1; f() { [ "$x" = 1 ] && :; }; if false; then f; fi; f');
+    assert.strictEqual(shellState(tree).condition(descendants(tree.root, ['list']).find((l) => l.text.startsWith('['))!)?.outcome, 'true');
+  });
 
   it('a body has the state of its call: functions defined and options set after the definition count', () => {
     const src = 'main() { setup; ls; }\nsetup() { shopt -s nullglob; }\nmain';
@@ -502,6 +512,23 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after('trap - USR1; trap \'\' INT; (( b = foo + 1 ))', 'b'), ['set=1']);
     // A value read before is not taken again for one that may have changed.
     assert.deepStrictEqual(after('x=\'foo + 1\'; (( a = x )); source ./c.sh; (( b = x ))', 'a', 'b'), ['set=1', 'unknown']);
+  });
+  it('says so on the paths that ran what the walk does not read, and after they join', () => {
+    // (bash: c.sh sets foo; the branch that does not source it reads foo unset; after the `if`, either may have run.)
+    const src = 'if [ "$1" ]; then source ./c.sh; else (( a = foo + 1 )); : "$a"; fi; (( b = foo + 1 )); echo "$a $b"';
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opaque-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'c.sh'), 'foo=3\n');
+      fs.writeFileSync(path.join(dir, 's.sh'), src);
+      const bash = (arg: string): string => spawnSync('bash', ['s.sh', arg], { cwd: dir, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 }).stdout;
+      assert.deepStrictEqual([bash(''), bash('x')], ['1 1\n', ' 4\n']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    assert.strictEqual(variable(before(src, ': "$a"'), 'a')?.value, '1');
+    assert.deepStrictEqual(after(src, 'b'), ['unknown']);
+    // (A loop walked again in another loop, whose pass sources a file: the path is so from its start.)
+    assert.deepStrictEqual(after('for i in 1 2; do for j in 1 2; do (( b = foo + 1 )); . ./c.sh; done; done', 'b'), ['unknown']);
   });
   it('reads ++ and -- as bash does', () => {
     // After a name, `x++`; before one, `++x`; elsewhere, a sign (bash: y=8 z=8 w=8 v=4, 4 and x=3).

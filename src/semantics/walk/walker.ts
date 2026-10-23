@@ -15,7 +15,7 @@ import {
   POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withoutErrexitWhy, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
-import { type HostCommands, NO_HOST, treeFacts, type Trust } from '../trust';
+import { type HostCommands, NO_HOST, type Trust } from '../trust';
 import { alwaysNumeric, changedByBash, readDeclaration } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
@@ -29,6 +29,8 @@ const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']
 const SIMPLE = ['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments'];
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
+/** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
+export const OPAQUE = 'opaque';
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
 const ERREXIT_STOPS = new Set(['command', 'test_command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
 
@@ -121,7 +123,7 @@ export class Walker {
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
   /** The walks of each function body: the state it was called with, and the state after it. */
-  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[] }[]>();
+  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[]; changed: ReadonlySet<string> }[]>();
   /** What the walks of each function body changed. */
   private readonly changes = new Map<SyntaxNode, Set<string>>();
   /** The state each body being walked started with, and the one to walk it again from (see `recurse`). */
@@ -142,8 +144,13 @@ export class Walker {
   expand: ShellState = EMPTY;
 
   readonly bash: boolean;
-  /** How deep the walk is in code that does not run here (a branch whose condition is decided): see `deadRun`. */
-  dead = 0;
+  /**
+   * The modes of the walk, each as how deep it is in it: `dead`, in code that does not run here (a branch whose
+   * condition is decided: see `deadRun`), where it records no decision; `quiet`, where `set -e` does not stop the shell
+   * (a condition, the left side of `&&`, `!`). A walk of a function body made in some modes is reused only in the same
+   * (`reuseKey`).
+   */
+  readonly mode = { dead: 0, quiet: 0 };
   /** The nodes run on some walk that is not in dead code. */
   readonly live = new Set<SyntaxNode>();
 
@@ -156,8 +163,6 @@ export class Walker {
   assumed = false;
   /** Where jumps go (see `Target`). */
   private readonly targets: Target[] = [];
-  /** How deep the walk is in a place where `set -e` does not stop the shell (a condition, the left side of `&&`, `!`). */
-  private quiet = 0;
   /** Nothing is trusted (src/semantics/trust.ts): no condition is decided, and every jump may be made or not. */
   readonly blind: boolean;
   /**
@@ -201,7 +206,7 @@ export class Walker {
 
   record(n: SyntaxNode, st: ShellState): void {
     if (this.silent) return;
-    if (!this.dead) this.live.add(n);
+    if (!this.mode.dead) this.live.add(n);
     const states = this.runStates.get(n);
     if (!states) this.runStates.set(n, [st]);
     else if (!states.includes(st)) states.push(st);
@@ -283,7 +288,7 @@ export class Walker {
     const bashEnv = st.variables.get('BASH_ENV');
     if (this.bash && bashEnv && bashEnv.set !== 'off' && bashEnv.value !== '') startup = true;
     if (startup) {
-      this.turnOpaque();
+      st = this.opaque(st);
       // (What they run is not read: nothing is trusted.)
       if (!this.blind) this.walkAgain('another shell runs its startup files first');
       const vars = new Map<string, VariableState>();
@@ -303,15 +308,6 @@ export class Walker {
       if (!defs.includes(f)) this.functionDefs.set(name, [...defs, f]);
     }
     this.aliases.collect(root);
-  }
-
-  /**
-   * What the trust scan found of the statement `n`: the script's scan, which reads the trees of the strings the walk
-   * runs too (`StringTrees`); for the tree of an alias's text with the rest of its command, a scan of that tree.
-   */
-  private facts(n: SyntaxNode): Trust {
-    const root = rootOf(n);
-    return this.blind || this.trust.reads(root) ? this.trust : treeFacts(root, this.scripts, this.host);
   }
 
   program(root: SyntaxNode, start: ShellState): ShellState {
@@ -388,7 +384,12 @@ export class Walker {
    */
   private widen(st: ShellState, keys: Set<string>): ShellState {
     const changes = { set: new Map(), shopt: new Map(), variables: new Map(), functions: new Map(), aliases: new Map(), disabled: new Map(), hashed: new Map() } as { [K in Kind]: Map<string, Entry<K>> };
+    let opaque = st.opaque;
     for (const key of keys) {
+      if (key === OPAQUE) {
+        opaque = true;
+        continue;
+      }
       const kind = key.slice(0, key.indexOf(' ')) as Kind;
       const name = key.slice(kind.length + 1);
       if (kind === 'set' || kind === 'shopt') {
@@ -416,6 +417,7 @@ export class Walker {
     // (The status, and whether the path gets here, stay.)
     return {
       ...st,
+      ...(opaque ? { opaque } : {}),
       set: st.set.withAll(changes.set), shopt: st.shopt.withAll(changes.shopt), variables: st.variables.withAll(changes.variables),
       functions: st.functions.withAll(changes.functions), aliases: st.aliases.withAll(changes.aliases),
       disabled: st.disabled.withAll(changes.disabled), hashed: st.hashed.withAll(changes.hashed),
@@ -432,7 +434,7 @@ export class Walker {
     for (let i = 0; i < statements.length;) {
       let j = i + 1;
       while (j < statements.length && statements[j - 1].endPosition.row === statements[j].startPosition.row) j++;
-      const unit: Target = { kind: 'unit', dead: this.dead, aborts: [], maybes: [] };
+      const unit: Target = { kind: 'unit', dead: this.mode.dead, aborts: [], maybes: [] };
       this.targets.push(unit);
       const first = statements[i];
       for (const t of statements.slice(i, j)) {
@@ -477,16 +479,16 @@ export class Walker {
     if (st.status === undefined) return false;
     const errexit = option(st, 'set', 'errexit');
     // (Where the status is tested, `set -e` does not stop the shell.)
-    return st.status === 0 || ((errexit === 'off' || errexit === 'default' || this.quiet > 0) && !this.opaque);
+    return st.status === 0 || ((errexit === 'off' || errexit === 'default' || this.mode.quiet > 0) && !st.opaque);
   }
 
   /** Runs `nodes` from `st` as code that does not run here: for the states of their nodes; what they change is dropped, and their conditions are not recorded. */
   private deadRun(nodes: readonly SyntaxNode[], st: ShellState): void {
-    this.dead++;
+    this.mode.dead++;
     try {
       this.sequence(nodes, st);
     } finally {
-      this.dead--;
+      this.mode.dead--;
     }
   }
 
@@ -500,7 +502,7 @@ export class Walker {
   jump(kind: 'break' | 'continue' | 'return' | 'exit', count: number | undefined, st: ShellState, sure = true): ShellState {
     st = withStatus(st, undefined);
     const collect = (t: { dead: number }, to: ShellState[]): void => {
-      if (t.dead === this.dead) to.push(st);
+      if (t.dead === this.mode.dead) to.push(st);
     };
     let maybe = !sure || this.blind;
     if (kind === 'break' || kind === 'continue') {
@@ -574,7 +576,7 @@ export class Walker {
         return st;
       }
       if (t.kind === 'unit') {
-        if (t.dead === this.dead) (ends ? t.aborts : t.maybes).push(st);
+        if (t.dead === this.mode.dead) (ends ? t.aborts : t.maybes).push(st);
         if (ends) return unreachable(st);
       }
     }
@@ -594,11 +596,11 @@ export class Walker {
 
   /** Runs `run` where `set -e` does not stop the shell (a condition, the left side of `&&` or `||`, after `!`). */
   private quietly<T>(run: () => T): T {
-    this.quiet++;
+    this.mode.quiet++;
     try {
       return run();
     } finally {
-      this.quiet--;
+      this.mode.quiet--;
     }
   }
 
@@ -637,22 +639,22 @@ export class Walker {
   run(n: SyntaxNode, st: ShellState): ShellState {
     // (After a jump, the rest is dead code: walked from the state there, for the states of its nodes.)
     if (st.unreachable) {
-      this.dead++;
+      this.mode.dead++;
       try {
         this.run(n, reached(st));
       } finally {
-        this.dead--;
+        this.mode.dead--;
       }
       return st;
     }
     this.record(n, st);
     // (Arithmetic the walk does not run: a subscript, an offset, `[[ x -eq y ]]`; a key of an array that must be
-    // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.)
-    const facts = this.facts(n);
-    for (const name of facts.arithNames(n) ?? []) this.unsetRead(st, name);
-    if (facts.mayFail(n)) this.abort(st, false);
-    for (const name of facts.associative(n) ?? []) {
-      if (!this.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
+    // associative here, else it is arithmetic too. One that may fail may discard the rest of the line: see `abort`.
+    // The trust scan read the trees of the strings and of the aliases the walk runs too: `StringTrees`.)
+    for (const name of this.trust.arithNames(n) ?? []) this.unsetRead(st, name);
+    if (this.trust.mayFail(n)) this.abort(st, false);
+    for (const name of this.trust.associative(n) ?? []) {
+      if (!this.mode.dead && !this.blind && attribute(st, name, 'A') !== 'on') this.walkAgain(`\`${name}\` may not be associative where its subscript is read`);
     }
     const outer = this.node;
     this.node = n;
@@ -681,7 +683,7 @@ export class Walker {
    * surely fails, where its status is not tested, ends the shell (the subshell).
    */
   private errexit(n: SyntaxNode, st: ShellState, after: ShellState): ShellState {
-    if (this.quiet || !after.status || !ERREXIT_STOPS.has(n.type) || option(st, 'set', 'errexit') !== 'on') return after;
+    if (this.mode.quiet || !after.status || !ERREXIT_STOPS.has(n.type) || option(st, 'set', 'errexit') !== 'on') return after;
     // (The last stage of a pipeline: the pipeline's status counts.)
     if (n.parent?.type === 'pipeline') return after;
     return this.jump('exit', undefined, after);
@@ -1008,7 +1010,7 @@ export class Walker {
     // (A name the script has not set may come from the environment: by custom, those are in capitals. Once a file
     // was sourced, a string run with `eval` or a trap set, it may come from there.)
     if (!v) {
-      if (/^[A-Z_][A-Z0-9_]*$/.test(target) || this.opaque) return undefined;
+      if (/^[A-Z_][A-Z0-9_]*$/.test(target) || st.opaque) return undefined;
       // (Taken as unset here, but not for deciding conditions: see `markAssumed`.)
       this.markAssumed();
       return unset;
@@ -1018,7 +1020,7 @@ export class Walker {
     // (Decisions read only the variables the script cannot change unseen: see src/semantics/trust.ts. A read in dead
     // code is no reason for a decision.)
     if (!this.trust.variable(name) || !this.trust.variable(target)) this.markAssumed();
-    else if (text !== undefined && !this.dead) for (const r of this.conditions.reading) r.set(name, text);
+    else if (text !== undefined && !this.mode.dead) for (const r of this.conditions.reading) r.set(name, text);
     return text;
   }
 
@@ -1027,7 +1029,7 @@ export class Walker {
    * environment, as text bash runs as an expression, which may assign any variable: nothing is trusted (see `found`).
    */
   unsetRead(st: ShellState, name: string): void {
-    if (this.dead || this.blind) return;
+    if (this.mode.dead || this.blind) return;
     const target = this.builtins.resolve(st, name) ?? name;
     if (!st.variables.get(target) && !alwaysNumeric(target)) this.walkAgain(`arithmetic reads \`${target}\`, which the script may not have set`);
   }
@@ -1043,15 +1045,14 @@ export class Walker {
     if (top) top.assumed = true;
   }
 
-  /** Whether a file was sourced, a string run with `eval` or a trap set: a name the script has not set may be set. */
-  private opaque = false;
-
-  /** `opaque` from now on: what was remembered of values read as expressions may be otherwise. */
-  turnOpaque(): void {
-    if (this.opaque) return;
-    this.opaque = true;
-    this.arith.arithMemo = new Map();
-    this.arith.assignsMemo = new Map();
+  /**
+   * `st` on a path that ran what the walk does not read (`ShellState.opaque`). It counts as a change (`OPAQUE`): what
+   * may run after it, a body no call reached, a trap's action, a function walked again, may run on such a path too.
+   */
+  opaque(st: ShellState): ShellState {
+    this.lastChange.set(OPAQUE, ++this.changeCount);
+    for (const c of this.collecting) c.add(OPAQUE);
+    return st.opaque ? st : { ...st, opaque: true };
   }
 
   private pipeline(n: SyntaxNode, st: ShellState): ShellState {
@@ -1129,6 +1130,7 @@ export class Walker {
       // (With the status the passes started from, `$?`, which the body may change too.)
       const was = { ...st, status: before.entry.status };
       for (const key of before.keys) {
+        if (key === OPAQUE) continue;
         const kind = key.slice(0, key.indexOf(' ')) as Kind;
         const name = key.slice(kind.length + 1);
         (was as Record<Kind, NameMap<unknown>>)[kind] = (was[kind] as NameMap<unknown>).with(name, before.entry[kind].get(name));
@@ -1136,7 +1138,7 @@ export class Walker {
       entry = merge([st, was], this.posix);
     }
     // `break` leaves the loop (the states there are merged into the one after it); `continue` ends the pass.
-    const target: Extract<Target, { kind: 'loop' }> = { kind: 'loop', dead: this.dead, breaks: [], continues: [] };
+    const target: Extract<Target, { kind: 'loop' }> = { kind: 'loop', dead: this.mode.dead, breaks: [], continues: [] };
     // A condition whose status is known (`holds`) is recorded at each test; one that stops the loop at its first test
     // makes the body dead.
     const test = (s: ShellState): { st: ShellState; holds?: boolean } => {
@@ -1159,11 +1161,11 @@ export class Walker {
       for (let i = 0; i < 5; i++) {
         const c = test(entry);
         if (i === 0 && c.holds === false) {
-          this.dead++;
+          this.mode.dead++;
           try {
             pass(c.st);
           } finally {
-            this.dead--;
+            this.mode.dead--;
           }
           stopped = c.st;
           settled = true;
@@ -1260,16 +1262,19 @@ export class Walker {
     } else {
       const walks = this.walks.get(def) ?? [];
       if (!this.silent) this.walks.set(def, walks);
-      // (A walk is reused only as it was made: in dead code or not, where `set -e` stops the shell or not, where an
-      // error ends a line or a subshell.)
-      const how = `${!!this.dead} ${!!this.quiet} ${!!this.unitTarget()}`;
+      const how = this.reuseKey();
       const seen = walks.find((w) => w.how === how && (w.entry === st || sameState(w.entry, st)));
-      // (A walk reused gives again the states where an error in it ended the line: see `abort`.)
+      // (A walk reused gives again the states where an error in it ended the line, see `abort`, and makes its changes
+      // again here, for what collects them: a loop, the body that calls it, a trap's action.)
       const unit = this.unitTarget();
       if (seen) {
         exit = seen.exit;
-        if (unit && unit.dead === this.dead) unit.aborts.push(...seen.aborts);
+        if (unit && unit.dead === this.mode.dead) unit.aborts.push(...seen.aborts);
         for (const m of seen.maybes) this.abort(m, false);
+        for (const key of seen.changed) {
+          this.lastChange.set(key, ++this.changeCount);
+          for (const c of this.collecting) c.add(key);
+        }
       } else if (walks.length >= WALKS_PER_FUNCTION) {
         exit = this.widen(st, this.changes.get(def)!);
         this.unwalked.add(def);
@@ -1277,11 +1282,27 @@ export class Walker {
       } else {
         const from = unit?.aborts.length ?? 0;
         const maybesFrom = unit?.maybes.length ?? 0;
-        exit = this.walkBody(def, st, { def, saved: new Map() });
-        if (!this.silent) walks.push({ entry: st, exit, how, aborts: unit?.aborts.slice(from) ?? [], maybes: unit?.maybes.slice(maybesFrom) ?? [] });
+        const changed = new Set<string>();
+        this.collecting.push(changed);
+        try {
+          exit = this.walkBody(def, st, { def, saved: new Map() });
+        } finally {
+          this.collecting.pop();
+        }
+        if (!this.silent) walks.push({ entry: st, exit, how, aborts: unit?.aborts.slice(from) ?? [], maybes: unit?.maybes.slice(maybesFrom) ?? [], changed });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
+  }
+
+  /**
+   * What a walk of a function body depends on besides its entry state: each mode of the walk (`mode`: in it or not),
+   * and whether an error ends a line there or a subshell (see `abort`). A walk is reused where these are the same
+   * (`call`). (A trap's action walked only for what it changes, `silent`, records nothing, and changes nothing a walk
+   * gives: it reuses the others.)
+   */
+  private reuseKey(): string {
+    return [...Object.values(this.mode).map((depth) => depth > 0), !!this.unitTarget()].join(' ');
   }
 
   /**
@@ -1339,7 +1360,7 @@ export class Walker {
     this.changes.set(def, changes);
     this.collecting.push(changes);
     // (`return` ends the body: the states there are merged into the one at its end.)
-    const target: Target = { kind: 'function', dead: this.dead, returns: [] };
+    const target: Target = { kind: 'function', dead: this.mode.dead, returns: [] };
     this.targets.push(target);
     let end: ShellState;
     try {
@@ -1385,7 +1406,7 @@ export class Walker {
     st = this.redirections(n, this.expandAll(assignments, st), this.runsProgram(n, st));
     // A prefix assignment to PATH empties the table of remembered paths too.
     if (assignments.some((a) => field(a, 'name')!.text === 'PATH')) st = this.builtins.forgetHashed(st);
-    const expanded = this.aliases.expand(n, name, st);
+    const expanded = this.aliases.expand(n, st);
     if (expanded) return expanded;
     // In POSIX mode, the assignments before a special builtin stay after it, exported.
     const posix = option(before, 'set', 'posix');
@@ -1439,12 +1460,12 @@ export class Walker {
   trapAction(script: NestedScript, host: SyntaxNode, st: ShellState, exitOnly: boolean, dead = false): void {
     this.targets.push({ kind: 'trap', exitOnly });
     // (A trap set in code that never runs is never set: its action is walked as dead code.)
-    if (dead) this.dead++;
+    if (dead) this.mode.dead++;
     try {
       this.runScript(script, host, st);
     } finally {
       this.targets.pop();
-      if (dead) this.dead--;
+      if (dead) this.mode.dead--;
     }
   }
 
@@ -1453,7 +1474,7 @@ export class Walker {
    * (the walk is made again, blind). An EXIT trap's action runs as the shell ends: nothing is left to run.
    */
   private escape(t: Extract<Target, { kind: 'trap' }>): void {
-    if (!t.exitOnly && !this.dead && !this.blind) this.walkAgain("a trap's action may end what a signal interrupts (an error, `return`, `break` or `continue`)");
+    if (!t.exitOnly && !this.mode.dead && !this.blind) this.walkAgain("a trap's action may end what a signal interrupts (an error, `return`, `break` or `continue`)");
   }
 
   /**

@@ -46,7 +46,7 @@ export class WalkConditions {
 
   /** Records what the condition of `n` decided on this walk (undefined: nothing), with what it read. */
   decide(n: SyntaxNode, outcome: string | undefined, reads: ReadonlyMap<string, string | null>): void {
-    if (this.w.dead) return;
+    if (this.w.mode.dead) return;
     let d = this.decisions.get(n);
     if (!d) this.decisions.set(n, (d = { outcomes: new Set(), reads: new Map(), mixed: false }));
     d.outcomes.add(outcome ?? '?');
@@ -263,7 +263,7 @@ export class WalkConditions {
   /** `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it. */
   lastStatus(st: ShellState): string | undefined {
     if (st.status === undefined || descendants(this.w.node!, SUBSTITUTIONS).length) return undefined;
-    if (!this.w.dead) for (const r of this.reading) r.set('?', String(st.status));
+    if (!this.w.mode.dead) for (const r of this.reading) r.set('?', String(st.status));
     return String(st.status);
   }
 
