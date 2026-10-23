@@ -418,8 +418,9 @@ export class WalkBuiltins {
 
   /**
    * The assignments before the builtin or program `n` runs (`n+='x=7' true`), which are the command's alone: only
-   * `+=` to an integer leaves something, the arithmetic its text runs (bash adds it to the value, running it). Not
-   * before `eval`, which makes them in the shell itself (`Walker.evalScript`).
+   * `+=` to an integer leaves something, the arithmetic its text runs (bash adds it to the value, running it), and
+   * only the first assignment of a name: the variable it makes has no attribute (`n+='x=7' n+='x=9' true` sets x to
+   * 7). Not before `eval`, which makes them in the shell itself (`Walker.evalScript`).
    */
   appendArith(assignments: SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
     let name = field(n, 'name')!.text;
@@ -430,10 +431,13 @@ export class WalkBuiltins {
       ({ name, args } = inner);
     }
     if (name === 'eval') return st;
+    const seen = new Set<string>();
     for (const a of assignments) {
       const nameNode = field(a, 'name')!;
       const value = field(a, 'value');
-      if (nameNode.type === 'subscript' || !value || !a.children.some((c) => c.type === '+=')) continue;
+      const first = !seen.has(nameNode.text);
+      seen.add(nameNode.text);
+      if (!first || nameNode.type === 'subscript' || !value || !a.children.some((c) => c.type === '+=')) continue;
       const target = this.resolve(st, nameNode.text);
       const text = this.w.conditions.staticText(value, st, true);
       if (target === undefined || attribute(st, target, 'i') !== 'on' || text === undefined) continue;
@@ -445,17 +449,17 @@ export class WalkBuiltins {
   /**
    * `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`;
    * `temporary`: one before a function call (`n=1+1 f`), whose variable bash makes without the integer and case
-   * attributes: `=` gives it the text as it is (`n='x=5' f` sets no x), but `+=` still runs an integer's arithmetic.
+   * attributes: `=` gives it the text as it is (`n='x=5' f` sets no x), but `+=` still runs an integer's arithmetic
+   * (then the variable made has no attribute either: a second `+=` of it appends text).
    */
   assign(st: ShellState, name: string, subscript: boolean, how: NonNullable<Operand['assign']>, at: SyntaxNode, nameref: boolean, declaring = false, temporary = false): ShellState {
     // Assigning to a nameref assigns to the variable it names.
     const target = nameref ? name : this.resolve(st, name);
     if (!target) return st;
     let prev = st.variables.get(target);
-    if (temporary && !how.append && prev && ['i', 'l', 'u'].some((l) => l in prev!.attrs)) {
-      const { i: _i, l: _l, u: _u, ...attrs } = prev.attrs;
-      prev = { ...prev, attrs };
-      st = this.w.put(st, 'variables', target, prev);
+    if (temporary && !how.append && prev) {
+      st = this.withoutCase(st, target);
+      prev = st.variables.get(target);
     }
     // A readonly variable keeps its value.
     if (prev?.attrs.r?.state === 'on' && !declaring) return st;
@@ -479,7 +483,15 @@ export class WalkBuiltins {
     if (is('n') && !nameref && (text === undefined || !NAME.test(text))) return st;
     // (An integer or a case attribute changes the value: then the word alone does not give it.)
     const source = text === undefined && !how.append && !['i', 'l', 'u'].some(is) ? how.source : undefined;
-    return this.setVariable(st, target, at, text, false, is('a') || is('A'), source);
+    st = this.setVariable(st, target, at, text, false, is('a') || is('A'), source);
+    return temporary ? this.withoutCase(st, target) : st;
+  }
+
+  /** `name` without the integer and case attributes (a variable made before a function call, see `assign`). */
+  private withoutCase(st: ShellState, name: string): ShellState {
+    const v = st.variables.get(name)!;
+    const { i: _i, l: _l, u: _u, ...attrs } = v.attrs;
+    return Object.keys(attrs).length === Object.keys(v.attrs).length ? st : this.w.put(st, 'variables', name, { ...v, attrs });
   }
 
   /** Sets `name` (to `value`, when known), exporting it under `set -a` (not an array: bash cannot export one). */
