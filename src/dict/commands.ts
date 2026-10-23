@@ -14,6 +14,11 @@ import { applyExtras } from './extras';
 import { args, ASSIGNMENTS, byCount, cmd, countOption, dashed, lastIsDestination, letters, operand, OptSpec, persistent, pos, runs } from './types';
 
 const files = pos('対象のファイル', 'target file');
+/**
+ * The options every GNU program has. An entry read with the `getopt_long` parser lists them, so that a prefix
+ * (`--ver`) is ambiguous where the tool finds it so (`--verbose`, `--version`).
+ */
+const GNU_INFO: OptSpec[] = [['--help', 'ヘルプを表示する', 'show help'], ['--version', 'バージョンを表示する', 'print the version']];
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
 const NEWERXY = [...'acBm'].flatMap((x) => [...'acBmt'].map((y) => `-newer${x}${y}`)).join('|');
 
@@ -248,7 +253,8 @@ export const core: Record<string, CommandSpec> = {
     ['-n|--number', '行番号を付ける', 'number all lines'],
     ['-A|--show-all', '改行やタブなどの制御文字を可視化', 'show non-printing characters'],
     ['-s|--squeeze-blank', '連続する空行を1行にまとめる', 'squeeze repeated blank lines'],
-  ], { positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')] }),
   grep: cmd('パターン（正規表現）に一致する行を検索して表示する', 'Print lines matching a pattern (regex)', [
     ['-i|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
     ['-v|--invert-match', '一致しない行を表示する', 'select non-matching lines'],
@@ -262,8 +268,9 @@ export const core: Record<string, CommandSpec> = {
     ['-q|--quiet|--silent', '何も出力せず、終了ステータスだけで結果を返す（条件判定用）', 'print nothing; report via exit status'],
     ['-s|--no-messages', 'ファイルが読めない等のエラーを表示しない', 'suppress error messages'],
     ['-E|--extended-regexp', '拡張正規表現(ERE)を使う（`+ ? | ()` がそのまま使える）', 'use extended regex (ERE)'],
-    ['-F|--fixed-strings', 'パターンを正規表現ではなく固定文字列として扱う', 'treat the pattern as a fixed string'],
+    ['-F|--fixed-strings|--fixed-regexp', 'パターンを正規表現ではなく固定文字列として扱う', 'treat the pattern as a fixed string'],
     ['-P|--perl-regexp', 'Perl 互換正規表現(PCRE)を使う', 'use Perl-compatible regex'],
+    ['-G|--basic-regexp', '基本正規表現(BRE)を使う（既定）', 'use basic regex (BRE; the default)'],
     ['-w|--word-regexp', '単語全体として一致する場合のみ', 'match whole words only'],
     ['-x|--line-regexp', '行全体が一致する場合のみ', 'match whole lines only'],
     ['-e|--regexp', '検索パターンを指定（`-` で始まるパターンや複数指定に使う）', 'specify a pattern (useful for several or `-`-prefixed ones)', 'arg fills lang:regex'],
@@ -277,8 +284,13 @@ export const core: Record<string, CommandSpec> = {
     ['--include', '検索対象を指定したグロブに一致するファイルに限定', 'only search files matching the glob', 'arg'],
     ['--exclude', '指定したグロブに一致するファイルを除外', 'skip files matching the glob', 'arg'],
     ['--exclude-dir', '指定したディレクトリを除外', 'skip the given directory', 'arg'],
-    ['--color', '一致部分を色付けする', 'highlight matches'],
-  ], { positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'] }),
+    ['--color|--colour', '一致部分を色付けする（`=always`、`=never`、`=auto`）', 'highlight matches (`=always`, `=never`, `=auto`)', 'attached'],
+    ['--exclude-from', '除外するファイルのグロブをファイルから読む', 'read globs of files to skip from a file', 'arg'],
+    ['--binary-files', 'バイナリファイルの扱い（`binary`、`text`、`without-match`）', 'how to treat binary files (`binary`, `text`, `without-match`)', 'arg'],
+    ['--group-separator', '前後の行を表示するとき、まとまりの間に置く区切り（既定は `--`）', 'separator between groups of context lines (default `--`)', 'arg'],
+    ['--no-group-separator', '前後の行のまとまりの間に区切りを置かない', 'no separator between groups of context lines'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'] }),
   sed: cmd('ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する（置換は `s/前/後/g`）', 'Stream editor: edit input line by line (substitute with `s/old/new/g`)', [
     ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップを作る）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
     ['-n|--quiet|--silent', '自動出力を抑止し、`p` コマンドで指定した行だけ出力', 'suppress automatic printing; print only with `p`'],
@@ -287,7 +299,8 @@ export const core: Record<string, CommandSpec> = {
     ['-E|-r|--regexp-extended', '拡張正規表現(ERE)を使う', 'use extended regex (ERE)'],
     ['-s|--separate', '複数ファイルを別々に扱う', 'treat files separately'],
     ['-z|--null-data', '行区切りを NUL 文字にする', 'lines are separated by NUL'],
-  ], { positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'] }),
   awk: cmd('テキストを行・フィールド単位で処理するプログラミング言語（`$1` は1列目）', 'Pattern-scanning language that processes lines and fields (`$1` = first field)', [
     ['-F', 'フィールド区切り文字を指定（既定は空白）', 'field separator (default: whitespace)', 'arg'],
     ['-v', 'awk の変数を設定（`-v name=value`）', 'set an awk variable (`-v name=value`)', 'arg'],
@@ -362,7 +375,7 @@ export const core: Record<string, CommandSpec> = {
     ['-t|--verbose', '実行するコマンドを表示', 'print commands before running'],
     ['-d|--delimiter', '入力の区切り文字（`echo` が出す末尾の改行は、最後の項目にそのまま残る）', 'input delimiter (the newline `echo` ends with stays in the last item)', 'arg'],
     ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
-    ['-L|--max-lines', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
+    ['-L', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
     ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],
     ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg'],
     ['-o|--open-tty', '子プロセスの標準入力を端末にする', 'reopen stdin as the terminal in the child'],
@@ -371,7 +384,7 @@ export const core: Record<string, CommandSpec> = {
     ['-p|--interactive', '実行する前に確認する', 'ask before running each command'],
     ['--show-limits', 'コマンドラインの長さの制限を表示', 'show the limits on command-line length'],
     ['-e|--eof', '指定した文字列で入力を打ち切る（`-eEND`。文字列なしなら打ち切らない）', 'stop reading at the given string (`-eEND`; with none, never)', 'attached'],
-    ['-l', '入力の指定した行数（既定は 1）ごとに1回実行する（`-l2`）', 'run once per the given number of input lines (default 1; `-l2`)', 'attached'],
+    ['-l|--max-lines', '入力の指定した行数（既定は 1）ごとに1回実行する（`-l2`、`--max-lines=2`）', 'run once per the given number of input lines (default 1; `-l2`, `--max-lines=2`)', 'attached'],
     ['--process-slot-var', '子プロセスごとに異なる番号を入れる環境変数の名前', 'name of a variable set to a different number in each child process', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
@@ -381,7 +394,8 @@ export const core: Record<string, CommandSpec> = {
     ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
     ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg lang:cutchars'],
     ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
-  ], { positional: [files] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [files] }),
   sort: cmd('行を並べ替える', 'Sort lines', [
     ['-n|--numeric-sort', '数値として並べる', 'compare as numbers'],
     ['-r|--reverse', '逆順（降順）にする', 'reverse order'],
@@ -415,11 +429,13 @@ export const core: Record<string, CommandSpec> = {
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
-  ], { positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
-  ], { positional: [files], patternOptions: [LINE_COUNT] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT] }),
   tail: cmd('ファイルの末尾部分を表示する（既定は10行）', 'Print the last part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`+N` で N 行目以降）', 'number of lines (`+N`: from line N)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
@@ -434,7 +450,8 @@ export const core: Record<string, CommandSpec> = {
   ], { positional: [files] }),
   tee: cmd('標準入力を標準出力とファイルの両方に書き出す', 'Copy stdin to stdout and to files', [
     ['-a|--append', 'ファイルに追記する（上書きしない）', 'append instead of overwrite'],
-  ], { positional: [pos('書き出すファイル', 'file to write')] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('書き出すファイル', 'file to write')] }),
   curl: cmd('URL を指定してデータを送受信する（HTTP リクエストなど）', 'Transfer data to or from a URL (HTTP requests etc.)', [
     ['-s|--silent', '進捗やエラーを表示しない', 'silent mode'],
     ['--retry', '一時的なエラーのとき、指定した回数まで再試行する', 'retry the given number of times on transient errors', 'arg'],
@@ -585,8 +602,8 @@ export const core: Record<string, CommandSpec> = {
       byCount(3, [pos('リンク先（実体）', 'target')], { orMore: true, unless: '-t|--target-directory', last: pos('リンクを作るディレクトリ', 'directory to make the links in') }),
     ],
   }),
-  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', [], { positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
-  dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', [], { positional: [pos('パス', 'path')] }),
+  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', GNU_INFO, { parser: 'getopt_long', positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
+  dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', GNU_INFO, { parser: 'getopt_long', positional: [pos('パス', 'path')] }),
   realpath: cmd('シンボリックリンクや `..` を解決した絶対パスを表示する', 'Print the resolved absolute path', [], { positional: [pos('パス', 'path')] }),
   readlink: cmd('シンボリックリンクのリンク先を表示する', 'Print the target of a symbolic link', [
     ['-f|--canonicalize', '全てのリンクを再帰的に解決した絶対パスを表示', 'canonicalize by following every symlink'],
@@ -933,7 +950,9 @@ export const core: Record<string, CommandSpec> = {
     ['-w|--equal-width', '桁数をゼロ埋めで揃える', 'pad with leading zeros'],
     ['-s|--separator', '区切り文字', 'separator', 'arg'],
     ['-f|--format', 'printf 形式の書式（`%03g`…）', 'printf-style format (`%03g`…)', 'arg'],
+    ...GNU_INFO,
   ], {
+    parser: 'getopt_long',
     positional: [pos('開始値・増分・終了値', 'first, increment or last')],
     operands: [
       byCount(1, [pos('終了値（開始値は 1）', 'last (counting from 1)')]),
@@ -944,11 +963,13 @@ export const core: Record<string, CommandSpec> = {
   mktemp: cmd('一意な名前の一時ファイルを作り、そのパスを表示する', 'Create a unique temporary file and print its path', [
     ['-d|--directory', 'ファイルではなく一時ディレクトリを作る', 'create a directory'],
     ['-t', 'TMPDIR 以下にテンプレートで作る', 'use TMPDIR with a template'],
-    ['-p|--tmpdir', '一時ファイルを作るディレクトリ', 'directory to create the file in', 'arg'],
+    ['-p', '一時ファイルを作るディレクトリ', 'directory to create the file in', 'arg'],
+    ['--tmpdir', '一時ファイルを作るディレクトリ（`--tmpdir=DIR`。値がなければ `$TMPDIR` か `/tmp`）', 'directory to create the file in (`--tmpdir=DIR`; without one, `$TMPDIR` or `/tmp`)', 'attached'],
     ['--suffix', '名前の末尾に付ける文字列', 'suffix to append to the name', 'arg'],
     ['-u|--dry-run', '名前だけ決めて作らない（非推奨）', 'only print a name; create nothing (unsafe)'],
     ['-q|--quiet', '作れなくてもエラーを表示しない', 'do not report errors'],
-  ], { positional: [pos('テンプレート（末尾に `XXXXXX`。例: `tmp.XXXXXX`）', 'template ending in `XXXXXX` (e.g. `tmp.XXXXXX`)')] }),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('テンプレート（末尾に `XXXXXX`。例: `tmp.XXXXXX`）', 'template ending in `XXXXXX` (e.g. `tmp.XXXXXX`)')] }),
   stat: cmd('ファイルの詳細情報（サイズ・権限・日時など）を表示する', 'Display file status (size, permissions, times…)', [
     ['-c|--format', '表示書式（例: `%s` はサイズ）', 'output format (e.g. `%s` = size)', 'arg'],
     ['-f|--file-system', 'ファイルでなく、それがあるファイルシステムの情報（Linux。macOS の `-f` は書式の指定）', 'the file system instead of the file (Linux; on macOS `-f` gives the format)'],
@@ -978,7 +999,8 @@ export const core: Record<string, CommandSpec> = {
   paste: cmd('複数ファイルの行を横に連結する', 'Merge lines of files side by side', [
     ['-d|--delimiters', '区切り文字', 'delimiter', 'arg'],
     ['-s|--serial', '1ファイルの全行を1行に連結', 'join all lines of each file'],
-  ]),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long' }),
   column: cmd('入力を列に揃えて表示する', 'Format input into columns', [
     ['-t|--table', '表形式に揃える', 'create a table'],
     ['-s|--separator', '入力の区切り文字', 'input separator', 'arg'],
