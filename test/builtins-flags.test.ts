@@ -207,25 +207,33 @@ describe('declaration builtins as plain commands, and related fixes', () => {
   });
   it('a function named like a declaration builtin gets the assignment word whole, and nothing is assigned', () => {
     const f = new Analyzer('en').explainLine(parser.parse('declare() { :; }; declare d=$v'), 0).items.flatMap(all);
-    assert.match(f.find((t) => t.label === 'd=$v')!.explanation, /^Argument \$1 to the function \(the command name is spelled as a declaration builtin, so it is expanded as an assignment would be/);
+    assert.strictEqual(f.find((t) => t.label === 'd=$v')!.explanation, 'Argument $1 to the function. The command name is spelled as a declaration builtin, so this word is expanded as an assignment would be: no word splitting, no globbing. Nothing is assigned');
     assert.strictEqual(bash('declare() { echo "$#:$1"; }; v="p q"; declare d=$v; echo "[$d]"').stdout, '1:d=p q\n[]\n');
-    // A function defined on some paths only: "if the function runs".
+    // A function defined on some paths only, or later than a call that runs first: "if the function runs".
     const maybe = new Analyzer('en').explainLine(parser.parse('[ "$x" ] && declare() { :; }\ndeclare d=$v'), 1).items.flatMap(all);
-    assert.match(maybe.find((t) => t.label === 'd=$v')!.explanation, /if the function runs, nothing is assigned; otherwise the builtin assigns it\)$/);
+    assert.match(maybe.find((t) => t.label === 'd=$v')!.explanation, /\. If the function runs, nothing is assigned; otherwise the builtin assigns it$/);
+    const later = new Analyzer('en').explainLine(parser.parse('f() { declare G=1; }\nf\ndeclare() { :; }\nf'), 0).items.flatMap(all);
+    assert.match(later.find((t) => t.label === 'G=1')!.explanation, /If the function runs, nothing is assigned; otherwise the builtin assigns it$/);
+    assert.strictEqual(bash('f() { declare G=1; echo "G=$G"; }; f; declare() { :; }; f').stdout, 'G=1\nG=\n');
   });
   it('`b=(…)` passed to a function named like a declaration builtin, or to `alias`, is assigned as an array', () => {
-    // bash 5.2: the array is assigned where the builtin would put it, and the command gets the name only.
+    // bash 5.2: the array is assigned as the builtin would, and the command gets the name only.
     assert.strictEqual(bash('declare() { echo "$#:$1"; }; declare b=(1 2); builtin declare -p b').stdout, '1:b\ndeclare -a b=([0]="1" [1]="2")\n');
     assert.strictEqual(bash('declare() { :; }; f() { declare c=(3); }; f; builtin declare -p c').status, 1);
+    // (`-g` and the other options count: a global `b`, a lowercase `m`.)
+    assert.strictEqual(bash('declare() { :; }; f() { declare -g b=(1 2); declare -l m=(X); builtin declare -p m; }; f; builtin declare -p b').stdout, 'declare -al m=([0]="x")\ndeclare -a b=([0]="1" [1]="2")\n');
+    // (`export` and `alias`: the variable visible here, the local one in a function that has one.)
     assert.strictEqual(bash('export() { :; }; f() { export c=(3); }; f; declare -p c').stdout, 'declare -a c=([0]="3")\n');
+    assert.strictEqual(bash('export() { :; }; f() { local e=0; export e=(1 2); alias e=(3) 2>/dev/null; declare -p e; }; f; declare -p e 2>/dev/null').stdout, 'declare -a e=([0]="3")\n');
     const r = bash('alias c=(1 2); declare -p c');
     assert.match(r.stderr, /alias: c: not found/);
     assert.strictEqual(r.stdout, 'declare -a c=([0]="1" [1]="2")\n');
     const arg = (src: string, line = 0) => new Analyzer('en').explainLine(parser.parse(src), line).items.flatMap(all).find((t) => t.label === 'b=(1 2)')!.explanation;
-    assert.match(arg('declare() { :; }; declare b=(1 2)'), /^Argument \$1 to the function \(bash assigns the array `b` \(where `declare` would \(in a function, a local variable of it\)\) and passes the function only the name `b`\)$/);
-    assert.match(arg('export() { :; }; export b=(1 2)'), /\(a global variable, with no attribute\)/);
-    assert.match(arg('[ "$x" ] && declare() { :; }\ndeclare b=(1 2)', 1), /^Argument \$1 to the function \(if the function runs, bash assigns the array `b`.*; otherwise the builtin assigns it\)$/);
-    assert.match(arg('alias b=(1 2)'), /^Argument `b=\(1 2\)` \(bash assigns the array `b` \(a global variable\) and passes only the name `b`, so `alias` fails: `alias: b: not found`\)$/);
+    assert.strictEqual(arg('declare() { :; }; declare b=(1 2)'), 'Argument $1 to the function. bash assigns the array `b` as `declare` would. In a function, it is a local variable. The function gets only the name `b`');
+    assert.match(arg('declare() { :; }; declare -g b=(1 2)'), /\. bash assigns the array `b` as `declare -g` would: a global variable\. The function gets only the name `b`$/);
+    assert.match(arg('export() { :; }; export b=(1 2)'), /It is the variable visible here: a local one if there is one, else the global one, with no attribute\./);
+    assert.match(arg('[ "$x" ] && declare() { :; }\ndeclare b=(1 2)', 1), /^Argument \$1 to the function\. If the function runs, bash assigns the array `b`.*\. Otherwise the builtin assigns it$/);
+    assert.match(arg('alias b=(1 2)'), /^Argument `b=\(1 2\)`\. bash assigns the array `b`\. It is the variable visible here.*\. `alias` gets only the name `b`, and fails: `alias: b: not found`$/);
     assert.match(new Analyzer('ja').explainLine(parser.parse('alias b=(1 2)'), 0).items.flatMap(all).find((t) => t.label === 'b=(1 2)')!.explanation, /not found/);
   });
   it('the status of a declaration hides a substitution in an assignment, however the name is written', () => {

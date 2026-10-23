@@ -3977,5 +3977,74 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "e=g; c=g; export() { :; }; f() { local e=0 c=0; export e=(1 2); alias c=(3) 2>/dev/null; x=$e$c; }; f",
+    "facts": {
+      "end": {
+        "variables": {
+          "c": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "e": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "x": {
+            "attrs": "-",
+            "value": "\"13\""
+          }
+        },
+        "functions": {
+          "export": "f",
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "declare() { :; }; f() { declare -g b=(1 2); declare -l m=(X); y=$m; }; f",
+    "facts": {
+      "end": {
+        "variables": {
+          "b": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"x\""
+          }
+        },
+        "functions": {
+          "declare": "f",
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "f() { declare -g G=1; }; f; declare() { :; }; G=0; f",
+    "facts": {
+      "end": {
+        "variables": {
+          "G": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        },
+        "functions": {
+          "declare": "f",
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
   }
 ]
