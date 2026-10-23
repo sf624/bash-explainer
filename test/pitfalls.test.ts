@@ -5,7 +5,10 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pitfallNotes } from '../src/pitfalls';
 import { wordFacts } from '../src/wordfacts';
+import * as fs from 'fs';
 import { Analyzer } from '../src/analyzer';
+import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
+import { MESSAGES, fact, said, type FactId } from '../src/messages';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -95,5 +98,40 @@ describe('the pitfall gate', () => {
   it('a syntax error is not a pitfall: the missing then stays with pitfalls off', () => {
     const notes = explainNotes('if [ -f a ] then echo x; fi', 0, false);
     assert.ok(notes.some((n) => /Syntax error: a `;` or a newline is needed before `then`/.test(n)), notes.join('|'));
+  });
+
+  // A host file (src/hosts.ts): every note of a line, with the setting on or off.
+  const hostNotes = (file: string, pitfalls: boolean, lang: 'en' | 'ja' = 'en') => {
+    const src = fs.readFileSync(path.join(root, 'test/fixtures/hosts', file), 'utf8');
+    const kind = hostKind('', file, src)!;
+    const extracted = extractShell(kind, src);
+    const tree = parser.parse(extracted.text);
+    const lines = src.split('\n');
+    return lines.flatMap((_, i) => explainHostedLine(new Analyzer(lang), tree, extracted, lines, i, lang, undefined, { pitfalls })?.notes ?? []);
+  };
+  const has = (notes: string[], re: RegExp) => notes.some((n) => re.test(n));
+  for (const [file, name, re] of [
+    ['Dockerfile', 'the Dockerfile pipefail note', /^⚠ If a command in the middle of the pipe fails, RUN still succeeds/],
+    ['deploy.py', 'the Python string-without-shell note', /^⚠ Without shell=True the whole string/],
+    ['deploy.py', 'the Python shell injection note', /^⚠ Shell injection risk: the shell runs a string/],
+    ['action.yml', 'the Actions script injection note', /^⚠ Script injection risk: `github\.event\.pull_request\.title`/],
+    ['test.bats', 'a bats pitfall', /^⚠ Pitfall: /],
+  ] as const) {
+    it(`${name} disappears with pitfalls off, and is the same text with them on`, () => {
+      assert.ok(has(hostNotes(file, true), re));
+      assert.ok(!has(hostNotes(file, false), re));
+      assert.ok(has(hostNotes(file, true, 'ja'), /^⚠ /));
+    });
+  }
+  it('said keeps the notes with pitfalls off and the pitfalls with them on', () => {
+    const fs2 = [fact('en', 'exit-modulo', { value: '256', status: 0 }), fact('en', 'local-outside-function')];
+    assert.deepStrictEqual(said(fs2, false).map((f) => f.id), ['exit-modulo']);
+    assert.deepStrictEqual(said(fs2, true).map((f) => f.id), ['exit-modulo', 'local-outside-function']);
+    assert.deepStrictEqual(said(fs2, undefined).length, 2);
+  });
+  it('only a pitfall has a heading in the catalog', () => {
+    for (const [id, e] of Object.entries(MESSAGES) as [FactId, { kind: string; heading?: unknown }][]) {
+      if (e.heading) assert.strictEqual(e.kind, 'pitfall', id);
+    }
   });
 });

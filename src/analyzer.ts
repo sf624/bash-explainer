@@ -63,7 +63,7 @@ import { assignmentsOf, definitionFails, type Missed, type NameResolution, resol
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
-import { type Fact, fact, factOf, MESSAGES } from './messages';
+import { type Fact, fact, factOf, MESSAGES, said } from './messages';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
@@ -335,13 +335,14 @@ export class Analyzer {
   // ---------------------------------------------------------------- helpers
 
   /**
-   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. This is the one gate
-   * of the `notes.pitfalls` setting: a pitfall (by its catalog entry) is not said when the pitfalls are off.
+   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. The `notes.pitfalls`
+   * setting is applied by `said` (src/messages.ts), the one rule: a pitfall (by its catalog entry) is not said when
+   * the pitfalls are off.
    */
   private say(f: Fact): string[] {
-    if (f.kind === 'pitfall' && this.opts.pitfalls === false) return [];
-    this.facts.push(f);
-    return [f.text];
+    const out = said([f], this.opts.pitfalls);
+    this.facts.push(...out);
+    return out.map((x) => x.text);
   }
 
   private s(ja: string, en: string): string {
@@ -2898,13 +2899,13 @@ export class Analyzer {
     if (!hasGlobstar(text)) return '';
     const globstar = this.shoptAt(n).globstar;
     const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
-    if (globstar === 'unknown' ) {
+    if (globstar === 'unknown') {
       this.extraNotes.push(...this.say(fact(this.lang, 'globstar-maybe-on', { on })));
     }
-    if (globstar === 'default' ) {
+    if (globstar === 'default') {
       this.extraNotes.push(...this.say(fact(this.lang, 'globstar-not-found', { on })));
     }
-    if (globstar === 'unsupported' ) {
+    if (globstar === 'unsupported') {
       this.extraNotes.push(...this.say(fact(this.lang, 'globstar-unsupported', { shell: this.shell! })));
     }
     return globstar === 'off' || globstar === 'unsupported'

@@ -3,6 +3,7 @@ import { run } from './support/run';
 import * as path from 'path';
 import { Analyzer, ExplainOptions } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
+import { factOf } from '../src/messages';
 import { explainHostedLine, Extracted, extractShell, HostKind, hostIssues, hostKind, remapExplanation, substitutionNotes } from '../src/hosts';
 import { customCommandSpec } from '../src/dict/custom';
 import { githubContext } from '../src/dict/ciVariables';
@@ -642,7 +643,7 @@ describe('host files: branches no other test takes', () => {
     assert.strictEqual(lines(e)[11], 'a "${py_name}" AA');
     assert.strictEqual(lines(e)[20], 'echo ${py_x} {} ${py_expr}');
     assert.strictEqual(lines(e)[30], 'raw\\ntwo');
-    const notes = e.regions.flatMap((r) => (r.notes ?? []).map((n) => n[1]));
+    const notes = e.regions.flatMap((r) => (r.notes ?? []).map((n) => (Array.isArray(n) ? n[1] : factOf('en', n.spec).text)));
     assert.ok(notes.some((n) => /decided at run time/.test(n)));
     assert.ok(notes.some((n) => /only the string literal is explained/.test(n)));
     assert.deepStrictEqual(extractShell('python', 'run("x")').regions, []);
