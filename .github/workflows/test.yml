@@ -183,6 +183,26 @@ jobs:
           test "$LENIENT" = "$WARNINGS"
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
 
+      # A CLI without --sarif (0.7.0, or a package: pin of an older version) takes a second run.
+      - name: An older command-line tool, pinned, still writes SARIF
+        id: older
+        continue-on-error: true
+        uses: ./
+        with:
+          files: test/fixtures/posix.sh
+          sarif: ${{ runner.temp }}/older.sarif
+          package: bash-explainer@0.7.0
+
+      - name: Check the older tool's result
+        env:
+          OUTCOME: ${{ steps.older.outcome }}
+          WARNINGS: ${{ steps.older.outputs.warnings }}
+          SARIF: ${{ runner.temp }}/older.sarif
+        run: |
+          test "$OUTCOME" = failure
+          test "$WARNINGS" -gt 0
+          node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
+
       - name: Scripts without problems pass
         uses: ./
         with:

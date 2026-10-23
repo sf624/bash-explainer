@@ -46,6 +46,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
+| `--sarif <file>` | with `--check`, also write the problems to this file as SARIF, whatever `--format` prints (so one run gives annotations and a SARIF file) |
 | `--format <format>` | `text`, `markdown` or `json`; with `--check`, also `github` (annotations in GitHub Actions) or `sarif` (for code scanning) |
 | `--no-examples` | leave out worked examples |
 | `--config <file>` | read the settings from this file (see [Settings](#settings)) |
