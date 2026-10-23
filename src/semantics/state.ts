@@ -34,9 +34,9 @@ import { builtinParse, commandName, DECLARATIONS, SET_LETTERS, setOptionWrites, 
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, treeFacts, type Trust, withinTrust } from './trust';
-import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, changedByBash, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
-export { ARITH_ASSIGNED, DYNAMIC, readDeclaration, type Declaration };
+export { ARITH_ASSIGNED, readDeclaration, type Declaration };
 
 export { lastStageInShell } from './env';
 
@@ -1993,7 +1993,7 @@ class Walker {
   private variableText(st: ShellState, name: string): string | null | undefined {
     this.noteRead(st, name);
     const target = this.resolve(st, name);
-    if (!target || DYNAMIC.test(target)) return undefined;
+    if (!target || changedByBash(target)) return undefined;
     const v = st.variables.get(target);
     const unset = ['off', 'default'].includes(option(st, 'set', 'nounset')) ? null : undefined;
     // (A name the script has not set may come from the environment: by custom, those are in capitals. Once a file
@@ -2020,7 +2020,7 @@ class Walker {
   private unsetRead(st: ShellState, name: string): void {
     if (this.dead || this.blind) return;
     const target = this.resolve(st, name) ?? name;
-    if (!st.variables.get(target) && !NUMERIC_DYNAMIC.test(target)) this.walkAgain(`arithmetic reads \`${target}\`, which the script may not have set`);
+    if (!st.variables.get(target) && !alwaysNumeric(target)) this.walkAgain(`arithmetic reads \`${target}\`, which the script may not have set`);
   }
 
   /**
@@ -2298,7 +2298,7 @@ class Walker {
     if (value === undefined) {
       // A value not known is an expression too, unless it is surely a number (see `unsure`).
       const target = this.resolve(st, name);
-      if (!target || !(NUMERIC_DYNAMIC.test(target) || attribute(st, target, 'i') === 'on')) this.markUnsure();
+      if (!target || !(alwaysNumeric(target) || attribute(st, target, 'i') === 'on')) this.markUnsure();
       return { st };
     }
     const text = (value ?? '').trim();

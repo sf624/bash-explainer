@@ -38,7 +38,7 @@ import { staticWordValue } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 import { builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
-import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, changedUnseen, assignsArithmetic, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -64,8 +64,6 @@ export interface Trust {
   reads(root: SyntaxNode): boolean;
 }
 
-/** The variables bash sets itself (besides `DYNAMIC`), or that builtins set without naming them. */
-const SPECIAL = /^(?:BASH\w*|COMP_\w+|READLINE_\w+|PWD|OLDPWD|REPLY|MAPFILE|OPTARG|OPTIND|OPTERR|COPROC\w*|UID|EUID|PPID|SHELLOPTS|BASHOPTS|COLUMNS|LINES|HOSTNAME|HOSTTYPE|MACHTYPE|OSTYPE|SHLVL)$/;
 const NAME = /^[A-Za-z_]\w*$/;
 /** The names in an arithmetic text or a value read as one (not the digits of `0x1f` or `16#ff`, nor `${#x}`'s). */
 const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
@@ -620,7 +618,8 @@ class Scan {
         this.keys.set(s.owner, set);
       }
     }
-    for (const name of this.integers) {
+    // (Also those of bash's integers that read it so, `OPTIND='x=5'` sets x: src/semantics/vars.ts.)
+    for (const name of new Set([...this.integers, ...[...this.texts.keys()].filter(assignsArithmetic)])) {
       for (const t of this.texts.get(name) ?? []) {
         if (t.text === undefined) this.blindFor('an integer variable is given text not known');
         else this.arithText(t.text, t.where, t.owner);
@@ -631,7 +630,7 @@ class Scan {
     const seen = new Set(queue);
     while (queue.length) {
       const name = queue.pop()!;
-      if (NUMERIC_DYNAMIC.test(name)) continue;
+      if (alwaysNumeric(name)) continue;
       const writes = this.writes.get(name);
       if (!writes) {
         this.blindFor(`arithmetic reads \`${name}\`, which the script never sets`);
@@ -729,7 +728,7 @@ function readTrust(scan: Scan): Trust {
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
   const trust: Trust = {
     blind: scan.blind,
-    variable: (name) => !scan.blind && NAME.test(name) && !SPECIAL.test(name) && !DYNAMIC.test(name) && !scan.arith.has(name) && !unseen.has(name)
+    variable: (name) => !scan.blind && NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
       && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain),
     closed: (name) => !scan.blind && !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
     arithNames: (n) => {

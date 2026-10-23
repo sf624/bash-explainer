@@ -14,7 +14,8 @@ import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
-import { ARITH_ASSIGNED, attribute, DYNAMIC, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
+import { changedByBash, setAtStart } from './vars';
 
 /** Where a word is: its context decides which expansions it undergoes. */
 export type WordContext =
@@ -431,9 +432,6 @@ export interface Fields {
 interface Piece { text: string; quoted: boolean; expanded: boolean }
 class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
 
-/** Variables bash sets itself: their values are not the environment's. */
-const SHELL_SET = /^(?:BASH\w*|PWD|OLDPWD|RANDOM|SRANDOM|LINENO|SECONDS|EPOCH\w+|PPID|UID|EUID|GROUPS|HOST\w+|OSTYPE|MACHTYPE|SHLVL|SHELLOPTS|PIPESTATUS|FUNCNAME|HISTCMD|OPTIND|OPTERR|DIRSTACK|IFS)$/;
-
 class Evaluator {
   private readonly unbound: Tri;
   constructor(private readonly w: WordMeaning, private readonly model: StateModel, private readonly env: WordEnv | undefined,
@@ -444,13 +442,14 @@ class Evaluator {
   /** The value of variable `name`: a string, null when unset, undefined when not known here. */
   variable(name: string, node: SyntaxNode): string | null | undefined {
     if (name === '_') return underscoreValue(node, this.model);
-    // (Bash changes some values itself: `RANDOM`, `SECONDS`.)
-    if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name) || DYNAMIC.test(name)) return undefined;
+    // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
+    if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name) || changedByBash(name)) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
     if (!v) {
       if (!this.env?.variables) return undefined;
-      return Object.hasOwn(this.env.variables, name) ? this.env.variables[name] : SHELL_SET.test(name) || name === name.toUpperCase() ? undefined : null;
+      // (Not in the environment: unset, unless bash sets it at start, or it is in capitals, which may come from elsewhere.)
+      return Object.hasOwn(this.env.variables, name) ? this.env.variables[name] : setAtStart(name) || name === name.toUpperCase() ? undefined : null;
     }
     if (v.declared === 'unknown' || v.set === 'unknown') return undefined;
     if (v.set === 'off') return null;

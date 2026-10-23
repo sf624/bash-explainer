@@ -46,4 +46,23 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; eval 'eval f'`), 'true');
     for (const more of ['trap f INT', "eval 'trap f INT'", "trap 'eval f' INT", "shopt -s expand_aliases; alias g='f'"]) assert.strictEqual(decided(`${body}; ${more}`), undefined, more);
   });
+  it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
+    // Arithmetic that reads a variable whose value is always a number runs no code: decisions stay.
+    for (const src of ['shift $((OPTIND-1))', 'while getopts ab o; do :; done; shift $((OPTIND-1))', '(( EUID == 0 ))', ': $((UID + PPID + RANDOM))']) {
+      assert.strictEqual(bash(`x=1; ${src}; echo $x`).trim(), '1');
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 1 ] && :`), 'true', src);
+    }
+    // A variable that bash sets only at start keeps what the script assigns; a readonly one keeps bash's value.
+    assert.strictEqual(bash('SHLVL=3; BASH_ARGV0=a; echo $SHLVL $BASH_ARGV0'), '3 a\n');
+    assert.strictEqual(decided('SHLVL=3; [ "$SHLVL" = 3 ] && :'), 'true');
+    assert.strictEqual(decided('BASH_ARGV0=a; [ "$BASH_ARGV0" = a ] && :'), 'true');
+    // (The failed assignment discards the rest of its line.)
+    assert.strictEqual(bash('exec 2>/dev/null\nUID=5\n[ "$UID" = 5 ] && echo yes || echo no'), 'no\n');
+    assert.strictEqual(decided('UID=5\n[ "$UID" = 5 ] && :'), undefined);
+    // Some of bash's integers read the text assigned to them as arithmetic, which may set a variable.
+    for (const src of ['OPTIND="x=5"', 'RANDOM="x=5"', 'y="x=5"; SRANDOM=$y']) {
+      assert.strictEqual(bash(`x=1; ${src}; echo $x`).trim(), '5', src);
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 1 ] && :`), undefined, src);
+    }
+  });
 });
