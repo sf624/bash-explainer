@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
-import { findIdioms, isStrictMode, simulateRedirects } from '../src/idioms';
+import { findIdioms, simulateRedirects } from '../src/idioms';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
@@ -11,6 +11,8 @@ function idioms(sources: string[], lang: 'en' | 'ja'): string[] {
   const parser = createUnbashParser();
   return findIdioms(sources.flatMap((src) => descendants(parser.parse(src).root, STATEMENTS)), lang);
 }
+/** Whether the statements of `src` hold one `set` that turns on errexit, nounset and pipefail. */
+const isStrictMode = (src: string): boolean => idioms([src], 'en').some((n) => /strict mode/.test(n));
 
 describe('redirect order', () => {
   it('follows redirections left to right', () => {
@@ -93,7 +95,6 @@ describe('set option bundles, compared with bash', () => {
       if (!on) return this.skip();
       assert.deepStrictEqual(explained(cmd), on);
       assert.strictEqual(isStrictMode(cmd), ['errexit', 'nounset', 'pipefail'].every((n) => on.includes(n)), cmd);
-      assert.strictEqual(idioms([cmd], 'en').some((n) => /strict mode/.test(n)), isStrictMode(cmd));
     });
   }
 

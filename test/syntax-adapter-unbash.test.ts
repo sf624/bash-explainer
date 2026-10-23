@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, hasError, token } from '../src/syntax/tree';
@@ -247,6 +248,21 @@ describe('unbash adapter: tokens and comments', () => {
 
 const o = (text: string): string => outline(tree(text).root);
 const errorsOf = (text: string): string => tree(text).errors.map((e) => `${e.kind}@${e.startIndex}-${e.endIndex}`).join(' ');
+
+describe('unbash adapter: redirections', () => {
+  it('sends `&>` and `&>>` to a process substitution, as bash does', function () {
+    // (unbash reads the process substitution as a word of its own, after a redirection with no target.)
+    assert.strictEqual(outline(ub.parse('exec &> >(tee log)').root),
+      '(program (redirected_statement (command @body (command_name @name (word "exec"))) (file_redirect @redirect "&>" (process_substitution @destination ">(" (command (command_name @name (word "tee")) (word @argument "log")) ")"))))');
+    assert.strictEqual(outline(ub.parse('echo &>> >(cat) b').root),
+      '(program (command (command_name @name (word "echo")) (file_redirect @redirect "&>>" (process_substitution @destination ">(" (command (command_name @name (word "cat"))) ")")) (word @argument "b")))');
+    assert.deepStrictEqual(ub.parse('exec &> >(tee log)').errors, []);
+    // bash: `b` is echo's argument, and both outputs go to the process substitution.
+    const r = spawnSync('bash', ['-c', 'echo &> >(sed s/^/got:/) b; wait; sleep 0.1'], { encoding: 'utf8' });
+    if (r.error) return this.skip();
+    assert.strictEqual(r.stdout, 'got:b\n');
+  });
+});
 
 describe('unbash adapter: heredocs', () => {
   it('has the start, the body and the end, with the expansions of the body', () => {
