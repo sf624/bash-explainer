@@ -31,6 +31,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - [docs/design/semantics.md](docs/design/semantics.md) is the plan: A, command specs read by one argument interpreter (`src/argv/`); B, a semantic model after the manual (`src/semantics/`); C, the bash-ast test. Do not add one-off fields to `src/dict/types.ts` or name checks to `src/analyzer.ts`; extend the spec or the model instead, or say why not.
 
 
+- The refactoring plan (one source per fact, in three stages) is [docs/design/refactor.md](docs/design/refactor.md). Every refactoring PR lists the finding IDs it addresses and updates the traceability table there in the same PR.
 - bats test files are a host kind ([docs/design/bats.md](docs/design/bats.md)): the extractor rewrites `@test "x" {` into the function bats makes of it, and bats' own functions (`run`, `load`…) are specs in `src/dict/bats.ts` that apply only in that kind (`ShellRegion.commands`). `test/bats-real.test.ts` checks what we say with bats-core (the devDependency `bats`, MIT, run as a program).
 - Every product parses with the unbash adapter (`src/syntax/adapters/unbash.ts`), and only that file may import unbash (test/syntax-boundary.test.ts); everything else reads the model of `src/syntax/tree.ts`. Tests that explain scripts build the parser with `createUnbashParser()`. tree-sitter was removed (docs/design/syntax-tree.md, step 6).
 - No bundle may load or contain wasm; test/offline.test.ts checks it.

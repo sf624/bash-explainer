@@ -1,0 +1,245 @@
+# Refactoring: one source per fact
+
+[semantics.md](semantics.md) built the specs (A), the semantic model (B) and the bash-ast test (C). Four independent code reviews (2026-10-23, at a87292f) then looked for places that still decide a fact a second time, beside the spec or the model. This page plans the refactoring that removes them, in steps. Each step is a PR.
+
+The reviews found 55 items, with IDs A1–A10 (the analyzer), S1–S9 (semantics, argv, syntax), D1–D14 (dictionary, embedded languages, examples, hosts) and P1–P12 (products, web, CI, tests). Each was checked against the code at 1f9b651 before it was planned. The [traceability table](#traceability) lists every ID, its verdict and its step. It is also where each step records its status.
+
+## Goal
+
+Every fact has one source. Today several do not:
+
+- **What a command's options mean** comes from its `ArgvParse` (src/argv/), but the example builders and the dialect check read the raw words again with regexes. Two bugs come from this (A1, D2).
+- **What a name runs** comes from `resolveName`, but `unset` and the stages of a pipeline example use the name's text (A4, A5).
+- **What a word does** (splitting, globbing) comes from `wordMeaning`, but the ⚠ notes of src/wordfacts.ts decide it from node types (A2).
+- **What a builtin sets** (`read -a`, `mapfile`, `printf -v`…) is written twice by hand, in the walk and in the trust scan, beside the spec (S1).
+- **Which shell a program name is**, **which command an alias such as `egrep` stands for**, and **which variables bash sets** each have several tables that disagree (D5, D6, S2).
+- **The settings, the document set-up and the diagnostics policy** are applied again by each product (P2–P5).
+
+## Principles
+
+1. **One source per fact.** Options come from the argv parse. Meanings come from the semantic model. A list (aliases of commands, shell names, variables bash sets) is one table, in one module, imported by every reader.
+2. **No change of behaviour, except to fix a contradiction.** A step that only moves code keeps every dump, probe and example table unchanged. A step that fixes an explanation contradicting bash or the tool says so in its PR, with a test against the real tool and a CHANGELOG line under `## Unreleased` (one bullet, or an extension of a bullet of the same kind).
+3. **Small PRs, each green on its own.** Every step keeps 100% coverage of `src/` and passes CI by itself. `test/fixtures/snippets.json` is regenerated in every step that changes tests.
+4. **Follow the plan of semantics.md.** No one-off fields in `src/dict/types.ts`, no name checks in `src/analyzer.ts`. When a step needs a new spec field, it is general, or the step says why not.
+
+## The steps
+
+Three stages, agreed with the maintainer. Stage 1 is small, independent steps; most of them fix a bug found by the reviews. Stage 2 is medium steps that move a fact into the spec or the model. Stage 3 is large, mostly mechanical splits, done once the facts have one source, so the split moves less code.
+
+Sizes are rough, in changed lines with tests: S under 300, M 300–1,000, L over 1,000.
+
+**Changes to the grouping agreed in advance**, after the verification:
+
+- The trust scan reading the tree (S6, S7) is a step of its own in stage 2 (2.2). It rewrites the same code as 2.1 and depends on it.
+- The option parsers of src/examples (`parseOptions`, `sedArgs`, `perlOptions`, D2) join the audit of the option presets in stage 3 (3.5). They have about 20 call sites and drive the example runners. Step 1.1 fixes only the readers that produce the reported bugs.
+- POSIX mode from `#!… --posix` (A7) goes with the errexit step (2.5), since `errexitWhy` already has a `posix` reason.
+- The action's double analysis (P12) goes with the CI step (3.7); the panel's double handlers (P12) go with the web split (3.3).
+
+### Stage 1: small, independent steps
+
+**1.1 ArgvParse query helpers; the examples read the parse.** *(A1, D1, D2 bug, D10, part of A7)*
+- What: add query helpers to `ArgvParse` in src/argv/: `has(option)` (any spelling: short, long, a unique prefix where the spec allows it, a bundle), `values(option)`, `operands(role)`. The example builders in src/analyzer.ts use them in place of raw words: `cmdFlags` (2438), `trContext` (2426), `sedScripts` (2474), `jqVars` (2492), the perl letter scan (2296) and `-i` (2639), `regexFlavor` (3235–3249). `readsFileOperand` in src/examples/pipeline.ts (266–277) reads the operands from the parse, not from `/^-[ef]$/`. `commandFeatures` in src/dialect.ts (297) reads the options of a builtin from its parse, so a value is not read as an option. The name checks around them (yq judged twice at 1477 and 2213, `parse.command === 'set'` at 1883, `turnedOff` -f/noglob at 1856, the `-exec` terminator by `a.text === '+'`) read the parse too.
+- Behaviour fixes, each with a row in the example tables compared with the real tool (test/examples-textfilters.test.ts, test/examples-sed.test.ts, test/examples-pipeline.test.ts):
+  - `grep -e -v foo`: the example said "with `-v`, lines that do not match are printed"; `-v` is the pattern.
+  - `sed -ie 's/a/b/' -e 's/c/d/' f`: the example ran both scripts; GNU sed takes `e` as the suffix of `-i` and fails ("can't read s/a/b/").
+  - `grep -efoo data.txt | sort`: the input was labelled as stdin; grep reads `data.txt`.
+  - `printf … | grep -e -v foo`: the example read stdin; grep reads the file `foo`.
+- Files: src/argv/interpret.ts (or a new src/argv/query.ts), src/analyzer.ts, src/examples/pipeline.ts, src/dialect.ts.
+- Guarded by: the example tables (unchanged except the rows above), test/dialect.test.ts, `npx tsx test/dump.ts test/fixtures/sample.sh en` unchanged.
+- Size M. Risk: medium (many example builders). Depends on: nothing.
+
+**1.2 `unset` and the stages of a pipeline through `resolveName`.** *(A4, A5)*
+- What: `unset()` (analyzer.ts:1318) takes its text from what `unset` would remove: with `-f` a function, with `-v` a variable, with neither the variable if one is known, else the function (bash 5.2, 4.2 "unset"). `pipelineExample` (2603) resolves each stage's name and gives no example for a stage that runs a function or an alias, as `commandTail` already does (`!head.fn`). `declaration()` (1281) and `unset()` share the "End of options" and flag texts with `render()` (1298, 1764) instead of copying them.
+- Behaviour fixes, with tests against bash:
+  - `f(){ :; }; unset f`: said "Unset the variable `f`"; bash removes the function.
+  - `sort() { tac; }; printf 'a\nb\n' | sort`: the example printed coreutils sort's output (`a b`); the function prints `b a`.
+- Files: src/analyzer.ts, test/names.test.ts or test/analyzer.test.ts, test/examples-pipeline.test.ts.
+- Guarded by: test/names-probes.test.ts, sample.sh dump unchanged.
+- Size S. Risk: low. Depends on: nothing.
+
+**1.3 One gate for pitfalls.** *(A6)*
+- What: the setting `notes.pitfalls` is checked in one place, where a ⚠ note is added, not in nine (analyzer.ts 297, 756, 1244, 1284, 1640, 2895–2901, 3298). A note is a pitfall by its catalog entry. The `[[ =~ ]]` backslash note (3507–3511, inline text) moves to src/messages.ts or src/pitfalls.ts. The distro-alias note (`ll`, 1700–1707) is gated too.
+- Not changed: the "missing `then`" error (1228–1238). It is a syntax error, not a pitfall, and stays shown.
+- Behaviour: with `notes.pitfalls` false, the two notes above no longer show. This is what the setting says; CHANGELOG line under Fixed.
+- Files: src/analyzer.ts, src/messages.ts or src/pitfalls.ts, test/pitfalls.test.ts.
+- Guarded by: test/pitfalls.test.ts, test/messages.test.ts, sample.sh dump unchanged (pitfalls on).
+- Size S. Risk: low. Depends on: nothing.
+
+**1.4 One table of command aliases, one mapping of shell names, a structured host identity.** *(D4, D5, D6, part of A7)*
+- What:
+  - One table of command aliases (`egrep` → `grep -E`, `fgrep` → `grep -F`, `gawk`/`mawk`/`nawk` → `awk`, `python` → `python3`) in src/dict/, read by `lookupCommand` (analyzer.ts 4639–4648), src/examples/pipeline.ts (181, 247–248, 270, 277) and `regexFlavor` (3247–3248). `lookupCommand` moves out of analyzer.ts into src/dict/.
+  - One mapping from a program name or path to a `Shell`: export `shellFromName` from src/dialect.ts (38) and use it in the eight places of src/hosts.ts (335, 351, 411, 525–539, 668, 720–725, 852, 987).
+  - Host regions carry a structured identity (`{ kind, ci?: 'github' | 'circleci' | 'azure' | …, label }`) instead of the English label `region.label[1]` (hosts.ts:1237). Readers test the kind, not `startsWith('GitHub Actions')` (hosts.ts:1241, src/embedded/yq.ts:189) or `/^Markdown/` (analyzer.ts:1701).
+- Behaviour fixes:
+  - Dockerfile `SHELL ["/bin/dash","-c"]` was read as `sh`, `RUN ["dash","-c",…]` as `dash`; both are `dash` now.
+  - Makefile `SHELL=/bin/ksh` and Python `executable='/bin/ksh'` were read as `sh` and warned that `[[ ]]` "fails in dash"; they are `ksh`. ksh is not installed on the development machine, so the test is a table of names checked against the ksh manual's list of `[[ ]]` support; dash is checked against the real dash.
+- Files: src/dict/ (new aliases table), src/analyzer.ts, src/examples/pipeline.ts, src/dialect.ts, src/hosts.ts, src/embedded/yq.ts, test/hosts.test.ts, test/dialect.test.ts.
+- Guarded by: test/hosts.test.ts, the example tables, sample.sh dump unchanged.
+- Size M. Risk: low. Depends on: 1.1 for the pipeline.ts and `regexFlavor` parts (same lines). The hosts.ts part can start at once.
+
+**1.5 Housekeeping.** *(P1, P6, S8, S9, S3 docs, A8)*
+- What:
+  - P1: the code-action provider uses the languages of `bashExplainer.languages` (`languages.map(l => ({ language: l }))`), and is registered again when the setting changes, as hover.ts:18–21 does. Today it is registered for `shellscript` only (src/ui/diagnostics.ts:24), so a language id added in the setting gets dialect diagnostics but no quick fix. CHANGELOG line under Fixed.
+  - P6: remove the npm script `build:grammar` (package.json:667); scripts/build-grammar.mjs is gone.
+  - S8: bound the module-level `aliasTrees` cache (src/semantics/state.ts:665, 3025–3033), for example an LRU of a few hundred entries.
+  - S9: semantics.md §4.2 no longer shows `src/semantics/model.ts`, which was never built; the layers diagram (about line 1114) adds trust.ts, nested.ts, conditions.ts and B7. Give a reason to the c8 ignore at words.ts:846–847 (a rethrow guard); make status.ts:363 (`return n`, unreachable) a non-null assertion. Remove the stray doc comment at state.ts:787–791.
+  - S3 (docs only): status.ts:259–260 and semantics.md:809 say the walk does not turn errexit off in `$( )`; it does (state.ts:1591–1596). CLAUDE.md already says so.
+  - A8: one helper around `braceExpand` for the three try/catch copies (analyzer.ts 2655, 2678, 2709–2720). The catch at 2719 is reachable (`echo {a..z}{a..z}{a..z}{a..z}` throws `Unsupported`): it gets a test and loses its c8 ignore.
+- Files: src/ui/diagnostics.ts, package.json, src/semantics/state.ts, src/semantics/words.ts, src/semantics/status.ts, src/analyzer.ts, docs/design/semantics.md.
+- Guarded by: unit tests, coverage. Size S. Risk: low. Depends on: nothing. Can be split into several PRs.
+
+**Parallelism in stage 1.** 1.2, 1.3 and 1.5 can run in parallel with each other and with 1.1. 1.1, 1.2, 1.3 and 1.5 all touch src/analyzer.ts, in different functions; the hunks do not overlap, but rebase each on the latest main before merging. 1.4 waits for 1.1 (pipeline.ts, `regexFlavor`); its hosts.ts part does not. Every bug-fix step adds a CHANGELOG line: keep both sides in a conflict.
+
+### Stage 2: facts into the spec and the model
+
+**2.1 Builtin effects as spec data.** *(S1, S4, D7, D8 in part)*
+- What: a builtin's spec says what it sets: the variable named by an option value or an operand (`read -a`, `mapfile`, `printf -v`, `getopts`, `wait -p`), `REPLY`/`MAPFILE` by default, options (`set`), aliases (`alias`, `unalias`), removals (`unset`). The `ValueType`s `variable` and `function` (src/argv/spec.ts:160), unused today, carry it. `Walker.builtin` (state.ts:3048–3192) and `Scan.command` (trust.ts:472–588) read these effects from the parse instead of their own switches. `command`/`builtin` are unwrapped through the spec's command slot (builtins.ts:378–381), not by `/^-\w*[vV]/` (state.ts:1736, 3054, trust.ts:464); `set -a` is read from the parse (trust.ts:582–584). The duplicated lists go to one module each: `DECLARATIONS` (state.ts:353, status.ts:80, words.ts:156, trust.ts:587), the bash-only builtins (names.ts:27, state.ts:3207); `commandName` (status.ts:117, state.ts:2601) becomes one helper.
+- bats: the functions of bats (src/dict/bats.ts) get effects like any builtin: `skip`, `bats_require_minimum_version`, `load` (by its spec) and `bats_pipe` set nothing the walk follows; `run` sets `status`, `output` and `lines`. The trust scan stops treating every host function as unknown (trust.ts:482), so a bats file with one `skip` is no longer blind as a whole. `runCommand` (bats.ts:20–27) and the `'run'` text test (bats.ts:78) read the parse of `run`'s spec. The `host` argument to `scriptTrust` and its cache bypass (trust.ts:692) go, or become part of the cache key in one place (state.ts:3521).
+- D8: `replacesShell` (spec.ts:246, exec only, no reader in src/) becomes the source of exec's effect, or goes.
+- Files: src/argv/spec.ts, src/dict/builtins.ts, src/dict/bats.ts, src/semantics/state.ts, src/semantics/trust.ts, src/semantics/status.ts, src/semantics/words.ts, src/semantics/names.ts, src/bats.ts.
+- Guarded by: test/state-probes.test.ts, test/env-probes.test.ts, test/names-probes.test.ts, test/status-probes.test.ts and test/decisions.test.ts unchanged; for bats, new rows in test/bats-real.test.ts (a file with `skip` gets the same decisions as without it), compared with real bats where present.
+- Size L (split into builtins first, bats second if needed). Risk: medium (the walk). Depends on: 1.5 (state.ts comments) loosely; nothing hard.
+
+**2.2 The trust scan reads the tree and the model.** *(S6, S7)*
+- What: indirection and slices come from the adapter's nodes (unbash.ts:751, 787–792), not from regexes over text (trust.ts:274, 281). The texts of `eval`, `trap` and `alias` are parsed once, by `Scripts.read` (state.ts:733), and the trust scan reads that tree; `foreignParser` (trust.ts:96, 603–606) and the bridge in `Walker.facts` (state.ts:1022–1027) go. "May this function be called where we do not see it?" is decided once, by `trust.closed()`; env.ts (198, 203–215) stops counting the function's name in the text.
+- Files: src/semantics/trust.ts, src/semantics/env.ts, src/semantics/state.ts.
+- Guarded by: all probe tests and test/decisions.test.ts unchanged.
+- Size M. Risk: medium. Depends on: 2.1 (same functions of trust.ts).
+
+**2.3 Word facts and the pipe-subshell fact from the model.** *(A2, A3, A10)*
+- What: src/wordfacts.ts asks `wordMeaning`/`partMeaning` whether a word is split or globbed (not `n.parent?.type !== 'string'`, wordfacts.ts:14), and `resolveName` for the commands it warns about (the list at wordfacts.ts:47). The prefix-assignment pitfall reads the expansions of the word from the tree, not `usesVariable`'s regex (pitfalls.ts:20). `pipeSubshellPitfalls` (analyzer.ts:2761–2809) takes the variables a last stage sets from the model's `assigned` (state.ts:291), which covers `((count++))`, `read`, `printf -v` and `mapfile`, and the later reads from the tree, so `echo '$n'` is not a read. The idioms of src/idioms.ts match the tree's shape, not the statement's text (`/^while (true|:); do/`, idioms.ts:164, 174, 229).
+- Behaviour fixes, with tests against bash:
+  - `IFS=; set -f; cp $a b`: the token said "not split", the ⚠ note said "split"; the note goes.
+  - `X=1 echo "\$X"`: warned that the shell expands `$X` first; `\$X` is not an expansion.
+  - `… | while read -r l; do ((count++)); done; echo "$count"`: now warned.
+  - `… | while read n; do :; done; echo '$n'`: no longer warned.
+  - Idioms with other spacing (`while  true ; do`) are recognised.
+- Files: src/wordfacts.ts, src/pitfalls.ts, src/analyzer.ts, src/idioms.ts.
+- Guarded by: test/word-probes.test.ts, test/wordfacts.test.ts, test/word-notes.test.ts, test/pitfalls.test.ts, test/idioms.test.ts.
+- Size M. Risk: low to medium. Depends on: 1.3 (the pitfall gate).
+
+**2.4 One way to read settings and open a document in every product.** *(P2, P3, P4, P5, P10)*
+- What: the VS Code extension builds a `Settings` with `readSettings` (src/settings.ts:201) from `getConfiguration`, and calls `explainOptions` (settings.ts:313), as the CLI, the language server and the web page do; the hard-coded defaults (service.ts 28–31, 40, 48, 62, 117, 153–157, 162; diagnostics.ts:46; hover.ts; inline.ts; ui/semanticTokens.ts) go. A shared `openDocument(text, uri/fileName, settings)` in src/ does the set-up (lines, host kind, the npm → `packageJson` mapping and the bats case, extraction, parse) now copied in service.ts (57–74, 133–140), cli/lsp.ts (81–100), cli/main.ts (337–345) and web/main.ts (216–230). One `diagnosticsFor(doc, settings)` applies the policy (diagnostics off, embedded off) now in service.ts:159 + diagnostics.ts:46, cli/lsp.ts:110–112, cli/main.ts:349 and web/main.ts:399. One `plain(message)` replaces the four copies (diagnostics.ts:54, cli/lsp.ts:107, web/main.ts:374, cli/main.ts:307), which already differ: only three strip a variation selector after the mark, and the CLI's also strips backticks. No message in src/ has a variation selector today, so users see no difference yet. One list of file kinds feeds cli/main.ts:19, web/main.ts:202, settings.ts:11 and service.ts:70 (package.json's `activationEvents` checked against it by test/settings-schema.test.ts).
+- P10: the shared functions live in src/, so coverage measures them; cli/ and web/ keep only wiring.
+- Behaviour: unchanged (the CLI keeps stripping backticks, as an option of the shared `plain`). No CHANGELOG line.
+- Files: src/settings.ts, a new src/document-setup.ts (or in src/document.ts), src/service.ts, src/ui/*.ts, cli/main.ts, cli/lsp.ts, web/main.ts.
+- Guarded by: test/settings.test.ts, test/settings-schema.test.ts, test/lsp.test.ts, test/cli.test.ts, test/web.test.ts (CI); the integration test in CI.
+- Size M. Risk: medium (products without unit coverage today). Depends on: 1.5 (P1, same file) loosely.
+
+**2.5 One source for errexit, and POSIX mode in the state.** *(S3, part of A7)*
+- What: the walk already turns errexit off in `$( )` (state.ts:1591–1596). The state also carries the reason (`off-in-substitution`, `inherit_errexit`, `posix`), and `statusModel(...).errexit` reads it; `errexitAt`/`fromCalls` (status.ts:262–290) go. `#!… --posix` is read by `shellState` (with `set -o posix`), not by a regex in `explainLine` (analyzer.ts:286), so `nestedScripts` (analyzer.ts:4615) and hosts.ts:1221 get it too.
+- Files: src/semantics/state.ts, src/semantics/status.ts, src/statusfacts.ts, src/analyzer.ts, src/hosts.ts, CLAUDE.md, semantics.md §4.11.
+- Guarded by: test/status-probes.test.ts and test/state-probes.test.ts unchanged; a probe row for `#!/bin/bash --posix`.
+- Size S–M. Risk: medium (errexit facts). Depends on: nothing; parallel with 2.1 if 2.1 does not touch the substitution code.
+
+**2.6 One catalog of the variables bash sets; one word evaluator.** *(S2)*
+- What: `DYNAMIC`/`NUMERIC_DYNAMIC` (vars.ts:13, 15), `SPECIAL` (trust.ts:61) and `SHELL_SET` (words.ts:435) become one table in src/semantics/vars.ts, each variable with its properties (dynamic, numeric, set by bash at start, set by a builtin). Their members differ today (`SHELL_SET` lacks `REPLY`, `MAPFILE`, `OPTARG`, `COMP_*`; only it has `IFS` and `HOSTFILE`); the table follows the manual (5.2 "Bash Variables"), checked by a probe that lists `compgen -v` in a clean bash. The walk's own evaluator for conditions (`condPieces`, `condFields`, `condValue`, `condPattern`, state.ts:2799–2901) is replaced by the evaluator of words.ts (437–853).
+- Files: src/semantics/vars.ts, src/semantics/trust.ts, src/semantics/words.ts, src/semantics/state.ts.
+- Guarded by: all probe tests; test/conditions.test.ts. A difference found by the probe is a fix, with a CHANGELOG line if users see it.
+- Size M. Risk: medium. Depends on: 2.1 (trust.ts), 2.2.
+
+**Parallelism in stage 2.** 2.1, 2.3, 2.4 and 2.5 can start in parallel. 2.1 and 2.5 both touch state.ts (different functions: builtins and substitutions). 2.2 and 2.6 follow 2.1.
+
+### Stage 3: large, mostly mechanical
+
+**3.1 Split the Analyzer.** *(A9, D11, D9, rest of A7)*
+- What: move out of src/analyzer.ts (4,731 lines, about 200 private members, 491 inline `this.s(` texts): the example builders (about 900 lines) into src/examples/, chosen by a spec field rather than by name (`commandExampleFor`'s `cmd === 'printf' | 'xargs' | 'getopt' | 'perl'`, 2631); `embeddedTextInner` (2174–2340) into a registry of embedded languages with one return shape; the expansion renderers (about 300 lines); the public types into src/analyzer-types.ts; `nestedScripts` (4615) into src/semantics/nested.ts; the per-call mutable fields into a per-line context object. D9: one `Unsupported` base class for the nine runners; the catch-alls (src/embedded/perl.ts:341, src/examples/jq.ts:1697, src/examples/regex.ts:381–382) rethrow what is not `Unsupported`, as elsewhere.
+- Guarded by: every dump unchanged (sample.sh and the fixtures, compared before and after), the full suite.
+- Size L, in several PRs (one per seam). Risk: low per PR (mechanical), but conflicts with every open analyzer PR: do it when stage 1 and 2.3 are merged. Depends on: 1.1–1.3, 2.3.
+
+**3.2 Split the Walker.** *(S5)*
+- What: src/semantics/state.ts's `Walker` (811–3507, about 50 fields, 19 mutable) into the walk, the builtin effects (from 2.1), the condition evaluation and the alias handling. The function-walk reuse key (2538) is derived from the modes, not listed by hand. `opaque` (2198) becomes part of `ShellState`, merged at joins, or is replaced by `trust.blind` where they overlap.
+- Guarded by: all probe tests and test/decisions.test.ts unchanged.
+- Size L. Risk: medium. Depends on: 2.1, 2.2, 2.5, 2.6.
+
+**3.3 Split web/main.ts.** *(P11, P12 panel part)*
+- What: web/main.ts (1,203 lines) into share, compare, panel bridge, editor and storage modules. The ten `localStorage` calls (web/main.ts 167, 183, 252, 911–912, 932–933, 999, 1010, 1029) and four in layout.ts (18, 97, 136, 143) go through web/storage.ts with try/catch in one place. The `panelOnly` (14) and `compare` branches become a mode object. The panel's `rerun` and `quickReference` handlers (src/ui/panel.ts:120–128, web/main.ts:638–641) share one implementation.
+- Guarded by: test/web.test.ts (CI, with the browser).
+- Size L. Risk: medium (no unit coverage). Depends on: 2.4 (web/main.ts document set-up), 3.6 (the web test).
+
+**3.4 Split src/hosts.ts.** *(D14)*
+- What: the per-CI flags (`githubLike`, `circleci`, `azure`, `azureWindows`, hosts.ts:592–596) and the nested label ternary (616–623, with CircleCI's label twice) become a table of CI systems. Optionally src/hosts/*.ts, one file per kind (Dockerfile, Makefile, YAML/CI, Markdown, Jenkinsfile, Python, package.json, bats).
+- Guarded by: test/hosts.test.ts, the host fixtures' dumps unchanged.
+- Size L (mechanical). Risk: low. Depends on: 1.4 (host identity, shell names).
+
+**3.5 Option parsing: presets audited against the tools; the examples' parsers read the parse.** *(D3, D2 rest, D8 rest, D13)*
+- What: the parser family of a spec is described by five flags and a style (`style`, `longPrefixes`, `longEquals`, `shortClusters`, `shortEquals`, `cobra`). Replace them with named presets (`getopt_long` with unique prefixes, `getopt` only, Go cobra, BSD, Java-style…) whose behaviour is checked against a real tool of that family. Then audit the entries: decision 3 of semantics.md turns prefixes on for GNU tools that use getopt_long, but only 8 entries have it; `grep` lacks it, so `grep --invert` (accepted by GNU grep 3.11) is "not in the dictionary". The example runners' own parsers (`parseOptions` in src/examples/textfilters.ts:23 and its ~20 callers, `sedArgs` in pipeline.ts:123, `perlOptions` in perlrun.ts:835, the `takesValue` table in pipeline.ts:269–271) read the `ArgvParse` (with the helpers of 1.1). The one-off spec fields (`lastModeWins`, `endsOptions`, `envWith`, `laterOperands`, `unknownOption`, `assignmentText`, `splice`) are reviewed: generalise, keep with the reason in spec.ts, or remove. D13: the extras files (extras.ts, extrasFiles.ts, extrasAdmin.ts) merge options into entries defined elsewhere; a test fails when an extra defines an option the main entry has, and each command's options move into one file where that is simple.
+- Behaviour: more GNU options accepted by prefix, as the tools do; each family preset has a real-tool test, and each entry turned on is in a table compared with the tool. CHANGELOG lines under Fixed.
+- Files: src/argv/spec.ts, src/argv/interpret.ts, src/dict/*.ts, src/examples/*.ts.
+- Size L, in several PRs (presets; then one PR per dictionary file). Risk: medium (option meanings). Depends on: 1.1.
+
+**3.6 Test support modules.** *(P8, P9)*
+- What: test/support/ gets `allTokens` (the `[t, ...all(t.children)]` flattening, copied in 29 files), `explain(src, line, opts)` (about 20 variants) and one bash runner (`bash --norc --noprofile`, `LC_ALL=C`, a clean `PATH` and `HOME`, input by file as test/support/run.ts does) used by test/tricky.test.ts:34, test/word-notes.test.ts:27 and test/builtins-real.test.ts:18. test/web.test.ts (2,150 lines, one `describe`) is split by feature, builds the site once, and waits for conditions instead of fixed sleeps (259, 1455, 1788, 1837, 2046).
+- Guarded by: the suite itself (no test lost: compare the test counts before and after).
+- Size L (mechanical). Risk: low. Depends on: nothing; best after stage 1 to avoid conflicts in test files.
+
+**3.7 CI: a composite action and the release workflow.** *(P7, P12 action part)*
+- What: a composite action for checkout, setup-node and `npm ci`, and one for installing the real tools (the same step at test.yml:31–33 and release.yml:41–43). release.yml builds on Node 24, not 22 (CI tests 18 and 24), and checks that the tagged commit passed test.yml instead of running a smaller suite. action.yml (73–77) runs `check` once and writes both the SARIF file and the GitHub annotations from it.
+- Guarded by: CI on the PR; a dry run of the release workflow (`workflow_dispatch` without publishing) before the next release.
+- Size S–M. Risk: medium (release). Depends on: nothing.
+
+**Parallelism in stage 3.** 3.4, 3.5, 3.6 and 3.7 are independent of each other. 3.1 and 3.2 touch different files and can run in parallel, but each is split into PRs merged one at a time. 3.3 follows 2.4 and 3.6.
+
+### Not planned
+
+- **D12** (sed and perl have two parsers each, one to explain and one to run): long term. The two have different needs (positions and texts vs a runnable program); merging them is a project of its own. Revisit when a bug comes from their disagreement.
+
+## How each step is checked
+
+1. **The PR lists the finding IDs it addresses**, in its description, with a link to this page.
+2. **A fresh reviewer** (a subagent that shares no context with the author) re-reads those findings, from the table below and from the step above, and confirms in the diff that each is resolved. For each ID the review names the test that shows it: a probe row, an example-table row compared with the real tool, a unit test, or a dump that is unchanged (a move) or changed only as the step says.
+3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #N`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
+4. **A step that finds a finding wrong, or only partly right,** says so in the table (`not a problem`, or a corrected note) instead of leaving it open.
+5. **A behaviour change not listed in the step** is either a fix of a contradiction (then it gets a test against the real tool, a CHANGELOG line and a line in the table's notes) or a regression to undo.
+
+## Traceability
+
+Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #N`, `done`, `won't do` or `not a problem`.
+
+| ID | Finding (short) | Verdict | Step | Status | Verified by |
+|---|---|---|---|---|---|
+| A1 | Example builders re-read argv with regexes; `grep -e -v foo`, `sed -ie … -e …` | confirmed (dump and GNU sed) | 1.1 | planned | |
+| A2 | wordfacts decides splitting from node types; `IFS=; set -f; cp $a b`; `X=1 echo "\$X"` | confirmed (dump); list at wordfacts.ts:47 | 2.3 | planned | |
+| A3 | pipe-subshell pitfall scans text; misses `((count++))`; fires on `echo '$n'` | confirmed (dump); `printf -v` missed only in a `{ }` stage | 2.3 | planned | |
+| A4 | Pipeline example ignores a function named like the command | confirmed (dump: `a b`, bash: `b a`) | 1.2 | planned | |
+| A5 | `unset f` says "variable" for a function; texts copied from `render()` | confirmed (bash `type f`: not found); unset() at 1318 | 1.2 | planned | |
+| A6 | `notes.pitfalls` gated in 9 places; 2 ⚠ bypass it | confirmed (`[[ =~ ]]` and distro alias); missing-`then` is a syntax error: not a problem | 1.3 | planned | |
+| A7 | `--posix` by regex; lookupCommand/nestedScripts in analyzer; name checks | confirmed (nestedScripts at 4615, lookupCommand at 4639) | 1.1 (name checks), 1.4 (lookupCommand), 2.5 (`--posix`), 3.1 (nestedScripts, commandExampleFor) | planned | |
+| A8 | Three try/catch around braceExpand; c8 comment wrong | confirmed (2655, 2678, 2709–2720; catch reachable) | 1.5 | planned | |
+| A9 | Analyzer god class | confirmed (facts) | 3.1 | planned | |
+| A10 | idioms match statement text by regex | confirmed (idioms.ts:164, 174, 229) | 2.3 | planned | |
+| S1 | Builtin effects hand-coded in Walker.builtin and Scan.command; `-v` regex ×3; duplicates | confirmed (Walker.builtin 3048–3192, Scan.command 472–588, set -a 582–584; DECLARATIONS in trust.ts once) | 2.1 | planned | |
+| S2 | Second word evaluator in the walk; four variable catalogs | confirmed | 2.6 | planned | |
+| S3 | errexit done twice | corrected: the code agrees; status.ts:259–260 and semantics.md:809 are stale (CLAUDE.md is right). `errexitAt` is redundant for the value but supplies `errexitWhy` | 1.5 (docs), 2.5 (one source) | planned | |
+| S4 | bats: any host function call blinds the trust; host threaded; run re-parsed | confirmed (one `skip` blinds the whole file) | 2.1 | planned | |
+| S5 | Walker god class; hand-listed reuse key; `opaque` | corrected: about 50 fields, 19 mutable (not ~40 mutable) | 3.2 | planned | |
+| S6 | Unseen calls decided twice (env.ts counts names) | confirmed | 2.2 | planned | |
+| S7 | Trust scan re-derives structure from text; two parsers per string | confirmed | 2.2 | planned | |
+| S8 | `aliasTrees` cache never evicts | confirmed (grows with distinct alias texts) | 1.5 | planned | |
+| S9 | Stale doc (model.ts, layers diagram), c8 ignores, stray comment | corrected: words.ts:846–847 is a rethrow guard (needs a reason, stays); status.ts:363 is the unreachable one | 1.5 | planned | |
+| D1 | Embedded languages read options from raw words; `grep --invert` | confirmed; `grep --invert` part is D3's | 1.1 (readers), 3.5 (prefixes) | planned | |
+| D2 | Second option-parser family in src/examples; `grep -efoo data.txt \| sort` input label | confirmed (dump) | 1.1 (`readsFileOperand` bug), 3.5 (the parsers) | planned | |
+| D3 | `longPrefixes` opt-in; `grep --invert` unknown; five flags describe a family | corrected: off by default is decision 3 of semantics.md; the gap is that getopt_long tools like grep lack it | 3.5 | planned | |
+| D4 | Host identity is its English label | confirmed | 1.4 | planned | |
+| D5 | Seven+ program-name → Shell mappings that disagree; dash/ksh read as sh | confirmed (eight in hosts.ts; ksh warned "fails in dash") | 1.4 | planned | |
+| D6 | Command aliases hard-coded in several places | confirmed (pipeline.ts 181, 247–248, 270, 277; not 193) | 1.4 | planned | |
+| D7 | bats.ts re-parses run's options | confirmed (same as S4) | 2.1 | planned | |
+| D8 | Spec fields unused or single-use | confirmed (`replacesShell` no reader; others one entry or one command) | 2.1 (`replacesShell`), 3.5 (the rest) | planned | |
+| D9 | Catch-alls swallow errors; nine Unsupported classes | confirmed (perl catch is src/embedded/perl.ts:341) | 3.1 | planned | |
+| D10 | dialect commandFeatures reads options with a regex over all words | confirmed | 1.1 | planned | |
+| D11 | embeddedTextInner switch → registry | proposal, same seam as A9 | 3.1 | planned | |
+| D12 | sed and perl have two parsers each | proposal | — | won't do (for now) | see "Not planned" |
+| D13 | extras files patch other entries' options | confirmed | 3.5 | planned | |
+| D14 | hosts.ts per-CI flags → table; split | confirmed | 3.4 | planned | |
+| P1 | Code actions only for `shellscript` | corrected: only dialect diagnostics have fixes, so host files are not affected; a language id added in the setting is | 1.5 | planned | |
+| P2 | VS Code reads settings by hand | confirmed (`readSettings`/`explainOptions` exist in src/settings.ts) | 2.4 | planned | |
+| P3 | Document set-up copied four times; kind lists | confirmed | 2.4 | planned | |
+| P4 | Diagnostics policy re-applied per product | confirmed | 2.4 | planned | |
+| P5 | Four drifting `plain()` copies | confirmed; the drift is latent (the VS Code copy would keep a variation selector, but no message has one; the CLI also strips backticks) | 2.4 | planned | |
+| P6 | Dead npm script `build:grammar` | confirmed | 1.5 | planned | |
+| P7 | release.yml re-tests on Node 22, smaller suite; setup copied | corrected: 12 `npm ci` across four workflow files, not 7 jobs; the tag's commit already passed test.yml, so this is redundancy, not a hole | 3.7 | planned | |
+| P8 | Test helpers re-implemented; bash runners differ | corrected: flattening in 29 files, `explain` in about 20 | 3.6 | planned | |
+| P9 | web.test.ts large, 3 builds, fixed sleeps | corrected: 2,150 lines; sleeps at 259, 1455, 1788, 1837, 2046 | 3.6 | planned | |
+| P10 | Coverage stops at src/ | confirmed | 2.4 | planned | |
+| P11 | Split web/main.ts | confirmed (proposal); ten `localStorage` calls | 3.3 | planned | |
+| P12 | Panel rerun/reference twice; action.yml analyses twice | confirmed (panel.ts:120–128, web/main.ts:638–641; action.yml:73–77) | 3.3 (panel), 3.7 (action) | planned | |
