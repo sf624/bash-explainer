@@ -268,7 +268,8 @@ class Scan {
       return;
     }
     this.write(m[1], w, false, value);
-    this.assigned(m[1], undefined, word, w);
+    // (An unset gives no text to read as arithmetic.)
+    if (value !== 'none') this.assigned(m[1], undefined, word, w);
     if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
   }
 
