@@ -306,7 +306,7 @@ export class Analyzer {
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line))
       .map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text));
-    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : [...pitfallNotes(root, line, this.lang), ...wordFacts(root, line, this.lang).map((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)])];
+    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang)), ...wordFacts(root, line, this.lang).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
     const facts = this.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
     const result: LineExplanation = {
@@ -334,10 +334,14 @@ export class Analyzer {
 
   // ---------------------------------------------------------------- helpers
 
-  /** A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. */
-  private say(f: Fact): string {
+  /**
+   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. This is the one gate
+   * of the `notes.pitfalls` setting: a pitfall (by its catalog entry) is not said when the pitfalls are off.
+   */
+  private say(f: Fact): string[] {
+    if (f.kind === 'pitfall' && this.opts.pitfalls === false) return [];
     this.facts.push(f);
-    return f.text;
+    return [f.text];
   }
 
   private s(ja: string, en: string): string {
@@ -765,8 +769,8 @@ export class Analyzer {
     const stored = redirected ? this.s('。本体のあとのリダイレクトは、定義した時ではなく関数を呼ぶたびに適用される', '. The redirection after the body is applied each time the function is called, not when it is defined') : '';
     // In POSIX mode a function cannot have the name of a special builtin.
     const fails = definitionFails(this.state, n);
-    if (fails !== 'off' && this.opts.pitfalls !== false) {
-      this.extraNotes.push(this.say(fact(this.lang, fails === 'on' ? 'posix-special-function-name' : 'posix-special-function-name-maybe')));
+    if (fails !== 'off') {
+      this.extraNotes.push(...this.say(fact(this.lang, fails === 'on' ? 'posix-special-function-name' : 'posix-special-function-name-maybe')));
     }
     return skeletal(this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${this.lineRef(n)}`,
@@ -1248,11 +1252,11 @@ export class Analyzer {
   /** `((i++))` is the old value of `i`: 0 makes the status 1, which `set -e` treats as a failure. */
   private postfixStatusNote(n: SyntaxNode): void {
     const m = /^\(\(\s*([A-Za-z_]\w*(?:\[[^\]]*\])?)(\+\+|--)\s*\)\)$/.exec(n.text);
-    if (!m || this.opts.pitfalls === false) return;
+    if (!m) return;
     const [, v, op] = m;
     // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
     if (this.status.errexit(n).ignored?.sure) return;
-    this.extraNotes.push(this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v })));
+    this.extraNotes.push(...this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v })));
   }
 
   /** `exit 256` and `return 300`: the status is taken modulo 256. */
@@ -1262,7 +1266,7 @@ export class Analyzer {
     const v = Number(fields(n, 'argument')[0].text);
     if (v >= 0 && v <= 255) return;
     const status = rule.value;
-    this.extraNotes.push(this.say(fact(this.lang, 'exit-modulo', { value: String(v), status })));
+    this.extraNotes.push(...this.say(fact(this.lang, 'exit-modulo', { value: String(v), status })));
   }
 
   /**
@@ -1288,8 +1292,8 @@ export class Analyzer {
   private declaration(n: SyntaxNode, redirsOut = false): Token {
     const call = this.builtinAsFunction(n, redirsOut);
     if (call) return call;
-    if (n.children[0].type === 'local' && this.opts.pitfalls !== false && !ancestor(n, (a) => a.type === 'function_definition')) {
-      this.extraNotes.push(this.say(fact(this.lang, 'local-outside-function')));
+    if (n.children[0].type === 'local' && !ancestor(n, (a) => a.type === 'function_definition')) {
+      this.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
     }
     // declare, typeset, export, readonly or local, all in the dictionary.
     const kw = n.children[0].type;
@@ -1578,22 +1582,22 @@ export class Analyzer {
     const runs = tx(`組み込みコマンドや外部コマンドの \`${name}\` が動きます`, `the builtin or program \`${name}\` runs`);
     switch (missed.why) {
       case 'later':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-defined-later', { name, line, runs })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-defined-later', { name, line, runs })));
         return;
       case 'subshell':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-subshell', { name, line, runs })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-subshell', { name, line, runs })));
         return;
       case 'in-function':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs })));
         return;
       case 'never-runs':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-defined-in-dead-branch', { name, line, runs })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-dead-branch', { name, line, runs })));
         return;
       case 'unset':
-        this.extraNotes.push(this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs })));
         return;
       case 'posix-special':
-        this.extraNotes.push(this.say(fact(this.lang, 'special-builtin-before-function', { name, line })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'special-builtin-before-function', { name, line })));
         return;
     }
   }
@@ -1662,9 +1666,7 @@ export class Analyzer {
       const first = missed.def.startPosition.row;
       if (missed.why === 'expand_aliases') {
         const value = this.state.at(nameNode).expand.aliases.get(name)!.value;
-        if (this.opts.pitfalls !== false) {
-          this.extraNotes.push(this.say(fact(this.lang, 'alias-not-expanded-in-script', { name, value })));
-        }
+        this.extraNotes.push(...this.say(fact(this.lang, 'alias-not-expanded-in-script', { name, value })));
         return {
           name, kind: 'function', nameTokens: [], refs: ['6.6'],
           explanation: this.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
@@ -1673,7 +1675,7 @@ export class Analyzer {
       }
       if (missed.why === 'later' || missed.why === 'same-unit') {
         const same = missed.why === 'same-unit';
-        this.extraNotes.push(this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 })));
+        this.extraNotes.push(...this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 })));
       }
     }
     if (res.kind === 'function') return { name, kind: 'function', fn: true, nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
@@ -1718,17 +1720,14 @@ export class Analyzer {
     if (distro) {
       const where = distro.definitions.map(([os]) => os).join(this.s('・', ', '));
       const defs = distro.definitions.map(([os, v]) => `${os}: \`${v}\``).join(this.s('、', ', '));
-      const what = distro.kind === 'alias' ? this.s('エイリアス', 'alias') : this.s('関数', 'function');
-      const instead = distro.portable
-        ? this.s(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``)
-        : this.s('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean');
+      const whatText = distro.kind === 'alias' ? tx('エイリアス', 'alias') : tx('関数', 'function');
+      const what = this.t(whatText);
       // In a README the commands are typed into a terminal, where the alias may exist.
       const interactive = /^Markdown/.test(this.opts.host ?? '');
-      this.extraNotes.push(interactive
-        ? this.s(`ℹ 環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what}で、ほかの環境にはありません。どこでも動かすには${distro.portable ? ` \`${distro.portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
-          `ℹ System-dependent: \`${name}\` is an ${what} ${where} define${distro.definitions.length > 1 ? '' : 's'} for interactive shells; other systems lack it. ${distro.portable ? `Write \`${distro.portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`)
-        : this.s(`⚠ 環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${distro.definitions.length > 1 ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead}`,
-          `⚠ System-dependent: \`${name}\` is an ${what} ${where} define${distro.definitions.length > 1 ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead}`));
+      const many = distro.definitions.length > 1;
+      this.extraNotes.push(...this.say(interactive
+        ? fact(this.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })
+        : fact(this.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean') })));
       return {
         name, spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
         explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
@@ -2757,7 +2756,7 @@ export class Analyzer {
     if (!byRoot) statusFactCache.set(this.status, (byRoot = new WeakMap()));
     let byLine = byRoot.get(this.rootNode);
     if (!byLine) byRoot.set(this.rootNode, (byLine = statusFacts(this.rootNode, this.state, this.status, this.shell)));
-    return (byLine.get(line) ?? []).filter((f) => (MESSAGES[f.id].kind === 'pitfall') === pitfall).map((f) => this.say(factOf(this.lang, f)));
+    return (byLine.get(line) ?? []).filter((f) => (MESSAGES[f.id].kind === 'pitfall') === pitfall).flatMap((f) => this.say(factOf(this.lang, f)));
   }
 
   /**
@@ -2806,7 +2805,7 @@ export class Analyzer {
           : [`\`${used}=$(コマンド)\` のようにコマンド置換で受け取ります`, `Take the output with command substitution: \`${used}=$(command)\``])
         : (bash ? ['`done < ファイル` や `done < <(コマンド)` のようにリダイレクトで渡すか、`shopt -s lastpipe` にします', 'Feed the loop with a redirection, `done < file` or `done < <(command)`, or turn on `shopt -s lastpipe`']
           : ['`done < ファイル` のようにリダイレクトで渡すか、一時ファイルを使います', 'Feed the loop with a redirection, `done < file`, or use a temporary file']);
-      return [this.say(fact(this.lang, 'pipeline-subshell-variable', { used, fix: tx(fix[0], fix[1]), partial: !link.sure }))];
+      return this.say(fact(this.lang, 'pipeline-subshell-variable', { used, fix: tx(fix[0], fix[1]), partial: !link.sure }));
     }
     return [];
   }
@@ -2831,7 +2830,7 @@ export class Analyzer {
       const body = bodyNode.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = shopt.nullglob !== 'unsupported';
-      return [this.say(fact(this.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, nullglob }))];
+      return this.say(fact(this.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, nullglob }));
     }
     return [];
   }
@@ -2852,12 +2851,12 @@ export class Analyzer {
     const state = this.shoptAt(use, 'parse').extglob;
     if (state === 'on') return [];
     if (top !== use && this.shoptAt(top).extglob !== 'on' && this.shoptAt(use).extglob === 'on') {
-      return [this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }))];
+      return this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }));
     }
     // (A trap's action is read when its signal comes; another shell starts with its own options.)
     const id = state === 'unknown' ? (this.nested === 'later' ? 'extglob-maybe-on-trap' : 'extglob-maybe-on')
       : state === 'off' ? 'extglob-turned-off' : this.nested === 'child' ? 'extglob-not-in-new-shell' : 'extglob-not-found';
-    return [this.say(fact(this.lang, id, { use: use.text }))];
+    return this.say(fact(this.lang, id, { use: use.text }));
   }
 
   /**
@@ -2899,14 +2898,14 @@ export class Analyzer {
     if (!hasGlobstar(text)) return '';
     const globstar = this.shoptAt(n).globstar;
     const on = this.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
-    if (globstar === 'unknown' && this.opts.pitfalls !== false) {
-      this.extraNotes.push(this.say(fact(this.lang, 'globstar-maybe-on', { on })));
+    if (globstar === 'unknown' ) {
+      this.extraNotes.push(...this.say(fact(this.lang, 'globstar-maybe-on', { on })));
     }
-    if (globstar === 'default' && this.opts.pitfalls !== false) {
-      this.extraNotes.push(this.say(fact(this.lang, 'globstar-not-found', { on })));
+    if (globstar === 'default' ) {
+      this.extraNotes.push(...this.say(fact(this.lang, 'globstar-not-found', { on })));
     }
-    if (globstar === 'unsupported' && this.opts.pitfalls !== false) {
-      this.extraNotes.push(this.say(fact(this.lang, 'globstar-unsupported', { shell: this.shell! })));
+    if (globstar === 'unsupported' ) {
+      this.extraNotes.push(...this.say(fact(this.lang, 'globstar-unsupported', { shell: this.shell! })));
     }
     return globstar === 'off' || globstar === 'unsupported'
       ? this.s(`。${globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
@@ -3280,13 +3279,13 @@ export class Analyzer {
       if (!x || x.set !== 'on' || wellKnownVariables[v] || script.model.at(e).run.variables.has(v)) continue;
       const exported = x.attrs.x?.state ?? 'off';
       if (variables === 'none') {
-        this.extraNotes.push(this.say(remote
+        this.extraNotes.push(...this.say(remote
           ? fact(this.lang, 'variable-not-in-remote-shell', { v })
           : fact(this.lang, 'variable-not-passed-by-wrapper', { v, via: blocker!.via })));
         return;
       }
       if (exported === 'off') {
-        this.extraNotes.push(this.say(fact(this.lang, 'variable-not-exported', { v })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'variable-not-exported', { v })));
         return;
       }
     }
@@ -3302,7 +3301,6 @@ export class Analyzer {
    * its last link is this slot, and what reaches it is what every link on the way passes on.
    */
   private slotNotes(role: CommandRole, env: ExecEnv, words: SyntaxNode[], assigned: string[], effect?: 'changes' | 'exits'): void {
-    if (this.opts.pitfalls === false) return;
     const { slot } = role;
     const link = env.links[env.links.length - 1] as SlotLink;
     const via = link.via;
@@ -3315,7 +3313,7 @@ export class Analyzer {
     const isFn = isPlainWord(first) && (this.resolve(name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
     if (slot.run === 'exec' && where === 'container') {
       if (isFn) {
-        this.extraNotes.push(this.say(fact(this.lang, 'function-not-in-container', { via, name })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-not-in-container', { via, name })));
       }
     } else if (slot.run === 'exec') {
       // (A builtin with a program of its name runs the program: the slot gave its spec.)
@@ -3328,16 +3326,16 @@ export class Analyzer {
           : effect === 'changes'
             ? tx(`サブシェル \`(${name} … && …)\` か、\`${via} sh -c '${name} … && …'\` を使います`, `Use a subshell \`(${name} … && …)\`, or \`${via} sh -c '${name} … && …'\``)
             : tx(`\`${via} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${via} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
-        this.extraNotes.push(this.say(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix })));
       }
     } else if (slot.run === 'shell-string' && where === 'remote') {
       const risky = words.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
       if (risky) {
-        this.extraNotes.push(this.say(fact(this.lang, 'ssh-local-expansion', { risky: risky.text })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'ssh-local-expansion', { risky: risky.text })));
       }
       this.unpassedVariables(env, words);
       if (isFn) {
-        this.extraNotes.push(this.say(fact(this.lang, 'function-not-on-remote', { name })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-not-on-remote', { name })));
       }
     } else if (slot.run === 'shell-string') {
       this.unpassedVariables(env, words);
@@ -3362,7 +3360,7 @@ export class Analyzer {
       const shell = link.shell!;
       if (res && res.kind !== 'function') {
         const f = fn!;
-        this.extraNotes.push(this.say(missed?.why === 'not-passed' && blocker !== link
+        this.extraNotes.push(...this.say(missed?.why === 'not-passed' && blocker !== link
           ? fact(this.lang, 'function-not-in-new-shell-blocked', { via, fn: f, blocker: blocker!.via })
           : missed?.why === 'not-passed'
           ? fact(this.lang, 'function-not-in-new-shell', { via, fn: f })
@@ -3371,13 +3369,13 @@ export class Analyzer {
           : fact(this.lang, 'function-not-in-new-shell-export', { via, fn: f })));
       } else if (missed?.why === 'not-imported') {
         // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
-        this.extraNotes.push(this.say(fact(this.lang, 'function-not-imported-sh', { via, fn: fn! })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'function-not-imported-sh', { via, fn: fn! })));
       }
     }
     for (const v of assigned) {
       const use = words.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
       if (use) {
-        this.extraNotes.push(this.say(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v })));
+        this.extraNotes.push(...this.say(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v })));
         break;
       }
     }
@@ -3514,9 +3512,7 @@ export class Analyzer {
     const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
     if (dropped.length) {
       const list = dropped.map((d) => `\`${d}\``).join(this.s('、', ', '));
-      this.extraNotes.push(this.s(
-        `⚠ \`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`re='\\bfoo'; [[ $x =~ $re ]]\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
-        `⚠ In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`re='\\bfoo'; [[ $x =~ $re ]]\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`));
+      this.extraNotes.push(...this.say(fact(this.lang, 'regex-backslash-dropped', { list })));
     }
     if (js) this.regexExample(js, 'values');
     return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);

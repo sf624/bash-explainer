@@ -16,9 +16,11 @@ interface Entry<P> {
   refs: readonly string[];
   /** The text in Japanese and English, without the ℹ or ⚠ that `kind` gives. */
   text: (p: P) => readonly [ja: string, en: string];
+  /** The note starts with a bare ⚠ (no "Pitfall:"): its text says what kind of problem it is. */
+  bare?: true;
 }
 
-const entry = <P = Record<string, never>>(kind: FactKind, refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind, refs, text });
+const entry = <P = Record<string, never>>(kind: FactKind, refs: readonly string[], text: (p: P) => readonly [string, string], bare?: true): Entry<P> => ({ kind, refs, text, ...(bare ? { bare } : {}) });
 
 /** A text in both languages, for a parameter that is itself words (where `set -e` is ignored…). */
 type Words = Text;
@@ -257,6 +259,16 @@ export const MESSAGES = {
   'bats-run-in-pipeline': entry<{ cmd: string }>('pitfall', ['3.2.3'], ({ cmd }) => [
     `パイプは \`run\` の出力を受け取りますが、\`run\` は \`${cmd}\` の出力を \`$output\` に入れるだけで何も出力しません。また、パイプラインのコマンドはサブシェルで実行されるので、\`run\` が設定した \`$status\` と \`$output\` はパイプラインが終わると消えます。パイプライン全体を \`run\` で実行するには \`run bats_pipe ${cmd} \\| …\` か \`run bash -c '… | …'\` と書きます`,
     `the pipe gets the output of \`run\`, but \`run\` writes nothing: it keeps the output of \`${cmd}\` in \`$output\`. And the commands of a pipeline run in subshells, so the \`$status\` and \`$output\` that \`run\` sets are gone when the pipeline ends. To run the whole pipeline under \`run\`, write \`run bats_pipe ${cmd} \\| …\` or \`run bash -c '… | …'\``]),
+  // ---------------------------------------------------------------- words and names
+  'regex-backslash-dropped': entry<{ list: string }>('pitfall', ['3.5.9', '3.2.5.2'], ({ list }) => [
+    `\`[[ =~ ]]\` の右辺に書いた ${list} は、クォート除去でバックスラッシュが消えて普通の文字になる（正規表現の演算子にならない）。演算子として使うには変数に入れる（\`re='\\bfoo'; [[ $x =~ $re ]]\`）か、\`[[:space:]]\` や \`[[:alnum:]_]\` のような書き方にする`,
+    `In \`[[ =~ ]]\`, an unquoted ${list} loses its backslash to quote removal and is an ordinary character, not a regex operator. Keep the regex in a variable (\`re='\\bfoo'; [[ $x =~ $re ]]\`) or use \`[[:space:]]\` or \`[[:alnum:]_]\` instead`], true),
+  'distro-alias-in-script': entry<{ name: string; where: string; what: Words; many: boolean; instead: Words }>('pitfall', ['6.6'], ({ name, where, what, many, instead }) => [
+    `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、コマンドではありません。ほかの環境にはなく、スクリプトの中では${many ? 'これらの' : 'その'}環境でも使えません（command not found）。${instead.ja}`,
+    `System-dependent: \`${name}\` is an ${what.en} ${where} define${many ? '' : 's'} for interactive shells, not a command. Other systems lack it, and scripts do not have it even there ("command not found"). ${instead.en}`], true),
+  'distro-alias-interactive': entry<{ name: string; where: string; what: Words; many: boolean; portable?: string }>('note', ['6.6'], ({ name, where, what, many, portable }) => [
+    `環境依存: \`${name}\` は ${where} が対話シェル用に定義する${what.ja}で、ほかの環境にはありません。どこでも動かすには${portable ? ` \`${portable}\` と書きます` : '、したいことに合ったコマンドをそのまま書きます'}`,
+    `System-dependent: \`${name}\` is an ${what.en} ${where} define${many ? '' : 's'} for interactive shells; other systems lack it. ${portable ? `Write \`${portable}\` to work everywhere` : 'To work everywhere, write the command you mean'}`]),
 } satisfies Record<string, Entry<never>>;
 
 export type FactId = keyof typeof MESSAGES;
@@ -270,11 +282,13 @@ const PREFIX: Record<FactKind, Text> = {
   pitfall: { ja: '⚠ 落とし穴: ', en: '⚠ Pitfall: ' },
 };
 
+const BARE_PITFALL: Text = { ja: '⚠ ', en: '⚠ ' };
+
 /** The note of a fact, in `lang`. */
 export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> extends Record<string, never> ? [] : [Params<K>]): Fact {
   const e = MESSAGES[id] as Entry<unknown>;
   const [ja, en] = e.text(params[0]);
-  return { id, kind: e.kind, text: PREFIX[e.kind][lang] + (lang === 'ja' ? ja : en), refs: e.refs };
+  return { id, kind: e.kind, text: (e.bare ? BARE_PITFALL[lang] : PREFIX[e.kind][lang]) + (lang === 'ja' ? ja : en), refs: e.refs };
 }
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */
