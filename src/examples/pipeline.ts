@@ -15,6 +15,8 @@ export interface Stage {
   words: (string | undefined)[];
   /** The stage as written, for labels. */
   text: string;
+  /** It prints what it reads as it is (`CommandSpec.copies`: cat): no step of its own is shown, but for the last. */
+  copies?: boolean;
 }
 
 type Runner = (input: string[]) => string[];

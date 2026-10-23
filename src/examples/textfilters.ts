@@ -407,46 +407,59 @@ const lineCount = (flag: string): [string, string] => ['n', flag.startsWith('+')
 
 const countOptions = (cmd: 'head' | 'tail', words: (string | undefined)[]): Parsed => parseOptions(cmd, words, cmd === 'head' ? HEAD : TAIL, lineCount);
 
-export function runHead(words: (string | undefined)[], input: string[]): string[] {
+/** The lines of a text, the last one with or without its newline. */
+const linesOf = (text: string): string[] => text.split('\n').filter((l, i, a) => i < a.length - 1 || l !== '');
+
+/** The text `head` prints for the input lines: with `-c`, bytes, which may end without a newline. */
+function headText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('head', words);
   const c = value(p, 'c');
+  const text = input.map((l) => l + '\n').join('');
   if (c !== undefined) {
-    const text = input.map((l) => l + '\n').join('');
     const n = Number(c);
-    const part = n < 0 || c.startsWith('-') ? text.slice(0, Math.max(0, text.length - Math.abs(n))) : text.slice(0, n);
-    return part.split('\n').filter((l, i, a) => i < a.length - 1 || l !== '');
+    return n < 0 || c.startsWith('-') ? text.slice(0, Math.max(0, text.length - Math.abs(n))) : text.slice(0, n);
   }
   const n = value(p, 'n') ?? '10';
   const k = Number(n);
   if (Number.isNaN(k)) throw new Unsupported('-n');
-  return n.startsWith('-') ? input.slice(0, Math.max(0, input.length + k)) : input.slice(0, k);
+  return (n.startsWith('-') ? input.slice(0, Math.max(0, input.length + k)) : input.slice(0, k)).map((l) => l + '\n').join('');
 }
 
-export function runTail(words: (string | undefined)[], input: string[]): string[] {
+/** The text `tail` prints for the input lines. */
+function tailText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('tail', words);
   const c = value(p, 'c');
+  const text = input.map((l) => l + '\n').join('');
   if (c !== undefined) {
-    const text = input.map((l) => l + '\n').join('');
     const n = Math.abs(Number(c));
-    const part = c.startsWith('+') ? text.slice(n - 1) : text.slice(Math.max(0, text.length - n));
-    return part.split('\n').filter((l, i, a) => i < a.length - 1 || l !== '');
+    return c.startsWith('+') ? text.slice(n - 1) : text.slice(Math.max(0, text.length - n));
   }
   const n = value(p, 'n') ?? '10';
   const k = Math.abs(Number(n));
   if (Number.isNaN(k)) throw new Unsupported('-n');
-  return n.startsWith('+') ? input.slice(Math.max(0, k - 1)) : input.slice(Math.max(0, input.length - k));
+  return (n.startsWith('+') ? input.slice(Math.max(0, k - 1)) : input.slice(Math.max(0, input.length - k))).map((l) => l + '\n').join('');
+}
+
+export function runHead(words: (string | undefined)[], input: string[]): string[] {
+  return linesOf(headText(words, input));
+}
+
+export function runTail(words: (string | undefined)[], input: string[]): string[] {
+  return linesOf(tailText(words, input));
 }
 
 /**
- * What `head` or `tail` prints for several files: each file's lines under a header `==> name <==`, a blank line
- * between files; no header with `-q`, a header for one file too with `-v` (the last of them given wins).
+ * What `head` or `tail` prints for several files: each file's text under a header `==> name <==`, with a newline
+ * before each header but the first (a blank line after a file's last line; none after bytes cut without one, `-c`);
+ * no header with `-q`, a header for one file too with `-v` (the last of them given wins).
  */
-export function perFile(cmd: string, files: { name: string; lines: string[] }[], words: (string | undefined)[], run: (words: (string | undefined)[], input: string[]) => string[]): string[] {
+export function perFile(cmd: 'head' | 'tail', files: { name: string; lines: string[] }[], words: (string | undefined)[]): string[] {
   const flags = parseWords(cmd, words).roles.flatMap(({ role }) => (role.role === 'cluster' ? role.letters : [role]))
     .flatMap((r) => (r.role === 'option' ? r.spec.names.filter((n) => n === '-q' || n === '-v') : []));
   const last = flags.pop();
   const headers = last === '-v' || (last !== '-q' && files.length > 1);
-  return files.flatMap((f, i) => [...(headers ? [...(i ? [''] : []), `==> ${f.name} <==`] : []), ...run(words, f.lines)]);
+  const text = cmd === 'head' ? headText : tailText;
+  return linesOf(files.map((f, i) => (headers ? `${i ? '\n' : ''}==> ${f.name} <==\n` : '') + text(words, f.lines)).join(''));
 }
 
 // ---------------------------------------------------------------- seq, basename, dirname

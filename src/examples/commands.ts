@@ -89,8 +89,6 @@ export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, word
       // Only the filters take input. Files of a glob or a variable may be any number: the headers of each are not known.
       if (ex.input) {
         if (src.each === 'headers' && src.streams.some((st) => st.kind === 'file' && st.many)) return undefined;
-        // cat shows what it does when it joins several files (`cat a - b`); one alone it prints as it is.
-        if (kind === 'cat' && src.streams.length < 2 && !src.reads) return undefined;
         return ioExample(ex.input, ex.output, { kind: 'filter', cmd: kind, words: values }, lang, src);
       }
       return { kind: 'textFilters', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible) }] };
