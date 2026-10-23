@@ -233,14 +233,14 @@ Verdicts are from the verification at 1f9b651. Line numbers are those of that co
 | D13 | extras files patch other entries' options | confirmed | 3.5 | planned | |
 | D14 | hosts.ts per-CI flags → table; split | confirmed | 3.4 | planned | |
 | P1 | Code actions only for `shellscript` | corrected: only dialect diagnostics have fixes, so host files are not affected; a language id added in the setting is | 1.5 | PR #208 | integration/extension.itest.ts "offers the quick fix in a language added to bashExplainer.languages" (not run here: needs a downloaded VS Code) |
-| P2 | VS Code reads settings by hand | confirmed (`readSettings`/`explainOptions` exist in src/settings.ts) | 2.4 | planned | |
-| P3 | Document set-up copied four times; kind lists | confirmed | 2.4 | planned | |
-| P4 | Diagnostics policy re-applied per product | confirmed | 2.4 | planned | |
-| P5 | Four drifting `plain()` copies | confirmed; the drift is latent (the VS Code copy would keep a variation selector, but no message has one; the CLI also strips backticks) | 2.4 | planned | |
+| P2 | VS Code reads settings by hand | confirmed (`readSettings`/`explainOptions` exist in src/settings.ts) | 2.4 | PR #218 | test/document-setup.test.ts "settingsFromEditor" (getter, fallback to the default, read-only proxies); VS Code code reads `service.settings`, no `config.get(key, default)` is left. The VS Code integration test (CI) runs the rest |
+| P3 | Document set-up copied four times; kind lists | confirmed | 2.4 | PR #218 | test/document-setup.test.ts "kindOfDocument", "openDocument", "shellsOf", "the kinds of file"; test/settings-schema.test.ts "activates the extension for the shell and the file kinds…"; test/cli.test.ts, test/lsp.test.ts unchanged. Web and VS Code wiring checked by CI (web test, integration test) |
+| P4 | Diagnostics policy re-applied per product | confirmed | 2.4 | PR #218 | test/document-setup.test.ts "diagnosticsFor" (enabled per surface, embedded, ignore, `all`) |
+| P5 | Four drifting `plain()` copies | confirmed; the drift is latent (the VS Code copy would keep a variation selector, but no message has one; the CLI also strips backticks) | 2.4 | PR #218 | test/document-setup.test.ts "plain" (variation selector, `backticks: false` for the CLI); cli.test.ts unchanged |
 | P6 | Dead npm script `build:grammar` | confirmed | 1.5 | PR #208 | package.json: the script is gone |
 | P7 | release.yml re-tests on Node 22, smaller suite; setup copied | corrected: 12 `npm ci` across four workflow files, not 7 jobs; the tag's commit already passed test.yml, so this is redundancy, not a hole | 3.7 | planned | |
 | P8 | Test helpers re-implemented; bash runners differ | corrected: flattening in 29 files, `explain` in about 20 | 3.6 | planned | |
 | P9 | web.test.ts large, 3 builds, fixed sleeps | corrected: 2,150 lines; sleeps at 259, 1455, 1788, 1837, 2046 | 3.6 | planned | |
-| P10 | Coverage stops at src/ | confirmed | 2.4 | planned | |
+| P10 | Coverage stops at src/ | confirmed | 2.4 | PR #218 | the shared code is in src/document-setup.ts and src/document.ts; Node 24 coverage 100% (lines and branches) |
 | P11 | Split web/main.ts | confirmed (proposal); ten `localStorage` calls | 3.3 | planned | |
 | P12 | Panel rerun/reference twice; action.yml analyses twice | confirmed (panel.ts:120–128, web/main.ts:638–641; action.yml:73–77) | 3.3 (panel), 3.7 (action) | planned | |
