@@ -164,29 +164,31 @@ So bash decides it from the text of the name, not from what the name runs. It is
 
 ### Audit of our command nodes
 
-| our node | bash | verdict |
-|---|---|---|
-| `command` | simple | matches, except that redirections after the last word go to a `redirected_statement` around it |
-| `test_command` | simple (`[` is a builtin, `]` its last argument) | differs: becomes a `command` |
-| `declaration_command` | simple; its assignment arguments are parsed specially (above) | differs: becomes a `command`; the special words stay `variable_assignment` |
-| `unset_command` | simple | differs: becomes a `command` |
-| `variable_assignment` as a statement | simple with no words | differs: becomes a `command` with no name. As a part of a command it matches bash's assignment word, and stays |
-| `variable_assignments` | simple with no words | differs: becomes a `command` with no name |
-| `redirected_statement` around a simple command | part of the simple command | differs: the redirections become children of the `command`, as those before the name already are |
-| `redirected_statement` around a compound command | the compound command's `redirects` | matches (a wrapper instead of a field); keep |
-| `negated_command` | a flag on the pipeline (or the command) | matches: the wrapper holds the `!` token; keep |
-| `time_statement` | a flag on the pipeline | matches: the wrapper holds `time` and `-p`; keep |
-| `coproc_statement` | `coproc` | matches |
-| `pipeline` | pipeline | matches |
-| `list` | connection with `&&`, `\|\|` | matches; `;`, `&` and newlines separate the statements of the parent |
-| `compound_statement`, `subshell` | group, subshell | matches |
-| `if_statement` (`elif_clause`, `else_clause`) | `if`, with an `elif` as a nested `if` | matches; the clauses only group the parts |
-| `for_statement`, `select_statement`, `c_style_for_statement` | `for`, `select`, arithmetic `for` | matches |
-| `while_statement` | `while`, `until` | matches (one type, told apart by its first token) |
-| `case_statement`, `case_item` | `case` and its clauses | matches |
-| `function_definition` | function definition | matches |
-| `arithmetic_command`, `extended_test` | arithmetic, conditional | matches |
-| `do_group` | none (the body of a loop) | a part, not a command; keep |
+The manual groups commands by section, not by node: one section can hold several kinds ([3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) holds `if`, `case`, `select`, `(( ))` and `[[ ]]`), and `!` and `time` are part of a pipeline ([3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html)). bash-ast's command types follow bash's parser (`command.h`), so the column gives the section that describes each one.
+
+| our node | bash | manual | verdict |
+|---|---|---|---|
+| `command` | simple | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html) | matches, except that redirections after the last word go to a `redirected_statement` around it |
+| `test_command` | simple (`[` is a builtin, `]` its last argument) | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); `[`: [4.1](https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html) | differs: becomes a `command` |
+| `declaration_command` | simple; its assignment arguments are parsed specially (above) | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); `export`, `readonly`: [4.1](https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html); `declare`, `local`, `typeset`: [4.2](https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html) | differs: becomes a `command`; the special words stay `variable_assignment` |
+| `unset_command` | simple | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [4.1](https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html) | differs: becomes a `command` |
+| `variable_assignment` as a statement | simple with no words | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.4](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html) | differs: becomes a `command` with no name. As a part of a command it matches bash's assignment word, and stays |
+| `variable_assignments` | simple with no words | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.4](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html) | differs: becomes a `command` with no name |
+| `redirected_statement` around a simple command | part of the simple command | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.6](https://www.gnu.org/software/bash/manual/html_node/Redirections.html) | differs: the redirections become children of the `command`, as those before the name already are |
+| `redirected_statement` around a compound command | the compound command's `redirects` | [3.2.5](https://www.gnu.org/software/bash/manual/html_node/Compound-Commands.html); [3.6](https://www.gnu.org/software/bash/manual/html_node/Redirections.html) | matches (a wrapper instead of a field); keep |
+| `negated_command` | a flag on the pipeline (or the command) | [3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html) | matches: the wrapper holds the `!` token; keep |
+| `time_statement` | a flag on the pipeline | [3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html) | matches: the wrapper holds `time` and `-p`; keep |
+| `coproc_statement` | `coproc` | [3.2.6](https://www.gnu.org/software/bash/manual/html_node/Coprocesses.html) | matches |
+| `pipeline` | pipeline | [3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html) | matches |
+| `list` | connection with `&&`, `\|\|` | [3.2.4](https://www.gnu.org/software/bash/manual/html_node/Lists.html) | matches; `;`, `&` and newlines separate the statements of the parent |
+| `compound_statement`, `subshell` | group, subshell | [3.2.5.3](https://www.gnu.org/software/bash/manual/html_node/Command-Grouping.html) | matches |
+| `if_statement` (`elif_clause`, `else_clause`) | `if`, with an `elif` as a nested `if` | [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches; the clauses only group the parts |
+| `for_statement`, `select_statement`, `c_style_for_statement` | `for`, `select`, arithmetic `for` | [3.2.5.1](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html); `select`: [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches |
+| `while_statement` | `while`, `until` | [3.2.5.1](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html) | matches (one type, told apart by its first token) |
+| `case_statement`, `case_item` | `case` and its clauses | [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches |
+| `function_definition` | function definition | [3.3](https://www.gnu.org/software/bash/manual/html_node/Shell-Functions.html) | matches |
+| `arithmetic_command`, `extended_test` | arithmetic, conditional | [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches |
+| `do_group` | none (the body of a loop) | [3.2.5.1](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html) | a part, not a command; keep |
 
 An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands; `$(grep -c foo f)` is only text in an assignment word. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
 
