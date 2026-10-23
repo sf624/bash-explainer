@@ -117,13 +117,14 @@ describe('execution environments: subshells', () => {
     assert.strictEqual(kind('m() { a; }; echo | m; trap m EXIT', 'a'), 'subshell?');
     assert.strictEqual(kind('m() { a; }; echo | m; "${1:-m}"', 'a'), 'subshell?');
     assert.strictEqual(kind('m() { a; }; echo | m; . ./lib.sh', 'a'), 'subshell?');
-    // (A name that runs nothing: in a comment, printed, looked up.)
-    for (const more of ['# m', 'declare -f m', 'type m', 'command -v m', 'unset -f x m']) assert.strictEqual(kind(`m() { a; }; echo | m; ${more}`, 'a'), 'subshell', more);
+    // (A name that runs nothing: in a comment, printed, looked up; `command m` runs no function.)
+    for (const more of ['# m', 'declare -f m', 'type m', 'command -v m', 'command m', 'unset -f x m']) assert.strictEqual(kind(`m() { a; }; echo | m; ${more}`, 'a'), 'subshell', more);
     // A call where the function may not be defined yet.
     const sites = (at('[ "$1" ] && m() { :; }; m', ':').env.links[0] as CallLink).sites;
     assert.deepStrictEqual(sites.map((x) => x.sure), [false]);
-    // Called through an alias: from where the alias is used, but not for sure: its text may run wherever the alias
-    // is used, a trap's action too (src/semantics/trust.ts reads it as text run from elsewhere).
+    // Called through an alias: from where the alias is used, but not for sure. The trust scan reads an alias's text
+    // where it is defined and does not expand aliases inside other strings, so it cannot tell which uses it sees
+    // (`trap g EXIT`, whose action calls `f` through the alias): src/semantics/trust.ts takes such a call as unseen.
     assert.strictEqual(kind('shopt -s expand_aliases\nalias g=f\nf() { a; }\nx=$(g)', 'a'), 'subshell?');
   });
   it('does not take the syntax around a statement for a subshell', () => {
@@ -238,6 +239,9 @@ describe('explanations from the execution environment', () => {
     assert.match(about('f() { cd /; }\nx=$(f); f | cat', 'cd', 'ja'), /サブシェル（関数の呼び出し元）/);
     assert.match(about('f() { cd /; }\nx=$(f)', 'cd', 'ja'), /サブシェル（関数の呼び出し元: `\$\( \)`）/);
     assert.match(about('f() { cd /; }\nf; f | cat', 'cd', 'ja'), /サブシェル（関数の呼び出し元の一部）/);
+    // (Every call it sees is in a subshell, but a sourced file may call it in the shell itself.)
+    assert.match(about('f() { cd /; }\necho | f; . ./lib.sh', 'cd'), /\. It may run in a subshell \(where its function is called; what the script does not show may call it too\);/);
+    assert.match(about('f() { cd /; }\necho | f; . ./lib.sh', 'cd', 'ja'), /サブシェル（関数の呼び出し元。スクリプトに見えない所からも呼ばれうる）で実行されることがあり/);
     assert.match(about('x | y; cd /', 'cd', 'ja', 0), /^カレントディレクトリを移動する（シェル組み込み）$/);
     assert.match(about('cd / | y', 'cd', 'ja'), /サブシェル（パイプラインの段）/);
     assert.match(about('x=`cd /`', 'cd', 'ja'), /バッククォート の中のサブシェル/);
