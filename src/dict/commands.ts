@@ -388,14 +388,14 @@ export const core: Record<string, CommandSpec> = {
     ['--process-slot-var', '子プロセスごとに異なる番号を入れる環境変数の名前', 'name of a variable set to a different number in each child process', 'arg'],
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
-  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
     ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
     ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
     ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg lang:cutchars'],
     ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files] }),
+  ], { example: 'cut', parser: 'getopt_long', positional: [files] }),
   sort: cmd('行を並べ替える', 'Sort lines', [
     ['-n|--numeric-sort', '数値として並べる', 'compare as numbers'],
     ['-r|--reverse', '逆順（降順）にする', 'reverse order'],
@@ -406,13 +406,13 @@ export const core: Record<string, CommandSpec> = {
     ['-f|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
     ['-V|--version-sort', 'バージョン番号順に並べる', 'natural version sort'],
     ['-o|--output', '結果を書き出すファイル', 'write result to file', 'arg'],
-  ], { positional: [files] }),
+  ], { example: 'sort', positional: [files] }),
   uniq: cmd('隣接する重複行をまとめる（通常 `sort` の後に使う）', 'Collapse adjacent duplicate lines (usually after `sort`)', [
     ['-c|--count', '各行の出現回数を先頭に付ける', 'prefix lines with their count'],
     ['-d|--repeated', '重複している行だけ表示', 'only print duplicated lines'],
     ['-u|--unique', '重複していない行だけ表示', 'only print unique lines'],
     ['-i|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
-  ], { positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')] }),
+  ], { example: 'uniq', positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')] }),
   getopt: cmd('コマンドライン引数を解析して、オプションを先・それ以外を `--` の後ろに並べ直した形で出力する（`eval set -- "$(getopt …)"` で使う。長いオプションも扱える）',
     'Parse command-line arguments and print them normalised: options first, other arguments after `--` (used as `eval set -- "$(getopt …)"`; supports long options)', [
       ['-o|--options', '受け付ける短いオプションの一覧', 'the short options to accept', 'arg fills lang:getoptshort'],
@@ -424,24 +424,24 @@ export const core: Record<string, CommandSpec> = {
       ['-s|--shell', 'クォートの仕方を指定したシェルに合わせる（sh, bash, csh, tcsh）', 'quote for the given shell (sh, bash, csh, tcsh)', 'arg'],
       ['-u|--unquoted', '出力をクォートしない（空白を含む引数が壊れる）', 'do not quote the output (breaks arguments with spaces)'],
       ['-T|--test', '拡張版の getopt か確認する（拡張版なら終了ステータス 4）', 'test for the enhanced getopt (exits 4 if so)'],
-    ], { positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
+    ], { example: 'getopt', positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
   tr: cmd('文字を置換・削除する（標準入力のみ）', 'Translate or delete characters (stdin only)', [
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
     ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
+  ], { example: 'tr', parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT] }),
+  ], { example: 'head', parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT] }),
   tail: cmd('ファイルの末尾部分を表示する（既定は10行）', 'Print the last part of files (default 10 lines)', [
     ['-n|--lines', '表示する行数（`+N` で N 行目以降）', 'number of lines (`+N`: from line N)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
     ['-f|--follow', '追記を監視し続けて表示する（ログ監視）', 'keep following appended data (log watching)'],
     ['-F', 'ファイルが作り直されても追い続ける', 'follow by name, retrying'],
-  ], { positional: [files], patternOptions: [LINE_COUNT] }),
+  ], { example: 'tail', positional: [files], patternOptions: [LINE_COUNT] }),
   wc: cmd('行数・単語数・バイト数を数える', 'Count lines, words and bytes', [
     ['-l|--lines', '行数を数える', 'count lines'],
     ['-w|--words', '単語数を数える', 'count words'],
@@ -602,8 +602,8 @@ export const core: Record<string, CommandSpec> = {
       byCount(3, [pos('リンク先（実体）', 'target')], { orMore: true, unless: '-t|--target-directory', last: pos('リンクを作るディレクトリ', 'directory to make the links in') }),
     ],
   }),
-  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', GNU_INFO, { parser: 'getopt_long', positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
-  dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', GNU_INFO, { parser: 'getopt_long', positional: [pos('パス', 'path')] }),
+  basename: cmd('パスからディレクトリ部分を除いたファイル名を取り出す', 'Strip directory (and optional suffix) from a path', GNU_INFO, { example: 'basename', parser: 'getopt_long', positional: [pos('パス', 'path')], operands: [byCount(2, [pos('パス', 'path'), pos('取り除く拡張子', 'suffix to remove')], { unless: '-a|--multiple|-s|--suffix' })] }),
+  dirname: cmd('パスからディレクトリ部分を取り出す', 'Strip the last component from a path', GNU_INFO, { example: 'dirname', parser: 'getopt_long', positional: [pos('パス', 'path')] }),
   realpath: cmd('シンボリックリンクや `..` を解決した絶対パスを表示する', 'Print the resolved absolute path', [], { positional: [pos('パス', 'path')] }),
   readlink: cmd('シンボリックリンクのリンク先を表示する', 'Print the target of a symbolic link', [
     ['-f|--canonicalize', '全てのリンクを再帰的に解決した絶対パスを表示', 'canonicalize by following every symlink'],
@@ -953,6 +953,7 @@ export const core: Record<string, CommandSpec> = {
     ...GNU_INFO,
   ], {
     parser: 'getopt_long',
+    example: 'seq',
     positional: [pos('開始値・増分・終了値', 'first, increment or last')],
     operands: [
       byCount(1, [pos('終了値（開始値は 1）', 'last (counting from 1)')]),
@@ -1072,7 +1073,7 @@ export const core: Record<string, CommandSpec> = {
     ['-M', 'モジュールを読み込む（例: `-MJSON::PP`）', 'load a module (e.g. `-MJSON::PP`)', 'attached'],
     ['-w', '警告を表示する', 'enable warnings'],
     ['-c', '構文チェックだけを行う', 'check syntax only'],
-  ], { positional: [pos('実行するスクリプトファイル', 'script file to run'), files] }),
+  ], { example: 'perl', positional: [pos('実行するスクリプトファイル', 'script file to run'), files] }),
   python3: cmd('Python 3 インタプリタを実行する', 'Run the Python 3 interpreter', [
     ['-c', '続く文字列を Python コードとして実行', 'run the string as Python code', 'arg'],
     ['-m', 'モジュールをスクリプトとして実行', 'run a module as a script', 'arg'],

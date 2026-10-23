@@ -1,4 +1,4 @@
-import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer';
+import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer-types';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';

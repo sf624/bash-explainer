@@ -173,7 +173,7 @@ const TEST_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返�
 const PROGRAMS: Record<string, CommandSpec> = {
   echo: cmd('引数を空白区切りで標準出力に表示する（coreutils のプログラム）', 'Print arguments to stdout, separated by spaces (the coreutils program)', ECHO_OPTIONS, ECHO_READING),
   printf: cmd('書式を指定して文字列を出力する（coreutils のプログラム。`-v` はない）', 'Print formatted output (the coreutils program, which has no `-v`)', [], {
-    parser: 'letters', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
+    parser: 'letters', example: 'printf', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),
   pwd: cmd('カレントディレクトリのパスを表示する（coreutils のプログラム。既定は `-P`）', 'Print the current directory (the coreutils program; `-P` is the default)', [
     ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
@@ -227,7 +227,7 @@ export const builtins: Record<string, CommandSpec> = {
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
   printf: b('書式を指定して文字列を出力する（`%s` 文字列, `%d` 整数, `\\n` 改行 など）', 'Print formatted output (`%s` string, `%d` integer, `\\n` newline…)', [
     naming(['-v', '出力せず、結果を指定した変数に代入する', 'assign the output to a variable instead of printing', 'arg'], 'variable', 'string'),
-  ], { program: PROGRAMS.printf, ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
+  ], { program: PROGRAMS.printf, example: 'printf', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')) }),
   read: actsOnShell(b('標準入力から1行読み、変数に代入する', 'Read a line from stdin into variables', [
     ['-r', 'バックスラッシュをエスケープ文字として扱わない（ほぼ常に付けるべき）', 'do not treat backslashes as escapes (almost always wanted)'],
     ['-p', '入力前にプロンプトを表示する', 'show a prompt first', 'arg'],
@@ -241,6 +241,7 @@ export const builtins: Record<string, CommandSpec> = {
     ['-i', '`-e` の編集行に最初から入れておく文字列', 'text to put in the `-e` edit line to begin with', 'arg'],
     ['-e', 'Readline で行編集しながら読む（対話シェル用）', 'read with Readline line editing (interactive shells)'],
   ], {
+    example: 'read',
     operands: [
       // With `-a`, bash sets only the array: the names are ignored.
       { when: { option: ['-a'] }, pattern: [operand('NAME', '読み込んだ値を入れる変数名', 'variable to store the input', { repeat: '*' })] },

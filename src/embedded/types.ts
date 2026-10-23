@@ -1,4 +1,4 @@
-import type { Kind } from '../analyzer';
+import type { Kind } from '../analyzer-types';
 import type { Lang } from '../i18n';
 
 /** A token inside an embedded language (regex, sed script, jq filter, awk program). */

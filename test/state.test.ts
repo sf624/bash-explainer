@@ -5,7 +5,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { nestedScripts } from '../src/analyzer';
+import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
 import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, readDeclaration, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';

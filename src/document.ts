@@ -1,10 +1,11 @@
-import { Analyzer, ExplainOptions, LineExplanation, nestedScripts } from './analyzer';
+import { Analyzer } from './analyzer';
+import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { dialectIssues, Shell } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
-import type { NestedScript } from './semantics/nested';
+import { type NestedScript, nestedScripts } from './semantics/nested';
 import { settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
 import type { Point, SyntaxTree } from './syntax/tree';

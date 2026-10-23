@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Span } from '../analyzer';
+import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, PANEL_BODY, panelUpdate } from './panelView';

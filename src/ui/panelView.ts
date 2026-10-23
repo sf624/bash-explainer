@@ -1,4 +1,4 @@
-import { LineExplanation, Span, Token } from '../analyzer';
+import { LineExplanation, Span, Token } from '../analyzer-types';
 import { Shell, SHELL_NAMES } from '../dialect';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';

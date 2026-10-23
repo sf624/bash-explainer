@@ -1,5 +1,5 @@
 import { githubFileNotes } from './yaml';
-import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer';
+import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
 import { dialectIssues, type Shell } from '../dialect';
 import { descendants, type BashParser, type SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
