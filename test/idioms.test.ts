@@ -199,6 +199,7 @@ describe('argument parsing, NUL-safe loops and other everyday idioms', () => {
     yes('[[ -f $f ]] || continue', /\*\.txt/, /\*\.txt/);
     assert.strictEqual(en('[ -e "$f" ] || exit 1'), '');
     assert.strictEqual(en('[ -z "$f" ] || continue'), '');
+    assert.strictEqual(en('[ -e x ] || continue'), '');
     yes("read -r -p 'Continue? [y/N] ' ans", /a yes\/no question/, /はい／いいえ/);
     yes('read -rp "Sure (y/n)? " ans', /a yes\/no question/, /はい／いいえ/);
     assert.strictEqual(en("read -r -p 'Name: ' name"), '');

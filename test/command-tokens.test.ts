@@ -19,7 +19,12 @@ import { findBashAst, runBashAst, shapeOfAst } from './support/bashast';
 import type { Shape } from './support/shape';
 import { diffShapes, shapeOfTree } from './support/shape';
 
-interface Known { input: string; token: string; problem: string; reason: string }
+interface Finding { input: string; token: string; problem: string; reason: string }
+/** What the test expects: the counts it pins (update them deliberately) and the findings it accepts, with reasons. */
+interface Known {
+  counts: { skipped: Record<string, number>; shapesDiffer: number; inSubstitution: number; inHeredoc: number };
+  findings: Finding[];
+}
 const knownFile = path.join(__dirname, 'fixtures/command-tokens-known.json');
 const bin = findBashAst();
 
@@ -121,6 +126,62 @@ describe('command tokens: the helpers (no bash-ast needed)', () => {
   });
 });
 
+/** The inputs added for this test: they feed snippets.json (scripts/extract-snippets.ts), and so the corpus. */
+describe('command tokens: inputs for the corpus', () => {
+  it('parses redirections next to `&&` and `||`, here-documents before other commands, and here-documents in `$( )`', () => {
+    const parser = createUnbashParser();
+    const trees = [
+      parser.parse('a > f && b'),
+      parser.parse('a 2>e || b >>f'),
+      parser.parse('>o a && b <i | c'),
+      parser.parse('{ a; } >o && b 2>&1'),
+      parser.parse('cat <<E && echo b\nx\nE\necho c'),
+      parser.parse('cat <<E | grep x; echo d\nbody $v\nE\nwc -l <<-F\n\tt\n\tF'),
+      parser.parse('x=$(cat <<E\nhi $y\nE\n); echo "$x"'),
+      parser.parse('echo "$(a > f && b | c)" <(d 2>&1) `e | f`'),
+    ];
+    assert.deepEqual(trees.filter((t) => hasError(t.root) || t.errors.length), []);
+  });
+});
+
+/** The node a command's words lie in: the script, or the substitution it runs in (a script of its own to bash). */
+function scopeOf(n: SyntaxNode): SyntaxNode {
+  let p = n.parent!;
+  while (p.parent && !SUBSTITUTIONS.has(p.type)) p = p.parent;
+  return p;
+}
+
+/** bash removes the backslashes before `\`, `` ` `` and `$` in backquotes before it parses the text. */
+const unescapeBackquoted = (t: string): string => t.replace(/\\([\\`$])/g, '$1');
+
+/** Change every string of a shape (in place), and the line of each simple command. */
+function rewrite(v: unknown, str: (s: string) => string, line: (l: number) => number): void {
+  if (Array.isArray(v)) v.forEach((x, i) => { if (typeof x === 'string') v[i] = str(x); else rewrite(x, str, line); });
+  else if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    for (const [k, x] of Object.entries(o)) {
+      if (typeof x === 'string' && k !== 'k' && k !== 'c' && k !== 'op') o[k] = str(x);
+      else if (k === 'line' && typeof x === 'number') o[k] = line(x);
+      else rewrite(x, str, line);
+    }
+  }
+}
+
+/** A script to bash: the whole input, or the text of a substitution, with its shapes and the commands in it. */
+interface Scope {
+  node: SyntaxNode;
+  name: string;
+  /** Where the text bash parses starts and ends in the input. */
+  from: number;
+  to: number;
+  /** Our commands directly in it, by their path in its shape. */
+  pathOf: Map<SyntaxNode, string>;
+  shapeOf: Map<SyntaxNode, Shape>;
+  bashAt: Map<string, unknown>;
+  /** Whether the shapes differ (its tokens are not compared with bash-ast then). */
+  differs: boolean;
+}
+
 describe('command tokens: each token of an explanation lies in one command of bash\'s', function () {
   before(function () {
     if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
@@ -133,10 +194,11 @@ describe('command tokens: each token of an explanation lies in one command of ba
     const ub = createUnbashParser();
     const analyzer = new Analyzer('en');
     const { files, snippets } = corpus();
-    const known: Known[] = JSON.parse(fs.readFileSync(knownFile, 'utf8'));
-    const used = new Set<Known>();
-    const counts = { inputs: 0, lines: 0, tokens: 0, inSubstitution: 0, inHeredoc: 0, separators: 0, known: 0, shapeDiffers: 0, skipped: {} as Record<string, number> };
-    const skip = (why: string): void => { counts.skipped[why] = (counts.skipped[why] ?? 0) + 1; };
+    const known: Known = JSON.parse(fs.readFileSync(knownFile, 'utf8'));
+    const used = new Set<Finding>();
+    const counts = { inputs: 0, scripts: 0, lines: 0, tokens: 0, separators: 0, known: 0 };
+    const pinned: Known['counts'] = { skipped: {}, shapesDiffer: 0, inSubstitution: 0, inHeredoc: 0 };
+    const skip = (why: string): void => { pinned.skipped[why] = (pinned.skipped[why] ?? 0) + 1; };
     const fresh: string[] = [];
     const inputs = [...files.map((f) => ({ ...f, key: f.name })), ...snippets.map((s) => ({ ...s, key: s.text }))];
     for (const input of inputs) {
@@ -145,47 +207,70 @@ describe('command tokens: each token of an explanation lies in one command of ba
       if (EXTGLOB.test(input.text)) { skip('extglob'); continue; }
       const tree = ub.parse(input.text);
       if (hasError(tree.root) || tree.errors.length > 0) { skip('error'); continue; }
-      // (A CRLF script is read through its masked text, by both parsers.)
-      const text = tree.text;
-      const r = runBashAst(bin!, text);
-      if (!r.ok) { skip('bash-ast'); continue; }
-      const from = new Map<Shape, SyntaxNode[]>();
-      const ours = shapeOfTree(tree.root, from);
-      if (!ours) { skip('empty'); continue; }
-      counts.inputs++;
-      const theirs = shapeOfAst(r.ast);
-      const bashAt = byPath(theirs);
-      // Where the shapes differ in kind or length, the paths below are not comparable: the shape test lists those.
-      const unsure = diffShapes(ours, theirs).filter((d) => /\.(kind|length)$/.test(d.path)).map((d) => d.path.replace(/\.(kind|length)$/, ''));
-      const pathOf = new Map<SyntaxNode, string>();
-      const shapeOf = new Map<SyntaxNode, Shape>();
-      for (const [p, s] of byPath(ours)) {
-        for (const n of from.get(s as Shape) ?? []) { pathOf.set(n, p); shapeOf.set(n, s as Shape); }
-      }
-      const all = descendants(tree.root);
-      // The commands in `$( )`, `<( )` and backquotes: ours only (bash-ast keeps their text in a word).
-      const inner = new Map<Shape, SyntaxNode[]>();
-      for (const s of all.filter((n) => SUBSTITUTIONS.has(n.type))) shapeOfTree(s, inner);
-      const commands = [...pathOf.keys(), ...[...inner.values()].flat()];
-      const bodies = all.filter((n) => n.type === 'heredoc_body');
-      const lineStarts = [0];
-      for (let i = 0; i < text.length; i++) if (text[i] === '\n') lineStarts.push(i + 1);
-      const offset = (p: { line: number; character: number }): number => lineStarts[p.line] + p.character;
+      // A CRLF script is read through its masked text (each CR before a LF a space, as the tree has it), by both parsers.
+      const text = tree.text.replace(/\r(?=\n)/g, ' ');
       const report = (token: string, problem: string): void => {
-        const k = known.find((e) => e.input === input.key && e.token === token && e.problem === problem);
+        const k = known.findings.find((e) => e.input === input.key && e.token === token && e.problem === problem);
         if (k) { used.add(k); counts.known++; return; }
         fresh.push(`${input.name}\n  ${token}: ${problem}`);
       };
+      const lineStarts = [0];
+      for (let i = 0; i < text.length; i++) if (text[i] === '\n') lineStarts.push(i + 1);
+      const offset = (p: { line: number; character: number }): number => lineStarts[p.line] + p.character;
+      const rowOf = (i: number): number => lineStarts.filter((s) => s <= i).length - 1;
+      const all = descendants(tree.root);
+
+      // Each script bash parses: the input, and the text of each substitution (bash parses it again, in the child).
+      const top = runBashAst(bin!, text);
+      if (!top.ok) { skip('bash-ast'); continue; }
+      const scopes = new Map<SyntaxNode, Scope>();
+      let empty = false;
+      for (const node of [tree.root, ...all.filter((n) => SUBSTITUTIONS.has(n.type))]) {
+        const isTop = node === tree.root;
+        const from = isTop ? 0 : node.children[0].endIndex;
+        const to = isTop ? text.length : node.children[node.children.length - 1].startIndex;
+        const backquoted = !isTop && node.children[0].type === '`';
+        const origins = new Map<Shape, SyntaxNode[]>();
+        const ours = shapeOfTree(node, origins);
+        if (isTop && !ours) { empty = true; break; }
+        const name = isTop ? 'the script' : `the substitution ${node.text.split('\n')[0].slice(0, 40)} (${node.startPosition.row + 1}:${node.startPosition.column + 1})`;
+        const r = isTop ? top : runBashAst(bin!, backquoted ? unescapeBackquoted(text.slice(from, to)) : text.slice(from, to));
+        // Lines count from the start of the substitution's text, as bash-ast counts them.
+        if (ours && !isTop) rewrite(ours, backquoted ? unescapeBackquoted : (x) => x, (l) => l - rowOf(from));
+        const theirs = r.ok ? shapeOfAst(r.ast) : null;
+        // (The line bash gives a command is left to test/bash-ast.test.ts: it says nothing of where commands begin and end.)
+        const differs = r.ok ? diffShapes(ours, theirs).some((d) => !d.path.endsWith('.line')) : ours !== null;
+        if (differs) { pinned.shapesDiffer++; report(name, 'the shapes differ'); }
+        const scope: Scope = { node, name, from, to, pathOf: new Map(), shapeOf: new Map(), bashAt: byPath(theirs), differs };
+        for (const [p, s] of byPath(ours)) {
+          for (const n of origins.get(s as Shape) ?? []) { scope.pathOf.set(n, p); scope.shapeOf.set(n, s as Shape); }
+        }
+        scopes.set(node, scope);
+      }
+      if (empty) { skip('empty'); continue; }
+      counts.inputs++;
+      counts.scripts += scopes.size;
+      const commands = [...scopes.values()].flatMap((s) => [...s.pathOf.keys()]);
+      const scopeOfCommand = new Map(commands.map((c) => [c, scopes.get(scopeOf(c))!]));
       const holds = (c: SyntaxNode, a: number, b: number): boolean => c.startIndex <= a && b <= c.endIndex;
       const innermost = (cs: SyntaxNode[], a: number, b: number): SyntaxNode | undefined =>
         cs.filter((c) => holds(c, a, b)).sort((x, y) => (x.endIndex - x.startIndex) - (y.endIndex - y.startIndex))[0];
-      /** Whether bash-ast has the command at this path; undefined when the shapes differ there (skipped). */
-      const inBash = (p: string, s: Shape): boolean | undefined => {
-        const b = bashAt.get(p) as Shape | undefined;
-        if (b && b.k === s.k) return true;
-        if (unsure.some((u) => p === u || p.startsWith(`${u}.`) || p.startsWith(`${u}[`))) return undefined;
-        return false;
+      /** The nearest of our commands around a node, by its ancestors. */
+      const commandAround = (n: SyntaxNode): SyntaxNode | undefined => {
+        for (let p = n.parent; p; p = p.parent) if (scopeOfCommand.has(p)) return p;
+        return undefined;
       };
+
+      // Each substitution lies in one word of the command around it, in the script around it.
+      for (const sc of scopes.values()) {
+        if (sc.node === tree.root) continue;
+        const outer = commandAround(sc.node);
+        if (!outer) { report(sc.name, 'is in no command'); continue; }
+        const osc = scopeOfCommand.get(outer)!;
+        if (osc.differs) continue;
+        const b = osc.bashAt.get(osc.pathOf.get(outer)!) as Shape | undefined;
+        if (!b || !stringsOf(b).map(bare).some((w) => w.includes(bare(sc.node.text)))) report(sc.name, `is in no word of bash-ast's command at ${osc.pathOf.get(outer)}`);
+      }
 
       const skipRows = continuationRows(tree.root);
       const seen = new Set<string>();
@@ -194,45 +279,55 @@ describe('command tokens: each token of an explanation lies in one command of ba
         counts.lines++;
         for (const t of allTokens(analyzer.explainLine(tree, line, shell).items)) {
           if (t.kind === 'comment') continue;
-          let a = offset(t.span.start);
-          let b = offset(t.span.end);
+          const a = offset(t.span.start);
+          const b = offset(t.span.end);
           const name = `${t.label} (${t.span.start.line + 1}:${t.span.start.character + 1})`;
           const id = `${a}:${b}:${t.label}`;
           if (seen.has(id)) continue;
           seen.add(id);
           counts.tokens++;
-          // A token in a here-document's body belongs to the command of its redirection.
-          const body = bodies.find((h) => holds(h, a, b));
-          if (body) { a = body.parent!.startIndex; b = a + 1; counts.inHeredoc++; }
           // (A command inside the token is fine: a token of a list, a pipeline, a block holds its commands.)
           const crossed = commands.find((c) => c.startIndex < b && a < c.endIndex && !holds(c, a, b) && !(a <= c.startIndex && c.endIndex <= b));
           if (crossed) { report(name, `crosses the ${crossed.type} at ${crossed.startIndex}`); continue; }
-          const own = innermost(commands, a, b);
-          if (!own) {
-            // `;` and `&` between the statements of the script belong to its sequence (bash's connection), not to a node of ours.
-            if (t.label === ';' || t.label === '&') counts.separators++;
-            else report(name, 'in no command');
-            continue;
+          // The script the token is in, by position: the innermost one whose text holds it.
+          const where = [...scopes.values()].filter((s) => s.from <= a && b <= s.to).sort((x, y) => (x.to - x.from) - (y.to - y.from))[0];
+          let own: SyntaxNode | undefined;
+          const body = all.find((h) => h.type === 'heredoc_body' && holds(h, a, b));
+          if (body) {
+            // A token in a here-document's body belongs to the command of its redirection, by the tree.
+            pinned.inHeredoc++;
+            const redirect = body.parent!;
+            own = commandAround(redirect);
+            const op = redirect.children.find((c) => !c.named)!.type;
+            const target = op === '<<-' ? body.text.replace(/^\t+/gm, '') : body.text;
+            const s = own && scopeOfCommand.get(own)!.shapeOf.get(own);
+            if (!s || !('redirects' in s) || !s.redirects.some((r) => r.op === '<<' && r.target === target)) {
+              report(name, 'its here-document is not a redirection of the command around it');
+              continue;
+            }
+          } else {
+            own = innermost(commands.filter((c) => scopeOfCommand.get(c) === where), a, b);
+            if (!own) {
+              // `;` and `&` after a statement of a script belong to its sequence (bash's connection), not to a node of ours.
+              const after = where.node.namedChildren.some((c) => scopeOfCommand.has(c) && c.endIndex <= a);
+              if ((t.label === ';' || t.label === '&') && after) counts.separators++;
+              else report(name, `in no command of ${where.name}`);
+              continue;
+            }
           }
-          // A command in `$( )`, `<( )` or backquotes is ours only: its substitution lies in one word of bash's command.
-          let sub: SyntaxNode | undefined;
-          for (let p = own.parent; p; p = p.parent) if (SUBSTITUTIONS.has(p.type)) sub = p;
-          const outer = sub ? innermost(commands.filter((c) => !holds(sub!, c.startIndex, c.endIndex)), sub.startIndex, sub.endIndex) : own;
-          if (!outer) { report(name, 'its substitution is in no command'); continue; }
-          const p = pathOf.get(outer)!;
-          const ok = inBash(p, shapeOf.get(outer)!);
-          if (ok === undefined) { counts.shapeDiffers++; continue; }
-          if (!ok) { report(name, `bash-ast has no ${shapeOf.get(outer)!.k} command at ${p}`); continue; }
-          if (sub) {
-            counts.inSubstitution++;
-            const words = stringsOf(bashAt.get(p) as Shape).map(bare);
-            if (!words.some((w) => w.includes(bare(sub!.text)))) report(name, `its substitution is in no word of bash-ast's command at ${p}`);
-          }
+          const sc = scopeOfCommand.get(own!)!;
+          if (sc !== where) { report(name, `its command is in ${sc.name}, the token in ${where.name}`); continue; }
+          if (sc.node !== tree.root) pinned.inSubstitution++;
+          if (sc.differs) continue;
+          const theirs = sc.bashAt.get(sc.pathOf.get(own!)!) as Shape | undefined;
+          if (theirs?.k !== sc.shapeOf.get(own!)!.k) report(name, `bash-ast has no ${sc.shapeOf.get(own!)!.k} command at ${sc.pathOf.get(own!)} of ${sc.name}`);
         }
       }
     }
-    console.log(`      command tokens: ${counts.inputs} inputs, ${counts.lines} lines, ${counts.tokens} tokens (${counts.inSubstitution} in a substitution, ${counts.inHeredoc} in a here-document, ${counts.separators} separators of the script, ${counts.shapeDiffers} where the shapes differ), skipped ${JSON.stringify(counts.skipped)}, ${counts.known} known, ${fresh.length} new, in ${((Date.now() - started) / 1000).toFixed(1)} s`);
-    const stale = known.filter((k) => !used.has(k)).map((k) => `stale: ${JSON.stringify(k.input).slice(0, 80)} ${k.token}: ${k.problem}`);
+    console.log(`      command tokens: ${counts.inputs} inputs (${counts.scripts} scripts with the substitutions), ${counts.lines} lines, ${counts.tokens} tokens (${counts.separators} separators), ${JSON.stringify(pinned)}, ${counts.known} known findings, ${fresh.length} new, in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    const stale = known.findings.filter((k) => !used.has(k)).map((k) => `stale: ${JSON.stringify(k.input).slice(0, 80)} ${k.token}: ${k.problem}`);
     assert.deepEqual([...fresh, ...stale], []);
+    // Pinned, so that a change moves them on purpose (in test/fixtures/command-tokens-known.json).
+    assert.deepEqual(pinned, known.counts);
   });
 });
