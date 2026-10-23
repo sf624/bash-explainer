@@ -1,6 +1,6 @@
 import { Lang, ordinal, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
-import { pitfallNotes, usesVariable } from './pitfalls';
+import { pitfallNotes, readsVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
 import { ancestor, descendants, field, fields, token } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
@@ -309,9 +309,8 @@ export class Analyzer {
     this.examples = [];
     const items = this.flatten(root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'], line)
-      .filter((n) => intersects(n, line))
-      .map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text));
-    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang)), ...wordFacts(root, line, this.lang).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
+      .filter((n) => intersects(n, line));
+    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.extraNotes), ...this.statusNotes(line, false), ...(this.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang)), ...wordFacts(root, line, this.lang, this.state, this.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
     const facts = this.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
     const result: LineExplanation = {
@@ -2756,16 +2755,11 @@ export class Analyzer {
       // The redirections after the last stage (`… | while …; done > log`) are its own.
       const last = stage.type === 'redirected_statement' ? field(stage, 'body') ?? stage : stage;
       if (!LAST_STAGES.has(last.type)) continue;
+      // The variables the stage sets, from the model (`((n++))`, `read n`, `printf -v n`, `mapfile n` too); not `local`.
       const names = new Set<string>();
-      for (const a of descendants(last, ['variable_assignment'])) {
-        const n = field(a, 'name')?.text;
-        // Not `X=1 cmd`, which only sets X for cmd, nor `local`.
-        if (n && a.parent?.type !== 'command' && !ancestorOf(a, (x) => x.type === 'declaration_command' && /^local\b/.test(x.text))) names.add(n);
-      }
-      for (const c of [last, ...descendants(last, ['command'])]) {
-        if (c.type === 'command' && field(c, 'name')?.text === 'read' && (c === last || last.type !== 'while_statement' || !ancestorOf(c, (x) => x === field(last, 'condition')))) {
-          for (const w of fields(c, 'argument')) if (/^[A-Za-z_]\w*$/.test(w.text) && !/^-/.test(sibling(w, -1)!.text)) names.add(w.text);
-        }
+      for (const m of [last, ...everyNode(last)]) {
+        if (m.type === 'declaration_command' && /^local\b/.test(m.text)) continue;
+        for (const v of this.state.writes(m)) names.add(v);
       }
       if (!names.size) continue;
       // Used after the pipeline, in the same block.
@@ -2773,12 +2767,12 @@ export class Analyzer {
       while (scope.parent && !BLOCK_OWNERS.has(scope.parent.type)) scope = scope.parent;
       // The program at least holds the pipeline.
       const block = scope.parent!;
-      const after = block.text.slice(scope.endIndex - block.startIndex);
-      // Read before being set again (a later loop may set the same names for itself).
+      const after = everyNode(block).filter((m) => m.startIndex >= scope.endIndex);
+      // Read (an expansion in the tree, not text in a quoted string) before being set again (a later loop may set the same names for itself).
       const used = [...names].find((n) => {
-        const use = after.search(new RegExp(`\\$\\{?${n}\\b`));
-        const set = after.search(new RegExp(`(^|[^\\w$])${n}\\+?=|\\bread\\b[^\\n;|&]*\\s${n}\\b`));
-        return use >= 0 && (set < 0 || use < set);
+        const use = after.find((m) => (m.type === 'simple_expansion' || m.type === 'expansion') && readsVariable(m, n));
+        const set = after.find((m) => this.state.writes(m).has(n));
+        return use && (!set || use.startIndex < set.startIndex);
       });
       if (!used) continue;
       const bash = !this.shell || this.shell === 'bash';
@@ -3348,7 +3342,7 @@ export class Analyzer {
       }
     }
     for (const v of assigned) {
-      const use = words.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
+      const use = words.find((w) => readsVariable(w, v));
       if (use) {
         this.extraNotes.push(...this.say(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v })));
         break;
@@ -4656,6 +4650,11 @@ function sortTokens(ts: Token[]): Token[] {
 }
 
 /** Whether an ancestor of `n` satisfies `test`. */
+
+/** Every node under `n`, in source order. */
+function everyNode(n: SyntaxNode): SyntaxNode[] {
+  return n.namedChildren.flatMap((c) => [c, ...everyNode(c)]);
+}
 
 function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return true;

@@ -1,5 +1,5 @@
 import { Lang } from './i18n';
-import { field, fields } from './syntax/tree';
+import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -16,9 +16,11 @@ function varName(n: SyntaxNode): string | undefined {
   return v?.text;
 }
 
-/** Does the text read the variable (`$NAME`, `${NAME}`, `${NAME:-…}`)? */
-export function usesVariable(text: string, name: string): boolean {
-  return new RegExp(`\\$(\\{${name}\\b|${name}\\b)`).test(text);
+/** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */
+export function readsVariable(word: SyntaxNode, name: string): boolean {
+  // (`${NAME[1]}` holds the name in its subscript.)
+  const named = (c: SyntaxNode): SyntaxNode | undefined => (c.type === 'subscript' ? c.namedChildren[0] : c);
+  return descendants(word, ['simple_expansion', 'expansion']).some((e) => e.namedChildren.some((c) => named(c)?.type === 'variable_name' && named(c)!.text === name));
 }
 
 export function commandName(n: SyntaxNode): string | undefined {

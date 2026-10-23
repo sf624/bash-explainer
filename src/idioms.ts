@@ -1,5 +1,7 @@
 import { Lang } from './i18n';
 import { pick } from './embedded/types';
+import { descendants, field } from './syntax/tree';
+import type { SyntaxNode } from './syntax/tree';
 
 export interface Redirect {
   op: string;
@@ -94,8 +96,39 @@ export function isStrictMode(text: string): boolean {
   return on.has('errexit') && on.has('nounset') && on.has('pipefail');
 }
 
+/** A statement's shape in the tree, for the idioms that are not a matter of its spelling (`while  true ; do`). */
+interface Shape { node: (n: SyntaxNode) => boolean }
+
+const nameOf = (c: SyntaxNode | null | undefined): string | undefined => (c?.type === 'command' ? field(c, 'name')?.text : undefined);
+// (`until` is a `while_statement` too, with that keyword first.)
+const whileOf = (n: SyntaxNode): SyntaxNode | undefined => (n.type === 'while_statement' && n.children[0].type === 'while' ? n : undefined);
+/** `while true`, `while :`: a loop whose only condition is that command. */
+const endless = (n: SyntaxNode): boolean => {
+  const w = whileOf(n);
+  const c = w && field(w, 'condition');
+  return !!c && c.type === 'command' && ['true', ':'].includes(nameOf(c)!) && c.namedChildren.length === 1;
+};
+/** `while … read … done < file` (`process`: `< <(command)`): the loop is redirected, and a command in it reads. */
+const readLoop = (process: boolean) => (n: SyntaxNode): boolean => {
+  const body = n.type === 'redirected_statement' ? field(n, 'body') : undefined;
+  if (body?.type !== 'while_statement') return false;
+  const redirects = n.namedChildren.filter((c) => c.type === 'file_redirect');
+  const r = redirects.length === 1 ? redirects[0] : undefined;
+  if (!r || !/^<(?!<)/.test(r.text) || (field(r, 'destination')?.type === 'process_substitution') !== process) return false;
+  return descendants(body, ['command']).some((c) => nameOf(c) === 'read');
+};
+const loopCommand = (name: string) => (n: SyntaxNode): boolean => {
+  const w = whileOf(n);
+  return nameOf(w && field(w, 'condition')) === name;
+};
+/** `while [ $# -gt 0 ]`, `while (( $# ))`: a loop over the arguments. */
+const argsLoop = (n: SyntaxNode): boolean => {
+  const c = whileOf(n) && field(n, 'condition');
+  return !!c && /^(\[\[? "?\$#"? (-gt 0|-ne 0|!= 0|> 0) \]\]?|\(\( ?\$# ?(> ?0)? ?\)\))$/.test(c.text.replace(/\s+/g, ' ').trim());
+};
+
 interface Idiom {
-  test: RegExp | ((text: string) => boolean);
+  test: RegExp | ((text: string) => boolean) | Shape;
   ja: string;
   en: string;
   /** Not reported when this other idiom (by index) is found, e.g. a `cd` that is part of a larger idiom. */
@@ -161,7 +194,7 @@ const IDIOMS: Idiom[] = [
     en: 'from here on, everything printed also goes to a log',
   },
   {
-    test: /^while (true|:); do|^while (true|:)$/,
+    test: { node: endless },
     ja: '無限ループ（`break` や `exit` で抜ける）',
     en: 'an endless loop (left with `break` or `exit`)',
   },
@@ -171,17 +204,17 @@ const IDIOMS: Idiom[] = [
     en: '`mktemp`: safely creates a unique temporary file (or directory with -d)',
   },
   {
-    test: /^while .*\bread\b.* done < (?!<\()\S+$/,
+    test: { node: readLoop(false) },
     ja: '`while read … done < ファイル`: ファイルを1行ずつ読んで処理する（ループ全体の標準入力がそのファイルになる）。最後の行の末尾に改行がないと、その行は読まれずに終わる（`while read -r line || [ -n "$line" ]` とすれば読める）',
     en: '`while read … done < file`: reads a file line by line (the file is the stdin of the whole loop). A last line with no newline at its end is skipped, unless the loop is `while read -r line || [ -n "$line" ]`',
   },
   {
-    test: /^while .*\bread\b.* done < <\(.*\)$/,
+    test: { node: readLoop(true) },
     ja: '`while read … done < <(コマンド)`: コマンドの出力を1行ずつ読んで処理する。`コマンド | while read …` と違い、ループがカレントシェルで動くので、中で代入した変数がループのあとも残る。最後の行の末尾に改行がないと、その行は読まれずに終わる（`|| [ -n "$line" ]` を足せば読める）',
     en: '`while read … done < <(command)`: reads the output of a command line by line. Unlike `command | while read …`, the loop runs in the current shell, so variables set in it are still there after the loop. A last line with no newline at its end is skipped, unless `|| [ -n "$line" ]` is added',
   },
   {
-    test: /^while getopts /,
+    test: { node: loopCommand('getopts') },
     ja: '`while getopts`: 短いオプション（`-a`、値つきの `-b 値`）を1つずつ読む。オプションの文字は変数に、値は `$OPTARG` に入る。最初のオプションでない語で読み取りが止まるので、オプションは引数より前に置く',
     en: '`while getopts`: reads short options (`-a`, `-b value`) one at a time: the letter goes to the variable, the value to `$OPTARG`. It stops at the first word that is not an option, so options must come before the operands',
   },
@@ -191,7 +224,7 @@ const IDIOMS: Idiom[] = [
     en: '`shift $((OPTIND-1))`: drops the options `getopts` has read, so `$1` is the first operand. In a function that uses `getopts`, set `local OPTIND=1` first, or a second call starts where the first stopped and reads nothing',
   },
   {
-    test: /^while getopt( |$)/,
+    test: { node: loopCommand('getopt') },
     ja: '`getopt`（`s` なし）は組み込みの `getopts` とは別の外部コマンドで、整えた引数を表示して終わる。1つずつ読むループにはならない（組み込みは `getopts`）',
     en: '`getopt` (no `s`) is an external program, not the builtin `getopts`: it prints the rewritten arguments and exits, so it cannot drive a loop that reads one option at a time (the builtin is `getopts`)',
   },
@@ -206,7 +239,7 @@ const IDIOMS: Idiom[] = [
     en: '`eval set -- "$args"`: puts the arguments that `getopt` rewrote (and quoted) back into `$1 $2 …`. Keep `"$args"` in double quotes',
   },
   {
-    test: /^while (\[\[? "?\$#"? (-gt 0|-ne 0|!= 0|> 0) \]\]?|\(\( ?\$# ?(> ?0)? ?\)\))( |;|$)/,
+    test: { node: argsLoop },
     ja: '引数を先頭から順に読むループ（ふつうは `case` で `$1` を調べ、最後に `shift` で1つ進める）。値をとるオプションは `shift 2` が要る。`shift` を忘れると、ループが終わらない',
     en: 'a loop over the arguments (usually a `case` on `$1`, then `shift` to move on). An option that takes a value needs `shift 2`; without any `shift` the loop never ends',
   },
@@ -248,10 +281,11 @@ const IDIOMS: Idiom[] = [
 ];
 
 /** Notes for the idioms found in the given statements, without duplicates. */
-export function findIdioms(statements: string[], lang: Lang): string[] {
+export function findIdioms(statements: readonly SyntaxNode[], lang: Lang): string[] {
   const s = pick(lang);
-  const texts = statements.map((stmt) => stmt.replace(/\\\n/g, ' ').replace(/\s+/g, ' ').trim());
-  const found = IDIOMS.map((idiom) => texts.some((t) => (typeof idiom.test === 'function' ? idiom.test(t) : idiom.test.test(t))));
+  // (A loop's text is its first line: its body is other statements.)
+  const texts = statements.map((n) => (n.type === 'while_statement' ? n.text.split('\n')[0] : n.text).replace(/\\\n/g, ' ').replace(/\s+/g, ' ').trim());
+  const found = IDIOMS.map((idiom) => statements.some((n, i) => (typeof idiom.test === 'function' ? idiom.test(texts[i]) : 'node' in idiom.test ? idiom.test.node(n) : idiom.test.test(texts[i]))));
   return IDIOMS.filter((idiom, i) => found[i] && !(idiom.unless !== undefined && found[idiom.unless]))
     .map((idiom) => s(`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`));
 }

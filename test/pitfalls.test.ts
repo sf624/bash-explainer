@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pitfallNotes } from '../src/pitfalls';
+import { shellState } from '../src/semantics/state';
 import { wordFacts } from '../src/wordfacts';
 import * as fs from 'fs';
 import { Analyzer } from '../src/analyzer';
@@ -71,7 +72,7 @@ describe('the spacing of [ ], against bash', () => {
       else assert.ok(r.stderr !== '' || r.status === 127, `${r.status} ${r.stderr}`);
       // The tool finds the same mistake.
       const one = cmd.replace(/^a=.*?; /, '').replace(/^a=1; b=2; /, '');
-      const mistakes = notes(one).length > 0 || wordFacts(parser.parse(one).root, 0, 'en').length > 0;
+      const mistakes = notes(one).length > 0 || (() => { const t = parser.parse(one); return wordFacts(t.root, 0, 'en', shellState(t)); })().length > 0;
       if (expected === 'fails') assert.ok(mistakes, cmd);
     });
   }

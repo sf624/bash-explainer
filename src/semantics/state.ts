@@ -300,6 +300,8 @@ export interface StateModel {
   readonly definitions: { readonly functions: ReadonlyMap<string, readonly SyntaxNode[]>; readonly aliases: ReadonlyMap<string, readonly SyntaxNode[]> };
   /** The options a `set` command turns on or off (`set -e`: errexit on), on any walk; empty for another node. */
   setWrites(n: SyntaxNode): ReadonlyMap<string, 'on' | 'off'>;
+  /** The variables the statement `n` sets itself, on any walk (`n=1`, `read n`, `((n++))`, `printf -v n`); not those of the statements inside it. */
+  writes(n: SyntaxNode): ReadonlySet<string>;
   /** The `source` and `.` commands that run (their files are not read). */
   readonly sources: readonly SyntaxNode[];
   /** The first statement of the unit bash reads at once that holds `n`: a line of top-level statements, or a compound command. */
@@ -813,6 +815,8 @@ class Walker {
   private readonly runStates = new Map<SyntaxNode, ShellState[]>();
   /** The `set` commands, with the options they turn on or off (on any walk). */
   readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
+  /** The variables each statement sets itself (on any walk), not those of the statements inside it. */
+  readonly varWrites = new Map<SyntaxNode, Set<string>>();
   readonly parseAt = new Map<SyntaxNode, ShellState>();
   readonly functionDefs = new Map<string, SyntaxNode[]>();
   readonly aliasDefs = new Map<string, SyntaxNode[]>();
@@ -902,6 +906,10 @@ class Walker {
     const key = `${kind} ${name}`;
     this.lastChange.set(key, ++this.changeCount);
     this.lastAt.set(key, this.node!);
+    if (kind === 'variables') {
+      const set = this.varWrites.get(this.node!) ?? new Set<string>();
+      this.varWrites.set(this.node!, set.add(name));
+    }
     for (const c of this.collecting) c.add(key);
     return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
   }
@@ -3590,6 +3598,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return w.unitStart.get(top) ?? top;
     },
     setWrites: (n) => w.setWrites.get(n) ?? new Map(),
+    writes: (n) => w.varWrites.get(n) ?? new Set(),
     condition: (n) => w.decision(n),
     dead: (n) => w.runAt(n) !== undefined && !w.live.has(n) && w.everywhere(n),
     at(n) {
