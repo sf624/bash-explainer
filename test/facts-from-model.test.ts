@@ -108,6 +108,17 @@ describe('a variable set at the end of a pipeline is gone after it', () => {
     ["g() { gv=1; }; printf 'a\\n' | g; echo \"[$gv]\"", '[]', true],
     ["g() { gv=1; }; printf 'a\\n' | g; gv=2; echo \"[$gv]\"", '[2]', false],
     ["g() { local gv=1; }; printf 'a\\n' | g; echo \"[$gv]\"", '[]', false],
+    // A local is not the shell's variable: `local`, `declare`, `typeset` (without `-g`), also with lastpipe off or on.
+    ["f() { declare dv=1; }; printf 'a\\n' | f; echo \"[$dv]\"", '[]', false],
+    ["f() { typeset dv=1; }; printf 'a\\n' | f; echo \"[$dv]\"", '[]', false],
+    ["f() { local dv=1; dv=2; }; printf 'a\\n' | f; echo \"[$dv]\"", '[]', false],
+    ["f() { declare -g dv=1; }; printf 'a\\n' | f; echo \"[$dv]\"", '[]', true],
+    ["printf 'a\\n' | { declare dv=1; }; echo \"[$dv]\"", '[]', true],
+    // A subshell inside the stage keeps what it sets.
+    ["f() { ( sv=1 ); }; printf 'a\\n' | f; echo \"[$sv]\"", '[]', false],
+    ["printf 'a\\n' | { ( x=1 ); }; echo \"[$x]\"", '[]', false],
+    ["printf 'a\\n' | { y=$(z=1); }; echo \"[$z]\"", '[]', false],
+    ["printf 'a\\n' | { ( x=1 ); y=2; }; echo \"[$y]\"", '[]', true],
     // Set again before it is read.
     ["printf 'a\\n' | while read n; do :; done; n=2; echo \"[$n]\"", '[2]', false],
     // The last stage runs in the shell.
