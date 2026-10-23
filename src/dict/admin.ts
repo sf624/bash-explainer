@@ -1,6 +1,6 @@
 import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, cmd, operand, OptSpec, pos, runs } from './types';
+import { args, cmd, GNU_INFO, operand, OptSpec, pos, runs } from './types';
 
 // System administration commands from the LPIC and LinuC objectives: boot loaders and kernel
 // modules, package tools of the Debian and Red Hat families, accounts, scheduling, time, logs,
@@ -635,12 +635,25 @@ export const admin: Record<string, CommandSpec> = {
     ['-r|--role', 'ロール', 'role', 'arg'],
     ['-R|--recursive', '再帰的に処理する', 'recurse'],
     ['--reference', '同じコンテキストにするファイル', 'copy the context of the given file', 'arg'],
-  ], { positional: [files] }),
+    ['--dereference', 'シンボリックリンクの指す先を変える（既定）', 'affect the referent of each symlink (the default)'],
+    ['-h|--no-dereference', 'シンボリックリンク自体を変える', 'affect symlinks themselves'],
+    ['-l|--range', 'セキュリティコンテキストのレンジ', 'range of the security context', 'arg'],
+    ['--no-preserve-root', '`/` を特別扱いしない（既定）', 'do not treat `/` specially (the default)'],
+    ['--preserve-root', '`/` を再帰的に処理しようとしたら失敗する', 'fail to operate recursively on `/`'],
+    ['-v|--verbose', '処理したファイルを報告する', 'report every file processed'],
+    ['-H', '`-R` のとき、コマンドラインのシンボリックリンクが指すディレクトリをたどる', 'with `-R`, follow a symlink to a directory given on the command line'],
+    ['-L', '`-R` のとき、ディレクトリを指すシンボリックリンクをすべてたどる', 'with `-R`, follow every symlink to a directory'],
+    ['-P', '`-R` のとき、シンボリックリンクをたどらない（既定）', 'with `-R`, follow no symlinks (the default)'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [files] }),
   runcon: cmd('指定した SELinux コンテキストでコマンドを実行する', 'Run a command in a given SELinux context', [
     ['-t|--type', 'タイプ', 'type', 'arg'],
     ['-u|--user', 'ユーザー', 'user', 'arg'],
     ['-r|--role', 'ロール', 'role', 'arg'],
-  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+    ['-c|--compute', '変更する前に、プロセスの遷移後のコンテキストを計算する', 'compute the process transition context before changing it'],
+    ['-l|--range', 'レベルレンジ', 'level range', 'arg'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   semanage: cmd('SELinux のポリシーの設定（ポート・ファイル・ブール値）を管理する', 'Manage SELinux policy settings (ports, files, booleans)', [], {
     subcommands: {
       port: cmd('ポートのタイプを管理する（`-a -t http_port_t -p tcp 8080`）', 'Manage port types (`-a -t http_port_t -p tcp 8080`)', [['-a|--add', '追加', 'add'], ['-d|--delete', '削除', 'delete'], ['-l|--list', '一覧表示', 'list'], ['-t|--type', 'タイプ', 'type', 'arg'], ['-p|--proto', 'プロトコル', 'protocol', 'arg']]),

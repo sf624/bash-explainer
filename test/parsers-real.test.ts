@@ -1,5 +1,5 @@
 // The option parser presets (src/argv/parsers.ts), each compared with a real parser of its family: GNU getopt_long
-// through util-linux getopt(1), bash's echo, OpenSSL, gh (cobra and pflag), iproute2, jq, git and dpkg. A tool
+// through util-linux getopt(1), bash's echo, gcc, OpenSSL, gh (cobra and pflag), iproute2, jq, git and dpkg. A tool
 // that is missing skips its rows.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
@@ -29,7 +29,9 @@ function normalized(parse: ArgvParse, words: ArgWord[]): string {
   const operands: string[] = [];
   let error = false;
   const text = (i: number): string => words[i].value ?? '?';
-  const name = (flag: string, o: OptionSpec): string => (o.names.includes(flag) ? flag : o.names.find((n) => n.startsWith(flag)) ?? flag);
+  // (`--hex` is OpenSSL's `-hex`.)
+  const name = (flag: string, o: OptionSpec): string =>
+    (o.names.includes(flag) ? flag : o.names.find((n) => n.startsWith(flag)) ?? (o.names.includes(flag.slice(1)) ? flag.slice(1) : flag));
   const option = (r: ArgRole, word: number): void => {
     if (r.role === 'unknown-option') { error = true; return; }
     if (r.role === 'cluster') { r.letters.forEach((l) => option(l, word)); return; }
@@ -131,11 +133,20 @@ describe('option parser presets agree with a real parser of their family', () =>
    */
   const TOOLS: { parser: OptionParser; tool: string; rows: [string, RegExp | 'fails', string][] }[] = [
     // OpenSSL's opt.c: one word per option, `-name=value`, no clusters, no prefixes.
-    { parser: 'single-dash', tool: 'openssl', rows: [
+    // OpenSSL's opt.c: `-name`, `-name=value`, no prefixes, and `--name` for `-name`.
+    { parser: 'openssl', tool: 'openssl', rows: [
       ['openssl rand -hex 4', /^[0-9a-f]{8}\n$/, '-hex -- rand 4'],
       ['openssl rand -out=/dev/null -hex 4', /^$/, '-out /dev/null -hex -- rand 4'],
       ['openssl rand -he 4', 'fails', 'error'],
       ['openssl rand -hexbase64 4', 'fails', 'error'],
+      ['openssl rand --hex 4', /^[0-9a-f]{8}\n$/, '-hex -- rand 4'],
+      ['openssl rand --out=/dev/null --hex 4', /^$/, '-out /dev/null -hex -- rand 4'],
+      ['openssl rand ---hex 4', 'fails', 'error'],
+    ] },
+    // gcc: a word of one dash is one option, and `--dumpversion` is not `-dumpversion`.
+    { parser: 'single-dash', tool: 'gcc', rows: [
+      ['gcc -dumpversion', /^\d+/, '-dumpversion --'],
+      ['gcc --dumpversion', 'fails', 'error'],
     ] },
     // pflag: `-R=foo` gives `foo` (`-R==foo` gives `=foo`); no prefixes.
     { parser: 'cobra', tool: 'gh', rows: [

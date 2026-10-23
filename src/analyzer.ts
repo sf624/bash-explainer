@@ -2097,6 +2097,8 @@ export class Analyzer {
   }
 
   private embeddedTextInner(lit: Literal, lang: EmbeddedLang, a: SyntaxNode): { tokens: Token[]; note?: string } | undefined {
+    // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
+    if (this.cx.argCtx?.parse.refused) return undefined;
     const cx: EmbeddedContext = {
       lang: this.lang,
       flavor: () => this.regexFlavor(),

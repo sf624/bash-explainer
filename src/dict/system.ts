@@ -1,6 +1,6 @@
 import type { CommandSpec, SubcommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { args, byCount, cmd, operand, OptSpec, persistent, pos } from './types';
+import { args, byCount, cmd, GNU_INFO, operand, OptSpec, persistent, pos } from './types';
 
 // Commands chosen from a survey of shell scripts, Dockerfiles and CI workflows in popular
 // repositories (installers, official Docker images, CI images): the ones most often met that the
@@ -101,7 +101,15 @@ const checksum = (bits: string): CommandSpec => cmd(`${bits} のハッシュ値�
   ['-c|--check', 'ハッシュ値の一覧ファイルと照合する（ダウンロードの検証）', 'verify against a checksum list (checking downloads)'],
   ['-b|--binary', 'バイナリモードで読む', 'read in binary mode'],
   ['--status', '何も表示せず、結果を終了ステータスで返す', 'print nothing; report via the exit status'],
-], { positional: [files] });
+  ['--tag', 'BSD 形式のチェックサムを出す', 'create a BSD-style checksum'],
+  ['-t|--text', 'テキストモードで読む（既定）', 'read in text mode (the default)'],
+  ['-z|--zero', '各行を改行でなく NUL で終える', 'end each output line with NUL, not a newline'],
+  ['--ignore-missing', '存在しないファイルを失敗にも報告にもしない', 'do not fail or report status for missing files'],
+  ['--quiet', '検証に成功したものは表示しない', 'do not print OK lines'],
+  ['--strict', '書式の正しくないチェックサムの行があれば 0 以外で終わる', 'exit non-zero for improperly formatted checksum lines'],
+  ['-w|--warn', '書式の正しくないチェックサムの行を警告する', 'warn about improperly formatted checksum lines'],
+  ...GNU_INFO,
+], { parser: 'getopt_long', positional: [files] });
 
 const compressor = (ja: string, en: string, ext: string, extra: OptSpec[] = []): CommandSpec => cmd(ja, en, [
   ['-d|--decompress', '展開する', 'decompress'],
@@ -113,7 +121,31 @@ const compressor = (ja: string, en: string, ext: string, extra: OptSpec[] = []):
   ...extra,
 ], { positional: [pos(`対象のファイル（展開なら \`${ext}\`）`, `file (\`${ext}\` to decompress)`)] });
 
-const decompressToStdout = (ja: string, en: string): CommandSpec => cmd(ja, en, [], { positional: [files] });
+const GZIP_OPTIONS: OptSpec[] = [
+  ['-a|--ascii', '行末を変換する（Unix では何もしない）', 'convert line ends (ignored on Unix)'],
+  ['-c|--stdout|--to-stdout', '結果を標準出力に書く（`zcat` では常にそうする）', 'write to stdout (`zcat` always does)'],
+  ['-d|--decompress|--uncompress', '展開する（`zcat` では常にそうする）', 'decompress (`zcat` always does)'],
+  ['-k|--keep', '元のファイルを削除しない', 'keep the input files'],
+  ['-L|--license', 'ライセンスを表示する', 'display the software license'],
+  ['-n|--no-name', '元の名前と日時を保存・復元しない', 'do not save or restore the original name and timestamp'],
+  ['-N|--name', '元の名前と日時を保存・復元する', 'save or restore the original name and timestamp'],
+  ['--silent', '警告を出さない（`--quiet` と同じ）', 'suppress all warnings (same as `--quiet`)'],
+  ['-1|--fast', '速く圧縮する', 'compress faster'],
+  ['-9|--best', 'よく圧縮する', 'compress better'],
+  ['--rsyncable', 'rsync で扱いやすいアーカイブにする', 'make an rsync-friendly archive'],
+  ['-b|--bits', 'LZW の最大ビット数（圧縮用）', 'maximum number of bits for LZW (compression only)', 'arg'],
+  ['-Z|--lzw', 'LZW 形式（compress 互換）で圧縮する', 'compress in the LZW (compress) format'],
+  ['-f|--force', '強制的に処理する', 'force'],
+  ['-l|--list', '圧縮ファイルの内容を一覧する', 'list the contents of compressed files'],
+  ['-q|--quiet', '警告を出さない', 'suppress all warnings'],
+  ['-r|--recursive', 'ディレクトリを再帰的に処理する', 'operate recursively on directories'],
+  ['-S|--suffix', '圧縮ファイルの拡張子', 'suffix of compressed files', 'arg'],
+  ['--synchronous', '同期的に書き出す（安全だが遅い）', 'synchronous output (safer on a crash, but slower)'],
+  ['-t|--test', '圧縮ファイルが壊れていないか調べる', 'test the integrity of compressed files'],
+  ['-v|--verbose', '詳しく表示する', 'verbose mode'],
+];
+
+const decompressToStdout = (ja: string, en: string, gnu = false): CommandSpec => cmd(ja, en, gnu ? [...GZIP_OPTIONS, ...GNU_INFO] : [], { ...(gnu ? { parser: 'getopt_long' as const } : {}), positional: [files] });
 
 /** `-R owner/name`, which gh's subcommands accept too. */
 const ghRepo: OptSpec[] = [['-R|--repo', '対象のリポジトリ（`オーナー/名前`）', 'repository (`owner/name`)', 'arg']];
@@ -419,8 +451,9 @@ export const system: Record<string, CommandSpec> = {
     ['-u|--user', 'ユーザー ID だけ（`0` なら root）', 'only the user ID (`0` is root)'], ['-g|--group', '主グループの ID だけ', 'only the primary group ID'],
     ['-G|--groups', '所属するグループの ID すべて', 'all group IDs'], ['-n|--name', '数値でなく名前で表示（`-un` でユーザー名）', 'names instead of numbers (`-un`: user name)'],
     ['-r|--real', '実 ID を表示する', 'real IDs instead of effective'],
-  ], { positional: [user] }),
-  whoami: cmd('今のユーザー名を表示する', 'Print the current user name'),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [user] }),
+  whoami: cmd('今のユーザー名を表示する', 'Print the current user name', [...GNU_INFO], { parser: 'getopt_long' }),
   getent: cmd('ユーザー・グループ・ホストなどのデータベースを引く（`/etc/passwd` や LDAP も見る）', 'Look up users, groups, hosts and other databases (`/etc/passwd`, LDAP…)', [], {
     positional: [pos('データベース（`passwd`、`group`、`hosts`…）', 'database (`passwd`, `group`, `hosts`…)'), pos('探すキー（名前や ID）', 'key to look up (name or ID)')],
   }),
@@ -464,15 +497,17 @@ export const system: Record<string, CommandSpec> = {
     ['-a|--all', 'すべての情報', 'all information'], ['-s|--kernel-name', 'カーネル名（`Linux`、`Darwin`…。スクリプトで OS 判定に使う）', 'kernel name (`Linux`, `Darwin`…; used to tell the OS)'],
     ['-m|--machine', 'マシンのアーキテクチャ（`x86_64`、`arm64`、`aarch64`…）', 'machine architecture (`x86_64`, `arm64`, `aarch64`…)'], ['-r|--kernel-release', 'カーネルのリリース', 'kernel release'],
     ['-n|--nodename', 'ホスト名', 'host name'], ['-o|--operating-system', 'OS 名', 'operating system'], ['-p|--processor', 'プロセッサの種類', 'processor type'], ['-v|--kernel-version', 'カーネルの版', 'kernel version'],
-  ]),
-  arch: cmd('マシンのアーキテクチャを表示する（`uname -m` と同じ）', 'Print the machine architecture (same as `uname -m`)'),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long' }),
+  arch: cmd('マシンのアーキテクチャを表示する（`uname -m` と同じ）', 'Print the machine architecture (same as `uname -m`)', [...GNU_INFO], { parser: 'getopt_long' }),
   hostname: cmd('ホスト名を表示・設定する', 'Show or set the host name', [
     ['-f|--fqdn|--long', '完全修飾ドメイン名', 'fully qualified domain name'], ['-s|--short', 'ドメインを除いた名前', 'short name'],
     ['-I|--all-ip-addresses', 'すべての IP アドレス（Linux）', 'all IP addresses (Linux)'], ['-i|--ip-address', 'ホスト名の IP アドレス', "the host name's IP address"],
   ]),
   nproc: cmd('使える CPU の数を表示する（`make -j$(nproc)` の定番）', 'Print the number of usable CPUs (as in `make -j$(nproc)`)', [
     ['--all', '制限を無視して全 CPU 数', 'all CPUs, ignoring limits'], ['--ignore', '指定した数だけ引いて表示', 'subtract the given number of', 'arg'],
-  ]),
+    ...GNU_INFO,
+  ], { parser: 'getopt_long' }),
   getconf: cmd('システムの設定値を表示する', 'Print system configuration values', [], {
     positional: [pos('変数名（`_NPROCESSORS_ONLN`: 使える CPU 数、`LONG_BIT`: 32/64 ビット、`PAGESIZE`…）', 'variable (`_NPROCESSORS_ONLN`: usable CPUs, `LONG_BIT`: 32/64-bit, `PAGESIZE`…)')],
   }),
@@ -521,7 +556,9 @@ export const system: Record<string, CommandSpec> = {
   stty: cmd('端末の設定を表示・変更する', 'Show or change terminal settings', [
     ['-echo', '入力した文字を表示しない（パスワード入力向け）', 'do not echo typed characters (for passwords)'], ['-icanon', '行単位でなく1文字ずつ読む', 'read character by character, not by line'],
     ['-g|--save', '今の設定を、あとで戻せる形で表示する', 'print the settings in a form that can restore them'], ['-F|--file', '対象の端末デバイス', 'terminal device', 'arg'],
-  ], { positional: [pos('設定（`size`: 行数と桁数、`sane`: 既定に戻す、`raw`、`echo`…）', 'setting (`size`: rows and columns, `sane`: reset, `raw`, `echo`…)')] }),
+    ['-a|--all', 'すべての設定を人が読める形で表示する', 'print all current settings in a human-readable form'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('設定（`size`: 行数と桁数、`sane`: 既定に戻す、`raw`、`echo`…）', 'setting (`size`: rows and columns, `sane`: reset, `raw`, `echo`…)')] }),
   // The options in iproute2's order (ip.c): `-s` is `-stats`, `-b` is `-batch`, `-br` is `-brief`.
   ip: cmd('ネットワークの設定を表示・変更する（iproute2）', 'Show or change network configuration (iproute2)', [
     ['-l|-loops', 'アドレスをまとめて削除するとき、試す回数の上限', 'maximum number of attempts when flushing addresses', 'arg'],
@@ -573,24 +610,24 @@ export const system: Record<string, CommandSpec> = {
     subcommands: {
       rand: cmd('ランダムなバイト列を作る（パスワードや鍵の生成）', 'Generate random bytes (passwords, keys)', [
         ['-base64', 'Base64 で出力', 'Base64 output'], ['-hex', '16進数で出力', 'hex output'], ['-out', '出力するファイル', 'output file', 'arg'],
-      ], { positional: [pos('バイト数', 'number of bytes')], parser: 'single-dash' }),
+      ], { positional: [pos('バイト数', 'number of bytes')], parser: 'openssl' }),
       x509: cmd('証明書を表示・変換する', 'Show or convert certificates', [
         ['-in', '入力ファイル', 'input file', 'arg'], ['-out', '出力ファイル', 'output file', 'arg'], ['-noout', '証明書そのものは出力しない', 'do not print the certificate itself'],
         ['-text', '内容を読める形で表示', 'print the contents as text'], ['-enddate', '有効期限を表示', 'print the expiry date'], ['-subject', 'サブジェクトを表示', 'print the subject'],
         ['-fingerprint', '指紋を表示', 'print the fingerprint'], ['-checkend', '指定した秒数以内に期限切れなら失敗する', 'fail if it expires within the given number of seconds', 'arg'],
-      ], { parser: 'single-dash' }),
+      ], { parser: 'openssl' }),
       req: cmd('証明書署名要求（CSR）や自己署名証明書を作る', 'Create certificate requests (CSR) or self-signed certificates', [
         ['-new', '新しい要求を作る', 'new request'], ['-x509', '要求の代わりに自己署名証明書を作る', 'make a self-signed certificate instead'], ['-nodes|-noenc', '秘密鍵を暗号化しない', 'do not encrypt the private key'],
         ['-newkey', '新しい鍵も作る（`rsa:2048`…）', 'also make a new key (`rsa:2048`…)', 'arg'], ['-keyout', '秘密鍵の出力先', 'where to write the private key', 'arg'],
         ['-out', '出力ファイル', 'output file', 'arg'], ['-days', '有効日数', 'days of validity', 'arg'], ['-subj', 'サブジェクト（`/CN=example.com`）', 'subject (`/CN=example.com`)', 'arg'],
-      ], { parser: 'single-dash' }),
+      ], { parser: 'openssl' }),
       s_client: cmd('TLS でサーバーにつないで証明書などを確かめる', 'Connect to a server over TLS to inspect it', [
         ['-connect', '接続先（`ホスト:ポート`）', 'where to connect (`host:port`)', 'arg'], ['-servername', 'SNI で名乗るホスト名', 'host name to send in SNI', 'arg'], ['-showcerts', '証明書チェーンをすべて表示', 'show the whole chain'],
-      ], { parser: 'single-dash' }),
+      ], { parser: 'openssl' }),
       dgst: cmd('ハッシュ値の計算や署名の検証をする', 'Hash, sign or verify', [
         ['-sha256', 'SHA-256', 'SHA-256'], ['-verify', '指定した公開鍵で署名を検証する', 'verify with the given public key', 'arg'], ['-signature', '署名のファイル', 'signature file', 'arg'], ['-sign', '指定した秘密鍵で署名する', 'sign with the given private key', 'arg'],
-      ], { positional: [files], parser: 'single-dash' }),
-      genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], parser: 'single-dash' }),
+      ], { positional: [files], parser: 'openssl' }),
+      genrsa: cmd('RSA の秘密鍵を作る', 'Generate an RSA private key', [['-out', '出力ファイル', 'output file', 'arg']], { positional: [pos('鍵の長さ（ビット）', 'key size in bits')], parser: 'openssl' }),
       version: cmd('OpenSSL の版を表示する', 'Print the OpenSSL version'),
     },
   }),
@@ -604,7 +641,12 @@ export const system: Record<string, CommandSpec> = {
   sha512sum: checksum('SHA-512'),
   cmp: cmd('2つのファイルをバイト単位で比べる', 'Compare two files byte by byte', [
     ['-s|--silent|--quiet', '何も表示せず終了ステータスで返す（同じなら 0）', 'print nothing; exit 0 if the same'], ['-l|--verbose', '違うバイトをすべて表示', 'list every differing byte'], ['-n|--bytes', '先頭から指定したバイト数だけ比べる', 'compare at most the given number of bytes', 'arg'],
-  ], { positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')] }),
+    ['-b|--print-bytes', '違うバイトも表示する', 'print the differing bytes'],
+    ['-c|--print-chars', '違うバイトを文字でも表示する', 'print the differing bytes as characters'],
+    ['-i|--ignore-initial', '先頭の指定したバイト数を読み飛ばす（`SKIP1:SKIP2` で別々に）', 'skip the first bytes (`SKIP1:SKIP2` for each file)', 'arg'],
+    ['--help', 'ヘルプを表示する', 'show help'],
+    ['-v|--version', 'バージョンを表示する', 'print the version'],
+  ], { parser: 'getopt_long', positional: [pos('1 つ目のファイル（`-` で標準入力）', 'first file (`-` for stdin)'), pos('2 つ目のファイル', 'second file'), pos('1 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the first file'), pos('2 つ目のファイルで読み飛ばすバイト数', 'bytes to skip in the second file')] }),
   xxd: cmd('16進ダンプを作る・元に戻す', 'Make a hex dump, or reverse one', [
     ['-r|-revert', '16進ダンプをバイナリに戻す', 'turn a hex dump back into binary'], ['-p|-ps|-plain', '区切りのない16進数だけで出力', 'plain hex, no offsets or text'],
     ['-c|-cols', '1行のバイト数', 'bytes per line', 'arg'], ['-l|-len', '指定したバイト数だけ', 'stop after the given number of bytes', 'arg'], ['-s|-seek', '指定した位置から', 'start at the given offset', 'arg'], ['-i|-include', 'C の配列として出力', 'output as a C array'],
@@ -614,7 +656,13 @@ export const system: Record<string, CommandSpec> = {
     ['-t|--format', '出力形式（`x1`: 1バイトずつ16進、`c`: 文字…）', 'output format (`x1`: hex bytes, `c`: characters…)', 'arg'],
     ['-v|--output-duplicates', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'], ['-c', '文字で表示（`-t c` と同じ）', 'characters (same as `-t c`)'],
     ['-x', '2バイトずつ16進で表示', 'hex, two bytes at a time'], ['-N|--read-bytes', '指定したバイト数だけ', 'read only the given number of bytes', 'arg'], ['-j|--skip-bytes', '先頭から指定したバイト数を飛ばす', 'skip the given number of bytes first', 'arg'],
-  ], { positional: [files] }),
+    ['--endian', '指定したバイト順に入れ替える（`big` か `little`）', 'swap the input bytes to the given byte order (`big` or `little`)', 'arg'],
+    ['-S', 'NUL で終わる文字列だけ表示する（最小の長さを指定）', 'show only NUL-terminated strings of at least the given length', 'arg'],
+    ['--strings', '`-S` と同じ（長さは `--strings=長さ`）', 'like `-S` (the length is `--strings=LEN`)', 'attached'],
+    ['-w|--width', '1 行に出力するバイト数（省略時は 32）', 'bytes per output line (32 if no value)', 'attached'],
+    ['--traditional', '3 つ目の古い形式（`ファイル 位置 ラベル`）の引数を受け付ける', 'accept the old third form of arguments (`FILE OFFSET LABEL`)'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [files] }),
   hexdump: cmd('ファイルを16進数でダンプする', 'Dump files in hex', [
     ['-C', '16進数と文字を並べた定番の形式', 'canonical hex + ASCII display'], ['-v', '同じ行の繰り返しを省略しない', 'do not collapse repeated lines'],
     ['-e', '出力の書式', 'output format string', 'arg'], ['-n', '指定したバイト数だけ', 'only the given number of bytes', 'arg'], ['-s', '先頭から指定したバイト数を飛ばす', 'skip the given number of bytes first', 'arg'],
@@ -641,7 +689,7 @@ export const system: Record<string, CommandSpec> = {
   bzip2: compressor('bzip2 形式で圧縮・展開する', 'Compress or decompress bzip2 files', '.bz2'),
   bunzip2: compressor('bzip2 形式を展開する', 'Decompress bzip2 files', '.bz2'),
   bzcat: decompressToStdout('bzip2 形式を展開して標準出力に出す', 'Decompress bzip2 files to stdout'),
-  zcat: decompressToStdout('gzip 形式を展開して標準出力に出す', 'Decompress gzip files to stdout'),
+  zcat: decompressToStdout('gzip 形式を展開して標準出力に出す', 'Decompress gzip files to stdout', true),
   patch: cmd('差分（diff）をファイルに当てる', 'Apply a diff to files', [
     ['-p|--strip', 'パスの先頭から指定した数の階層を取り除く（`-p1` で `a/` `b/` を除く。git の差分の定番）', 'strip the given number of leading path parts (`-p1` drops `a/` and `b/`, as git diffs need)', 'arg'],
     ['-i|--input', '差分のファイル（省略時は標準入力）', 'diff file (default: stdin)', 'arg'], ['-R|--reverse', '逆向きに当てる（元に戻す）', 'apply in reverse (undo)'],

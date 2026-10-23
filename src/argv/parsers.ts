@@ -11,7 +11,9 @@ import type { CommandSpec } from './spec';
  * - `getopt_long`: GNU getopt_long, with a unique prefix of a long option for it (`--pres` for `--preserve-status`;
  *   a prefix of several is refused). For an entry that lists every long option of the tool's `--help`.
  * - `single-dash`: every option is one word, with one dash (`-name`, `-var-file x`), and never clusters; a known
- *   option takes `-name=value` (OpenSSL's opt.c, Go's flag package, find's tests, Java).
+ *   option takes `-name=value` (gcc, find's tests, Java).
+ * - `openssl`: OpenSSL's opt.c: the rules of `single-dash`, and `--name` is `-name` (`openssl rand --hex 4`). Go's
+ *   flag package reads `--name` so too; its tools (go, terraform, shfmt) keep `single-dash` until compared with one.
  * - `letters`: a word is an option only when each of its letters is a known option, and the first operand ends
  *   the options (bash's `echo`: `echo -ne` reads two options, `echo -nx` prints `-nx`).
  * - `cobra`: Go's cobra with pflag: the rules of `gnu`, and `-f=x` gives `-f` the value `x`. The program finds its
@@ -27,7 +29,7 @@ import type { CommandSpec } from './spec';
  *   attached value (`-C.`, `-c=x`); long options keep `--name=value`.
  * - `dpkg`: dpkg's own (`myopt`): the rules of `gnu`, and `-f=x` gives `-f` the value `x` (`dpkg-query -f=…`).
  */
-export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg';
+export type OptionParser = 'gnu' | 'getopt_long' | 'single-dash' | 'openssl' | 'letters' | 'cobra' | 'iproute2' | 'jq' | 'git' | 'dpkg';
 
 /** What a preset does, as the interpreter (src/argv/interpret.ts) reads it. */
 export interface ParserRules {
@@ -41,6 +43,8 @@ export interface ParserRules {
   shortEquals: boolean;
   /** Every option is one word with one dash (`-name`), which may take `-name=value`. */
   singleDash: boolean;
+  /** `--name` is read as `-name` (with `singleDash`). */
+  doubleDash: boolean;
   /** A word is an option only when each of its letters is one. */
   letters: boolean;
   /** The first operand ends the options, whatever the spec's `optionsFirst`. */
@@ -50,13 +54,14 @@ export interface ParserRules {
 }
 
 const GNU: ParserRules = {
-  longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, letters: false, optionsFirst: false, cobra: false,
+  longPrefixes: false, longEquals: true, shortClusters: true, shortEquals: false, singleDash: false, doubleDash: false, letters: false, optionsFirst: false, cobra: false,
 };
 
 export const PARSERS: Record<OptionParser, ParserRules> = {
   gnu: GNU,
   getopt_long: { ...GNU, longPrefixes: 'unique' },
   'single-dash': { ...GNU, singleDash: true },
+  openssl: { ...GNU, singleDash: true, doubleDash: true },
   letters: { ...GNU, letters: true, optionsFirst: true },
   cobra: { ...GNU, shortEquals: true, cobra: true },
   iproute2: { ...GNU, singleDash: true, longPrefixes: 'first' },
