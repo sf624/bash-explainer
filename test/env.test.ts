@@ -311,4 +311,29 @@ describe('explanations from the execution environment', () => {
     assert.match(about('[ "$1" ] && shopt -s lastpipe\necho | { a; }', '{ ‹commands› }', 'en', 1), /the last one runs in the shell itself on the paths where `shopt -s lastpipe` is on/);
     assert.match(about('( { a; } )', '{ ‹commands› }'), /in the current shell/);
   });
+  it('explains a long chain of functions, each called in `$( )` and plainly, in little time', function () {
+    // (Where each function runs was read again for each of its callers' calls, which doubled at each function: 40 of
+    // them took about a minute.)
+    this.timeout(60000);
+    const bodies: Record<string, (a: number, b: number) => string> = {
+      plain: (a, b) => `local a=$(f${a}); f${b};`,
+      'set -e': (a, b) => `local a=$(f${a}); f${b};`,
+      if: (a, b) => `if x=$(f${a}); then f${b}; fi;`,
+      '||': (a, b) => `a=$(f${a}) || f${b};`,
+      '&&': (a, b) => `f${b} && echo "$(f${a})";`,
+      '|': (a, b) => `f${a} | cat; f${b};`,
+    };
+    for (const [shape, body] of Object.entries(bodies)) {
+      const lines = [...(shape === 'set -e' ? ['set -e'] : []), 'f0() { cd /; }', 'f1() { f0; }'];
+      for (let i = 2; i < 40; i++) lines.push(`f${i}() { ${body(i - 1, i - 2)} }`);
+      lines.push('f39');
+      const tree = parser.parse(lines.join('\n'));
+      const analyzer = new Analyzer('en');
+      const t = Date.now();
+      lines.forEach((_, i) => analyzer.explainLine(tree, i));
+      assert.ok(Date.now() - t < 5000, `${shape}: ${Date.now() - t} ms`);
+      // (f0 runs in a subshell on some of its calls only.)
+      assert.strictEqual(kind(lines.join('\n'), 'cd /'), 'subshell?', shape);
+    }
+  });
 });

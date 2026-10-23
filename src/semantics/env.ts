@@ -245,22 +245,28 @@ export const within = (env: ExecEnv, link: EnvLink): ExecEnv => ({ links: [...en
 
 /** The kind of process: the main shell, a subshell of it, another shell, or a program started by a slot. */
 export type ProcessKind = 'main' | 'subshell' | 'shell' | 'program';
+type Process = { readonly kind: ProcessKind; readonly sure: boolean; readonly link?: EnvLink };
+
+/** `processOf` of each environment, and `callSites` of each call link (both are never changed once made). */
+const processes = new WeakMap<ExecEnv, Process>();
+const callProcesses = new WeakMap<CallLink, { some: boolean; all: boolean }>();
 
 /**
  * The process that runs code in `env`: the innermost link that starts one (a `current-shell` slot starts none).
  * `sure: false` when it is a subshell on some paths only, and the main shell on the others; `link` is the link
  * that starts it.
  */
-export function processOf(env: ExecEnv): { kind: ProcessKind; sure: boolean; link?: EnvLink } {
-  let out: { kind: ProcessKind; sure: boolean; link?: EnvLink } = { kind: 'main', sure: true };
+export function processOf(env: ExecEnv): Process {
+  const hit = processes.get(env);
+  if (hit) return hit;
+  let out: Process = { kind: 'main', sure: true };
   for (const l of env.links) {
     if (l.kind === 'call') {
       // (A function is called from the script's own shells: none is in another program.)
       if (out.kind === 'subshell' && out.sure) continue;
-      const all = l.sites.map((x) => processOf(x.env));
-      const sub = all.filter((p) => p.kind === 'subshell');
-      out = !sub.length ? { kind: 'main', sure: out.sure && !l.unsure }
-        : { kind: 'subshell', sure: sub.length === all.length && sub.every((p) => p.sure) && !l.unsure, link: l };
+      const calls = callSites(l);
+      out = !calls.some ? { kind: 'main', sure: out.sure && !l.unsure }
+        : { kind: 'subshell', sure: calls.all && !l.unsure, link: l };
     } else if (l.kind === 'slot') {
       if (l.slot.run === 'subshell') out = { kind: 'subshell', sure: true, link: l };
       else if (l.slot.run !== 'current-shell') out = { kind: l.slot.run === 'exec' ? 'program' : 'shell', sure: true, link: l };
@@ -269,7 +275,24 @@ export function processOf(env: ExecEnv): { kind: ProcessKind; sure: boolean; lin
       out = { kind: 'subshell', sure: l.sure || (out.kind === 'subshell' && out.sure), link: l };
     }
   }
+  processes.set(env, out);
   return out;
+}
+
+/**
+ * The calls of a function: whether some run in a subshell, and whether all surely do. Kept per link, as
+ * `processOf` is per environment: the chains of a function's calls hold those of its callers' calls, which would be
+ * read again at each (a chain of functions, each called in `$( )` and also plainly, doubles them at each step).
+ */
+function callSites(l: CallLink): { some: boolean; all: boolean } {
+  let hit = callProcesses.get(l);
+  if (!hit) {
+    const all = l.sites.map((x) => processOf(x.env));
+    const sub = all.filter((p) => p.kind === 'subshell');
+    hit = { some: sub.length > 0, all: sub.length === all.length && sub.every((p) => p.sure) };
+    callProcesses.set(l, hit);
+  }
+  return hit;
 }
 
 /** Where the code runs: on this machine, on a remote one (ssh), or in a container. */
