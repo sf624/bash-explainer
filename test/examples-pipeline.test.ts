@@ -1,6 +1,14 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { run } from './support/run';
+import { argWords } from './support/argwords';
+import { Analyzer } from '../src/analyzer';
+import { lookupCommand } from '../src/analyzer';
+import { interpret } from '../src/argv/interpret';
 import { pipelineExample, readsFileOperand, Stage } from '../src/examples/pipeline';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 const lines = (s: string) => s.replace(/\n$/, '').split('\n').filter((l, i, a) => !(a.length === 1 && l === ''));
@@ -117,22 +125,63 @@ describe('pipeline examples agree with bash', () => {
     assert.ok(pipelineExample([st('sed', '-u', 's/a/b/'), st('cat')], false));
     assert.strictEqual(pipelineExample([st('seq', '3'), st('awk', '-v')], false), undefined);
     assert.strictEqual(pipelineExample([st('perl', '-x'), st('cat')], false), undefined);
-    assert.strictEqual(readsFileOperand(st('grep', undefined, '-e')), true);
-    assert.strictEqual(readsFileOperand(st('perl', undefined)), false);
     assert.ok(pipelineExample([st('grep', 'a'), st('sort', undefined, '-u')], false));
   });
 });
 
-describe('readsFileOperand', () => {
-  const cases: [string, boolean][] = [
-    ['grep -v error app.log', true], ['grep error', false], ['sed -e s/a/b/', false], ['awk -F: {print} /etc/passwd', true],
-    ['perl -ne print f', true], ['sort -rn', false], ['head -n 3', false], ['cut -d, -f2 f', true],
-    ['tr a b', false], ['wc f', true], ['grep -e x f', true],
+/** A directory with the files the commands below name. */
+function sandbox(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-reads-'));
+  for (const f of ['app.log', 'f', 'data.txt', 'foo']) fs.writeFileSync(path.join(dir, f), '-v from a file\n');
+  fs.writeFileSync(path.join(dir, 'prog.awk'), '{ print }\n');
+  return dir;
+}
+
+describe('readsFileOperand agrees with the tools on whether they read a file instead of stdin', () => {
+  // A tool reads its stdin when what it prints changes with what stdin holds.
+  const stdin = 'a\nerror\nfoo\nx,y\n-v\nzzz\n';
+  const cases: string[] = [
+    'grep -v error app.log', 'grep error', 'sed -e s/a/b/', 'awk -F: {print} /etc/passwd', 'perl -ne print f', 'sort -rn', 'head -n 3',
+    'cut -d, -f2 f', 'tr a b', 'wc f', 'grep -e x f', 'grep -efoo data.txt', 'grep -e -v foo', 'grep -e -v', 'grep x -', 'sed -ie s/a/b/ -e s/c/d/ f',
+    'awk {print} v=1', 'awk -f prog.awk data.txt', 'awk -f prog.awk', 'perl -pi.bak -e s/a/b/ f', 'tee out', 'sort -k 2', 'sort -t, -k2 f', 'egrep a', 'egrep a f',
   ];
-  for (const [src, expected] of cases) {
-    it(src, () => {
-      const [cmd, ...words] = src.split(' ');
-      assert.strictEqual(readsFileOperand({ cmd, words, text: src }), expected);
+  for (const line of cases) {
+    it(line, () => {
+      const { name, words, texts } = argWords(line);
+      const parse = interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand });
+      const real = (input: string) => {
+        const dir = sandbox();
+        try {
+          return run('bash', ['-c', line], { input, cwd: dir }).stdout.toString();
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      };
+      assert.strictEqual(readsFileOperand({ cmd: name, words: texts, text: line }, parse), real(stdin) === real(''));
     });
   }
+});
+
+describe('the pipeline example of a line agrees with the tools', () => {
+  const parser = createUnbashParser();
+  const example = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.title === 'Example (the whole pipeline)');
+  it('labels the input a file when the first stage reads one (`grep -efoo data.txt`)', () => {
+    for (const [line, label] of [['grep -efoo data.txt | sort', 'Input (sample file contents)'], ['grep -e foo data.txt | sort', 'Input (sample file contents)'],
+      ['grep -e foo | sort', 'Input'], ["awk '{ print }' v=1 | sort", 'Input']]) {
+      assert.strictEqual(example(line)?.sections[0].label, label, line);
+    }
+  });
+  it('shows none when a later stage reads a file, not the pipe (`printf … | grep -e -v foo`)', () => {
+    const line = "printf 'a\\n-v\\n' | grep -e -v foo";
+    const dir = sandbox();
+    try {
+      // grep reads the file foo, so what printf writes never reaches it.
+      assert.strictEqual(run('bash', ['-c', line], { cwd: dir }).stdout.toString(), '-v from a file\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    assert.strictEqual(example(line), undefined);
+    assert.ok(example("printf 'a\\n-v\\n' | grep -e -v"));
+    assert.ok(example("printf 'a\\n-v\\n' | grep -e -v -"));
+  });
 });

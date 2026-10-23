@@ -7,6 +7,8 @@ import { runSed, sedExample } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { FILTERS, parseOptions, runSeq, sampleInput, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
+import type { ArgvParse } from '../argv/interpret';
+import { operands } from '../argv/query';
 
 export interface Stage {
   cmd: string;
@@ -262,23 +264,21 @@ function sampleFor(stage: Stage, more = 0): string[] | undefined {
   return sampleInput(stage.cmd, w, more) ?? ['banana', 'apple', 'cherry', 'apple'];
 }
 
-/** Whether the first stage names a file to read (grep PATTERN FILE, sort FILE, cat FILE…). */
-export function readsFileOperand(stage: Stage): boolean {
-  const w = stage.words;
-  // Options whose value is the next word, per command.
-  const takesValue: Record<string, RegExp> = {
-    grep: /^-[efmABCd]$/, egrep: /^-[efmABCd]$/, fgrep: /^-[efmABCd]$/, sed: /^-[ef]$/, awk: /^-[Ffv]$/, gawk: /^-[Ffv]$/, mawk: /^-[Ffv]$/,
-    perl: /^-\w*[eE]$/, sort: /^-[tkoS]$/, cut: /^-[dfcb]$/, head: /^-[nc]$/, tail: /^-[nc]$/, uniq: /^-[fsw]$/,
-  };
-  const value = takesValue[stage.cmd];
-  const operands = w.filter((x, i) => (x === undefined || !x.startsWith('-')) && !(value && value.test(w[i - 1] ?? '')));
-  const inline = w.some((x) => /^-[ef]$/.test(x ?? '') || (stage.cmd === 'perl' && /^-\w*[eE]$/.test(x ?? '')));
+/**
+ * Whether a stage names a file to read (grep PATTERN FILE, sort FILE, cat FILE…), from the operands of `parse`, the
+ * parse of its words: then it does not read its standard input. `-` names the standard input.
+ */
+export function readsFileOperand(stage: Stage, parse: ArgvParse): boolean {
+  const named = operands(parse).filter(({ word, role }) => stage.words[word] !== '-' && !role.assignment);
+  // The first operand (`ARG1`) of these is the pattern, script or program, unless an option gives it (`-e`, `-f`):
+  // then the operands start at the second (src/dict/types.ts, `fills`). awk's `NAME=value` operands are assignments.
+  const program = new Set(operands(parse, 'ARG1').map(({ word }) => word));
   switch (stage.cmd) {
     case 'grep': case 'egrep': case 'fgrep': case 'sed': case 'awk': case 'gawk': case 'mawk': case 'perl':
-      // The first operand is the pattern, script or program unless given with -e / -f.
-      return operands.length > (inline ? 0 : 1);
-    case 'tr': case 'echo': case 'printf': case 'seq': case 'xargs': return false;
-    default: return operands.length > 0;
+      return named.some(({ word }) => !program.has(word));
+    // tee writes to the files it names.
+    case 'tr': case 'echo': case 'printf': case 'seq': case 'xargs': case 'tee': return false;
+    default: return named.length > 0;
   }
 }
 

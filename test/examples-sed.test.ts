@@ -1,5 +1,10 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { run } from './support/run';
+import { Analyzer } from '../src/analyzer';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runSed, sedExample } from '../src/examples/sed';
 
 function realSed(script: string, input: string[], quiet: boolean, extended: boolean): string[] {
@@ -100,4 +105,33 @@ describe('sed escapes that stand for a character', () => {
     assert.ok(sedExample('s/\\\\x41/X/', { quiet: false, extended: false }));
     assert.ok(sedExample('s/\\xg/X/', { quiet: false, extended: false }) === undefined || true);
   });
+});
+
+describe('the sed example of a line agrees with GNU sed', () => {
+  // Each line edits the file `f`: the example shows what it prints, or, in place, what `f` holds after.
+  const cases = [
+    "sed -ie 's/a/b/' -e 's/c/d/' f", "sed -e 's/a/b/' -e 's/c/d/' f", "sed --expression='s/a/b/' -e 's/c/d/' f", "sed -n -e 's/a/X/p' f",
+    "sed -ne 's/a/X/p' f", "sed -i.bak 's/a/b/' f", "sed --in-place 's/a/b/' f", "sed -i -e 's/a/b/' f", "sed -E -e 's/(a+)/<\\1>/' f",
+  ];
+  const parser = createUnbashParser();
+  for (const line of cases) {
+    it(line, () => {
+      const ex = new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'sed');
+      assert.ok(ex, 'has an example');
+      const [input, output] = ex.sections.map((s) => s.lines);
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-sed-'));
+      try {
+        const f = path.join(dir, 'f');
+        fs.writeFileSync(f, input.join('\n') + '\n');
+        // (`sed -ie 's/a/b/' …` fails on the file `s/a/b/`, which it cannot read, and edits `f`.)
+        const printed = run('bash', ['-c', line], { cwd: dir }).stdout.toString();
+        const inPlace = ex.title === 'Example (the file is rewritten like this)';
+        const after = fs.readFileSync(f, 'utf8');
+        assert.deepStrictEqual(inPlace ? after : printed, output.map((l) => l + '\n').join(''));
+        assert.strictEqual(after !== input.join('\n') + '\n', inPlace, 'the file is rewritten');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
 });
