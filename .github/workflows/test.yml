@@ -217,7 +217,8 @@ jobs:
           package: ${{ steps.pack.outputs.tgz }}
 
   bash-ast:
-    # Compares our syntax tree with bash's own parser through bash-ast (test/bash-ast.test.ts).
+    # Compares our syntax tree with bash's own parser through bash-ast (test/bash-ast.test.ts), and the commands
+    # the tokens of the explanations lie in (test/command-tokens.test.ts).
     # GPL boundary: bash-ast is GPL-3.0. We only download and run it as a separate program, and read
     # its JSON on a pipe. We never redistribute it: no artifact, cache, commit, release or bundle.
     name: Syntax tree against bash-ast
@@ -249,3 +250,11 @@ jobs:
           # Fail instead of skipping when bash-ast cannot be run.
           BASH_EXPLAINER_BASH_AST: '1'
         run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash-ast.test.ts
+
+      # Each token of an explanation lies in one command of ours, and bash-ast has that command (docs/design/syntax-tree.md).
+      - name: Run test/command-tokens.test.ts
+        # (Also when the shape test fails: the two report different things.)
+        if: success() || failure()
+        env:
+          BASH_EXPLAINER_BASH_AST: '1'
+        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/command-tokens.test.ts
