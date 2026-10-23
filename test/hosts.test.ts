@@ -665,15 +665,33 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     assert.deepStrictEqual(regionShells('python', "import subprocess\nsubprocess.run('echo a', shell=True, executable='/bin/dash')\n"), ['dash']);
     assert.deepStrictEqual(regionShells('makefile', 'SHELL=/bin/unknownsh\nall:\n\techo a\n'), ['sh']);
   });
-  it('`[[ ]]` is not said to fail in dash for ksh, and is for dash (dash is checked against the real dash)', () => {
+  it('`[[ ]]` has no portability note for ksh, and is not available for dash (dash is checked against the real dash)', function () {
     const notes = (src: string, file: string, line: number) => {
       const extracted = extractShell(hostKind('', file)!, src);
       const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')!;
-      return ex.notes.join('\n');
+      return ex.notes;
     };
-    assert.doesNotMatch(notes('SHELL=/bin/ksh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), /dash/);
-    assert.match(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), /dash/);
-    assert.notStrictEqual(spawnSync('dash', ['-c', '[[ -n x ]]']).status, 0);
+    assert.deepStrictEqual(notes('SHELL=/bin/ksh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), []);
+    assert.deepStrictEqual(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), ['⚠ `[[ ]]` is not available in dash. Instead, use `[ ]`.']);
+    // posh is a POSIX sh: the note is the POSIX one.
+    assert.match(notes('SHELL=/bin/posh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2).join('\n'), /not POSIX sh/);
+    const dash = spawnSync('dash', ['-c', '[[ -n x ]]']);
+    if (dash.error) this.skip();
+    assert.strictEqual(dash.status, 127);
+  });
+  it('posh, busybox and lksh are shells wherever a shell is named', () => {
+    const regionShells2 = (kind: Parameters<typeof extractShell>[0], file: string, src: string) => extractShell(kind, src).regions.map((r) => r.shell);
+    assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["posh","-c","echo a"]\nRUN ["busybox","-c","echo a"]\nRUN ["lksh","-c","echo a"]\nRUN ["pdksh","-c","echo a"]\n'), ['sh', 'ash', 'mksh', 'mksh']);
+    assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["myshell","-c","echo a"]\n'), ['bash']);
+    // GitHub Actions: `shell: posh {0}` is a POSIX sh; the narrow rule (only bash and sh) stays for the others.
+    const gh = (shell: string) => extractShell(hostKind('', 'ci.yml')!, `jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n        shell: ${shell}\n`).regions.map((r) => r.shell);
+    assert.deepStrictEqual(gh('posh {0}'), ['sh']);
+    assert.deepStrictEqual(gh('busybox {0}'), []);
+    assert.deepStrictEqual(gh('bash {0}'), ['bash']);
+    // A Jenkins shebang, a ShellCheck directive.
+    assert.deepStrictEqual(regionShells2('jenkinsfile', 'Jenkinsfile', "node {\n  sh '''#!/bin/busybox sh\n    echo a\n  '''\n}\n"), ['ash']);
+    assert.deepStrictEqual(regionShells2('markdown', 'README.md', '```bash\n# shellcheck shell=busybox\necho a\n```\n'), ['ash']);
+    assert.deepStrictEqual(regionShells2('markdown', 'README.md', '```bash\n# shellcheck shell=posh\necho a\n```\n'), ['sh']);
   });
   it('a region says what it is part of, apart from its label', () => {
     const ci = (file: string, src: string) => extractShell(hostKind('', file)!, src).regions.map((r) => r.host);

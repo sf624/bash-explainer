@@ -151,9 +151,9 @@ function sourcedBefore(model: StateModel, at: SyntaxNode): { sourced?: SyntaxNod
 /** `PATH=… cmd`: an assignment to PATH before the name of the command `c`. */
 const pathPrefix = (c: SyntaxNode): boolean => c.type === 'command' && c.namedChildren.some((a) => a.type === 'variable_assignment' && field(a, 'name')!.text === 'PATH');
 
-/** How a shell run through a slot takes the functions exported to it: bash does, dash, zsh and ksh do not; `sh` may be dash. */
+/** How a shell run through a slot takes the functions exported to it: bash does, the others (dash, zsh, ksh…) do not; `sh` may be dash. */
 function imports(shell: SlotLink['shell']): Tri {
-  return shell === 'sh' ? 'unknown' : shell === 'dash' || shell === 'zsh' || shell === 'ksh' ? 'off' : 'on';
+  return shell === 'sh' ? 'unknown' : shell === 'bash' || shell === 'unknown' ? 'on' : 'off';
 }
 
 /** Where a name is looked up: the slot that runs it, if any, and what that allows. */

@@ -16,6 +16,7 @@ import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from
 import { interpret } from '../argv/interpret';
 import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
+import { shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { field, type SyntaxNode } from '../syntax/tree';
 import type { ShellState, Tri } from './state';
@@ -26,7 +27,7 @@ export type SubshellReason = 'parentheses' | 'command-substitution' | 'process-s
 /** A subshell that starts at `at`; `sure: false` when it does on some paths only (lastpipe, or some of a function's calls). */
 export interface SubshellLink { readonly kind: 'subshell'; readonly why: SubshellReason; readonly at: SyntaxNode; readonly sure: boolean }
 /** The shell a `shell-string` slot starts, from the program's name (`unknown`: `su -c`, ssh, a path or a name not known). */
-export type ShellKind = 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh' | 'unknown';
+export type ShellKind = Shell | 'unknown';
 
 /**
  * A command run through a command slot: `at` is its first word (or the shell string); `via` names the slot (`bash -c`,
@@ -414,7 +415,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
       else if (role.role === 'command') {
         const env = role.slot.envWith && flags.some((f) => role.slot.envWith!.options.includes(f)) ? role.slot.envWith.env : role.slot.env ?? 'exported';
         const program = (role.slot.run === 'shell-string' ? p.command.split(' ')[0].split('/').pop()! : '');
-        const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (/^(bash|sh|dash|zsh|ksh)$/.test(program) && !role.slot.joinsWords ? program as ShellKind : 'unknown');
+        const shell: ShellKind | undefined = role.slot.run !== 'shell-string' ? undefined : role.slot.shell ?? (!role.slot.joinsWords ? shellFromName(program) : undefined) ?? 'unknown';
         // (The options of a shell started by its name: not those of `su -l -c` or of `watch`.)
         const invocation = shell && shell !== 'unknown' && !role.slot.shell ? shellInvocation(all) : [];
         const inner = within(outer, { kind: 'slot', slot: role.slot, via: slotName(p, s, role), at: w.node(word), assigns, env, ...(unsets.length ? { unsets } : {}),

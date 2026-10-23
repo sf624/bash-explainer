@@ -316,7 +316,6 @@ function execWords(b: Builder, words: JsonWord[]): void {
   });
 }
 
-const SHELLS = /^(sh|bash|dash|ash|zsh|ksh|ksh93|mksh|yash|busybox)$/;
 
 function dockerfile(b: Builder): void {
   // `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` changes the shell of later shell-form instructions.
@@ -359,11 +358,11 @@ function dockerfile(b: Builder): void {
       }
       // `RUN ["sh", "-c", "script"]`: the string after `-c` is a shell script.
       const c = words.findIndex((w, n) => n > 0 && /^-\w*c$/.test(w.value));
-      if (SHELLS.test(prog) && c > 0 && words[c + 1]) {
+      const target = shellFromName(prog);
+      if (target && c > 0 && words[c + 1]) {
         const script = words[c + 1];
         const o = (b.outs[script.line] ??= new LineOut());
         for (let k = 0; k < script.value.length; k++) o.insert(script.value[k], script.cols[k], script.cols[k] + 1);
-        const target: Shell = shellFromName(prog)!;
         b.region(script.line, script.line, [`Dockerfile の ${instr}（exec 形式で \`${words[0].value} ${words[c].value}\` に渡すスクリプト）`, `Dockerfile ${instr} (a script passed to \`${words[0].value} ${words[c].value}\` in exec form)`], target);
         i = last;
         continue;
