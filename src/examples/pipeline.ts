@@ -9,6 +9,7 @@ import { FILTERS, parseOptions, runSeq, sampleInput, Unsupported } from './textf
 import { runXargs, showCommand } from './runtime';
 import type { ArgvParse } from '../argv/interpret';
 import { operands } from '../argv/query';
+import { canonicalName, impliedWords } from '../dict/aliases';
 
 export interface Stage {
   cmd: string;
@@ -178,9 +179,9 @@ function runWc(words: (string | undefined)[], input: string[]): string[] {
 /** A runner for one stage, or undefined if the command is not supported. */
 export function runner(stage: Stage): Runner | undefined {
   const w = stage.words;
-  switch (stage.cmd) {
-    case 'grep': case 'egrep': case 'fgrep': {
-      const words = stage.cmd === 'egrep' ? ['-E', ...w] : stage.cmd === 'fgrep' ? ['-F', ...w] : w;
+  switch (canonicalName(stage.cmd)) {
+    case 'grep': {
+      const words = [...impliedWords(stage.cmd), ...w];
       grepRegexes(words);
       return (input) => runGrep(words, input);
     }
@@ -192,7 +193,7 @@ export function runner(stage: Stage): Runner | undefined {
         return out;
       };
     }
-    case 'awk': case 'gawk': case 'mawk': {
+    case 'awk': {
       const a = awkArgs(w);
       return (input) => {
         const out = runAwk(a.program, input, a);
@@ -245,14 +246,14 @@ function sourceOutput(stage: Stage): string[] | undefined {
 /** Sample input for the first stage that reads input. */
 function sampleFor(stage: Stage, more = 0): string[] | undefined {
   const w = stage.words;
-  switch (stage.cmd) {
-    case 'grep': case 'egrep': case 'fgrep':
-      return grepSample(stage.cmd === 'egrep' ? ['-E', ...w] : stage.cmd === 'fgrep' ? ['-F', ...w] : w, more);
+  switch (canonicalName(stage.cmd)) {
+    case 'grep':
+      return grepSample([...impliedWords(stage.cmd), ...w], more);
     case 'sed': {
       const a = sedArgs(w);
       return sedExample(a.script, { quiet: a.quiet, extended: a.extended })?.input;
     }
-    case 'awk': case 'gawk': case 'mawk': {
+    case 'awk': {
       const a = awkArgs(w);
       return awkExample(a.program, a)?.input;
     }
@@ -273,8 +274,8 @@ export function readsFileOperand(stage: Stage, parse: ArgvParse): boolean {
   // The first operand (`ARG1`) of these is the pattern, script or program, unless an option gives it (`-e`, `-f`):
   // then the operands start at the second (src/dict/types.ts, `fills`). awk's `NAME=value` operands are assignments.
   const program = new Set(operands(parse, 'ARG1').map(({ word }) => word));
-  switch (stage.cmd) {
-    case 'grep': case 'egrep': case 'fgrep': case 'sed': case 'awk': case 'gawk': case 'mawk': case 'perl':
+  switch (canonicalName(stage.cmd)) {
+    case 'grep': case 'sed': case 'awk': case 'perl':
       return named.some(({ word }) => !program.has(word));
     // tee writes to the files it names.
     case 'tr': case 'echo': case 'printf': case 'seq': case 'xargs': case 'tee': return false;

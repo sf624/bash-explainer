@@ -8,6 +8,7 @@ import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
+import { impliedWords, lookupCommand } from './dict/aliases';
 import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
@@ -3223,8 +3224,9 @@ export class Analyzer {
     const cmd = this.argCtx!.cmd.split('/').pop()!;
     if (cmd === 'sed') return this.given('-E') ? 'ere' : 'bre';
     if (this.given('-P')) return 'pcre';
-    if (this.given('-F') || cmd === 'fgrep') return 'fixed';
-    if (this.given('-E') || cmd === 'egrep') return 'ere';
+    const implied = impliedWords(cmd);
+    if (this.given('-F') || implied.includes('-F')) return 'fixed';
+    if (this.given('-E') || implied.includes('-E')) return 'ere';
     return 'bre';
   }
 
@@ -4612,19 +4614,6 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
   return out;
 }
 
-export function lookupCommand(name: string): CommandSpec | undefined {
-  if (Object.prototype.hasOwnProperty.call(builtins, name)) return builtins[name];
-  const base = name.includes('/') ? name.slice(name.lastIndexOf('/') + 1) : name;
-  // `/bin/kill`: a path runs the program of a builtin's name.
-  if (base !== name && Object.prototype.hasOwnProperty.call(builtins, base) && builtins[base].program) return builtins[base].program;
-  if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];
-  if (base === 'egrep' || base === 'fgrep') return commands.grep;
-  if (base === 'gawk' || base === 'mawk' || base === 'nawk') return commands.awk;
-  if (base === 'python') return commands.python3;
-  if (base === 'zsh' || base === 'dash' || base === 'ksh') return commands.sh;
-  return undefined;
-}
-
 /**
  * Every renderer shows a token's label beside its explanation, so an explanation that opens with the label
  * quoted (`` `%s`: value 1 as a string ``) says it twice: remove that opening. The text stays when it only
@@ -4705,3 +4694,5 @@ function posOf(starts: number[], i: number): Pos {
 }
 
 const sameSpan = (a: Span, b: Span): boolean => a.start.line === b.start.line && a.start.character === b.start.character && a.end.line === b.end.line && a.end.character === b.end.character;
+
+export { lookupCommand };
