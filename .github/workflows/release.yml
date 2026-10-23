@@ -56,10 +56,14 @@ jobs:
               echo "The Test workflow passed on $GITHUB_SHA."
               exit 0
             fi
-            if [ "$(jq '[.[] | select(.status != "completed")] | length' <<< "$runs")" -eq 0 ]; then
+            # No run yet: a tag pushed seconds after the merge, before the run shows up. Wait 5 minutes for it.
+            if [ "$(jq 'length' <<< "$runs")" -gt 0 ] && [ "$(jq '[.[] | select(.status != "completed")] | length' <<< "$runs")" -eq 0 ]; then
               break
             fi
-            echo "The Test workflow is still running on $GITHUB_SHA."
+            if [ "$(jq 'length' <<< "$runs")" -eq 0 ] && [ "$attempt" -gt 5 ]; then
+              break
+            fi
+            echo "Waiting for the Test workflow on $GITHUB_SHA."
             sleep 60
           done
           echo "::error::The Test workflow has not passed on $GITHUB_SHA: tag a commit whose Test run succeeded"

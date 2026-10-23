@@ -69,8 +69,16 @@ runs:
         [ -n "$CHECK_SHELL" ] && args+=(--shell "$CHECK_SHELL")
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
-        # One run writes the annotations to the output and the SARIF file.
-        [ -n "$SARIF" ] && args+=(--sarif "$SARIF")
+        # A CLI with --sarif (listed in its help) writes the annotations and the SARIF file in one
+        # run. An older one (an earlier version, or a `package:` pin) takes a second run.
+        if [ -n "$SARIF" ]; then
+          if npx --yes --package="$package" bash-explainer --help 2>/dev/null | grep -q -- '--sarif <file>'; then
+            args+=(--sarif "$SARIF")
+          else
+            check --format sarif > "$SARIF"
+            [ $? -le 1 ] || exit 2
+          fi
+        fi
         out=$(check --format github)
         status=$?
         # Printed, these lines become annotations on the pull request.

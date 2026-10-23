@@ -164,6 +164,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       }
       case '--sarif':
         o.sarifFile = value();
+        if (o.sarifFile === '-') throw new UsageError('--sarif needs a file, not - (use --format sarif for standard output)');
         break;
       default: {
         if (arg.startsWith('-') && arg !== '-') throw new UsageError(`unknown option: ${arg}`);
@@ -371,8 +372,9 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   }
 
   if (o.sarifFile !== undefined) {
+    const text = JSON.stringify(sarif(json as Problem[]), null, 2) + '\n';
     try {
-      fs.writeFileSync(o.sarifFile, JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
+      fs.writeFileSync(o.sarifFile, text);
     } catch (e) {
       io.stderr(`bash-explainer: cannot write ${o.sarifFile}: ${(e as Error).message}\n`);
       return 2;

@@ -128,6 +128,9 @@ describe('the command-line tool', function () {
     assert.match(both.out, /^::warning file=/m);
     assert.strictEqual(fs.readFileSync(file, 'utf8'), alone.out);
     assert.strictEqual(run(['--sarif', file, '-e', 'ls']).code, 2);
+    const dash = run(['--check', '--sarif', '-', '-e', 'ls']);
+    assert.strictEqual(dash.code, 2);
+    assert.match(dash.err, /--sarif needs a file/);
     const bad = run(['--check', '--sarif', path.join(dir, 'no-such-dir', 'x.sarif'), '-e', 'ls']);
     assert.strictEqual(bad.code, 2);
     assert.match(bad.err, /cannot write/);
