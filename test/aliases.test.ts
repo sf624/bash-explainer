@@ -58,11 +58,11 @@ describe('shells other than bash take the options of sh', () => {
       assert.strictEqual(lookupCommand(n), commands.sh, n);
     }
     assert.strictEqual(lookupCommand('busybox'), undefined);
-    assert.strictEqual(lookupCommand('bash'), commands.bash);
+    for (const n of ['bash', 'bash5', '/usr/bin/bash5.2']) assert.strictEqual(lookupCommand(n), commands.bash, n);
   });
 
   it('lists options that the real dash takes', () => {
-    const names = new Set(commands.sh.options.flatMap((o) => o.names));
+    const names = new Set((commands.sh.options ?? []).flatMap((o) => o.names));
     for (const o of ['-c', '-n', '-e', '-x', '-u']) assert.ok(names.has(o), o);
     assert.strictEqual(spawnSync('dash', ['-n', '-e', '-u', '-c', 'echo hi']).status, 0);
   });

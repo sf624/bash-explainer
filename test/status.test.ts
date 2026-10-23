@@ -214,7 +214,7 @@ describe('helpers of the status model', () => {
       return model.hidesFailure(node);
     };
     for (const yes of ['a | b', 'echo $(a) | b', 'cat f | b', 'a | grep x', 'a | sed s/a/b/', 'a | head -1 > f'.replace(' head -1', ' tr a b')]) assert.ok(hides(yes), yes);
-    for (const no of ['set -o pipefail; a | b', '! a | b', 'echo x | b', 'printf "%s" x | b', 'cat <<EOF | b\nx\nEOF'.replace(/\\n/g, '\n'), 'a | head -1', 'a | grep -q x',
+    for (const no of ['set -o pipefail; a | b', '! a | b', 'echo x | b', 'printf "%s" x | b', 'cat <<EOF | b\nx\nEOF'.replace(/\\n/g, '\n'), 'a | head -1', 'a | grep -q x', 'a | egrep -q x', 'a | fgrep -m1 x',
       'a | grep -m1 x', "a | sed '1q'", 'a b', 'echo x > f | b'.replace(' > f', '') + '; echo x | b']) assert.ok(!hides(no), no);
     assert.ok(hides('cat <<EOF f | b\nx\nEOF'.replace(/\\n/g, '\n')));
     assert.ok(hides('echo x > f | b'));
@@ -301,7 +301,7 @@ describe('the notes on status and errexit', () => {
     const end = 'set -e\nf() {\n  [ -f x ] && echo found\n}\nf > log';
     assert.ok(notes(end, 2).some((n) => /`f` returns its non-zero status, and so does the script, which ends with the call on line 5/.test(n)));
     assert.ok(notes(end, 2, 'ja').some((n) => /終わるスクリプトもその終了ステータスになる/.test(n)));
-    for (const left of ['[[ -n $x ]]', '(( n ))', 'test -f x', 'grep -q x f', 'grep --quiet x f', '[ -f x ] && [ -r x ]']) {
+    for (const left of ['[[ -n $x ]]', '(( n ))', 'test -f x', 'grep -q x f', 'egrep -q x f', 'fgrep --quiet x f', 'grep --quiet x f', '[ -f x ] && [ -r x ]']) {
       assert.ok(notes(`set -e\nf() {\n  ${left} && echo found\n}\nf\n:`, 2).some((n) => /last command of/.test(n)), left);
     }
     for (const left of ['mkdir -p d', 'grep x f', 'cd d', '[ -f x ] && cd d', 'x=1', 'test() { :; }; test x']) {

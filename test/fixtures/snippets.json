@@ -597,6 +597,7 @@
  "f(1 2)",
  "fdisk -u -l /dev/sdb",
  "fdisk -w always /dev/sdb",
+ "fgrep 'a.b' f",
  "file",
  "find -L . -name a",
  "find . -ctime -1 -cmin 5 -size +10k -size -1M -size 3 -group g -perm 644 -maxdepth 2 -mindepth 1 -readable -writable -executable -true -false -quit",
