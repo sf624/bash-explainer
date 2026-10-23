@@ -58,6 +58,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplainer')) return;
+      service.settingsChanged();
       if (e.affectsConfiguration('bashExplainer.languages')) { hover.register(); diagnostics.register(); }
       if (e.affectsConfiguration('bashExplainer.embedded.files')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();

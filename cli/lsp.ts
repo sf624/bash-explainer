@@ -94,8 +94,7 @@ export function startLanguageServer(io: Io): void {
   const shells = (doc: ShellDocument, uri: string) => shellsOf(doc.lines, fileName(uri), forcedShell(settings));
 
   function issues(doc: Doc): DocumentIssue[] {
-    const parsed = parse(doc);
-    return parsed ? diagnosticsFor(parsed, lang, shells(parsed, doc.uri), settings, 'lsp').shown : [];
+    return diagnosticsFor(() => parse(doc), (d) => shells(d, doc.uri), lang, settings, 'lsp').shown;
   }
 
   function publish(uri: string): void {

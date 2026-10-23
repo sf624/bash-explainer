@@ -159,7 +159,9 @@ export function defaultSettings(): Settings {
 export function settingsFromEditor(get: (key: SettingKey) => unknown, surface: Surface = 'vscode'): Settings {
   const out = defaultSettings() as unknown as Record<string, unknown>;
   for (const spec of settingsFor(surface)) {
-    const value = get(spec.key);
+    let value = get(spec.key);
+    // A list keeps its known items: an unknown one is dropped, not the whole list.
+    if (spec.items && Array.isArray(value)) value = value.filter((v) => typeof v !== 'string' || spec.items!.includes(v));
     // (A copy through JSON: VS Code hands out read-only proxies of lists and objects, which structuredClone refuses.)
     if (checkValue(spec, value) === undefined) out[spec.key] = JSON.parse(JSON.stringify(value));
   }

@@ -802,7 +802,7 @@ describe('the web page in a browser', function () {
     await until('the dialog closed', () => page.locator('#settings-dialog').isVisible(), (v) => !v);
     await choose(page, '#lang', 'en');
     // The panel's header is not shown on the page; a shell chosen in the menu is the setting.
-    assert.strictEqual(await panel().locator('header').isHidden(), true);
+    await until('the header hidden', () => panel().locator('header').isHidden(), (h) => h);
     await choose(page, '#shell', 'dash');
     await page.locator('#settings-open').click();
     await until('the dialog', () => page.locator('#settings-dialog').isVisible(), (v) => v);

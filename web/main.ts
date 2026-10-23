@@ -383,7 +383,7 @@ let codesSeen: string[] = [];
 const problems = linter((v): Diagnostic[] => {
   const doc = shellDocument();
   if (!doc) return [];
-  const found = diagnosticsFor(doc, lang, shells(), settings, 'web');
+  const found = diagnosticsFor(() => doc, shells, lang, settings, 'web');
   codesSeen = [...new Set(found.all.map((i) => i.code))].sort();
   const list = found.shown;
   showProblems(list);

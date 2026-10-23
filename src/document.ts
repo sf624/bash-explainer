@@ -48,18 +48,24 @@ export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, i
 }
 
 /**
- * The problems of a document under the settings: `shown` (none while `diagnostics.enabled` is off, where the
+ * The problems of a document (`open` gives it, `shellsOf` its shells) under the settings: `shown` (none while `diagnostics.enabled` is off, where the
  * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
  * codes in `diagnostics.ignore`) and `all` (what the document has, whatever the settings say, found only when
  * asked for; the codes the file itself turns off are left out in both).
  */
-export function diagnosticsFor(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
+export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
+  let doc: ShellDocument | undefined;
   let found: DocumentIssue[] | undefined;
-  const all = () => (found ??= documentIssues(doc, lang, shells));
-  const off = (settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'])
-    || (doc.extracted !== undefined && !settings['diagnostics.embedded']);
+  // (The document is opened, that is parsed, only when its problems are looked at.)
+  const all = () => (found ??= (doc ??= open()) ? documentIssues(doc, lang, shellsOf(doc)) : []);
+  const disabled = settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
   const ignore = new Set(settings['diagnostics.ignore']);
-  return { get all() { return all(); }, shown: off ? [] : all().filter((i) => !ignore.has(i.code)) };
+  const shown = () => {
+    if (disabled) return [];
+    const list = all();
+    return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
+  };
+  return { get all() { return all(); }, shown: shown() };
 }
 
 /**

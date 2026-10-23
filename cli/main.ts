@@ -338,7 +338,7 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     const shells = shellsOf(lines, input.name, o.shell);
 
     if (o.check) {
-      const issues = diagnosticsFor(doc, o.lang, shells, o.settings, 'cli').shown
+      const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       warnings += issues.filter((i) => i.severity === 'warning').length;

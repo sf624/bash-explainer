@@ -11,6 +11,7 @@ import type { ExamplePlacement, Feature } from './ui/render';
 
 /** Shared access to settings and per-document parse trees for all display modes. */
 export class ExplainService implements vscode.Disposable {
+  private cached: Settings | undefined;
   private analyzers = new Map<Lang, Analyzer>();
   private overrides = new Map<string, { shell?: Shell; yq?: string }>();
   private changed = new vscode.EventEmitter<vscode.TextDocument>();
@@ -33,8 +34,12 @@ export class ExplainService implements vscode.Disposable {
 
   /** The settings in effect, read as the other products read theirs (defaults from src/settings.ts). */
   get settings(): Settings {
-    const c = this.config;
-    return settingsFromEditor((key) => c.get(key));
+    return (this.cached ??= settingsFromEditor((key) => this.config.get(key)));
+  }
+
+  /** Reads the settings again (after a change in the configuration). */
+  settingsChanged(): void {
+    this.cached = undefined;
   }
 
   enabled(feature: Feature): boolean {
@@ -153,7 +158,7 @@ export class ExplainService implements vscode.Disposable {
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): DocumentIssue[] {
-    return diagnosticsFor(this.document(doc), this.lang, this.shells(doc), this.settings, 'vscode').shown;
+    return diagnosticsFor(() => this.document(doc), () => this.shells(doc), this.lang, this.settings, 'vscode').shown;
   }
 
   forget(doc: vscode.TextDocument): void {
