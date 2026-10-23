@@ -13,25 +13,27 @@
 // - Nothing is trusted (`blind`) when the script runs what cannot be read: `source`, `eval` or `trap` of text not
 //   known, a command name not known (`$cmd`, `"$@"`), a file a function of the file's host runs (bats' `load`; the
 //   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
-//   indirection (`${!v}`), a DEBUG or RETURN trap, a trap's or a callback's function that changes options, functions
+//   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a trap's or a callback's function that changes options, functions
 //   or aliases; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never
 //   set: bash runs it as an expression, which may assign any variable).
-// - A function is closed (its decisions and dead code may be said) when every call of it is a plain call in the
-//   script: not exported (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called
-//   from the text of an `eval`, `trap` or `alias`.
+// - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
+//   body runs) when every call of it is one the walk sees, in the script or in an `eval`'s string: not exported
+//   (`export -f`, `set -a`), not named as an argument (`complete -F f`, `trap f INT`), not called from the text of a
+//   trap or an alias (which may run anywhere), and nothing is blind.
 //
-// The walk runs the static strings of `eval` and of traps (4.13), but this scan still reads them as foreign text (a
-// trap's action runs at any time). Its facts of statements (`arithNames`, `mayFail`, `associative`) are of the
-// script's own statements: for a string's, the walk asks the scan of that string's tree (`Walker.facts`). A string
-// the walk does not read (an expansion in it, a glob, too deep) makes it walk again with nothing trusted
-// (`Walker.found`), as does a trap's action that may leave what a signal interrupts.
+// The walk runs the static strings of `eval` and of traps (4.13), and this scan reads the same trees (`StringTrees`:
+// the model's), as foreign text (a trap's action runs at any time; what a string assigns is not trusted). So the
+// facts of statements (`arithNames`, `mayFail`, `associative`) are of the script's statements and of its strings'
+// alike (`Trust.reads`); only the tree of an alias's text with the rest of its command, which the walk parses as it
+// expands it, has a scan of its own (`treeFacts`). A string the walk does not read (an expansion in it, a glob, too
+// deep) makes it walk again with nothing trusted (`Walker.found`), as does a trap's action that may leave what a
+// signal interrupts.
 // Another shell's model (`bash -c`) trusts no more than the model of the script that starts it (`withinTrust`).
 import type { CommandSpec } from '../argv/spec';
 import { argWord, prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
-import { createUnbashParser } from '../syntax/adapters/unbash';
-import { field, fields, type BashParser, type SyntaxNode } from '../syntax/tree';
+import { field, fields, type SyntaxNode } from '../syntax/tree';
 import { builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
@@ -56,6 +58,8 @@ export interface Trust {
    * a plain number (`a[i]=x`, `${s:i}`). An error there discards the rest of the line.
    */
   mayFail(n: SyntaxNode): boolean;
+  /** Whether the facts of the statements of the tree `root` are here: the script's, and those of the strings it runs (`StringTrees`). */
+  reads(root: SyntaxNode): boolean;
 }
 
 /** The variables bash sets itself (besides `DYNAMIC`), or that builtins set without naming them. */
@@ -82,23 +86,46 @@ interface Write {
   nameref?: boolean;
 }
 
-interface Where { fn: string | undefined; foreign: boolean }
+/**
+ * Where a node is: the function whose body holds it, whether it is in the text of an `eval`, a trap or an alias
+ * (`foreign`), and whether the walk runs it where it stands (`now`: the script, or an `eval`'s string there, whose
+ * calls are calls the walk sees; not a trap's action or an alias's text).
+ */
+interface Where { fn: string | undefined; foreign: boolean; now: boolean }
 
 const identifiers = (text: string): string[] => text.match(IDENTIFIERS) ?? [];
+
+/**
+ * Whether the expansion `n` is an indirection (`${!v}`, `${!1}`, `${!a[1]}`, `${!v@Q}`, `${!v:-x}`, `${!a[@]:-x}`): the
+ * value it reads names the variable, and a subscript there is arithmetic, which may assign any variable. Not the keys
+ * of an array (`${!a[@]}`) or the names with a prefix (`${!v@}`) with nothing after them, nor a special parameter
+ * whose value is a number or the option letters (`${!#}`, `${!?}`, `${!-}`); `${!@}` and `${!*}` take `$1`'s value.
+ */
+function indirect(n: SyntaxNode): boolean {
+  const kids = n.children;
+  if (kids[1]?.type !== '!') return false;
+  // (`${!}` is `$!`, with no `!` token; in `${!:-x}`, `!` is the name and `x` the operand.)
+  const name = kids[2];
+  const after = kids.slice(3).filter((c) => c.type !== '}').map((c) => c.type).join(' ');
+  switch (name?.type) {
+    case 'subscript': return !(['@', '*'].includes(field(name, 'index')!.text) && after === '');
+    case 'special_variable_name': return name.text === '@' || name.text === '*';
+    case 'variable_name': return after !== '@' && after !== '*';
+  }
+  return false;
+}
 
 /** The values of several words given in turn (a list of `for`, the elements of an array). */
 const joined = (values: Value[]): Value =>
   (values.every((v): v is Extract<Value, object> => typeof v === 'object') ? { names: values.flatMap((v) => v.names), text: '' } : 'unknown');
-
-let foreignParser: BashParser | undefined;
 
 /** Thrown when the scan finds that nothing is trusted (see `Scan.blindFor`). */
 class StopScan {}
 
 class Scan {
   readonly writes = new Map<string, Write[]>();
-  /** The foreign texts read, by function (see `foreign`). */
-  private readonly foreignSeen = new Set<string>();
+  /** The trees read: the script's, and those of the strings it runs (see `foreign`); the facts of their statements are here. */
+  readonly roots = new Set<SyntaxNode>();
   /** Names read by arithmetic, and the statements that read them where the walk does not run the arithmetic. */
   readonly arith = new Set<string>();
   readonly pending = new Map<SyntaxNode, Set<string>>();
@@ -127,14 +154,15 @@ class Scan {
   /** The variables whose values are command names (`$debug`), and whether they are quoted (not split). */
   private readonly commandVariables: { name: string; quoted: boolean }[] = [];
 
-  constructor(root: SyntaxNode, private readonly stop: boolean, private readonly host: HostCommands = NO_HOST) {
+  constructor(root: SyntaxNode, private readonly strings: StringTrees, private readonly stop: boolean, private readonly host: HostCommands) {
+    this.roots.add(root);
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
       n.children.forEach(defs);
     };
     defs(root);
     try {
-      this.visit(root, { fn: undefined, foreign: false }, root);
+      this.visit(root, { fn: undefined, foreign: false, now: true });
       this.finish();
     } catch (e) {
       /* c8 ignore next -- only `StopScan` is thrown on purpose */
@@ -167,9 +195,8 @@ class Scan {
     else this.changes.add(w.fn ?? '');
   }
 
-  /** The statement of the main tree that runs `n` (none in foreign text, which the walk parses on its own). */
-  private owner(n: SyntaxNode, w: Where): SyntaxNode | undefined {
-    if (w.foreign) return undefined;
+  /** The statement that runs `n`: of the script, or of a string it runs (the walk runs the same tree, `StringTrees`). */
+  private owner(n: SyntaxNode): SyntaxNode | undefined {
     // (An assignment in a command is run with it.)
     for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type) && !(x.type === 'variable_assignment' && ['command', 'variable_assignments', 'declaration_command'].includes(x.parent!.type))) return x;
     /* c8 ignore next -- every word is in a statement */
@@ -228,7 +255,7 @@ class Scan {
   /** Records the text assigned to `name` (read as arithmetic if it is an integer). */
   private assigned(name: string, text: string | undefined, n: SyntaxNode, w: Where): void {
     const list = this.texts.get(name) ?? [];
-    list.push({ text, owner: this.owner(n, w), where: w });
+    list.push({ text, owner: this.owner(n), where: w });
     this.texts.set(name, list);
   }
 
@@ -242,15 +269,15 @@ class Scan {
     }
     this.write(m[1], w, false, value);
     this.assigned(m[1], undefined, word, w);
-    if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word, w), where: w });
+    if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
   }
 
-  private visit(n: SyntaxNode, w: Where, root: SyntaxNode): void {
+  private visit(n: SyntaxNode, w: Where): void {
     switch (n.type) {
       case 'function_definition': {
         this.changed(w);
         const name = field(n, 'name')!.text;
-        for (const c of n.children) this.visit(c, { fn: w.foreign ? w.fn : name, foreign: w.foreign }, root);
+        for (const c of n.children) this.visit(c, { ...w, fn: w.foreign ? w.fn : name });
         if (w.foreign) this.callbacks.add(name);
         return;
       }
@@ -260,35 +287,37 @@ class Scan {
         return;
       case 'c_style_for_statement':
         for (const f of ['initializer', 'condition', 'update'] as const) for (const c of fields(n, f)) this.arithText(c.text, w);
-        for (const c of n.children) if (c.field === 'body') this.visit(c, w, root);
+        for (const c of n.children) if (c.field === 'body') this.visit(c, w);
         return;
       case 'subscript': {
         const index = field(n, 'index');
-        if (index) this.subscripts.push({ array: field(n, 'name')!.text, text: index.text, owner: this.owner(n, w), where: w });
+        if (index) this.subscripts.push({ array: field(n, 'name')!.text, text: index.text, owner: this.owner(n), where: w });
         break;
       }
       case 'expansion': {
         const name = n.namedChildren[0];
         const ops = n.children.filter((c) => !c.named).map((c) => c.type);
-        if (/^\$\{![A-Za-z_]\w*(?:\[[^\]@*]*\])?(?:[^\w[\]@*]|$)/.test(n.text) && !/^\$\{![A-Za-z_]\w*[@*]\}$/.test(n.text)) this.blindFor('indirect expansion');
+        if (indirect(n)) this.blindFor('indirect expansion');
         if (name?.type === 'variable_name' && (ops.includes(':=') || ops.includes('='))) {
           const word = n.namedChildren[n.namedChildren.length - 1];
           this.write(name.text, w, false, word === name ? { names: [], text: '' } : this.value(word));
           this.assigned(name.text, undefined, n, w);
         }
-        // `${x:offset:length}`: arithmetic.
-        const m = /^\$\{(?:[A-Za-z_]\w*(?:\[[^\]]*\])?|[@*]|\d+):(?![-=?+])([\s\S]*)\}$/.exec(n.text);
-        if (m) {
-          const owner = this.owner(n, w);
-          this.arithText(m[1], w, owner);
-          if (owner && !/^\s*-?\d+\s*(?::\s*\d+\s*)?$/.test(m[1])) this.fails.add(owner);
+        // `${x:offset:length}`: arithmetic, the text after the first `:` (an operator of its own, not `:-`).
+        const colon = n.children.find((c) => c.type === ':' && c.field === 'operator');
+        if (colon) {
+          const end = n.children[n.children.length - 1];
+          const text = n.text.slice(colon.endIndex - n.startIndex, (end.type === '}' ? end.startIndex : n.endIndex) - n.startIndex);
+          const owner = this.owner(n);
+          this.arithText(text, w, owner);
+          if (owner && !/^\s*-?\d+\s*(?::\s*\d+\s*)?$/.test(text)) this.fails.add(owner);
         }
         break;
       }
       case 'binary_expression': {
         const op = field(n, 'operator')?.text;
         if (op && ['-eq', '-ne', '-lt', '-le', '-gt', '-ge'].includes(op) && n.parent && this.inExtendedTest(n)) {
-          for (const side of [field(n, 'left'), field(n, 'right')]) if (side) this.arithText(side.text, w, this.owner(n, w));
+          for (const side of [field(n, 'left'), field(n, 'right')]) if (side) this.arithText(side.text, w, this.owner(n));
         }
         break;
       }
@@ -337,7 +366,7 @@ class Scan {
         this.command(n, w);
         break;
     }
-    for (const c of n.children) this.visit(c, w, root);
+    for (const c of n.children) this.visit(c, w);
   }
 
   /** Whether `n` is in `[[ ]]` (where `-eq` and the others read arithmetic; in `test` and `[`, integers only). */
@@ -350,7 +379,7 @@ class Scan {
   /** The operand of `-v` (`[[ -v a[i] ]]`): its subscript is arithmetic. */
   private testV(word: SyntaxNode, w: Where): void {
     const m = /^([A-Za-z_]\w*)\[(.*)\]$/s.exec(staticWordValue(word) ?? word.text);
-    if (m) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word, w), where: w });
+    if (m) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
   }
 
   /**
@@ -367,7 +396,7 @@ class Scan {
       for (const e of value.namedChildren) {
         // (`a=([i]=x)`: `[i]` is a subscript.)
         const key = /^\[([^\]]*)\]\+?=/.exec(e.text)?.[1];
-        if (key !== undefined && !associative) this.subscripts.push({ array: name, text: key, owner: this.owner(a, w), where: w });
+        if (key !== undefined && !associative) this.subscripts.push({ array: name, text: key, owner: this.owner(a), where: w });
       }
       this.assigned(name, undefined, a, w);
       return;
@@ -406,7 +435,7 @@ class Scan {
           const m = target === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(target);
           if (m) {
             this.refTargets.add(m[1]);
-            if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(o, w), where: w });
+            if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(o), where: w });
           } else this.refUnknown.add(name);
           this.write(name, w, false, 'unknown', true);
           continue;
@@ -422,7 +451,7 @@ class Scan {
           continue;
         }
         name = m[1];
-        if (m[2]) this.subscripts.push({ array: name, text: m[2].slice(1, -1), owner: this.owner(o, w), where: w });
+        if (m[2]) this.subscripts.push({ array: name, text: m[2].slice(1, -1), owner: this.owner(o), where: w });
         if (nameref) {
           const target = m[3] && text !== undefined ? m[4] : undefined;
           if (target !== undefined && NAME.test(target)) this.refTargets.add(target);
@@ -481,7 +510,7 @@ class Scan {
       return;
     }
     if (this.functions.has(name)) {
-      if (w.foreign) this.callbacks.add(name);
+      if (!w.now) this.callbacks.add(name);
       else {
         const set = this.calls.get(w.fn ?? '') ?? new Set<string>();
         set.add(name);
@@ -489,7 +518,8 @@ class Scan {
       }
     }
     // A function named as an argument may be run by the command (`complete -F f`, `mapfile -C f`, `trap f INT`).
-    const refs = !lookup && name !== 'unset' && name !== 'type' && !DECLARATIONS.has(name);
+    // (`eval`'s words are read as its string, below: a name there is a call.)
+    const refs = !lookup && !['unset', 'type', 'eval'].includes(name) && !DECLARATIONS.has(name);
     if (refs) for (const a of args) if (this.functions.has(staticWordValue(a) ?? '')) this.callbacks.add(staticWordValue(a)!);
     // (A function the host file defines, bats' `run`, is read by its spec as a builtin, unless the script defines its own.)
     const hosted = direct && !this.functions.has(name) && Object.hasOwn(this.host, name) ? this.host[name] : undefined;
@@ -511,28 +541,26 @@ class Scan {
     if (hosted) return;
     switch (name) {
       case 'eval': {
-        // (The words the walk reads as the string, after `--`: see `Walker.script`.)
-        const text = args.filter((a, i) => i > 0 || a.text !== '--').map((a) => staticWordValue(a));
-        if (text.some((t) => t === undefined)) this.blindFor('eval of text not known');
-        else this.foreign(text.join(' '), w);
+        // (The string is the words of its command slot, as the walk reads it: `Walker.builtin`.)
+        const at = parse.roles.find((r) => r.role.role === 'command');
+        if (at) this.foreign(this.strings.script(args.slice(at.word)), 'eval of text not known', w, true);
         return;
       }
       case 'trap': {
         // (Its action is the word of the slot that runs it later; the signals are its operands.)
-        const roles = parse.roles;
-        const actions = roles.filter((r) => r.role.role === 'command').map((r) => staticWordValue(args[r.word]));
-        const signals = roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]));
-        if (!actions.length || actions.every((t) => t === '' || t === '-')) return;
-        if (actions.some((t) => t === undefined)) this.blindFor('a trap of text not known');
-        else if (signals.some((s) => s === undefined || /^(?:SIG)?(?:DEBUG|RETURN)$/i.test(s))) this.blindFor('a DEBUG or RETURN trap');
-        else this.foreign(actions.join(' '), w);
+        const at = parse.roles.find((r) => r.role.role === 'command');
+        if (!at || ['', '-'].includes(staticWordValue(args[at.word])!)) return;
+        const root = this.strings.script([args[at.word]]);
+        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]));
+        if (root && signals.some((s) => s === undefined || /^(?:SIG)?(?:DEBUG|RETURN)$/i.test(s))) this.blindFor('a DEBUG or RETURN trap');
+        else this.foreign(root, 'a trap of text not known', w);
         return;
       }
       case 'alias':
         for (const a of args) {
           const v = staticWordValue(a);
           const m = v === undefined ? null : /^[^=]+=([\s\S]*)$/.exec(v);
-          if (m) this.foreign(m[1], w);
+          if (m) this.foreign(this.strings.alias(a, m[1]), 'an alias of text not known', w);
           else if (v === undefined) this.blindFor('an alias of text not known');
         }
         return;
@@ -566,15 +594,17 @@ class Scan {
     else this.callbacks.add(f);
   }
 
-  /** The text of an `eval`, a trap's action or an alias: read as part of the script, run from elsewhere. */
-  private foreign(text: string, w: Where): void {
-    // (The same text from the same function reads the same: once is enough.)
-    const key = `${w.fn ?? ''}\n${text}`;
-    if (this.foreignSeen.has(key)) return;
-    this.foreignSeen.add(key);
-    foreignParser ??= createUnbashParser();
-    const tree = foreignParser.parse(text);
-    this.visit(tree.root, { fn: w.fn, foreign: true }, tree.root);
+  /**
+   * The tree of an `eval`'s string, a trap's action or an alias's text: read as part of the script, run from
+   * elsewhere (`now`: where it stands, an `eval`'s). None: its text is not known, for `why`.
+   */
+  private foreign(root: SyntaxNode | undefined, why: string, w: Where, now = false): void {
+    if (!root) {
+      this.blindFor(why);
+      return;
+    }
+    this.roots.add(root);
+    this.visit(root, { fn: w.fn, foreign: true, now: now && w.now });
   }
 
   /** What is left once the whole script is read: subscripts, integers, the values read as arithmetic, callbacks. */
@@ -652,22 +682,41 @@ class Scan {
 /** The functions a file's host defines (bats' `run`, `load`…), by name, with their specs (src/dict/bats.ts). */
 export type HostCommands = Readonly<Record<string, CommandSpec>>;
 export const NO_HOST: HostCommands = {};
-/** The trusts read, per host and tree; for `stop` off, read to the end even when nothing is trusted: for the facts of its statements (`Walker.facts`). */
-const trusts = new WeakMap<HostCommands, { stop: WeakMap<SyntaxNode, Trust>; all: WeakMap<SyntaxNode, Trust> }>();
 
 /**
- * The trust of the decisions over the script `root` (cached per host and tree). `stop`: the scan stops at the first
- * reason to trust nothing; off, it reads the whole tree, for the facts of its statements. `host`: the functions the
- * file's host defines (a bats file: `run`, `load`…), read by their specs.
+ * The trees of the strings the scan reads as part of the script: those of the model (`Scripts` in
+ * src/semantics/state.ts), whose walk runs them. So each string is parsed once, and the facts of its statements are
+ * the scan's (`Trust.reads`).
  */
-export function scriptTrust(root: SyntaxNode, stop = true, host = NO_HOST): Trust {
-  let caches = trusts.get(host);
-  if (!caches) trusts.set(host, (caches = { stop: new WeakMap(), all: new WeakMap() }));
-  const cache = stop ? caches.stop : caches.all;
-  const hit = cache.get(root);
-  if (hit) return hit;
-  const trust = readTrust(new Scan(root, stop, host));
-  cache.set(root, trust);
+export interface StringTrees {
+  /** The root of the string that `words` make (`eval a b`, a trap's action); undefined when its text is not known. */
+  script(words: readonly SyntaxNode[]): SyntaxNode | undefined;
+  /** The root of `text`, the value the word `word` of `alias` gives (the walk reads it with the rest of each command it starts: a tree of its own). */
+  alias(word: SyntaxNode, text: string): SyntaxNode;
+}
+
+/**
+ * The trust of the decisions of a model over the script `root`, whose strings have the trees `strings` gives (once
+ * per model: the trees are the model's). The scan stops at the first reason to trust nothing. `host`: the functions
+ * the file's host defines (a bats file: `run`, `load`…), read by their specs.
+ */
+export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HOST): Trust {
+  return readTrust(new Scan(root, strings, true, host));
+}
+
+/** The facts of statements read, per host and tree (`treeFacts`). */
+const facts = new WeakMap<HostCommands, WeakMap<SyntaxNode, Trust>>();
+
+/**
+ * The facts of the statements of a tree the script's scan did not read (`Trust.reads`): an alias's text with the rest
+ * of the command it starts, which the walk parses as it expands it. Read to the end, also where it finds a reason to
+ * trust nothing; cached per host and tree.
+ */
+export function treeFacts(root: SyntaxNode, strings: StringTrees, host = NO_HOST): Trust {
+  let cache = facts.get(host);
+  if (!cache) facts.set(host, (cache = new WeakMap()));
+  let trust = cache.get(root);
+  if (!trust) cache.set(root, (trust = readTrust(new Scan(root, strings, false, host))));
   return trust;
 }
 
@@ -690,12 +739,13 @@ function readTrust(scan: Scan): Trust {
       return names && [...names];
     },
     mayFail: (n) => scan.fails.has(n),
+    reads: (root) => scan.roots.has(root),
   };
   return trust;
 }
 
 /** Nothing trusted: for a walk that found, as it went, arithmetic reading text not known (see `Walker`). */
-export const BLIND: Trust = { blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, associative: () => undefined, mayFail: () => false };
+export const BLIND: Trust = { blind: 'arithmetic reads text not known', variable: () => false, closed: () => false, arithNames: () => undefined, associative: () => undefined, mayFail: () => false, reads: () => false };
 
 /**
  * What another shell's model trusts (`bash -c S`): its own script's trust, and no more than the outer model's, whose

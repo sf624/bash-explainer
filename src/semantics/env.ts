@@ -46,8 +46,8 @@ export interface SlotLink {
 export interface CallSite { readonly at: SyntaxNode; readonly env: ExecEnv; readonly sure: boolean }
 /**
  * A function body, which runs where the function is called: at any of `sites`. `unsure`: it may also be called from
- * where the model does not see (its name is a word the walk did not take for a call, `bash -c f`), or it is never
- * called (then the links before this one are where it is defined).
+ * where the model does not see (`WalkFacts.closed`: exported, named as an argument, `bash -c f`, in a trap's action),
+ * or it is never called (then the links before this one are where it is defined).
  */
 export interface CallLink { readonly kind: 'call'; readonly def: SyntaxNode; readonly sites: readonly CallSite[]; readonly unsure: boolean }
 export type EnvLink = SubshellLink | SlotLink | CallLink;
@@ -118,8 +118,9 @@ export interface WalkFacts {
   run(n: SyntaxNode): ShellState;
   /** The commands that call each function definition, and whether it is surely defined there. */
   readonly calls: ReadonlyMap<SyntaxNode, ReadonlyMap<SyntaxNode, boolean>>;
-  readonly root: SyntaxNode;
   readonly shell?: Shell;
+  /** Whether every call of the function `name` is one the walk sees (src/semantics/trust.ts, `Trust.closed`). */
+  closed(name: string): boolean;
   /** Where the root of a tree runs: the model's own (a string another shell runs: the slot's chain), or that of a string `eval` runs. */
   base(root: SyntaxNode): ExecEnv;
 }
@@ -135,8 +136,6 @@ export class EnvModel {
   private readonly memo = new Map<SyntaxNode, ExecEnv>();
   /** The strongly connected components of the call graph (functions that call each other), by definition. */
   private components: Map<SyntaxNode, Set<SyntaxNode>> | undefined;
-  /** How many times each word appears in the script (not in comments): a function's name that is not a call it saw. */
-  private words: Map<string, number> | undefined;
 
   constructor(private readonly walk: WalkFacts) {}
 
@@ -194,25 +193,9 @@ export class EnvModel {
         for (const e of entries) sites.push({ at, env: inner.length ? { links: [...e.env.links, ...inner] } : e.env, sure: sure && e.sure });
       }
     }
-    const name = field(def, 'name')!.text;
-    // (Each call is one word of the name; the definition is another.)
-    const unsure = !sites.length || this.count(name) > 1 + new Set(sites.map((x) => x.at)).size;
+    const unsure = !sites.length || !this.walk.closed(field(def, 'name')!.text);
     const link: CallLink = { kind: 'call', def, sites, unsure };
     return { links: sites.length ? [link] : [...this.at(def).links, link] };
-  }
-
-  private count(name: string): number {
-    if (!this.words) {
-      this.words = new Map();
-      const visit = (n: SyntaxNode): void => {
-        if (n.type === 'comment') return;
-        if (!n.children.length) for (const w of n.text.match(/[^\s'"`$;|&(){}<>=]+/g) ?? []) this.words!.set(w, (this.words!.get(w) ?? 0) + 1);
-        n.children.forEach(visit);
-      };
-      visit(this.walk.root);
-    }
-    // (The definition's own name is one of the words.)
-    return this.words.get(name)!;
   }
 
   /** The functions that call `def`, directly or not, and that it calls (Tarjan's algorithm, over every definition at once). */
