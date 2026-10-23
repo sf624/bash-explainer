@@ -6,8 +6,8 @@
  *
  * Pages are cached under $MANPAGE_CACHE (default: a directory in the system temp directory), never in the
  * repository.
- * Checked: the commands of basic, storage, admin, netadmin and monitor (their options and
- * subcommands' options) and the extra options of extras*.ts. macOS commands are not on Debian.
+ * Checked: the commands of core, basic, storage, admin, netadmin, monitor, system, distro and ops (their options and
+ * subcommands' options). macOS commands are not on Debian.
  *
  * Output: per command, the options of ours that neither the page nor `--help` mention (suspect),
  * the number of options the page has that we lack, and the commands without a page.
@@ -21,11 +21,11 @@ import { storage } from '../src/dict/storage';
 import { admin } from '../src/dict/admin';
 import { netadmin } from '../src/dict/netadmin';
 import { monitor } from '../src/dict/monitor';
-import { extraFiles } from '../src/dict/extrasFiles';
-import { extraAdmin } from '../src/dict/extrasAdmin';
-import { extraSubcommands } from '../src/dict/extras';
+import { core } from '../src/dict/commands';
+import { system } from '../src/dict/system';
+import { distro } from '../src/dict/distro';
+import { ops } from '../src/dict/ops';
 import type { CommandSpec } from '../src/argv/spec';
-import { cmd } from '../src/dict/types';
 
 const SUITE = 'trixie'; // the current Debian stable release
 const BASE = 'https://manpages.debian.org';
@@ -56,22 +56,12 @@ function targets(): Map<string, Map<string, string[]>> {
     m.set(key, [...(m.get(key) ?? []), ...names]);
     out.set(cmdName, m);
   };
-  for (const table of [basic, storage, admin, netadmin, monitor]) {
+  for (const table of [core, basic, storage, admin, netadmin, monitor, system, distro, ops]) {
     for (const [name, doc] of Object.entries(table)) {
       const m = new Map<string, string[]>();
       collect(name, doc, m);
       for (const [k, v] of m) add(name, k, v);
       if (!m.size) out.set(name, out.get(name) ?? new Map());
-    }
-  }
-  for (const table of [extraFiles, extraAdmin]) {
-    for (const [name, specs] of Object.entries(table)) add(name, name, cmd('', '', specs).options!.flatMap((o) => o.names));
-  }
-  for (const [name, subs] of Object.entries(extraSubcommands)) {
-    for (const [sub, d] of Object.entries(subs)) {
-      const m = new Map<string, string[]>();
-      collect(`${name} ${sub}`, d, m);
-      for (const [k, v] of m) add(name, k, v);
     }
   }
   return out;
