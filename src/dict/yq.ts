@@ -13,7 +13,7 @@ const formats = (kind: 'input' | 'output') => ({
 const V4_OPTIONS: OptSpec[] = [
   ['-o|--output-format', '出力形式（`json`・`yaml`・`xml`・`props`・`csv`・`tsv`・`toml`・`shell`・`lua` など。既定は入力と同じ）', 'output format (`json`, `yaml`, `xml`, `props`, `csv`, `tsv`, `toml`, `shell`, `lua`…; defaults to the input format)', 'arg', formats('output')],
   ['-p|--input-format', '入力形式（`json`・`xml`・`csv`・`toml`・`props`・`ini` など。既定は拡張子から判断）', 'input format (`json`, `xml`, `csv`, `toml`, `props`, `ini`…; guessed from the file extension)', 'arg', formats('input')],
-  ['-i|--inplace', '結果で最初のファイルを上書きする', 'update the first file in place', 'each:in-place'],
+  ['-i|--inplace', '結果で最初のファイルを上書きする', 'update the first file in place', 'each:into-first'],
   ['-n|--null-input', '入力を読まずに式だけで文書を作る', 'read no input; build a document from the expression'],
   ['-P|--prettyPrint', '`{a: 1}` のような書き方も通常のブロック形式に整える', 'pretty print (turn flow style like `{a: 1}` into block style)'],
   ['-I|--indent', 'インデントの幅（既定 2）', 'indentation width (default 2)', 'arg'],

@@ -14,7 +14,7 @@ export const has = (tool: string): boolean => spawnSync(tool, ['--version']).sta
 export function exampleOf(src: string, lang: 'en' | 'ja' = 'en'): Example | undefined {
   const all = explain(src, 0, lang).examples;
   return all.find((e) => /whole pipeline|パイプライン全体/.test(e.title))
-    ?? all.find((e) => e.sections.some((s) => /^(Output|出力|Error|After|書き換え後|Commands|Written to)/.test(s.label)));
+    ?? all.find((e) => e.sections.some((s) => /^(Output|出力|Error|After|`[^`]+` after|書き換え後|Commands|Written to)/.test(s.label)));
 }
 
 /**
@@ -39,7 +39,9 @@ export function realOutput(line: string, ex: Example, bin: Record<string, string
     fs.mkdirSync(binDir);
     for (const [name, target] of Object.entries(bin)) fs.symlinkSync(target, path.join(binDir, name));
     const r = run('bash', ['-c', line], { cwd: dir, input: stdin, env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` } });
-    const written = /^Written to `([^`]+)`$/.exec(out.label)?.[1];
+    // What a file gets: one the output is written to, or the file rewritten in place (the first input file).
+    const firstFile = ex.sections.map((sec) => /^Input: `([^`]+)`/.exec(sec.label)?.[1]).find((f) => f);
+    const written = /^Written to `([^`]+)`$|^`([^`]+)` after$/.exec(out.label)?.slice(1).find((f) => f) ?? (out.label === 'After' ? firstFile : undefined);
     const stdout = r.stdout.toString();
     const got = written ? (stdout === '' ? fs.readFileSync(path.join(dir, written), 'utf8') : `stdout: ${stdout}`) : stdout;
     return { got: got.replace(/\n$/, ''), want: out.lines.join('\n') };

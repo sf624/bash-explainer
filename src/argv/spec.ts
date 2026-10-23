@@ -113,6 +113,8 @@ export interface CommandSpec {
    * example of a pipeline shows no step of its own for it before the last.
    */
   copies?: boolean;
+  /** Its program can read the name of the file it reads (awk's `FILENAME`): the example tells it the names. */
+  fileName?: boolean;
 }
 
 /**
@@ -121,9 +123,11 @@ export interface CommandSpec {
  * `headers`: it prints its result for each file apart, under a header `==> a <==` (head, tail). `apart`: it works on
  * each apart (grep puts the name before each line, wc prints a line each and a total, `sed -s` counts the lines and
  * finds `$` in each): the example shows the first file. `in-place`: it rewrites each file with
- * its result (`sed -i`, `perl -i`, yq's `-i`): the example shows the first file and what it becomes.
+ * its result (`sed -i`, `perl -i`, kislyuk/yq's `-i`): the example shows the first file and what it becomes.
+ * `into-first`: it reads them all and writes its whole result into the first, instead of printing it (mikefarah/yq's
+ * `-i`): the example shows each file and what the first becomes.
  */
-export type EachFile = 'headers' | 'apart' | 'in-place';
+export type EachFile = 'headers' | 'apart' | 'in-place' | 'into-first';
 
 /** The commands src/examples/commands.ts can run on sample input. */
 export type CommandExampleKind = 'printf' | 'xargs' | 'getopt' | 'perl' | 'read' | 'cat' | 'sort' | 'uniq' | 'cut' | 'tr' | 'head' | 'tail' | 'seq' | 'basename' | 'dirname';
