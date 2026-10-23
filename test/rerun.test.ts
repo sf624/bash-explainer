@@ -1,24 +1,12 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import type { BashParser as Parser } from '../src/syntax/tree';
-import { Analyzer } from '../src/analyzer';
 import { matchMarks, rerun } from '../src/examples/rerun';
 import { toJsRegex } from '../src/examples/regex';
-import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { quickReference } from '../src/ui/reference';
 import { toPlainMarkdown } from '../src/ui/render';
+import { explain } from './support/explain';
 
 const root = path.join(__dirname, '..');
-let parser: Parser;
-before(async () => {
-  parser = createUnbashParser();
-});
-const explain = (src: string) => {
-  const tree = parser.parse(src);
-  const ex = new Analyzer('en').explainLine(tree, 0);
-  return ex;
-};
-
 describe('editable examples', () => {
   it('marks matches and capture groups', () => {
     const re = toJsRegex('([0-9]{4})-([0-9]{2})', 'ere')!;

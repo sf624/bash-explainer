@@ -5,14 +5,11 @@ import { Analyzer, Token } from '../src/analyzer';
 import { explainAwk } from '../src/embedded/awk';
 import { EmbeddedToken } from '../src/embedded/types';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-
-function all(ts: EmbeddedToken[]): EmbeddedToken[] {
-  return ts.flatMap((t) => [t, ...all(t.children)]);
-}
+import { allTokens } from './support/explain';
 
 function find(src: string, ts: EmbeddedToken[], text: string): EmbeddedToken {
-  const t = all(ts).find((x) => src.slice(x.start, x.end) === text);
-  assert.ok(t, `no token "${text}" in ${all(ts).map((x) => src.slice(x.start, x.end)).join(' | ')}`);
+  const t = allTokens(ts).find((x) => src.slice(x.start, x.end) === text);
+  assert.ok(t, `no token "${text}" in ${allTokens(ts).map((x) => src.slice(x.start, x.end)).join(' | ')}`);
   return t;
 }
 
@@ -56,8 +53,8 @@ describe('awk explainer', () => {
 
   it('treats / as division after an operand and as a regex elsewhere', () => {
     const src = '{ print a / b / c }';
-    assert.ok(!all(explainAwk(src, 'en')).some((t) => /Regex/.test(t.explanation)));
-    assert.ok(all(explainAwk('$1 ~ /a/', 'en')).some((t) => /Regex/.test(t.explanation)));
+    assert.ok(!allTokens(explainAwk(src, 'en')).some((t) => /Regex/.test(t.explanation)));
+    assert.ok(allTokens(explainAwk('$1 ~ /a/', 'en')).some((t) => /Regex/.test(t.explanation)));
   });
 
   it('copes with incomplete programs', () => {

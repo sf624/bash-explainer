@@ -5,6 +5,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { explainRegex, Flavor } from '../src/embedded/regex';
 import { EmbeddedToken } from '../src/embedded/types';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -19,8 +20,7 @@ function parts(src: string, flavor: Flavor): [string, string][] {
 }
 
 function find(tokens: EmbeddedToken[], src: string, text: string): EmbeddedToken {
-  const all = (ts: EmbeddedToken[]): EmbeddedToken[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  const t = all(tokens).find((x) => src.slice(x.start, x.end) === text);
+  const t = allTokens(tokens).find((x) => src.slice(x.start, x.end) === text);
   assert.ok(t, `no token "${text}"`);
   return t;
 }
@@ -28,8 +28,7 @@ function find(tokens: EmbeddedToken[], src: string, text: string): EmbeddedToken
 function lineTokens(src: string): Token[] {
   const tree = parser.parse(src);
   const ex = new Analyzer('en').explainLine(tree, 0);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  return all(ex.items);
+  return allTokens(ex.items);
 }
 
 describe('regex explainer', () => {

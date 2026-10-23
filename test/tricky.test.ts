@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { runBash } from './support/bash';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { descendants, field, hasError } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
@@ -10,6 +10,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { evalArithWrapping } from '../src/arith';
 import { explainArith } from '../src/embedded/arith';
 import { braceExpand, globMatches, isGlob } from '../src/examples/shellwords';
+import { allTokens } from './support/explain';
 
 let parser: Parser;
 
@@ -20,8 +21,7 @@ before(async () => {
 /** Every token of the explanation of a one-line script. */
 function tokens(src: string, lang: 'ja' | 'en' = 'en'): Token[] {
   const ex = new Analyzer(lang).explainLine(parser.parse(src), 0);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  return all(ex.items);
+  return allTokens(ex.items);
 }
 const find = (src: string, label: string, lang: 'ja' | 'en' = 'en', outer = false) => {
   // The innermost one (the outermost with `outer`): an argument and its only child can have the same label.
@@ -32,11 +32,8 @@ const find = (src: string, label: string, lang: 'ja' | 'en' = 'en', outer = fals
 
 /** The output of bash for `script` (stdout and stderr, joined), with the script name cut from errors. */
 function bash(script: string): string {
-  try {
-    return execFileSync('bash', ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    return 'ERROR';
-  }
+  const r = runBash(script);
+  return r.status === 0 ? r.stdout : 'ERROR';
 }
 
 // The twelve lines of the first round of tricky scripts.
@@ -240,7 +237,7 @@ describe('quote removal', () => {
       const node = field(descendants(parser.parse(`x ${w}`).root, ['command'])[0], 'argument');
       const v = node && staticWordValue(node);
       if (v === undefined) continue;
-      assert.strictEqual(execFileSync('bash', ['-c', `printf %s ${w}`], { encoding: 'utf8' }), v, w);
+      assert.strictEqual(runBash(`printf %s ${w}`, { env: { LC_ALL: 'C.UTF-8' } }).stdout, v, w);
     }
     // And the ones it must leave alone.
     for (const w of ['$x', 'a*', '*', 'a?b', '[a]', '{a,b}', '~', '~/x', '"$x"', '"a`x`"', '$(date)', "$'\\xe3'", "$'\\777'", '$(echo)x', '$(: a)', '$(true; true)x', '$(true | true)x']) {
@@ -317,7 +314,7 @@ describe('tricky lines (round 2)', () => {
     assert.strictEqual(exampleFor(parseExpansion('${s/l/$x}')!, 'en'), undefined);
     assert.strictEqual(exampleFor(parseExpansion('${s/l/&&}')!, 'en'), undefined);
     for (const w of ['a', '\\}', '"a b"', "'a b'", '"a\\"b"', '"a\\$b"', 'a\\\\b', '"a\\nb"', 'x"y"\'z\'']) {
-      assert.strictEqual(execFileSync('bash', ['-c', `printf %s ${w}`], { encoding: 'utf8' }), unquoteWord(w), w);
+      assert.strictEqual(runBash(`printf %s ${w}`, { env: { LC_ALL: 'C.UTF-8' } }).stdout, unquoteWord(w), w);
     }
     for (const w of ['$x', '"$x"', '`x`', '"`x`"', "'abc", '"abc', '"abc\\']) assert.strictEqual(unquoteWord(w), undefined, w);
   });
@@ -706,8 +703,7 @@ const ROUND4 = [
 /** The tokens of line `line` (0-based) of a script, as `tokens` gives them for one line. */
 function tokensAt(script: string, line: number, lang: 'ja' | 'en' = 'en'): Token[] {
   const ex = new Analyzer(lang).explainLine(parser.parse(script), line);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  return all(ex.items);
+  return allTokens(ex.items);
 }
 const findAt = (script: string, line: number, label: string, lang: 'ja' | 'en' = 'en', outer = false) => {
   const toks = tokensAt(script, line, lang);

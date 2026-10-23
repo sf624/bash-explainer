@@ -2,38 +2,28 @@
 // context, tildes, glob options, redirection targets. What bash does with each case is in the probes
 // (test/fixtures/probes/words.json, checked by test/word-probes.test.ts) and in the cases run here.
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { Analyzer, Token } from '../src/analyzer';
+import { runBash } from './support/bash';
+import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 const explain = (src: string, lang: 'ja' | 'en' = 'en', line?: number) => {
   const tree = parser.parse(src);
   return new Analyzer(lang).explainLine(tree, line ?? src.split('\n').length - 1);
 };
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 /** The explanation of the last token labelled `label` on the last line of `src`. */
 const expl = (src: string, label: string, lang: 'ja' | 'en' = 'en'): string => {
-  const t = all(explain(src, lang).items).filter((x) => x.label === label).pop();
+  const t = allTokens(explain(src, lang).items).filter((x) => x.label === label).pop();
   assert.ok(t, `${label} in ${src}`);
   return t.explanation;
 };
-const labels = (src: string, label: string): string[] => all(explain(src).items).filter((x) => x.label === label).map((t) => t.explanation);
+const labels = (src: string, label: string): string[] => allTokens(explain(src).items).filter((x) => x.label === label).map((t) => t.explanation);
 
 /** What bash prints for `script`, run in a directory with a few files. */
 function bash(script: string, posix = false): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'word-notes-'));
-  try {
-    for (const f of ['a.txt', 'b.txt', 'c.log', '.hidden']) fs.writeFileSync(path.join(dir, f), '');
-    return execFileSync('bash', [...(posix ? ['--posix'] : []), '-c', script], { cwd: dir, env: { PATH: '/usr/bin:/bin', HOME: '/home/w', LC_ALL: 'C' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    return `error: ${(e as { stderr: string }).stderr.trim().replace(/^.*?: line \d+: /, '')}`;
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const r = runBash(script, { files: ['a.txt', 'b.txt', 'c.log', '.hidden'], posix });
+  return r.status === 0 ? r.stdout : `error: ${r.stderr.trim().replace(/^.*?: line \d+: /, '')}`;
 }
 
 describe('word notes: splitting by context', () => {
@@ -65,7 +55,7 @@ describe('word notes: splitting by context', () => {
     assert.match(expl(`${src}IFS=$v; echo $x`, '$x', 'ja'), /グロブ展開が無効になる経路もある/);
     assert.match(expl('set -f; IFS=$v; echo $x', '$x'), /value not known here\); globbing is off after `set -f`\)$/);
     assert.match(expl('IFS=$v; echo $x', '$x', 'ja'), /その文字で分割され、グロブ展開もされる）$/);
-    assert.match(all(explain(`${src}echo *`).items).find((t) => t.label === '*')!.explanation, /Glob pattern/);
+    assert.match(allTokens(explain(`${src}echo *`).items).find((t) => t.label === '*')!.explanation, /Glob pattern/);
   });
 });
 
@@ -95,7 +85,7 @@ describe('word notes: tildes', () => {
 describe('word notes: globs', () => {
   it('says that an assignment does no file-name expansion', () => {
     assert.strictEqual(expl('x=*.txt', '*.txt'), 'Value `*.txt`. An assignment does no file-name expansion, so `*` and `?` are assigned as they are');
-    assert.strictEqual(all(explain('x=*.txt').items).filter((t) => t.label === '*').length, 0);
+    assert.strictEqual(allTokens(explain('x=*.txt').items).filter((t) => t.label === '*').length, 0);
     assert.strictEqual(bash('x=*.txt; echo "$x"'), '*.txt\n');
   });
 
@@ -109,7 +99,7 @@ describe('word notes: globs', () => {
     assert.match(expl('if a; then shopt -s nullglob; fi; ls *.zz', '*.zz'), /goes away on the paths where nullglob is on, and stays as written on the others$/);
     assert.match(expl('shopt -s nullglob; ls *.zz', '*.zz', 'ja'), /nullglob が有効なので/);
     const g = explain("GLOBIGNORE='*.log'; ls *");
-    assert.match(all(g.items).find((t) => t.label === '*' && t.kind === 'argument')!.explanation,
+    assert.match(allTokens(g.items).find((t) => t.label === '*' && t.kind === 'argument')!.explanation,
       /setting `GLOBIGNORE` turned dotglob on, so it also matches names starting with `\.` \(not `\.` and `\.\.`\); names that match `\*\.log` of `GLOBIGNORE` are left out$/);
     assert.strictEqual(bash("GLOBIGNORE='*.log'; echo *"), '.hidden a.txt b.txt\n');
     const ex = g.examples.find((e) => e.kind === 'glob')!;
@@ -117,7 +107,7 @@ describe('word notes: globs', () => {
     const log = explain("GLOBIGNORE='*.log'; ls *.log").examples.find((e) => e.kind === 'glob')!;
     assert.ok(!log.sections.some((s) => /^Matching/.test(s.label)) && log.sections[0].lines.includes('app.log'));
     assert.ok(explain('shopt -s dotglob; ls *').examples.find((e) => e.kind === 'glob')!.interactive);
-    assert.match(all(explain("GLOBIGNORE='*.log'; ls *", 'ja').items).find((t) => t.label === '*')!.explanation, /`GLOBIGNORE` を設定したので dotglob が有効になり/);
+    assert.match(allTokens(explain("GLOBIGNORE='*.log'; ls *", 'ja').items).find((t) => t.label === '*')!.explanation, /`GLOBIGNORE` を設定したので dotglob が有効になり/);
   });
 
   it('says what a glob or braces in a redirection target do', () => {
@@ -139,14 +129,14 @@ describe('word notes: globs', () => {
 describe('word notes: after the review', () => {
   it('says that globbing may be off on a glob word as on an expansion of the same line', () => {
     const src = 'if a; then set -f; fi\necho *.c $x';
-    assert.match(all(explain(src).items).find((t) => t.label === '*.c')!.explanation, /globbing is off on some paths, after `set -f` \(there it stays as written\)/);
+    assert.match(allTokens(explain(src).items).find((t) => t.label === '*.c')!.explanation, /globbing is off on some paths, after `set -f` \(there it stays as written\)/);
     assert.match(expl(src, '$x'), /globbing is off on some paths/);
-    assert.match(all(explain(src, 'ja').items).find((t) => t.label === '*.c')!.explanation, /グロブ展開が無効になる経路もある/);
+    assert.match(allTokens(explain(src, 'ja').items).find((t) => t.label === '*.c')!.explanation, /グロブ展開が無効になる経路もある/);
   });
 
   it('says nothing of dotglob on a pattern that starts with `.`', () => {
-    assert.doesNotMatch(all(explain('shopt -s dotglob; ls .*').items).find((t) => t.label === '.*')!.explanation, /dotglob/);
-    assert.match(all(explain('shopt -s dotglob; ls *').items).find((t) => t.label === '*')!.explanation, /dotglob/);
+    assert.doesNotMatch(allTokens(explain('shopt -s dotglob; ls .*').items).find((t) => t.label === '.*')!.explanation, /dotglob/);
+    assert.match(allTokens(explain('shopt -s dotglob; ls *').items).find((t) => t.label === '*')!.explanation, /dotglob/);
   });
 
   it('says that an unquoted expansion in a pattern is a pattern', () => {

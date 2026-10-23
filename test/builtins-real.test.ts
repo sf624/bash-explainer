@@ -1,7 +1,6 @@
 // The builtins, compared with bash: which words are text, names, signals, expressions or arguments, as the
 // interpreter reads them with the builtin's spec, and what bash does with the same line.
 import * as assert from 'assert';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -10,12 +9,11 @@ import { ArgRole, ArgvParse, interpret } from '../src/argv/interpret';
 import { shellOptions } from '../src/dict/builtins';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { argWords } from './support/argwords';
+import { runBash } from './support/bash';
 
-const hasBash = spawnSync('bash', ['--norc', '-c', 'true']).status === 0;
-/** The C locale: the tests match bash's messages in English. */
-const ENV = { ...process.env, LC_ALL: 'C' };
-/** What bash prints for `script` (stdout), with `input` on stdin. */
-const bash = (script: string, input = ''): string => spawnSync('bash', ['--norc', '-c', script], { input, env: ENV, encoding: 'utf8', timeout: 10000 }).stdout;
+const hasBash = runBash('true').status === 0;
+/** What bash prints for `script` (stdout), with `input` on stdin (the C locale: the tests match bash's messages in English). */
+const bash = (script: string, input = ''): string => runBash(script, { input }).stdout;
 const parseOf = (line: string): { parse: ArgvParse; words: string[] } => {
   const { name, words, texts } = argWords(line);
   return { parse: interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand }), words: words.map((w, i) => w.value ?? texts[i]) };
@@ -117,8 +115,8 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       const named = r.role === 'pattern-option' ? /^-(?:sig)?(.*)$/i.exec(word)![1] : r.role === 'option' && r.flag === word ? word.slice(1) : word.slice(2);
       // Job control keeps SIGINT for the background job (bash ignores it there otherwise), and only
       // a refused signal is followed by `kill -9`, so no second signal races the first.
-      const out = spawnSync('bash', ['--norc', '-c', `set -m; sleep 5 & kill ${word} $! 2>&1 || kill -9 $!; wait $!; echo $?`], { env: ENV, encoding: 'utf8' }).stdout;
-      const valid = spawnSync('bash', ['--norc', '-c', `kill -l ${named}`]).status === 0;
+      const out = runBash(`set -m; sleep 5 & kill ${word} $! 2>&1 || kill -9 $!; wait $!; echo $?`).stdout;
+      const valid = runBash(`kill -l ${named}`).status === 0;
       assert.strictEqual(/invalid signal/.test(out), !valid, word);
       // The process ends with 128 + the signal's number.
       if (valid) assert.strictEqual(String(Number(out.trim().split('\n').pop()) - 128), /^\d+$/.test(named) ? named : bash(`kill -l ${named}`).trim(), word);
@@ -129,7 +127,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     for (const word of ['-s9', '-s1', '-nTERM', '-nint', '-s-1']) {
       const { parse } = parseOf(`kill ${word} 1`);
       assert.strictEqual(parse.roles[0].role.role, 'pattern-option', word);
-      assert.match(spawnSync('bash', ['--norc', '-c', `kill ${word} 1`], { env: ENV, encoding: 'utf8' }).stderr, /invalid signal specification/, word);
+      assert.match(runBash(`kill ${word} 1`).stderr, /invalid signal specification/, word);
     }
     // With `-l` the words `-15` and `-TERM` are options that do nothing, and the list is printed whole.
     for (const word of ['-15', '-TERM', '-9', '-KILL', '-0', '-s HUP', '-sHUP', '-n 9', '-nINT']) {
@@ -140,7 +138,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     }
     // Once a signal is given, `-s9` is a process ID, which bash refuses as such.
     assert.strictEqual(parseOf('kill -9 -s9 1').parse.roles[1].role.role, 'operand');
-    assert.match(spawnSync('bash', ['--norc', '-c', 'kill -9 -s9 1'], { env: ENV, encoding: 'utf8' }).stderr, /arguments must be process or job IDs/);
+    assert.match(runBash('kill -9 -s9 1').stderr, /arguments must be process or job IDs/);
     assert.match((parseOf('kill -15 1').parse.roles[0].role as { text: { en: string } }).text.en, /^Send signal number 15/);
     // A pattern option with no text for the mode keeps its own.
     assert.match((parseOf('kill -l -s9').parse.roles[1].role as { text: { en: string } }).text.en, /^Invalid/);
@@ -151,26 +149,26 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
     for (const line of ['pushd +1', 'pushd -1', 'popd +1', 'popd -2', 'dirs +0', 'dirs -0', 'dirs -p +2']) {
       const { parse } = parseOf(line);
       assert.strictEqual(parse.roles.at(-1)!.role.role, 'pattern-option', line);
-      const run = spawnSync('bash', ['--norc', '-c', `${stack} ${line}`], { env: ENV, encoding: 'utf8' });
+      const run = runBash(`${stack} ${line}`);
       assert.strictEqual(run.status, 0, line);
       assert.strictEqual(run.stderr, '', line);
     }
     // Out of the stack's range bash complains about the number, so it was read as one.
-    assert.match(spawnSync('bash', ['--norc', '-c', `${stack} pushd +9`], { env: ENV, encoding: 'utf8' }).stderr, /directory stack index/);
+    assert.match(runBash(`${stack} pushd +9`).stderr, /directory stack index/);
   });
 
   it('shopt -o: the names are those of `set -o`, and the ones the dictionary explains are all known to bash', () => {
     const parser = createUnbashParser();
     const children = (script: string): Token[] => new Analyzer('en').explainLine(parser.parse(script), 0).items[0].children;
     for (const name of Object.keys(shellOptions)) {
-      assert.strictEqual(spawnSync('bash', ['--norc', '-c', `shopt -qo ${name}`], { encoding: 'utf8' }).stderr, '', name);
+      assert.strictEqual(runBash(`shopt -qo ${name}`).stderr, '', name);
     }
     const [opt, errexit, other] = children('shopt -o errexit nullglob');
     assert.strictEqual(opt.label, '-o');
     assert.match(errexit.explanation, /^Shell option `errexit`: exit immediately/);
     assert.doesNotMatch(other.explanation, /^Shell option/);
     // Without `-o`, `errexit` is no shopt name.
-    assert.match(spawnSync('bash', ['--norc', '-c', 'shopt errexit'], { env: ENV, encoding: 'utf8' }).stderr, /invalid shell option name/);
+    assert.match(runBash('shopt errexit').stderr, /invalid shell option name/);
     assert.match(children('shopt -s extglob')[1].explanation, /^Shell option `extglob`/);
   });
 
@@ -186,12 +184,12 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
 
   it('exit, return, shift, break and continue: a number, even with a `-`', () => {
     assert.deepStrictEqual(operands('exit -1'), ['-1']);
-    assert.strictEqual(spawnSync('bash', ['--norc', '-c', 'exit -1']).status, 255);
+    assert.strictEqual(runBash('exit -1').status, 255);
     assert.deepStrictEqual(operands('return -- 4'), ['4']);
     assert.strictEqual(bash('f() { return -- 4; }; f; echo $?'), '4\n');
     for (const line of ['shift -1', 'break -1', 'continue -x']) {
       assert.deepStrictEqual(operands(line), [line.split(' ')[1]], line);
-      assert.match(spawnSync('bash', ['--norc', '-c', `for i in 1; do ${line}; done`], { env: ENV, encoding: 'utf8' }).stderr, /out of range|numeric argument/, line);
+      assert.match(runBash(`for i in 1; do ${line}; done`).stderr, /out of range|numeric argument/, line);
     }
   });
 
@@ -223,7 +221,7 @@ const printed = (words: string[]): string => words.map((w) => `${w},`).join('');
       assert.deepStrictEqual(exprs, line.split(' ').slice(1).filter((w) => w !== '--'), line);
       assert.strictEqual(bash(`${line}; echo $a,$b`), `${values}\n`, line);
     }
-    assert.strictEqual(spawnSync('bash', ['--norc', '-c', 'let -x']).status, 1);
+    assert.strictEqual(runBash('let -x').status, 1);
     assert.deepStrictEqual(operands('let -x'), ['-x']);
   });
 

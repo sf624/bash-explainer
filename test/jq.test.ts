@@ -1,17 +1,14 @@
 import * as assert from 'assert';
 import { explainJq } from '../src/embedded/jq';
 import { EmbeddedToken } from '../src/embedded/types';
-
-function all(ts: EmbeddedToken[]): EmbeddedToken[] {
-  return ts.flatMap((t) => [t, ...all(t.children)]);
-}
+import { allTokens } from './support/explain';
 
 function shape(src: string, ts: EmbeddedToken[]): string[] {
   return ts.map((t) => src.slice(t.start, t.end));
 }
 
 function find(src: string, ts: EmbeddedToken[], text: string): EmbeddedToken {
-  const t = all(ts).find((x) => src.slice(x.start, x.end) === text);
+  const t = allTokens(ts).find((x) => src.slice(x.start, x.end) === text);
   assert.ok(t, `no token "${text}"`);
   return t;
 }

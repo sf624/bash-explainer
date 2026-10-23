@@ -8,14 +8,13 @@ import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { toMarkdown, toPlainMarkdown } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens, explain } from './support/explain';
 
 let parser: Parser;
 before(async () => {
   parser = createUnbashParser();
 });
 
-const explain = (src: string, line = 0) => new Analyzer('en').explainLine(parser.parse(src), line);
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 const covered = (src: string, t: Token): string => {
   const lines = src.split('\n');
   const { start, end } = t.span;
@@ -98,7 +97,7 @@ describe('the label of a command', () => {
 
   it('names the command run by another one', () => {
     const src = 'sudo -u bob rm -rf /tmp/x';
-    const wrapped = all(explain(src).items).find((t) => t.label === 'rm')!;
+    const wrapped = allTokens(explain(src).items).find((t) => t.label === 'rm')!;
     assert.strictEqual(covered(src, wrapped), 'rm -rf /tmp/x');
   });
 
@@ -114,7 +113,7 @@ describe('the label of a command', () => {
     const n = lines.findIndex((l) => l.startsWith('RUN apk add'));
     const extracted = extractShell(hostKind('', 'Dockerfile')!, src);
     const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, lines, n, 'en')!;
-    const apk = all(ex.items).find((t) => t.label === 'apk')!;
+    const apk = allTokens(ex.items).find((t) => t.label === 'apk')!;
     assert.strictEqual(apk.label, 'apk');
     assert.ok(covered(src, apk).startsWith('apk add --no-cache curl jq'));
     assert.strictEqual(apk.span.start.character, lines[n].indexOf('apk'));

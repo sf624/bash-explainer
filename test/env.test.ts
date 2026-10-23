@@ -13,6 +13,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { CommandSpec } from '../src/argv/spec';
 import { BATS_COMMANDS } from '../src/dict/bats';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 
@@ -195,10 +196,9 @@ describe('execution environments: command slots', () => {
 
 describe('explanations from the execution environment', () => {
   const explain = (src: string, lang: 'en' | 'ja' = 'en', line = 0) => new Analyzer(lang).explainLine(parser.parse(src), line);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  const about = (src: string, label: string, lang: 'en' | 'ja' = 'en', line = 0): string => all(explain(src, lang, line).items).find((t) => t.label === label)!.explanation;
+  const about = (src: string, label: string, lang: 'en' | 'ja' = 'en', line = 0): string => allTokens(explain(src, lang, line).items).find((t) => t.label === label)!.explanation;
   const pid = (src: string, lang: 'en' | 'ja' = 'en', line = 0, shell?: Shell): string =>
-    all(new Analyzer(lang).explainLine(parser.parse(src), line, shell).items).find((t) => t.label === '$$' && t.kind === 'variable')!.explanation;
+    allTokens(new Analyzer(lang).explainLine(parser.parse(src), line, shell).items).find((t) => t.label === '$$' && t.kind === 'variable')!.explanation;
   const pitfalls = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /落とし穴|Pitfall/.test(n));
   const bash = (code: string): string => spawnSync('bash', ['--norc', '--noprofile', '-c', code], { encoding: 'utf8', cwd: '/tmp', env: { PATH: process.env.PATH } }).stdout;
   const hasBash = spawnSync('bash', ['--version']).status === 0;
@@ -297,7 +297,7 @@ describe('explanations from the execution environment', () => {
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
   });
   it('reads `$_` after the commands of its own process only', function () {
-    const last = (src: string): string => all(explain(src).items).find((t) => t.label === '$_' && t.kind === 'variable')!.explanation;
+    const last = (src: string): string => allTokens(explain(src).items).find((t) => t.label === '$_' && t.kind === 'variable')!.explanation;
     assert.match(last('x=$(a=1; echo "$_")'), /The command before is only an assignment, so `\$_` is empty$/);
     assert.match(last('a=1; ( b=2 ); echo $_'), /The command before is only an assignment/);
     assert.doesNotMatch(last('echo a; ( b=2 ); echo $_'), /assignment/);

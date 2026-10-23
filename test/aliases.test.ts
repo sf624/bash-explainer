@@ -9,14 +9,14 @@ import { commands } from '../src/dict/commands';
 import { runner } from '../src/examples/pipeline';
 import { shellFromName } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const stage = (cmd: string, ...words: string[]) => ({ cmd, words, text: [cmd, ...words].join(' ') });
 const input = ['a.c', 'abc', 'aac', 'xyz', 'a+c'];
 
 function tokens(src: string): Token[] {
   const ex = new Analyzer('en').explainLine(createUnbashParser().parse(src), 0);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  return all(ex.items);
+  return allTokens(ex.items);
 }
 
 describe('the table of command aliases', () => {

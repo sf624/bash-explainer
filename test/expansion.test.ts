@@ -5,6 +5,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeGlob, exampleFor, globParts, parseExpansion } from '../src/expansion';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -16,8 +17,7 @@ before(async () => {
 function expansionToken(src: string, lang: 'ja' | 'en' = 'en'): Token {
   const tree = parser.parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 0);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  const t = all(ex.items).find((x) => x.label.startsWith('${') && x.children.some((c) => c.label !== x.label));
+  const t = allTokens(ex.items).find((x) => x.label.startsWith('${') && x.children.some((c) => c.label !== x.label));
   assert.ok(t, `no expansion token in ${src}`);
   return t;
 }

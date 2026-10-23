@@ -33,6 +33,7 @@ import { TreeCache } from '../src/syntax/cache';
 import type { BashParser } from '../src/syntax/tree';
 import { panelUpdate } from '../src/ui/panelView';
 import { toMarkdown } from '../src/ui/render';
+import { allTokens, explain } from './support/explain';
 
 // Lines that the tests of each feature do not reach: the less common inputs, and the ways a
 // helper gives up. Every line of src/ is to run in some test (see scripts/coverage-check.mjs).
@@ -43,13 +44,8 @@ before(async () => {
   parser = createUnbashParser();
 });
 
-const explain = (src: string, line = 0) => {
-  const tree = parser.parse(src);
-  return new Analyzer('en').explainLine(tree, line);
-};
 const flat = (e: ReturnType<typeof explain>): string => {
-  const all = (ts: typeof e.items): typeof e.items => ts.flatMap((t) => [t, ...all(t.children)]);
-  return [...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n');
+  return [...e.notes, ...allTokens(e.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n');
 };
 
 describe('lines no other test reaches', () => {

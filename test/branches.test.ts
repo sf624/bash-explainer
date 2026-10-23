@@ -41,6 +41,7 @@ import { formatDate as gitDate, GitFormatUnsupported, relativeDate, runGitLog, s
 import { panelUpdate } from '../src/ui/panelView';
 import { quickReference } from '../src/ui/reference';
 import { examplesMarkdown, lineSegments, placeExamples, toPlainMarkdown } from '../src/ui/render';
+import { allTokens, explain } from './support/explain';
 
 // Branches that the tests of each feature do not take: the other language, the rarer inputs, and
 // the ways a helper gives up. Every branch of src/ is to be taken in some test, removed, or marked
@@ -52,13 +53,8 @@ before(async () => {
   parser = createUnbashParser();
 });
 
-const explain = (src: string, line = 0, lang: 'ja' | 'en' = 'en') => {
-  const tree = parser.parse(src);
-  return new Analyzer(lang).explainLine(tree, line);
-};
 const flat = (e: ReturnType<typeof explain>): string => {
-  const all = (ts: typeof e.items): typeof e.items => ts.flatMap((t) => [t, ...all(t.children)]);
-  return [...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n');
+  return [...e.notes, ...allTokens(e.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n');
 };
 
 describe('branches no other test takes', () => {
@@ -247,9 +243,7 @@ describe('branches no other test takes', () => {
   });
 
   it('regex: BRE alternation and anchors, empty intervals, PCRE groups, classes, escapes', () => {
-    type T = ReturnType<typeof explainRegex>;
-    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
-    const r = (src: string, flavor: 'bre' | 'ere' | 'pcre') => all(explainRegex(src, flavor, 'en')).map((t) => t.explanation).join('\n');
+    const r = (src: string, flavor: 'bre' | 'ere' | 'pcre') => allTokens(explainRegex(src, flavor, 'en')).map((t) => t.explanation).join('\n');
     assert.match(r('a$\\|b', 'bre'), /end of the line/);
     assert.match(r('\\(a$\\)', 'bre'), /end of the line/);
     assert.ok(!/repeated/.test(r('a\\{,\\}', 'bre')));
@@ -312,9 +306,7 @@ describe('branches no other test takes', () => {
   });
 
   it('perl: quote-like operators cut short or with brackets, conditions, substitutions, fields from the end', () => {
-    type T = ReturnType<typeof explainPerl>;
-    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
-    const p = (src: string) => all(explainPerl(src, 'en')).map((t) => t.explanation).join('\n');
+    const p = (src: string) => allTokens(explainPerl(src, 'en')).map((t) => t.explanation).join('\n');
     for (const src of ['s/a/b', 's{a}', 's{a} ', 'print "x"; s/a', 'BEGIN { $n = 0 ']) assert.ok(explainPerl(src, 'en').length > 0, src);
     assert.match(p('s{a{1}} {b}g'), /Substitute.*every match of `a\{1\}` with `b`/);
     assert.match(p('s{a}/b/'), /with `b`/);
@@ -341,9 +333,7 @@ describe('branches no other test takes', () => {
   });
 
   it('awk: continued lines, comments, odd operators, a pattern of 0, unfinished functions, statements of every kind', () => {
-    type T = ReturnType<typeof explainAwk>;
-    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
-    const a = (src: string) => all(explainAwk(src, 'en')).map((t) => t.explanation).join('\n');
+    const a = (src: string) => allTokens(explainAwk(src, 'en')).map((t) => t.explanation).join('\n');
     assert.deepStrictEqual(explainAwk('# only a comment', 'en'), []);
     assert.match(a('0'), /always false/);
     assert.match(a('{ x = 1 + \\\n 2 } # done'), /x/);
@@ -395,9 +385,7 @@ describe('branches no other test takes', () => {
   });
 
   it('sed scripts: every command, address and replacement escape', () => {
-    type T = ReturnType<typeof explainSed>;
-    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
-    const e = (src: string) => all(explainSed(src, 'bre', 'en')).map((t) => t.explanation).join('\n');
+    const e = (src: string) => allTokens(explainSed(src, 'bre', 'en')).map((t) => t.explanation).join('\n');
     assert.match(e('a foo\np'), /append the line "foo"/);
     assert.match(e('s/a\n/b/'), /Unterminated/);
     assert.match(e('\\%x%Ip'), /matching the regex `x` \(case-insensitive\)/);
@@ -459,9 +447,7 @@ describe('branches no other test takes', () => {
   });
 
   it('jq filters: strings, bindings, slices, formats, calls, object keys, and what does not parse', () => {
-    type T = ReturnType<typeof explainJq>;
-    const all = (ts: T): T => ts.flatMap((t) => [t, ...all(t.children)]);
-    const j = (src: string, dialect: 'jq' | 'yq' = 'jq') => all(explainJq(src, 'en', dialect)).map((t) => t.explanation).join('\n');
+    const j = (src: string, dialect: 'jq' | 'yq' = 'jq') => allTokens(explainJq(src, 'en', dialect)).map((t) => t.explanation).join('\n');
     for (const src of ['`', '(1', '(1]', 'if . then 1', '...', ')', 'f(1 2)', '{1: 2}', '{a b}', 'then', '1 2', '"open']) assert.match(j(src), /Could not parse/, src);
     assert.ok(!/Could not parse/.test(j('"a\\(("x") + "y")b" + "a\\"b"')));
     assert.match(j('. as $x | . as $y | $x'), /Binding/);
@@ -727,8 +713,7 @@ describe('the analyzer: branches no other test takes', () => {
     const tree = parser.parse(src);
     const en = new Analyzer('en').explainLine(tree, line, shell, opts);
     const ja = new Analyzer('ja').explainLine(tree, line, shell, opts);
-    const all = (ts: typeof en.items): typeof en.items => ts.flatMap((t) => [t, ...all(t.children)]);
-    return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...all(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
+    return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...allTokens(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
   };
   const cases: [string, number?, Shell?, ExplainOptions?][] = [
     ['echo ${a[10]} ${a[11]} ${a[12]} ${a[13]} ${a[1]} ${a[2]} ${a[3]} ${a[-11]} ${a[-2]} ${s:10:1} ${s:11} ${s:21:1} ${s:22:1} ${s:23}'],

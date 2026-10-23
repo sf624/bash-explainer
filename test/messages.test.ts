@@ -1,13 +1,9 @@
 // The message catalog (src/messages.ts): every entry cites sections of the manual that exist, says its kind with the
 // right mark in both languages, and the analyzer lists a fact with the exact text of the note it shows.
 import * as assert from 'assert';
-import { Analyzer } from '../src/analyzer';
 import { fact, factOf, MESSAGES, type FactId } from '../src/messages';
 import { SECTIONS } from '../src/manual';
-import { createUnbashParser } from '../src/syntax/adapters/unbash';
-
-const parser = createUnbashParser();
-const explain = (src: string, line: number, lang: 'en' | 'ja' = 'en', opts?: { pitfalls?: boolean }) => new Analyzer(lang).explainLine(parser.parse(src), line, undefined, opts);
+import { explain } from './support/explain';
 
 describe('the message catalog', () => {
   it('cites only sections of the manual, and at least one', () => {

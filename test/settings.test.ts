@@ -6,6 +6,7 @@ import { Analyzer, EXAMPLE_KINDS, ExplainOptions, Token } from '../src/analyzer'
 import { parseDirectives, suppressed } from '../src/directives';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pruneDepth } from '../src/ui/render';
+import { allTokens } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -17,7 +18,6 @@ const explain = (src: string, opts: ExplainOptions = {}, line = 0) => {
   const ex = new Analyzer('en').explainLine(tree, line, undefined, opts);
   return ex;
 };
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 
 describe('example settings', () => {
   it('gives every example of the sample script a kind', () => {
@@ -55,7 +55,7 @@ describe('custom commands', () => {
   };
   it('explains a command described in the setting', () => {
     const ex = explain('deploy -n -e prod web', { customCommands });
-    const toks = all(ex.items).map((t) => `${t.label}: ${t.explanation}`);
+    const toks = allTokens(ex.items).map((t) => `${t.label}: ${t.explanation}`);
     assert.match(toks[0], /^deploy: Deploy to production \(from the customCommands setting\)/);
     assert.ok(toks.includes('-n: only show what would happen'));
     assert.ok(toks.includes('-e: environment') && toks.includes('prod: Value for `-e`'), toks.join('\n'));
@@ -68,7 +68,7 @@ describe('custom commands', () => {
       operands: [{ name: 'HOST', description: 'host to act on', repeat: '+' }],
       subcommands: { restart: { summary: 'Restart the service', options: [{ names: ['-f'], description: 'without asking' }], operands: [{ description: 'service', repeat: '*' }] } },
     };
-    const toks = (line: string) => all(explain(line, { customCommands: { tool } }).items).map((t) => `${t.label}: ${t.explanation}`);
+    const toks = (line: string) => allTokens(explain(line, { customCommands: { tool } }).items).map((t) => `${t.label}: ${t.explanation}`);
     const hosts = toks('tool -c a.yml web1 web2 -x');
     assert.ok(hosts.includes('a.yml: Value for `-c`') && hosts.includes('web1: host to act on') && hosts.includes('-x: host to act on'), hosts.join('\n'));
     const sub = toks('tool restart -f nginx');
@@ -77,13 +77,13 @@ describe('custom commands', () => {
   });
   it('reads takesValue as 0.6 did in the old shape (any true value), and only `true` in the new one', () => {
     const old = { summary: 'Old', options: { '-a': { description: 'a', takesValue: 'yes' }, '-b': { description: 'b', takesValue: 1 }, '-c': { description: 'c', takesValue: 0 } } };
-    const toks = all(explain('old -a x -b y -c z', { customCommands: { old } }).items).map((t) => `${t.label}: ${t.explanation}`);
+    const toks = allTokens(explain('old -a x -b y -c z', { customCommands: { old } }).items).map((t) => `${t.label}: ${t.explanation}`);
     assert.ok(toks.includes('x: Value for `-a`') && toks.includes('y: Value for `-b`') && !toks.includes('z: Value for `-c`'), toks.join('\n'));
     const tool = { summary: 'New', options: [{ names: ['-a'], description: 'a', takesValue: 'yes' }] };
-    assert.ok(!all(explain('tool -a x', { customCommands: { tool } }).items).some((t) => t.explanation === 'Value for `-a`'));
+    assert.ok(!allTokens(explain('tool -a x', { customCommands: { tool } }).items).some((t) => t.explanation === 'Value for `-a`'));
   });
   it('also inside sudo, and ignores malformed entries', () => {
-    assert.match(all(explain('sudo deploy web', { customCommands }).items).map((t) => t.explanation).join('\n'), /Deploy to production/);
+    assert.match(allTokens(explain('sudo deploy web', { customCommands }).items).map((t) => t.explanation).join('\n'), /Deploy to production/);
     assert.match(explain('broken -x', { customCommands }).items[0].explanation, /not in the dictionary/);
   });
 });

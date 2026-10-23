@@ -4,14 +4,14 @@ import * as assert from 'assert';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 let parser: Parser;
 before(async () => {
   parser = createUnbashParser();
 });
 
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-const tokens = (src: string, lang: 'en' | 'ja') => all(new Analyzer(lang).explainLine(parser.parse(src), 0).items);
+const tokens = (src: string, lang: 'en' | 'ja') => allTokens(new Analyzer(lang).explainLine(parser.parse(src), 0).items);
 const find = (src: string, lang: 'en' | 'ja', label: string): Token => tokens(src, lang).find((t) => t.label === label)!;
 
 describe('an explanation does not repeat its label', () => {

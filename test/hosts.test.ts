@@ -7,6 +7,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
 import { githubContext } from '../src/dict/ciVariables';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -23,8 +24,7 @@ function explain(file: string, line: number, lang: 'ja' | 'en' = 'en') {
   const ex = explainHostedLine(new Analyzer(lang), tree, extracted, src.split('\n'), line - 1, lang);
   return ex;
 }
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-const labels = (file: string, line: number) => all(explain(file, line)!.items).map((t) => `${t.label}@${t.span.start.character}`);
+const labels = (file: string, line: number) => allTokens(explain(file, line)!.items).map((t) => `${t.label}@${t.span.start.character}`);
 
 describe('hostKind', () => {
   it('recognises hosts by language id and file name', () => {
@@ -42,7 +42,7 @@ describe('Dockerfile', () => {
     assert.ok(labels('Dockerfile', 3).includes('apk@4'));
     assert.ok(labels('Dockerfile', 5).includes('rm@7'));
     assert.ok(!labels('Dockerfile', 5).some((l) => l.startsWith('&&@') === false && /error/.test(l)));
-    assert.ok(!all(explain('Dockerfile', 5)!.items).some((t) => t.kind === 'error'));
+    assert.ok(!allTokens(explain('Dockerfile', 5)!.items).some((t) => t.kind === 'error'));
   });
   it('skips flags and non-shell lines; reads here-documents', () => {
     assert.ok(labels('Dockerfile', 6)[0].endsWith('@43'));
@@ -52,7 +52,7 @@ describe('Dockerfile', () => {
   it('explains the exec form as a command run without a shell', () => {
     const ex = explain('Dockerfile', 7)!;
     assert.match(ex.notes[0], /runs the command directly, without a shell/);
-    assert.deepStrictEqual(all(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
+    assert.deepStrictEqual(allTokens(ex.items).map((t) => [t.kind, t.label]), [['builtin', '"echo"'], ['argument', '"exec form is not a shell"'], ['string', '"exec form is not a shell"']]);
     const multi = labels('Dockerfile', 17);
     assert.ok(multi.includes('"--config"@24') && multi.includes('"--name"@12') && multi.includes('"$HOME/app.conf"@36'), multi.join());
   });
@@ -183,8 +183,8 @@ describe('other CI systems', () => {
   it('marks Groovy interpolation in double quotes, and undoes \\$', () => {
     const ex = explain('Jenkinsfile', 16)!;
     assert.ok(ex.notes.some((n) => /Groovy fills in `\$name`/.test(n)), ex.notes.join('\n'));
-    assert.ok(all(ex.items).some((t) => t.label === '$ver' && /Groovy expression `ver`/.test(t.explanation)));
-    assert.ok(all(ex.items).some((t) => t.label === '\\$HOME' || t.label === '$HOME'));
+    assert.ok(allTokens(ex.items).some((t) => t.label === '$ver' && /Groovy expression `ver`/.test(t.explanation)));
+    assert.ok(allTokens(ex.items).some((t) => t.label === '\\$HOME' || t.label === '$HOME'));
     assert.deepStrictEqual(explain('Jenkinsfile', 6)!.notes.filter((n) => /Groovy/.test(n)), []);
   });
 
@@ -195,10 +195,10 @@ describe('other CI systems', () => {
 
   it('reads Azure Pipelines script: and bash:, with $(var) macros, not PowerShell', () => {
     assert.deepStrictEqual(shellLines('azure-pipelines.yml'), [8, 11, 12]);
-    const items = all(explain('azure-pipelines.yml', 8)!.items);
+    const items = allTokens(explain('azure-pipelines.yml', 8)!.items);
     assert.ok(items.some((t) => t.label === '$(buildConfiguration)' && /Azure Pipelines macro/.test(t.explanation)));
     assert.ok(!items.some((t) => t.label === 'buildConfiguration' && t.kind === 'command'));
-    assert.ok(all(explain('azure-pipelines.yml', 11)!.items).some((t) => t.label === '$(Build.SourceBranchName)'));
+    assert.ok(allTokens(explain('azure-pipelines.yml', 11)!.items).some((t) => t.label === '$(Build.SourceBranchName)'));
   });
 });
 
@@ -341,7 +341,7 @@ describe('GitHub Actions expression contexts', () => {
     const ex = explainSrc(wf('github.event.pull_request.number', 'github.event.x.y'));
     assert.ok(ex.notes.some((n) => /^`\$\{\{ github\.event\.pull_request\.number \}\}` is the GitHub Actions expression .*: the pull request number; replaced/.test(n)), ex.notes.join('\n'));
     assert.ok(ex.notes.some((n) => /webhook payload of the event that triggered the workflow/.test(n)));
-    assert.ok(all(ex.items).some((t) => t.label === '${{ github.event.pull_request.number }}' && /the pull request number/.test(t.explanation)));
+    assert.ok(allTokens(ex.items).some((t) => t.label === '${{ github.event.pull_request.number }}' && /the pull request number/.test(t.explanation)));
   });
 
   it('warns about the user-controlled fields, in English and Japanese', () => {
@@ -372,7 +372,7 @@ describe('Python', () => {
   it('explains a list as arguments run without a shell', () => {
     assert.match(explain('deploy.py', 7)!.notes[0], /run directly, without a shell/);
     assert.ok(labels('deploy.py', 7).includes('"--oneline"@19'));
-    const ssh = all(explain('deploy.py', 18)!.items);
+    const ssh = allTokens(explain('deploy.py', 18)!.items);
     assert.match(ssh.find((t) => t.label === 'host')!.explanation, /The value of the Python expression `host`/);
   });
   it('warns about f-strings with shell=True and strings without it', () => {
@@ -381,7 +381,7 @@ describe('Python', () => {
   });
   it('joins adjacent literals across lines, and skips comments and other strings', () => {
     assert.ok(labels('deploy.py', 12).includes('wc@10'));
-    assert.ok(!all(explain('deploy.py', 12)!.items).some((t) => t.kind === 'error'));
+    assert.ok(!allTokens(explain('deploy.py', 12)!.items).some((t) => t.kind === 'error'));
     assert.strictEqual(explain('deploy.py', 17), undefined);
     assert.strictEqual(explain('deploy.py', 15), undefined);
   });
@@ -432,7 +432,7 @@ describe('host files the other tests do not reach', () => {
     const extracted = extractShell(hostKind('', file)!, src);
     const tree = parser.parse(extracted.text);
     const ex = explainHostedLine(new Analyzer('en'), tree, extracted, src.split('\n'), line, 'en');
-    return ex ? [...ex.context.map((c) => c.label), ...ex.notes, ...all(ex.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n') : '';
+    return ex ? [...ex.context.map((c) => c.label), ...ex.notes, ...allTokens(ex.items).map((t) => `${t.label}: ${t.explanation}`)].join('\n') : '';
   };
   it('Makefile: SHELL, and one-letter make variables', () => {
     assert.match(text('Makefile', 'SHELL := /bin/bash\nall:\n\techo $O\n', 2), /the make variable `O`, expanded by make before the shell runs/);
@@ -559,11 +559,11 @@ describe('bats', () => {
     // A test on one line has no line range.
     assert.strictEqual(explain('test.bats', 26)!.summary, 'bats test: bats rewrites it into the function `test_empty`, which it calls to run the test');
     assert.match(explain('test.bats', 9, 'ja')!.summary, /^bats のテスト: bats はこれを関数 `test_addition_works` に書き換えて/);
-    assert.strictEqual(all(explain('test.bats', 9, 'ja')!.items)[1].explanation, 'テストの名前: bats はこの名前から関数名 `test_addition_works` を作る');
+    assert.strictEqual(allTokens(explain('test.bats', 9, 'ja')!.items)[1].explanation, 'テストの名前: bats はこの名前から関数名 `test_addition_works` を作る');
   });
 
   it('reads run, load, skip and the other functions of bats with their specs', () => {
-    const tokens = (line: number) => all(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
+    const tokens = (line: number) => allTokens(explain('test.bats', line)!.items).map((t) => `${t.kind} ${t.label}: ${t.explanation.slice(0, 40)}`);
     assert.deepStrictEqual(tokens(16).slice(0, 3), [
       'command run: bats function: runs a command in a subsh',
       'option !: fail, and so fail the test, unless the c',
@@ -575,18 +575,18 @@ describe('bats', () => {
     assert.match(tokens(6)[0], /^command bats_require_minimum_version: bats function/);
     assert.match(tokens(29)[0], /^command skip: bats function: skips the rest/);
     // An option run does not know is an error; the options need bats 1.5.0.
-    const unknown = all(bats(['@test "a" {', '  run -x true', '}'], 2).items);
+    const unknown = allTokens(bats(['@test "a" {', '  run -x true', '}'], 2).items);
     assert.strictEqual(unknown[1].explanation, 'an option `run` does not know: bats says "unknown flag", and `run` fails');
     assert.match(unknown[0].explanation, /bats warns \(BW02\) unless `bats_require_minimum_version 1\.5\.0` comes first/);
-    assert.match(all(explain('test.bats', 5)!.items)[0].explanation, /at the top of the file this stops the whole test file; in `setup` or a test, only that test fails/);
+    assert.match(allTokens(explain('test.bats', 5)!.items)[0].explanation, /at the top of the file this stops the whole test file; in `setup` or a test, only that test fails/);
     // A string run runs through bash -c is read in the new shell, which gets only what is exported.
     const nested = ['f() { :; }', 'x=1', '@test "a" {', "  run bash -c 'echo $x; f'", "  run eval 'f'", '}'];
     const viaBash = bats(nested, 4);
     assert.match(viaBash.notes.join('\n'), /`x` is a variable of this script that is not exported/);
     assert.match(viaBash.notes.join('\n'), /`bash -c` runs the command in a new shell, which does not have this script's function `f`/);
-    assert.deepStrictEqual(all(viaBash.items).filter((t) => t.label === 'f').map((t) => t.kind), ['command']);
+    assert.deepStrictEqual(allTokens(viaBash.items).filter((t) => t.label === 'f').map((t) => t.kind), ['command']);
     // (`run eval S`: the walk of the model does not know bats' run yet, so S stays one word: docs/design/bats.md.)
-    assert.deepStrictEqual(all(bats(nested, 5).items).map((t) => t.label), ['run', 'eval', "'f'"]);
+    assert.deepStrictEqual(allTokens(bats(nested, 5).items).map((t) => t.label), ['run', 'eval', "'f'"]);
     // run runs bats_pipe, whose words are not a command to the shell.
     assert.deepStrictEqual(tokens(22).slice(0, 3).map((t) => t.split(':')[0]), ['command run', 'command bats_pipe', 'argument printf']);
     // Outside a bats file, the names are ordinary commands.

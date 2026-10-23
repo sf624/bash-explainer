@@ -4,6 +4,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainGitDate, explainGitFormat } from '../src/embedded/gitformat';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 describe('git formats', () => {
   it('explains placeholders, colours and alignment', () => {
@@ -40,8 +41,7 @@ describe('quoted option values', () => {
   it('maps placeholders across the quote in --pretty=format:\'…\'', () => {
     const tree = parser.parse("git log --pretty=format:'%h %s'");
     const ex = new Analyzer('en').explainLine(tree, 0);
-    const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-    const ts = all(ex.items);
+    const ts = allTokens(ex.items);
     const opt = ts.find((t) => t.label.startsWith('--pretty'))!;
     assert.strictEqual(opt.kind, 'option');
     assert.match(opt.explanation, /how each commit is shown/);
