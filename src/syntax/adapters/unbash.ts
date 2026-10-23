@@ -444,16 +444,22 @@ class Converter {
     while (split > 0 && isRedirect(after[split - 1])) split--;
     let outside = after.splice(split) as U.Redirection[];
     if (!c.name) {
-      // Assignments and redirections only.
-      outside = before.filter((x): x is U.Redirection => x.type !== 'Assignment');
+      // Assignments and redirections only: a simple command with no words, as bash parses it. Its node holds the
+      // assignments and the redirections between them; the redirections before the first and after the last stay
+      // outside, in a `redirected_statement`, as after the words of a command.
       const assigns = before.filter((x): x is U.Assignment => x.type === 'Assignment');
       let body: Mut | undefined;
-      if (assigns.length === 1) body = this.assignment(assigns[0]);
-      else if (assigns.length > 1) {
-        body = this.node('variable_assignments', assigns[0].pos, assigns[assigns.length - 1].end);
-        for (const a of assigns) this.add(body, this.assignment(a));
+      if (assigns.length) {
+        const first = assigns[0].pos;
+        const last = assigns[assigns.length - 1].end;
+        body = this.node('command', first, last);
+        for (const x of before) {
+          if (x.type === 'Assignment') this.add(body, this.assignment(x));
+          else if (x.pos > first && x.pos < last) this.add(body, this.redirect(x as U.Redirection), 'redirect');
+        }
         this.fill(body);
       }
+      outside = before.filter((x): x is U.Redirection => x.type !== 'Assignment' && !(body && x.pos > body.startIndex && x.pos < body.endIndex));
       if (!outside.length) return body!;
       const r = this.node('redirected_statement', Math.min(body?.startIndex ?? start, this.startOf(outside[0])), c.end);
       // `>f x=1 >g`: a redirection written before the assignments comes first.

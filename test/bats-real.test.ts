@@ -96,6 +96,12 @@ const ROWS: Row[] = [
     says: { 0: ['bats-negation-ignored'] },
   },
   {
+    title: '`! x=1` that is not the last command does not fail the test',
+    body: ['! x=1', 'true'],
+    bats: 'ok',
+    says: { 0: ['bats-negation-ignored'] },
+  },
+  {
     title: '`! cmd | cmd` that is not the last command does not fail the test',
     body: ['! echo x | grep -q x', 'true'],
     bats: 'ok',

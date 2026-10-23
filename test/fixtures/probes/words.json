@@ -1282,5 +1282,32 @@
     "gaps": {
       "a": "in POSIX mode, bash keeps the declaration rule after `command` (`command declare a=$v` does not split `$v`): the model follows only bash's default mode, where it splits"
     }
+  },
+  {
+    "manual": "3.4.2",
+    "snippet": "true x; a=1 >/dev/null b=2; @PROBE:a@ \"$_\"",
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4.2",
+    "snippet": "true x; for (( i = 0; i < 1; i++ )); do @PROBE:a@ \"$_\"; done",
+    "gaps": {
+      "a": "`$_` after a command is its last argument: the model knows it only after a command that is only assignments (the first part of `for (( ))` is not one)"
+    },
+    "facts": {
+      "a": [
+        [
+          "x"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

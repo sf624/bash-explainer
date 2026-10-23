@@ -19,10 +19,14 @@ export const SET_LETTERS: Readonly<Record<string, string>> = {
 };
 
 const names = new WeakMap<SyntaxNode, string | null>();
-/** The static name of the simple command `c` (`'exit'` is `exit`), or undefined when it is not known here (`$cmd`). */
+/** The static name of the simple command `c` (`'exit'` is `exit`), or undefined when it is not known here (`$cmd`) or it has none (`a=1`). */
 export function commandName(c: SyntaxNode): string | undefined {
   let name = names.get(c);
-  if (name === undefined) names.set(c, (name = staticWordValue(field(c, 'name')!.namedChildren[0]) ?? null));
+  if (name === undefined) {
+    // (A command with no name, `a=1`, has none.)
+    const word = field(c, 'name')?.namedChildren[0];
+    names.set(c, (name = (word && staticWordValue(word)) ?? null));
+  }
   return name ?? undefined;
 }
 

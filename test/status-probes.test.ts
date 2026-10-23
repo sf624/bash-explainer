@@ -149,7 +149,8 @@ class Run {
         return 0;
       }
       case 'function_definition': return 0;
-      case 'variable_assignment': case 'variable_assignments': {
+      case 'command': if (field(n, 'name')) return this.command(n); {
+        // (Assignments alone: the status of the last command substitution.)
         this.expansionError(n);
         const s = this.substitutions(n) ?? 0;
         return rule.kind === 'last-substitution' ? s : 0;
@@ -165,7 +166,6 @@ class Run {
         const words = n.namedChildren.flatMap((c) => (c.type === 'unary_expression' || c.type === 'binary_expression' ? c.children : [c]));
         return this.test(n, words.map((w) => (w.named && w.type !== 'test_operator' ? this.value(w) : w.text)));
       }
-      case 'command': return this.command(n);
     }
     throw new Unknown(n.type);
   }

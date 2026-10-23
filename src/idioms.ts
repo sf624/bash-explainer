@@ -88,7 +88,7 @@ export function simulateRedirects(redirs: Redirect[], lang: Lang): string | unde
 // and a command in quotes is not run (`echo '$(mktemp)'`).
 
 /** What a command runs, when its name is written plainly (`true`, `"true"`, `\true`). */
-const nameOf = (c: SyntaxNode | null | undefined): string | undefined => (c?.type === 'command' ? staticWordValue(field(c, 'name')!.namedChildren[0]) : undefined);
+const nameOf = (c: SyntaxNode | null | undefined): string | undefined => (c?.type === 'command' && field(c, 'name') ? staticWordValue(field(c, 'name')!.namedChildren[0]) : undefined);
 const argsOf = (c: SyntaxNode): SyntaxNode[] => fields(c, 'argument');
 /** The values of a command's arguments, undefined where they are not known without running anything. */
 const wordsOf = (c: SyntaxNode): (string | undefined)[] => argsOf(c).map((w) => staticWordValue(w));

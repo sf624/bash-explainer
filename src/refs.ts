@@ -21,7 +21,7 @@ export const CONSTRUCTS: Readonly<Record<string, readonly string[]>> = {
 /** Other nodes, by type. */
 export const NODES: Readonly<Record<string, readonly string[]>> = {
   ...CONSTRUCTS,
-  variable_assignment: ['3.4'], variable_assignments: ['3.4'],
+  variable_assignment: ['3.4'],
   heredoc_redirect: ['3.6.6'], herestring_redirect: ['3.6.7'],
   expansion: ['3.5.3'],
   command_substitution: ['3.5.4'], arithmetic_expansion: ['3.5.5'], process_substitution: ['3.5.6'],
@@ -59,6 +59,8 @@ function parameterSections(text: string): readonly string[] {
 export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   if (n.type === 'file_redirect') return redirectSections(n);
   if (n.type === 'simple_expansion') return parameterSections(n.text);
+  // (A command with no name: assignments only.)
+  if (n.type === 'command' && !field(n, 'name')) return NODES.variable_assignment;
   if (n.type === 'comment') return n.startPosition.row === 0 && n.text.startsWith('#!') ? ['3.8'] : undefined;
   return NODES[n.type];
 }

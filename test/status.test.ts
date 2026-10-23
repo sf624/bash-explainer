@@ -12,7 +12,7 @@ import { PROBE_ENV } from './support/probe';
 
 const parser = createUnbashParser();
 const TYPES = ['command', 'pipeline', 'list', 'negated_command', 'subshell', 'compound_statement', 'if_statement', 'while_statement', 'variable_assignment',
-  'variable_assignments', 'declaration_command', 'arithmetic_command', 'extended_test', 'redirected_statement', 'function_definition', 'coproc_statement',
+  'declaration_command', 'arithmetic_command', 'extended_test', 'redirected_statement', 'function_definition', 'coproc_statement',
   'time_statement', 'case_statement', 'for_statement'];
 
 /** The model of `src`, and its first statement whose text is `text`. */
@@ -371,7 +371,7 @@ describe('the notes on status and errexit', () => {
     assert.ok(notes('set -e\n( cd /nowhere; rm x ) || echo failed', 1, 'ja').some((n) => /`\|\|` の左側で実行されるので、`\( \)`の中でも/.test(n)));
     assert.ok(notes('set -e\nif { a; b; }; then :; fi', 1).some((n) => /ignored in this `\{ \}`/.test(n)));
     assert.ok(notes('set -e\n( a > f; b ) || :', 1).some((n) => /ignored in this `\( \)`/.test(n)));
-    for (const quiet of ['( cd /x; rm y ) || echo failed', 'set -e\n( x=1; rm y ) || :', 'set -e\n( > f; rm y ) || :', 'set -e\n( a ) || :', 'set -e\n( a; b )']) assert.ok(!notes(quiet, quiet.split('\n').length - 1).some((n) => /is ignored in/.test(n)), quiet);
+    for (const quiet of ['( cd /x; rm y ) || echo failed', 'set -e\n( x=1; rm y ) || :', 'set -e\n( > f; rm y ) || :', 'set -e\n( a ) || :', 'set -e\n( { a; }; b ) || :', 'set -e\n( a; b )']) assert.ok(!notes(quiet, quiet.split('\n').length - 1).some((n) => /is ignored in/.test(n)), quiet);
     const fn = 'set -e\nf() {\n  cd /x\n  rm y\n}\nif f; then :; fi';
     assert.ok(notes(fn, 1).some((n) => /`f` is called only where `set -e` is ignored \(line 6\), so it is ignored in all of its body too/.test(n)));
     assert.ok(notes(fn, 1, 'ja').some((n) => /からしか呼ばれないので/.test(n)));

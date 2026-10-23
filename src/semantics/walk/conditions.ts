@@ -2,7 +2,7 @@
 // known (`[ ]`, `[[ ]]`, `true`, `(( ))`, assignments), the lists of a `case` that run, and what each condition decided.
 import { evalArith } from '../../arith';
 import { staticWordValue, substitutionNames } from '../../staticword';
-import { descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
 import type { Decision } from '../state';
@@ -135,6 +135,7 @@ export class WalkConditions {
    * last one's (see `sequence`).
    */
   statusOf(n: SyntaxNode, st: ShellState, after: ShellState): number | undefined {
+    if (assignmentsOnly(n)) return fields(n, 'redirect').every(safeRedirect) ? this.assignmentStatus(n, prefixAssignments(n), st) : undefined;
     switch (n.type) {
       case 'command': case 'arithmetic_command': case 'list': case 'if_statement': case 'case_statement': case 'pipeline':
       case 'compound_statement': case 'subshell': case 'time_statement':
@@ -145,8 +146,6 @@ export class WalkConditions {
         const v = this.w.bash && n.namedChildren.length === 1 ? this.condExpr(n.namedChildren[0], st) : undefined;
         return v === undefined ? undefined : Number(!v);
       }
-      case 'variable_assignment': return this.assignmentStatus(n, [n], st);
-      case 'variable_assignments': return this.assignmentStatus(n, n.namedChildren, st);
     }
     return undefined;
   }

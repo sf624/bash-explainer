@@ -1217,5 +1217,21 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "a=1 >f b=$(false); @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": ">g a=1 2>/dev/null b=$(false) >f; @PROBE:a@",
+    "facts": {
+      "ran": [],
+      "status": 1
+    }
   }
 ]

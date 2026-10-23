@@ -609,11 +609,13 @@ describe('bats', () => {
     assert.match(bats(['@test "a" {', '  ! grep -q some-long-pattern /some/long/path/to/a/file', '  :', '}'], 2).notes.join('\n'), /`! grep -q some-long-pattern \/so…` does not fail/);
     assert.match(bats(src, 9, 'ja').notes.join('\n'), /落とし穴: `set -e` は `!` のあとのコマンドの結果を無視するので/);
     // The fix depends on what follows `!`: run takes one command; a pipeline needs bats_pipe; a group, `|| false`.
-    const forms = ['@test "a" {', '  ! true', '  ! echo x | grep -q x', '  ! { true; }', '  :', '}'];
+    const forms = ['@test "a" {', '  ! true', '  ! echo x | grep -q x', '  ! { true; }', '  ! x=1', '  :', '}'];
     assert.match(bats(forms, 2).notes.join('\n'), /Write `run ! true` \(since bats 1\.5\.0, with `bats_require_minimum_version 1\.5\.0`\) or `! true \|\| false`$/);
     assert.match(bats(forms, 3).notes.join('\n'), /Write `! echo x \| grep -q x \|\| false`, or run the pipeline with `run ! bats_pipe …`, each `\|` written `\\\|` \(since bats 1\.10\.0\)$/);
     assert.match(bats(forms, 4).notes.join('\n'), /Write `! \{ true; \} \|\| false`$/);
-    for (const line of [2, 3, 4]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^⚠ 落とし穴: `set -e` は/);
+    // (`run ! x=1` would run a command named `x=1`.)
+    assert.match(bats(forms, 5).notes.join('\n'), /Write `! x=1 \|\| false`$/);
+    for (const line of [2, 3, 4, 5]) assert.match(bats(forms, line, 'ja').notes.join('\n'), /^⚠ 落とし穴: `set -e` は/);
   });
 
   it("reads bats' functions by their specs for the conditions it decides", () => {

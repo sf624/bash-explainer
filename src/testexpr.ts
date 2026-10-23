@@ -164,7 +164,7 @@ export interface TestShape { left?: SyntaxNode; op: string; right: SyntaxNode }
  */
 export function writtenAsBracket(n: SyntaxNode): boolean {
   // (Quoted or escaped, `"["` and `\[`, it is written otherwise.)
-  return n.type === 'command' && n.children.find((c) => c.type === 'command_name')!.text === '[';
+  return n.type === 'command' && n.children.find((c) => c.type === 'command_name')?.text === '[';
 }
 
 /** The words of a command written `[ … ]` (`writtenAsBracket`) between the brackets, and the last `]` if it has one. */

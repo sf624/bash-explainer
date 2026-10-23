@@ -226,8 +226,9 @@ function tests(list: SyntaxNode, state: StateModel, status: StatusModel, shell?:
   return flat(list.namedChildren[0]).every((c) => {
     const rule = status.status(c);
     if (rule.kind === 'test' || rule.kind === 'arith') return true;
-    const name = c.type === 'command' ? field(c, 'name')?.text : undefined;
-    if (!name || rule.kind !== 'command') return false;
+    // (A command with no name has the status of a substitution, `last-substitution`.)
+    if (rule.kind !== 'command' || c.type !== 'command') return false;
+    const name = field(c, 'name')!.text;
     const kind = resolveName(state, name, field(c, 'name')!, { shell, command: true }).kind;
     return (canonicalName(name) === 'grep' && kind === 'file' && fields(c, 'argument').some((a) => /^-[A-Za-z]*q|^--(quiet|silent)$/.test(a.text)));
   });

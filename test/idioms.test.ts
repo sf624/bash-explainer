@@ -6,7 +6,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 
 // The idioms of the statements of a source text (the kinds of statement the analyzer collects on a line).
-const STATEMENTS = ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'extended_test', 'while_statement'];
+const STATEMENTS = ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'];
 function idioms(sources: string[], lang: 'en' | 'ja'): string[] {
   const parser = createUnbashParser();
   return findIdioms(sources.flatMap((src) => descendants(parser.parse(src).root, STATEMENTS)), lang);

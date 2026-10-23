@@ -144,16 +144,15 @@ export function redirectParts(r: SyntaxNode): LabelPart[] {
 /** The skeleton of a command inside a pipeline, list or negation: its name only. */
 function stage(n: SyntaxNode): LabelPart[] {
   switch (n.type) {
-    case 'command': return writtenAsBracket(n) ? bracket(n) : [code(flat(field(n, 'name')!.text))];
+    // (A command with no name is its assignments, below.)
+    case 'command': if (!field(n, 'name')) break; return writtenAsBracket(n) ? bracket(n) : [code(flat(field(n, 'name')!.text))];
     // The redirections of a stage are left to its own explanation.
     // (A redirection with nothing to redirect, `a | >f`, is only the redirection.)
     case 'redirected_statement': return field(n, 'body') ? stage(field(n, 'body')!) : skeleton(n);
     case 'pipeline': case 'list': case 'negated_command': case 'time_statement': case 'coproc_statement': return skeleton(n);
-    default: {
-      const own = skeleton(n);
-      return labelText(own).length <= LABEL_LIMIT ? own : [placeholder('command')];
-    }
   }
+  const own = skeleton(n);
+  return labelText(own).length <= LABEL_LIMIT ? own : [placeholder('command')];
 }
 
 function sequence(n: SyntaxNode): LabelPart[] {
@@ -193,6 +192,8 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
       return [...(body ? skeleton(body) : []), ...n.namedChildren.filter((c) => c !== body && c.children.length).flatMap(redirectParts)];
     }
     case 'command': {
+      // (With no name: one assignment, `a=1`, or the text of several.)
+      if (!field(n, 'name')) return n.namedChildren.length === 1 ? skeleton(n.namedChildren[0]) : [keep(flat(n.text), 'word')];
       if (writtenAsBracket(n)) return bracket(n);
       // `>f echo x`: the redirections inside the node are the command's own.
       const redirs = n.children.filter((c) => c.type.endsWith('redirect'));

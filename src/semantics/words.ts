@@ -11,7 +11,7 @@ import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
-import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
 import { resolveName } from './names';
@@ -847,13 +847,14 @@ function afterAssignment(n: SyntaxNode, model: StateModel): boolean {
   let prev: SyntaxNode | undefined;
   // (A command in a subshell that `n` is not in sets the subshell's `$_`, and a function body runs elsewhere.)
   const here = model.env(n).links;
-  for (const c of descendants(root, ['command', 'variable_assignment'])) {
-    // (The assignments of a command or a declaration are its words: `declare x=1` sets `$_` to `x=1`.)
-    if (c.endIndex > n.startIndex || (c.type === 'variable_assignment' && c.parent?.type === 'command')) continue;
+  // (The assignments of a command or a declaration are its words: `declare x=1` sets `$_` to `x=1`. The first part of
+  // `for (( i = 0; … ))` is arithmetic, not a command: it leaves `$_`.)
+  for (const c of descendants(root, ['command'])) {
+    if (c.endIndex > n.startIndex) continue;
     if (ancestor(c, (x) => x.type === 'function_definition') || model.env(c).links.some((l) => !here.includes(l))) continue;
     if (!prev || c.endIndex >= prev.endIndex) prev = c;
   }
-  return !!prev && (prev.type === 'variable_assignment' || (prev.type === 'command' && !field(prev, 'name')?.text));
+  return !!prev && assignmentsOnly(prev);
 }
 
 /** The value of `$_` where `n` is: empty after a command that is only an assignment; undefined otherwise. */
@@ -912,13 +913,12 @@ function sourceValue(source: SyntaxNode, model: StateModel, env: WordEnv | undef
 }
 
 const cdCache = new WeakMap<SyntaxNode, boolean>();
-// (Every `command` node has a name: the adapter gives the others as assignments or redirected statements.)
 /** Whether the script changes its directory anywhere (`cd`, `pushd`, `popd`): the model does not follow it. */
 function changesDirectory(n: SyntaxNode): boolean {
   let root = n;
   while (root.parent) root = root.parent;
   let v = cdCache.get(root);
-  if (v === undefined) cdCache.set(root, (v = descendants(root, ['command']).some((c) => ['cd', 'pushd', 'popd'].includes(field(c, 'name')!.text))));
+  if (v === undefined) cdCache.set(root, (v = descendants(root, ['command']).some((c) => ['cd', 'pushd', 'popd'].includes(field(c, 'name')?.text ?? ''))));
   return v;
 }
 

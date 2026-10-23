@@ -4046,5 +4046,32 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "3.7.1",
+    "snippet": "a=1 >f b=$a; c=$b; d=0; d=1 2>/dev/null e=$d | cat",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "c": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "d": {
+            "attrs": "-",
+            "value": "\"0\""
+          }
+        }
+      },
+      "status": 0
+    }
   }
 ]

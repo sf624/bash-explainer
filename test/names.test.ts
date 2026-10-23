@@ -243,7 +243,7 @@ describe('NameResolution in bodies that run later, after `source`, and of declar
   it('a function named like a declaration builtin or `unset` runs instead of it, unless POSIX mode finds the special builtin', () => {
     const tree = parser.parse('export() { echo my; }\nexport a=1\nset -o posix\nexport b=2\nlocal() { :; }\nf() { local x=1; }\nf\nunset() { :; }\nx=1\nunset x');
     const model = shellState(tree);
-    const decl = descendants(tree.root, ['command']).filter((d) => ['export', 'local', 'unset'].includes(field(d, 'name')!.text))
+    const decl = descendants(tree.root, ['command']).filter((d) => ['export', 'local', 'unset'].includes(field(d, 'name')?.text ?? ''))
       .map((d) => short(resolveName(model, field(d, 'name')!.text, d, { command: true })));
     assert.deepStrictEqual(decl, ['function', 'builtin:special<function:posix-special', 'function', 'builtin:special']);
     // (`unset() { …; }` after `set -o posix` is not defined: bash stops there.) The walk calls the function:

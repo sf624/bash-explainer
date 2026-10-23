@@ -196,10 +196,6 @@ function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
   switch (n.type) {
     case 'command':
       return simpleOf(n, extra);
-    case 'variable_assignment': case 'variable_assignments': {
-      const as = n.type === 'variable_assignment' ? [n] : n.namedChildren;
-      return { k: 'simple', line: n.startPosition.row + 1, assignments: as.map(wordOf), words: [], redirects: extra };
-    }
     case 'redirected_statement': {
       const body = n.children.find((c) => c.named && c.field === 'body');
       if (!body) return { k: 'simple', line: n.startPosition.row + 1, assignments: [], words: [], redirects: [...extra, ...redirectsOf(n)] };

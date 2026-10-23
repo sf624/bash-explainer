@@ -6,7 +6,7 @@ import type { ArgvParse } from '../../argv/interpret';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
 import { commandName, SET_LETTERS, wrapped } from '../effects';
 import { type ExecEnv, lastStageInShell, reachOf, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
@@ -26,8 +26,6 @@ import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './sh
 
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
-/** The simple commands: they expand their words before their redirections. */
-const SIMPLE = ['command', 'variable_assignment', 'variable_assignments'];
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
 /** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
@@ -710,17 +708,7 @@ export class Walker {
 
   private runStatement(n: SyntaxNode, st: ShellState): ShellState {
     switch (n.type) {
-      case 'command': return this.command(n, st);
-      case 'variable_assignment':
-        this.substitutions(n, st);
-        return this.builtins.assignNode(n, this.defaults(n, st), true);
-      case 'variable_assignments':
-        for (const a of n.namedChildren) {
-          this.record(a, st);
-          this.substitutions(a, st);
-          st = this.builtins.assignNode(a, this.defaults(a, st), true);
-        }
-        return st;
+      case 'command': return assignmentsOnly(n) ? this.assignments(n, st) : this.command(n, st);
       case 'extended_test':
         this.substitutions(n, st);
         return this.defaults(n, st);
@@ -735,14 +723,12 @@ export class Walker {
         return this.sequence(n.children, st);
       case 'redirected_statement': {
         // A compound command makes its redirections first; a simple command expands its words first (see `redirections`),
-        // and assignments alone are made before them.
+        // and assignments alone are made before them (see `assignments`).
         for (const r of fields(n, 'redirect')) this.substitutions(r, st);
         const body = field(n, 'body');
-        const simple = !!body && SIMPLE.includes(body.type);
         // (A subshell makes them in its own process: `( : ) > $(( n = 3 ))` leaves n.)
-        if (!simple) st = this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, body?.type === 'subshell' ? 'on' : 'off'));
-        st = this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
-        return body?.type.startsWith('variable_assignment') ? withStatus(this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, 'off')), st.status) : st;
+        if (body?.type !== 'command') st = this.fdVariables(fields(n, 'redirect'), this.expandAll(fields(n, 'redirect'), st, body?.type === 'subshell' ? 'on' : 'off'));
+        return this.sequence(n.children.filter((c) => c.field !== 'redirect'), st);
       }
       case 'subshell':
         return this.sequence(n.children, st);
@@ -878,7 +864,7 @@ export class Walker {
     const visit = (x: SyntaxNode): void => {
       for (const c of x.children) {
         if (SUBSTITUTIONS.includes(c.type)) sub(c);
-        else if (!STATEMENTS.has(c.type) || c.parent?.type === 'command' || c.parent?.type === 'variable_assignments') visit(c);
+        else if (!STATEMENTS.has(c.type)) visit(c);
       }
     };
     if (SUBSTITUTIONS.includes(n.type)) sub(n);
@@ -1391,6 +1377,20 @@ export class Walker {
     }
     if (frame.options) end = { ...end, set: frame.options };
     return end;
+  }
+
+  /**
+   * A command with no name (`a=1`, `a=$(cmd) b=$a`): its assignments are the shell's, made from left to right; then its
+   * redirections are made (their command substitutions run first). Its status is set by `statusOf`.
+   */
+  private assignments(n: SyntaxNode, st: ShellState): ShellState {
+    for (const r of fields(n, 'redirect')) this.substitutions(r, st);
+    for (const a of prefixAssignments(n)) {
+      this.record(a, st);
+      this.substitutions(a, st);
+      st = this.builtins.assignNode(a, this.defaults(a, st), true);
+    }
+    return withStatus(this.redirections(n, st, 'off'), st.status);
   }
 
   private command(n: SyntaxNode, st: ShellState): ShellState {
