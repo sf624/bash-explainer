@@ -596,6 +596,42 @@ body.resizing .problems-resize {
   transition: opacity 0.2s, transform 0.2s var(--ease);
 }
 
+#status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-action {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .status-action {
+    min-height: 40px;
+  }
+}
+
+.status-action:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .status-action:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+}
+
 #status:empty {
   opacity: 0;
   transform: translate(-50%, 8px);

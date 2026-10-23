@@ -3,7 +3,7 @@
 //  - `?view=panel` (panel mode): only the explanation panel, filled by the page around it (the compare page);
 //  - compare.html (compare mode): the editor and two such frames, this copy's and another copy's.
 // Everything runs here, in the browser; the script is never sent anywhere.
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, undo } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, StreamParser, syntaxHighlighting } from '@codemirror/language';
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { groovy } from '@codemirror/legacy-modes/mode/groovy';
@@ -70,6 +70,8 @@ const TEXT = {
     development: 'Development (main',
     pr: 'PR',
     replace: 'Replace your script with the sample?',
+    sampleLoaded: 'Sample loaded',
+    undo: 'Undo',
     line: (n: number) => `Ln ${n}`,
     compareLink: { pr: 'Compare with main', next: 'Compare with release' },
     compareTagline: 'Compares this version with another, side by side. Type or move the cursor on the left: both panels follow.',
@@ -114,6 +116,8 @@ const TEXT = {
     development: '開発版（main',
     pr: 'PR',
     replace: '入力中のスクリプトをサンプルに置き換えますか？',
+    sampleLoaded: 'サンプルを読み込みました',
+    undo: '元に戻す',
     line: (n: number) => `${n} 行目`,
     compareLink: { pr: 'main と比較', next: 'リリース版と比較' },
     compareTagline: 'このバージョンを別のバージョンと並べて比べます。左で入力やカーソル移動をすると、2つのパネルが追従します。',
@@ -432,6 +436,8 @@ const view = new EditorView({
       highlightField, Prec.highest(shading), ...(panelOnly ? [] : [problems, lintGutter()]),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) {
+          // Undo would no longer undo the sample once the text changed again.
+          if (undoOffered && !loadingSample) status('');
           clearTimeout(shadingTimer);
           shadingTimer = setTimeout(shade, 100);
         }
@@ -451,8 +457,14 @@ function placeCursor(lineNumber: number): void {
   view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
 }
 
+/** Whether the sample button is replacing the text, so that the offer to undo it stays. */
+let loadingSample = false;
+/** Whether the toast offers to undo the sample. */
+let undoOffered = false;
+
 function setText(text: string, cursorLine: number): void {
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  // On its own in the history, so that one undo takes back the replacement and nothing typed just before it.
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, annotations: isolateHistory.of('full') });
   placeCursor(cursorLine);
 }
 
@@ -772,10 +784,25 @@ function showProblems(list: DocumentIssue[]): void {
 // ---- Toolbar --------------------------------------------------------------------------------
 
 let statusTimer: ReturnType<typeof setTimeout> | undefined;
-function status(text: string, sticky = false): void {
-  $('status').textContent = text;
+function status(text: string, sticky = false, action?: { label: string; run: () => void }): void {
+  const el = $('status');
+  undoOffered = false;
+  el.replaceChildren(...(text ? [text] : []));
+  if (text && action) {
+    // A toast with one button (the sample's "Undo"); it hides when the button runs.
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'status-action';
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      action.run();
+      status('');
+    });
+    el.append(button);
+    undoOffered = true;
+  }
   clearTimeout(statusTimer);
-  if (!sticky) statusTimer = setTimeout(() => ($('status').textContent = ''), 6000);
+  if (!sticky && text) statusTimer = setTimeout(() => status(''), 6000);
 }
 
 /** Sets the text of an element the page has (the compare page has fewer than the main page). */
@@ -1064,14 +1091,12 @@ on('kind-menu', 'change', (e) => {
 });
 
 function chooseKind(k: Kind): void {
-  const before = kindInfo(kind);
   kind = k;
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) menuKind.value = k;
   view.dispatch({ effects: languageMode.reconfigure(modeFor(kind)) });
-  // An untouched sample gives way to the sample of the new kind; the user's own text stays.
-  const text = view.state.doc.toString();
-  if (!text.trim() || text === before.sample) setText(kindInfo(kind).sample, kindInfo(kind).cursorLine);
+  // Only the reading changes; the text stays, unless there is none: then the new kind's sample is loaded.
+  if (!view.state.doc.toString().trim()) setText(kindInfo(kind).sample, kindInfo(kind).cursorLine);
   shade();
   updatePanel();
   recheck();
@@ -1080,8 +1105,12 @@ function chooseKind(k: Kind): void {
 on('sample', 'click', () => {
   const info = kindInfo(kind);
   const text = view.state.doc.toString();
-  if (text.trim() && text !== info.sample && !KINDS.some((k) => k.sample === text) && !confirm(TEXT[lang].replace)) return;
-  setText(info.sample, info.cursorLine);
+  // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
+  const own = text.trim() !== '' && !KINDS.some((k) => k.sample === text);
+  if (own && !confirm(TEXT[lang].replace)) return;
+  loadingSample = true;
+  try { setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
+  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: () => { undo(view); focusUnlessTouch(); } });
 });
 
 // The other version is another page: go there with the script in the hash, in the same language.
