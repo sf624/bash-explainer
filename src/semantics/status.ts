@@ -4,7 +4,7 @@
 //   an assignment, a pipeline's last stage (or with pipefail the last that failed; `!` negates it), the last command
 //   a list or a compound command ran, an arithmetic value, a number given to `exit` or `return`, a job's for `wait`.
 // - `errexitOf(n)` says whether `set -e` stops the shell when the statement fails: errexit where it runs (bash turns
-//   it off in `$( )` unless inherit_errexit, which POSIX mode turns on: the walk of src/semantics/state.ts does it),
+//   it off in `$( )` unless inherit_errexit, which POSIX mode turns on: the walk, src/semantics/walk/walker.ts, does it),
 //   unless bash ignores it there: in the condition of `if`, `while` and `until`, left of `&&` and `||` (every
 //   command but the last of the list), after `!`, and in all of a function called from such a place (B2's calls).
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.

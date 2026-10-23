@@ -1,6 +1,6 @@
 // Deciding conditions (docs/design/semantics.md, 4.14): what bash's `test` builtin gives for words whose values are
 // known, and whether a pattern of `case` or `[[ == ]]` matches a known word. The walk of the shell state
-// (src/semantics/state.ts) reads the words and calls these; anything not known here is `undefined`.
+// (src/semantics/walk/conditions.ts) reads the words and calls these; anything not known here is `undefined`.
 import { globToRegex, hasExtglob } from '../examples/shellwords';
 import { parseTest, type TestExpr } from '../testexpr';
 

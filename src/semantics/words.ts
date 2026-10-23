@@ -498,7 +498,7 @@ class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
 
 /**
  * Where the evaluator of a word reads values: the finished model (`ModelValues`, for `wordFields`), or the walk of
- * the state as it runs (src/semantics/state.ts, for its conditions).
+ * the state as it runs (src/semantics/walk/conditions.ts, for its conditions).
  */
 export interface ValueSource {
   /** The value of the parameter `name` (a variable, or a special parameter such as `?`): a string, null when unset, undefined when not known here. */
@@ -961,7 +961,7 @@ function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
 }
 
 /**
- * The word that holds `n` as the walk of the state reads it in a condition (src/semantics/state.ts), from the state `st`
+ * The word that holds `n` as the walk of the state reads it in a condition (src/semantics/walk/conditions.ts), from the state `st`
  * and the values of `source`: its fields (`[ ]`, `test`, a command name; with no file to match a glob against, and
  * `ifs: false` when the IFS is not to be followed), its one field (`[[ ]]`, `case`), or its pattern (`[[ == ]]`, a
  * `case` pattern: quoted characters escaped). Undefined when it is not known, or bash fails on it.

@@ -1,4 +1,4 @@
-// What the walk of the shell state (src/semantics/state.ts) and the trust of its decisions (src/semantics/trust.ts)
+// What the walk of the shell state (src/semantics/walk/) and the trust of its decisions (src/semantics/trust.ts)
 // both read: declaration commands read with their builtin's spec, the catalog of the variables bash sets, and the names
 // an arithmetic text assigns.
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
