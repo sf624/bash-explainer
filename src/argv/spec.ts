@@ -99,8 +99,10 @@ export interface OptionSpec {
   /** `['-f', '--file']`. */
   names: string[];
   text: Text;
-  /** What it does written with a `+` (`declare +x`), with the command's `plusOptions`, when that differs from turning it on. */
+  /** What it does written with a `+` (`declare +x`, `set +f`), with the command's `plusOptions`, when that differs from turning it on. */
   offText?: Text;
+  /** What it does when no word gives the value it takes (`set -o` alone lists the settings); `offText` written with a `+` (`set +o`). */
+  noValue?: { text: Text; offText: Text };
   /** The value the option takes; a list when it takes several words (`jq --arg NAME VALUE`). */
   value?: ValueSpec | ValueSpec[];
   /** Inherited by subcommands (`kubectl -n`). */
@@ -141,6 +143,8 @@ export interface ValueSpec {
   lang?: EmbeddedLang;
   /** The meaning of particular values (`set -o pipefail`). */
   values?: Record<string, Text>;
+  /** The meaning of particular values given to the option written with a `+`, when that differs from undoing them (`set +o noglob`). */
+  offValues?: Record<string, Text>;
   /** The value is a command, read as a `command` role (`su -c 'cmd'`). */
   command?: CommandSlot;
   /**

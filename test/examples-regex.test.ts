@@ -1,6 +1,8 @@
 import * as assert from 'assert';
 import { run } from './support/run';
+import { Analyzer } from '../src/analyzer';
 import { grepWrap, literalRegex, regexExamples, toJsRegex } from '../src/examples/regex';
+import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 /** Lines of `input` that the real tool considers matching. */
 function realMatches(pattern: string, flavor: 'bre' | 'ere' | 'pcre', input: string[]): string[] {
@@ -80,4 +82,25 @@ describe('regex translation', () => {
     const w = grepWrap(toJsRegex('ab', 'bre')!, false, true);
     assert.ok(new RegExp(w.source).test('x ab y') && !new RegExp(w.source).test('xab'));
   });
+});
+
+describe('the grep example of a line agrees with GNU grep', () => {
+  // The line explained, and the same grep reading the example's lines from stdin (the file operands left out).
+  const cases: [string, string[]][] = [
+    ['grep -e -v foo', ['-e', '-v']], ['grep -v foo', ['-v', 'foo']], ['grep -ve foo', ['-ve', 'foo']], ['grep --invert-match -e ab f', ['--invert-match', '-e', 'ab']],
+    ['grep -ix -e AB', ['-ix', '-e', 'AB']], ['grep -w -e ab f', ['-w', '-e', 'ab']], ['grep -E -e "a+b" f', ['-E', '-e', 'a+b']], ['grep -F -e a.b', ['-F', '-e', 'a.b']],
+    ['grep -e -x f', ['-e', '-x']], ['grep -e -i f', ['-e', '-i']],
+  ];
+  const parser = createUnbashParser();
+  for (const [line, args] of cases) {
+    it(line, () => {
+      const ex = new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.kind === 'regex');
+      assert.ok(ex, 'has an example');
+      // The section of the lines grep prints, and the other one.
+      const printed = ex.sections.filter((s) => s.label === 'Matching lines' || s.label.startsWith('Printed')).flatMap((s) => s.lines);
+      const all = ex.sections.flatMap((s) => s.lines);
+      const real = run('grep', args, { input: all.join('\n') + '\n' }).stdout.toString().split('\n').filter(Boolean);
+      assert.deepStrictEqual(printed, real);
+    });
+  }
 });

@@ -197,6 +197,9 @@ const has = (call: BuiltinCall, ...flags: string[]): boolean => call.flags.some(
 /** `declare`, `typeset`: no name, `-p` and `-F` print, and so does `-f` without an attribute to give. */
 const declares = (c: BuiltinCall): boolean => c.operands.length > 0 && !has(c, '-p', '-F') && !(has(c, '-f') && !c.flags.some((f) => /^[-+][xrt]$/.test(f)));
 
+/** `set +f`, `set +o noglob`. */
+const GLOB_AGAIN = tx('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again');
+
 export const builtins: Record<string, CommandSpec> = {
   export: actsOnShell(declarationSpec('export', exportFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
@@ -240,8 +243,15 @@ export const builtins: Record<string, CommandSpec> = {
     ['-x', '実行するコマンドを展開後の形で表示する（デバッグ用）', 'print each command after expansion (debugging)'],
     ['-v', '読み込んだ行をそのまま表示する', 'print input lines as they are read'],
     // `set -euo pipefail`: bash's `set` takes the name of `-o` from the next word, and reads the letters after it.
-    { names: ['-o'], text: tx('名前でオプションを有効にする', 'enable an option by name'), value: { name: 'VALUE', how: 'next-only', values: shellOptions } },
-    ['-f', 'グロブ（ワイルドカード展開）を無効にする', 'disable globbing'],
+    {
+      names: ['-o'], text: tx('名前でオプションを有効にする', 'enable an option by name'), offText: tx('名前で指定したオプションを無効にする', 'disable an option by name'),
+      value: { name: 'VALUE', how: 'next-only', values: shellOptions, offValues: { noglob: GLOB_AGAIN } },
+      noValue: {
+        text: tx('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'),
+        offText: tx('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed'),
+      },
+    },
+    { names: ['-f'], text: tx('グロブ（ワイルドカード展開）を無効にする', 'disable globbing'), offText: GLOB_AGAIN },
     ['-C', '`>` で既存ファイルを上書きしない', 'do not overwrite files with `>`'],
     ['-n', 'コマンドを読むだけで実行しない（構文チェック）', 'read commands but do not execute (syntax check)'],
     ['-a', '以降に設定した変数を自動でエクスポートする', 'export all subsequently set variables'],

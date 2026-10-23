@@ -11,6 +11,7 @@ import { commands } from './dict/commands';
 import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec } from './argv/spec';
 import { argWord, countOf } from './argv/words';
+import { givenOptions, has as hasOption, operands, values } from './argv/query';
 import { explainRegex, Flavor, flavorName } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
@@ -282,7 +283,11 @@ export class Analyzer {
    * The command whose arguments are being explained (set while they are, which is when the helpers that read it
    * run), its words, and whether the shell reads them again (`eval`).
    */
-  private argCtx: { cmd: string; args: SyntaxNode[]; rereads?: boolean } | undefined;
+  /**
+   * The command whose words are explained: its name, its words, and their parse (`nodes` are the words the
+   * parse's indices count, of which `args` are this command's), which the explanations of embedded languages read.
+   */
+  private argCtx: { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean } | undefined;
   /** Where the commands run by command slots run (src/semantics/env.ts), keyed by their first word or string. */
   private slotEnvs = new Map<SyntaxNode, ExecEnv>();
 
@@ -1523,7 +1528,7 @@ export class Analyzer {
     }
     // (A function of the script is not the command its name suggests: no example of that command.)
     if (!head.fn) {
-      this.commandExampleFor(head.name, args);
+      this.commandExampleFor(head.name, args, read.parse);
       if (head.kind === 'builtin' && head.name === 'read') this.readExample(n, args);
     }
     for (const a of args) {
@@ -1769,7 +1774,7 @@ export class Analyzer {
    */
   private render(parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], isFn = false): Token[] {
     const savedCtx = this.argCtx;
-    this.argCtx = { cmd: parse.command, args: words };
+    this.argCtx = { cmd: parse.command, args: words, parse, nodes, spec };
     const out: Token[] = [];
     // The names set by `NAME=value` words before the wrapped command (`env FOO=1 cmd`).
     const assigned: string[] = [];
@@ -1816,7 +1821,7 @@ export class Analyzer {
             break;
           }
           case 'terminator':
-            out.push(this.tok(a, 'operator', a.text === '+'
+            out.push(this.tok(a, 'operator', role.text === '+'
               ? this.s('`-exec` の終わり: 見つかったファイルをまとめて1回のコマンドに渡す', 'End of `-exec`: pass all matches to one command invocation')
               : this.s('`-exec` の終わり: 見つかったファイル1件ごとにコマンドを実行（`;` はシェルに解釈されないようエスケープが必要）', 'End of `-exec`: run once per match (`;` must be escaped from the shell)')));
             break;
@@ -1883,12 +1888,13 @@ export class Analyzer {
     return this.s(`オプション（辞書に未登録。\`man ${command.split(' ')[0]}\` を参照）`, `Option (not in the dictionary; see \`man ${command.split(' ')[0]}\`)`);
   }
 
-  /** `set +f` is the opposite of `set -f`: what turning the option (or the option named by a value) off does. */
-  private turnedOff(flag: string, what: string, value = false): string {
-    const on = flag === '-f' || flag === 'noglob'
-      ? this.s('グロブ（ワイルドカード展開）を再び有効にする', 'enable globbing (wildcard expansion) again')
-      : flag === '-o' ? this.s('名前で指定したオプションを無効にする', 'disable an option by name')
-        : this.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
+  /**
+   * `set +x` is the opposite of `set -x`: what turning the option (or the option named by a value) off does; `off`
+   * is what the spec says it does (`set +f`: globbing is on again), when that is more than undoing it.
+   */
+  private turnedOff(flag: string, what: string, value = false, off?: Text): string {
+    const on = off ? this.t(off)
+      : this.s(`元に戻す（${value ? '' : `\`${flag}\` は「`}${what}${value ? '' : '」'}）`, `turn it off again (${value ? '' : `\`${flag}\` is "`}${what}${value ? '' : '"'})`);
     return value ? on : this.s(`\`${flag}\` を解除: ${on}`, `Undo \`${flag}\`: ${on}`);
   }
 
@@ -1906,12 +1912,10 @@ export class Analyzer {
     if (role.role === 'unknown-option') return this.tok(a, 'option', this.unknownOption(parse.command, spec, role.ambiguous));
     const flag = dash(role.flag);
     // `set -o` with no name lists the settings; `set +o` prints commands that restore them.
-    const listing = parse.command === 'set' && flag === '-o' && role.missing;
-    return this.tok(a, 'option', listing
-      ? (role.disables
-        ? this.s('`+o` だけ（名前なし）: 現在の設定を再現するコマンド（`set +o allexport` など）を表示する。何も変えない', '`+o` alone (no name): print the commands that recreate the current settings (`set +o allexport`…); nothing is changed')
-        : this.s('`-o` だけ（名前なし）: 現在のオプションの設定（`allexport  off` など）を一覧表示する。何も変えない', '`-o` alone (no name): list the current option settings (`allexport  off`…); nothing is changed'))
-      : role.disables ? this.turnedOff(flag, this.t(role.text)) : this.t(role.text), this.wordParts(a));
+    const alone = role.missing ? role.spec.noValue : undefined;
+    return this.tok(a, 'option', alone
+      ? this.t(role.disables ? alone.offText : alone.text)
+      : role.disables ? this.turnedOff(flag, this.t(role.text), false, role.spec.offText) : this.t(role.text), this.wordParts(a));
   }
 
   /** `--name=value` (and `-name=value` for single-dash options): the option, with its value in the text. */
@@ -1950,7 +1954,7 @@ export class Analyzer {
     const letter = l as Extract<ArgRole, { role: 'option' | 'unknown-option' }>;
     const flag = dash(letter.flag);
     if (letter.role === 'unknown-option') return [this.part(a, letter, flag, this.unknownOption(parse.command, spec))];
-    const parts = [this.part(a, letter, flag, letter.disables ? this.turnedOff(flag, this.t(letter.text)) : this.t(letter.text))];
+    const parts = [this.part(a, letter, flag, letter.disables ? this.turnedOff(flag, this.t(letter.text), false, letter.spec.offText) : this.t(letter.text))];
     const value = letter.value;
     if (!value) return parts;
     // In `-F'|'` the value is what is left after quote removal.
@@ -1991,7 +1995,7 @@ export class Analyzer {
     else {
       const known = spec?.values?.[v.text];
       t = this.tok(v, 'argument', known
-        ? `${v.text}: ${disables ? this.turnedOff(v.text, this.t(known), true) : this.t(known)}`
+        ? `${v.text}: ${disables ? this.turnedOff(v.text, this.t(known), true, spec!.offValues?.[v.text]) : this.t(known)}`
         : valueFor, this.wordParts(v));
     }
     // `jq --arg NAME VALUE`: two words follow; the first is the name.
@@ -2205,29 +2209,25 @@ export class Analyzer {
         const flavor = this.regexFlavor();
         note = flavorName(flavor, this.lang);
         tokens = flavor === 'fixed' ? [] : explainRegex(lit.text, flavor, this.lang);
-        const flags = this.cmdFlags();
-        const ignoreCase = flags.has('-i') || flags.has('--ignore-case');
+        const ignoreCase = this.given('-i');
         const js = flavor === 'fixed' ? literalRegex(lit.text, ignoreCase) : toJsRegex(lit.text, flavor, { ignoreCase });
         if (js) {
-          const wrapped = grepWrap(js, flags.has('-x') || flags.has('--line-regexp'), flags.has('-w') || flags.has('--word-regexp'));
-          this.regexExample(wrapped, flags.has('-v') || flags.has('--invert-match') ? 'inverted' : 'lines');
+          const wrapped = grepWrap(js, this.given('-x'), this.given('-w'));
+          this.regexExample(wrapped, this.given('-v') ? 'inverted' : 'lines');
         }
         break;
       }
       case 'sed': {
         const flavor = this.regexFlavor();
         tokens = explainSed(lit.text, flavor === 'ere' ? 'ere' : 'bre', this.lang);
-        const flags = this.cmdFlags();
         // With several -e options sed runs them as one script, so the example does too.
         const scripts = this.sedScripts() ?? [lit.text];
+        const quiet = this.given('-n');
         // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
-        const ex = flags.has('-z') || flags.has('--null-data') ? undefined : sedExample(scripts.join('\n'), {
-          quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'),
-          extended: flavor === 'ere',
-        });
+        const ex = this.given('-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
         if (ex) {
-          this.ioExample(ex.input, ex.output, flags.has('-i') || flags.has('--in-place'), {
-            kind: 'sed', script: scripts.join('\n'), quiet: flags.has('-n') || flags.has('--quiet') || flags.has('--silent'), extended: flavor === 'ere',
+          this.ioExample(ex.input, ex.output, this.given('-i'), {
+            kind: 'sed', script: scripts.join('\n'), quiet, extended: flavor === 'ere',
             highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
           });
         }
@@ -2236,17 +2236,12 @@ export class Analyzer {
       case 'jq': {
         tokens = explainJq(lit.text, this.lang);
         // kislyuk/yq passes the filter to jq, but reads and (with -y) writes YAML.
-        if (this.argCtx!.cmd.split('/').pop() === 'yq') {
+        if (this.argCtx!.spec === YQ_SPECS.kislyuk) {
           this.yqExample(lit.text, 'kislyuk');
           break;
         }
-        const flags = this.cmdFlags();
-        const nullInput = flags.has('-n') || flags.has('--null-input');
-        const jqFlags = {
-          raw: flags.has('-r') || flags.has('--raw-output'),
-          join: flags.has('-j') || flags.has('--join-output'),
-          slurp: (flags.has('-s') || flags.has('--slurp')) && !nullInput,
-        };
+        const nullInput = this.given('-n');
+        const jqFlags = { raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput };
         const runs = jqExample(lit.text, { ...jqFlags, nullInput, vars: this.jqVars() });
         if (runs) this.jqExamples(runs, { kind: 'jq', filter: lit.text, ...jqFlags, vars: this.jqVars() });
         break;
@@ -2318,12 +2313,8 @@ export class Analyzer {
       }
       case 'perl': {
         tokens = explainPerl(lit.text, this.lang);
-        const flags = new Set<string>();
-        for (const w of this.argCtx!.args) {
-          const m = /^-([a-zA-Z0-9]+)/.exec(w.text);
-          // Letters up to the first value-taking one (`-lane`, `-pi.bak`).
-          if (m && !w.text.startsWith('--')) for (const ch of m[1]) { flags.add(ch); if ('eEiFM0'.includes(ch)) break; }
-        }
+        // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
+        const flags = new Set(givenOptions(this.argCtx!.parse).map(({ role }) => role.flag.slice(1)));
         note = perlLoopNote(flags, this.lang);
         break;
       }
@@ -2448,28 +2439,29 @@ export class Analyzer {
     }];
   }
 
-  /** How tr uses the set in `a`: its position among the sets and the -d/-s flags. */
+  /** How tr uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
   private trContext(a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] } {
-    const args = this.argCtx!.args;
-    const flags = args.filter((w) => /^-[a-zA-Z]+$/.test(w.text)).map((w) => w.text.slice(1)).join('');
-    const sets = args.filter((w) => !/^-[a-zA-Z]+$/.test(w.text));
+    const { nodes, parse } = this.argCtx!;
+    const sets = operands(parse).map(({ word }) => nodes[word]);
     const idx = sets.findIndex((w) => same(w, a));
     const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
-    if (flags.includes('d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
-    if (flags.includes('s') && sets.length === 1) return { role: 'squeeze', sets: lits };
+    if (this.given('-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
+    if (this.given('-s') && sets.length === 1) return { role: 'squeeze', sets: lits };
     return { role: idx === 0 ? 'from' : 'to', sets: lits };
   }
 
-  /** Short (`-v`) and long (`--invert-match`) option names used by the current command. */
-  private cmdFlags(): Set<string> {
-    const flags = new Set<string>();
-    for (const w of this.argCtx!.args) {
-      const t = w.text;
-      if (t === '--') break;
-      if (t.startsWith('--')) flags.add(t.split('=')[0]);
-      else if (/^-[A-Za-z]+$/.test(t)) for (const ch of t.slice(1)) flags.add('-' + ch);
-    }
-    return flags;
+  /** Whether the current command is given the option `names` name, written in any of its forms (src/argv/query.ts). */
+  private given(...names: string[]): boolean {
+    return hasOption(this.argCtx!.parse, ...names);
+  }
+
+  /**
+   * The values given to the option `names` name, in order, with the option as written (`of`) and which of its
+   * values each is; `text` is the value's text when it is plain text (also in the option's word: `-efoo`).
+   */
+  private optionValues(...names: string[]): { text?: string; of: string; index: number }[] {
+    const { nodes, parse } = this.argCtx!;
+    return values(parse, ...names).map(({ word, at, role }) => ({ text: literalContent(nodes[word])?.text.slice(at ?? 0), of: role.of, index: role.index }));
   }
 
   /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
@@ -2496,60 +2488,43 @@ export class Analyzer {
     });
   }
 
-  /** The scripts given to sed with -e/--expression, in order; undefined when there are none. */
+  /** The scripts given to sed with -e/--expression, in order; undefined when there are none, or one is not plain text. */
   private sedScripts(): string[] | undefined {
-    const args = this.argCtx!.args;
-    const out: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const t = args[i].text;
-      if (t.startsWith('--expression=')) out.push(literalContent(args[i])?.text.slice('--expression='.length) ?? '');
-      else if (t === '--expression' || /^-[a-zA-Z]*e$/.test(t)) {
-        const v = args[++i];
-        if (!v) break;
-        const lit = literalContent(v);
-        if (!lit) return undefined;
-        out.push(lit.text);
-      }
-    }
-    return out.length ? out : undefined;
+    const scripts = this.optionValues('-e').map((v) => v.text);
+    return scripts.length && scripts.every((t) => t !== undefined) ? scripts as string[] : undefined;
   }
 
   /** --arg / --argjson values of the current jq command. */
   private jqVars(): Record<string, Json> {
-    const args = this.argCtx!.args;
     const vars: Record<string, Json> = {};
-    for (let i = 0; i + 2 < args.length; i++) {
-      const t = args[i].text;
-      if (t !== '--arg' && t !== '--argjson') continue;
-      const name = literalContent(args[i + 1])?.text;
-      const value = literalContent(args[i + 2])?.text;
-      if (name !== undefined && value !== undefined) {
-        try {
-          vars[name] = t === '--arg' ? value : JSON.parse(value);
-        } catch {
-          // Not valid JSON: leave it out, and the example will not be made.
-        }
+    const given = this.optionValues('--arg', '--argjson');
+    given.forEach(({ text: name, of, index }, i) => {
+      // The name, then its value.
+      const value = given[i + 1]?.index === 1 ? given[i + 1].text : undefined;
+      if (index !== 0 || name === undefined || value === undefined) return;
+      try {
+        vars[name] = of === '--arg' ? value : JSON.parse(value);
+      } catch {
+        // Not valid JSON: leave it out, and the example will not be made.
       }
-      i += 2;
-    }
+    });
     return vars;
   }
 
   /** Input and output of a yq expression, in the YAML each yq reads and prints. */
   private yqExample(filter: string, style: YamlStyle): void {
-    const flags = this.cmdFlags();
     const words = this.argCtx!.args.map((a) => literalContent(a)?.text ?? '');
     // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
     const format = words.map((w, i) => (/^(-o|--output-format)$/.test(w) ? words[i + 1] : /^-o=?(.+)$/.exec(w)?.[1] ?? /^--output-format=(.+)$/.exec(w)?.[1])).find(Boolean);
-    const json = style === 'mikefarah' ? format === 'json' || format === 'j' : !(flags.has('-y') || flags.has('--yaml-output') || flags.has('-Y') || flags.has('--yaml-roundtrip'));
+    const json = style === 'mikefarah' ? format === 'json' || format === 'j' : !this.given('-y', '-Y');
     if (style === 'mikefarah' && format && !json && format !== 'yaml' && format !== 'y') return;
-    const raw = style === 'mikefarah' ? !json : flags.has('-r') || flags.has('--raw-output');
-    let runs = jqExample(filter, { raw, nullInput: flags.has('-n') || flags.has('--null-input'), vars: style === 'kislyuk' ? this.jqVars() : {} });
+    const raw = style === 'mikefarah' ? !json : this.given('-r');
+    let runs = jqExample(filter, { raw, nullInput: this.given('-n'), vars: style === 'kislyuk' ? this.jqVars() : {} });
     // Where jq stops with an error, mikefarah/yq is often lenient (it adds a string and a number), so show nothing.
     if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
     if (!runs?.length) return;
-    const inPlace = flags.has('-i') || flags.has('--inplace') || flags.has('--in-place');
+    const inPlace = this.given('-i');
     try {
       runs.forEach((r, i) => {
         const input = yamlLines(r.input, style);
@@ -2606,6 +2581,8 @@ export class Analyzer {
   private pipelineExample(n: SyntaxNode): Example | undefined {
     // A pipeline is explained on the line it is on, or whole (see sub).
     const stages: Stage[] = [];
+    // Whether each stage names a file to read (from the parse of its words).
+    const files: boolean[] = [];
     let readsFile = false;
     for (const [i, c] of n.namedChildren.entries()) {
       let cmd = c;
@@ -2628,13 +2605,17 @@ export class Analyzer {
       // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
       if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
-      stages.push({ cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) });
+      const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) };
+      stages.push(stage);
+      files.push(readsFileOperand(stage, interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) })));
     }
+    // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
+    if (files.slice(1).some(Boolean)) return undefined;
     const ex = pipelineExample(stages, readsFile);
     if (!ex) return undefined;
     const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.slice(0, MAX_SHOWN_LINES - 1), '…'] : lines).map(visible);
     const sections: ExampleSection[] = [];
-    const fromFile = readsFile || readsFileOperand(stages[0]);
+    const fromFile = readsFile || files[0];
     if (ex.input) sections.push({ label: fromFile ? this.s('入力（ファイルの中身の例）', 'Input (sample file contents)') : this.s('入力', 'Input'), lines: cap(ex.input) });
     ex.steps.forEach((step, i) => {
       // `cat file` passes the input on unchanged.
@@ -2654,7 +2635,7 @@ export class Analyzer {
   }
 
   /** Examples for coreutils-style commands (sort, uniq, cut, tr, head, tail, seq, basename, dirname). */
-  private commandExampleFor(name: string, args: SyntaxNode[]): void {
+  private commandExampleFor(name: string, args: SyntaxNode[], parse: ArgvParse): void {
     const cmd = name.split('/').pop()!;
     if (cmd === 'printf') { this.printfExample(args); return; }
     if (cmd === 'xargs') { this.xargsExample(args); return; }
@@ -2664,7 +2645,7 @@ export class Analyzer {
       const parsed = perlOptions(words);
       const ex = parsed && perlExample(parsed.code, parsed.opts);
       if (!ex) return;
-      const inPlace = words.some((w) => /^-[a-zA-Z]*i/.test(w ?? ''));
+      const inPlace = hasOption(parse, '-i');
       if (ex.input.length) this.ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts });
       else this.examples.push({ kind: 'perl', title: this.s('例', 'Example'), sections: [{ label: this.s('出力', 'Output'), lines: ex.output.map(visible), empty: this.s('（出力なし）', '(no output)') }] });
       return;
@@ -3241,19 +3222,11 @@ export class Analyzer {
 
   /** Regex dialect implied by the current command and its options. */
   private regexFlavor(): Flavor | 'fixed' {
-    const ctx = this.argCtx!;
-    const cmd = ctx.cmd.split('/').pop()!;
-    const flags = new Set<string>();
-    for (const w of ctx.args) {
-      const t = w.text;
-      if (t === '--') break;
-      if (t.startsWith('--')) flags.add(t.split('=')[0]);
-      else if (/^-[A-Za-z]+$/.test(t)) for (const ch of t.slice(1)) flags.add('-' + ch);
-    }
-    if (cmd === 'sed') return flags.has('-E') || flags.has('-r') || flags.has('--regexp-extended') ? 'ere' : 'bre';
-    if (flags.has('-P') || flags.has('--perl-regexp')) return 'pcre';
-    if (flags.has('-F') || flags.has('--fixed-strings') || cmd === 'fgrep') return 'fixed';
-    if (flags.has('-E') || flags.has('--extended-regexp') || cmd === 'egrep') return 'ere';
+    const cmd = this.argCtx!.cmd.split('/').pop()!;
+    if (cmd === 'sed') return this.given('-E') ? 'ere' : 'bre';
+    if (this.given('-P')) return 'pcre';
+    if (this.given('-F') || cmd === 'fgrep') return 'fixed';
+    if (this.given('-E') || cmd === 'egrep') return 'ere';
     return 'bre';
   }
 

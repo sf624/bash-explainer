@@ -1,3 +1,7 @@
+import { interpret } from './argv/interpret';
+import { has, operands, values } from './argv/query';
+import { argWord } from './argv/words';
+import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
@@ -225,15 +229,12 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       return;
     case 'command': {
       const name = field(n, 'name')!;
-      const words = n.namedChildren.filter((c) => c !== name).map((c) => c.text);
-      commandFeatures(name.text, words, add);
+      commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && c.type !== 'variable_assignment'), add);
       return;
     }
-    case 'declaration_command': {
-      const words = n.children.slice(1).map((c) => c.text);
-      commandFeatures(n.children[0].text, words, add);
+    case 'declaration_command':
+      commandFeatures(n.children[0].text, n.children.slice(1), add);
       return;
-    }
     case 'brace_expression': add('braceRange'); return;
     case 'coproc_statement': add('coproc'); return;
     case 'c_style_for_statement': add('cFor'); return;
@@ -294,12 +295,17 @@ function variableFeature(name: string, add: (id: string) => void): void {
   else if (/^BASH_|^BASHPID$|^BASHOPTS$|^EPOCH(SECONDS|REALTIME)$/.test(name)) add('bashVar');
 }
 
-function commandFeatures(name: string, words: string[], add: (id: string) => void): void {
-  // The letters of `-abc`, also with a value attached (`read -n1`).
-  const flags = words.map((w) => /^-([a-zA-Z]+)/.exec(w)?.[1] ?? '').join('');
+/** The features of a builtin's options and operands, read from the parse of its words with the builtin's spec. */
+function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) => void): void {
+  // (Every name below is a builtin's.)
+  if (!Object.hasOwn(builtins, name)) return;
+  const parse = interpret(builtins[name], nodes.map(argWord), { name });
+  const on = (...names: string[]): boolean => has(parse, ...names);
+  // The values of `set -o NAME` (not `set +o NAME`), also bundled as in `set -euo pipefail`.
+  const setOption = (option: string): boolean => values(parse, '-o').some(({ word, role }) => role.of.startsWith('-') && argWord(nodes[word]).value === option);
   switch (name) {
-    case 'declare': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'declare'); break;
-    case 'typeset': add(words.some((w) => /^-\w*A/.test(w)) ? 'assoc' : 'typeset'); break;
+    case 'declare': add(on('-A') ? 'assoc' : 'declare'); break;
+    case 'typeset': add(on('-A') ? 'assoc' : 'typeset'); break;
     case 'local': add('local'); break;
     case 'readarray': case 'mapfile': add('readarray'); break;
     case 'source': add('source'); break;
@@ -308,30 +314,27 @@ function commandFeatures(name: string, words: string[], add: (id: string) => voi
     case 'pushd': case 'popd': case 'dirs': add('pushd'); break;
     case 'print': add('print'); break;
     case 'whence': add('whence'); break;
-    case 'export': if (/f/.test(flags)) add('exportF'); break;
-    case 'wait': if (/n/.test(flags)) add('waitN'); break;
-    case 'type': if (/t/.test(flags)) add('typeT'); break;
+    case 'export': if (on('-f')) add('exportF'); break;
+    case 'wait': if (on('-n')) add('waitN'); break;
+    case 'type': if (on('-t')) add('typeT'); break;
     case 'printf':
-      if (words[0] === '-v') add('printfV');
-      if (words.some((w) => /%q/.test(w))) add('printfQ');
+      if (on('-v')) add('printfV');
+      if (nodes.some((w) => /%q/.test(w.text))) add('printfQ');
       break;
-    case 'echo': {
-      const opts = words.filter((w, i) => /^-[neE]+$/.test(w) && words.slice(0, i).every((x) => /^-[neE]+$/.test(x))).join('');
-      if (/e/.test(opts)) add('echoE');
-      if (/n/.test(opts)) add('echoN');
+    case 'echo':
+      if (on('-e')) add('echoE');
+      if (on('-n')) add('echoN');
       break;
-    }
     case 'read':
-      if (/a/.test(flags)) add('readA');
-      if (/p/.test(flags)) add('readP');
-      if (/[nstd]/.test(flags)) add('readOpts');
+      if (on('-a')) add('readA');
+      if (on('-p')) add('readP');
+      if (on('-n', '-s', '-t', '-d')) add('readOpts');
       break;
     case 'set':
-      // `-o NAME`, also bundled as in `set -euo pipefail`.
-      if (words.some((w, i) => w === 'pipefail' && /^-\w*o$/.test(words[i - 1] ?? ''))) add('pipefail');
-      if (/E/.test(flags) || words.some((w, i) => w === 'errtrace' && /^-\w*o$/.test(words[i - 1] ?? ''))) add('errtrace');
+      if (setOption('pipefail')) add('pipefail');
+      if (on('-E') || setOption('errtrace')) add('errtrace');
       break;
-    case 'trap': if (words.slice(1).some((w) => w === 'ERR')) add('trapErr'); break;
+    case 'trap': if (operands(parse, 'SIGNAL').some(({ word }) => argWord(nodes[word]).value === 'ERR')) add('trapErr'); break;
   }
 }
 

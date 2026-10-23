@@ -65,6 +65,25 @@ describe('find in a command line', () => {
     assert.match(ts.find((t) => t.label === '{}')!.explanation, /replaced with the path/);
   });
 
+  it('ends -exec as GNU find does, at `+` or `;` however it is quoted', () => {
+    const fs = require('fs') as typeof import('fs');
+    const os = require('os') as typeof import('os');
+    const { execFileSync } = require('child_process') as typeof import('child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'find-exec-'));
+    try {
+      for (const f of ['a', 'b']) fs.writeFileSync(path.join(dir, f), '');
+      for (const end of ['+', "'+'", '"+"', '\\+', '\\;', "';'"]) {
+        const line = `find . -type f -exec echo {} ${end}`;
+        const t = tokens(line).find((x) => x.label === end)!;
+        // One echo for both files, or one each.
+        const runs = execFileSync('bash', ['-c', line], { cwd: dir }).toString().trim().split('\n').length;
+        assert.strictEqual(/pass all matches to one command/.test(t.explanation), runs === 1, `${line}: ${t.explanation}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to per-option explanations when the expression is incomplete', () => {
     const ts = tokens('find . -name x -o');
     assert.ok(!ts.some((t) => t.kind === 'test'));

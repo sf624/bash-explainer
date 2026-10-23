@@ -55,8 +55,8 @@ export type ArgRole =
    * value or words it is (`su -c`, `find -exec`); `item`, the operand it fills (`bash -c`, `ssh host cmd`).
    */
   | { role: 'command'; slot: CommandSlot; name?: string; spec?: CommandSpec; parse?: ArgvParse; of?: string; item?: OperandSpec }
-  /** The word that ends an option's command (`;` of `find -exec … ;`). */
-  | { role: 'terminator' }
+  /** The word that ends an option's command (`;` of `find -exec … ;`), and its text (one of the option's `until.terminators`). */
+  | { role: 'terminator'; text: string }
   /** A word of the shell string that a `command` role before it joins from the words (`ssh host ls -l`). */
   | { role: 'joined' }
   /** A word of the expression that `operandParser` reads (`find . -name x`). */
@@ -501,7 +501,7 @@ class Reader {
       let j = last + 1;
       while (j < st.end && !terminators.includes(this.words[j].value ?? '')) j++;
       if (j > last + 1) st.roles.set(last + 1, this.command(slot, last + 1, j, flag));
-      if (j < st.end) { st.roles.set(j, { role: 'terminator' }); return j; }
+      if (j < st.end) { st.roles.set(j, { role: 'terminator', text: this.words[j].value! }); return j; }
       return st.end - 1;
     }
     const values = valuesOf(opt);

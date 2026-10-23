@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { fixFor } from '../src/fixes';
-import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES } from '../src/dialect';
+import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const root = path.join(__dirname, '..');
@@ -114,6 +114,23 @@ describe('the dialect table agrees with the installed shells', () => {
           assert.strictEqual(r.stdout.toString().trim() === 'ok', BEHAVIOURS[id].differs.includes(letter), `${id} in ${names[0]}`);
         });
       }
+    });
+  }
+});
+
+describe("the dialect check reads a builtin's options from its parse, as dash does", () => {
+  // A line dash refuses has a feature dash lacks; one it runs has none (`read -p -a v`: `-a` is the prompt).
+  const cases = [
+    'read -p -a v', 'read -a v', 'read -p -n v', 'read -d , v', 'read -rn1 v', 'trap ERR', "trap 'true' ERR", "trap 'true' EXIT",
+    'printf -v x %s a', 'printf %s -v', 'export -f fn', 'export x', 'type -t ls', 'declare -A m', 'wait -n',
+  ];
+  const dash = locate(['dash']);
+  for (const line of cases) {
+    (dash ? it : it.skip)(line, () => {
+      const r = spawnSync(dash!, ['-c', line], { timeout: 5000, input: 'x\n' });
+      const refused = r.status !== 0 || r.stderr.length > 0;
+      const lacking = featuresOnLine(parser.parse(line).root, 0).filter((id) => !featureWorks(id, 'dash'));
+      assert.strictEqual(lacking.length > 0, refused, `${lacking.join(' ')}: ${r.stderr.toString()}`);
     });
   }
 });
