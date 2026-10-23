@@ -1,5 +1,5 @@
 // Everything the web page keeps in the browser (localStorage), in one place: the settings dialog's
-// "Clear stored data" removes exactly these. A new key goes here (test/web.test.ts fails on a
+// "Clear stored data" removes exactly these. A new key goes here (the clear-data test in test/web-phone.test.ts fails on a
 // 'bash-explainer-…' key anywhere else in web/).
 
 export const STORAGE_KEYS = {
