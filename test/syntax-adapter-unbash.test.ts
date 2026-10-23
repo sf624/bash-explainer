@@ -718,13 +718,14 @@ describe('unbash adapter: words, assignments and redirections', () => {
       '(program (declaration_command "declare" (word "-a") (variable_assignment (variable_name @name "x") "=" (array @value "(" (number "1") (number "2") ")")) (variable_name "y")) ";" '
       + '(declaration_command "local" (word "-r") (variable_assignment (variable_name @name "q") "=" (number @value "1")) (variable_name "r")) ";" '
       + '(declaration_command "readonly" (variable_name "z")) ";" (declaration_command "export" (variable_assignment (variable_name @name "A") "=" (word @value "b"))))');
-    assert.equal(o('unset -f f x'), '(program (unset_command "unset" (word "-f") (variable_name "f") (variable_name "x")))');
+    // `unset` is a plain command: what its words mean comes from its spec and the model, not from the tree.
+    assert.equal(o('unset -f f a[1]'), '(program (command (command_name @name (word "unset")) (word @argument "-f") (word @argument "f") (word @argument "a[1]")))');
     assert.equal(o('alias ll="ls -l"'),
       '(program (command (command_name @name (word "alias")) (concatenation @argument (word "ll=") (string "\\"" (string_content "ls -l") "\\""))))');
     assert.equal(o('make CC=gcc'), '(program (command (command_name @name (word "make")) (word @argument "CC=gcc")))');
     assert.equal(o('alias x= y'), '(program (command (command_name @name (word "alias")) (word @argument "x=") (word @argument "y")))');
     assert.equal(o('export A=b >f').startsWith('(program (redirected_statement (declaration_command'), true);
-    assert.equal(o('unset x 2>f').startsWith('(program (redirected_statement (unset_command'), true);
+    assert.equal(o('unset x 2>f').startsWith('(program (redirected_statement (command'), true);
     assert.equal(first('declare -p >f 2>&1').type, 'redirected_statement');
     assert.equal(o('x=1 unset y').startsWith('(program (command (variable_assignment'), true);
     assert.equal(o('FOO=1 declare x').startsWith('(program (command (variable_assignment'), true);
@@ -845,7 +846,7 @@ describe('unbash adapter: more shapes', () => {
   });
   it('a bare declare, unset or [', () => {
     assert.equal(o('declare'), '(program (declaration_command "declare"))');
-    assert.equal(o('unset'), '(program (unset_command "unset"))');
+    assert.equal(o('unset'), '(program (command (command_name @name (word "unset"))))');
     assert.equal(first('[').incomplete, false);
     assert.equal(first('[').type, 'command');
     assert.deepEqual(tree('[ -f x').errors, []);

@@ -361,9 +361,6 @@ class Scan {
       case 'declaration_command':
         this.declaration(n.children[0].type, n.namedChildren.filter((c) => !c.type.endsWith('redirect')), readDeclaration(n), w);
         break;
-      case 'unset_command':
-        this.unset(n.namedChildren.filter((c) => !c.type.endsWith('redirect')), w);
-        break;
       case 'command':
         this.command(n, w);
         break;

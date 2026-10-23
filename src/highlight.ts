@@ -4,7 +4,7 @@
 // as semantic tokens.
 import type { ShellDocument } from './document';
 import type { Extracted } from './hosts';
-import type { SyntaxNode, SyntaxTree } from './syntax/tree';
+import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
@@ -94,7 +94,7 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
     let kind: HighlightKind | null;
     if (SUBSTITUTIONS.has(p)) kind = 'substitution';
     else if (REDIRECTS.has(p)) kind = 'redirect';
-    else if (p === 'declaration_command' || p === 'unset_command') kind = 'builtin';
+    else if (p === 'declaration_command') kind = 'builtin';
     else if (p === 'string' || p === 'translated_string' || p === 'expansion' || p === 'simple_expansion' || p === 'subscript' || p === 'variable_assignment' || p === 'brace_expression') kind = null;
     else if (arith || EXPRESSIONS.has(p)) kind = p === 'arithmetic_command' && KEYWORDS.has(t.type) ? 'keyword' : 'operator';
     else kind = KEYWORDS.has(t.type) ? 'keyword' : 'operator';
@@ -189,6 +189,11 @@ function words(w: SyntaxNode, set: Painter): void {
   if (isOption(w)) {
     const eq = w.text.indexOf('=');
     set(w.startIndex, eq > 0 ? w.startIndex + eq : w.endIndex, 'option');
+    return;
+  }
+  // The names of `unset x y` are coloured as the names a declaration assigns, by the command's spelling.
+  if (p.type === 'command' && w.field === 'argument' && field(p, 'name')!.text === 'unset' && /^[A-Za-z_]\w*$/.test(w.text)) {
+    set(w.startIndex, w.endIndex, 'assignment');
     return;
   }
   let at: SyntaxNode = w;

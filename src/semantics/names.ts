@@ -14,7 +14,10 @@ import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
-import { field, type SyntaxNode } from '../syntax/tree';
+import { interpret } from '../argv/interpret';
+import { has as hasOption } from '../argv/query';
+import { argWord } from '../argv/words';
+import { field, fields, type SyntaxNode } from '../syntax/tree';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
 import { docIndex } from './state';
@@ -295,12 +298,25 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   const assignments = command.namedChildren.filter((c) => c.type === 'variable_assignment' && (!name || c.startIndex < name.startIndex));
   const posix = option(model.at(command).run, 'set', 'posix');
   const stays = res !== 'dynamic' && res?.kind === 'builtin' && res.special && (posix === 'on' || posix === 'unknown');
-  return assignments.map((a) => ({
-    node: a,
-    name: (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text,
-    scope: !res ? 'shell' : stays ? 'persists' : 'command',
-    sure: res === 'dynamic' ? false : !stays || posix === 'on',
-  }));
+  // (`x=1 unset x` removes that `x`: it does not stay.)
+  const unset = res !== 'dynamic' && res?.kind === 'builtin' && res.name === 'unset' ? temporariesUnset(fields(command, 'argument'), command) : undefined;
+  return assignments.map((a) => {
+    const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
+    const kept = stays && !unset?.has(name);
+    return { node: a, name, scope: !res ? 'shell' : kept ? 'persists' : 'command', sure: res === 'dynamic' ? false : !kept || posix === 'on' };
+  });
+}
+
+/**
+ * The variables that `unset` with the words `words` removes among the temporary ones that the assignments before the
+ * command `n` make (`x=1 unset x`): bash removes that `x`, and the one from before stays, in POSIX mode too.
+ */
+export function temporariesUnset(words: readonly SyntaxNode[], n: SyntaxNode): Set<string> {
+  const prefix = new Set(n.children.filter((c) => c.type === 'variable_assignment').map((a) => field(a, 'name')!.text));
+  const ws = words.filter((w) => !w.type.endsWith('redirect'));
+  const parse = interpret(builtins.unset, ws.map(argWord), { name: 'unset' });
+  if (!prefix.size || hasOption(parse, '-f')) return new Set();
+  return new Set(parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
 }
 
 /**

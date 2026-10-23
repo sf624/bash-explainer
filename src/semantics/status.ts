@@ -80,7 +80,7 @@ export interface ErrexitContext {
 }
 
 /** Statements whose own status `set -e` checks. */
-const CHECKED = new Set(['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments',
+const CHECKED = new Set(['command', 'declaration_command', 'variable_assignment', 'variable_assignments',
   'extended_test', 'arithmetic_command', 'pipeline', 'negated_command', 'subshell']);
 
 /** A Tri for an option (`default`: off, but in POSIX mode for the options it turns on). */

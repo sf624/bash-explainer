@@ -287,6 +287,12 @@ export interface OperandSpec {
   /** As for a value (`ValueSpec.type`, `ValueSpec.sets`): `getopts OPTSTRING NAME` sets the variable NAME. */
   type?: ValueType;
   sets?: VariableSet;
+  /**
+   * The operand names what the builtin removes (`unset NAME`): a function with `-f`, a variable with `-v`, the name
+   * reference itself with `-n`, and with none of them the variable if there is one, else the function. A name with
+   * a subscript (`a[1]`) is an element of an array; written unquoted, it is a glob pattern first.
+   */
+  unsets?: boolean;
   lang?: EmbeddedLang;
   /** What the command does with the file the operand names (`IoUse`): `sort FILE` reads its input from it, `uniq IN OUT` writes OUT. */
   io?: IoUse;

@@ -147,7 +147,7 @@ function simpleOf(n: SyntaxNode, extra: Redir[]): Shape {
     if (c.type === 'variable_assignment') assignments.push(wordOf(c));
     else if (c.type === 'file_redirect' || c.type === 'heredoc_redirect' || c.type === 'herestring_redirect') redirects.push(...redirectOf(c));
     else if (c.named && c.type !== 'comment' && c.type !== 'heredoc_body') add(c, wordOf(c));
-    else if (!c.named && (n.type === 'declaration_command' || n.type === 'unset_command')) add(c, c.type);
+    else if (!c.named && n.type === 'declaration_command') add(c, c.type);
   }
   // bash-ast lists any word that looks like an assignment (`awk OFS=, f`) under assignments, not words
   const words: string[] = [];
@@ -195,7 +195,7 @@ function fromNode(n: SyntaxNode | undefined, extra: Redir[] = []): Shape {
 
 function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
   switch (n.type) {
-    case 'command': case 'declaration_command': case 'unset_command':
+    case 'command': case 'declaration_command':
       return simpleOf(n, extra);
     case 'variable_assignment': case 'variable_assignments': {
       const as = n.type === 'variable_assignment' ? [n] : n.namedChildren;

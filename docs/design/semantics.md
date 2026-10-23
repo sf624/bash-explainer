@@ -1037,7 +1037,7 @@ It checks:
 | `list` `semi`, `amp` (left-nested) | statements of `program`, a body or a `do_group`; `&` token after a statement. An empty `simple` on the right of a trailing `amp` is dropped. |
 | `list` `and`, `or` | `list` with `&&`, `\|\|` |
 | `pipeline` (`negated`) | `pipeline`; `negated_command` over it; `\|&` is a stage's `dup_output` of fd 2 in bash-ast |
-| `simple` | `command`, `declaration_command`, `unset_command`, `variable_assignment(s)`; a `redirected_statement` around them |
+| `simple` | `command`, `declaration_command`, `variable_assignment(s)`; a `redirected_statement` around them |
 | `subshell`, `group` | `subshell`, `compound_statement` (`redirects` from the `redirected_statement`) |
 | `if` with `else_branch` that is an `if` | `if_statement` with `elif_clause`, `else_clause` |
 | `for`, `select` | `for_statement`, `select_statement`; `for i; do` gives bash-ast's `"$@"`, shown as `implicit` |

@@ -500,7 +500,7 @@ export const builtins: Record<string, CommandSpec> = {
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],
     ['-n', '名前参照（`declare -n`）そのものを削除する（参照先の変数は残る）', 'unset the name reference itself, not the variable it points to'],
-  ], args(operand('NAME', '削除する名前', 'name to unset')))),
+  ], args(operand('NAME', '削除する名前', 'name to unset', { unsets: true })))),
   enable: actsOnShell(b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
     ['-n', 'ビルトインを無効にする（同名の外部コマンドが使われる）', 'disable the builtin (an external command of that name runs)'],
     ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],

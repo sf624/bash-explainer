@@ -3668,5 +3668,107 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=5; x=1 unset x; y=5; x=1 unset y",
+    "note": "unset of a variable that a prefix assignment sets removes that temporary one: the variable from before stays",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"5\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=5; \\unset x; y=5; command unset y; z=5; builtin unset z",
+    "note": "unset run through a quoted name, command or builtin is the builtin",
+    "facts": {
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "a=(1 2 3); b=(1 2); unset a[1] 'b[@]'",
+    "note": "unquoted, a[1] is a glob that matches no file here: the element is removed; b[@] removes every element",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [2]=\"3\")"
+          },
+          "b": {
+            "attrs": "a",
+            "value": "()"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "f() { :; }; x=1; unset -fv x f",
+    "note": "unset -fv is an error: nothing is unset",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: unset: cannot simultaneously unset a function and a variable"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "unset() { :; }; x=1; \\unset x; command unset -f unset; y=1; unset y",
+    "note": "a quoted name still runs the function unset; command unset runs the builtin",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.11",
+    "snippet": "x=5; x=1 unset x; y=5; y=1 unset -f y",
+    "posix": true,
+    "note": "in POSIX mode too, unset removes the temporary x and the x from before stays; with -f the assignment stays",
+    "facts": {
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"5\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0
+    }
   }
 ]

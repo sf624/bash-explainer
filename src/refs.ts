@@ -61,7 +61,7 @@ export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   if (n.type === 'file_redirect') return redirectSections(n);
   if (n.type === 'simple_expansion') return parameterSections(n.text);
   if (n.type === 'comment') return n.startPosition.row === 0 && n.text.startsWith('#!') ? ['3.8'] : undefined;
-  if (n.type === 'declaration_command' || n.type === 'unset_command') return builtinSections(n.children[0].type, builtins[n.children[0].type].builtin === 'special');
+  if (n.type === 'declaration_command') return builtinSections(n.children[0].type, builtins[n.children[0].type].builtin === 'special');
   return NODES[n.type];
 }
 

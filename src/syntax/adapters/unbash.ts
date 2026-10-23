@@ -467,7 +467,6 @@ class Converter {
     const args = [...before, ...after];
     let node: Mut;
     if (DECLARATIONS.has(name) && !before.length) node = this.declaration(c, after);
-    else if (name === 'unset' && !before.length) node = this.unset(c, after);
     else {
       const last = args.length ? args[args.length - 1] : c.name;
       node = this.node('command', start, Math.max(last.end, c.name.end));
@@ -533,14 +532,6 @@ class Converter {
     this.node(NUMBER.test(m[2]) ? 'number' : 'word', at, at + m[2].length, 'index', n);
     this.tok(']', w.end - 1, n);
     return n;
-  }
-
-  unset(c: U.Command, args: readonly (U.Assignment | U.Word | U.Redirection)[]): Mut {
-    const node = this.node('unset_command', c.pos, Math.max(c.name!.end, ...args.map((a) => a.end)));
-    this.tok(c.name!.value, c.name!.pos, node);
-    for (const a of args) this.item(node, a, (w) => this.add(node, IDENTIFIER.test(w.text) ? this.node('variable_name', w.pos, w.end) : this.word(w, 'declaration')), null);
-    this.fill(node);
-    return node;
   }
 
   assignment(a: U.Assignment): Mut {

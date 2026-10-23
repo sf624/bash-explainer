@@ -4,6 +4,9 @@
 // behaviour here was checked with bash 5.2 (and dash for `sh -c`).
 import * as assert from 'assert';
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand } from '../src/analyzer';
@@ -240,7 +243,8 @@ describe('NameResolution in bodies that run later, after `source`, and of declar
   it('a function named like a declaration builtin or `unset` runs instead of it, unless POSIX mode finds the special builtin', () => {
     const tree = parser.parse('export() { echo my; }\nexport a=1\nset -o posix\nexport b=2\nlocal() { :; }\nf() { local x=1; }\nf\nunset() { :; }\nx=1\nunset x');
     const model = shellState(tree);
-    const decl = descendants(tree.root, ['declaration_command', 'unset_command']).map((d) => short(resolveName(model, d.children[0].type, d, { command: true })));
+    const decl = descendants(tree.root, ['declaration_command', 'command']).filter((d) => d.type === 'declaration_command' || field(d, 'name')!.text === 'unset')
+      .map((d) => short(resolveName(model, d.type === 'command' ? 'unset' : d.children[0].type, d, { command: true })));
     assert.deepStrictEqual(decl, ['function', 'builtin:special<function:posix-special', 'function', 'builtin:special']);
     // (`unset() { …; }` after `set -o posix` is not defined: bash stops there.) The walk calls the function:
     // `unset x` leaves x set; `export a=1` does not export it.
@@ -445,6 +449,41 @@ describe('the analyzer says what a name runs', () => {
     }
     // Without the argument the maybe-set variable is not there, and bash removes the function.
     assert.strictEqual(bash('f() { :; }; if [ -n "$1" ]; then f=1; fi; unset f; declare -F f >/dev/null && echo function; true'), '');
+  });
+
+  it('`unset` is a command: its words are read with its spec wherever the builtin runs (checked with bash)', () => {
+    // Run in an empty directory, but for the files a row makes: an unquoted `a[1]` is a glob.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-unset-'));
+    const bash = (code: string): string => execFileSync('bash', ['-c', code], { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+    const text = (src: string): string => all(explain(src, src.split('\n').length - 1).items[0]).join('\n');
+    const show = 'declare -p x a 2>/dev/null | sed "s/^declare -[-a] //"; declare -F f; true';
+    // [the script, the last line explained, what bash leaves, the text]
+    const rows: [string, string, RegExp][] = [
+      ['x=5\nx=1 unset x', 'x="5"\n', /Unset the variable `x` that `x=1` set for this command only \(the `x` from before stays/],
+      ['x=5\n\\unset x', '', /The command name `\\unset` becomes `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
+      ['x=5\ncommand unset x', '', /runs `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
+      ['f() { :; }\nbuiltin unset f', '', /Remove the function `f`/],
+      ['a=(1 2 3)\nunset \'a[1]\'', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]` of the array `a`/],
+      ['a=(1 2 3)\nunset a[1]', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]`[\s\S]*if a file matches it, that file's name is unset instead/],
+      ['a=(1 2 3); a1=x; touch a1\nunset a[1]', 'a=([0]="1" [1]="2" [2]="3")\n', /Unset the element `a\[1\]`[\s\S]*if a file matches it, that file's name is unset instead/],
+      ['a=(1 2 3)\nunset "a[@]"', 'a=()\n', /Remove all the elements of the array `a` \(it stays, empty\)/],
+      ['f() { :; }; x=1\nunset -fv x f', 'x="1"\nf\n', /Name to unset \(with both `-f` and `-v`, nothing is unset\)/],
+      ['x=1\nunset -- x', '', /End of options[\s\S]*Unset the variable `x`/],
+      ['unset() { :; }; x=1\n\\unset x', 'x="1"\n', /Call the function `unset`/],
+    ];
+    try {
+      for (const [src, left, expected] of rows) {
+        assert.strictEqual(bash(`${src}\n${show}`).replace(/^declare -a /gm, ''), left, src);
+        assert.match(text(src), expected, src);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+    // A name known only at run time: the role of the word.
+    assert.match(text('unset "$y"'), /name to unset/);
+    // `-fv` says why nothing is removed, once.
+    assert.strictEqual(notes('f() { :; }\nunset -fv x f', 1).match(/cannot simultaneously unset/g)?.length, 1);
+    assert.match(notes('unset -fv x', 0, 'ja'), /何も削除されません/);
   });
 
   it('a pipeline stage that runs a function or an alias has no example of the program of that name', () => {

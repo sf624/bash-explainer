@@ -93,6 +93,9 @@ export const MESSAGES = {
   'special-builtin-before-function': note<{ name: string; line: number }>(['3.7.2', '6.11'], ({ name, line }) => [
     `POSIX モードでは特殊ビルトインが関数より先に見つかるので、行 ${line} の関数 \`${name}\` ではなく、ビルトインの \`${name}\` が動きます`,
     `In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of line ${line}`]),
+  'unset-function-and-variable': note(['4.1'], () => [
+    '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
+    '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
   'local-outside-function': pitfall(['4.2'], () => [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
     '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']),
