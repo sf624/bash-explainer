@@ -173,7 +173,7 @@ export interface ValueSpec {
  * What a builtin does to the variable a word names (`type: 'variable'`; src/semantics/effects.ts): sets it to a
  * string (`read NAME`, `printf -v NAME`: a name or an element, `a[1]`), to an indexed array (`read -a NAME`), to the
  * lines it reads (`mapfile NAME`: an indexed array, named by a plain name), or to the ID of a job that ended (`wait -p
- * NAME`: only when one did).
+ * NAME`: bash unsets it first, and sets it only when a job ended).
  */
 export type VariableSet = 'string' | 'array' | 'lines' | 'job-id';
 

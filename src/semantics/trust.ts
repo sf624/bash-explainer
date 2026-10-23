@@ -486,7 +486,7 @@ class Scan {
       }
     }
     // A function named as an argument may be run by the command (`complete -F f`, `mapfile -C f`, `trap f INT`).
-    const refs = !lookup && !['unset', 'type', 'declare', 'typeset', 'readonly', 'export', 'local'].includes(name);
+    const refs = !lookup && name !== 'unset' && name !== 'type' && !DECLARATIONS.has(name);
     if (refs) for (const a of args) if (this.functions.has(staticWordValue(a) ?? '')) this.callbacks.add(staticWordValue(a)!);
     if (lookup || !builtins[name]) return;
     const spec = builtins[name];

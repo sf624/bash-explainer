@@ -3061,7 +3061,11 @@ class Walker {
     // The variables it sets (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`), as its spec says.
     for (const v of variableWrites(builtins[name], parse, args)) {
       if (v.sets === 'lines') st = v.name && NAME.test(v.name) ? this.giveAttribute(this.setVariable(st, v.name, n, undefined), v.name, 'a', n) : st;
-      else if (v.sets === 'job-id') st = merge([st, this.setNamed(st, v.name, n, false)], this.posix);
+      else if (v.sets === 'job-id') {
+        // (bash unsets it first, also an integer: `x=1; wait -p x` with no job leaves `x` unset.)
+        const cleared = v.name && NAME.test(v.name) && attribute(st, v.name, 'r') === 'off' ? this.put(st, 'variables', v.name, { declared: 'off', set: 'off', attrs: {}, at: n }) : st;
+        st = merge([cleared, this.setNamed(cleared, v.name, n, false)], this.posix);
+      }
       else st = this.setNamed(st, v.name, n, v.sets === 'array');
     }
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
