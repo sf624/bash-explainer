@@ -1,8 +1,9 @@
 /** Brace expansion, glob matching examples and printf, as bash does them. */
 import { sprintf } from './awk';
 import { bracketEnd, bracketRegex } from '../bracket';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
-class Unsupported extends Error {}
+class Unsupported extends RunnerUnsupported {}
 
 // ---------------------------------------------------------------- brace expansion
 

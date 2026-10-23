@@ -1,6 +1,7 @@
 // Simulates util-linux getopt(1) for worked examples.
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
-export class GetoptUnsupported extends Error {}
+export class GetoptUnsupported extends RunnerUnsupported {}
 
 export interface GetoptSpec {
   /** Short options as given to `-o`, e.g. `+hv:c::`. */

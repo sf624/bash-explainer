@@ -1,8 +1,9 @@
 import { lex, Lex, ParseError } from '../embedded/jq';
 import { base64Decode, base64Encode, utf8Length } from './bytes';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
 /** Raised for jq features the example runner does not implement; no example is shown then. */
-class Unsupported extends Error {}
+class Unsupported extends RunnerUnsupported {}
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 
@@ -1334,6 +1335,9 @@ function singular(name: string): string {
   return name.replace(/ies$/, 'y').replace(/s$/, '');
 }
 
+/** The builtins the inferer reads with their argument, which jq does not define without one. */
+const ONE_ARGUMENT = new Set(['select', 'map', 'map_values', 'sort_by', 'group_by', 'unique_by', 'min_by', 'max_by', 'index', 'rindex', 'indices', 'contains', 'inside', 'del']);
+
 class Inferer {
   private vars = new Map<string, Shape>();
   private defs = new Map<string, Node>();
@@ -1470,6 +1474,8 @@ class Inferer {
 
   private call(n: Extract<Node, { t: 'call' }>, s: Shape): Shape {
     const a = n.args;
+    // jq has these only with an argument: `select` alone is not defined (`jq: error: select/0 is not defined`).
+    if (!a.length && ONE_ARGUMENT.has(n.name)) throw new Unsupported(`${n.name}/0`);
     switch (n.name) {
       case 'select': this.cond(a[0], s); return s;
       case 'map': { const el = s.arr(); const out = new Shape(); out.kind = 'array'; out.elem = this.run(a[0], el); return out; }
@@ -1690,14 +1696,14 @@ export function jqExample(filter: string, opts: JqFlags & { vars?: Record<string
     return r && [r];
   }
   const shape = new Shape();
-  // Inferer throws nothing itself: the catch keeps a bug in it from breaking the explanation.
   try {
     new Inferer().run(node, shape);
-    /* c8 ignore start */
-  } catch {
-    return undefined;
+  } catch (e) {
+    // (A filter jq refuses, `select` with no argument: no example. Anything else is a bug, which shows.)
+    if (e instanceof Unsupported) return undefined;
+    /* c8 ignore next */
+    throw e;
   }
-  /* c8 ignore stop */
   // With `-s` the filter sees an array of the values in the file.
   const sample = (v: Json): Json => (opts.slurp && !Array.isArray(v) ? [v] : v);
   const first = run(sample(materialize(shape, 0)));

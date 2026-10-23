@@ -333,15 +333,8 @@ class PerlExplainer {
 
 /** Explain Perl code given with -e. */
 export function explainPerl(src: string, lang: Lang): EmbeddedToken[] {
-  // No input is known to throw (the explainer reads any text): the catch keeps a bug in it from
-  // breaking the explanation of the whole shell line.
-  try {
-    return new PerlExplainer(src, lang).statements(0, src.length);
-    /* c8 ignore start */
-  } catch {
-    return [{ start: 0, end: src.length, kind: 'error', explanation: pick(lang)('Perl のコードを解析できませんでした', 'Could not parse the Perl code'), children: [] }];
-  }
-  /* c8 ignore stop */
+  // (The explainer reads any text and throws nothing of its own: an error from it is a bug, which shows.)
+  return new PerlExplainer(src, lang).statements(0, src.length);
 }
 
 /** How -n, -p, -a, -l, -i and -0 wrap the code, as one sentence. */

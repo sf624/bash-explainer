@@ -1,8 +1,9 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
 /** Raised for awk features the example runner does not implement; no example is shown then. */
-class Unsupported extends Error {}
+class Unsupported extends RunnerUnsupported {}
 
 // ---------------------------------------------------------------- AST
 
