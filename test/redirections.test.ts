@@ -61,13 +61,34 @@ describe('redirections of a simple command', () => {
     assert.equal(explain('grep 2>/dev/null x in | sort > out').examples.some((e) => /whole pipeline/.test(e.title)), true);
   });
 
-  it('with a descriptor inside `[ ]` are no misread comparison', () => {
+  it('inside `[ ]` are a misread comparison only when written as one', () => {
     // bash runs `[ -f x ]`, with its stderr to /dev/null.
     assert.equal(runBash('touch x; [ -f x 2>/dev/null ]; echo $?; [ -f y 2>/dev/null ]; echo $?', { files: [] }).stdout, '0\n1\n');
     assert.equal(explain('[ -f x 2>/dev/null ]').notes.some((n) => /inside `\[ \]` is read as a redirection/.test(n)), false);
     assert.equal(explain('[ b > a ]').notes.some((n) => /`>` inside `\[ \]` is read as a redirection/.test(n)), true);
+    assert.equal(explain('[ a 2>&1 ]').notes.some((n) => /inside `\[ \]`/.test(n)), false);
     // After the last word, it is the command's: no pitfall either.
     assert.equal(explain('[ a = b ] >/dev/null').notes.some((n) => /inside `\[ \]`/.test(n)), false);
+    // But `N>M` reads as a comparison, and bash makes it a redirection of fd N: `[ ]` is false, `[ x ]` true, and the
+    // files `3` and `5` appear.
+    assert.equal(filesAfter('[ 5>3 ]; echo $?; a=x; [ $a 2>5 ]; echo $?'), '1\n0\n3\n5\n');
+    assert.equal(explain('[ 5>3 ]').notes.some((n) => /`5>` inside `\[ \]` is read as a redirection/.test(n)), true);
+    assert.equal(explain('[ $a 2>5 ]').notes.some((n) => /`2>` inside `\[ \]` is read as a redirection/.test(n)), true);
+  });
+
+  it('after `]` are not part of the label of the test', () => {
+    const t = (src: string) => allTokens(explain(src).items).find((x) => x.kind === 'test')!;
+    assert.equal(t('[ a = b ] >/dev/null').label, '[ a = b ]');
+    assert.equal(explain('[ a = b ] >/dev/null').summary, 'test [ a = b ]');
+    assert.equal(explain('[ a = b ] >o && echo y').items[0].label, '[ a = b ] && echo');
+    assert.equal(explain('x | [ a ] >o').items[0].label, 'x | [ a ]');
+    assert.equal(explain('! [ a ] >o').items[0].label, '! [ a ]');
+    // The redirection token around it shows them.
+    assert.equal(explain('[ a = b ] >o').items[0].label, '[ a = b ] >o');
+    // (Among the words they stay: they are inside the brackets.)
+    assert.equal(t('[ -f x 2>/dev/null ]').label, '[ -f x 2>/dev/null ]');
+    // A long test is cut to its brackets, without them too.
+    assert.equal(t('[ "$some_long_variable_name" = "another long value here" ] >o').label, '[ ‹expression› ]');
   });
 
   it('written before the name count for the idioms and the pitfalls', () => {

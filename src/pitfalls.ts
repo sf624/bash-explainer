@@ -98,10 +98,11 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
 
   /** `[ … ]`, by its spelling: what goes wrong in how it is written. */
   const bracket = (n: SyntaxNode) => {
-    // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`. (Not those after its last word, `[ … ] >f`, nor one
-    // with a descriptor, `[ -f x 2>/dev/null ]`: no comparison is written so.)
+    // `[ $a < $b ]`, `[ 5>3 ]`: `<` and `>` are redirections of the command `[`. (Not those after its last word,
+    // `[ … ] >f`, nor those plainly meant as redirections: to a device, `2>/dev/null`, or a copy of a descriptor, `2>&1`.)
     const end = args(n).at(-1)?.startIndex ?? -1;
-    const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && !field(e, 'descriptor') && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end);
+    const meant = (e: SyntaxNode) => /&/.test(e.children.find((c) => !c.named)!.type) || /^\/dev\//.test(field(e, 'destination')?.text ?? '');
+    const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && !meant(e) && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end);
     if (redirect) {
       add(`\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
         `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
