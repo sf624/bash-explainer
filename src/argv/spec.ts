@@ -2,6 +2,7 @@
 // A spec says which words are options, which take values, what the operands mean, and where
 // another command starts. src/argv/interpret.ts reads a command's words with it.
 import type { EmbeddedLang } from '../embedded/types';
+import type { Shell } from '../dialect';
 import type { Text } from '../i18n';
 
 export interface CommandSpec {
@@ -260,5 +261,5 @@ export interface CommandSlot {
    */
   later?: boolean;
   /** The shell a `shell-string` slot starts, when the program's name does not say it (procps `watch` runs `sh -c`). */
-  shell?: 'bash' | 'sh' | 'dash' | 'zsh' | 'ksh';
+  shell?: Shell;
 }
