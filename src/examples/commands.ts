@@ -205,11 +205,13 @@ export function dateExample(format: string, lang: Lang): Example | undefined {
   const outputs = SAMPLE_DATES.map((d) => formatDateCommand(format, parseSampleDate(d)!));
   if (outputs.some((o) => o === undefined)) return undefined;
   const spec: RerunSpec = { kind: 'date', format };
+  const when = s('実行した時刻（例、UTC）', 'When it runs (made up, UTC)');
   return { kind: 'date',
-    interactive: interactive(spec, SAMPLE_DATES, lang),
+    interactive: interactive(spec, SAMPLE_DATES, lang, when),
     title: s('例', 'Example'),
     sections: [
-      { label: s('日時（UTC）', 'Date and time (UTC)'), lines: SAMPLE_DATES },
+      // `date` reads no input: these are the moments at which it runs.
+      { label: when, lines: SAMPLE_DATES },
       { label: s('出力', 'Output'), lines: outputs.map((o) => visible(o!)) },
     ],
   };

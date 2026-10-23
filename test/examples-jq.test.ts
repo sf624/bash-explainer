@@ -157,6 +157,13 @@ describe('jq steps', () => {
 });
 
 describe('jq example inputs and flags', () => {
+  it('calls the first section an input only when jq reads one', () => {
+    const label = (src: string) => new Analyzer('en').explainLine(createUnbashParser().parse(src), 0).examples[0].sections[0].label;
+    assert.strictEqual(label("jq '.a' f.json"), 'Input');
+    assert.strictEqual(label("jq -n '1 + 2 | . * 2'"), 'Value of `.` (`-n`: no input is read)');
+    const y = new Analyzer('ja').explainLine(createUnbashParser().parse("yq -n '1 + 2 | . * 2'"), 0).examples;
+    assert.ok(y.every((e) => e.sections[0].label !== '入力（YAML）'));
+  });
   it('fits the input to a pattern, a literal compared with and a key that is not a name', () => {
     for (const f of ['. as {(.k): $v} | $v', '. as [$a, [$b]] | $a', '.[] as [{a: $x}] | $x', 'contains([1])', 'contains([])', 'contains({"b": 1})', '. as {"a": $x} | $x']) {
       assert.ok(jqExample(f), f);

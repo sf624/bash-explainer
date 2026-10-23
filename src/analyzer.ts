@@ -2146,7 +2146,7 @@ export class Analyzer {
         const nullInput = this.given('-n');
         const jqFlags = { raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput };
         const runs = jqExample(text, { ...jqFlags, nullInput, vars: this.jqVars() });
-        if (runs) this.jqExamples(runs, { kind: 'jq', filter: text, ...jqFlags, vars: this.jqVars() });
+        if (runs) this.jqExamples(runs, nullInput, { kind: 'jq', filter: text, ...jqFlags, vars: this.jqVars() });
         break;
       }
       case 'awk': {
@@ -2355,7 +2355,7 @@ export class Analyzer {
         this.cx.examples.push({ kind: 'yq',
           title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
           sections: [
-            { label: this.s('入力（YAML）', 'Input (YAML)'), lines: input },
+            { label: this.given('-n') ? this.s('`.` の値（`-n` なので入力は読まない）', 'Value of `.` (`-n`: no input is read)') : this.s('入力（YAML）', 'Input (YAML)'), lines: input },
             ...(r.steps && i === 0 ? jqStepSections(r.steps, output, this.lang, (vs) => (json ? vs.map(toJson) : yqYamlOutput(vs, style)))
               : [r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`), lines: output, empty: this.s('（出力なし）', '(no output)') }]),
           ],
@@ -2369,7 +2369,7 @@ export class Analyzer {
     /* c8 ignore stop */
   }
 
-  private jqExamples(runs: JqRun[], spec?: RerunSpec): void {
+  private jqExamples(runs: JqRun[], nullInput: boolean, spec?: RerunSpec): void {
     runs.forEach((r, i) => {
       // Short JSON stays on one line; longer JSON is indented like jq prints it.
       const compact = toJson(r.input);
@@ -2377,7 +2377,7 @@ export class Analyzer {
       this.cx.examples.push({ kind: 'jq',
         title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
         sections: [
-          { label: this.s('入力', 'Input'), lines: input },
+          { label: nullInput ? this.s('`.` の値（`-n` なので入力は読まない）', 'Value of `.` (`-n`: no input is read)') : this.s('入力', 'Input'), lines: input },
           ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.map(toJson))
             : [r.error
               ? { label: this.s('エラー', 'Error'), lines: [r.error] }
