@@ -43,3 +43,28 @@ describe('git log formats agree with git', () => {
     });
   }
 });
+
+describe('the git log example shows as many commits as git', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Analyzer } = require('../src/analyzer');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createUnbashParser } = require('../src/syntax/adapters/unbash');
+  let dir = '';
+  const env = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@x', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@x' };
+  const git = (args: string[]) => execFileSync('git', args, { cwd: dir, env: { ...process.env, ...env } }).toString();
+  before(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gl-n-'));
+    git(['init', '-q', '-b', 'main']);
+    for (let i = 0; i < sampleCommits(Date.now()).length; i++) git(['commit', '-q', '--allow-empty', '-m', `c${i}`]);
+  });
+  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // The count is read as git reads it: `--max-count N` (a separate value), `-nN`, `-N`, the last one winning.
+  for (const args of [['--max-count', '2'], ['--max-count=2'], ['-n2'], ['-n', '1'], ['-2'], ['-n', '3', '-1'], ['-1', '-n', '2'], ['--date', 'short', '-n', '2'], []]) {
+    const line = ['git log', ...args, '--format=%h'].join(' ');
+    it(line, () => {
+      const ex = new Analyzer('en').explainLine(createUnbashParser().parse(line), 0).examples.find((e: { kind: string }) => e.kind === 'gitLog');
+      assert.ok(ex, 'has an example');
+      assert.strictEqual(ex.sections[0].lines.length, git(['log', ...args, '--format=%h']).trim().split('\n').length);
+    });
+  }
+});

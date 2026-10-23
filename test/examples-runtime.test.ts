@@ -9,6 +9,8 @@ describe('xargs agrees with GNU xargs', () => {
     [['-n1', '-P4'], ['gzip']], [['-r'], ['ls']], [['-n', '3'], ['cp', '-t', 'dest']], [['--max-args=2'], ['echo']],
     // With `-I` and a delimiter, each item is a run of its own.
     [['-0', '-n', '1', '-I{}'], ['rm', '-f', '{}']], [['-0', '-I{}'], ['mv', '{}', '{}.bak']], [['-d', ',', '-I{}'], ['echo', '{}']],
+    // `-i`/`--replace` and `-l`/`--max-lines` take a value only attached: the next word is the command (`-I {}`, `-L 1`).
+    [['--replace'], ['echo', '{}']], [['-i'], ['mv', '{}', '{}.bak']], [['-i@'], ['echo', '@']], [['--max-lines'], ['echo']], [['-l'], ['echo']], [['--max-l=2'], ['echo']],
   ];
   for (const [opts, cmd] of cases) {
     it([...opts, ...cmd].join(' ') || '(no options)', () => {

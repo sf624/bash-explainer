@@ -173,6 +173,7 @@
  "FOO=1 time ls",
  "GLOBIGNORE='*.log'; ls *",
  "GLOBIGNORE='*.log'; ls *.log",
+ "HOME=/h; [[ ~root == /h ]]",
  "IFS= read -r a b",
  "IFS=\"$x\" read a",
  "IFS=: read -r a b",
@@ -290,6 +291,7 @@
  "[[ a == ]]",
  "[[ a b ]]",
  "[[ a$b == ab ]]",
+ "[[ ~+ == x ]]",
  "[[.a.]]",
  "[[:foo:]]",
  "[abc",
@@ -1074,6 +1076,7 @@
  "yq 'env(HOME)' f.yml",
  "yq --output-format=json '.a' f.yml",
  "yq -i '.a = 1' f.yml",
+ "yq -o \"$f\" '.a' f.yml",
  "yq -o json .a f.yml",
  "yq -o=xml '.a' f.yml",
  "yq -oj '.a' f.yml",
@@ -1104,5 +1107,6 @@
  "{a b}",
  "{a: .b | .}",
  "{echo,hi}",
- "{ls,-l}"
+ "{ls,-l}",
+ "~"
 ]

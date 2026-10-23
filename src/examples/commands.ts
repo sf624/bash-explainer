@@ -13,7 +13,9 @@ import { perlExample, perlOptions } from './perlrun';
 import { Interactive, rerun, RerunSpec } from './rerun';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { commandExample, parseOptions, Unsupported as TextFiltersUnsupported } from './textfilters';
+import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
+import type { ArgvParse } from '../argv/interpret';
+import { has, values } from '../argv/query';
 
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
@@ -105,7 +107,7 @@ function xargsExample(words: ExampleWord[], lang: Lang): Example | undefined {
       { label: s('実行されるコマンド', 'Commands that run'), lines: ex.commands, empty: s('（実行されない）', '(none)') },
     ],
     // Input split on NUL or another delimiter is not one item per line, so it is not editable.
-    ...(words.some((w) => /^(-0|--null|-d|--delimiter)/.test(w.text)) ? {} : { interactive: interactive({ kind: 'xargs', words: values }, input, lang, s('入力（標準入力）', 'Input (stdin)')) }),
+    ...(has(parseWords('xargs', values), '-0', '-d') ? {} : { interactive: interactive({ kind: 'xargs', words: values }, input, lang, s('入力（標準入力）', 'Input (stdin)')) }),
   };
 }
 
@@ -113,42 +115,25 @@ function xargsExample(words: ExampleWord[], lang: Lang): Example | undefined {
 function getoptExample(words: (string | undefined)[], lang: Lang): Example | undefined {
   const s = pick(lang);
   const spec: GetoptSpec = { short: '', long: [] };
-  let i = 0;
-  const value = (w: string, short: string, long: string[]): string | undefined => {
-    if (w === short || long.includes(w)) return words[++i];
-    if (w.startsWith(short) && w.length > 2) return w.slice(2);
-    const eq = long.find((l) => w.startsWith(`${l}=`));
-    return eq ? w.slice(eq.length + 1) : undefined;
-  };
-  let shortGiven = false;
-  for (; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined) return undefined;
-    if (w === '--') break;
-    if (!w.startsWith('-')) {
-      // The old form: `getopt OPTSTRING ARGS…`.
-      if (!shortGiven) {
-        spec.short = w;
-        spec.legacy = true;
-      }
-      break;
-    }
-    if (/^-(o|-options)/.test(w)) {
-      const v = value(w, '-o', ['--options']);
-      if (v === undefined) return undefined;
-      spec.short = v;
-      shortGiven = true;
-    } else if (/^-(l|-long)/.test(w)) {
-      const v = value(w, '-l', ['--longoptions', '--long']);
-      if (v === undefined) return undefined;
-      spec.long.push(...v.split(','));
-    } else if (/^-(n|s|-name|-shell)/.test(w)) {
-      if (!w.includes('=') && w.length === 2 || ['--name', '--shell'].includes(w)) i++;
-    } else if (w === '-a' || w === '--alternative') {
-      spec.alternative = true;
-    } else if (/^-(Q|T|-quiet-output|-test)$/.test(w)) {
-      return undefined;
-    }
+  // getopt's own options, read with its spec; `-Q` and `-T` print nothing to show, and a value not known gives none.
+  let p;
+  try {
+    p = parseOptions('getopt', words, shortKeys('olaqu', { '-n': '_', '-s': '_' }));
+  } catch (e) {
+    if (e instanceof TextFiltersUnsupported) return undefined;
+    /* c8 ignore next */
+    throw e;
+  }
+  for (const [key, v] of p.opts) {
+    if (key === 'o') spec.short = v;
+    else if (key === 'l') spec.long.push(...v.split(','));
+    else if (key === 'a') spec.alternative = true;
+  }
+  // The old form: `getopt OPTSTRING ARGS…`, when no `-o` is given.
+  if (!p.opts.some(([key]) => key === 'o') && p.operands.length) {
+    if (p.operands[0] === undefined) return undefined;
+    spec.short = p.operands[0];
+    spec.legacy = true;
   }
   if (!spec.short && !spec.long.length) return undefined;
   try {
@@ -185,7 +170,7 @@ export function readExample(words: (string | undefined)[], ifs: string | undefin
   if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
   let p;
   try {
-    p = parseOptions(words, { flags: 'rse', values: 'aptu', long: {} });
+    p = parseOptions('read', words, shortKeys('rseaptu'));
   } catch (e) {
     // An option the example does not model (`-n 3`): no example. Anything else is a bug, which shows.
     if (e instanceof TextFiltersUnsupported) return undefined;
@@ -230,16 +215,25 @@ export function dateExample(format: string, lang: Lang): Example | undefined {
   };
 }
 
-/** `git log` output for sample commits, for a `--pretty`/`--format` or `--date` value; `words` are git's (`''` where not known). */
-export function gitLogExample(kind: 'gitformat' | 'gitdate', value: string, words: string[], lang: Lang): Example | undefined {
+/**
+ * `git log` output for sample commits, for a `--pretty`/`--format` or `--date` value. `parse` is the parse of
+ * `log`'s words and `words` their text (undefined where not known), indexed as the parse's words are: the other
+ * options are read from it, the last one given winning (`--max-count 2`, `-n2`, `-2`).
+ */
+export function gitLogExample(kind: 'gitformat' | 'gitdate', value: string, parse: ArgvParse, words: (string | undefined)[], lang: Lang): Example | undefined {
   const s = pick(lang);
-  const opt = (re: RegExp) => words.map((w) => re.exec(w)?.[1]).filter((v) => v !== undefined).pop();
-  const pretty = kind === 'gitformat' ? value : opt(/^--(?:pretty|format)=([\s\S]*)$/) ?? (words.includes('--oneline') ? 'oneline' : undefined);
-  const date = kind === 'gitdate' ? value : opt(/^--date=([\s\S]*)$/) ?? 'default';
+  const last = (...names: string[]): string | undefined => values(parse, ...names).map(({ word, at }) => words[word]?.slice(at ?? 0)).filter((v) => v !== undefined).pop();
+  const pretty = kind === 'gitformat' ? value : last('--pretty') ?? (has(parse, '--oneline') ? 'oneline' : undefined);
+  const date = kind === 'gitdate' ? value : last('--date') ?? 'default';
   const now = Date.now();
   let commits = sampleCommits(now);
-  const count = opt(/^(?:-n|--max-count=)(\d+)$/) ?? opt(/^-(\d+)$/) ?? words.find((w, i) => words[i - 1] === '-n' && /^\d+$/.test(w));
-  if (count !== undefined) commits = commits.slice(0, Math.max(1, Number(count)));
+  // `-n N`, `--max-count=N` and `-N` (a pattern option): the last one given.
+  const counts = [
+    ...values(parse, '-n').map(({ word, at }) => ({ word, text: words[word]?.slice(at ?? 0) })),
+    ...parse.roles.flatMap(({ word, role }) => (role.role === 'pattern-option' ? [{ word, text: role.flag.slice(1) }] : [])),
+  ].sort((a, b) => a.word - b.word);
+  const count = counts.pop()?.text;
+  if (count !== undefined && /^\d+$/.test(count)) commits = commits.slice(0, Math.max(1, Number(count)));
   try {
     if (kind === 'gitdate') {
       return { kind: 'gitLog',

@@ -1,14 +1,21 @@
 /** Simulations of xargs, simple test conditions and `read` word splitting, for worked examples. */
 import { globExamples, globMatches } from './shellwords';
-import { parseOptions, Unsupported } from './textfilters';
+import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
 
 // ---------------------------------------------------------------- xargs
 
-const XARGS = {
-  flags: '0rtpx',
-  values: 'nLIdPsE',
-  long: { null: '0', 'no-run-if-empty': 'r', verbose: 't', interactive: 'p', exit: 'x', 'max-args': 'n', 'max-lines': 'L', replace: 'I', delimiter: 'd', 'max-procs': 'P', 'max-chars': 's', eof: 'E' },
-};
+/** The options of xargs the examples follow (`-t`, `-x` and `-P` change nothing they show). */
+const XARGS = shortKeys('0rtxnLIdPil');
+
+/**
+ * xargs' options, read with its dictionary spec, and the command it runs (`echo` when none is given). `-i` and `-l`,
+ * whose value is only attached (`-i@`, `-l2`), are `-I {}` and `-L 1` without one.
+ */
+function xargsOptions(words: (string | undefined)[]): { p: Parsed; command: (string | undefined)[] } {
+  const p = parseOptions('xargs', words, XARGS);
+  p.opts = p.opts.map(([n, v]) => (n === 'i' ? ['I', v || '{}'] : n === 'l' ? ['L', v || '1'] : [n, v]));
+  return { p, command: p.command === undefined ? ['echo'] : words.slice(p.command) };
+}
 
 /** Split xargs input the default way: blanks and newlines separate, quotes and backslashes group. */
 function xargsTokens(text: string): string[] {
@@ -41,16 +48,10 @@ function xargsTokens(text: string): string[] {
 
 /** The command lines xargs runs for `input` (the text on its stdin). */
 export function runXargs(words: (string | undefined)[], input: string): string[][] {
-  // xargs options end at the first non-option word (the command).
-  const firstCmd = words.findIndex((w, i) => w === undefined || (!w.startsWith('-') && !/^-[nLIdPsE]$/.test(words[i - 1] ?? '')));
-  const optWords = firstCmd < 0 ? words : words.slice(0, firstCmd);
-  const p = parseOptions(optWords, XARGS);
-  if (p.operands.length) throw new Unsupported('unexpected operand');
-  const cmd = firstCmd < 0 ? ['echo'] : words.slice(firstCmd);
+  const { p, command: cmd } = xargsOptions(words);
   if (cmd.some((w) => w === undefined)) throw new Unsupported('non-literal command');
   const command = cmd as string[];
   const get = (c: string) => [...p.opts].reverse().find(([n]) => n === c)?.[1];
-  if (get('s') !== undefined || get('E') !== undefined || p.opts.some(([n]) => n === 'p')) throw new Unsupported('xargs option');
   const replace = get('I');
   const delim = p.opts.some(([n]) => n === '0') ? '\0' : get('d')?.replace(/^\\n$/, '\n').replace(/^\\t$/, '\t');
   let items: string[];
@@ -93,7 +94,7 @@ export function showCommand(words: string[]): string {
 /** Input that shows how xargs groups items, and the commands that result. */
 export function xargsExample(words: (string | undefined)[]): { input: string; commands: string[] } | undefined {
   try {
-    const p = parseOptions(words.slice(0, Math.max(0, words.findIndex((w, i) => w === undefined || (!w.startsWith('-') && !/^-[nLIdPsE]$/.test(words[i - 1] ?? ''))))) as string[], XARGS);
+    const { p } = xargsOptions(words);
     const get = (c: string) => p.opts.find(([n]) => n === c)?.[1];
     const files = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt'];
     let input: string;

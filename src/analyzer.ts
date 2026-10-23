@@ -2160,7 +2160,7 @@ export class Analyzer {
         break;
       case 'gitformat':
       case 'gitdate':
-        this.pushExample(gitLogExample(lang, text, this.cx.argCtx!.args.map((x) => literalContent(x)?.text ?? ''), this.lang));
+        this.pushExample(gitLogExample(lang, text, this.cx.argCtx!.parse, this.cx.argCtx!.nodes.map((x) => literalContent(x)?.text), this.lang));
         break;
       case 'glob': {
         // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.
@@ -2333,10 +2333,11 @@ export class Analyzer {
 
   /** Input and output of a yq expression, in the YAML each yq reads and prints. */
   private yqExample(filter: string, style: YamlStyle): void {
-    const words = this.cx.argCtx!.args.map((a) => literalContent(a)?.text ?? '');
     // mikefarah/yq: only expressions made of operations that behave as in jq (checked against yq).
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
-    const format = words.map((w, i) => (/^(-o|--output-format)$/.test(w) ? words[i + 1] : /^-o=?(.+)$/.exec(w)?.[1] ?? /^--output-format=(.+)$/.exec(w)?.[1])).find(Boolean);
+    // (The last `-o` wins, as pflag reads it; a format that is not plain text is none the example follows.)
+    const given = this.optionValues('-o', '--output-format');
+    const format = given.length ? given[given.length - 1].text ?? '?' : undefined;
     const json = style === 'mikefarah' ? format === 'json' || format === 'j' : !this.given('-y', '-Y');
     if (style === 'mikefarah' && format && !json && format !== 'yaml' && format !== 'y') return;
     const raw = style === 'mikefarah' ? !json : this.given('-r');

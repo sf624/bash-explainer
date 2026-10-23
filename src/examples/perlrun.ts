@@ -2,6 +2,7 @@
 import { sprintf } from './awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { parseOptions, shortKeys, Unsupported as TextUnsupported } from './textfilters';
 
 class Unsupported extends RunnerUnsupported {}
 
@@ -832,36 +833,39 @@ export interface PerlOptions {
   fieldSep?: string;
 }
 
-/** Parse perl's command-line switches; the code comes from -e/-E (joined with newlines). */
+/** The switches of perl the examples follow (`-i` and `-w` change nothing they show; `-E` runs code as `-e`). */
+const PERL = shortKeys('eEnplaFiw', { '-E': 'e' });
+
+/**
+ * perl's command-line switches, read with its dictionary spec; the code comes from -e/-E (joined with newlines).
+ * Undefined for a switch the examples do not follow (`-0`; `-l` with octal digits, `-l0`, which ends each print with that
+ * character instead of a newline), and a word that is not literal.
+ */
 export function perlOptions(words: (string | undefined)[]): { opts: PerlOptions; code: string } | undefined {
+  let p;
+  try {
+    p = parseOptions('perl', words, PERL);
+  } catch (e) {
+    if (e instanceof TextUnsupported) return undefined;
+    // A bug in the parse: let it show.
+    /* c8 ignore next */
+    throw e;
+  }
+  // (A first operand that is not literal may be a switch, or the script.)
+  if (p.operands.length && p.operands[0] === undefined) return undefined;
   const opts: PerlOptions = {};
   const code: string[] = [];
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined) return undefined;
-    if (!w.startsWith('-') || w === '-') break;
-    if (w === '--') break;
-    for (let k = 1; k < w.length; k++) {
-      const c = w[k];
-      if (c === 'e' || c === 'E') {
-        const v = k + 1 < w.length ? w.slice(k + 1) : words[++i];
-        if (v === undefined) return undefined;
-        code.push(v);
-        break;
-      }
-      if (c === 'n') opts.loop = opts.loop ?? 'n';
-      else if (c === 'p') opts.loop = 'p';
-      else if (c === 'l') { opts.chompL = true; if (/^\d/.test(w.slice(k + 1))) return undefined; }
-      else if (c === 'a') { opts.autosplit = true; opts.loop = opts.loop ?? 'n'; }
-      else if (c === 'F') {
-        // -F implies -a and -n (perl 5.20+).
-        opts.fieldSep = w.slice(k + 1).replace(/^\/(.*)\/$/, '$1').replace(/^(['"])(.*)\1$/, '$2');
-        opts.autosplit = true;
-        opts.loop = opts.loop ?? 'n';
-        break;
-      } else if (c === 'i') { break; }
-      else if (c === 'w') continue;
-      else return undefined;
+  for (const [c, v] of p.opts) {
+    if (c === 'e') code.push(v);
+    else if (c === 'n') opts.loop = opts.loop ?? 'n';
+    else if (c === 'p') opts.loop = 'p';
+    else if (c === 'l') { if (v) return undefined; opts.chompL = true; }
+    else if (c === 'a') { opts.autosplit = true; opts.loop = opts.loop ?? 'n'; }
+    else if (c === 'F') {
+      // -F implies -a and -n (perl 5.20+).
+      opts.fieldSep = v.replace(/^\/(.*)\/$/, '$1').replace(/^(['"])(.*)\1$/, '$2');
+      opts.autosplit = true;
+      opts.loop = opts.loop ?? 'n';
     }
   }
   return code.length ? { opts, code: code.join('\n') } : undefined;
