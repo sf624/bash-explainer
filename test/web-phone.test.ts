@@ -1,0 +1,249 @@
+// The web page: touch screens, stored data and the window, run for real in headless Chromium (the build, the server and the browser
+// are shared by all test/web-*.test.ts files: test/support/site.ts). Skipped when no browser can start,
+// unless $BASH_EXPLAINER_BROWSER is set (as in CI).
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { Browser } from 'playwright-core';
+import { openSite, choose, root, stable, until } from './support/site';
+
+describe('the web page: touch screens, stored data and the window', function () {
+  this.timeout(120000);
+  let browser: Browser;
+  let base = '';
+
+  before(async function () {
+    ({ browser, base } = await openSite(this));
+  });
+
+  it('does not move the focus to the quick reference\'s search field on a touch screen (no on-screen keyboard), and does with a mouse', async () => {
+    const { devices } = await import('playwright-core');
+    for (const touch of [true, false]) {
+      const ctx = await browser.newContext(touch ? { ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' } : { viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      if (touch) await page.locator('#ref').tap();
+      else await page.locator('#ref').click();
+      await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
+      const focused = () => panel().evaluate('document.activeElement && document.activeElement.id');
+      if (touch) {
+        // (The search field would be focused by now, if it were going to be.)
+        assert.notStrictEqual(await stable('the focus', async () => String(await focused())), 'ref-search');
+        assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
+      } else {
+        await until('the search field', async () => String(await focused()), (id) => id === 'ref-search');
+      }
+      await ctx.close();
+    }
+  });
+
+  it('clears everything the page stores from the settings dialog, after a confirmation, and applies the defaults and the tip at once', async () => {
+    // Every storage key is listed in web/storage.ts, which is what the dialog clears.
+    for (const file of fs.readdirSync(path.join(root, 'web')).filter((f) => /\.(ts|js)$/.test(f) && f !== 'storage.ts' && f !== 'theme-init.js')) {
+      assert.doesNotMatch(fs.readFileSync(path.join(root, 'web', file), 'utf8').replace(/^\s*\/\/.*$/gm, ''), /'bash-explainer-[a-z-]+'/, file);
+    }
+    const { devices } = await import('playwright-core');
+    const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').first().waitFor();
+    const stored = () => page.evaluate('Object.keys(localStorage).sort()') as Promise<string[]>;
+    // The tip shows the first time; closing it, the theme, the shell and read mode are kept.
+    await until('the tip', () => page.locator('#readtip').isVisible(), (v) => v);
+    await page.locator('#readtip-close').tap();
+    await page.locator('#readmode').tap();
+    await choose(page, '#theme', 'dark');
+    await choose(page, '#shell', 'dash');
+    await until('the keys', stored, (k) => k.includes('bash-explainer-settings') && k.includes('bash-explainer-theme') && k.includes('bash-explainer-read-mode') && k.includes('bash-explainer-read-tip-seen'));
+    assert.strictEqual(await page.locator('#readtip').isVisible(), false);
+
+    await page.locator('#settings-open').tap();
+    await page.locator('#settings-clear').tap();
+    // Asked first: a cancel changes nothing.
+    assert.match(await page.locator('#settings-dialog').innerText(), /This cannot be undone/);
+    await page.locator('#settings-clear-no').tap();
+    assert.strictEqual(await page.locator('#settings-clear').isVisible(), true);
+    assert.ok((await stored()).includes('bash-explainer-settings'));
+    await page.locator('#settings-clear').tap();
+    await page.locator('#settings-clear-yes').tap();
+    assert.match(await page.locator('#settings-clear-status').innerText(), /Cleared/);
+    // No reload: the dialog, the page and the storage are back to the defaults.
+    assert.deepStrictEqual(await stored(), []);
+    assert.strictEqual(await page.locator('#setting-shell').inputValue(), 'auto');
+    assert.strictEqual(await page.locator('#shell').inputValue(), 'auto');
+    assert.strictEqual(await page.locator('#theme').inputValue(), 'auto');
+    assert.strictEqual(await page.evaluate('document.documentElement.getAttribute("data-theme")'), null);
+    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    await page.locator('#settings-done').tap();
+    await until('the tip again', () => page.locator('#readtip').isVisible(), (v) => v);
+    await ctx.close();
+
+    // The Japanese words, and no storage at all: nothing throws, the page still goes back to its defaults.
+    const bare = await browser.newContext({ viewport: { width: 1280, height: 720 }, locale: 'ja-JP' });
+    await bare.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const p2 = await bare.newPage();
+    const errors: string[] = [];
+    p2.on('pageerror', (e) => errors.push(e.message));
+    await p2.goto(base);
+    await p2.locator('.cm-line').first().waitFor();
+    await p2.locator('#settings-open').click();
+    assert.strictEqual(await p2.locator('#settings-clear').textContent(), '保存したデータを消去');
+    await p2.locator('#settings-clear').click();
+    await p2.locator('#settings-clear-yes').click();
+    assert.match(await p2.locator('#settings-clear-status').innerText(), /消去しました/);
+    assert.deepStrictEqual(errors, []);
+    await bare.close();
+  });
+
+  it('read mode: on a phone a tap places the cursor without the keyboard, the choice is kept, and the top bar stays one row at 360px', async () => {
+    const { devices } = await import('playwright-core');
+    const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const btn = page.locator('#readmode');
+    assert.strictEqual(await btn.isVisible(), true);
+    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'false');
+    assert.match((await btn.getAttribute('aria-label'))!, /^Read mode/);
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    const fits = async () => page.evaluate('(() => { const t = document.querySelector(".top"); const k = document.querySelector(".brand").getBoundingClientRect(); return [t.getBoundingClientRect().height, k.width, document.documentElement.scrollWidth <= document.documentElement.clientWidth]; })()') as Promise<[number, number, boolean]>;
+    await btn.tap();
+    assert.strictEqual(await btn.getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
+    const [h, w, ok] = await fits();
+    assert.ok(h <= 49 && w >= 40 && ok, String([h, w, ok]));
+    // A tap in the editor moves the cursor, and the explanation follows.
+    const panel = page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    const lineOf = () => page.evaluate('document.querySelector(".cm-activeLine") && [...document.querySelectorAll(".cm-line")].indexOf(document.querySelector(".cm-activeLine"))') as Promise<number>;
+    await page.locator('.cm-line').nth(5).tap();
+    await until('the cursor line', lineOf, (n) => n === 5);
+    const first = await panel.locator('.row .label').first().innerText();
+    await page.locator('.cm-line').nth(2).tap();
+    await until('the cursor line', lineOf, (n) => n === 2);
+    await until('the explanation', () => panel.locator('.row .label').first().innerText(), (t) => t !== first);
+    // The choice is kept; turning it off lets the editor take text again.
+    await page.reload();
+    await page.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await page.locator('#readmode').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), 'none');
+    await page.locator('#readmode').tap();
+    assert.strictEqual(await page.locator('.cm-content').getAttribute('inputmode'), null);
+    await ctx.close();
+    // Not on a desktop (a fine pointer), and the mode works without storage.
+    const desk = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    await desk.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const d = await desk.newPage();
+    await d.goto(base);
+    await d.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await d.locator('#readmode').isVisible(), false);
+    await d.evaluate('document.getElementById("readmode").click()');
+    assert.strictEqual(await d.locator('.cm-content').getAttribute('inputmode'), 'none');
+    await desk.close();
+  });
+
+  it('read-mode tip: shown once on a phone, closed by the button or by using the switch, never on a desktop', async () => {
+    const { devices } = await import('playwright-core');
+    const phone = { ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' };
+    const ctx = await browser.newContext(phone);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.locator('.cm-line').nth(5).waitFor();
+    const tip = page.locator('#readtip');
+    assert.strictEqual(await tip.isVisible(), true);
+    assert.match(await tip.innerText(), /Tap here to turn off editing/);
+    const close = page.locator('#readtip-close');
+    assert.strictEqual(await close.getAttribute('aria-label'), 'Close');
+    // Inside the window, the arrow over the switch, and no horizontal scroll.
+    const geo = await page.evaluate('(() => { const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); const x = parseFloat(getComputedStyle(document.querySelector("#readtip")).getPropertyValue("--arrow-x")); return { l: t.left, r: t.right, top: t.top, bottom: b.bottom, arrow: t.left + x, mid: b.left + b.width / 2, ok: document.documentElement.scrollWidth <= document.documentElement.clientWidth }; })()') as { l: number; r: number; top: number; bottom: number; arrow: number; mid: number; ok: boolean };
+    assert.ok(geo.l >= 0 && geo.r <= 360 && geo.ok && geo.top >= geo.bottom, JSON.stringify(geo));
+    assert.ok(Math.abs(geo.arrow - geo.mid) < 1, JSON.stringify(geo));
+    // With the banner of the development version above the bar, the bubble moves down with the switch.
+    const below = await page.evaluate('(() => { document.getElementById("channel-banner").hidden = false; document.getElementById("banner-text").textContent = "Built from main at abc1234. Not released yet, may change."; window.dispatchEvent(new Event("resize")); const t = document.querySelector("#readtip").getBoundingClientRect(); const b = document.querySelector("#readmode").getBoundingClientRect(); return { top: t.top, bottom: b.bottom }; })()') as { top: number; bottom: number };
+    assert.ok(below.bottom > 48 && below.top >= below.bottom, JSON.stringify(below));
+    await close.tap();
+    assert.strictEqual(await tip.isVisible(), false);
+    await page.reload();
+    await page.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await tip.isVisible(), false);
+    await ctx.close();
+    // Using the switch also counts as seeing it.
+    const ctx2 = await browser.newContext(phone);
+    const p2 = await ctx2.newPage();
+    await p2.goto(base);
+    await p2.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), true);
+    await p2.locator('#readmode').tap();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), false);
+    await p2.reload();
+    await p2.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p2.locator('#readtip').isVisible(), false);
+    await ctx2.close();
+    // Without storage it shows, and the button hides it for the session.
+    const ctx3 = await browser.newContext({ ...phone, locale: 'ja-JP' });
+    await ctx3.addInitScript('Object.defineProperty(window, "localStorage", { get() { throw new Error("no storage"); } })');
+    const p3 = await ctx3.newPage();
+    await p3.goto(base);
+    await p3.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await p3.locator('#readtip').isVisible(), true);
+    assert.match(await p3.locator('#readtip').innerText(), /ここをタップ/);
+    await p3.locator('#readtip-close').tap();
+    assert.strictEqual(await p3.locator('#readtip').isVisible(), false);
+    await ctx3.close();
+    // Not on a desktop.
+    const desk = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+    const d = await desk.newPage();
+    await d.goto(base);
+    await d.locator('.cm-line').first().waitFor();
+    assert.strictEqual(await d.locator('#readtip').isVisible(), false);
+    await desk.close();
+  });
+
+  it('fits the window on phones and desktops: the page never scrolls, the editor and the explanation scroll inside', async () => {
+    const { devices } = await import('playwright-core');
+    const sizes = [
+      { ...devices['iPhone 13'], viewport: { width: 390, height: 844 } },
+      { ...devices['Galaxy S9+'], viewport: { width: 360, height: 740 } },
+      { viewport: { width: 1440, height: 900 } },
+      { viewport: { width: 1280, height: 720 } },
+    ];
+    for (const size of sizes) {
+      const ctx = await browser.newContext(size);
+      const page = await ctx.newPage();
+      await page.goto(base);
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      await until('the tree', () => panel()?.locator('.row .label').count().catch(() => 0) ?? Promise.resolve(0), (n) => n > 1);
+      const { width, height } = size.viewport;
+      // A wheel over the explanation and over the editor scrolls them, not the page. (Chromium's synthetic
+      // touch scrolling moves no scroller inside a page here, on the old page either: the wheel it is.)
+      const box = (await page.locator('#panel').boundingBox())!;
+      const ed0 = (await page.locator('#editor').boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, 400);
+      await page.mouse.move(ed0.x + ed0.width / 2, ed0.y + ed0.height / 2);
+      await page.mouse.wheel(0, 400);
+      await until('the editor scrolled', () => page.evaluate("document.querySelector('.cm-scroller').scrollTop") as Promise<number>, (t) => t > 0);
+      await page.evaluate('window.scrollTo(0, 500)');
+      const m = await page.evaluate(`(() => {
+        const s = document.querySelector('.cm-scroller');
+        return {
+          page: [document.scrollingElement.scrollHeight - innerHeight, document.scrollingElement.scrollWidth - innerWidth, scrollY],
+          footer: document.querySelectorAll('footer').length,
+          editor: s.scrollTop > 0 && s.scrollHeight > s.clientHeight,
+        };
+      })()`);
+      assert.deepStrictEqual(m, { page: [0, 0, 0], footer: 0, editor: true }, `${width}×${height}`);
+      const inner = await until('the explanation scrolled', () => panel().evaluate('[document.scrollingElement.scrollHeight > innerHeight, scrollY > 0]') as Promise<boolean[]>, (v) => v[1]);
+      assert.deepStrictEqual(inner, [true, true], `${width}×${height}`);
+      // The editor and the explanation take the window below the top bar, side by side or one above the other.
+      const ed = (await page.locator('.source').boundingBox())!;
+      const bar = (await page.locator('.top').boundingBox())!;
+      assert.ok(bar.height <= 49, String(bar.height));
+      if (width < 768) assert.ok(ed.width === width && box.width === width && box.y > ed.y + ed.height && Math.round(box.y + box.height) === height, JSON.stringify([ed, box]));
+      else assert.ok(box.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(box.height) === height - bar.height, JSON.stringify([ed, box]));
+      await ctx.close();
+    }
+  });
+});
