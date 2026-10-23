@@ -167,6 +167,15 @@ export const tildeParts = (nodes: readonly SyntaxNode[]): { node: SyntaxNode; te
   nodes.flatMap((n) => (n.type === 'concatenation' ? n.namedChildren : [n])).map((n) => ({ node: n, text: n.text, plain: n.type === 'word' }));
 
 /**
+ * Whether the text of the word part `n` has an unescaped `*`, `?` or `{`, or a `[` with a `]` after it: a glob or a
+ * brace that may change the word. (bash's `glob_pattern_p`: a `[` with no `]` after it is no pattern, and stays as it
+ * is: `[ -f x ]`, `echo [`. In a part of a concatenation, the `]` may be in another part: `a["x"]`.)
+ */
+function globbed(n: SyntaxNode, text: string): boolean {
+  return /(^|[^\\])(\\\\)*([*?{]|\[.*\])/s.test(text) || (n.parent?.type === 'concatenation' && /(^|[^\\])(\\\\)*\[/.test(text));
+}
+
+/**
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
  * depends on a variable, a command, a glob, a brace expansion or a tilde. `assignment`: the word is the value of an
@@ -182,7 +191,7 @@ function literalValue(n: SyntaxNode, assignment: boolean): string | undefined {
   switch (n.type) {
     case 'word': case 'number': {
       // An unescaped glob or brace is not text yet; in the value of an assignment, they are text.
-      if (!assignment && /(^|[^\\])(\\\\)*[*?[{]/.test(text)) return undefined;
+      if (!assignment && globbed(n, text)) return undefined;
       return text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
     }
     case 'raw_string': return text.slice(1, -1);
@@ -238,7 +247,7 @@ function mappedValue(n: SyntaxNode, out: MappedText): boolean {
   };
   switch (n.type) {
     case 'word': case 'number':
-      if (/(^|[^\\])(\\\\)*[*?[{]/.test(src)) return false;
+      if (globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
     case 'raw_string':

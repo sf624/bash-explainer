@@ -1032,5 +1032,145 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "\\[ -f a.txt ] && @PROBE:found@; @PROBE:after@",
+    "note": "an escaped `[` is the builtin `[` all the same",
+    "facts": {
+      "ran": [
+        "found",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "\"[\" -f nofile ] || @PROBE:missing@; @PROBE:after@",
+    "note": "so is a quoted one",
+    "facts": {
+      "ran": [
+        "missing",
+        "after"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "x=1 [ -f a.txt ] && @PROBE:found@",
+    "note": "and one after an assignment",
+    "facts": {
+      "ran": [
+        "found"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "[ -f a.txt; @PROBE:after@",
+    "note": "`[` with no `]` fails at run time (status 2), and set -e stops",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: [: missing `]'"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "@PROBE:before@; [ -f a.txt",
+    "errexit": false,
+    "note": "`[` with no `]` is no syntax error: its status is 2",
+    "facts": {
+      "ran": [
+        "before"
+      ],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: [: missing `]'"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "@PROBE:before@; [",
+    "errexit": false,
+    "note": "`[` alone: missing `]`, status 2",
+    "facts": {
+      "ran": [
+        "before"
+      ],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: [: missing `]'"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "@PROBE:before@; [ ]",
+    "errexit": false,
+    "note": "`[ ]`: no expression, false",
+    "facts": {
+      "ran": [
+        "before"
+      ],
+      "status": 1
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "{ time [ -f nofile ] || @PROBE:missing@; } 2>/dev/null",
+    "note": "`time` around a command `[`",
+    "facts": {
+      "ran": [
+        "missing"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "! [ -f a.txt ] || @PROBE:found@",
+    "note": "`!` around a command `[`",
+    "facts": {
+      "ran": [
+        "found"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.3",
+    "snippet": "[ ] | cat && @PROBE:last@",
+    "errexit": false,
+    "note": "a command `[` in a pipeline: the status is cat's",
+    "facts": {
+      "ran": [
+        "last"
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "[() { return 3; }; @PROBE:a@; [ -f a.txt ]",
+    "errexit": false,
+    "note": "a function `[` runs instead of the builtin",
+    "facts": {
+      "ran": [
+        "a"
+      ],
+      "status": 3
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n [; [ -f a.txt ] && @PROBE:found@",
+    "note": "after `enable -n [`, the program `[` runs the test",
+    "facts": {
+      "ran": [
+        "found"
+      ],
+      "status": 0
+    }
   }
 ]

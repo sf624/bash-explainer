@@ -859,5 +859,43 @@
       }
     },
     "requires": "dash"
+  },
+  {
+    "manual": "3.3",
+    "snippet": "[() { :; }; @PROBE@",
+    "names": [
+      "["
+    ],
+    "facts": {
+      "1": {
+        "[": {
+          "bash": "function",
+          "posix": "not-run"
+        }
+      }
+    },
+    "gaps": {
+      "1 [ posix": "bash --posix refuses `[` as a function name (\"not a valid identifier\") and stops the script; the model does not follow that the script stops, and says the function runs"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "enable -n [; @PROBE@",
+    "names": [
+      "[",
+      "test"
+    ],
+    "facts": {
+      "1": {
+        "[": {
+          "bash": "file",
+          "posix": "file"
+        },
+        "test": {
+          "bash": "builtin",
+          "posix": "builtin"
+        }
+      }
+    }
   }
 ]

@@ -230,6 +230,6 @@ function tests(list: SyntaxNode, state: StateModel, status: StatusModel, shell?:
     const name = c.type === 'command' ? field(c, 'name')?.text : undefined;
     if (!name || rule.kind !== 'command') return false;
     const kind = resolveName(state, name, field(c, 'name')!, { shell, command: true }).kind;
-    return (name === 'test' && kind === 'builtin') || (canonicalName(name) === 'grep' && kind === 'file' && fields(c, 'argument').some((a) => /^-[A-Za-z]*q|^--(quiet|silent)$/.test(a.text)));
+    return (canonicalName(name) === 'grep' && kind === 'file' && fields(c, 'argument').some((a) => /^-[A-Za-z]*q|^--(quiet|silent)$/.test(a.text)));
   });
 }

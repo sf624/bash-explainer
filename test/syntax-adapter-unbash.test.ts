@@ -412,12 +412,15 @@ describe('unbash adapter: heredocs', () => {
 });
 
 describe('unbash adapter: [ ] and [[ ]]', () => {
-  it('[ ] holds its words flat, between its brackets; test stays a command', () => {
+  it('[ ] is a command named `[`, with `]` its last argument, as bash parses it; test is a command too', () => {
     assert.equal(o('[ ! -f "$a" -a x = y* ]'),
-      '(program (test_command "[" (word "!") (word "-f") (string "\\"" (simple_expansion "$" (variable_name "a")) "\\"") (word "-a") (word "x") (word "=") (extglob_pattern "y*") "]"))');
+      '(program (command (command_name @name (word "[")) (word @argument "!") (word @argument "-f") (string @argument "\\"" (simple_expansion "$" (variable_name "a")) "\\"") (word @argument "-a") (word @argument "x") (word @argument "=") (word @argument "y*") (word @argument "]")))');
+    // (Quoted, escaped or with an assignment before it, the same.)
+    for (const src of ['\\[ a ]', '"[" a ]', 'x=1 [ a ]', '[ a', '[', '[ ]']) assert.equal(first(src).type, 'command', src);
     assert.equal(first('test -f a').type, 'command');
-    assert.equal(tree('[ -f a').root.namedChildren[0].incomplete, true);
-    assert.equal(errorsOf('[ -f a'), 'missing@6-6');
+    // (A missing `]` is no syntax error: `[` fails when it runs, with status 2.)
+    assert.equal(tree('[ -f a').root.namedChildren[0].incomplete, false);
+    assert.equal(errorsOf('[ -f a'), '');
     assert.equal(first('[ a ] > f').type, 'redirected_statement');
   });
   it('[[ ]] keeps its expressions, with regex and extglob_pattern on the right', () => {
@@ -528,6 +531,8 @@ describe('unbash adapter: expansions and arithmetic', () => {
     assert.equal(bare('echo $(($(a) + `b`))', 'arithmetic_expansion').includes('(command_substitution @left "$(" (command (command_name @name (word "a"))) ")")'), true);
     assert.equal(bare('echo $((a ? b : c, d))', 'arithmetic_expansion').includes('"," (variable_name "d")'), true);
     assert.equal(bare('echo $((x, (y, z)))', 'arithmetic_expansion').includes('(parenthesized_expression "(" (variable_name "y") "," (variable_name "z") ")")'), true);
+    // (A group not closed while it is typed: its `)` is missing.)
+    assert.deepEqual(tree('(( (1').errors.map((e) => e.message), ['Missing ")"', 'Missing "))"']);
   });
   it('has the three parts of for ((;;))', () => {
     assert.equal(o('for ((i=0;i<3;i++)); do :; done'),
@@ -568,7 +573,6 @@ describe('unbash adapter: unfinished input', () => {
     ['(a; b', 'subshell', ')'],
     ['[[ -f x', 'extended_test', ']]'],
     ['(( a', 'arithmetic_command', '))'],
-    ['[ -f x', 'test_command', ']'],
     ['echo "abc', 'string', '"'],
     ['echo $(a', 'command_substitution', ')'],
     ['echo `a', 'command_substitution', '`'],
@@ -778,7 +782,7 @@ describe('unbash adapter: words, assignments and redirections', () => {
   it('is about words that look like operators of [ and the like', () => {
     assert.equal(first('[ab]').type, 'command');
     assert.equal(first('[[.a.]]').type, 'command');
-    assert.equal(first('[ a ]; echo').type, 'test_command');
+    assert.equal(first('[ a ]; echo').type, 'command');
   });
 });
 
@@ -835,23 +839,24 @@ describe('unbash adapter: more shapes', () => {
   it('a redirection before the command, or among the words of a [ ]', () => {
     assert.equal(o('>f echo a'), '(program (command (file_redirect @redirect ">" (word @destination "f")) (command_name @name (word "echo")) (word @argument "a")))');
     assert.equal(o('x=1 >f cmd').includes('(file_redirect @redirect'), true);
-    assert.equal(o('[ a >f b ]'), '(program (test_command "[" (word "a") (file_redirect @redirect ">" (word @destination "f")) (word "b") "]"))');
+    assert.equal(o('[ a >f b ]'), '(program (command (command_name @name (word "[")) (word @argument "a") (file_redirect @redirect ">" (word @destination "f")) (word @argument "b") (word @argument "]")))');
     assert.equal(o('declare >f x').includes('(file_redirect'), true);
     assert.equal(o('unset >f x').includes('(file_redirect'), true);
   });
   it('a bare declare, unset or [', () => {
     assert.equal(o('declare'), '(program (declaration_command "declare"))');
     assert.equal(o('unset'), '(program (unset_command "unset"))');
-    assert.equal(first('[').incomplete, true);
-    assert.equal(first('[').type, 'test_command');
+    assert.equal(first('[').incomplete, false);
+    assert.equal(first('[').type, 'command');
+    assert.deepEqual(tree('[ -f x').errors, []);
   });
   it('patterns and the right side of =~', () => {
     assert.equal(o('[[ x == a.b ]]').includes('(word @right "a.b")'), true);
     assert.equal(o('[[ x =~ 12 ]]').includes('(number @right "12")'), true);
     assert.equal(o('[[ x =~ re ]]').includes('(word @right "re")'), true);
-    assert.equal(o('[ x = ab ]').includes('(word "ab")'), true);
-    assert.equal(o('[ x = a ]').includes('(extglob_pattern "a")'), true);
-    assert.equal(o('[ x = \\? ]').includes('(word "\\\\?")'), true);
+    assert.equal(o('[ x = ab ]').includes('(word @argument "ab")'), true);
+    assert.equal(o('[ x = a* ]').includes('(word @argument "a*")'), true);
+    assert.equal(o('[ x = \\? ]').includes('(word @argument "\\\\?")'), true);
   });
   it('elif and else, with and without ;, and an open elif', () => {
     const text = 'if a; then b; elif c; then d\nelse e\nfi';

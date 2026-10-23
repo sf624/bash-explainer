@@ -13,7 +13,7 @@ import type { Shell } from '../dialect';
 import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
-import { resolveName } from './names';
+import { resolveName, testSpecOf } from './names';
 import { type ErrexitWhy, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
@@ -80,7 +80,7 @@ export interface ErrexitContext {
 }
 
 /** Statements whose own status `set -e` checks. */
-const CHECKED = new Set(['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments', 'test_command',
+const CHECKED = new Set(['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments',
   'extended_test', 'arithmetic_command', 'pipeline', 'negated_command', 'subshell']);
 
 /** A Tri for an option (`default`: off, but in POSIX mode for the options it turns on). */
@@ -170,6 +170,8 @@ class Statuses implements StatusModel {
         // (B3: a function of that name runs instead of the builtin.)
         const res = name ? resolveName(this.state, name, field(n, 'name')!, { shell: this.shell, command: true }) : undefined;
         if (res?.kind === 'function') return { kind: 'command', functions: [res.fn.def] };
+        // (`test` and `[`, the builtins or the programs.)
+        if (res && testSpecOf(res)) return { kind: 'test' };
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         if (name === 'exit' || name === 'return') {
           const v = args[0]?.text;
@@ -195,7 +197,7 @@ class Statuses implements StatusModel {
         const subs = outerSubstitutions(n);
         return { kind: 'last-substitution', ...(subs.length ? { at: subs[subs.length - 1] } : {}) };
       }
-      case 'test_command': case 'extended_test': return { kind: 'test' };
+      case 'extended_test': return { kind: 'test' };
       case 'arithmetic_command': return { kind: 'arith' };
       case 'pipeline': return { kind: 'pipeline', stages: n.namedChildren.filter((c) => STATEMENTS.has(c.type)), pipefail: optionOn(this.state.at(n).run, 'set', 'pipefail'), negated: false };
       case 'negated_command': {

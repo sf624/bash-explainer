@@ -2,7 +2,7 @@ import type { Lang } from './i18n';
 import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
 import { args, commandName, readsVariable } from './pitfalls';
-import { type NameResolution, resolveName } from './semantics/names';
+import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { partMeaning } from './semantics/words';
 import { field } from './syntax/tree';
@@ -73,6 +73,13 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
           const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
           if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text }));
         }
+        // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
+        // The words of the test itself, not variables inside a `$(…)` in it.
+        // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
+        if (testSpecAt(model, n, shell)?.closingOperand) {
+          const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
+          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }));
+        }
         break;
       }
       case 'redirected_statement': {
@@ -92,14 +99,6 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }));
         // `for a in $*` / `for a in $@`
         if (value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }));
-        break;
-      }
-      case 'test_command': {
-        // `[ $x = y ]`: an empty or spaced value breaks the test.
-        // The words of the test itself, not variables inside a `$(…)` in it.
-        // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
-        const word = n.namedChildren.find((e) => isExpansion(e) && !alwaysNumber(e));
-        if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }));
         break;
       }
     }

@@ -174,7 +174,7 @@ function contextOf(w: SyntaxNode): WordContext | undefined {
     case 'command_name': return 'command-name';
     case 'command': return w.field !== 'argument' ? undefined : declaresHere(p) && ASSIGNMENT_WORD.test(w.type === 'concatenation' ? w.namedChildren[0].text : w.text) && /^(word|concatenation)$/.test(w.type)
       && (w.type === 'word' || w.namedChildren[0].type === 'word') ? 'declaration-assignment' : 'argument';
-    case 'unset_command': case 'test_command': return 'argument';
+    case 'unset_command': return 'argument';
     case 'declaration_command': return 'declaration-argument';
     case 'variable_assignment': return w.field === 'value' ? 'assignment-value' : undefined;
     case 'array': return 'array-element';

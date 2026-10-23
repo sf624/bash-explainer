@@ -8,6 +8,7 @@
 // list stays true. The test reads the table only: it needs no bash.
 import * as assert from 'assert';
 import { evalArith } from '../src/arith';
+import { testSpecAt } from '../src/semantics/names';
 import { statusModel, type StatusModel } from '../src/semantics/status';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { wordFields, type WordEnv } from '../src/semantics/words';
@@ -159,18 +160,24 @@ class Run {
         if (v === undefined || Number.isNaN(v)) throw new Unknown(n.text);
         return Number(v === 0);
       }
-      case 'test_command': case 'extended_test': {
+      case 'extended_test': {
         this.expansionError(n);
         const words = n.namedChildren.flatMap((c) => (c.type === 'unary_expression' || c.type === 'binary_expression' ? c.children : [c]));
-        const [op, arg] = words.map((w) => (w.named && w.type !== 'test_operator' ? this.value(w) : w.text));
-        if (op === '-f') return Number(!FILES.includes(arg));
-        if (op === '-z') return Number(arg !== '');
-        if (op === '-n') return Number(arg === '');
-        throw new Unknown(n.text);
+        return this.test(n, words.map((w) => (w.named && w.type !== 'test_operator' ? this.value(w) : w.text)));
       }
       case 'command': return this.command(n);
     }
     throw new Unknown(n.type);
+  }
+
+  /** A test of one operator, `-f`, `-z` or `-n`, and its operand (`words`: their values). */
+  private test(n: SyntaxNode, words: string[]): number {
+    const [op, arg] = words;
+    if (!words.length) return 1;
+    if (op === '-f') return Number(!FILES.includes(arg));
+    if (op === '-z') return Number(arg !== '');
+    if (op === '-n') return Number(arg === '');
+    throw new Unknown(n.text);
   }
 
   private command(n: SyntaxNode): number {
@@ -183,6 +190,13 @@ class Run {
       case 'given': throw rule.by === 'exit' ? new Exit(rule.value) : new Return(rule.value);
       case 'previous': throw rule.by === 'exit' ? new Exit(this.last) : new Return(this.last);
       case 'wait': return rule.all ? 0 : rule.job && this.jobs.has(rule.job) ? this.jobs.get(rule.job)! : (() => { throw new Unknown('wait'); })();
+      // (`test` and `[`: the words of `[` up to its `]`; without it, status 2.)
+      case 'test': {
+        const words = args.map((w) => this.value(w));
+        const closer = testSpecAt(this.state, n)?.closingOperand;
+        if (closer && words.pop() !== closer) return 2;
+        return this.test(n, words);
+      }
       case 'arith': {
         const v = evalArith(args[args.length - 1].text.replace(/^[A-Za-z_]\w*=/, ''));
         if (v === undefined) throw new Unknown(n.text);
@@ -203,7 +217,7 @@ class Run {
     }
     switch (name) {
       case '__probe': this.ran.push(args[0].text); return 0;
-      case 'true': case ':': case 'echo': case 'shopt': case 'set': case 'export': case 'cat': return 0;
+      case 'true': case ':': case 'echo': case 'shopt': case 'set': case 'export': case 'cat': case 'enable': return 0;
       case 'false': return 1;
       case 'cd': return Number(!FILES.includes(`${this.value(args[0]).replace(/^\.\//, '')}/`));
       case 'nope_not_a_command': return 127;

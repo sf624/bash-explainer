@@ -1,6 +1,7 @@
 import { Lang } from './i18n';
 import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
+import { bracketWords, writtenAsBracket } from './testexpr';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -44,6 +45,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
   const check = (n: SyntaxNode) => {
     switch (n.type) {
       case 'command': {
+        if (writtenAsBracket(n)) bracket(n);
         const name = commandName(n);
         const a = args(n);
         // `[-f x]`: the name is one word, `[-f`.
@@ -90,28 +92,29 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         }
         break;
       }
-      case 'test_command': {
-        // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`.
-        const redirect = n.namedChildren.find((e) => e.type === 'file_redirect');
-        if (redirect) {
-          add(`\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
-            `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
-        }
-        const last = n.namedChildren[n.namedChildren.length - 1];
-        const closed = n.children[n.children.length - 1].type === ']';
-        const next = n.parent?.children[n.parent.children.indexOf(n) + 2];
-        const sep = n.parent?.children[n.parent.children.indexOf(n) + 1];
-        if (!closed && last && /[^\s]\]$/.test(last.text)) {
-          // `[ -f x]`
-          add(`\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
-            `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
-        } else if (!closed && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {
-          // `[ a && b ]`
-          add(`\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
-            `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`[ … ] ${sep.type} [ … ]\`, or use \`[[ ]]\``);
-        }
-        break;
-      }
+    }
+  };
+
+  /** `[ … ]`, by its spelling: what goes wrong in how it is written. */
+  const bracket = (n: SyntaxNode) => {
+    // `[ $a < $b ]`: `<` and `>` are redirections of the command `[`.
+    const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && e.startIndex > field(n, 'name')!.startIndex);
+    if (redirect) {
+      add(`\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
+        `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
+    }
+    const { words, close } = bracketWords(n);
+    const last = words[words.length - 1];
+    const next = n.parent?.children[n.parent.children.indexOf(n) + 2];
+    const sep = n.parent?.children[n.parent.children.indexOf(n) + 1];
+    if (!close && last && /[^\s]\]$/.test(last.text)) {
+      // `[ -f x]`
+      add(`\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
+        `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
+    } else if (!close && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {
+      // `[ a && b ]`
+      add(`\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
+        `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`[ … ] ${sep.type} [ … ]\`, or use \`[[ ]]\``);
     }
   };
   visit(root);

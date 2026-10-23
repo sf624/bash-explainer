@@ -9,7 +9,7 @@ import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand } from '../src/analyzer';
 import type { Shell } from '../src/dialect';
 import { slotEnvs } from '../src/semantics/env';
-import { assignmentsOf, definitionFails, type NameResolution, resolveName } from '../src/semantics/names';
+import { assignmentsOf, definitionFails, type NameResolution, resolveName, testSpecAt } from '../src/semantics/names';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -458,4 +458,34 @@ describe('the analyzer says what a name runs', () => {
     assert.ok(!has("shopt -s expand_aliases\nalias sort='sort -r'\nprintf 'a\\nb\\n' | sort", 2));
     assert.ok(has("sort() { tac; }\nunset -f sort\nprintf 'a\\nb\\n' | sort", 2));
   });
+});
+
+// Whether a command runs `test` or `[` (`testSpecOf`), the one place that decides it. Checked with bash 5.2: a
+// function `[` runs instead, `enable -n [` and `hash -p` run the program (which wants a `]` by what it is, not by
+// the name it is called with: `hash -p /usr/bin/[ b; b -f x` says "missing ‘]’").
+describe('what runs test', () => {
+  const at = (src: string, text: string) => {
+    const { node, tree } = commandAt(src, text);
+    return testSpecAt(shellState(tree), node);
+  };
+  const cases: [src: string, text: string, runs: 'builtin [' | 'builtin test' | 'program [' | 'program test' | undefined][] = [
+    ['[ a ]', '[ a ]', 'builtin ['],
+    ['\\[ a ]', '\\[ a ]', 'builtin ['],
+    ['"[" a ]', '"[" a ]', 'builtin ['],
+    ['test a', 'test a', 'builtin test'],
+    ['/usr/bin/[ a ]', '/usr/bin/[ a ]', 'program ['],
+    ['enable -n [\n[ a ]', '[ a ]', 'program ['],
+    ['hash -p /usr/bin/test t\nt -f x', 't -f x', 'program test'],
+    ['hash -p /usr/bin/[ b\nb -f x', 'b -f x', 'program ['],
+    ['[() { :; }\n[ a ]', '[ a ]', undefined],
+    ['$c a', '$c a', undefined],
+    ['ls a', 'ls a', undefined],
+  ];
+  for (const [src, text, runs] of cases) {
+    it(`${JSON.stringify(src)}: ${runs ?? 'no test'}`, () => {
+      const spec = at(src, text);
+      const got = spec && `${spec.builtin ? 'builtin' : 'program'} ${spec.closingOperand ? '[' : 'test'}`;
+      assert.strictEqual(got, runs);
+    });
+  }
 });

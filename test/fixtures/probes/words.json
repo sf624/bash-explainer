@@ -1224,5 +1224,34 @@
         "h5"
       ]
     }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "shopt -s nullglob; @PROBE:a@ [ a[ ] x\\[y]",
+    "note": "a `[` with no `]` after it is no pattern: nullglob leaves it",
+    "facts": {
+      "a": [
+        [
+          "[",
+          "a[",
+          "]",
+          "x[y]"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "shopt -s nullglob; @PROBE:a@ a[\"b\"] [\"a\"].txt",
+    "note": "a `]` in another part of the word closes the bracket: a pattern",
+    "facts": {
+      "a": [
+        [
+          "a.txt"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

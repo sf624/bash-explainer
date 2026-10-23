@@ -11,7 +11,9 @@
 // The model reads the shell state of src/semantics/state.ts at the place of the name, and the environment of
 // src/semantics/env.ts. It does not know the file system: a name that is none of the others is a file to search.
 import type { Shell } from '../dialect';
+import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
+import { staticWordValue } from '../staticword';
 import { field, type SyntaxNode } from '../syntax/tree';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
@@ -20,9 +22,6 @@ import { docIndex } from './state';
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
 export const RESERVED = new Set(['!', '[[', ']]', '{', '}', 'case', 'coproc', 'do', 'done', 'elif', 'else', 'esac', 'fi', 'for', 'function', 'if', 'in',
   'select', 'then', 'time', 'until', 'while']);
-
-/** `[` is the builtin `test`, written with a closing `]`. */
-const SAME_AS: Record<string, string> = { '[': 'test' };
 
 /** Why a definition of the name does not apply where it is used. */
 export type MissReason =
@@ -256,7 +255,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
 
 /** The builtin or the file `name` runs, past aliases and functions. */
 function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash, st, sourced, pathPrefix }: Place, missed: Missed | undefined): NameResolution {
-  const spec = name.includes('/') || exec || (!bash && BASH_ONLY_BUILTINS.has(name)) ? undefined : builtins[SAME_AS[name] ?? name];
+  const spec = name.includes('/') || exec || (!bash && BASH_ONLY_BUILTINS.has(name)) ? undefined : builtins[name];
   const disabled = spec ? st.disabled.get(name) : undefined;
   const m = missed ? { missed } : {};
   if (spec && disabled?.state !== 'on') return { kind: 'builtin', name, special: spec.builtin === 'special', ...m, ...(disabled?.state === 'unknown' ? { disabled } : {}) };
@@ -313,4 +312,36 @@ export function definitionFails(model: StateModel, def: SyntaxNode): Tri {
   if (builtins[field(def, 'name')!.text]?.builtin !== 'special') return 'off';
   const posix = option(model.at(def).run, 'set', 'posix');
   return posix === 'on' || posix === 'unknown' ? posix : 'off';
+}
+
+/**
+ * The spec of `test` when `name` runs it (the builtin, or with `program` the coreutils program): `test` and `[`,
+ * which read their words as a conditional expression (src/testexpr.ts); `[` wants a last `]` (`closingOperand`).
+ * A path runs the program of its last part (`/usr/bin/[`).
+ */
+export function testSpec(name: string, program: boolean): CommandSpec | undefined {
+  const base = name.slice(name.lastIndexOf('/') + 1);
+  const builtin = Object.hasOwn(builtins, base) ? builtins[base] : undefined;
+  const spec = program || base !== name ? builtin?.program : builtin;
+  return spec?.operandParser === 'test-expression' ? spec : undefined;
+}
+
+/**
+ * Whether what a command name runs (`res`) is `test` or `[`, and its spec: the builtin, or the program (after
+ * `enable -n`, through `env`, by its path). A function or an alias of that name is a plain call: undefined.
+ * This is the one place that decides it from the model; the analyzer, the status model and the facts ask it.
+ */
+export function testSpecOf(res: NameResolution): CommandSpec | undefined {
+  if (res.kind === 'builtin') return testSpec(res.name, false);
+  if (res.kind === 'file') return testSpec(res.path === 'hashed' ? res.hashed!.value : res.name, true);
+  return undefined;
+}
+
+/** `testSpecOf` for the simple command `n` (a `command` node) where it is; undefined when its name is not known here. */
+export function testSpecAt(model: StateModel, n: SyntaxNode, shell?: Shell): CommandSpec | undefined {
+  const nameNode = field(n, 'name');
+  const word = nameNode?.namedChildren[0];
+  const name = word && staticWordValue(word);
+  if (name === undefined) return undefined;
+  return testSpecOf(resolveName(model, name, nameNode!, { shell, command: true, quoted: word!.type !== 'word' || word!.text !== name }));
 }

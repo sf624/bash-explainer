@@ -1,4 +1,5 @@
 import { SyntaxNode, field, fields } from './syntax/tree';
+import { writtenAsBracket } from './testexpr';
 
 /**
  * The label of a construct (`if`, `for`, a pipeline, a redirection…) is its skeleton: the keywords and operators,
@@ -143,7 +144,7 @@ export function redirectParts(r: SyntaxNode): LabelPart[] {
 /** The skeleton of a command inside a pipeline, list or negation: its name only. */
 function stage(n: SyntaxNode): LabelPart[] {
   switch (n.type) {
-    case 'command': return [code(flat(field(n, 'name')!.text))];
+    case 'command': return writtenAsBracket(n) ? bracket(n) : [code(flat(field(n, 'name')!.text))];
     case 'declaration_command': return [code(n.children[0].type)];
     case 'unset_command': return [code('unset')];
     // The redirections of a stage are left to its own explanation.
@@ -170,6 +171,9 @@ function sequence(n: SyntaxNode): LabelPart[] {
   return out;
 }
 
+/** A command written `[ … ]` (by its spelling, as the colours: src/testexpr.ts): whole when short, else its brackets. */
+const bracket = (n: SyntaxNode): LabelPart[] => whole(n, () => [code('['), placeholder('expression'), code(']')]);
+
 /** A test, an arithmetic command or an assignment: whole when short, else its brackets or name with a placeholder. */
 function whole(n: SyntaxNode, make: () => LabelPart[]): LabelPart[] {
   const text = flat(n.text);
@@ -191,6 +195,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
       return [...(body ? skeleton(body) : []), ...n.namedChildren.filter((c) => c !== body && c.children.length).flatMap(redirectParts)];
     }
     case 'command': case 'declaration_command': {
+      if (writtenAsBracket(n)) return bracket(n);
       // `>f echo x`: the redirections inside the node are the command's own.
       const redirs = n.children.filter((c) => c.type.endsWith('redirect'));
       return [...stage(n), ...redirs.flatMap(redirectParts)];
@@ -206,7 +211,6 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
       const body = field(n, 'body');
       return [code('coproc'), ...(name ? [code(name.text)] : []), ...(body ? stage(body) : [])];
     }
-    case 'test_command': return whole(n, () => [code('['), placeholder('expression'), code(']')]);
     case 'extended_test': return whole(n, () => [code('[['), placeholder('expression'), code(']]')]);
     case 'arithmetic_command': return whole(n, () => [code('(('), placeholder('expression'), code('))')]);
     case 'variable_assignment': return whole(n, () => {

@@ -6,6 +6,7 @@ import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
 import type { Decision } from '../state';
+import { testSpec } from '../names';
 import { type ValueSource, wordIn } from '../words';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
@@ -74,7 +75,9 @@ export class WalkConditions {
     const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
     if (name?.length !== 1 || st.functions.get(name[0]) || st.disabled.get(name[0])) return undefined;
     const args = fields(n, 'argument');
-    if (name[0] === 'test') return this.testCommand(args, st);
+    // (`test` and `[`, the builtins: src/semantics/names.ts.)
+    const test = testSpec(name[0], false);
+    if (test) return this.testCommand(args, st, test.closingOperand);
     if (!['true', 'false', ':'].includes(name[0]) || args.some((a) => !wordIn(a, st, this.values(st), 'fields', this.ifsFollowed(st)))) return undefined;
     return name[0] === 'false' ? 1 : 0;
   }
@@ -110,7 +113,6 @@ export class WalkConditions {
         return after.status;
       case 'negated_command': return after.status === undefined ? undefined : Number(after.status === 0);
       case 'redirected_statement': return fields(n, 'redirect').every(safeRedirect) ? after.status : undefined;
-      case 'test_command': return st.functions.get('[') || st.disabled.get('[') ? undefined : this.testCommand(n.namedChildren, st);
       case 'extended_test': {
         const v = this.w.bash && n.namedChildren.length === 1 ? this.condExpr(n.namedChildren[0], st) : undefined;
         return v === undefined ? undefined : Number(!v);
@@ -136,15 +138,18 @@ export class WalkConditions {
     }
   }
 
-  /** The status of `test` or `[` with the words `words` (without the `]`), run from `st`, when their values are known. */
-  private testCommand(words: readonly SyntaxNode[], st: ShellState): number | undefined {
-    if (!this.w.bash) return undefined;
+  /**
+   * The status of `test` or `[` with the words `words`, run from `st`, when their values are known. `closer`: the
+   * last word `[` wants (`]`), without which it fails (`[: missing ']'`, status 2).
+   */
+  private testCommand(words: readonly SyntaxNode[], st: ShellState, closer: string | undefined): number | undefined {
     const args: string[] = [];
     for (const w of words) {
       const f = wordIn(w, st, this.values(st), 'fields', this.ifsFollowed(st));
       if (!f) return undefined;
       args.push(...f);
     }
+    if (closer && args.pop() !== closer) return 2;
     return testStatus(args, this.testEnv(st));
   }
 

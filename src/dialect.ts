@@ -7,6 +7,7 @@ import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
 import { ancestor, descendants, field } from './syntax/tree';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
+import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** Shells a script can be written for. `sh` means "any POSIX sh" (dash, busybox ash, …). */
 export type Shell = 'bash' | 'sh' | 'dash' | 'ash' | 'yash' | 'ksh' | 'mksh' | 'zsh';
@@ -224,10 +225,9 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
       add('dbracket');
       if (descendants(n, ['=~']).length) add('regex');
       return;
-    case 'test_command':
-      if (n.namedChildren.some((w) => w.text === '==')) add('eqeqTest');
-      return;
     case 'command': {
+      // (`[ a == b ]`, by its spelling.)
+      if (writtenAsBracket(n) && bracketWords(n).words.some((w) => w.text === '==')) add('eqeqTest');
       const name = field(n, 'name')!;
       commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && c.type !== 'variable_assignment'), add);
       return;

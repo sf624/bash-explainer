@@ -164,6 +164,9 @@ const TEST_OPTIONS: OptSpec[] = [
   ['-lt', 'より小さい', 'less than'], ['-le', '以下', 'less than or equal'], ['-gt', 'より大きい', 'greater than'], ['-ge', '以上', 'greater than or equal'],
 ];
 const TEST_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返す（`[ ]` と同じ）', 'Evaluate a conditional expression; exit 0 if true (same as `[ ]`)'] as const;
+/** `[` is `test` with a last argument `]`. */
+const BRACKET_SUMMARY = ['条件式を評価し、真なら 0、偽なら 1 を返す（`test` と同じで、最後の引数は `]`）', 'Evaluate a conditional expression; exit 0 if true (same as `test`, with a last argument `]`)'] as const;
+const BRACKET_READING: Rest = { parser: 'single-dash', operandParser: 'test-expression', closingOperand: ']' };
 
 /**
  * The programs named like builtins (coreutils, procps), which a path (`/bin/kill`) or a wrapper that starts a
@@ -193,6 +196,7 @@ const PROGRAMS: Record<string, CommandSpec> = {
       ...args(operand('PID', '対象のプロセス ID', 'target PID')).operands!,
     ],
   }),
+  '[': cmd(`${BRACKET_SUMMARY[0]}（coreutils のプログラム）`, `${BRACKET_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, BRACKET_READING),
   test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { parser: 'single-dash', operandParser: 'test-expression' }),
   true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { parser: 'letters' }),
   false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { parser: 'letters' }),
@@ -369,6 +373,7 @@ export const builtins: Record<string, CommandSpec> = {
     ],
   }),
   test: b(TEST_SUMMARY[0], TEST_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS.test, parser: 'single-dash', operandParser: 'test-expression' }),
+  '[': b(BRACKET_SUMMARY[0], BRACKET_SUMMARY[1], TEST_OPTIONS, { program: PROGRAMS['['], ...BRACKET_READING }),
   compgen: b('補完の候補を生成して表示する（補完関数の中で使う）', 'Generate completion candidates (used in completion functions)', [
     ['-G', '指定したグロブに合うファイル名（`compgen -G パターン` は一致があるかの判定によく使う）', 'file names matching the given glob (`compgen -G pattern` is a common way to test for a match)', 'arg'],
     ['-W', '指定した単語の一覧から候補を作る', 'candidates from the given word list', 'arg'], ['-A', '候補の種類（`file`、`command`、`variable`…）', 'kind of candidates (`file`, `command`, `variable`…)', 'arg'],

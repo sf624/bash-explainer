@@ -1,6 +1,6 @@
 {
   "counts": {
-    "skipped": { "extglob": 22, "dialect": 4, "error": 69, "bash-ast": 18 },
+    "skipped": { "extglob": 22, "dialect": 4, "error": 61, "bash-ast": 18 },
     "shapesDiffer": 0,
     "inSubstitution": 170,
     "inHeredoc": 7
