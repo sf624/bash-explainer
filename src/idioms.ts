@@ -129,6 +129,8 @@ const expansionOf = (w: SyntaxNode | undefined): SyntaxNode | undefined => {
 const parameterOf = (w: SyntaxNode | undefined): { name: string; index?: string } | undefined => {
   const e = expansionOf(w);
   if (e?.type === 'simple_expansion') return { name: e.namedChildren[0].text };
+  // (`${#}` is `$#`: the adapter reads its `#` as an operator.)
+  if (e?.children.length === 3 && e.children[1].text === '#') return { name: '#' };
   if (e?.children.length !== 3 || !e.children[1].named) return undefined;
   const v = e.children[1];
   return v.type === 'subscript' ? { name: field(v, 'name')!.text, index: field(v, 'index')!.text } : { name: v.text };
@@ -145,20 +147,27 @@ const substitutedCommand = (w: SyntaxNode | undefined): SyntaxNode | undefined =
 };
 /** Whether `c` is the only command of a `$( )`. */
 const isSubstituted = (c: SyntaxNode): boolean => c.parent!.type === 'command_substitution' && c.parent!.namedChildren.length === 1;
-/** `$(dirname "$0")`, `"$(dirname "${BASH_SOURCE[0]}")"`: the directory of the script. */
+/** The arguments after a leading `--` (`dirname -- "$0"`). */
+const operandsOf = (c: SyntaxNode): SyntaxNode[] => (wordsOf(c)[0] === '--' ? argsOf(c).slice(1) : argsOf(c));
+/** `$(dirname "$0")`, `"$(dirname -- "${BASH_SOURCE[0]}")"`: the directory of the script. */
 const isScriptDir = (w: SyntaxNode | undefined): boolean => {
   const c = substitutedCommand(w);
-  return !!c && commandIs(c, 'dirname') && argsOf(c).length === 1 && isScriptPath(argsOf(c)[0]);
+  return !!c && commandIs(c, 'dirname') && operandsOf(c).length === 1 && isScriptPath(operandsOf(c)[0]);
 };
-/** `cd "$(dirname "$0")"`. */
-const cdScriptDir = (c: SyntaxNode): boolean => commandIs(c, 'cd') && argsOf(c).length === 1 && isScriptDir(argsOf(c)[0]);
+/** `cd "$(dirname "$0")"`, `cd -- "$(dirname -- "$0")"`. */
+const cdScriptDir = (c: SyntaxNode): boolean => commandIs(c, 'cd') && operandsOf(c).length === 1 && isScriptDir(operandsOf(c)[0]);
 const isPwd = (c: SyntaxNode | undefined): boolean => !!c && commandIs(c, 'pwd') && ['', '-P'].includes(wordsOf(c).join(' '));
-/** `$(cd "$(dirname "$0")" && pwd)` (or `; pwd`, `pwd -P`): the absolute path of the script's directory. */
+/**
+ * `$(cd "$(dirname "$0")" && pwd)` (or `; pwd`, `pwd -P`, and `cd … &> /dev/null`, which hides only what `cd` prints):
+ * the absolute path of the script's directory.
+ */
 const scriptDirPath = (c: SyntaxNode): boolean => {
   if (!cdScriptDir(c)) return false;
-  const p = c.parent!;
-  if (p.type === 'list') return p.namedChildren[0] === c && tokensOf(p)[0] === '&&' && isPwd(p.namedChildren[1]) && isSubstituted(p);
-  return p.type === 'command_substitution' && p.namedChildren.length === 2 && p.namedChildren[0] === c && isPwd(p.namedChildren[1]);
+  // (Redirections of `cd` alone leave what `pwd` prints.)
+  const st = c.parent!.type === 'redirected_statement' ? c.parent! : c;
+  const p = st.parent!;
+  if (p.type === 'list') return p.namedChildren[0] === st && tokensOf(p)[0] === '&&' && isPwd(p.namedChildren[1]) && isSubstituted(p);
+  return p.type === 'command_substitution' && p.namedChildren.length === 2 && p.namedChildren[0] === st && isPwd(p.namedChildren[1]);
 };
 
 /** Where stdout and stderr end up after a statement's redirections, when the targets are plain words. */
@@ -191,7 +200,8 @@ const runDirectly = (n: SyntaxNode): boolean => {
   const b = n.type === 'extended_test' && n.namedChildren.length === 1 && n.namedChildren[0].type === 'binary_expression' ? n.namedChildren[0] : undefined;
   const [left, op, right] = b ? [field(b, 'left'), field(b, 'operator')!.text, field(b, 'right')]
     : n.type === 'test_command' && n.namedChildren.length === 3 ? [n.namedChildren[0], staticWordValue(n.namedChildren[1]), n.namedChildren[2]] : [];
-  if (!['=', '==', '-ef'].includes(op!)) return false;
+  // (`!=` asks the same question: whether it is sourced.)
+  if (!['=', '==', '!=', '-ef'].includes(op!)) return false;
   const source = (w: SyntaxNode | undefined) => isScriptPath(w) && parameterOf(w)!.name === 'BASH_SOURCE';
   const zero = (w: SyntaxNode | undefined) => isScriptPath(w) && parameterOf(w)!.name === '0';
   return (source(left) && zero(right)) || (zero(left) && source(right));
@@ -236,7 +246,9 @@ const exitTrap = (c: SyntaxNode): boolean => {
   const words = wordsOf(c);
   const at = words[0] === '--' ? 1 : 0;
   const action = words[at];
-  return words.length > at + 1 && !(action !== undefined && (action === '' || action.startsWith('-'))) && words.slice(at + 1).includes('EXIT');
+  // (bash takes `0` and `exit` in any case for EXIT.)
+  return words.length > at + 1 && !(action !== undefined && (action === '' || action.startsWith('-')))
+    && words.slice(at + 1).some((w) => w === '0' || w?.toUpperCase() === 'EXIT');
 };
 /** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). `>>` and `&>>` do the same: a pipe has no end to append to. */
 const execTee = (n: SyntaxNode): boolean => {
@@ -271,7 +283,7 @@ const argsLoop = (n: SyntaxNode): boolean => {
   const e = (c?.type === 'extended_test' || c?.type === 'arithmetic_command') && c.namedChildren.length === 1 ? c.namedChildren[0] : undefined;
   if (c?.type === 'arithmetic_command' && count(e)) return true;
   return e?.type === 'binary_expression' && count(field(e, 'left')) && zero(field(e, 'right'))
-    && (c!.type === 'arithmetic_command' ? ['>'] : ['-gt', '-ne', '!=', '>']).includes(field(e, 'operator')!.text);
+    && (c!.type === 'arithmetic_command' ? ['>', '!='] : ['-gt', '-ne', '!=', '>']).includes(field(e, 'operator')!.text);
 };
 /** `[ -e "$f" ] || continue`: a test of a name, and `continue` when it is not there. */
 const globGuard = (n: SyntaxNode): boolean => {

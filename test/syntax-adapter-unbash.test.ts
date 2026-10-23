@@ -6,8 +6,10 @@ import { descendants, field, fields, hasError, token } from '../src/syntax/tree'
 import type { SyntaxNode } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import type { Token } from '../src/analyzer';
+import { findBashAst, runBashAst, shapeOfAst } from './support/bashast';
 import { corpus, invariants } from './support/corpus';
 import { soundness } from './support/fuzz';
+import { diffShapes, shapeOfTree } from './support/shape';
 
 // The unbash adapter builds the model of a script. The first part holds the expected trees of the inputs
 // that tree-sitter (the parser used before) read wrongly, the invariants of the trees of the fixtures and
@@ -261,6 +263,38 @@ describe('unbash adapter: redirections', () => {
     const r = spawnSync('bash', ['-c', 'echo &> >(sed s/^/got:/) b; wait; sleep 0.1'], { encoding: 'utf8' });
     if (r.error) return this.skip();
     assert.strictEqual(r.stdout, 'got:b\n');
+  });
+  it('sends `&>` to a process substitution after a compound command or before the command name, as bash does', function () {
+    // (unbash reads these as an unexpected token, or the process substitution as the command name.)
+    const both = ['{ ls; } &> >(tee log)', 'while :; do :; done &>> >(tee log)', 'f() { :; } &> >(tee log)', '(ls) &> >(tee log)',
+      'if :; then :; fi &><(cat)', '&> >(tee log) ls', 'x=1 &>> >(tee log) ls', 'a && &> >(tee log) ls', '&> >(tee log)', 'x=$(ls &> >(tee log))'];
+    for (const text of both) {
+      const t = tree(text);
+      assert.deepStrictEqual(t.errors, [], text);
+      const [r] = types(t.root, 'file_redirect');
+      assert.strictEqual(r.text, text.slice(text.indexOf('&>'), text.indexOf(')', text.indexOf('&>')) + 1), text);
+      assert.match(r.children[0].text, /^&>>?$/, text);
+      assert.strictEqual(field(r, 'destination')!.type, 'process_substitution', text);
+    }
+    assert.strictEqual(field(types(tree('&> >(tee log) ls').root, 'command')[0], 'name')!.text, 'ls');
+    // bash's own parser gives the same shapes.
+    const bin = findBashAst();
+    if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
+    for (const text of bin ? both : []) {
+      const r = runBashAst(bin!, text);
+      assert.ok(r.ok, text);
+      assert.deepStrictEqual(diffShapes(shapeOfTree(tree(text).root), shapeOfAst(r.ast)), [], text);
+    }
+    assert.strictEqual(o('{ ls; } &> >(tee log)'),
+      '(program (redirected_statement (compound_statement @body "{" (command (command_name @name (word "ls"))) ";" "}") (file_redirect @redirect "&>" (process_substitution @destination ">(" (command (command_name @name (word "tee")) (word @argument "log")) ")"))))');
+    // Text in quotes is left as it is.
+    assert.strictEqual(o("echo '&> >(x)'"), '(program (command (command_name @name (word "echo")) (raw_string @argument "\'&> >(x)\'")))');
+    const r = spawnSync('bash', ['-n', '-c', both.join('\n')], { encoding: 'utf8' });
+    if (r.error) return this.skip();
+    assert.strictEqual(r.status, 0, r.stderr);
+    // bash: both outputs go to the process substitution, and the command is `echo`.
+    const run = spawnSync('bash', ['-c', '{ echo out; echo err >&2; } &> >(sed s/^/got:/); &>> >(sed s/^/2:/) echo b; wait; sleep 0.1'], { encoding: 'utf8' });
+    assert.deepStrictEqual(run.stdout.split('\n').sort(), ['', '2:b', 'got:err', 'got:out']);
   });
 });
 
