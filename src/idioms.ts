@@ -246,9 +246,9 @@ const exitTrap = (c: SyntaxNode): boolean => {
   const words = wordsOf(c);
   const at = words[0] === '--' ? 1 : 0;
   const action = words[at];
-  // (bash takes `0` and `exit` in any case for EXIT.)
+  // (bash takes `exit` in any case, and a number that is 0 (`00`, ` 0`, `+0`), for EXIT.)
   return words.length > at + 1 && !(action !== undefined && (action === '' || action.startsWith('-')))
-    && words.slice(at + 1).some((w) => w === '0' || w?.toUpperCase() === 'EXIT');
+    && words.slice(at + 1).some((w) => w !== undefined && (w.toUpperCase() === 'EXIT' || (/^\s*[-+]?\d+\s*$/.test(w) && Number(w) === 0)));
 };
 /** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). `>>` and `&>>` do the same: a pipe has no end to append to. */
 const execTee = (n: SyntaxNode): boolean => {

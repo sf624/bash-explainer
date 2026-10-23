@@ -268,6 +268,21 @@ describe('unbash adapter: redirections', () => {
     // (unbash reads these as an unexpected token, or the process substitution as the command name.)
     const both = ['{ ls; } &> >(tee log)', 'while :; do :; done &>> >(tee log)', 'f() { :; } &> >(tee log)', '(ls) &> >(tee log)',
       'if :; then :; fi &><(cat)', '&> >(tee log) ls', 'x=1 &>> >(tee log) ls', 'a && &> >(tee log) ls', '&> >(tee log)', 'x=$(ls &> >(tee log))'];
+    // Several in one script: unbash tells of one error at a time.
+    const several = ['{ a; } &> >(x)\n{ b; } &> >(y)\nls &> >(z) w', 'a; { b; } &> >(y); { c; } &> >(z)', 'f() {\n{ a; } &> >(x)\n{ b; } &>> >(y)\n}\n&> >(cat) echo'];
+    for (const text of several) {
+      const t = tree(text);
+      assert.deepStrictEqual(t.errors, [], text);
+      const rs = types(t.root, 'file_redirect');
+      assert.strictEqual(rs.length, text.split('&>').length - 1, text);
+      for (const r of rs) {
+        assert.match(r.children[0].text, /^&>>?$/, text);
+        assert.strictEqual(field(r, 'destination')!.type, 'process_substitution', text);
+      }
+    }
+    // `ls &> >(z) w`: `w` is the argument, and the name of `&> >(cat) echo` is `echo`.
+    assert.deepStrictEqual(types(tree(several[0]).root, 'command').filter((c) => field(c, 'name')!.text === 'ls').map((c) => fields(c, 'argument').map((a) => a.text)), [['w']]);
+    assert.ok(types(tree(several[2]).root, 'command').some((c) => field(c, 'name')!.text === 'echo'));
     for (const text of both) {
       const t = tree(text);
       assert.deepStrictEqual(t.errors, [], text);
@@ -280,7 +295,7 @@ describe('unbash adapter: redirections', () => {
     // bash's own parser gives the same shapes.
     const bin = findBashAst();
     if (!bin && process.env.BASH_EXPLAINER_BASH_AST) assert.fail('BASH_EXPLAINER_BASH_AST is set, but bash-ast cannot be run (see $BASH_AST)');
-    for (const text of bin ? both : []) {
+    for (const text of bin ? [...both, ...several] : []) {
       const r = runBashAst(bin!, text);
       assert.ok(r.ok, text);
       assert.deepStrictEqual(diffShapes(shapeOfTree(tree(text).root), shapeOfAst(r.ast)), [], text);
@@ -289,9 +304,11 @@ describe('unbash adapter: redirections', () => {
       '(program (redirected_statement (compound_statement @body "{" (command (command_name @name (word "ls"))) ";" "}") (file_redirect @redirect "&>" (process_substitution @destination ">(" (command (command_name @name (word "tee")) (word @argument "log")) ")"))))');
     // Text in quotes is left as it is.
     assert.strictEqual(o("echo '&> >(x)'"), '(program (command (command_name @name (word "echo")) (raw_string @argument "\'&> >(x)\'")))');
-    const r = spawnSync('bash', ['-n', '-c', both.join('\n')], { encoding: 'utf8' });
-    if (r.error) return this.skip();
-    assert.strictEqual(r.status, 0, r.stderr);
+    for (const text of [both.join('\n'), ...several]) {
+      const r = spawnSync('bash', ['-n', '-c', text], { encoding: 'utf8' });
+      if (r.error) return this.skip();
+      assert.strictEqual(r.status, 0, r.stderr);
+    }
     // bash: both outputs go to the process substitution, and the command is `echo`.
     const run = spawnSync('bash', ['-c', '{ echo out; echo err >&2; } &> >(sed s/^/got:/); &>> >(sed s/^/2:/) echo b; wait; sleep 0.1'], { encoding: 'utf8' });
     assert.deepStrictEqual(run.stdout.split('\n').sort(), ['', '2:b', 'got:err', 'got:out']);

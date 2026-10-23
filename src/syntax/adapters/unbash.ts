@@ -56,6 +56,23 @@ function extglobLike(t: string, alone: boolean, alternative: boolean, closedByPa
   return !/[A-Za-z]/.test(t[0]) || [...t.slice(1)].some((c) => !/[A-Za-z.\\]/.test(c));
 }
 
+/**
+ * The errors of a script and of the scripts of the substitutions in it (a backquote with escapes is parsed
+ * apart, by `decoded`, and its errors are in the text without the escapes).
+ */
+function scriptErrors(script: U.ParsedScript): U.ParseError[] {
+  const errors: U.ParseError[] = [];
+  const walk = (n: U.SyntaxNode): void => {
+    if (n.type === 'Script') {
+      if (n !== script && (n as U.ParsedScript).source !== undefined) return;
+      errors.push(...((n as U.ParsedScript).errors ?? []));
+    }
+    forEachChild(n, walk);
+  };
+  walk(script);
+  return errors;
+}
+
 class Converter {
   readonly errors: SyntaxError[] = [];
   /** Where the `&` is of a `&>` or `&>>` whose target is a process substitution (`&> >(tee log)`); see `parseScript`. */
@@ -188,24 +205,21 @@ class Converter {
    * compound command (`{ …; } &> >(tee log)`) that word is an unexpected token, and before a command name it is the
    * name. bash redirects both outputs to the process substitution. Where unbash says such a redirection has no
    * target, the `&` is read as a blank, so that unbash reads `> >(tee log)`; `redirect` puts the `&` back.
+   * unbash may stop at the first error of a kind, so the text is read again until no new one appears: each
+   * reading hides one `&` more, so there are at most as many as the `&>` in the text.
    */
   parseScript(): U.ParsedScript {
-    const first = parse(this.text);
-    const errors: U.ParseError[] = [];
-    const walk = (n: U.SyntaxNode): void => {
-      if (n.type === 'Script') {
-        if (n !== first && (n as U.ParsedScript).source !== undefined) return;
-        errors.push(...((n as U.ParsedScript).errors ?? []));
+    let script = parse(this.text);
+    for (;;) {
+      const before = this.bothOutputs.size;
+      for (const e of scriptErrors(script)) {
+        const op = e.message === 'expected redirect target' && /^[<>]\(/.test(this.text.slice(e.pos)) ? /&>>?[ \t]*$/.exec(this.text.slice(0, e.pos)) : null;
+        if (op) this.bothOutputs.add(op.index);
       }
-      forEachChild(n, walk);
-    };
-    walk(first);
-    for (const e of errors) {
-      const op = e.message === 'expected redirect target' && /^[<>]\(/.test(this.text.slice(e.pos)) ? /&>>?[ \t]*$/.exec(this.text.slice(0, e.pos)) : null;
-      if (op) this.bothOutputs.add(op.index);
+      if (this.bothOutputs.size === before) break;
+      script = parse(this.text.split('').map((c, i) => (this.bothOutputs.has(i) ? ' ' : c)).join(''));
     }
-    if (!this.bothOutputs.size) return first;
-    return parse(this.text.split('').map((c, i) => (this.bothOutputs.has(i) ? ' ' : c)).join(''));
+    return script;
   }
 
   /**
@@ -216,17 +230,7 @@ class Converter {
    * the construct there is `incomplete`.
    */
   unreadable(root: Mut, script: U.ParsedScript): void {
-    const errors: U.ParseError[] = [];
-    // The errors of the script and of the scripts of the substitutions in it (a backquote with escapes
-    // is parsed apart, by `decoded`, and its errors are in the text without the escapes).
-    const walk = (n: U.SyntaxNode): void => {
-      if (n.type === 'Script') {
-        if (n !== script && (n as U.ParsedScript).source !== undefined) return;
-        errors.push(...((n as U.ParsedScript).errors ?? []));
-      }
-      forEachChild(n, walk);
-    };
-    walk(script);
+    const errors = scriptErrors(script);
     const unexpected = (e: U.ParseError): RegExpExecArray | null => /^unexpected token '(.*)'$/.exec(e.message);
     // The tokens first: an error after one may be about the same place.
     for (const e of [...errors.filter((x) => unexpected(x)), ...errors.filter((x) => !unexpected(x))]) {

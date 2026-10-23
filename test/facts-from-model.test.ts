@@ -221,12 +221,15 @@ describe('idioms follow the tree, not the spelling', () => {
         assert.strictEqual(bash(`set -- a b; while ${cond}; do printf '[%s]' "$1"; shift; done`), '[a][b]', cond);
         assert.match(idioms(`while ${cond}; do shift; done`), /a loop over the arguments/, cond);
       }
-      // `0` and `exit` name EXIT.
-      for (const sig of ['0', 'exit']) {
+      // `0` (any number that is 0) and `exit` name EXIT.
+      for (const sig of ['0', '00', "' 0'", '+0', 'exit', 'Exit']) {
         assert.strictEqual(bash(`trap 'echo bye' ${sig}; echo end`), 'end\nbye\n', sig);
         assert.match(idioms(`trap cleanup ${sig}`), /runs clean-up/, sig);
       }
-      assert.doesNotMatch(idioms('trap cleanup 1'), /runs clean-up/);
+      for (const sig of ['1', "' exit'"]) {
+        assert.notStrictEqual(bash(`trap 'echo bye' ${sig}; echo end`), 'end\nbye\n', sig);
+        assert.doesNotMatch(idioms(`trap cleanup ${sig}`), /runs clean-up/, sig);
+      }
       // `!=`: sourced or not, the same question.
       fs.writeFileSync(path.join(dir, 'r.sh'), '[[ $BASH_SOURCE != $0 ]] && { echo sourced; return; }\necho direct\n');
       assert.strictEqual(bash('bash r.sh; source r.sh', dir), 'direct\nsourced\n');
