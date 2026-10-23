@@ -79,7 +79,13 @@ export interface CommandSpec {
    * (`exit`). In a subshell (src/semantics/env.ts), only the subshell. `when`: the calls that do, when not all of
    * them do (`set +o` and `umask` only print).
    */
-  shellEffect?: { does: 'changes' | 'exits'; when?: (call: BuiltinCall) => boolean };
+  shellEffect?: {
+    does: 'changes' | 'exits'; when?: (call: BuiltinCall) => boolean;
+    /** The variable it sets when no word names one (a value or an operand with `sets`): `read` sets REPLY, `mapfile` the array MAPFILE. */
+    byDefault?: { name: string; sets: VariableSet };
+    /** What it changes that the model follows besides variables: the shell's options (`set`, `shopt`), its aliases, the builtins enabled. */
+    alters?: ('options' | 'aliases' | 'builtins')[];
+  };
   /**
    * The program of a builtin's name (coreutils echo, procps kill): a path (`/bin/kill`) or a wrapper that starts
    * a program (`env echo`) runs it, and its options may differ from the builtin's.
@@ -138,7 +144,9 @@ export interface ValueSpec {
   optional?: boolean;
   /** With `optional`, the next word is the value when it matches (`journalctl -b -1`). */
   next?: RegExp;
+  /** `variable`: a variable name, which the builtin sets as `sets` says; `function`: a function it runs later (`mapfile -C`, `complete -F`). */
   type?: ValueType;
+  sets?: VariableSet;
   /** The value is written in another language (`grep -e PATTERN`). */
   lang?: EmbeddedLang;
   /** The meaning of particular values (`set -o pipefail`). */
@@ -160,6 +168,14 @@ export interface ValueSpec {
   /** The value removes an environment variable from what the command a slot runs gets (`env -u NAME`). */
   unsetsEnv?: boolean;
 }
+
+/**
+ * What a builtin does to the variable a word names (`type: 'variable'`; src/semantics/effects.ts): sets it to a
+ * string (`read NAME`, `printf -v NAME`: a name or an element, `a[1]`), to an indexed array (`read -a NAME`), to the
+ * lines it reads (`mapfile NAME`: an indexed array, named by a plain name), or to the ID of a job that ended (`wait -p
+ * NAME`: only when one did).
+ */
+export type VariableSet = 'string' | 'array' | 'lines' | 'job-id';
 
 export type ValueType = 'file' | 'dir' | 'number' | 'duration' | 'signal' | 'pid' | 'job' | 'user'
   | 'variable' | 'function' | 'arith' | 'pattern' | 'shell-option';
@@ -197,7 +213,9 @@ export interface OperandSpec {
   text: Text;
   /** As in a regular expression; absent: exactly one. */
   repeat?: '?' | '*' | '+';
+  /** As for a value (`ValueSpec.type`, `ValueSpec.sets`): `getopts OPTSTRING NAME` sets the variable NAME. */
   type?: ValueType;
+  sets?: VariableSet;
   lang?: EmbeddedLang;
   /**
    * The words from here on are a command (`exec` and `current-shell` slots take every word left;

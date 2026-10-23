@@ -32,6 +32,7 @@ import { builtins } from '../dict/builtins';
 import { staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { field, fields, type BashParser, type SyntaxNode } from '../syntax/tree';
+import { builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
@@ -66,8 +67,6 @@ const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
 const PASTE = /^\$\{#?[A-Za-z_]\w*(?:\[[^\]]*\])?(?::?-[^{}$`'"]*)?\}/;
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */
 const SAFE_BUILTINS = new Set(['true', 'false', ':', 'echo', 'test', '[']);
-/** Builtins that change what decisions read besides variables: options, functions, aliases, builtins. */
-const CHANGES_SHELL = new Set(['set', 'shopt', 'enable', 'alias', 'unalias']);
 
 /** What a write gives a variable: a number, nothing (unset), text with these names in it, or text not known. */
 type Value = 'number' | 'none' | 'unknown' | { names: string[]; text: string; fixed?: true };
@@ -234,8 +233,8 @@ class Scan {
   }
 
   /** A variable named by a word given to a builtin (`read x`, `printf -v 'a[i]'`): written, to a value of `value`. */
-  private named(word: SyntaxNode, w: Where, value: Value = 'unknown'): void {
-    const text = word.type === 'variable_name' ? word.text : staticWordValue(word);
+  /** A variable a builtin sets, named `text` by the word `word` (undefined: a name not known here). */
+  private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value = 'unknown'): void {
     const m = text === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
     if (!m) {
       if (text === undefined) this.blindFor('a builtin is given a variable name not known');
@@ -446,25 +445,23 @@ class Scan {
   }
 
   private unset(words: SyntaxNode[], w: Where): void {
-    const parse = interpret(builtins.unset, words.map(argWord), { name: 'unset' });
+    const parse = builtinParse('unset', words);
     const flags = optionRoles(parse).map((r) => r.flag.slice(1)).join('');
     if (flags.includes('f') && !flags.includes('v')) {
       this.changed(w);
       return;
     }
-    for (const r of parse.roles) if (r.role.role === 'operand') this.named(words[r.word], w, 'none');
+    for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none');
   }
 
   /** The command name of `c` and its words, past `command` and `builtin` (undefined: not known); `lookup`: `command -v`. */
   private nameOf(c: SyntaxNode): { name: string | undefined; args: SyntaxNode[]; lookup: boolean } {
-    let name = staticWordValue(field(c, 'name')!.namedChildren[0]);
+    let name = commandName(c);
     let args = fields(c, 'argument');
     while (name === 'command' || name === 'builtin') {
-      const i = args.findIndex((a) => !/^-/.test(staticWordValue(a) ?? '-'));
-      if (name === 'command' && args.slice(0, i < 0 ? args.length : i).some((a) => /^-\w*[vV]/.test(a.text))) return { name: 'command', args, lookup: true };
-      if (i < 0) return { name, args: [], lookup: false };
-      name = staticWordValue(args[i]);
-      args = args.slice(i + 1);
+      const inner = wrapped(name, args);
+      if ('lookup' in inner) return { name, args, lookup: true };
+      ({ name, args } = inner);
     }
     return { name, args, lookup: false };
   }
@@ -492,13 +489,12 @@ class Scan {
     const refs = !lookup && !['unset', 'type', 'declare', 'typeset', 'readonly', 'export', 'local'].includes(name);
     if (refs) for (const a of args) if (this.functions.has(staticWordValue(a) ?? '')) this.callbacks.add(staticWordValue(a)!);
     if (lookup || !builtins[name]) return;
-    if (CHANGES_SHELL.has(name)) this.changed(w);
-    const parse = (): ReturnType<typeof interpret> => interpret(builtins[name], args.map(argWord), { name });
-    const operands = (): SyntaxNode[] => parse().roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
-    const valueOf = (flag: string): SyntaxNode | undefined => {
-      const r = parse().roles.find((x) => x.role.role === 'value' && x.role.of === flag);
-      return r ? args[r.word] : undefined;
-    };
+    const spec = builtins[name];
+    if (spec.shellEffect?.alters) this.changed(w);
+    const parse = builtinParse(name, args);
+    // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
+    for (const v of variableWrites(spec, parse, args)) if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown');
+    for (const f of callbacks(parse, args)) this.callback(f);
     switch (name) {
       case 'source': case '.':
         this.blindFor('a file is sourced');
@@ -512,7 +508,7 @@ class Scan {
       }
       case 'trap': {
         // (Its action is the word of the slot that runs it later; the signals are its operands.)
-        const roles = parse().roles;
+        const roles = parse.roles;
         const actions = roles.filter((r) => r.role.role === 'command').map((r) => staticWordValue(args[r.word]));
         const signals = roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]));
         if (!actions.length || actions.every((t) => t === '' || t === '-')) return;
@@ -530,66 +526,31 @@ class Scan {
         }
         return;
       case 'let':
-        for (const a of operands()) this.arithText(a.text, w);
-        return;
-      case 'read': {
-        const array = valueOf('-a');
-        const names = operands();
-        if (array) this.named(array, w);
-        for (const o of names) this.named(o, w);
-        return;
-      }
-      case 'mapfile': case 'readarray': {
-        const array = operands()[0];
-        if (array) this.named(array, w);
-        const callback = valueOf('-C');
-        if (callback) this.callback(callback);
-        return;
-      }
-      case 'printf': {
-        const v = valueOf('-v');
-        if (v) this.named(v, w);
-        return;
-      }
-      case 'getopts': {
-        const v = operands()[1];
-        if (v) this.named(v, w);
-        return;
-      }
-      case 'wait': {
-        const v = valueOf('-p');
-        if (v) this.named(v, w, 'number');
-        return;
-      }
-      case 'complete': case 'compgen': case 'compopt':
-        for (const flag of ['-F', '-C']) {
-          const f = valueOf(flag);
-          if (f) this.callback(f);
-        }
+        for (const r of parse.roles) if (r.role.role === 'operand') this.arithText(args[r.word].text, w);
         return;
       case 'unset':
         this.unset(args, w);
         return;
-      case 'set':
-        // `set -a`, `set -o allexport` (or options not known): functions defined after are exported.
-        for (let i = 0; i < args.length; i++) {
-          const t = staticWordValue(args[i]);
-          if (t === '--' || t === '-') break;
-          if (t === undefined || /^-[A-Za-z]*a/.test(t) || (t === '-o' && staticWordValue(args[i + 1] ?? args[i]) === 'allexport')) this.exportAll = true;
-        }
+      case 'set': {
+        // `set -a`, `set -o allexport` (the last of them in the command wins), or options not known (a name of `-o`
+        // not known, a word whose value is not known before the operands): functions defined after are exported.
+        const writes = setOptionWrites(parse, args);
+        const first = parse.roles.find((r) => r.role.role === 'end-of-options' || (r.role.role === 'operand' && staticWordValue(args[r.word]) !== undefined))?.word ?? args.length;
+        if (writes.filter((o) => o.name === 'allexport').pop()?.on || writes.some((o) => o.name === undefined && o.on)
+          || args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.exportAll = true;
         return;
+      }
       case 'test': case '[':
         args.forEach((a, i) => {
           if (i > 0 && staticWordValue(args[i - 1]) === '-v') this.testV(a, w);
         });
         return;
     }
-    if (['declare', 'typeset', 'local', 'export', 'readonly'].includes(name)) this.declaration(name, args, readDeclarationWords(name, args), w);
+    if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args), w);
   }
 
   /** A function named to be run later by a builtin (`complete -F f`): any, when the name is not known. */
-  private callback(word: SyntaxNode): void {
-    const f = staticWordValue(word);
+  private callback(f: string | undefined): void {
     if (f === undefined) this.blindFor('a callback not known');
     else this.callbacks.add(f);
   }

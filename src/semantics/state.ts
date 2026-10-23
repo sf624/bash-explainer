@@ -24,11 +24,12 @@ import { arithLiteral, evalArith, evalArithWrapping } from '../arith';
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
-import { builtins } from '../dict/builtins';
+import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { ansiCValue, staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv, unaryTest } from './conditions';
+import { builtinParse, commandName, DECLARATIONS, SET_LETTERS, setOptionWrites, variableWrites, wrapped } from './effects';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import { BLIND, scriptTrust, type Trust, withinTrust } from './trust';
@@ -345,14 +346,8 @@ export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';
 }
 
-/** `set` letters and the options they stand for. */
-const SET_LETTERS: Record<string, string> = {
-  a: 'allexport', b: 'notify', e: 'errexit', f: 'noglob', h: 'hashall', k: 'keyword', m: 'monitor', n: 'noexec', p: 'privileged',
-  t: 'onecmd', u: 'nounset', v: 'verbose', x: 'xtrace', B: 'braceexpand', C: 'noclobber', E: 'errtrace', H: 'histexpand', P: 'physical', T: 'functrace',
-};
 /** The attributes the declaration builtins give with their options. */
 const ATTRIBUTE_LETTERS = new Set(['a', 'A', 'i', 'l', 'n', 'r', 't', 'u', 'x']);
-const DECLARATIONS = new Set(['declare', 'typeset', 'local', 'export', 'readonly']);
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 const NAME = /^[A-Za-z_]\w*$/;
@@ -1017,7 +1012,7 @@ class Walker {
       if (!defs.includes(f)) this.functionDefs.set(name, [...defs, f]);
     }
     for (const c of descendants(root, ['command'])) {
-      if (this.commandName(c) !== 'alias') continue;
+      if (commandName(c) !== 'alias') continue;
       for (const a of fields(c, 'argument')) {
         const name = this.aliasOf(a)?.name;
         const defs = name ? this.aliasDefs.get(name) ?? [] : [];
@@ -1044,7 +1039,7 @@ class Walker {
     this.root = root;
     this.collectDefinitions(root);
     const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
-      ...descendants(root, ['command']).filter((c) => this.commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
+      ...descendants(root, ['command']).filter((c) => commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
     for (const def of descendants(root, ['function_definition'])) {
       // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
       let x = def;
@@ -1739,14 +1734,13 @@ class Walker {
    * looks it up), and never a function.
    */
   private runsProgram(c: SyntaxNode, st: ShellState): Tri {
-    let name = this.commandName(c);
+    let name = commandName(c);
     let args = fields(c, 'argument');
     let fn = true;
     while (name === 'command') {
-      const i = args.findIndex((a) => !/^-/.test(staticWordValue(a) ?? '-'));
-      if (i < 0 || args.slice(0, i).some((a) => /^-\w*[vV]/.test(a.text))) return 'off';
-      name = staticWordValue(args[i]);
-      args = args.slice(i + 1);
+      const inner = wrapped(name, args);
+      if ('lookup' in inner) return 'off';
+      ({ name, args } = inner);
       fn = false;
     }
     if (name === undefined) return 'unknown';
@@ -2609,13 +2603,9 @@ class Walker {
     return end;
   }
 
-  private commandName(c: SyntaxNode): string | undefined {
-    return staticWordValue(field(c, 'name')!.namedChildren[0]);
-  }
-
   private command(n: SyntaxNode, st: ShellState): ShellState {
     this.substitutions(n, st);
-    const name = this.commandName(n);
+    const name = commandName(n);
     const nameNode = field(n, 'name')!;
     const assignments = n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < nameNode.startIndex);
     // With no command name, the assignments are the shell's, made before the redirections; their status is that of
@@ -3062,14 +3052,18 @@ class Walker {
     if (!builtins[name] || !this.bashBuiltin(name)) return st;
     // `command set -f`, `builtin shopt -s x`: the builtin runs (`command -v` only looks it up).
     if (name === 'command' || name === 'builtin') {
-      const i = args.findIndex((a) => !/^-/.test(staticWordValue(a) ?? '-'));
-      const next = i < 0 ? undefined : staticWordValue(args[i]);
-      if (next === undefined || args.slice(0, i).some((a) => /^-\w*[vV]/.test(a.text))) return st;
-      return this.builtin(next, args.slice(i + 1), n, st);
+      const inner = wrapped(name, args);
+      return 'lookup' in inner || inner.name === undefined ? st : this.builtin(inner.name, inner.args, n, st);
     }
     if (DECLARATIONS.has(name)) return this.declare(name, args, readDeclarationWords(name, args), n, st);
     if (name === 'unset') return this.unset(args, n, st);
-    const parse = interpret(builtins[name], args.map(argWord), { name });
+    const parse = builtinParse(name, args);
+    // The variables it sets (`read`, `printf -v`, `mapfile`, `getopts`, `wait -p`), as its spec says.
+    for (const v of variableWrites(builtins[name], parse, args)) {
+      if (v.sets === 'lines') st = v.name && NAME.test(v.name) ? this.giveAttribute(this.setVariable(st, v.name, n, undefined), v.name, 'a', n) : st;
+      else if (v.sets === 'job-id') st = merge([st, this.setNamed(st, v.name, n, false)], this.posix);
+      else st = this.setNamed(st, v.name, n, v.sets === 'array');
+    }
     const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
     const valueOf = (flag: string): SyntaxNode | undefined => {
       const r = parse.roles.find((x) => x.role.role === 'value' && x.role.of === flag);
@@ -3125,7 +3119,7 @@ class Walker {
         if (!this.silent) this.sources.push(this.aliasHost ?? n);
         this.turnOpaque();
         return st;
-      case 'set': return this.setCommand(st, parse.roles.map((r) => r.role), args);
+      case 'set': return this.setCommand(st, parse, args);
       case 'shopt': {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
         if (!on) return st;
@@ -3172,28 +3166,7 @@ class Walker {
         }
         return st;
       }
-      case 'wait': {
-        // `-p name`: the ID of the job that ended (none when there was no job).
-        const v = valueOf('-p');
-        return v ? merge([st, this.setNamed(st, v, n, false)], this.posix) : st;
-      }
-      case 'read': {
-        const array = valueOf('-a');
-        if (array) return this.setNamed(st, array, n, true);
-        if (!operands.length) return this.setVariable(st, 'REPLY', n, undefined);
-        for (const o of operands) st = this.setNamed(st, o, n, false);
-        return st;
-      }
-      case 'mapfile': case 'readarray': {
-        const array = operands[0] ? staticWordValue(operands[0]) : 'MAPFILE';
-        return array && NAME.test(array) ? this.giveAttribute(this.setVariable(st, array, n, undefined), array, 'a', n) : st;
-      }
-      case 'printf': {
-        const v = valueOf('-v');
-        return v ? this.setNamed(st, v, n, false) : st;
-      }
       case 'getopts': {
-        if (operands[1]) st = this.setNamed(st, operands[1], n, false);
         // OPTARG is set, or unset when the option takes no value.
         st = this.setVariable(st, 'OPTIND', n, undefined);
         const prev = st.variables.get('OPTARG');
@@ -3217,12 +3190,11 @@ class Walker {
 
   /** Whether `name` is read here as bash's builtin (the others are programs, or other shells' builtins). */
   private bashBuiltin(name: string): boolean {
-    return this.bash || !['shopt', 'mapfile', 'readarray'].includes(name);
+    return this.bash || !BASH_ONLY_BUILTINS.has(name);
   }
 
-  /** Sets the variable a word names (`v`, `a[1]`: an element), to a value not known here. */
-  private setNamed(st: ShellState, w: SyntaxNode, at: SyntaxNode, array: boolean): ShellState {
-    const name = staticWordValue(w);
+  /** Sets the variable `name` names (`v`, `a[1]`: an element), to a value not known here. */
+  private setNamed(st: ShellState, name: string | undefined, at: SyntaxNode, array: boolean): ShellState {
     const m = /^([A-Za-z_]\w*)(\[.*\])?$/s.exec(name ?? '');
     if (!m) return st;
     // (An integer runs the text it is given, which may fail: see `assignmentError`.)
@@ -3256,25 +3228,13 @@ class Walker {
     return !on && now === 'unknown' ? merge([st, out], this.posix) : out;
   }
 
-  private setCommand(st: ShellState, roles: ArgRole[], args: SyntaxNode[]): ShellState {
-    const turn = (name: string, on: boolean): void => {
+  private setCommand(st: ShellState, parse: ArgvParse, args: SyntaxNode[]): ShellState {
+    for (const { name, on } of setOptionWrites(parse, args, this.shell)) {
+      if (!name) continue;
       const writes = this.setWrites.get(this.node!) ?? new Map<string, 'on' | 'off'>();
       this.setWrites.set(this.node!, writes.set(name, on ? 'on' : 'off'));
       st = name === 'posix' ? this.setPosix(st, on, this.node!) : this.put(st, 'set', name, on ? 'on' : 'off');
-    };
-    roles.forEach((role, i) => {
-      for (const r of role.role === 'cluster' ? role.letters : [role]) {
-        if (r.role === 'option' || r.role === 'unknown-option') {
-          // (ksh's `set -G` is not in bash's spec.)
-          const letter = r.flag.slice(1);
-          const name = letter === 'G' && this.shell === 'ksh' ? 'globstar' : SET_LETTERS[letter];
-          if (name) turn(name, r.flag[0] === '-');
-        } else if (r.role === 'value') {
-          const name = staticWordValue(args[i]);
-          if (name) turn(name, r.of !== '+o');
-        }
-      }
-    });
+    }
     return st;
   }
 

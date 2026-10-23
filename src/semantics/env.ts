@@ -455,9 +455,11 @@ function shellInvocation(all: readonly Item[]): { flag: string; value?: string }
 
 /**
  * What a call of a builtin does to the shell that runs it (`CommandSpec.shellEffect`): `changes` it, `exits` it,
- * or nothing (`set +o`, `umask`, `declare -p` only print). `roles` are its words with their roles.
+ * or nothing (`set +o`, `umask`, `declare -p` only print). `roles` are its words with their roles. A command slot
+ * that replaces the shell (`exec cmd`: `CommandSlot.replacesShell`) ends it.
  */
 export function shellEffectOf(spec: CommandSpec | undefined, roles: readonly (readonly [SyntaxNode, ArgRole])[]): 'changes' | 'exits' | undefined {
+  if (roles.some(([, r]) => r.role === 'command' && r.slot.replacesShell)) return 'exits';
   const effect = spec?.shellEffect;
   if (!effect?.when) return effect?.does;
   const call: BuiltinCall = { flags: [], bare: [], operands: [] };
