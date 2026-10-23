@@ -535,7 +535,7 @@ describe('host files: branches no other test takes', () => {
       'RUN ["mksh", "-c", "echo 5"]', 'RUN ["ksh93", "-c", "echo 6"]', 'RUN ["yash", "-c", "echo 7"]', 'RUN ["sh", "-c", "echo 8"]',
       'RUN ["echo", \\',
     ].join('\n'));
-    assert.deepStrictEqual(shells(e), ['1:sh', '3:bash', '5:sh', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:sh', '14:bash',
+    assert.deepStrictEqual(shells(e), ['1:sh', '3:bash', '5:sh', '6:bash', '7:zsh', '8:bash', '9:ash', '10:bash', '11:ash', '12:bash', '13:dash', '14:bash',
       '16:bash', '17:zsh', '18:dash', '19:ash', '20:mksh', '21:ksh', '22:yash', '23:sh']);
     assert.strictEqual(lines(e)[3], "$'a\\n\\tb' x");
     assert.strictEqual(lines(e).length, 25);
@@ -546,7 +546,7 @@ describe('host files: branches no other test takes', () => {
     const e = extractShell('makefile', [
       'SHELL := /bin/zsh', '\techo outside', 'all:', '\t@echo $(CC) ${CFLAGS} $$HOME $@ $X $(oops', '\t@-+', '\techo a \\', 'continued', 'SHELL = /bin/ksh', 'b:', '\techo b',
     ].join('\n'));
-    assert.deepStrictEqual(shells(e), ['3:zsh', '4:zsh', '5:zsh', '9:sh']);
+    assert.deepStrictEqual(shells(e), ['3:zsh', '4:zsh', '5:zsh', '9:ksh']);
     assert.strictEqual(lines(e)[3], 'echo ${CC} ${CFLAGS} $HOME ${make_target} ${X} $(oops');
     assert.strictEqual(lines(e)[6], 'continued');
   });
@@ -735,7 +735,7 @@ describe('the analyzer: branches no other test takes', () => {
     ['echo ${@} $? ${#} $_'], ['for ((i = 0; i < 3; i++)); do :; done'], ['cat <<-EOF\n\tx\n\tEOF'], ['cat <<"EOF" > out\nx\nEOF'],
     ['case $x in\n  @(a|b)) echo;;\n  *.txt|a?) :;;\n  plain) :;;\nesac', 1], ['case $x in\n  *.txt|a?) :;;\nesac', 1], ['case $x in\n  plain) :;;\nesac', 1],
     ['{ echo a; } > out'], ['while read -r l; do :; done < f'], ['cat <<< "$x"'], ['x+=(a)'], ['x='], ['declare -x -Q a b=1'], ['declare -a \\\n  x', 1],
-    ['yq \'.a\' \\\n  f.yml', 1], ['git foo bar'], ['alias ll="ls -l"\nll', 1, 'zsh'], ['l -a', 0, undefined, { host: 'Markdown code block (bash)' }], ['l -a'],
+    ['yq \'.a\' \\\n  f.yml', 1], ['git foo bar'], ['alias ll="ls -l"\nll', 1, 'zsh'], ['l -a', 0, undefined, { host: { kind: 'markdown' } }], ['l -a'],
     ['set +e -u'], ['shopt -s nullglob foo'], ['echo a \\\n  b', 1], ['chmod 999 f'], ['sort -k x f'], ['cut -f x f'], ["tr '' x"], ["yq r f.yml 'a[x]'"],
     ["getopt -o '!' -- \"$@\""], ["getopts '!' opt"], ['git log --date=nonsense'], ["find . -path '*/src/*'"], ["find . -name '*.c'"], ['date 0101'],
     ["yq -o=xml '.a' f.yml"], ["yq -oj '.a' f.yml"], ["yq --output-format=json '.a' f.yml"], ["yq -y '.a' f.yml"], ["yq -r '.name' f.yml"], ["yq -i '.a = 1' f.yml"],
@@ -745,7 +745,7 @@ describe('the analyzer: branches no other test takes', () => {
     ['cat f | sort | cat'], ["perl -le 'print 1'"], ["perl -pi -e 's/a/b/' f"], ["perl -ne 'print ~1'"], ['basename /a/b.txt .txt'], ['echo {1..20}'], ['echo {1..1000}'],
     ['x=$(case $y in @(a|b)) echo;; *.c) :;; plain) :;; esac; declare -x z; find . -name "*.c" -print; seq 3 | sort -r; { echo a; } > out; echo {a,b} *.txt; f() { local v=$(date); }; yq .a f.yml; tr -d x; sed -n p; awk 1; getopts ab o; read -r a b; [[ $a =~ ^x ]]; (( i++ )); echo ${a:1:2} ${#a} ${!a} ${a[*]} ${a/x/y} ${a,,} ${a@Q}) \\\n  && echo done'],
     ['echo $(case $y in a) :;; *.c) :;; esac) \\\n  x'], ['> out'], ['cat <<< x 2>&1 > f'], ['cat <<EOF'], ['declare -x a \\\n  b', 1], ['unset a \\\n  b', 1],
-    ['echo $(yq .a f.yml) \\\n  x'], ['alert', 0, undefined, { host: 'Markdown code block (bash)' }], ['grep -r a \\\n  b', 1], ['for x; do :; done'],
+    ['echo $(yq .a f.yml) \\\n  x'], ['alert', 0, undefined, { host: { kind: 'markdown' } }], ['grep -r a \\\n  b', 1], ['for x; do :; done'],
     ['{ cat; } <<< x 2>&1 > f'], ['case $x in\n  a |\n  b) :;;\nesac', 1], ['case $x in\n  (\n  a) :;;\nesac', 1], ['case $x in\n  a)\n    echo;;\nesac', 2],
     ['x=1 \\\n  && case $y in a) :;; esac'], ['cat <<EOF\nEOF'], ['x=1 \\\n  && yq .a f.yml'], ['find . \\\n  -name a -o -name b'], ['find -L . -name a'], ['find . /tmp'],
     ['x=1 \\\n  && grep -e a -A 2 --color=auto f'], ['x=1 \\\n  && git log --oneline -n 3 --format=%h'],

@@ -46,6 +46,7 @@ import { explainCutList, explainSortKey, explainTrSet, trSummary } from './embed
 import { explainSed } from './embedded/sed';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { dialectNotes, Shell } from './dialect';
+import type { HostId } from './hosts';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping, intValue } from './arith';
 import { decodedText, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
 import { bracketEnd } from './bracket';
@@ -109,8 +110,8 @@ export interface ContextEntry { label: string; line: number }
 
 /** Context for explaining a line. */
 export interface ExplainOptions {
-  /** The kind of file the shell code is in (e.g. "GitHub Actions `run:` step"). */
-  host?: string;
+  /** What the shell code is part of (the kind of file, and the CI system of a YAML step). */
+  host?: HostId;
   /** The `bashExplainer.yq.flavor` setting. */
   yqFlavor?: string;
   /** Worked examples: off altogether, or off for some kinds. */
@@ -1724,7 +1725,7 @@ export class Analyzer {
       const whatText = distro.kind === 'alias' ? tx('エイリアス', 'alias') : tx('関数', 'function');
       const what = this.t(whatText);
       // In a README the commands are typed into a terminal, where the alias may exist.
-      const interactive = /^Markdown/.test(this.opts.host ?? '');
+      const interactive = this.opts.host?.kind === 'markdown';
       const many = distro.definitions.length > 1;
       this.extraNotes.push(...this.say(interactive
         ? fact(this.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })

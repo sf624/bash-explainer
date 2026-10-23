@@ -305,7 +305,7 @@ describe('lines no other test reaches', () => {
     });
     it('a distribution alias in a README', () => {
       const tree = parser.parse('ll');
-      const e = new Analyzer('en').explainLine(tree, 0, undefined, { host: 'Markdown code block (bash)' });
+      const e = new Analyzer('en').explainLine(tree, 0, undefined, { host: { kind: 'markdown' } });
       assert.ok(e.notes.some((n) => /^ℹ System-dependent: `ll`/.test(n)));
     });
   });

@@ -1,4 +1,5 @@
 import type { Lang } from '../i18n';
+import type { HostId } from '../hosts';
 import { lex } from './jq';
 import { JQ_ONLY, YQ_ONLY } from './yqfuncs';
 
@@ -85,7 +86,7 @@ const versionKey = (v: string) => v.split('.').map(Number).reduce((a, n) => a * 
 const later = (a: string, b: string) => (versionKey(a) >= versionKey(b) ? a : b);
 
 /** Decide which yq the command is for, and where what it uses works. */
-export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host?: string; setting?: string } = {}): YqVerdict {
+export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host?: HostId; setting?: string } = {}): YqVerdict {
   const clues: Clue[] = [];
   const uses: Use[] = [];
   const code = (w: string) => `\`${w}\``;
@@ -186,7 +187,7 @@ export function judgeYq(words: (string | undefined)[], ctx: { doc?: string; host
   install(/\bapt(-get)?\s+(?:-\S+\s+)*install\b[^\n]*\byq\b/, 'kislyuk', 'kislyuk/yq と判断（Debian・Ubuntu の yq パッケージは kislyuk/yq）', 'kislyuk/yq (the Debian/Ubuntu yq package is kislyuk/yq)');
   install(/\bbrew\s+install\b[^\n]*\bpython-yq\b/, 'kislyuk', 'kislyuk/yq と判断', 'kislyuk/yq');
   install(/\b(brew|snap)\s+install\b(?![^\n]*python-yq)[^\n]*\byq\b/, 'mikefarah4', 'mikefarah/yq と判断', 'mikefarah/yq');
-  if (ctx.host?.startsWith('GitHub Actions')) clues.push({ flavor: 'mikefarah4', weight: 1, why: ['GitHub Actions のランナーには mikefarah/yq v4 が入っている', 'GitHub Actions runners come with mikefarah/yq v4'] });
+  if (ctx.host?.ci === 'github') clues.push({ flavor: 'mikefarah4', weight: 1, why: ['GitHub Actions のランナーには mikefarah/yq v4 が入っている', 'GitHub Actions runners come with mikefarah/yq v4'] });
 
   let flavor: YqFlavor = 'mikefarah4';
   let decided = false;

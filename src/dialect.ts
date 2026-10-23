@@ -22,7 +22,6 @@ export function detectShell(text: string, fileName = ''): Shell | undefined {
     const words = shebang[1].trim().split(/\s+/);
     const prog = words[0].split('/').pop()!;
     // `#!/bin/busybox sh`, `#!/usr/bin/env bash`, `#!/usr/bin/env -S ksh93 -e`.
-    if (prog === 'busybox') return 'ash';
     if (prog === 'env') {
       const arg = words.slice(1).find((w) => !w.startsWith('-') && !w.includes('='));
       return arg ? shellFromName(arg.split('/').pop()!) : undefined;
@@ -36,12 +35,13 @@ export function detectShell(text: string, fileName = ''): Shell | undefined {
   return undefined;
 }
 
-function shellFromName(name: string): Shell | undefined {
+/** The shell a program name stands for (`dash`, `ksh93`, `lksh`, `busybox`, `posh`…); the one mapping every reader uses. */
+export function shellFromName(name: string): Shell | undefined {
   const n = name.replace(/\d+(\.\d+)*$/, '');
   if (n === 'bash') return 'bash';
   if (n === 'sh' || n === 'posh') return 'sh';
   if (n === 'dash') return 'dash';
-  if (n === 'ash') return 'ash';
+  if (n === 'ash' || n === 'busybox') return 'ash';
   if (n === 'yash') return 'yash';
   if (n === 'ksh') return 'ksh';
   if (n === 'mksh' || n === 'lksh' || n === 'pdksh' || n === 'oksh') return 'mksh';

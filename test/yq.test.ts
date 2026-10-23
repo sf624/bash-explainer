@@ -35,7 +35,7 @@ describe('judgeYq', () => {
     assert.strictEqual(judgeYq(words("'.a' f.yml"), { doc: 'RUN apt-get install -y yq\n' }).flavor, 'kislyuk');
     assert.strictEqual(judgeYq(words("'.a' f.yml"), { doc: 'brew install yq\n' }).flavor, 'mikefarah4');
     assert.strictEqual(judgeYq(words("'.a' f.yml"), { doc: 'wget https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64' }).flavor, 'mikefarah4');
-    assert.strictEqual(judgeYq(words("'.a' f.yml"), { host: 'GitHub Actions `run:` step' }).flavor, 'mikefarah4');
+    assert.strictEqual(judgeYq(words("'.a' f.yml"), { host: { kind: 'yaml', ci: 'github' } }).flavor, 'mikefarah4');
     assert.strictEqual(judgeYq(words("'.a' f.yml"), { setting: 'kislyuk' }).flavor, 'kislyuk');
   });
   it('says what it is explained as, why, and where it works', () => {
