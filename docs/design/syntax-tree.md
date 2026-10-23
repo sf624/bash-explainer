@@ -190,7 +190,7 @@ The manual groups commands by section, not by node: one section can hold several
 | `arithmetic_command`, `extended_test` | arithmetic, conditional | [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html) | matches |
 | `do_group` | none (the body of a loop) | [3.2.5.1](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html) | a part, not a command; keep |
 
-An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands. `assignments` and `words` are two fields of one simple command, not two nodes: the first command has an assignment and no word, the second has words and no assignment. `$(grep -c foo f)` is only text in an assignment word. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
+An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands. `assignments` and `words` are two fields of one simple command, not two nodes: the first command has an assignment and no word, the second has words and no assignment. To the parent bash, `$(grep -c foo f)` is only text in an assignment word. When the word is expanded, a child bash parses that text and runs it, and to the child it is a simple command again. Our tree reads both at once: the `command` inside `command_substitution` is the child's simple command, so the guard maps it to bash-ast's tree of the substitution's text, not to the parent's. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
 
 ```mermaid
 flowchart TB
@@ -201,7 +201,7 @@ flowchart TB
   subgraph before["ours, before"]
     B1["list #amp;#amp;"] --> B2["variable_assignment<br/>x=…"]
     B2 --> B3["command_substitution"]
-    B3 --> B4["command<br/>grep -c foo f<br/>(not in bash-ast:<br/>we supply it)"]
+    B3 --> B4["command<br/>grep -c foo f<br/>(not in the parent's bash-ast;<br/>the child's simple command)"]
     B1 --> B5["test_command<br/>tokens [ and ]<br/>words #quot;$x#quot; -gt 0"]
   end
   A2 -. "differs: no command" .-> B2
@@ -210,6 +210,26 @@ flowchart TB
   classDef supplied stroke-dasharray:4 3
   class B2,B5 differs
   class B4 supplied
+```
+
+The substitution, seen by the two shells. The parent reads `$(grep -c foo f)` as part of a word; the child bash that runs it parses the text as a script of its own:
+
+```mermaid
+flowchart LR
+  subgraph parent["parent bash (bash-ast of the line)"]
+    P1["simple command 1"] --> P2["assignment word<br/>x=$(grep -c foo f)<br/>(text only)"]
+  end
+  subgraph child["child bash (bash-ast of the text grep -c foo f)"]
+    K1["simple command<br/>words: grep -c foo f"]
+  end
+  subgraph ours["ours: one tree for both"]
+    O1["command (no name)"] --> O2["variable_assignment x=…"] --> O3["command_substitution"] --> O4["command grep -c foo f"]
+  end
+  P2 -. "expanded: the text<br/>runs in a child bash" .-> K1
+  P1 -.-> O1
+  K1 -.-> O4
+  classDef supplied stroke-dasharray:4 3
+  class O4 supplied
 ```
 
 After the change, each command of bash-ast has one `command` of ours:
@@ -224,7 +244,7 @@ flowchart TB
     C1["list #amp;#amp;"] --> C2["command (no name)<br/>= simple command 1"]
     C2 --> C3["variable_assignment<br/>x=…"]
     C3 --> C4["command_substitution"]
-    C4 --> C5["command<br/>grep -c foo f<br/>(not in bash-ast:<br/>we supply it)"]
+    C4 --> C5["command<br/>grep -c foo f<br/>(not in the parent's bash-ast;<br/>the child's simple command)"]
     C1 --> C6["command, name [<br/>= simple command 2<br/>arguments #quot;$x#quot; -gt 0 ]"]
   end
   A2 -.-> C2
