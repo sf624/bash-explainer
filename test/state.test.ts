@@ -542,6 +542,11 @@ describe('shell state: arithmetic', () => {
       // (bash fails on it, and leaves n as it was, but what it assigned before the error stays; the model takes the
       // line as one that may end at the assignment.)
       ["declare -i n; n='x=5, 1/0'", ['x', 'n'], '5', 'unknown unknown'],
+      // (Before a function or `eval`, the variable is made without the integer attribute: `=` gives it the text as it
+      // is, and sets no x; `+=` still runs the arithmetic. Before, `n='x=5' f` set x.)
+      ["declare -i n; f() { :; }; x=1; n='x=5' f", ['x'], '1', 'set=1'],
+      ["declare -i n; x=1; n='x=5' eval :", ['x'], '1', 'set=1'],
+      ["declare -i n=4; f() { :; }; x=1; n+='x=7' f", ['x', 'n'], '7 4', 'set=7 set=4'],
     ];
     for (const [src, names, theirs, ours] of rows) {
       assert.strictEqual(bash(`${src}\necho ${names.map((v) => `$${v}`).join(' ')}`), `${theirs}\n`, src);

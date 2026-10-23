@@ -1269,7 +1269,7 @@ export class Walker {
         const name = field(a, 'name')!.text;
         if (!frame.saved.has(name)) frame.saved.set(name, entry.variables.get(name));
         // (bash exports them to the commands the body runs.)
-        entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry), name, 'x', a);
+        entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), name, 'x', a);
       }
       exit = this.walkBody(def, entry, frame);
     } else {
@@ -1504,7 +1504,7 @@ export class Walker {
     for (const a of temps) {
       const v = field(a, 'name')!.text;
       if (!saved.has(v)) saved.set(v, entry.variables.get(v));
-      entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry), v, 'x', a);
+      entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), v, 'x', a);
     }
     let after = this.runScript(script, n, entry);
     for (const [v, was] of saved) after = this.put(after, 'variables', v, was);

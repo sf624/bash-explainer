@@ -384,15 +384,18 @@ export class WalkBuiltins {
     return name;
   }
 
-  /** The assignment `a`; `statement`: one with no command (`x=1`, not `x=1 cmd`), where an error discards the rest of the line. */
-  assignNode(a: SyntaxNode, st: ShellState, statement = false): ShellState {
+  /**
+   * The assignment `a`; `statement`: one with no command (`x=1`, not `x=1 cmd`), where an error discards the rest of
+   * the line; `temporary`: one before a function call (`x=1 f`), see `assign`.
+   */
+  assignNode(a: SyntaxNode, st: ShellState, statement = false, temporary = false): ShellState {
     const nameNode = field(a, 'name')!;
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
     const text = value ? this.w.conditions.staticText(value, st, true) : '';
     if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
-    return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false);
+    return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false, false, temporary);
   }
 
   /**
@@ -413,12 +416,21 @@ export class WalkBuiltins {
     return text === undefined || this.w.arith.integer(text, st, at).value === undefined;
   }
 
-  /** `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`. */
-  assign(st: ShellState, name: string, subscript: boolean, how: NonNullable<Operand['assign']>, at: SyntaxNode, nameref: boolean, declaring = false): ShellState {
+  /**
+   * `name=value`, `name+=value`, `name[i]=value`, `name=(…)`; `nameref`: the assignment of a `declare -n`;
+   * `temporary`: one before a function call (`n=1+1 f`), whose variable bash makes without the integer and case
+   * attributes: `=` gives it the text as it is (`n='x=5' f` sets no x), but `+=` still runs an integer's arithmetic.
+   */
+  assign(st: ShellState, name: string, subscript: boolean, how: NonNullable<Operand['assign']>, at: SyntaxNode, nameref: boolean, declaring = false, temporary = false): ShellState {
     // Assigning to a nameref assigns to the variable it names.
     const target = nameref ? name : this.resolve(st, name);
     if (!target) return st;
-    const prev = st.variables.get(target);
+    let prev = st.variables.get(target);
+    if (temporary && !how.append && prev && ['i', 'l', 'u'].some((l) => l in prev!.attrs)) {
+      const { i: _i, l: _l, u: _u, ...attrs } = prev.attrs;
+      prev = { ...prev, attrs };
+      st = this.w.put(st, 'variables', target, prev);
+    }
     // A readonly variable keeps its value.
     if (prev?.attrs.r?.state === 'on' && !declaring) return st;
     if (subscript || how.array) {
