@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { shellState } from '../src/semantics/state';
 import { wordFacts } from '../src/wordfacts';
 
 let parser: Parser;
@@ -10,7 +11,8 @@ before(async () => {
 });
 
 function facts(src: string, line = 0, lang: 'en' | 'ja' = 'en') {
-  return wordFacts(parser.parse(src).root, line, lang);
+  const tree = parser.parse(src);
+  return wordFacts(tree.root, line, lang, shellState(tree));
 }
 
 describe('word facts', () => {

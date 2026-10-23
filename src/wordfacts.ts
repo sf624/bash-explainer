@@ -1,6 +1,10 @@
 import type { Lang } from './i18n';
 import { type Fact, fact } from './messages';
-import { args, commandName, usesVariable } from './pitfalls';
+import type { Shell } from './dialect';
+import { args, commandName, readsVariable } from './pitfalls';
+import { type NameResolution, resolveName } from './semantics/names';
+import type { StateModel } from './semantics/state';
+import { partMeaning } from './semantics/words';
 import { field } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -10,9 +14,18 @@ import type { SyntaxNode } from './syntax/tree';
 // line where its node starts, and said from the catalog (src/messages.ts) with the sections of the manual it is about.
 // The style checks, which are not facts of the models, are in src/pitfalls.ts.
 
-/** A variable expansion the shell word-splits and globs: not inside double quotes. */
-function unquotedExpansion(n: SyntaxNode): boolean {
-  return (n.type === 'simple_expansion' || n.type === 'expansion') && n.parent?.type !== 'string';
+/** The file commands whose unquoted variables are worth a warning. */
+const PATH_COMMANDS = new Set(['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.']);
+
+/** The name of the builtin or program a resolution runs, when it is known (not a function: what it does is not known). */
+function ranName(r: NameResolution): string | undefined {
+  if (r.kind === 'alias') return r.sure && r.target ? ranName(r.target) : undefined;
+  return r.kind === 'builtin' || r.kind === 'file' ? r.name.split('/').pop() : undefined;
+}
+
+/** What the model says splitting and globbing do to this expansion. */
+function isExpansion(n: SyntaxNode): boolean {
+  return n.type === 'simple_expansion' || n.type === 'expansion';
 }
 
 /** `$?`, `$#`, `$$`, `$!` and `${#…}`: always a number, so safe unquoted. */
@@ -21,7 +34,13 @@ function alwaysNumber(n: SyntaxNode): boolean {
 }
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
-export function wordFacts(root: SyntaxNode, line: number, lang: Lang): Fact[] {
+export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell?: Shell): Fact[] {
+  /** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
+  const bare = (n: SyntaxNode): boolean => {
+    if (!isExpansion(n)) return false;
+    const m = partMeaning(n, model);
+    return !!m && (m.split.applies !== false || m.glob.applies !== false);
+  };
   const facts: Fact[] = [];
   const add = (f: Fact) => { if (!facts.some((g) => g.text === f.text)) facts.push(f); };
   const visit = (n: SyntaxNode) => {
@@ -37,16 +56,19 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang): Fact[] {
         // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value.
         const prefix = n.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
         for (const v of prefix) {
-          const use = a.find((w) => w.type !== 'raw_string' && usesVariable(w.text, v));
+          const use = a.find((w) => readsVariable(w, v));
           if (name && use) {
             add(fact(lang, 'prefix-assignment-expanded-first', { v, name, use: use.text }));
             break;
           }
         }
         // Unquoted variables as paths of file commands.
-        if (name && ['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.'].includes(name)) {
-          const bare = a.find((w) => unquotedExpansion(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => unquotedExpansion(c))));
-          if (bare) add(fact(lang, 'unquoted-variable-as-path', { bare: bare.text }));
+        // (What the name runs, from the model: a function of that name is not `cp`.)
+        const nameNode = field(n, 'name');
+        const ran = nameNode && /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true })) : undefined;
+        if (ran && PATH_COMMANDS.has(ran)) {
+          const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
+          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text }));
         }
         break;
       }
@@ -72,8 +94,9 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang): Fact[] {
       case 'test_command': {
         // `[ $x = y ]`: an empty or spaced value breaks the test.
         // The words of the test itself, not variables inside a `$(…)` in it.
-        const bare = n.namedChildren.find((e) => unquotedExpansion(e) && !alwaysNumber(e));
-        if (bare) add(fact(lang, 'unquoted-variable-in-test', { bare: bare.text }));
+        // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
+        const word = n.namedChildren.find((e) => isExpansion(e) && !alwaysNumber(e));
+        if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }));
         break;
       }
     }

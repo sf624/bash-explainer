@@ -3,6 +3,14 @@ import { spawnSync } from 'child_process';
 import { findIdioms, isStrictMode, simulateRedirects } from '../src/idioms';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { descendants } from '../src/syntax/tree';
+
+// The idioms of the statements of a source text (the kinds of statement the analyzer collects on a line).
+const STATEMENTS = ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'test_command', 'extended_test', 'while_statement'];
+function idioms(sources: string[], lang: 'en' | 'ja'): string[] {
+  const parser = createUnbashParser();
+  return findIdioms(sources.flatMap((src) => descendants(parser.parse(src).root, STATEMENTS)), lang);
+}
 
 describe('redirect order', () => {
   it('follows redirections left to right', () => {
@@ -28,7 +36,7 @@ describe('redirect order', () => {
 });
 
 describe('idioms', () => {
-  const has = (stmt: string, re: RegExp) => assert.ok(findIdioms([stmt], 'en').some((n) => re.test(n)), stmt);
+  const has = (stmt: string, re: RegExp) => assert.ok(idioms([stmt], 'en').some((n) => re.test(n)), stmt);
 
   it('finds common patterns', () => {
     has('while IFS= read -r line', /reads a line exactly as is/);
@@ -44,13 +52,13 @@ describe('idioms', () => {
   });
 
   it('reports the larger idiom only', () => {
-    const notes = findIdioms(['SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)', 'cd "$(dirname "${BASH_SOURCE[0]}")"'], 'en');
+    const notes = idioms(['SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)', 'cd "$(dirname "${BASH_SOURCE[0]}")"'], 'en');
     assert.strictEqual(notes.length, 1);
     assert.match(notes[0], /absolute path/);
   });
 
   it('ignores ordinary commands', () => {
-    assert.deepStrictEqual(findIdioms(['echo hello', 'cd /tmp', 'read line'], 'en'), []);
+    assert.deepStrictEqual(idioms(['echo hello', 'cd /tmp', 'read line'], 'en'), []);
   });
 });
 
@@ -85,7 +93,7 @@ describe('set option bundles, compared with bash', () => {
       if (!on) return this.skip();
       assert.deepStrictEqual(explained(cmd), on);
       assert.strictEqual(isStrictMode(cmd), ['errexit', 'nounset', 'pipefail'].every((n) => on.includes(n)), cmd);
-      assert.strictEqual(findIdioms([cmd], 'en').some((n) => /strict mode/.test(n)), isStrictMode(cmd));
+      assert.strictEqual(idioms([cmd], 'en').some((n) => /strict mode/.test(n)), isStrictMode(cmd));
     });
   }
 
@@ -111,14 +119,14 @@ describe('set option bundles, compared with bash', () => {
 });
 
 describe('reading a file line by line', () => {
-  const notes = (stmt: string) => findIdioms([stmt], 'en').filter((n) => /line by line/.test(n));
+  const notes = (stmt: string) => idioms([stmt], 'en').filter((n) => /line by line/.test(n));
 
   it('knows a loop fed by a file and one fed by a command', () => {
     assert.match(notes('while read -r line; do echo "$line"; done < input.txt')[0], /^Idiom: `while read … done < file`.*unless the loop is `while read -r line \|\| \[ -n "\$line" \]`$/);
-    assert.match(notes('while read -r line; do echo "$line" done < "$f"')[0], /done < file/);
+    assert.match(notes('while read -r line; do echo "$line"; done < "$f"')[0], /done < file/);
     assert.match(notes('while IFS= read -r line; do n=$((n+1)); done < <(ls)')[0], /done < <\(command\)`.*current shell/);
-    assert.match(findIdioms(['while read -r l; do :; done < <(ls)'], 'ja').join(), /カレントシェル/);
-    assert.match(findIdioms(['while read -r l; do :; done < f'], 'ja').join(), /1行ずつ/);
+    assert.match(idioms(['while read -r l; do :; done < <(ls)'], 'ja').join(), /カレントシェル/);
+    assert.match(idioms(['while read -r l; do :; done < f'], 'ja').join(), /1行ずつ/);
   });
 
   it('leaves other loops alone', () => {
@@ -129,8 +137,8 @@ describe('reading a file line by line', () => {
 });
 
 describe('argument parsing, NUL-safe loops and other everyday idioms', () => {
-  const en = (stmt: string) => findIdioms([stmt], 'en').join('\n');
-  const ja = (stmt: string) => findIdioms([stmt], 'ja').join('\n');
+  const en = (stmt: string) => idioms([stmt], 'en').join('\n');
+  const ja = (stmt: string) => idioms([stmt], 'ja').join('\n');
   const yes = (stmt: string, re: RegExp, jaRe: RegExp) => {
     assert.match(en(stmt), re, stmt);
     assert.match(ja(stmt), jaRe, stmt);
