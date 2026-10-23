@@ -1226,6 +1226,8 @@ class Converter {
       // A function with no body: the input stops after `f()`.
       n.incomplete = true;
       this.errors.push({ kind: 'missing', message: 'Missing "compound_statement"', startIndex: c.end, endIndex: c.end });
+      // (unbash may end it past what holds it: `if x; then f() fi`, where `fi` closes the `if`.)
+      n.endIndex = Math.min(n.endIndex, limit);
       this.fill(n);
       this.truncate(n);
       return n;

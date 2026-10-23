@@ -628,6 +628,9 @@ describe('unbash adapter: unfinished input', () => {
     assert.equal(o('for'), '(program (for_statement INCOMPLETE "for"))');
     assert.equal(o('f()'), '(program (function_definition INCOMPLETE (word @name "f") "(" ")"))');
     assert.equal(o('function g'), '(program (function_definition INCOMPLETE "function" (word @name "g")))');
+    // (Found by the fuzz: the `fi` that closes the `if` is not the function's.)
+    assert.deepEqual(invariants(tree('if false; then f() fi')), []);
+    assert.match(o('if false; then f() fi'), /\(function_definition INCOMPLETE \(word @name "f"\) "\(" "\)"\) "fi"\)\)$/);
     assert.equal(o('while true; do\n').includes('INCOMPLETE'), true);
     assert.equal(o('for ((;;))').includes('INCOMPLETE'), true);
   });

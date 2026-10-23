@@ -29,7 +29,8 @@ describe('pitfalls', () => {
     ['rm -rf $DIR/build', /if `DIR` is empty this becomes `rm -r \/build`/],
     ['rm -rf "${DIR}/build"', /if `DIR` is empty/],
     ['[-f x]', /`\[` is an ordinary command, so a space must follow it \(`\[-f` reads as another command name\)/],
-    ['[ -f x]', /the `\]` in `x\]` is read as part of the word/],
+    // (`[ -f x]`, with a last word of known text, is the analyzer's note: test/testexpr.test.ts.)
+    ['[ -f $x]', /the `\]` in `\$x\]` is read as part of the word/],
     ['[ "$a" < "$b" ]', /`<` inside `\[ \]` is read as a redirection, not a comparison/],
     ['[ -f x && -n y ]', /`&&` inside `\[ \]` is not an argument of `\[`/],
     ['while read line; do :; done < f', /without `-r`, backslashes/],
@@ -72,7 +73,9 @@ describe('the spacing of [ ], against bash', () => {
       else assert.ok(r.stderr !== '' || r.status === 127, `${r.status} ${r.stderr}`);
       // The tool finds the same mistake.
       const one = cmd.replace(/^a=.*?; /, '').replace(/^a=1; b=2; /, '');
-      const mistakes = notes(one).length > 0 || (() => { const t = parser.parse(one); return wordFacts(t.root, 0, 'en', shellState(t)); })().length > 0;
+      // (`[ -d /]`: the analyzer says that `[` fails, a fact of the model.)
+      const failsNote = new Analyzer('en').explainLine(parser.parse(one), 0, 'bash').facts?.some((f) => /^bracket-|^test-malformed$/.test(f.id));
+      const mistakes = notes(one).length > 0 || failsNote || (() => { const t = parser.parse(one); return wordFacts(t.root, 0, 'en', shellState(t)); })().length > 0;
       if (expected === 'fails') assert.ok(mistakes, cmd);
     });
   }

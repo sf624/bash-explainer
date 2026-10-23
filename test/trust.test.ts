@@ -1,13 +1,14 @@
 // What the decisions of the state model trust (src/semantics/trust.ts): the scan reads the syntax tree, and the trees
 // of the strings the walk runs, not their text again. Each case is compared with bash.
 import * as assert from 'assert';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 
 const parser = createUnbashParser();
 const bash = (code: string): string => execFileSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).toString();
+const bashErr = (code: string): string => spawnSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }, encoding: 'utf8' }).stderr;
 
 /** What the model decides of the last `&&` list of `src` (undefined: nothing). */
 function decided(src: string): string | undefined {
@@ -45,9 +46,12 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; eval f`), 'true');
     assert.strictEqual(decided(`${body}; eval 'eval f'`), 'true');
     for (const more of ['trap f INT', "eval 'trap f INT'", "trap 'eval f' INT", "shopt -s expand_aliases; alias g='f'"]) assert.strictEqual(decided(`${body}; ${more}`), undefined, more);
-    // (An alias named with a character the walk does not take: bash expands it, `g,h` runs `f`; its text is read alone.)
+    // (An alias named with a comma: bash expands it, `g,h` runs `f`.)
     assert.strictEqual(bash(`${body}; f() { echo F; }; shopt -s expand_aliases; alias 'g,h=f'\ng,h`), 'F\n');
     assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g,h=f'`), undefined);
+    // (A name with a `/` is invalid: bash defines nothing, so nothing runs `f`.)
+    assert.match(bashErr(`shopt -s expand_aliases; alias 'g/h=f'`), /invalid alias name/);
+    assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g/h=f'; eval f`), 'true');
   });
 
   it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", function () {

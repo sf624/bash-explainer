@@ -34,6 +34,8 @@ export function testRange(e: TestExpr): [number, number] {
 }
 
 class Syntax extends Error {}
+/** A form this parser does not follow (`-t` without a number in a long test): not an error of bash. */
+class Unfollowed extends Error {}
 
 /**
  * Parses the arguments `[` receives (without the closing `]`). A word is its text after quote removal, or null when it
@@ -41,6 +43,21 @@ class Syntax extends Error {}
  * `-t` without a number in a long test, which this parser does not follow.
  */
 export function parseTest(w: (string | null)[]): TestExpr | undefined {
+  const r = readTest(w);
+  return typeof r === 'object' ? r : undefined;
+}
+
+/**
+ * Whether bash's `test` surely fails on the words `w` without evaluating them (status 2, with "unary operator
+ * expected", "binary operator expected", "too many arguments"…): their number and shape fit no expression of the
+ * POSIX rules for one to four arguments, nor of bash's grammar beyond. Only when every word is known: an expansion
+ * may give an operator, or no word or several.
+ */
+export function testFails(w: readonly (string | null)[]): boolean {
+  return w.every((x) => x !== null) && readTest(w) === 'error';
+}
+
+function readTest(w: readonly (string | null)[]): TestExpr | 'error' | 'unfollowed' | undefined {
   const n = w.length;
   let pos = 0;
   const is = (i: number, s: string) => w[i] === s;
@@ -97,7 +114,7 @@ export function parseTest(w: (string | null)[]): TestExpr | undefined {
     }
     // `-t` takes a file descriptor only if a number follows; this is not followed.
     if (is(p, '-t')) {
-      if (p + 1 >= n || !/^\d+$/.test(w[p + 1] ?? '0')) return fail();
+      if (p + 1 >= n || !/^\d+$/.test(w[p + 1] ?? '0')) throw new Unfollowed();
       pos += 2;
       return unary(p);
     }
@@ -128,8 +145,9 @@ export function parseTest(w: (string | null)[]): TestExpr | undefined {
       default: return general();
     }
   } catch (e) {
-    if (e instanceof Syntax) return undefined;
-    // Only Syntax is thrown here.
+    if (e instanceof Syntax) return 'error';
+    if (e instanceof Unfollowed) return 'unfollowed';
+    // Only these are thrown here.
     /* c8 ignore next */
     throw e;
   }
@@ -162,27 +180,49 @@ export function bracketWords(n: SyntaxNode): { words: SyntaxNode[]; close?: Synt
  * there (no argument, or a last one whose text is known: bash fails at run time with `[: missing ']'`, status 2).
  * `test` is the expression, undefined when bash would report an error in it (or with a last word not known).
  */
-export interface CommandTest { words: SyntaxNode[]; close?: SyntaxNode; unclosed: boolean; test?: BracketTest }
+export interface CommandTest {
+  words: SyntaxNode[]; close?: SyntaxNode; unclosed: boolean; test?: BracketTest;
+  /**
+   * The expression is known and bash cannot read it (`test -f c ]`, `[ a b ]`: `testFails`), so `test` fails with
+   * status 2 before evaluating anything. Not set when `unclosed`, which bash reports first.
+   */
+  malformed: boolean;
+}
 
 export function commandTest(spec: CommandSpec, args: SyntaxNode[]): CommandTest {
   const closer = spec.closingOperand;
   const last = args[args.length - 1];
   const value = last && staticWordValue(last);
-  if (!closer) return { words: args, unclosed: false, test: testOfWords(args) };
-  if (value === closer) return { words: args.slice(0, -1), close: last, unclosed: false, test: testOfWords(args.slice(0, -1)) };
+  const read = (words: SyntaxNode[], unclosed: boolean): CommandTest => {
+    const test = testOfWords(words);
+    return { words, unclosed, ...(test ? { test } : {}), malformed: !unclosed && !test && testFails(words.map(fieldText)) };
+  };
+  if (!closer) return read(args, false);
+  if (value === closer) return { ...read(args.slice(0, -1), false), close: last };
   // (Without its `]`, the words are still read as the expression they were meant to be, as while it is typed.)
-  return { words: args, unclosed: !last || value !== undefined, test: testOfWords(args) };
+  return read(args, !last || value !== undefined);
+}
+
+/**
+ * The one field a word of `test` gives, or null when that is not sure: an expansion, and also a word with a glob,
+ * a brace or a tilde, which may give other fields or several.
+ */
+function fieldText(x: SyntaxNode): string | null {
+  return /[*?[{~]/.test(x.text) ? null : wordText(x);
+}
+
+/** A word of `test` after quote removal (`\(` is `(`), or null when it depends on an expansion. */
+function wordText(x: SyntaxNode): string | null {
+  if (x.type === 'number') return x.text;
+  if (x.text === '\\(' || x.text === '\\)') return x.text[1];
+  return literalContent(x)?.text ?? null;
 }
 
 /** The words of a `[ ]` or of the arguments of `test`, read as one expression. */
 export function testOfWords(leaves: SyntaxNode[]): BracketTest | undefined {
   // (Each node is a whole word: an argument of the command.)
-  const words: BracketWord[] = leaves.map((x) => ({ nodes: [x], text: null }));
-  for (const w of words) {
-    // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
-    const parts = w.nodes.map((x) => (x.type === 'number' ? x.text :x.text === '\\(' || x.text === '\\)' ? x.text[1] : literalContent(x)?.text));
-    w.text = parts.every((t) => t !== undefined) ? parts.join('') : null;
-  }
+  // `\(` and `\)` are the parentheses of a group: after quote removal they are `(` and `)`.
+  const words: BracketWord[] = leaves.map((x) => ({ nodes: [x], text: wordText(x) }));
   const expr = parseTest(words.map((w) => w.text));
   return expr && { words, expr };
 }

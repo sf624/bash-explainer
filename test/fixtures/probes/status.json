@@ -1106,6 +1106,51 @@
   },
   {
     "manual": "4.1",
+    "snippet": "test -f a.txt ]; @PROBE:after@",
+    "note": "`test` with three words and no binary operator in the middle fails (status 2) before testing anything, and set -e stops",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: test: a.txt: binary operator expected"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "@PROBE:before@; [ a.txt ] ]",
+    "errexit": false,
+    "note": "`[ a.txt ] ]`: two words before the last `]`, the first no unary operator: status 2",
+    "facts": {
+      "ran": [
+        "before"
+      ],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: [: a.txt: unary operator expected"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "[ a b c d ] || @PROBE:failed@",
+    "note": "four words that are no expression: too many arguments, status 2",
+    "facts": {
+      "ran": [
+        "failed"
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: [: too many arguments"
+    }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "[ -f a.txt -a ] && @PROBE:found@",
+    "note": "three words whose middle one is no binary operator: a `-a` at the end does not make it an AND (status 2)",
+    "facts": {
+      "ran": [],
+      "status": 2,
+      "stderr": "SCRIPT: line 1: [: a.txt: binary operator expected"
+    }
+  },
+  {
+    "manual": "4.1",
     "snippet": "@PROBE:before@; [ ]",
     "errexit": false,
     "note": "`[ ]`: no expression, false",
