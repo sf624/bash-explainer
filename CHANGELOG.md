@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 ### New
 
@@ -56,7 +56,7 @@
 - The redirections of a command are read wherever they are written: before its name, among its words, after them, and around assignments alone. A command of redirections and assignments only has the status of the last `$( )` in its redirections, which bash makes after the assignments: `>f$(false)` and `x=1 >f$(false)` fail (`set -e` stops there), and `>f$(exit 2) x=$(exit 1)` has status 2. In such a redirection, `>f$a a=2` says that `$a` is already 2, as bash writes `f2`. A pipeline stage with an output redirection before or among its words (`>out grep x in | sort`, `grep >out x in | sort`) gets no example of the whole pipeline, since its output goes to the file. `echo a > f b 2>&1` says where both outputs end up, and `cat <<< x 2>&1 > f` says it once. `>/dev/null 2>&1 command -v jq` is the quiet check idiom, `>/etc/motd sudo echo hi` gets the sudo pitfall, and `[ -f x 2>/dev/null ]` no longer warns that `2>` is a misread comparison. After `x=1`, `>g$(( x *= 5 )) printf "$x"` prints `1`, as the explanation now says. Before, these had the status 0 or that of the assignments, no note on `$a`, an example in which `sort` sorted what went to the file, no note or the note twice, no idiom and no pitfall, a wrong warning, and an unknown value.
 - A script with a long chain of functions, each calling the one before in `$( )` and the one before that plainly (`f3() { local a=$(f2); f1; }`), is explained at once. Before, 40 such functions froze the explanation for about a minute.
 
-[All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...main)
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.7.0...v0.8.0)
 
 ## 0.7.0
 
