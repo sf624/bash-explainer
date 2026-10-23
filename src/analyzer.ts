@@ -1377,11 +1377,11 @@ export class Analyzer {
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.cx.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    const read = this.args(head.spec, args, head.name, head.fn);
+    const read = this.args(head.spec, args, head.runs ?? head.name, head.fn);
     let argToks = read.tokens;
     // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
     const bracket = head.test?.closingOperand !== undefined;
-    if (head.test) argToks = this.testArgs(n, commandTest(head.test, args), bracket) ?? argToks;
+    if (head.test) argToks = this.testArgs(n, commandTest(head.test, args, this.bashTest(head.test)), bracket);
     // (A function of the script is not the command its name suggests: no example of that command.)
     if (!head.fn) {
       this.unreadStdin(n, read.parse, args, head.name);
@@ -1446,22 +1446,28 @@ export class Analyzer {
 
   /**
    * The tokens of the arguments of `test` or `[` (`test`, from src/testexpr.ts): the expression, and the last `]` of `[`
-   * (`bracket`). Undefined when bash cannot read the expression of `test` (its words are then read with its spec).
+   * (`bracket`). Where the expression is not known to be read (bash fails on it, or a word is not known), the words
+   * are plain arguments: no condition is explained that may never be evaluated.
    */
-  private testArgs(n: SyntaxNode, test: CommandTest, bracket: boolean): Token[] | undefined {
-    // (Where bash fails before evaluating anything, the words are plain arguments: no condition is explained.)
+  private testArgs(n: SyntaxNode, test: CommandTest, bracket: boolean): Token[] {
     const last = test.words[test.words.length - 1];
-    if (test.unclosed && last && /\S\]$/.test(last.text)) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-close-glued', { word: last.text })));
+    // (`[ -f x]`, `[ -f $x]`: the `]` is glued to the last word. With a word not known, the pitfall says it.)
+    const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
+    if (test.unclosed && glued) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-close-glued', { word: last.text })));
     else if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close')));
     if (test.malformed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'test-malformed', { name: bracket ? '[' : 'test' })));
     let inner: Token[];
-    if (test.test && !test.unclosed) {
+    if (test.test && !test.unclosed && !glued) {
       this.testExample(n, bracketShape(test.test), '[');
       inner = this.testTokens(n, test.test, test.test.expr);
-    } else if (bracket || test.malformed) inner = this.subs(test.words);
-    else return undefined;
+    } else inner = this.subs(test.words);
     if (!test.close) return inner;
     return [...inner, this.tok(test.close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
+  }
+
+  /** Whether `test` (its spec, `testSpecOf`) is bash's builtin, which reads its words by bash's rules (`commandTest`). */
+  private bashTest(test: CommandSpec): boolean {
+    return !!test.builtin && (!this.cx.shell || this.cx.shell === 'bash');
   }
 
   /** What the command name `name` runs at `at` (src/semantics/names.ts). */
@@ -1536,16 +1542,24 @@ export class Analyzer {
     // echo=printf`, `alias [=echo`) is the alias. (A quoted name is never an alias.)
     let res = this.resolve(name, nameNode, { quoted: sv !== undefined });
     const known = !!lookupCommand(name);
-    if (res.kind === 'alias' && known && res.target?.name === name) res = this.resolve(name, nameNode, { quoted: true });
+    // (Not `test` or `[` with more words, `alias [='[ -n x'`: they change the expression.)
+    const same = res.kind === 'alias' && res.target?.name === name && (alias1(res.alias.value) || !testSpecOf(res.target));
+    if (same && known) res = this.resolve(name, nameNode, { quoted: true });
     if (res.kind === 'alias') {
       const { alias } = res;
+      // The words after the name are read with the spec of the command the alias runs, when its text is that name
+      // alone at each step (`alias g=grep`: `g -n x f`). With more words (`alias ll='ls -l'`), they go after those.
+      let runs: NameResolution | undefined = res;
+      while (runs?.kind === 'alias' && alias1(runs.alias.value)) runs = runs.target;
+      const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? this.specFor(runs.name) : undefined;
+      const spec: CommandSpec = target ?? { ...NO_SPEC, unknownOption: { ja: `エイリアスの置き換え先 \`${alias.value}\` に渡す単語`, en: `A word passed on to \`${alias.value}\`, the text of the alias` } };
       const line = (docLine(alias.at) + 1);
       // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
       const chain = res.target?.kind === 'alias'
         ? this.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
         : '';
       return {
-        name, kind: 'function', nameTokens: [], refs: ['6.6'],
+        name, kind: 'function', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}),
         explanation: res.sure
           ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
           : alias.state === 'on'
@@ -2108,8 +2122,8 @@ export class Analyzer {
     // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.
     const value = staticWordValue(first);
     const test = value === undefined ? undefined : testSpecOf(this.resolve(value, first, { env: this.cx.slotEnvs.get(first) }));
-    const children = (test && this.testArgs(first.parent!, commandTest(test, words.slice(1)), test.closingOperand !== undefined))
-      ?? this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
+    const children = test ? this.testArgs(first.parent!, commandTest(test, words.slice(1), this.bashTest(test)), test.closingOperand !== undefined)
+      : this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
     if (role.of) {
       // `{}` is replaced by find (and `xargs -I{}`) with each path.
       const mark = (ts: Token[]) => ts.forEach((t) => {
@@ -3974,6 +3988,13 @@ interface CommandHead {
   refs?: readonly string[];
   /** The spec of `test` or `[`, when the name runs one of them (src/semantics/names.ts, `testSpecOf`). */
   test?: CommandSpec;
+  /** The command whose spec reads the words, when it is not `name`: what an alias runs (`alias g=grep`). */
+  runs?: string;
+}
+
+/** An alias whose text is one plain word: the alias runs that command with the same words. */
+function alias1(value: string): boolean {
+  return /^[^\s;|&<>()'"`$\\=]+$/.test(value);
 }
 
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;

@@ -7,6 +7,9 @@ import { Analyzer, Token } from '../src/analyzer';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { parseTest, TestExpr, testFails, testRange } from '../src/testexpr';
+import { spawnSync } from 'child_process';
+import { shellState } from '../src/semantics/state';
+import { statusModel } from '../src/semantics/status';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -320,9 +323,9 @@ describe('[ ] in the analyzer groups as bash does', () => {
 // what bash runs, which the status of each line shows (`f` is a file, `c` is not; the function returns 3).
 describe('a command named [ is explained as what bash runs', () => {
   /** The explanation of the last line of `src`, and all its tokens. */
-  const explain = (src: string) => {
+  const explain = (src: string, shell: 'bash' | 'dash' = 'bash') => {
     const tree = parser.parse(src)!;
-    const e = new Analyzer('en').explainLine(tree, src.split('\n').length - 1, 'bash');
+    const e = new Analyzer('en').explainLine(tree, src.split('\n').length - 1, shell);
     const all: Token[] = [];
     const walk = (t: Token) => { all.push(t); t.children.forEach(walk); };
     e.items.forEach(walk);
@@ -414,4 +417,52 @@ describe('a command named [ is explained as what bash runs', () => {
       assert.ok(!explain(src).e.facts?.some((f) => f.id === 'test-malformed'));
     });
   }
+  // POSIX leaves a dangling `-a` or `-o` unspecified: bash fails (2), dash does not. The note and the status model's
+  // `fails` are bash's only; in dash the words stay plain arguments, with no condition.
+  const dashHas = spawnSync('dash', ['-c', ':']).status === 0;
+  for (const [src, dashStatus] of [['[ a -a ]', 1], ['test a -o', 0], ['[ -t 1 -a ]', 1]] as const) {
+    it(`${JSON.stringify(src)}: bash 2, dash ${dashStatus}`, function () {
+      assert.strictEqual(bash(src).status, 2);
+      assert.deepStrictEqual(explain(src).e.facts?.map((f) => f.id), ['test-malformed']);
+      const tree = parser.parse(src)!;
+      assert.deepStrictEqual(statusModel(shellState(tree, 'bash'), 'bash').status(tree.root.namedChildren[0]), { kind: 'test', fails: true });
+      if (!dashHas) return this.skip();
+      assert.strictEqual(spawnSync('dash', ['-c', src], { cwd: dir }).status, dashStatus);
+      const { e, all } = explain(src, 'dash');
+      assert.ok(!e.facts?.some((f) => f.id === 'test-malformed'));
+      assert.ok(!all.some((t) => t.explanation.startsWith('Condition: `')));
+      const dashTree = parser.parse(src)!;
+      assert.deepStrictEqual(statusModel(shellState(dashTree, 'dash'), 'dash').status(dashTree.root.namedChildren[0]), { kind: 'test' });
+    });
+  }
+  // The words after an alias are read as the command it runs reads them, when its text is that name alone; else
+  // they are words passed on to its text. Never `man` of the alias's own name.
+  for (const [src, word, text] of [
+    ['shopt -s expand_aliases\nalias g=grep\ng -n x f', '-n', 'show line numbers'],
+    ["shopt -s expand_aliases\nalias ll='ls -l'\nll -a", '-a', 'A word passed on to `ls -l`, the text of the alias'],
+    ['shopt -s expand_aliases\nalias [=echo\n[ -f c ]', '-f', undefined],
+    ['shopt -s expand_aliases\nalias test=echo\ntest -f c', '-f', undefined],
+  ] as const) {
+    it(`${JSON.stringify(src)}: ${word} as the alias runs it`, () => {
+      const t = explain(src).all.find((x) => x.label === word)!;
+      assert.ok(!t.explanation.includes('man '), t.explanation);
+      if (text) assert.strictEqual(t.explanation, text);
+    });
+  }
+  // An alias `[` whose text adds words: bash reads them into the expression (`[ -n x -f c ]`: syntax error, 2).
+  it('an alias [ with more words: no condition', () => {
+    const src = 'shopt -s expand_aliases\nalias [="[ -n x"\n[ -f c ]';
+    const real = bash(src);
+    assert.strictEqual(real.status, 2);
+    assert.match(real.stderr, /`-f' unexpected/);
+    const { all } = explain(src);
+    assert.ok(all[0].explanation.startsWith('The alias `[`'));
+    assert.ok(!all.some((t) => t.explanation.startsWith('Condition: `')));
+  });
+  // `[ -f $x]`: the `]` is glued to a word not known. One note (the pitfall), and no condition on `$x]`.
+  it('[ -f $x]: one note, no condition', () => {
+    const { e, all } = explain('[ -f $x]');
+    assert.strictEqual(e.notes.filter((n) => n.includes('`]`')).length, 1);
+    assert.ok(!all.some((t) => t.explanation.startsWith('Condition: `')));
+  });
 });

@@ -177,7 +177,7 @@ class Statuses implements StatusModel {
         // (`test` and `[`, the builtins or the programs.)
         const test = res && testSpecOf(res);
         if (test) {
-          const read = commandTest(test, args);
+          const read = commandTest(test, args, !!test.builtin && (!this.shell || this.shell === 'bash'));
           return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
         }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
