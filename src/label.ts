@@ -146,7 +146,6 @@ function stage(n: SyntaxNode): LabelPart[] {
   switch (n.type) {
     case 'command': return writtenAsBracket(n) ? bracket(n) : [code(flat(field(n, 'name')!.text))];
     case 'declaration_command': return [code(n.children[0].type)];
-    case 'unset_command': return [code('unset')];
     // The redirections of a stage are left to its own explanation.
     // (A redirection with nothing to redirect, `a | >f`, is only the redirection.)
     case 'redirected_statement': return field(n, 'body') ? stage(field(n, 'body')!) : skeleton(n);

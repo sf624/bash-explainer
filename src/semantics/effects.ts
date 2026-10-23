@@ -64,7 +64,7 @@ export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[]
 export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet; maybe?: boolean }
 
 /** The name a word gives a builtin (from `at` in its value: `-vx`), or undefined when it is not known here. */
-export const wordName = (n: SyntaxNode, at = 0): string | undefined => (n.type === 'variable_name' ? n.text : staticWordValue(n)?.slice(at));
+export const wordName = (n: SyntaxNode, at = 0): string | undefined => staticWordValue(n)?.slice(at);
 
 /** The values given in the parse (in their own word, or in the option's: `-vx`), with their specs. */
 function givenValues(parse: ArgvParse): { word: number; at: number; spec: ValueSpec | undefined }[] {

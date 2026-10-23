@@ -8,6 +8,7 @@ import { argWord, prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
+import { temporariesUnset } from '../names';
 import { aliasOf, builtinParse, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { optionRoles, readDeclarationWords, type Declaration } from '../vars';
@@ -328,9 +329,10 @@ export class WalkBuiltins {
     const ws = words.filter((w) => !w.type.endsWith('redirect'));
     const parse = interpret(builtins.unset, ws.map(argWord), { name: 'unset' });
     const flags = optionRoles(parse).map((r) => r.flag.slice(1)).join('');
-    const all = parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => ({ node: ws[word], text: (ws[word].type === 'variable_name' ? ws[word].text : staticWordValue(ws[word])) ?? ws[word].text }));
+    const all = parse.roles.filter((r) => r.role.role === 'operand').map(({ word }) => ({ node: ws[word], text: staticWordValue(ws[word]) ?? ws[word].text }));
     // (`unset -fv` is an error: nothing is unset.)
     if (flags.includes('f') && flags.includes('v')) return st;
+    const temporary = temporariesUnset(words, n);
     for (const { node, text } of all) {
       if (node.type !== 'variable_name' && staticWordValue(node) === undefined) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
@@ -346,8 +348,8 @@ export class WalkBuiltins {
         if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
         continue;
       }
-      // `unset 'a[1]'` removes an element.
-      if (text.includes('[')) continue;
+      // `unset 'a[1]'` removes an element; `x=1 unset x` the `x` of the command, and the one from before stays.
+      if (text.includes('[') || temporary.has(text)) continue;
       const v = st.variables.get(text);
       // With no -v, a name with no variable is a function.
       if (!flags.includes('v') && (!v || v.declared === 'off') && fn && fn.state !== 'off') {

@@ -19,6 +19,7 @@ import { type HostCommands, NO_HOST, type Trust } from '../trust';
 import { alwaysNumeric, changedByBash, INTEGERS_AT_START, readDeclaration } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
+import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './shared';
@@ -26,7 +27,7 @@ import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './sh
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 /** The simple commands: they expand their words before their redirections. */
-const SIMPLE = ['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments'];
+const SIMPLE = ['command', 'declaration_command', 'variable_assignment', 'variable_assignments'];
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
 /** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
@@ -330,9 +331,8 @@ export class Walker {
 
   program(root: SyntaxNode, start: ShellState): ShellState {
     // (One pass over the tree: the definitions, and the names `unset` may remove.)
-    const nodes = this.collectDefinitions(root, ['function_definition', 'command', 'unset_command']);
-    const unset = new Set([...nodes.filter((u) => u.type === 'unset_command').flatMap((u) => u.namedChildren),
-      ...nodes.filter((c) => c.type === 'command' && commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
+    const nodes = this.collectDefinitions(root, ['function_definition', 'command']);
+    const unset = new Set(nodes.filter((c) => c.type === 'command' && commandName(c) === 'unset').flatMap((c) => fields(c, 'argument')).map((w) => staticWordValue(w) ?? w.text));
     for (const def of nodes.filter((d) => d.type === 'function_definition')) {
       // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
       let x = def;
@@ -718,10 +718,6 @@ export class Walker {
         const words = n.namedChildren.filter((c) => !c.type.endsWith('redirect'));
         return this.orFunction(n.children[0].type, st, (s) => this.builtins.declare(n.children[0].type, words, readDeclaration(n), n, s));
       }
-      case 'unset_command':
-        this.substitutions(n, st);
-        st = this.redirections(n, this.defaults(n, st), 'off');
-        return this.orFunction('unset', st, (s) => this.builtins.unset(n.namedChildren, n, s));
       case 'variable_assignment':
         this.substitutions(n, st);
         return this.builtins.assignNode(n, this.defaults(n, st), true);
@@ -1432,7 +1428,9 @@ export class Walker {
     const special = assignments.length > 0 && !!name && builtins[name]?.builtin === 'special' && (posix === 'on' || posix === 'unknown');
     if (special) {
       let kept = st;
-      for (const a of assignments.filter(temporary)) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
+      // (`x=1 unset x` removes the temporary `x`, which then does not stay.)
+      const unset = name === 'unset' ? temporariesUnset(fields(n, 'argument'), n) : undefined;
+      for (const a of assignments.filter((a) => temporary(a) && !unset?.has(field(a, 'name')!.text))) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
       st = posix === 'on' ? kept : merge([this.builtins.appendArith(assignments, n, st), kept], this.posix);
     }
     if (name === undefined) return withStatus(st, this.conditions.simpleStatus(n, before));

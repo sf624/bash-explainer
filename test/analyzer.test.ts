@@ -685,7 +685,7 @@ describe('the state along the script (src/semantics/state.ts)', () => {
     // A command substitution reads its aliases when it runs.
     assert.match(find(explain('shopt -s expand_aliases; alias hi="echo A"; echo "$(hi)"'), 'hi').explanation, /alias `hi`/);
     // `unset -fv`: both options.
-    assert.match(find(explain('unset -fv g'), '-fv').explanation, /unset functions; unset variables/);
+    assert.deepStrictEqual(find(explain('unset -fv g'), '-fv').children.map((c) => c.explanation), ['unset functions', 'unset variables']);
   });
   it('a subshell keeps its changes', () => {
     assert.doesNotMatch(find(explain('( shopt -s dotglob )\nls *', 1), '*').explanation, /dotglob/);

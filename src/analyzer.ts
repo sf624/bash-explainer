@@ -521,7 +521,6 @@ export class Analyzer {
       case 'command': return this.command(n);
       case 'time_statement': return this.timeStatement(n);
       case 'declaration_command': return this.redirectLayoutOf(n) ?? this.declaration(n);
-      case 'unset_command': return this.unset(n);
       case 'variable_assignment': return skeletal(this.assignment(n), n, true);
       case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
       case 'pipeline': return this.pipeline(n);
@@ -1176,9 +1175,9 @@ export class Analyzer {
   }
 
   /**
-   * `export() { …; }; export x=1`: a declaration builtin or `unset` that the parser reads as its own node, when a
-   * function of its name runs instead (src/semantics/names.ts; in POSIX mode, `export`, `readonly` and `unset`, special
-   * builtins, are found first). Its words are the function's arguments.
+   * `export() { …; }; export x=1`: a declaration builtin that the parser reads as its own node, when a function of its
+   * name runs instead (src/semantics/names.ts; in POSIX mode, `export` and `readonly`, special builtins, are found
+   * first). Its words are the function's arguments.
    */
   private builtinAsFunction(n: SyntaxNode, redirsOut: boolean): Token | undefined {
     const head = n.children[0];
@@ -1235,45 +1234,6 @@ export class Analyzer {
   /** The token of `--`, which ends the options of a builtin. */
   private endOfOptions(n: SyntaxNode): Token {
     return this.tok(n, 'option', this.s('オプションの終わり: 以降は `-` で始まっていても通常の引数として扱う', 'End of options: everything after is a plain argument'));
-  }
-
-  private unset(n: SyntaxNode): Token {
-    const call = this.builtinAsFunction(n, false);
-    if (call) return call;
-    // The options and the names, read with unset's spec.
-    const kids = n.namedChildren;
-    const roles = new Map(interpret(builtins.unset, kids.map(argWord), { name: 'unset' }).roles.map(({ word, role }) => [kids[word], role]));
-    const letters = (r: ArgRole): Extract<ArgRole, { role: 'option' }>[] =>
-      (r.role === 'cluster' ? r.letters : [r]).filter((l): l is Extract<ArgRole, { role: 'option' }> => l.role === 'option');
-    const flags = kids.flatMap((c) => letters(roles.get(c)!).map((l) => l.flag));
-    // `unset` removes a variable if there is one, else a function (`-f`: a function, `-v`: a variable).
-    const st = this.cx.state.at(n).run;
-    // (Without -f, -v and -n only: with -n, bash keeps the function.)
-    const fallback = (name: string): 'function' | 'maybe' | 'variable' => {
-      if (flags.includes('-f')) return 'function';
-      if (flags.some((f) => f === '-v' || f === '-n') || (st.functions.get(name)?.state ?? 'off') === 'off') return 'variable';
-      const declared = st.variables.get(name)?.declared ?? 'off';
-      return declared === 'off' ? 'function' : declared === 'unknown' ? 'maybe' : 'variable';
-    };
-    const ref = !flags.includes('-f') && flags.includes('-n');
-    const children = kids.map((c) => {
-      // (`-fv`: the letters together.)
-      const opts = letters(roles.get(c)!);
-      if (opts.length) return this.tok(c, 'option', opts.map((o) => this.t(o.text)).join(this.s('、', '; ')));
-      if (c.type === 'variable_name' || isPlainWord(c)) {
-        const kind = fallback(c.text);
-        const text = kind === 'function' ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``)
-          : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`)
-            : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`);
-        return this.tok(c, 'variable', kind === 'maybe'
-          ? text + this.s(`。変数がなければ、代わりに関数 \`${c.text}\` を削除する`, `. If there is no such variable, the function \`${c.text}\` is removed instead`) : text);
-      }
-      return this.explain(c);
-    });
-    const t = this.tok(n, 'builtin', this.t(builtins.unset.summary) + this.s('（シェル組み込み）', ' (shell builtin)'), children, 'unset');
-    t.summary = `unset: ${t.explanation}`;
-    t.explanation += this.shellEffectNote(n, 'changes');
-    return t;
   }
 
   /** Whether the settings keep this example (examples.enabled / examples.disabled). */
@@ -1988,6 +1948,8 @@ export class Analyzer {
   private operandToken(nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean): Token {
     const a = nodes[word];
     const item = role.spec;
+    // `unset NAME`: what it removes, as bash decides it here.
+    if (item?.unsets) return this.unsetOperand(nodes, word, parse);
     // `env FOO=1 cmd`: an assignment for the command, not the command.
     if (item?.assignment) {
       const name = a.text.slice(0, a.text.indexOf('='));
@@ -2008,6 +1970,57 @@ export class Analyzer {
       desc = this.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
     } else if (desc && role.otherwise) desc = this.uncertainText(desc, this.t(role.otherwise.text), parse, nodes);
     return this.positional(a, desc, isFn ? undefined : item?.lang);
+  }
+
+  /**
+   * An operand of `unset` (`OperandSpec.unsets`): a function with `-f`, a variable with `-v`, the name reference itself
+   * with `-n`, else the variable if there is one here, or the function (src/semantics/state.ts). `a[1]` is an element
+   * of an array, and a glob pattern too when it is not quoted. A variable that a prefix assignment of the command sets
+   * (`x=1 unset x`) is that temporary one: the variable from before stays.
+   */
+  private unsetOperand(nodes: SyntaxNode[], word: number, parse: ArgvParse): Token {
+    const a = nodes[word];
+    const fn = hasOption(parse, '-f');
+    if (fn && hasOption(parse, '-v')) {
+      // (Once for the command, at its first name.)
+      if (parse.roles.find((r) => r.role.role === 'operand')!.word === word) this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-function-and-variable')));
+      return this.positional(a, this.s('削除する名前（`-f` と `-v` を同時に指定しているので、何も削除されない）', 'Name to unset (with both `-f` and `-v`, nothing is unset)'));
+    }
+    const plain = isPlainWord(a);
+    // (An unquoted glob has no value known here: its text, which bash uses when no file matches.)
+    const name = staticWordValue(a) ?? (plain ? a.text : undefined);
+    if (name === undefined) return this.positional(a, this.t(builtins.unset.operands![0].pattern[0].text));
+    const element = /^([A-Za-z_]\w*)\[(.+)\]$/s.exec(name);
+    let text: string;
+    if (fn) text = this.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``);
+    else if (element) {
+      text = element[2] === '@' || element[2] === '*'
+        ? this.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る）`, `Remove all the elements of the array \`${element[1]}\` (it stays, empty)`)
+        : this.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま）`, `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices)`);
+      // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
+      if (plain && hasGlob(a.text)) {
+        text += this.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を削除する（\`'${name}'\` と書く）`,
+          `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is unset instead (write \`'${name}'\`)`);
+      }
+    } else {
+      const temp = !hasOption(parse, '-n') && a.parent!.children.find((c) => c.type === 'variable_assignment' && field(c, 'name')?.text === name);
+      if (temp) {
+        text = this.s(`\`${temp.text}\` がこのコマンドのためだけに設定した変数 \`${name}\` を削除する（それより前からある \`${name}\` はそのまま残る）`,
+          `Unset the variable \`${name}\` that \`${temp.text}\` set for this command only (the \`${name}\` from before stays as it was)`);
+      } else {
+        // `unset` removes a variable if there is one, else a function (`-v`: a variable; with `-n`, bash keeps the function).
+        const st = this.cx.state.at(a.parent!).run;
+        const declared = st.variables.get(name)?.declared ?? 'off';
+        const kind = hasOption(parse, '-v', '-n') || (st.functions.get(name)?.state ?? 'off') === 'off' ? 'variable'
+          : declared === 'off' ? 'function' : declared === 'unknown' ? 'maybe' : 'variable';
+        text = kind === 'function' ? this.s(`関数 \`${name}\` を削除する`, `Remove the function \`${name}\``)
+          : hasOption(parse, '-n') ? this.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${name}\` itself (the variable it points to stays)`)
+            : this.s(`変数 \`${name}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${name}\` (it becomes undefined)`);
+        if (kind === 'maybe') text += this.s(`。変数がなければ、代わりに関数 \`${name}\` を削除する`, `. If there is no such variable, the function \`${name}\` is removed instead`);
+      }
+    }
+    // (A plain name is the variable or function itself; a quoted one or a pattern keeps the explanation of its word.)
+    return plain && !hasGlob(a.text) ? this.tok(a, 'variable', text) : this.positional(a, text);
   }
 
   /**

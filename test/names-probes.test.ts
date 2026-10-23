@@ -111,7 +111,10 @@ describe('assignments before a command against bash (test/fixtures/probes/state.
         if (!name.text) continue;
         const res = resolveName(model, name.text, c, { command: true, program });
         for (const a of assignmentsOf(model, c, res)) {
-          assert.strictEqual(a.scope === 'persists', Object.hasOwn(assigned, a.name), `${a.name} in \`${c.text}\`: ${a.scope}`);
+          // (A variable set before keeps its value when the assignment does not stay: `x=5; x=1 unset x`.)
+          const value = field(a.node, 'value')?.text;
+          const before = /^\w+$/.test(value ?? '') && (assigned[a.name] as { value?: string } | undefined)?.value?.startsWith('"') && (assigned[a.name] as { value: string }).value !== `"${value}"`;
+          assert.strictEqual(a.scope === 'persists', Object.hasOwn(assigned, a.name) && !before, `${a.name} in \`${c.text}\`: ${a.scope}`);
           assert.ok(a.sure);
         }
       }
