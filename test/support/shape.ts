@@ -181,8 +181,19 @@ function condOf(n: SyntaxNode): Cond {
   }
 }
 
+/** While `shapeOfTree` records them: the nodes each shape object was made from (see `shapeOfTree`). */
+let origins: Map<Shape, SyntaxNode[]> | undefined;
+const record = (s: Shape, ...ns: SyntaxNode[]): Shape => {
+  if (origins) origins.set(s, [...(origins.get(s) ?? []), ...ns]);
+  return s;
+};
+
 function fromNode(n: SyntaxNode | undefined, extra: Redir[] = []): Shape {
   if (!n) return { k: 'empty' };
+  return record(shapeOfNode(n, extra), n);
+}
+
+function shapeOfNode(n: SyntaxNode, extra: Redir[]): Shape {
   switch (n.type) {
     case 'command': case 'declaration_command': case 'unset_command': case 'test_command':
       return simpleOf(n, extra);
@@ -200,7 +211,8 @@ function fromNode(n: SyntaxNode | undefined, extra: Redir[] = []): Shape {
       if (!inner) return { k: 'empty' };
       const p = fromNode(inner);
       // `! ! a` is not negated (bash toggles); bash-ast keeps no negation on a compound command
-      if (p.k === 'pipeline') return p.negated ? pipeline(false, p.stages) : pipeline(true, p.stages);
+      // (`! a | b` makes a new pipeline: it stands for the nodes of the old one too)
+      if (p.k === 'pipeline') return record(p.negated ? pipeline(false, p.stages) : pipeline(true, p.stages), ...origins?.get(p) ?? []);
       return p.k === 'simple' ? pipeline(true, [p]) : p;
     }
     case 'time_statement': {
@@ -297,10 +309,19 @@ function elifOf(parent: SyntaxNode, c: SyntaxNode): Shape {
   return { k: 'if', cond, then: seq(itemsOf(c.children.slice(idx + 1))), else: elseShape, redirects: [] };
 }
 
-/** The shape of a whole script: its statements; null when there are none. */
+/**
+ * The shape of a whole script: its statements; null when there are none. With `from`, it also records the nodes
+ * each command of the shape was made from: a command node, and the wrappers that get the same shape
+ * (`redirected_statement`, `time_statement` with a body, `negated_command` over a compound command or a pipeline).
+ */
 // bash-ast keeps no redirections on `(( ))`, `[[ ]]` and `for ((;;))`, so ours are left out of their shapes too.
-export function shapeOfTree(root: SyntaxNode): Shape | null {
-  return seq(itemsOf(root.children));
+export function shapeOfTree(root: SyntaxNode, from?: Map<Shape, SyntaxNode[]>): Shape | null {
+  origins = from;
+  try {
+    return seq(itemsOf(root.children));
+  } finally {
+    origins = undefined;
+  }
 }
 
 // --- Comparison ---

@@ -101,7 +101,8 @@ function shorten(text: string, max = 60): string {
   return rest.some((l) => l.trim()) && s === first ? s + ' …' : s;
 }
 
-function isBlockLike(n: SyntaxNode): boolean {
+/** Whether each line of the node explains only its own part (a block over several lines); otherwise `sub` explains it whole. */
+export function isBlockLike(n: SyntaxNode): boolean {
   if (BLOCKS.has(n.type)) return isMultiline(n);
   if (WRAPPERS.has(n.type)) return n.namedChildren.some(isBlockLike);
   return false;
