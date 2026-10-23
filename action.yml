@@ -69,10 +69,8 @@ runs:
         [ -n "$CHECK_SHELL" ] && args+=(--shell "$CHECK_SHELL")
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
-        if [ -n "$SARIF" ]; then
-          check --format sarif > "$SARIF"
-          [ $? -le 1 ] || exit 2
-        fi
+        # One run writes the annotations to the output and the SARIF file.
+        [ -n "$SARIF" ] && args+=(--sarif "$SARIF")
         out=$(check --format github)
         status=$?
         # Printed, these lines become annotations on the pull request.

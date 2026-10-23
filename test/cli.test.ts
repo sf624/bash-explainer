@@ -120,6 +120,19 @@ describe('the command-line tool', function () {
     assert.deepStrictEqual(json.map((i: { code: string }) => i.code), ['dbracket']);
   });
 
+  it('--sarif writes the SARIF file from the same run that prints the annotations', () => {
+    const file = path.join(dir, 'out.sarif');
+    const both = run(['--check', '--format', 'github', '--sarif', file, fixture('posix.sh')]);
+    const alone = run(['--check', '--format', 'sarif', fixture('posix.sh')]);
+    assert.strictEqual(both.code, 1);
+    assert.match(both.out, /^::warning file=/m);
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), alone.out);
+    assert.strictEqual(run(['--sarif', file, '-e', 'ls']).code, 2);
+    const bad = run(['--check', '--sarif', path.join(dir, 'no-such-dir', 'x.sarif'), '-e', 'ls']);
+    assert.strictEqual(bad.code, 2);
+    assert.match(bad.err, /cannot write/);
+  });
+
   it('writes problems as GitHub annotations or SARIF, in line order', () => {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);

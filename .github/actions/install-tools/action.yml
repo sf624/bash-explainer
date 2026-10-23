@@ -1,0 +1,12 @@
+name: Install the tools the tests compare against
+description: >-
+  The tests compare the built-in runners with the real tools, and the shell-support table with
+  real shells; tools that are missing are skipped. GPL tools are installed as separate programs.
+
+runs:
+  using: composite
+  steps:
+    - run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh
+      shell: bash
