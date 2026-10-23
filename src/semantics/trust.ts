@@ -651,6 +651,7 @@ class Scan {
           read.add(d);
           more = true;
           const tree = this.strings.expansion(c, d.value);
+          if (!tree) this.blindFor('too many aliases expanded');
           this.expanding.set(tree, new Set([...from, name]));
           origin.set(tree, top);
           // (A command in an alias's text is foreign: so is the rest of it, in the tree of an alias expanded there.)
@@ -748,8 +749,11 @@ export interface StringTrees {
   script(words: readonly SyntaxNode[]): SyntaxNode | undefined;
   /** The root of `text`, the value the word `word` of `alias` gives, read alone (for an alias no command names). */
   alias(word: SyntaxNode, text: string): SyntaxNode;
-  /** The root of the alias text `text` with the rest of the simple command `command`: the tree the walk runs where it expands the alias there. */
-  expansion(command: SyntaxNode, text: string): SyntaxNode;
+  /**
+   * The root of the alias text `text` with the rest of the simple command `command`: the tree the walk runs where it
+   * expands the alias there. None past the trees a model makes in all (`ALIAS_TREES`).
+   */
+  expansion(command: SyntaxNode, text: string): SyntaxNode | undefined;
 }
 
 /**

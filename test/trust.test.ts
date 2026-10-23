@@ -50,7 +50,8 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g,h=f'`), undefined);
   });
 
-  it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", () => {
+  it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", function () {
+    this.timeout(60000);
     // (The key of an associative array is not arithmetic, also in an alias's text: `k` is not read. Before, that tree
     // was read on its own, without `declare -A m`, and nothing was trusted.)
     const src = "declare -A m; shopt -s expand_aliases; alias put='m[k]=1'\nput";
@@ -69,6 +70,17 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       const forty = Array.from({ length: 40 }, (_, i) => `alias a${i}='echo ${i}'`);
       assert.strictEqual(decided(uses(on, [...forty, ...Array.from({ length: 1200 }, (_, i) => `a${i % 40}`)])), 'true', `40 aliases, 30 uses each, expand_aliases ${on}`);
     }
+    // (Nor do the trees of all the commands together grow without bound: 500 commands of a chain that doubles 9 times
+    // ask for 255,500. Before, V8 ran out of memory after about 20 s.)
+    const chain = ['shopt -s expand_aliases', ...Array.from({ length: 9 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), 'alias a9=echo', ...Array(500).fill('a0'), 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    const heap = process.memoryUsage().heapUsed;
+    const t = Date.now();
+    const tree = parser.parse(chain);
+    const model = shellState(tree);
+    assert.strictEqual(model.blind, 'too many aliases expanded');
+    assert.strictEqual(model.condition(descendants(tree.root, ['list']).pop()!), undefined);
+    assert.ok(Date.now() - t < 20000, `took ${Date.now() - t} ms`);
+    assert.ok(process.memoryUsage().heapUsed - heap < 1e9, `${process.memoryUsage().heapUsed - heap} bytes`);
   });
   it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
     // Arithmetic that reads a variable whose value is always a number runs no code: decisions stay.

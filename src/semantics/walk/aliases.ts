@@ -52,6 +52,9 @@ export class WalkAliases {
     const expands = !this.w.bash ? 'on' : option(from, 'shopt', 'expand_aliases');
     if (!alias || alias.state === 'off' || !(expands === 'on' || expands === 'unknown')) return undefined;
     const root = this.w.scripts.expansion(n, alias.value);
+    // (Past the trees a model makes, what the alias runs is not read. The trust scan asked for the same trees first,
+    // so it trusts nothing then.)
+    if (!root) return this.w.opaque(st);
     this.expanding.add(name!);
     const host = this.w.aliasHost;
     this.w.aliasHost ??= n;
