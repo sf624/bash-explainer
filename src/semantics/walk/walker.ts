@@ -1428,7 +1428,8 @@ export class Walker {
     }
     if (name === undefined) return withStatus(st, this.conditions.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
-    const called = fn && withStatus(this.call(fn, st, assignments), undefined);
+    // (`declare() { …; }; declare b=(1 2)`: bash assigns the array, and passes the name.)
+    const called = fn && withStatus(this.call(fn, this.builtins.markedArrays(name, fields(n, 'argument'), n, st), assignments), undefined);
     if (called && fn.state === 'on') return called;
     if (!special) st = this.builtins.appendArith(assignments, n, st);
     const ran = withStatus(this.builtins.builtin(name, fields(n, 'argument'), n, st, true), this.conditions.simpleStatus(n, before));

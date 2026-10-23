@@ -563,6 +563,11 @@ class Scan {
       }
       case 'alias':
         for (const a of args) {
+          // (`alias c=(1 2)` assigns the array `c`, and defines no alias.)
+          if (a.type === 'variable_assignment') {
+            this.assignment(a, w, true);
+            continue;
+          }
           // (Read where commands may run it: see `aliases`. A name bash rejects, `a/b=x`, defines nothing.)
           const v = staticWordValue(a);
           const def = v === undefined ? undefined : aliasOf(a);

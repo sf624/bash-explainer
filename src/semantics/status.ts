@@ -9,9 +9,11 @@
 //   command but the last of the list), after `!`, and in all of a function called from such a place (B2's calls).
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
 import { canonicalName } from '../dict/aliases';
+import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
 import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
-import { commandName, DECLARATIONS } from './effects';
+import { actedNames } from '../argv/query';
+import { builtinParse, commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
@@ -25,7 +27,7 @@ export type StatusRule =
   /** Only assignments (`x=$(cmd)`): the status of the last command substitution, or 0 without one (`at`). */
   | { readonly kind: 'last-substitution'; readonly at?: SyntaxNode }
   /** A declaration builtin with command substitutions in its assignments (`local x=$(cmd)`): its own status hides theirs. */
-  | { readonly kind: 'masked'; readonly by: string; readonly substitutions: readonly SyntaxNode[] }
+  | { readonly kind: 'masked'; readonly by: string; readonly name: string; readonly substitutions: readonly SyntaxNode[] }
   /** A pipeline: its last stage's status, or with pipefail the last one that is not 0; `!` negates it. */
   | { readonly kind: 'pipeline'; readonly stages: readonly SyntaxNode[]; readonly pipefail: Tri; readonly negated: boolean }
   /** `(( ))` and `let`: 1 when the value is 0, else 0. */
@@ -110,6 +112,12 @@ function backgrounded(n: SyntaxNode): boolean {
 }
 
 /** The command substitutions of `n` that are not inside another one, in source order. */
+/** Whether the builtin `name` has operands that declare names (`OperandSpec.acts`): the declaration builtins. */
+const declaresNames = (name: string): boolean => !!builtins[name]?.operands?.some((o) => o.pattern.some((p) => p.acts === 'declares'));
+
+/** A word that is an assignment as text (`\declare a=$(cmd)`): the name assigned. */
+const ASSIGNMENT = /^([A-Za-z_]\w*(?:\[[^\]]*\])?)\+?=/;
+
 function outerSubstitutions(n: SyntaxNode): SyntaxNode[] {
   return descendants(n, ['command_substitution']).filter((s) => {
     for (let x = s.parent; x && x !== n; x = x.parent) if (x.type === 'command_substitution' || x.type === 'process_substitution') return false;
@@ -188,10 +196,15 @@ class Statuses implements StatusModel {
           return /^-?\d+$/.test(v) ? { kind: 'given', by: name, value: ((Number(v) % 256) + 256) % 256 } : { kind: 'command', functions: [] };
         }
         if (name === 'let') return { kind: 'arith' };
-        // `local x=$(cmd)`: the declaration's own status, whatever the substitution's.
-        if (DECLARATIONS.has(res.name)) {
-          const subs = args.filter((c) => c.type === 'variable_assignment').flatMap(outerSubstitutions);
-          if (subs.length) return { kind: 'masked', by: res.name, substitutions: subs };
+        // `local x=$(cmd)`, `\local x=$(cmd)`: the declaration's own status, whatever the substitution's (its operands
+        // that declare names, `OperandSpec.acts`).
+        const assigned = !declaresNames(res.name) ? [] : actedNames(builtinParse(res.name, args)).filter((o) => o.acts === 'declares').map(({ word }) => args[word])
+          .filter((a) => a.type === 'variable_assignment' || ASSIGNMENT.test(a.text));
+        const subs = assigned.flatMap(outerSubstitutions);
+        if (subs.length) {
+          const a = assigned.find((x) => outerSubstitutions(x).length)!;
+          const v = a.type === 'variable_assignment' ? field(a, 'name')!.text : ASSIGNMENT.exec(a.text)![1];
+          return { kind: 'masked', by: res.name, name: v, substitutions: subs };
         }
         if (name === 'wait') {
           const all = !args.length;

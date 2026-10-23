@@ -101,8 +101,9 @@ export class WalkBuiltins {
         return st;
       }
       case 'alias':
+        st = this.markedArrays('alias', args, n, st);
         for (const a of args) {
-          const def = aliasOf(a);
+          const def = a.type === 'variable_assignment' ? undefined : aliasOf(a);
           if (def) st = this.w.put(st, 'aliases', def.name, { state: 'on', value: def.value, at: n });
         }
         return st;
@@ -249,6 +250,18 @@ export class WalkBuiltins {
       }
     }
     return out;
+  }
+
+  /**
+   * The arrays `a=(…)` among the words of a command that does not declare them, after a name written as a declaration
+   * builtin or `alias` (a function named `declare`, `alias` itself): bash assigns them as the builtin `command` would
+   * (`declare`, `local` and `typeset` make them local in a function; the others global, with no attribute).
+   */
+  markedArrays(command: string, words: readonly SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
+    const arrays = words.filter((w) => w.type === 'variable_assignment' && field(w, 'value')?.type === 'array');
+    if (!arrays.length) return st;
+    const decl = readDeclarationWords('declare', arrays);
+    return this.declare('declare', arrays, ['declare', 'local', 'typeset'].includes(command) ? decl : { ...decl, on: 'g' }, n, st);
   }
 
   declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {

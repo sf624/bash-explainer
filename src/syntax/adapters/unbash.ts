@@ -479,10 +479,12 @@ class Converter {
     this.add(cn, this.word(name, 'name'));
     // bash's parser reads `name=value` (and `name=(…)`) as an assignment after a first word written as a declaration
     // builtin (`declare`, not `\declare` or `command declare`): unbash gives those as assignments, and so does the
-    // model. (After `alias`, which bash also marks, the word defines an alias, not a variable: it stays a word.)
-    const declares = DECLARATIONS.has(this.text.slice(name.pos, name.end));
+    // model. (After `alias`, which bash also marks, the word defines an alias, not a variable: it stays a word, unless
+    // it is `a=(…)`, which bash assigns as an array.)
+    const written = this.text.slice(name.pos, name.end);
+    const declares = DECLARATIONS.has(written);
     for (const s of after) {
-      if (s.type === 'Assignment' && declares) this.add(node, this.assignment(s), 'argument');
+      if (s.type === 'Assignment' && (declares || (written === 'alias' && s.value.type === 'ArrayValue'))) this.add(node, this.assignment(s), 'argument');
       else this.item(node, s, (w) => this.add(node, this.word(w, 'argument'), 'argument'), 'argument');
     }
     this.fill(node);

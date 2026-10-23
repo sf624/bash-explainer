@@ -3886,9 +3886,6 @@
         }
       },
       "status": 0
-    },
-    "gaps": {
-      "end.variables.b": "bash makes the array of a word `b=(…)` it passes to a function named like a declaration builtin (as for `alias b=(1 2)`): the model does not follow it"
     }
   },
   {
@@ -3936,6 +3933,49 @@
       "end.aliases.a": "the model keeps the text of an alias's definition, not its expansion",
       "end.aliases.b": "the model keeps the text of an alias's definition, not its expansion",
       "end.aliases.c": "the model keeps the text of an alias's definition, not its expansion (`\\alias c=$v` defines `c` as `p`, and fails on `q`)"
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "declare() { :; }; export() { :; }; f() { declare c=(3 4); export d=(5); local() { :; }; local e=(6); }; f",
+    "facts": {
+      "end": {
+        "variables": {
+          "d": {
+            "attrs": "a",
+            "value": "([0]=\"5\")"
+          }
+        },
+        "functions": {
+          "declare": "f",
+          "export": "f",
+          "f": "f",
+          "local": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "f() { alias q=(1 2) 2>/dev/null; }; f; x=1 alias w=(3) 2>/dev/null",
+    "facts": {
+      "end": {
+        "variables": {
+          "q": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          },
+          "w": {
+            "attrs": "a",
+            "value": "([0]=\"3\")"
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
     }
   }
 ]

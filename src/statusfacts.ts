@@ -80,8 +80,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
           if (rule.kind === 'masked') {
             // The keyword: local, export, declare, readonly or typeset.
             const kw = rule.by;
-            const v = field(ancestor(rule.substitutions[0], (x) => x.type === 'variable_assignment')!, 'name')!.text;
-            add(n, { id: 'declaration-masks-status', params: { kw, v } });
+            add(n, { id: 'declaration-masks-status', params: { kw, v: rule.name } });
           }
         }
         // (The cheap tests first: this runs on every command of the script.)
