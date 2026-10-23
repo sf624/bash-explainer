@@ -18,10 +18,7 @@ export type NodeType =
   | 'comment'
   | 'command'
   | 'command_name'
-  | 'declaration_command' // no longer made (a `command` named `declare`…, with assignment arguments); the name goes in step 6 of docs/design/syntax-tree.md
-  | 'unset_command' // no longer made (a `command` named `unset`); the name goes in step 6 of docs/design/syntax-tree.md
   | 'variable_assignment' // before a command's name, in a command with no name (`a=1`), or (field `argument`) an argument of a declaration builtin: `declare a=1`
-  | 'variable_assignments' // no longer made (a `command` with no name); the name goes in step 6 of docs/design/syntax-tree.md
   | 'negated_command' // ! pipeline
   | 'redirected_statement' // a compound statement with redirections (or `time >o`); a simple command's redirections are its children
   | 'pipeline'
@@ -43,7 +40,6 @@ export type NodeType =
   | 'while_statement' // also until, told apart by its first token
   | 'function_definition'
   | 'arithmetic_command' // (( … ))
-  | 'test_command' // [ … ]
   | 'extended_test' // [[ … ]]
   // Words and their parts
   | 'word'
