@@ -188,13 +188,13 @@ Sizes are rough, in changed lines with tests: S under 300, M 300–1,000, L over
 
 1. **The PR lists the finding IDs it addresses**, in its description, with a link to this page.
 2. **A fresh reviewer** (a subagent that shares no context with the author) re-reads those findings, from the table below and from the step above, and confirms in the diff that each is resolved. For each ID the review names the test that shows it: a probe row, an example-table row compared with the real tool, a unit test, or a dump that is unchanged (a move) or changed only as the step says.
-3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #208`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
+3. **The table is updated in the same PR**: the step's rows go from `planned` to `PR #N`, with how they were verified. After the merge, the next PR (or the maintainer) marks them `done`.
 4. **A step that finds a finding wrong, or only partly right,** says so in the table (`not a problem`, or a corrected note) instead of leaving it open.
 5. **A behaviour change not listed in the step** is either a fix of a contradiction (then it gets a test against the real tool, a CHANGELOG line and a line in the table's notes) or a regression to undo.
 
 ## Traceability
 
-Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #208`, `done`, `won't do` or `not a problem`.
+Verdicts are from the verification at 1f9b651. Line numbers are those of that commit. Status: `planned`, `PR #N`, `done`, `won't do` or `not a problem`.
 
 | ID | Finding (short) | Verdict | Step | Status | Verified by |
 |---|---|---|---|---|---|
@@ -215,7 +215,7 @@ Verdicts are from the verification at 1f9b651. Line numbers are those of that co
 | S5 | Walker god class; hand-listed reuse key; `opaque` | corrected: about 50 fields, 19 mutable (not ~40 mutable) | 3.2 | planned | |
 | S6 | Unseen calls decided twice (env.ts counts names) | confirmed | 2.2 | planned | |
 | S7 | Trust scan re-derives structure from text; two parsers per string | confirmed | 2.2 | planned | |
-| S8 | `aliasTrees` cache never evicts | confirmed (grows with distinct alias texts) | 1.5 | PR #208 | test/state.test.ts "the cache of alias texts" (300 alias texts, then a repeat) |
+| S8 | `aliasTrees` cache never evicts | confirmed (grows with distinct alias texts) | 1.5 | PR #208 | test/state.test.ts "the cache of alias texts" (300 alias texts, then a repeat: the values are right; the bound itself is not observable, so not tested) |
 | S9 | Stale doc (model.ts, layers diagram), c8 ignores, stray comment | corrected: words.ts:846–847 is a rethrow guard (needs a reason, stays); status.ts:363 is the unreachable one | 1.5 | PR #208 | docs and comments only; `enclosingBlock` has no unreachable return; coverage check |
 | D1 | Embedded languages read options from raw words; `grep --invert` | confirmed; `grep --invert` part is D3's | 1.1 (readers), 3.5 (prefixes) | planned | |
 | D2 | Second option-parser family in src/examples; `grep -efoo data.txt \| sort` input label | confirmed (dump) | 1.1 (`readsFileOperand` bug), 3.5 (the parsers) | planned | |

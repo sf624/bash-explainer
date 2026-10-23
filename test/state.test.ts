@@ -234,13 +234,12 @@ describe('shell state: functions and aliases', () => {
 });
 
 describe('shell state: the cache of alias texts', () => {
-  it('is bounded, and a text read again after it left the cache gives the same state', () => {
+  it('gives the same expansion for a text read again after many others', () => {
     const lines = ['shopt -s expand_aliases'];
     for (let i = 0; i < 300; i++) lines.push(`alias a${i}='x=${i}'`, `a${i}`);
     lines.push('a299', 'a0');
     const st = end(lines.join('\n'));
-    assert.ok(variable(st, 'x'));
-    
+    assert.strictEqual(variable(st, 'x')?.value, '0');
   });
 });
 
