@@ -186,6 +186,53 @@ So bash decides it from the text of the name, not from what the name runs. It is
 | `arithmetic_command`, `extended_test` | arithmetic, conditional | matches |
 | `do_group` | none (the body of a loop) | a part, not a command; keep |
 
+An example: `x=$(grep -c foo f) && [ "$x" -gt 0 ]`. bash-ast gives a connection and two simple commands; `$(grep -c foo f)` is only text in an assignment word. Before the change, two of our nodes differ (red). The `grep` command in `$( )` has no node in bash-ast: we supply it (dashed).
+
+```mermaid
+flowchart TB
+  subgraph before["ours, before"]
+    B1["list #amp;#amp;"] --> B2["variable_assignment<br/>x=…"]
+    B2 --> B3["command_substitution"]
+    B3 --> B4["command<br/>grep -c foo f"]
+    B1 --> B5["test_command<br/>tokens [ and ]<br/>words #quot;$x#quot; -gt 0"]
+  end
+  subgraph bash["bash-ast"]
+    A1["list (and)"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
+    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+  end
+  B1 -.-> A1
+  B2 -. "differs: no command" .-> A2
+  B5 -. "differs: by its name" .-> A3
+  B4 -. "none: word text<br/>(we supply it)" .-x A2
+  classDef differs stroke:#c33,stroke-width:2px
+  classDef supplied stroke-dasharray:4 3
+  class B2,B5 differs
+  class B4 supplied
+```
+
+After the change, each command of bash-ast has one `command` of ours:
+
+```mermaid
+flowchart TB
+  subgraph after["ours, after"]
+    C1["list #amp;#amp;"] --> C2["command<br/>(no name)"]
+    C2 --> C3["variable_assignment<br/>x=…"]
+    C3 --> C4["command_substitution"]
+    C4 --> C5["command<br/>grep -c foo f"]
+    C1 --> C6["command<br/>name [<br/>arguments #quot;$x#quot; -gt 0 ]"]
+  end
+  subgraph bash["bash-ast"]
+    A1["list (and)"] --> A2["simple<br/>assignments: x=$(grep -c foo f)"]
+    A1 --> A3["simple<br/>words: [ #quot;$x#quot; -gt 0 ]"]
+  end
+  C1 -.-> A1
+  C2 -.-> A2
+  C6 -.-> A3
+  C5 -. "none: word text<br/>(we supply it)" .-x A2
+  classDef supplied stroke-dasharray:4 3
+  class C5 supplied
+```
+
 ### `[` today
 
 Checked with bash 5.2 and `npx tsx test/dump.ts`:
@@ -226,6 +273,46 @@ Each step is a PR. Each keeps every test passing, and the dump of sample.sh unch
 - **For each token**, find the innermost of our commands whose range holds its span. It must exist, and no other command may overlap the span without holding it: a token must not cross the boundary between two commands. The path of that command must exist in bash-ast's shape.
 - **Exceptions.** Inside a `command_substitution` or a `process_substitution` (backquotes too), the innermost command is ours: bash-ast keeps the text as a word. The test still requires one innermost command, and that the substitution lies inside one word of a command of bash-ast. A token of an embedded language (jq, awk, sed…) must lie inside one word of one command. A `comment` belongs to no command, and is skipped. A token in a `heredoc_body` belongs to the command of its redirection: the body lies outside that command's range, so the test looks it up from the `heredoc_redirect`.
 - Inputs bash-ast rejects are skipped, and so are known differences at the path in question, as in the shape test.
+
+The tokens of the example, after the change, each in the box of its innermost command. The two exceptions are dashed: the `grep` command in `$( )`, and the token of the regex (an embedded language).
+
+```mermaid
+flowchart TB
+  subgraph K1["list #amp;#amp; = bash-ast list (and)"]
+    T0["operator: the whole list"]
+    T8["operator #amp;#amp;"]
+    subgraph K2["command x=… = bash-ast simple 1"]
+      T1["assignment x=$(…)"]
+      T2["substitution $(…)"]
+      subgraph K3["command grep: inside $( ), ours only; lies in one word of simple 1"]
+        T3["command grep"]
+        T4["option -c"]
+        T5["argument foo: search pattern"]
+        T6["string foo: literal (BRE)<br/>embedded language: inside one word"]
+        T7["argument f: file"]
+      end
+    end
+    subgraph K4["command [ = bash-ast simple 2"]
+      T9["test [ … ]"]
+      T10["builtin ["]
+      T11["condition #quot;$x#quot; -gt 0"]
+      T12["string #quot;$x#quot;, variable $x"]
+      T14["argument ]: the last one"]
+    end
+  end
+  T5 --- T6
+  T9 --- T10
+  T9 --- T11
+  T11 --- T12
+  T9 --- T14
+  T3 --- T4
+  T3 --- T5
+  T3 --- T7
+  T1 --- T2
+  classDef exception stroke-dasharray:4 3
+  class T6 exception
+  style K3 stroke-dasharray:4 3
+```
 
 The test comes first (step 0), as a guard. Today's tree should mostly pass it: wrappers map to their body, and the shape test already agrees. What fails today is a finding. It goes in a list with a reason, as in bash-ast-known.json, and the steps above shrink that list. Each step then shows that no token lost its command.
 
