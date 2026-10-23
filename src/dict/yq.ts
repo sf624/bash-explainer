@@ -27,10 +27,10 @@ const V4_OPTIONS: OptSpec[] = [
   ['-M|--no-colors', '色を付けない', 'no colours'],
   ['-v|--verbose', '詳しいログを出す', 'verbose logging'],
   ['--expression', '式を明示する（ファイル名と区別できないとき）', 'give the expression explicitly (when it looks like a file)', 'arg'],
-  ['--from-file', '式をファイルから読む', 'read the expression from a file', 'arg'],
+  ['--from-file', '式をファイルから読む', 'read the expression from a file', 'arg io:read'],
 ];
 
-const V4_EXPR = { positional: [pos('yq の式（jq に似た記法）', 'yq expression (jq-like)'), pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)')], positionalLang: ['yq4' as const] };
+const V4_EXPR = { positional: [pos('yq の式（jq に似た記法）', 'yq expression (jq-like)'), pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)')], positionalLang: ['yq4' as const], positionalIo: [undefined, 'input' as const] };
 
 /** mikefarah/yq v4: `yq [eval] EXPR FILE…`; a Go program with cobra and pflag (`-o=json` gives `-o` the value `json`). */
 const mikefarah4: CommandSpec = cmd('YAML（JSON・XML・TOML なども）を jq に似た式で抽出・変換する（mikefarah/yq v4）', 'Query and edit YAML (also JSON, XML, TOML…) with jq-like expressions (mikefarah/yq v4)', V4_OPTIONS, {
@@ -60,9 +60,9 @@ const kislyuk: CommandSpec = cmd('YAML を JSON に変換して jq で処理す�
   ['-S|--sort-keys', 'キーをソートして出力する', 'sort keys'],
   ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg2'],
   ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg2'],
-  ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2'],
-  ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2'],
-], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 YAML ファイル', 'input YAML file')], positionalLang: ['jq'] });
+  ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2 io:read'],
+  ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2 io:read'],
+], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 YAML ファイル', 'input YAML file')], positionalLang: ['jq'], positionalIo: [undefined, 'input'] });
 
 const V3_GLOBAL: OptSpec[] = [
   ['-j|--tojson', 'JSON で出力する', 'output JSON'],

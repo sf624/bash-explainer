@@ -54,6 +54,27 @@ describe('the web page: the explanation panel and the editor', function () {
     await ctx.close();
   });
 
+  it('gives each file an example reads a box of its own, and runs the example again on all of them', async () => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await page.goto(base);
+    const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+    await until('the panel', () => Promise.resolve(panel()), (f) => !!f);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('sort a.txt b.txt');
+    await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes('sort a.txt'));
+    const labels = await panel().locator('.example .example-label').allTextContents();
+    assert.deepStrictEqual(labels.slice(0, 2).map((l) => l.replace(/ — .*/, '')), ['Input: a.txt (sample contents)', 'Input: b.txt (sample contents)']);
+    const boxes = panel().locator('.example textarea');
+    assert.strictEqual(await boxes.count(), 2);
+    await boxes.nth(0).fill('zebra');
+    await boxes.nth(1).fill('apple\nmango');
+    const out = () => panel().locator('.example pre:not(.layer)').last().textContent();
+    await until('the rerun example', async () => (await out()) ?? '', (t) => t === 'apple\nmango\nzebra');
+    await ctx.close();
+  });
+
   it('keeps the source line of the panel at the top while the explanation scrolls, and is capped', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 420 } });
     const page = await ctx.newPage();

@@ -594,6 +594,51 @@ function deepMerge(a: Obj, b: Obj): Obj {
   return out;
 }
 
+/**
+ * The JSON values of a text, one after another, as jq reads a file: separated by whitespace, or by nothing where one
+ * ends with a bracket or a quote (`{"a":1}{"a":2}`). Throws a SyntaxError where a value is not JSON.
+ */
+export function parseJsonValues(text: string): Json[] {
+  const out: Json[] = [];
+  let i = 0;
+  const ws = /\s/;
+  while (i < text.length) {
+    if (ws.test(text[i])) { i++; continue; }
+    // The end of the value: where its brackets close, its string ends, or (a number, a literal) whitespace or a bracket begins.
+    let depth = 0;
+    let j = i;
+    for (; j < text.length; j++) {
+      const c = text[j];
+      // A number or a literal ends where blanks or another value start.
+      if (depth === 0 && j > i && (ws.test(c) || '{["'.includes(c))) break;
+      if (c === '"') {
+        for (j++; j < text.length && text[j] !== '"'; j++) if (text[j] === '\\') j++;
+        if (depth === 0) { j++; break; }
+      } else if (c === '{' || c === '[') depth++;
+      else if (c === '}' || c === ']') {
+        depth--;
+        if (depth <= 0) { j++; break; }
+      }
+    }
+    out.push(JSON.parse(text.slice(i, j)) as Json);
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * A value like `v` for the `k`th file of several (from 0, `v` itself): its numbers plus `k`, and its strings with
+ * `k + 1` after them, so that each file's output shows apart.
+ */
+export function varyJson(v: Json, k: number): Json {
+  if (k === 0) return v;
+  if (typeof v === 'number') return v + k;
+  if (typeof v === 'string') return `${v}${k + 1}`;
+  if (Array.isArray(v)) return v.map((x) => varyJson(x, k));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([key, x]) => [key, varyJson(x, k)]));
+  return v;
+}
+
 /** Compact JSON as `jq -c` prints it. */
 export function toJson(v: Json): string {
   return JSON.stringify(v);

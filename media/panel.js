@@ -190,46 +190,62 @@
   }
 
   /**
-   * The input as an editor (regex101's test string): a transparent textarea over a layer that
-   * shows the same text with matches highlighted, followed by the results.
+   * The inputs as editors (regex101's test string), one per file the command reads: a transparent textarea over a
+   * layer that shows the same text with matches highlighted; then the results.
    */
   function editable(it) {
     const id = nextId++;
-    const label = document.createElement('div');
-    label.className = 'example-label';
-    label.append(...inline(it.inputLabel));
-    const hint = document.createElement('span');
-    hint.className = 'hint';
-    hint.textContent = ` — ${labels.editHint}`;
-    label.append(hint);
-    const wrap = document.createElement('div');
-    wrap.className = 'editor';
-    const layer = document.createElement('pre');
-    layer.className = 'layer';
-    const area = document.createElement('textarea');
-    area.spellcheck = false;
-    area.value = it.input.join('\n');
-    wrap.append(layer, area);
-    const results = document.createElement('div');
-    const ed = { spec: it.spec, layer, results, empty: '' };
-    editors.set(id, ed);
+    const out = [];
+    /** @type {{ layer: HTMLElement, area: HTMLTextAreaElement }[]} */
+    const boxes = [];
     let timer;
-    // The textarea covers the layer (inset: 0), so it grows with the text the layer shows.
-    area.addEventListener('input', () => {
-      drawLayer(layer, area.value, undefined);
-      clearTimeout(timer);
-      timer = setTimeout(() => vscode.postMessage({ type: 'rerun', id, spec: it.spec, input: area.value }), 150);
+    it.inputs.forEach((input, i) => {
+      const label = document.createElement('div');
+      label.className = 'example-label';
+      label.append(...inline(input.label));
+      if (i === 0) {
+        const hint = document.createElement('span');
+        hint.className = 'hint';
+        hint.textContent = ` — ${labels.editHint}`;
+        label.append(hint);
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'editor';
+      const layer = document.createElement('pre');
+      layer.className = 'layer';
+      const area = document.createElement('textarea');
+      area.spellcheck = false;
+      area.value = input.lines.join('\n');
+      wrap.append(layer, area);
+      boxes.push({ layer, area });
+      // The textarea covers the layer (inset: 0), so it grows with the text the layer shows.
+      area.addEventListener('input', () => {
+        drawLayer(layer, area.value, undefined);
+        clearTimeout(timer);
+        timer = setTimeout(() => vscode.postMessage({ type: 'rerun', id, spec: it.spec, inputs: boxes.map((b) => b.area.value) }), 150);
+      });
+      out.push(label, wrap);
     });
-    drawLayer(layer, it.input.join('\n'), it.result.marks);
+    const results = document.createElement('div');
+    const ed = { spec: it.spec, boxes, results, empty: '' };
+    editors.set(id, ed);
+    drawMarks(ed, it.result.marks);
     showResult(ed, it.result, false);
-    return [label, wrap, results];
+    return [...out, results];
+  }
+
+  /** Each box's text, with the marks of its lines (the marks are per line of all the boxes, in order). */
+  function drawMarks(ed, marks) {
+    let first = 0;
+    for (const { layer, area } of ed.boxes) {
+      const count = area.value.split('\n').length;
+      drawLayer(layer, area.value, marks && marks.slice(first, first + count));
+      first += count;
+    }
   }
 
   function showResult(ed, result, redraw = true) {
-    if (redraw && result.marks) {
-      const area = /** @type {HTMLTextAreaElement} */ (ed.layer.nextElementSibling);
-      drawLayer(ed.layer, area.value, result.marks);
-    }
+    if (redraw && result.marks) drawMarks(ed, result.marks);
     ed.results.replaceChildren(...sections(result.sections));
   }
 

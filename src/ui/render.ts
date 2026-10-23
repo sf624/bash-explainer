@@ -27,7 +27,7 @@ export const ui = {
     panel: {
       copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
-      editHint: '入力は書き換えられます（結果はその場で更新）', noMatch: '該当なし',
+      editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
     },
   },
   en: {
@@ -51,7 +51,7 @@ export const ui = {
     panel: {
       copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
-      editHint: 'You can edit the input; the result updates as you type', noMatch: 'Nothing found',
+      editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
     },
   },
 } satisfies Record<Lang, unknown>;

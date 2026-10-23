@@ -178,6 +178,8 @@ export interface ValueSpec {
   sets?: VariableSet;
   /** The value is written in another language (`grep -e PATTERN`). */
   lang?: EmbeddedLang;
+  /** What the command does with the file the value names (`IoUse`): `sort -o OUT` writes it, `jq --slurpfile NAME FILE` reads it. */
+  io?: IoUse;
   /** The meaning of particular values (`set -o pipefail`). */
   values?: Record<string, Text>;
   /**
@@ -237,6 +239,14 @@ export interface OldStyleSpec {
   anywhere?: boolean;
 }
 
+/**
+ * What a command does with a file a word names, which the worked examples follow (src/examples/source.ts): `input`,
+ * it reads the data it works on from it, instead of its standard input (`sort FILE`, `jq FILTER FILE`, `xargs -a
+ * FILE`); `read`, it reads something else from it (a script, `sed -f FILE`; a variable, `jq --rawfile NAME FILE`);
+ * `write`, it writes to it (`sort -o FILE`, `uniq IN OUT`, `tee FILE`).
+ */
+export type IoUse = 'input' | 'read' | 'write';
+
 /** One way to read the operands: it applies when `when` holds and the pattern fits. */
 export interface OperandAlt { when?: Condition; pattern: OperandSpec[] }
 
@@ -250,6 +260,8 @@ export interface OperandSpec {
   type?: ValueType;
   sets?: VariableSet;
   lang?: EmbeddedLang;
+  /** What the command does with the file the operand names (`IoUse`): `sort FILE` reads its input from it, `uniq IN OUT` writes OUT. */
+  io?: IoUse;
   /**
    * The words from here on are a command (`exec` and `current-shell` slots take every word left;
    * a `shell-string` slot is this one word, a script).

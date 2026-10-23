@@ -148,7 +148,7 @@ describe('jq steps', () => {
 
   it('shows the stages in the example and when it is run again', () => {
     const e = new Analyzer('en').explainLine(createUnbashParser().parse("jq '.users | map(.age) | add' u.json"), 0);
-    assert.deepStrictEqual(e.examples[0].sections.map((s) => s.label), ['Input', 'After `.users`', 'After `map(.age)`', 'Output (after `add`)']);
+    assert.deepStrictEqual(e.examples[0].sections.map((s) => s.label), ['Input: `u.json` (sample contents)', 'After `.users`', 'After `map(.age)`', 'Output (after `add`)']);
     assert.deepStrictEqual(e.examples[0].interactive!.result.sections.map((s) => s.label), ['After `.users`', 'After `map(.age)`', 'Output (after `add`)']);
     const long = new Analyzer('ja').explainLine(createUnbashParser().parse(`jq 'range(10) | tostring | . + "${'x'.repeat(40)}"' u.json`), 0);
     assert.deepStrictEqual(long.examples[0].sections[1].lines.length, 5);
@@ -168,7 +168,7 @@ describe('jq example inputs and flags', () => {
     assert.deepStrictEqual(jqExample('.[]', { join: true })![0].outputs, ['value1value2value3']);
   });
   it('re-runs a joined example', () => {
-    const run = (filter: string) => rerun({ kind: 'jq', filter, raw: false, join: true, slurp: true, vars: {} }, ['1', '2'], 'en');
+    const run = (filter: string) => rerun({ kind: 'jq', filter, raw: false, join: true, slurp: true, vars: {} }, [['1', '2']], 'en');
     assert.deepStrictEqual(run('.[]').sections[0].lines, ['12']);
     assert.deepStrictEqual(run('empty').sections[0].lines, []);
   });

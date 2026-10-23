@@ -4,8 +4,8 @@ import { parseOptions, Parsed, shortKeys, Unsupported } from './textfilters';
 
 // ---------------------------------------------------------------- xargs
 
-/** The options of xargs the examples follow (`-t`, `-x` and `-P` change nothing they show). */
-const XARGS = shortKeys('0rtxnLIdPil');
+/** The options of xargs the examples follow (`-t`, `-x` and `-P` change nothing they show; `-a` only where the items come from). */
+const XARGS = shortKeys('0rtxnLIdPil', { '-a': '_' });
 
 /**
  * xargs' options, read with its dictionary spec, and the command it runs (`echo` when none is given). `-i` and `-l`,

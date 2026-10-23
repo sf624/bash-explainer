@@ -17,10 +17,11 @@ import { explainRegex, Flavor } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget, hasGlob } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
-import { MAX_SHOWN_LINES, pipelineExample, readsFileOperand, Stage } from './examples/pipeline';
-import { jqExample, JqRun, Json, slurpLines, toJson } from './examples/jq';
+import { MAX_SHOWN_LINES, pipelineExample, Stage } from './examples/pipeline';
+import { InputSource, inputSource, knownLines, NO_INPUT, readsFiles, shareOut, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
+import { jqExample, JqRun, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
 import { sedExample } from './examples/sed';
-import { Interactive, jqStepSections, RerunSpec } from './examples/rerun';
+import { InputBox, Interactive, jqStepSections, RerunSpec } from './examples/rerun';
 import { globExample, patternExample, testExample } from './examples/patterns';
 import { braceExpand, extglobs, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
 import { pictureNote, visible } from './ctlchars';
@@ -1426,6 +1427,7 @@ export class Analyzer {
     }
     // (A function of the script is not the command its name suggests: no example of that command.)
     if (!head.fn) {
+      this.unreadStdin(n, read.parse, args, head.name);
       this.commandExampleFor(n, head.spec, args, read.parse);
     }
     for (const a of args) {
@@ -2132,10 +2134,12 @@ export class Analyzer {
         // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
         const ex = this.given('-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
         if (ex) {
+          // With `-s` (and `-i`) sed reads each file apart: the example shows the first.
+          const src = this.inputSource();
           this.ioExample(ex.input, ex.output, this.given('-i'), {
             kind: 'sed', script: scripts.join('\n'), quiet, extended: flavor === 'ere',
             highlight: sedPattern(scripts.join('\n'), flavor === 'ere' ? 'ere' : 'bre'),
-          });
+          }, this.given('-s') ? { streams: src.streams.slice(0, 1) } : src);
         }
         break;
       }
@@ -2148,13 +2152,15 @@ export class Analyzer {
         const nullInput = this.given('-n');
         const jqFlags = { raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput };
         const runs = jqExample(text, { ...jqFlags, nullInput, vars: this.jqVars() });
-        if (runs) this.jqExamples(runs, { kind: 'jq', filter: text, ...jqFlags, vars: this.jqVars() });
+        // `-n`: jq reads no input (the filter's `input` and `inputs` would read it).
+        if (runs) this.jqExamples(runs, nullInput ? NO_INPUT : this.inputSource(), { kind: 'jq', filter: text, ...jqFlags, vars: this.jqVars() });
         break;
       }
       case 'awk': {
         const opts = this.awkOptions();
         const ex = opts && awkExample(text, opts);
-        if (ex) this.ioExample(ex.input, ex.output, false, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns });
+        // A program of `BEGIN` rules alone reads no input.
+        if (ex) this.ioExample(ex.input, ex.output, false, { kind: 'awk', program: text, fs: opts!.fs, vars: opts!.vars, assigns: opts!.assigns }, ex.readsInput ? this.inputSource() : NO_INPUT);
         break;
       }
       case 'yq4':
@@ -2306,7 +2312,7 @@ export class Analyzer {
     this.cx.examples.push({ kind: 'regex',
       title: mode === 'inverted' ? this.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : this.s('例', 'Example'),
       sections: sections.filter((s) => s.lines.length),
-      interactive: this.interactive({ kind: 'regex', regex: js, mode }, [...yes, ...no], this.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)')),
+      interactive: this.interactive({ kind: 'regex', regex: js, mode }, [{ label: this.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)'), lines: [...yes, ...no] }]),
     });
   }
 
@@ -2348,18 +2354,26 @@ export class Analyzer {
     if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
     if (!runs?.length) return;
     const inPlace = this.given('-i');
+    const outLabel = this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`);
+    const show = (vs: Json[]) => (json ? vs.map((v) => (raw && typeof v === 'string' ? v : toJson(v))) : yqYamlOutput(vs, style));
+    // `-n`: no input is read. With `-i`, mikefarah/yq rewrites the first file, and kislyuk/yq each file apart.
+    const all = this.given('-n') ? NO_INPUT : this.inputSource();
+    const src = inPlace ? { streams: all.streams.slice(0, 1) } : all;
+    if (src.streams.length > 1 || src.streams.some(knownLines)) {
+      this.yqStreams(filter, style, src, runs[0].input, show, outLabel);
+      return;
+    }
     try {
       runs.forEach((r, i) => {
         const input = yamlLines(r.input, style);
-        const output = r.error ? [r.error] : json
-          ? r.values.map((v) => (raw && typeof v === 'string' ? v : toJson(v)))
-          : yqYamlOutput(r.values, style);
+        const output = r.error ? [r.error] : show(r.values);
         this.cx.examples.push({ kind: 'yq',
           title: inPlace ? this.s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
+          ...(src.streams.length ? {} : { note: this.s('入力は読まない（`.` は `null`）', 'Reads no input (`.` is `null`)') }),
           sections: [
-            { label: this.s('入力（YAML）', 'Input (YAML)'), lines: input },
+            ...(src.streams.length ? [{ label: streamLabel(src.streams[0], this.lang), lines: input }] : []),
             ...(r.steps && i === 0 ? jqStepSections(r.steps, output, this.lang, (vs) => (json ? vs.map(toJson) : yqYamlOutput(vs, style)))
-              : [r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: this.s(`出力（${json ? 'JSON' : 'YAML'}）`, `Output (${json ? 'JSON' : 'YAML'})`), lines: output, empty: this.s('（出力なし）', '(no output)') }]),
+              : [r.error ? { label: this.s('エラー', 'Error'), lines: output } : { label: outLabel, lines: output, empty: this.s('（出力なし）', '(no output)') }]),
           ],
         });
       });
@@ -2371,23 +2385,84 @@ export class Analyzer {
     /* c8 ignore stop */
   }
 
-  private jqExamples(runs: JqRun[], spec?: RerunSpec): void {
+  /**
+   * The examples of a jq filter: the runs on sample input (`jqExample`), shown as read from `src`. Several files, or
+   * the text of a here-string, make one example, run again on what each holds (src/examples/rerun.ts).
+   */
+  private jqExamples(runs: JqRun[], src: InputSource, spec: Extract<RerunSpec, { kind: 'jq' }>): void {
+    // Short JSON stays on one line; longer JSON is indented like jq prints it.
+    const fileLines = (v: Json): string[] => (toJson(v).length <= 60 ? [toJson(v)] : JSON.stringify(v, null, 2).split('\n'));
+    if (src.streams.length > 1 || src.streams.some(knownLines)) {
+      const r = runs[0];
+      // A slurped sample is shared out among the files; otherwise each file holds a value like the sample.
+      let k = 0;
+      const contents = r.slurp ? shareOut(src, slurpLines(r.input)) : src.streams.map((st) => knownLines(st) ?? fileLines(varyJson(r.input, k++)));
+      const inputs: InputBox[] = src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: contents[i] }));
+      const it = this.interactive(spec, inputs);
+      this.cx.examples.push({ kind: 'jq',
+        title: this.s('例', 'Example'),
+        sections: [...inputs.map((b) => ({ ...b, empty: this.s('（空）', '(empty)') })), ...it.result.sections],
+        interactive: it,
+      });
+      return;
+    }
     runs.forEach((r, i) => {
-      // Short JSON stays on one line; longer JSON is indented like jq prints it.
-      const compact = toJson(r.input);
-      const input = r.slurp ? slurpLines(r.input) : compact.length <= 60 ? [compact] : JSON.stringify(r.input, null, 2).split('\n');
+      const input = r.slurp ? slurpLines(r.input) : fileLines(r.input);
+      const label = src.streams.length ? streamLabel(src.streams[0], this.lang) : '';
       this.cx.examples.push({ kind: 'jq',
         title: i === 0 ? this.s('例', 'Example') : this.s('例（値が無いとき）', 'Example (when the value is missing)'),
+        ...(src.streams.length ? {} : { note: this.s('入力は読まない（`.` は `null`）', 'Reads no input (`.` is `null`)') }),
         sections: [
-          { label: this.s('入力', 'Input'), lines: input },
+          ...(src.streams.length ? [{ label, lines: input }] : []),
           ...(r.steps && i === 0 ? jqStepSections(r.steps, r.outputs, this.lang, (vs) => vs.map(toJson))
             : [r.error
               ? { label: this.s('エラー', 'Error'), lines: [r.error] }
-              : { label: spec?.kind === 'jq' && spec.join ? this.s('出力（改行なし）', 'Output (no newlines)') : this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
+              : { label: spec.join ? this.s('出力（改行なし）', 'Output (no newlines)') : this.s('出力', 'Output'), lines: r.outputs, empty: this.s('（出力なし）', '(no output)') }]),
         ],
         // Only the first example can be edited; the second shows the missing-value case.
-        ...(spec && i === 0 && r.input !== null ? { interactive: this.interactive(spec, r.slurp ? input : JSON.stringify(r.input, null, 2).split('\n'), r.slurp ? this.s('入力（JSON を1行に1つ）', 'Input (one JSON value per line)') : this.s('入力（JSON）', 'Input (JSON)')) } : {}),
+        ...(i === 0 && src.streams.length ? { interactive: this.interactive(spec, [{ label, lines: r.slurp ? input : JSON.stringify(r.input, null, 2).split('\n') }]) } : {}),
       });
+    });
+  }
+
+  /**
+   * The yq example of several files, or of the text of a here-string (when it is JSON, which is YAML too): what yq
+   * prints for each. `sample` is the value of the sample input; the other files hold values like it.
+   */
+  private yqStreams(filter: string, style: YamlStyle, src: InputSource, sample: Json, show: (vs: Json[]) => string[], outLabel: string): void {
+    const vars = style === 'kislyuk' ? this.jqVars() : {};
+    let k = 0;
+    const docs: Json[][] = [];
+    for (const st of src.streams) {
+      const known = knownLines(st);
+      try {
+        docs.push(known ? parseJsonValues(known.join('\n')) : [varyJson(sample, k++)]);
+      } catch {
+        // (YAML that is not JSON: the example cannot read it.)
+        return;
+      }
+    }
+    const results: Json[][] = [];
+    for (const vs of docs) {
+      const outs: Json[] = [];
+      for (const v of vs) {
+        // (Values the line gives may make the filter fail, or take too long to run here.)
+        const res = runJq(filter, v, vars);
+        if (!res || 'error' in res) return;
+        outs.push(...res.outputs);
+      }
+      results.push(outs);
+    }
+    // mikefarah/yq prints the documents of each file apart, with `---` between files, in YAML.
+    const output = style === 'mikefarah' && !outLabel.includes('JSON')
+      ? results.flatMap((vs, i) => [...(i ? ['---'] : []), ...show(vs)])
+      : show(results.flat());
+    this.cx.examples.push({ kind: 'yq',
+      title: this.s('例', 'Example'),
+      sections: [
+        ...src.streams.map((st, i) => ({ label: streamLabel(st, this.lang), lines: knownLines(st) ?? yamlLines(docs[i][0], style) })),
+        { label: outLabel, lines: output, empty: this.s('（出力なし）', '(no output)') },
+      ],
     });
   }
 
@@ -2407,6 +2482,7 @@ export class Analyzer {
     // Whether each stage names a file to read (from the parse of its words).
     const files: boolean[] = [];
     let readsFile = false;
+    let src: InputSource | undefined;
     for (const [i, c] of n.namedChildren.entries()) {
       let cmd = c;
       if (c.type === 'redirected_statement') {
@@ -2430,16 +2506,22 @@ export class Analyzer {
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
       const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) };
       stages.push(stage);
-      files.push(readsFileOperand(stage, interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) })));
+      const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
+      files.push(readsFiles(parse, stage.words));
+      if (i === 0) src = this.inputSource(cmd, parse, args);
     }
     // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
     if (files.slice(1).some(Boolean)) return undefined;
-    const ex = pipelineExample(stages, readsFile);
+    // Several files read as one stream; a stage that reads each apart (head, tail, tac) or names each (grep) is not followed.
+    const streams = src!.streams;
+    if (streams.length > 1 && !['cat', 'sort', 'sed', 'awk', 'cut', 'perl'].includes(stages[0].cmd)) return undefined;
+    const known = streams.length === 1 ? knownLines(streams[0]) : undefined;
+    const ex = pipelineExample(stages, readsFile || !!known, known);
     if (!ex) return undefined;
     const cap = (lines: string[]) => (lines.length > MAX_SHOWN_LINES ? [...lines.slice(0, MAX_SHOWN_LINES - 1), '…'] : lines).map(visible);
     const sections: ExampleSection[] = [];
-    const fromFile = readsFile || files[0];
-    if (ex.input) sections.push({ label: fromFile ? this.s('入力（ファイルの中身の例）', 'Input (sample file contents)') : this.s('入力', 'Input'), lines: cap(ex.input) });
+    const inputs: InputBox[] = ex.input ? shareOut(src!, ex.input).map((lines, i) => ({ label: streamLabel(streams[i], this.lang), lines })) : [];
+    sections.push(...inputs.map((b) => ({ label: b.label, lines: cap(b.lines), empty: this.s('（空）', '(empty)') })));
     ex.steps.forEach((step, i) => {
       // `cat file` passes the input on unchanged.
       if (step.stage.cmd === 'cat' && i < ex.steps.length - 1) return;
@@ -2453,7 +2535,7 @@ export class Analyzer {
     return {
       title: this.s('例（パイプライン全体）', 'Example (the whole pipeline)'), sections,
       // Data from a file can be edited; data made by echo or seq cannot.
-      ...(ex.input ? { interactive: this.interactive({ kind: 'pipeline', stages }, ex.input, sections[0].label) } : {}),
+      ...(inputs.length ? { interactive: this.interactive({ kind: 'pipeline', stages }, inputs) } : {}),
     };
   }
 
@@ -2465,7 +2547,37 @@ export class Analyzer {
       this.readExample(n, args);
       return;
     }
-    this.pushExample(commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), hasOption(parse, '-i'), this.lang));
+    this.pushExample(commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), hasOption(parse, '-i'), this.lang, this.inputSource(n, parse, args)));
+  }
+
+  /**
+   * What a command reads (src/examples/source.ts): the files its words name as its input, or its standard input, from
+   * the syntax around it. By default, the command whose words are being read (`argCtx`).
+   */
+  private inputSource(cmd?: SyntaxNode, parse?: ArgvParse, nodes?: SyntaxNode[]): InputSource {
+    const ctx = this.cx.argCtx!;
+    const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
+      const value = literalContent(a)?.text;
+      const glob = this.wordAt(a)?.steps.find((st) => st.kind === 'glob');
+      return { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
+    });
+    return inputSource(parse ?? ctx.parse, words, this.stdinOf(cmd ?? ctx.args[0].parent!));
+  }
+
+  private stdinOf(cmd: SyntaxNode): Stdin {
+    return stdinOf(cmd, (w) => literalContent(w)?.text);
+  }
+
+  /** A note when the command reads files it names, so not the standard input the line gives it (`jq . a.json < b.json`). */
+  private unreadStdin(n: SyntaxNode, parse: ArgvParse, args: SyntaxNode[], name: string): void {
+    const src = this.inputSource(n, parse, args);
+    const file = src.streams.find((st): st is Extract<Stream, { kind: 'file' }> => st.kind === 'file');
+    if (!src.unread || !file) return;
+    const u = src.unread;
+    const stdin: Text = u.from === 'file' ? tx(`\`< ${u.name}\``, `\`< ${u.name}\``)
+      : u.from === 'pipe' ? tx('パイプで渡される前のコマンドの出力', 'the output of the previous command, through the pipe')
+        : (u as Extract<Stdin, { from: 'here' }>).doc ? tx('ヒアドキュメント', 'the here-document') : tx('ヒアストリング', 'the here-string');
+    this.cx.extraNotes.push(...this.say(fact(this.lang, 'stdin-not-read', { cmd: name.split('/').pop()!, file: file.name, stdin })));
   }
 
   /** How `read` splits a sample line into its variables (with the IFS given before it). */
@@ -2748,8 +2860,8 @@ export class Analyzer {
   }
 
   /** An example's editable form for the panel (src/examples/commands.ts). */
-  private interactive(spec: RerunSpec, input: string[], inputLabel?: string): Interactive {
-    return interactive(spec, input, this.lang, inputLabel);
+  private interactive(spec: RerunSpec, inputs: InputBox[]): Interactive {
+    return interactive(spec, inputs, this.lang);
   }
 
   /** Values that select a case branch (any of its patterns) and values that do not. */
@@ -2769,8 +2881,8 @@ export class Analyzer {
   }
 
   /** An input → output example (sed, awk, perl, sort…; src/examples/commands.ts). */
-  private ioExample(input: string[], output: string[], inPlace: boolean, spec: RerunSpec): void {
-    this.cx.examples.push(ioExample(input, output, inPlace, spec, this.lang));
+  private ioExample(input: string[], output: string[], inPlace: boolean, spec: RerunSpec, src: InputSource): void {
+    this.cx.examples.push(ioExample(input, output, inPlace, spec, this.lang, src));
   }
 
   /** Regex dialect implied by the current command and its options. */

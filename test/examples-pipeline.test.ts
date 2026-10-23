@@ -6,7 +6,8 @@ import { run } from './support/run';
 import { argWords } from './support/argwords';
 import { Analyzer, lookupCommand } from '../src/analyzer';
 import { interpret } from '../src/argv/interpret';
-import { pipelineExample, readsFileOperand, Stage } from '../src/examples/pipeline';
+import { pipelineExample, Stage } from '../src/examples/pipeline';
+import { readsFiles } from '../src/examples/source';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
@@ -170,13 +171,14 @@ function sandbox(): string {
   return dir;
 }
 
-describe('readsFileOperand agrees with the tools on whether they read a file instead of stdin', () => {
+describe('readsFiles agrees with the tools on whether they read a file instead of stdin', () => {
   // A tool reads its stdin when what it prints changes with what stdin holds.
   const stdin = 'a\nerror\nfoo\nx,y\n-v\nzzz\n';
   const cases: string[] = [
     'grep -v error app.log', 'grep error', 'sed -e s/a/b/', 'awk -F: {print} /etc/passwd', 'perl -ne print f', 'sort -rn', 'head -n 3',
     'cut -d, -f2 f', 'tr a b', 'wc f', 'grep -e x f', 'grep -efoo data.txt', 'grep -e -v foo', 'grep -e -v', 'grep x -', 'sed -ie s/a/b/ -e s/c/d/ f',
     'awk {print} v=1', 'awk -f prog.awk data.txt', 'awk -f prog.awk', 'perl -pi.bak -e s/a/b/ f', 'tee out', 'sort -k 2', 'sort -t, -k2 f', 'egrep a', 'egrep a f',
+    'uniq f out', 'uniq', 'xargs -a f echo', 'xargs -af echo', 'xargs echo', 'head -n 1 f data.txt',
   ];
   for (const line of cases) {
     it(line, () => {
@@ -190,7 +192,7 @@ describe('readsFileOperand agrees with the tools on whether they read a file ins
           fs.rmSync(dir, { recursive: true, force: true });
         }
       };
-      assert.strictEqual(readsFileOperand({ cmd: name, words: texts, text: line }, parse), real(stdin) === real(''));
+      assert.strictEqual(readsFiles(parse, texts), real(stdin) === real(''));
     });
   }
 });
@@ -199,8 +201,9 @@ describe('the pipeline example of a line agrees with the tools', () => {
   const parser = createUnbashParser();
   const example = (line: string) => new Analyzer('en').explainLine(parser.parse(line), 0).examples.find((x) => x.title === 'Example (the whole pipeline)');
   it('labels the input a file when the first stage reads one (`grep -efoo data.txt`)', () => {
-    for (const [line, label] of [['grep -efoo data.txt | sort', 'Input (sample file contents)'], ['grep -e foo data.txt | sort', 'Input (sample file contents)'],
-      ['grep -e foo | sort', 'Input'], ["awk '{ print }' v=1 | sort", 'Input']]) {
+    for (const [line, label] of [['grep -efoo data.txt | sort', 'Input: `data.txt` (sample contents)'], ['grep -e foo data.txt | sort', 'Input: `data.txt` (sample contents)'],
+      ['grep -e foo | sort', 'Input: stdin (sample contents)'], ["awk '{ print }' v=1 | sort", 'Input: stdin (sample contents)'], ['sort < in.txt | uniq', 'Input: stdin (`in.txt`, sample contents)'],
+      ['cat *.log | sort', 'Input: files matching `*.log` (sample contents)'], ['sort "$@" | uniq -c', 'Input: the files `"$@"` names (sample contents)']]) {
       assert.strictEqual(example(line)?.sections[0].label, label, line);
     }
   });

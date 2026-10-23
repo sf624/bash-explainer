@@ -10,7 +10,8 @@ import type { Lang } from '../i18n';
 import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './getopt';
 import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
 import { perlExample, perlOptions } from './perlrun';
-import { Interactive, rerun, RerunSpec } from './rerun';
+import { InputBox, Interactive, rerun, RerunSpec } from './rerun';
+import { InputSource, knownLines, shareOut, streamLabel } from './source';
 import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { commandExample, parseOptions, parseWords, shortKeys, Unsupported as TextFiltersUnsupported } from './textfilters';
@@ -20,45 +21,71 @@ import { has, values } from '../argv/query';
 /** A word of the command line: its text when it is known (`literalContent`), and as written. */
 export interface ExampleWord { value: string | undefined; text: string }
 
-/** An example's editable form for the panel: the spec to run it again, and what it gives now. */
-export function interactive(spec: RerunSpec, input: string[], lang: Lang, inputLabel = pick(lang)('入力', 'Input')): Interactive {
-  return { spec, inputLabel, input, result: rerun(spec, input, lang) };
+/** An example's editable form for the panel: the spec to run it again, its input boxes, and what they give now. */
+export function interactive(spec: RerunSpec, inputs: InputBox[], lang: Lang): Interactive {
+  return { spec, inputs, result: rerun(spec, inputs.map((b) => b.lines), lang) };
 }
 
-/** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
-export function ioExample(input: string[], output: string[], inPlace: boolean, spec: RerunSpec, lang: Lang): Example {
+/** Where a command reads when nothing on the line says (its standard input, from wherever the script's comes). */
+const STDIN: InputSource = { streams: [{ kind: 'stdin', stdin: { from: 'unknown' } }] };
+
+/**
+ * An input → output example (sed, awk, sort…) of the made-up lines `sample` and what the command makes of them,
+ * `output`; tabs and control characters are made visible. `src`: what the command reads (src/examples/source.ts),
+ * one section each, with the sample shared out among the files and the text the line gives (a here-string) used as
+ * it is. A command that edits files in place shows the first one.
+ */
+export function ioExample(sample: string[], output: string[], inPlace: boolean, spec: RerunSpec, lang: Lang, src: InputSource = STDIN): Example {
   const s = pick(lang);
   const tabs = (lines: string[]) => lines.map(visible);
-  return { kind: spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters',
-    interactive: interactive(spec, input, lang),
-    title: inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example'),
+  const kind = spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters';
+  const title = inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example');
+  const outLabel = inPlace ? s('書き換え後', 'After') : s('出力', 'Output');
+  // (awk's only program that reads nothing: `BEGIN` rules alone.)
+  if (!src.streams.length) {
+    return { kind, title, note: s('入力は読まない（`BEGIN` だけ）', 'Reads no input (`BEGIN` only)'), sections: [{ label: outLabel, lines: tabs(output), empty: s('（出力なし）', '(no output)') }] };
+  }
+  const streams = inPlace ? src.streams.slice(0, 1) : src.streams;
+  const contents = shareOut({ streams }, sample);
+  // head and tail print each file apart, under a header.
+  const files = spec.kind === 'filter' && (spec.cmd === 'head' || spec.cmd === 'tail')
+    ? { ...spec, files: streams.map((st) => (st.kind === 'file' ? st.name : 'standard input')) } : undefined;
+  const run = files ?? spec;
+  const shown = files || streams.some(knownLines) ? rerun(run, contents, lang).sections[0].lines : output;
+  const boxes = streams.map((st, i) => ({ label: streamLabel(st, lang), lines: contents[i] }));
+  return { kind,
+    interactive: interactive(run, boxes, lang),
+    title,
     sections: [
-      { label: s('入力', 'Input'), lines: tabs(input) },
-      { label: inPlace ? s('書き換え後', 'After') : s('出力', 'Output'), lines: tabs(output), empty: s('（出力なし）', '(no output)') },
+      ...boxes.map((b) => ({ label: b.label, lines: tabs(b.lines), empty: s('（空）', '(empty)') })),
+      { label: outLabel, lines: tabs(shown), empty: s('（出力なし）', '(no output)') },
     ],
   };
 }
 
 /** What a command whose spec names `kind` does with these words (`read` has `readExample`); `inPlace`: perl's `-i` is given. */
-export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], inPlace: boolean, lang: Lang): Example | undefined {
+export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], inPlace: boolean, lang: Lang, src: InputSource = STDIN): Example | undefined {
   const s = pick(lang);
   const values = words.map((w) => w.value);
   switch (kind) {
     case 'printf': return printfExample(values, lang);
-    case 'xargs': return xargsExample(words, lang);
+    case 'xargs': return xargsExample(words, lang, src);
     case 'getopt': return getoptExample(values, lang);
     case 'perl': {
       const parsed = perlOptions(values);
       const ex = parsed && perlExample(parsed.code, parsed.opts);
       if (!ex) return undefined;
-      if (ex.input.length) return ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts }, lang);
+      if (ex.input.length) return ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts }, lang, src);
       return { kind: 'perl', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible), empty: s('（出力なし）', '(no output)') }] };
     }
     default: {
       const ex = commandExample(kind, values);
       if (!ex) return undefined;
-      // Only the filters take input.
-      if (ex.input) return ioExample(ex.input, ex.output, false, { kind: 'filter', cmd: kind, words: values }, lang);
+      // Only the filters take input. Files of a glob or a variable may be any number: how head and tail print them is not known.
+      if (ex.input) {
+        if ((kind === 'head' || kind === 'tail') && src.streams.some((st) => st.kind === 'file' && st.many)) return undefined;
+        return ioExample(ex.input, ex.output, false, { kind: 'filter', cmd: kind, words: values }, lang, src);
+      }
       return { kind: 'textFilters', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible) }] };
     }
   }
@@ -94,20 +121,22 @@ function printfExample(words: (string | undefined)[], lang: Lang): Example | und
 }
 
 /** The commands xargs runs for a sample input. */
-function xargsExample(words: ExampleWord[], lang: Lang): Example | undefined {
+function xargsExample(words: ExampleWord[], lang: Lang, src: InputSource): Example | undefined {
   const s = pick(lang);
   const values = words.map((w) => w.value);
   const ex = runXargs(values);
   if (!ex) return undefined;
   const input = ex.input.endsWith('\n') ? ex.input.slice(0, -1).split('\n') : [ex.input];
+  // (xargs reads one stream: its standard input, or the file `-a` names.)
+  const label = streamLabel(src.streams[0], lang);
   return { kind: 'xargs',
     title: s('例', 'Example'),
     sections: [
-      { label: s('入力（標準入力）', 'Input (stdin)'), lines: input.map(visible) },
+      { label, lines: input.map(visible) },
       { label: s('実行されるコマンド', 'Commands that run'), lines: ex.commands, empty: s('（実行されない）', '(none)') },
     ],
     // Input split on NUL or another delimiter is not one item per line, so it is not editable.
-    ...(has(parseWords('xargs', values), '-0', '-d') ? {} : { interactive: interactive({ kind: 'xargs', words: values }, input, lang, s('入力（標準入力）', 'Input (stdin)')) }),
+    ...(has(parseWords('xargs', values), '-0', '-d') ? {} : { interactive: interactive({ kind: 'xargs', words: values }, [{ label, lines: input }], lang) }),
   };
 }
 
@@ -205,11 +234,13 @@ export function dateExample(format: string, lang: Lang): Example | undefined {
   const outputs = SAMPLE_DATES.map((d) => formatDateCommand(format, parseSampleDate(d)!));
   if (outputs.some((o) => o === undefined)) return undefined;
   const spec: RerunSpec = { kind: 'date', format };
+  // `date` reads no input: these are the moments at which it runs.
+  const when = s('実行した時刻（例、UTC）', 'When it runs (made up, UTC)');
   return { kind: 'date',
-    interactive: interactive(spec, SAMPLE_DATES, lang),
+    interactive: interactive(spec, [{ label: when, lines: SAMPLE_DATES }], lang),
     title: s('例', 'Example'),
     sections: [
-      { label: s('日時（UTC）', 'Date and time (UTC)'), lines: SAMPLE_DATES },
+      { label: when, lines: SAMPLE_DATES },
       { label: s('出力', 'Output'), lines: outputs.map((o) => visible(o!)) },
     ],
   };

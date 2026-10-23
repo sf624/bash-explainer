@@ -232,7 +232,7 @@ const FROM_LINE: PatternOption = {
 
 /** awk's files, or `name=value` assignments between them. */
 const AWK_FILES: OperandSpec = {
-  name: 'ARG2', text: files, repeat: '*',
+  name: 'ARG2', text: files, repeat: '*', io: 'input',
   assignmentText: pos(
     '変数の代入 `名前=値`: これより後のファイルを読み始める前に awk の変数を設定する（`-v` と違い `BEGIN` では使えない。`\\t` などのエスケープは解釈される）',
     'Variable assignment `name=value`: sets the awk variable before the files after it are read (unlike `-v`, `BEGIN` does not see it; escapes such as `\\t` are processed)',
@@ -351,7 +351,7 @@ export const core: Record<string, CommandSpec> = {
     ['-A|--show-all', '改行やタブなどの制御文字を可視化', 'show non-printing characters'],
     ['-s|--squeeze-blank', '連続する空行を1行にまとめる', 'squeeze repeated blank lines'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')] }),
+  ], { parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')], positionalIo: ['input'] }),
   grep: cmd('パターン（正規表現）に一致する行を検索して表示する', 'Print lines matching a pattern (regex)', [
     ['-z|--null-data', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
     ['-a|--text', 'バイナリファイルもテキストとして扱う', 'treat binary files as text'],
@@ -384,7 +384,7 @@ export const core: Record<string, CommandSpec> = {
     ['-w|--word-regexp', '単語全体として一致する場合のみ', 'match whole words only'],
     ['-x|--line-regexp', '行全体が一致する場合のみ', 'match whole lines only'],
     ['-e|--regexp', '検索パターンを指定（`-` で始まるパターンや複数指定に使う）', 'specify a pattern (useful for several or `-`-prefixed ones)', 'arg fills lang:regex'],
-    ['-f|--file', 'パターンをファイルから読む', 'read patterns from a file', 'arg fills'],
+    ['-f|--file', 'パターンをファイルから読む', 'read patterns from a file', 'arg fills io:read'],
     ['-A|--after-context', '一致行の後ろ N 行も表示', 'print N lines after each match', 'arg'],
     ['-B|--before-context', '一致行の前 N 行も表示', 'print N lines before each match', 'arg'],
     ['-C|--context', '一致行の前後 N 行も表示', 'print N lines of context', 'arg'],
@@ -404,7 +404,7 @@ export const core: Record<string, CommandSpec> = {
     parser: 'getopt_long',
     modes: [{ name: 'bre', default: true }, { name: 'ere' }, { name: 'fixed' }, { name: 'pcre' }],
     conflictingModes: tx('`-E`・`-F`・`-G`・`-P` のうち別のものと一緒に指定すると、grep は「conflicting matchers specified」と言って何もしない（終了ステータス 2）', 'With another of `-E`, `-F`, `-G`, `-P`, grep refuses the line: "conflicting matchers specified" (exit status 2)'),
-    positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'] }),
+    positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'], positionalIo: [undefined, 'input'] }),
   sed: cmd('ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する（置換は `s/前/後/g`）', 'Stream editor: edit input line by line (substitute with `s/old/new/g`)', [
     ['-u|--unbuffered', '入力と出力のバッファリングを最小にする', 'minimal input and output buffering'],
     ['-l|--line-length', '`l` コマンドの折り返し幅', 'line-wrap length for the `l` command', 'arg'],
@@ -416,16 +416,16 @@ export const core: Record<string, CommandSpec> = {
     ['-i|--in-place', 'ファイルを直接書き換える（`-i.bak` でバックアップを作る）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
     ['-n|--quiet|--silent', '自動出力を抑止し、`p` コマンドで指定した行だけ出力', 'suppress automatic printing; print only with `p`'],
     ['-e|--expression', '実行するスクリプトを指定（複数指定可）', 'add a script to run', 'arg fills lang:sed'],
-    ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills'],
+    ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills io:read'],
     ['-E|-r|--regexp-extended', '拡張正規表現(ERE)を使う', 'use extended regex (ERE)'],
     ['-s|--separate', '複数ファイルを別々に扱う', 'treat files separately'],
     ['-z|--null-data', '行区切りを NUL 文字にする', 'lines are separated by NUL'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'] }),
+  ], { parser: 'getopt_long', positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'], positionalIo: [undefined, 'input'] }),
   awk: cmd('テキストを行・フィールド単位で処理するプログラミング言語（`$1` は1列目）', 'Pattern-scanning language that processes lines and fields (`$1` = first field)', [
     ['-F', 'フィールド区切り文字を指定（既定は空白）', 'field separator (default: whitespace)', 'arg'],
     ['-v', 'awk の変数を設定（`-v name=value`）', 'set an awk variable (`-v name=value`)', 'arg'],
-    ['-f', 'プログラムをファイルから読む', 'read the program from a file', 'arg'],
+    ['-f', 'プログラムをファイルから読む', 'read the program from a file', 'arg io:read'],
   ], {
     operands: [
       { when: { option: ['-f'] }, pattern: [AWK_FILES] },
@@ -500,7 +500,7 @@ export const core: Record<string, CommandSpec> = {
     ['-i|--replace', '置換文字列（既定は `{}`。`-i` は直後にだけ文字列を付けられる）', 'replace string (default `{}`; attach any string directly)', 'attached'],
     ['-L', '入力の指定した行数ごとに1回実行する', 'run once per the given number of input lines', 'arg'],
     ['-E', '指定した文字列で入力を打ち切る', 'stop reading at the given string', 'arg'],
-    ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg'],
+    ['-a|--arg-file', '標準入力でなくファイルから読む', 'read items from a file', 'arg io:input'],
     ['-o|--open-tty', '子プロセスの標準入力を端末にする', 'reopen stdin as the terminal in the child'],
     ['-s|--max-chars', 'コマンドラインの最大の長さ', 'maximum length of the command line', 'arg'],
     ['-x|--exit', '長さが収まらないとき終了する', 'exit if the size is exceeded'],
@@ -523,7 +523,7 @@ export const core: Record<string, CommandSpec> = {
     ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
     ['-n', '何もしない（互換のため受け付ける）', 'ignored (accepted for compatibility)'],
     ...GNU_INFO,
-  ], { example: 'cut', parser: 'getopt_long', positional: [files] }),
+  ], { example: 'cut', parser: 'getopt_long', positional: [files], positionalIo: ['input'] }),
   sort: cmd('行を並べ替える', 'Sort lines', [
     ['-b|--ignore-leading-blanks', '先頭の空白を無視する', 'ignore leading blanks'],
     ['-d|--dictionary-order', '英数字と空白だけで比べる', 'consider only blanks and alphanumerics'],
@@ -547,8 +547,8 @@ export const core: Record<string, CommandSpec> = {
     ['-h|--human-numeric-sort', '`2K`, `1G` のような単位付き数値で並べる', 'compare human-readable numbers (2K, 1G)'],
     ['-f|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
     ['-V|--version-sort', 'バージョン番号順に並べる', 'natural version sort'],
-    ['-o|--output', '結果を書き出すファイル', 'write result to file', 'arg'],
-    ['--random-source', '`-R` が使う乱数を読むファイル', 'file to read random bytes from for `-R`', 'arg'],
+    ['-o|--output', '結果を書き出すファイル', 'write result to file', 'arg io:write'],
+    ['--random-source', '`-R` が使う乱数を読むファイル', 'file to read random bytes from for `-R`', 'arg io:read'],
     ['--sort', '並べ方（`general-numeric`, `human-numeric`, `month`, `numeric`, `random`, `version`）', 'sort order (`general-numeric`, `human-numeric`, `month`, `numeric`, `random`, `version`)', 'arg'],
     ['--batch-size', '一度に統合する入力の最大数', 'most inputs merged at once', 'arg'],
     ['--compress-program', '一時ファイルの圧縮に使うプログラム', 'program that compresses the temporary files', 'arg'],
@@ -556,7 +556,7 @@ export const core: Record<string, CommandSpec> = {
     ['--files0-from', 'NUL 区切りの入力ファイル名を読むファイル', 'read NUL-separated input file names from the file', 'arg'],
     ['--check', '整列済みかどうかを確認するだけ（`=quiet` / `=silent` なら何も表示しない）', 'only check whether it is sorted (`=quiet` / `=silent`: print nothing)', 'attached'],
     ...GNU_INFO,
-  ], { example: 'sort', parser: 'getopt_long', positional: [files] }),
+  ], { example: 'sort', parser: 'getopt_long', positional: [files], positionalIo: ['input'] }),
   uniq: cmd('隣接する重複行をまとめる（通常 `sort` の後に使う）', 'Collapse adjacent duplicate lines (usually after `sort`)', [
     ['-f|--skip-fields', '比べるとき先頭のN個のフィールドを飛ばす', 'skip the first N fields when comparing', 'arg'],
     ['-s|--skip-chars', '比べるとき先頭のN文字を飛ばす', 'skip the first N characters when comparing', 'arg'],
@@ -570,7 +570,7 @@ export const core: Record<string, CommandSpec> = {
     ['--group', '全ての行を出し、グループの間に空行を入れる（`=separate`, `=prepend`, `=append`, `=both`）', 'show all lines and separate groups with an empty line (`=separate`, `=prepend`, `=append`, `=both`)', 'attached'],
     ['--all-repeated', '重複した行をすべて出す（`=none`, `=prepend`, `=separate` でグループを区切る）', 'print all duplicate lines (`=none`, `=prepend`, `=separate` separates the groups)', 'attached'],
     ...GNU_INFO,
-  ], { example: 'uniq', parser: 'getopt_long', positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')] }),
+  ], { example: 'uniq', parser: 'getopt_long', positional: [pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)'), pos('出力ファイル（省略すると標準出力）', 'output file (stdout if omitted)')], positionalIo: ['input', 'write'] }),
   getopt: cmd('コマンドライン引数を解析して、オプションを先・それ以外を `--` の後ろに並べ直した形で出力する（`eval set -- "$(getopt …)"` で使う。長いオプションも扱える）',
     'Parse command-line arguments and print them normalised: options first, other arguments after `--` (used as `eval set -- "$(getopt …)"`; supports long options)', [
       ['-o|--options', '受け付ける短いオプションの一覧', 'the short options to accept', 'arg fills lang:getoptshort'],
@@ -601,7 +601,7 @@ export const core: Record<string, CommandSpec> = {
     ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
     ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
     ...GNU_INFO,
-  ], { example: 'head', parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT] }),
+  ], { example: 'head', parser: 'getopt_long', positional: [files], positionalIo: ['input'], patternOptions: [LINE_COUNT] }),
   tail: cmd('ファイルの末尾部分を表示する（既定は10行）', 'Print the last part of files (default 10 lines)', [
     ['-q|--quiet|--silent', '複数ファイルでもファイル名の見出しを付けない', 'never print file name headers'],
     ['-v|--verbose', '常にファイル名の見出しを付ける', 'always print file name headers'],
@@ -616,7 +616,7 @@ export const core: Record<string, CommandSpec> = {
     ['-F', 'ファイルが作り直されても追い続ける', 'follow by name, retrying'],
     ['--max-unchanged-stats', '`-f` で変化がなくても、ファイルが入れ替わっていないか確かめるまでの回数', 'with `-f`, checks without change before testing whether the file was replaced', 'arg'],
     ...GNU_INFO,
-  ], { example: 'tail', parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT, FROM_LINE] }),
+  ], { example: 'tail', parser: 'getopt_long', positional: [files], positionalIo: ['input'], patternOptions: [LINE_COUNT, FROM_LINE] }),
   wc: cmd('行数・単語数・バイト数を数える', 'Count lines, words and bytes', [
     ['-L|--max-line-length', '最も長い行の長さ', 'length of the longest line'],
     ['--files0-from', 'NUL 区切りのファイル名の一覧を読むファイル', 'read NUL-separated file names from the given file', 'arg'],
@@ -626,14 +626,14 @@ export const core: Record<string, CommandSpec> = {
     ['-m|--chars', '文字数を数える', 'count characters'],
     ['--total', '合計の行を出すとき（`auto`, `always`, `only`, `never`）', 'when to print the total line (`auto`, `always`, `only`, `never`)', 'arg'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [files] }),
+  ], { parser: 'getopt_long', positional: [files], positionalIo: ['input'] }),
   tee: cmd('標準入力を標準出力とファイルの両方に書き出す', 'Copy stdin to stdout and to files', [
     ['-i|--ignore-interrupts', '割り込みシグナルを無視する', 'ignore interrupt signals'],
     ['-p', 'パイプへの書き込みエラーを診断する', 'diagnose errors writing to pipes'],
     ['--output-error', '書き込みエラーの扱い（`warn`、`exit`…）', 'what to do on write errors (`warn`, `exit`…)', 'attached'],
     ['-a|--append', 'ファイルに追記する（上書きしない）', 'append instead of overwrite'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('書き出すファイル', 'file to write')] }),
+  ], { parser: 'getopt_long', positional: [pos('書き出すファイル', 'file to write')], positionalIo: ['write'] }),
   curl: cmd('URL を指定してデータを送受信する（HTTP リクエストなど）', 'Transfer data to or from a URL (HTTP requests etc.)', [
     ['-b|--cookie', '送るクッキー（文字列またはファイル）', 'cookies to send (string or file)', 'arg'],
     ['-c|--cookie-jar', 'クッキーを保存するファイル', 'file to save cookies to', 'arg'],
@@ -1475,8 +1475,8 @@ export const core: Record<string, CommandSpec> = {
     ['-s|--slurp', '全入力を1つの配列として読む', 'read all inputs into one array'],
     ['--arg', 'jq の変数に文字列を渡す（`--arg name value`）', 'pass a string variable (`--arg name value`)', 'arg2'],
     ['--argjson', 'jq の変数に JSON の値を渡す（`--argjson name 値`）', 'pass a JSON variable (`--argjson name value`)', 'arg2'],
-    ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2'],
-    ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2'],
+    ['--slurpfile', 'ファイルの JSON を配列として変数に入れる（`--slurpfile name ファイル`）', "load a file's JSON values into a variable as an array (`--slurpfile name file`)", 'arg2 io:read'],
+    ['--rawfile', 'ファイルの中身を文字列として変数に入れる（`--rawfile name ファイル`）', "load a file's text into a variable (`--rawfile name file`)", 'arg2 io:read'],
     {
       names: ['--args'], text: pos('残りの引数を（ファイルでなく）文字列として `$ARGS.positional` に入れる', 'take the remaining arguments as strings in `$ARGS.positional`, not as files'),
       // (The operands after the filter are values for `$ARGS.positional`, not input files.)
@@ -1488,7 +1488,7 @@ export const core: Record<string, CommandSpec> = {
     },
     ['--indent', '出力のインデント幅（0〜7。0 は `-c` と同じ）', 'indentation width of the output (0 to 7; 0 is like `-c`)', 'arg'],
     ['--tab', 'インデントにタブを使う', 'indent with tabs'],
-    ['-f|--from-file', 'フィルタをファイルから読む（その場合、最初の引数は入力ファイル）', 'read the filter from a file (the first operand is then an input file)', 'arg fills'],
+    ['-f|--from-file', 'フィルタをファイルから読む（その場合、最初の引数は入力ファイル）', 'read the filter from a file (the first operand is then an input file)', 'arg fills io:read'],
     ['-S|--sort-keys', 'オブジェクトのキーを並べ替えて出力', 'sort the keys of objects in the output'],
     ['-a|--ascii-output', '非 ASCII 文字を `\\uXXXX` に直して出力', 'escape non-ASCII characters as `\\uXXXX`'],
     ['-j|--join-output', '`-r` と同じだが、出力ごとの改行も付けない', 'like `-r`, but print no newline after each output'],
@@ -1498,7 +1498,7 @@ export const core: Record<string, CommandSpec> = {
     ['-C|--color-output', '色を付けて出力', 'colour the output'],
     ['-M|--monochrome-output', '色を付けない', 'no colours'],
     ['-L', 'モジュールを探すディレクトリ', 'directory to search for modules', 'arg'],
-  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'], parser: 'jq' /* `--arg=x` is an unknown option: jq reads values only as separate words */ }),
+  ], { positional: [pos('jq フィルタ（例: `.items[].name`）', 'jq filter (e.g. `.items[].name`)'), pos('入力 JSON ファイル', 'input JSON file')], positionalLang: ['jq'], positionalIo: [undefined, 'input'], parser: 'jq' /* `--arg=x` is an unknown option: jq reads values only as separate words */ }),
   ps: cmd('実行中のプロセスを表示する', 'Report running processes', [
     ['-e|-A', '全てのプロセスを表示', 'select all processes'],
     ['-f', '詳細形式で表示', 'full format'],
@@ -1895,7 +1895,7 @@ export const core: Record<string, CommandSpec> = {
   ], {
     example: 'perl',
     // perl reads switches up to the first word that is not one: the script, or with `-e` the first file.
-    optionsFirst: true, positional: [pos('実行するスクリプトファイル', 'script file to run'), files] }),
+    optionsFirst: true, positional: [pos('実行するスクリプトファイル', 'script file to run'), files], positionalIo: ['read', 'input'] }),
   python3: cmd('Python 3 インタプリタを実行する', 'Run the Python 3 interpreter', [
     ['-c', '続く文字列を Python コードとして実行', 'run the string as Python code', 'arg'],
     ['-m', 'モジュールをスクリプトとして実行', 'run a module as a script', 'arg'],

@@ -14,7 +14,8 @@ export type FromPanel =
   | { type: 'highlight'; span: Span | null }
   | { type: 'reveal'; span: Span }
   | { type: 'openSettings' }
-  | { type: 'rerun'; id: number; spec: RerunSpec; input: string }
+  /** `inputs`: the text of each input box, in order. */
+  | { type: 'rerun'; id: number; spec: RerunSpec; inputs: string[] }
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' };

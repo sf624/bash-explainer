@@ -182,12 +182,12 @@ describe('branches no other test takes', () => {
 
   it('reruns: a group that took no part in Japanese, and examples that cannot run', () => {
     const regex = { source: '(a)?b', flags: '' };
-    assert.match(rerun({ kind: 'regex', regex, mode: 'lines' }, ['b'], 'ja').sections[1].lines[0], /（なし）/);
-    const cannot = (spec: Parameters<typeof rerun>[0]) => rerun(spec, ['x'], 'en').sections[0].lines[0];
+    assert.match(rerun({ kind: 'regex', regex, mode: 'lines' }, [['b']], 'ja').sections[1].lines[0], /（なし）/);
+    const cannot = (spec: Parameters<typeof rerun>[0]) => rerun(spec, [['x']], 'en').sections[0].lines[0];
     assert.strictEqual(cannot({ kind: 'filter', cmd: 'nope', words: [] }), '(cannot run on this input)');
-    assert.strictEqual(rerun({ kind: 'jq', filter: 'input_filename', raw: false, vars: {} }, ['1'], 'en').sections[0].lines[0], '(cannot run on this input)');
+    assert.strictEqual(rerun({ kind: 'jq', filter: 'input_filename', raw: false, vars: {} }, [['1']], 'en').sections[0].lines[0], '(cannot run on this input)');
     assert.strictEqual(cannot({ kind: 'pipeline', stages: [] }), '(cannot run on this input)');
-    assert.deepStrictEqual(rerun({ kind: 'date', format: '%Q' }, ['2024-03-05 07:08:09'], 'en').sections[0].lines, ['']);
+    assert.deepStrictEqual(rerun({ kind: 'date', format: '%Q' }, [['2024-03-05 07:08:09']], 'en').sections[0].lines, ['']);
   });
 
   it('pitfalls: rm on a special parameter, a for over a nameless command, and local', () => {

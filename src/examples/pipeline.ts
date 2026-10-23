@@ -7,8 +7,6 @@ import { runSed, sedExample } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { FILTERS, parseOptions, runSeq, sampleInput, shortKeys, sortsUnique, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
-import type { ArgvParse } from '../argv/interpret';
-import { operands } from '../argv/query';
 import { canonicalName, impliedWords } from '../dict/aliases';
 
 export interface Stage {
@@ -243,24 +241,6 @@ function sampleFor(stage: Stage, more = 0): string[] | undefined {
     }
   }
   return sampleInput(stage.cmd, w, more) ?? ['banana', 'apple', 'cherry', 'apple'];
-}
-
-/**
- * Whether a stage names a file to read (grep PATTERN FILE, sort FILE, cat FILE…), from the operands of `parse`, the
- * parse of its words: then it does not read its standard input. `-` names the standard input.
- */
-export function readsFileOperand(stage: Stage, parse: ArgvParse): boolean {
-  const named = operands(parse).filter(({ word, role }) => stage.words[word] !== '-' && !role.assignment);
-  // The first operand (`ARG1`) of these is the pattern, script or program, unless an option gives it (`-e`, `-f`):
-  // then the operands start at the second (src/dict/types.ts, `fills`). awk's `NAME=value` operands are assignments.
-  const program = new Set(operands(parse, 'ARG1').map(({ word }) => word));
-  switch (canonicalName(stage.cmd)) {
-    case 'grep': case 'sed': case 'awk': case 'perl':
-      return named.some(({ word }) => !program.has(word));
-    // tee writes to the files it names.
-    case 'tr': case 'echo': case 'printf': case 'seq': case 'xargs': case 'tee': return false;
-    default: return named.length > 0;
-  }
 }
 
 /** The most lines added to a sample to make the stages change the data. */

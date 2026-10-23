@@ -224,6 +224,10 @@ export const MESSAGES = {
   'unmatched-glob-runs-once': pitfall<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
     `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます'}`,
     `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${nullglob ? ', or turn on `shopt -s nullglob` before the loop' : ''}`]),
+  // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
+  'stdin-not-read': note<{ cmd: string; file: string; stdin: Words }>(['3.2.3', '3.6'], ({ cmd, file, stdin }) => [
+    `\`${cmd}\` には読むファイル（\`${file}\`）が指定されているので、標準入力（${stdin.ja}）は読まない（\`-\` を指定すると標準入力も読む）`,
+    `\`${cmd}\` is given a file to read (\`${file}\`), so it does not read its stdin (${stdin.en}); \`-\` would make it read stdin too`]),
 
   // ---------------------------------------------------------------- words (3.7.1, 3.5.7, 3.4.2, 3.6; src/wordfacts.ts)
   'prefix-assignment-expanded-first': pitfall<{ v: string; name: string; use: string }>(['3.7.1', '3.7.4'], ({ v, name, use }) => [
