@@ -77,8 +77,8 @@ const values = (p: Parsed, c: string) => p.opts.filter(([n]) => n === c).map(([,
 
 // ---------------------------------------------------------------- sort
 
-/** The options of sort the simulation follows (`-S`, the buffer size, changes nothing it shows). */
-const SORT = shortKeys('bdfghinrsuVktS');
+/** The options of sort the simulation follows (`-S`, the buffer size, changes nothing it shows; `-o` only where the output goes). */
+const SORT = shortKeys('bdfghinrsuVktS', { '-o': '_' });
 
 /** Whether sort's words give `-u` (`-nu`, `--unique`, `--uniq`); throws Unsupported where the simulation cannot follow them. */
 export const sortsUnique = (words: (string | undefined)[]): boolean => has(parseOptions('sort', words, SORT), 'u');

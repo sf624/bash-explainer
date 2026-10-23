@@ -1040,6 +1040,11 @@ export interface AwkRunOptions {
   fs?: string;
   vars?: Record<string, string>;
   assigns?: Record<string, string>;
+  /**
+   * The files awk reads, with their lines, in order: `FILENAME` is the name of each, and `FNR` starts again at each.
+   * Without them, awk reads the input lines from its standard input, which `FILENAME` calls `-`.
+   */
+  files?: { name: string; lines: string[] }[];
 }
 
 /**
@@ -1141,20 +1146,24 @@ export function runAwk(src: string, input: string[], opts: AwkRunOptions = {}): 
     if (!exited && (main.length || hasEnd)) {
       assign();
       try {
-        input.forEach((line, k) => {
-          it.vars.set('NR', k + 1);
-          it.vars.set('FNR', k + 1);
-          it.setRecord(line);
-          try {
-            for (const r of main) {
-              if (!it.selects(r)) continue;
-              if (r.action) it.exec(r.action);
-              else it.out.push(it.fields[0] + toStr(it.vars.get('ORS')));
+        let nr = 0;
+        for (const file of opts.files ?? [{ name: '-', lines: input }]) {
+          it.vars.set('FILENAME', file.name);
+          file.lines.forEach((line, k) => {
+            it.vars.set('NR', ++nr);
+            it.vars.set('FNR', k + 1);
+            it.setRecord(line);
+            try {
+              for (const r of main) {
+                if (!it.selects(r)) continue;
+                if (r.action) it.exec(r.action);
+                else it.out.push(it.fields[0] + toStr(it.vars.get('ORS')));
+              }
+            } catch (sig) {
+              if (!(sig instanceof NextSig)) throw sig;
             }
-          } catch (sig) {
-            if (!(sig instanceof NextSig)) throw sig;
-          }
-        });
+          });
+        }
       } catch (sig) {
         if (!(sig instanceof ExitSig)) throw sig;
       }

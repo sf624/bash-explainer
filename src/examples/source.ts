@@ -5,7 +5,7 @@
 // labels of their input sections, made by one function.
 import type { ArgvParse } from '../argv/interpret';
 import { givenOptions } from '../argv/query';
-import type { CommandSpec, EachFile } from '../argv/spec';
+import type { CommandSpec, EachFile, IoUse } from '../argv/spec';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
 import { field, type SyntaxNode } from '../syntax/tree';
@@ -40,6 +40,8 @@ export interface InputSource {
   reads?: number[];
   /** How the command works on several files, when not as one stream (`EachFile`, from its spec and options). */
   each?: EachFile;
+  /** The file the command writes its output to instead of its standard output (`uniq IN OUT`, `sort -o OUT`). */
+  writes?: string;
 }
 
 /** A word of the command line as the source reads it: its value when known, as written, and whether it may be many files. */
@@ -51,19 +53,24 @@ export const NO_INPUT: InputSource = { streams: [] };
 /** A word that names an input file: its index, and where the name starts in it when an option's word holds it (`-afile`). */
 export interface InputWord { word: number; at?: number }
 
-/** The words that name the command's input files (`io: 'input'` operands and option values), in order. */
-export function inputWords(parse: ArgvParse): InputWord[] {
+/** The words that name the files the command uses so (`io` of operands and option values), in order. */
+function ioWords(parse: ArgvParse, io: IoUse): InputWord[] {
   const out: InputWord[] = [];
   for (const { word, role } of parse.roles) {
-    if (role.role === 'operand' && role.spec?.io === 'input' && !role.assignment) out.push({ word });
-    else if (role.role === 'value' && role.spec?.io === 'input') out.push({ word });
+    if (role.role === 'operand' && role.spec?.io === io && !role.assignment) out.push({ word });
+    else if (role.role === 'value' && role.spec?.io === io) out.push({ word });
     else {
       // A value in the option's word (`-afile`, `--arg-file=f`).
-      const v = (role.role === 'cluster' ? role.letters : [role]).map((r) => (r.role === 'option' ? r.value : undefined)).find((x) => x?.spec?.io === 'input');
+      const v = (role.role === 'cluster' ? role.letters : [role]).map((r) => (r.role === 'option' ? r.value : undefined)).find((x) => x?.spec?.io === io);
       if (v) out.push({ word, at: v.attached });
     }
   }
   return out;
+}
+
+/** The words that name the command's input files (`io: 'input'` operands and option values), in order. */
+export function inputWords(parse: ArgvParse): InputWord[] {
+  return ioWords(parse, 'input');
 }
 
 /** Whether the command reads a file it names (not `-`): then it does not read its standard input. */
@@ -85,8 +92,10 @@ function eachFileOf(parse: ArgvParse, spec: CommandSpec | undefined): EachFile |
  * input; `spec`, the command's, says how it works on several files. A file named twice is one stream read twice.
  */
 export function inputSource(parse: ArgvParse, words: SourceWord[], stdin: Stdin, spec?: CommandSpec): InputSource {
+  const out = ioWords(parse, 'write')[0];
+  const writes = out ? { writes: (words[out.word].value ?? words[out.word].text).slice(out.at ?? 0) } : {};
   const named = inputWords(parse);
-  if (!named.length) return { streams: [{ kind: 'stdin', stdin }] };
+  if (!named.length) return { streams: [{ kind: 'stdin', stdin }], ...writes };
   const each = eachFileOf(parse, spec);
   const streams: Stream[] = [];
   const reads: number[] = [];
@@ -111,6 +120,7 @@ export function inputSource(parse: ArgvParse, words: SourceWord[], stdin: Stdin,
     ...(reads.length > streams.length ? { reads } : {}),
     ...(each ? { each } : {}),
     ...(!readsStdin && stdin.from !== 'unknown' ? { unread: stdin } : {}),
+    ...writes,
   };
 }
 
@@ -121,7 +131,9 @@ export function readOrder<T>(src: InputSource, contents: T[][]): T[][] {
 
 /** What the command reads, as the example shows it: the first file alone, for a command that works on each apart or rewrites each. */
 export function shownSource(src: InputSource): InputSource {
-  return src.each === 'apart' || src.each === 'in-place' ? { streams: src.streams.slice(0, 1), each: src.each } : src;
+  if (src.each !== 'apart' && src.each !== 'in-place') return src;
+  const { reads: _reads, ...rest } = src;
+  return { ...rest, streams: src.streams.slice(0, 1) };
 }
 
 const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
@@ -166,10 +178,13 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
   return { from: 'pipe', ...(lines ? { lines } : {}) };
 }
 
-/** The label of an input section: what is read and from where (`入力: \`a.json\`（中身の例）`). */
-export function streamLabel(stream: Stream, lang: Lang): string {
+/**
+ * The label of an input section: what is read and from where (`入力: \`a.json\`（中身の例）`). `readBy`: the jq function
+ * that reads it (`inputs` under `-n`).
+ */
+export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string {
   const s = pick(lang);
-  const head = s('入力: ', 'Input: ');
+  const head = readBy ? s(`\`${readBy}\` が読む入力: `, `Input read by \`${readBy}\`: `) : s('入力: ', 'Input: ');
   if (stream.kind === 'file') {
     const name = `\`${stream.name}\``;
     if (stream.many === 'glob') return head + s(`${name} に一致するファイル（中身の例）`, `files matching ${name} (sample contents)`);

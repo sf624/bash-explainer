@@ -262,7 +262,7 @@ export interface OldStyleSpec {
  * What a command does with a file a word names, which the worked examples follow (src/examples/source.ts): `input`,
  * it reads the data it works on from it, instead of its standard input (`sort FILE`, `jq FILTER FILE`, `xargs -a
  * FILE`); `read`, it reads something else from it (a script, `sed -f FILE`; a variable, `jq --rawfile NAME FILE`);
- * `write`, it writes to it (`sort -o FILE`, `uniq IN OUT`, `tee FILE`).
+ * `write`, it writes its output to it, not to its standard output (`sort -o FILE`, `uniq IN OUT`; not `tee FILE`, which copies it there).
  */
 export type IoUse = 'input' | 'read' | 'write';
 

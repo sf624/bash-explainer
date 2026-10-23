@@ -2,7 +2,7 @@
 import type { Lang } from '../i18n';
 import { formatDate, parseSampleDate } from '../embedded/format';
 import { runAwk } from './awk';
-import { Json, JqStep, jqSteps, parseJsonValues, runJq, toJson } from './jq';
+import { Json, JqFormat, jqOutputLines, jqPrint, JqStep, jqSteps, parseJsonValues, runJq } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
 import { pipelineExample, Stage } from './pipeline';
 import { JsRegex } from './regex';
@@ -22,8 +22,13 @@ type RerunKind =
   | { kind: 'regex'; regex: JsRegex; mode: 'lines' | 'inverted' | 'values' }
   | { kind: 'glob'; pattern: string; mode: GlobMode; opts?: GlobOpts }
   | { kind: 'sed'; script: string; quiet: boolean; extended: boolean; highlight?: JsRegex }
-  | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string>; assigns?: Record<string, string> }
-  | { kind: 'jq'; filter: string; raw: boolean; join?: boolean; slurp?: boolean; vars: Record<string, Json> }
+  /** `files`: the names of the files it reads, one per box (`FILENAME`). */
+  | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string>; assigns?: Record<string, string>; files?: string[] }
+  /**
+   * `format`: how the results are printed (one line each when not given); `nullInput` (`-n`): `.` is null and the inputs
+   * are left to `input` and `inputs`; `rawInput` (`-R`): each line is a string.
+   */
+  | { kind: 'jq'; filter: string; raw: boolean; join?: boolean; slurp?: boolean; vars: Record<string, Json>; format?: JqFormat; nullInput?: boolean; rawInput?: boolean }
   | { kind: 'perl'; code: string; opts: PerlOptions }
   /** `files`: the names of the files it reads, for a tool that prints each one apart (`head`, `tail`: `==> a <==`). */
   | { kind: 'filter'; cmd: string; words: (string | undefined)[]; files?: string[] }
@@ -135,7 +140,7 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
       if (spec.highlight) r.marks = input.map((l) => matchMarks(spec.highlight!, l));
       return r;
     }
-    case 'awk': return out(runAwk(spec.program, input, spec));
+    case 'awk': return out(runAwk(spec.program, input, { ...spec, files: spec.files?.map((name, i) => ({ name, lines: inputs[i] })) }));
     case 'perl': return out(runPerl(spec.code, spec.opts, input));
     case 'filter': {
       const run = FILTERS[spec.cmd];
@@ -145,22 +150,30 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
       return out(run(words(spec.words), input));
     }
     case 'jq': {
-      const show = (vs: Json[]): string[] => {
-        const shown = vs.map((v) => ((spec.raw || spec.join) && typeof v === 'string' ? v : toJson(v)));
-        return spec.join ? (shown.length ? [shown.join('')] : []) : shown;
-      };
+      const format = spec.format ?? { indent: 0 };
+      const show = (vs: Json[]): string[] => jqOutputLines(vs, { ...spec, format });
       let values: Json[];
-      try {
-        // Each box holds JSON values (a file may hold several); jq reads them all, one after another.
-        values = inputs.flatMap((box) => parseJsonValues(box.join('\n')));
-      } catch (e) {
-        return { sections: [{ label: s('エラー', 'Error'), lines: [s('入力が JSON として読めません', 'The input is not valid JSON') + `: ${(e as Error).message}`] }] };
+      if (spec.rawInput) {
+        // `-R`: each line is a string; with `-s`, the whole text is one.
+        values = spec.slurp ? [input.map((l) => l + '\n').join('')] : input;
+      } else {
+        try {
+          // Each box holds JSON values (a file may hold several); jq reads them all, one after another.
+          values = inputs.flatMap((box) => parseJsonValues(box.join('\n')));
+        } catch (e) {
+          return { sections: [{ label: s('エラー', 'Error'), lines: [s('入力が JSON として読めません', 'The input is not valid JSON') + `: ${(e as Error).message}`] }] };
+        }
+        // `-s`: the filter reads them all as one array.
+        if (spec.slurp) values = [values];
       }
-      // `-s`: the filter reads them all as one array.
-      if (spec.slurp) values = [values];
+      // Each value read is `.` for a run of the filter, which may read the next ones (`input`); with `-n`, `.` is null once.
+      const queue = [...values];
       const results: Json[] = [];
-      for (const value of values) {
-        const res = runJq(spec.filter, value, spec.vars);
+      let runs = 0;
+      while (spec.nullInput ? runs === 0 : queue.length) {
+        const value = spec.nullInput ? null : queue.shift()!;
+        runs++;
+        const res = runJq(spec.filter, value, spec.vars, queue);
         if (!res) return out(undefined);
         if ('error' in res) {
           const before = show(results);
@@ -169,8 +182,8 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
         results.push(...res.outputs);
       }
       const lines = show(results);
-      const steps = spec.join || values.length !== 1 ? undefined : jqSteps(spec.filter, values[0], spec.vars);
-      return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.map(toJson)) } : out(lines);
+      const steps = spec.join || spec.nullInput || runs !== 1 || values.length !== 1 ? undefined : jqSteps(spec.filter, values[0], spec.vars);
+      return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.flatMap((v) => jqPrint(v, format))) } : out(lines);
     }
     case 'pipeline': {
       const ex = pipelineExample(spec.stages.map((st) => ({ ...st, words: words(st.words) })), true, input);

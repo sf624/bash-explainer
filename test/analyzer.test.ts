@@ -1059,7 +1059,7 @@ describe('jq options with values', () => {
     assert.ok(r.some((x) => x.startsWith('n: Name for')) && r.some((x) => x.includes('jq filter')), r.join('\n'));
   });
   it('--arg value is used in the example', () => {
-    assert.ok(explain(`jq --arg n foo '.name = $n' in.json`).examples[0].sections[1].lines[0].includes('"foo"'));
+    assert.ok(explain(`jq --arg n foo '.name = $n' in.json`).examples[0].sections[1].lines.join('\n').includes('"foo"'));
   });
   it('--indent takes a number; -f makes the first operand an input file; --args operands are strings', () => {
     const a = roles(`jq --indent 4 . in.json`);
