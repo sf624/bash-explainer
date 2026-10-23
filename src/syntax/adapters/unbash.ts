@@ -18,6 +18,7 @@ type Mut = {
 /** A range of the text. */
 interface Range { pos: number; end: number }
 
+// (The parser's own list, for the node it builds: the syntax layer does not import the semantic model's, src/semantics/effects.ts.)
 const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
 const NUMBER = /^-?\d+$/;
 const BRACE_RANGE = /^\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(\.\.-?\d+)?\}$/;

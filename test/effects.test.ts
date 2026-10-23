@@ -47,11 +47,22 @@ describe('builtin effects from the spec (src/semantics/effects.ts)', () => {
   });
   it('does not decide from a variable a builtin sets in the option\'s own word', () => {
     // (bash prints `changed`: the model once read `x` as still 1.)
-    for (const cmd of ['printf -vx 2', 'read -rax <<< 2']) {
+    for (const cmd of ['printf -vx 2', 'read -rax <<< 2', 'wait -n -px', 'wait -p x']) {
       const src = `x=1; ${cmd}; [ "$x" = 1 ] && echo same || echo changed`;
       assert.strictEqual(bash(src), 'changed\n');
       const tree = parser.parse(src);
       assert.strictEqual(shellState(tree).condition(descendants(tree.root, ['list']).find((l) => l.text.startsWith('['))!), undefined, cmd);
+    }
+  });
+  it('unsets the variable of `wait -p` first, and sets it when a job ended', () => {
+    // bash: with no job, `x` is unset (an integer too); after a job, it holds the job's ID.
+    assert.strictEqual(bashOf('x=1; wait -p x', 'x'), 'unset');
+    assert.strictEqual(bashOf('declare -i x=1; wait -n -px', 'x'), 'unset');
+    assert.strictEqual(bashOf('x=1; sleep 0 & wait -n -p x', 'x'), '?');
+    // The model does not know whether a job ended: `x` may be set, never with its old value.
+    for (const src of ['x=1; wait -p x', 'declare -i x=1; wait -n -px', 'x=1; sleep 0 & wait -n -p x']) {
+      const v = shellState(parser.parse(src)).end.variables.get('x')!;
+      assert.deepStrictEqual([v.set, v.value], ['unknown', undefined], src);
     }
   });
   it('reads the words of `command` and `builtin` by the command slot of their specs', () => {
