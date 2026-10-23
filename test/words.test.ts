@@ -2,6 +2,7 @@
 // Its agreement with bash on the probes is checked by test/word-probes.test.ts; here, the contexts the probes'
 // arguments cannot show (a here-string, a here-document) are compared with bash too.
 import * as assert from 'assert';
+import { execFileSync } from 'child_process';
 import { shellState, type StateModel } from '../src/semantics/state';
 import { CONTEXTS, partMeaning, underscoreValue, wordFields, wordMeaning, wordOf, type WordEnv } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -219,6 +220,18 @@ describe('words: fields', () => {
     assert.deepStrictEqual(wordFields(find('x=1', 'x').node, find('x=1', 'x').model), {});
     assert.deepStrictEqual(fieldsOf('x=1; : ${x:=2}; echo "$x"', '"$x"'), {});
     assert.deepStrictEqual(fieldsOf('x=1; let y=1; echo "$x"', '"$x"').fields, ['1']);
+  });
+
+  it('takes `$(true)` for empty only where `true` runs the builtin', () => {
+    // (bash prints `a` for each of the redefined ones.)
+    for (const def of ['true() { echo a; }', 'shopt -s expand_aliases\nalias true="echo a"\n']) {
+      const src = `${def}; x=$(true); echo "$x" "$(true)"`.replace('\n;', '\n');
+      assert.strictEqual(execFileSync('bash', ['-c', src]).toString(), 'a a\n', src);
+      assert.deepStrictEqual(fieldsOf(src, '"$x"'), {}, src);
+      assert.deepStrictEqual(fieldsOf(src, '"$(true)"'), {}, src);
+    }
+    assert.deepStrictEqual(fieldsOf('x=$(true); echo "$x" "$(true)"', '"$x"').fields, ['']);
+    assert.deepStrictEqual(fieldsOf('x=$(true); echo "$x" "$(true)"', '"$(true)"').fields, ['']);
   });
 
   it('expands the word of an assignment whose value is not static, where it ran', () => {

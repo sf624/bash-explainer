@@ -26,7 +26,7 @@ import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
-import { type MappedText, staticWordValue } from '../staticword';
+import { type MappedText, staticWordValue, substitutionNames } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { compareIntegers, patternMatches, testStatus, type TestEnv, unaryTest } from './conditions';
@@ -529,8 +529,6 @@ function safeRedirect(r: SyntaxNode): boolean {
   if (target === '/dev/null') return ['>', '>>', '&>', '&>>', '>|', '<'].includes(op!);
   return op === '>&' && (target === '1' || target === '2');
 }
-
-/** Text as written, without its backslashes (each quotes the character after it; one before a newline goes with it). */
 
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 
@@ -2747,11 +2745,11 @@ class Walker {
    */
   private simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
     if (!this.bash || n.namedChildren.some((c) => c.type === 'variable_assignment') || !fields(n, 'redirect').every(safeRedirect)) return undefined;
-    const name = this.condFields(field(n, 'name')!.namedChildren[0], st);
+    const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
     if (name?.length !== 1 || st.functions.get(name[0]) || st.disabled.get(name[0])) return undefined;
     const args = fields(n, 'argument');
     if (name[0] === 'test') return this.testCommand(args, st);
-    if (!['true', 'false', ':'].includes(name[0]) || args.some((a) => !this.condFields(a, st))) return undefined;
+    if (!['true', 'false', ':'].includes(name[0]) || args.some((a) => !wordIn(a, st, this.values(st), 'fields', this.ifsFollowed(st)))) return undefined;
     return name[0] === 'false' ? 1 : 0;
   }
 
@@ -2814,7 +2812,7 @@ class Walker {
     if (!this.bash) return undefined;
     const args: string[] = [];
     for (const w of words) {
-      const f = this.condFields(w, st);
+      const f = wordIn(w, st, this.values(st), 'fields', this.ifsFollowed(st));
       if (!f) return undefined;
       args.push(...f);
     }
@@ -2843,7 +2841,8 @@ class Walker {
           const v = this.condExpr(operand, st);
           return v === undefined ? undefined : !v;
         }
-        const value = this.condValue(operand, st);
+        // (`[[ -f` while it is typed has no operand.)
+        const value = operand && wordIn(operand, st, this.values(st), 'value');
         return value === undefined ? undefined : unaryTest(op.text, value, this.testEnv(st));
       }
       case 'binary_expression': {
@@ -2858,11 +2857,11 @@ class Walker {
           const r = this.condExpr(right!, st);
           return l === undefined && r !== decides ? undefined : r;
         }
-        const value = this.condValue(left, st);
+        const value = left && wordIn(left, st, this.values(st), 'value');
         if (value === undefined) return undefined;
         if (op === '==' || op === '=' || op === '!=') {
           const nocase = option(st, 'shopt', 'nocasematch');
-          const pattern = nocase === 'off' || nocase === 'default' ? this.condPattern(right, st) : undefined;
+          const pattern = nocase === 'off' || nocase === 'default' ? right && wordIn(right, st, this.values(st), 'pattern') : undefined;
           const m = pattern === undefined ? undefined : patternMatches(value, pattern);
           return m === undefined ? undefined : m === (op !== '!=');
         }
@@ -2875,7 +2874,7 @@ class Walker {
         }
         if (INTEGER_TESTS.has(op)) {
           // Arithmetic: decimal integers only (`010` is octal there, `x` a variable), with spaces, tabs and newlines around.
-          const other = this.condValue(right, st);
+          const other = right && wordIn(right, st, this.values(st), 'value');
           const int = (t: string | undefined): bigint | undefined => {
             const m = t === undefined ? null : /^[ \t\n]*([+-]?(?:0|[1-9]\d{0,17}))[ \t\n]*$/.exec(t);
             return m ? BigInt(m[1]) : undefined;
@@ -2889,30 +2888,51 @@ class Walker {
       }
     }
     // A word alone: true when it is not empty.
-    const value = this.condValue(e, st);
+    const value = wordIn(e, st, this.values(st), 'value');
     return value === undefined ? undefined : value !== '';
   }
 
+  /** The state `source` reads (set by `values`). */
+  private valuesState: ShellState = EMPTY;
   /**
-   * The values the words of a condition read from `st` (src/semantics/words.ts evaluates them): a variable through
-   * `variableText` (not one the script has not set, nor one decisions do not trust: see `markAssumed`), `$?`, and `~`
-   * from HOME.
+   * The values the words of a condition read (src/semantics/words.ts evaluates them), from `valuesState`: a variable
+   * through `variableText` (not one the script has not set, nor one decisions do not trust: see `markAssumed`), `$?`,
+   * `~` from HOME, and whether `$(true)` runs the builtin. One object for the walk (a condition is read often).
    */
-  private values(st: ShellState): ValueSource {
-    const variable = (name: string): string | null | undefined => {
+  private readonly source: ValueSource = {
+    variable: (name) => {
+      const st = this.valuesState;
       if (name === '?') return this.lastStatus(st);
       if (!NAME.test(name)) return undefined;
       this.assumed = false;
       const v = this.variableText(st, name);
       return this.assumed ? undefined : v;
-    };
-    return {
-      variable,
-      tilde: (user) => {
-        const home = user === '' ? variable('HOME') : undefined;
-        return home ?? undefined;
-      },
-    };
+    },
+    tilde: (user) => (user === '' ? this.source.variable('HOME', this.node!) ?? undefined : undefined),
+    builtinRuns: (name) => this.builtinRuns(name, this.valuesState),
+  };
+
+  /** The walk's values (`source`), read from `st`. */
+  private values(st: ShellState): ValueSource {
+    this.valuesState = st;
+    return this.source;
+  }
+
+  /** Whether the name `name` runs its builtin from `st`: not a function, an alias (in `$( )`, from its parse), or a program after `enable -n`. */
+  private builtinRuns(name: string, st: ShellState): boolean {
+    const off = (e: { state: Tri } | undefined): boolean => !e || e.state === 'off';
+    return !this.functionCalled(name, st) && off(st.disabled.get(name)) && off(this.expand.aliases.get(name)) && off(st.aliases.get(name));
+  }
+
+  /** The text of the word `w`, when nothing in it varies from `st`: `$(true)` prints nothing only when `true` runs the builtin. */
+  private staticText(w: SyntaxNode, st: ShellState, assignment = false): string | undefined {
+    const v = staticWordValue(w, assignment);
+    return v !== undefined && substitutionNames(w).every((x) => this.builtinRuns(x, st)) ? v : undefined;
+  }
+
+  /** Whether word splitting follows the IFS of `st` in a condition: not one the script set, or may set where the walk does not see it. */
+  private ifsFollowed(st: ShellState): boolean {
+    return !st.variables.get('IFS') && this.trust.variable('IFS');
   }
 
   /** `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it. */
@@ -2922,24 +2942,6 @@ class Walker {
     return String(st.status);
   }
 
-  /** The value of the word `w` in `[[ ]]` or of `case` (not split, not globbed), when known from `st`. */
-  private condValue(w: SyntaxNode | undefined, st: ShellState): string | undefined {
-    return w && wordIn(w, st, this.values(st), 'value');
-  }
-
-  /** The pattern of the word `w` (`[[ x == w ]]`, a `case` pattern), for `patternMatches`, when known from `st`. */
-  private condPattern(w: SyntaxNode | undefined, st: ShellState): string | undefined {
-    return w && wordIn(w, st, this.values(st), 'pattern');
-  }
-
-  /**
-   * The words the word `w` of `test` or `[` gives, when known from `st`: an unquoted expansion is split (not with an
-   * IFS the script set, or may set where the walk does not see it), and a glob is not followed.
-   */
-  private condFields(w: SyntaxNode, st: ShellState): string[] | undefined {
-    return wordIn(w, st, this.values(st), 'fields', !st.variables.get('IFS') && this.trust.variable('IFS'));
-  }
-
   /**
    * The items of the `case` statement `n` whose lists run, in order, when the word and the patterns tried are known from
    * `st` (bash: the patterns are tried in turn; `;;` ends, `;&` runs the next list, `;;&` tries the patterns after it).
@@ -2947,14 +2949,14 @@ class Walker {
   private caseRuns(n: SyntaxNode, items: readonly SyntaxNode[], st: ShellState): number[] | undefined {
     const nocase = option(st, 'shopt', 'nocasematch');
     const { value: runs, reads } = this.reads((): number[] | undefined => {
-      const word = this.bash && !this.blind && (nocase === 'off' || nocase === 'default') ? this.condValue(field(n, 'value')!, st) : undefined;
+      const word = this.bash && !this.blind && (nocase === 'off' || nocase === 'default') ? wordIn(field(n, 'value')!, st, this.values(st), 'value') : undefined;
       if (word === undefined) return undefined;
       const out: number[] = [];
       for (let i = 0; i < items.length;) {
         let found = -1;
         for (let j = i; j < items.length && found < 0; j++) {
           for (const v of fields(items[j], 'value')) {
-            const pattern = this.condPattern(v, st);
+            const pattern = wordIn(v, st, this.values(st), 'pattern');
             const m = pattern === undefined ? undefined : patternMatches(word, pattern);
             if (m === undefined) return undefined;
             if (m) {
@@ -3299,7 +3301,7 @@ class Walker {
   }
 
   /** The names a declaration's words declare or assign. */
-  private operands(words: SyntaxNode[], roles: Map<SyntaxNode, ArgRole>): Operand[] {
+  private operands(words: SyntaxNode[], roles: Map<SyntaxNode, ArgRole>, st: ShellState): Operand[] {
     const out: Operand[] = [];
     for (const w of words) {
       if (roles.get(w)?.role !== 'operand') continue;
@@ -3308,11 +3310,11 @@ class Walker {
         const value = field(w, 'value');
         const subscript = nameNode.type === 'subscript';
         out.push({ node: w, name: subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
-          assign: { append: w.children.some((c) => c.type === '+='), text: value ? staticWordValue(value, true) : '', array: value?.type === 'array', source: value } });
+          assign: { append: w.children.some((c) => c.type === '+='), text: value ? this.staticText(value, st, true) : '', array: value?.type === 'array', source: value } });
         continue;
       }
       // A word: `x`, or `y=2` in `x=1 declare y=2`, where the parser sees a plain command; `"c"=$x` (whose value is not known here).
-      const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : staticWordValue(w);
+      const text = w.type === 'variable_name' || w.type === 'subscript' ? w.text : this.staticText(w, st);
       const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(w).replace(/=.*/s, '=')) ;
       if (!m || (text === undefined && !m[3])) continue;
       out.push({ node: w, name: m[1], subscript: !!m[2], ...(m[3] ? { assign: { append: m[3] === '+=', text: text === undefined ? undefined : m[4], array: false } } : {}) });
@@ -3322,7 +3324,7 @@ class Walker {
 
   private declare(builtin: string, words: SyntaxNode[], { roles, on, off }: Declaration, n: SyntaxNode, st: ShellState): ShellState {
     if (on.includes('p')) return st;
-    const operands = this.operands(words, roles);
+    const operands = this.operands(words, roles, st);
     // `export -f f`, `declare -fx f`, `readonly -f f`: the names are functions.
     if (/[fF]/.test(on)) {
       const exported: Tri | undefined = (builtin === 'export' && !on.includes('n')) || on.includes('x') ? 'on' : (builtin === 'export' || off.includes('x')) ? 'off' : undefined;
@@ -3465,7 +3467,7 @@ class Walker {
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
-    const text = value ? staticWordValue(value, true) : '';
+    const text = value ? this.staticText(value, st, true) : '';
     if (statement) this.assignmentError(st, name, value?.type === 'array' ? '' : text);
     return this.assign(st, name, subscript, { append: a.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value }, a, false);
   }

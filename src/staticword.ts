@@ -79,6 +79,21 @@ function emptySubstitution(n: SyntaxNode): boolean {
 }
 
 /**
+ * The command names of the substitutions in `n` (itself included) that `staticWordValue` takes to print nothing (`:`,
+ * `true`, `false`): they print nothing only when that name runs the builtin, not a function, an alias or a program
+ * after `enable -n`, which the caller decides from the shell state.
+ */
+export function substitutionNames(n: SyntaxNode): string[] {
+  const out: string[] = [];
+  const visit = (m: SyntaxNode): void => {
+    if (m.type === 'command_substitution' && m.namedChildren.length === 1 && emptySubstitution(m)) out.push(m.namedChildren[0].text);
+    else m.namedChildren.forEach(visit);
+  };
+  visit(n);
+  return out;
+}
+
+/**
  * The text of a node as the shell reads it. Inside a backquote substitution the text is the source, which
  * bash reads once before the command in it is parsed: a backslash before `$`, a backquote and a backslash
  * (and a double quote, when the backquote itself is in double quotes) is removed, once for each

@@ -10,10 +10,11 @@
 import { evalArith } from '../arith';
 import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
 import { parseExpansion } from '../expansion';
-import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
+import { ansiCValue, decodedText, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
+import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 import { changedByBash, setAtStart } from './vars';
 
@@ -319,7 +320,7 @@ interface Shape {
   /** The tilde prefixes, by the context's rule and POSIX mode. */
   tildes: Map<string, TildePrefix[]>;
   /** The meanings the walk read (`wordIn`), by the options they were read with (`optionsOf`), with the state of the first. */
-  walked: WeakMap<WordOptions, WordMeaning>;
+  walked: WeakMap<WordOptions, { meaning: WordMeaning; noIfs?: WordMeaning }>;
   /** The variables the statement may assign before the word is expanded (`unreliableNames`). */
   unreliable: ReadonlySet<string>;
 }
@@ -504,6 +505,8 @@ export interface ValueSource {
   variable(name: string, node: SyntaxNode): string | null | undefined;
   /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known. */
   tilde(user: string, w: WordMeaning): string | undefined;
+  /** Whether the command `name` of the substitution `at` (`$(true)`) runs the builtin: not a function, an alias, nor a program after `enable -n`. */
+  builtinRuns(name: string, at: SyntaxNode): boolean;
 }
 
 /** The values of the model where the word runs, with the environment `env` for what the script does not set. */
@@ -533,6 +536,11 @@ class ModelValues implements ValueSource {
     return v.value;
   }
 
+  builtinRuns(name: string, at: SyntaxNode): boolean {
+    const r = resolveName(this.model, name, at.namedChildren[0]);
+    return r.kind === 'builtin' && !r.missed && !r.disabled;
+  }
+
   /** `~+` and `~-` not after a `cd` anywhere. */
   tilde(user: string): string | undefined {
     const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
@@ -548,8 +556,9 @@ class ModelValues implements ValueSource {
 class Evaluator {
   private readonly unbound: Tri;
   private readonly unreliable: ReadonlySet<string>;
-  constructor(private readonly w: WordMeaning, private readonly source: ValueSource) {
-    this.unbound = on(option(w.state, 'set', 'nounset'), 'set', 'nounset', false);
+  /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options). */
+  constructor(private readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state) {
+    this.unbound = on(option(st, 'set', 'nounset'), 'set', 'nounset', false);
     this.unreliable = shapeOf(w.nodes).unreliable;
   }
 
@@ -583,8 +592,9 @@ class Evaluator {
       }
       case 'simple_expansion': case 'expansion': return this.expansion(n, quoted);
       case 'command_substitution': {
+        // (`$(true)` prints nothing, unless `true` is a function, an alias or a program here.)
         const v = staticWordValue(n);
-        return v === undefined ? undefined : [{ text: v, quoted, expanded: true }];
+        return v === undefined || !substitutionNames(n).every((x) => this.source.builtinRuns(x, n)) ? undefined : [{ text: v, quoted, expanded: true }];
       }
       case 'arithmetic_expansion': {
         const inner = n.text.replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, '');
@@ -664,7 +674,7 @@ class Evaluator {
     const pattern = patternOf(part('pattern'), this);
     if (pattern === undefined) return undefined;
     // nocasematch makes `${x/p/r}` ignore case (not `#` and `%`).
-    const nocase = op[0] === '/' ? on(option(this.w.state, 'shopt', 'nocasematch'), 'shopt', 'nocasematch', false) : 'off';
+    const nocase = op[0] === '/' ? on(option(this.st, 'shopt', 'nocasematch'), 'shopt', 'nocasematch', false) : 'off';
     if (nocase === 'unknown') return undefined;
     const re = globToRegex(pattern, 'value', { nocase: nocase === 'on' });
     /* c8 ignore next -- a guard: a pattern without extended globs always converts. */
@@ -962,15 +972,15 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: '
   const found = wordOf(n);
   /* c8 ignore next -- a guard: the walk reads only words of a command, of `[[ ]]` and of `case` */
   if (!found) return undefined;
-  // (The same word is read in many states, most of them with the same options: only the state is new.)
+  // (The same word is read in many states, most of them with the same options: its meaning is kept, and only the
+  // evaluator is given the state.)
   const walked = shapeOf(found.nodes).walked;
   const key = optionsOf(st);
   let seen = walked.get(key);
-  if (!seen) walked.set(key, (seen = build(found.nodes, found.context, st, false)));
-  const w: WordMeaning = { ...seen, state: st };
-  if (!ifs) w.ifs = { kind: 'unknown', at: found.nodes[0] };
+  if (!seen) walked.set(key, (seen = { meaning: build(found.nodes, found.context, st, false) }));
+  const w = ifs ? seen.meaning : (seen.noIfs ??= { ...seen.meaning, ifs: { kind: 'unknown', at: found.nodes[0] } });
   try {
-    const split = splitFields(w, new Evaluator(w, source));
+    const split = splitFields(w, new Evaluator(w, source, st));
     if (!split) return undefined;
     if (as !== 'fields') {
       // (One field: `[[ ]]` and `case` neither split nor drop an empty word.)
