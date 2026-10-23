@@ -117,7 +117,7 @@ describe('the examples of several files, or of a here-string, agree with the too
     ['tr', 'tr a-z A-Z <<< hello'], ['sort', 'sort a b | uniq -c'], ['sort', 'cat a b | sort -r'], ['sort', "sort <<< b | uniq"],
     ['jq', "cat <<'E' | jq -c .a\n{\"a\":[1,2]}\nE"], ['jq', "echo '{\"a\":1}' | jq -c .a"],
     ['sort', "sort <<< $'b\\na'"], ['sort', 'sort a a'], ['jq', 'jq -c . a.json a.json'], ['head', 'head -n 1 a a'], ['jq', 'jq -cs . a b'],
-    ['cat', 'cat a - b < c'], ['cat', 'cat a - - < c'], ['cat', 'cat a b'], ['jq', "jq -cs 'map(.a)' a b"], ['sort', "sort 0<<< $'b\\na' | uniq"], ['sort', "cat 0<<'E' | sort\nb\na\nE"],
+    ['cat', 'cat a - b < c'], ['cat', 'cat a - - < c'], ['cat', 'cat a b'], ['head', 'head -c 5 a b'], ['head', 'head -c -3 a b'], ['head', 'head -q -c 5 a b'], ['tail', 'tail -c 3 a b'], ['head', 'head -c 11 a b'], ['jq', "jq -cs 'map(.a)' a b"], ['sort', "sort 0<<< $'b\\na' | uniq"], ['sort', "cat 0<<'E' | sort\nb\na\nE"],
   ];
   for (const [tool, line] of lines) {
     (has(tool) ? it : it.skip)(line, () => {

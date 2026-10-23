@@ -140,7 +140,8 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
     case 'filter': {
       const run = FILTERS[spec.cmd];
       if (!run) return out(undefined);
-      if (spec.files) return out(perFile(spec.cmd, spec.files.map((name, i) => ({ name, lines: inputs[i] })), words(spec.words), run));
+      // (`files` is given to the tools that print a header for each file, head and tail: `EachFile`.)
+      if (spec.files) return out(perFile(spec.cmd as 'head' | 'tail', spec.files.map((name, i) => ({ name, lines: inputs[i] })), words(spec.words)));
       return out(run(words(spec.words), input));
     }
     case 'jq': {
@@ -175,7 +176,7 @@ export function rerun(spec: RerunSpec, boxes: string[][], lang: Lang): RerunResu
       const ex = pipelineExample(spec.stages.map((st) => ({ ...st, words: words(st.words) })), true, input);
       if (!ex) return out(undefined);
       return {
-        sections: ex.steps.filter((st, i) => st.stage.cmd !== 'cat' || i === ex.steps.length - 1).map((st, i, all) => ({
+        sections: ex.steps.filter((st, i) => !st.stage.copies || i === ex.steps.length - 1).map((st, i, all) => ({
           label: i === all.length - 1 ? s(`出力（\`${st.stage.text}\` の後）`, `Output (after \`${st.stage.text}\`)`) : s(`\`${st.stage.text}\` の後`, `After \`${st.stage.text}\``),
           lines: st.output, empty: s('（なし）', '(nothing)'),
         })),

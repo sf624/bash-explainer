@@ -108,6 +108,11 @@ export interface CommandSpec {
   example?: CommandExampleKind;
   /** How it works on several input files when not as one stream (`EachFile`): head and tail print each under a header. */
   eachFile?: EachFile;
+  /**
+   * It prints what it reads as it is (cat): its worked example is shown only when it joins several streams, and the
+   * example of a pipeline shows no step of its own for it before the last.
+   */
+  copies?: boolean;
 }
 
 /**

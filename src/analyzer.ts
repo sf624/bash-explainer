@@ -2499,7 +2499,7 @@ export class Analyzer {
     sections.push(...inputs.map((b) => ({ label: b.label, lines: cap(b.lines), empty: this.s('（空）', '(empty)') })));
     ex.steps.forEach((step, i) => {
       // `cat file` passes the input on unchanged.
-      if (step.stage.cmd === 'cat' && i < ex.steps.length - 1) return;
+      if (step.stage.copies && i < ex.steps.length - 1) return;
       const last = i === ex.steps.length - 1;
       const label = step.stage.cmd === 'xargs'
         ? this.s(`\`${step.stage.text}\` が実行するコマンド`, `Commands run by \`${step.stage.text}\``)
@@ -2547,7 +2547,7 @@ export class Analyzer {
       // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
       if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && x.type !== 'variable_assignment' && !x.type.endsWith('redirect'));
-      const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40) };
+      const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(cmd.text, 40), ...(this.specFor(name.text)?.copies ? { copies: true } : {}) };
       stages.push(stage);
       const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
       files.push(readsFiles(parse, stage.words));
@@ -2564,7 +2564,10 @@ export class Analyzer {
       this.readExample(n, args);
       return;
     }
-    this.pushExample(commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), this.lang, this.inputSource(n, parse, args, spec)));
+    const src = this.inputSource(n, parse, args, spec);
+    // A command that prints what it reads as it is (cat) shows what it does when it joins several streams (`cat a - b`).
+    if (spec.copies && src.streams.length < 2 && !src.reads) return;
+    this.pushExample(commandExampleOf(kind, args.map((a) => ({ value: literalContent(a)?.text, text: a.text })), this.lang, src));
   }
 
   /**

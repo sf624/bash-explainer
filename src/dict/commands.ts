@@ -351,7 +351,7 @@ export const core: Record<string, CommandSpec> = {
     ['-A|--show-all', '改行やタブなどの制御文字を可視化', 'show non-printing characters'],
     ['-s|--squeeze-blank', '連続する空行を1行にまとめる', 'squeeze repeated blank lines'],
     ...GNU_INFO,
-  ], { example: 'cat', parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')], positionalIo: ['input'] }),
+  ], { example: 'cat', copies: true, parser: 'getopt_long', positional: [pos('出力するファイル（`-` または省略で標準入力）', 'file to print (`-` or none = stdin)')], positionalIo: ['input'] }),
   grep: cmd('パターン（正規表現）に一致する行を検索して表示する', 'Print lines matching a pattern (regex)', [
     ['-z|--null-data', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
     ['-a|--text', 'バイナリファイルもテキストとして扱う', 'treat binary files as text'],
