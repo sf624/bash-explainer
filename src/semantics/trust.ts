@@ -34,11 +34,11 @@
 import type { CommandSpec } from '../argv/spec';
 import { argWord, prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
-import { staticWordValue } from '../staticword';
+import { staticWordValue, substitutionNames } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 import { builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
-import { alwaysNumeric, ARITH_ASSIGNED, changedUnseen, assignsArithmetic, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -144,6 +144,8 @@ class Scan {
   readonly exported = new Set<string>();
   exportAll = false;
   readonly functions = new Set<string>();
+  /** Whether the script runs `alias` or `enable`, which may make `$(true)` print something (see `value`). */
+  private renames = false;
   /** The functions each function calls ('' : the top level), and those run otherwise than by a plain call. */
   readonly calls = new Map<string, Set<string>>();
   readonly callbacks = new Set<string>();
@@ -158,6 +160,7 @@ class Scan {
     this.roots.add(root);
     const defs = (n: SyntaxNode): void => {
       if (n.type === 'function_definition') this.functions.add(field(n, 'name')!.text);
+      if (n.type === 'command' && ['alias', 'enable'].includes(commandName(n) ?? '')) this.renames = true;
       n.children.forEach(defs);
     };
     defs(root);
@@ -227,7 +230,8 @@ class Scan {
   /** What the word `v` assigns (undefined: the empty value). */
   private value(v: SyntaxNode | undefined): Value {
     if (!v) return { names: [], text: '' };
-    const s = staticWordValue(v, true);
+    // (`$(true)` prints nothing only when `true` is the builtin: not when the script defines a function or an alias of it.)
+    const s = substitutionNames(v).some((x) => this.renames || this.functions.has(x)) ? undefined : staticWordValue(v, true);
     if (s !== undefined) return { names: identifiers(s), text: s, fixed: true };
     const names: string[] = [];
     const parts: string[] = [];

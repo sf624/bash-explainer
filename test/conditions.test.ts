@@ -148,6 +148,11 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     ['p="\\*"; [[ "*" == $p ]]', true], ['p="\\*"; [[ a == $p ]]', true], ['x=a; [[ ${x:-b} == a ]]', true], ['[[ ${nope-b} == b ]]', false], ['x=abc; [ "${x#a}" = bc ]', true],
     ['HOME=/h; [[ ~ == /h ]]', true], ['HOME=/h; [ ~/a = /h/a ]', true], ['[[ ~ == /h ]]', false], ['[[ $((1+2)) == 3 ]]', true], ['x=1; [[ $((x=2)) == 2 && $x == 2 ]]', false],
     ['set -f; x="*"; [ $x = "*" ]', true], ['x="*"; [ $x = "*" ]', false], ['x=a; [ {a,b} = a ]', true], ['set +B; [ {a,b} = a ]', true], ['x="a b"; [ $x = "a b" ]', true],
+    // `$(true)` prints nothing only when `true` runs the builtin (each of these prints `a` in bash).
+    ['x=$(true); [ "$x" = "" ]', true], ['declare x=$(false); [ "$x" = "" ]', true], ['[ "$(:)" = "" ]', true],
+    ['true() { echo a; }; x=; [ -n "$x$(true)" ]', false], [':() { echo a; }; [ "$(:)" = "" ]', false], ['enable -n true; [ "$(true)" = "" ]', false],
+    ['shopt -s expand_aliases\nalias true="echo a"\n[ "$(true)" = "" ]', false], ['true() { echo a; }; x=$(true); [ "$x" = "" ]', false],
+    ['true() { echo a; }; declare x=$(true); [ "$x" = "" ]', false],
     ['IFS=:; x="a:b"; [ $x = a ]', false], ['x=; [[ a == b || ${x:?empty} == a ]]', false],
     // What the model does not follow, or must not decide.
     ['set -o pipefail; [ -f /nonexistent ] | true', false], ['set -o pipefail; true | true', true], ['if true; then false; elif true; then true; fi', true], ['[() { return 3; }; [ a ]', false],
