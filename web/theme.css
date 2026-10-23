@@ -1,6 +1,8 @@
 /*
  * The VS Code theme variables the panel uses (media/panel.css), with the colours of VS Code's
  * Light Modern and Dark Modern themes, following the system setting unless the page's theme switch says Light or Dark.
+ * The chart colours, which colour the parts of a line, and the error colour are our own where VS Code's fall
+ * below 4.5:1 as text: those of src/ui/palette.ts (test/contrast.test.ts compares them and measures them).
  */
 :root {
   color-scheme: light dark;
@@ -11,7 +13,7 @@
 
   --vscode-foreground: #3b3b3b;
   --vscode-descriptionForeground: #616161;
-  --vscode-errorForeground: #e51400;
+  --vscode-errorForeground: #d0020f;
   --vscode-focusBorder: #005fb8;
   --vscode-editor-background: #ffffff;
   --vscode-editor-foreground: #3b3b3b;
@@ -29,12 +31,12 @@
   --vscode-textCodeBlock-background: #f2f2f2;
   --vscode-textLink-foreground: #005fb8;
   --vscode-textLink-activeForeground: #005fb8;
-  --vscode-charts-blue: #1a85ff;
-  --vscode-charts-green: #388a34;
-  --vscode-charts-orange: #c26b00;
-  --vscode-charts-purple: #652d90;
-  --vscode-charts-red: #e51400;
-  --vscode-charts-yellow: #8f6800;
+  --vscode-charts-blue: #0161f8;
+  --vscode-charts-green: #1f7c2b;
+  --vscode-charts-orange: #9f5c00;
+  --vscode-charts-purple: #5f2489;
+  --vscode-charts-red: #d0020f;
+  --vscode-charts-yellow: #645000;
 
   --page-background: #f8f8f8;
   --page-accent: #005fb8;
@@ -46,7 +48,7 @@
   :root:not([data-theme="light"]) {
     --vscode-foreground: #cccccc;
     --vscode-descriptionForeground: #9d9d9d;
-    --vscode-errorForeground: #f85149;
+    --vscode-errorForeground: #fd6358;
     --vscode-focusBorder: #0078d4;
     --vscode-editor-background: #1f1f1f;
     --vscode-editor-foreground: #cccccc;
@@ -67,7 +69,7 @@
     --vscode-charts-green: #89d185;
     --vscode-charts-orange: #d18616;
     --vscode-charts-purple: #b180d7;
-    --vscode-charts-red: #f14c4c;
+    --vscode-charts-red: #ff5c65;
     --vscode-charts-yellow: #cca700;
 
     --page-background: #181818;
@@ -84,7 +86,7 @@
   color-scheme: dark;
   --vscode-foreground: #cccccc;
   --vscode-descriptionForeground: #9d9d9d;
-  --vscode-errorForeground: #f85149;
+  --vscode-errorForeground: #fd6358;
   --vscode-focusBorder: #0078d4;
   --vscode-editor-background: #1f1f1f;
   --vscode-editor-foreground: #cccccc;
@@ -105,7 +107,7 @@
   --vscode-charts-green: #89d185;
   --vscode-charts-orange: #d18616;
   --vscode-charts-purple: #b180d7;
-  --vscode-charts-red: #f14c4c;
+  --vscode-charts-red: #ff5c65;
   --vscode-charts-yellow: #cca700;
 
   --page-background: #181818;

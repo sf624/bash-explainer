@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ExplainService } from '../service';
+import { ThemeKind } from './palette';
 import { pruneDepth, toMarkdown } from './render';
 
 export class HoverController implements vscode.HoverProvider, vscode.Disposable {
@@ -45,7 +46,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     };
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
     const link = `command:bashExplainer.openPanel?${args}`;
-    const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos, link, doc.lineAt(pos.line).text, this.service.examplePlacement), true);
+    const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos, link, doc.lineAt(pos.line).text, this.service.examplePlacement, themeKind()), true);
     md.supportHtml = true;
     md.isTrusted = { enabledCommands: ['bashExplainer.openPanel', 'bashExplainer.openSettings'] };
     return new vscode.Hover(md, doc.lineAt(pos.line).range);
@@ -68,5 +69,15 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     clearTimeout(this.followTimer);
     this.registration?.dispose();
     this.disposables.forEach((d) => d.dispose());
+  }
+}
+
+/** The kind of the active colour theme, whose colours the hover's labels take. */
+function themeKind(): ThemeKind {
+  switch (vscode.window.activeColorTheme.kind) {
+    case vscode.ColorThemeKind.Light: return 'light';
+    case vscode.ColorThemeKind.HighContrast: return 'highContrast';
+    case vscode.ColorThemeKind.HighContrastLight: return 'highContrastLight';
+    default: return 'dark';
   }
 }

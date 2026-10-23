@@ -3,6 +3,7 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
+import { Role, roleColour, ThemeKind } from './palette';
 
 export const ui = {
   ja: {
@@ -111,17 +112,25 @@ export function placeExamples(ex: LineExplanation): LineExplanation {
   return { ...ex, items, examples: rest };
 }
 
-/** Theme colours per token kind; the same palette as the panel (media/panel.css). */
-const KIND_COLOR: Record<Kind, string> = {
-  command: '--vscode-charts-blue', subcommand: '--vscode-charts-blue', builtin: '--vscode-charts-blue', function: '--vscode-charts-blue',
-  option: '--vscode-charts-orange',
-  argument: '--vscode-charts-green', string: '--vscode-charts-green', number: '--vscode-charts-green',
-  operator: '--vscode-charts-purple', keyword: '--vscode-charts-purple', block: '--vscode-charts-purple', test: '--vscode-charts-purple',
-  redirect: '--vscode-charts-yellow', pattern: '--vscode-charts-yellow',
-  variable: '--vscode-charts-red', expansion: '--vscode-charts-red', substitution: '--vscode-charts-red', assignment: '--vscode-charts-red',
-  comment: '--vscode-descriptionForeground',
-  error: '--vscode-errorForeground',
+/** The colour role of each token kind; the same palette as the panel (media/panel.css). */
+const KIND_ROLE: Record<Kind, Role | 'comment' | 'error'> = {
+  command: 'command', subcommand: 'command', builtin: 'command', function: 'command',
+  option: 'option',
+  argument: 'argument', string: 'argument', number: 'argument',
+  operator: 'operator', keyword: 'operator', block: 'operator', test: 'operator',
+  redirect: 'redirect', pattern: 'redirect',
+  variable: 'variable', expansion: 'variable', substitution: 'variable', assignment: 'variable',
+  comment: 'comment',
+  error: 'error',
 };
+
+/** The CSS colour of a token kind in the hover, in a theme of that kind (src/ui/palette.ts). */
+function kindColor(kind: Kind, theme: ThemeKind): string {
+  const role = KIND_ROLE[kind];
+  if (role === 'comment') return 'var(--vscode-descriptionForeground)';
+  if (role === 'error') return 'var(--vscode-errorForeground)';
+  return roleColour(role, theme);
+}
 
 /** Escape text for inline HTML inside Markdown (entities also stop `*`, `_` etc. acting as Markdown). */
 function esc(text: string): string {
@@ -129,8 +138,8 @@ function esc(text: string): string {
 }
 
 /** Hover HTML only keeps `<span style>` in exactly this shape: `color:<#hex|var(--vscode-…)>;`. */
-function colored(text: string, kind: Kind): string {
-  return `<span style="color:var(${KIND_COLOR[kind]});">${esc(text)}</span>`;
+function colored(text: string, kind: Kind, theme: ThemeKind): string {
+  return `<span style="color:${kindColor(kind, theme)};">${esc(text)}</span>`;
 }
 
 function contains(t: Token, p: Pos): boolean {
@@ -174,8 +183,9 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
  * Markdown (with inline HTML, so `supportHtml` must be on) for the hover. Labels are coloured
  * by token kind, and `lineText` is shown regex101-style at the top. Tokens under `at` (the
  * mouse position) are emphasised. `panelLink` is a command URI that opens this line in the panel.
+ * `theme` is the kind of the active colour theme, whose colours the labels take.
  */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'first'): string {
+export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'first', theme: ThemeKind = 'dark'): string {
   if (placement !== 'bottom') ex = placeExamples(ex);
   const t = ui[lang];
   const out: string[] = [];
@@ -189,7 +199,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
     const segs = lineSegments(lineText, ex.line, ex.items);
     while (segs.length && !segs[0].text.trim()) segs.shift();
     if (segs.length) segs[0].text = segs[0].text.trimStart();
-    out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind) : esc(g.text))).join('') + '</code>', '');
+    out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind, theme) : esc(g.text))).join('') + '</code>', '');
   }
   // A note, and a token, end with the sections of the manual they are about, small.
   const small = (refs: readonly string[] | undefined) => (refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : '');
@@ -201,8 +211,8 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   const walk = (tok: Token, depth: number) => {
     // A code part in `<code>`, a placeholder in italics and the muted colour; the parts are a space apart.
     const label = joinParts(labelParts(tok), (p) => (p.placeholder
-      ? `<i>${colored(p.text, 'comment')}</i>`
-      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind)}</code>`));
+      ? `<i>${colored(p.text, 'comment', theme)}</i>`
+      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind, theme)}</code>`));
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
     out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}${small(tok.refs)}`);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.

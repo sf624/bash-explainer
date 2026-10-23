@@ -4,6 +4,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { examplesMarkdown, lineSegments, noteRefs, placeExamples, toMarkdown, toPlainMarkdown } from '../src/ui/render';
+import type { ThemeKind } from '../src/ui/palette';
 import { panelUpdate } from '../src/ui/panelView';
 
 const root = path.join(__dirname, '..');
@@ -34,6 +35,27 @@ describe('hover markdown', () => {
     const { md } = hover('ls -l');
     assert.match(md, /<code><span style="color:var\(--vscode-charts-blue\);">ls<\/span><\/code> — List directory/);
     assert.match(md, /<code><span style="color:var\(--vscode-charts-orange\);">-l<\/span><\/code>/);
+  });
+
+  it('colours labels with our own colours where the theme kind has them (src/ui/palette.ts)', () => {
+    const src = 'echo "$x" -n 2>&1';
+    const ex = new Analyzer('en').explainLine(parser.parse(src), 0);
+    const md = (theme: ThemeKind) => toMarkdown(ex, 'en', undefined, undefined, src, 'first', theme);
+    assert.match(md('light'), /<span style="color:#0161f8;">echo<\/span>/);
+    assert.match(md('light'), /<span style="color:#d0020f;">&#36;x<\/span>/);
+    assert.match(md('highContrastLight'), /<span style="color:#0148bc;">echo<\/span>/);
+    assert.match(md('highContrast'), /<span style="color:#6badff;">echo<\/span>/);
+    // Dark themes keep the theme's chart colours, but red, too dark on a code block.
+    assert.match(md('dark'), /<span style="color:var\(--vscode-charts-blue\);">echo<\/span>/);
+    assert.match(md('dark'), /<span style="color:#ff5c65;">&#36;x<\/span>/);
+    // An error and a comment keep the theme's own colours, in every theme.
+    const bad = 'printf "%y" # c';
+    const md2 = toMarkdown(new Analyzer('en').explainLine(parser.parse(bad), 0), 'en', undefined, undefined, bad, 'first', 'light');
+    assert.match(md2, /<span style="color:var\(--vscode-errorForeground\);">%y<\/span>/);
+    assert.match(md2, /<span style="color:var\(--vscode-descriptionForeground\);">&#35;&nbsp;c<\/span>/);
+    for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
+      for (const s of [...md(theme).matchAll(/style="([^"]*)"/g)].map((m) => m[1])) assert.match(s, ALLOWED_STYLE, theme);
+    }
   });
 
   it('escapes HTML and Markdown in source text', () => {
