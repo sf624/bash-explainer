@@ -539,6 +539,13 @@ class Scan {
     }
     for (const f of callbacks(parse, args)) this.callback(f);
     if (hosted) return;
+    // `test` and `[` (by their spec): `-v name` reads a variable.
+    if (spec.operandParser === 'test-expression') {
+      args.forEach((a, i) => {
+        if (i > 0 && staticWordValue(args[i - 1]) === '-v') this.testV(a, w);
+      });
+      return;
+    }
     switch (name) {
       case 'eval': {
         // (The string is the words of its command slot, as the walk reads it: `WalkBuiltins.builtin`.)
@@ -558,12 +565,10 @@ class Scan {
       }
       case 'alias':
         for (const a of args) {
-          // (Read where commands may run it: see `aliases`. One the walk does not take, by its name: its text alone.)
+          // (Read where commands may run it: see `aliases`. A name bash rejects, `a/b=x`, defines nothing.)
           const v = staticWordValue(a);
           const def = v === undefined ? undefined : aliasOf(a);
-          const m = v === undefined ? null : /^[^=]+=([\s\S]*)$/.exec(v);
           if (def) this.aliasDefs.push({ ...def, word: a, where: w });
-          else if (m) this.foreign(this.strings.alias(a, m[1]), 'an alias of text not known', w);
           else if (v === undefined) this.blindFor('an alias of text not known');
         }
         return;
@@ -582,11 +587,6 @@ class Scan {
           || args.slice(0, first).some((a) => staticWordValue(a) === undefined)) this.exportAll = true;
         return;
       }
-      case 'test': case '[':
-        args.forEach((a, i) => {
-          if (i > 0 && staticWordValue(args[i - 1]) === '-v') this.testV(a, w);
-        });
-        return;
     }
     if (DECLARATIONS.has(name)) this.declaration(name, args, readDeclarationWords(name, args), w);
   }

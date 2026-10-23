@@ -2,6 +2,7 @@ import { Lang } from './i18n';
 import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
+import { staticWordValue } from './staticword';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -108,7 +109,8 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
     const next = n.parent?.children[n.parent.children.indexOf(n) + 2];
     const sep = n.parent?.children[n.parent.children.indexOf(n) + 1];
     if (!close && last && /[^\s]\]$/.test(last.text)) {
-      // `[ -f x]`
+      // `[ -f $x]`. (With a last word of known text, `[ -f x]`, the analyzer says it: `bracket-close-glued`.)
+      if (staticWordValue(last) !== undefined) return;
       add(`\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
         `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
     } else if (!close && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {

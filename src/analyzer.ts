@@ -1449,12 +1449,16 @@ export class Analyzer {
    * (`bracket`). Undefined when bash cannot read the expression of `test` (its words are then read with its spec).
    */
   private testArgs(n: SyntaxNode, test: CommandTest, bracket: boolean): Token[] | undefined {
-    if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close')));
+    // (Where bash fails before evaluating anything, the words are plain arguments: no condition is explained.)
+    const last = test.words[test.words.length - 1];
+    if (test.unclosed && last && /\S\]$/.test(last.text)) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-close-glued', { word: last.text })));
+    else if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close')));
+    if (test.malformed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'test-malformed', { name: bracket ? '[' : 'test' })));
     let inner: Token[];
-    if (test.test) {
+    if (test.test && !test.unclosed) {
       this.testExample(n, bracketShape(test.test), '[');
       inner = this.testTokens(n, test.test, test.test.expr);
-    } else if (bracket) inner = this.subs(test.words);
+    } else if (bracket || test.malformed) inner = this.subs(test.words);
     else return undefined;
     if (!test.close) return inner;
     return [...inner, this.tok(test.close, 'argument', this.s('`[` に渡す最後の引数。`[` はこれで式の終わりを確かめる（ないとエラー）', 'The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)'))];
@@ -1527,11 +1531,12 @@ export class Analyzer {
         explanation: this.s('変数（展開結果）をコマンド名として実行する', 'Run the expanded value as a command'),
       };
     }
-    // What bash runs (src/semantics/names.ts). An alias over a known command (`alias grep=ggrep`) is still
-    // explained as that command. (A quoted name is never an alias.)
+    // What bash runs (src/semantics/names.ts). An alias over a known command that runs that command with more words
+    // (`alias grep='grep --color=auto'`) is still explained as that command; one that runs something else (`alias
+    // echo=printf`, `alias [=echo`) is the alias. (A quoted name is never an alias.)
     let res = this.resolve(name, nameNode, { quoted: sv !== undefined });
     const known = !!lookupCommand(name);
-    if (res.kind === 'alias' && known) res = this.resolve(name, nameNode, { quoted: true });
+    if (res.kind === 'alias' && known && res.target?.name === name) res = this.resolve(name, nameNode, { quoted: true });
     if (res.kind === 'alias') {
       const { alias } = res;
       const line = (docLine(alias.at) + 1);

@@ -77,9 +77,12 @@ export class WalkConditions {
   simpleStatus(n: SyntaxNode, st: ShellState): number | undefined {
     if (!this.w.bash || n.namedChildren.some((c) => c.type === 'variable_assignment') || !fields(n, 'redirect').every(safeRedirect)) return undefined;
     const name = wordIn(field(n, 'name')!.namedChildren[0], st, this.values(st), 'fields', this.ifsFollowed(st));
+    // (The walk builds the state that `resolveName` reads (src/semantics/names.ts), so it cannot ask it: it looks at
+    // the functions and the `enable -n` of `st` itself. An alias does not get here: the walk runs its text instead,
+    // `WalkAliases.expand`.)
     if (name?.length !== 1 || st.functions.get(name[0]) || st.disabled.get(name[0])) return undefined;
     const args = fields(n, 'argument');
-    // (`test` and `[`, the builtins: src/semantics/names.ts.)
+    // (`test` and `[`, the builtins: their specs, src/semantics/names.ts.)
     const test = testSpec(name[0], false);
     if (test) return this.testCommand(args, st, test.closingOperand);
     if (name[0] === 'unset') return this.unsetStatus(args, st);

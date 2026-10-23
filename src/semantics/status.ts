@@ -14,6 +14,7 @@ import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
+import { commandTest } from '../testexpr';
 import { type ErrexitWhy, option, type ShellState, type StateModel, type Tri } from './state';
 import { type WordEnv, wordFields, type WordFailure, wordOf } from './words';
 
@@ -29,8 +30,11 @@ export type StatusRule =
   | { readonly kind: 'pipeline'; readonly stages: readonly SyntaxNode[]; readonly pipefail: Tri; readonly negated: boolean }
   /** `(( ))` and `let`: 1 when the value is 0, else 0. */
   | { readonly kind: 'arith' }
-  /** `[[ ]]` and `[ ]`: 0 when true, 1 when false, 2 on an error. */
-  | { readonly kind: 'test' }
+  /**
+   * `[[ ]]` and `[ ]`: 0 when true, 1 when false, 2 on an error. `fails`: `test` or `[` surely fails before evaluating
+   * anything (status 2): `[` without its `]`, or arguments bash cannot read as an expression (src/testexpr.ts).
+   */
+  | { readonly kind: 'test'; readonly fails?: true }
   /** Lists, `{ }`, `( )`, `if`, `case`, loops, `time`: the status of the last command run (0 when none ran). */
   | { readonly kind: 'last-run' }
   /** `exit N` and `return N`: N modulo 256 (with a word that is not a number, the rule is `command`). */
@@ -171,7 +175,11 @@ class Statuses implements StatusModel {
         const res = name ? resolveName(this.state, name, field(n, 'name')!, { shell: this.shell, command: true }) : undefined;
         if (res?.kind === 'function') return { kind: 'command', functions: [res.fn.def] };
         // (`test` and `[`, the builtins or the programs.)
-        if (res && testSpecOf(res)) return { kind: 'test' };
+        const test = res && testSpecOf(res);
+        if (test) {
+          const read = commandTest(test, args);
+          return read.unclosed || read.malformed ? { kind: 'test', fails: true } : { kind: 'test' };
+        }
         if (res?.kind !== 'builtin') return { kind: 'command', functions: this.calledBy(n) };
         if (name === 'exit' || name === 'return') {
           const v = args[0]?.text;

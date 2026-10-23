@@ -6,7 +6,7 @@ import * as path from 'path';
 import { Analyzer, Token } from '../src/analyzer';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { parseTest, TestExpr, testRange } from '../src/testexpr';
+import { parseTest, TestExpr, testFails, testRange } from '../src/testexpr';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -209,6 +209,9 @@ describe('[ ] arguments are read as bash reads them', () => {
       // `[ ]` with no words is false (1), not an error.
       if (l.length === 0) mine = 1;
       if (mine !== real[i]) wrong.push(`[ ${l.join(' ')} ]: bash ${real[i]}, here ${mine} (${e && show(e, l)})`);
+      // (`testFails`: bash fails on the words themselves, status 2, before evaluating anything.)
+      const parseError = !e && l.length > 0;
+      if (testFails(l) !== parseError) wrong.push(`[ ${l.join(' ')} ]: testFails ${testFails(l)}`);
     });
     assert.deepStrictEqual(wrong.slice(0, 40), []);
   });
@@ -359,14 +362,56 @@ describe('a command named [ is explained as what bash runs', () => {
       if (runs !== 'function') assert.ok(all.some((t) => t.label === ']' && t.explanation.startsWith('The last argument passed to `[`')), 'the last `]`');
     });
   }
-  // Without its `]`, `[` fails when it runs (status 2): no syntax error, and a note says so.
-  for (const [src, status] of [['[ -f f', 2], ['[', 2], ['[ -f f]', 2], ['[ ]', 1], ['[ -f f ]', 0]] as const) {
+  // Without its `]`, `[` fails when it runs (status 2): no syntax error, one note says so, and no condition is
+  // explained (bash never evaluates it).
+  for (const [src, status, id] of [['[ -f f', 2, 'bracket-missing-close'], ['[', 2, 'bracket-missing-close'], ['[ -f f]', 2, 'bracket-close-glued'],
+    ['[ ]', 1, undefined], ['[ -f f ]', 0, undefined]] as const) {
     it(`${JSON.stringify(src)}: status ${status}`, () => {
       const real = bash(src);
       assert.strictEqual(real.status, status);
       assert.strictEqual(real.stderr.includes("missing `]'"), status === 2);
       assert.deepStrictEqual(parser.parse(src)!.errors, []);
-      assert.strictEqual(explain(src).e.facts?.some((f) => f.id === 'bracket-missing-close') ?? false, status === 2);
+      const { e, all } = explain(src);
+      assert.deepStrictEqual(e.facts?.map((f) => f.id).filter((x) => x.startsWith('bracket-')) ?? [], id ? [id] : []);
+      assert.ok(!e.notes.some((n) => n.includes('Pitfall') && n.includes(']')), 'no pitfall says it again');
+      assert.strictEqual(all.some((t) => t.explanation.startsWith('Condition: `')), status === 0);
+    });
+  }
+  // Words that are no expression of `test` (by the POSIX rules for one to four arguments, then bash's grammar):
+  // bash fails with status 2 before evaluating anything, so a note says so and no condition is explained.
+  for (const [src, error] of [['test -f f ]', 'binary operator expected'], ['[ f ] ]', 'unary operator expected'], ['test a b', 'unary operator expected'],
+    ['[ a b c d ]', 'too many arguments'], ['test -f f -a', 'binary operator expected'], ['[ ! a b ]', 'unary operator expected']] as const) {
+    it(`${JSON.stringify(src)}: ${error}`, () => {
+      const real = bash(src);
+      assert.strictEqual(real.status, 2);
+      assert.ok(real.stderr.includes(error), real.stderr);
+      const { e, all } = explain(src);
+      assert.deepStrictEqual(e.facts?.map((f) => f.id), ['test-malformed']);
+      assert.ok(!all.some((t) => t.explanation.startsWith('Condition: `') || t.explanation === 'true if it is a regular file'), 'no condition');
+    });
+  }
+  // An alias comes before the builtin where aliases expand: `[` and `echo` run what the alias says (also in POSIX
+  // mode), and a bash script without expand_aliases still runs the builtins.
+  for (const [src, out, alias] of [
+    ['shopt -s expand_aliases\nalias [=echo\n[ -f c ]', '-f c ]\n', true],
+    ['set -o posix\nalias [=echo\n[ -f c ]', '-f c ]\n', true],
+    ['shopt -s expand_aliases\nalias echo=printf\necho %s x', 'x', true],
+    ["shopt -s expand_aliases\nalias echo='echo -n'\necho x", 'x', false],
+    ['alias [=echo\n[ -f c ]', '', false],
+    ['alias echo=printf\necho %s x', '%s x\n', false],
+  ] as const) {
+    it(`${JSON.stringify(src)}: ${alias ? 'the alias' : 'the builtin'}`, () => {
+      assert.strictEqual(run('bash', ['-s'], { cwd: dir, input: src }).stdout.toString(), out);
+      const { all } = explain(src);
+      const name = all[0];
+      assert.strictEqual(name.explanation.startsWith(`The alias \``), alias, name.explanation);
+      assert.strictEqual(all.some((t) => t.explanation.startsWith('Condition: `')), !alias && src.includes('[ -f'));
+    });
+  }
+  // A word that may give another field, or none or several, is not known: no note.
+  for (const src of ['test -f $x ]', '[ a * ]', '[ "$a" "$b" ]', 'test a {b,c}', '[ -t x -a y z ]']) {
+    it(`${JSON.stringify(src)}: not surely an error`, () => {
+      assert.ok(!explain(src).e.facts?.some((f) => f.id === 'test-malformed'));
     });
   }
 });

@@ -2,7 +2,7 @@
 // known, and whether a pattern of `case` or `[[ == ]]` matches a known word. The walk of the shell state
 // (src/semantics/walk/conditions.ts) reads the words and calls these; anything not known here is `undefined`.
 import { globToRegex, hasExtglob } from '../examples/shellwords';
-import { parseTest, type TestExpr } from '../testexpr';
+import { parseTest, type TestExpr, testFails } from '../testexpr';
 
 /** What a decision needs from the shell state: whether `set -o name` is on (undefined: not known). */
 export interface TestEnv {
@@ -68,8 +68,8 @@ function unary(op: string, arg: string, env: TestEnv): boolean {
 export function testStatus(args: readonly string[], env: TestEnv): number | undefined {
   if (!args.length) return 1;
   const e = parseTest([...args]);
-  // (`parseTest` does not follow `-t` in a long test; anything else it rejects is bash's syntax error.)
-  if (!e) return args.includes('-t') ? undefined : 2;
+  // (`parseTest` does not follow `-t` in a long test; what else it rejects is bash's error: `testFails`.)
+  if (!e) return testFails(args) ? 2 : undefined;
   try {
     return evaluate(e, args, env) ? 0 : 1;
   } catch (err) {

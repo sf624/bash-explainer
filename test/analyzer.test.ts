@@ -987,8 +987,8 @@ describe('[ ] shows its syntax', () => {
     assert.deepStrictEqual([t.children[0].span.start, t.children[0].span.end], [{ line: 0, character: 0 }, { line: 0, character: 1 }]);
     assert.deepStrictEqual([t.children[2].span.start, t.children[2].span.end], [{ line: 1, character: 7 }, { line: 1, character: 8 }]);
   });
-  it('has no ] token when the test is not closed', () => {
-    assert.deepStrictEqual(explain('[ -f x').items[0].children.map((c) => c.label), ['[', '-f x']);
+  it('has no ] token, and no condition, when the test is not closed', () => {
+    assert.deepStrictEqual(explain('[ -f x').items[0].children.map((c) => c.label), ['[', '-f', 'x']);
   });
   it('keeps `test -f x` as a builtin command', () => {
     const t = explain('test -f x').items[0];

@@ -33,11 +33,15 @@ export function aliasName(c: SyntaxNode): string | undefined {
   return word.type === 'word' && word.text === name ? name : undefined;
 }
 
-/** `alias name=value` (or `'name=value'`): the name and what it stands for (static, or the text without its outer quotes). */
+/**
+ * `alias name=value` (or `'name=value'`): the name and what it stands for (static, or the text without its outer quotes).
+ * A name is any text without a `/`, `$`, backquote, `=`, quote, blank or metacharacter (bash's `legal_alias_name`):
+ * `[`, `{` and `a!b` are names too.
+ */
 export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
   const v = staticWordValue(a);
   const text = v ?? a.text;
-  const m = /^([\w.:@%+-]+)=(['"]?)([\s\S]*)\2$/.exec(text);
+  const m = /^([^\s/$`='"\\()<>;&|]+)=(['"]?)([\s\S]*)\2$/.exec(text);
   if (!m) return undefined;
   return { name: m[1], value: v !== undefined ? v.slice(v.indexOf('=') + 1) : m[3] };
 }

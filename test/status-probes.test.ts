@@ -190,11 +190,11 @@ class Run {
       case 'given': throw rule.by === 'exit' ? new Exit(rule.value) : new Return(rule.value);
       case 'previous': throw rule.by === 'exit' ? new Exit(this.last) : new Return(this.last);
       case 'wait': return rule.all ? 0 : rule.job && this.jobs.has(rule.job) ? this.jobs.get(rule.job)! : (() => { throw new Unknown('wait'); })();
-      // (`test` and `[`: the words of `[` up to its `]`; without it, status 2.)
+      // (`test` and `[`: status 2 when the model says it fails; else the words of `[` up to its `]`.)
       case 'test': {
+        if (rule.fails) return 2;
         const words = args.map((w) => this.value(w));
-        const closer = testSpecAt(this.state, n)?.closingOperand;
-        if (closer && words.pop() !== closer) return 2;
+        if (testSpecAt(this.state, n)?.closingOperand) words.pop();
         return this.test(n, words);
       }
       case 'arith': {

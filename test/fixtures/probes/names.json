@@ -680,6 +680,46 @@
   },
   {
     "manual": "6.6",
+    "snippet": "alias [=echo echo=printf test=:\n@PROBE:script@\nshopt -s expand_aliases\n@PROBE:on@",
+    "note": "an alias may have the name of a builtin, also `[`: where aliases expand, it is found before the builtin",
+    "names": [
+      "[",
+      "echo",
+      "test"
+    ],
+    "facts": {
+      "script": {
+        "[": {
+          "bash": "builtin",
+          "posix": "alias"
+        },
+        "echo": {
+          "bash": "builtin",
+          "posix": "alias"
+        },
+        "test": {
+          "bash": "builtin",
+          "posix": "alias"
+        }
+      },
+      "on": {
+        "[": {
+          "bash": "alias",
+          "posix": "alias"
+        },
+        "echo": {
+          "bash": "alias",
+          "posix": "alias"
+        },
+        "test": {
+          "bash": "alias",
+          "posix": "alias"
+        }
+      }
+    }
+  },
+  {
+    "manual": "6.6",
     "snippet": "alias a=b b='echo B'\n@PROBE:defined@\nunalias b\n@PROBE:unaliased@",
     "note": "an alias chain; under bash --posix aliases expand",
     "names": [
