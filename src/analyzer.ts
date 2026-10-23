@@ -2,7 +2,7 @@ import { Lang, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
 import { pitfallNotes, readsVariable } from './pitfalls';
 import { wordFacts } from './wordfacts';
-import { ancestor, descendants, field, fields, prefixAssignments, token } from './syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, fields, prefixAssignments, token } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
@@ -205,7 +205,7 @@ export class Analyzer {
       context: [], slotEnvs: new Map(), extraNotes: [], facts: [], examples: [], argCtx: undefined,
     };
     const items = this.flatten(root);
-    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'variable_assignment', 'extended_test', 'while_statement'], line)
+    const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
     const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.cx.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang)), ...wordFacts(root, line, this.lang, this.cx.state, this.cx.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
@@ -519,10 +519,9 @@ export class Analyzer {
   private explainNode(n: SyntaxNode): Token {
     switch (n.type) {
       case 'comment': return this.comment(n);
-      case 'command': return this.command(n);
+      case 'command': return assignmentsOnly(n) ? this.assignments(n) : this.command(n);
       case 'time_statement': return this.timeStatement(n);
       case 'variable_assignment': return skeletal(this.assignment(n), n, true);
-      case 'variable_assignments': return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
       case 'pipeline': return this.pipeline(n);
       case 'list': return this.list(n);
       case 'redirected_statement': return this.redirected(n);
@@ -844,7 +843,7 @@ export class Analyzer {
     const redirToks = this.subs(redirs);
     // Redirections in the middle of the words (`echo a > f b`, or `time cmd > f`) leave no single range for the
     // command: it stays one token that carries its redirections as children.
-    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'time_statement'].includes(body.type)) {
+    if (bodyToks.length === 1 && body && !isBlockLike(body) && ['command', 'time_statement'].includes(body.type) && !assignmentsOnly(body)) {
       const t = bodyToks[0];
       return { ...t, span: spanOf(n), children: sortTokens([...t.children, ...redirToks]) };
     }
@@ -874,7 +873,8 @@ export class Analyzer {
    * there are none, or one stands in the middle (`echo a > f b`).
    */
   private redirectLayout(body: SyntaxNode, outer: SyntaxNode[]): Layout | undefined {
-    if (body.type !== 'command') return undefined;
+    // (Assignments alone, `a=1 >f`, run no command: see `redirected`.)
+    if (body.type !== 'command' || assignmentsOnly(body)) return undefined;
     const redirs = sortNodes([...body.children.filter((c) => c.type.endsWith('redirect')), ...outer]);
     const words = body.children.filter((c) => !c.type.endsWith('redirect'));
     const first = words[0];
@@ -1059,6 +1059,13 @@ export class Analyzer {
     ), this.subs(n.namedChildren.filter((c) => !isPlainWord(c))));
   }
 
+  /** A command with no name: its assignments (`a=1`, `a=1 b=2`), and any redirections between them. */
+  private assignments(n: SyntaxNode): Token {
+    const [only, ...rest] = n.namedChildren;
+    if (!rest.length) return skeletal(this.assignment(only), only, true);
+    return this.tok(n, 'assignment', this.s('複数の変数への代入', 'Several variable assignments'), this.subs(n.namedChildren));
+  }
+
   /** An assignment; `decl`: an argument of a declaration that makes the name a nameref (`local -n r=$1`). */
   private assignment(n: SyntaxNode, decl = false): Token {
     const name = field(n, 'name')!;
@@ -1199,7 +1206,7 @@ export class Analyzer {
   /** When the line runs several commands, names the one each example is for in its title. */
   private titledExamples(root: SyntaxNode, line: number): Example[] {
     const commands = onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)
-      .filter((c) => intersects(c, line));
+      .filter((c) => intersects(c, line) && !assignmentsOnly(c));
     if (commands.length < 2) return this.cx.examples;
     return this.cx.examples.map((e) => {
       if (!e.target) return e;
@@ -1290,7 +1297,6 @@ export class Analyzer {
   }
 
   private commandToken(n: SyntaxNode, redirsOut = false): Token {
-    // (An assignment with no command, `FOO=1 2>/dev/null`, is a `redirected_statement` of the assignment.)
     const nameNode = field(n, 'name')!;
     const { prefix, args, redirs } = this.commandParts(n, nameNode);
     // `time` is a keyword at the start of a pipeline (a `time_statement`); `FOO=1 time x` and `a | time x` run the program.
@@ -3222,7 +3228,7 @@ export class Analyzer {
       let fn: string | undefined;
       if (!('why' in script)) {
         const own = new Set(descendants(script.tree.root, ['function_definition']).map((d) => field(d, 'name')!.text));
-        fn = descendants(script.tree.root, ['command']).map((c) => staticWordValue(field(c, 'name')!.namedChildren[0]))
+        fn = descendants(script.tree.root, ['command']).filter((c) => !assignmentsOnly(c)).map((c) => staticWordValue(field(c, 'name')!.namedChildren[0]))
           .find((n) => n !== undefined && !own.has(n) && this.cx.state.definitions.functions.has(n));
       } else {
         const lit = literalContent(first)?.text;
@@ -3925,10 +3931,10 @@ export class Analyzer {
   private orderNote(n: SyntaxNode, name: string): string {
     const top = (parent: SyntaxNode) => { let c = n; while (c.parent && !same(c.parent, parent)) c = c.parent; return c; };
     const sets = (a: SyntaxNode) => a.type === 'variable_assignment' && field(a, 'name')?.text === name;
-    const cmd = ancestor(n, (a) => a.type === 'command' || a.type === 'variable_assignments');
+    const cmd = ancestor(n, (a) => a.type === 'command');
     if (!cmd) return '';
     const mine = top(cmd);
-    if (cmd.type === 'variable_assignments') {
+    if (assignmentsOnly(cmd)) {
       return cmd.namedChildren.some((a) => sets(a) && a.endIndex <= mine.startIndex)
         ? this.s(`。同じ行で先に \`${name}=…\` と代入しているので、代入は左から順に実行され、ここではその値になる`, `. \`${name}=…\` comes earlier on this line, and assignments run from left to right, so it already has that value here`)
         : '';
@@ -3976,7 +3982,7 @@ export class Analyzer {
   private substitutionStatus(n: SyntaxNode): string {
     // (A word is always in a statement.)
     let stmt = n.parent!;
-    while (!STATEMENTS.has(stmt.type) || (stmt.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(stmt.parent!.type))) stmt = stmt.parent!;
+    while (!STATEMENTS.has(stmt.type)) stmt = stmt.parent!;
     const ctx = this.cx.status.errexit(stmt);
     if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
     const rule = this.cx.status.status(stmt);

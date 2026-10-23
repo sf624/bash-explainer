@@ -203,8 +203,8 @@ class Scan {
 
   /** The statement that runs `n`: of the script, or of a string it runs (the walk runs the same tree, `StringTrees`). */
   private owner(n: SyntaxNode): SyntaxNode | undefined {
-    // (An assignment in a command is run with it.)
-    for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type) && !(x.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(x.parent!.type))) return x;
+    // (An assignment is run with its command.)
+    for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type)) return x;
     /* c8 ignore next -- every word is in a statement */
     return undefined;
   }
@@ -359,7 +359,8 @@ class Scan {
         if (n.field !== 'argument') this.assignment(n, w, true);
         break;
       case 'command':
-        this.command(n, w);
+        // (A command with no name has only its assignments, read above.)
+        if (field(n, 'name')) this.command(n, w);
         break;
     }
     for (const c of n.children) this.visit(c, w);

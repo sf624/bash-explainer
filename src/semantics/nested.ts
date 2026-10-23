@@ -6,9 +6,10 @@ import { interpret } from '../argv/interpret';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
-import { type MappedText, staticWordText, staticWordValue } from '../staticword';
-import { descendants, field, fields } from '../syntax/tree';
+import { type MappedText, staticWordText } from '../staticword';
+import { descendants, fields } from '../syntax/tree';
 import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
+import { commandName } from './effects';
 import { type ExecEnv, type SlotLink, slotEnvs } from './env';
 // (state.ts imports this module too; each uses the other's functions only when they run.)
 import { shellState, type StateModel } from './state';
@@ -92,7 +93,7 @@ export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script:
   const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
   const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
     for (const cmd of descendants(t.root, ['command'])) {
-      const name = staticWordValue(field(cmd, 'name')!.namedChildren[0]);
+      const name = commandName(cmd);
       const spec = name === undefined ? undefined : lookupCommand(name);
       const args = fields(cmd, 'argument');
       if (!spec || !args.length) continue;

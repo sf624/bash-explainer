@@ -176,7 +176,7 @@ export function collectBehaviours(root: SyntaxNode, from: number, to: number): F
       && n.namedChildren.slice(1).some((a) => /\\[abcefnrtv\\0]/.test(a.type === 'raw_string' ? a.text : a.type === 'string' ? a.text.replace(/\\\\/g, '\\') : ''))) add('echoEscape');
     // An unquoted `$var` used as a word of a command.
     if (n.type === 'simple_expansion' && (n.parent?.type === 'command' || n.parent?.type === 'concatenation' && n.parent.parent?.type === 'command')) add('wordSplit');
-    if (n.type === 'command' && field(n, 'name')!.text === 'typeset') {
+    if (n.type === 'command' && field(n, 'name')?.text === 'typeset') {
       const f = ancestor(n, (a) => a.type === 'function_definition');
       if (f && f.children[0].type !== 'function') add('typesetScope');
     }
@@ -228,7 +228,9 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     case 'command': {
       // (`[ a == b ]`, by its spelling.)
       if (writtenAsBracket(n) && bracketWords(n).words.some((w) => w.text === '==')) add('eqeqTest');
-      const name = field(n, 'name')!;
+      const name = field(n, 'name');
+      // (A command with no name has only assignments: their own case.)
+      if (!name) return;
       const prefix = prefixAssignments(n);
       commandFeatures(name.text, n.namedChildren.filter((c) => c !== name && !prefix.includes(c)), add);
       return;

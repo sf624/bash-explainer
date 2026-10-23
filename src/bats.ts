@@ -6,7 +6,7 @@ import { lastStatements, statusModel } from './semantics/status';
 import { builtinParse, commandName } from './semantics/effects';
 import { processOf, STATEMENTS } from './semantics/env';
 import { BATS_COMMANDS } from './dict/bats';
-import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { assignmentsOnly, descendants, field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
 // What bats adds to a test file, said on its lines (docs/design/bats.md): the note on each `@test`, and two pitfalls
 // that follow from bash itself once bats has made a test a function run with `set -e`. The extractor (src/hosts.ts)
@@ -59,9 +59,9 @@ export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: numb
     for (const s of body.namedChildren.filter((c) => STATEMENTS.has(c.type))) {
       // (Bash ignores `set -e` for a statement of the body only when it is `! cmd` itself.)
       if (s.startPosition.row !== line || last.includes(s) || status.errexit(s).ignored?.at !== s) continue;
-      // (`run !` runs one command: a pipeline needs bats_pipe, a group neither.)
+      // (`run !` runs one command: a pipeline needs bats_pipe, a group neither, and assignments alone are no command to run.)
       const inner = s.namedChildren.find((c) => STATEMENTS.has(c.type))!;
-      const form = inner.type === 'command' ? 'command' : inner.type === 'pipeline' ? 'pipeline' : 'other';
+      const form = inner.type === 'command' && !assignmentsOnly(inner) ? 'command' : inner.type === 'pipeline' ? 'pipeline' : 'other';
       out.push(fact(lang, 'bats-negation-ignored', { cmd: shorten(inner.text), form }));
     }
   }

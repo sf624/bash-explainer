@@ -11,7 +11,7 @@
 import { canonicalName } from '../dict/aliases';
 import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
-import { descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { assignmentsOnly, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { actedNames } from '../argv/query';
 import { builtinParse, commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
@@ -86,7 +86,7 @@ export interface ErrexitContext {
 }
 
 /** Statements whose own status `set -e` checks. */
-const CHECKED = new Set(['command', 'variable_assignment', 'variable_assignments',
+const CHECKED = new Set(['command',
   'extended_test', 'arithmetic_command', 'pipeline', 'negated_command', 'subshell']);
 
 /** A Tri for an option (`default`: off, but in POSIX mode for the options it turns on). */
@@ -177,6 +177,11 @@ class Statuses implements StatusModel {
   private own(n: SyntaxNode): StatusRule {
     switch (n.type) {
       case 'command': {
+        // (A command with no name, `a=$(cmd)`, has the status of its last command substitution, or 0.)
+        if (assignmentsOnly(n)) {
+          const subs = outerSubstitutions(n);
+          return { kind: 'last-substitution', ...(subs.length ? { at: subs[subs.length - 1] } : {}) };
+        }
         const name = commandName(n);
         const args = fields(n, 'argument');
         // (B3: a function of that name runs instead of the builtin.)
@@ -212,10 +217,6 @@ class Statuses implements StatusModel {
           return { kind: 'wait', all, ...(job ? { job } : {}) };
         }
         return { kind: 'command', functions: [] };
-      }
-      case 'variable_assignment': case 'variable_assignments': {
-        const subs = outerSubstitutions(n);
-        return { kind: 'last-substitution', ...(subs.length ? { at: subs[subs.length - 1] } : {}) };
       }
       case 'extended_test': return { kind: 'test' };
       case 'arithmetic_command': return { kind: 'arith' };
@@ -260,10 +261,10 @@ class Statuses implements StatusModel {
     // (The shell that checks a `( )` is the one around it.)
     const p = processOf({ links: this.state.env(n).links.filter((l) => !(l.kind === 'subshell' && l.at === n && l.why === 'parentheses')) });
     const stops = !p.sure ? 'unknown' : p.kind === 'main' ? 'script' : 'subshell';
-    // (An assignment in a declaration, before a command or among others is part of that statement.)
     const checked: ErrexitContext['checked'] = n.parent?.type === 'pipeline' && STATEMENTS.has(n.type) ? { why: 'pipeline-stage' }
       : backgrounded(n) || n.type === 'coproc_statement' ? { why: 'job' }
-      : n.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(n.parent!.type) ? { why: 'part-of-command' }
+      // (An assignment is part of its command: `a=1`, `x=1 cmd`, `local x=1`.)
+      : n.type === 'variable_assignment' && n.parent!.type === 'command' ? { why: 'part-of-command' }
       : CHECKED.has(n.type) ? true : { why: 'compound' };
     const ctx: ErrexitContext = { errexit, errexitWhy, ...(ignored ? { ignored } : {}), active, checked, stops };
     this.errexitMemo.set(n, ctx);

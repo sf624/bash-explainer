@@ -662,9 +662,9 @@ describe('unbash adapter: unfinished input', () => {
     assert.equal(errorsOf('cat <<EOF\nabc\n'), 'missing@14-14');
   });
   it('an array with no ) is an incomplete array', () => {
-    assert.equal(o('a=(1 2'), '(program (variable_assignment (variable_name @name "a") "=" (array @value INCOMPLETE "(" (number "1") (number "2"))))');
+    assert.equal(o('a=(1 2'), '(program (command (variable_assignment (variable_name @name "a") "=" (array @value INCOMPLETE "(" (number "1") (number "2")))))');
     // Text after the `)` makes the value a plain word: bash assigns `(x)y` (found by the fuzz).
-    assert.equal(o('a+=(x)one < f'), '(program (redirected_statement (variable_assignment @body (variable_name @name "a") "+=" (word @value "(x)one")) (file_redirect @redirect "<" (word @destination "f"))))');
+    assert.equal(o('a+=(x)one < f'), '(program (redirected_statement (command @body (variable_assignment (variable_name @name "a") "+=" (word @value "(x)one"))) (file_redirect @redirect "<" (word @destination "f"))))');
     assert.equal(o('a=(b "c d"').includes('INCOMPLETE'), true);
   });
   it('text unbash cannot read is an error node and an unreadable error', () => {
@@ -705,17 +705,19 @@ describe('unbash adapter: words, assignments and redirections', () => {
     assert.deepEqual(s.children.map((c) => `${c.type}:${c.text}`), ['":"', 'string_content:a b', 'string_content:c ', 'simple_expansion:$d', 'string_content: e', '":"']);
   });
   it('has assignments, in a command, alone, or as several', () => {
+    // Alone, they are a command with no name, as in bash (a simple command with no words).
+    assert.equal(o('x=1'), '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1"))))');
     assert.equal(o('x=1 y="$z" w='),
-      '(program (variable_assignments (variable_assignment (variable_name @name "x") "=" (number @value "1")) '
+      '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) '
       + '(variable_assignment (variable_name @name "y") "=" (string @value "\\"" (simple_expansion "$" (variable_name "z")) "\\"")) (variable_assignment (variable_name @name "w") "=")))');
     assert.equal(o('x=1 y=2 cmd z'),
       '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) (variable_assignment (variable_name @name "y") "=" (number @value "2")) '
       + '(command_name @name (word "cmd")) (word @argument "z")))');
     assert.equal(o('a[1]=x b+=y'),
-      '(program (variable_assignments (variable_assignment (subscript @name (variable_name @name "a") "[" (number @index "1") "]") "=" (word @value "x")) '
+      '(program (command (variable_assignment (subscript @name (variable_name @name "a") "[" (number @index "1") "]") "=" (word @value "x")) '
       + '(variable_assignment (variable_name @name "b") "+=" (word @value "y"))))');
     assert.equal(o('a=(1 [2]=x "y") b=()'),
-      '(program (variable_assignments (variable_assignment (variable_name @name "a") "=" (array @value "(" (number "1") (concatenation (word "[") (number "2") (word "]") (word "=x")) (string "\\"" (string_content "y") "\\"") ")")) '
+      '(program (command (variable_assignment (variable_name @name "a") "=" (array @value "(" (number "1") (concatenation (word "[") (number "2") (word "]") (word "=x")) (string "\\"" (string_content "y") "\\"") ")")) '
       + '(variable_assignment (variable_name @name "b") "=" (array @value "(" ")"))))');
   });
   it('has declarations, unset, and assignment-like words of other commands', () => {
@@ -754,8 +756,14 @@ describe('unbash adapter: words, assignments and redirections', () => {
     assert.equal(o('exec 3>&- {fd}>f &>o'),
       '(program (redirected_statement (command @body (command_name @name (word "exec"))) (file_redirect @redirect (file_descriptor @descriptor "3") ">&" (word @destination "-")) '
       + '(file_redirect @redirect (file_descriptor @descriptor "{fd}") ">" (word @destination "f")) (file_redirect @redirect "&>" (word @destination "o"))))');
-    assert.equal(o('x=1 >f').startsWith('(program (redirected_statement (variable_assignment'), true);
-    assert.equal(o('x=1 y=2 >f 2>g').startsWith('(program (redirected_statement (variable_assignments'), true);
+    assert.equal(o('x=1 >f').startsWith('(program (redirected_statement (command @body (variable_assignment'), true);
+    assert.equal(o('x=1 y=2 >f 2>g').startsWith('(program (redirected_statement (command @body (variable_assignment'), true);
+    // A redirection between assignments is the command's; those before the first and after the last are around it,
+    // as after the words of a command (step 5 of docs/design/syntax-tree.md moves them in).
+    assert.equal(o('x=1 >f y=2'), '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) '
+      + '(file_redirect @redirect ">" (word @destination "f")) (variable_assignment (variable_name @name "y") "=" (number @value "2"))))');
+    assert.equal(o('>f x=1 >g'), '(program (redirected_statement (file_redirect @redirect ">" (word @destination "f")) '
+      + '(command @body (variable_assignment (variable_name @name "x") "=" (number @value "1"))) (file_redirect @redirect ">" (word @destination "g"))))');
     assert.equal(o('>f >g'), '(program (redirected_statement (file_redirect @redirect ">" (word @destination "f")) (file_redirect @redirect ">" (word @destination "g"))))');
   });
   it('gives the redirections after the last command of a pipeline or a list to that command, as bash does', () => {
@@ -1021,10 +1029,10 @@ describe('unbash adapter: tricky lines found by evaluation', () => {
     assert.equal(tree('while a; { b; }').root.namedChildren[0].incomplete, true);
   });
   it('[7]=z in an array is the index (a concatenation of four pieces, as the model has it)', () => {
-    assert.equal(o('a+=([7]=z)'), '(program (variable_assignment (variable_name @name "a") "+=" (array @value "(" (concatenation (word "[") (number "7") (word "]") (word "=z")) ")")))');
+    assert.equal(o('a+=([7]=z)'), '(program (command (variable_assignment (variable_name @name "a") "+=" (array @value "(" (concatenation (word "[") (number "7") (word "]") (word "=z")) ")"))))');
     assert.equal(o('a=([k]+=v)').includes('(word "k")'), true);
     // A `]` not followed by `=` (or by `+=`) does not make an index: the element is a plain word.
-    assert.equal(o('a=([]x)'), '(program (variable_assignment (variable_name @name "a") "=" (array @value "(" (word "[]x") ")")))');
+    assert.equal(o('a=([]x)'), '(program (command (variable_assignment (variable_name @name "a") "=" (array @value "(" (word "[]x") ")"))))');
   });
   it('a `))` that ends the expression of an unclosed `((` or `$((` is not the closer', () => {
     for (const text of ['(( x--  (( (1 + 2) ))', 'echo $(( x  $(( (1) ))']) {

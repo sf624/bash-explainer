@@ -107,8 +107,9 @@ describe('assignments before a command against bash (test/fixtures/probes/state.
       const model = shellState(tree, undefined, { posix: !!row.posix });
       const assigned = row.facts.end?.variables ?? {};
       for (const c of descendants(tree.root, ['command'])) {
-        const name = field(c, 'name')!;
-        if (!name.text) continue;
+        // (Assignments alone have no name: they are the shell's.)
+        const name = field(c, 'name');
+        if (!name?.text) continue;
         const res = resolveName(model, name.text, c, { command: true, program });
         for (const a of assignmentsOf(model, c, res)) {
           // (A variable set before keeps its value when the assignment does not stay: `x=5; x=1 unset x`.)
