@@ -47,7 +47,8 @@ function tempDir(): string {
 function helpOptions(text: string): Map<string, 'none' | 'required' | 'optional'> {
   const out = new Map<string, 'none' | 'required' | 'optional'>();
   for (const line of text.split('\n')) {
-    const head = /^\s+(-\S.*?)(?:\s{2,}|$)/.exec(line);
+    // (The names are words of a dash joined by `, `; a long name may fill its column, with one space after it.)
+    const head = /^\s+(-[^\s,]+(?:, -[^\s,]+)*)/.exec(line);
     if (!head) continue;
     const names = head[1].split(/,\s*/);
     const last = names[names.length - 1];

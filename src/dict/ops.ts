@@ -1,5 +1,5 @@
 import type { CommandSpec } from '../argv/spec';
-import { cmd, COMMAND_TEXT, operand, OptSpec, persistent, pos, runs } from './types';
+import { cmd, COMMAND_TEXT, GNU_INFO, operand, OptSpec, persistent, pos, runs } from './types';
 import { tx } from '../i18n';
 
 // Commands found in a second survey: operations and cloud scripts (Kubernetes, Terraform, AWS,
@@ -361,7 +361,11 @@ export const ops: Record<string, CommandSpec> = {
   blkid: cmd('ブロックデバイスの種類や UUID を表示する', 'Show the type and UUID of block devices', [['-s', '指定した項目だけ（`UUID`、`TYPE`）', 'only the given tag (`UUID`, `TYPE`)', 'arg'], ['-o', '出力形式（`value` で値だけ）', 'output format (`value`: values only)', 'arg']], { positional: [device] }),
   findmnt: cmd('マウントされているファイルシステムを表示する', 'Show mounted file systems', [['-t|--types', '種類で絞る', 'filter by type', 'arg'], ['-o|--output', '表示する列', 'columns to show', 'arg'], ['-n|--noheadings', '見出しを出さない', 'no header'], ['-l|--list', '木でなく一覧で', 'list instead of a tree'], ['-u|--notruncate', '切り詰めない', 'do not truncate']], { positional: [pos('マウント先またはデバイス', 'mount point or device')] }),
   umount: cmd('ファイルシステムのマウントを外す', 'Unmount file systems', [['-l|--lazy', '使われなくなってから外す', 'detach now, clean up when no longer busy'], ['-f|--force', '強制する', 'force'], ['-a|--all', 'すべて', 'all']], { positional: [pos('マウント先またはデバイス', 'mount point or device')] }),
-  sync: cmd('書き込み待ちのデータをディスクに書き出す', 'Write cached data to disk'),
+  sync: cmd('書き込み待ちのデータをディスクに書き出す', 'Write cached data to disk', [
+    ['-d|--data', 'ファイルのデータだけ同期する（不要なメタデータは除く）', 'sync only file data, no unneeded metadata'],
+    ['-f|--file-system', 'ファイルがあるファイルシステム全体を同期する', 'sync the file systems that contain the files'],
+    ...GNU_INFO,
+  ], { parser: 'getopt_long', positional: [pos('同期するファイル（省略時はすべて）', 'file to sync (default: everything)')] }),
   modprobe: cmd('カーネルモジュールを読み込む・外す', 'Load or remove kernel modules', [['-r|--remove', '外す', 'remove'], ['-n|--dry-run', '実際には行わない', 'do not actually do it'], ['-v|--verbose', '詳しく表示', 'verbose']], { positional: [pos('モジュール名', 'module name')] }),
   dmesg: cmd('カーネルのメッセージを表示する', 'Show kernel messages', [['-T|--ctime', '人が読める時刻で', 'human-readable timestamps'], ['-w|--follow', '新しいメッセージを待ち続ける', 'wait for new messages'], ['-l|--level', '指定した重要度だけ', 'only these levels', 'arg']]),
   uptime: cmd('起動からの時間と負荷を表示する', 'Show how long the system has been up, and the load', [['-p|--pretty', '読みやすい形で', 'pretty format'], ['-s|--since', '起動した日時', 'boot time']]),

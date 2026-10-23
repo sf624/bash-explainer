@@ -31,6 +31,12 @@ export interface CommandSpec {
    * (echo only: it turns escapes on and off as it reads each letter; rpm's and kill's modes are chosen by the option, wherever.)
    */
   lastModeWins?: boolean;
+  /**
+   * Options that select different modes refuse the line, and the text says so (GNU grep: `-E -F` is "conflicting
+   * matchers specified", GNU tar: `-c -x` is "You may not specify more than one…", status 2); it is added to the
+   * option that selects a mode other than the first one's, and the parse is `refused`.
+   */
+  conflictingModes?: Text;
   /** Dashless letters in the first word (`tar cvzf`, `ps aux`), or in any word (`ps -p 1 u`). */
   oldStyle?: OldStyleSpec;
   /**

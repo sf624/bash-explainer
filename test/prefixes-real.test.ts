@@ -13,6 +13,7 @@ import type { CommandSpec, OptionSpec } from '../src/argv/spec';
 import { builtins } from '../src/dict/builtins';
 import { commands } from '../src/dict/commands';
 import { argWords, render } from './support/argwords';
+import { allTokens, explain, tokensOf } from './support/explain';
 
 // (The tools run in a directory of their own, also for TMPDIR, in case one runs: `mktemp --t` makes a file.)
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'prefixes-real-'));
@@ -29,6 +30,18 @@ const longNames = (help: string): string[] => [...new Set(help.split('\n').filte
 const ENTRIES = [
   'timeout', 'env', 'nice', 'xargs', 'stdbuf', 'flock', 'sudo',
   'grep', 'sed', 'cut', 'head', 'tr', 'cat', 'tee', 'paste', 'seq', 'mktemp', 'basename', 'dirname',
+  // coreutils in commands.ts
+  'ls', 'sort', 'uniq', 'tail', 'wc', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown', 'ln', 'realpath', 'readlink',
+  'date', 'sleep', 'nohup', 'stat', 'du', 'df', 'install', 'tac', 'nl', 'comm', 'split', 'md5sum', 'sha256sum', 'base64',
+  // diffutils, gzip, and coreutils in basic.ts
+  'diff', 'gzip', 'gunzip', 'sdiff', 'diff3', 'users', 'logname', 'pinky', 'unlink', 'link', 'factor', 'sum', 'shred', 'mknod',
+  'csplit', 'tsort', 'numfmt', 'pathchk', 'dircolors', 'pr',
+  // coreutils and diffutils in distro.ts, system.ts, admin.ts, ops.ts
+  'shuf', 'truncate', 'yes', 'printenv', 'fold', 'fmt', 'expand', 'unexpand', 'join', 'chgrp', 'mkfifo', 'b2sum', 'cksum', 'tty',
+  'groups', 'who', 'id', 'whoami', 'uname', 'arch', 'nproc', 'stty', 'sha1sum', 'sha224sum', 'sha384sum', 'sha512sum', 'cmp', 'od',
+  'chcon', 'runcon', 'sync', 'zcat',
+  // GNU tar
+  'tar',
 ];
 
 /** The shortest prefix of `name` that no other name starts with, when it is shorter than the name. */
@@ -40,11 +53,13 @@ function uniquePrefix(name: string, all: string[]): string | undefined {
   return undefined;
 }
 
-/** The tool's own reading of a prefix: the option it names (from glibc's message), or `ambiguous`. */
-function theirs(tool: string, prefix: string, takesValue: boolean): string | undefined {
+/** The tool's own reading of a prefix: the option it names (from glibc's message), or `ambiguous`; with the candidates of an ambiguous prefix and whether it does not know the name at all. */
+function reading(tool: string, prefix: string, takesValue: boolean): { named?: string; candidates: string[]; unknown: boolean } {
   const r = spawnSync(tool, takesValue ? [prefix] : [`${prefix}=x`], { cwd: DIR, env: ENV, encoding: 'utf8', input: '', timeout: 10000 });
-  if (/is ambiguous/.test(r.stderr)) return 'ambiguous';
-  return /option '(--[\w-]+)' (?:doesn't allow|requires) an argument/.exec(r.stderr)?.[1];
+  const candidates = [.../possibilities:(.*)/.exec(r.stderr)?.[1].matchAll(/'(--[\w-]+)'/g) ?? []].map((m) => m[1]);
+  if (/is ambiguous/.test(r.stderr)) return { named: 'ambiguous', candidates, unknown: false };
+  const named = /option '(--[\w-]+)' (?:doesn't allow|requires) an argument/.exec(r.stderr)?.[1];
+  return { named, candidates, unknown: /unrecognized option/.test(r.stderr) };
 }
 
 /** The names of the option a word is for the entry, or `ambiguous`. */
@@ -54,8 +69,20 @@ function ours(spec: CommandSpec, word: string): string[] | 'ambiguous' | undefin
   return role?.role === 'option' ? role.spec.names : undefined;
 }
 
-/** Options that differ between releases of the tool, left out (util-linux 2.39's flock has no `--command`, only `-c`). */
+/**
+ * Options that differ between releases of the tool, left out (util-linux 2.39's flock has no `--command`, only `-c`).
+ * RELEASES: the entries follow the tools of the CI runner (coreutils 9.4, grep 3.11, tar 1.35 on Ubuntu 24.04). When
+ * the runner moves, the test only lists what changed: an option of the entry the tool does not know (when its
+ * `--help` does not list it either), a long option of `--help` the entry lacks, and a hidden option that makes a
+ * prefix ambiguous. Add the new options to the entry, and put an option whose reading differs here.
+ */
 const DIFFERS: Record<string, string[]> = { flock: ['--command'] };
+/**
+ * Tools that check their words before getopt_long and refuse a misused option with their own message (stty:
+ * "invalid argument '--save=x'"): the names are checked in `--help`, the prefixes with ours only, and a row below
+ * runs a prefix.
+ */
+const OWN_MESSAGES = ['stty'];
 
 describe('getopt_long entries agree with the GNU tools', () => {
   it('lists every entry read with getopt_long', () => {
@@ -81,15 +108,26 @@ describe('getopt_long entries agree with the GNU tools', () => {
         for (const name of o.names.filter((n) => n.startsWith('--'))) {
           if (DIFFERS[tool]?.includes(name)) continue;
           // (An option with an optional value is not run: `--name=x` would act. Its name is in --help.)
-          if (optional(o)) { assert.ok(help.includes(name), `${tool} ${name}`); continue; }
+          if (optional(o) || OWN_MESSAGES.includes(tool)) {
+            assert.ok(help.includes(name), `${tool} ${name}`);
+            const prefix = uniquePrefix(name, names);
+            if (prefix && OWN_MESSAGES.includes(tool)) assert.deepStrictEqual(ours(spec, prefix), o.names, `${tool} ${prefix}`);
+            continue;
+          }
           // (The tool names the option by one of its names: flock says `--nonblocking` for `--nonblock`.)
-          const exists = theirs(tool, name, o.value !== undefined);
-          assert.ok(exists && o.names.includes(exists), `${tool} ${name}: the tool reads ${exists}`);
+          const exists = reading(tool, name, o.value !== undefined);
+          // Releases differ (RELEASES below): an option the tool here does not know, and its `--help` does not list,
+          // may be one of a newer release (or an older one's, dropped since); it is only listed.
+          if (exists.unknown && !help.includes(name)) { console.log(`      (${tool} here does not know ${name})`); continue; }
+          assert.ok(exists.named && o.names.includes(exists.named), `${tool} ${name}: the tool reads ${exists.named}`);
           const prefix = uniquePrefix(name, names);
           if (!prefix) continue;
           assert.deepStrictEqual(ours(spec, prefix), o.names, `${tool} ${prefix}`);
-          const named = theirs(tool, prefix, o.value !== undefined);
-          assert.ok(named && o.names.includes(named), `${tool} ${prefix}: the tool reads ${named}`);
+          const named = reading(tool, prefix, o.value !== undefined);
+          // A hidden option of the tool here that neither the entry nor `--help` names can make a prefix ambiguous.
+          const hidden = named.candidates.filter((c) => !names.includes(c));
+          if (named.named === 'ambiguous' && hidden.length) { console.log(`      (${tool} ${prefix}: also ${hidden.join(' ')}, which --help does not list)`); continue; }
+          assert.ok(named.named && o.names.includes(named.named), `${tool} ${prefix}: the tool reads ${named.named}`);
         }
       }
     });
@@ -125,6 +163,45 @@ describe('lines with long options, against the GNU tools', () => {
   (has('grep') ? it : it.skip)('grep --col=never: an optional value after `=`', () => {
     assert.strictEqual(run('grep --col=never a', 'a\nb\n'), 'a\n');
     assert.match(read('grep --col=never a')[0], /^--col=never: --col=6 highlight matches/);
+  });
+  // GNU grep refuses two different matchers (`-E -F`), but takes one given twice.
+  for (const [line, refused] of [
+    ['grep -E -G a', true], ['grep -E -F a', true], ['grep -EF a', true], ['grep -P -E a', true], ['grep -G --extended-regexp a', true],
+    ['grep -E -E a', false], ['grep -F --fixed-strings a', false], ['grep -i -E a', false], ['grep -G a', false],
+  ] as const) {
+    (has('grep') && isGnu('grep') ? it : it.skip)(`${line}: ${refused ? 'refused' : 'taken'}, as grep does`, () => {
+      const r = spawnSync('bash', ['--norc', '-c', line], { cwd: DIR, env: ENV, encoding: 'utf8', input: 'a\n' });
+      assert.strictEqual(r.status, refused ? 2 : 0, line);
+      assert.strictEqual(/conflicting matchers specified/.test(r.stderr), refused, line);
+      assert.strictEqual(read(line).filter((l) => l.includes('conflicting matchers specified')).length, refused ? 1 : 0, line);
+      // A refused line has no example, and its pattern is read in no flavour (not as a fixed string or a regex).
+      const piped = `echo a | ${line}`;
+      assert.strictEqual(explain(piped).examples.length === 0, refused, piped);
+      const dotted = `${line}.`;
+      const pattern = allTokens(tokensOf(dotted)).filter((t) => t.label === 'a.').pop()!;
+      if (refused) assert.deepStrictEqual(pattern.children, [], dotted);
+      else if (!/-F/.test(line)) assert.ok(pattern.children.some((t) => /any (single )?character/i.test(t.explanation)), dotted);
+    });
+  }
+  // GNU tar refuses two different operations (`-c -x`), but takes one given twice.
+  for (const [line, refused] of [
+    ['tar -c -x -f a.tar', true], ['tar cxf a.tar', true], ['tar --create --get -f a.tar', true], ['tar -t --delete -f a.tar', true],
+    ['tar -c -c -f a.tar -T /dev/null', false], ['tar cf a.tar --create -T /dev/null', false],
+  ] as const) {
+    (has('tar') && isGnu('tar') ? it : it.skip)(`${line}: ${refused ? 'refused' : 'taken'}, as tar does`, () => {
+      const r = spawnSync('bash', ['--norc', '-c', line], { cwd: DIR, env: ENV, encoding: 'utf8', input: '' });
+      assert.strictEqual(/You may not specify more than one/.test(r.stderr), refused, line);
+      if (refused) assert.strictEqual(r.status, 2, line);
+      else assert.strictEqual(r.status, 0, line);
+      assert.strictEqual(read(line).filter((l) => l.includes('You may not specify more than one')).length, refused ? 1 : 0, line);
+    });
+  }
+  (has('stty') ? it : it.skip)('stty --sa is --save, --fil is --file', () => {
+    // (stty reads no terminal from a file: it refuses with an ioctl error, after reading its options.)
+    const r = spawnSync('bash', ['--norc', '-c', 'stty --sa; stty --fil /dev/null; stty --sx'], { cwd: DIR, env: ENV, encoding: 'utf8', input: '' });
+    assert.deepStrictEqual(r.stderr.split('\n').filter(Boolean).map((l) => /invalid argument|ioctl/.exec(l)?.[0]), ['ioctl', 'ioctl', 'invalid argument', undefined]);
+    assert.match(read('stty --sa')[0], /^--sa: --sa print the settings in a form that can restore them$/);
+    assert.deepStrictEqual(read('stty --fil /dev/null'), ['--fil: --fil terminal device', '/dev/null: value 0 of --fil VALUE']);
   });
   (has('xargs') ? it : it.skip)('xargs --max-lines takes no next word: the word is the command', () => {
     assert.strictEqual(run('xargs --max-lines echo X', 'a\nb\n'), 'X a\nX b\n');

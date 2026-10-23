@@ -7,9 +7,9 @@ import { runSed, sedExample } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
 import { FILTERS, parseOptions, runSeq, sampleInput, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
-import type { ArgvParse } from '../argv/interpret';
+import { type ArgvParse, interpret } from '../argv/interpret';
 import { operands } from '../argv/query';
-import { canonicalName, impliedWords } from '../dict/aliases';
+import { canonicalName, impliedWords, lookupCommand } from '../dict/aliases';
 
 export interface Stage {
   cmd: string;
@@ -34,6 +34,8 @@ const GREP = {
 };
 
 function grepRegexes(words: (string | undefined)[], relax = false): { res: JsRegex[]; p: ReturnType<typeof parseOptions> } {
+  // (`grep -E -F`: grep refuses the line, as the explanation says.)
+  if (interpret(lookupCommand('grep')!, words.map((w) => (w === undefined ? {} : { value: w })), { name: 'grep' }).refused) throw new Unsupported('conflicting matchers');
   const p = parseOptions(words, GREP);
   const has = (c: string) => p.opts.some(([n]) => n === c);
   if (has('z') || has('H')) throw new Unsupported('grep option');

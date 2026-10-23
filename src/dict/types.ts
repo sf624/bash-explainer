@@ -144,6 +144,12 @@ export function args(...items: OperandSpec[]): Pick<CommandSpec, 'operands'> {
   return { operands: [{ pattern: items.map((o, i) => ({ repeat: i === items.length - 1 ? '*' : '?', ...o })) }] };
 }
 
+/**
+ * The options every GNU program has. An entry read with the `getopt_long` parser lists them, so that a prefix
+ * (`--ver`) is ambiguous where the tool finds it so (`--verbose`, `--version`).
+ */
+export const GNU_INFO: OptSpec[] = [['--help', 'ヘルプを表示する', 'show help'], ['--version', 'バージョンを表示する', 'print the version']];
+
 export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
 
 /** The operand from which the words are the command a wrapper runs (`sudo cmd args`), started as `slot` says. */

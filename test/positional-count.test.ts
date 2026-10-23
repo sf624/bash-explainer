@@ -50,7 +50,7 @@ describe('positional arguments described by their number', () => {
     assert.deepStrictEqual(operands('install -m 755 a b').map((o) => o[1]), ['file to copy', 'destination (the new name, or an existing directory)']);
     assert.deepStrictEqual(operands('install a b c d').map((o) => o[1]), ['file to copy', 'file to copy', 'file to copy', 'destination directory']);
     assert.deepStrictEqual(operands('install -d x y').map((o) => o[1]), Array(2).fill('file to copy (a directory to create with `-d`)'));
-    assert.deepStrictEqual(operands('install -t d a b').map((o) => o[1]), Array(3).fill('file to copy (a directory to create with `-d`)'));
+    assert.deepStrictEqual(operands('install -t d a b').map((o) => o[1]), Array(2).fill('file to copy (a directory to create with `-d`)'));
   });
 
   it('rsync and scp: the last argument is the destination', () => {

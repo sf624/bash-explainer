@@ -102,6 +102,8 @@ export interface ArgvParse {
   gaveUp?: boolean;
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
+  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
+  refused?: boolean;
 }
 
 export interface InterpretContext {
@@ -221,7 +223,9 @@ class Reader {
       const rest = Array.from({ length: to - afterDashes }, (_, k) => afterDashes! + k);
       this.placeOperands(parse, st, rest, [{ alt: { pattern: (spec.dashDash as { then: OperandSpec[] }).then }, index: -1 }], to, false);
     }
-    for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: inMode(role, parse.mode) });
+    const first: { mode?: string; refused?: boolean } = {};
+    for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(role, parse.mode), first) });
+    if (first.refused) parse.refused = true;
     return parse;
   }
 
@@ -392,7 +396,9 @@ class Reader {
     const written = w.value ?? w.prefix;
     if (written === undefined) return -1;
     const disables = !!spec.plusOptions && /^\+./.test(written);
-    const text = disables ? '-' + written.slice(1) : written;
+    // (`--name` is `-name` where the parser reads both: OpenSSL.)
+    const text = disables ? '-' + written.slice(1) : rules.doubleDash && /^--[^-]/.test(written) ? written.slice(1) : written;
+    const shift = written.length - text.length;
     const blocked = (o: { unlessMarked?: string }): boolean => !!o.unlessMarked && given.marks.has(o.unlessMarked);
     const mark = (o: { marks?: string }): void => { if (o.marks) given.marks.add(o.marks); };
     if (!open) {
@@ -429,7 +435,7 @@ class Reader {
     if (eq > 0 && ((long && rules.longEquals) || (rules.singleDash && findOption(options, text.slice(0, eq), false)))) {
       const flag = text.slice(0, eq);
       const opt = findOption(options, flag, rules.longPrefixes);
-      const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 };
+      const value: ValueRole = { role: 'value', of: flag, ...(opt ? { option: opt, spec: valuesOf(opt)[0] } : {}), index: 0, attached: eq + 1 + shift };
       given.flags.push(flag);
       if (!opt) { roles.set(i, { role: 'unknown-option', flag, value, ...ambiguous(lookupOption(options, flag, rules.longPrefixes)) }); return i; }
       roles.set(i, { role: 'option', flag, spec: opt, text: opt.text, value });
@@ -680,6 +686,22 @@ function inMode(role: ArgRole, mode: string | undefined): ArgRole {
   if (role.role === 'pattern-option') return role.pattern.inMode?.[mode] ? { ...role, text: role.pattern.inMode[mode] } : role;
   if (role.role !== 'option' || !role.spec.inMode?.[mode]) return role;
   return { ...role, text: role.spec.inMode[mode] };
+}
+
+/**
+ * `grep -E -F`: with `conflictingModes`, an option that selects another mode than the first one given says that
+ * the tool refuses the line. `first` holds the mode of the first such option, over the words in order, and
+ * whether the line is refused.
+ */
+function conflicting(spec: CommandSpec, role: ArgRole, first: { mode?: string; refused?: boolean }): ArgRole {
+  if (!spec.conflictingModes) return role;
+  if (role.role === 'cluster' || role.role === 'old-style') return { ...role, letters: role.letters.map((l) => conflicting(spec, l, first)) };
+  if (role.role !== 'option' || !role.spec.selects) return role;
+  first.mode ??= role.spec.selects;
+  if (role.spec.selects === first.mode) return role;
+  const why = spec.conflictingModes;
+  first.refused = true;
+  return { ...role, text: { ja: `${role.text.ja}。${why.ja}`, en: `${role.text.en}. ${why.en}` } };
 }
 
 export interface MatchResult {
