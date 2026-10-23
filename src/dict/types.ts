@@ -1,4 +1,4 @@
-import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
+import type { CommandSlot, CommandSpec, Condition, IoUse, OperandAlt, OperandSpec, OptionSpec, PatternOption, ValueSpec } from '../argv/spec';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 
@@ -8,7 +8,8 @@ import { Text, tx } from '../i18n';
  * (the option gives what is otherwise the first operand: `grep -e`), `setenv` and `envfile` (the value gives the
  * command a slot runs an environment variable, or a file of them: `docker run -e`), `attached` (a value only in the same word:
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
- * `lang:<name>` (the value's language) and `persistent` (subcommands take it too). The fifth item gives the
+ * `lang:<name>` (the value's language), `io:<use>` (what the command does with the file the value names, `IoUse`:
+ * `sort -o` writes it) and `persistent` (subcommands take it too). The fifth item gives the
  * meaning of particular values (`set -o pipefail`).
  */
 export type OptSpec = [string, string, string, string?] | [string, string, string, string, Record<string, Text>];
@@ -17,8 +18,9 @@ export type OptSpec = [string, string, string, string?] | [string, string, strin
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
+  const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
-  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}) };
+  const extra: Partial<ValueSpec> = { ...(lang ? { lang } : {}), ...(io ? { io } : {}), ...(values ? { values } : {}), ...(setsEnv ? { setsEnv } : {}), ...(flags.includes('unsetenv') ? { unsetsEnv: true } : {}) };
   const nextIf = /next:(\S+)/.exec(flags)?.[1];
   if (flags.includes('until')) opt.until = { terminators: [';', '+'], slot: { run: 'exec' } };
   else if (flags.includes('arg')) {
@@ -61,6 +63,8 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
   positional?: Text[];
   /** The language of the operand at each index of `positional` (it does not repeat). */
   positionalLang?: (EmbeddedLang | undefined)[];
+  /** What the command does with the file the operand at each index of `positional` names (`IoUse`); the last one repeats. */
+  positionalIo?: (IoUse | undefined)[];
 }
 
 /**
@@ -69,28 +73,28 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
  */
 export function cmd(ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], rest: CmdRest = {}): CommandSpec {
   const summary = tx(ja, en);
-  const { positional = [], positionalLang = [], operands = [], ...fields } = rest;
+  const { positional = [], positionalLang = [], positionalIo = [], operands = [], ...fields } = rest;
   const options = mergeOptions(opts.map((o) => (Array.isArray(o) ? optionOf(o) : o)));
   const fills = opts.flatMap((o) => (Array.isArray(o) && o[3]?.includes('fills') ? o[0].split('|') : []));
   const alts: OperandAlt[] = [
     ...operands,
-    ...(fills.length ? [{ when: { option: fills }, pattern: listed(positional, positionalLang, 1) }] : []),
-    ...(positional.length ? [{ pattern: listed(positional, positionalLang) }] : []),
+    ...(fills.length ? [{ when: { option: fills }, pattern: listed(positional, positionalLang, positionalIo, 1) }] : []),
+    ...(positional.length ? [{ pattern: listed(positional, positionalLang, positionalIo) }] : []),
   ];
   return { summary, options, ...fields, ...(alts.length ? { operands: alts } : {}) };
 }
 
-/** `ARG<i+1>`: the operand at index `i`, in the language given for it. */
-const item = (i: number, text: Text, repeat?: OperandSpec['repeat'], lang?: EmbeddedLang): OperandSpec =>
-  ({ name: `ARG${i + 1}`, text, ...(repeat ? { repeat } : {}), ...(lang ? { lang } : {}) });
+/** `ARG<i+1>`: the operand at index `i`, in the language given for it, and what the command does with the file it names. */
+const item = (i: number, text: Text, repeat?: OperandSpec['repeat'], lang?: EmbeddedLang, io?: IoUse): OperandSpec =>
+  ({ name: `ARG${i + 1}`, text, ...(repeat ? { repeat } : {}), ...(lang ? { lang } : {}), ...(io ? { io } : {}) });
 
-/** The texts from `from` on: each optional, and the last repeats; a language applies to its own index only. */
-function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], from = 0): OperandSpec[] {
+/** The texts from `from` on: each optional, and the last repeats; a language applies to its own index only, a use of a file to the repeats too. */
+function listed(texts: Text[], langs: (EmbeddedLang | undefined)[], ios: (IoUse | undefined)[], from = 0): OperandSpec[] {
   const out: OperandSpec[] = [];
   for (let i = from; i < texts.length; i++) {
-    if (i < texts.length - 1) out.push(item(i, texts[i], '?', langs[i]));
-    else if (langs[i]) out.push(item(i, texts[i], '?', langs[i]), item(i + 1, texts[i], '*'));
-    else out.push(item(i, texts[i], '*'));
+    if (i < texts.length - 1) out.push(item(i, texts[i], '?', langs[i], ios[i]));
+    else if (langs[i]) out.push(item(i, texts[i], '?', langs[i], ios[i]), item(i + 1, texts[i], '*', undefined, ios[i]));
+    else out.push(item(i, texts[i], '*', undefined, ios[i]));
   }
   return out;
 }

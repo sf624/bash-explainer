@@ -109,7 +109,7 @@ describe('lines no other test reaches', () => {
   });
 
   it('grep -v: the panel reruns the inverted match', () => {
-    const r = rerun({ kind: 'regex', regex: { source: 'a', flags: '' }, mode: 'inverted' }, ['abc', 'xyz'], 'en');
+    const r = rerun({ kind: 'regex', regex: { source: 'a', flags: '' }, mode: 'inverted' }, [['abc', 'xyz']], 'en');
     assert.deepStrictEqual(r.sections[0].lines, ['xyz']);
   });
 

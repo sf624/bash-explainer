@@ -2,14 +2,14 @@
 import type { Lang } from '../i18n';
 import { formatDate, parseSampleDate } from '../embedded/format';
 import { runAwk } from './awk';
-import { Json, JqStep, jqSteps, runJq, toJson } from './jq';
+import { Json, JqStep, jqSteps, parseJsonValues, runJq, toJson } from './jq';
 import { PerlOptions, runPerl } from './perlrun';
 import { pipelineExample, Stage } from './pipeline';
 import { JsRegex } from './regex';
 import { runXargs, showCommand } from './runtime';
 import { runSed } from './sed';
 import { globMatches, GlobMode, GlobOpts } from './shellwords';
-import { FILTERS } from './textfilters';
+import { FILTERS, perFile } from './textfilters';
 
 /** Everything needed to run an example again on new input; plain data, so it can go to the webview and back. */
 export type RerunSpec =
@@ -19,7 +19,8 @@ export type RerunSpec =
   | { kind: 'awk'; program: string; fs?: string; vars: Record<string, string>; assigns?: Record<string, string> }
   | { kind: 'jq'; filter: string; raw: boolean; join?: boolean; slurp?: boolean; vars: Record<string, Json> }
   | { kind: 'perl'; code: string; opts: PerlOptions }
-  | { kind: 'filter'; cmd: string; words: (string | undefined)[] }
+  /** `files`: the names of the files it reads, for a tool that prints each one apart (`head`, `tail`: `==> a <==`). */
+  | { kind: 'filter'; cmd: string; words: (string | undefined)[]; files?: string[] }
   | { kind: 'pipeline'; stages: Stage[] }
   | { kind: 'xargs'; words: (string | undefined)[] }
   | { kind: 'date'; format: string };
@@ -35,11 +36,13 @@ export interface RerunResult {
   marks?: Mark[][];
 }
 
-/** The example in a form the panel can edit: the input, and what it currently gives. */
+/** One box of input the panel can edit: a file the command reads, or its standard input. */
+export interface InputBox { label: string; lines: string[] }
+
+/** The example in a form the panel can edit: the inputs, one box each, and what they currently give. */
 export interface Interactive {
   spec: RerunSpec;
-  inputLabel: string;
-  input: string[];
+  inputs: InputBox[];
   result: RerunResult;
 }
 
@@ -83,15 +86,19 @@ export function jqStepSections(steps: JqStep[], last: string[], lang: Lang, show
   });
 }
 
-/** Run an example again on the given input lines. */
 /**
  * A word that is not literal is undefined. A spec sent back by the VS Code panel went through
  * JSON, which turns it into null, so read null as undefined again.
  */
 const words = (ws: (string | null | undefined)[]) => ws.map((w) => w ?? undefined);
 
-export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult {
+/**
+ * Run an example again on the given input lines, one list per box (`Interactive.inputs`). The files a command reads
+ * as one stream are read one after another; the marks of a regex are per line of them all, in that order.
+ */
+export function rerun(spec: RerunSpec, inputs: string[][], lang: Lang): RerunResult {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);
+  const input = inputs.flat();
   const none = s('（出力なし）', '(no output)');
   const out = (lines: string[] | undefined, label = s('出力', 'Output')): RerunResult => ({
     sections: [{ label, lines: lines ?? [s('（この入力では実行できません）', '(cannot run on this input)')], empty: none }],
@@ -124,22 +131,36 @@ export function rerun(spec: RerunSpec, input: string[], lang: Lang): RerunResult
     case 'perl': return out(runPerl(spec.code, spec.opts, input));
     case 'filter': {
       const run = FILTERS[spec.cmd];
-      return out(run ? run(words(spec.words), input) : undefined);
+      if (!run) return out(undefined);
+      if (spec.files) return out(perFile(spec.cmd, spec.files.map((name, i) => ({ name, lines: inputs[i] })), words(spec.words), run));
+      return out(run(words(spec.words), input));
     }
     case 'jq': {
-      let value: Json;
+      const show = (vs: Json[]): string[] => {
+        const shown = vs.map((v) => ((spec.raw || spec.join) && typeof v === 'string' ? v : toJson(v)));
+        return spec.join ? (shown.length ? [shown.join('')] : []) : shown;
+      };
+      let values: Json[];
       try {
-        // `-s`: each line is one value of the file, and the filter reads them as an array.
-        value = spec.slurp ? input.filter((l) => l.trim()).map((l) => JSON.parse(l) as Json) : JSON.parse(input.join('\n')) as Json;
+        // Each box holds JSON values (a file may hold several); jq reads them all, one after another.
+        values = inputs.flatMap((box) => parseJsonValues(box.join('\n')));
       } catch (e) {
         return { sections: [{ label: s('エラー', 'Error'), lines: [s('入力が JSON として読めません', 'The input is not valid JSON') + `: ${(e as Error).message}`] }] };
       }
-      const res = runJq(spec.filter, value, spec.vars);
-      if (!res) return out(undefined);
-      if ('error' in res) return { sections: [{ label: s('エラー', 'Error'), lines: [res.error] }] };
-      const shown = res.outputs.map((v) => ((spec.raw || spec.join) && typeof v === 'string' ? v : toJson(v)));
-      const lines = spec.join ? (shown.length ? [shown.join('')] : []) : shown;
-      const steps = spec.join ? undefined : jqSteps(spec.filter, value, spec.vars);
+      // `-s`: the filter reads them all as one array.
+      if (spec.slurp) values = [values];
+      const results: Json[] = [];
+      for (const value of values) {
+        const res = runJq(spec.filter, value, spec.vars);
+        if (!res) return out(undefined);
+        if ('error' in res) {
+          const before = show(results);
+          return { sections: [...(before.length ? [{ label: s('出力', 'Output'), lines: before }] : []), { label: s('エラー', 'Error'), lines: [res.error] }] };
+        }
+        results.push(...res.outputs);
+      }
+      const lines = show(results);
+      const steps = spec.join || values.length !== 1 ? undefined : jqSteps(spec.filter, values[0], spec.vars);
       return steps ? { sections: jqStepSections(steps, lines, lang, (vs) => vs.map(toJson)) } : out(lines);
     }
     case 'pipeline': {

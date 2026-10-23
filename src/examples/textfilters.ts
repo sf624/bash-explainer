@@ -437,6 +437,18 @@ export function runTail(words: (string | undefined)[], input: string[]): string[
   return n.startsWith('+') ? input.slice(Math.max(0, k - 1)) : input.slice(Math.max(0, input.length - k));
 }
 
+/**
+ * What `head` or `tail` prints for several files: each file's lines under a header `==> name <==`, a blank line
+ * between files; no header with `-q`, a header for one file too with `-v` (the last of them given wins).
+ */
+export function perFile(cmd: string, files: { name: string; lines: string[] }[], words: (string | undefined)[], run: (words: (string | undefined)[], input: string[]) => string[]): string[] {
+  const flags = parseWords(cmd, words).roles.flatMap(({ role }) => (role.role === 'cluster' ? role.letters : [role]))
+    .flatMap((r) => (r.role === 'option' ? r.spec.names.filter((n) => n === '-q' || n === '-v') : []));
+  const last = flags.pop();
+  const headers = last === '-v' || (last !== '-q' && files.length > 1);
+  return files.flatMap((f, i) => [...(headers ? [...(i ? [''] : []), `==> ${f.name} <==`] : []), ...run(words, f.lines)]);
+}
+
 // ---------------------------------------------------------------- seq, basename, dirname
 
 export function runSeq(words: (string | undefined)[]): string[] {

@@ -565,7 +565,7 @@ describe('example titles', () => {
     const [ex] = explain('date -u +%Y%m%dT%H%M%SZ').examples;
     assert.deepStrictEqual(ex.sections.map((x) => x.lines), [['2024-03-05 07:08:09', '2025-12-31 23:59:59'], ['20240305T070809Z', '20251231T235959Z']]);
     assert.strictEqual(ex.kind, 'date');
-    assert.deepStrictEqual(rerun(ex.interactive!.spec, ['2000-01-01 00:00:00', 'soon'], 'en').sections[0].lines, ['20000101T000000Z', '(not a date; write it like `2024-03-05 07:08:09`)']);
+    assert.deepStrictEqual(rerun(ex.interactive!.spec, [['2000-01-01 00:00:00', 'soon']], 'en').sections[0].lines, ['20000101T000000Z', '(not a date; write it like `2024-03-05 07:08:09`)']);
   });
   it('keeps the plain title for a single command', () => {
     assert.deepStrictEqual(explain('sort -u names.txt', 0, 'ja').examples.map((e) => e.title), ['例']);

@@ -10,10 +10,10 @@ describe('panel replies', () => {
   const spec = { kind: 'regex', regex: { source: 'a', flags: '' }, mode: 'inverted' } as const;
 
   it('runs an example again on the input, without the final newline', () => {
-    const m: FromPanel = { type: 'rerun', id: 7, spec, input: 'abc\nxyz\n' };
+    const m: FromPanel = { type: 'rerun', id: 7, spec, inputs: ['abc\nxyz\n'] };
     assert.ok(isPanelQuestion(m));
     if (!isPanelQuestion(m)) return;
-    assert.deepStrictEqual(panelReply(m, 'en'), { type: 'rerunResult', id: 7, result: rerun(spec, ['abc', 'xyz'], 'en') });
+    assert.deepStrictEqual(panelReply(m, 'en'), { type: 'rerunResult', id: 7, result: rerun(spec, [['abc', 'xyz']], 'en') });
   });
 
   it('sends the quick reference in the language asked', () => {

@@ -90,7 +90,7 @@ describe('hover markdown', () => {
     const { ex, md } = hover("awk '{ print $1 }'", 0, 'bottom');
     assert.strictEqual(ex.examples.length, 1);
     assert.ok(!ex.notes.some((n) => /^Example/.test(n)), 'examples are not notes');
-    assert.match(md, /#### Example\n\n\*\*Input\*\*\n\n```text\napple red tokyo\nbanana yellow osaka/);
+    assert.match(md, /#### Example\n\n\*\*Input: stdin \(sample contents\)\*\*\n\n```text\napple red tokyo\nbanana yellow osaka/);
   });
 
   it('puts each example right under its token, before the explanations of its parts', () => {

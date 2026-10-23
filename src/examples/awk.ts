@@ -1322,6 +1322,8 @@ function numbersAround(thresholds: number[]): number[] {
 export interface AwkExample {
   input: string[];
   output: string[];
+  /** False for a program of `BEGIN` rules alone, which awk runs without reading any input. */
+  readsInput: boolean;
 }
 
 /** Make up input lines that fit the program (fields, numbers around thresholds, regex matches) and run it. */
@@ -1373,5 +1375,5 @@ export function awkExample(src: string, opts: AwkRunOptions = {}): AwkExample | 
   }
   const output = runAwk(src, input, opts);
   if (!output) return undefined;
-  return { input, output: output.length > 6 ? [...output.slice(0, 5), '…'] : output };
+  return { input, output: output.length > 6 ? [...output.slice(0, 5), '…'] : output, readsInput: !onlyBegin };
 }

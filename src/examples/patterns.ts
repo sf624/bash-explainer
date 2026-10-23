@@ -32,7 +32,7 @@ export function globExample(pattern: string, mode: GlobMode, opts: GlobOpts, ign
   return { kind: 'glob',
     title, sections: [{ label: yes, lines: ex.matching }, { label: no, lines: ex.nonMatching }].filter((sec) => sec.lines.length),
     // (The panel's matcher does not know GLOBIGNORE: no names to try then.)
-    ...(ignore !== undefined ? {} : { interactive: interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [...ex.matching, ...ex.nonMatching], lang, s('試す名前（1行に1つ）', 'Names to try (one per line)')) }),
+    ...(ignore !== undefined ? {} : { interactive: interactive({ kind: 'glob', pattern, mode, ...(Object.keys(opts).length ? { opts } : {}) }, [{ label: s('試す名前（1行に1つ）', 'Names to try (one per line)'), lines: [...ex.matching, ...ex.nonMatching] }], lang) }),
   };
 }
 

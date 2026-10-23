@@ -14,8 +14,8 @@ export function isPanelQuestion(m: FromPanel): m is PanelQuestion {
 /** The reply to a question: the result of a worked example run on the user's input, or the quick reference. */
 export function panelReply(m: PanelQuestion, lang: Lang) {
   if (m.type === 'rerun') {
-    // The user edited the input of a worked example: run it again.
-    return { type: 'rerunResult' as const, id: m.id, result: rerun(m.spec, m.input.replace(/\n$/, '').split('\n'), lang) };
+    // The user edited an input of a worked example: run it again.
+    return { type: 'rerunResult' as const, id: m.id, result: rerun(m.spec, m.inputs.map((t) => t.replace(/\n$/, '').split('\n')), lang) };
   }
   return { type: 'reference' as const, entries: quickReference(lang) };
 }
