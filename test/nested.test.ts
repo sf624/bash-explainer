@@ -16,6 +16,7 @@ import { option, shellState, type StateModel } from '../src/semantics/state';
 import { staticWordText, staticWordValue } from '../src/staticword';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields, type SyntaxNode, type SyntaxTree } from '../src/syntax/tree';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 const hasBash = spawnSync('bash', ['--version']).status === 0;
@@ -393,11 +394,10 @@ describe('nested scripts: the pitfall of a variable another shell does not get',
 });
 
 describe('nested scripts: the explanation', () => {
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
   const explain = (src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) => new Analyzer(lang).explainLine(parser.parse(src), line, shell);
   /** The token labelled `label`, and the source text it spans. */
   const spanned = (src: string, label: string, line = 0): { token: Token; text: string } => {
-    const token = all(explain(src, line).items).find((t) => t.label === label);
+    const token = allTokens(explain(src, line).items).find((t) => t.label === label);
     assert.ok(token, `no token ${label} in ${src}`);
     const lines = src.split('\n');
     const { start, end } = token.span;
@@ -412,7 +412,7 @@ describe('nested scripts: the explanation', () => {
     assert.strictEqual(spanned(`eval 'echo '"\\$x"`, '$x').text, '\\$x');
     const str = spanned(`bash -c 'ls -l'`, `'ls -l'`).token;
     assert.ok(str.kind === 'argument' || str.kind === 'string');
-    assert.ok(all([str]).some((t) => t.label === 'ls'));
+    assert.ok(allTokens([str]).some((t) => t.label === 'ls'));
     // A trap's action, and the words eval joins (one token over them).
     assert.strictEqual(spanned(`trap 'rm -f "$tmp"' EXIT`, 'rm').text, 'rm -f "$tmp"');
     const joined = spanned(`eval echo '|' wc -l`, `echo '|' wc -l`).token;
@@ -424,10 +424,10 @@ describe('nested scripts: the explanation', () => {
 
   it('gives a string of several lines a token per line', () => {
     const src = `bash -c '\n  cd /x\n  make \\\n    all\n'`;
-    const lines = all(explain(src).items).filter((t) => t.kind === 'block');
+    const lines = allTokens(explain(src).items).filter((t) => t.kind === 'block');
     assert.deepStrictEqual(lines.map((t) => [t.label, t.explanation]), [['cd /x', 'Line 2 of the string'], ['make \\', 'Line 3 of the string']]);
     assert.strictEqual(spanned(src, 'make').text, 'make \\\n    all');
-    assert.deepStrictEqual(explain(src, 0, 'ja').items[0].children.flatMap((c) => all([c])).filter((t) => t.kind === 'block').map((t) => t.explanation), ['文字列の 2 行目', '文字列の 3 行目']);
+    assert.deepStrictEqual(explain(src, 0, 'ja').items[0].children.flatMap((c) => allTokens([c])).filter((t) => t.kind === 'block').map((t) => t.explanation), ['文字列の 2 行目', '文字列の 3 行目']);
   });
 
   it('says why a string is not read, and when its shell is not known', () => {
@@ -436,14 +436,14 @@ describe('nested scripts: the explanation', () => {
     assert.match(spanned(`su -c 'whoami'`, `'whoami'`).token.explanation, /The shell that runs it is not known here/);
     // (No shell runs a string under `sudo eval`: the slot's pitfall says so, and the string is a plain argument.)
     const sudo = explain(`sudo eval 'x=1'`);
-    assert.ok(!all(sudo.items).some((t) => t.kind === 'assignment' || /not explained/.test(t.explanation)));
+    assert.ok(!allTokens(sudo.items).some((t) => t.kind === 'assignment' || /not explained/.test(t.explanation)));
     assert.ok(sudo.notes.some((n) => /starts `eval` as a separate program/.test(n)));
-    assert.match(all(explain(`su -c 'whoami'`, 0, 'ja').items).find((t) => t.label === `'whoami'`)!.explanation, /bash として解説する/);
+    assert.match(allTokens(explain(`su -c 'whoami'`, 0, 'ja').items).find((t) => t.label === `'whoami'`)!.explanation, /bash として解説する/);
     let src = 'x=1';
     for (let i = 0; i < NESTED_DEPTH + 1; i++) src = `eval ${JSON.stringify(src).replace(/\$/g, '\\$')}`;
-    const deep = all(explain(src).items).filter((t) => /nested this deep/.test(t.explanation));
+    const deep = allTokens(explain(src).items).filter((t) => /nested this deep/.test(t.explanation));
     assert.strictEqual(deep.length, 1);
-    assert.match(all(explain(src, 0, 'ja').items).map((t) => t.explanation).join('\n'), /文字列の中の文字列が深すぎる/);
+    assert.match(allTokens(explain(src, 0, 'ja').items).map((t) => t.explanation).join('\n'), /文字列の中の文字列が深すぎる/);
   });
 
   it('says why a function or an extended glob may not be there, as the string is run', () => {
@@ -453,10 +453,10 @@ describe('nested scripts: the explanation', () => {
     assert.deepStrictEqual(pitfalls(`f() { :; }\nbash -c 'f() { echo; }; f'`, 1), []);
     assert.strictEqual(pitfalls(`f() { :; }\nbash -c 'echo; f'`, 1).length, 1);
     // (`sh` may be dash; startup files may define it.)
-    const call = (src: string) => all(explain(src).items).filter((t) => t.kind === 'function' && t.label === 'f').pop()!.explanation;
+    const call = (src: string) => allTokens(explain(src).items).filter((t) => t.kind === 'function' && t.label === 'f').pop()!.explanation;
     assert.match(call(`f() { :; }; export -f f; sh -c 'f'`), /But `sh` is dash on Debian and Ubuntu/);
     assert.match(call(`f() { :; }; bash -lc 'f'`), /it is defined there only if the files it reads at startup/);
-    assert.match(explain(`f() { :; }; bash -lc 'f'`, 0, 'ja').items.flatMap((t) => all([t])).map((t) => t.explanation).join('\n'), /起動時に読むファイル/);
+    assert.match(explain(`f() { :; }; bash -lc 'f'`, 0, 'ja').items.flatMap((t) => allTokens([t])).map((t) => t.explanation).join('\n'), /起動時に読むファイル/);
     // An extended glob in a trap's action is read when the signal comes; another shell starts with extglob off.
     assert.ok(explain(`shopt -u extglob; trap 'echo @(a|b)' INT; shopt -s extglob`).notes.some((n) => /a trap's action is read when its signal comes/.test(n)));
     assert.ok(explain(`shopt -s extglob; bash -c 'echo @(a|b)'`).notes.some((n) => /The new shell starts with `extglob` off/.test(n)));
@@ -464,12 +464,12 @@ describe('nested scripts: the explanation', () => {
   });
 
   it('says on the word with the expansion why joined words are not read', () => {
-    const tokens = all(explain(`eval set -- "$OPTS"`).items);
+    const tokens = allTokens(explain(`eval set -- "$OPTS"`).items);
     assert.ok(!/holds an expansion/.test(tokens.find((t) => t.label === 'set')!.explanation));
     assert.match(tokens.find((t) => t.label === '"$OPTS"')!.explanation, /It holds an expansion/);
-    assert.match(all(explain(`eval echo *`).items).find((t) => t.label === '*')!.explanation, /It holds an expansion/);
+    assert.match(allTokens(explain(`eval echo *`).items).find((t) => t.label === '*')!.explanation, /It holds an expansion/);
     // (`"$@"` in single quotes is text: the words after the string are what the spec says.)
-    assert.match(all(explain(`bash -c 'f "$@"' _ a`).items).find((t) => t.label === '_')!.explanation, /^Becomes `\$0`, the name in place of a script name \(shown in error messages\); not an argument$/);
+    assert.match(allTokens(explain(`bash -c 'f "$@"' _ a`).items).find((t) => t.label === '_')!.explanation, /^Becomes `\$0`, the name in place of a script name \(shown in error messages\); not an argument$/);
   });
 
   it('adds the notes and examples of the string to the line', () => {

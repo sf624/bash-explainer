@@ -1,10 +1,7 @@
 import * as assert from 'assert';
 import { explainSed } from '../src/embedded/sed';
 import { EmbeddedToken } from '../src/embedded/types';
-
-function all(ts: EmbeddedToken[]): EmbeddedToken[] {
-  return ts.flatMap((t) => [t, ...all(t.children)]);
-}
+import { allTokens } from './support/explain';
 
 function text(src: string, t: EmbeddedToken): string {
   return src.slice(t.start, t.end);
@@ -19,14 +16,14 @@ describe('sed explainer', () => {
       ['s', 'command'], ['/', 'operator'], ['([0-9]+)-x', 'pattern'], ['/', 'operator'], ['\\1', 'string'], ['/', 'operator'], ['g', 'option'],
     ]);
     // The pattern is explained as an ERE, the replacement's backreference too.
-    assert.ok(all(cmd.children).some((t) => t.kind === 'block' && /^Group 1/.test(t.explanation)));
-    assert.match(all(cmd.children).find((t) => text(src, t) === '\\1' && t.kind === 'variable')!.explanation, /what group 1 matched/);
+    assert.ok(allTokens(cmd.children).some((t) => t.kind === 'block' && /^Group 1/.test(t.explanation)));
+    assert.match(allTokens(cmd.children).find((t) => text(src, t) === '\\1' && t.kind === 'variable')!.explanation, /what group 1 matched/);
   });
 
   it('uses the regex dialect it is given', () => {
-    const bre = all(explainSed('s/a+/b/', 'bre', 'en')).find((t) => t.explanation.includes('basic regex'));
+    const bre = allTokens(explainSed('s/a+/b/', 'bre', 'en')).find((t) => t.explanation.includes('basic regex'));
     assert.ok(bre, '+ is a literal in BRE');
-    assert.ok(all(explainSed('s/a+/b/', 'ere', 'en')).some((t) => /one or more/.test(t.explanation)));
+    assert.ok(allTokens(explainSed('s/a+/b/', 'ere', 'en')).some((t) => /one or more/.test(t.explanation)));
   });
 
   it('explains addresses, ranges and negation', () => {
@@ -62,13 +59,13 @@ describe('sed explainer', () => {
     const empty = explainSed('s/^[ \\t]*//', 'bre', 'en')[0];
     assert.ok(empty.children.every((t) => t.end > t.start), 'no zero-width tokens');
     assert.match(empty.children[empty.children.length - 1].explanation, /replacement is empty, so matches are deleted/);
-    assert.match(all(empty.children).find((t) => t.kind === 'pattern' && t.explanation.startsWith('Character class'))!.explanation, /one of " ", a tab/);
+    assert.match(allTokens(empty.children).find((t) => t.kind === 'pattern' && t.explanation.startsWith('Character class'))!.explanation, /one of " ", a tab/);
   });
 
   it('reports malformed scripts instead of throwing', () => {
     for (const bad of ['s/a/b', 's', '/foo', 'k', 'y/ab/']) {
       const ts = explainSed(bad, 'bre', 'en');
-      assert.ok(all(ts).some((t) => t.kind === 'error'), bad);
+      assert.ok(allTokens(ts).some((t) => t.kind === 'error'), bad);
     }
   });
 });

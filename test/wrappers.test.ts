@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 // Commands that run other commands: which word is the command, what `bash -c` numbers its arguments,
 // and the pitfalls of starting a program from a shell (functions, builtins, early expansion).
@@ -13,10 +14,9 @@ before(async () => {
 });
 
 const explain = (src: string, lang: 'en' | 'ja' = 'en', line = 0): LineExplanation => new Analyzer(lang).explainLine(parser.parse(src), line);
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 /** The explanation of the token labelled `label`, without its trailing detail. */
 const about = (src: string, label: string, lang: 'en' | 'ja' = 'en'): string => {
-  const t = all(explain(src, lang).items).find((x) => x.label === label);
+  const t = allTokens(explain(src, lang).items).find((x) => x.label === label);
   assert.ok(t, `no token ${label} in ${src}`);
   return t.explanation;
 };
@@ -167,7 +167,7 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     assert.strictEqual(explain('timeout 5 cd /tmp').items[0].children.find((t) => t.label === 'cd')?.kind, 'builtin');
     // A builtin with a program of its name: the program runs (coreutils echo, procps kill), as it does at a path.
     for (const [src, label] of [['env echo hi', 'echo'], ['sudo kill -9 1', 'kill'], ['exec test -f x', 'test']]) {
-      const t = all(explain(src).items).find((x) => x.label === label)!;
+      const t = allTokens(explain(src).items).find((x) => x.label === label)!;
       assert.strictEqual(t.kind, 'command', src);
       assert.match(t.explanation, /the (coreutils|procps) program/, src);
     }
@@ -256,7 +256,7 @@ describe('the pitfalls follow from how the command is run', () => {
   });
   it('sudo -s and -i: a shell runs the command, so builtins run, and the function is not there', () => {
     for (const src of ['sudo -i cd /tmp', 'sudo -s cd /tmp', 'sudo --login export A=1', 'sudo -iu bob cd ~']) assert.deepStrictEqual(at(src), [], src);
-    assert.strictEqual(all(explain('sudo -i cd /tmp').items).find((t) => t.label === 'cd')?.kind, 'builtin');
+    assert.strictEqual(allTokens(explain('sudo -i cd /tmp').items).find((t) => t.label === 'cd')?.kind, 'builtin');
     assert.deepStrictEqual(at('sudo -s myfunc'), ["⚠ Pitfall: `sudo` runs the command in a new shell, which does not have this script's function `myfunc`. Write out its body"]);
   });
   it('watch: sh -c runs the words joined, unless -x execs them', () => {

@@ -4,6 +4,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, parseFind } from '../src/embedded/find';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const arity = (w: string) => (w === '-exec' ? 'until' as const : ['-name', '-path', '-wholename', '-type', '-mtime', '-newer', '-maxdepth', '-mmin'].includes(w) ? 1 : 0);
 
@@ -16,8 +17,7 @@ before(async () => {
 function tokens(src: string, lang: 'ja' | 'en' = 'en'): Token[] {
   const tree = parser.parse(src);
   const ex = new Analyzer(lang).explainLine(tree, 0);
-  const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-  return all(ex.items);
+  return allTokens(ex.items);
 }
 
 describe('find expressions', () => {

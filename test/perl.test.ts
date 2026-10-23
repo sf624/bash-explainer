@@ -5,8 +5,8 @@ import { Analyzer, Token } from '../src/analyzer';
 import { explainPerl, perlLoopNote } from '../src/embedded/perl';
 import { EmbeddedToken } from '../src/embedded/types';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
-const all = (ts: EmbeddedToken[]): EmbeddedToken[] => ts.flatMap((t) => [t, ...all(t.children)]);
 const text = (src: string, t: EmbeddedToken) => src.slice(t.start, t.end);
 
 describe('perl code', () => {
@@ -15,8 +15,8 @@ describe('perl code', () => {
     const [sub] = explainPerl(src, 'en');
     assert.match(sub.explanation, /^Substitute in the line \(`\$_`\): replace every match of `foo\(\\d\+\)` with `bar\$1`/);
     assert.deepStrictEqual(sub.children.map((t) => text(src, t)), ['foo(\\d+)', 'bar$1', 'g']);
-    assert.match(all(sub.children).find((t) => text(src, t) === '\\d')!.explanation, /a digit/);
-    assert.match(all(sub.children).find((t) => text(src, t) === '$1')!.explanation, /group 1/);
+    assert.match(allTokens(sub.children).find((t) => text(src, t) === '\\d')!.explanation, /a digit/);
+    assert.match(allTokens(sub.children).find((t) => text(src, t) === '$1')!.explanation, /group 1/);
   });
 
   it('handles bracketed delimiters and other targets', () => {
@@ -30,7 +30,7 @@ describe('perl code', () => {
     const src = 'print if /^ERROR/';
     const [stmt] = explainPerl(src, 'en');
     assert.match(stmt.explanation, /^if the line matches `\/\^ERROR\/`: `print`/);
-    assert.ok(all([stmt]).some((t) => t.kind === 'keyword' && text(src, t) === '^'));
+    assert.ok(allTokens([stmt]).some((t) => t.kind === 'keyword' && text(src, t) === '^'));
     assert.match(explainPerl('next unless $x', 'en')[0].explanation, /^unless `\$x`: skip to the next line/);
   });
 
@@ -38,7 +38,7 @@ describe('perl code', () => {
     const src = '$sum += $F[1]; $seen{$_}++; END { print $sum }';
     const ts = explainPerl(src, 'en');
     assert.deepStrictEqual(ts.map((t) => text(src, t)), ['$sum += $F[1]', '$seen{$_}++', 'END { print $sum }']);
-    assert.match(all(ts).find((t) => text(src, t) === '$F[1]')!.explanation, /field 2/);
+    assert.match(allTokens(ts).find((t) => text(src, t) === '$F[1]')!.explanation, /field 2/);
     assert.match(ts[1].explanation, /increment/);
     assert.match(ts[2].explanation, /once after all input/);
   });

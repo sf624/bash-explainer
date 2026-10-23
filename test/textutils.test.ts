@@ -5,6 +5,7 @@ import { Analyzer, Token } from '../src/analyzer';
 import { explainGetopts } from '../src/embedded/getopts';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from '../src/embedded/textutils';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 describe('sort keys', () => {
   it('reads a single-field numeric reverse key', () => {
@@ -67,8 +68,7 @@ describe('in command lines', () => {
   const tokens = (src: string): Token[] => {
     const tree = parser.parse(src);
     const ex = new Analyzer('en').explainLine(tree, 0);
-    const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
-    return all(ex.items);
+    return allTokens(ex.items);
   };
 
   it('breaks down attached and --name=value option values', () => {

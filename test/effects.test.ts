@@ -9,6 +9,7 @@ import { attribute, shellState } from '../src/semantics/state';
 import { statusModel } from '../src/semantics/status';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, fields } from '../src/syntax/tree';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
 const bash = (code: string): string => execFileSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).toString();
@@ -102,8 +103,7 @@ describe('builtin effects from the spec (src/semantics/effects.ts)', () => {
   it('says that `exec` with a command in a subshell ends only the subshell', () => {
     assert.strictEqual(bash('(exec true; echo no); echo yes'), 'yes\n');
     type Item = { explanation: string; children: Item[] };
-    const all = (items: Item[]): Item[] => items.flatMap((t) => [t, ...all(t.children)]);
-    const text = (src: string) => all(new Analyzer('en').explainLine(parser.parse(src), 0).items as Item[]).find((t) => t.explanation.startsWith('Replace the shell'))!.explanation;
+    const text = (src: string) => allTokens(new Analyzer('en').explainLine(parser.parse(src), 0).items as Item[]).find((t) => t.explanation.startsWith('Replace the shell'))!.explanation;
     assert.match(text('(exec true; echo no); echo yes'), /ends only the subshell, not the script/);
     assert.doesNotMatch(text('exec true'), /subshell/);
     // (Without a command it only redirects the shell's own descriptors.)

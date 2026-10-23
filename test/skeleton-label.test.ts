@@ -10,15 +10,14 @@ import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { joinParts, LABEL_LIMIT, LabelPart, labelParts, labelText } from '../src/label';
 import { codeSpan, labelMarkdown, toMarkdown, toPlainMarkdown } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens, explain } from './support/explain';
 
 let parser: Parser;
 before(() => {
   parser = createUnbashParser();
 });
 
-const explain = (src: string, line = 0, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), line);
 const first = (src: string, line = 0, lang: 'en' | 'ja' = 'en') => explain(src, line, lang).items[0];
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 
 /** The parts as a short string: `code` as it is, placeholders in *stars*. */
 const show = (parts: readonly LabelPart[] | undefined) => joinParts(parts ?? [], (p) => (p.placeholder ? `*${p.text}*` : p.text));
@@ -107,8 +106,8 @@ describe('the label of a construct', () => {
       const ja = first(src, 0, 'ja');
       assert.notStrictEqual(en.explanation, ja.explanation, src);
       assert.deepStrictEqual(
-        all([ja]).map((t) => [t.label, t.labelParts]),
-        all([en]).map((t) => [t.label, t.labelParts]),
+        allTokens([ja]).map((t) => [t.label, t.labelParts]),
+        allTokens([en]).map((t) => [t.label, t.labelParts]),
         src,
       );
     }
@@ -163,7 +162,7 @@ describe('the label of a construct', () => {
     const a = new Analyzer('en');
     const tree = parser.parse(lines.join('\n'));
     lines.forEach((_, i) => {
-      for (const t of all(a.explainLine(tree, i).items)) {
+      for (const t of allTokens(a.explainLine(tree, i).items)) {
         assert.strictEqual(t.label, t.labelParts ? labelText(t.labelParts) : t.label);
         assert.ok(!/[‹›]/.test(t.label) || t.labelParts, t.label);
       }

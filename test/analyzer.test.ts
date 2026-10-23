@@ -7,6 +7,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, LineExplanation, Token } from '../src/analyzer';
 import { rerun } from '../src/examples/rerun';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens, explain } from './support/explain';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -15,18 +16,9 @@ before(async () => {
   parser = createUnbashParser();
 });
 
-function explain(src: string, line = 0, lang: 'ja' | 'en' = 'en'): LineExplanation {
-  const tree = parser.parse(src);
-  return new Analyzer(lang).explainLine(tree, line);
-}
-
-function all(tokens: Token[]): Token[] {
-  return tokens.flatMap((t) => [t, ...all(t.children)]);
-}
-
 function find(e: LineExplanation, label: string, kind?: Token['kind']): Token {
-  const t = all(e.items).find((x) => x.label === label && (!kind || x.kind === kind));
-  assert.ok(t, `no token "${label}" in: ${all(e.items).map((x) => x.label).join(', ')}`);
+  const t = allTokens(e.items).find((x) => x.label === label && (!kind || x.kind === kind));
+  assert.ok(t, `no token "${label}" in: ${allTokens(e.items).map((x) => x.label).join(', ')}`);
   return t;
 }
 
@@ -88,7 +80,7 @@ describe('time keyword', () => {
     assert.strictEqual(find(e, 'time', 'keyword').kind, 'keyword');
     assert.match(e.items[0].explanation, /^Time `sleep 1`: run it and report how long/);
     assert.match(e.summary, /^time sleep:/);
-    assert.ok(all(e.items).some((t) => t.label === 'sleep' || t.label === '1' || t.kind === 'argument'));
+    assert.ok(allTokens(e.items).some((t) => t.label === 'sleep' || t.label === '1' || t.kind === 'argument'));
   });
   it('explains -p and the options of the timed command', () => {
     const e = explain('time -p ls -l');
@@ -168,7 +160,7 @@ describe('time keyword', () => {
   it('runs the program time after a pipe, where bash has no keyword', () => {
     for (const src of ['a | time b', 'a |& time b']) {
       const e = explain(src);
-      assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'keyword'), [], src);
+      assert.deepStrictEqual(allTokens(e.items).filter((t) => t.kind === 'keyword'), [], src);
       assert.match(find(e, 'time').explanation, /Measure the run time and resource use/, src);
       assert.strictEqual(spanText(src, find(e, 'time')), 'time b', src);
     }
@@ -190,7 +182,7 @@ describe('statements as bash reads them', () => {
     assert.deepStrictEqual(labels(e.items[0].children[2]), ['echo', '> f']);
     assert.deepStrictEqual(labels(e.items[0].children[2].children[0]), ['B']);
     assert.deepStrictEqual(labels(e.items[0].children[0]), ['A']);
-    assert.ok(!all(e.items).some((t) => /as a whole/.test(t.explanation)));
+    assert.ok(!allTokens(e.items).some((t) => /as a whole/.test(t.explanation)));
     const p = explain('echo a | cat 2>/dev/null');
     assert.match(p.items[0].explanation, /^Pipeline/);
     assert.deepStrictEqual(labels(p.items[0]), ['echo', '|', 'cat 2>/dev/null']);
@@ -255,13 +247,13 @@ describe('statements as bash reads them', () => {
     assert.match(find(e, '${(f)var}', 'error').explanation, /bad substitution/);
     assert.match(find(explain('echo ${(f)var}', 0, 'ja'), '${(f)var}', 'error').explanation, /bad substitution/);
     const zsh = new Analyzer('en').explainLine(parser.parse('echo ${(f)var}'), 0, 'zsh');
-    assert.ok(!all(zsh.items).some((t) => /bad substitution/.test(t.explanation)));
+    assert.ok(!allTokens(zsh.items).some((t) => /bad substitution/.test(t.explanation)));
   });
   it('explains the later lines of a case pattern list that goes on after a backslash as patterns', () => {
     const src = 'case $x in\n  a|b|\\\n  c)\n    echo hi ;;\n  d|\\\n  e) echo d ;;\nesac';
     assert.strictEqual(run('bash', ['-n'], { input: src }).status, 0);
     const c = explain(src, 2);
-    assert.deepStrictEqual(all(c.items).map((t) => [t.kind, t.label]), [['pattern', 'c']]);
+    assert.deepStrictEqual(allTokens(c.items).map((t) => [t.kind, t.label]), [['pattern', 'c']]);
     assert.match(c.context.map((x) => x.label).join(), /case branch/);
     // The body after `)` on the same line is still explained, and the first line has the whole branch.
     assert.deepStrictEqual(explain(src, 5).items.map((t) => t.label), ['e', 'echo', ';;']);
@@ -308,9 +300,9 @@ describe('statements as bash reads them', () => {
       ['[[ $x = [ab]*.c ]]', '[ab]*.c', /^Glob pattern/],
     ] as const) assert.match(find(explain(src), label, 'pattern').explanation, note, src);
     // Plain words, and `[ ]` (which compares text), have none; an arithmetic `==` has none either.
-    assert.ok(!all(explain('[[ $x == abc ]]').items).some((t) => t.kind === 'pattern'));
-    assert.ok(!all(explain('[ "$x" = *.txt ]').items).some((t) => t.kind === 'pattern'));
-    assert.ok(!all(explain('echo $((x == y*2))').items).some((t) => t.kind === 'pattern'));
+    assert.ok(!allTokens(explain('[[ $x == abc ]]').items).some((t) => t.kind === 'pattern'));
+    assert.ok(!allTokens(explain('[ "$x" = *.txt ]').items).some((t) => t.kind === 'pattern'));
+    assert.ok(!allTokens(explain('echo $((x == y*2))').items).some((t) => t.kind === 'pattern'));
   });
   it('explains the redirections of a compound command and of a here-document', () => {
     assert.ok(find(explain('{ cat; } <<EOF\nx\nEOF'), '<<EOF'));
@@ -343,7 +335,7 @@ describe('input that is not finished', () => {
   });
   it('leaves out a redirection the parser could not read at all', () => {
     const e = explain('[range(200000)] | map(. + 1)');
-    assert.deepStrictEqual(all(e.items).filter((t) => t.kind === 'redirect'), []);
+    assert.deepStrictEqual(allTokens(e.items).filter((t) => t.kind === 'redirect'), []);
     // bash: a syntax error near `200000`; `[range` is read as a command name.
     assert.strictEqual(e.items[0].kind, 'command');
     assert.strictEqual(e.items[0].label, '[range');
@@ -369,7 +361,7 @@ describe('input that is not finished', () => {
 describe('operators, redirections and expansions', () => {
   it('explains pipes, && and || in order', () => {
     const e = explain('a | b && c || d');
-    const ops = all(e.items).filter((t) => t.kind === 'operator' && t.children.length === 0).map((t) => t.label);
+    const ops = allTokens(e.items).filter((t) => t.kind === 'operator' && t.children.length === 0).map((t) => t.label);
     assert.deepStrictEqual(ops, ['|', '&&', '||']);
   });
 
@@ -424,7 +416,7 @@ describe('multi-line constructs', () => {
     const e = explain(script, 0);
     assert.strictEqual(e.items.length, 1);
     assert.match(e.items[0].explanation, /for loop.*lines 1–3/);
-    assert.ok(!all(e.items).some((t) => t.label.startsWith('echo')));
+    assert.ok(!allTokens(e.items).some((t) => t.label.startsWith('echo')));
   });
 
   it('gives loop body lines their enclosing context', () => {
@@ -735,7 +727,7 @@ describe('the state along the script (src/semantics/state.ts)', () => {
 });
 
 describe('syntax the other tests do not reach', () => {
-  const ex = (src: string, line = 0) => all(explain(src, line).items).map((t) => `${t.label}: ${t.explanation}`).join('\n');
+  const ex = (src: string, line = 0) => allTokens(explain(src, line).items).map((t) => `${t.label}: ${t.explanation}`).join('\n');
   const cases: [string, RegExp, number?][] = [
     ['until ping -c1 host; do sleep 1; done', /until loop: repeat the body until the condition succeeds/],
     ['for a; do echo "$a"; done', /for loop over the positional parameters \("\$@"\) as `a`/],
@@ -791,7 +783,7 @@ describe('aliases of distributions', () => {
     ];
     for (const [src, re] of cases) {
       const e = explain(src, 0);
-      assert.match(all(e.items).map((t) => t.explanation).join('\n'), re, src);
+      assert.match(allTokens(e.items).map((t) => t.explanation).join('\n'), re, src);
       assert.ok(e.notes.some((n) => /System-dependent/.test(n)), src);
     }
     assert.match(explain('md a/b').notes.join('\n'), /is an alias openSUSE defines for interactive shells.*Write `mkdir -p`/);
@@ -923,7 +915,7 @@ describe('a command with redirections', () => {
       assert.deepStrictEqual(e.items[0].children[0].span, { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } });
       assert.strictEqual(e.summary, 'cat: Concatenate files and print to stdout');
     }
-    assert.ok(all(explain(src).items).some((t) => t.label === '$USER'));
+    assert.ok(allTokens(explain(src).items).some((t) => t.label === '$USER'));
   });
   it('is the command with 2>&1 alone', () => {
     const e = explain('make 2>&1');
@@ -949,7 +941,7 @@ describe('a subcommand', () => {
     for (const [src, label, parent] of [['git log --oneline -5', 'log', 'git'], ['docker run -it alpine', 'run', 'docker'], ['kubectl get pods', 'get', 'kubectl'], ['npm run build', 'run', 'npm']]) {
       const t = find(explain(src), label, 'subcommand');
       assert.match(t.explanation, new RegExp(`^Subcommand \`${parent} ${label}\`: .* \\(to the shell it is an argument to \`${parent}\`, which interprets it itself\\)$`), src);
-      assert.strictEqual(all(explain(src).items).filter((x) => x.kind === 'subcommand').length, 1, src);
+      assert.strictEqual(allTokens(explain(src).items).filter((x) => x.kind === 'subcommand').length, 1, src);
     }
   });
   it('has the note in Japanese, once', () => {
@@ -958,7 +950,7 @@ describe('a subcommand', () => {
     assert.strictEqual((t.explanation.match(/シェルから見れば/g) ?? []).length, 1);
   });
   it('is not made for an argument that is not in the dictionary', () => {
-    assert.deepStrictEqual(all(explain('git remote frobnicate origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
+    assert.deepStrictEqual(allTokens(explain('git remote frobnicate origin URL').items).filter((x) => x.kind === 'subcommand').map((x) => x.label), ['remote']);
   });
 });
 
@@ -1023,18 +1015,18 @@ describe('a short option with a quoted value glued on', () => {
   for (const [src, label, text] of cases) {
     it(src, () => {
       const e = explain(src);
-      const opt = all(e.items).find((t) => t.kind === 'option' && t.label === label);
+      const opt = allTokens(e.items).find((t) => t.kind === 'option' && t.label === label);
       assert.ok(opt && opt.explanation.includes(text), `${label}: ${opt?.explanation}`);
       assert.ok(opt.children.some((c) => c.kind === 'argument' && c.explanation.startsWith('Value for')));
       // The command's own operands keep their roles.
-      assert.ok(!all(e.items).some((t) => t.explanation === 'target file' && t.label === label));
+      assert.ok(!allTokens(e.items).some((t) => t.explanation === 'target file' && t.label === label));
     });
   }
   it('says what the value is after quote removal', () => {
-    assert.ok(all(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
+    assert.ok(allTokens(explain(`cut -d',' -f2 f`).items).some((t) => t.explanation.includes('`,` after quote removal')));
   });
   it('says that a long option prefix is ambiguous, with the options it could be', () => {
-    const word = (src: string, lang: 'en' | 'ja') => all(new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0).items).find((t) => t.kind === 'option')!.explanation;
+    const word = (src: string, lang: 'en' | 'ja') => allTokens(new Analyzer(lang).explainLine(createUnbashParser().parse(src), 0).items).find((t) => t.kind === 'option')!.explanation;
     assert.strictEqual(word('timeout --v 1 true', 'en'), 'Ambiguous option (it starts several long options: `--verbose`, `--version`); timeout refuses it');
     assert.match(word('env --ig=x true', 'en'), /^Ambiguous option .*`--ignore-environment`, `--ignore-signal`\); env refuses it/);
     assert.match(word('timeout --v 1 true', 'ja'), /^あいまいなオプション（.*`--verbose`、`--version`）。timeout は受け付けない$/);
@@ -1043,16 +1035,16 @@ describe('a short option with a quoted value glued on', () => {
   });
   it('shows the value of a partly quoted word without its quote characters, and its span ends there', () => {
     const line = "dpkg-query -Wf='X${Package}' bash";
-    const value = all(explain(line).items).find((t) => t.kind === 'argument' && t.explanation.startsWith('Value for `-f`'))!;
+    const value = allTokens(explain(line).items).find((t) => t.kind === 'argument' && t.explanation.startsWith('Value for `-f`'))!;
     assert.strictEqual(value.label, 'X${Package}');
     assert.strictEqual(line.slice(value.span.start.character, value.span.end.character), 'X${Package}');
-    const dir = all(explain("tar -C'/tmp' -xf a.tar").items).find((t) => t.explanation.startsWith('Value for `-C`'))!;
+    const dir = allTokens(explain("tar -C'/tmp' -xf a.tar").items).find((t) => t.explanation.startsWith('Value for `-C`'))!;
     assert.strictEqual(dir.label, '/tmp');
   });
 });
 
 describe('jq options with values', () => {
-  const roles = (src: string) => all(explain(src).items[0].children).filter((t) => t.span.start.line === 0).map((t) => `${t.label}: ${t.explanation}`);
+  const roles = (src: string) => allTokens(explain(src).items[0].children).filter((t) => t.span.start.line === 0).map((t) => `${t.label}: ${t.explanation}`);
   it('--arg and its relatives take a name and a value, then the filter and the file', () => {
     for (const o of ['--arg', '--argjson', '--slurpfile', '--rawfile']) {
       const r = roles(`jq ${o} n 3 '.a = $n' in.json`);
@@ -1095,7 +1087,7 @@ describe('jq examples follow -s and -j', () => {
 });
 
 describe('jq destructuring and label/break', () => {
-  const texts = (src: string) => all(explain(src).items).map((t) => t.explanation);
+  const texts = (src: string) => allTokens(explain(src).items).map((t) => t.explanation);
   it('explains patterns after as, reduce and foreach', () => {
     const cases: [string, string][] = [
       [`jq '.[] as [$a,$b] | $a + $b' f`, 'Destructuring pattern `[$a,$b]`: takes the value apart into `$a`, `$b`'],
@@ -1205,7 +1197,7 @@ describe('regex explanations (audit fixes)', () => {
 
 describe('a redirection after a compound command, on its first line', () => {
   const header = (src: string, lang: 'ja' | 'en' = 'en') => explain(src, 0, lang).items[0];
-  const redirect = (src: string, lang: 'ja' | 'en' = 'en') => all([header(src, lang)]).find((t) => t.kind === 'redirect')!;
+  const redirect = (src: string, lang: 'ja' | 'en' = 'en') => allTokens([header(src, lang)]).find((t) => t.kind === 'redirect')!;
 
   it('is a child of the header that applies to the whole loop (while)', () => {
     const src = 'while read -r line; do\n  echo "$line"\ndone < input.txt';
@@ -1217,7 +1209,7 @@ describe('a redirection after a compound command, on its first line', () => {
     assert.match(redirect(src, 'ja').explanation, /^ファイル `input.txt` の内容を標準入力\(fd 0\)として読み込む。ループ全体に付いている: .*`read`/);
     // The line of the redirection itself is explained as before, and a middle line has none.
     assert.strictEqual(explain(src, 2).items.filter((t) => t.kind === 'redirect').length, 1);
-    assert.strictEqual(all(explain(src, 1).items).filter((t) => t.kind === 'redirect').length, 0);
+    assert.strictEqual(allTokens(explain(src, 1).items).filter((t) => t.kind === 'redirect').length, 0);
   });
 
   it('says what an output redirection does to the commands', () => {
@@ -1240,14 +1232,14 @@ describe('a redirection after a compound command, on its first line', () => {
   });
 
   it('keeps every redirection, in source order', () => {
-    const toks = all([header('while read -r l; do\n  :\ndone < in.txt 2> err.log')]).filter((t) => t.kind === 'redirect');
+    const toks = allTokens([header('while read -r l; do\n  :\ndone < in.txt 2> err.log')]).filter((t) => t.kind === 'redirect');
     assert.deepStrictEqual(toks.map((t) => t.label), ['< in.txt', '2> err.log']);
   });
 });
 
 describe('a redirection after another multi-line command', () => {
   it('is said to apply to the whole command', () => {
-    const r = all(explain('((\n  x = 1\n)) > out.txt').items).find((t) => t.kind === 'redirect');
+    const r = allTokens(explain('((\n  x = 1\n)) > out.txt').items).find((t) => t.kind === 'redirect');
     if (r) assert.match(r.explanation, /whole command: /);
     else assert.fail('no redirect token');
   });

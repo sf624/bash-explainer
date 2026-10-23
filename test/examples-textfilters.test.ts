@@ -3,6 +3,7 @@ import { run } from './support/run';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { commandExample, expandSet, FILTERS, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
+import { allTokens } from './support/explain';
 
 /** The real command's output (GNU coreutils, C locale). */
 function real(cmd: string, args: string[], input?: string[]): string[] {
@@ -112,10 +113,9 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
 describe('the explanation of a tr set follows the options as GNU tr reads them', () => {
   // `--delete` is `-d` however it is written; a set is deleted when tr removes its characters.
   const parser = createUnbashParser();
-  const all = (t: Token[]): Token[] => t.flatMap((x) => [x, ...all(x.children)]);
   for (const line of ['tr --delete a', 'tr -d a', 'tr -s a', 'tr a b', 'tr -ds a b']) {
     it(line, () => {
-      const set = all(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.label === 'a')!;
+      const set = allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.label === 'a')!;
       const deleted = real('tr', line.split(' ').slice(1), ['ab']).join('').length < 2;
       assert.strictEqual(/characters to delete/.test(set.explanation), deleted, set.explanation);
     });

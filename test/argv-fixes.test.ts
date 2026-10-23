@@ -4,13 +4,13 @@
 import * as assert from 'assert';
 import { Analyzer, Kind, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { allTokens } from './support/explain';
 
 const parser = createUnbashParser();
-const all = (ts: Token[]): Token[] => ts.flatMap((t) => [t, ...all(t.children)]);
 /** The outermost token of the last occurrence of `word` in `line`. */
 function tokenOf(line: string, word: string): Token {
   const col = line.lastIndexOf(word);
-  const t = all(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((x) => x.span.start.character === col && x.label === word);
+  const t = allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((x) => x.span.start.character === col && x.label === word);
   assert.ok(t, `no token for ${word} in ${line}`);
   return t;
 }
