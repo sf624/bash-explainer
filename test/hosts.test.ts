@@ -685,6 +685,7 @@ describe('one mapping from a program name to a shell (hosts)', () => {
     // busybox starts a shell only as the applet `sh` or `ash` (applets.c, run_applet_and_exit: the first argument is the applet name; `busybox -c` is "applet not found").
     assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["busybox","ash","-c","echo a"]\n'), ['ash']);
     assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["busybox","-c","echo a"]\n'), regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["myshell","-c","echo a"]\n'));
+    assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["busybox"]\n'), regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["myshell"]\n'));
     assert.deepStrictEqual(regionShells2('dockerfile', 'Dockerfile', 'FROM x\nRUN ["myshell","-c","echo a"]\n'), ['bash']);
     // GitHub Actions: `shell: posh {0}` is a POSIX sh; the narrow rule (only bash and sh) stays for the others.
     const gh = (shell: string) => extractShell(hostKind('', 'ci.yml')!, `jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n        shell: ${shell}\n`).regions.map((r) => r.shell);

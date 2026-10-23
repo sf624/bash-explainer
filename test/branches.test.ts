@@ -531,7 +531,7 @@ describe('host files: branches no other test takes', () => {
       'FROM alpine', 'RUN   ', 'RUN ["a", 1]', 'RUN ["a\\n\\tb", "x"]', 'RUN ["echo", "open', 'RUN []',
       'SHELL ["/bin/zsh", "-c"]', 'RUN echo z', 'SHELL ["/bin/ash", "-c"]', 'RUN echo a', 'SHELL ["/bin/busybox", "sh", "-c"]', 'RUN echo b',
       'SHELL ["/bin/dash", "-c"]', 'RUN echo d', 'SHELL ["pipefail"]', 'SHELL /bin/bash',
-      'RUN ["bash", "-c", "echo 1"]', 'RUN ["zsh", "-c", "echo 2"]', 'RUN ["dash", "-c", "echo 3"]', 'RUN ["busybox", "-c", "echo 4"]',
+      'RUN ["bash", "-c", "echo 1"]', 'RUN ["zsh", "-c", "echo 2"]', 'RUN ["dash", "-c", "echo 3"]', 'RUN ["busybox", "sh", "-c", "echo 4"]',
       'RUN ["mksh", "-c", "echo 5"]', 'RUN ["ksh93", "-c", "echo 6"]', 'RUN ["yash", "-c", "echo 7"]', 'RUN ["sh", "-c", "echo 8"]',
       'RUN ["echo", \\',
     ].join('\n'));
