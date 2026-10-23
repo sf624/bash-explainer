@@ -26,15 +26,16 @@ import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
-import { ansiCValue, type MappedText, staticWordValue } from '../staticword';
+import { type MappedText, staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
-import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv, unaryTest } from './conditions';
+import { compareIntegers, patternMatches, testStatus, type TestEnv, unaryTest } from './conditions';
 import { builtinParse, commandName, DECLARATIONS, SET_LETTERS, setOptionWrites, variableWrites, wrapped } from './effects';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, treeFacts, type Trust, withinTrust } from './trust';
 import { alwaysNumeric, ARITH_ASSIGNED, changedByBash, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+import { type ValueSource, wordIn } from './words';
 
 export { ARITH_ASSIGNED, readDeclaration, type Declaration };
 
@@ -530,7 +531,6 @@ function safeRedirect(r: SyntaxNode): boolean {
 }
 
 /** Text as written, without its backslashes (each quotes the character after it; one before a newline goes with it). */
-const unescape = (text: string): string => text.replace(/\\\n/g, '').replace(/\\(.)/gs, '$1');
 
 const INTEGER_TESTS = new Set(['-eq', '-ne', '-lt', '-le', '-gt', '-ge']);
 
@@ -2894,52 +2894,25 @@ class Walker {
   }
 
   /**
-   * The pieces of the word `w` of a condition, when its value is known from `st`: literal text as written
-   * (`raw`: its backslashes still quote), quoted text, and the values of `$name`, `${name}` and `$?`.
+   * The values the words of a condition read from `st` (src/semantics/words.ts evaluates them): a variable through
+   * `variableText` (not one the script has not set, nor one decisions do not trust: see `markAssumed`), `$?`, and `~`
+   * from HOME.
    */
-  private condPieces(w: SyntaxNode | undefined, st: ShellState, quoted = false): { text: string; quoted: boolean; raw: boolean }[] | undefined {
-    if (!w) return undefined;
-    switch (w.type) {
-      case 'word': case 'extglob_pattern': case 'number':
-        // (Quotes and expansions are nodes of their own; text with them left is not followed, nor a tilde, which
-        // expands at the start and after `=` or `:`.)
-        return /[$`'"~]/.test(w.text) ? undefined : [{ text: w.text, quoted, raw: !quoted }];
-      case 'raw_string': return [{ text: w.text.slice(1, -1), quoted: true, raw: false }];
-      case 'ansi_c_string': {
-        const v = ansiCValue(w.text.slice(2, -1));
-        return v === undefined ? undefined : [{ text: v, quoted: true, raw: false }];
-      }
-      case 'string': {
-        const out: { text: string; quoted: boolean; raw: boolean }[] = [{ text: '', quoted: true, raw: false }];
-        for (const c of w.namedChildren) {
-          if (c.type === 'string_content') out.push({ text: c.text.replace(/\\\n/g, '').replace(/\\([$`"\\])/g, '$1'), quoted: true, raw: false });
-          else {
-            const p = c.type === 'simple_expansion' || c.type === 'expansion' ? this.condPieces(c, st, true) : undefined;
-            if (!p) return undefined;
-            out.push(...p);
-          }
-        }
-        return out;
-      }
-      case 'simple_expansion': case 'expansion': {
-        const name = /^\$(?:([A-Za-z_]\w*|\?)|\{([A-Za-z_]\w*|\?)\})$/.exec(w.text);
-        this.assumed = false;
-        const v = !name ? undefined : (name[1] ?? name[2]) === '?' ? this.lastStatus(st) : this.variableText(st, name[1] ?? name[2]);
-        // (Not a name the script has not set: see `variableText`.)
-        return v === undefined || this.assumed ? undefined : [{ text: v ?? '', quoted, raw: false }];
-      }
-      case 'concatenation': {
-        const out: { text: string; quoted: boolean; raw: boolean }[] = [];
-        for (const c of w.namedChildren) {
-          const p = this.condPieces(c, st, quoted);
-          if (!p) return undefined;
-          out.push(...p);
-        }
-        return out;
-      }
-    }
-    // Command substitution, arithmetic, the other parameters and expansions: not known here.
-    return undefined;
+  private values(st: ShellState): ValueSource {
+    const variable = (name: string): string | null | undefined => {
+      if (name === '?') return this.lastStatus(st);
+      if (!NAME.test(name)) return undefined;
+      this.assumed = false;
+      const v = this.variableText(st, name);
+      return this.assumed ? undefined : v;
+    };
+    return {
+      variable,
+      tilde: (user) => {
+        const home = user === '' ? variable('HOME') : undefined;
+        return home ?? undefined;
+      },
+    };
   }
 
   /** `$?` in the statement being run, from `st`; not known in a statement with a substitution, which changes it. */
@@ -2951,54 +2924,20 @@ class Walker {
 
   /** The value of the word `w` in `[[ ]]` or of `case` (not split, not globbed), when known from `st`. */
   private condValue(w: SyntaxNode | undefined, st: ShellState): string | undefined {
-    const pieces = this.condPieces(w, st);
-    return pieces?.map((p) => (p.raw ? unescape(p.text) : p.text)).join('');
+    return w && wordIn(w, st, this.values(st), 'value');
   }
 
   /** The pattern of the word `w` (`[[ x == w ]]`, a `case` pattern), for `patternMatches`, when known from `st`. */
   private condPattern(w: SyntaxNode | undefined, st: ShellState): string | undefined {
-    const pieces = this.condPieces(w, st);
-    // (Literal text keeps its backslashes, and so does the value of an unquoted `$p`: both are patterns.)
-    return pieces && patternText(pieces.map((p) => ({ text: p.text, quoted: p.quoted })));
+    return w && wordIn(w, st, this.values(st), 'pattern');
   }
 
   /**
-   * The words the word `w` of `test` or `[` gives, when known from `st`: an unquoted expansion is split (with the
-   * default IFS only) and may give none; a glob, a brace or a tilde is not followed.
+   * The words the word `w` of `test` or `[` gives, when known from `st`: an unquoted expansion is split (not with an
+   * IFS the script set, or may set where the walk does not see it), and a glob is not followed.
    */
   private condFields(w: SyntaxNode, st: ShellState): string[] | undefined {
-    const pieces = this.condPieces(w, st);
-    if (!pieces) return undefined;
-    const out: string[] = [];
-    let cur = '';
-    let has = false;
-    for (const p of pieces) {
-      if (p.raw) {
-        // (Nor an extended glob, which `shopt -s extglob` makes one: `@(a)`.)
-        if (/(^|[^\\])(\\\\)*[*?[{]/.test(p.text) || /[@!+]\(/.test(p.text)) return undefined;
-        cur += unescape(p.text);
-        has = true;
-      } else if (p.quoted) {
-        cur += p.text;
-        has = true;
-      } else {
-        // (An IFS the script set, or may set where the walk does not see it, is not followed; the value of an
-        // expansion may be a glob.)
-        if (st.variables.get('IFS') || !this.trust.variable('IFS') || /[*?[]/.test(p.text)) return undefined;
-        for (const c of p.text) {
-          if (c !== ' ' && c !== '\t' && c !== '\n') {
-            cur += c;
-            has = true;
-          } else if (has) {
-            out.push(cur);
-            cur = '';
-            has = false;
-          }
-        }
-      }
-    }
-    if (has) out.push(cur);
-    return out;
+    return wordIn(w, st, this.values(st), 'fields', !st.variables.get('IFS') && this.trust.variable('IFS'));
   }
 
   /**

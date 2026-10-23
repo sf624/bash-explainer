@@ -301,39 +301,102 @@ export function wordMeaning(n: SyntaxNode, model: StateModel): WordMeaning | und
   if (!byNode) cache.set(model, (byNode = new WeakMap()));
   const known = byNode.get(found.nodes[0]);
   if (known) return known;
-  const meaning = build(found.nodes, found.context, model);
+  const meaning = build(found.nodes, found.context, model.at(found.nodes[0]).run);
   byNode.set(found.nodes[0], meaning);
   return meaning;
 }
 
-function build(nodes: SyntaxNode[], found: WordContext, model: StateModel): WordMeaning {
-  const st = model.at(nodes[0]).run;
+/** What a word is made of, whatever the state: read once per word (the walk reads its conditions on every pass). */
+interface Shape {
+  expansions: SyntaxNode[];
+  /** The expansions not in double quotes (nor process substitutions), and whether some are in them. */
+  unquoted: SyntaxNode[];
+  someQuoted: boolean;
+  brace: boolean;
+  plain: SyntaxNode[];
+  globWords: SyntaxNode[];
+  quoted: boolean;
+  /** The tilde prefixes, by the context's rule and POSIX mode. */
+  tildes: Map<string, TildePrefix[]>;
+  /** The meanings the walk read (`wordIn`), by the options they were read with (`optionsOf`), with the state of the first. */
+  walked: WeakMap<WordOptions, WordMeaning>;
+  /** The variables the statement may assign before the word is expanded (`unreliableNames`). */
+  unreliable: ReadonlySet<string>;
+}
+
+const shapes = new WeakMap<SyntaxNode, Shape>();
+function shapeOf(nodes: readonly SyntaxNode[]): Shape {
+  let shape = shapes.get(nodes[0]);
+  if (shape) return shape;
+  const expansions = expansionsOf(nodes);
+  const plain = plainWords(nodes);
+  shape = {
+    expansions,
+    unquoted: expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e)),
+    someQuoted: expansions.some(nearestQuote),
+    brace: hasBrace(nodes),
+    plain,
+    globWords: plain.filter((w) => isGlob(w.text)),
+    quoted: nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text)),
+    tildes: new Map(),
+    walked: new WeakMap(),
+    unreliable: unreliableNames(nodes[0]),
+  };
+  shapes.set(nodes[0], shape);
+  return shape;
+}
+
+/** What the meaning of a word reads of its state: POSIX mode, the glob options, the IFS, braceexpand. */
+interface WordOptions { posix: Tri; glob: GlobState; ifs: IfsState; braceOpt: Tri }
+const NONE = {};
+type OptionsCache = WeakMap<object, WeakMap<object, WeakMap<object, WeakMap<object, WordOptions>>>>;
+const stateOptions: OptionsCache = new WeakMap();
+/**
+ * The options of `st` that words read: one object for the states that share them (the same `set` and `shopt` maps,
+ * IFS and GLOBIGNORE), so that the meanings of a word can be kept by it (`Shape.walked`).
+ */
+function optionsOf(st: ShellState): WordOptions {
+  const keys: object[] = [st.set, st.shopt, st.variables.get('IFS') ?? NONE, st.variables.get('GLOBIGNORE') ?? NONE];
+  let m = stateOptions as WeakMap<object, unknown>;
+  for (const k of keys.slice(0, -1)) {
+    let next = m.get(k) as WeakMap<object, unknown> | undefined;
+    if (!next) m.set(k, (next = new WeakMap()));
+    m = next;
+  }
+  let o = m.get(keys[3]) as WordOptions | undefined;
+  if (!o) {
+    const posix = on(option(st, 'set', 'posix'), 'set', 'posix', false);
+    o = { posix, glob: globOf(st, posix === 'on'), ifs: ifsOf(st), braceOpt: on(option(st, 'set', 'braceexpand'), 'set', 'braceexpand', false) };
+    m.set(keys[3], o);
+  }
+  return o;
+}
+
+/** The meaning of a word where it runs; `whole`: also its `value` and `failure` (the walk's conditions need neither). */
+function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, whole = true): WordMeaning {
   // A subscript of an associative array is a key; of an indexed one (or one not known as associative), arithmetic.
   const sub = found === 'subscript-indexed' ? nodes[0].parent! : undefined;
   const context: WordContext = sub && attribute(st, field(sub, 'name')!.text, 'A') === 'on' ? 'subscript-assoc' : found;
-  const posix = on(option(st, 'set', 'posix'), 'set', 'posix', false);
+  const { posix, glob, ifs, braceOpt } = optionsOf(st);
   const rule = CONTEXTS[context];
-  const glob = globOf(st, posix === 'on');
-  const ifs = ifsOf(st);
-  const expansions = expansionsOf(nodes);
-  const tildes = tildesOf(nodes, rule, posix);
+  const shape = shapeOf(nodes);
+  const { expansions, unquoted, someQuoted, globWords } = shape;
+  const key = `${rule.tilde} ${posix}`;
+  let tildes = shape.tildes.get(key);
+  if (!tildes) shape.tildes.set(key, (tildes = tildesOf(nodes, rule, posix)));
   const steps: ExpansionStep[] = [];
-  const brace = rule.brace && hasBrace(nodes);
-  const braceOpt = on(option(st, 'set', 'braceexpand'), 'set', 'braceexpand', false);
-  steps.push(mk({ kind: 'brace', applies: brace && (braceOpt === 'unknown' ? 'unknown' : braceOpt === 'on'), ...(brace && braceOpt !== 'on' ? { why: 'braceexpand-off' as const } : !rule.brace ? { why: 'context' as const } : {}), parts: brace ? plainWords(nodes) : [] }));
+  const brace = rule.brace && shape.brace;
+  steps.push(mk({ kind: 'brace', applies: brace && (braceOpt === 'unknown' ? 'unknown' : braceOpt === 'on'), ...(brace && braceOpt !== 'on' ? { why: 'braceexpand-off' as const } : !rule.brace ? { why: 'context' as const } : {}), parts: brace ? shape.plain : [] }));
   steps.push(mk({ kind: 'tilde', applies: tildes.length > 0, parts: [...new Set(tildes.map((t) => t.node))] }));
   for (const kind of ['parameter', 'command', 'arithmetic', 'process'] as const) {
     const parts = expansions.filter((e) => STEP_OF[e.type] === kind);
     steps.push(mk({ kind, applies: parts.length > 0, parts }));
   }
   const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st };
-  const unquoted = expansions.filter((e) => e.type !== 'process_substitution' && !nearestQuote(e));
-  const someQuoted = expansions.some(nearestQuote);
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
-  const globWords = plainWords(nodes).filter((w) => isGlob(w.text));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
-  const quoted = nodes.some((n) => QUOTES.has(n.type) || descendants(n, [...QUOTES]).length > 0 || /\\/.test(n.text));
-  steps.push(mk({ kind: 'quote-removal', applies: quoted, parts: [] }));
+  steps.push(mk({ kind: 'quote-removal', applies: shape.quoted, parts: [] }));
+  if (!whole) return meaning;
   const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
   if (literal) meaning.value = nodes.map((x) => staticWordValue(x) ?? '').join('');
   const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));
@@ -432,18 +495,26 @@ export interface Fields {
 interface Piece { text: string; quoted: boolean; expanded: boolean }
 class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
 
-class Evaluator {
-  private readonly unbound: Tri;
-  constructor(private readonly w: WordMeaning, private readonly model: StateModel, private readonly env: WordEnv | undefined,
-    private readonly unreliable: ReadonlySet<string>, private readonly expanding: ReadonlySet<SyntaxNode>) {
-    this.unbound = on(option(w.state, 'set', 'nounset'), 'set', 'nounset', false);
-  }
+/**
+ * Where the evaluator of a word reads values: the finished model (`ModelValues`, for `wordFields`), or the walk of
+ * the state as it runs (src/semantics/state.ts, for its conditions).
+ */
+export interface ValueSource {
+  /** The value of the parameter `name` (a variable, or a special parameter such as `?`): a string, null when unset, undefined when not known here. */
+  variable(name: string, node: SyntaxNode): string | null | undefined;
+  /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known. */
+  tilde(user: string, w: WordMeaning): string | undefined;
+}
 
-  /** The value of variable `name`: a string, null when unset, undefined when not known here. */
+/** The values of the model where the word runs, with the environment `env` for what the script does not set. */
+class ModelValues implements ValueSource {
+  constructor(private readonly w: WordMeaning, private readonly model: StateModel, private readonly env: WordEnv | undefined,
+    private readonly expanding: ReadonlySet<SyntaxNode>) {}
+
   variable(name: string, node: SyntaxNode): string | null | undefined {
     if (name === '_') return underscoreValue(node, this.model);
     // (Bash changes some values itself: `RANDOM`, `SECONDS`, a readonly `UID`; src/semantics/vars.ts.)
-    if (!/^[A-Za-z_]\w*$/.test(name) || this.unreliable.has(name) || changedByBash(name)) return undefined;
+    if (!/^[A-Za-z_]\w*$/.test(name) || changedByBash(name)) return undefined;
     const st = this.w.state;
     const v = st.variables.get(name);
     if (!v) {
@@ -460,6 +531,31 @@ class Evaluator {
       return sourceValue(v.source, this.model, this.env, this.expanding);
     }
     return v.value;
+  }
+
+  /** `~+` and `~-` not after a `cd` anywhere. */
+  tilde(user: string): string | undefined {
+    const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
+    if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0]))) return undefined;
+    if (name === 'PWD') return this.env?.pwd;
+    const v = this.w.state.variables.get(name);
+    if (v) return v.set === 'on' ? v.value : undefined;
+    return this.env?.variables?.[name];
+  }
+}
+
+/** What a word gives, read from its nodes with the values of a `ValueSource`. */
+class Evaluator {
+  private readonly unbound: Tri;
+  private readonly unreliable: ReadonlySet<string>;
+  constructor(private readonly w: WordMeaning, private readonly source: ValueSource) {
+    this.unbound = on(option(w.state, 'set', 'nounset'), 'set', 'nounset', false);
+    this.unreliable = shapeOf(w.nodes).unreliable;
+  }
+
+  /** The value of the parameter `name`: a string, null when unset, undefined when not known here. */
+  variable(name: string, node: SyntaxNode): string | null | undefined {
+    return this.unreliable.has(name) ? undefined : this.source.variable(name, node);
   }
 
   /** The value of `$name` in an operand of `${…}`: empty when unset (an error under `set -u`), undefined when not known. */
@@ -622,14 +718,9 @@ class Evaluator {
     return this.unbound === 'unknown' ? undefined : out('');
   }
 
-  /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known (`~+` and `~-` not after a `cd` anywhere). */
+  /** What the tilde prefix `~user` becomes (`~`, `~+`, `~-`), when it is known. */
   tilde(user: string): string | undefined {
-    const name = user === '' ? 'HOME' : user === '+' ? 'PWD' : user === '-' ? 'OLDPWD' : undefined;
-    if (!name || (name !== 'HOME' && changesDirectory(this.w.nodes[0]))) return undefined;
-    if (name === 'PWD') return this.env?.pwd;
-    const v = this.w.state.variables.get(name);
-    if (v) return v.set === 'on' ? v.value : undefined;
-    return this.env?.variables?.[name];
+    return this.source.tilde(user, this.w);
   }
 }
 
@@ -824,21 +915,15 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
   const w = wordMeaning(n, model);
   if (!w) return {};
   const unknown: Fields = w.failure ? { failure: w.failure } : {};
-  const ev = new Evaluator(w, model, env, unreliableNames(w.nodes[0]), expanding);
+  const ev = new Evaluator(w, new ModelValues(w, model, env, expanding));
   try {
-    const alternatives = braceAlternatives(w);
-    if (!alternatives) return unknown;
+    const split = splitFields(w, ev);
+    if (!split) return unknown;
     const fields: string[] = [];
-    for (const nodes of alternatives) {
-      const pieces = piecesOf(w, nodes, ev);
-      if (!pieces) return unknown;
-      const split = splitPieces(w, pieces);
-      if (!split) return unknown;
-      for (const f of split) {
-        const g = globField(w, f, env);
-        if (!g) return unknown;
-        fields.push(...g);
-      }
+    for (const f of split) {
+      const g = globField(w, f, env);
+      if (!g) return unknown;
+      fields.push(...g);
     }
     if (w.rule.fields === 'one-or-error' && fields.length !== 1) return { error: 'ambiguous-redirect', failure: { kind: 'command', applies: true } };
     return { fields };
@@ -848,6 +933,67 @@ function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, ex
     if (!(e instanceof Failure)) throw e;
     return { error: e.error, failure: { kind: 'fatal', applies: true } };
   }
+}
+
+/** The fields of the word before pathname expansion (brace expansion, the expansions, word splitting); throws a `Failure`. */
+function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
+  const alternatives = braceAlternatives(w);
+  if (!alternatives) return undefined;
+  const out: Char[][] = [];
+  for (const nodes of alternatives) {
+    const pieces = piecesOf(w, nodes, ev);
+    if (!pieces) return undefined;
+    const split = splitPieces(w, pieces);
+    if (!split) return undefined;
+    out.push(...split);
+  }
+  return out;
+}
+
+/**
+ * The word that holds `n` as the walk of the state reads it in a condition (src/semantics/state.ts), from the state `st`
+ * and the values of `source`: its fields (`[ ]`, `test`, a command name; with no file to match a glob against, and
+ * `ifs: false` when the IFS is not to be followed), its one field (`[[ ]]`, `case`), or its pattern (`[[ == ]]`, a
+ * `case` pattern: quoted characters escaped). Undefined when it is not known, or bash fails on it.
+ */
+export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields', ifs: boolean): string[] | undefined;
+export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'value' | 'pattern'): string | undefined;
+export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields' | 'value' | 'pattern', ifs = true): string[] | string | undefined {
+  const found = wordOf(n);
+  /* c8 ignore next -- a guard: the walk reads only words of a command, of `[[ ]]` and of `case` */
+  if (!found) return undefined;
+  // (The same word is read in many states, most of them with the same options: only the state is new.)
+  const walked = shapeOf(found.nodes).walked;
+  const key = optionsOf(st);
+  let seen = walked.get(key);
+  if (!seen) walked.set(key, (seen = build(found.nodes, found.context, st, false)));
+  const w: WordMeaning = { ...seen, state: st };
+  if (!ifs) w.ifs = { kind: 'unknown', at: found.nodes[0] };
+  try {
+    const split = splitFields(w, new Evaluator(w, source));
+    if (!split) return undefined;
+    if (as !== 'fields') {
+      // (One field: `[[ ]]` and `case` neither split nor drop an empty word.)
+      const f = split[0];
+      return as === 'value' ? f.map((c) => c.c).join('') : patternOfChars(f);
+    }
+    const fields: string[] = [];
+    for (const f of split) {
+      const g = globField(w, f, undefined);
+      if (!g) return undefined;
+      fields.push(...g);
+    }
+    return fields;
+  } catch (e) {
+    /* c8 ignore next -- a rethrow guard, as in fieldsAt */
+    if (!(e instanceof Failure)) throw e;
+    return undefined;
+  }
+}
+
+/** A field as a pattern for globToRegex: quoted characters escaped. */
+function patternOfChars(f: readonly Char[]): string {
+  return f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
 }
 
 /** The word, or after brace expansion each word it gives (as text: only a word of plain text is expanded here). */
@@ -954,7 +1100,7 @@ function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[
   const text = f.map((c) => c.c).join('');
   const step = w.steps.find((s) => s.kind === 'glob')!;
   if (step.applies === false && step.why !== 'noglob') return [text];
-  const pattern = f.map((c) => (c.quoted && /[\\*?[\]()|!@+]/.test(c.c) ? `\\${c.c}` : c.c)).join('');
+  const pattern = patternOfChars(f);
   if (!isGlob(pattern)) return [text];
   if (step.applies === false) return [text];
   const g = w.glob;
