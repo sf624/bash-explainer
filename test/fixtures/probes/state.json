@@ -3791,5 +3791,151 @@
       "status": 0,
       "stderr": "SCRIPT: line 1: unset: x: cannot unset: readonly variable"
     }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x=1 declare a=(1 2); >/dev/null declare b=(3 4); { time typeset c=(5); } 2>/dev/null; ! declare d=(6); readonly -a e=(7 8)",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          },
+          "b": {
+            "attrs": "a",
+            "value": "([0]=\"3\" [1]=\"4\")"
+          },
+          "c": {
+            "attrs": "a",
+            "value": "([0]=\"5\")"
+          },
+          "d": {
+            "attrs": "a",
+            "value": "([0]=\"6\")"
+          },
+          "e": {
+            "attrs": "ar",
+            "value": "([0]=\"7\" [1]=\"8\")"
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "v='p  q'; declare a=$v; x=1 declare b=$v; >/dev/null export c=$v; \\declare g=$v; command declare h=$v; builtin declare i=$v",
+    "facts": {
+      "end": {
+        "variables": {
+          "a": {
+            "attrs": "-",
+            "value": "\"p  q\""
+          },
+          "b": {
+            "attrs": "-",
+            "value": "\"p  q\""
+          },
+          "c": {
+            "attrs": "x",
+            "value": "\"p  q\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"p\""
+          },
+          "h": {
+            "attrs": "-",
+            "value": "\"p\""
+          },
+          "i": {
+            "attrs": "-",
+            "value": "\"p\""
+          },
+          "q": {
+            "attrs": "-"
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"p  q\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.3",
+    "snippet": "declare() { :; }; v='p  q'; declare a=$v; export() { :; }; export b=(1 2)",
+    "facts": {
+      "end": {
+        "variables": {
+          "b": {
+            "attrs": "a",
+            "value": "([0]=\"1\" [1]=\"2\")"
+          },
+          "v": {
+            "attrs": "-",
+            "value": "\"p  q\""
+          }
+        },
+        "functions": {
+          "declare": "f",
+          "export": "f"
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.variables.b": "bash makes the array of a word `b=(…)` it passes to a function named like a declaration builtin (as for `alias b=(1 2)`): the model does not follow it"
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "r=1; export r; export -n s=r r",
+    "facts": {
+      "end": {
+        "variables": {
+          "r": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "s": {
+            "attrs": "-",
+            "value": "\"r\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "shopt -s expand_aliases; v='p  q'; alias a=$v b=~/x:~/y; \\alias c=$v 2>/dev/null",
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"p  q\""
+          }
+        },
+        "aliases": {
+          "a": "p  q",
+          "b": "/home/probe/x:/home/probe/y",
+          "c": "p"
+        }
+      },
+      "status": 0
+    },
+    "gaps": {
+      "end.aliases.a": "the model keeps the text of an alias's definition, not its expansion",
+      "end.aliases.b": "the model keeps the text of an alias's definition, not its expansion",
+      "end.aliases.c": "the model keeps the text of an alias's definition, not its expansion (`\\alias c=$v` defines `c` as `p`, and fails on `q`)"
+    }
   }
 ]

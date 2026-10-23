@@ -186,12 +186,14 @@ describe('unbash adapter: tokens and comments', () => {
     assert.deepEqual(toks(t.namedChildren[2]), ['elif@14', ';@20', 'then@22', ';@28']);
     assert.deepEqual(toks(t.namedChildren[3]), ['else@30', ';@36']);
   });
-  it('the keyword of a declaration ends before a line continuation after it (`declare\\<newline> x`)', () => {
-    for (const text of ['declare\\\n  x', 'local\\\n\\\n x=1']) {
+  it('a command name ends before a line continuation after it (`declare\\<newline> x`)', () => {
+    for (const text of ['declare\\\n  x', 'local\\\n\\\n x=1', 'echo\\\n']) {
       const d = first(text);
-      assert.deepEqual(toks(d), [`${text.split('\\')[0]}@0`], text);
+      assert.deepEqual(field(d, 'name')!.text, text.split('\\')[0], text);
       assert.deepEqual(soundness(tree(text)), [], text);
     }
+    // (After it, `x=1` is still an assignment of `local`.)
+    assert.equal(first('local\\\n\\\n x=1').namedChildren[1].type, 'variable_assignment');
   });
   it('a keyword in a comment is not a token', () => {
     const text = 'if true; # then\nthen :; fi';
@@ -717,17 +719,24 @@ describe('unbash adapter: words, assignments and redirections', () => {
       + '(variable_assignment (variable_name @name "b") "=" (array @value "(" ")"))))');
   });
   it('has declarations, unset, and assignment-like words of other commands', () => {
+    // A declaration is a plain command; after a first word written as a declaration builtin, an assignment is one.
     assert.equal(o('declare -a x=(1 2) y; local -r q=1 r; readonly z; export A=b'),
-      '(program (declaration_command "declare" (word "-a") (variable_assignment (variable_name @name "x") "=" (array @value "(" (number "1") (number "2") ")")) (variable_name "y")) ";" '
-      + '(declaration_command "local" (word "-r") (variable_assignment (variable_name @name "q") "=" (number @value "1")) (variable_name "r")) ";" '
-      + '(declaration_command "readonly" (variable_name "z")) ";" (declaration_command "export" (variable_assignment (variable_name @name "A") "=" (word @value "b"))))');
+      '(program (command (command_name @name (word "declare")) (word @argument "-a") (variable_assignment @argument (variable_name @name "x") "=" (array @value "(" (number "1") (number "2") ")")) (word @argument "y")) ";" '
+      + '(command (command_name @name (word "local")) (word @argument "-r") (variable_assignment @argument (variable_name @name "q") "=" (number @value "1")) (word @argument "r")) ";" '
+      + '(command (command_name @name (word "readonly")) (word @argument "z")) ";" (command (command_name @name (word "export")) (variable_assignment @argument (variable_name @name "A") "=" (word @value "b"))))');
+    // (After prefix assignments and redirections too; not when the name is quoted or escaped: bash then rejects `a=(…)`.)
+    assert.equal(o('x=1 declare g=(1)'), '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) (command_name @name (word "declare")) '
+      + '(variable_assignment @argument (variable_name @name "g") "=" (array @value "(" (number "1") ")"))))');
+    assert.equal(o('>o typeset g=$v').includes('(variable_assignment @argument'), true);
+    assert.equal(o('\\declare g=$v'), '(program (command (command_name @name (word "\\\\declare")) (concatenation @argument (word "g=") (simple_expansion "$" (variable_name "v")))))');
+    assert.equal(o('command declare g=$v').includes('variable_assignment'), false);
     // `unset` is a plain command: what its words mean comes from its spec and the model, not from the tree.
     assert.equal(o('unset -f f a[1]'), '(program (command (command_name @name (word "unset")) (word @argument "-f") (word @argument "f") (word @argument "a[1]")))');
     assert.equal(o('alias ll="ls -l"'),
       '(program (command (command_name @name (word "alias")) (concatenation @argument (word "ll=") (string "\\"" (string_content "ls -l") "\\""))))');
     assert.equal(o('make CC=gcc'), '(program (command (command_name @name (word "make")) (word @argument "CC=gcc")))');
     assert.equal(o('alias x= y'), '(program (command (command_name @name (word "alias")) (word @argument "x=") (word @argument "y")))');
-    assert.equal(o('export A=b >f').startsWith('(program (redirected_statement (declaration_command'), true);
+    assert.equal(o('export A=b >f').startsWith('(program (redirected_statement (command'), true);
     assert.equal(o('unset x 2>f').startsWith('(program (redirected_statement (command'), true);
     assert.equal(first('declare -p >f 2>&1').type, 'redirected_statement');
     assert.equal(o('x=1 unset y').startsWith('(program (command (variable_assignment'), true);
@@ -848,7 +857,7 @@ describe('unbash adapter: more shapes', () => {
     assert.equal(o('unset >f x').includes('(file_redirect'), true);
   });
   it('a bare declare, unset or [', () => {
-    assert.equal(o('declare'), '(program (declaration_command "declare"))');
+    assert.equal(o('declare'), '(program (command (command_name @name (word "declare"))))');
     assert.equal(o('unset'), '(program (command (command_name @name (word "unset"))))');
     assert.equal(first('[').incomplete, false);
     assert.equal(first('[').type, 'command');

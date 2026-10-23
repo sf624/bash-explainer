@@ -58,7 +58,7 @@ export interface ExecEnv { readonly links: readonly EnvLink[] }
 export const MAIN_SHELL: ExecEnv = { links: [] };
 
 /** Statements: what a list of commands is made of. */
-export const STATEMENTS = new Set(['command', 'declaration_command', 'variable_assignment', 'variable_assignments', 'negated_command',
+export const STATEMENTS = new Set(['command', 'variable_assignment', 'variable_assignments', 'negated_command',
   'redirected_statement', 'pipeline', 'list', 'time_statement', 'coproc_statement', 'compound_statement', 'subshell', 'if_statement', 'case_statement',
   'for_statement', 'select_statement', 'c_style_for_statement', 'while_statement', 'function_definition', 'arithmetic_command', 'extended_test']);
 

@@ -149,7 +149,7 @@ class Run {
         return 0;
       }
       case 'function_definition': return 0;
-      case 'variable_assignment': case 'variable_assignments': case 'declaration_command': {
+      case 'variable_assignment': case 'variable_assignments': {
         this.expansionError(n);
         const s = this.substitutions(n) ?? 0;
         return rule.kind === 'last-substitution' ? s : 0;
@@ -197,6 +197,8 @@ class Run {
         if (testSpecAt(this.state, n)?.closingOperand) words.pop();
         return this.test(n, words);
       }
+      // (`local x=$(false)`: the declaration's own status.)
+      case 'masked': return 0;
       case 'arith': {
         const v = evalArith(args[args.length - 1].text.replace(/^[A-Za-z_]\w*=/, ''));
         if (v === undefined) throw new Unknown(n.text);
@@ -218,6 +220,7 @@ class Run {
     switch (name) {
       case '__probe': this.ran.push(args[0].text); return 0;
       case 'true': case ':': case 'echo': case 'shopt': case 'set': case 'export': case 'cat': case 'enable': return 0;
+      case 'declare': case 'local': case 'readonly': case 'typeset': return 0;
       case 'false': return 1;
       case 'cd': return Number(!FILES.includes(`${this.value(args[0]).replace(/^\.\//, '')}/`));
       case 'nope_not_a_command': return 127;

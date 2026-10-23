@@ -37,7 +37,7 @@ import { staticWordValue, substitutionNames } from '../staticword';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
-import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
+import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, type Declaration } from './vars';
 
 export interface Trust {
   /** Why nothing is trusted (no decision at all), when so. */
@@ -204,7 +204,7 @@ class Scan {
   /** The statement that runs `n`: of the script, or of a string it runs (the walk runs the same tree, `StringTrees`). */
   private owner(n: SyntaxNode): SyntaxNode | undefined {
     // (An assignment in a command is run with it.)
-    for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type) && !(x.type === 'variable_assignment' && ['command', 'variable_assignments', 'declaration_command'].includes(x.parent!.type))) return x;
+    for (let x: SyntaxNode | null = n; x; x = x.parent) if (STATEMENTS.has(x.type) && !(x.type === 'variable_assignment' && ['command', 'variable_assignments'].includes(x.parent!.type))) return x;
     /* c8 ignore next -- every word is in a statement */
     return undefined;
   }
@@ -356,10 +356,7 @@ class Scan {
       }
       case 'variable_assignment':
         // (Those of a declaration are read with it.)
-        if (n.parent?.type !== 'declaration_command') this.assignment(n, w, true);
-        break;
-      case 'declaration_command':
-        this.declaration(n.children[0].type, n.namedChildren.filter((c) => !c.type.endsWith('redirect')), readDeclaration(n), w);
+        if (n.field !== 'argument') this.assignment(n, w, true);
         break;
       case 'command':
         this.command(n, w);
@@ -412,7 +409,7 @@ class Scan {
       // (`declare -f f` prints it; `export -f`, `declare -fx` export it, and a name not known may be any.)
       if ((builtin !== 'export' || on.includes('n')) && !on.includes('x')) return;
       for (const o of operands) {
-        const name = o.type === 'variable_name' ? o.text : staticWordValue(o);
+        const name = staticWordValue(o);
         if (name === undefined) this.exportAll = true;
         else this.exported.add(name);
       }
@@ -441,8 +438,9 @@ class Scan {
         }
         this.assignment(o, w, plain, on.includes('A'));
       } else {
-        // A word: `x`, `'x=1'`, `"$v"=1` (a name with a value not known), `$v` (a name not known).
-        const text = o.type === 'variable_name' || o.type === 'subscript' ? o.text : staticWordValue(o);
+        // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
+        // not known), `$v` (a name not known).
+        const text = staticWordValue(o) ?? (o.type === 'word' ? o.text : undefined);
         const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o).replace(/=.*/s, '='));
         if (!m || (text === undefined && !m[3])) {
           // (`local -`: the options, not a variable.)

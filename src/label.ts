@@ -145,7 +145,6 @@ export function redirectParts(r: SyntaxNode): LabelPart[] {
 function stage(n: SyntaxNode): LabelPart[] {
   switch (n.type) {
     case 'command': return writtenAsBracket(n) ? bracket(n) : [code(flat(field(n, 'name')!.text))];
-    case 'declaration_command': return [code(n.children[0].type)];
     // The redirections of a stage are left to its own explanation.
     // (A redirection with nothing to redirect, `a | >f`, is only the redirection.)
     case 'redirected_statement': return field(n, 'body') ? stage(field(n, 'body')!) : skeleton(n);
@@ -193,7 +192,7 @@ export function skeleton(n: SyntaxNode): LabelPart[] {
       const body = field(n, 'body');
       return [...(body ? skeleton(body) : []), ...n.namedChildren.filter((c) => c !== body && c.children.length).flatMap(redirectParts)];
     }
-    case 'command': case 'declaration_command': {
+    case 'command': {
       if (writtenAsBracket(n)) return bracket(n);
       // `>f echo x`: the redirections inside the node are the command's own.
       const redirs = n.children.filter((c) => c.type.endsWith('redirect'));

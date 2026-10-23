@@ -5,7 +5,7 @@ import { args, commandName, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import type { StateModel } from './semantics/state';
 import { partMeaning } from './semantics/words';
-import { field } from './syntax/tree';
+import { field, prefixAssignments } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -57,7 +57,7 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         const name = commandName(n);
         const a = args(n);
         // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value.
-        const prefix = n.namedChildren.filter((c) => c.type === 'variable_assignment').map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
+        const prefix = prefixAssignments(n).map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
           if (name && use) {

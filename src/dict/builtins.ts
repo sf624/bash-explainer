@@ -1,5 +1,5 @@
 import { Text, tx } from '../i18n';
-import type { BuiltinCall, CommandSpec, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
+import type { BuiltinCall, CommandSpec, NameOptions, OperandSpec, OptionSpec, PatternOption, ValueSpec, ValueType, VariableSet } from '../argv/spec';
 import { args, cmd, operand, optionOf, OptSpec, runs } from './types';
 import { declarationCommands, declarationFlags, declarationOffFlags, exportFlags, readonlyFlags } from './syntax';
 
@@ -96,11 +96,19 @@ const special = (ja: string, en: string, opts: (OptSpec | OptionSpec)[] = [], re
  */
 const numeric = (o: OperandSpec): Rest => ({ parser: 'letters', ...args(o) });
 
-/** The declaration builtins, for the times they are a plain command (`LC_ALL=C export X`); alone they are explained by `declaration`. */
-function declarationSpec(name: string, flags: Record<string, Text>, rest: Rest = {}, off: Record<string, Text> = {}): CommandSpec {
+/** `export -f`, `readonly -f`: functions. */
+const FUNCTION_NAMES: NameOptions['options'] = [['-f', 'function']];
+/** `declare -f` (and `-F`, `local -f`): functions; `-n`: the name reference itself. */
+const DECLARE_NAMES: NameOptions['options'] = [['-f', 'function'], ['-F', 'function'], ['-n', 'nameref']];
+
+/**
+ * A declaration builtin. Its operands name what it declares (`acts`): functions with `-f` (and `-F`), the name
+ * reference itself with `-n` for those that have it (`export -n` unexports instead).
+ */
+function declarationSpec(name: string, flags: Record<string, Text>, options: NameOptions['options'], rest: Rest = {}, off: Record<string, Text> = {}): CommandSpec {
   const t = declarationCommands[name];
   return b(t.ja, t.en, Object.entries(flags).map(([flag, text]) => ({ names: [flag], text, ...(off[flag] ? { offText: off[flag] } : {}) })), {
-    ...args(operand('NAME', '変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)')),
+    ...args(operand('NAME', '変数名（`名前=値` も可。`-f` なら関数名）', 'variable name (`name=value` too; function names with `-f`)', { type: 'variable', acts: 'declares', names: { options } })),
     ...rest,
   });
 }
@@ -220,12 +228,12 @@ const GLOB_AGAIN = tx('グロブ（ワイルドカード展開）を再び有効
 export const BASH_ONLY_BUILTINS: ReadonlySet<string> = new Set(['shopt', 'mapfile', 'readarray']);
 
 export const builtins: Record<string, CommandSpec> = {
-  export: actsOnShell(declarationSpec('export', exportFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
-  readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
+  export: actsOnShell(declarationSpec('export', exportFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
+  readonly: actsOnShell(declarationSpec('readonly', readonlyFlags, FUNCTION_NAMES, { builtin: 'special' }), (c) => c.operands.length > 0 && !has(c, '-p')),
   // `declare +x`: a `+` turns the attribute off.
-  declare: actsOnShell(declarationSpec('declare', declarationFlags, { plusOptions: true }, declarationOffFlags), declares),
-  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, { plusOptions: true }, declarationOffFlags), declares),
-  local: actsOnShell(declarationSpec('local', declarationFlags, { plusOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
+  declare: actsOnShell(declarationSpec('declare', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
+  typeset: actsOnShell(declarationSpec('typeset', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), declares),
+  local: actsOnShell(declarationSpec('local', declarationFlags, DECLARE_NAMES, { plusOptions: true }, declarationOffFlags), (c) => c.operands.length > 0),
   // `echo` knows only `-n`, `-e` and `-E`, alone or joined; any other word, `--` too, is text to print.
   // The last of `-e` and `-E` decides whether backslash escapes are read.
   echo: b('引数を空白区切りで標準出力に表示する', 'Print arguments to stdout, separated by spaces', ECHO_OPTIONS, { program: PROGRAMS.echo, ...ECHO_READING }),
@@ -500,7 +508,9 @@ export const builtins: Record<string, CommandSpec> = {
     ['-v', '変数を削除', 'unset variables'],
     ['-f', '関数を削除', 'unset functions'],
     ['-n', '名前参照（`declare -n`）そのものを削除する（参照先の変数は残る）', 'unset the name reference itself, not the variable it points to'],
-  ], args(operand('NAME', '削除する名前', 'name to unset', { unsets: true })))),
+  ], args(operand('NAME', '削除する名前', 'name to unset', {
+    type: 'variable', acts: 'unsets', names: { options: [['-f', 'function'], ['-n', 'nameref'], ['-v', 'variable']], orFunction: true, exclusive: ['-f', '-v'] },
+  })))),
   enable: actsOnShell(b('ビルトインを有効・無効にする', 'Enable or disable builtins', [
     ['-n', 'ビルトインを無効にする（同名の外部コマンドが使われる）', 'disable the builtin (an external command of that name runs)'],
     ['-a', 'すべてのビルトインを対象にする', 'act on all builtins'],

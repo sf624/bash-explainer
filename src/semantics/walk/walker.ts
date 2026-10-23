@@ -6,7 +6,7 @@ import type { ArgvParse } from '../../argv/interpret';
 import type { Shell } from '../../dialect';
 import { builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
+import { descendants, field, fields, prefixAssignments, type SyntaxNode } from '../../syntax/tree';
 import { commandName, SET_LETTERS, wrapped } from '../effects';
 import { type ExecEnv, lastStageInShell, reachOf, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
@@ -16,7 +16,7 @@ import {
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
-import { alwaysNumeric, changedByBash, INTEGERS_AT_START, readDeclaration } from '../vars';
+import { alwaysNumeric, changedByBash, INTEGERS_AT_START } from '../vars';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
@@ -27,7 +27,7 @@ import { ArithError, ExpansionError, NAME, SUBSTITUTIONS, WalkAgain } from './sh
 /** The shells that start in POSIX mode (for what the model follows: assignments before special builtins). */
 const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']);
 /** The simple commands: they expand their words before their redirections. */
-const SIMPLE = ['command', 'declaration_command', 'variable_assignment', 'variable_assignments'];
+const SIMPLE = ['command', 'variable_assignment', 'variable_assignments'];
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
 const ARITH_HOSTS = ['arithmetic_expansion', 'arithmetic_command', 'c_style_for_statement'];
 /** The change (see `Walker.put`) of a path that ran what the walk does not read (`Walker.opaque`). */
@@ -711,13 +711,6 @@ export class Walker {
   private runStatement(n: SyntaxNode, st: ShellState): ShellState {
     switch (n.type) {
       case 'command': return this.command(n, st);
-      case 'declaration_command': {
-        // Its words are expanded, then its redirections are made, then it runs.
-        this.substitutions(n, st);
-        st = this.redirections(n, this.defaults(n, st), 'off');
-        const words = n.namedChildren.filter((c) => !c.type.endsWith('redirect'));
-        return this.orFunction(n.children[0].type, st, (s) => this.builtins.declare(n.children[0].type, words, readDeclaration(n), n, s));
-      }
       case 'variable_assignment':
         this.substitutions(n, st);
         return this.builtins.assignNode(n, this.defaults(n, st), true);
@@ -885,7 +878,7 @@ export class Walker {
     const visit = (x: SyntaxNode): void => {
       for (const c of x.children) {
         if (SUBSTITUTIONS.includes(c.type)) sub(c);
-        else if (!STATEMENTS.has(c.type) || c.parent?.type === 'command' || c.parent?.type === 'declaration_command' || c.parent?.type === 'variable_assignments') visit(c);
+        else if (!STATEMENTS.has(c.type) || c.parent?.type === 'command' || c.parent?.type === 'variable_assignments') visit(c);
       }
     };
     if (SUBSTITUTIONS.includes(n.type)) sub(n);
@@ -902,7 +895,7 @@ export class Walker {
   private defaults(n: SyntaxNode, st: ShellState, program: Tri = 'off'): ShellState {
     let found = descendants(n, ['expansion', 'arithmetic_expansion']);
     // An assignment expands its value before its subscript (`a[$(( i++ ))]=$(( j = i ))` gives j=0; not with `declare`).
-    const value = n.type === 'variable_assignment' ? field(n, 'value') : undefined;
+    const value = n.type === 'variable_assignment' && n.field !== 'argument' ? field(n, 'value') : undefined;
     if (value) {
       const inValue = (e: SyntaxNode): boolean => e.startIndex >= value.startIndex && e.endIndex <= value.endIndex;
       found = [...found.filter(inValue), ...found.filter((e) => !inValue(e))];
@@ -1404,7 +1397,7 @@ export class Walker {
     this.substitutions(n, st);
     const name = commandName(n);
     const nameNode = field(n, 'name')!;
-    const assignments = n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < nameNode.startIndex);
+    const assignments = prefixAssignments(n);
     // With no command name, the assignments are the shell's, made before the redirections; their status is that of
     // the last command substitution. (A quoted empty name is a command: `x=1 ''` is "command not found".)
     const word = nameNode.namedChildren[0];
@@ -1429,26 +1422,18 @@ export class Walker {
     if (special) {
       let kept = st;
       // (`x=1 unset x` removes the temporary `x`, which then does not stay.)
-      const unset = name === 'unset' ? temporariesUnset(fields(n, 'argument'), n) : undefined;
-      for (const a of assignments.filter((a) => temporary(a) && !unset?.has(field(a, 'name')!.text))) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
+      const unset = temporariesUnset(name!, fields(n, 'argument'), n);
+      for (const a of assignments.filter((a) => temporary(a) && !unset.has(field(a, 'name')!.text))) kept = this.builtins.giveAttribute(this.builtins.assignNode(a, kept), field(a, 'name')!.text, 'x', a);
       st = posix === 'on' ? kept : merge([this.builtins.appendArith(assignments, n, st), kept], this.posix);
     }
     if (name === undefined) return withStatus(st, this.conditions.simpleStatus(n, before));
     const fn = this.functionCalled(name, st);
-    if (fn) return withStatus(this.call(fn, st, assignments), undefined);
+    const called = fn && withStatus(this.call(fn, st, assignments), undefined);
+    if (called && fn.state === 'on') return called;
     if (!special) st = this.builtins.appendArith(assignments, n, st);
-    return withStatus(this.builtins.builtin(name, fields(n, 'argument'), n, st, true), this.conditions.simpleStatus(n, before));
-  }
-
-  /**
-   * A function named like the builtin `name` (`export() { …; }; export x`) runs instead of it, unless POSIX mode
-   * finds the special builtin first; `builtin` runs the builtin.
-   */
-  private orFunction(name: string, st: ShellState, builtin: (st: ShellState) => ShellState): ShellState {
-    const fn = this.functionCalled(name, st);
-    if (!fn) return builtin(st);
-    const called = this.call(fn, st, []);
-    return fn.state === 'on' ? called : merge([called, builtin(st)], this.posix);
+    const ran = withStatus(this.builtins.builtin(name, fields(n, 'argument'), n, st, true), this.conditions.simpleStatus(n, before));
+    // (A function defined on some paths only: on the others, the builtin or the program runs.)
+    return called ? merge([called, ran], this.posix) : ran;
   }
 
   /** The function a command named `name` calls in `st`: none when POSIX mode finds a special builtin of that name first. */
@@ -1502,8 +1487,7 @@ export class Walker {
    */
   evalScript(script: NestedScript, n: SyntaxNode, st: ShellState): ShellState {
     // (`n` is the command that runs eval: `eval s`, `builtin eval s`.)
-    const name = field(n, 'name')!;
-    const temps = n.namedChildren.filter((c) => c.type === 'variable_assignment' && c.startIndex < name.startIndex);
+    const temps = prefixAssignments(n);
     if (!temps.length || option(st, 'set', 'posix') === 'on') return this.runScript(script, n, st);
     const saved = new Map<string, VariableState | undefined>();
     let entry = st;
