@@ -64,5 +64,11 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       assert.strictEqual(bash(`x=1; ${src}; echo $x`).trim(), '5', src);
       assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 1 ] && :`), undefined, src);
     }
+    // An unset gives them no text: nothing is run (text not known still is: `OPTIND=$y`).
+    for (const src of ['unset OPTIND', 'unset RANDOM', 'declare -i n; unset n']) {
+      assert.strictEqual(bash(`x=1; ${src}; echo $x`).trim(), '1', src);
+      assert.strictEqual(decided(`x=1; ${src}; [ "$x" = 1 ] && :`), 'true', src);
+    }
+    assert.strictEqual(decided('x=1; OPTIND="$y"; [ "$x" = 1 ] && :'), undefined);
   });
 });
