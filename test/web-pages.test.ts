@@ -228,4 +228,22 @@ describe('the web page: release, development and preview pages, the panel view a
     assert.strictEqual(await p2.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
     await wide.close();
   });
+
+  it('lists the problems of the script on the compare page, without a page error', async () => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(`${base}pr/123/compare.html`);
+    await page.locator('.cm-line').first().waitFor();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('#!/bin/sh\n[[ -f a ]] && echo ok');
+    const items = await until('the problems', () => page.locator('#problem-list li').count(), (n) => n > 0, 15000);
+    assert.ok(items > 0);
+    assert.strictEqual(await page.locator('#problems').isVisible(), true);
+    assert.strictEqual(await page.locator('#problems-count').textContent(), String(items));
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
 });

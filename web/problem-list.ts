@@ -1,6 +1,7 @@
 // The Problems list under the editor (its size and folding are in layout.ts).
 import { DocumentIssue, plain } from '../src/document';
 import { Lang } from '../src/i18n';
+import { $ } from './dom';
 import { TEXT } from './text';
 
 /** Text with its `backtick` spans as <code> nodes, as the panel shows them (DOM nodes, never HTML). */
@@ -13,7 +14,6 @@ function withCode(text: string): Node[] {
 
 /** Fills the list; a click on a problem calls `pick`. */
 export function showProblems(list: DocumentIssue[], lang: Lang, pick: (issue: DocumentIssue) => void): void {
-  const $ = (id: string) => document.getElementById(id)!;
   const t = TEXT[lang];
   $('problems').hidden = list.length === 0;
   $('problems-title').textContent = t.problems;
