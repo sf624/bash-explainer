@@ -59,8 +59,8 @@ function parameterSections(text: string): readonly string[] {
 export function nodeSections(n: SyntaxNode): readonly string[] | undefined {
   if (n.type === 'file_redirect') return redirectSections(n);
   if (n.type === 'simple_expansion') return parameterSections(n.text);
-  // (A command with no name: assignments only.)
-  if (n.type === 'command' && !field(n, 'name')) return NODES.variable_assignment;
+  // (A command with no name: its tokens have the sections of its assignments; around them, redirections have none.)
+  if (n.type === 'command' && !field(n, 'name')) return undefined;
   if (n.type === 'comment') return n.startPosition.row === 0 && n.text.startsWith('#!') ? ['3.8'] : undefined;
   return NODES[n.type];
 }

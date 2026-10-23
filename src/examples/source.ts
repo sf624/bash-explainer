@@ -8,7 +8,7 @@ import { givenOptions } from '../argv/query';
 import type { CommandSpec, EachFile, IoUse } from '../argv/spec';
 import { pick } from '../embedded/types';
 import type { Lang } from '../i18n';
-import { field, type SyntaxNode } from '../syntax/tree';
+import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 
 /** Where a command's standard input comes from. */
 export type Stdin =
@@ -139,17 +139,13 @@ export function shownSource(src: InputSource): InputSource {
   return { ...rest, streams: src.streams.slice(0, 1) };
 }
 
-const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
-
 /**
  * Where the standard input of `cmd`, a command node, comes from: the last redirection of fd 0 it has (`< f`, `<<<`,
  * `<<`), or the stage before it in a pipeline. `literal` gives a word's value when it is known; `piped`, what the
  * stages of a pipeline before the one at `index` print, when it is known.
  */
 export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | undefined, piped?: (pipeline: SyntaxNode, index: number) => string[] | undefined): Stdin {
-  const outer = cmd.parent?.type === 'redirected_statement' && field(cmd.parent, 'body') === cmd ? cmd.parent : cmd;
-  const redirs = [...cmd.namedChildren, ...(outer === cmd ? [] : outer.namedChildren)]
-    .filter((r) => REDIRECTS.has(r.type)).sort((a, b) => a.startIndex - b.startIndex);
+  const redirs = redirectionsOf(cmd);
   let stdin: Stdin | undefined;
   for (const r of redirs) {
     const fd = field(r, 'descriptor')?.text ?? '';
@@ -175,9 +171,9 @@ export function stdinOf(cmd: SyntaxNode, literal: (n: SyntaxNode) => string | un
     }
   }
   if (stdin) return stdin;
-  const p = outer.parent;
-  if (p?.type !== 'pipeline' || p.namedChildren[0] === outer) return { from: 'unknown' };
-  const lines = piped?.(p, p.namedChildren.indexOf(outer));
+  const p = cmd.parent;
+  if (p?.type !== 'pipeline' || p.namedChildren[0] === cmd) return { from: 'unknown' };
+  const lines = piped?.(p, p.namedChildren.indexOf(cmd));
   return { from: 'pipe', ...(lines ? { lines } : {}) };
 }
 

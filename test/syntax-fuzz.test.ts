@@ -17,11 +17,16 @@ import type { Shell } from '../src/dialect';
 // all indexes in range; and a text that unbash reports errors for must have errors or an incomplete
 // node in the tree.
 
-/** Whether unbash reports an error for the text, in the script or in any substitution in it. */
+/**
+ * Whether unbash reports an error for the text, in the script or in any substitution in it. (Not the one it reports
+ * for `&> >(tee log)`, a redirection with no target before a process substitution: the adapter reads it as bash does,
+ * `parseScript` in src/syntax/adapters/unbash.ts.)
+ */
 function unbashComplains(text: string): boolean {
   let found = false;
+  const bothOutputs = (e: { message: string; pos: number }): boolean => e.message === 'expected redirect target' && /^[<>]\(/.test(text.slice(e.pos)) && /&>>?[ \t]*$/.test(text.slice(0, e.pos));
   const walk = (m: Parameters<typeof forEachChild>[0]): void => {
-    if (m.type === 'Script' && (m as { errors?: unknown[] }).errors?.length) found = true;
+    if (m.type === 'Script' && (m as { errors?: { message: string; pos: number }[] }).errors?.some((e) => !bothOutputs(e))) found = true;
     if (!found) forEachChild(m, walk);
   };
   walk(parse(text));

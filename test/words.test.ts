@@ -217,6 +217,11 @@ describe('words: fields', () => {
     assert.deepStrictEqual(fieldsOf('x=1; echo $(( ++x )) "$(echo "$x")"', '"$x"'), {});
     // A simple command expands its words before its redirections (bash prints <1>).
     assert.deepStrictEqual(fieldsOf('x=1; printf "<%s>" "$x" 2>/dev/null > g$(( x *= 5 ))', '"$x"').fields, ['1']);
+    // Also written before the name, and after assignments alone (bash prints <1>, and `z` is 1).
+    assert.deepStrictEqual(fieldsOf('x=1; >g$(( x *= 5 )) printf "<%s>" "$x"', '"$x"').fields, ['1']);
+    assert.deepStrictEqual(fieldsOf('y=1; z=$y >g$(( y *= 5 )); echo "$z"', '"$z"').fields, ['1']);
+    // (In the redirection itself, what it assigns is not known.)
+    assert.deepStrictEqual(fieldsOf('x=1; printf a > g$(( x *= 5 ))$x', '$x'), {});
     assert.deepStrictEqual(wordFields(find('x=1', 'x').node, find('x=1', 'x').model), {});
     assert.deepStrictEqual(fieldsOf('x=1; : ${x:=2}; echo "$x"', '"$x"'), {});
     assert.deepStrictEqual(fieldsOf('x=1; let y=1; echo "$x"', '"$x"').fields, ['1']);

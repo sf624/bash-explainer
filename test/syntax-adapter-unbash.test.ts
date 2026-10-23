@@ -264,7 +264,7 @@ describe('unbash adapter: redirections', () => {
   it('sends `&>` and `&>>` to a process substitution, as bash does', function () {
     // (unbash reads the process substitution as a word of its own, after a redirection with no target.)
     assert.strictEqual(outline(ub.parse('exec &> >(tee log)').root),
-      '(program (redirected_statement (command @body (command_name @name (word "exec"))) (file_redirect @redirect "&>" (process_substitution @destination ">(" (command (command_name @name (word "tee")) (word @argument "log")) ")"))))');
+      '(program (command (command_name @name (word "exec")) (file_redirect @redirect "&>" (process_substitution @destination ">(" (command (command_name @name (word "tee")) (word @argument "log")) ")"))))');
     assert.strictEqual(outline(ub.parse('echo &>> >(cat) b').root),
       '(program (command (command_name @name (word "echo")) (file_redirect @redirect "&>>" (process_substitution @destination ">(" (command (command_name @name (word "cat"))) ")")) (word @argument "b")))');
     assert.deepStrictEqual(ub.parse('exec &> >(tee log)').errors, []);
@@ -327,7 +327,7 @@ describe('unbash adapter: redirections', () => {
 describe('unbash adapter: heredocs', () => {
   it('has the start, the body and the end, with the expansions of the body', () => {
     assert.equal(o('cat <<E\n${a} $(b) $((1)) $c\nE'),
-      '(program (redirected_statement (command @body (command_name @name (word "cat"))) (heredoc_redirect @redirect "<<" (heredoc_start "E") '
+      '(program (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "E") '
       + '(heredoc_body (expansion "${" (variable_name "a") "}") (heredoc_content " ") (command_substitution "$(" (command (command_name @name (word "b"))) ")") (heredoc_content " ") '
       + '(arithmetic_expansion "$((" (number "1") "))") (heredoc_content " ") (simple_expansion "$" (variable_name "c")) (heredoc_content "")) (heredoc_end "E"))))');
   });
@@ -338,13 +338,13 @@ describe('unbash adapter: heredocs', () => {
   });
   it('goes on with the rest of its line as bash does: a pipeline, a list, more redirections', () => {
     assert.equal(o('cat <<E | wc -l\nx\nE'),
-      '(program (pipeline (redirected_statement (command @body (command_name @name (word "cat"))) (heredoc_redirect @redirect "<<" (heredoc_start "E") (heredoc_body "x\\n") (heredoc_end "E"))) '
+      '(program (pipeline (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "E") (heredoc_body "x\\n") (heredoc_end "E"))) '
       + '"|" (command (command_name @name (word "wc")) (word @argument "-l"))))');
     assert.equal(o('a <<E && b\nx\nE'),
-      '(program (list (redirected_statement (command @body (command_name @name (word "a"))) (heredoc_redirect @redirect "<<" (heredoc_start "E") (heredoc_body "x\\n") (heredoc_end "E"))) '
+      '(program (list (command (command_name @name (word "a")) (heredoc_redirect @redirect "<<" (heredoc_start "E") (heredoc_body "x\\n") (heredoc_end "E"))) '
       + '"&&" (command (command_name @name (word "b")))))');
     assert.equal(o('cat <<A 2>&1 >f\n1\nA'),
-      '(program (redirected_statement (command @body (command_name @name (word "cat"))) (heredoc_redirect @redirect "<<" (heredoc_start "A") (heredoc_body "1\\n") (heredoc_end "A")) '
+      '(program (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "A") (heredoc_body "1\\n") (heredoc_end "A")) '
       + '(file_redirect @redirect (file_descriptor @descriptor "2") ">&" (number @destination "1")) (file_redirect @redirect ">" (word @destination "f"))))');
     // `|` binds tighter than `&&`: the list is outside.
     const t = tree('a <<E | b && c\nx\nE\nd');
@@ -355,7 +355,7 @@ describe('unbash adapter: heredocs', () => {
   it('lets the heredoc node end with its body, with the rest of its line inside its range but not in it', () => {
     const text = 'cat <<E; echo b\nx\nE\necho c';
     const t = tree(text);
-    assert.deepEqual(t.root.namedChildren.map((c) => c.type), ['redirected_statement', 'command', 'command']);
+    assert.deepEqual(t.root.namedChildren.map((c) => c.type), ['command', 'command', 'command']);
     assert.deepEqual(invariants(t), []);
     const h = types(t.root, 'heredoc_redirect')[0];
     assert.equal(h.text, '<<E; echo b\nx\nE');
@@ -371,14 +371,14 @@ describe('unbash adapter: heredocs', () => {
     assert.deepEqual(invariants(t), []);
     assert.equal(o('cat <<EOF out.txt\nhi\nEOF'),
       '(program (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "EOF") (heredoc_body "hi\\n") (heredoc_end "EOF")) (word @argument "out.txt")))');
-    // A redirection after the last word is the statement's.
+    // A redirection after the last word is the command's too, as in bash.
     assert.equal(o('cat <<EOF out.txt >f\nhi\nEOF'),
-      '(program (redirected_statement (command @body (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "EOF") (heredoc_body "hi\\n") (heredoc_end "EOF")) (word @argument "out.txt")) '
+      '(program (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<" (heredoc_start "EOF") (heredoc_body "hi\\n") (heredoc_end "EOF")) (word @argument "out.txt") '
       + '(file_redirect @redirect ">" (word @destination "f"))))');
   });
   it('lets <<- strip the tabs of the first line and of the closing line', () => {
     assert.equal(o('cat <<-"E"\n\tx $a\n\tE'),
-      '(program (redirected_statement (command @body (command_name @name (word "cat"))) (heredoc_redirect @redirect "<<-" (heredoc_start "\\"E\\"") (heredoc_body "x $a\\n\\t") (heredoc_end "E"))))');
+      '(program (command (command_name @name (word "cat")) (heredoc_redirect @redirect "<<-" (heredoc_start "\\"E\\"") (heredoc_body "x $a\\n\\t") (heredoc_end "E"))))');
   });
   it('has the closing line after a <<- line that goes on, with the tabs of the body and of the line', () => {
     const text = 'sftp -b - <<-EOF || return 1\n\tx\n\tEOF';
@@ -386,7 +386,7 @@ describe('unbash adapter: heredocs', () => {
     assert.deepEqual(t.errors, []);
     const h = types(t.root, 'heredoc_redirect')[0];
     assert.deepEqual(h.children.map((c) => c.type), ['<<-', 'heredoc_start', 'heredoc_body', 'heredoc_end']);
-    assert.deepEqual(first(text).namedChildren.map((c) => c.type), ['redirected_statement', 'command']);
+    assert.deepEqual(first(text).namedChildren.map((c) => c.type), ['command', 'command']);
     assert.equal(types(t.root, 'heredoc_end')[0].text, 'EOF');
     assert.equal(h.endIndex, text.length);
   });
@@ -423,7 +423,7 @@ describe('unbash adapter: [ ] and [[ ]]', () => {
     // (A missing `]` is no syntax error: `[` fails when it runs, with status 2.)
     assert.equal(tree('[ -f a').root.namedChildren[0].incomplete, false);
     assert.equal(errorsOf('[ -f a'), '');
-    assert.equal(first('[ a ] > f').type, 'redirected_statement');
+    assert.equal(first('[ a ] > f').type, 'command');
   });
   it('[[ ]] keeps its expressions, with regex and extglob_pattern on the right', () => {
     assert.equal(o('[[ -f a && ( $b =~ ^x+ || c == d* ) && ! e ]]'),
@@ -450,11 +450,12 @@ describe('unbash adapter: time, coproc, select and (( ))', () => {
     assert.equal(o('time -p ls | wc'),
       '(program (time_statement "time" (word @option "-p") (pipeline @body (command (command_name @name (word "ls"))) "|" (command (command_name @name (word "wc"))))))');
     assert.equal(o('time ls -l >o'),
-      '(program (time_statement "time" (redirected_statement @body (command @body (command_name @name (word "ls")) (word @argument "-l")) (file_redirect @redirect ">" (word @destination "o")))))');
+      '(program (time_statement "time" (command @body (command_name @name (word "ls")) (word @argument "-l") (file_redirect @redirect ">" (word @destination "o")))))');
     // `time` is a keyword only at the start of a pipeline.
     assert.equal(o('a | time b'), '(program (pipeline (command (command_name @name (word "a"))) "|" (command (command_name @name (word "time")) (word @argument "b"))))');
     assert.equal(first('a && time b').namedChildren[1].type, 'time_statement');
     assert.equal(o('time'), '(program (time_statement "time"))');
+    // (Nothing to time, only redirections: they are the statement's.)
     assert.equal(o('time -p >o'), '(program (redirected_statement (time_statement @body "time" (word @option "-p")) (file_redirect @redirect ">" (word @destination "o"))))');
     assert.equal(o('time ! a | b'), '(program (time_statement "time" (negated_command @body "!" (pipeline (command (command_name @name (word "a"))) "|" (command (command_name @name (word "b")))))))');
     assert.equal(o('! time a'), '(program (negated_command "!" (time_statement "time" (command @body (command_name @name (word "a"))))))');
@@ -464,7 +465,7 @@ describe('unbash adapter: time, coproc, select and (( ))', () => {
   it('coproc: the name, and a command or a group as the body', () => {
     assert.equal(o('coproc ls -l'), '(program (coproc_statement "coproc" (command @body (command_name @name (word "ls")) (word @argument "-l"))))');
     assert.equal(o('coproc NAME { :; }'), '(program (coproc_statement "coproc" (word @name "NAME") (compound_statement @body "{" (command (command_name @name (word ":"))) ";" "}")))');
-    assert.equal(o('coproc ls >f').startsWith('(program (coproc_statement "coproc" (redirected_statement @body'), true);
+    assert.equal(o('coproc ls >f').startsWith('(program (coproc_statement "coproc" (command @body (command_name @name (word "ls")) (file_redirect'), true);
     const bare = tree('coproc');
     assert.equal(bare.root.namedChildren[0].type, 'coproc_statement');
     assert.deepEqual(bare.root.namedChildren[0].children.map((c) => c.type), ['coproc']);
@@ -664,7 +665,7 @@ describe('unbash adapter: unfinished input', () => {
   it('an array with no ) is an incomplete array', () => {
     assert.equal(o('a=(1 2'), '(program (command (variable_assignment (variable_name @name "a") "=" (array @value INCOMPLETE "(" (number "1") (number "2")))))');
     // Text after the `)` makes the value a plain word: bash assigns `(x)y` (found by the fuzz).
-    assert.equal(o('a+=(x)one < f'), '(program (redirected_statement (command @body (variable_assignment (variable_name @name "a") "+=" (word @value "(x)one"))) (file_redirect @redirect "<" (word @destination "f"))))');
+    assert.equal(o('a+=(x)one < f'), '(program (command (variable_assignment (variable_name @name "a") "+=" (word @value "(x)one")) (file_redirect @redirect "<" (word @destination "f"))))');
     assert.equal(o('a=(b "c d"').includes('INCOMPLETE'), true);
   });
   it('text unbash cannot read is an error node and an unreadable error', () => {
@@ -738,9 +739,9 @@ describe('unbash adapter: words, assignments and redirections', () => {
       '(program (command (command_name @name (word "alias")) (concatenation @argument (word "ll=") (string "\\"" (string_content "ls -l") "\\""))))');
     assert.equal(o('make CC=gcc'), '(program (command (command_name @name (word "make")) (word @argument "CC=gcc")))');
     assert.equal(o('alias x= y'), '(program (command (command_name @name (word "alias")) (word @argument "x=") (word @argument "y")))');
-    assert.equal(o('export A=b >f').startsWith('(program (redirected_statement (command'), true);
-    assert.equal(o('unset x 2>f').startsWith('(program (redirected_statement (command'), true);
-    assert.equal(first('declare -p >f 2>&1').type, 'redirected_statement');
+    assert.equal(o('export A=b >f').startsWith('(program (command (command_name'), true);
+    assert.equal(o('unset x 2>f').startsWith('(program (command (command_name'), true);
+    assert.deepEqual(first('declare -p >f 2>&1').namedChildren.map((c) => c.type), ['command_name', 'word', 'file_redirect', 'file_redirect']);
     assert.equal(o('x=1 unset y').startsWith('(program (command (variable_assignment'), true);
     assert.equal(o('FOO=1 declare x').startsWith('(program (command (variable_assignment'), true);
     assert.equal(o('declare x <<<y').includes('(herestring_redirect'), true);
@@ -748,37 +749,36 @@ describe('unbash adapter: words, assignments and redirections', () => {
   });
   it('has redirections: descriptors, here strings, a command with none, and after the first word', () => {
     assert.equal(o('echo >f a 2>&1 <g'),
-      '(program (redirected_statement (command @body (command_name @name (word "echo")) (file_redirect @redirect ">" (word @destination "f")) (word @argument "a")) '
+      '(program (command (command_name @name (word "echo")) (file_redirect @redirect ">" (word @destination "f")) (word @argument "a") '
       + '(file_redirect @redirect (file_descriptor @descriptor "2") ">&" (number @destination "1")) (file_redirect @redirect "<" (word @destination "g"))))');
-    assert.equal(o('>f'), '(program (redirected_statement (file_redirect @redirect ">" (word @destination "f"))))');
+    assert.equal(o('>f'), '(program (command (file_redirect @redirect ">" (word @destination "f"))))');
     assert.equal(o('cat <<<"$x" a'),
       '(program (command (command_name @name (word "cat")) (herestring_redirect @redirect "<<<" (string "\\"" (simple_expansion "$" (variable_name "x")) "\\"")) (word @argument "a")))');
     assert.equal(o('exec 3>&- {fd}>f &>o'),
-      '(program (redirected_statement (command @body (command_name @name (word "exec"))) (file_redirect @redirect (file_descriptor @descriptor "3") ">&" (word @destination "-")) '
+      '(program (command (command_name @name (word "exec")) (file_redirect @redirect (file_descriptor @descriptor "3") ">&" (word @destination "-")) '
       + '(file_redirect @redirect (file_descriptor @descriptor "{fd}") ">" (word @destination "f")) (file_redirect @redirect "&>" (word @destination "o"))))');
-    assert.equal(o('x=1 >f').startsWith('(program (redirected_statement (command @body (variable_assignment'), true);
-    assert.equal(o('x=1 y=2 >f 2>g').startsWith('(program (redirected_statement (command @body (variable_assignment'), true);
-    // A redirection between assignments is the command's; those before the first and after the last are around it,
-    // as after the words of a command (step 5 of docs/design/syntax-tree.md moves them in).
+    assert.equal(o('x=1 >f'), '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) (file_redirect @redirect ">" (word @destination "f"))))');
+    assert.equal(o('x=1 y=2 >f 2>g').startsWith('(program (command (variable_assignment'), true);
+    // Every redirection of a command with no name is its own, wherever it is written.
     assert.equal(o('x=1 >f y=2'), '(program (command (variable_assignment (variable_name @name "x") "=" (number @value "1")) '
       + '(file_redirect @redirect ">" (word @destination "f")) (variable_assignment (variable_name @name "y") "=" (number @value "2"))))');
-    assert.equal(o('>f x=1 >g'), '(program (redirected_statement (file_redirect @redirect ">" (word @destination "f")) '
-      + '(command @body (variable_assignment (variable_name @name "x") "=" (number @value "1"))) (file_redirect @redirect ">" (word @destination "g"))))');
-    assert.equal(o('>f >g'), '(program (redirected_statement (file_redirect @redirect ">" (word @destination "f")) (file_redirect @redirect ">" (word @destination "g"))))');
+    assert.equal(o('>f x=1 >g'), '(program (command (file_redirect @redirect ">" (word @destination "f")) '
+      + '(variable_assignment (variable_name @name "x") "=" (number @value "1")) (file_redirect @redirect ">" (word @destination "g"))))');
+    assert.equal(o('>f >g'), '(program (command (file_redirect @redirect ">" (word @destination "f")) (file_redirect @redirect ">" (word @destination "g"))))');
   });
   it('gives the redirections after the last command of a pipeline or a list to that command, as bash does', () => {
     assert.equal(o('a | b >f'),
-      '(program (pipeline (command (command_name @name (word "a"))) "|" (redirected_statement (command @body (command_name @name (word "b"))) (file_redirect @redirect ">" (word @destination "f")))))');
+      '(program (pipeline (command (command_name @name (word "a"))) "|" (command (command_name @name (word "b")) (file_redirect @redirect ">" (word @destination "f")))))');
     assert.equal(o('a && b >f'),
-      '(program (list (command (command_name @name (word "a"))) "&&" (redirected_statement (command @body (command_name @name (word "b"))) (file_redirect @redirect ">" (word @destination "f")))))');
-    assert.equal(o('a >f | b').startsWith('(program (pipeline (redirected_statement'), true);
+      '(program (list (command (command_name @name (word "a"))) "&&" (command (command_name @name (word "b")) (file_redirect @redirect ">" (word @destination "f")))))');
+    assert.equal(o('a >f | b').startsWith('(program (pipeline (command (command_name @name (word "a")) (file_redirect'), true);
     // A compound command takes its own, also at the end of a list.
     assert.equal(o('a && { b; } >f').includes('"&&" (redirected_statement (compound_statement @body'), true);
     assert.equal(o('{ a; } >f').startsWith('(program (redirected_statement (compound_statement @body'), true);
   });
   it('negates the whole pipeline with !', () => {
-    assert.equal(o('! a >f'), '(program (negated_command "!" (redirected_statement (command @body (command_name @name (word "a"))) (file_redirect @redirect ">" (word @destination "f")))))');
-    assert.equal(o('! a | b >f').startsWith('(program (negated_command "!" (pipeline (command (command_name @name (word "a"))) "|" (redirected_statement'), true);
+    assert.equal(o('! a >f'), '(program (negated_command "!" (command (command_name @name (word "a")) (file_redirect @redirect ">" (word @destination "f")))))');
+    assert.equal(o('! a | b >f').startsWith('(program (negated_command "!" (pipeline (command (command_name @name (word "a"))) "|" (command (command_name @name (word "b")) (file_redirect'), true);
     assert.equal(o('! a | b'), '(program (negated_command "!" (pipeline (command (command_name @name (word "a"))) "|" (command (command_name @name (word "b"))))))');
     assert.equal(first('! a | b && c').type, 'list');
     assert.equal(first('! a | b && c').namedChildren[0].type, 'negated_command');
@@ -854,7 +854,7 @@ describe('unbash adapter: more shapes', () => {
     const t = tree('a | cat <<E | wc\nx\nE\n');
     assert.deepEqual(invariants(t), []);
     assert.equal(first('a | cat <<E | wc\nx\nE\n').type, 'pipeline');
-    assert.deepEqual(first('a | cat <<E | wc\nx\nE\n').namedChildren.map((c) => c.type), ['command', 'redirected_statement', 'command']);
+    assert.deepEqual(first('a | cat <<E | wc\nx\nE\n').namedChildren.map((c) => c.type), ['command', 'command', 'command']);
     assert.equal(types(t.root, 'pipeline').length, 1);
   });
   it('a redirection before the command, or among the words of a [ ]', () => {

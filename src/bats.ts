@@ -69,17 +69,16 @@ export function batsFacts(tree: SyntaxTree, tests: readonly number[], line: numb
   // cmd`: run reads the pipe, but sets its variables in a subshell too (unless lastpipe runs the last stage here).
   for (const p of descendants(tree.root, ['pipeline'])) {
     if (p.startPosition.row !== line) continue;
-    p.namedChildren.filter((c) => STATEMENTS.has(c.type)).forEach((stage, k) => {
-      // (`run cmd 2>&1 | …`: the command with its redirection; `>f | …` has none.)
-      const cmd = stage.type === 'redirected_statement' ? field(stage, 'body') : stage;
-      if (cmd?.type !== 'command' || commandName(cmd) !== 'run') return;
+    p.namedChildren.filter((c) => STATEMENTS.has(c.type)).forEach((cmd, k) => {
+      // (`run cmd 2>&1 | …`: its redirections are its own.)
+      if (cmd.type !== 'command' || commandName(cmd) !== 'run') return;
       // (A function of the file named `run` is not bats' own.)
       if (resolveName(state, 'run', cmd).kind === 'function') return;
       const words = runCommand(cmd);
       if (!words.length) return;
       const text = shorten(words.map((w) => w.text).join(' '));
       if (k === 0) out.push(fact(lang, 'bats-run-in-pipeline', { cmd: text }));
-      else if (processOf(state.env(stage)).kind === 'subshell') out.push(fact(lang, 'bats-run-in-pipeline-stage', { cmd: text }));
+      else if (processOf(state.env(cmd)).kind === 'subshell') out.push(fact(lang, 'bats-run-in-pipeline-stage', { cmd: text }));
     });
   }
   return out;

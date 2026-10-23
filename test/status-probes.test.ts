@@ -72,13 +72,15 @@ class Run {
     if (this.status.expansionError(n, ENV)) throw new Exit(1);
   }
 
-  /** The command substitutions of `n`, run in order (each in a subshell): the status of the last one. */
-  private substitutions(n: SyntaxNode): number | undefined {
+  /** The command substitutions of `n`, run in order (each in a subshell): the status of the last one (and of each, in `ran`). */
+  private substitutions(n: SyntaxNode, ran?: Map<SyntaxNode, number>): number | undefined {
     let s: number | undefined;
     const visit = (x: SyntaxNode): void => {
       for (const c of x.children) {
-        if (c.type === 'command_substitution') s = this.sub(() => this.block(c.namedChildren));
-        else if (c.type !== 'subshell' && c.type !== 'compound_statement') visit(c);
+        if (c.type === 'command_substitution') {
+          s = this.sub(() => this.block(c.namedChildren));
+          ran?.set(c, s);
+        } else if (c.type !== 'subshell' && c.type !== 'compound_statement') visit(c);
       }
     };
     visit(n);
@@ -150,10 +152,11 @@ class Run {
       }
       case 'function_definition': return 0;
       case 'command': if (field(n, 'name')) return this.command(n); {
-        // (Assignments alone: the status of the last command substitution.)
+        // (Assignments alone: the status of the substitution the model says runs last, `at`.)
         this.expansionError(n);
-        const s = this.substitutions(n) ?? 0;
-        return rule.kind === 'last-substitution' ? s : 0;
+        const ran = new Map<SyntaxNode, number>();
+        this.substitutions(n, ran);
+        return rule.kind === 'last-substitution' && rule.at ? ran.get(rule.at)! : 0;
       }
       case 'arithmetic_command': {
         const m = /^\(\(\s*(?:([A-Za-z_]\w*)(\+\+|--)|([^)]*?))\s*\)\)$/.exec(n.text)!;

@@ -406,8 +406,9 @@ class Converter {
     }
     n.endIndex = end;
     if (!body) return n;
-    if (body.type === 'redirected_statement' && body.children[0]?.field !== 'body') {
+    if (body.type === 'command' && body.children.every((c) => c.field === 'redirect')) {
       // `time >o`: nothing to time, only redirections, which belong to the statement.
+      body.type = 'redirected_statement';
       body.children.unshift(n);
       n.field = 'body';
       body.startIndex = t.pos;
@@ -438,37 +439,17 @@ class Converter {
     const after: Item[] = [...c.suffix];
     // (`&> >(tee log) cmd` starts at the `&`, before unbash's start: see `parseScript`.)
     const start = this.startOf(c);
-    const isRedirect = (x: Item): x is U.Redirect | U.HereDoc => x.type === 'Redirect' || x.type === 'HereDoc';
-    // Redirections after the last word are the statement's, not the command's; a here string stays in the command.
-    let split = after.length;
-    while (split > 0 && isRedirect(after[split - 1])) split--;
-    let outside = after.splice(split) as U.Redirection[];
     if (!c.name) {
-      // Assignments and redirections only: a simple command with no words, as bash parses it. Its node holds the
-      // assignments and the redirections between them; the redirections before the first and after the last stay
-      // outside, in a `redirected_statement`, as after the words of a command.
-      const assigns = before.filter((x): x is U.Assignment => x.type === 'Assignment');
-      let body: Mut | undefined;
-      if (assigns.length) {
-        const first = assigns[0].pos;
-        const last = assigns[assigns.length - 1].end;
-        body = this.node('command', first, last);
-        for (const x of before) {
-          if (x.type === 'Assignment') this.add(body, this.assignment(x));
-          else if (x.pos > first && x.pos < last) this.add(body, this.redirect(x as U.Redirection), 'redirect');
-        }
-        this.fill(body);
+      // Assignments and redirections only (`a=1 >f b=2`, `>f`): a simple command with no words, as bash parses it.
+      const node = this.node('command', start, c.end);
+      for (const x of before) {
+        if (x.type === 'Assignment') this.add(node, this.assignment(x));
+        else this.add(node, this.redirect(x as U.Redirection), 'redirect');
       }
-      outside = before.filter((x): x is U.Redirection => x.type !== 'Assignment' && !(body && x.pos > body.startIndex && x.pos < body.endIndex));
-      if (!outside.length) return body!;
-      const r = this.node('redirected_statement', Math.min(body?.startIndex ?? start, this.startOf(outside[0])), c.end);
-      // `>f x=1 >g`: a redirection written before the assignments comes first.
-      for (const x of outside) if (body && x.pos < body.startIndex) this.add(r, this.redirect(x), 'redirect');
-      if (body) this.add(r, body, 'body');
-      for (const x of outside) if (!body || x.pos >= body.startIndex) this.add(r, this.redirect(x), 'redirect');
-      this.fill(r);
-      return r;
+      this.fill(node);
+      return node;
     }
+    // Every redirection of a simple command is its child, wherever it is written (`>o echo a 2>e`), as in bash.
     const args = [...before, ...after];
     const last = args.length ? args[args.length - 1] : c.name;
     // (unbash ends a plain name after a line continuation that follows it: `declare\<newline> x`. The name is before it.)
@@ -494,7 +475,6 @@ class Converter {
       else this.item(node, s, (w) => this.add(node, this.word(w, 'argument'), 'argument'), 'argument');
     }
     this.fill(node);
-    if (outside.length) return this.redirected(node, outside, c.end);
     return node;
   }
 
