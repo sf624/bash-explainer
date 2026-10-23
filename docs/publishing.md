@@ -8,8 +8,9 @@ All three registries are reached through GitHub's OpenID Connect, so there is no
 
 1. If the UI changed since the README images were recorded (`node scripts/images-hash.mjs --check` fails), run the [README images](../.github/workflows/readme-images.yml) workflow and merge its pull request; the Release workflow stops otherwise.
 2. Bump `version` in `package.json` and `cli/package.json` (`npm version <version> --no-git-tag-version`, then the same in `cli/`), and rename `## Unreleased` in `CHANGELOG.md` to `## <version>`, with its `[All changes]` link changed to `compare/v<previous>...v<version>`; merge to `main`.
-3. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`.
-4. In the workflow run, approve the `release` environment (**Review deployments**).
+3. Optional dry run: in the Actions tab, run the Release workflow by hand (**Run workflow**) on `main`. It checks that the Test workflow passed on that commit, checks the README images and packages the extension; the publish and web page jobs are skipped, so nothing is published.
+4. Push the tag from an up-to-date `main`: `git switch main && git pull && git tag v<version> && git push origin v<version>`. The workflow stops if the tag does not match `package.json`, or if the Test workflow did not pass on the tagged commit.
+5. In the workflow run, approve the `release` environment (**Review deployments**).
 
 ## One-time setup
 

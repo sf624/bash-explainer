@@ -43,6 +43,8 @@ Options:
       --format <format>  text, markdown or json (default: text); with --check also
                          sarif (for code scanning) or github (annotations in
                          GitHub Actions)
+      --sarif <file>     with --check, also write the problems to this file as
+                         SARIF, whatever --format says (one run for both)
       --no-examples      leave out worked examples
       --config <file>    read the settings from this JSON file (default:
                          $BASH_EXPLAINER_CONFIG, else
@@ -75,6 +77,8 @@ interface Options {
   kind?: Kind;
   lang: Lang;
   format: Format;
+  /** With --check: also write the problems to this file as SARIF. */
+  sarifFile?: string;
   color: boolean;
   settings: Settings;
   /** Keys and values from the settings file or --set that were left out. */
@@ -158,6 +162,9 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
         o.format = v as Format;
         break;
       }
+      case '--sarif':
+        o.sarifFile = value();
+        break;
       default: {
         if (arg.startsWith('-') && arg !== '-') throw new UsageError(`unknown option: ${arg}`);
         // file:12 or file:3-8 (a real file whose name ends that way wins)
@@ -168,6 +175,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
     }
   }
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
+  if (o.sarifFile !== undefined && !o.check) throw new UsageError('--sarif goes with --check');
   // defaults < settings file < --set < --lang, --shell, --no-examples
   const file = noConfig ? undefined : settingsFile(config, env);
   let fromFile: Partial<Settings> = {};
@@ -342,9 +350,9 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       warnings += issues.filter((i) => i.severity === 'warning').length;
-      if (o.format === 'json' || o.format === 'sarif') json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
-      else if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
-      else chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
+      if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
+      if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
+      else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
     } else {
       const [from, to] = input.lines ?? [1, lines.length];
       if (to > lines.length) {
@@ -362,6 +370,14 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
     }
   }
 
+  if (o.sarifFile !== undefined) {
+    try {
+      fs.writeFileSync(o.sarifFile, JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
+    } catch (e) {
+      io.stderr(`bash-explainer: cannot write ${o.sarifFile}: ${(e as Error).message}\n`);
+      return 2;
+    }
+  }
   if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
   else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
   else if (chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
