@@ -12,6 +12,7 @@ import { braceExpand, globToRegex, hasExtglob, hasGlobstar, isGlob } from '../ex
 import { parseExpansion } from '../expansion';
 import { ansiCValue, decodedText, staticWordValue, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { DECLARATIONS } from './effects';
 import { STATEMENTS } from './env';
 import { ARITH_ASSIGNED, attribute, DYNAMIC, defaultOn, option, type OptionState, type ShellState, type StateModel, type Tri } from './state';
 
@@ -153,7 +154,6 @@ const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'parenthes
 const PATTERN_OPS = new Set(['=', '==', '!=']);
 
 const ASSIGNMENT_WORD = /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/;
-const DECLARATIONS = new Set(['declare', 'typeset', 'local', 'export', 'readonly']);
 /**
  * A plain command whose name is a declaration builtin after prefix assignments (`x=1 declare y=$v`, which the parser
  * gives as a command): bash still reads its assignment words as assignments. Not behind `command`.

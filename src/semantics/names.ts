@@ -11,7 +11,7 @@
 // The model reads the shell state of src/semantics/state.ts at the place of the name, and the environment of
 // src/semantics/env.ts. It does not know the file system: a name that is none of the others is a file to search.
 import type { Shell } from '../dialect';
-import { builtins } from '../dict/builtins';
+import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
 import { field, type SyntaxNode } from '../syntax/tree';
 import { type ExecEnv, reachOf, type SlotLink, subshellReasons } from './env';
 import { type AliasState, type CommandEntry, type FunctionState, option, type ShellState, type StateModel, type Tri } from './state';
@@ -23,8 +23,6 @@ export const RESERVED = new Set(['!', '[[', ']]', '{', '}', 'case', 'coproc', 'd
 
 /** `[` is the builtin `test`, written with a closing `]`. */
 const SAME_AS: Record<string, string> = { '[': 'test' };
-/** The builtins of bash that sh-like shells (dash, ksh…) are not taken to have. */
-const BASH_ONLY = new Set(['shopt', 'mapfile', 'readarray']);
 
 /** Why a definition of the name does not apply where it is used. */
 export type MissReason =
@@ -258,7 +256,7 @@ function resolve(model: StateModel, name: string, at: SyntaxNode, opts: ResolveO
 
 /** The builtin or the file `name` runs, past aliases and functions. */
 function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash, st, sourced, pathPrefix }: Place, missed: Missed | undefined): NameResolution {
-  const spec = name.includes('/') || exec || (!bash && BASH_ONLY.has(name)) ? undefined : builtins[SAME_AS[name] ?? name];
+  const spec = name.includes('/') || exec || (!bash && BASH_ONLY_BUILTINS.has(name)) ? undefined : builtins[SAME_AS[name] ?? name];
   const disabled = spec ? st.disabled.get(name) : undefined;
   const m = missed ? { missed } : {};
   if (spec && disabled?.state !== 'on') return { kind: 'builtin', name, special: spec.builtin === 'special', ...m, ...(disabled?.state === 'unknown' ? { disabled } : {}) };

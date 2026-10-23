@@ -11,6 +11,7 @@
 import { canonicalName } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
+import { commandName } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { option, type ShellState, type StateModel, type Tri } from './state';
@@ -77,9 +78,6 @@ export interface ErrexitContext {
   readonly stops: 'script' | 'subshell' | 'unknown';
 }
 
-/** Declaration builtins: their status is their own, even with `$( )` in their assignments. */
-const DECLARATIONS = new Set(['declare', 'typeset', 'local', 'export', 'readonly']);
-
 /** Statements whose own status `set -e` checks. */
 const CHECKED = new Set(['command', 'declaration_command', 'unset_command', 'variable_assignment', 'variable_assignments', 'test_command',
   'extended_test', 'arithmetic_command', 'pipeline', 'negated_command', 'subshell']);
@@ -112,12 +110,6 @@ function outerSubstitutions(n: SyntaxNode): SyntaxNode[] {
     for (let x = s.parent; x && x !== n; x = x.parent) if (x.type === 'command_substitution' || x.type === 'process_substitution') return false;
     return true;
   });
-}
-
-/** The static name of a simple command (`exit`, `wait`), or undefined. */
-function commandName(n: SyntaxNode): string | undefined {
-  const name = field(n, 'name');
-  return name && /^[\w.:-]+$/.test(name.text) ? name.text : undefined;
 }
 
 export interface StatusModel {
