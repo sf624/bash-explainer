@@ -129,3 +129,113 @@ Found in the review of the unbash adapter; they needed the analyzer or the build
 - **`declare a[1]` and `declare a[@]`** are `subscript` nodes in the adapter, so "Element `[1]` of array `a`" stays.
 - **`[ ( a = b ) -o c = d ]`** (a syntax error in bash) is no longer a test; the tests use `\( \)`, which the analyzer groups (and compares with bash).
 - **`cat <<EOF; cmd`** is covered in test/analyzer.test.ts as well as in the adapter test.
+
+## Command nodes at bash's granularity
+
+A plan, not built yet. The goal: at the command level, our tree has the nodes bash's parser has. If bash makes something a simple command, so do we. Word-level parts (`string`, `expansion`, `concatenation`…) stay finer than bash's words: the explanations need them.
+
+Why: some command nodes are left over from tree-sitter-bash, and the adapter makes them by looking at the command name. `[ … ]` becomes a `test_command` when the name is `[`. What a name runs is a question for the model (`resolveName`), not for the parser: a function named `[`, `enable -n [` or a quoted `"["` change it, and the adapter cannot see them all.
+
+### What bash's parser makes
+
+From bash 5.2's `command.h`, and checked with bash-ast v0.3.3 on the inputs below. bash's commands are: simple, connection (`;`, `&`, `&&`, `||`, newline), pipeline (bash-ast gives it its own node), `if`, `case`, `for`, arithmetic `for`, `select`, `while`, `until`, group `{ }`, subshell `( )`, arithmetic `(( ))`, conditional `[[ ]]`, function definition, and `coproc`.
+
+- `[ -f x ] > o`, `test -f x`, `unset a b`, `\[ -f x ]`, `"[" -f x ]`, `command [ -f x ]`: each is one simple command, with its words as written. `[ -f x` is a simple command too: bash fails only at run time (`[: missing ']'`, status 2).
+- `a=1 b=2`, `a=1`, `a=1 >o`, `>o`: a simple command with no words.
+- `echo a >o` and `>o echo a 2>e`: one simple command; its redirections are part of it.
+- `{ a; } >o`, `while …; done >o`, `( a ) 2>&1`: the redirections belong to the compound command (its own `redirects`).
+- `! a | b`: a pipeline with a negated flag. `time -p a | b`: a pipeline with a timing flag (bash-ast drops it). For `! a` alone, the flag is on the simple command.
+- `coproc N { a; }`: a `coproc` node, with the name and the body.
+- `declare a=(1 2) b`, `export X=1`, `local -r y=$z`: simple commands. bash-ast lists `a=(1 2)` under `assignments`, and `declare` and `b` under `words`.
+
+The last one has a real special case in bash's parser, at the word level. Take the first word of a simple command as written (not quoted, not escaped; after any prefix assignments; after alias expansion). When it names a builtin marked `ASSIGNMENT_BUILTIN` (`alias`, `declare`, `export`, `local`, `readonly`, `typeset`), the parser accepts `name=(…)` in the arguments. It accepts it after `eval` and `let` too. When the command runs, such arguments are expanded like assignments: no word splitting and no globbing. Checked with bash 5.2:
+
+| input | bash |
+|---|---|
+| `declare a=(1 2)`, `x=1 declare a=(1 2)`, `eval a=(1 2)`, `let a=(1+2)`, `alias a=(1 2)` | parsed |
+| `echo a=(1 2)`, `\declare a=(1 2)`, `command declare a=(1 2)`, `builtin declare a=(1 2)` | syntax error near `(` |
+| `v="1 2"` and then `declare a=$v`, `x=1 declare a=$v`, `local a=$v`, or (alias `d=declare`) `d a=$v` | `a` is `1 2` |
+| `\declare a=$v`, `"declare" a=$v`, `command declare a=$v`, `builtin declare a=$v`, `c=declare; $c a=$v` | split: `` `2': not a valid identifier `` |
+| a function `declare`, then `declare a=$v` | the function gets one argument, `a=1 2` |
+
+So bash decides it from the text of the name, not from what the name runs. It is a fact of the syntax, and the adapter may keep it. But it marks words; it does not make a kind of command.
+
+### Audit of our command nodes
+
+| our node | bash | verdict |
+|---|---|---|
+| `command` | simple | matches, except that redirections after the last word go to a `redirected_statement` around it |
+| `test_command` | simple (`[` is a builtin, `]` its last argument) | differs: becomes a `command` |
+| `declaration_command` | simple; its assignment arguments are parsed specially (above) | differs: becomes a `command`; the special words stay `variable_assignment` |
+| `unset_command` | simple | differs: becomes a `command` |
+| `variable_assignment` as a statement | simple with no words | differs: becomes a `command` with no name. As a part of a command it matches bash's assignment word, and stays |
+| `variable_assignments` | simple with no words | differs: becomes a `command` with no name |
+| `redirected_statement` around a simple command | part of the simple command | differs: the redirections become children of the `command`, as those before the name already are |
+| `redirected_statement` around a compound command | the compound command's `redirects` | matches (a wrapper instead of a field); keep |
+| `negated_command` | a flag on the pipeline (or the command) | matches: the wrapper holds the `!` token; keep |
+| `time_statement` | a flag on the pipeline | matches: the wrapper holds `time` and `-p`; keep |
+| `coproc_statement` | `coproc` | matches |
+| `pipeline` | pipeline | matches |
+| `list` | connection with `&&`, `\|\|` | matches; `;`, `&` and newlines separate the statements of the parent |
+| `compound_statement`, `subshell` | group, subshell | matches |
+| `if_statement` (`elif_clause`, `else_clause`) | `if`, with an `elif` as a nested `if` | matches; the clauses only group the parts |
+| `for_statement`, `select_statement`, `c_style_for_statement` | `for`, `select`, arithmetic `for` | matches |
+| `while_statement` | `while`, `until` | matches (one type, told apart by its first token) |
+| `case_statement`, `case_item` | `case` and its clauses | matches |
+| `function_definition` | function definition | matches |
+| `arithmetic_command`, `extended_test` | arithmetic, conditional | matches |
+| `do_group` | none (the body of a loop) | a part, not a command; keep |
+
+### `[` today
+
+Checked with bash 5.2 and `npx tsx test/dump.ts`:
+
+| input | bash runs | our tree and explanation today |
+|---|---|---|
+| `[ -f x ]` | the builtin `[` | `test_command`; right |
+| `\[ -f x ]`, `"[" -f x ]`, `x=1 [ -f x ]` | the builtin `[` | a `command`: "Run the external command `[` (not in the dictionary)". Wrong |
+| `command [ -f x ]`, `builtin [ -f x ]`, `env [ -f x ]` | the builtin `[` (with `env`, `/usr/bin/[`) | "runs `[`: Command `[`". The condition is not explained, and `-f` is "Option (not in the dictionary; see `man `)", with no name |
+| a function `[`, then `[ -f x ]` | the function | explained as a test. Wrong |
+| `enable -n [`, then `[ -f x ]` | `/usr/bin/[` | explained as a test, without saying it is the program. Acceptable |
+| alias `[=echo`, with `expand_aliases` | `echo` | explained as a test. Rare |
+| `[ -f x` | `[`, which fails with status 2 | a syntax error (`missing`): the dialect check reports it, and the walk of the shell state stops there |
+| `[ -d / && -d /tmp ]`, `[ -f x]` | `[ -d /`, then `-d /tmp ]`; a `[` with no `]` | a syntax error. bash-ast-known.json lists 8 such inputs and says unbash reports the error; in fact the adapter does |
+
+The pitfalls already explain the run-time `missing ']'` of `[ -f x]` and `[ a && b ]`.
+
+### The plan
+
+Each step is a PR. Each keeps every test passing, and the dump of sample.sh unchanged, except where an explanation was wrong. A fixed explanation gets a test against real bash (a row in an `examples-*` table, or a probe) and a CHANGELOG line under "Fixed".
+
+0. **The guard**: the token test (below), before any node changes.
+1. **`[` is a command.** The adapter drops `testCommand`: `[ … ]` is a `command` named `[`, and `]` is its last argument. A missing `]` is no longer a syntax error. The consumers ask `resolveName` what the name runs. When it is the builtin `[` or `test`, or a file `[`, testexpr groups the arguments (without a last `]`); a function or an alias is a plain call. Read today in analyzer.ts (`test`, the statements of a line, the `]` token, `bracketTest`), pitfalls.ts (its `test_command` case joins the checks of a command named `[`), conditions.ts (it already checks for a function `[`), status.ts, walker.ts (`ERREXIT_STOPS`, the conditions), env.ts (`STATEMENTS`), trust.ts, words.ts, highlight.ts (`[` and `]` as a builtin when `resolveName` says so), idioms.ts, label.ts, dialect.ts, refs.ts (sections from the name, through `SAME_AS`), wordfacts.ts; in the tests, syntax-adapter-unbash, shape.ts, testexpr, idioms and status. Fixes: `\[`, `"["`, `x=1 [`, `command [`, `builtin [` and `env [` are explained as a test; after a function `[`, as a call; `[ -f x` runs (the pitfall says `missing ']'`), and the state walk goes on. The 8 `[` entries leave bash-ast-known.json.
+2. **`unset` is a command.** What its arguments are (variables, functions with `-f`, `a[0]` subject to globbing) comes from its spec in `src/argv/`. Read today in walker.ts (the definitions it unsets), trust.ts, status.ts, words.ts, label.ts, highlight.ts, refs.ts and analyzer.ts. Check whether the walk unsets variables when a function named `unset` runs instead.
+3. **Declarations are commands.** The adapter keeps bash's rule above: after a first word written `declare`, `typeset`, `export`, `readonly`, `local` or `alias` (also after prefix assignments), an argument that is an assignment is a `variable_assignment` with field `argument`; after `eval` and `let`, `a=(…)` is one word. Which builtin runs, and what its options do, come from `resolveName` and the spec. Read today in analyzer.ts, label.ts, highlight.ts, dialect.ts (`typeset`), refs.ts, statusfacts.ts, status.ts, walker.ts, trust.ts and words.ts (`declaration-argument`). Fix: `x=1 declare g=(1 2)` explains the array (today it is a plain argument). Gap: an alias that expands to `declare`; the adapter cannot know aliases.
+4. **Assignments alone are commands.** `a=1` and `a=1 b=2` are a `command` with no `command_name`, with `variable_assignment` children, as prefix assignments already are. The explanation stays ("Several variable assignments"). Read today in analyzer.ts, status.ts, walker.ts, conditions.ts, trust.ts, env.ts, refs.ts and words.ts.
+5. **The redirections of a simple command are its children.** No `redirected_statement` around a `command`: `>o echo a 2>e` gives one `command` with both. `redirected_statement` stays around compound commands, and for `time >o`. This is the largest step: analyzer.ts (8 places), idioms.ts, status.ts, walker.ts (the redirections of a body), statusfacts.ts, bats.ts, label.ts, wordfacts.ts, conditions.ts, and 34 assertions in syntax-adapter-unbash.test.ts. The line end of a here-document moves with it.
+6. **Close.** Remove the old names from `NodeType`, from rule 3's table, and from the kind mapping in semantics.md (5.2). `SyntaxNode.type` is `NodeType | string`, so a leftover `=== 'test_command'` is no type error: a test fails if a removed name appears in `src/`. shape.ts makes a bash-ast `simple` only from a `command`, and fails on any other node.
+
+### How it is checked
+
+**bash-ast's shapes.** test/bash-ast.test.ts already compares the commands, their words and their redirections (test/support/shape.ts). Today shape.ts makes a `simple` from five node types, and from a `redirected_statement` around them. After step 6 only a `command` makes one, so a node of another kind where bash has a simple command fails the test. An entry of bash-ast-known.json that a step fixes fails as stale, so each step removes its entries. The declaration rule is not visible in bash-ast (it lists every word that looks like an assignment under `assignments`); test/word-probes.test.ts checks it with bash (`declare a=$v`, `\declare a=$v`, `x=1 declare a=$v`).
+
+**Tokens refine commands.** Every explanation token has exactly one innermost enclosing command, and that command is one of bash's: tokens refine commands, and the relation from tokens to commands is many to one. A new test checks this with bash-ast, over the corpus of the shape test (the fixtures and snippets.json):
+
+- **Our commands** are the nodes that shape.ts turns into a shape node: simple commands, pipelines, and-or lists, sequences, compound commands, function definitions and coprocs. shape.ts records, for each path in the shape, the nodes it came from. A wrapper (`redirected_statement`, `negated_command`, `time_statement`) gets the same path as its body. Where the shapes agree, each path is also a command of bash-ast.
+- **The tokens** are those of `analyzer.explainLine` for each line: all items and their children (not `context`, not the examples). Their spans are rows and columns; turn them into offsets with the line starts of the text. A statement over several lines is explained whole on each of its lines, so keep each token once, by span and label.
+- **For each token**, find the innermost of our commands whose range holds its span. It must exist, and no other command may overlap the span without holding it: a token must not cross the boundary between two commands. The path of that command must exist in bash-ast's shape.
+- **Exceptions.** Inside a `command_substitution` or a `process_substitution` (backquotes too), the innermost command is ours: bash-ast keeps the text as a word. The test still requires one innermost command, and that the substitution lies inside one word of a command of bash-ast. A token of an embedded language (jq, awk, sed…) must lie inside one word of one command. A `comment` belongs to no command, and is skipped. A token in a `heredoc_body` belongs to the command of its redirection: the body lies outside that command's range, so the test looks it up from the `heredoc_redirect`.
+- Inputs bash-ast rejects are skipped, and so are known differences at the path in question, as in the shape test.
+
+The test comes first (step 0), as a guard. Today's tree should mostly pass it: wrappers map to their body, and the shape test already agrees. What fails today is a finding. It goes in a list with a reason, as in bash-ast-known.json, and the steps above shrink that list. Each step then shows that no token lost its command.
+
+### Risks
+
+- **Many consumers.** About 25 files read these types. Each step changes one type, so a regression shows in the dumps and the tests of that step.
+- **Coverage.** Removed branches drop out; new ones (`resolveName` on `[`) need tests. Coverage stays at 100%.
+- **Fixes look like changes.** A dump that changes is either a fix (with a bash test and a CHANGELOG line) or a bug of the step.
+- **snippets.json** is generated from the tests; when the PRs are stacked, it is regenerated at each level.
+
+### Size
+
+About 2,000 to 2,500 changed lines in 7 PRs. Step 5 (redirections, about 700 lines) and step 1 (`[`, about 500) are the largest. Steps 2 to 4 are 150 to 300 each, and the guard about 250.
