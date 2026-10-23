@@ -157,7 +157,7 @@ describe('the status after a statement against bash (src/semantics/state.ts)', (
     // What the model does not follow, or must not decide.
     ['set -o pipefail; [ -f /nonexistent ] | true', false], ['set -o pipefail; true | true', true], ['if true; then false; elif true; then true; fi', true], ['[() { return 3; }; [ a ]', false],
     ['set +e; [[ -o errexit ]]', true], ['set -o posix; [ a \\< b ]', false], ['[ -f /nonexistent ] && set -o posix; [ a \\< b ]', false],
-    ['[[ 1 -eq $nope ]]', false], ["[ $'\\xff' = a ]", false], ["[ $'a\\tb' = a ]", true], ['unset x; [ -z "$x" ]', false], ['x=; [ -z "$x" ]', true], ['x=1 ""', false],
+    ['[[ 1 -eq $nope ]]', false], ['[[ ~+ == /x ]]', false], ["[ $'\\xff' = a ]", false], ["[ $'a\\tb' = a ]", true], ['unset x; [ -z "$x" ]', false], ['x=; [ -z "$x" ]', true], ['x=1 ""', false],
     ['x=1 $(:)', false], ['x=1 "" >/dev/null', false], ['v="u + 1"; (( v )); (( v ))', false], ['x=1; eval :; [ "$x" = 1 ]', true], ['x=1; eval "$c"; [ "$x" = 1 ]', false],
     ['x=1; exec {x}>/dev/null; [ "$x" = 1 ]', false], ['[ "$(echo a)" = a ]', false], ['[ "${#x}" = 0 ]', false], ['[ "a\\b" = "a\\b" ]', true],
     ['shopt -s nocasematch; [[ A =~ a ]]', false], ["x=$'1\\r'; [[ $x -eq 1 ]]", false], ['x=$\'1\\n\'; [[ $x -eq 1 ]]', false], ['[[ $\'1\\n\' -eq 1 ]]', true], ['[ @(a) = a ]', false],

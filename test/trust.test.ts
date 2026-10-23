@@ -45,6 +45,20 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided(`${body}; eval f`), 'true');
     assert.strictEqual(decided(`${body}; eval 'eval f'`), 'true');
     for (const more of ['trap f INT', "eval 'trap f INT'", "trap 'eval f' INT", "shopt -s expand_aliases; alias g='f'"]) assert.strictEqual(decided(`${body}; ${more}`), undefined, more);
+    // (An alias named with a character the walk does not take: bash expands it, `g,h` runs `f`; its text is read alone.)
+    assert.strictEqual(bash(`${body}; f() { echo F; }; shopt -s expand_aliases; alias 'g,h=f'\ng,h`), 'F\n');
+    assert.strictEqual(decided(`${body}; shopt -s expand_aliases; alias 'g,h=f'`), undefined);
+  });
+
+  it("reads the aliases the walk expands from the walk's own trees: the alias's text with the rest of the command", () => {
+    // (The key of an associative array is not arithmetic, also in an alias's text: `k` is not read. Before, that tree
+    // was read on its own, without `declare -A m`, and nothing was trusted.)
+    const src = "declare -A m; shopt -s expand_aliases; alias put='m[k]=1'\nput";
+    assert.strictEqual(bash(`k='x=5'; x=1; ${src}\necho "\${!m[@]} $x"`), 'k 1\n');
+    assert.strictEqual(decided(`${src}\nx=1; [ "$x" = 1 ] && :`), 'true');
+    // (Each alias whose text names another doubles the trees to read: past a bound, nothing is trusted.)
+    const many = ['shopt -s expand_aliases', ...Array.from({ length: 11 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), 'a0', 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    assert.strictEqual(shellState(parser.parse(many)).blind, 'too many aliases expanded in aliases');
   });
   it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
     // Arithmetic that reads a variable whose value is always a number runs no code: decisions stay.

@@ -23,9 +23,13 @@ const ARITH_NESTING = 1000;
 const ARITH_MEMO = 8;
 /** What may be pasted into an arithmetic expression; bash expands it first. (A single-quoted text is not: it is an error.) */
 const PASTES = ['simple_expansion', 'expansion', 'arithmetic_expansion', 'command_substitution', 'process_substitution', 'string', 'ansi_c_string', 'translated_string'];
-/** The key of `set -u` among the reads of a value (no variable has this name). */
-const NOUNSET = '-u';
-/** What a value read as an expression has read so far: the variables (and `set -u`), whether it can be remembered, how deep it went. */
+/**
+ * The key, among the reads of a value, of what a read depends on besides the variables (no variable has this name):
+ * `set -u`, and whether the path ran what the walk does not read (`ShellState.opaque`), as `context` gives them.
+ */
+const CONTEXT = '-u';
+const context = (st: ShellState): string => `${option(st, 'set', 'nounset')}${st.opaque ? ' opaque' : ''}`;
+/** What a value read as an expression has read so far: the variables (and `CONTEXT`), whether it can be remembered, how deep it went. */
 interface ArithReads { deps: Map<string, unknown>; pure: boolean; depth: number; unsure: boolean; assumed: boolean }
 /**
  * A value read as an expression, remembered with what it read and how deep it went: its value; or `unknown` (`deep`:
@@ -319,7 +323,7 @@ export class WalkArith {
   }
 
   /** What the values reached from the variable `name` seem to assign, each remembered with the variables it read. */
-  assignsMemo = new Map<string, { deps: ReadonlyMap<string, unknown>; targets: ReadonlySet<string> }>();
+  private readonly assignsMemo = new Map<string, { deps: ReadonlyMap<string, unknown>; targets: ReadonlySet<string> }>();
 
   /**
    * What the value of the variable `name` seems to assign, read as an expression, and the values of the variables it
@@ -328,7 +332,7 @@ export class WalkArith {
   private valueAssigns(st: ShellState, name: string): ReadonlySet<string> {
     const hit = this.assignsMemo.get(name);
     if (hit && this.sameReads(st, hit.deps)) return hit.targets;
-    const deps = new Map<string, unknown>([[NOUNSET, option(st, 'set', 'nounset')]]);
+    const deps = new Map<string, unknown>([[CONTEXT, context(st)]]);
     const targets = new Set<string>();
     const texts: string[] = [];
     const seen = new Set<string>();
@@ -352,9 +356,9 @@ export class WalkArith {
     return targets;
   }
 
-  /** Whether the variables (and `set -u`) in `deps` are the same in `st`. */
+  /** Whether the variables (and `CONTEXT`) in `deps` are the same in `st`. */
   private sameReads(st: ShellState, deps: ReadonlyMap<string, unknown>): boolean {
-    for (const [k, v] of deps) if ((k === NOUNSET ? option(st, 'set', 'nounset') : st.variables.get(k)) !== v) return false;
+    for (const [k, v] of deps) if ((k === CONTEXT ? context(st) : st.variables.get(k)) !== v) return false;
     return true;
   }
 
@@ -529,15 +533,15 @@ export class WalkArith {
   /** What each value being read as an expression has read so far (see `arithValue`). */
   readonly arithReads: ArithReads[] = [];
   /** The values of variables read as expressions, by name, with what each read (`ARITH_MEMO`, most recent first). */
-  arithMemo = new Map<string, ArithRemembered[]>();
+  private readonly arithMemo = new Map<string, ArithRemembered[]>();
 
-  /** Notes that the value being read as an expression (if any) depends on the variable `name` and on `set -u`. */
+  /** Notes that the value being read as an expression (if any) depends on the variable `name` and on `CONTEXT`. */
   noteRead(st: ShellState, name: string): void {
     const top = this.arithReads[this.arithReads.length - 1];
     if (!top) return;
     const v = st.variables.get(name);
     top.deps.set(name, v);
-    top.deps.set(NOUNSET, option(st, 'set', 'nounset'));
+    top.deps.set(CONTEXT, context(st));
     // (A nameref reads other variables: not remembered.)
     if (isNameref(v)) top.pure = false;
   }

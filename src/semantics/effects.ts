@@ -23,6 +23,22 @@ export function commandName(c: SyntaxNode): string | undefined {
   return staticWordValue(field(c, 'name')!.namedChildren[0]);
 }
 
+/** The name of the simple command `c` when bash may read it as an alias: a plain word, with no quote or expansion. */
+export function aliasName(c: SyntaxNode): string | undefined {
+  const word = field(c, 'name')!.namedChildren[0];
+  const name = commandName(c);
+  return word.type === 'word' && word.text === name ? name : undefined;
+}
+
+/** `alias name=value` (or `'name=value'`): the name and what it stands for (static, or the text without its outer quotes). */
+export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
+  const v = staticWordValue(a);
+  const text = v ?? a.text;
+  const m = /^([\w.:@%+-]+)=(['"]?)([\s\S]*)\2$/.exec(text);
+  if (!m) return undefined;
+  return { name: m[1], value: v !== undefined ? v.slice(v.indexOf('=') + 1) : m[3] };
+}
+
 /** The words of a builtin read with its spec (or `spec`: a function of the host, bats' `run`). */
 export function builtinParse(name: string, args: readonly SyntaxNode[], spec = builtins[name]): ArgvParse {
   return interpret(spec, args.map(argWord), { name });

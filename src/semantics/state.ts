@@ -138,8 +138,9 @@ export function docLine(n: SyntaxNode): number {
 
 /**
  * The strings a model reads as scripts (`StateModel.script`), by their first word, and the trees of those that run in
- * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model. The trust
- * scan reads the same trees (`StringTrees`): each string is parsed once.
+ * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model. Also the trees
+ * of the aliases the walk expands (an alias's text with the rest of a command). The trust scan reads the same trees
+ * (`StringTrees`): each string is parsed once.
  */
 export class Scripts implements StringTrees {
   readonly byWord = new Map<SyntaxNode, NestedScript | NotRead>();
@@ -147,6 +148,8 @@ export class Scripts implements StringTrees {
   /** The text and tree of each string, by its first word (none: not static text); the trees of the texts of `alias`, by word. */
   private readonly parsed = new Map<SyntaxNode, { text: MappedText; tree: SyntaxTree } | undefined>();
   private readonly aliases = new Map<SyntaxNode, SyntaxNode>();
+  /** The trees of the aliases expanded at each command, by the command and the alias's text. */
+  private readonly expansions = new Map<SyntaxNode, Map<string, SyntaxNode>>();
   model!: StateModel;
   constructor(readonly depth: number) {}
 
@@ -165,8 +168,18 @@ export class Scripts implements StringTrees {
 
   alias(word: SyntaxNode, text: string): SyntaxNode {
     let root = this.aliases.get(word);
+    if (!root) this.aliases.set(word, (root = parser().parse(text).root));
+    return root;
+  }
+
+  expansion(command: SyntaxNode, text: string): SyntaxNode {
+    let byText = this.expansions.get(command);
+    if (!byText) this.expansions.set(command, (byText = new Map()));
+    let root = byText.get(text);
     if (!root) {
-      this.aliases.set(word, (root = parser().parse(text).root));
+      // (The rest of the command: what follows its name, read with the alias's text, as bash reads it.)
+      const rest = command.text.slice(field(command, 'name')!.endIndex - command.startIndex);
+      byText.set(text, (root = parser().parse(text + rest).root));
     }
     return root;
   }

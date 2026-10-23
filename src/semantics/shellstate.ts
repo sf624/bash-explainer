@@ -238,6 +238,12 @@ export interface ShellState {
    * under `set -e`). What runs from it is dead code; merging drops it.
    */
   readonly unreachable?: true;
+  /**
+   * Set on the state of a path that ran what the walk does not read (a sourced file, a string of `eval` or a trap's
+   * action that is not static text, the startup files of another shell): there a name the script has not set may be
+   * set. Merging keeps it: such a path may have been taken.
+   */
+  readonly opaque?: true;
 }
 
 /** Why errexit has its value in a `$( )` (`ShellState.errexitWhy`). */
@@ -266,7 +272,7 @@ export function attribute(st: ShellState, name: string, letter: string): Tri {
   return st.variables.get(name)?.attrs[letter]?.state ?? 'off';
 }
 
-export type Kind = Exclude<keyof ShellState, 'status' | 'unreachable' | 'errexitWhy'>;
+export type Kind = Exclude<keyof ShellState, 'status' | 'unreachable' | 'errexitWhy' | 'opaque'>;
 export type Entry<K extends Kind> = ShellState[K] extends NameMap<infer V> ? V : never;
 
 export const EMPTY: ShellState = {
@@ -349,6 +355,7 @@ export function merge(states: ShellState[], posix = false): ShellState {
     hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeAlias(x, y)),
     ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
     ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
+    ...(a.opaque || b.opaque ? { opaque: true as const } : {}),
   }));
 }
 
@@ -374,7 +381,7 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     const k = Object.keys(x.attrs);
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state);
   };
-  return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
+  return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
     && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))

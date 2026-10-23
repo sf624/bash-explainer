@@ -1,24 +1,10 @@
 // The aliases of the walk of the shell state (src/semantics/walk/walker.ts): the `alias` commands of the script, and
-// a command whose name is an alias, which runs the alias's text with the rest of the command, read again.
-import { staticWordValue } from '../../staticword';
-import { descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../../syntax/tree';
-import { commandName } from '../effects';
+// a command whose name is an alias, which runs the alias's text with the rest of the command, read again. The trees of
+// those texts are the model's (`Scripts.expansion`): the trust scan reads the same ones (src/semantics/trust.ts).
+import { descendants, fields, type SyntaxNode } from '../../syntax/tree';
+import { aliasName, aliasOf, commandName } from '../effects';
 import { type AliasState, merge, option, type ShellState, withStatus } from '../shellstate';
-import { parser } from './shared';
 import type { Walker } from './walker';
-
-/** Trees of alias texts, least recently used first; bounded, as a long-lived process (LSP, web) sees many texts. */
-const aliasTrees = new Map<string, SyntaxTree>();
-const ALIAS_TREES = 256;
-
-/** `alias name=value` (or `'name=value'`): the name and what it stands for (static, or the text without its outer quotes). */
-export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
-  const v = staticWordValue(a);
-  const text = v ?? a.text;
-  const m = /^([\w.:@%+-]+)=(['"]?)([\s\S]*)\2$/.exec(text);
-  if (!m) return undefined;
-  return { name: m[1], value: v !== undefined ? v.slice(v.indexOf('=') + 1) : m[3] };
-}
 
 /** The aliases the walk expands, and the `alias` commands that define them. */
 export class WalkAliases {
@@ -55,35 +41,23 @@ export class WalkAliases {
   }
 
   /**
-   * The state after the simple command `n` named `name`, run from `st` once its words are expanded, when its name is
-   * an alias that may be expanded (in the state its aliases come from, `Walker.expand`); undefined otherwise.
+   * The state after the simple command `n`, run from `st` once its words are expanded, when its name is an alias that
+   * may be expanded (in the state its aliases come from, `Walker.expand`): the alias's text, then the rest of the
+   * command, read and run instead. Undefined otherwise.
    */
-  expand(n: SyntaxNode, name: string | undefined, st: ShellState): ShellState | undefined {
-    const nameNode = field(n, 'name')!;
-    const word = nameNode.namedChildren[0];
+  expand(n: SyntaxNode, st: ShellState): ShellState | undefined {
+    const name = aliasName(n);
     const from = this.w.expand;
-    const alias = name !== undefined && word.type === 'word' && word.text === name && !this.expanding.has(name) ? from.aliases.get(name) : undefined;
+    const alias = name !== undefined && !this.expanding.has(name) ? from.aliases.get(name) : undefined;
     const expands = !this.w.bash ? 'on' : option(from, 'shopt', 'expand_aliases');
     if (!alias || alias.state === 'off' || !(expands === 'on' || expands === 'unknown')) return undefined;
-    // The alias's text, then the rest of the command, read and run instead.
-    const tree = this.parseText(alias.value + n.text.slice(nameNode.endIndex - n.startIndex));
+    const root = this.w.scripts.expansion(n, alias.value);
     this.expanding.add(name!);
     const host = this.w.aliasHost;
     this.w.aliasHost ??= n;
-    const after = this.w.sequence(tree.root.children, st);
+    const after = this.w.sequence(root.children, st);
     this.w.aliasHost = host;
     this.expanding.delete(name!);
     return alias.state === 'on' && expands === 'on' ? after : merge([withStatus(st, undefined), after], this.w.posix);
-  }
-
-  private parseText(text: string): SyntaxTree {
-    let tree = aliasTrees.get(text);
-    if (tree) aliasTrees.delete(text);
-    else {
-      tree = parser().parse(text);
-      if (aliasTrees.size >= ALIAS_TREES) aliasTrees.delete(aliasTrees.keys().next().value!);
-    }
-    aliasTrees.set(text, tree);
-    return tree;
   }
 }
