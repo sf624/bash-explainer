@@ -81,7 +81,7 @@ describe('awk command lines (options and name=value operands) agree with gawk', 
     assert.strictEqual(awkInvocation(['-v', 'x=a\\', 'BEGIN{}']).vars.x, 'a\\');
   });
   it('refuses what it cannot follow', () => {
-    for (const words of [['{print}', 'f', 'x=1'], ['-v', 'x=\\q', '{print}'], ['{print}', 'x=\\q'], ['-F', '\\d', '{print}'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x']]) {
+    for (const words of [['{print}', 'f', 'x=1'], ['-v', 'x=\\q', '{print}'], ['{print}', 'x=\\q'], ['-F', '\\d', '{print}'], ['--posix', '{print}'], ['-v', 'x', '{print}'], ['-F'], [undefined, 'x'], ['-xF:', '{print}']]) {
       assert.ok(awkInvocation(words).unsupported !== undefined, JSON.stringify(words));
     }
     const f = awkInvocation(['-f', 'p.awk', 'x=1']);

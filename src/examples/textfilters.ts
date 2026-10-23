@@ -4,60 +4,72 @@
  */
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
+import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
+import { lookupCommand } from '../dict/aliases';
+
 export class Unsupported extends RunnerUnsupported {}
 
-/** Option names → whether they take a value. Long options map to their short form. */
-interface OptSpec {
-  flags: string;
-  values: string;
-  long?: Record<string, string>;
-}
+/**
+ * The options a simulator follows: a name of the option in the command's dictionary spec (any of its names) → the
+ * key it has in `Parsed.opts`. The key `_` marks an option whose value the simulator does not read, so it may be not literal.
+ */
+export type Supported = Record<string, string>;
 
 export interface Parsed {
-  /** Options in order: [name, value] (value '' for flags). */
+  /** Options in order: [key, value] (value '' for flags and for an optional value not given). */
   opts: [string, string][];
   /** Operands (files, numbers, names); undefined when not literal. */
   operands: (string | undefined)[];
+  /** The index of the word that starts the command this one runs (`xargs … CMD`), if any. */
+  command?: number;
 }
 
-/** GNU-style option parsing: combined flags (-nr), attached values (-k2 -t:), --long[=value], and `--`. */
-export function parseOptions(words: (string | undefined)[], spec: OptSpec): Parsed {
-  const opts: [string, string][] = [];
-  const operands: (string | undefined)[] = [];
-  let ended = false;
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined || ended || w === '-' || !w.startsWith('-')) {
-      operands.push(w);
-      continue;
-    }
-    if (w === '--') { ended = true; continue; }
-    if (w.startsWith('--')) {
-      const eq = w.indexOf('=');
-      const name = eq < 0 ? w.slice(2) : w.slice(2, eq);
-      const short = spec.long?.[name];
-      if (!short) throw new Unsupported(`--${name}`);
-      if (spec.values.includes(short)) {
-        const v = eq < 0 ? words[++i] : w.slice(eq + 1);
-        if (v === undefined) throw new Unsupported('missing value');
-        opts.push([short, v]);
-      } else opts.push([short, '']);
-      continue;
-    }
-    for (let k = 1; k < w.length; k++) {
-      const c = w[k];
-      if (spec.values.includes(c)) {
-        const v = k + 1 < w.length ? w.slice(k + 1) : words[++i];
-        if (v === undefined) throw new Unsupported('missing value');
-        opts.push([c, v]);
+/** The parse of a command's words with its dictionary spec, as the explanation reads them; a word that is not literal is undefined. */
+export function parseWords(cmd: string, words: (string | undefined)[]): ArgvParse {
+  return interpret(lookupCommand(cmd)!, words.map((w) => (w === undefined ? {} : { value: w })), { name: cmd, lookup: lookupCommand });
+}
+
+/**
+ * The options and operands of `cmd`'s words, read with its dictionary spec (`parseWords`): clusters (`-nr`), values
+ * attached or in the next word (`-k2`, `-t :`), `--name=value`, a unique prefix of a long name where the tool takes
+ * one (`--rev`), and `--`. An option `supported` does not name, one the spec does not know or that is ambiguous, and
+ * a value that is missing or not literal throw `Unsupported`. `pattern` gives the key and value of an option the
+ * spec recognises by its form (`head -5`: `-n 5`).
+ */
+export function parseOptions(cmd: string, words: (string | undefined)[], supported: Supported, pattern?: (flag: string) => [string, string]): Parsed {
+  const out: Parsed = { opts: [], operands: [] };
+  const option = (r: ArgRole, word: number): void => {
+    if (r.role === 'pattern-option' && pattern) { out.opts.push(pattern(r.flag)); return; }
+    if (r.role !== 'option') throw new Unsupported(`${r.role} ${words[word]}`);
+    const key = r.spec.names.map((n) => supported[n]).find((k) => k !== undefined);
+    if (key === undefined) throw new Unsupported(r.flag);
+    if (r.missing) throw new Unsupported('missing value');
+    out.opts.push([key, r.value ? words[word]!.slice(r.value.attached) : '']);
+  };
+  const parse = parseWords(cmd, words);
+  // (A line the tool refuses, `grep -E -F`, runs nothing.)
+  if (parse.refused) throw new Unsupported('refused');
+  for (const { word, role } of parse.roles) {
+    switch (role.role) {
+      case 'operand': out.operands.push(words[word]); break;
+      case 'end-of-options': break;
+      case 'command': out.command = word; break;
+      case 'cluster': role.letters.forEach((l) => option(l, word)); break;
+      case 'value': {
+        const v = words[word];
+        // (A value the simulator does not read, key `_`, may be anything: getopt's `-n "$0"`.)
+        if (v === undefined && out.opts[out.opts.length - 1][0] !== '_') throw new Unsupported('missing value');
+        out.opts[out.opts.length - 1][1] = v ?? '';
         break;
       }
-      if (!spec.flags.includes(c)) throw new Unsupported(`-${c}`);
-      opts.push([c, '']);
+      default: option(role, word);
     }
   }
-  return { opts, operands };
+  return out;
 }
+
+/** The short options `-x` of `letters` as keys `x`, and `more`. */
+export const shortKeys = (letters: string, more: Supported = {}): Supported => ({ ...Object.fromEntries([...letters].map((c) => [`-${c}`, c])), ...more });
 
 const has = (p: Parsed, c: string) => p.opts.some(([n]) => n === c);
 const value = (p: Parsed, c: string) => [...p.opts].reverse().find(([n]) => n === c)?.[1];
@@ -65,14 +77,11 @@ const values = (p: Parsed, c: string) => p.opts.filter(([n]) => n === c).map(([,
 
 // ---------------------------------------------------------------- sort
 
-const SORT: OptSpec = {
-  flags: 'bdfghinrsuVM',
-  values: 'ktS',
-  long: {
-    'ignore-leading-blanks': 'b', 'dictionary-order': 'd', 'ignore-case': 'f', 'general-numeric-sort': 'g', 'human-numeric-sort': 'h',
-    'numeric-sort': 'n', reverse: 'r', stable: 's', unique: 'u', 'version-sort': 'V', key: 'k', 'field-separator': 't', 'buffer-size': 'S',
-  },
-};
+/** The options of sort the simulation follows (`-S`, the buffer size, changes nothing it shows). */
+const SORT = shortKeys('bdfghinrsuVktS');
+
+/** Whether sort's words give `-u` (`-nu`, `--unique`, `--uniq`); throws Unsupported where the simulation cannot follow them. */
+export const sortsUnique = (words: (string | undefined)[]): boolean => has(parseOptions('sort', words, SORT), 'u');
 
 interface SortKey {
   sf: number; sc: number; ef: number; ec: number;
@@ -170,8 +179,7 @@ function compareKey(a: string, b: string, opts: string): number {
 }
 
 export function runSort(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(words, SORT);
-  if (has(p, 'M')) throw new Unsupported('month sort');
+  const p = parseOptions('sort', words, SORT);
   const global = p.opts.filter(([n]) => 'bdfghinrV'.includes(n)).map(([n]) => n).join('');
   const sep = value(p, 't');
   if (sep !== undefined && [...sep].length !== 1) throw new Unsupported('-t');
@@ -193,15 +201,17 @@ export function runSort(words: (string | undefined)[], input: string[]): string[
 
 // ---------------------------------------------------------------- uniq
 
-const UNIQ: OptSpec = {
-  flags: 'cdDiuz',
-  values: 'fsw',
-  long: { count: 'c', repeated: 'd', 'all-repeated': 'D', 'ignore-case': 'i', unique: 'u', 'skip-fields': 'f', 'skip-chars': 's', 'check-chars': 'w' },
+/** The options of uniq the simulation follows; `--all-repeated` only as `-D` (its method `none`). */
+const UNIQ = shortKeys('cdDiufsw', { '--all-repeated': 'D' });
+
+const uniqOptions = (words: (string | undefined)[]): Parsed => {
+  const p = parseOptions('uniq', words, UNIQ);
+  if (p.opts.some(([k, v]) => k === 'D' && v !== '' && v !== 'none')) throw new Unsupported('--all-repeated');
+  return p;
 };
 
 export function runUniq(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(words, UNIQ);
-  if (has(p, 'z')) throw new Unsupported('-z');
+  const p = uniqOptions(words);
   const skipF = Number(value(p, 'f') ?? 0);
   const skipC = Number(value(p, 's') ?? 0);
   const width = value(p, 'w') !== undefined ? Number(value(p, 'w')) : Infinity;
@@ -229,11 +239,8 @@ export function runUniq(words: (string | undefined)[], input: string[]): string[
 
 // ---------------------------------------------------------------- cut
 
-const CUT: OptSpec = {
-  flags: 'sn',
-  values: 'bcfdO',
-  long: { bytes: 'b', characters: 'c', fields: 'f', delimiter: 'd', 'only-delimited': 's', 'output-delimiter': 'O', complement: 'C' },
-};
+/** The options of cut the simulation follows (`-n` changes nothing). */
+const CUT = shortKeys('snbcfd', { '--output-delimiter': 'O', '--complement': 'C' });
 
 function parseList(list: string): (i: number) => boolean {
   const ranges = list.split(',').map((r) => {
@@ -247,8 +254,8 @@ function parseList(list: string): (i: number) => boolean {
 }
 
 export function runCut(words: (string | undefined)[], input: string[]): string[] {
-  const complement = words.includes('--complement');
-  const p = parseOptions(words.filter((w) => w !== '--complement'), { ...CUT, flags: CUT.flags + 'C' });
+  const p = parseOptions('cut', words, CUT);
+  const complement = has(p, 'C');
   const pick = (sel: (i: number) => boolean) => (i: number) => (complement ? !sel(i) : sel(i));
   const fields = value(p, 'f');
   const chars = value(p, 'c') ?? value(p, 'b');
@@ -334,14 +341,15 @@ export function expandSet(set: string, fillTo?: number): string[] {
   return out;
 }
 
-const TR: OptSpec = { flags: 'cCdst', values: '', long: { complement: 'c', delete: 'd', 'squeeze-repeats': 's', 'truncate-set1': 't' } };
+/** The options of tr the simulation follows. */
+const TR = shortKeys('cdst');
 
 /** tr over the whole text (lines joined with \n), so sets containing \n behave as in tr. */
 export function runTr(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(words, TR);
+  const p = parseOptions('tr', words, TR);
   const sets = p.operands;
   if (sets.some((s) => s === undefined) || !sets.length || sets.length > 2) throw new Unsupported('sets');
-  const comp = has(p, 'c') || has(p, 'C');
+  const comp = has(p, 'c');
   const del = has(p, 'd');
   const squeeze = has(p, 's');
   const text = input.map((l) => l + '\n').join('');
@@ -390,17 +398,17 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
 
 // ---------------------------------------------------------------- head / tail
 
-/** `head -5` / `tail +2` (obsolete forms) become `-n 5` / `-n +2`. */
-function normaliseCount(words: (string | undefined)[]): (string | undefined)[] {
-  return words.flatMap((w, i) => {
-    // `-n -2`: the number is the value of -n, not the obsolete form.
-    if (i > 0 && /^(-n|-c|--lines|--bytes)$/.test(words[i - 1] ?? '')) return [w];
-    return w && /^-\d+$/.test(w) ? ['-n', w.slice(1)] : w && /^\+\d+$/.test(w) ? ['-n', w] : [w];
-  });
-}
+/** The options of head and tail the simulation follows. */
+const HEAD = shortKeys('qvznc');
+const TAIL = shortKeys('fFqvzncs', { '--follow': 'f' });
+
+/** `head -5`, `tail -5`, `tail +2` (the old forms the specs recognise) are `-n 5`, `-n +2`. */
+const lineCount = (flag: string): [string, string] => ['n', flag.startsWith('+') ? flag : flag.slice(1)];
+
+const countOptions = (cmd: 'head' | 'tail', words: (string | undefined)[]): Parsed => parseOptions(cmd, words, cmd === 'head' ? HEAD : TAIL, lineCount);
 
 export function runHead(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(normaliseCount(words), { flags: 'qvz', values: 'nc', long: { lines: 'n', bytes: 'c', quiet: 'q', silent: 'q', verbose: 'v' } });
+  const p = countOptions('head', words);
   const c = value(p, 'c');
   if (c !== undefined) {
     const text = input.map((l) => l + '\n').join('');
@@ -415,7 +423,7 @@ export function runHead(words: (string | undefined)[], input: string[]): string[
 }
 
 export function runTail(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(normaliseCount(words), { flags: 'fFqvz', values: 'ncs', long: { lines: 'n', bytes: 'c', follow: 'f', quiet: 'q', silent: 'q', verbose: 'v' } });
+  const p = countOptions('tail', words);
   const c = value(p, 'c');
   if (c !== undefined) {
     const text = input.map((l) => l + '\n').join('');
@@ -432,10 +440,9 @@ export function runTail(words: (string | undefined)[], input: string[]): string[
 // ---------------------------------------------------------------- seq, basename, dirname
 
 export function runSeq(words: (string | undefined)[]): string[] {
-  // Negative numbers are operands, not options.
-  const fixed = words.map((w) => (w && /^-\d/.test(w) ? `\u0000${w}` : w));
-  const p = parseOptions(fixed, { flags: 'w', values: 'sf', long: { 'equal-width': 'w', separator: 's', format: 'f' } });
-  const nums = p.operands.map((o) => o?.replace('\u0000', ''));
+  // (A negative number is an operand: the spec says so, as GNU seq reads it.)
+  const p = parseOptions('seq', words, shortKeys('wsf'));
+  const nums = p.operands;
   // seq needs one to three numbers.
   if (nums.length < 1 || nums.length > 3 || nums.some((n) => n === undefined || !/^-?(\d+\.?\d*|\.\d+)$/.test(n))) throw new Unsupported('seq operands');
   const [first, inc, last] = nums.length === 1 ? ['1', '1', nums[0]!] : nums.length === 2 ? [nums[0]!, '1', nums[1]!] : [nums[0]!, nums[1]!, nums[2]!];
@@ -465,7 +472,7 @@ export function runSeq(words: (string | undefined)[]): string[] {
 }
 
 export function runBasename(words: (string | undefined)[]): string[] {
-  const p = parseOptions(words, { flags: 'az', values: 's', long: { multiple: 'a', suffix: 's', zero: 'z' } });
+  const p = parseOptions('basename', words, shortKeys('asz'));
   if (p.operands.some((o) => o === undefined) || !p.operands.length) throw new Unsupported('operands');
   const names = p.operands as string[];
   const multiple = has(p, 'a') || has(p, 's');
@@ -479,7 +486,7 @@ export function runBasename(words: (string | undefined)[]): string[] {
 }
 
 export function runDirname(words: (string | undefined)[]): string[] {
-  const p = parseOptions(words, { flags: 'z', values: '', long: { zero: 'z' } });
+  const p = parseOptions('dirname', words, shortKeys('z'));
   if (p.operands.some((o) => o === undefined) || !p.operands.length) throw new Unsupported('operands');
   return (p.operands as string[]).map((n) => {
     if (/^\/+$/.test(n)) return '/';
@@ -515,7 +522,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
   try {
     switch (cmd) {
       case 'sort': {
-        const p = parseOptions(words, SORT);
+        const p = parseOptions('sort', words, SORT);
         const global = p.opts.filter(([n]) => 'bdfghinrV'.includes(n)).map(([n]) => n).join('');
         const sep = value(p, 't') ?? ' ';
         const keys = values(p, 'k').map((k) => parseKey(k, global));
@@ -548,13 +555,13 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         return rows.map((r) => r.join(sep));
       }
       case 'uniq': {
-        const p = parseOptions(words, UNIQ);
+        const p = uniqOptions(words);
         if (has(p, 'i')) return ['apple', 'Apple', 'banana', 'apple', 'cherry', 'cherry'];
         if (value(p, 'f')) return ['1 apple', '2 apple', '3 banana', '4 apple', '5 cherry', '6 cherry'];
         return ['apple', 'apple', 'banana', 'apple', 'cherry', 'cherry'];
       }
       case 'cut': {
-        const p = parseOptions(words.filter((w) => w !== '--complement'), { ...CUT, flags: CUT.flags + 'C' });
+        const p = parseOptions('cut', words, CUT);
         const list = value(p, 'f') ?? value(p, 'c') ?? value(p, 'b') ?? '1';
         const max = Math.max(...list.split(/[,-]/).filter(Boolean).map(Number));
         if (value(p, 'f') !== undefined) {
@@ -573,10 +580,10 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         return ['abcdefghijklmnopqrstuvwxyz'.slice(0, len), '0123456789abcdefghijklmn'.slice(0, len)];
       }
       case 'tr': {
-        const p = parseOptions(words, TR);
+        const p = parseOptions('tr', words, TR);
         const set1 = p.operands[0] !== undefined ? expandSet(p.operands[0]) : [];
         // A complement keeps the set and changes everything else, so include other characters.
-        if (has(p, 'c') || has(p, 'C')) return ['Hello, World! #123'];
+        if (has(p, 'c')) return ['Hello, World! #123'];
         if (set1.includes('\n')) return ['one', 'two', 'three'];
         if (set1.includes('\r')) return ['line 1\r', 'line 2\r'];
         if (has(p, 's') && set1.includes(' ')) return ['too   many    spaces'];
@@ -588,7 +595,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
       }
       case 'head':
       case 'tail': {
-        const p = parseOptions(normaliseCount(words), { flags: 'fFqvz', values: 'ncs', long: { lines: 'n', bytes: 'c', follow: 'f' } });
+        const p = countOptions(cmd, words);
         if (value(p, 'c') !== undefined) return ['abcdefghij', 'klmnopqrst'];
         const n = Math.abs(Number(value(p, 'n') ?? '10'));
         const count = Math.min(Math.max(n + 3, 6), 14) + more;

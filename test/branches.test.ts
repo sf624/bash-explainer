@@ -257,7 +257,6 @@ describe('branches no other test takes', () => {
 
   it('xargs, tests and read: the cases the simulation leaves out', () => {
     assert.throws(() => runXargs([], "a 'b"), Unsupported);
-    assert.throws(() => runXargs(['-'], ''), Unsupported);
     assert.throws(() => runXargs(['echo', undefined], 'a'), Unsupported);
     assert.throws(() => runXargs(['-s', '10'], 'a'), Unsupported);
     assert.deepStrictEqual(runXargs(['-r', 'echo'], ''), []);
@@ -716,6 +715,9 @@ describe('the analyzer: branches no other test takes', () => {
     return [en, ja].map((e) => [...e.context.map((c) => c.label), ...e.notes, ...allTokens(e.items).map((t) => `${t.label}: ${t.explanation}`), ...e.examples.map((x) => x.title)].join('\n'));
   };
   const cases: [string, number?, Shell?, ExplainOptions?][] = [
+    // `~` read by the shell state with HOME not known (`tilde` in src/semantics/state.ts, its `?? undefined`): only
+    // the seeded fuzz took that branch, and new snippets changed its inputs.
+    ['~'], ['HOME=/h; [[ ~root == /h ]]'], ['[[ ~+ == x ]]'],
     ['echo ${a[10]} ${a[11]} ${a[12]} ${a[13]} ${a[1]} ${a[2]} ${a[3]} ${a[-11]} ${a[-2]} ${s:10:1} ${s:11} ${s:21:1} ${s:22:1} ${s:23}'],
     ['echo "$x" | grep -c a', 0, undefined, { idioms: false, pitfalls: false }],
     ['until false; do\n  echo a\ndone', 1], ['((\n  x = 1\n))', 1], ['a=1 b=2'], ['(( x ? 1 : 2 )); (( x-- )); (( (1 + 2) ))'], ["echo $'a\\tb'"],
@@ -736,7 +738,7 @@ describe('the analyzer: branches no other test takes', () => {
     ['{ cat; } <<< x 2>&1 > f'], ['case $x in\n  a |\n  b) :;;\nesac', 1], ['case $x in\n  (\n  a) :;;\nesac', 1], ['case $x in\n  a)\n    echo;;\nesac', 2],
     ['x=1 \\\n  && case $y in a) :;; esac'], ['cat <<EOF\nEOF'], ['x=1 \\\n  && yq .a f.yml'], ['find . \\\n  -name a -o -name b'], ['find -L . -name a'], ['find . /tmp'],
     ['x=1 \\\n  && grep -e a -A 2 --color=auto f'], ['x=1 \\\n  && git log --oneline -n 3 --format=%h'],
-    ['tr "$a" x'], ['tr -d a b'], ['grep -- -a f'], ['sed --expression="$x" f'], ['sed -e "$x" f'], ['yq "$e" f'], ['yq -o json .a f.yml'], ["yq '.a | input' f.yml"],
+    ['tr "$a" x'], ['tr -d a b'], ['grep -- -a f'], ['sed --expression="$x" f'], ['sed -e "$x" f'], ['yq "$e" f'], ['yq -o json .a f.yml'], ["yq -o \"$f\" '.a' f.yml"], ["yq '.a | input' f.yml"],
     ["yq -y '.a // \"d\"' f.yml"], ["yq -r '.a | tonumber' f.yml"], ['{ echo; } > f | sort'], ['grep a | sort'], ['perl -ne "$x"'],
     ['seq 3 | while read -r n; do t=$n; done; echo "$t"'], ['seq 3 | read v; echo "$v"', 0, 'dash'], ['seq 3 | { read v; }; echo "$v"'], ['seq 3 | for i in 1; do s=1; done; echo $s'],
     ['echo a | X=1 cat; echo $X'], ['f() { echo | while read -r l; do local q=1; done; echo $q; }'], ['echo | while read -r -d x l; do :; done; echo $l'],

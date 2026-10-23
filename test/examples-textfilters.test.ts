@@ -25,6 +25,9 @@ const cases: string[][] = [
   ['seq', '5'], ['seq', '2', '5'], ['seq', '1', '3', '10'], ['seq', '-w', '8', '11'], ['seq', '-s', ',', '3'], ['seq', '0', '0.5', '2'], ['seq', '10', '-3', '1'], ['seq', '-w', '-2', '2'],
   ['basename', '/a/b/report.txt', '.txt'], ['basename', '-a', '/x/y', 'z/w/'], ['basename', '-s', '.sh', 'a.sh', 'b/c.sh'], ['basename', '/'], ['basename', '.sh', '.sh'],
   ['dirname', '/a/b/c.txt'], ['dirname', 'file'], ['dirname', '/'], ['cut', '-b', '2-4'], ['cut', '-d,', '-f9'], ['uniq', '-w', '3'], ['dirname', '/a/b/', 'x/y', '/z'], ['dirname', '//a//b//'],
+  // Options read as the explanation reads them (the dictionary spec): long prefixes, other names of an option.
+  ['sort', '--rev'], ['sort', '--uniq'], ['cut', '-d,', '--comp', '-f2'], ['cut', '-n', '-f2'], ['tr', '-C', '[:alnum:]\\n', '_'], ['uniq', '--all-repeated'],
+  ['uniq', '--all-repeated=none'], ['head', '-q', '-n', '3'], ['tail', '--lin=2'], ['seq', '-.5', '1'], ['basename', '--suf=.sh', 'a.sh'],
 ];
 
 describe('coreutils examples agree with GNU coreutils', () => {
@@ -59,6 +62,12 @@ describe('coreutils example input', () => {
     for (const args of [[], ['-w'], ['-s', ','], ['1', '2', '3', '4']]) assert.strictEqual(commandExample('seq', args), undefined, args.join(' '));
     assert.strictEqual(commandExample('basename', []), undefined);
     assert.throws(() => runSort(['--bogus'], []));
+    // GNU seq reads options only before the first number (`seq 1 -w 3`: invalid floating point argument: '-w'), and
+    // uniq's other grouping methods are not `-D`.
+    for (const [cmd, ...args] of [['seq', '1', '-w', '3'], ['uniq', '--all-repeated=prepend']]) {
+      assert.strictEqual(commandExample(cmd, args), undefined, args.join(' '));
+    }
+    assert.notStrictEqual(run('seq', ['1', '-w', '3']).status, 0);
   });
 });
 
@@ -98,7 +107,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
     ];
     for (const [f, msg] of fails) assert.throws(f, (e: Error) => e instanceof Unsupported && e.message.includes(msg), msg);
-    assert.deepStrictEqual(parseOptions(['--', '-x'], { flags: 'x', values: '' }).operands, ['-x']);
+    assert.deepStrictEqual(parseOptions('sort', ['--', '-x'], {}).operands, ['-x']);
     assert.strictEqual(sampleInput('wc', []), undefined);
     assert.strictEqual(commandExample('nope', []), undefined);
     assert.ok(sampleInput('cut', ['-s', '-f', '2'])!.includes('no delimiter here'));

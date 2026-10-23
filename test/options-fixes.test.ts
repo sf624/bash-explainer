@@ -78,6 +78,23 @@ const roles: [string, Record<string, RegExp>][] = [
   ['ip n show', { n: /neighbour/ }],
   ['ip addr flush dev eth0', { flush: /Remove every address/ }],
   ['pkill -f nginx', { nginx: /pattern/ }],
+  // GNU seq: a negative number is the first operand, and options end there (checked below).
+  ['seq -w -2 2', { '-2': /^first/, 2: /^last/ }],
+  ['seq 10 -3 1', { '-3': /^increment/ }],
+  // GNU tail: `+2` is `-n +2`.
+  ['tail +2 f', { '+2': /from line 2/ }],
+  // gawk and perl read options only before the program (or perl's first file).
+  ["awk 'NR>1' f -v", { '-v': /target file/ }],
+  ["perl -ne 'print' f -l", { '-l': /target file/ }],
+  // GNU tr's `-C` is `-c`; GNU cut accepts `-n` and ignores it.
+  ['tr -C a x', { '-C': /complement/ }],
+  ['cut -n -f1', { '-n': /ignored/ }],
+  // perl's `-l` and `-0` take octal digits attached; other letters after them are switches (checked below).
+  ["perl -l0 -e 'print 1'", { 0: /Value `0` for `-l`/ }],
+  ["perl -0ne 'print'", { '-0ne': /`-0` `-n` `-e`/ }],
+  ["perl -lne 'print'", { '-lne': /`-l` `-n` `-e`/ }],
+  // util-linux getopt reads its own options only before the first operand: `-u` is an argument it parses (checked below).
+  ['getopt -o a x -u', { '-u': /arguments to parse/ }],
 ];
 
 describe('option dictionary fixes (audit)', () => {
@@ -129,6 +146,19 @@ describe('option dictionary fixes (audit)', () => {
     fs.writeFileSync(path.join(tmp, 'in.txt'), 'a\na\nb\n');
     run('uniq', ['in.txt', 'out.txt']);
     assert.strictEqual(fs.readFileSync(path.join(tmp, 'out.txt'), 'utf8'), 'a\nb\n');
+    assert.strictEqual(run('seq', ['-w', '-2', '2']), '-2\n-1\n00\n01\n02');
+    assert.strictEqual(run('seq', ['10', '-3', '1']), '10\n7\n4\n1');
+    fs.writeFileSync(path.join(tmp, 'f'), 'a\nb\nc\n');
+    assert.strictEqual(run('tail', ['+2', 'f']), 'b\nc');
+    assert.strictEqual(run('gawk', ['BEGIN { print ARGV[1], ARGV[2] }', 'f', '-v']), 'f -v');
+    assert.strictEqual(run('perl', ['-e', 'print "@ARGV"', 'f', '-l']), 'f -l');
+    assert.strictEqual(execFileSync('tr', ['-C', 'a', 'x'], { input: 'abc', encoding: 'utf8' }), 'axx');
+    assert.strictEqual(run('cut', ['-n', '-f1', 'f']), 'a\nb\nc');
+    assert.strictEqual(run('perl', ['-l0', '-e', 'print 1']), '1\u0000');
+    assert.strictEqual(run('perl', ['-0ne', 'print', 'f']), 'a\nb\nc');
+    assert.strictEqual(run('perl', ['-lne', 'print length', 'f']), '1\n1\n1');
+    // (getopt parses `x -u` with `-o a`: "invalid option -- 'u'", status 1; were `-u` its own, it would quote nothing and succeed.)
+    assert.throws(() => execFileSync('getopt', ['-o', 'a', 'x', '-u'], { stdio: 'pipe' }));
   });
 });
 

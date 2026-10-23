@@ -5,11 +5,11 @@ import { perlExample, perlOptions, runPerl } from './perlrun';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './regex';
 import { runSed, sedExample } from './sed';
 import { bashPrintf, ShellWordsUnsupported } from './shellwords';
-import { FILTERS, parseOptions, runSeq, sampleInput, Unsupported } from './textfilters';
+import { FILTERS, parseOptions, runSeq, sampleInput, shortKeys, sortsUnique, Unsupported } from './textfilters';
 import { runXargs, showCommand } from './runtime';
-import { type ArgvParse, interpret } from '../argv/interpret';
+import type { ArgvParse } from '../argv/interpret';
 import { operands } from '../argv/query';
-import { canonicalName, impliedWords, lookupCommand } from '../dict/aliases';
+import { canonicalName, impliedWords } from '../dict/aliases';
 
 export interface Stage {
   cmd: string;
@@ -23,22 +23,12 @@ type Runner = (input: string[]) => string[];
 
 // ---------------------------------------------------------------- grep
 
-const GREP = {
-  flags: 'ivcnowxEFPGsqHhz',
-  values: 'em',
-  long: {
-    'ignore-case': 'i', 'invert-match': 'v', count: 'c', 'line-number': 'n', 'only-matching': 'o', 'word-regexp': 'w', 'line-regexp': 'x',
-    'extended-regexp': 'E', 'fixed-strings': 'F', 'perl-regexp': 'P', 'basic-regexp': 'G', 'no-messages': 's', quiet: 'q', silent: 'q',
-    regexp: 'e', 'max-count': 'm', 'no-filename': 'h', 'with-filename': 'H',
-  },
-};
+/** The options of grep the simulation follows. */
+const GREP = shortKeys('ivcnowxEFPGsqhem');
 
 function grepRegexes(words: (string | undefined)[], relax = false): { res: JsRegex[]; p: ReturnType<typeof parseOptions> } {
-  // (`grep -E -F`: grep refuses the line, as the explanation says.)
-  if (interpret(lookupCommand('grep')!, words.map((w) => (w === undefined ? {} : { value: w })), { name: 'grep' }).refused) throw new Unsupported('conflicting matchers');
-  const p = parseOptions(words, GREP);
+  const p = parseOptions('grep', words, GREP);
   const has = (c: string) => p.opts.some(([n]) => n === c);
-  if (has('z') || has('H')) throw new Unsupported('grep option');
   const patterns = p.opts.filter(([n]) => n === 'e').map(([, v]) => v);
   if (!patterns.length) {
     const first = p.operands.shift();
@@ -125,34 +115,19 @@ function grepSample(words: (string | undefined)[], more = 0): string[] | undefin
 
 // ---------------------------------------------------------------- other runners
 
+/** The options of sed the simulation follows (`-i`, `-s` and `-u` change nothing it shows). */
+const SED = shortKeys('enEisu');
+
 function sedArgs(words: (string | undefined)[]): { script: string; quiet: boolean; extended: boolean } {
-  const scripts: string[] = [];
-  let quiet = false;
-  let extended = false;
-  const operands: (string | undefined)[] = [];
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined) throw new Unsupported('non-literal');
-    if (w === '-e' || w === '--expression') { const v = words[++i]; if (v === undefined) throw new Unsupported('-e'); scripts.push(v); continue; }
-    if (w.startsWith('--expression=')) { scripts.push(w.slice(13)); continue; }
-    if (w === '-n' || w === '--quiet' || w === '--silent') { quiet = true; continue; }
-    if (w === '-E' || w === '-r' || w === '--regexp-extended') { extended = true; continue; }
-    if (/^-[nErse]+$/.test(w)) {
-      if (w.includes('n')) quiet = true;
-      if (/[Er]/.test(w)) extended = true;
-      if (w.endsWith('e')) { const v = words[++i]; if (v === undefined) throw new Unsupported('-e'); scripts.push(v); }
-      continue;
-    }
-    if (/^-i/.test(w) || w === '-s' || w === '-u') continue;
-    if (w.startsWith('-')) throw new Unsupported(`sed ${w}`);
-    operands.push(w);
-  }
+  if (words.includes(undefined)) throw new Unsupported('non-literal');
+  const p = parseOptions('sed', words, SED);
+  const scripts = p.opts.filter(([n]) => n === 'e').map(([, v]) => v);
   if (!scripts.length) {
-    const first = operands.shift();
+    const first = p.operands[0];
     if (first === undefined) throw new Unsupported('script');
     scripts.push(first);
   }
-  return { script: scripts.join('\n'), quiet, extended };
+  return { script: scripts.join('\n'), quiet: p.opts.some(([n]) => n === 'n'), extended: p.opts.some(([n]) => n === 'E') };
 }
 
 function awkArgs(words: (string | undefined)[]): { program: string; fs?: string; vars: Record<string, string>; assigns: Record<string, string> } {
@@ -163,7 +138,7 @@ function awkArgs(words: (string | undefined)[]): { program: string; fs?: string;
 }
 
 function runWc(words: (string | undefined)[], input: string[]): string[] {
-  const p = parseOptions(words, { flags: 'lwcmL', values: '', long: { lines: 'l', words: 'w', bytes: 'c', chars: 'm' } });
+  const p = parseOptions('wc', words, shortKeys('lwcmL'));
   if (p.operands.length) throw new Unsupported('wc files');
   const text = input.map((l) => l + '\n').join('');
   const counts: Record<string, number> = {
@@ -177,6 +152,9 @@ function runWc(words: (string | undefined)[], input: string[]): string[] {
   if (order.length === 1) return [String(counts[order[0]])];
   return [order.map((c) => String(counts[c]).padStart(7)).join(' ')];
 }
+
+/** Whether the words give no option (else Unsupported) and no file but `-` (or a word not literal). */
+const readsOnlyStdin = (cmd: string, words: (string | undefined)[]): boolean => parseOptions(cmd, words, {}).operands.every((x) => x === '-' || x === undefined);
 
 /** A runner for one stage, or undefined if the command is not supported. */
 export function runner(stage: Stage): Runner | undefined {
@@ -212,11 +190,11 @@ export function runner(stage: Stage): Runner | undefined {
         return out;
       };
     }
-    case 'cat': case 'tee':
-      if (stage.cmd === 'cat' && w.some((x) => x !== '-' && x !== undefined && !x.startsWith('-'))) return undefined;
-      return (input) => input;
-    case 'tac': return (input) => [...input].reverse();
-    case 'rev': return (input) => input.map((l) => [...l].reverse().join(''));
+    case 'tee': return (input) => input;
+    // (No option of these is followed: `cat -n` numbers the lines. A file operand is read instead of the pipe.)
+    case 'cat': return readsOnlyStdin('cat', w) ? (input) => input : undefined;
+    case 'tac': return readsOnlyStdin('tac', w) ? (input) => [...input].reverse() : undefined;
+    case 'rev': return readsOnlyStdin('rev', w) ? (input) => input.map((l) => [...l].reverse().join('')) : undefined;
     case 'wc': return (input) => runWc(w, input);
     case 'xargs': return (input) => runXargs(w, input.map((l) => l + '\n').join('')).map(showCommand);
   }
@@ -332,7 +310,8 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
     let rest = stages;
     const src = !readsFile ? sourceOutput(stages[0]) : undefined;
     const first = stages[0];
-    const firstIsCatFile = first.cmd === 'cat' && first.words.some((x) => x === undefined || (x !== '-' && !x.startsWith('-')));
+    // `cat FILE | …`: the stage shows the file. cat with an option (`cat -n f`) throws Unsupported, as its runner declines it.
+    const firstIsCatFile = first.cmd === 'cat' && parseOptions('cat', first.words, {}).operands.some((x) => x !== '-');
     const steps: PipelineStep[] = [];
     if (src) {
       steps.push({ stage: first, output: src });
@@ -340,7 +319,8 @@ export function pipelineExample(stages: Stage[], readsFile: boolean, given?: str
     } else {
       // The data comes from a file: invent it for the first stage that processes it.
       const consumer = firstIsCatFile ? stages[1] : first;
-      const wantsDuplicates = stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && s.words.some((x) => /^-[a-zA-Z]*u/.test(x ?? ''))));
+      const wantsDuplicates = stages.some((s) => s.cmd === 'uniq' || (s.cmd === 'sort' && sortsUnique(s.words)));
+      // (A sort the simulation cannot follow throws Unsupported there: it gives no example anyway.)
       const build = (more: number): string[] | undefined => {
         let lines = given ?? sampleFor(consumer, more);
         // Duplicates make uniq, sort -u and counting visible further down.

@@ -1,6 +1,8 @@
 import { lex, Lex } from '../embedded/awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
 import { Unsupported as RunnerUnsupported } from './unsupported';
+import { parseWords } from './textfilters';
+import { has } from '../argv/query';
 
 /** Raised for awk features the example runner does not implement; no example is shown then. */
 class Unsupported extends RunnerUnsupported {}
@@ -1070,41 +1072,43 @@ export interface AwkInvocation extends AwkRunOptions {
   unsupported?: string;
 }
 
-/** Read the options before the program and the `name=value` operands after it. A word that is not literal is undefined. */
+/**
+ * Read the options before the program and the `name=value` operands after it, with awk's dictionary spec (as the
+ * explanation reads them). A word that is not literal is undefined.
+ */
 export function awkInvocation(words: (string | undefined)[]): AwkInvocation {
   const r: AwkInvocation = { vars: {}, assigns: {} };
   const bad = (why: string) => { r.unsupported ??= why; };
-  let i = 0;
-  let fromFile = false;
-  for (; i < words.length; i++) {
-    const w = words[i];
-    if (w === undefined) { bad('non-literal'); continue; }
-    if (w === '--') { i++; break; }
-    if (w === '-F' || /^-F./.test(w)) {
-      const v = w === '-F' ? words[++i] : w.slice(2);
+  // The value of `-F` or `-v` (undefined: missing or not literal).
+  const take = (flag: string, v: string | undefined): void => {
+    if (flag === '-F') {
       // `-F'\t'` is a tab; `-Ft` is the letter t in gawk and mawk alike.
       const fs = v === undefined ? undefined : awkUnescape(v, true);
       if (fs === undefined) bad('-F'); else r.fs = fs;
-      continue;
-    }
-    if (w === '-v' || /^-v./.test(w)) {
-      const v = w === '-v' ? words[++i] : w.slice(2);
+    } else if (flag === '-v') {
       const eq = v?.indexOf('=') ?? -1;
       const value = v === undefined || eq < 1 ? undefined : awkUnescape(v.slice(eq + 1));
       if (v === undefined || value === undefined) bad('-v'); else r.vars[v.slice(0, eq)] = value;
-      continue;
     }
-    if (w === '-f') { fromFile = true; i++; continue; }
-    if (w.startsWith('-')) { bad(`awk ${w}`); continue; }
-    break;
+  };
+  const parse = parseWords('awk', words);
+  const rest: (string | undefined)[] = [];
+  // In the order of the words, so that the first reason is the one given.
+  for (const { word, role } of parse.roles) {
+    for (const x of role.role === 'cluster' ? role.letters : [role]) {
+      // Options awk has more of (`--posix`, `-W …`) do not change what the example shows; the caller decides.
+      if (x.role === 'unknown-option') bad(`awk ${words[word]}`);
+      else if (x.role === 'option' && (x.value || x.missing)) take(x.flag, x.value && words[word]!.slice(x.value.attached));
+      else if (x.role === 'value') take(x.of, words[word]);
+      else if (x.role === 'operand') { if (words[word] === undefined) bad('non-literal'); rest.push(words[word]); }
+    }
   }
-  if (!fromFile) r.program = words[i++];
+  if (!has(parse, '-f')) r.program = rest.shift();
   let seenFile = false;
-  for (; i < words.length; i++) {
-    const w = words[i];
-    const m = w === undefined ? null : /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
-    if (w === undefined) bad('non-literal');
-    else if (!m) seenFile = true;
+  for (const w of rest) {
+    if (w === undefined) continue;
+    const m = /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
+    if (!m) seenFile = true;
     else if (seenFile) bad('assignment after a file');
     else {
       const value = awkUnescape(m[2]);

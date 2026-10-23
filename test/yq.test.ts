@@ -100,7 +100,7 @@ const dir = process.env.BASH_EXPLAINER_YQ;
   const cmds = [
     "yq '.items[] | select(.kind == \"Pod\") | .metadata.name' pods.yml", "yq e '.spec.replicas = 3' d.yml", "yq -i '.version = \"1.2\"' chart.yaml",
     "yq '.a.b |= . + 1' f.yml", "yq '.users | map(.name)' u.yml", "yq '.tags | join(\",\")' f.yml", "yq '.items | length' f.yml",
-    "yq -o json '.metadata' f.yml", "yq '.a // \"default\"' f.yml", "yq 'del(.status)' f.yml", "yq '.list | sort | unique' f.yml",
+    "yq -o json '.metadata' f.yml", "yq -o=json '.metadata' f.yml", "yq '.a // \"default\"' f.yml", "yq 'del(.status)' f.yml", "yq '.list | sort | unique' f.yml",
     "yq '.items[] | select(.enabled)' f.yml", "yq '.a | has(\"b\")' f.yml", "yq '.items | sort_by(.name) | .[0]' f.yml", "yq '.name | test(\"^web\")' f.yml",
     "yq '.users[] | select(.age > 30) | .name' f.yml", "yq '[.items[].name]' f.yml", "yq '.a | split(\"-\")' f.yml", "yq '.items | group_by(.kind)' f.yml",
     "yq -y '.spec | add' x.yml", "yq -y '.users | map(.name)' u.yml", "yq -r '.users[].name' u.yml", "yq -y 'del(.a)' f.yml", "yq -y '.config.timeout // 30' f.yml",
@@ -129,4 +129,20 @@ const dir = process.env.BASH_EXPLAINER_YQ;
       });
     });
   }
+});
+
+describe('yq -o as pflag reads it', () => {
+  // mikefarah/yq reads its flags with pflag, where `-o=json` gives `-o` the value `json` (the `cobra` preset, compared
+  // with gh in test/parsers-real.test.ts). Its example is the JSON one, as for `-o json`.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { Analyzer } = require('../src/analyzer');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createUnbashParser } = require('../src/syntax/adapters/unbash');
+  it('-o=json, -ojson and -o json give the same example', () => {
+    const parser = createUnbashParser();
+    const example = (line: string) => JSON.stringify(new Analyzer('en').explainLine(parser.parse(line), 0).examples[0]?.sections);
+    const json = example("yq -o json '.a' f.yml");
+    assert.match(json, /\{/);
+    for (const line of ["yq -o=json '.a' f.yml", "yq -ojson '.a' f.yml", "yq e -o=json '.a' f.yml"]) assert.strictEqual(example(line), json, line);
+  });
 });

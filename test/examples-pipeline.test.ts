@@ -39,6 +39,9 @@ describe('pipeline examples agree with bash', () => {
     [['awk', '-v', 'x=1', '{ print x, $0 }'], ['cat']], [['awk', '-vx=2', '--', '{ print x }'], ['cat']],
     [['seq', '3'], ['wc']], [['seq', '3'], ['wc', '-l', '-w']], [['seq', '3'], ['wc', '-m']],
     [['seq', '3'], ['cat', '-']], [['seq', '3'], ['tee']],
+    // Options read as the explanation reads them: long prefixes, a value that looks like an option, clusters.
+    [['grep', '--inv', 'a'], ['cat']], [['grep', '-e', '-v', '-e', 'a'], ['cat']], [['sed', '--expr', 's/a/X/'], ['cat']], [['sed', '-ns', '/e/p'], ['cat']],
+    [['sort', '--rev'], ['uniq']], [['seq', '3'], ['wc', '--li']], [['perl', '-lne', 'print if /e/'], ['cat']],
   ];
   for (const words of cases) {
     const stages: Stage[] = words.map(([cmd, ...w]) => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
@@ -103,6 +106,37 @@ describe('pipeline examples agree with bash', () => {
       [['echo'], ['sed', 's/a/b/']].slice(0, 0), [['grep', '-v', 'zzzz'], ['sort']].slice(0, 1),
     ];
     for (const stages of none.filter((x) => x.length > 1)) assert.strictEqual(pipelineExample(stages.map(st), false), undefined, JSON.stringify(stages));
+  });
+  it('declines what the tools refuse', () => {
+    // GNU grep: "conflicting matchers specified" (status 2).
+    const refused = [['grep', '-E', '-F', 'a'], ['grep', '-G', '--perl', 'a']];
+    for (const words of refused) {
+      const stages = [['seq', '3'], words].map(([cmd, ...w]): Stage => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
+      assert.strictEqual(pipelineExample(stages, false), undefined, words.join(' '));
+      assert.notStrictEqual(run('/usr/bin/grep', words.slice(1), { input: '1\n' }).status, 0, words.join(' '));
+    }
+  });
+  // cat, tac and rev pass on their input (reversed) only without options and files: `cat -n` numbers the lines.
+  it('declines cat, tac and rev with an option or a file, whose output is not the input as passed on', () => {
+    for (const words of [['cat', '-n'], ['cat', '--number'], ['tac', '-s', '2'], ['tac', 'f'], ['rev', 'f']]) {
+      const stages = [['seq', '3'], words].map(([cmd, ...w]): Stage => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
+      assert.strictEqual(pipelineExample(stages, false), undefined, words.join(' '));
+      const real = run(words[0], words.slice(1), { input: '1\n2\n3\n' });
+      assert.ok(real.status !== 0 || String(real.stdout) !== '1\n2\n3\n', words.join(' '));
+    }
+    for (const words of [['cat'], ['cat', '-'], ['tac'], ['rev']]) {
+      const stages = [['seq', '3'], words].map(([cmd, ...w]): Stage => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
+      assert.ok(pipelineExample(stages, false), words.join(' '));
+    }
+    // A first `cat FILE` shows the file as it is; with an option (`cat -n f`, numbered lines) there is no example.
+    const st = (...w: string[]): Stage => ({ cmd: w[0], words: w.slice(1), text: w.join(' ') });
+    for (const first of [st('cat', '-n', 'f'), st('cat', '--number', 'f'), st('cat', '-A', 'f')]) assert.strictEqual(pipelineExample([first, st('sort')], false), undefined, first.text);
+    assert.ok(pipelineExample([st('cat', 'f'), st('sort')], false));
+    assert.ok(pipelineExample([st('cat', '--', '-n'), st('sort')], false), 'cat -- -n reads the file -n');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cat-n-'));
+    fs.writeFileSync(path.join(tmp, 'f'), 'b\na\n');
+    assert.strictEqual(String(run('cat', ['--number', path.join(tmp, 'f')]).stdout), '     1\tb\n     2\ta\n');
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
   it('starts from sample data when the first stage is not a source', () => {
     const st = (cmd: string, ...words: (string | undefined)[]): Stage => ({ cmd, words, text: [cmd, ...words].join(' ') });

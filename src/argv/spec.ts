@@ -54,9 +54,10 @@ export interface CommandSpec {
    */
   subcommandPrefixes?: boolean | 'first';
   /**
-   * A word that matches is an operand and ends the options and the old-style letters: every word after it is an
-   * operand too (procps `ps 1 u`: a bare number starts a list of process IDs, which ends the line). (procps `ps`
-   * only: its own parser, which no preset describes.)
+   * A word that matches is an operand, even when it starts with a dash, and ends the options and the old-style
+   * letters: every word after it is an operand too (procps `ps 1 u`: a bare number starts a list of process IDs,
+   * which ends the line; GNU `seq -2 2`: a negative number is the first operand). (procps `ps` and GNU `seq`: each
+   * checks the word before its parser reads it, which no preset describes.)
    */
   endsOptions?: RegExp;
   /**
@@ -166,6 +167,12 @@ export interface ValueSpec {
   optional?: boolean;
   /** With `optional`, the next word is the value when it matches (`journalctl -b -1`). */
   next?: RegExp;
+  /**
+   * With `optional`, the rest of a cluster is the value only when it matches; otherwise the letters after the option
+   * are options too (perl's `-l0` and `-0777` take octal digits, `-lne` is `-l -n -e`). (perl only: its switches
+   * take digits attached and go on with letters; a value of digits followed by letters, `-l0ne`, is not modelled.)
+   */
+  attachedMatch?: RegExp;
   /** `variable`: a variable name, which the builtin sets as `sets` says; `function`: a function it runs later (`mapfile -C`, `complete -F`). */
   type?: ValueType;
   sets?: VariableSet;

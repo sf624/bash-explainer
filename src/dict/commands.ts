@@ -2,7 +2,7 @@ import { shellOptions, shoptOptions } from './builtins';
 import { ops } from './ops';
 import { distro } from './distro';
 import { system } from './system';
-import type { CommandSpec, OperandAlt, OperandSpec } from '../argv/spec';
+import type { CommandSpec, OperandAlt, OperandSpec, OptionSpec, PatternOption } from '../argv/spec';
 import { tx } from '../i18n';
 import { basic } from './basic';
 import { storage } from './storage';
@@ -212,6 +212,15 @@ const LINE_COUNT = countOption(
   pos('展開した数の行数（`-n 数` の古い書き方）', 'as many lines as the expansion gives (old way to write `-n N`)'),
 );
 
+/** A perl switch that takes digits attached (`-l0`, `-0777`); other letters after it are switches (`-lne`). */
+const perlDigits = (opt: OptSpec, digits: RegExp): OptionSpec => ({ ...optionOf(opt), value: { name: 'VALUE', how: 'attached-only', optional: true, attachedMatch: digits } });
+
+/** `tail +2`: the old way to write `-n +2` (GNU tail takes it as the first word, before at most one file). */
+const FROM_LINE: PatternOption = {
+  pattern: /^\+(\d+)$/,
+  text: ([, n]) => pos(`${n} 行目から最後まで（\`-n +${n}\` の古い書き方）`, `from line ${n} to the end (old way to write \`-n +${n}\`)`),
+};
+
 /** awk's files, or `name=value` assignments between them. */
 const AWK_FILES: OperandSpec = {
   name: 'ARG2', text: files, repeat: '*',
@@ -330,6 +339,8 @@ export const core: Record<string, CommandSpec> = {
       { when: { option: ['-f'] }, pattern: [AWK_FILES] },
       { pattern: [{ name: 'ARG1', text: pos('awk プログラム（`パターン { アクション }`）', 'awk program (`pattern { action }`)'), repeat: '?', lang: 'awk' }, AWK_FILES] },
     ],
+    // (The options end at the program: gawk's getopt string starts with `+`; POSIX awk too.)
+    optionsFirst: true,
   }),
   find: findSpec(cmd('条件に一致するファイルをディレクトリ階層から探す', 'Search a directory tree for files matching conditions', [
     ['-name', 'ファイル名がグロブパターンに一致する', 'file name matches the glob', 'arg lang:glob'],
@@ -414,6 +425,7 @@ export const core: Record<string, CommandSpec> = {
     ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
     ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg lang:cutchars'],
     ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
+    ['-n', '何もしない（互換のため受け付ける）', 'ignored (accepted for compatibility)'],
     ...GNU_INFO,
   ], { example: 'cut', parser: 'getopt_long', positional: [files] }),
   sort: cmd('行を並べ替える', 'Sort lines', [
@@ -455,11 +467,15 @@ export const core: Record<string, CommandSpec> = {
       ['-s|--shell', 'クォートの仕方を指定したシェルに合わせる（sh, bash, csh, tcsh）', 'quote for the given shell (sh, bash, csh, tcsh)', 'arg'],
       ['-u|--unquoted', '出力をクォートしない（空白を含む引数が壊れる）', 'do not quote the output (breaks arguments with spaces)'],
       ['-T|--test', '拡張版の getopt か確認する（拡張版なら終了ステータス 4）', 'test for the enhanced getopt (exits 4 if so)'],
-    ], { example: 'getopt', positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
+    ], {
+      example: 'getopt',
+      // util-linux getopt reads its own options up to the first operand (`+` in its getopt string): the words after it are the arguments it parses.
+      optionsFirst: true,
+      positional: [pos('（旧形式）受け付けるオプション文字', '(old form) the option letters'), pos('解析する引数（通常は `"$@"`）', 'the arguments to parse (usually `"$@"`)')], positionalLang: ['getoptshort'] }),
   tr: cmd('文字を置換・削除する（標準入力のみ）', 'Translate or delete characters (stdin only)', [
     ['-d|--delete', '指定した文字を削除する', 'delete the characters'],
     ['-s|--squeeze-repeats', '連続する同じ文字を1つにまとめる', 'squeeze repeated characters'],
-    ['-c|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
+    ['-c|-C|--complement', '指定した文字以外を対象にする', 'use the complement of the set'],
     ...GNU_INFO,
   ], { example: 'tr', parser: 'getopt_long', positional: [pos('変換元の文字集合（例: `a-z`）', 'source character set (e.g. `a-z`)'), pos('変換先の文字集合（例: `A-Z`）', 'target character set (e.g. `A-Z`)')], positionalLang: ['trset', 'trset'], operands: [byCount(1, [pos('削除または圧縮する文字集合（`-d`、`-s`）', 'character set to delete or squeeze (`-d`, `-s`)')], { langs: ['trset', 'trset'] })] }),
   head: cmd('ファイルの先頭部分を表示する（既定は10行）', 'Print the first part of files (default 10 lines)', [
@@ -475,7 +491,7 @@ export const core: Record<string, CommandSpec> = {
     ['-F', 'ファイルが作り直されても追い続ける', 'follow by name, retrying'],
     ['--max-unchanged-stats', '`-f` で変化がなくても、ファイルが入れ替わっていないか確かめるまでの回数', 'with `-f`, checks without change before testing whether the file was replaced', 'arg'],
     ...GNU_INFO,
-  ], { example: 'tail', parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT] }),
+  ], { example: 'tail', parser: 'getopt_long', positional: [files], patternOptions: [LINE_COUNT, FROM_LINE] }),
   wc: cmd('行数・単語数・バイト数を数える', 'Count lines, words and bytes', [
     ['-l|--lines', '行数を数える', 'count lines'],
     ['-w|--words', '単語数を数える', 'count words'],
@@ -1211,7 +1227,8 @@ export const core: Record<string, CommandSpec> = {
     ['-f|--format', 'printf 形式の書式（`%03g`…）', 'printf-style format (`%03g`…)', 'arg'],
     ...GNU_INFO,
   ], {
-    parser: 'getopt_long',
+    // getopt_long with `+`, and a word that looks like a negative number (`-2`, `-.5`) is the first operand.
+    parser: 'getopt_long', optionsFirst: true, endsOptions: /^-[.\d]/,
     example: 'seq',
     positional: [pos('開始値・増分・終了値', 'first, increment or last')],
     operands: [
@@ -1411,14 +1428,17 @@ export const core: Record<string, CommandSpec> = {
     ['-n', '入力の各行についてコードを実行する（自動では出力しない）', 'run the code for each input line (no automatic printing)'],
     ['-p', '入力の各行についてコードを実行し、`$_` を出力する（sed 風）', 'run the code for each line and print `$_` (sed-like)'],
     ['-i', 'ファイルを直接書き換える（`-i.bak` でバックアップを作る）', 'edit files in place (`-i.bak` keeps a backup)', 'attached'],
-    ['-l', '各行末の改行を取り除き、print で改行を付ける', 'chomp input lines and add a newline to print'],
+    perlDigits(['-l', '各行末の改行を取り除き、print で改行を付ける（`-l0` のように8進数を付けると、改行の代わりにその文字を付ける）', 'chomp input lines and add a newline to print (with octal digits, as in `-l0`, that character instead)'], /^[0-7]+$/),
     ['-a', '各行を空白で分割して `@F` に入れる（-n か -p と使う）', 'split each line into `@F` (with -n or -p)'],
     ['-F', '`-a` の区切り（例: `-F:`、`-F,`）', 'separator for `-a` (e.g. `-F:`)', 'attached'],
-    ['-0', '入力の区切り（`-0777` でファイル全体を1つとして読む）', 'input record separator (`-0777` reads whole files)', 'attached'],
+    perlDigits(['-0', '入力の区切り（`-0777` でファイル全体を1つとして読む）', 'input record separator (`-0777` reads whole files)'], /^(?:[0-7]+|x[0-9a-fA-F]+)$/),
     ['-M', 'モジュールを読み込む（例: `-MJSON::PP`）', 'load a module (e.g. `-MJSON::PP`)', 'attached'],
     ['-w', '警告を表示する', 'enable warnings'],
     ['-c', '構文チェックだけを行う', 'check syntax only'],
-  ], { example: 'perl', positional: [pos('実行するスクリプトファイル', 'script file to run'), files] }),
+  ], {
+    example: 'perl',
+    // perl reads switches up to the first word that is not one: the script, or with `-e` the first file.
+    optionsFirst: true, positional: [pos('実行するスクリプトファイル', 'script file to run'), files] }),
   python3: cmd('Python 3 インタプリタを実行する', 'Run the Python 3 interpreter', [
     ['-c', '続く文字列を Python コードとして実行', 'run the string as Python code', 'arg'],
     ['-m', 'モジュールをスクリプトとして実行', 'run a module as a script', 'arg'],
@@ -1486,7 +1506,7 @@ export const core: Record<string, CommandSpec> = {
       }),
       status: cmd('作業ツリーの状態を表示する', 'Show working tree status', [['-s|--short', '短い形式', 'short format'], ['--porcelain', 'スクリプト向けの安定した形式', 'stable machine-readable format']]),
       log: cmd('コミット履歴を表示する', 'Show commit logs', [
-        ['--oneline', '1コミット1行で表示', 'one line per commit'], ['-n', '表示する件数', 'number of commits', 'arg'], ['--graph', 'ブランチをグラフ表示', 'draw a graph'],
+        ['--oneline', '1コミット1行で表示', 'one line per commit'], ['-n|--max-count', '表示する件数', 'number of commits', 'arg'], ['--graph', 'ブランチをグラフ表示', 'draw a graph'],
         ['--pretty|--format', '各コミットの表示形式', 'how each commit is shown', 'arg lang:gitformat'],
         ['--date', '日時の表示形式', 'how dates are shown', 'arg lang:gitdate'],
         ['--since|--after', '指定した日時以降のコミットだけ', 'commits after the given date', 'arg'],

@@ -186,7 +186,9 @@ class Reader {
         const used = this.oldStyle(st, i);
         if (used >= 0) { i = used; continue; }
       }
-      if (!endOpts) {
+      // (A word `endsOptions` matches is an operand even when it looks like an option: seq's `-2`.)
+      const ends = !!spec.endsOptions && value !== undefined && spec.endsOptions.test(value);
+      if (!endOpts && !ends) {
         const used = this.option(st, i);
         if (used >= 0) {
           const split = this.splice(st, i, used);
@@ -210,7 +212,7 @@ class Reader {
         break;
       }
       // Options end at the first operand (`optionsFirst`), or where a command starts.
-      if (rules.optionsFirst || this.startsCommand(st, [...operands, i]) || (spec.endsOptions && value !== undefined && spec.endsOptions.test(value))) endOpts = true;
+      if (rules.optionsFirst || this.startsCommand(st, [...operands, i]) || ends) endOpts = true;
       operands.push(i);
     }
     parse.mode = chooseMode(spec, given);
@@ -479,6 +481,8 @@ class Reader {
       const first = values[0];
       // `set -euo pipefail`: the value is the next word, and the letters after it still count.
       if (first.how === 'next-only') { last = this.separateValues(st, opt, as, last, 0, role); continue; }
+      // perl's `-lne`: the rest is not digits, so `-l` has no value and `n`, `e` are options.
+      if (first.attachedMatch && !open && !first.attachedMatch.test(text.slice(k + 1))) continue;
       if (k + 1 < text.length || open) {
         // `dpkg-query -f=FORMAT`: the value starts after the `=`.
         const at = st.rules.shortEquals && text[k + 1] === '=' ? k + 2 : k + 1;

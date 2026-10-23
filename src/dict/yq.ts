@@ -32,9 +32,10 @@ const V4_OPTIONS: OptSpec[] = [
 
 const V4_EXPR = { positional: [pos('yq の式（jq に似た記法）', 'yq expression (jq-like)'), pos('入力ファイル（省略すると標準入力）', 'input file (stdin if omitted)')], positionalLang: ['yq4' as const] };
 
-/** mikefarah/yq v4: `yq [eval] EXPR FILE…`. */
+/** mikefarah/yq v4: `yq [eval] EXPR FILE…`; a Go program with cobra and pflag (`-o=json` gives `-o` the value `json`). */
 const mikefarah4: CommandSpec = cmd('YAML（JSON・XML・TOML なども）を jq に似た式で抽出・変換する（mikefarah/yq v4）', 'Query and edit YAML (also JSON, XML, TOML…) with jq-like expressions (mikefarah/yq v4)', V4_OPTIONS, {
   ...V4_EXPR,
+  parser: 'cobra',
   subcommands: {
     e: cmd('式を各ドキュメントに順に適用する（`eval`）', 'apply the expression to each document (`eval`)', V4_OPTIONS, V4_EXPR),
     eval: cmd('式を各ドキュメントに順に適用する', 'apply the expression to each document', V4_OPTIONS, V4_EXPR),
