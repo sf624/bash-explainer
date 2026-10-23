@@ -1,9 +1,10 @@
 import type { Json } from './jq';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
 /** Whose YAML: mikefarah/yq (yaml.v3, YAML 1.2) or kislyuk/yq (PyYAML, YAML 1.1). */
 export type YamlStyle = 'mikefarah' | 'kislyuk';
 
-export class YamlUnsupported extends Error {}
+export class YamlUnsupported extends RunnerUnsupported {}
 
 const NUMBER = /^[-+]?(\d[\d_]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?$|^0x[0-9a-fA-F]+$|^0o[0-7]+$|^[-+]?\.(inf|Inf|INF)$|^\.(nan|NaN|NAN)$/;
 const CORE = /^(true|True|TRUE|false|False|FALSE|null|Null|NULL|~|)$/;

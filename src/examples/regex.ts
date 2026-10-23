@@ -370,18 +370,13 @@ export interface RegexExamples {
 /** Example lines that match (and nearby ones that do not), verified against the pattern itself. */
 export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   const re = new RegExp(js.source, js.flags);
-  let tree: Node;
-  // Parser reads every regex JavaScript accepts, to the end, and throws nothing itself: the check
-  // and the catch keep a bug in it from breaking the explanation.
-  try {
-    const p = new Parser(js.source);
-    tree = p.alt();
-    /* c8 ignore start */
-    if (p.i < js.source.length) return undefined;
-  } catch {
-    return undefined;
-  }
-  /* c8 ignore stop */
+  // Parser reads every regex JavaScript accepts, to the end, and throws nothing of its own: an error from it is a
+  // bug, which shows.
+  const p = new Parser(js.source);
+  const tree = p.alt();
+  // A guard: it reads to the end.
+  /* c8 ignore next */
+  if (p.i < js.source.length) return undefined;
   const matching: string[] = [];
   for (let v = 0; v < 12 && matching.length < max; v++) {
     const text = gen(tree, v, []);

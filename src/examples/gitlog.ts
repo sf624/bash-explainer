@@ -1,4 +1,5 @@
 // Formats sample commits the way `git log --pretty=… --date=…` would, for worked examples.
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
 export interface SampleCommit {
   hash: string;
@@ -13,7 +14,7 @@ export interface SampleCommit {
   refs: string;
 }
 
-export class GitFormatUnsupported extends Error {}
+export class GitFormatUnsupported extends RunnerUnsupported {}
 
 /** Three commits dated relative to `now` (newest first), so relative dates read naturally. */
 export function sampleCommits(now = Date.now()): SampleCommit[] {

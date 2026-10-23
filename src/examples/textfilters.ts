@@ -2,8 +2,9 @@
  * Line-oriented coreutils (sort, uniq, cut, tr, head, tail) and argument-only commands
  * (seq, basename, dirname), simulated with GNU semantics in the C locale.
  */
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
-export class Unsupported extends Error {}
+export class Unsupported extends RunnerUnsupported {}
 
 /** Option names → whether they take a value. Long options map to their short form. */
 interface OptSpec {

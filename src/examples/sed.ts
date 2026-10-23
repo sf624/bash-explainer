@@ -1,5 +1,6 @@
 import { sedEscapeAt } from '../ctlchars';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
 type Addr =
   | { kind: 'line'; n: number }
@@ -29,7 +30,7 @@ interface Cmd {
   endLine?: number;
 }
 
-class Unsupported extends Error {}
+class Unsupported extends RunnerUnsupported {}
 
 /** Parse the subset of sed that the example runner can execute; throws Unsupported otherwise. */
 class Parser {

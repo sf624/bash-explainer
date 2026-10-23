@@ -191,3 +191,14 @@ describe('jq is available', () => {
     assert.match(execFileSync('jq', ['--version']).toString(), /^jq-/);
   });
 });
+
+describe('jq builtins that need their argument', () => {
+  // jq does not define `select/0` (a compile error): no example, and nothing thrown.
+  for (const f of ['.[] | select', 'map', 'sort_by', 'del', '.a | contains', 'index']) {
+    it(f, function () {
+      assert.strictEqual(jqExample(f), undefined);
+      if (!hasJq) return this.skip();
+      assert.strictEqual(realJq(f, [{ a: 1 }]), 'error');
+    });
+  }
+});

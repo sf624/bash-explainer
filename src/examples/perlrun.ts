@@ -1,8 +1,9 @@
 /** A small Perl subset for one-liner examples: perl -n/-p/-l/-a/-F/-i -e '…'. */
 import { sprintf } from './awk';
 import { JsRegex, regexExamples, toJsRegex } from './regex';
+import { Unsupported as RunnerUnsupported } from './unsupported';
 
-class Unsupported extends Error {}
+class Unsupported extends RunnerUnsupported {}
 
 // ---------------------------------------------------------------- lexer
 
