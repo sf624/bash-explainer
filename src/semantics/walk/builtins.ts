@@ -7,7 +7,7 @@ import type { CommandSpec } from '../../argv/spec';
 import { argWord, prefixOf } from '../../argv/words';
 import { BASH_ONLY_BUILTINS, builtins } from '../../dict/builtins';
 import { staticWordValue } from '../../staticword';
-import { descendants, field, type SyntaxNode } from '../../syntax/tree';
+import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { aliasOf, builtinParse, DECLARATIONS, setOptionWrites, variableWrites, wrapped } from '../effects';
 import { attribute, type Attribute, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy } from '../shellstate';
 import { optionRoles, readDeclarationWords, type Declaration } from '../vars';
@@ -414,6 +414,32 @@ export class WalkBuiltins {
   /** Whether `text`, given to an integer at `at`, may fail: it is not known, or the walk's arithmetic gives it no value. */
   private mayFail(text: string | undefined, st: ShellState, at: SyntaxNode): boolean {
     return text === undefined || this.w.arith.integer(text, st, at).value === undefined;
+  }
+
+  /**
+   * The assignments before the builtin or program `n` runs (`n+='x=7' true`), which are the command's alone: only
+   * `+=` to an integer leaves something, the arithmetic its text runs (bash adds it to the value, running it). Not
+   * before `eval`, which makes them in the shell itself (`Walker.evalScript`).
+   */
+  appendArith(assignments: SyntaxNode[], n: SyntaxNode, st: ShellState): ShellState {
+    let name = field(n, 'name')!.text;
+    let args = fields(n, 'argument');
+    while (name === 'command' || name === 'builtin') {
+      const inner = wrapped(name, args);
+      if ('lookup' in inner || inner.name === undefined) break;
+      ({ name, args } = inner);
+    }
+    if (name === 'eval') return st;
+    for (const a of assignments) {
+      const nameNode = field(a, 'name')!;
+      const value = field(a, 'value');
+      if (nameNode.type === 'subscript' || !value || !a.children.some((c) => c.type === '+=')) continue;
+      const target = this.resolve(st, nameNode.text);
+      const text = this.w.conditions.staticText(value, st, true);
+      if (target === undefined || attribute(st, target, 'i') !== 'on' || text === undefined) continue;
+      st = this.w.arith.integer(text, st, a).st;
+    }
+    return st;
   }
 
   /**
