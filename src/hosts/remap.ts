@@ -142,7 +142,6 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
       endLine: n.startPosition.row, endCol: sameLine ? col(n.endPosition.row, n.endPosition.column) : original[n.startPosition.row].length,
     };
   };
-  const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   for (const region of extracted.regions) {
     for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
