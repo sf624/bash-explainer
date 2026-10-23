@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
+import { Analyzer } from './analyzer';
+import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { detectShell, Shell } from './dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
 import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument } from './document-setup';

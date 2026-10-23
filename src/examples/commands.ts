@@ -1,0 +1,264 @@
+// The worked examples of a command's run (printf, xargs, getopt, perl, read, the text filters, date, git log), built
+// from its words. The analyzer chooses one by the command's spec (`CommandSpec.example`), not by its name, and shows
+// what it returns.
+import type { Example } from '../analyzer-types';
+import type { CommandExampleKind } from '../argv/spec';
+import { visible } from '../ctlchars';
+import { formatDate as formatDateCommand, parseSampleDate, SAMPLE_DATES } from '../embedded/format';
+import { pick } from '../embedded/types';
+import type { Lang } from '../i18n';
+import { GetoptSpec, GetoptUnsupported, runGetopt, sampleGetoptArgs } from './getopt';
+import { formatDate, GitFormatUnsupported, runGitLog, sampleCommits } from './gitlog';
+import { perlExample, perlOptions } from './perlrun';
+import { Interactive, rerun, RerunSpec } from './rerun';
+import { readSampleLine, runRead, xargsExample as runXargs } from './runtime';
+import { bashPrintf, ShellWordsUnsupported } from './shellwords';
+import { commandExample, parseOptions } from './textfilters';
+
+/** A word of the command line: its text when it is known (`literalContent`), and as written. */
+export interface ExampleWord { value: string | undefined; text: string }
+
+/** An example's editable form for the panel: the spec to run it again, and what it gives now. */
+export function interactive(spec: RerunSpec, input: string[], lang: Lang, inputLabel = pick(lang)('入力', 'Input')): Interactive {
+  return { spec, inputLabel, input, result: rerun(spec, input, lang) };
+}
+
+/** An input → output example (sed, awk, sort…); tabs and control characters are made visible. */
+export function ioExample(input: string[], output: string[], inPlace: boolean, spec: RerunSpec, lang: Lang): Example {
+  const s = pick(lang);
+  const tabs = (lines: string[]) => lines.map(visible);
+  return { kind: spec.kind === 'sed' || spec.kind === 'awk' || spec.kind === 'perl' ? spec.kind : 'textFilters',
+    interactive: interactive(spec, input, lang),
+    title: inPlace ? s('例（ファイルの中身がこう書き換わる）', 'Example (the file is rewritten like this)') : s('例', 'Example'),
+    sections: [
+      { label: s('入力', 'Input'), lines: tabs(input) },
+      { label: inPlace ? s('書き換え後', 'After') : s('出力', 'Output'), lines: tabs(output), empty: s('（出力なし）', '(no output)') },
+    ],
+  };
+}
+
+/** What a command whose spec names `kind` does with these words (`read` has `readExample`); `inPlace`: perl's `-i` is given. */
+export function commandExampleOf(kind: Exclude<CommandExampleKind, 'read'>, words: ExampleWord[], inPlace: boolean, lang: Lang): Example | undefined {
+  const s = pick(lang);
+  const values = words.map((w) => w.value);
+  switch (kind) {
+    case 'printf': return printfExample(values, lang);
+    case 'xargs': return xargsExample(words, lang);
+    case 'getopt': return getoptExample(values, lang);
+    case 'perl': {
+      const parsed = perlOptions(values);
+      const ex = parsed && perlExample(parsed.code, parsed.opts);
+      if (!ex) return undefined;
+      if (ex.input.length) return ioExample(ex.input, ex.output, inPlace, { kind: 'perl', code: parsed!.code, opts: parsed!.opts }, lang);
+      return { kind: 'perl', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible), empty: s('（出力なし）', '(no output)') }] };
+    }
+    default: {
+      const ex = commandExample(kind, values);
+      if (!ex) return undefined;
+      // Only the filters take input.
+      if (ex.input) return ioExample(ex.input, ex.output, false, { kind: 'filter', cmd: kind, words: values }, lang);
+      return { kind: 'textFilters', title: s('例', 'Example'), sections: [{ label: s('出力', 'Output'), lines: ex.output.map(visible) }] };
+    }
+  }
+}
+
+/** What `printf FORMAT ARGS…` prints, when all of them are literal. */
+function printfExample(words: (string | undefined)[], lang: Lang): Example | undefined {
+  const s = pick(lang);
+  if (words.some((w) => w === undefined)) return undefined;
+  let list = words as string[];
+  let target: string | undefined;
+  if (list[0] === '-v') {
+    target = list[1];
+    list = list.slice(2);
+  }
+  if (list[0] === '--') list = list.slice(1);
+  if (!list.length) return undefined;
+  let out: string;
+  try {
+    out = bashPrintf(list[0], list.slice(1));
+  } catch (e) {
+    if (e instanceof ShellWordsUnsupported) return undefined;
+    // A bug in bashPrintf: let it show.
+    /* c8 ignore next */
+    throw e;
+  }
+  const endsWithNewline = out.endsWith('\n');
+  const lines = (endsWithNewline ? out.slice(0, -1) : out).split('\n').map(visible);
+  const label = target
+    ? s(`変数 \`${target}\` に入る値`, `Value stored in \`${target}\``)
+    : endsWithNewline ? s('出力', 'Output') : s('出力（末尾に改行なし）', 'Output (no trailing newline)');
+  return { kind: 'printf', title: s('例', 'Example'), sections: [{ label, lines, empty: s('（空文字）', '(empty)') }] };
+}
+
+/** The commands xargs runs for a sample input. */
+function xargsExample(words: ExampleWord[], lang: Lang): Example | undefined {
+  const s = pick(lang);
+  const values = words.map((w) => w.value);
+  const ex = runXargs(values);
+  if (!ex) return undefined;
+  const input = ex.input.endsWith('\n') ? ex.input.slice(0, -1).split('\n') : [ex.input];
+  return { kind: 'xargs',
+    title: s('例', 'Example'),
+    sections: [
+      { label: s('入力（標準入力）', 'Input (stdin)'), lines: input.map(visible) },
+      { label: s('実行されるコマンド', 'Commands that run'), lines: ex.commands, empty: s('（実行されない）', '(none)') },
+    ],
+    // Input split on NUL or another delimiter is not one item per line, so it is not editable.
+    ...(words.some((w) => /^(-0|--null|-d|--delimiter)/.test(w.text)) ? {} : { interactive: interactive({ kind: 'xargs', words: values }, input, lang, s('入力（標準入力）', 'Input (stdin)')) }),
+  };
+}
+
+/** How getopt rearranges sample arguments, from the `-o` / `--long` given. */
+function getoptExample(words: (string | undefined)[], lang: Lang): Example | undefined {
+  const s = pick(lang);
+  const spec: GetoptSpec = { short: '', long: [] };
+  let i = 0;
+  const value = (w: string, short: string, long: string[]): string | undefined => {
+    if (w === short || long.includes(w)) return words[++i];
+    if (w.startsWith(short) && w.length > 2) return w.slice(2);
+    const eq = long.find((l) => w.startsWith(`${l}=`));
+    return eq ? w.slice(eq.length + 1) : undefined;
+  };
+  let shortGiven = false;
+  for (; i < words.length; i++) {
+    const w = words[i];
+    if (w === undefined) return undefined;
+    if (w === '--') break;
+    if (!w.startsWith('-')) {
+      // The old form: `getopt OPTSTRING ARGS…`.
+      if (!shortGiven) {
+        spec.short = w;
+        spec.legacy = true;
+      }
+      break;
+    }
+    if (/^-(o|-options)/.test(w)) {
+      const v = value(w, '-o', ['--options']);
+      if (v === undefined) return undefined;
+      spec.short = v;
+      shortGiven = true;
+    } else if (/^-(l|-long)/.test(w)) {
+      const v = value(w, '-l', ['--longoptions', '--long']);
+      if (v === undefined) return undefined;
+      spec.long.push(...v.split(','));
+    } else if (/^-(n|s|-name|-shell)/.test(w)) {
+      if (!w.includes('=') && w.length === 2 || ['--name', '--shell'].includes(w)) i++;
+    } else if (w === '-a' || w === '--alternative') {
+      spec.alternative = true;
+    } else if (/^-(Q|T|-quiet-output|-test)$/.test(w)) {
+      return undefined;
+    }
+  }
+  if (!spec.short && !spec.long.length) return undefined;
+  try {
+    const sample = sampleGetoptArgs(spec);
+    const output = runGetopt(spec, sample);
+    const shown = sample.map((a) => (/^[\w.,=\/-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(' ');
+    return { kind: 'getopt',
+      title: s('例', 'Example'),
+      sections: [
+        { label: s('スクリプトに渡された引数の例', 'Sample arguments given to the script'), lines: [shown] },
+        {
+          label: spec.legacy
+            ? s('getopt の出力（`set --` に渡すと引数がこの順に並び直る。旧形式はクォートしないので空白を含む引数が壊れる）', 'What getopt prints (`set --` puts the arguments in this order; the old form does not quote, so arguments with spaces break)')
+            : s('getopt の出力（`eval set --` に渡すと引数がこの順に並び直る）', 'What getopt prints (`eval set --` puts the arguments in this order)'),
+          lines: [output.trimStart()],
+        },
+      ],
+    };
+    /* c8 ignore start */
+  } catch (e) {
+    // The sample arguments are made to fit the spec, so getopt never rejects them: a guard.
+    if (!(e instanceof GetoptUnsupported)) throw e;
+    return undefined;
+  }
+  /* c8 ignore stop */
+}
+
+/**
+ * How `read` splits a sample line into its variables, with the IFS given before it (`ifs`, undefined when it is not
+ * known) and the line of a here-string (`here`); and a note on a separator that is not whitespace.
+ */
+export function readExample(words: (string | undefined)[], ifs: string | undefined, here: string | undefined, lang: Lang): { example: Example; note?: string } | undefined {
+  const s = pick(lang);
+  if (ifs === undefined || words.some((w) => w === undefined)) return undefined;
+  let p;
+  try {
+    p = parseOptions(words, { flags: 'rse', values: 'aptu', long: {} });
+  } catch {
+    return undefined;
+  }
+  const array = p.opts.find(([o]) => o === 'a')?.[1];
+  const names = (p.operands as string[]).length ? (p.operands as string[]) : array ? [] : ['REPLY'];
+  const raw = p.opts.some(([o]) => o === 'r');
+  // The line the command reads, when a here-string gives it: `read -a p <<< "a,b,,c,"`.
+  const line = here ?? readSampleLine(names.length, ifs, !!array);
+  const r = runRead(line, names, { ifs, raw, array });
+  let note: string | undefined;
+  // A separator that is not whitespace (`IFS=,`) keeps empty fields; a trailing one adds no field.
+  if (/[^ \t\n]/.test(ifs)) {
+    const seps = [...ifs].filter((c) => !/[ \t\n]/.test(c)).map((c) => `\`${c}\``).join(s('、', ', '));
+    note = s(
+      `\`IFS=${ifs}\` の \`read\`: 空白以外の区切り文字（${seps}）が続くと、間の空のフィールドもそのまま残る（空白の区切りは続いても1つにまとまる）。末尾の区切り文字の後ろには空のフィールドはできない`,
+      `\`read\` with \`IFS=${ifs}\`: a separator that is not whitespace (${seps}) keeps the empty field between two of them (whitespace separators merge into one); a separator at the end of the line adds no empty field after it`);
+  }
+  const lines = r.array ? [`${r.array[0]}=(${r.array[1].map((x) => JSON.stringify(x)).join(' ')})`] : r.vars.map(([k, v]) => `${k}=${JSON.stringify(v)}`);
+  const example: Example = { kind: 'read',
+    title: s('例', 'Example'),
+    sections: [{ label: s('読み込む行', 'Line read'), lines: [JSON.stringify(line)] }, { label: s('変数に入る値', 'Values stored'), lines }],
+  };
+  return { example, ...(note ? { note } : {}) };
+}
+
+/** What `date +FORMAT` prints at fixed, made-up moments (in UTC, so the same line always shows the same). */
+export function dateExample(format: string, lang: Lang): Example | undefined {
+  const s = pick(lang);
+  const outputs = SAMPLE_DATES.map((d) => formatDateCommand(format, parseSampleDate(d)!));
+  if (outputs.some((o) => o === undefined)) return undefined;
+  const spec: RerunSpec = { kind: 'date', format };
+  return { kind: 'date',
+    interactive: interactive(spec, SAMPLE_DATES, lang),
+    title: s('例', 'Example'),
+    sections: [
+      { label: s('日時（UTC）', 'Date and time (UTC)'), lines: SAMPLE_DATES },
+      { label: s('出力', 'Output'), lines: outputs.map((o) => visible(o!)) },
+    ],
+  };
+}
+
+/** `git log` output for sample commits, for a `--pretty`/`--format` or `--date` value; `words` are git's (`''` where not known). */
+export function gitLogExample(kind: 'gitformat' | 'gitdate', value: string, words: string[], lang: Lang): Example | undefined {
+  const s = pick(lang);
+  const opt = (re: RegExp) => words.map((w) => re.exec(w)?.[1]).filter((v) => v !== undefined).pop();
+  const pretty = kind === 'gitformat' ? value : opt(/^--(?:pretty|format)=([\s\S]*)$/) ?? (words.includes('--oneline') ? 'oneline' : undefined);
+  const date = kind === 'gitdate' ? value : opt(/^--date=([\s\S]*)$/) ?? 'default';
+  const now = Date.now();
+  let commits = sampleCommits(now);
+  const count = opt(/^(?:-n|--max-count=)(\d+)$/) ?? opt(/^-(\d+)$/) ?? words.find((w, i) => words[i - 1] === '-n' && /^\d+$/.test(w));
+  if (count !== undefined) commits = commits.slice(0, Math.max(1, Number(count)));
+  try {
+    if (kind === 'gitdate') {
+      return { kind: 'gitLog',
+        title: s('例（この形式で表示した日時）', 'Example (dates in this style)'),
+        sections: [{
+          label: s('例のコミットの日時がこう表示される（`%ad`・`%cd` や Date: 行）', 'How the sample commits\' dates are shown (`%ad`, `%cd`, the Date: line)'),
+          lines: commits.map((c) => visible(formatDate(c.time, date, now))),
+        }],
+      };
+    }
+    // Multi-line formats get long; two commits show the layout.
+    const multi = !pretty || ['short', 'medium', 'full', 'fuller'].includes(pretty);
+    const lines = runGitLog(multi ? commits.slice(0, 2) : commits, pretty, date, now);
+    return { kind: 'gitLog',
+      title: s('例（この書式での `git log` の出力）', 'Example (`git log` output with this format)'),
+      sections: [{ label: s('例のコミットでの出力', 'Output for sample commits'), lines: lines.map(visible) }],
+    };
+    /* c8 ignore start */
+  } catch (e) {
+    // A guard: runGitLog throws nothing else.
+    if (!(e instanceof GitFormatUnsupported)) throw e;
+    return undefined;
+  }
+  /* c8 ignore stop */
+}

@@ -104,3 +104,8 @@ export function sedEscapeAt(src: string, i: number): SedEscape | undefined {
         : s(`Control-${m[4].toUpperCase()} の文字${suffix(s)}`, `Control-${m[4].toUpperCase()}: the character with code ${code}${suffix(s)}`);
   return { length: m[0].length, code, text };
 }
+
+/** Tabs as ⇥ and other control characters as their Unicode pictures (CR → ␍), so examples show them. */
+export function visible(line: string): string {
+  return line.replace(/\t/g, '⇥').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (c) => (c === '\x7f' ? '␡' : String.fromCharCode(0x2400 + c.charCodeAt(0))));
+}

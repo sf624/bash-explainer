@@ -2,11 +2,16 @@
 // `bash -c S`, `trap S INT`, `ssh host S`), read as the script it is. This file reads the string's text, with the
 // source range of each character, and says which shell reads it; src/semantics/state.ts parses it and gives it a
 // model (`StateModel.script`).
+import { interpret } from '../argv/interpret';
+import { argWord } from '../argv/words';
+import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
-import { type MappedText, staticWordText } from '../staticword';
+import { type MappedText, staticWordText, staticWordValue } from '../staticword';
+import { descendants, field, fields } from '../syntax/tree';
 import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
-import type { ExecEnv, SlotLink } from './env';
-import type { StateModel } from './state';
+import { type ExecEnv, type SlotLink, slotEnvs } from './env';
+// (state.ts imports this module too; each uses the other's functions only when they run.)
+import { shellState, type StateModel } from './state';
 
 /** How many strings in strings are read (deeper ones stay opaque). */
 export const NESTED_DEPTH = 8;
@@ -76,4 +81,33 @@ export function scriptSourceIndex(script: Pick<NestedScript, 'starts' | 'ends' |
   const { starts, ends } = script;
   if (end && i > 0) return ends[i - 1];
   return i < starts.length ? starts[i] : ends[ends.length - 1] ?? script.words[0].startIndex;
+}
+
+/**
+ * Every string of `tree` that a command slot runs as a script (docs/design/semantics.md, 4.13), and those inside them,
+ * outermost first, each with `source`: where offset `i` of its text is in `tree`'s text (`end`: as the end of a range).
+ * For the dialect checks of the strings (src/document.ts).
+ */
+export function nestedScripts(tree: SyntaxTree, shell?: Shell, descend: (script: NestedScript) => boolean = () => true): { script: NestedScript; source: (i: number, end: boolean) => number }[] {
+  const out: { script: NestedScript; source: (i: number, end: boolean) => number }[] = [];
+  const visit = (t: SyntaxTree, model: StateModel, source: (i: number, end: boolean) => number): void => {
+    for (const cmd of descendants(t.root, ['command'])) {
+      const name = staticWordValue(field(cmd, 'name')!.namedChildren[0]);
+      const spec = name === undefined ? undefined : lookupCommand(name);
+      const args = fields(cmd, 'argument');
+      if (!spec || !args.length) continue;
+      const strings = new Map<SyntaxNode, SyntaxNode[]>();
+      const envs = slotEnvs(model.env(cmd), interpret(spec, args.map(argWord), { name, lookup: lookupCommand }), spec, args, lookupCommand, strings);
+      for (const [first, words] of strings) {
+        const script = model.script(words, envs.get(first)!);
+        if ('why' in script) continue;
+        const inner = (i: number, end: boolean) => source(scriptSourceIndex(script, i, end), end);
+        out.push({ script, source: inner });
+        // (Reading the strings in it builds its model: not done when the caller does not need them.)
+        if (descend(script)) visit(script.tree, script.model, inner);
+      }
+    }
+  };
+  visit(tree, shellState(tree, shell), (i) => i);
+  return out;
 }

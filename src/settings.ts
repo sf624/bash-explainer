@@ -4,7 +4,7 @@
 // so that a new VS Code setting cannot be forgotten on the other surfaces. A setting of one surface
 // only, 'web', is not in package.json (VS Code has its own for it) and carries its own description.
 // Pure code: the web page bundles it, so it reads no file itself.
-import { EXAMPLE_KINDS, ExplainOptions } from './analyzer';
+import { EXAMPLE_KINDS, ExplainOptions } from './analyzer-types';
 import { Shell } from './dialect';
 import { EMBEDDED_FILES } from './document-setup';
 import type { ExamplePlacement } from './ui/render';

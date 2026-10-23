@@ -1,4 +1,4 @@
-import type { LineExplanation } from '../analyzer';
+import type { LineExplanation } from '../analyzer-types';
 import { BATS_COMMANDS } from '../dict/bats';
 import type { Extracted } from './index';
 import { Builder } from './builder';

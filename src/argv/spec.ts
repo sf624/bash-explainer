@@ -93,7 +93,16 @@ export interface CommandSpec {
    * a program (`env echo`) runs it, and its options may differ from the builtin's.
    */
   program?: CommandSpec;
+  /**
+   * The worked example of a run of the command (src/examples/commands.ts): the simulation of that tool, chosen by the
+   * spec rather than by the name, so that a path, an alias of the dictionary or a wrapped command gets it too, and a
+   * function of the same name does not.
+   */
+  example?: CommandExampleKind;
 }
+
+/** The commands src/examples/commands.ts can run on sample input. */
+export type CommandExampleKind = 'printf' | 'xargs' | 'getopt' | 'perl' | 'read' | 'sort' | 'uniq' | 'cut' | 'tr' | 'head' | 'tail' | 'seq' | 'basename' | 'dirname';
 
 /**
  * A call of a builtin, as `shellEffect.when` reads it: the options given (`-p`, `+o`; `--` too), those given
