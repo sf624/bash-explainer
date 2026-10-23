@@ -83,3 +83,7 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
   }
   return out;
 }
+
+const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
+/** Whether a word's text has a wildcard: `*`, `?`, an extended glob (`+(`, `@(`, `!(`) or a bracket expression. */
+export const hasGlob = (s: string): boolean => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);
