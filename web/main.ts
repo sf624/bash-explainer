@@ -15,12 +15,12 @@ import { Compartment, EditorState, Prec, RangeSetBuilder, StateEffect, StateFiel
 import { Decoration, DecorationSet, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { Analyzer, LineExplanation, Span } from '../src/analyzer';
-import { detectShell, Shell } from '../src/dialect';
-import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from '../src/document';
+import { Shell } from '../src/dialect';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain, ShellDocument, Shells } from '../src/document';
+import { openDocument, shellsOf } from '../src/document-setup';
 import { rerun } from '../src/examples/rerun';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
-import { extractShell } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -217,21 +217,14 @@ const analyzer = () => analyzers.get(lang) ?? analyzers.set(lang, new Analyzer(l
 function shellDocument(): ShellDocument | undefined {
   const text = view.state.doc.toString();
   if (parsed && parsed.text === text && parsed.kind === kind) return parsed.doc;
-  const lines = text.split('\n');
-  let doc: ShellDocument;
-  if (kind === 'shell') {
-    doc = { lines, tree: parser.parse(text) };
-  } else {
-    const extracted = extractShell(kind, text);
-    doc = { lines, extracted, tree: parser.parse(extracted.text) };
-  }
+  const doc = openDocument(text, kind, (shellText) => parser.parse(shellText));
   parsed = { text, kind, doc };
   return doc;
 }
 
 function shells(): Shells {
-  const head = view.state.doc.sliceString(0, view.state.doc.line(Math.min(50, view.state.doc.lines)).to);
-  return { forced: forcedShell(settings), detected: detectShell(head, kindInfo(kind).fileName) };
+  const lines = Array.from({ length: Math.min(50, view.state.doc.lines) }, (_, i) => view.state.doc.line(i + 1).text);
+  return shellsOf(lines, kindInfo(kind).fileName, forcedShell(settings));
 }
 
 // ---- Editor ---------------------------------------------------------------------------------
@@ -370,9 +363,6 @@ const editorTheme = EditorView.theme({
   '.cm-tooltip': { backgroundColor: 'var(--vscode-input-background)', color: 'var(--vscode-foreground)', border: '1px solid var(--vscode-panel-border)' },
 });
 
-/** A problem's message without the ⚠ / ℹ it starts with in the explanations. */
-const plain = (message: string) => message.replace(/^[⚠ℹ]\uFE0F?\s*/u, '');
-
 /** Text with its `backtick` spans as <code> nodes, as the panel shows them (DOM nodes, never HTML). */
 function withCode(text: string): Node[] {
   return text.split(/(`[^`]+`)/).filter(Boolean).map((part) => {
@@ -393,11 +383,9 @@ let codesSeen: string[] = [];
 const problems = linter((v): Diagnostic[] => {
   const doc = shellDocument();
   if (!doc) return [];
-  // diagnostics.enabled, and diagnostics.embedded for the shell code in other files.
-  const all = documentIssues(doc, lang, shells());
-  codesSeen = [...new Set(all.map((i) => i.code))].sort();
-  const off = !settings['diagnostics.enabled'] || (kind !== 'shell' && !settings['diagnostics.embedded']);
-  const list = off ? [] : all.filter((i) => !settings['diagnostics.ignore'].includes(i.code));
+  const found = diagnosticsFor(doc, lang, shells(), settings, 'web');
+  codesSeen = [...new Set(found.all.map((i) => i.code))].sort();
+  const list = found.shown;
   showProblems(list);
   return list.map((i) => ({
     from: pos(v.state, i.startLine, i.startCol),

@@ -20,7 +20,7 @@ export class SemanticTokensController implements vscode.Disposable {
   refresh(): void {
     this.registration?.dispose();
     this.registration = undefined;
-    if (!this.service.config.get<boolean>('highlight.enabled', false)) return;
+    if (!this.service.settings['highlight.enabled']) return;
     const tokens = (doc: vscode.TextDocument, lines?: { from: number; to: number }) => {
       const parsed = this.service.isTarget(doc) && this.service.hasShell(doc) ? this.service.document(doc) : undefined;
       return new vscode.SemanticTokens(new Uint32Array(parsed ? semanticTokens(parsed, lines) : []));

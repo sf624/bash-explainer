@@ -52,7 +52,7 @@ export class InlineController implements vscode.Disposable {
       this.clear(editor);
       return;
     }
-    const max = this.service.config.get<number>('inline.maxLength', 120);
+    const max = this.service.settings['inline.maxLength'];
     const text = ex.summary.length > max ? ex.summary.slice(0, max - 1) + '…' : ex.summary;
     const end = editor.document.lineAt(line).range.end;
     editor.setDecorations(this.decoration, [{

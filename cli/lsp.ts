@@ -2,9 +2,8 @@
 // explanations, the problems as diagnostics and their quick fixes, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
-import { detectShell } from '../src/dialect';
-import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
-import { extractShell, HostKind, hostKind } from '../src/hosts';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain, ShellDocument } from '../src/document';
+import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
@@ -76,26 +75,15 @@ export function startLanguageServer(io: Io): void {
   };
 
   /** What kind of document it is, or undefined when it has nothing for us. */
-  function kindOf(doc: Doc): 'shell' | HostKind | undefined {
-    const found = hostKind(doc.languageId === 'make' ? 'makefile' : doc.languageId, fileName(doc.uri), doc.text);
-    // The setting names package.json files `packageJson`.
-    const kind = found && settings['embedded.files'].includes(found === 'npm' ? 'packageJson' : found) ? found : undefined;
-    // A bats file is one also in a shell language (a `.bats` file opened as a shell script).
-    if (kind !== 'bats' && (SHELL_LANGUAGES.has(doc.languageId) || settings.languages.includes(doc.languageId))) return 'shell';
-    return kind;
+  function kindOf(doc: Doc): FileKind | undefined {
+    return kindOfDocument({ languageId: doc.languageId, fileName: fileName(doc.uri), text: doc.text }, settings, [...SHELL_LANGUAGES, ...settings.languages]);
   }
 
   function parse(doc: Doc): ShellDocument | undefined {
     if (doc.parsed) return doc.parsed;
     const kind = kindOf(doc);
     if (!kind) return undefined;
-    const lines = doc.text.split(/\r?\n/);
-    if (kind === 'shell') {
-      doc.parsed = { lines, tree: parser.parse(doc.text) };
-    } else {
-      const extracted = extractShell(kind, doc.text);
-      doc.parsed = { lines, extracted, tree: parser.parse(extracted.text) };
-    }
+    doc.parsed = openDocument(doc.text, kind, (text) => parser.parse(text));
     return doc.parsed;
   }
 
@@ -103,14 +91,11 @@ export function startLanguageServer(io: Io): void {
     if (doc) doc.parsed = undefined;
   }
 
-  const shells = (doc: ShellDocument, uri: string) => ({ forced: forcedShell(settings), detected: detectShell(doc.lines.slice(0, 50).join('\n'), fileName(uri)) });
-  const plain = (message: string) => message.replace(/^[⚠ℹ]️?\s*/u, '');
+  const shells = (doc: ShellDocument, uri: string) => shellsOf(doc.lines, fileName(uri), forcedShell(settings));
 
   function issues(doc: Doc): DocumentIssue[] {
-    if (!settings['diagnostics.enabled']) return [];
     const parsed = parse(doc);
-    if (!parsed || (parsed.extracted && !settings['diagnostics.embedded'])) return [];
-    return documentIssues(parsed, lang, shells(parsed, doc.uri), settings['diagnostics.ignore']);
+    return parsed ? diagnosticsFor(parsed, lang, shells(parsed, doc.uri), settings, 'lsp').shown : [];
   }
 
   function publish(uri: string): void {
