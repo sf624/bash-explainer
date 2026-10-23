@@ -53,5 +53,10 @@
     "input": "a\\",
     "path": "$",
     "reason": "unbash accepts a backslash at the end of the input; bash rejects it (like `echo (`, README Limitations)"
+  },
+  {
+    "input": "x=$(cat <<E\nhi $y\nE\n); echo \"$x\"",
+    "path": "$.items[0].cmd.line",
+    "reason": "bash numbers the command by the line where its words end (after the here-document in `$( )`); ours is the line it starts on"
   }
 ]
