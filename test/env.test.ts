@@ -110,17 +110,21 @@ describe('execution environments: subshells', () => {
     const mutual = 'f() { [ "$1" ] && return; a; g; }; g() { b; f x; }; echo | f';
     assert.deepStrictEqual([kind(mutual, 'a'), kind(mutual, 'b')], ['subshell', 'subshell']);
     assert.deepStrictEqual([kind(`${mutual}; g`, 'a'), kind(`${mutual}; g`, 'b')], ['subshell?', 'subshell?']);
-    // Called by `eval` or a trap: from where they run; a name used where the walk sees no call: not for sure.
+    // Called by `eval` or a trap: from where they run. Not for sure where it may be called where the walk does not
+    // see (src/semantics/trust.ts, `closed`): a trap's action, a command name not known, a sourced file.
     assert.strictEqual(kind('m() { a; }; echo | m; eval m', 'a'), 'subshell?');
     assert.strictEqual(kind('m() { a; }; x=$(builtin eval "m")', 'a'), 'subshell');
     assert.strictEqual(kind('m() { a; }; echo | m; trap m EXIT', 'a'), 'subshell?');
     assert.strictEqual(kind('m() { a; }; echo | m; "${1:-m}"', 'a'), 'subshell?');
-    assert.strictEqual(kind('m() { a; }; echo | m # m', 'a'), 'subshell');
+    assert.strictEqual(kind('m() { a; }; echo | m; . ./lib.sh', 'a'), 'subshell?');
+    // (A name that runs nothing: in a comment, printed, looked up.)
+    for (const more of ['# m', 'declare -f m', 'type m', 'command -v m', 'unset -f x m']) assert.strictEqual(kind(`m() { a; }; echo | m; ${more}`, 'a'), 'subshell', more);
     // A call where the function may not be defined yet.
     const sites = (at('[ "$1" ] && m() { :; }; m', ':').env.links[0] as CallLink).sites;
     assert.deepStrictEqual(sites.map((x) => x.sure), [false]);
-    // Called through an alias: from where the alias is used.
-    assert.strictEqual(kind('shopt -s expand_aliases\nalias g=f\nf() { a; }\nx=$(g)', 'a'), 'subshell');
+    // Called through an alias: from where the alias is used, but not for sure: its text may run wherever the alias
+    // is used, a trap's action too (src/semantics/trust.ts reads it as text run from elsewhere).
+    assert.strictEqual(kind('shopt -s expand_aliases\nalias g=f\nf() { a; }\nx=$(g)', 'a'), 'subshell?');
   });
   it('does not take the syntax around a statement for a subshell', () => {
     assert.deepStrictEqual(subshellReasons(parser.parse('a &').root), []);

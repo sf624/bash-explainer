@@ -26,14 +26,14 @@ import { argWord, prefixOf } from '../argv/words';
 import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { BASH_ONLY_BUILTINS, builtins } from '../dict/builtins';
-import { ansiCValue, staticWordValue } from '../staticword';
+import { ansiCValue, type MappedText, staticWordValue } from '../staticword';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, hasError, type BashParser, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { compareIntegers, patternMatches, patternText, testStatus, type TestEnv, unaryTest } from './conditions';
 import { builtinParse, commandName, DECLARATIONS, SET_LETTERS, setOptionWrites, variableWrites, wrapped } from './effects';
 import { EnvModel, type ExecEnv, lastStageInShell, MAIN_SHELL, reachOf, type SlotLink, slotEnvs, STATEMENTS, subshellReasons } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
-import { BLIND, type HostCommands, NO_HOST, scriptTrust, type Trust, withinTrust } from './trust';
+import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, treeFacts, type Trust, withinTrust } from './trust';
 import { ARITH_ASSIGNED, DYNAMIC, NUMERIC_DYNAMIC, optionRoles, readDeclaration, readDeclarationWords, type Declaration } from './vars';
 
 export { ARITH_ASSIGNED, DYNAMIC, readDeclaration, type Declaration };
@@ -736,13 +736,40 @@ export function docLine(n: SyntaxNode): number {
 
 /**
  * The strings a model reads as scripts (`StateModel.script`), by their first word, and the trees of those that run in
- * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model.
+ * its own shell (`eval`, a trap's action), by root: the walk runs them, so their nodes are in this model. The trust
+ * scan reads the same trees (`StringTrees`): each string is parsed once.
  */
-class Scripts {
+class Scripts implements StringTrees {
   readonly byWord = new Map<SyntaxNode, NestedScript | NotRead>();
   readonly byRoot = new Map<SyntaxNode, NestedScript>();
+  /** The text and tree of each string, by its first word (none: not static text); the trees of the texts of `alias`, by word. */
+  private readonly parsed = new Map<SyntaxNode, { text: MappedText; tree: SyntaxTree } | undefined>();
+  private readonly aliases = new Map<SyntaxNode, SyntaxNode>();
   model!: StateModel;
   constructor(readonly depth: number) {}
+
+  /** The text of the string `words` make, and its tree. */
+  private parse(words: readonly SyntaxNode[]): { text: MappedText; tree: SyntaxTree } | undefined {
+    if (this.parsed.has(words[0])) return this.parsed.get(words[0]);
+    const text = scriptText(words);
+    aliasParser ??= createUnbashParser();
+    const out = text && { text, tree: aliasParser.parse(text.text) };
+    this.parsed.set(words[0], out);
+    return out;
+  }
+
+  script(words: readonly SyntaxNode[]): SyntaxNode | undefined {
+    return this.parse(words)?.tree.root;
+  }
+
+  alias(word: SyntaxNode, text: string): SyntaxNode {
+    let root = this.aliases.get(word);
+    if (!root) {
+      aliasParser ??= createUnbashParser();
+      this.aliases.set(word, (root = aliasParser.parse(text).root));
+    }
+    return root;
+  }
 
   /** The string of `words`, read as a script of `kind`, run where `env` says, by the shell `shell` says. */
   read(words: readonly SyntaxNode[], kind: NestedScript['kind'], env: () => ExecEnv, shell: { shell: Shell | undefined; known: boolean }): NestedScript | NotRead {
@@ -752,13 +779,12 @@ class Scripts {
     while (root.parent) root = root.parent;
     // (A string in a string that this shell runs is one level deeper than that string.)
     const depth = (this.byRoot.get(root)?.depth ?? this.depth) + 1;
-    const text = scriptText(words);
+    const parsed = this.parse(words);
     let out: NestedScript | NotRead;
-    if (!text) out = { why: 'not-static' };
+    if (!parsed) out = { why: 'not-static' };
     else if (depth > NESTED_DEPTH) out = { why: 'too-deep' };
     else {
-      aliasParser ??= createUnbashParser();
-      const tree = aliasParser.parse(text.text);
+      const { text, tree } = parsed;
       const scripts = this;
       let model: StateModel | undefined;
       let where: ExecEnv | undefined;
@@ -1056,21 +1082,15 @@ class Walker {
   }
 
   /**
-   * What the trust scan found of the statement `n`: the script's scan for its own statements, the scan of a string
-   * (src/semantics/trust.ts reads the string as foreign text, whose nodes are not the walk's) for those of a string.
+   * What the trust scan found of the statement `n`: the script's scan, which reads the trees of the strings the walk
+   * runs too (`StringTrees`); for the tree of an alias's text with the rest of its command, a scan of that tree.
    */
   private facts(n: SyntaxNode): Trust {
-    if (this.blind) return this.trust;
     const root = rootOf(n);
-    // (Read to its end: a string's scan may find a reason to trust nothing, but its facts still hold.)
-    return root === this.root ? this.trust : scriptTrust(root, false, this.host);
+    return this.blind || this.trust.reads(root) ? this.trust : treeFacts(root, this.scripts, this.host);
   }
 
-  /** The root of the tree the walk starts from. */
-  private root: SyntaxNode | undefined;
-
   program(root: SyntaxNode, start: ShellState): ShellState {
-    this.root = root;
     this.collectDefinitions(root);
     const unset = new Set([...descendants(root, ['unset_command']).flatMap((u) => u.namedChildren),
       ...descendants(root, ['command']).filter((c) => commandName(c) === 'unset').flatMap((c) => fields(c, 'argument'))].map((w) => staticWordValue(w) ?? w.text));
@@ -3639,7 +3659,7 @@ const modelTrusts = new WeakMap<StateModel, Trust>();
  */
 function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, depth: number, base: ExecEnv, start: (w: Walker) => ShellState, outer?: Trust, host = NO_HOST): StateModel {
   const scripts = new Scripts(depth);
-  const own = scriptTrust(tree.root, true, host);
+  const own = scriptTrust(tree.root, scripts, host);
   const trust = outer ? withinTrust(own, outer) : own;
   let w = new Walker(shell, posix, scripts, trust, host);
   let initial!: ShellState;
@@ -3660,7 +3680,9 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
   }
   // (The model's `at` is defined below; the environments ask for it only later.)
   const envs = new EnvModel({
-    run: (n) => model.at(n).run, calls: w.calls, root: tree.root, shell,
+    run: (n) => model.at(n).run, calls: w.calls, shell,
+    // (A walk that found a reason to trust nothing on the way trusts no function either.)
+    closed: (name) => !found && trust.closed(name),
     // (The root of a string this shell runs, `eval`'s, runs where the slot does; any other, where this tree does: a
     // function another shell imports.)
     base: (root) => scripts.byRoot.get(root)?.env ?? base,
