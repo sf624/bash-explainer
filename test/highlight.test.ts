@@ -62,6 +62,12 @@ describe('highlight', () => {
     ]);
   });
 
+  it('colours the options of unset as its spec reads them: up to the first name (checked with bash)', () => {
+    // bash reads `-v` after a name as a name: `unset x -v y` unsets `x`, `-v` (no such variable) and `y`.
+    assert.strictEqual(execFileSync('bash', ['-c', 'x=1 y=2; unset x -v y; echo "$?${x-u}${y-u}"']).toString(), '0uu\n');
+    assert.deepEqual(spans('unset -v x -v y'), ['builtin:unset', 'option:-v', 'assignment:x', 'assignment:y']);
+  });
+
   it('colours tests', () => {
     assert.deepEqual(spans('[[ -n $x && $y =~ ^a+$ ]]; [ -f x ] && test -d y'), [
       'keyword:[[', 'option:-n', 'variable:$x', 'operator:&&', 'variable:$y', 'operator:=~', 'keyword:]]', 'operator:;',

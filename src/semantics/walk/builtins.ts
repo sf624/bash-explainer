@@ -334,7 +334,7 @@ export class WalkBuiltins {
     if (flags.includes('f') && flags.includes('v')) return st;
     const temporary = temporariesUnset(words, n);
     for (const { node, text } of all) {
-      if (node.type !== 'variable_name' && staticWordValue(node) === undefined) {
+      if (staticWordValue(node) === undefined) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
         for (const e of descendants(node, ['expansion'])) {
           const name = e.namedChildren[0];

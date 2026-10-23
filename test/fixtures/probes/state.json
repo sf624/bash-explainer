@@ -3770,5 +3770,26 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "4.1",
+    "snippet": "readonly x=1; z=1; if unset z x; then y=1; fi; unset x || w=1",
+    "note": "unset of a read-only variable fails (status 1) and unsets the others",
+    "facts": {
+      "end": {
+        "variables": {
+          "w": {
+            "attrs": "-",
+            "value": "\"1\""
+          },
+          "x": {
+            "attrs": "r",
+            "value": "\"1\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: unset: x: cannot unset: readonly variable"
+    }
   }
 ]
