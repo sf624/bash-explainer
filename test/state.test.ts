@@ -430,16 +430,21 @@ describe('shell state: more builtins', () => {
     ['on', 'off', 'unknown', 'unknown', 'on', 'off']);
   });
   it('is fast on long scripts with many functions', function () {
-    this.timeout(20000);
-    const lines: string[] = [];
-    for (let i = 0; i < 300; i++) {
-      lines.push(`f${i}() {`, `  local a${i}=1`, '  for x in a b c; do', `    while read -r line; do v${i}=$line; f${(i * 7) % 300}; done < /dev/null`, '  done',
-        `  g${i}=2; IFS=, ; [[ -n $x ]] && shopt -s extglob`, `  f${(i * 13) % 300}`, '}', `f${i} "$@"`, `if [ -n "$x" ]; then y${i}=1; else declare -A m${i}; fi`);
-    }
-    const tree = parser.parse(lines.join('\n'));
-    const t = Date.now();
-    shellState(tree);
-    assert.ok(Date.now() - t < 3000, `${Date.now() - t} ms`);
+    this.timeout(60000);
+    const time = (n: number): number => {
+      const lines: string[] = [];
+      for (let i = 0; i < n; i++) {
+        lines.push(`f${i}() {`, `  local a${i}=1`, '  for x in a b c; do', `    while read -r line; do v${i}=$line; f${(i * 7) % n}; done < /dev/null`, '  done',
+          `  g${i}=2; IFS=, ; [[ -n $x ]] && shopt -s extglob`, `  f${(i * 13) % n}`, '}', `f${i} "$@"`, `if [ -n "$x" ]; then y${i}=1; else declare -A m${i}; fi`);
+      }
+      const tree = parser.parse(lines.join('\n'));
+      const t = Date.now();
+      shellState(tree);
+      return Date.now() - t;
+    };
+    // (Twice the functions take about twice as long, measured in the same run: a fixed time fails on a loaded machine.)
+    const [half, all] = [time(150), time(300)];
+    assert.ok(all < 4 * half + 500, `150 functions: ${half} ms, 300: ${all} ms`);
   });
 });
 
@@ -697,7 +702,7 @@ describe('shell state: arithmetic', () => {
     assert.ok(Date.now() - start < 5000, `took ${Date.now() - start} ms`);
     // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may):
     // ten times the lines take about as long, measured in the same run (not against a fixed time, which a loaded
-    // machine may pass; followed, they would take ten times as long).
+    // machine may fail; followed, they would take ten times as long).
     const timed = (lines: number): number => {
       const t = Date.now();
       assert.deepStrictEqual(after(`${values}\n${'(( y = v30 ))\n'.repeat(lines)}(( z = 1 ))`, 'z'), ['unknown']);
