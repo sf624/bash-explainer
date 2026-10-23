@@ -98,7 +98,9 @@ function redirectAt(n: SyntaxNode): Redir[] {
     return [{ fd, op: '<<', target: op === '<<-' ? text.replace(/^\t+/gm, '') : text }];
   }
   if (n.type === 'herestring_redirect') return [{ fd, op: '<<<', target: wordOf(n.namedChildren[n.namedChildren.length - 1]) }];
-  const dest = field(n, 'destination')!;
+  const dest = field(n, 'destination');
+  // (A redirection with no target, as the adapter should never leave one: reported, not thrown.)
+  if (!dest) return [{ fd, op, target: '(missing)' }];
   const target = wordOf(dest);
   if (op === '>&' || op === '<&') {
     if (target === '-') return [{ fd, op: 'close', target: '-' }];
