@@ -702,14 +702,18 @@ function yamlShell(b: Builder, at: number, indent: number, key: string, githubLi
   }
   if (!githubLike) return undefined;
   // `defaults: run: shell:` for the workflow, or for the job that holds this step.
-  for (let d = at - 1; d >= 2; d--) {
+  // Keys have no order: the defaults may stand above or below the step. The deepest (the job's) wins.
+  let found: { k: number; shell: Shell | null } | undefined;
+  for (let d = 2; d < b.lines.length; d++) {
     const m = /^(\s*)shell:\s*(\S+)/.exec(b.lines[d]);
     if (!m || !/^\s*run\s*:\s*$/.test(b.lines[d - 1]) || !/^\s*defaults\s*:\s*$/.test(b.lines[d - 2])) continue;
     const k = indentOf(b.lines[d - 2]);
-    // A job's defaults apply only until the job ends.
-    if (b.lines.slice(d + 1, at).some((l) => l.trim() && indentOf(l) < k)) continue;
-    return shellName(m[2]);
+    // A job's defaults apply only within the job.
+    const [from, to] = d < at ? [d + 1, at] : [at + 1, d - 2];
+    if (b.lines.slice(from, to).some((l) => l.trim() && indentOf(l) < k)) continue;
+    if (!found || k > found.k) found = { k, shell: shellName(m[2]) };
   }
+  if (found) return found.shell;
   // A job on a Windows runner runs `run:` with PowerShell unless told otherwise.
   if (/windows/i.test(runsOn(b, at) ?? '')) return null;
   return 'bash';
