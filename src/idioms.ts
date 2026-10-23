@@ -238,13 +238,13 @@ const exitTrap = (c: SyntaxNode): boolean => {
   const action = words[at];
   return words.length > at + 1 && !(action !== undefined && (action === '' || action.startsWith('-'))) && words.slice(at + 1).includes('EXIT');
 };
-/** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). */
+/** `exec > >(tee -a log) 2>&1`: from here on, stdout goes through `tee` (or `logger`). `>>` and `&>>` do the same: a pipe has no end to append to. */
 const execTee = (n: SyntaxNode): boolean => {
   const c = n.type === 'redirected_statement' ? field(n, 'body')! : undefined;
   return !!c && commandIs(c, 'exec') && !argsOf(c).length && fields(n, 'redirect').some((r) => {
     const fd = field(r, 'descriptor')?.text ?? '';
     const dest = field(r, 'destination');
-    return r.type === 'file_redirect' && (tokensOf(r)[0] === '&>' || (tokensOf(r)[0] === '>' && (fd === '' || fd === '1')))
+    return r.type === 'file_redirect' && (['&>', '&>>'].includes(tokensOf(r)[0]) || (['>', '>>'].includes(tokensOf(r)[0]) && (fd === '' || fd === '1')))
       && dest?.type === 'process_substitution' && commandIs(dest.namedChildren[0], 'tee', 'logger');
   });
 };
