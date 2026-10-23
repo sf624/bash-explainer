@@ -1338,15 +1338,25 @@ export class Analyzer {
     const flags = kids.flatMap((c) => letters(roles.get(c)!).map((l) => l.flag));
     // `unset` removes a variable if there is one, else a function (`-f`: a function, `-v`: a variable).
     const st = this.state.at(n).run;
-    const asFunction = (name: string): boolean => flags.includes('-f')
-      || (!flags.includes('-v') && (st.variables.get(name)?.declared ?? 'off') === 'off' && (st.functions.get(name)?.state ?? 'off') !== 'off');
+    // (Without -f, -v and -n only: with -n, bash keeps the function.)
+    const fallback = (name: string): 'function' | 'maybe' | 'variable' => {
+      if (flags.includes('-f')) return 'function';
+      if (flags.some((f) => f === '-v' || f === '-n') || (st.functions.get(name)?.state ?? 'off') === 'off') return 'variable';
+      const declared = st.variables.get(name)?.declared ?? 'off';
+      return declared === 'off' ? 'function' : declared === 'unknown' ? 'maybe' : 'variable';
+    };
     const ref = !flags.includes('-f') && flags.includes('-n');
     const children = kids.map((c) => {
       // (`-fv`: the letters together.)
       const opts = letters(roles.get(c)!);
       if (opts.length) return this.tok(c, 'option', opts.map((o) => this.t(o.text)).join(this.s('、', '; ')));
       if (c.type === 'variable_name' || isPlainWord(c)) {
-        return this.tok(c, 'variable', asFunction(c.text) ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``) : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`) : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`));
+        const kind = fallback(c.text);
+        const text = kind === 'function' ? this.s(`関数 \`${c.text}\` を削除する`, `Remove the function \`${c.text}\``)
+          : ref ? this.s(`名前参照 \`${c.text}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${c.text}\` itself (the variable it points to stays)`)
+            : this.s(`変数 \`${c.text}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${c.text}\` (it becomes undefined)`);
+        return this.tok(c, 'variable', kind === 'maybe'
+          ? text + this.s(`。変数がなければ、代わりに関数 \`${c.text}\` を削除する`, `. If there is no such variable, the function \`${c.text}\` is removed instead`) : text);
       }
       return this.explain(c);
     });
