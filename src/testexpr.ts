@@ -184,18 +184,22 @@ export interface CommandTest {
   words: SyntaxNode[]; close?: SyntaxNode; unclosed: boolean; test?: BracketTest;
   /**
    * The expression is known and bash cannot read it (`test -f c ]`, `[ a b ]`: `testFails`), so `test` fails with
-   * status 2 before evaluating anything. Not set when `unclosed`, which bash reports first.
+   * status 2 before evaluating anything. Not set when `unclosed`, which bash reports first, nor without `bashRules`.
    */
   malformed: boolean;
 }
 
-export function commandTest(spec: CommandSpec, args: SyntaxNode[]): CommandTest {
+/**
+ * `bashRules`: the words are read by bash's builtin. Other shells differ where POSIX leaves the result unspecified
+ * (dash: `[ a -a ]` is 1, `test a -o` is 0, where bash fails with 2), so `malformed` is said only for bash.
+ */
+export function commandTest(spec: CommandSpec, args: SyntaxNode[], bashRules: boolean): CommandTest {
   const closer = spec.closingOperand;
   const last = args[args.length - 1];
   const value = last && staticWordValue(last);
   const read = (words: SyntaxNode[], unclosed: boolean): CommandTest => {
     const test = testOfWords(words);
-    return { words, unclosed, ...(test ? { test } : {}), malformed: !unclosed && !test && testFails(words.map(fieldText)) };
+    return { words, unclosed, ...(test ? { test } : {}), malformed: bashRules && !unclosed && !test && testFails(words.map(fieldText)) };
   };
   if (!closer) return read(args, false);
   if (value === closer) return { ...read(args.slice(0, -1), false), close: last };
