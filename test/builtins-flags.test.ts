@@ -230,7 +230,10 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     assert.strictEqual(r.stdout, 'declare -a c=([0]="1" [1]="2")\n');
     const arg = (src: string, line = 0) => new Analyzer('en').explainLine(parser.parse(src), line).items.flatMap(all).find((t) => t.label === 'b=(1 2)')!.explanation;
     assert.strictEqual(arg('declare() { :; }; declare b=(1 2)'), 'Argument $1 to the function. bash assigns the array `b` as `declare` would. In a function, it is a local variable. The function gets only the name `b`');
-    assert.match(arg('declare() { :; }; declare -g b=(1 2)'), /\. bash assigns the array `b` as `declare -g` would: a global variable\. The function gets only the name `b`$/);
+    assert.strictEqual(arg('declare() { :; }; declare -g b=(1 2)'), 'Argument $2 to the function. bash assigns the array `b` as `declare -g` would: a global variable. The function gets only the name `b`');
+    // (The function gets `-g` as $1 and `b` as $2.)
+    assert.strictEqual(bash('declare() { echo "$1|$2"; }; declare -g b=(1 2)').stdout, '-g|b\n');
+    assert.match(new Analyzer('en').explainLine(parser.parse('f() { :; }; f -x a'), 0).items.flatMap(all).find((t) => t.label === 'a')!.explanation, /^Argument \$2 to the function/);
     assert.match(arg('export() { :; }; export b=(1 2)'), /It is the variable visible here: a local one if there is one, else the global one, with no attribute\./);
     assert.match(arg('[ "$x" ] && declare() { :; }\ndeclare b=(1 2)', 1), /^Argument \$1 to the function\. If the function runs, bash assigns the array `b`.*\. Otherwise the builtin assigns it$/);
     assert.match(arg('alias b=(1 2)'), /^Argument `b=\(1 2\)`\. bash assigns the array `b`\. It is the variable visible here.*\. `alias` gets only the name `b`, and fails: `alias: b: not found`$/);
