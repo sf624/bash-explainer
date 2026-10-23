@@ -59,6 +59,16 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     // (Each alias whose text names another doubles the trees to read: past a bound, nothing is trusted.)
     const many = ['shopt -s expand_aliases', ...Array.from({ length: 11 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), 'a0', 'x=1; [ "$x" = 1 ] && :'].join('\n');
     assert.strictEqual(shellState(parser.parse(many)).blind, 'too many aliases expanded in aliases');
+    // (The bound is per command of the script: many plain uses of aliases, even of one that names another, are read.
+    // Before, every use counted, and such a script trusted nothing.)
+    const defs = "alias ls='ls -F'; alias ll='ls -l'";
+    const uses = (on: boolean, lines: string[]): string => [...(on ? ['shopt -s expand_aliases'] : []), defs, ...lines, 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    assert.strictEqual(bash(`x=1; ${uses(true, Array(3).fill('ll / >/dev/null'))}\necho $x`), '1\n');
+    for (const on of [false, true]) {
+      assert.strictEqual(decided(uses(on, Array(1200).fill('ll /'))), 'true', `1,200 uses, expand_aliases ${on}`);
+      const forty = Array.from({ length: 40 }, (_, i) => `alias a${i}='echo ${i}'`);
+      assert.strictEqual(decided(uses(on, [...forty, ...Array.from({ length: 1200 }, (_, i) => `a${i % 40}`)])), 'true', `40 aliases, 30 uses each, expand_aliases ${on}`);
+    }
   });
   it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
     // Arithmetic that reads a variable whose value is always a number runs no code: decisions stay.

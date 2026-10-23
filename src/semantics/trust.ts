@@ -91,7 +91,10 @@ interface Write {
  */
 interface Where { fn: string | undefined; foreign: boolean; now: boolean; rest?: { at: number; where: Where } }
 
-/** How many trees of aliases expanded at commands the scan reads (each alias in an alias's text doubles them). */
+/**
+ * How many trees of aliases expanded the scan reads from one command of the script (each alias in an alias's text
+ * may double them there); the commands of the script are not counted together.
+ */
 const ALIAS_EXPANSIONS = 1000;
 const NO_NAMES: ReadonlySet<string> = new Set();
 
@@ -624,7 +627,9 @@ class Scan {
   private aliases(): void {
     const read = new Set<AliasDef>();
     const done = new Map<SyntaxNode, Set<string>>();
-    let count = 0;
+    // (The command of the script each tree comes from, and how many trees each such command has.)
+    const origin = new Map<SyntaxNode, SyntaxNode>();
+    const counts = new Map<SyntaxNode, number>();
     for (let more = true; more;) {
       more = false;
       // (The trees read add commands and definitions to both lists.)
@@ -634,16 +639,20 @@ class Scan {
         while (root.parent) root = root.parent;
         const from = this.expanding.get(root) ?? NO_NAMES;
         if (from.has(name)) continue;
+        const top = origin.get(root) ?? c;
         const texts = done.get(c) ?? new Set<string>();
         done.set(c, texts);
         for (const d of this.aliasDefs) {
           if (d.name !== name || texts.has(d.value)) continue;
-          if (++count > ALIAS_EXPANSIONS) this.blindFor('too many aliases expanded in aliases');
+          const count = (counts.get(top) ?? 0) + 1;
+          if (count > ALIAS_EXPANSIONS) this.blindFor('too many aliases expanded in aliases');
+          counts.set(top, count);
           texts.add(d.value);
           read.add(d);
           more = true;
           const tree = this.strings.expansion(c, d.value);
           this.expanding.set(tree, new Set([...from, name]));
+          origin.set(tree, top);
           // (A command in an alias's text is foreign: so is the rest of it, in the tree of an alias expanded there.)
           const { rest: _, ...outer } = where;
           this.visit(tree, { fn: where.fn, foreign: true, now: false, rest: { at: d.value.length, where: outer } });
