@@ -1542,7 +1542,7 @@ export class Analyzer {
         this.cx.extraNotes.push(...this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 })));
       }
     }
-    if (res.kind === 'function') return { name, kind: 'function', fn: true, nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
+    if (res.kind === 'function') return { name, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
     this.missedNote(name, missed);
     // After `source`, a name the dictionary does not know may be a function of the file read.
     if (res.kind === 'file' && res.sourced) {
@@ -1608,7 +1608,7 @@ export class Analyzer {
    * Explain the argument words of a command: the argument interpreter (src/argv/interpret.ts) reads them
    * with the command's spec, and each word's role becomes a token.
    */
-  private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn = false): { tokens: Token[]; parse: ArgvParse } {
+  private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn: boolean | 'maybe' = false): { tokens: Token[]; parse: ArgvParse } {
     // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
     const spec = known && !isFn ? known : NO_SPEC;
     const lookup = (name: string): CommandSpec | undefined => this.specFor(name);
@@ -1632,7 +1632,7 @@ export class Analyzer {
    * The tokens of the words `nodes` (indexed as the interpreter's words) that `parse` reads with `spec`.
    * `words` are the words of this command, which the explanations of embedded languages look at.
    */
-  private render(parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], isFn = false): Token[] {
+  private render(parse: ArgvParse, spec: CommandSpec, nodes: SyntaxNode[], words: SyntaxNode[], isFn: boolean | 'maybe' = false): Token[] {
     const savedCtx = this.cx.argCtx;
     this.cx.argCtx = { cmd: parse.command, args: words, parse, nodes, spec };
     const out: Token[] = [];
@@ -1919,7 +1919,7 @@ export class Analyzer {
   }
 
   /** The token of an operand: what the spec says it is, numbered (`$1`), or as a job spec, a shell option, an assignment. */
-  private operandToken(nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean): Token {
+  private operandToken(nodes: SyntaxNode[], word: number, role: Extract<ArgRole, { role: 'operand' }>, parse: ArgvParse, spec: CommandSpec, n: number, assigned: string[], isFn: boolean | 'maybe'): Token {
     const a = nodes[word];
     const item = role.spec;
     // `unset NAME`, `declare NAME=value`: what the name stands for, as bash decides it here.
@@ -1944,7 +1944,40 @@ export class Analyzer {
       const roles = role.several.map((o) => this.t(o.text)).join(this.s('、', ', then '));
       desc = this.s(`\`${a.text}\` が1語に展開されるなら${desc}、2語以上なら順に${roles}`, `${desc} when \`${a.text}\` expands to a single word; when it expands to more, they are ${roles}`);
     } else if (desc && role.otherwise) desc = this.uncertainText(desc, this.t(role.otherwise.text), parse, nodes);
+    // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)
+    if (a.type === 'variable_assignment') return this.markedAssignment(a, desc ?? this.s(`引数 \`${a.text}\``, `Argument \`${a.text}\``), parse.command, isFn);
     return this.positional(a, desc, isFn ? undefined : item?.lang);
+  }
+
+  /**
+   * `a=…` passed to a command that does not declare it, after a name written as a declaration builtin or `alias`:
+   * a function of that name (`isFn`; `maybe`: defined on some paths only) or `alias`. bash expands it as an assignment
+   * (not split), and gives it whole: nothing is assigned. `a=(…)` is assigned as an array (where the builtin would put
+   * it: in a function, `declare`, `local` and `typeset` make it local), and the command gets the name `a` only;
+   * `alias` then fails on that name (`alias: a: not found`). Checked with bash 5.2.
+   */
+  private markedAssignment(a: SyntaxNode, desc: string, command: string, isFn: boolean | 'maybe'): Token {
+    const name = field(a, 'name')!.text;
+    const value = field(a, 'value');
+    let note: string;
+    if (value?.type === 'array') {
+      const where = !isFn ? this.s('グローバル変数', 'a global variable')
+        : ['declare', 'local', 'typeset'].includes(command) ? this.s(`\`${command}\` と同じ場所（関数の中ならそのローカル変数）`, `where \`${command}\` would (in a function, a local variable of it)`)
+          : this.s('グローバル変数（属性なし）', 'a global variable, with no attribute');
+      const assigns = this.s(`bash は配列 \`${name}\` を${where}として代入し`, `bash assigns the array \`${name}\` (${where})`);
+      note = !isFn
+        ? this.s(`（${assigns}、\`alias\` には名前 \`${name}\` だけを渡すので、\`alias: ${name}: not found\` で失敗する）`, ` (${assigns} and passes only the name \`${name}\`, so \`alias\` fails: \`alias: ${name}: not found\`)`)
+        : isFn === 'maybe'
+          ? this.s(`（関数が動くなら、${assigns}、関数には名前 \`${name}\` だけを渡す。動かなければビルトインが代入する）`, ` (if the function runs, ${assigns} and passes it only the name \`${name}\`; otherwise the builtin assigns it)`)
+          : this.s(`（${assigns}、関数には名前 \`${name}\` だけを渡す）`, ` (${assigns} and passes the function only the name \`${name}\`)`);
+    } else {
+      note = isFn === 'maybe'
+        ? this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。関数が動くなら代入はされず、動かなければビルトインが代入する）',
+          ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; if the function runs, nothing is assigned; otherwise the builtin assigns it)')
+        : this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。代入はされない）',
+          ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; nothing is assigned)');
+    }
+    return this.tok(a, 'argument', desc + note, this.sub(value));
   }
 
   /**
@@ -2144,14 +2177,6 @@ export class Analyzer {
       const t = this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
       if (glob) t.refs = ['3.5.8'];
       return t;
-    }
-    if (a.type === 'variable_assignment') {
-      // `declare() { …; }; declare a=$v`: bash's parser marks the word by the spelling of the name, so it is expanded
-      // as an assignment (the function gets `a=1 2` as one argument), but nothing is assigned.
-      const note = this.s('（コマンド名が宣言ビルトインの綴りなので、代入と同じく単語分割もグロブ展開もされずに渡される。代入はされない）',
-        ' (the command name is spelled as a declaration builtin, so it is expanded as an assignment would be, with no word splitting or globbing; nothing is assigned)');
-      // (Only a function's words come here, and they have a description.)
-      return this.tok(a, 'argument', desc! + note, this.sub(field(a, 'value')));
     }
     const inner = this.sub(a);
     // The embedded tokens sit inside the quotes, so they become children of the string token.
@@ -3976,8 +4001,8 @@ export class Analyzer {
 
 interface CommandHead {
   name: string; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[];
-  /** A call of a function defined in the script. */
-  fn?: boolean;
+  /** A call of a function defined in the script (`maybe`: on some paths only). */
+  fn?: true | 'maybe';
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
   refs?: readonly string[];
   /** The spec of `test` or `[`, when the name runs one of them (src/semantics/names.ts, `testSpecOf`). */

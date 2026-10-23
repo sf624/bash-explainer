@@ -1265,5 +1265,22 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "6.11",
+    "posix": true,
+    "snippet": "v='p  q'; command declare a=$v; command export e=$v; @PROBE:a@ \"$a\" \"$e\"",
+    "facts": {
+      "a": [
+        [
+          "p  q",
+          "p  q"
+        ]
+      ],
+      "status": 0
+    },
+    "gaps": {
+      "a": "in POSIX mode, bash keeps the declaration rule after `command` (`command declare a=$v` does not split `$v`): the model follows only bash's default mode, where it splits"
+    }
   }
 ]
