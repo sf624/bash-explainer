@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { batsTestName, explainHostedLine, extractShell, hostIssues, hostKind } from '../src/hosts';
@@ -647,5 +648,39 @@ describe('bats', () => {
     assert.deepStrictEqual(ids(bats(later, 5)), []);
     assert.deepStrictEqual(ids(bats(later, 6)), []);
     assert.match(bats(later, 2, 'ja').notes.join('\n'), /パイプラインが終わると消えます/);
+  });
+});
+
+describe('one mapping from a program name to a shell (hosts)', () => {
+  const regionShells = (kind: Parameters<typeof extractShell>[0], src: string) => extractShell(kind, src).regions.map((r) => r.shell);
+  it('Dockerfile: SHELL and RUN in exec form agree', () => {
+    assert.deepStrictEqual(regionShells('dockerfile', 'FROM x\nSHELL ["/bin/dash","-c"]\nRUN echo a\n').slice(1), ['dash']);
+    assert.deepStrictEqual(regionShells('dockerfile', 'FROM x\nRUN ["dash","-c","echo a"]\n'), ['dash']);
+    assert.deepStrictEqual(regionShells('dockerfile', 'FROM x\nSHELL ["/bin/ksh","-c"]\nRUN echo a\n').slice(1), ['ksh']);
+    assert.deepStrictEqual(regionShells('dockerfile', 'FROM x\nSHELL ["/bin/busybox","sh","-c"]\nRUN echo a\n').slice(1), ['ash']);
+  });
+  it('Makefile SHELL and Python executable name ksh, not sh', () => {
+    assert.deepStrictEqual(regionShells('makefile', 'SHELL=/bin/ksh\nall:\n\techo a\n'), ['ksh']);
+    assert.deepStrictEqual(regionShells('python', "import subprocess\nsubprocess.run('echo a', shell=True, executable='/bin/ksh')\n"), ['ksh']);
+    assert.deepStrictEqual(regionShells('python', "import subprocess\nsubprocess.run('echo a', shell=True, executable='/bin/dash')\n"), ['dash']);
+    assert.deepStrictEqual(regionShells('makefile', 'SHELL=/bin/unknownsh\nall:\n\techo a\n'), ['sh']);
+  });
+  it('`[[ ]]` is not said to fail in dash for ksh, and is for dash (dash is checked against the real dash)', () => {
+    const notes = (src: string, file: string, line: number) => {
+      const extracted = extractShell(hostKind('', file)!, src);
+      const ex = explainHostedLine(new Analyzer('en'), parser.parse(extracted.text), extracted, src.split('\n'), line, 'en')!;
+      return ex.notes.join('\n');
+    };
+    assert.doesNotMatch(notes('SHELL=/bin/ksh\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), /dash/);
+    assert.match(notes('SHELL=/bin/dash\nall:\n\t[[ -n x ]]\n', 'Makefile', 2), /dash/);
+    assert.notStrictEqual(spawnSync('dash', ['-c', '[[ -n x ]]']).status, 0);
+  });
+  it('a region says what it is part of, apart from its label', () => {
+    const ci = (file: string, src: string) => extractShell(hostKind('', file)!, src).regions.map((r) => r.host);
+    assert.deepStrictEqual(ci('ci.yml', 'jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n'), [{ kind: 'yaml', ci: 'github' }]);
+    assert.deepStrictEqual(ci('.gitlab-ci.yml', 'build:\n  script:\n    - make\n'), [{ kind: 'yaml' }]);
+    assert.deepStrictEqual(ci('azure-pipelines.yml', 'pool:\n  vmImage: ubuntu-latest\nsteps:\n  - script: echo a\n'), [{ kind: 'yaml', ci: 'azure' }]);
+    assert.deepStrictEqual(ci('config.yml', 'version: 2.1\njobs:\n  b:\n    steps:\n      - run: echo a\n'), [{ kind: 'yaml', ci: 'circleci' }]);
+    assert.deepStrictEqual(ci('README.md', '```bash\necho a\n```\n'), [{ kind: 'markdown' }]);
   });
 });

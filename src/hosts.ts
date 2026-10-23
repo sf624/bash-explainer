@@ -1,6 +1,6 @@
 import { azureVariables as AZURE_VARIABLES, ciVariables, githubContext } from './dict/ciVariables';
 import type { ExplainOptions, LineExplanation, Pos, Token } from './analyzer';
-import { detectShell, dialectIssues, Shell } from './dialect';
+import { detectShell, dialectIssues, Shell, shellFromName } from './dialect';
 import { descendants, type BashParser, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { createUnbashParser } from './syntax/adapters/unbash';
 import { shellState } from './semantics/state';
@@ -16,12 +16,20 @@ export type HostKind = 'dockerfile' | 'makefile' | 'yaml' | 'npm' | 'markdown' |
 /** A note on every line of a region: [ja, en], or a catalog fact (its `code` makes it a warning in the Problems panel). */
 export type RegionNote = [ja: string, en: string] | { spec: FactSpec; code: string };
 
+/** Which CI system a YAML step belongs to, when the file says. */
+export type HostCi = 'github' | 'circleci' | 'azure';
+
+/** What a shell region is part of: the kind of file, and the CI system for a YAML step. The English label is only for people. */
+export interface HostId { kind: HostKind; ci?: HostCi }
+
 /** A run of lines holding shell code inside another kind of file. */
 export interface ShellRegion {
   start: number;
   end: number;
   /** What the snippet is, e.g. "Dockerfile RUN" (ja, en). */
   label: [string, string];
+  /** What the region is part of (readers test this, not the label). */
+  host: HostId;
   shell?: Shell;
   /** Notes shown on every line of the region. */
   /**
@@ -121,7 +129,7 @@ class Builder {
   substitutions: HostSubstitution[] = [];
   /** Azure Pipelines: variables whose `$(name)` macros the pipeline replaces before the script runs. */
   azure?: { vars: Set<string> };
-  constructor(text: string) {
+  constructor(text: string, readonly kind: HostKind) {
     this.lines = text.split(/\r?\n/);
     this.outs = this.lines.map(() => undefined);
   }
@@ -132,7 +140,7 @@ class Builder {
     return o;
   }
   region(start: number, end: number, label: [string, string], shell?: Shell, notes?: RegionNote[], warnPipefail?: boolean): void {
-    if (end >= start) this.regions.push({ start, end, label, shell, notes, warnPipefail });
+    if (end >= start) this.regions.push({ start, end, label, host: { kind: this.kind }, shell, notes, warnPipefail });
   }
   build(): Extracted {
     const maps = this.lines.map((l, i) => this.outs[i]?.finish(l.length) ?? [l.length]);
@@ -141,7 +149,7 @@ class Builder {
 }
 
 export function extractShell(kind: HostKind, text: string): Extracted {
-  const b = new Builder(text);
+  const b = new Builder(text, kind);
   switch (kind) {
     case 'dockerfile': dockerfile(b); break;
     case 'makefile': makefile(b); break;
@@ -339,7 +347,7 @@ function dockerfile(b: Builder): void {
       if (instr === 'SHELL') {
         notShell = /^(powershell|pwsh|cmd)(\.exe)?$/i.test(prog);
         if (notShell) { i = last; continue; }
-        shell = prog === 'bash' ? 'bash' : prog === 'zsh' ? 'zsh' : prog === 'ash' || prog === 'busybox' ? 'ash' : 'sh';
+        shell = shellFromName(prog) ?? 'sh';
         pipefail = words.some((w, n) => w.value === 'pipefail' && /^-\w*o$/.test(words[n - 1]?.value ?? ''));
         execWords(b, words);
         b.region(i, last, ['Dockerfile の SHELL', 'Dockerfile SHELL'], 'bash', [[
@@ -355,7 +363,7 @@ function dockerfile(b: Builder): void {
         const script = words[c + 1];
         const o = (b.outs[script.line] ??= new LineOut());
         for (let k = 0; k < script.value.length; k++) o.insert(script.value[k], script.cols[k], script.cols[k] + 1);
-        const target: Shell = prog === 'bash' ? 'bash' : prog === 'zsh' ? 'zsh' : prog === 'dash' ? 'dash' : prog === 'ash' || prog === 'busybox' ? 'ash' : prog === 'mksh' ? 'mksh' : /^ksh/.test(prog) ? 'ksh' : prog === 'yash' ? 'yash' : 'sh';
+        const target: Shell = shellFromName(prog)!;
         b.region(script.line, script.line, [`Dockerfile の ${instr}（exec 形式で \`${words[0].value} ${words[c].value}\` に渡すスクリプト）`, `Dockerfile ${instr} (a script passed to \`${words[0].value} ${words[c].value}\` in exec form)`], target);
         i = last;
         continue;
@@ -415,7 +423,7 @@ function makefile(b: Builder): void {
     const shellVar = /^\s*SHELL\s*:?=\s*(\S+)/.exec(line);
     if (shellVar) {
       const name = shellVar[1].split('/').pop()!;
-      shell = name === 'bash' ? 'bash' : name === 'zsh' ? 'zsh' : 'sh';
+      shell = shellFromName(name) ?? 'sh';
     }
     if (!line.startsWith('\t')) {
       // A rule line (`target: deps`) starts a recipe; other lines end it.
@@ -529,7 +537,7 @@ function jenkinsfile(b: Builder): void {
     const script = [b.lines[first].slice(first === i ? from : 0), ...b.lines.slice(first + 1, last + 1)].join('\n');
     // `#!/bin/bash`, `#!/usr/bin/env bash`: the last part of the path, or the word after env.
     const shebang = /^\s*#!\s*(?:\S*\/)?(\w+)(?:[ \t]+(\w+))?/.exec(script);
-    const shell = shebang ? (shellFromShebang(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
+    const shell = shebang ? (shellFromName(shebang[2] && shebang[1] === 'env' ? shebang[2] : shebang[1]) ?? 'sh') : 'sh';
     const notes: RegionNote[] = [];
     if (interpolate && /(^|[^\\])\$[A-Za-z_{]/.test(script)) {
       notes.push([
@@ -540,10 +548,6 @@ function jenkinsfile(b: Builder): void {
     b.region(first, last, ['Jenkinsfile の `sh` ステップ', 'Jenkinsfile `sh` step'], shell, notes.length ? notes : undefined);
     i = endLine;
   }
-}
-
-function shellFromShebang(name: string): Shell | undefined {
-  return ({ bash: 'bash', sh: 'sh', dash: 'dash', zsh: 'zsh', ksh: 'ksh', mksh: 'mksh', ash: 'ash', yash: 'yash' } as Record<string, Shell>)[name];
 }
 
 /** The column of the closing `quote` from `from` on, skipping backslash escapes; -1 if none. */
@@ -620,14 +624,16 @@ function yaml(b: Builder): void {
     if (key === 'script' && azureWindows) continue;
     const shell = yamlShell(b, i, indent, key, githubLike);
     if (shell === null) continue;
+    const first = b.regions.length;
+    let ci: HostCi | undefined;
     const label: [string, string] = b.azure && (key === 'script' || key === 'bash')
-      ? [`Azure Pipelines の \`${key}:\` ステップ`, `Azure Pipelines \`${key}:\` step`]
+      ? (ci = 'azure', [`Azure Pipelines の \`${key}:\` ステップ`, `Azure Pipelines \`${key}:\` step`])
       : key === 'command' && /^\s*(-\s+)?run\s*:\s*$/.test(parentLine(b, i, indent) ?? '')
-        ? ['CircleCI の `run` ステップ', 'CircleCI `run` step']
+        ? (ci = 'circleci', ['CircleCI の `run` ステップ', 'CircleCI `run` step'])
         : circleci && key === 'run'
-          ? ['CircleCI の `run` ステップ', 'CircleCI `run` step']
+          ? (ci = 'circleci', ['CircleCI の `run` ステップ', 'CircleCI `run` step'])
           : githubLike && key === 'run'
-          ? ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step']
+          ? (ci = 'github', ['GitHub Actions の `run:` ステップ', 'GitHub Actions `run:` step'])
           : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
     if (/^[|>][-+]?\d*$/.test(rest)) {
@@ -648,6 +654,7 @@ function yaml(b: Builder): void {
       }
       i = j - 1;
     }
+    if (ci) for (const r of b.regions.slice(first)) r.host.ci = ci;
   }
 }
 
@@ -726,9 +733,8 @@ function runsOn(b: Builder, at: number): string | undefined {
 
 function shellName(s: string): Shell | null {
   const n = s.replace(/['"]/g, '').split(/[\s{]/)[0];
-  if (n === 'bash') return 'bash';
-  if (n === 'sh') return 'sh';
-  return null;
+  const sh = shellFromName(n);
+  return sh === 'bash' || sh === 'sh' ? sh : null;
 }
 
 /** A `|` / `>` block scalar: the more-indented lines after `at`. Returns the last line of the block. */
@@ -853,7 +859,7 @@ function markdown(b: Builder): void {
     const close = (l: string) => l.trim().startsWith(fence[0].repeat(fence.length)) && !l.trim().slice(fence.length).trim();
     // `sh` and `shell` mostly mean "shell code" (GitHub colours them like bash), so they are bash, not POSIX sh;
     // a shebang or `# shellcheck shell=` line in the block wins over every tag.
-    const fenceShell: Shell | undefined | null = lang === 'posix' ? 'sh' : ['sh', 'bash', 'shell', 'shellscript', 'console', 'shellsession', 'terminal'].includes(lang) ? 'bash' : lang === 'zsh' ? 'zsh' : lang === 'ksh' ? 'ksh' : lang === 'dash' ? 'dash' : null;
+    const fenceShell: Shell | undefined | null = lang === 'posix' ? 'sh' : ['sh', 'bash', 'shell', 'shellscript', 'console', 'shellsession', 'terminal'].includes(lang) ? 'bash' : lang === 'zsh' || lang === 'ksh' || lang === 'dash' ? shellFromName(lang)! : null;
     const prompts = ['console', 'shellsession', 'terminal'].includes(lang);
     while (j < b.lines.length && !close(b.lines[j])) {
       if (fenceShell !== null) {
@@ -988,7 +994,7 @@ function python(b: Builder): void {
     const shellArg = keyword('shell');
     const usesShell = spec.shell === 'always' || (spec.shell === 'kwarg' && shellArg === 'True');
     const exe = keyword('executable')?.replace(/^["']|["']$/g, '').split('/').pop();
-    const target: Shell = exe === 'bash' ? 'bash' : exe === 'zsh' ? 'zsh' : 'sh';
+    const target: Shell = (exe && shellFromName(exe)) || 'sh';
     const label = (what: [string, string]): [string, string] => [`Python の \`${m[1]}\`（${what[0]}）`, `Python \`${m[1]}\` (${what[1]})`];
     const [a0, z0] = positional[0];
     const isList = /^[[(]/.test(src[a0]) && pyClose(src, a0) === z0;
@@ -1228,14 +1234,14 @@ export function explainHostedLine(
 ): LineExplanation | undefined {
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
-  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.label[1], ...(region.commands ? { hostCommands: region.commands } : {}) });
+  const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}) });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
   // (The catalog facts of the host go through `said`, like the analyzer's, so `notes.pitfalls` off leaves out their pitfalls.)
   const hostFacts: Fact[] = [];
   const spoken = (spec: FactSpec) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => x.text); };
   const notes = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [pick(n)] : spoken(n.spec))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
-  if (region.label[1].startsWith('GitHub Actions')) notes.push(...githubFileNotes(original[line], lang));
+  if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line], lang));
   if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
     notes.push(...spoken(PIPEFAIL));
   }
