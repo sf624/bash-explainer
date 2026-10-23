@@ -6,10 +6,8 @@
 // Pure code: the web page bundles it, so it reads no file itself.
 import { EXAMPLE_KINDS, ExplainOptions } from './analyzer';
 import { Shell } from './dialect';
+import { EMBEDDED_FILES } from './document-setup';
 import type { ExamplePlacement } from './ui/render';
-
-/** Kinds of files with embedded shell code, as named in the `embedded.files` setting. */
-export const EMBEDDED_FILES = ['dockerfile', 'makefile', 'yaml', 'packageJson', 'markdown', 'python', 'jenkinsfile', 'bats'] as const;
 
 export const PREFIX = 'bashExplainer.';
 
@@ -152,6 +150,20 @@ export const settingsFor = (surface: Surface): SettingSpec[] => SETTINGS.filter(
 /** A fresh copy of every default (arrays and objects are not shared). */
 export function defaultSettings(): Settings {
   return Object.fromEntries(SETTINGS.map((s) => [s.key, structuredClone(s.default)])) as unknown as Settings;
+}
+
+/**
+ * The settings an editor holds, read through `get` (VS Code's `getConfiguration`): a value that is missing
+ * or does not fit its setting is the default, and a setting that has no meaning on the surface is too.
+ */
+export function settingsFromEditor(get: (key: SettingKey) => unknown, surface: Surface = 'vscode'): Settings {
+  const out = defaultSettings() as unknown as Record<string, unknown>;
+  for (const spec of settingsFor(surface)) {
+    const value = get(spec.key);
+    // (A copy through JSON: VS Code hands out read-only proxies of lists and objects, which structuredClone refuses.)
+    if (checkValue(spec, value) === undefined) out[spec.key] = JSON.parse(JSON.stringify(value));
+  }
+  return out as unknown as Settings;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

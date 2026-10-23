@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EXAMPLE_KINDS } from '../src/analyzer';
 import { SHELL_NAMES } from '../src/dialect';
+import { ACTIVATION_LANGUAGES } from '../src/document-setup';
 import { YQ_NAMES } from '../src/embedded/yq';
 import {
   changedSettings, checkValue, defaultSettings, defaultSettingsPath, explainOptions, exportSettings, forcedShell, importSettings, mergeSettings, parseAssignment,
@@ -50,6 +51,10 @@ describe('the settings module', () => {
       assert.strictEqual(spec.surfaces.length < 4, !!spec.elsewhere, 'a setting not offered everywhere says why, and only then');
     });
   }
+
+  it('activates the extension for the shell and the file kinds of src/document-setup.ts', () => {
+    assert.deepStrictEqual([...json('package.json').activationEvents].sort(), ACTIVATION_LANGUAGES.map((l) => `onLanguage:${l}`).sort());
+  });
 
   it('names the shells, yq flavors and kinds of examples the code knows', () => {
     assert.deepStrictEqual(settingSpec('shell')!.enum, ['auto', ...Object.keys(SHELL_NAMES)]);

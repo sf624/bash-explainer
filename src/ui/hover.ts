@@ -38,11 +38,11 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     const full = this.service.explain(doc, pos.line);
     if (!full.items.length && !forced) return undefined;
     // The hover can be kept short: fewer levels of the tree, examples only in the panel.
-    const cfg = this.service.config;
+    const settings = this.service.settings;
     const ex = {
       ...full,
-      items: pruneDepth(full.items, cfg.get<number>('hover.maxDepth', 0)),
-      examples: cfg.get<boolean>('examples.inHover', true) ? full.examples : [],
+      items: pruneDepth(full.items, settings['hover.maxDepth']),
+      examples: settings['examples.inHover'] ? full.examples : [],
     };
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
     const link = `command:bashExplainer.openPanel?${args}`;
@@ -54,7 +54,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
 
   private onSelection(e: vscode.TextEditorSelectionChangeEvent): void {
     clearTimeout(this.followTimer);
-    if (!this.service.enabled('hover') || !this.service.config.get<boolean>('hover.followCursor', false)) return;
+    if (!this.service.enabled('hover') || !this.service.settings['hover.followCursor']) return;
     if (e.kind === vscode.TextEditorSelectionChangeKind.Command) return;
     if (!this.service.isTarget(e.textEditor.document) || !e.selections[0].isEmpty) return;
     const editor = e.textEditor;
@@ -62,7 +62,7 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
       if (vscode.window.activeTextEditor === editor && !editor.document.lineAt(editor.selection.active.line).isEmptyOrWhitespace) {
         void this.showAtCursor();
       }
-    }, this.service.config.get<number>('hover.followDelay', 400));
+    }, this.service.settings['hover.followDelay']);
   }
 
   dispose(): void {

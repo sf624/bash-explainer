@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { plain } from '../document';
 import type { Fix } from '../fixes';
 import { ExplainService } from '../service';
 
@@ -50,7 +51,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
   }
 
   private update(doc: vscode.TextDocument): void {
-    if (doc.isClosed || !this.service.config.get<boolean>('diagnostics.enabled', true) || !this.service.isTarget(doc)) {
+    if (doc.isClosed || !this.service.isTarget(doc)) {
       this.clear(doc);
       return;
     }
@@ -58,7 +59,7 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
     const diagnostics = this.service.issues(doc).map((i) => {
       const range = new vscode.Range(i.startLine, i.startCol, i.endLine, i.endCol);
       // The ⚠ / ℹ marks are for the hover; the Problems panel has its own icons.
-      const d = new vscode.Diagnostic(range, i.message.replace(/^[⚠ℹ]\s*/u, ''), i.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
+      const d = new vscode.Diagnostic(range, plain(i.message), i.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information);
       d.source = 'Bash Explainer';
       d.code = i.code;
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });

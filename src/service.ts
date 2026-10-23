@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { Analyzer, ExplainOptions, LineExplanation } from './analyzer';
-import { detectShell, Shell, SHELL_NAMES } from './dialect';
-import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument, Shells } from './document';
-import { Extracted, extractShell, HostKind, hostKind } from './hosts';
+import { detectShell, Shell } from './dialect';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
+import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument } from './document-setup';
+import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
-import { EMBEDDED_FILES } from './settings';
+import { explainOptions, forcedShell, Settings, settingsFromEditor } from './settings';
 import type { TreeCache } from './syntax/cache';
 import type { ExamplePlacement, Feature } from './ui/render';
 
@@ -23,52 +24,56 @@ export class ExplainService implements vscode.Disposable {
     return vscode.workspace.getConfiguration('bashExplainer');
   }
 
-  /** The setting behind each display feature, and its default. */
-  static readonly FEATURES: Record<Feature, [string, boolean]> = {
-    hover: ['hover.enabled', true],
-    inline: ['inline.enabled', false],
-    panel: ['panel.autoOpen', false],
+  /** The setting behind each display feature. */
+  static readonly FEATURES: Record<Feature, 'hover.enabled' | 'inline.enabled' | 'panel.autoOpen'> = {
+    hover: 'hover.enabled',
+    inline: 'inline.enabled',
+    panel: 'panel.autoOpen',
   };
 
+  /** The settings in effect, read as the other products read theirs (defaults from src/settings.ts). */
+  get settings(): Settings {
+    const c = this.config;
+    return settingsFromEditor((key) => c.get(key));
+  }
+
   enabled(feature: Feature): boolean {
-    const [key, def] = ExplainService.FEATURES[feature];
-    return this.config.get<boolean>(key, def);
+    return this.settings[ExplainService.FEATURES[feature]];
   }
 
   get examplePlacement(): ExamplePlacement {
-    const v = this.config.get<string>('examples.placement', 'first');
-    return v === 'last' || v === 'bottom' ? v : 'first';
+    return this.settings['examples.placement'];
   }
 
   get lang(): Lang {
-    return resolveLang(this.config.get<string>('language'), vscode.env.language);
+    return resolveLang(this.settings.language, vscode.env.language);
   }
 
   get languages(): string[] {
-    return this.config.get<string[]>('languages', ['shellscript']);
+    return this.settings.languages;
   }
 
   /** A shell script, or a file with embedded shell code (Dockerfile, Makefile, CI YAML…). */
   isTarget(doc: vscode.TextDocument | undefined): doc is vscode.TextDocument {
-    return !!doc && (this.languages.includes(doc.languageId) || !!this.hostOf(doc));
+    return !!doc && this.kindOf(doc) !== undefined;
   }
 
   /** The kind of host file, when embedded shell code is explained. */
   hostOf(doc: vscode.TextDocument): HostKind | undefined {
-    const kind = hostKind(doc.languageId, doc.fileName, doc.lineAt(0).text);
-    // A bats file is one also in a shell language (a `.bats` file opened as a shell script).
-    if (this.languages.includes(doc.languageId) && kind !== 'bats') return undefined;
-    // The setting names package.json files `packageJson`.
-    const files = this.config.get<string[]>('embedded.files', [...EMBEDDED_FILES]);
-    return kind && files.includes(kind === 'npm' ? 'packageJson' : kind) ? kind : undefined;
+    const kind = this.kindOf(doc);
+    return kind === 'shell' ? undefined : kind;
+  }
+
+  private kindOf(doc: vscode.TextDocument) {
+    return kindOfDocument({ languageId: doc.languageId, fileName: doc.fileName, text: doc.lineAt(0).text }, this.settings);
   }
 
   /** The documents that may have shell code: the shell languages, and the kinds of files with embedded code (`isTarget` tells). */
   selector(): vscode.DocumentSelector {
     return [
       ...this.languages.map((language) => ({ language })),
-      ...['dockerfile', 'makefile', 'yaml', 'github-actions-workflow', 'markdown', 'python', 'groovy', 'jenkinsfile', 'bats'].map((language) => ({ language })),
-      { pattern: '**/package.json' }, { pattern: '**/{Dockerfile,Containerfile}*' }, { pattern: '**/{Makefile,GNUmakefile,*.mk}' }, { pattern: '**/*.bats' },
+      ...HOST_LANGUAGES.map((language) => ({ language })),
+      ...HOST_PATTERNS.map((pattern) => ({ pattern })),
     ];
   }
 
@@ -102,13 +107,12 @@ export class ExplainService implements vscode.Disposable {
   forcedShell(doc: vscode.TextDocument): Shell | undefined {
     const chosen = this.overrides.get(doc.uri.toString())?.shell;
     if (chosen) return chosen;
-    const set = this.config.get<string>('shell', 'auto');
-    return set !== 'auto' && set in SHELL_NAMES ? (set as Shell) : undefined;
+    return forcedShell(this.settings);
   }
 
   /** The yq chosen in the panel for this document, else the `yq.flavor` setting. */
   yqFlavorOf(doc: vscode.TextDocument): string {
-    return this.overrides.get(doc.uri.toString())?.yq ?? this.config.get<string>('yq.flavor', 'auto');
+    return this.overrides.get(doc.uri.toString())?.yq ?? this.settings['yq.flavor'];
   }
 
   /** Choices made in the panel for one document, for this session ('auto' clears them). */
@@ -134,11 +138,9 @@ export class ExplainService implements vscode.Disposable {
 
   /** The document's lines and parse tree; for a host file, the tree of its shell parts. */
   document(doc: vscode.TextDocument): ShellDocument {
-    const lines = doc.getText().split(/\r?\n/);
     const kind = this.hostOf(doc);
-    if (!kind) return { lines, tree: this.trees.get(doc.uri.toString(), doc.version, () => doc.getText()) };
-    const extracted = this.extractedOf(doc, kind);
-    return { lines, extracted, tree: this.trees.get(`${doc.uri.toString()}#shell`, doc.version, () => extracted.text) };
+    const key = doc.uri.toString() + (kind ? '#shell' : '');
+    return openDocument(doc.getText(), kind ?? 'shell', (text) => this.trees.get(key, doc.version, () => text), kind && this.extractedOf(doc, kind));
   }
 
   private shells(doc: vscode.TextDocument): Shells {
@@ -146,21 +148,12 @@ export class ExplainService implements vscode.Disposable {
   }
 
   private explainOptions(doc: vscode.TextDocument): ExplainOptions {
-    const c = this.config;
-    return {
-      yqFlavor: this.yqFlavorOf(doc),
-      examples: { enabled: c.get<boolean>('examples.enabled', true), disabled: c.get<string[]>('examples.disabled', []) },
-      idioms: c.get<boolean>('notes.idioms', true),
-      pitfalls: c.get<boolean>('notes.pitfalls', true),
-      customCommands: c.get<Record<string, unknown>>('customCommands', {}),
-    };
+    return { ...explainOptions(this.settings), yqFlavor: this.yqFlavorOf(doc) };
   }
 
   /** Problems in the whole document for the Problems panel, with quick fixes for shell scripts. */
   issues(doc: vscode.TextDocument): DocumentIssue[] {
-    if (this.hostOf(doc) && !this.config.get<boolean>('diagnostics.embedded', true)) return [];
-    // Codes turned off in the settings, or by `# bash-explainer disable=` comments in the file.
-    return documentIssues(this.document(doc), this.lang, this.shells(doc), this.config.get<string[]>('diagnostics.ignore', []));
+    return diagnosticsFor(this.document(doc), this.lang, this.shells(doc), this.settings, 'vscode').shown;
   }
 
   forget(doc: vscode.TextDocument): void {

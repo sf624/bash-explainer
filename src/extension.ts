@@ -53,7 +53,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       if (!picked) return;
       for (const f of features) {
         const on = picked.some((p) => p.feature === f);
-        if (on !== service.enabled(f)) await service.config.update(ExplainService.FEATURES[f][0], on, vscode.ConfigurationTarget.Global);
+        if (on !== service.enabled(f)) await service.config.update(ExplainService.FEATURES[f], on, vscode.ConfigurationTarget.Global);
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {

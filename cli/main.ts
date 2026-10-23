@@ -2,9 +2,10 @@
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
-import { detectShell, Shell, SHELL_NAMES } from '../src/dialect';
-import { DocumentIssue, documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
-import { extractShell, HostKind, hostKind } from '../src/hosts';
+import { Shell, SHELL_NAMES } from '../src/dialect';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
+import { FILE_KINDS, FileKind, openDocument, shellsOf } from '../src/document-setup';
+import { hostKind } from '../src/hosts';
 import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
@@ -15,8 +16,8 @@ import { readSettingsFile, settingsFile, SettingsFileError } from './settings-fi
 
 declare const __VERSION__: string;
 
-type Kind = 'shell' | HostKind;
-const KINDS: Kind[] = ['shell', 'dockerfile', 'makefile', 'yaml', 'npm', 'markdown', 'python', 'jenkinsfile', 'bats'];
+type Kind = FileKind;
+const KINDS = FILE_KINDS;
 type Format = 'text' | 'markdown' | 'json' | 'sarif' | 'github';
 
 const HELP = `Usage: bash-explainer [options] <file>[:<line>[-<line>]]...
@@ -261,7 +262,7 @@ function exampleText(e: Example, paint: (code: string | undefined, s: string) =>
 /** Problems, one per line, as compilers print them. */
 function issueText(name: string, i: DocumentIssue, color: boolean): string {
   const sev = i.severity === 'warning' ? (color ? '\x1b[33mwarning\x1b[0m' : 'warning') : (color ? '\x1b[34minfo\x1b[0m' : 'info');
-  return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message)} [${i.code}]`;
+  return `${name}:${i.startLine + 1}:${i.startCol + 1}: ${sev}: ${plain(i.message, { backticks: false })} [${i.code}]`;
 }
 
 /** A GitHub Actions workflow command, which shows the problem on the pull request's diff. */
@@ -269,7 +270,7 @@ function annotation(name: string, i: DocumentIssue): string {
   const data = (s: string) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   const prop = (s: string) => data(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
   const where = `file=${prop(name)},line=${i.startLine + 1},col=${i.startCol + 1},endLine=${i.endLine + 1},endColumn=${i.endCol + 1}`;
-  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer: ${i.code}`)}::${data(plain(i.message))}`;
+  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer: ${i.code}`)}::${data(plain(i.message, { backticks: false }))}`;
 }
 
 interface Problem { file: string; line: number; column: number; endLine: number; endColumn: number; severity: string; code: string; message: string }
@@ -304,8 +305,6 @@ function sarif(problems: Problem[]) {
   };
 }
 
-const plain = (message: string) => message.replace(/^[⚠ℹ]️?\s*/u, '').replace(/`/g, '');
-
 /** Examples without what only the panel uses. */
 const forJson = (ex: LineExplanation) => ({ ...ex, examples: ex.examples.map(({ interactive: _, ...e }) => e) });
 
@@ -334,23 +333,16 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   let warnings = 0;
 
   for (const input of inputs) {
-    const lines = input.text.split(/\r?\n/);
-    let doc: ShellDocument;
-    if (input.kind === 'shell') {
-      doc = { lines, tree: parser.parse(input.text) };
-    } else {
-      const extracted = extractShell(input.kind, input.text);
-      doc = { lines, extracted, tree: parser.parse(extracted.text) };
-    }
-    const shells = { forced: o.shell, detected: detectShell(lines.slice(0, 50).join('\n'), input.name) };
+    const doc = openDocument(input.text, input.kind, (text) => parser.parse(text));
+    const lines = doc.lines;
+    const shells = shellsOf(lines, input.name, o.shell);
 
     if (o.check) {
-      // Warnings in the shell code of other files are left out when diagnostics.embedded is off.
-      const issues = (input.kind !== 'shell' && !o.settings['diagnostics.embedded'] ? [] : documentIssues(doc, o.lang, shells, o.settings['diagnostics.ignore']))
+      const issues = diagnosticsFor(doc, o.lang, shells, o.settings, 'cli').shown
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       warnings += issues.filter((i) => i.severity === 'warning').length;
-      if (o.format === 'json' || o.format === 'sarif') json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message) })));
+      if (o.format === 'json' || o.format === 'sarif') json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
       else if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
       else chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
     } else {

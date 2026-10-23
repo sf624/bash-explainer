@@ -5,6 +5,8 @@ import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
 import type { NestedScript } from './semantics/nested';
+import { settingSpec } from './settings';
+import type { Settings, Surface } from './settings';
 import type { Point, SyntaxTree } from './syntax/tree';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
@@ -43,6 +45,30 @@ export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, i
   const skip = new Set(ignore);
   const directives = parseDirectives(doc.lines);
   return allIssues(doc, lang, shells).filter((i) => !skip.has(i.code) && !suppressed(directives, i.startLine, i.code));
+}
+
+/**
+ * The problems of a document under the settings: `shown` (none while `diagnostics.enabled` is off, where the
+ * surface has it; none in the shell code of another file while `diagnostics.embedded` is off; without the
+ * codes in `diagnostics.ignore`) and `all` (what the document has, whatever the settings say, found only when
+ * asked for; the codes the file itself turns off are left out in both).
+ */
+export function diagnosticsFor(doc: ShellDocument, lang: Lang, shells: Shells, settings: Settings, surface: Surface): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
+  let found: DocumentIssue[] | undefined;
+  const all = () => (found ??= documentIssues(doc, lang, shells));
+  const off = (settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'])
+    || (doc.extracted !== undefined && !settings['diagnostics.embedded']);
+  const ignore = new Set(settings['diagnostics.ignore']);
+  return { get all() { return all(); }, shown: off ? [] : all().filter((i) => !ignore.has(i.code)) };
+}
+
+/**
+ * A problem's message as the Problems panel and the editors show it: without the ⚠ / ℹ it starts with in the
+ * explanations (and, with `backticks: false`, without the backticks that mark code, for plain text).
+ */
+export function plain(message: string, opts: { backticks?: boolean } = {}): string {
+  const text = message.replace(/^[⚠ℹ]\uFE0F?\s*/u, '');
+  return opts.backticks === false ? text.replace(/`/g, '') : text;
 }
 
 function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssue[] {
