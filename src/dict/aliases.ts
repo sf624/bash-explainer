@@ -47,6 +47,8 @@ export function lookupCommand(name: string): CommandSpec | undefined {
   if (Object.prototype.hasOwnProperty.call(commands, base)) return commands[base];
   const alias = aliasOf(base);
   if (alias) return commands[alias.as];
-  if (base !== 'busybox' && shellFromName(base)) return commands.sh;
+  const shell = base === 'busybox' ? undefined : shellFromName(base);
+  if (shell === 'bash') return commands.bash;
+  if (shell) return commands.sh;
   return undefined;
 }

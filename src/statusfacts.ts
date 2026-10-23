@@ -5,6 +5,7 @@
 // where bash ignores it; a function, `( )` or `{ }` of several commands run where it is ignored; a `$( )` of several
 // commands, where bash turns it off; a declaration that hides the status of its `$( )`; the first pipeline that
 // hides a failure without pipefail; a function whose last command is `test && cmd`, called where `set -e` stops it.
+import { canonicalName } from './dict/aliases';
 import type { FactSpec, Words } from './messages';
 import { featureWorks, type Shell } from './dialect';
 import { STATEMENTS } from './semantics/env';
@@ -229,6 +230,6 @@ function tests(list: SyntaxNode, state: StateModel, status: StatusModel, shell?:
     const name = c.type === 'command' ? field(c, 'name')?.text : undefined;
     if (!name || rule.kind !== 'command') return false;
     const kind = resolveName(state, name, field(c, 'name')!, { shell, command: true }).kind;
-    return (name === 'test' && kind === 'builtin') || (name === 'grep' && kind === 'file' && fields(c, 'argument').some((a) => /^-[A-Za-z]*q|^--(quiet|silent)$/.test(a.text)));
+    return (name === 'test' && kind === 'builtin') || (canonicalName(name) === 'grep' && kind === 'file' && fields(c, 'argument').some((a) => /^-[A-Za-z]*q|^--(quiet|silent)$/.test(a.text)));
   });
 }

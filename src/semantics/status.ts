@@ -8,6 +8,7 @@
 //   unless bash ignores it there: in the condition of `if`, `while` and `until`, left of `&&` and `||` (every
 //   command but the last of the list), after `!`, and in all of a function called from such a place (B2's calls).
 //   Lists and compound commands other than `( )` are not checked themselves: their commands are.
+import { canonicalName } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
@@ -393,6 +394,6 @@ function closesEarly(stage: SyntaxNode): boolean {
   if (body?.type !== 'command') return false;
   const name = commandName(body);
   const args = fields(body, 'argument').map((a) => a.text);
-  return name === 'head' || (name === 'grep' && args.some((a) => /^-[A-Za-z]*[qm]/.test(a) || /^--(quiet|silent|max-count)/.test(a)))
+  return name === 'head' || (canonicalName(name ?? '') === 'grep' && args.some((a) => /^-[A-Za-z]*[qm]/.test(a) || /^--(quiet|silent|max-count)/.test(a)))
     || (name === 'sed' && args.some((a) => /q\d*['"]?$/.test(a)));
 }
