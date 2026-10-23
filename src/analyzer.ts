@@ -1998,15 +1998,12 @@ export class Analyzer {
         ? this.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る）`, `Remove all the elements of the array \`${element[1]}\` (it stays, empty)`)
         : this.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま）`, `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices)`);
       // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
-      if (plain && hasGlob(a.text)) {
-        text += this.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を削除する（\`'${name}'\` と書く）`,
-          `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is unset instead (write \`'${name}'\`)`);
-      }
+      if (plain && hasGlob(a.text) && this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = this.unsetGlob(a, name, text);
     } else {
       const temp = !hasOption(parse, '-n') && a.parent!.children.find((c) => c.type === 'variable_assignment' && field(c, 'name')?.text === name);
       if (temp) {
-        text = this.s(`\`${temp.text}\` がこのコマンドのためだけに設定した変数 \`${name}\` を削除する（それより前からある \`${name}\` はそのまま残る）`,
-          `Unset the variable \`${name}\` that \`${temp.text}\` set for this command only (the \`${name}\` from before stays as it was)`);
+        text = this.s(`\`${temp.text}\` がこのコマンドのためだけに設定した変数 \`${name}\` を削除する（コマンドの前から \`${name}\` があれば、それはそのまま残る）`,
+          `Unset the variable \`${name}\` that \`${temp.text}\` set for this command only (a \`${name}\` set before the command, if any, stays as it was)`);
       } else {
         // `unset` removes a variable if there is one, else a function (`-v`: a variable; with `-n`, bash keeps the function).
         const st = this.cx.state.at(a.parent!).run;
@@ -2017,10 +2014,39 @@ export class Analyzer {
           : hasOption(parse, '-n') ? this.s(`名前参照 \`${name}\` そのものを削除する（参照先の変数は残る）`, `Unset the name reference \`${name}\` itself (the variable it points to stays)`)
             : this.s(`変数 \`${name}\` を削除する（未定義の状態に戻す）`, `Unset the variable \`${name}\` (it becomes undefined)`);
         if (kind === 'maybe') text += this.s(`。変数がなければ、代わりに関数 \`${name}\` を削除する`, `. If there is no such variable, the function \`${name}\` is removed instead`);
+        // A read-only variable stays: bash refuses (status 1).
+        const readonly = kind === 'function' ? 'off' : attribute(st, name, 'r');
+        if (readonly === 'on') {
+          this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-readonly', { name })));
+          text = this.s(`変数 \`${name}\` は読み取り専用なので削除されない（エラー、終了ステータス 1）`, `The variable \`${name}\` is read-only, so it is not unset (an error, status 1)`);
+        } else if (readonly === 'unknown') {
+          text += this.s(`。ただし、この前の一部の経路では読み取り専用になっていて、そこでは削除されずエラーになる（終了ステータス 1）`, `. But some paths before here make it read-only, and there it is not unset (an error, status 1)`);
+        }
       }
     }
     // (A plain name is the variable or function itself; a quoted one or a pattern keeps the explanation of its word.)
     return plain && !hasGlob(a.text) ? this.tok(a, 'variable', text) : this.positional(a, text);
+  }
+
+  /**
+   * `unset a[1]`, unquoted: a glob pattern first, as the glob options in effect say. A file that matches is unset
+   * instead of the element (`text`); with nullglob, a word that matches nothing goes away; with failglob, it is an error.
+   */
+  private unsetGlob(a: SyntaxNode, name: string, text: string): string {
+    const shopt = this.shoptAt(a);
+    const quoted = `\`'${name}'\``;
+    if (shopt.failglob === 'on') {
+      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を削除し、なければ failglob が有効なので \`no match\` のエラーになり何も削除されない。要素 \`${name}\` を削除するなら ${quoted} と書く`,
+        `Unquoted, this is a glob pattern: a file that matches it has its name unset, and when none matches, failglob makes it an error (\`no match\`) and nothing is unset. To unset the element \`${name}\`, write ${quoted}`);
+    }
+    if (shopt.nullglob === 'on') {
+      return this.s(`クォートしていないのでグロブとして展開される。一致するファイルがあればその名前を削除し、なければ nullglob が有効なのでこの単語はなくなり何も削除されない。要素 \`${name}\` を削除するなら ${quoted} と書く`,
+        `Unquoted, this is a glob pattern: a file that matches it has its name unset, and when none matches, nullglob makes the word go away and nothing is unset. To unset the element \`${name}\`, write ${quoted}`);
+    }
+    const sometimes = shopt.failglob === 'unknown' || shopt.nullglob === 'unknown'
+      ? this.s('（nullglob や failglob が有効な経路では、一致しなければ何も削除されない）', ' (on the paths where nullglob or failglob is on, nothing is unset when none matches)') : '';
+    return text + this.s(`。ただしクォートしていないので先にグロブとして展開され、一致するファイルがあればその名前を削除する${sometimes}（${quoted} と書く）`,
+      `. Unquoted, it is a glob pattern first: if a file matches it, that file's name is unset instead${sometimes} (write ${quoted})`);
   }
 
   /**

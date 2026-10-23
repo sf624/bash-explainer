@@ -459,7 +459,12 @@ describe('the analyzer says what a name runs', () => {
     const show = 'declare -p x a 2>/dev/null | sed "s/^declare -[-a] //"; declare -F f; true';
     // [the script, the last line explained, what bash leaves, the text]
     const rows: [string, string, RegExp][] = [
-      ['x=5\nx=1 unset x', 'x="5"\n', /Unset the variable `x` that `x=1` set for this command only \(the `x` from before stays/],
+      ['x=5\nx=1 unset x', 'x="5"\n', /Unset the variable `x` that `x=1` set for this command only \(a `x` set before the command, if any, stays/],
+      ['true\nx=1 unset x', '', /Unset the variable `x` that `x=1` set for this command only \(a `x` set before the command, if any, stays/],
+      ['readonly x=1\nunset x', 'declare -r x="1"\n', /The variable `x` is read-only, so it is not unset \(an error, status 1\)/],
+      ['shopt -s nullglob; a=(1 2 3)\nunset a[1]', 'a=([0]="1" [1]="2" [2]="3")\n', /nullglob makes the word go away and nothing is unset/],
+      ['shopt -s failglob; a=(1 2 3)\nunset a[1]', 'a=([0]="1" [1]="2" [2]="3")\n', /failglob makes it an error \(`no match`\) and nothing is unset/],
+      ['set -f; a=(1 2 3)\nunset a[1]', 'a=([0]="1" [2]="3")\n', /Unset the element `a\[1\]` of the array `a` \(the other elements keep their indices\)\. But `set -f`/],
       ['x=5\n\\unset x', '', /The command name `\\unset` becomes `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
       ['x=5\ncommand unset x', '', /runs `unset`[\s\S]*Unset the variable `x` \(it becomes undefined\)/],
       ['f() { :; }\nbuiltin unset f', '', /Remove the function `f`/],
@@ -481,6 +486,9 @@ describe('the analyzer says what a name runs', () => {
     }
     // A name known only at run time: the role of the word.
     assert.match(text('unset "$y"'), /name to unset/);
+    assert.match(notes('readonly x=1\nunset x', 1), /`unset` fails \(`cannot unset: readonly variable`, status 1\)/);
+    assert.match(text('if [ "$1" ]; then readonly x; fi\nunset x'), /some paths before here make it read-only/);
+    assert.match(text('a=(1 2); if [ "$1" ]; then shopt -s nullglob; fi\nunset a[1]'), /on the paths where nullglob or failglob is on/);
     // `-fv` says why nothing is removed, once.
     assert.strictEqual(notes('f() { :; }\nunset -fv x f', 1).match(/cannot simultaneously unset/g)?.length, 1);
     assert.match(notes('unset -fv x', 0, 'ja'), /何も削除されません/);

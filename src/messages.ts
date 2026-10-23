@@ -96,6 +96,9 @@ export const MESSAGES = {
   'unset-function-and-variable': note(['4.1'], () => [
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
     '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
+  'unset-readonly': note<{ name: string }>(['4.1', '4.2'], ({ name }) => [
+    `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
+    `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
   'local-outside-function': pitfall(['4.2'], () => [
     '`local` は関数の中でしか使えず、関数の外で使うと「can only be used in a function」のエラーになります',
     '`local` can be used only inside a function; outside one it fails with "can only be used in a function"']),

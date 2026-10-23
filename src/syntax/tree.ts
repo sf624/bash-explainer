@@ -19,7 +19,7 @@ export type NodeType =
   | 'command'
   | 'command_name'
   | 'declaration_command' // declare, typeset, local, export, readonly
-  | 'unset_command'
+  | 'unset_command' // no longer made (a `command` named `unset`); the name goes in step 6 of docs/design/syntax-tree.md
   | 'variable_assignment'
   | 'variable_assignments' // more than one assignment with no command
   | 'negated_command' // ! pipeline

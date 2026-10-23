@@ -6,6 +6,10 @@ import { descendants, field, fields, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, option, type ShellState, type Tri } from '../shellstate';
 import type { Decision } from '../state';
+import { interpret } from '../../argv/interpret';
+import { has as hasOption } from '../../argv/query';
+import { argWord } from '../../argv/words';
+import { builtins } from '../../dict/builtins';
 import { testSpec } from '../names';
 import { type ValueSource, wordIn } from '../words';
 import { ArithError, NAME, SUBSTITUTIONS } from './shared';
@@ -78,8 +82,29 @@ export class WalkConditions {
     // (`test` and `[`, the builtins: src/semantics/names.ts.)
     const test = testSpec(name[0], false);
     if (test) return this.testCommand(args, st, test.closingOperand);
+    if (name[0] === 'unset') return this.unsetStatus(args, st);
     if (!['true', 'false', ':'].includes(name[0]) || args.some((a) => !wordIn(a, st, this.values(st), 'fields', this.ifsFollowed(st)))) return undefined;
     return name[0] === 'false' ? 1 : 0;
+  }
+
+  /**
+   * The status of `unset` with the words `args` (static names of variables): 1 when one of them is read-only (bash
+   * says `cannot unset: readonly variable`, and unsets the others), or with both `-f` and `-v`; else 0. Undefined
+   * when it is not known here (a word not known, an element, `-f`, a variable read-only on some paths only).
+   */
+  private unsetStatus(args: readonly SyntaxNode[], st: ShellState): number | undefined {
+    const parse = interpret(builtins.unset, args.map(argWord), { name: 'unset' });
+    if (hasOption(parse, '-f')) return hasOption(parse, '-v') ? 1 : undefined;
+    let status = 0;
+    for (const { word, role } of parse.roles) {
+      if (role.role !== 'operand') continue;
+      const name = staticWordValue(args[word]);
+      const target = name !== undefined && NAME.test(name) ? (hasOption(parse, '-n') ? name : this.w.builtins.resolve(st, name)) : undefined;
+      const readonly = target === undefined ? 'unknown' : attribute(st, target, 'r');
+      if (readonly === 'unknown') return undefined;
+      if (readonly === 'on') status = 1;
+    }
+    return status;
   }
 
   /**

@@ -4,7 +4,10 @@
 // as semantic tokens.
 import type { ShellDocument } from './document';
 import type { Extracted } from './hosts';
-import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { interpret } from './argv/interpret';
+import { argWord } from './argv/words';
+import { builtins } from './dict/builtins';
+import { field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
@@ -219,6 +222,12 @@ function isOption(w: SyntaxNode): boolean {
   const p = w.parent!;
   if (p.type === 'declaration_command') return true;
   if (p.type !== 'command' || w.field !== 'argument') return false;
+  // `unset x -v y`: unset reads options up to its first name, as its spec says (by the command's spelling).
+  if (field(p, 'name')!.text === 'unset') {
+    const args = fields(p, 'argument');
+    const at = args.indexOf(w);
+    return interpret(builtins.unset, args.map(argWord), { name: 'unset' }).roles.some((r) => r.word === at && r.role.role !== 'operand');
+  }
   return !p.children.slice(0, p.children.indexOf(w)).some((a) => a.field === 'argument' && a.text === '--');
 }
 
