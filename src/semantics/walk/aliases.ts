@@ -1,7 +1,7 @@
 // The aliases of the walk of the shell state (src/semantics/walk/walker.ts): the `alias` commands of the script, and
 // a command whose name is an alias, which runs the alias's text with the rest of the command, read again. The trees of
 // those texts are the model's (`Scripts.expansion`): the trust scan reads the same ones (src/semantics/trust.ts).
-import { descendants, fields, type SyntaxNode } from '../../syntax/tree';
+import { fields, type SyntaxNode } from '../../syntax/tree';
 import { aliasName, aliasOf, commandName } from '../effects';
 import { type AliasState, merge, option, type ShellState, withStatus } from '../shellstate';
 import type { Walker } from './walker';
@@ -15,10 +15,10 @@ export class WalkAliases {
   /** The aliases being expanded (an alias is not expanded again inside itself). */
   private readonly expanding = new Set<string>();
 
-  /** Records the `alias` commands under `root`. */
-  collect(root: SyntaxNode): void {
-    for (const c of descendants(root, ['command'])) {
-      if (commandName(c) !== 'alias') continue;
+  /** Records the `alias` commands among `nodes`. */
+  collect(nodes: readonly SyntaxNode[]): void {
+    for (const c of nodes) {
+      if (c.type !== 'command' || commandName(c) !== 'alias') continue;
       for (const a of fields(c, 'argument')) {
         const name = aliasOf(a)?.name;
         const defs = name ? this.defs.get(name) ?? [] : [];

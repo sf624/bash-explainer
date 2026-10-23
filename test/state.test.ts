@@ -151,8 +151,9 @@ describe('shell state: paths', () => {
 
 describe('shell state: variables', () => {
   it('follows assignments, attributes and unset', () => {
+    // (`n=x` runs `x` as arithmetic: x, not set, is 0, as in bash run with no such variable.)
     const st = end('a=1\na+=2\nb+=x\nc=$x\nc+=1\nd=(1 2)\nd[3]=4\ne[1]=x\ndeclare -A m\nm[k]=v\nm=()\ndeclare -i n=2+3\nn+=1\nn=x\ndeclare -l lo=AB\ndeclare -u up=ab\ni=\nunset i\nunset "d[1]"');
-    assert.deepStrictEqual([variable(st, 'a')?.value, variable(st, 'b')?.value, variable(st, 'c')?.value, variable(st, 'n')?.value, variable(st, 'lo')?.value, variable(st, 'up')?.value], ['12', undefined, undefined, undefined, 'ab', 'AB']);
+    assert.deepStrictEqual([variable(st, 'a')?.value, variable(st, 'b')?.value, variable(st, 'c')?.value, variable(st, 'n')?.value, variable(st, 'lo')?.value, variable(st, 'up')?.value], ['12', undefined, undefined, '0', 'ab', 'AB']);
     assert.deepStrictEqual(['d', 'e', 'm'].map((v) => [attribute(st, v, 'a'), attribute(st, v, 'A')]), [['on', 'off'], ['on', 'off'], ['off', 'on']]);
     assert.deepStrictEqual([variable(st, 'i')?.set, variable(st, 'd')?.set], ['off', 'on']);
     assert.strictEqual(variable(end('declare -i n; n+=1'), 'n')?.value, undefined);
@@ -192,7 +193,8 @@ describe('shell state: variables', () => {
     assert.deepStrictEqual(['a', 'b', 'pv', 'o', 'OPTIND', 'OPTARG', 'd', 'e'].map((v) => variable(st, v)?.set), ['on', 'on', 'on', 'on', 'on', 'unknown', 'on', 'on']);
     assert.strictEqual(variable(end('read'), 'REPLY')?.set, 'on');
     assert.strictEqual(attribute(end("printf -v 'a[1]' x"), 'a', 'a'), 'on');
-    assert.strictEqual(end('printf -v $v x; mapfile $m').variables.size, 0);
+    // (Nothing but the integers bash has at start.)
+    assert.deepStrictEqual([...end('printf -v $v x; mapfile $m').variables.keys()], [...end('').variables.keys()]);
     assert.deepStrictEqual(['arr', 'MAPFILE', 'lines'].map((v) => attribute(st, v, 'a')), ['on', 'on', 'on']);
     assert.deepStrictEqual([variable(st, 'f'), variable(st, 'g')], [undefined, undefined]);
     assert.strictEqual(variable(end('x=${y:=1}'), 'y')?.set, 'on');
@@ -512,6 +514,39 @@ describe('shell state: arithmetic', () => {
     assert.deepStrictEqual(after('trap - USR1; trap \'\' INT; (( b = foo + 1 ))', 'b'), ['set=1']);
     // A value read before is not taken again for one that may have changed.
     assert.deepStrictEqual(after('x=\'foo + 1\'; (( a = x )); source ./c.sh; (( b = x ))', 'a', 'b'), ['set=1', 'unknown']);
+  });
+  it("runs the text given to an integer as arithmetic, with what it assigns; bash's own integers are so from the start", () => {
+    // (A script file, where an error discards the rest of its line only: `bash -c` discards the rest of the string.)
+    const bash = (src: string): string => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'integers-'));
+      try {
+        fs.writeFileSync(path.join(dir, 's.sh'), src);
+        return spawnSync('bash', ['s.sh'], { cwd: dir, encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 }).stdout;
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    };
+    // (bash makes OPTIND, RANDOM, SRANDOM and HISTCMD integers when it starts.)
+    assert.deepStrictEqual(bash('declare -p OPTIND RANDOM SRANDOM HISTCMD').split('\n').filter(Boolean).map((l) => l.split(' ')[1]), ['-i', '-i', '-i', '-i']);
+    assert.deepStrictEqual(['OPTIND', 'RANDOM', 'SRANDOM', 'HISTCMD'].map((v) => attribute(end(''), v, 'i')), ['on', 'on', 'on', 'on']);
+    // Each script, the names to look at, what bash has (`$name`), and what the model says (see `after`).
+    const rows: [string, string[], string, string][] = [
+      ["x=1; OPTIND='x=5'", ['x', 'OPTIND'], '5 5', 'set=5 set=5'],
+      ["x=1; RANDOM='x=6'", ['x'], '6', 'set=6'],
+      ["declare -i n; n='x=5'", ['x', 'n'], '5 5', 'set=5 set=5'],
+      ["declare -i n=3; n+='x=5'", ['x', 'n'], '5 8', 'set=5 set=8'],
+      ["declare -i n; n='x=5, 2 ** 63'", ['x', 'n'], `5 ${-(2n ** 63n)}`, `set=5 set=${-(2n ** 63n)}`],
+      // (No longer an integer: unset, or a local of the same name.)
+      ["x=1; unset OPTIND; OPTIND='x=5'", ['x'], '1', 'set=1'],
+      ["x=1; f() { local OPTIND; OPTIND='x=5'; }; f", ['x'], '1', 'set=1'],
+      // (bash fails on it, and leaves n as it was, but what it assigned before the error stays; the model takes the
+      // line as one that may end at the assignment.)
+      ["declare -i n; n='x=5, 1/0'", ['x', 'n'], '5', 'unknown unknown'],
+    ];
+    for (const [src, names, theirs, ours] of rows) {
+      assert.strictEqual(bash(`${src}\necho ${names.map((v) => `$${v}`).join(' ')}`), `${theirs}\n`, src);
+      assert.strictEqual(after(src, ...names).join(' '), ours, src);
+    }
   });
   it('says so on the paths that ran what the walk does not read, and after they join', () => {
     // (bash: c.sh sets foo; the branch that does not source it reads foo unset; after the `if`, either may have run.)

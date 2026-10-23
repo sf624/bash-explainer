@@ -507,6 +507,8 @@ export interface ValueSource {
   tilde(user: string, w: WordMeaning): string | undefined;
   /** Whether the command `name` of the substitution `at` (`$(true)`) runs the builtin: not a function, an alias, nor a program after `enable -n`. */
   builtinRuns(name: string, at: SyntaxNode): boolean;
+  /** The value of the arithmetic expansion `n`, when it is known (the walk's arithmetic); without it, of a constant expression only. */
+  arith?(n: SyntaxNode): bigint | undefined;
 }
 
 /** The values of the model where the word runs, with the environment `env` for what the script does not set. */
@@ -576,7 +578,7 @@ class Evaluator {
   /** The pieces of a node of the word, or undefined when they are not known here. */
   pieces(n: SyntaxNode, quoted: boolean): Piece[] | undefined {
     switch (n.type) {
-      case 'word': case 'number': case 'extglob_pattern': case 'variable_name': case 'brace_expression':
+      case 'word': case 'number': case 'extglob_pattern': case 'variable_name': case 'brace_expression': case 'regex':
         return plain(decodedText(n));
       case 'raw_string': return [{ text: n.text.slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
@@ -598,7 +600,7 @@ class Evaluator {
       }
       case 'arithmetic_expansion': {
         const inner = n.text.replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, '');
-        const v = evalArith(inner);
+        const v = this.source.arith ? this.source.arith(n) : evalArith(inner);
         return v === undefined ? undefined : [{ text: String(v), quoted, expanded: true }];
       }
     }
@@ -963,12 +965,16 @@ function splitFields(w: WordMeaning, ev: Evaluator): Char[][] | undefined {
 /**
  * The word that holds `n` as the walk of the state reads it in a condition (src/semantics/walk/conditions.ts), from the state `st`
  * and the values of `source`: its fields (`[ ]`, `test`, a command name; with no file to match a glob against, and
- * `ifs: false` when the IFS is not to be followed), its one field (`[[ ]]`, `case`), or its pattern (`[[ == ]]`, a
- * `case` pattern: quoted characters escaped). Undefined when it is not known, or bash fails on it.
+ * `ifs: false` when the IFS is not to be followed), its one field (`[[ ]]`, `case`), its pattern (`[[ == ]]`, a
+ * `case` pattern: quoted characters escaped), or its regex (`[[ =~ ]]`: quoted characters other than letters, digits
+ * and `_` escaped with a backslash, as bash does). Undefined when it is not known, or bash fails on it.
  */
 export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields', ifs: boolean): string[] | undefined;
-export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'value' | 'pattern'): string | undefined;
-export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields' | 'value' | 'pattern', ifs = true): string[] | string | undefined {
+export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'value' | 'pattern' | 'regex'): string | undefined;
+export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: 'fields' | 'value' | 'pattern' | 'regex', ifs = true): string[] | string | undefined {
+  // (Most words of conditions are plain text, which is their field, value, pattern and regex as it is: read at once.
+  // `n` is the whole word: the right side of `[[ == ]]` comes in parts only when it starts with an expansion.)
+  if ((n.type === 'word' || n.type === 'number') && PLAIN_TEXT.test(n.text)) return as === 'fields' ? [n.text] : n.text;
   const found = wordOf(n);
   /* c8 ignore next -- a guard: the walk reads only words of a command, of `[[ ]]` and of `case` */
   if (!found) return undefined;
@@ -985,7 +991,7 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: '
     if (as !== 'fields') {
       // (One field: `[[ ]]` and `case` neither split nor drop an empty word.)
       const f = split[0];
-      return as === 'value' ? f.map((c) => c.c).join('') : patternOfChars(f);
+      return as === 'value' ? f.map((c) => c.c).join('') : as === 'regex' ? f.map((c) => (c.quoted && /\W/.test(c.c) ? `\\${c.c}` : c.c)).join('') : patternOfChars(f);
     }
     const fields: string[] = [];
     for (const f of split) {
@@ -1000,6 +1006,9 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: ValueSource, as: '
     return undefined;
   }
 }
+
+/** A word that bash takes as it is written: no expansion, quote, escape, tilde, brace, glob or extended glob. */
+const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 
 /** A field as a pattern for globToRegex: quoted characters escaped. */
 function patternOfChars(f: readonly Char[]): string {

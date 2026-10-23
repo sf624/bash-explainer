@@ -114,6 +114,9 @@ export const setAtStart = (name: string): boolean => known(name)?.start !== unde
 /** Whether the text assigned to `name` is read as arithmetic (`OPTIND`, `RANDOM`: integers from the start). */
 export const assignsArithmetic = (name: string): boolean => !!known(name)?.arithmetic;
 
+/** The variables bash makes integers when it starts, whose text it reads as arithmetic (`OPTIND`, `RANDOM`…). */
+export const INTEGERS_AT_START: readonly string[] = Object.keys(BASH_VARIABLES).filter(assignsArithmetic);
+
 /** Whether `name` is readonly from the start (`UID`): what the script assigns to it fails. */
 export const readonlyAtStart = (name: string): boolean => known(name)?.start?.includes('r') ?? false;
 
