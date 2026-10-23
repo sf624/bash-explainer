@@ -206,11 +206,23 @@ describe('the web page: resizing the panes and the Problems list', function () {
     const after = (await p2.locator('#problems').boundingBox())!.height;
     assert.ok(Math.abs(before + 100 - after) < 8, `${before} → ${after}`);
     assert.strictEqual(await flat(), true);
-    // Right after a CDP touch sequence Chromium drops the click of the next tap (measured: 50 and 100 ms fail,
-    // 150 and 300 ms pass), and nothing in the page shows it: a fixed wait.
-    await p2.waitForTimeout(300);
-    await p2.locator('#problems-toggle').tap();
-    assert.strictEqual(await p2.locator('#problem-list li').first().isVisible(), false);
+    // Right after a CDP touch sequence Chromium drops the click of the next tap, and nothing in the page shows
+    // it (a fixed wait of 300 ms was not enough on a slow runner). So tap, wait for the list to go, and tap
+    // again if it has not (at most 5 taps). The toggle counts its own flips, so a tap that works twice, or a
+    // toggle that does not work, cannot pass by accident: the list must be hidden after an odd number of flips.
+    await p2.evaluate(`window.__flips = 0; new MutationObserver(() => window.__flips++).observe(document.getElementById('problems-toggle'), { attributes: true, attributeFilter: ['aria-expanded'] })`);
+    const hidden = async () => !(await p2.locator('#problem-list li').first().isVisible());
+    let taps = 0;
+    do {
+      await p2.locator('#problems-toggle').tap();
+      taps++;
+      const end = Date.now() + 500;
+      while (Date.now() < end && !(await hidden())) await new Promise((r) => setTimeout(r, 50));
+    } while (!(await hidden()) && taps < 5);
+    assert.strictEqual(await hidden(), true, `still visible after ${taps} taps`);
+    const flips = await p2.evaluate('window.__flips') as number;
+    assert.strictEqual(flips % 2, 1, `${flips} flips`);
+    assert.strictEqual(await p2.locator('#problems-toggle').getAttribute('aria-expanded'), 'false');
     assert.strictEqual(await flat(), true);
     await phone.close();
   });

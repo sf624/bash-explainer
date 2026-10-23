@@ -535,7 +535,7 @@ body.resizing .problems-resize {
   transform: rotate(-90deg);
 }
 
-#problems-toggle .count {
+#problems .count {
   padding: 0 6px;
   border-radius: 8px;
   background: var(--accent-soft);
