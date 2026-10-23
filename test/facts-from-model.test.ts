@@ -55,8 +55,9 @@ describe('an unquoted variable as a path follows the options in effect', () => {
 
   it('is about the command the name runs, not the name', function () {
     if (!have) return this.skip();
-    // A function named `cp` runs its own body: `$a` is split all the same, but what it does with it is not known.
-    assert.strictEqual(asPath('cp() { :; }\ncp $a b', 1), false);
+    // A function named `rm` is called with the words already split (bash: 2 words), so the warning stays.
+    assert.strictEqual(bash('rm() { echo $#; }; f="a b"; rm $f'), '2\n');
+    assert.strictEqual(asPath('rm() { command rm -i "$@"; }\nrm $f', 1), true);
     assert.strictEqual(asPath('cp $a b'), true);
     // An alias of `rm` is `rm`; one of another command is not.
     assert.strictEqual(asPath('shopt -s expand_aliases\nalias del=rm\ndel $a', 2), true);
@@ -103,6 +104,10 @@ describe('a variable set at the end of a pipeline is gone after it', () => {
     ["printf 'a\\n' | read n; echo \"[$n]\"", '[]', true],
     // Not a read: single quotes.
     ["printf 'a\\n' | while read n; do :; done; echo '[$n]'", '[$n]', false],
+    // A function called in the last stage sets what its body sets.
+    ["g() { gv=1; }; printf 'a\\n' | g; echo \"[$gv]\"", '[]', true],
+    ["g() { gv=1; }; printf 'a\\n' | g; gv=2; echo \"[$gv]\"", '[2]', false],
+    ["g() { local gv=1; }; printf 'a\\n' | g; echo \"[$gv]\"", '[]', false],
     // Set again before it is read.
     ["printf 'a\\n' | while read n; do :; done; n=2; echo \"[$n]\"", '[2]', false],
     // The last stage runs in the shell.

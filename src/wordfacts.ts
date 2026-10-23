@@ -17,13 +17,16 @@ import type { SyntaxNode } from './syntax/tree';
 /** The file commands whose unquoted variables are worth a warning. */
 const PATH_COMMANDS = new Set(['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.']);
 
-/** The name of the builtin or program a resolution runs, when it is known (not a function: what it does is not known). */
+/**
+ * The command a resolution runs, when it is known: an alias is its target. A function keeps its name: bash expands
+ * the words before calling it, so `rm() { command rm -i "$@"; }; rm $f` splits `$f` all the same.
+ */
 function ranName(r: NameResolution): string | undefined {
   if (r.kind === 'alias') return r.sure && r.target ? ranName(r.target) : undefined;
-  return r.kind === 'builtin' || r.kind === 'file' ? r.name.split('/').pop() : undefined;
+  return r.name.split('/').pop();
 }
 
-/** What the model says splitting and globbing do to this expansion. */
+/** Is the node a parameter expansion (`$x`, `${x}`)? */
 function isExpansion(n: SyntaxNode): boolean {
   return n.type === 'simple_expansion' || n.type === 'expansion';
 }
