@@ -186,6 +186,13 @@ describe('unbash adapter: tokens and comments', () => {
     assert.deepEqual(toks(t.namedChildren[2]), ['elif@14', ';@20', 'then@22', ';@28']);
     assert.deepEqual(toks(t.namedChildren[3]), ['else@30', ';@36']);
   });
+  it('the keyword of a declaration ends before a line continuation after it (`declare\\<newline> x`)', () => {
+    for (const text of ['declare\\\n  x', 'local\\\n\\\n x=1']) {
+      const d = first(text);
+      assert.deepEqual(toks(d), [`${text.split('\\')[0]}@0`], text);
+      assert.deepEqual(soundness(tree(text)), [], text);
+    }
+  });
   it('a keyword in a comment is not a token', () => {
     const text = 'if true; # then\nthen :; fi';
     const t = first(text);

@@ -510,7 +510,10 @@ class Converter {
 
   declaration(c: U.Command, args: readonly (U.Assignment | U.Word | U.Redirection)[]): Mut {
     const node = this.node('declaration_command', c.pos, Math.max(c.name!.end, ...args.map((a) => a.end)));
-    this.add(node, this.node(c.name!.value, c.name!.pos, c.name!.end), null).named = false;
+    // (unbash ends the name after a line continuation that follows it: `declare\<newline> x`. The keyword is before it.)
+    let end = c.name!.end;
+    while (this.text.slice(end - 2, end) === '\\\n') end -= 2;
+    this.add(node, this.node(c.name!.value, c.name!.pos, end), null).named = false;
     for (const a of args) {
       if (a.type === 'Assignment') this.add(node, this.assignment(a));
       else if (a.type === 'Word') this.add(node, IDENTIFIER.test(a.text) ? this.node('variable_name', a.pos, a.end) : this.subscriptName(a) ?? this.word(a, 'declaration'));
