@@ -4,7 +4,7 @@
 // - A subshell link comes from the node's place in the tree: `( )`, `$( )` and backquotes, `<( )` and `>( )`, a
 //   statement followed by `&`, a coproc's command, and every stage of a pipeline but the last one. The last stage
 //   is a subshell unless lastpipe is on and job control off, which the shell state where the pipeline runs says
-//   (`sure: false` when only some paths turn lastpipe on). The walk of src/semantics/state.ts drops the changes
+//   (`sure: false` when only some paths turn lastpipe on). The walk of the state (src/semantics/walk/) drops the changes
 //   of the same subshells, with the same rules (`subshellReasons`, `lastStageInShell`).
 // - A function body runs where the function is called (the walk records the calls): its chain starts with a
 //   `call` link that holds the chains of its calls. A function no call reaches runs where it is defined.

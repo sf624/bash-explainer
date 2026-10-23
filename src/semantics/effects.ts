@@ -1,5 +1,5 @@
 // What a builtin does to the shell's state, read from its parse by its spec (src/argv/spec.ts: `shellEffect`, and the
-// values and operands of `type: 'variable'` or `'function'`). The walk of the state (src/semantics/state.ts) and the
+// values and operands of `type: 'variable'` or `'function'`). The walk of the state (src/semantics/walk/) and the
 // trust scan (src/semantics/trust.ts) both read the effects here, so that they never disagree on what a builtin sets.
 import { interpret, type ArgRole, type ArgvParse } from '../argv/interpret';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';

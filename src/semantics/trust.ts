@@ -546,7 +546,7 @@ class Scan {
     if (hosted) return;
     switch (name) {
       case 'eval': {
-        // (The string is the words of its command slot, as the walk reads it: `Walker.builtin`.)
+        // (The string is the words of its command slot, as the walk reads it: `WalkBuiltins.builtin`.)
         const at = parse.roles.find((r) => r.role.role === 'command');
         if (at) this.foreign(this.strings.script(args.slice(at.word)), 'eval of text not known', w, true);
         return;
