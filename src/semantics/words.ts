@@ -81,8 +81,7 @@ export const CONTEXTS: Readonly<Record<WordContext, ContextRule>> = {
 
 export type Applies = boolean | 'unknown';
 export type StepKind = 'brace' | 'tilde' | 'parameter' | 'command' | 'arithmetic' | 'process' | 'split' | 'glob' | 'quote-removal';
-/** Why a step does not apply (or may not). */
-/** `zsh`: zsh, without SH_WORD_SPLIT and GLOB_SUBST (its defaults), neither splits nor globs a parameter expansion. */
+/** Why a step does not apply (or may not). `zsh`: zsh, without SH_WORD_SPLIT and GLOB_SUBST (its defaults), neither splits nor globs a parameter expansion. */
 export type StepWhy = 'context' | 'quoted' | 'noglob' | 'ifs-empty' | 'posix-mode' | 'braceexpand-off' | 'zsh';
 
 export interface ExpansionStep {
@@ -463,20 +462,14 @@ function globStep(w: WordMeaning, parts: SyntaxNode[], someQuoted: boolean): Ste
   return { kind: 'glob', applies, ...(w.glob.noglob === 'unknown' ? { why: 'noglob' as const } : ctx.why ? { why: ctx.why } : {}), parts };
 }
 
-/**
- * What happens to the expansion `part` (or a word with glob characters) of its word: quoted, split, globbed. In a zsh
- * model, an unquoted parameter expansion is neither split nor globbed (zshexpn, "Parameter Expansion": SH_WORD_SPLIT
- * and GLOB_SUBST are off by default); a command substitution is still split.
- */
+/** What happens to the expansion `part` (or a word with glob characters) of its word: quoted, split, globbed. (In zsh, an unquoted parameter expansion is neither split nor globbed: zshexpn, SH_WORD_SPLIT and GLOB_SUBST are off by default; a command substitution is still split.) */
 export function partMeaning(part: SyntaxNode, model: StateModel): PartMeaning | undefined {
   const word = wordMeaning(part, model);
   if (!word) return undefined;
   const quoted = nearestQuote(part);
-  const zsh = model.shell === 'zsh' && (part.type === 'simple_expansion' || part.type === 'expansion');
   const step = (kind: 'split' | 'glob'): ExpansionStep => {
     const s = word.steps.find((x) => x.kind === kind)!;
-    if (quoted) return mk({ kind, applies: false, why: 'quoted', parts: [] });
-    if (zsh) return mk({ kind, applies: false, why: 'zsh', parts: [] });
+    if (quoted || (model.shell === 'zsh' && (part.type === 'simple_expansion' || part.type === 'expansion'))) return mk({ kind, applies: false, why: quoted ? 'quoted' : 'zsh', parts: [] });
     return s.parts.includes(part) || s.applies === false ? s : mk({ kind, applies: false, parts: [] });
   };
   return { word, quoted, split: step('split'), glob: step('glob') };
