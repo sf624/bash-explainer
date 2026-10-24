@@ -361,3 +361,62 @@ export function testSpecAt(model: StateModel, n: SyntaxNode, shell?: Shell): Com
   if (name === undefined) return undefined;
   return testSpecOf(resolveName(model, name, nameNode!, { shell, command: true, quoted: word!.type !== 'word' || word!.text !== name }));
 }
+
+/** What a command name is, as the panel's badge says it (docs/design/name-kinds.md): a `file` is a program. */
+export type NameKind = 'keyword' | 'alias' | 'function' | 'builtin' | 'program' | 'none';
+
+/** Another meaning of the same name, and the code that runs it in place of this one. */
+export interface NameOther {
+  kind: NameKind;
+  /** Code that runs it (`command time`, `builtin echo`); none for a reserved word, which is one where it starts a command unquoted. */
+  reach: string[];
+  /** A builtin turned off by `enable -n` here: `enable NAME` turns it on again. */
+  off?: boolean;
+  /** A program's usual path: the model does not know the file system, so it is only "usually" there. */
+  path?: string;
+}
+
+/** What a command name runs here, who looks it up, and what else the same name is (`nameFacts`). */
+export interface NameFacts {
+  /** The name as bash looks it up (quotes removed). */
+  name: string;
+  runs: NameKind;
+  /** The command that looks the name up in place of bash's usual order: a program (`sudo`, `xargs`, `env`), or `command` and `builtin`. */
+  by?: string;
+  /** The other meanings of the name, in bash's order (3.7.2): empty when it has none. */
+  also: NameOther[];
+}
+
+/**
+ * What the command name of `res` is (3.7.2): what runs, who looks it up (the slot of `env` that runs it), and the
+ * other meanings of the same name, with code that reaches each. A program of the name comes from the dictionary
+ * (`program`, and the program a builtin's entry describes), never from the file system. A path names no other.
+ */
+export function nameFacts(res: NameResolution, opts: { program?: (name: string) => boolean; env?: ExecEnv; shell?: Shell } = {}): NameFacts {
+  const runs: NameKind = res.kind === 'file' ? 'program' : res.kind;
+  const last = opts.env?.links[opts.env.links.length - 1];
+  const slot = last?.kind === 'slot' && (last.slot.run === 'exec' || last.slot.lookup) ? last : undefined;
+  const by = slot ? { by: slot.via } : {};
+  const { name } = res;
+  if (name.includes('/')) return { name, runs, ...by, also: [] };
+  const also: NameOther[] = [];
+  const add = (o: NameOther): void => void (o.kind !== runs && also.push(o));
+  const missed = (res as { missed?: Missed }).missed;
+  const bash = !opts.shell || opts.shell === 'bash' || !BASH_ONLY_BUILTINS.has(name);
+  const builtin = Object.hasOwn(builtins, name) && bash ? builtins[name] : undefined;
+  if (RESERVED.has(name)) add({ kind: 'keyword', reach: [] });
+  // (Quoted, a name is not an alias; `command` and `builtin` skip functions, and a program has none.)
+  if (missed?.kind === 'alias' && missed.why === 'quoted') add({ kind: 'alias', reach: [name] });
+  if (missed?.kind === 'function' && ['command', 'builtin', 'program'].includes(missed.why)) add({ kind: 'function', reach: [name] });
+  if (builtin) {
+    if (res.kind === 'file' && res.disabled) add({ kind: 'builtin', reach: [], off: true });
+    else add({ kind: 'builtin', reach: runs === 'function' ? [`builtin ${name}`, `command ${name}`] : runs === 'alias' ? [`\\${name}`, `command ${name}`] : [name] });
+  }
+  // (Where a builtin of the name is, `command` and a quoted name find it first: only `env` starts the program.)
+  if (builtin?.program || opts.program?.(name)) {
+    const reach = builtin ? [`env ${name}`] : runs === 'keyword' ? [`command ${name}`, `\\${name}`, `env ${name}`]
+      : runs === 'alias' ? [`\\${name}`, `command ${name}`] : runs === 'function' ? [`command ${name}`] : [name];
+    add({ kind: 'program', reach, path: `/usr/bin/${name}` });
+  }
+  return { name, runs, ...by, also };
+}

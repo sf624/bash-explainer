@@ -361,7 +361,7 @@ describe('a command named [ is explained as what bash runs', () => {
       assert.strictEqual(conditions.length, runs === 'function' ? 0 : 1, 'the condition is explained');
       assert.ok(!all.some((t) => t.explanation.includes('see `man `')), 'no manual page without a name');
       if (runs === 'function') assert.ok(all.some((t) => t.kind === 'function' && t.explanation.startsWith('Call the function `[`')), 'the function');
-      if (runs === 'program') assert.ok(all.some((t) => /program|external command/.test(t.explanation)), 'the program');
+      if (runs === 'program') assert.ok(all.some((t) => t.name?.runs === 'program' && t.label.endsWith('[')), 'the program');
       if (runs !== 'function') assert.ok(all.some((t) => t.label === ']' && t.explanation.startsWith('The last argument passed to `[`')), 'the last `]`');
     });
   }
