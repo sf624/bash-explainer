@@ -123,6 +123,43 @@ function hasUnquotedExpansion(n: SyntaxNode): boolean {
   return n.type === 'concatenation' && n.namedChildren.some(hasUnquotedExpansion);
 }
 
+/** The expansions a pair of double quotes keeps as they are, as one word without splitting or globbing. */
+const QUOTABLE = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']);
+/** Literal text that means the same inside double quotes: no glob, tilde, brace, quote or escape. */
+const PLAIN = /^[\w@%+=:,./-]+$/;
+
+/**
+ * A word with its unquoted expansions double-quoted, and the rest as written (`$DIR/*` → `"$DIR"/*`, so the glob
+ * still matches; `~/$d` → `~/"$d"`, so the tilde still expands). A word whose other parts mean the same in quotes is
+ * quoted whole (`$d/x` → `"$d/x"`). `replace` gives the text of some of its nodes instead (`${DIR:?}` for `$DIR`).
+ */
+export function quoteExpansions(n: SyntaxNode, replace: ReadonlyMap<SyntaxNode, string> = new Map()): string {
+  const text = (x: SyntaxNode): string => {
+    const r = replace.get(x);
+    if (r !== undefined) return r;
+    let out = '';
+    let at = x.startIndex;
+    for (const c of x.namedChildren) {
+      out += x.text.slice(at - x.startIndex, c.startIndex - x.startIndex) + text(c);
+      at = c.endIndex;
+    }
+    return out + x.text.slice(at - x.startIndex);
+  };
+  if (QUOTABLE.has(n.type)) return `"${text(n)}"`;
+  if (n.type !== 'concatenation') return text(n);
+  const parts = n.namedChildren;
+  if (parts.every((c) => QUOTABLE.has(c.type) || (c.type === 'word' && PLAIN.test(c.text)))) return `"${text(n)}"`;
+  // Each run of adjacent expansions in one pair of quotes (`$a$b/*` → `"$a$b"/*`).
+  const quotable = (i: number) => i >= 0 && i < parts.length && QUOTABLE.has(parts[i].type);
+  let out = '';
+  for (const [i, c] of parts.entries()) {
+    const open = quotable(i) && !quotable(i - 1);
+    const close = quotable(i) && !quotable(i + 1);
+    out += (open ? '"' : '') + text(c) + (close ? '"' : '');
+  }
+  return out;
+}
+
 /** A word as `[ ]` needs it: expansions double-quoted, since `[ ]` splits and globs them. */
 function word(n: SyntaxNode): string | undefined {
   switch (n.type) {

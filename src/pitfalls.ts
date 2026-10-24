@@ -3,6 +3,7 @@ import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue } from './staticword';
+import { quoteExpansions } from './fixes';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -73,13 +74,21 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         // `rm -rf $DIR/…`: an empty DIR removes from the root.
         if (name === 'rm' && a.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) {
           for (const w of a) {
-            const first = w.type === 'concatenation' || w.type === 'string' ? w.namedChildren[0] : undefined;
-            if (!first || (first.type !== 'simple_expansion' && first.type !== 'expansion')) continue;
+            let first = w.type === 'concatenation' || w.type === 'string' ? w.namedChildren[0] : undefined;
+            if (!first) continue;
+            // What follows the variable (`/*`; `/x"` in `"$DIR/x"`).
+            const rest = w.text.slice(first.endIndex - w.startIndex);
+            // `"$DIR"/*`: the quotes keep the glob, and an empty DIR still leaves `/*`.
+            if (first.type === 'string' && first.namedChildren.length === 1 && first.text === `"${first.namedChildren[0].text}"`) first = first.namedChildren[0];
+            if (first.type !== 'simple_expansion' && first.type !== 'expansion') continue;
             // HOME and PWD are always set; special parameters such as `$$` have no name to put in `${…:?}`.
             const v = varName(first);
-            if (v && !['HOME', 'PWD'].includes(v) && w.text.slice(first.endIndex - w.startIndex).startsWith('/') && !/:\?/.test(first.text)) {
-              add(`\`${v}\` が空だと \`rm -r ${w.text.replace(first.text, '')}\` になり、ルートから削除してしまいます。\`"\${${v}:?}/…"\` と書くと、空のときは止まります`,
-                `if \`${v}\` is empty this becomes \`rm -r ${w.text.replace(first.text, '')}\`, deleting from the root. Write \`"\${${v}:?}/…"\` to stop when it is empty`);
+            if (v && !['HOME', 'PWD'].includes(v) && rest.startsWith('/') && !/:\?/.test(first.text)) {
+              // The word with `${v:?}` for the variable, its expansions quoted and its glob kept (`"${DIR:?}"/*`).
+              const safe = quoteExpansions(w, new Map([[first, `\${${v}:?}`]]));
+              const left = w.type === 'string' ? `"${rest}` : rest;
+              add(`\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
+                `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
               break;
             }
           }

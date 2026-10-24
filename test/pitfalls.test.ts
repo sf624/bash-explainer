@@ -7,6 +7,7 @@ import { pitfallNotes } from '../src/pitfalls';
 import { shellState } from '../src/semantics/state';
 import { wordFacts } from '../src/wordfacts';
 import * as fs from 'fs';
+import * as os from 'os';
 import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { MESSAGES, fact, said, type FactId } from '../src/messages';
@@ -27,7 +28,10 @@ describe('pitfalls', () => {
   const cases: [string, RegExp][] = [
     ['x = 1', /runs a command named `x`; it is not an assignment/],
     ['rm -rf $DIR/build', /if `DIR` is empty this becomes `rm -r \/build`/],
-    ['rm -rf "${DIR}/build"', /if `DIR` is empty/],
+    ['rm -rf "${DIR}/build"', /if `DIR` is empty this becomes `rm -r "\/build"`, deleting from the root. Write `"\$\{DIR:\?\}\/build"`/],
+    // The glob stays out of the quotes in the rewrite; quoted as `"$DIR"/*`, an empty DIR still leaves `/*`.
+    ['rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root. Write `"\$\{DIR:\?\}"\/\*` to stop/],
+    ['rm -rf "$DIR"/*', /becomes `rm -r \/\*`, deleting from the root. Write `"\$\{DIR:\?\}"\/\*` to stop/],
     ['[-f x]', /`\[` is an ordinary command, so a space must follow it \(`\[-f` reads as another command name\)/],
     // (`[ -f x]`, with a last word of known text, is the analyzer's note: test/testexpr.test.ts.)
     ['[ -f $x]', /the `\]` in `\$x\]` is read as part of the word/],
@@ -50,6 +54,22 @@ describe('pitfalls', () => {
   for (const src of fine) {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(notes(src), []));
   }
+
+  it('the rewrite of `rm -rf $DIR/*` keeps the glob and stops when DIR is empty, in bash', () => {
+    const safe = notes('rm -rf $DIR/*').join('\n').match(/Write `(.*)` to stop/)![1];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rm-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'a b'));
+      for (const f of ['x', 'y']) fs.writeFileSync(path.join(dir, 'a b', f), '');
+      const words = (value: string) => spawnSync('bash', ['-c', `DIR=${value}; printf '<%s>\\n' ${safe}`], { cwd: dir, encoding: 'utf8' });
+      assert.strictEqual(words("'a b'").stdout, '<a b/x>\n<a b/y>\n');
+      const empty = words("''");
+      assert.strictEqual(empty.stdout, '');
+      assert.match(empty.stderr, /DIR: parameter null or not set/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('speaks Japanese, and only on the line where the construct starts', () => {
     assert.match(notes('x = 1', 0, 'ja')[0], /^⚠ 落とし穴: `x =…` は代入ではなく/);
