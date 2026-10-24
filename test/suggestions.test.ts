@@ -101,6 +101,10 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   // `for a in $@` → `for a in "$@"`.
   'for-over-unquoted-args': 'mechanical',
   'unquoted-variable-in-test': 'mechanical',
+  // `${x:-}` for the unset variable (when the analyzer gives `fix`): `set -u` no longer stops and the value is empty.
+  'nounset-unbound': 'mechanical',
+  // Options of the shebang → `set …` on the next line: run the file directly (before: bash refuses; after: it runs).
+  'shebang-refused': 'scenario',
   // `… | sudo tee file`, with `sudo` stubbed.
   'redirect-by-your-shell': 'scenario',
   'bats-test': 'none',
@@ -142,6 +146,6 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 12, scenario: 21, prose: 11, none: 36 });
+      { mechanical: 13, scenario: 22, prose: 11, none: 36 });
   });
 });
