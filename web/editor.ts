@@ -301,13 +301,13 @@ export class Editor {
     return { from: pos(this.view.state, span.start.line, span.start.character), to: pos(this.view.state, span.end.line, span.end.character) };
   }
 
-  /** Selects a span of the panel's explanation. */
-  selectSpan(span: Span): void {
+  /** Selects a span of the panel's explanation; `preserveFocus` leaves the focus where it is (in the panel's tree). */
+  selectSpan(span: Span, preserveFocus = false): void {
     const r = this.spanRange(span);
     // Bring the start of the token into view, and move sideways only as far as that needs (the
     // end of a long span, as `scrollIntoView` does, could hide the start of every line).
     this.view.dispatch({ selection: { anchor: r.from, head: r.to }, effects: EditorView.scrollIntoView(r.from, { x: 'nearest', y: 'nearest', xMargin: 40 }) });
-    this.focusUnlessTouch();
+    if (!preserveFocus) this.focusUnlessTouch();
   }
 
   /** Marks the part of the line the pointer is on in the panel (null: none). */

@@ -30,7 +30,7 @@ export interface CompareHost {
   /** Everything a copy needs: the script, the cursor, the language, the theme and the settings. */
   state(): CopyState;
   /** A click in a copy's panel: select the span in the script. */
-  reveal(span: Span): void;
+  reveal(span: Span, preserveFocus?: boolean): void;
   /** The pointer on a part of a copy's explanation (null: no longer). */
   highlight(span: Span | null): void;
   /** The shell or yq chosen in a copy's panel: the choice is for both copies. */
@@ -58,7 +58,7 @@ export class Compare {
           return this.sendState();
         }
         case 'bx-reveal':
-          return host.reveal(m.span);
+          return host.reveal(m.span, m.preserveFocus);
         case 'bx-highlight':
           return host.highlight(m.span);
         case 'bx-choice':

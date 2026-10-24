@@ -27,13 +27,15 @@ export interface PanelHost {
   override(key: 'shell' | 'yq', value: string): void;
   openSettings(): void;
   /** A click on a part of the explanation: select it in the script. */
-  reveal(span: Span): void;
+  reveal(span: Span, preserveFocus?: boolean): void;
   /** The pointer on a part of the explanation: mark it in the script (null: no longer). */
   highlight(span: Span | null): void;
 }
 
 export class PanelBridge {
   private ready = false;
+  /** The panel's view and layers: from storage, then as the panel says. */
+  private state: PanelState = readStoredObject<PanelState>(STORAGE_KEYS.panel);
   private watcher: MutationObserver | undefined;
   private watched: Document | undefined;
 
@@ -74,7 +76,12 @@ export class PanelBridge {
 
   /** The view and layers the viewer chose last time (VS Code keeps them in the webview's state, which the frame has not). */
   private sendState(): void {
-    this.send({ type: 'panelState', state: readStoredObject<PanelState>(STORAGE_KEYS.panel) });
+    this.send({ type: 'panelState', state: this.state });
+  }
+
+  /** The view the panel shows: the tree is built only for the tree view. */
+  view(): 'list' | 'tree' {
+    return this.state.view === 'tree' ? 'tree' : 'list';
   }
 
   /** Sends a message to the panel, once it is ready. */
@@ -109,11 +116,17 @@ export class PanelBridge {
       case 'highlight':
         return this.host.highlight(m.span);
       case 'reveal':
-        return this.host.reveal(m.span);
+        return this.host.reveal(m.span, m.preserveFocus);
       case 'copy':
         return this.host.copy();
       case 'panelState':
-        writeStored(STORAGE_KEYS.panel, JSON.stringify(m.state));
+        {
+          const before = this.view();
+          this.state = m.state;
+          writeStored(STORAGE_KEYS.panel, JSON.stringify(m.state));
+          // The tree has to be built for the tree view: explain the line again.
+          if (this.view() !== before) this.host.update();
+        }
         return;
     }
   }

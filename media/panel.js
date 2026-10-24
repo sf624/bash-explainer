@@ -389,7 +389,7 @@
       const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
       const fold = !all.some((li) => li.getAttribute('aria-expanded') === 'false');
       for (const li of all) setFolded(li, fold && li.getAttribute('aria-level') !== '1');
-      $('toggle').textContent = fold ? labels.expandAll : labels.collapseAll;
+      updateToggle();
       return;
     }
     const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .body > ul'));
@@ -402,6 +402,11 @@
     }
     $('toggle').textContent = collapse ? labels.expandAll : labels.collapseAll;
   });
+  /** The shared button says what it will do in the view shown: unfold when something is folded, else fold. */
+  function updateToggle() {
+    const folded = view === 'tree' && reading ? foldedKeys.size > 0 : $('tree').querySelector('li.collapsed') !== null;
+    $('toggle').textContent = folded ? labels.expandAll : labels.collapseAll;
+  }
   $('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
   /** Colour each character of the line by the deepest token covering it. */
@@ -472,8 +477,10 @@
   /** The layers, in the order the layer buttons add them. */
   const LEVEL = { bash: 1, child: 2, command: 3, language: 4 };
 
+  /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
     vscode.setState({ view, level });
+    vscode.postMessage({ type: 'panelState', state: { view, level } });
   }
 
   /** The view and layers the viewer chose (VS Code's webview state; on the web page, the page sends them). */
@@ -497,6 +504,7 @@
     $('tree').hidden = tree;
     $('examples').hidden = tree;
     $('reading').hidden = !tree || !reading;
+    if (labels.expandAll) updateToggle();
     markLine(null);
   }
 
@@ -536,6 +544,8 @@
 
   function renderReading() {
     const ul = $('reading-tree');
+    // A new update or layer redraws the tree: the focus goes back to the item it was on.
+    const hadFocus = ul.contains(document.activeElement);
     ul.replaceChildren();
     const t = labels.tree;
     if (!t) return;
@@ -543,26 +553,40 @@
     const box = $('layers');
     box.setAttribute('aria-label', t.show);
     $('layers-label').textContent = t.show;
-    box.querySelectorAll('button').forEach((b) => b.remove());
-    t.levels.forEach((/** @type {string} */ text, /** @type {number} */ i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = `layer l-${['bash', 'child', 'command', 'language'][i]}`;
-      b.textContent = text;
-      b.dataset.level = String(i + 1);
-      b.setAttribute('aria-pressed', String(level === i + 1));
-      b.addEventListener('click', () => {
-        level = i + 1;
-        save();
-        renderReading();
+    // The layer buttons are made once (a click must not take the focus with them) and only updated.
+    if (!box.querySelector('button')) {
+      t.levels.forEach((/** @type {string} */ _text, /** @type {number} */ i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `layer l-${['bash', 'child', 'command', 'language'][i]}`;
+        b.dataset.level = String(i + 1);
+        b.addEventListener('click', () => {
+          level = i + 1;
+          save();
+          renderReading();
+        });
+        box.append(b);
       });
-      box.append(b);
+    }
+    box.querySelectorAll('button').forEach((b, i) => {
+      b.textContent = t.levels[i];
+      b.setAttribute('aria-pressed', String(level === i + 1));
     });
     if (!reading || view !== 'tree') return;
     ul.append(treeItem(reading, '0', 1, null, 1, 1, ''));
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
     if (current) current.tabIndex = 0;
+    if (hadFocus) {
+      // (The item itself, or the nearest one above it that is drawn: its layer may be gone.)
+      let key = currentKey;
+      let again = items.find((li) => li.dataset.path === key);
+      while (!again && key.includes('.')) {
+        key = key.slice(0, key.lastIndexOf('.'));
+        again = items.find((li) => li.dataset.path === key);
+      }
+      if (again ?? current) focusItem(/** @type {HTMLElement} */ (again ?? current));
+    }
   }
 
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
@@ -622,7 +646,7 @@
       if (selecting()) return;
       focusItem(li);
       if (kids.length && !(e.target instanceof Element && e.target.closest('a'))) toggleItem(li);
-      reveal(n);
+      reveal(n, true);
     });
     if (kids.length) {
       li.setAttribute('aria-expanded', String(!folded));
@@ -671,6 +695,15 @@
     const path = String(li.dataset.path);
     if (fold) foldedKeys.add(path);
     else foldedKeys.delete(path);
+    if (fold) {
+      // What was hidden cannot keep the focus or the Tab stop: they go to this item.
+      if (group.contains(document.activeElement)) focusItem(li);
+      else if (group.querySelector('li[tabindex="0"]')) {
+        group.querySelectorAll('li[tabindex="0"]').forEach((x) => { /** @type {HTMLElement} */ (x).tabIndex = -1; });
+        li.tabIndex = 0;
+        currentKey = path;
+      }
+    }
     const tw = li.querySelector(':scope > .trow > .twisty');
     if (tw) tw.textContent = fold ? '▸' : '▾';
   }
@@ -699,18 +732,31 @@
     }
   }
 
+  /** The links of an item's row are in the Tab order only while the item has the focus: Tab goes into them, and on past the tree. */
+  function linksTabbable(/** @type {HTMLElement | null} */ li) {
+    $('reading-tree').querySelectorAll('.refs a').forEach((a) => {
+      /** @type {HTMLAnchorElement} */ (a).tabIndex = li && a.closest('li') === li ? 0 : -1;
+    });
+  }
+
   $('reading-tree').addEventListener('focusin', (e) => {
-    const li = e.target instanceof HTMLElement ? e.target.closest('li[role="treeitem"]') : null;
+    const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
+    linksTabbable(li);
     if (li) showNode(readingNodes.get(li));
   });
   $('reading-tree').addEventListener('focusout', (e) => {
-    if (!(e.relatedTarget instanceof Node && $('reading-tree').contains(e.relatedTarget))) showNode(null);
+    if (!(e.relatedTarget instanceof Node && $('reading-tree').contains(e.relatedTarget))) {
+      linksTabbable(null);
+      showNode(null);
+    }
   });
 
   // The keys of the ARIA tree pattern.
   $('reading-tree').addEventListener('keydown', (e) => {
     const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
     if (!li) return;
+    // A key on one of the item's links is the link's (Enter follows it).
+    if (e.target instanceof Element && e.target.closest('a') && (e.key === 'Enter' || e.key === ' ')) return;
     const items = visibleItems();
     const i = items.indexOf(li);
     const group = /** @type {HTMLElement | null} */ (li.querySelector(':scope > ul[role="group"]'));
@@ -731,7 +777,7 @@
       case 'Enter':
       case ' ':
         toggleItem(li);
-        reveal(readingNodes.get(li));
+        reveal(readingNodes.get(li), true);
         break;
       default:
         return;
@@ -745,8 +791,8 @@
 
   /** Selects a token's range in the editor. Not one over several lines (an if, a loop, a function): the cursor would move to its last
       line, and the panel with it, when one only meant to fold the row; the hover already shows that range. */
-  function reveal(token) {
-    if (token.span.start.line === token.span.end.line) vscode.postMessage({ type: 'reveal', span: token.span });
+  function reveal(token, /** @type {boolean} */ keepFocus = false) {
+    if (token.span.start.line === token.span.end.line) vscode.postMessage({ type: 'reveal', span: token.span, preserveFocus: keepFocus });
   }
 
   /** The rows of a token and of all its parts. */
