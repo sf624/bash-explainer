@@ -71,7 +71,7 @@ import type { Example, ExampleSection, ExplainOptions, Kind, LineExplanation, Sp
 import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 import { type Explainer, LineExplainer, memoKey, type Walk } from './explain/context';
-import { ancestorOf, fromEmbedded, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
+import { fromEmbedded, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
 import { given, globOff, hostCommand, ifsAt, inArithmetic, isAssoc, optionValues, regexFlavor, resolve, shoptAt, type ShoptName, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
 import { groupSubshell, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
@@ -2611,7 +2611,7 @@ export class Analyzer {
   private extglobPitfalls(root: SyntaxNode, line: number): string[] {
     if (this.cx.shell && this.cx.shell !== 'bash') return [];
     const uses = onLine(root, ['word', 'extglob_pattern'], line)
-      .filter((n) => n.startPosition.row === line && hasExtglob(n.text) && !ancestorOf(n, (a) => a.type === 'extended_test'));
+      .filter((n) => n.startPosition.row === line && hasExtglob(n.text) && !/^(extended_test|expansion)$/.test(ancestor(n, (a) => /^(extended_test|expansion|command_substitution|process_substitution)$/.test(a.type))?.type ?? '')); // (Not in `[[ ]]` nor in a `${x%…}`: bash reads them anyway.)
     if (!uses.length) return [];
     const use = uses[0];
     let top = use;

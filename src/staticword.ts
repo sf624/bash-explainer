@@ -1,3 +1,4 @@
+import { visible } from './ctlchars';
 import type { EmbeddedLang } from './embedded/types';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -70,9 +71,13 @@ export function unquoteWord(text: string, inDouble = false): string | undefined 
 
 /**
  * The text a word gives as a message (`${x:?"msg"}` prints `msg`): without its quotes; when it expands something
- * (`"no $f"`), without the outer quotes of a word that is one double-quoted string.
+ * (`"no $f"`), without the outer quotes of a word that is one double-quoted string. A word that is one `$'…'` is
+ * the text it stands for, with its control characters as pictures (`$'a\tb'` is `a⇥b`).
  */
 export function messageText(text: string): string {
+  const ansi = /^\$'((?:[^'\\]|\\.)*)'$/s.exec(text);
+  const value = ansi ? ansiCValue(ansi[1]) : undefined;
+  if (value !== undefined) return visible(value).replace(/\n/g, '␊');
   return unquoteWord(text) ?? (/^"(?:[^"\\]|\\.)*"$/.test(text) ? text.slice(1, -1) : text);
 }
 

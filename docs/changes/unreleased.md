@@ -383,18 +383,27 @@ A word is explained with the shell options and the `IFS` in effect where it runs
 | --- | --- | --- | --- |
 | `ls **/*.sh`, globstar never turned on | `**` is `*`: `d/b.sh`, not `a.sh` or `d/e/c.sh` | "`**` is the same as `*` and matches one level only", with an example of one level | "`**` matches directories at any depth", with an example at every depth |
 | `if …; then shopt -s globstar; fi; ls **/*.sh` | any depth on one path, one level on the other | both, and the example says "where globstar is on" | any depth |
+| `shopt -s globstar dotglob; ls **/` | directories starting with `.` too | "any depth (zero or more)", and the dotglob note | "not those starting with `.`" |
 | `echo "${x%.@(gz\|bz2)}"`, extglob not on | `@(gz\|bz2)` is plain text: `a.gz` stays `a.gz` | "there is no extended glob: `(`, `\|` and `)` are matched as plain characters", one part of plain text | the part `@(gz\|bz2)` was "extended glob, exactly one of the alternatives" |
 | `IFS=,; read -r a b <<< "$line"` | splits on `,` | the example's line is `alice,30,tokyo`: `a="alice"`, `b="30,tokyo"` | the line `alice 30 tokyo`, split on spaces |
 | `case $x in "$q")` | the value of `q` is literal text (`q='a*'` matches only `a*`) | "the expansion is quoted, so its value is matched as literal text" | "what it expands to is the pattern" |
-| `case $x in $p"*")` | `$p` is a pattern, `"*"` a `*` | "what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text" | "what it expands to is the pattern" |
+| `case $x in $p"*")`, `${q:-"*"})` | `$p` is a pattern, `"*"` a `*` | "what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text" | "what it expands to is the pattern" |
+| `case $x in $'a*')` | only `a*` matches | a part quoted with `$'…'` | a glob pattern with no parts |
 | `x=~` | the home directory | "Tilde expansion: `~` becomes the home directory" | "Value `~`" |
-| `y=$'\n'` | a newline | "it is the string `␊` (`␊` is a newline)" | "the string `\n`", like the two characters of `$'\\n'` |
+| `y=$'\n'` | a newline | "it is the string `␊` (control characters are shown as symbols: `␊` is LF (line feed, newline))"; `$'\t'` and `$'\r'` say what `⇥` and `␍` are | "the string `\n`", like the two characters of `$'\\n'` |
 | `${x:?"msg"}`, `${x:?"need $y"}` | prints `x: msg`, `x: need …` | "Exit with error "msg"", "need $y" | `""msg""`, `""need $y""` |
 | `${x:?""}` | prints `x: ` (an empty message) | the error "" | the example said "(a default message)" |
+| `: "${x:?'a b'}"`, `${x:?$'t\tx'}` | prints `x: a b`; `x: t⇥x`, with a tab for `⇥` | the message "a b", "t⇥x", in the token and the example | the example said `'a b'`; `$'t\tx'` as written |
 | `a=(["k"]=w)` | index `$k`: 0 when `k` is not set | "index `k` (an arithmetic expression: the value of the variable `k`, 0 when it is not set)" | "index `k`" |
+| `declare -n r=m; declare -A m; r=([k]=v)` | `m` is associative: the key `k` | "key `k` (a string, not evaluated)" | "index `k`" |
+| `if …; then declare -A m; fi; m=([k]=v)`, `declare -A "$v"`, after `source ./lib.sh` | a key if `m` is associative there | "subscript `k` (a key if the array is associative, an arithmetic expression otherwise)" | "index `k`" |
 | `echo "${s@K}"`, `${a@K}`, `${@@K}` | `'hello'`: quoted, as `@Q` does | "quote it as `@Q` does (only all the elements of an array, `${a[@]@K}`, give keys and values)" | "show it as key/value pairs" |
-| `x="$(printf '%s\n' "${a[@]}")"` | one word | the outer string "stays one argument" | it said `"${array[@]}"` gives one word per element, a note for the inner string |
-| `shopt -s failglob` (or `nullglob`), then `for f in *.txt; do [ -e "$f" ] \|\| continue; …` | a glob that matches nothing is an error (or goes away), so the loop never gets `*.txt` | no idiom | the idiom "bash keeps `*.txt` as it is and the loop runs once with that text" |
+| `x=s; echo "${!x@K}"`; `x='ia[@]'` | `'hi'`; `0 "p" 1 "q"` | as `@Q` does; key/value pairs (with `x` not known, both) | key/value pairs |
+| `x="$(printf '%s\n' "${a[@]}")"`, `f "${a[@]:+x}"`, `f "${y:-$(… "${a[@]}")}"` | one word | the outer string "stays one argument" | it said `"${array[@]}"` gives one word per element, a note for the inner string |
+| `x="${a[@]}"`, `local x="${a[@]}"` | one value, the elements joined with spaces | "stays one argument" | one word per element |
+| `shopt -s failglob` (or `nullglob`), then `for f in *.txt; do [ -e "$f" ] \|\| continue; …` | a glob that matches nothing is an error (or goes away), so the loop never gets `*.txt` | no idiom (nor where either may be on) | the idiom "bash keeps `*.txt` as it is and the loop runs once with that text" |
+| `for f in "$@"; do [ -e "$f" ] \|\| continue; …` | no glob: nothing is kept as written | no idiom | the same idiom |
+| `echo "${x%@(a\|"$q")}"`, extglob not on | runs: `@(…)` in `${x%…}` is plain text (`x=ab` prints `ab`) | no caveat | "extended globs like `@(a\|` are a syntax error unless `shopt -s extglob` comes first" |
 
 `[[ $x == "$q" ]]` already said that a quoted right side is literal text.
 

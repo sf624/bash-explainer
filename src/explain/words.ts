@@ -5,22 +5,23 @@
 // the descriptions and notes of variables from here.
 import type { Kind, Token } from '../analyzer-types';
 import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
-import { visible } from '../ctlchars';
+import { pictureList, visible } from '../ctlchars';
 import { ciVariables } from '../dict/ciVariables';
 import { specialVariables, wellKnownVariables } from '../dict/syntax';
 import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
 import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
+import { parseExpansion } from '../expansion';
 import { shorten } from '../label';
 import { fact } from '../messages';
 import { spanOf } from '../noteanchors';
 import { attribute, docLine } from '../semantics/state';
-import { partMeaning, underscoreValue } from '../semantics/words';
+import { CONTEXTS, partMeaning, underscoreValue, wordOf } from '../semantics/words';
 import { decodedText, splitElement, staticWordValue, unquoteWord } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
-import { globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
+import { arrayKind, globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
 import { pidNote } from './where';
 
 /** `braceExpand` of an unquoted word: undefined when it has no brace expansion, null when it gives too many words to list. */
@@ -55,8 +56,8 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
     return t;
   }
   // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes (not one in a
-  // `$( )` in the string: the substitution gives one word).
-  const perElement = n.namedChildren.some((c) => (c.type === 'simple_expansion' || c.type === 'expansion') && /\$@|\$\{@|\$\{(?!#)[^}]*\[@\]|\$\{![\w]*@\}/.test(c.text));
+  // `$( )` in the string: the substitution gives one word), where the word may be many (not an assignment's value).
+  const perElement = n.namedChildren.some(eachElement) && manyFields(n);
   return cx.tok(n, 'string', (perElement ? cx.s(
     'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
     'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
@@ -67,12 +68,40 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
 }
 
 /**
+ * Whether an expansion in double quotes gives one word per element (manual 3.4.2, 3.5.3): `$@`, `${a[@]}` and
+ * `${!a[@]}`, `${!pre@}`, also with a slice, a pattern or case operator, a transform but `A`, `K` and `k`, or `-`, `:-`,
+ * `?`, `:?`; a `${x:-…}` or `${x:+…}` whose word has one. Not a length (`${#a[@]}`), nor a `$( )` (one word).
+ */
+function eachElement(n: SyntaxNode): boolean {
+  if (n.type === 'simple_expansion') return n.text === '$@';
+  if (n.type === 'string') return n.namedChildren.some(eachElement);
+  if (n.type !== 'expansion') return false;
+  const p = parseExpansion(n.text);
+  if (!p || p.prefix === '#') return false;
+  const all = p.name === '@' || p.subscript === '@';
+  const word = () => n.namedChildren.some((c) => c.type !== 'variable_name' && c.type !== 'subscript' && eachElement(c));
+  if (p.prefix === '!') return (p.subscript === '@' && !p.op) || (!p.subscript && p.op === '@' && p.parts.length === 3);
+  if (!p.op || p.op === '?' || p.op === ':?') return all;
+  if (p.op === '-' || p.op === ':-') return all || word();
+  if (p.op === '+' || p.op === ':+') return word();
+  if (p.op === '=' || p.op === ':=') return false;
+  return all && !(p.op === '@' && p.parts.some((x) => x.role === 'transform' && /^[AKk]$/.test(x.text)));
+}
+
+/** Whether the word that holds `n` may be many words (an argument, a `for` list), seen through a `${x:-…}` around it. */
+function manyFields(n: SyntaxNode): boolean {
+  let w = wordOf(n);
+  while (w?.context === 'param-word') w = wordOf(w.nodes[0].parent!);
+  return !!w && CONTEXTS[w.context].fields === 'many';
+}
+
+/**
  * "Concatenation": the parts are glued into one word, except around `"$@"` and `"${a[@]}"`, which are one word per element:
  * the text before them joins the first element, and the text after them the last.
  */
 export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
   const parts = n.namedChildren;
-  const each = parts.findIndex((c) => c.type === 'string' && /^"(?:\$@|\$\{(?:!?[A-Za-z_]\w*\[@\]|@)[^}]*\})"$/.test(c.text));
+  const each = manyFields(n) ? parts.findIndex((c) => c.type === 'string' && c.namedChildren.length === 1 && eachElement(c.namedChildren[0])) : -1;
   if (each < 0) return cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
   const text = (from: number, to: number): string => (from >= to ? '' : n.text.slice(parts[from].startIndex - n.startIndex, parts[to - 1].endIndex - n.startIndex));
   const before = text(0, each);
@@ -94,12 +123,12 @@ export function valueNote(cx: Explainer, n: SyntaxNode): string {
   const v = staticWordValue(n);
   if (!v || v === decodedText(n)) return '';
   const literal = v.includes('$');
-  // (A newline is shown as `␊`, so that it is not read as the two characters `\n`.)
-  const nl = v.includes('\n');
-  const text = nl ? visible(v).replace(/\n/g, '␊') : shown(v);
+  // (A newline is shown as `␊`, so that it is not read as the two characters `\n`; each picture is told once.)
+  const text = visible(v).replace(/\n/g, '␊');
+  const pictures = pictureList([text], (ja, en) => cx.s(ja, en));
   return cx.s(
-    `。クォートやバックスラッシュを取り除くと \`${text}\` という文字列になる${nl ? '（`␊` は改行文字）' : ''}${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
-    `. After quote removal it is the string \`${text}\`${nl ? ' (`␊` is a newline)' : ''}${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
+    `。クォートやバックスラッシュを取り除くと \`${text}\` という文字列になる${pictures ? `（制御文字は記号で表している: ${pictures}）` : ''}${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
+    `. After quote removal it is the string \`${text}\`${pictures ? ` (control characters are shown as symbols: ${pictures})` : ''}${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
   );
 }
 
@@ -181,7 +210,8 @@ export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
   // (bash expands the tilde before the command sees the word: its reading, even in an operand.)
   if (tildes.length === 1 && first.start === 0) {
     return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
-      + (first.end < n.text.length ? cx.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : '')), refs: ['3.5.2'] };
+      + (first.end < n.text.length ? cx.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : '')
+      + (hasGlob(n.text) ? notGlobbedHere(cx, n) : '')), refs: ['3.5.2'] };
   }
   const row = n.startPosition.row;
   const col = n.startPosition.column;
@@ -220,7 +250,8 @@ export function casePattern(cx: Explainer, p: SyntaxNode): Token {
   const parts = p.type === 'concatenation' ? p.namedChildren : [p];
   if (!descendants(p, [...EXPANDING]).length && !EXPANDING.has(p.type)) return globToken(cx, p, 'value', p.text, 0);
   const unquoted = parts.some((x) => EXPANDING.has(x.type));
-  const quoted = parts.some((x) => QUOTED.has(x.type));
+  // (The quoted parts of a default or alternate value are literal too: in `${q:-"*"}`, the `*`.)
+  const quoted = parts.some((x) => QUOTED.has(x.type) || (x.type === 'expansion' && /^:?[-+=]$/.test(String(parseExpansion(x.text)!.op)) && x.namedChildren.some((c) => QUOTED.has(c.type))));
   return cx.tok(p, 'pattern', !unquoted
     ? cx.s(`パターン \`${p.text}\`: 展開はクォートされているので、その値は文字列そのものとして照合される（値の中の \`*\` や \`?\` はワイルドカードにならない）`, `Pattern \`${p.text}\`: the expansion is quoted, so its value is matched as literal text (\`*\` and \`?\` in the value are not wildcards)`)
     : quoted
@@ -291,7 +322,10 @@ function starStarNote(cx: Explainer, text: string, n: SyntaxNode): string {
   if (globstar === 'unsupported') {
     cx.note(fact(cx.lang, 'globstar-unsupported', { shell: cx.shell! }), n);
   }
-  const deep = cx.s('`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '`**` matches directories at any depth (zero or more, not those starting with `.`)');
+  // (With dotglob on, `**` goes into directories starting with `.` too; the note on dotglob says so.)
+  const dotglob = shoptAt(cx, n).dotglob;
+  const dots = dotglob === 'on' ? ['', ''] : dotglob === 'unknown' ? ['、`.` で始まるものは dotglob が有効な経路でだけ含む', '; those starting with `.` only where dotglob is on'] : ['、`.` で始まるものは除く', ', not those starting with `.`'];
+  const deep = cx.s(`\`**\` は任意の深さのディレクトリ（0階層以上${dots[0]}）に一致する`, `\`**\` matches directories at any depth (zero or more${dots[1]})`);
   if (globstar === 'on') return cx.s(`。${deep}`, `. ${deep}`);
   if (globstar === 'unknown') return cx.s(`。globstar が有効な経路では ${deep}。ほかの経路では \`*\` と同じで、1階層分にしか一致しない`, `. Where globstar is on, ${deep}; elsewhere it is the same as \`*\` and matches one level only`);
   const why = { off: ['globstar が無効なので', 'With globstar off'], default: ['globstar が有効になっていないので', 'With globstar not turned on'], unsupported: ['このシェルでは', 'In this shell'] }[globstar];
@@ -464,10 +498,12 @@ export function arrayElement(cx: Explainer, n: SyntaxNode): Token {
   // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
   const key = unquoteWord(e.key) ?? e.key;
   const m = ['', key, e.plus, e.value];
-  const assoc = isAssoc(cx, field(n.parent!.parent!, 'name')!.text, n);
+  const kind = arrayKind(cx, field(n.parent!.parent!, 'name')!.text, n);
   // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
+  // (Arithmetic only when the array is surely not associative: `declare -A` may be in a file read with `source`.)
   const v = evalArith(m[1]);
-  const what = assoc ? cx.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
+  const what = kind === 'assoc' ? cx.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
+    : kind === 'unknown' ? cx.s(`添字 \`${m[1]}\`（連想配列ならキー、そうでなければ算術式）`, `subscript \`${m[1]}\` (a key if the array is associative, an arithmetic expression otherwise)`)
     : v !== undefined && String(v) !== m[1] ? cx.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
     : v !== undefined ? cx.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``)
     // (`[k]=w` is index 0 when `k` is not set: a name is a variable.)

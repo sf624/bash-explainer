@@ -59,12 +59,6 @@ export function sortTokens(ts: Token[]): Token[] {
   return ts.sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
 }
 
-/** Whether an ancestor of `n` satisfies `test`. */
-export function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
-  for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
-  return false;
-}
-
 /** The offset of the start of each line of `text` (kept for the last few texts). */
 const lineStartCache = new Map<string, number[]>();
 export function lineStarts(text: string): number[] {

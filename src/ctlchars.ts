@@ -53,16 +53,21 @@ const PICTURES = /[␀-␟␡⇥]/gu;
  * stands for, once. Undefined when the lines hold none.
  */
 export function pictureNote(lines: string[], s: S): string | undefined {
+  const list = pictureList(lines, s);
+  return list && s(`制御文字は目に見えないので、例では記号で表している: ${list}`, `Control characters are invisible, so the example shows them as symbols: ${list}`);
+}
+
+/** What each control picture in `lines` stands for, once (`` `⇥` is HT (tab) ``); undefined when they hold none. */
+export function pictureList(lines: string[], s: S): string | undefined {
   const seen: string[] = [];
   for (const l of lines) for (const m of l.matchAll(PICTURES)) if (!seen.includes(m[0])) seen.push(m[0]);
   if (!seen.length) return undefined;
-  const list = seen.map((p) => {
+  return seen.map((p) => {
     const code = pictureCode(p)!;
     const n = NAMED[code];
     const what = n ? s(`${NAMED[code][0]}（${n[2]}）`, `${n[0]} (${n[1]})`) : controlAbbr(code)!;
     return `\`${p}\` ${s('は', 'is')} ${what}`;
   }).join(s('、', ', '));
-  return s(`制御文字は目に見えないので、例では記号で表している: ${list}`, `Control characters are invisible, so the example shows them as symbols: ${list}`);
 }
 
 /** The character a code stands for, when it is a visible ASCII one: ` ("A")` or `（「A」）`, else the control name. */

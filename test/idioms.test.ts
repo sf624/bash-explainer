@@ -197,8 +197,10 @@ describe('argument parsing, NUL-safe loops and other everyday idioms', () => {
     yes('readarray -t lines < <(ls)', /`mapfile` \(`readarray`\)/, /`mapfile`/);
     yes('ls | mapfile -t lines', /loses the array/, /配列が消える/);
     assert.strictEqual(en('echo mapfile'), '');
-    yes('[ -e "$f" ] || continue', /skips a name that does not exist/, /存在しない名前/);
-    yes('[[ -f $f ]] || continue', /\*\.txt/, /\*\.txt/);
+    yes('for f in *.txt; do [ -e "$f" ] || continue; done', /skips a name that does not exist/, /存在しない名前/);
+    yes('for f in d/*; do [[ -f $f ]] || continue; done', /\*\.txt/, /\*\.txt/);
+    // (Only in a `for` over a glob of that name.)
+    assert.strictEqual(en('[ -e "$f" ] || continue'), '');
     assert.strictEqual(en('[ -e "$f" ] || exit 1'), '');
     assert.strictEqual(en('[ -z "$f" ] || continue'), '');
     assert.strictEqual(en('[ -e x ] || continue'), '');

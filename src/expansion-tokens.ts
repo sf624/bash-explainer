@@ -308,7 +308,12 @@ function expansionSummary(h: Explainer, n: SyntaxNode): Token {
   const indirectTransform = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)@([QEPAKaULuk])$/.exec(inner) : null;
   if (indirectTransform) {
     const [, v, letter] = indirectTransform;
-    const tf = transformOf(letter, {})!;
+    // (`K` and `k` give keys and values when the name found is all the elements of an array: `x='a[@]'`.)
+    const named = h.state.at(n).run.variables.get(v);
+    const value = named?.set === 'on' ? named.value : undefined;
+    const tf = value === undefined && (letter === 'K' || letter === 'k')
+      ? [`シェルに再入力できる形に \`@Q\` と同じくクォートする（\`${v}\` の値が \`a[@]\` のような配列の全要素なら、キーと値の組）`, `quote it as \`@Q\` does (keys and values when the value of \`${v}\` is all the elements of an array, such as \`a[@]\`)`]
+      : transformOf(letter, { subscript: /\[[@*]\]$/.test(value ?? '') ? '@' : undefined })!;
     return h.tok(n, 'expansion', h.s(`間接参照: 変数 \`${v}\` の値を変数名とみなし、その変数の値を${tf[0]}`,
       `Indirection: use the value of \`${v}\` as a variable name, then take that variable's value and ${tf[1]}`));
   }
