@@ -518,28 +518,43 @@
     });
   }
 
-  /** The name a node is shown with: its kind, the command that reads, or the language. */
+  /** The name a node is shown with: its kind (a command name with what it runs), or the language. */
   function chipOf(n) {
     const t = labels.tree;
     if (n.kind === 'line') return t.kinds.line;
-    if (n.kind === 'reading') return t.reads.replace('{name}', n.label);
     if (n.kind === 'language') return t.languages[n.label] ?? n.label;
     const shell = n.layer === 'bash' || n.layer === 'child';
-    return (shell && t.kinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    const kind = (shell && t.kinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    return n.resolves && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
   }
 
-  /** Who reads a node: its layer, with the name of the command whose reading it is in. */
-  function readerOf(n, cmd) {
-    const r = labels.tree.readers[n.layer];
-    return r.replace('{name}', cmd || '');
+  /** Who reads a node: bash, which shell parses it again, the command, or the language and who reads it. */
+  function readerOf(n) {
+    const r = labels.tree.readers;
+    if (n.layer === 'child') return r.child[n.process ?? 'child'];
+    if (n.layer === 'language' && n.reader === 'bash') return r.bashLanguage;
+    return r[n.layer].replace('{name}', n.reader ?? '');
   }
 
   /** The name at the right of a band: where a new reader takes over. */
-  function bandOf(n, cmd) {
+  function bandOf(n) {
     const t = labels.tree;
-    if (n.layer === 'command') return t.reads.replace('{name}', cmd || '');
+    if (n.layer === 'command') return t.reads.replace('{name}', n.reader ?? '');
     if (n.layer === 'language') return n.kind === 'language' ? chipOf(n) : '';
-    return t.bands[n.layer];
+    if (n.layer === 'child') return t.bands.child[n.process ?? 'child'];
+    return t.bands.bash;
+  }
+
+  /** The kinds whose general text the tree shows already: once each, at their first node (`renderReading`). */
+  let aboutShown = new Set();
+
+  /** What a kind is in general, where no token says more about the node: at its first node only, not on every argument. */
+  function aboutOf(n) {
+    const about = labels.tree.about;
+    const key = n.kind === 'language' && n.reader === 'bash' ? 'bashLanguage' : n.kind;
+    if (aboutShown.has(key)) return '';
+    aboutShown.add(key);
+    return about[key] ?? '';
   }
 
   function renderReading() {
@@ -573,7 +588,8 @@
       b.setAttribute('aria-pressed', String(level === i + 1));
     });
     if (!reading || view !== 'tree') return;
-    ul.append(treeItem(reading, '0', 1, null, 1, 1, ''));
+    aboutShown = new Set();
+    ul.append(treeItem(reading, '0', 1, null, 1, 1));
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
     if (current) current.tabIndex = 0;
@@ -590,8 +606,7 @@
   }
 
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
-  function treeItem(n, path, depth, parent, pos, size, cmd) {
-    if (n.kind === 'reading') cmd = n.label;
+  function treeItem(n, path, depth, parent, pos, size) {
     const li = document.createElement('li');
     li.setAttribute('role', 'treeitem');
     li.setAttribute('aria-level', String(depth));
@@ -600,7 +615,9 @@
     li.tabIndex = -1;
     li.dataset.path = path;
     li.className = `ti l-${n.layer}`;
-    const band = !parent || parent.layer !== n.layer;
+    // (A band starts where the reader changes: another layer, another command, another shell.)
+    const band = !parent || parent.layer !== n.layer || (n.layer === 'command' && parent.reader !== n.reader)
+      || (n.layer === 'child' && parent.process !== n.process);
     if (band) li.classList.add('band');
     const kids = n.children.filter((/** @type {any} */ c) => LEVEL[c.layer] <= level);
     const row = document.createElement('div');
@@ -614,14 +631,14 @@
     chip.className = 'chip';
     chip.textContent = chipOf(n);
     row.append(twisty, chip);
-    const code = !['line', 'reading', 'language'].includes(n.kind) ? n.label : '';
+    const code = !['line', 'language'].includes(n.kind) ? n.label : '';
     if (code) {
       const c = document.createElement('code');
       c.className = 'tcode';
       c.textContent = code;
       row.append(c);
     }
-    const about = n.text ?? labels.tree.about[n.kind] ?? '';
+    const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
     text.className = n.text === undefined ? 'text about' : 'text';
@@ -629,7 +646,7 @@
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
     row.append(text, ...links);
-    const bandName = band ? bandOf(n, cmd) : '';
+    const bandName = band ? bandOf(n) : '';
     if (bandName) {
       const b = document.createElement('span');
       b.className = 'band-label';
@@ -637,7 +654,7 @@
       b.textContent = bandName;
       row.append(b);
     }
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n, cmd)}. ${about.replace(/`/g, '')}`);
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n)}. ${about.replace(/`/g, '')}`);
     li.append(row);
     readingNodes.set(li, n);
     row.addEventListener('mouseenter', () => showNode(n));
@@ -653,7 +670,7 @@
       const group = document.createElement('ul');
       group.setAttribute('role', 'group');
       group.hidden = folded;
-      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, n, i + 1, kids.length, cmd)));
+      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, n, i + 1, kids.length)));
       li.append(group);
     }
     return li;

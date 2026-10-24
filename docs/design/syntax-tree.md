@@ -355,7 +355,7 @@ The test comes first (step 0), as a guard. Today's tree should mostly pass it: t
 
 ### What it is for
 
-The panel's tree view (src/reading.ts) draws these commands as bash's layer of a line: who reads each part, bash, a child bash in a substitution, the command, or a language in a word. Its prototypes, and how their data is made, are in [tree-view/README.md](tree-view/README.md).
+The panel's tree view (src/reading.ts) draws these commands as bash's layer of a line: who reads each part: bash, a shell that parses a text again (a substitution, or a string a command gives a shell), the command, or a language in a word. Its prototypes, and how their data is made, are in [tree-view/README.md](tree-view/README.md).
 
 ### Size
 

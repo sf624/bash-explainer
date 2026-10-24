@@ -20,36 +20,54 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
   const pos = (p: Pos): Pos => ({ line: p.line, character: extracted.maps[p.line][p.character] });
   const span = (sp: Token['span']) => ({ start: pos(sp.start), end: pos(sp.end) });
   // A part of a placeholder (the name inside `${make_target}`) has no counterpart in the original.
-  const insidePlaceholder = (t: Token) => t.span.start.line === t.span.end.line
+  const insidePlaceholder = (t: { span: Token['span'] }) => t.span.start.line === t.span.end.line
     && extracted.inserted[t.span.start.line].some(([a, b]) => t.span.start.character >= a && t.span.end.character <= b && (t.span.start.character > a || t.span.end.character < b));
+  /**
+   * The label of a part of the extracted text, in the original: its text there (the name a command is labelled
+   * with, at the start of its span, from the original too). A skeleton (`labelParts`) or a name that is not the code
+   * (`code` false) stays.
+   */
+  const relabel = (label: string, sp: Token['span'], code = true): string => {
+    if (!code) return label;
+    const at = sp.start;
+    const to = span(sp);
+    const head = extracted.text.split('\n')[at.line].slice(at.character);
+    const one = sp.start.line === sp.end.line;
+    const spanLength = one ? sp.end.character - at.character : Infinity;
+    if (head.startsWith(label) && !label.endsWith('…') && spanLength > label.length) {
+      return original[to.start.line].slice(to.start.character, extracted.maps[at.line][at.character + label.length]);
+    }
+    let out = label;
+    const text = one ? original[to.start.line]?.slice(to.start.character, to.end.character) : undefined;
+    if (text) out = text.length > 60 ? text.slice(0, 59) + '…' : text;
+    return out;
+  };
+  /** What the placeholder that `sp` is exactly stands for, if it is one. */
+  const placeholder = (sp: Token['span']): string | undefined => {
+    const whole = sp.start.line === sp.end.line
+      ? extracted.inserted[sp.start.line].find(([a, b]) => a === sp.start.character && b === sp.end.character)
+      : undefined;
+    if (!whole?.[2]) return undefined;
+    const m = whole[2][lang === 'ja' ? 0 : 1];
+    return lang === 'en' ? m[0].toUpperCase() + m.slice(1) : m;
+  };
   const token = (t: Token): Token => {
     const sp = span(t.span);
-    let label = t.label;
-    const at = t.span.start;
-    const head = extracted.text.split('\n')[at.line].slice(at.character);
-    const one = t.span.start.line === t.span.end.line;
-    const spanLength = one ? t.span.end.character - at.character : Infinity;
-    if (t.labelParts) {
-      // A skeleton is not the text of the span: keep it.
-    } else if (head.startsWith(t.label) && !t.label.endsWith('…') && spanLength > t.label.length) {
-      // A command is labelled with its name, the start of its span: take the name from the original too.
-      label = original[sp.start.line].slice(sp.start.character, extracted.maps[at.line][at.character + t.label.length]);
-    } else if (one) {
-      const text = original[sp.start.line]?.slice(sp.start.character, sp.end.character);
-      if (text) label = text.length > 60 ? text.slice(0, 59) + '…' : text;
-    }
+    const label = relabel(t.label, t.span, !t.labelParts);
     // A token that is exactly a placeholder is the host syntax it stands for.
-    const whole = t.span.start.line === t.span.end.line
-      ? extracted.inserted[t.span.start.line].find(([a, b]) => a === t.span.start.character && b === t.span.end.character)
-      : undefined;
-    if (whole?.[2]) {
-      const m = whole[2][lang === 'ja' ? 0 : 1];
-      return { ...t, label, span: sp, explanation: lang === 'en' ? m[0].toUpperCase() + m.slice(1) : m, children: [] };
-    }
+    const host = placeholder(t.span);
+    if (host) return { ...t, label, span: sp, explanation: host, children: [] };
     return { ...t, label, span: sp, children: t.children.filter((c) => !insidePlaceholder(c)).map(token) };
   };
-  // The reading tree: its places in the original (its labels are the code of the extracted text, or names).
-  const reading = (n: ReadingNode): ReadingNode => ({ ...n, span: span(n.span), children: n.children.map(reading) });
+  // The reading tree, as the tokens: in the original, labelled with its text there, without the parts of a
+  // placeholder. (The labels that are not code stay: a skeleton, a language's name.)
+  const reading = (n: ReadingNode): ReadingNode => {
+    const code = n.kind !== 'language' && n.kind !== 'line' && !n.label.includes('‹');
+    const out: ReadingNode = { ...n, label: relabel(n.label, n.span, code), span: span(n.span) };
+    const host = placeholder(n.span);
+    if (host) return { ...out, text: host, children: [] };
+    return { ...out, children: n.children.filter((c) => !insidePlaceholder(c)).map(reading) };
+  };
   return {
     ...ex,
     items: ex.items.map(token),

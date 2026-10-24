@@ -17,7 +17,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- The panel has a tree view of the line (the **Tree** button; **List** goes back): it shows who reads each part. bash splits the line into commands, and each command into words, assignments and redirections; a child bash parses the text of each `$( )`, `<( )` and backquotes again; each command reads its words as options, arguments and subcommands (and a string `bash -c` runs is a script again); and a regex, a glob, a sed script or a printf format inside a word is a language of its own. Each reader has a colour and a band, and buttons add them one at a time (bash, + child bash, + commands, + languages). The tree folds and moves with the arrow keys, Home, End and Enter, as screen readers expect of a tree, and pointing at a part highlights it in the editor and in the line. The panel remembers the view and the layers (on the web page, for your next visit). Before, the panel had only the list of explanations.
+- The panel has a **Tree** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
 
 ### Fixed
 
