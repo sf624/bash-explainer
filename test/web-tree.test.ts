@@ -175,22 +175,71 @@ describe('the web page: the tree view of the panel', function () {
     await ctx.close();
   });
 
-  it('keeps the manual links on the first line of a row, level with its kind, wide and on a phone', async () => {
+  /**
+   * The outline's geometry, for each item in a group: where its elbow is, from the middle of its first line (the
+   * code's pill, or the kind where there is no code); where the group's line is, from the middle of the parent's
+   * twisty; how far the line goes below the elbow (the last child); the links' middle, from the pill's; the band's
+   * background; and how far the row's parts reach past the panel's right edge.
+   */
+  const outline = (panel: Frame) => panel.evaluate(`(() => {
+    const px = (v) => parseFloat(v) || 0;
+    const middle = (r) => (r.top + r.bottom) / 2;
+    const width = document.documentElement.clientWidth;
+    return [...document.querySelectorAll('#reading-tree ul[role="group"] > li')].map((li) => {
+      const r = li.getBoundingClientRect();
+      const after = getComputedStyle(li, '::after');
+      const before = getComputedStyle(li, '::before');
+      const row = li.querySelector(':scope > .trow');
+      const pill = row.querySelector('.tcode');
+      const first = (pill ?? row.querySelector('.chip')).getBoundingClientRect();
+      // (A long code wraps in its pill: the elbow is at the middle of its first line.)
+      const lh = px(getComputedStyle(row).lineHeight);
+      const mid = first.height > lh * 1.5 ? first.top + 1 + lh / 2 : middle(first);
+      const elbow = r.top + px(after.top) + px(after.marginTop) + px(after.borderTopWidth) / 2;
+      const twisty = li.parentElement.closest('li').querySelector(':scope > .trow > .twisty').getBoundingClientRect();
+      const line = r.left + px(before.left) + px(before.borderLeftWidth) / 2;
+      const refs = row.querySelector('.refs');
+      const parts = [...row.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right);
+      return {
+        text: row.textContent.slice(0, 40), pill: !!pill, last: !li.nextElementSibling, band: li.classList.contains('band'),
+        layer: li.className.match(/l-(\\w+)/)[1], background: getComputedStyle(li).backgroundColor,
+        elbow: elbow - mid, line: line - (twisty.left + twisty.right) / 2, below: r.top + px(before.top) + px(before.height) - elbow,
+        refs: refs ? middle(refs.getBoundingClientRect()) - mid : null, overflow: Math.max(...parts) - width,
+      };
+    });
+  })()`) as Promise<{ text: string; pill: boolean; last: boolean; band: boolean; layer: string; background: string; elbow: number; line: number; below: number; refs: number | null; overflow: number }[]>;
+
+  it('draws the outline: elbows at the pills, lines under the twisties, links level with the code, one tint per layer', async () => {
     for (const width of [1280, 360]) {
-      const ctx = await browser.newContext({ viewport: { width, height: 800 }, locale: 'en-US' });
-      const page = await ctx.newPage();
-      const panel = await treeOf(page, 'sudo ls -l /tmp | xargs grep -n x');
-      const rows = await panel.locator('#reading-tree .trow:has(.refs)').evaluateAll((rs) => rs.map((r) => {
-        const chip = r.querySelector('.chip')!.getBoundingClientRect();
-        const refs = r.querySelector('.refs')!.getBoundingClientRect();
-        return { text: r.textContent, chip: chip.top, refs: refs.top, height: r.getBoundingClientRect().height };
-      }));
-      assert.ok(rows.length > 5, `${width}px: ${rows.length} rows with links`);
-      // (The kind and the links differ a little in size: the same line, within a pixel or two.)
-      for (const r of rows) assert.ok(Math.abs(r.chip - r.refs) <= 2, `${width}px: ${JSON.stringify(r)}`);
-      // On a phone, a command name's row wraps its text, not its links.
-      if (width === 360) assert.ok(rows.some((r) => /command name/.test(r.text ?? '') && r.height > 30), `${width}px: a row wraps`);
-      await ctx.close();
+      for (const line of ['x=$(grep -c foo f) && [ "$x" -gt 0 ]', 'sudo ls -l /tmp | xargs grep -n x']) {
+        const ctx = await browser.newContext({ viewport: { width, height: 800 }, locale: 'en-US' });
+        const page = await ctx.newPage();
+        const panel = await treeOf(page, line);
+        const items = await outline(panel);
+        const at = `${width}px, ${line}`;
+        assert.ok(items.length > 15, `${at}: ${items.length} items`);
+        for (const i of items) {
+          const it = `${at}: ${JSON.stringify(i)}`;
+          if (i.pill) assert.ok(Math.abs(i.elbow) <= 1.5, `the elbow at the pill's middle, ${it}`);
+          assert.ok(Math.abs(i.line) <= 1, `the line under the parent's twisty, ${it}`);
+          if (i.last) assert.ok(Math.abs(i.below) <= 1, `no line below the last child, ${it}`);
+          if (i.refs !== null) assert.ok(Math.abs(i.refs) <= 2, `the links level with the code, ${it}`);
+          assert.ok(i.overflow <= 0, `nothing past the right edge, ${it}`);
+        }
+        // A band's tint is opaque, and the same for a layer at every depth (not laid over the band around it).
+        const tints = new Map<string, Set<string>>();
+        for (const i of items.filter((x) => x.band)) tints.set(i.layer, (tints.get(i.layer) ?? new Set()).add(i.background));
+        assert.ok(tints.size >= 2, `${at}: bands of ${[...tints.keys()]}`);
+        for (const [layer, set] of tints) {
+          assert.strictEqual(set.size, 1, `${at}: one tint for ${layer}: ${[...set]}`);
+          assert.ok(!/rgba|\/ 0\.|\/ 0\)/.test([...set][0]), `${at}: ${layer}'s tint is opaque: ${[...set]}`);
+        }
+        assert.ok(items.some((i) => !i.band && i.background === 'rgba(0, 0, 0, 0)'), `${at}: an item in a band shows the band's tint`);
+        assert.strictEqual(await panel.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true, `${at}: no sideways scroll`);
+        // On a phone, a command name's row wraps its text, not its links.
+        if (width === 360) assert.ok(await panel.locator('#reading-tree .trow', { hasText: 'command name' }).evaluateAll((rs) => rs.some((r) => r.getBoundingClientRect().height > 30)), `${at}: a row wraps`);
+        await ctx.close();
+      }
     }
   });
 

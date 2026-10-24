@@ -154,6 +154,26 @@ describe('the contrast of the colours of the roles', () => {
     });
   }
 
+  // The tree view tints the items each reader covers with its layer's colour (media/panel.css): an opaque mix of
+  // the layer's colour and the background, the same at every depth. The kind and the reader's name are in the
+  // layer's colour, the texts in the foreground or the muted colour; the code is in a pill of the background's colour.
+  it('reaches 4.5:1 on the layer tints of the tree view', () => {
+    const pct = Number(/#reading-tree li\.band \{\s*background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(panel)?.[1]);
+    assert.ok(pct > 0 && pct < 20, `the tint: ${pct}%`);
+    assert.match(panel, /\.trow \.tcode \{[^}]*background: var\(--t-bg\);/);
+    const LAYERS: Record<string, Role> = { bash: 'operator', child: 'command', command: 'argument', language: 'option' };
+    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
+      const bg = parse(vars['--vscode-editor-background']);
+      for (const [layer, role] of Object.entries(LAYERS)) {
+        const colour = parse(vars[CHARTS[role]]);
+        const tint = colour.map((c, i) => (pct / 100) * c + (1 - pct / 100) * bg[i]) as RGB;
+        const texts: Record<string, string> = { [`the ${layer} layer`]: vars[CHARTS[role]] };
+        for (const v of ['descriptionForeground', 'foreground']) texts[v] = vars[`--vscode-${v}`];
+        check(`${kind}, ${layer}'s tint`, texts, { [`${layer}'s tint`]: tint }, 4.5);
+      }
+    }
+  });
+
   it('keeps the roles of the web page apart', () => {
     for (const kind of ['light', 'dark'] as const) {
       distinct(`web ${kind}`, Object.fromEntries(ROLES.map((r) => [r, web[kind][CHARTS[r]]])) as Record<Role, string>, 8);

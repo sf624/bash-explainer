@@ -546,6 +546,15 @@
     return t.bands.bash;
   }
 
+  /** The role a node's code is coloured with, as the list colours its tokens (`.kind-*`): a node of the other layers has its token's kind. */
+  const ROLES = /** @type {Record<string, string>} */ ({
+    commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
+    word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
+    list: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
+    function: 'keyword', script: 'substitution', part: 'operator',
+  });
+  const roleOf = (/** @type {any} */ n) => ROLES[n.kind] ?? n.kind;
+
   /** The kinds whose general text the tree shows already: once each, at their first node (`renderReading`). */
   let aboutShown = new Set();
 
@@ -631,18 +640,18 @@
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = chipOf(n);
-    // (The kind, the code and the text wrap together; the links and the band name stay at the top right.)
-    const main = document.createElement('span');
-    main.className = 'tmain';
-    main.append(chip);
-    row.append(twisty, main);
+    // The first line: the code in a pill (in the colour of its role, as in the list) and the kind; at its right,
+    // where a reader takes over, the reader's name, and the links. The text has a line of its own under them.
+    const head = document.createElement('span');
+    head.className = 'thead';
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
     if (code) {
       const c = document.createElement('code');
-      c.className = 'tcode';
+      c.className = `tcode kind-${roleOf(n)}`;
       c.textContent = code;
-      main.append(c);
+      head.append(c);
     }
+    head.append(chip);
     const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
@@ -650,16 +659,19 @@
     text.append(...inline(about));
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
-    main.append(text);
-    row.append(...links);
+    const right = document.createElement('span');
+    right.className = 'tright';
     const bandName = band ? bandOf(n) : '';
     if (bandName) {
       const b = document.createElement('span');
       b.className = 'band-label';
       b.setAttribute('aria-hidden', 'true');
       b.textContent = bandName;
-      row.append(b);
+      right.append(b);
     }
+    right.append(...links);
+    row.append(twisty, head, right);
+    if (about) row.append(text);
     li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n)}. ${about.replace(/`/g, '')}`);
     li.append(row);
     readingNodes.set(li, n);
