@@ -59,7 +59,7 @@ jobs:
       - name: Type check, and unit tests with coverage
         if: matrix.node == 24
         # The two type checks run beside the tests (not before them) and are waited for after: a failure of
-        # either, or of the tests, fails the step. The tests run in parallel (.mocharc.json: three workers on
+        # either, or of the tests, fails the step. The tests run in parallel (.mocharc.cjs: three workers on
         # the four cores of the runner), so the type checks mostly take the fourth core.
         run: |
           npx tsc --noEmit > "$RUNNER_TEMP/tsc-src.log" 2>&1 &
@@ -322,7 +322,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/bash-ast"
           echo "BASH_AST=$RUNNER_TEMP/bash-ast/bash-ast" >> "$GITHUB_ENV"
 
-      # --no-config: .mocharc.json lists every test file, and --spec would add to it.
+      # --no-config: .mocharc.cjs lists every test file, and --spec would add to it.
       - name: Run test/bash-ast.test.ts
         env:
           # Fail instead of skipping when bash-ast cannot be run.
