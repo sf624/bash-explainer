@@ -11,7 +11,7 @@ import { shellState, type StateModel } from './semantics/state';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
-import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
+import { descendants, type Point, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { wordFindings } from './wordfacts';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
@@ -41,6 +41,20 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
       ?? { line, summary: '', items: [], context: [], notes: [], examples: [] };
   }
   return analyzer.explainLine(doc.tree, line, shells.forced ?? shells.detected, opts);
+}
+
+/** A here-document operator (`<<EOF`): its line, and its place among the here-documents that start on that line. */
+export interface HeredocAt { line: number; index: number }
+
+/**
+ * The here-document whose body, or closing delimiter, is on `line` (the hover explains its `<<EOF` there): from the
+ * syntax tree, since the explanation's token of the operator covers only `<<EOF`.
+ */
+export function heredocAt(doc: ShellDocument, line: number): HeredocAt | undefined {
+  const all = descendants(doc.tree.root, ['heredoc_redirect']);
+  // (A here-document always has a body, empty while the delimiter is not written yet. The node ends with the closing line.)
+  const h = all.find((n) => n.startPosition.row < line && n.namedChildren.find((c) => c.type === 'heredoc_body')!.startPosition.row <= line && line <= n.endPosition.row);
+  return h && { line: h.startPosition.row, index: all.filter((n) => n.startPosition.row === h.startPosition.row).indexOf(h) };
 }
 
 /**

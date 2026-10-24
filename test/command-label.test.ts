@@ -6,7 +6,9 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
-import { toMarkdown, toPlainMarkdown } from '../src/ui/render';
+import { partAt } from '../src/ui/hoverParts';
+import { partHover } from '../src/ui/hoverView';
+import { toPlainMarkdown } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens, explain } from './support/explain';
 
@@ -131,7 +133,9 @@ describe('the label of a command', () => {
     assert.match(plain, /\n- `grep` — Print lines/);
     assert.match(plain, /\n {2}- `-E` — /);
     assert.ok(!plain.includes('- `grep -E x f`'));
-    const hover = toMarkdown(ex, 'en', { line: 0, character: 8 }, 'command:x', src);
-    assert.match(hover, /<strong><code>[^\n]*grep<\/span><\/code><\/strong> — Print lines/);
+    // The hover at `x` (an argument of grep) names the command it belongs to by its name.
+    const chain = partAt(ex.items, { line: 0, character: 8 });
+    const hover = partHover({ ex, lang: 'en', theme: 'dark', lineText: src, placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' }, chain);
+    assert.match(hover, /Command: <\/span><span[^>]*>grep<\/span> <span title[^\n]* — Print lines/);
   });
 });

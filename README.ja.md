@@ -11,7 +11,7 @@
 
 シェルスクリプトを1行ずつ解説します。シェルスクリプト版の [regex101](https://regex101.com/) を目指しています。
 
-行にマウスを乗せると、コマンド・オプション・リダイレクト・`${…}` がそれぞれ何をしているかを、書き換えて試せる具体例つきで解説します。知らないスクリプトを読むときにも、シェルを学ぶときにも、教えるときにも役立ちます。
+行のどこにでもマウスを乗せると、その部分（コマンド・オプション・リダイレクト・`${…}`）が何をしているかを、書き換えて試せる具体例つきで解説します。知らないスクリプトを読むときにも、シェルを学ぶときにも、教えるときにも役立ちます。
 
 **設定不要で、[設計上オフラインで動きます](#プライバシー)。** 通信も AI もテレメトリも使いません。日本語と英語に対応しています。
 
@@ -23,7 +23,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 | 場所 | 使い方 |
 | --- | --- |
-| **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて行にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
+| **VS Code** | Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールし、シェルスクリプトを開いて単語にマウスを乗せます。詳しくは [VS Code で使う](#vs-code-で使う) を参照してください。 |
 | VSCodium など Open VSX を使うエディタ | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev と github.dev | 同じ拡張が VS Code for the Web でも動きます（GitHub のリポジトリで `.` を押す）。 |
 | **ブラウザ**（インストールなし） | [ブラウザ版](https://sf624.github.io/bash-explainer/) にスクリプトを貼り付けて、カーソルを動かします。`main` からビルドした [開発版](https://sf624.github.io/bash-explainer/next/) もあります（リリース版と異なる場合があります）。 |
@@ -131,7 +131,7 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 1. Visual Studio Marketplace から **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** をインストールします。
 2. シェルスクリプト（`.sh`、`.bash` など）を開きます。
-3. 知りたい行にマウスを乗せます。キーボードなら、カーソルを置いて `Ctrl+K Ctrl+E`（macOS は `Cmd+K Cmd+E`）です。
+3. 知りたい単語にマウスを乗せます。行全体の解説は、カーソルを置いて `Ctrl+K Ctrl+E`（macOS は `Cmd+K Cmd+E`）を押すか、ホバーの **行全体** をクリックします。
 
 カーソルに追従するサイドペインで見たいときは、ホバーの下の **パネルで詳しく見る** をクリックします。
 
@@ -150,7 +150,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | | 使い方 | 既定 |
 | --- | --- | --- |
 | **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | エディタのタイトルバーやホバーから開く |
-| **ホバー** | 行にマウスを乗せる。またはカーソル行で `Ctrl+K Ctrl+E` | オン |
+| **ホバー** | 単語にマウスを乗せると、その部分の解説。カーソル行で `Ctrl+K Ctrl+E` を押すと行全体 | オン |
 | **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
 
 ステータスバーの **Bash Explainer** をクリックすると、それぞれオン/オフできます。
@@ -163,7 +163,9 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 #### ホバー
 
-行にマウスを乗せると、その場で分解した解説が出ます。
+単語・オプション・演算子にマウスを乗せると、それが何かをその場で解説します。意味、コマンド名の種類（予約語・ビルトイン・関数・エイリアス・プログラムのバッジ）と誰が実行するか、属するコマンドを表示します。隣の単語に移ると、その単語の解説に変わります。インデントの上では、行の構造を1行で表示します。
+
+行全体の解説は、`Ctrl+K Ctrl+E`、右クリックメニューの **カーソル行の bash を解説**、またはホバーの **行全体** で開きます。コマンドごとに、引数とあわせて表示します。
 
 ![ホバー](images/hover.gif)
 
@@ -198,7 +200,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | 設定 | 既定値 | 説明 |
 | --- | --- | --- |
 | **表示** | | |
-| `bashExplainer.hover.enabled` | `true` | マウスを乗せた行の解説をホバーで表示（`Ctrl+K Ctrl+E` はオフでも使える） |
+| `bashExplainer.hover.enabled` | `true` | マウスを乗せた部分の解説をホバーで表示（行全体を解説する `Ctrl+K Ctrl+E` はオフでも使える） |
 | `bashExplainer.hover.followCursor` | `false` | カーソルが移動するたびにホバーを表示 |
 | `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
 | `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |

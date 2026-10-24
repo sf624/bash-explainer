@@ -2,12 +2,14 @@
 // explanations, the problems as diagnostics and their quick fixes, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
-import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain, ShellDocument } from '../src/document';
+import { DocumentIssue, diagnosticsFor, explainDocumentLine, heredocAt, plain, ShellDocument } from '../src/document';
 import { FileKind, kindOfDocument, openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { partAt, rangeOnLine } from '../src/ui/hoverParts';
+import { plainPartHover } from '../src/ui/hoverView';
 import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
 import { readSettingsFile, settingsFile } from './settings-file';
 
@@ -120,7 +122,8 @@ export function startLanguageServer(io: Io): void {
     timers.set(uri, setTimeout(() => publish(uri), 200));
   }
 
-  function hover(doc: Doc, line: number) {
+  /** The part at the position first, then the whole line below a rule (plain Markdown: editors show no HTML, and run no command links). */
+  function hover(doc: Doc, line: number, character: number) {
     if (!settings['hover.enabled']) return null;
     const parsed = parse(doc);
     if (!parsed || line >= parsed.lines.length) return null;
@@ -130,10 +133,10 @@ export function startLanguageServer(io: Io): void {
     // As in VS Code, the hover can be kept short: fewer levels of the tree, no examples.
     const ex = { ...full, items: pruneDepth(full.items, settings['hover.maxDepth']), examples: settings['examples.inHover'] ? full.examples : [] };
     const where = `Bash Explainer · ${lang === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
-    return {
-      contents: { kind: 'markdown', value: toPlainMarkdown(ex, parsed.lines[line], where, lang) },
-      range: { start: { line, character: 0 }, end: { line, character: parsed.lines[line].length } },
-    };
+    const text = parsed.lines[line];
+    const chain = partAt(ex.items, { line, character }, heredocAt(parsed, line));
+    const range = chain.length ? rangeOnLine(chain[chain.length - 1].span, line, text.length) : { start: { line, character: 0 }, end: { line, character: text.length } };
+    return { contents: { kind: 'markdown', value: plainPartHover(ex, chain, lang, toPlainMarkdown(ex, text, where, lang)) }, range };
   }
 
   function codeActions(doc: Doc, range: { start: { line: number }; end: { line: number } }) {
@@ -230,7 +233,7 @@ export function startLanguageServer(io: Io): void {
       }
       case 'textDocument/hover': {
         const doc = docs.get(m.params.textDocument.uri);
-        return void reply(doc ? hover(doc, m.params.position.line) : null);
+        return void reply(doc ? hover(doc, m.params.position.line, m.params.position.character) : null);
       }
       case 'textDocument/semanticTokens/full':
         return void reply(tokens(docs.get(m.params.textDocument.uri)));

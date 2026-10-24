@@ -18,7 +18,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { runBash } from './support/bash';
 import { allTokens } from './support/explain';
 import { readingNodes } from '../src/reading';
-import { toMarkdown, toPlainMarkdown } from '../src/ui/render';
+import { wholeLine } from '../src/ui/hoverView';
+import { toPlainMarkdown } from '../src/ui/render';
 
 const parser = createUnbashParser();
 
@@ -264,7 +265,8 @@ describe('what a command name is, in the outputs with no badge and in the readin
     assert.match(md, /^- `sudo` — Run a command as another user \(root by default\) \(program\)$/m);
     assert.match(md, /^ {2}- `echo` — runs `echo`: .* \(from coreutils\) \(program, run by `sudo`\)$/m);
     assert.match(md, /^- `cd` — Change the current directory \(builtin\)/m);
-    assert.match(toMarkdown(e, 'en'), /— Change the current directory \(builtin\)/);
+    // The hover says it with a badge.
+    assert.match(wholeLine({ ex: e, lang: 'en', theme: 'dark', lineText: 'sudo echo hi; cd /', placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' }), /&nbsp;builtin&nbsp;<\/span><\/span> — Change the current directory/);
     assert.match(toPlainMarkdown(ex('cd /', 'ja'), 'cd /', 'a.sh:1', 'ja'), /— カレントディレクトリを移動する（ビルトイン）/);
   });
 

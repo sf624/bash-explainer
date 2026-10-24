@@ -8,7 +8,8 @@ import { Analyzer, Token } from '../src/analyzer';
 import { main } from '../cli/main';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { joinParts, LABEL_LIMIT, LabelPart, labelParts, labelText } from '../src/label';
-import { codeSpan, labelMarkdown, toMarkdown, toPlainMarkdown } from '../src/ui/render';
+import { wholeLine } from '../src/ui/hoverView';
+import { codeSpan, labelMarkdown, toPlainMarkdown } from '../src/ui/render';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens, explain } from './support/explain';
 
@@ -195,10 +196,9 @@ describe('the label of a construct, shown', () => {
   });
 
   it('is code and italic placeholders in the hover', () => {
-    const hover = toMarkdown(ex(), 'en', { line: 0, character: 1 }, undefined, src);
-    assert.match(hover, /- <strong><code>[^\n]*for<\/span><\/code> <code>[^\n]*f<\/span><\/code> <code>[^\n]*in<\/span><\/code> <i><span style="color:var\(--vscode-descriptionForeground\);">words<\/span><\/i> <code>/);
+    const hover = wholeLine({ ex: ex(), lang: 'en', theme: 'dark', lineText: src, placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' });
+    assert.match(hover, /<b><span[^>]*>for<\/span> <span[^>]*>f<\/span> <span[^>]*>in<\/span> <i><span style="color:var\(--vscode-descriptionForeground\);">words<\/span><\/i> <span/);
     assert.ok(!hover.includes('‹'));
-    assert.ok(!toMarkdown(ex(), 'en', undefined, undefined, src).includes('<strong><code>'));
   });
 });
 

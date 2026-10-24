@@ -21,6 +21,8 @@ Keep it current:
 5. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
 6. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
 
+7. Every pitfall the explanation states, as a diagnostic with its range, at the note levels of the prototype on branch `proto/note-levels`. It needs the analyzer to give the notes as nodes with ranges (after the thinning). Decided with the hover ([design/hover.md](design/hover.md)); diagnostics stay as they are until then.
+
 ## Waiting on the maintainer
 
 - A check on a real phone of the zoom fix (#285).
@@ -34,6 +36,7 @@ Keep it current:
 ## Done lately
 
 - Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
+- The hover explains the part at the position; a card on no part; the whole line per command through `Ctrl+K Ctrl+E` or the hover's link; no tree glyphs; the Language Server's hover starts with the part (#317; [design/hover.md](design/hover.md)).
 - Name kinds: a badge on every command name (keyword, builtin, function, alias, program) and a "Same name, also" line, in both panel views (#306; [design/name-kind.md](design/name-kind.md)).
 - Panel header, Meaning/Reading names, the eight steps, fold motion and the row kept in place (#293, #294, #292); "subshell" in Reading (#296). Plain elbows in Reading (#299).
 - Web page: same icons as VS Code (#297), the bar's order (#298), no version switch on the release page (#302). A pasted script sets the file kind (#295). README npm badge (#300).

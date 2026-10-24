@@ -9,7 +9,8 @@ import { explainGitFormat } from '../src/embedded/gitformat';
 import { toJsRegex } from '../src/examples/regex';
 import { explainSed } from '../src/embedded/sed';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { examplesMarkdown, toMarkdown } from '../src/ui/render';
+import { wholeLine } from '../src/ui/hoverView';
+import { examplesMarkdown } from '../src/ui/render';
 import type { BashParser as Parser } from '../src/syntax/tree';
 
 void path;
@@ -195,7 +196,7 @@ describe('notes on the control pictures in examples', () => {
   it('is shown by the hover, the plain Markdown and the other renderers', () => {
     const src = "printf '\\033[1m%s' OK";
     const ex = explain(src);
-    const md = toMarkdown(ex, 'en', undefined, undefined, src);
+    const md = wholeLine({ ex: ex, lang: 'en', theme: 'dark', lineText: src, placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' });
     assert.ok(md.includes('> Control characters are invisible'));
     assert.ok(examplesMarkdown(ex.examples).join('\n').includes('\n> Control characters are invisible'));
     const nested = examplesMarkdown(ex.examples, '  ').join('\n');

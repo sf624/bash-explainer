@@ -19,6 +19,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- The hover explains the part under the mouse (a word, an option, an operator), and moving to the next word explains that one. The whole line, one block per command, opens with `Ctrl+K Ctrl+E` or the hover's **Whole line** link; before, every hover showed it.
+- The Language Server's hover starts with the part at the position, then the whole line.
 - The panel's header in VS Code is a toolbar, like those of VS Code's own views: the line, the shell's dropdown and the Meaning/Reading switch, then icon buttons with tooltips for Collapse all, Copy as Markdown, Quick reference and Settings. Before, the buttons were text links.
 - On the web page, the Meaning/Reading switch is in the top bar, or in the menu on a phone.
 - On the web page, Collapse all, Copy as Markdown, Quick reference and Settings show the same icons as in the VS Code panel (VS Code's Codicons) and now stand in the panel header's order, with Copy as Markdown before Quick reference, and their icons change for Expand all and Back as there. Before, the page drew its own icons for them.

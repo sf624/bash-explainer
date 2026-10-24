@@ -32,7 +32,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { TreeCache } from '../src/syntax/cache';
 import type { BashParser } from '../src/syntax/tree';
 import { panelUpdate } from '../src/ui/panelView';
-import { toMarkdown } from '../src/ui/render';
+import { partAt } from '../src/ui/hoverParts';
+import { wholeLine } from '../src/ui/hoverView';
 import { allTokens, explain } from './support/explain';
 
 // Lines that the tests of each feature do not reach: the less common inputs, and the ways a
@@ -125,8 +126,8 @@ describe('lines no other test reaches', () => {
 
   it('hover: the token under the cursor, and a line with nothing to explain', () => {
     const e = explain('echo hi');
-    assert.match(toMarkdown(e, 'en', { line: 0, character: 6 }), /<strong><code><span[^>]*>hi<\/span><\/code><\/strong>/);
-    assert.match(toMarkdown({ ...e, items: [], notes: [] }, 'en'), /Nothing to explain/i);
+    assert.deepStrictEqual(partAt(e.items, { line: 0, character: 6 }).map((t) => t.label), ['echo', 'hi']);
+    assert.match(wholeLine({ ex: { ...e, items: [], notes: [] }, lang: 'en', theme: 'dark', lineText: 'echo hi', placement: 'first', panelLink: 'command:x', lineLink: 'command:l', keys: 'K' }), /Nothing to explain/i);
   });
 
   it('host files: a trailing $ in a Makefile recipe, a Jenkinsfile shebang, a Python list item with \\x41', () => {
