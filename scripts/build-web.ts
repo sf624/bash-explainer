@@ -84,7 +84,9 @@ async function main(): Promise<void> {
   if (metafile) fs.writeFileSync(metafile, JSON.stringify(result.metafile));
   const copy = (from: string, to = path.basename(from)) => fs.copyFileSync(path.join(root, from), path.join(outdir, to));
   // The development version and the previews ask search engines to leave them out, so that the released page is the one they find.
-  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '');
+  const index = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8').replace('<!--robots-->', channel !== 'release' ? '<meta name="robots" content="noindex">' : '')
+    // Only the development version and the previews have the version switch in the menu; the release page leaves it out of the markup.
+    .replace(/<!--switch-->(.*?)<!--\/switch-->/s, channel === 'release' ? '' : '$1');
   fs.writeFileSync(path.join(outdir, 'index.html'), index);
   // The compare page: the editor and two copies of the page in panel mode (`?view=panel`).
   fs.writeFileSync(path.join(outdir, 'compare.html'), fs.readFileSync(path.join(root, 'web/compare.html'), 'utf8').replace('<!--robots-->', '<meta name="robots" content="noindex">'));

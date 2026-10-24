@@ -36,9 +36,11 @@ describe('the web page: the menu and the settings sheet', function () {
     assert.strictEqual(await page.locator('#menu-settings').count(), 0);
     const sheet = await until('the sheet in place', async () => (await page.locator('#drawer').boundingBox())!, (b) => Math.abs(b.x) < 0.5);
     assert.ok(sheet.width < 390, JSON.stringify(sheet));
-    for (const id of ['#kind-menu', '#menu-copy', '#lang', '#theme', '#channel', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
+    for (const id of ['#kind-menu', '#menu-copy', '#lang', '#theme', '#menu-sample', '#menu-share', '#menu-install', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
       assert.strictEqual(await page.locator(id).isVisible(), true, id);
     }
+    // The release page has no version switch and no link to the development version.
+    assert.strictEqual(await page.locator('#channel, #channel-label, #dev-link').count(), 0);
     // The shared actions keep the panel's order (collapse, copy, quick reference): on a phone the fold and the
     // quick reference are in the bar in that order, and the copy leads the menu's actions.
     const [cx, rx] = await Promise.all(['#collapse', '#ref'].map(async (id) => (await page.locator(id).boundingBox())!.x));
