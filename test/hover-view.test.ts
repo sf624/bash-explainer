@@ -220,7 +220,7 @@ describe('the hover Markdown', () => {
     assert.match(md, /\[\$\(comment-discussion\) \d+ more in the panel\]\(command:panel\)/);
     // The command it belongs to, then the notes of the line, after the part.
     const command = lines.findIndex((l) => l.includes('Command: '));
-    const note = lines.findIndex((l) => l.startsWith('> Idiom'));
+    const note = lines.findIndex((l) => (l.startsWith('> ') && l.includes(' Idiom')));
     assert.ok(command > 4 && note > command, md);
     // The examples of the part, at the end; the footer says where it is.
     assert.ok(lines.findIndex((l) => l.startsWith('#### Example')) > note);
@@ -253,7 +253,7 @@ describe('the hover Markdown', () => {
     const md = partMd(open('exit 300'), 0, 0);
     assert.match(md, /\(builtin\)|&nbsp;builtin&nbsp;/);
     assert.match(md, /<small>Bash manual \[4\.1\]\(https:\/\/www\.gnu\.org\/software\/bash\/manual\/html_node\/Bourne-Shell-Builtins\.html "Bourne Shell Builtins"\)/);
-    assert.match(md, /^> ℹ An exit status is 0–255, .* <small>Bash manual \[3\.7\.5\]\(/m);
+    assert.match(md, /^> <span style="color:var\(--vscode-descriptionForeground\);">\$\(info\)<\/span> An exit status is 0–255, .* <small>Bash manual \[3\.7\.5\]\(/m);
     const row = partMd(open('a | b'), 0, 0);
     assert.ok(row.includes('<small>Bash manual <a href="https://www.gnu.org/software/bash/manual/html_node/Pipelines.html" title="Pipelines">3.2.3</a></small>') || !row.includes('<table>'));
     const pipe = wholeLine(input(open('a | b'), 0));
@@ -298,7 +298,7 @@ describe('the hover Markdown', () => {
     assert.ok(md.includes('<tr><td>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--vscode-charts-orange);">-⁠name</span>'), md);
     assert.match(lines[lines.length - 1], /^\[\$\(comment-discussion\) \d+ more in the panel\]\(command:panel\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]/);
     // The notes after the commands.
-    assert.ok(lines.findIndex((l) => l.startsWith('> Idiom')) > lines.lastIndexOf('<table>'));
+    assert.ok(lines.findIndex((l) => (l.startsWith('> ') && l.includes(' Idiom'))) > lines.lastIndexOf('<table>'));
     // One command: no breadcrumb, and the panel link as it is.
     const one = wholeLine(input(open('ls -l'), 0));
     assert.ok(!one.includes('<small><span title'));
@@ -310,9 +310,40 @@ describe('the hover Markdown', () => {
     const x = { ...input(doc, 1), ex: new Analyzer('en').explainLine(doc.tree, 1, 'sh') };
     const md = wholeLine(x);
     assert.match(md, /^\*\*Bash Explainer\*\* · Line 2 · checked for POSIX sh/);
-    assert.match(md, /> ⚠ `\[\[ \]\]` is not POSIX sh/);
+    // (The mark is the level's codicon, in the level's colour.)
+    assert.match(md, /> <span style="color:var\(--vscode-editorWarning-foreground\);">\$\(warning\)<\/span> `\[\[ \]\]` is not POSIX sh/);
     assert.match(wholeLine(input(doc, 2)), /Nothing to explain/);
     assert.match(wholeLine({ ...input(doc, 2), lineText: '  x' }), /Nothing to explain/);
+  });
+
+  it('shows each note with its level: its codicon and word in its colour, warnings first', () => {
+    // A plain fact, a caveat and a pitfall, in the order found.
+    const doc = open('exit 300; read line; x = 1');
+    const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
+    const whole = (theme: ThemeKind) => notes(wholeLine(input(doc, 0, { theme })));
+    const w = 'var(--vscode-editorWarning-foreground)';
+    const i = 'var(--vscode-editorInfo-foreground)';
+    const [warning, info, note] = whole('dark');
+    assert.ok(warning.startsWith(`> <span style="color:${w};">$(warning)</span> <span style="color:${w};"><strong>Pitfall:</strong></span> \`x =…\` runs`), warning);
+    assert.ok(info.startsWith(`> <span style="color:${i};">$(info)</span> <span style="color:${i};"><strong>Caveat:</strong></span> without`), info);
+    // (A plain fact: the info icon, muted, and no word.)
+    assert.ok(note.startsWith('> <span style="color:var(--vscode-descriptionForeground);">$(info)</span> An exit status'), note);
+    // Our own colours where the theme's are not readable as text (src/ui/palette.ts, LEVEL_COLOURS).
+    assert.match(whole('light')[0], /^> <span style="color:#855f00;">\$\(warning\)<\/span>/);
+    assert.match(whole('light')[1], /^> <span style="color:#005fb8;">\$\(info\)<\/span>/);
+    assert.match(whole('highContrast')[0], /^> <span style="color:var\(--vscode-editorWarning-foreground\);">/);
+    assert.match(whole('highContrast')[1], /^> <span style="color:#6badff;">/);
+    assert.match(whole('highContrastLight')[0], /^> <span style="color:#704500;">/);
+    // The part's hover shows them the same way, and the sanitizer keeps every colour.
+    assert.deepStrictEqual(notes(partMd(doc, 0, 0)), whole('dark'));
+    for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
+      checkHtml(wholeLine(input(doc, 0, { theme })), `levels ${theme}`);
+      checkHtml(partMd(doc, 0, 0, { theme }), `levels, part ${theme}`);
+    }
+    // In Japanese, the word of the language.
+    const ja = notes(wholeLine(input(doc, 0, { lang: 'ja' })));
+    assert.match(ja[0], /<strong>落とし穴:<\/strong>/);
+    assert.match(ja[1], /<strong>注意:<\/strong>/);
   });
 
   it('places the examples of the whole line by the setting', () => {

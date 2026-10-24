@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
-import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
+import { FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
 import { THEME_SETTINGS, themeRoleColours } from './themeColours';
 import { panelPalette, paletteVars, type PanelBase } from './themePalette';
@@ -146,6 +146,7 @@ export class PanelController implements vscode.Disposable {
       detected: this.service.detectedShell(ed.document),
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
+      marks: lineMarks(this.service.issues(ed.document), line),
     }));
   }
 

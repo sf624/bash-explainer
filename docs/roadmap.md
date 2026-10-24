@@ -14,14 +14,13 @@ Keep it current:
 
 ## Next, in this order
 
-1. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
-2. bash 5.3, step 2 of [design/bash-versions.md](design/bash-versions.md): fix the explanations of `printf %#q` and `%ls` first (they are wrong today), then steps 3–7.
-3. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
-4. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
-5. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
-6. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
-
-7. Every pitfall the explanation states, as a diagnostic with its range, at the note levels of the prototype on branch `proto/note-levels`. It needs the analyzer to give the notes as nodes with ranges (after the thinning). Decided with the hover ([design/hover.md](design/hover.md)); diagnostics stay as they are until then.
+1. Every pitfall stated as a problem, with its level and its range, once the thinned analyzer gives note nodes ([design/note-levels.md](design/note-levels.md), "The bridge"): the views then read the level from the node, not from the note's mark (`noteLevel`, `splitNote`). Today only the pitfalls of src/pitfalls.ts and src/wordfacts.ts are problems. Decided with the hover ([design/hover.md](design/hover.md)); the other notes stay out of the diagnostics until then.
+2. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
+3. bash 5.3, step 2 of [design/bash-versions.md](design/bash-versions.md): fix the explanations of `printf %#q` and `%ls` first (they are wrong today), then steps 3–7.
+4. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
+5. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
+6. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
+7. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
 
 ## Waiting on the maintainer
 
@@ -38,6 +37,7 @@ Keep it current:
 - Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
 - The hover explains the part at the position; a card on no part; the whole line per command through `Ctrl+K Ctrl+E` or the hover's link; no tree glyphs; the Language Server's hover starts with the part (#317; [design/hover.md](design/hover.md)).
 - Name hints after the command names that do not run what they suggest, in VS Code and the Language Server; the inline summary removed, its settings deprecated (#318; [design/hover.md](design/hover.md)).
+- Note levels: warning, caveat and plain fact, from the catalog, the style checks and the dialect issues, shown with an icon, a word and a colour in every view (#PR; [design/note-levels.md](design/note-levels.md)).
 - Name kinds: a badge on every command name (keyword, builtin, function, alias, program) and a "Same name, also" line, in both panel views (#306; [design/name-kind.md](design/name-kind.md)).
 - Panel header, Meaning/Reading names, the eight steps, fold motion and the row kept in place (#293, #294, #292); "subshell" in Reading (#296). Plain elbows in Reading (#299).
 - Web page: same icons as VS Code (#297), the bar's order (#298), no version switch on the release page (#302). A pasted script sets the file kind (#295). README npm badge (#300).

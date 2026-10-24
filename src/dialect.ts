@@ -6,6 +6,7 @@ import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
+import { type NoteLevel, notePrefix, PORTABILITY } from './messages';
 import { ancestor, braceTakenAsWord, descendants, field, prefixAssignments, substitutionForm } from './syntax/tree';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
@@ -348,6 +349,11 @@ function commandFeatures(name: string, nodes: SyntaxNode[], add: (id: string) =>
   }
 }
 
+/** The level of a dialect issue (src/messages.ts, `NoteLevel`): what fails in the shell is a warning, the rest information. */
+export function issueLevel(kind: Issue['kind']): NoteLevel {
+  return kind === 'unsupported' ? 'warning' : kind === 'behaviour' ? 'info' : 'note';
+}
+
 /** A problem in a script for its target shell, with where it is. */
 export interface Issue {
   id: string;
@@ -393,7 +399,7 @@ function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefi
   const b = BEHAVIOURS[id];
   // For POSIX sh, name the common /bin/sh implementations that differ.
   const differ = shell === 'sh' ? (['dash', 'ash'] as RealShell[]).filter((sh) => b.differs.includes(LETTER[sh])) : shell !== 'bash' && b.differs.includes(LETTER[shell]) ? [shell] : [];
-  return differ.length ? 'ℹ ' + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
+  return differ.length ? notePrefix(lang, 'info', 'note', PORTABILITY) + s(b.ja(differ.map((x) => SHELL_NAMES[x]).join('・')), b.en(differ.map((x) => SHELL_NAMES[x]).join(' and '))) : undefined;
 }
 
 /** The line and column of an offset in the text. */

@@ -3,7 +3,9 @@ import { Shell, SHELL_NAMES } from '../dialect';
 import { YQ_NAMES } from '../embedded/yq';
 import { RerunSpec } from '../examples/rerun';
 import { Lang } from '../i18n';
-import { ExamplePlacement, noteRefs, placeExamples, ui } from './render';
+import type { DocumentIssue } from '../document';
+import { type NoteLevel, splitNote } from '../messages';
+import { ExamplePlacement, noteRefs, notesByLevel, placeExamples, ui } from './render';
 import { manualLabel, SECTIONS } from '../manual';
 import { readingNodes } from '../reading';
 import type { PanelBase } from './themePalette';
@@ -47,6 +49,8 @@ export interface PanelLine {
   placement: ExamplePlacement;
   /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
   animations: boolean;
+  /** The problems on the line, as the editor underlines them: columns from 0, and the level of each. */
+  marks?: { from: number; to: number; level: NoteLevel }[];
 }
 
 /**
@@ -63,6 +67,12 @@ function manualLinks(lang: Lang, ex: LineExplanation): Record<string, { label: s
   // (And those of the tree view: the sections of bash's own reading, where no token says them.)
   for (const n of ex.reading ? readingNodes(ex.reading) : []) for (const id of n.refs ?? []) ids.add(id);
   return Object.fromEntries([...ids].map((id) => [id, { label: manualLabel(lang, [id]), title: SECTIONS.get(id)!.title, url: SECTIONS.get(id)!.url }]));
+}
+
+/** The problems on `line`, as the panel underlines them in its copy of the line (to its end when they go on). */
+export function lineMarks(issues: readonly DocumentIssue[], line: number): { from: number; to: number; level: NoteLevel }[] {
+  return issues.filter((i) => i.startLine === line && (i.endLine > line || i.endCol > i.startCol))
+    .map((i) => ({ from: i.startCol, to: i.endLine === line ? i.endCol : Number.MAX_SAFE_INTEGER, level: i.severity }));
 }
 
 /** The message that shows a line's explanation in the panel. */
@@ -90,6 +100,10 @@ export function panelUpdate(p: PanelLine) {
     examplesFirst: p.placement === 'first',
     animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
+    // The notes as drawn: warnings first, each with its level and the word after its mark (src/messages.ts).
+    notes: notesByLevel(ex.notes).map((n) => ({ ...splitNote(n, lang), refs: noteRefs(ex, n) ?? [] })),
+    levelLabels: lang === 'ja' ? { warning: '警告', info: '情報', note: '補足' } : { warning: 'Warning', info: 'Information', note: 'Note' },
+    marks: p.marks ?? [],
     emptyMessage: t.empty,
     settingsLabel: t.settings,
   };

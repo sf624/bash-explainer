@@ -52,3 +52,30 @@ export function errorColour(theme: ThemeKind): string {
 export function roleColour(role: Role, theme: ThemeKind): string {
   return THEME_COLOURS[theme][role] ?? `var(${CHART_VARIABLE[role]})`;
 }
+
+/** A level of a note (src/messages.ts) that has a colour: `note` has none. */
+export type ColouredLevel = 'warning' | 'info';
+
+/** The theme colour of each level: the one the editor's squiggles and the Problems panel's icons take. */
+export const LEVEL_VARIABLE: Record<ColouredLevel, string> = {
+  warning: '--vscode-editorWarning-foreground',
+  info: '--vscode-editorInfo-foreground',
+};
+
+/**
+ * The colours of the levels where the theme's fall below 4.5:1 as text (7:1 in high contrast), adjusted keeping the
+ * hue: Light Modern's warning #bf8803 is 3.12:1 on white and its info #1a85ff 3.59:1; High Contrast's info #3794ff is
+ * 6.84:1 on black; High Contrast Light's warning #895503 is 6.24:1 on white and its info #1a85ff 3.59:1.
+ * media/panel.css (`--c-warning`, `--c-info`) and web/theme.css (`--vscode-editorWarning-foreground`…) hold the same
+ * values, and test/contrast.test.ts measures them.
+ */
+export const LEVEL_COLOURS: Partial<Record<ThemeKind, Partial<Record<ColouredLevel, string>>>> = {
+  light: { warning: '#855f00', info: '#005fb8' },
+  highContrast: { info: '#6badff' },
+  highContrastLight: { warning: '#704500', info: '#0f4a85' },
+};
+
+/** The CSS colour of a level in a theme kind. */
+export function levelColour(level: ColouredLevel, theme: ThemeKind): string {
+  return LEVEL_COLOURS[theme]?.[level] ?? `var(${LEVEL_VARIABLE[level]})`;
+}

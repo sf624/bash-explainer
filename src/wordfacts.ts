@@ -20,6 +20,8 @@ import type { SyntaxNode } from './syntax/tree';
 
 /** The file commands whose unquoted variables are worth a warning. */
 const PATH_COMMANDS = new Set(['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod', 'chown', 'ln', 'cat', 'source', '.']);
+/** Of those, the ones that delete or overwrite what a path names: a wrong path given to them cannot be undone. */
+const DESTRUCTIVE_COMMANDS = new Set(['rm', 'cp', 'mv']);
 
 /**
  * The command a resolution runs, when it is known: an alias is its target. A function keeps its name: bash expands
@@ -52,11 +54,8 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
   return wordFindings(root, lang, model, shell, line, line).map((f) => f.fact).filter((f, i, all) => all.findIndex((g) => g.text === f.text) === i);
 }
 
-/**
- * A word fact found, with the node it is about (for a diagnostic's range). `mild`: what it says breaks only the
- * command, and the shell goes on (an unset read in a redirection of a program, `cat < "$f"` with `set -u`).
- */
-export interface WordFinding { fact: Fact; node: SyntaxNode; mild?: boolean }
+/** A word fact found, with the node it is about (for a diagnostic's range); its level is the fact's. */
+export interface WordFinding { fact: Fact; node: SyntaxNode }
 
 /** The word facts whose node starts on a line from `from` to `to`, in one walk of the tree. */
 export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
@@ -69,7 +68,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
   const facts: WordFinding[] = [];
   // (The node is the one being checked, unless a narrower one is given.)
   let at = root;
-  const add = (f: Fact, node: SyntaxNode = at, mild = false) => facts.push({ fact: f, node, ...(mild ? { mild } : {}) });
+  const add = (f: Fact, node: SyntaxNode = at) => facts.push({ fact: f, node });
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check((at = n));
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
@@ -89,7 +88,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
           add(fact(lang, 'nounset-unbound', {
             v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), ...(plain ? { fix: `\${${u.shown}:-}` } : {}),
-          }), n, u.exits === 'command' && !errexit);
+          }), n);
         }
         break;
       }
@@ -112,7 +111,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         const ran = nameNode && /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true })) : undefined;
         if (ran && PATH_COMMANDS.has(ran)) {
           const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
-          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word) }), word);
+          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word), ...(DESTRUCTIVE_COMMANDS.has(ran) ? { destroys: true } : {}) }), word);
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.

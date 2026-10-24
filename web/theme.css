@@ -2,7 +2,7 @@
  * The VS Code theme variables the panel uses (media/panel.css), with the colours of VS Code's
  * Light Modern and Dark Modern themes, following the system setting unless the page's theme switch says Light or Dark.
  * The chart colours, which colour the parts of a line, and the error colour are our own where VS Code's fall
- * below 4.5:1 as text: those of src/ui/palette.ts (test/contrast.test.ts compares them and measures them).
+ * below 4.5:1 as text: those of src/ui/palette.ts (the levels of the notes too: LEVEL_COLOURS) (test/contrast.test.ts compares them and measures them).
  */
 :root {
   color-scheme: light dark;
@@ -37,6 +37,8 @@
   --vscode-charts-purple: #5f2489;
   --vscode-charts-red: #d0020f;
   --vscode-charts-yellow: #645000;
+  --vscode-editorWarning-foreground: #855f00;
+  --vscode-editorInfo-foreground: #005fb8;
 
   --page-background: #f8f8f8;
   --page-accent: #005fb8;
@@ -71,6 +73,8 @@
     --vscode-charts-purple: #b180d7;
     --vscode-charts-red: #ff5c65;
     --vscode-charts-yellow: #cca700;
+    --vscode-editorWarning-foreground: #cca700;
+    --vscode-editorInfo-foreground: #3794ff;
 
     --page-background: #181818;
     --page-accent: #0078d4;
@@ -109,6 +113,8 @@
   --vscode-charts-purple: #b180d7;
   --vscode-charts-red: #ff5c65;
   --vscode-charts-yellow: #cca700;
+  --vscode-editorWarning-foreground: #cca700;
+  --vscode-editorInfo-foreground: #3794ff;
 
   --page-background: #181818;
   --page-accent: #0078d4;

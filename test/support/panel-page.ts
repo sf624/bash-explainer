@@ -11,7 +11,8 @@ import * as path from 'path';
 import { Analyzer } from '../../src/analyzer';
 import { Lang } from '../../src/i18n';
 import { createUnbashParser } from '../../src/syntax/adapters/unbash';
-import { PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
+import { documentIssues } from '../../src/document';
+import { lineMarks, PANEL_BODY, panelUpdate } from '../../src/ui/panelView';
 
 const root = path.join(__dirname, '..', '..');
 export const SAMPLE = 'find . -name "*.log" -mtime +7 | xargs rm -f 2>/dev/null';
@@ -20,8 +21,11 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
 /** The update message for `line` (the second line of the script `file`), as the extension sends it. */
 function message(lang: Lang, line: string, file: string): unknown {
   const src = `#!/bin/bash\n${line}\n`;
-  const ex = new Analyzer(lang).explainLine(createUnbashParser().parse(src), 1, 'bash', { reading: true });
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first', animations: true });
+  const tree = createUnbashParser().parse(src);
+  const ex = new Analyzer(lang).explainLine(tree, 1, 'bash', { reading: true });
+  // (The line's problems, as the editor underlines them.)
+  const marks = lineMarks(documentIssues({ lines: src.split('\n'), tree }, lang, { detected: 'bash' }), 1);
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first', animations: true, marks });
 }
 
 const HOST = `(function () {

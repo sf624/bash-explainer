@@ -24,13 +24,13 @@ A name the reader asked for gets none: `builtin cd`, `command ls`, `\ls`, `sudo 
 The pitfalls that the explanation of a line points out are now problems too. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).
 
 ```text
-script.sh:2:10: warning: Pitfall: the output of $(ls …) is split on spaces and newlines, so file names with spaces break. Use a glob, as in for f in *.txt [for-over-ls-output]
+script.sh:2:10: info: Caveat: the output of $(ls …) is split on spaces and newlines, so file names with spaces break. Use a glob, as in for f in *.txt [for-over-ls-output]
 script.sh:3:8: warning: Pitfall: if DIR is empty this becomes rm -r /*, deleting from the root. Write "${DIR:?}"/* to stop when it is empty [rm-empty-variable-root]
-script.sh:3:8: info: Pitfall: $DIR/* is not quoted, so a value with spaces or * is split into several arguments or expanded to file names. Write "$DIR"/* [unquoted-variable-as-path]
+script.sh:3:8: warning: Pitfall: $DIR/* is not quoted, so a value with spaces or * is split into several arguments or expanded to file names. Write "$DIR"/* [unquoted-variable-as-path]
 script.sh:4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment. Write x=… with no spaces around = [assignment-with-spaces]
 ```
 
-Warnings, for what breaks the script:
+Warnings, for what breaks the script as written or does damage that cannot be undone (the levels: [docs/design/note-levels.md](../design/note-levels.md)):
 
 | Code | Example |
 | --- | --- |
@@ -43,17 +43,18 @@ Warnings, for what breaks the script:
 | `brace-close-no-separator` | `{ echo a }` |
 | `rm-empty-variable-root` | `rm -rf $DIR/*` |
 | `prefix-assignment-expanded-first` | `FOO=1 echo $FOO` |
-| `for-over-ls-output` | `for f in $(ls)` |
-| `for-over-unquoted-args` | `for a in $*` |
+| `unquoted-variable-as-path` | `rm $f`, `mv $a $b`, `cp $src /tmp/` |
 | `redirect-by-your-shell` | `sudo cmd > /etc/x` |
 | `nounset-unbound` | `set -u; echo "$dir"` (information when only the command fails: `cat < "$f"`) |
 | `shebang-refused` | `#!/bin/bash -e -u` |
 
-Information, for what is frequent and harmless with most values:
+Information, for what goes wrong only with some values, and where the damage is limited:
 
 | Code | Example |
 | --- | --- |
-| `unquoted-variable-as-path` | `cp $src /tmp/` |
+| `unquoted-variable-as-path` | `cat $f`, `cd $dir`, `chmod +x $f` |
+| `for-over-ls-output` | `for f in $(ls)` |
+| `for-over-unquoted-args` | `for a in $*` |
 | `unquoted-variable-in-test` | `[ $a = b ]` |
 | `read-without-r` | `read line` |
 
@@ -217,6 +218,32 @@ Any hover with a position explains the part there: a word, an option, an operato
 - The tree has no glyphs (`├─ └─`) any more: the parts are indented, and their labels are coloured without the code background.
 - `hover.followCursor` shows the part at the cursor.
 - The Language Server's hover (`textDocument/hover`) starts with the part at the position, in plain Markdown, then the whole line below a rule. Its range is the part.
+
+### Note levels
+
+A note says how much it matters, with a mark, a word and a colour:
+
+| Level | Mark and word | When |
+| --- | --- | --- |
+| Warning | ⚠ Pitfall / 落とし穴 | The line breaks as written, or if it goes wrong the damage cannot be undone: `x = 1`, `[-f x]`, `rm -rf $DIR/*` with an empty `DIR`, a stop under `set -u`. |
+| Information | ⓘ Caveat / 注意 | It goes wrong only with some values or systems and the damage is limited, or a failure goes unnoticed: `echo $x`, `read line`, `local x=$(false)`. |
+| Information | ⓘ Portability / 移植性 | It works differently in the target shell: dash's `echo` reads `\n`. |
+| Note | ℹ (no word) | A fact of how the shell runs the line. |
+
+- The panel shows the level's icon (VS Code's warning and info icons) and its word in bold, in the editor's warning or info colour (ours where the theme's is too light as text), and colours the note's left border. A plain fact keeps the grey border and a muted icon. The panel's copy of the line underlines the line's problems as the editor does.
+- The hover shows the same icon and word; the command line colours the mark and the word (yellow, blue); Copy as Markdown keeps the mark and puts the word in bold (`> ⚠ **Pitfall:** …`).
+- Every view lists the warnings first, then the information, then the plain facts.
+- A construct the target shell lacks (`[[ ]]` in sh) stays a warning, with no word: its text says it fails, and where. A note on what works differently started with ℹ before; it is ⓘ Portability now.
+- The notes that say a command fails when it runs are warnings now: `[` without `]`, `[ -f x]`, a `[` test it cannot read, `unset` of a read-only variable, `unset -f -v`.
+
+Problems whose severity changed:
+
+| Code | Now | Before |
+| --- | --- | --- |
+| `unquoted-variable-as-path` given to `rm`, `mv` or `cp` | warning | information |
+| `dockerPipefail` (a Dockerfile `RUN` pipe without pipefail) | information | warning |
+
+`for-over-ls-output` and `for-over-unquoted-args` are information: they break only names with spaces (they are new problems in this release).
 
 ## Fixed
 

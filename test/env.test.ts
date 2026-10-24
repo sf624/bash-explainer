@@ -202,7 +202,7 @@ describe('explanations from the execution environment', () => {
   const about = (src: string, label: string, lang: 'en' | 'ja' = 'en', line = 0): string => allTokens(explain(src, lang, line).items).find((t) => t.label === label)!.explanation;
   const pid = (src: string, lang: 'en' | 'ja' = 'en', line = 0, shell?: Shell): string =>
     allTokens(new Analyzer(lang).explainLine(parser.parse(src), line, shell).items).find((t) => t.label === '$$' && t.kind === 'variable')!.explanation;
-  const pitfalls = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /落とし穴|Pitfall/.test(n));
+  const pitfalls = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[⚠ⓘ] (落とし穴|注意|Pitfall|Caveat)/.test(n));
   const bash = (code: string): string => spawnSync('bash', ['--norc', '--noprofile', '-c', code], { encoding: 'utf8', cwd: '/tmp', env: { PATH: process.env.PATH } }).stdout;
   const hasBash = spawnSync('bash', ['--version']).status === 0;
 
