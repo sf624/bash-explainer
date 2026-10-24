@@ -655,6 +655,35 @@ describe('tricky lines (round 3)', () => {
     assert.strictEqual(explainArith('$x + $y[2]', 'en')!.tokens[0].children.length, 2);
   });
 
+  it('says that spaces around `=` are allowed in arithmetic, and only there', () => {
+    // bash: `for (( i = 0; …))`, `(( x = 1 ))`, `$(( y = 2 ))` and `let 'z = 3'` assign; `a = 1` runs a command `a`.
+    assert.strictEqual(bash("for (( i = 0; i < 3; i++ )); do :; done; (( x = 1 )); : $(( y = 2 )); let 'z = 3'; echo $i $x $y $z"), '3 1 2 3\n');
+    const src = 'for (( i = 0; i < 3; i++ )); do :; done';
+    assert.strictEqual(find(src, 'i = 0').explanation, 'Assign the value of the arithmetic expression to variable `i` (in arithmetic, spaces around `=` are allowed)');
+    assert.strictEqual(find(src, 'i = 0', 'ja').explanation, '変数 `i` に算術式の値を代入する（算術式の中なので、`=` の前後に空白を入れてよい）');
+    for (const s of [src, 'for ((i=0; i<3; i++)); do :; done', '(( x = 1 ))', 'echo $(( y = 2 ))', "let 'z = 3'"]) {
+      for (const lang of ['en', 'ja'] as const) assert.ok(!tokens(s, lang).some((t) => /no spaces around|前後に空白は入れられない/.test(t.explanation)), `${lang}: ${s}`);
+    }
+    assert.match(find('a=1', 'a=1').explanation, /\(no spaces around `=`\)/);
+  });
+
+  it('explains a name in arithmetic as a variable, also in a `for (( ))` header', () => {
+    // bash reads `x` as the variable: `!x` is 1 when x is 0, `-x`, `~x`; in a `for (( ))` header too.
+    assert.strictEqual(bash('x=0; y=1; (( !x )) && echo a; (( !x && y )) && echo b; (( -x == 0 && ~x == -1 )) && echo c; done=0; n=0; for ((; !done; )); do n=$((n + 1)); (( n == 3 )) && done=1; done; echo $n'),
+      'a\nb\nc\n3\n');
+    const cases: [string, string][] = [
+      ['(( !x ))', 'x'], ['(( x ))', 'x'], ['(( -x ))', 'x'], ['(( ~x ))', 'x'], ['(( !x && y ))', 'x'], ['(( !x && y ))', 'y'],
+      ['for ((; !x; )); do :; done', 'x'], ['for ((; !done; )); do :; done', 'done'], ['for ((; !x && y; )); do :; done', 'y'], ['for ((; x; )); do :; done', 'x'],
+      ['for (( i = 0; i < n; i++ )); do :; done', 'n'],
+    ];
+    for (const [s, name] of cases) {
+      for (const lang of ['en', 'ja'] as const) {
+        const own = tokens(s, lang).filter((t) => t.label === name && t.kind !== 'keyword');
+        assert.deepStrictEqual(own.map((t) => [t.kind, t.explanation]), [['variable', lang === 'en' ? `Variable \`${name}\`` : `変数 \`${name}\``]], `${lang}: ${s}`);
+      }
+    }
+  });
+
   it('computes the shift operators of constants as bash does', () => {
     const exprs = ['1<<4', '1<<62', '1<<63', '1<<64', '1<<-1', '256>>4', '-8>>1', '1+1<<2', '1<<1+1', '(1<<2)*3', '3>>1', '1<<63>>63', '2**63', '2**64', '9223372036854775807*2', '-9223372036854775807-2', '- (1<<63)'];
     for (const e of exprs) {

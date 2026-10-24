@@ -357,6 +357,24 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - The words of an ssh command that this shell expands before sending them are the ones bash expands: `'a'*`, `"a"*`, `a=~/x`, `x=~`, `<(echo hi)` and `>(cat)` now get the pitfall, and a `*` after `set -f` or `set -o noglob` no longer does.
 - A variable read in a `bash -c` string that bash cannot parse (`bash -c 'echo ${y'`) no longer gets the pitfall that it is not exported.
 
+### What `|| true` masks
+
+`|| true` and `|| :` make a failure a success only when what runs is the builtin, or the program `true`. A function of that name runs instead of the builtin, and its status counts (bash 5.2):
+
+| Written, under `set -e` | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `true() { return 1; }` then `x=$(false \|\| true)` | stops at the assignment | the script stops here if it fails | the idiom "`\|\| true`: turns a failure into success" |
+| `:() { return 1; }` then `x=$(false \|\| :)` | stops | the same | the same |
+| `x=$(false \|\| command true)`, `builtin true`, `/bin/true` | goes on | the idiom, and no note on `$( )` | the script stops here if it fails |
+| `x=$(false \|\| : "${u:?}")` | stops (`u` is unset) | the script stops here if it fails | the same |
+
+A word after `true`, a redirection or an assignment before it takes the reading away: they may fail. `while true` is an endless loop under the same rule: after `true() { return 1; }`, the body never runs, and the idiom is gone; `while command true` is one.
+
+### Arithmetic in a `for (( ))` header
+
+- `for (( i = 0; i < 3; i++ ))`: the initializer says "Assign the value of the arithmetic expression to variable `i` (in arithmetic, spaces around `=` are allowed)". Before, it said "(no spaces around `=`)", which holds only outside arithmetic. `(( x = 1 ))`, `$(( y = 2 ))` and `let 'z = 3'` never said it.
+- A name in the header is the variable bash reads, as in `(( ))`: `x` in `for ((; !x; ))`, `-x`, `~x`, and `i` and `n` in `i < n`. Before, `x` was "Word `x`", and the names beside an operator were not explained.
+
 ### Quote removal in find's expression
 
 find's expression is read from its words as bash passes them, after quote removal. A word whose value is not known (`$x`, an unquoted glob) is read as written.

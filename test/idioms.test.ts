@@ -4,12 +4,14 @@ import { findIdioms, simulateRedirects } from '../src/idioms';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { shellState } from '../src/semantics/state';
+import { statusModel } from '../src/semantics/status';
 
-// The idioms of the statements of a source text (the kinds of statement the analyzer collects on a line).
+// The idioms of the statements of the lines of a script (the kinds of statement the analyzer collects on a line).
 const STATEMENTS = ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'];
-function idioms(sources: string[], lang: 'en' | 'ja'): string[] {
-  const parser = createUnbashParser();
-  return findIdioms(sources.flatMap((src) => descendants(parser.parse(src).root, STATEMENTS)), lang);
+function idioms(lines: string[], lang: 'en' | 'ja'): string[] {
+  const tree = createUnbashParser().parse(lines.join('\n'));
+  return findIdioms(descendants(tree.root, STATEMENTS), lang, statusModel(shellState(tree)));
 }
 /** Whether the statements of `src` hold one `set` that turns on errexit, nounset and pipefail. */
 const isStrictMode = (src: string): boolean => idioms([src], 'en').some((n) => /strict mode/.test(n));

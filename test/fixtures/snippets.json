@@ -1279,6 +1279,7 @@
  "trap 'rm -f $tmp' EXIT",
  "trap 'rm f' INT",
  "trap - INT; v=2",
+ "true",
  "try input",
  "type -t ls",
  "typeset -i n=1",
