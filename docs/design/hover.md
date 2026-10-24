@@ -59,6 +59,8 @@ An inlay hint after a command name, only where the name does not run what a read
 
 The hint is plain text (VS Code shows no Markdown in a hint); its tooltip says what runs, who runs it, the other meanings of the name and what it does. A click opens the line in the panel. `bashExplainer.hints.names` turns them off; VS Code's `editor.inlayHints.enabled` turns every hint on, off, or on while `Ctrl+Alt` is held. The Language Server gives the same hints (`textDocument/inlayHint`), with the tooltip and no command.
 
+VS Code (1.142) keeps a copy of the hints of the line whose hint the mouse is on, and puts it back when the mouse moves off, even after the hints were asked for again. A setting changed in between (the language) left that one hint stale. So for a minute after a refresh, a move of the cursor asks for the hints again.
+
 ## Why the inline summary was removed
 
 The inline summary was a faint line at the end of the cursor line: the line's summary, cut to `inline.maxLength`. The study tried to keep it (the part at the cursor instead of the line, as eldoc does), and found:
