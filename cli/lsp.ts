@@ -1,5 +1,5 @@
 // A Language Server (LSP over standard input and output) for editors other than VS Code: hover
-// explanations, the problems as diagnostics and their quick fixes, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
+// explanations, the problems as diagnostics and their quick fixes, hints after surprising command names, and (with highlight.enabled) semantic tokens. Hand-written JSON-RPC, so the
 // tool still needs nothing but fs (the usual libraries also bring sockets).
 import { Analyzer } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, heredocAt, plain, ShellDocument } from '../src/document';
@@ -10,6 +10,7 @@ import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } fr
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { partAt, rangeOnLine } from '../src/ui/hoverParts';
 import { plainPartHover } from '../src/ui/hoverView';
+import { nameHints } from '../src/ui/nameHints';
 import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
 import { readSettingsFile, settingsFile } from './settings-file';
 
@@ -69,6 +70,8 @@ export function startLanguageServer(io: Io): void {
   let shuttingDown = false;
   /** Whether the client lets the server ask it to request the semantic tokens again. */
   let canRefresh = false;
+  /** Whether the client lets the server ask it to request the inlay hints again. */
+  let canRefreshHints = false;
   let requests = 0;
 
   const send = (msg: Message) => {
@@ -139,6 +142,23 @@ export function startLanguageServer(io: Io): void {
     return { contents: { kind: 'markdown', value: plainPartHover(ex, chain, lang, toPlainMarkdown(ex, text, where, lang)) }, range };
   }
 
+  /** Hints after the command names that do not run what they suggest, on the lines asked for (`hints.names`). */
+  function inlayHints(doc: Doc, from: number, to: number) {
+    const parsed = settings['hints.names'] ? parse(doc) : undefined;
+    if (!parsed) return [];
+    const analyzer = new Analyzer(lang);
+    const opts = explainOptions(settings);
+    const out: unknown[] = [];
+    for (let line = Math.max(0, from); line <= to && line < parsed.lines.length; line++) {
+      if (!parsed.lines[line].trim()) continue;
+      const ex = explainDocumentLine(analyzer, parsed, line, lang, shells(parsed, doc.uri), opts);
+      for (const h of nameHints(ex, line, parsed.lines[line], lang)) {
+        out.push({ position: h.position, label: h.label, paddingLeft: true, paddingRight: true, tooltip: { kind: 'markdown', value: h.tooltip } });
+      }
+    }
+    return out;
+  }
+
   function codeActions(doc: Doc, range: { start: { line: number }; end: { line: number } }) {
     return issues(doc)
       .filter((i) => i.fix && i.startLine <= range.end.line && i.endLine >= range.start.line)
@@ -182,10 +202,12 @@ export function startLanguageServer(io: Io): void {
       case 'initialize':
         configure(m.params?.initializationOptions, 'initializationOptions');
         canRefresh = !!m.params?.capabilities?.workspace?.semanticTokens?.refreshSupport;
+        canRefreshHints = !!m.params?.capabilities?.workspace?.inlayHint?.refreshSupport;
         return void reply({
           capabilities: {
             textDocumentSync: { openClose: true, change: 1 },
             hoverProvider: true,
+            inlayHintProvider: true,
             codeActionProvider: { codeActionKinds: ['quickfix'] },
             // Always offered: highlight.enabled may be turned on later, and the tokens are empty while it is off.
             semanticTokensProvider: { legend: LEGEND, full: true, range: true },
@@ -209,6 +231,7 @@ export function startLanguageServer(io: Io): void {
         }
         // highlight.enabled, or which documents are shell code, may have changed.
         if (canRefresh) send({ id: `bash-explainer-${++requests}`, method: 'workspace/semanticTokens/refresh' });
+        if (canRefreshHints) send({ id: `bash-explainer-${++requests}`, method: 'workspace/inlayHint/refresh' });
         return;
       case 'textDocument/didOpen': {
         const d = m.params.textDocument;
@@ -234,6 +257,10 @@ export function startLanguageServer(io: Io): void {
       case 'textDocument/hover': {
         const doc = docs.get(m.params.textDocument.uri);
         return void reply(doc ? hover(doc, m.params.position.line, m.params.position.character) : null);
+      }
+      case 'textDocument/inlayHint': {
+        const doc = docs.get(m.params.textDocument.uri);
+        return void reply(doc ? inlayHints(doc, m.params.range.start.line, m.params.range.end.line) : []);
       }
       case 'textDocument/semanticTokens/full':
         return void reply(tokens(docs.get(m.params.textDocument.uri)));

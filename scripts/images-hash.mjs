@@ -1,4 +1,4 @@
-// The README images show the UI: the hover, the panel and the inline summary. This hashes the files
+// The README images show the UI: the hover, the panel and the name hints. This hashes the files
 // that decide how those look, so a release can tell whether the images were recorded with them.
 // Usage: node scripts/images-hash.mjs [--write | --check]
 //   (no option)  print the hash
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STORE = path.join(ROOT, 'images', '.source-hash');
 /** What the images look like depends on these; the explanations' wording is left out on purpose. */
-const SOURCES = ['src/ui', 'media', 'images/demo.sh', 'scripts/capture-readme-images.mjs'];
+const SOURCES = ['src/ui', 'media', 'images/demo.sh', 'images/hints.sh', 'scripts/capture-readme-images.mjs'];
 
 function files(rel) {
   const abs = path.join(ROOT, rel);

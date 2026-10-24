@@ -1,6 +1,6 @@
 # The hover
 
-What the hover explains, and how it looks. Built from a design study in real VS Code (the prototypes on the branches `proto/hover-inline` and `proto/hover-inline-2`), with the maintainer's choices.
+What the hover explains, how it looks, the name hints, and why the inline summary was removed. Built from a design study in real VS Code (the prototypes on the branches `proto/hover-inline` and `proto/hover-inline-2`), with the maintainer's choices.
 
 The code: `src/ui/hoverParts.ts` (which part a position explains), `src/ui/hoverView.ts` (the Markdown), `src/ui/hover.ts` (VS Code), `cli/lsp.ts` (the Language Server). Tests: `test/hover-view.test.ts`.
 
@@ -52,3 +52,19 @@ The hover once drew the tree with glyphs (`├─ └─ │`) inside `<code>`. 
 So the hierarchy is indentation (non-breaking spaces), and the labels are coloured by kind, with no code background. The study used `<samp>` for them, but VS Code does not style `<samp>`: it falls back to the browser's default monospace font, which is Courier on macOS. The labels are plain coloured spans instead, in the hover's font. A label in the narrow first column has a word joiner after each hyphen, so that `-name *.gz -mtime` does not break after a dash.
 
 The structure (lists, pipelines, constructs) is one line, a breadcrumb, instead of the rows of a tree.
+
+## Name hints
+
+An inlay hint after a command name, only where the name does not run what a reader would guess (`src/ui/nameHints.ts`, from the name facts of src/semantics/names.ts): nothing runs; a program runs where bash has only a builtin of the name (`sudo cd`); a function or an alias hides a builtin or a program; a builtin turned off by `enable -n`; an alias that bash does not expand here. A name the reader asked for is not marked: `builtin cd`, `command ls`, `\ls`, a program that `sudo` or `xargs` runs. The study first put a hint after every name and every option of the cursor line; that repeated what the hover says and moved the code as the cursor moved. Hints on surprises only are rare, so they can stay on every line in view.
+
+The hint is plain text (VS Code shows no Markdown in a hint); its tooltip says what runs, who runs it, the other meanings of the name and what it does. A click opens the line in the panel. `bashExplainer.hints.names` turns them off; VS Code's `editor.inlayHints.enabled` turns every hint on, off, or on while `Ctrl+Alt` is held. The Language Server gives the same hints (`textDocument/inlayHint`), with the tooltip and no command.
+
+## Why the inline summary was removed
+
+The inline summary was a faint line at the end of the cursor line: the line's summary, cut to `inline.maxLength`. The study tried to keep it (the part at the cursor instead of the line, as eldoc does), and found:
+
+- it said one thing about a whole line, which for most lines is the first command, and the hover says the same and more;
+- it moved with the cursor, so the end of every line the cursor passed flickered, and a long line pushed it out of view;
+- it was off by default, and the study found no case it served that the part hover, `Ctrl+K Ctrl+E` and the name hints do not.
+
+So it was removed rather than kept beside them. Its settings stay, deprecated (`markdownDeprecationMessage`, in both languages), with no effect, and a user who had it on gets a notice once per session until "Don't show again" (`src/ui/inlineNotice.ts`).

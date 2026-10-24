@@ -97,6 +97,7 @@ describe('the Language Server', function () {
     const r = await client.request('initialize', { processId: null, rootUri: null, capabilities: {} });
     assert.strictEqual(r.result.serverInfo.name, 'bash-explainer');
     assert.strictEqual(r.result.capabilities.hoverProvider, true);
+    assert.strictEqual(r.result.capabilities.inlayHintProvider, true);
     client.notify('initialized', {});
   });
 
@@ -123,6 +124,27 @@ describe('the Language Server', function () {
     assert.deepStrictEqual(end.result.range, { start: { line: 1, character: 0 }, end: { line: 1, character: 35 } });
     // Each row ends with the sections of the manual it is about, linked.
     assert.ok(r.result.contents.value.includes('(Bash manual [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html "Conditional Constructs")'), r.result.contents.value);
+  });
+
+  it('gives a hint after a command name that does not run what it suggests', async () => {
+    const uri = 'file:///work/hints.sh';
+    client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'sh', version: 1, text: 'cd() { builtin cd "$@"; }\n\ncd /tmp\nsudo cd /\n' } });
+    const r = await client.request('textDocument/inlayHint', { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 9, character: 0 } } });
+    assert.deepStrictEqual(r.result.map((h: any) => [h.position, h.label]), [
+      [{ line: 2, character: 2 }, 'function, not the builtin'],
+      [{ line: 3, character: 7 }, 'program, run by sudo: usually there is none'],
+    ]);
+    assert.strictEqual(r.result[0].tooltip.kind, 'markdown');
+    assert.match(r.result[0].tooltip.value, /^`cd` \*\*function\*\*\n\nSame name, also: /);
+    // Only the lines asked for; none for a document it does not know.
+    const one = await client.request('textDocument/inlayHint', { textDocument: { uri }, range: { start: { line: 3, character: 0 }, end: { line: 3, character: 9 } } });
+    assert.strictEqual(one.result.length, 1);
+    assert.deepStrictEqual((await client.request('textDocument/inlayHint', { textDocument: { uri: 'file:///work/none.sh' }, range: { start: { line: 0, character: 0 }, end: { line: 1, character: 0 } } })).result, []);
+    // hints.names off: none.
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { hints: { names: false } } } });
+    assert.deepStrictEqual((await client.request('textDocument/inlayHint', { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 9, character: 0 } } })).result, []);
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { hints: { names: true } } } });
+    client.notify('textDocument/didClose', { textDocument: { uri } });
   });
 
   it('offers the quick fix', async () => {

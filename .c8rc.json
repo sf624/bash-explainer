@@ -7,7 +7,7 @@
     "src/service.ts",
     "src/ui/diagnostics.ts",
     "src/ui/hover.ts",
-    "src/ui/inline.ts",
+    "src/ui/inlayHints.ts",
     "src/ui/panel.ts",
     "src/ui/semanticTokens.ts",
     "src/ui/themeColours.ts"

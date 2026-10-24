@@ -1,6 +1,6 @@
 name: README images
 
-# Records the README images (images/*.gif, inline.png) with scripts/capture-readme-images.mjs, in
+# Records the README images (images/*.gif, name-hints.png) with scripts/capture-readme-images.mjs, in
 # VS Code on a virtual display. Run by hand when the UI changed (the Release workflow stops until the
 # images match it, see scripts/images-hash.mjs): it opens a pull request with the new images. On a
 # pull request that changes the recording itself, it only uploads the images as an artifact.
@@ -35,7 +35,7 @@ jobs:
 
       - run: npm ci
 
-      # Cascadia Code is the font the recording sets; the emoji font draws the inline summary's 💡.
+      # Cascadia Code is the font the recording sets; the emoji font draws emoji in the explanations.
       - name: Install a virtual display, ffmpeg and fonts
         run: |
           sudo apt-get update

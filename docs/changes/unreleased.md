@@ -4,6 +4,21 @@ The short list is in [CHANGELOG.md](../../CHANGELOG.md#unreleased).
 
 ## New
 
+### Name hints
+
+A command name gets an inlay hint after it where it does not run what a reader would guess from the name (from the same facts as the panel's badge):
+
+| Script | Hint |
+| --- | --- |
+| `cd() { builtin cd "$@"; }` then `cd /tmp` | `function, not the builtin` |
+| `shopt -s expand_aliases; alias ls='ls -F'` then `ls` | `alias, not the program` |
+| `enable -n echo` then `echo hi` | `program: the builtin is off` |
+| `alias ls='ls -F'` in a script, then `ls` | `program: the alias is not expanded` |
+| `sudo cd /root` | `program, run by sudo: usually there is none` |
+| `builtin ls` | `nothing runs` |
+
+A name the reader asked for gets none: `builtin cd`, `command ls`, `\ls`, `sudo echo`, `xargs echo`. The hint's tooltip says what runs, who runs it, what else the name is and what it does; a click opens the line in the panel. `bashExplainer.hints.names` turns the hints off, and VS Code's `editor.inlayHints.enabled` all inlay hints. The Language Server answers `textDocument/inlayHint` with the same hints (and asks the editor to refresh them when the settings change, if it can).
+
 ### Pitfalls as problems
 
 The pitfalls that the explanation of a line points out are now problems too. Each has a code, shown in the Problems panel and in the output of `--check`, and its range is the part of the line it is about (the word `$DIR/*`, the `$(ls)` of a `for`, the whole `x = 1`).
@@ -182,6 +197,14 @@ A shell script without a shebang says nothing clear, so pasting one keeps the ki
 The colours follow the theme when it changes. How the theme is read, and how much each choice keeps parts apart, is in [docs/design/theme-colours.md](../design/theme-colours.md).
 
 ## Changed
+
+### The inline summary was removed
+
+The faint one-line summary at the end of the cursor line (`bashExplainer.inline.enabled`, off by default) was removed. It repeated the start of the hover on every line the cursor passed, and could say only one thing about a line. The hover now explains the part under the mouse, `Ctrl+K Ctrl+E` the whole line, and the name hints mark what a reader could misread.
+
+- `bashExplainer.inline.enabled` and `bashExplainer.inline.maxLength` stay in the settings, marked deprecated, with no effect.
+- A user who had `inline.enabled` on gets a notice when VS Code starts, with **Open settings** and **Don't show again**.
+- The status bar's choice of display modes lists the hover and the panel only.
 
 ### The hover explains the part under the mouse
 

@@ -35,6 +35,7 @@ export interface Settings {
   'hover.followCursor': boolean;
   'hover.followDelay': number;
   'hover.maxDepth': number;
+  'hints.names': boolean;
   'inline.enabled': boolean;
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
@@ -117,12 +118,16 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'The web page and the command-line tool have no hover.',
   },
   {
-    key: 'inline.enabled', type: 'boolean', default: false, group: 'display', title: ['インライン要約', 'Inline summary'], surfaces: ['vscode'],
-    elsewhere: 'The summary at the end of the line is drawn by VS Code.',
+    key: 'hints.names', type: 'boolean', default: true, group: 'display', title: ['コマンド名のヒント', 'Name hints'], surfaces: ['vscode', 'lsp'],
+    elsewhere: 'The web page and the command-line tool show no inlay hints.',
   },
   {
-    key: 'inline.maxLength', type: 'number', default: 120, minimum: 20, group: 'display', title: ['インライン要約の長さ', 'Inline summary length'], surfaces: ['vscode'],
-    elsewhere: 'Goes with inline.enabled.',
+    key: 'inline.enabled', type: 'boolean', default: false, group: 'display', title: ['インライン要約（廃止）', 'Inline summary (removed)'], surfaces: ['vscode'],
+    elsewhere: 'Deprecated: the inline summary was removed, and the setting has no effect (VS Code tells a user who had it on once).',
+  },
+  {
+    key: 'inline.maxLength', type: 'number', default: 120, minimum: 20, group: 'display', title: ['インライン要約の長さ（廃止）', 'Inline summary length (removed)'], surfaces: ['vscode'],
+    elsewhere: 'Deprecated, with inline.enabled.',
   },
   {
     key: 'panel.autoOpen', type: 'boolean', default: false, group: 'display', title: ['パネルを自動で開く', 'Open the panel by itself'], surfaces: ['vscode'],

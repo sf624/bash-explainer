@@ -77,6 +77,18 @@ describe('the settings module', () => {
     assert.deepStrictEqual(settingTexts({ properties: { 'bashExplainer.x': { description: '%missing%' } } }, {}), { x: { description: '%missing%', values: undefined } });
   });
 
+  it('says in both languages that inline.* no longer has an effect, and what to use instead', () => {
+    for (const nls of [json('package.nls.json'), json('package.nls.ja.json')]) {
+      for (const key of ['inline.enabled', 'inline.maxLength']) {
+        const ref = properties[PREFIX + key].markdownDeprecationMessage;
+        assert.strictEqual(ref, '%config.inline.deprecated%');
+        assert.match(nls['config.inline.deprecated'], /Ctrl\+K Ctrl\+E.*#bashExplainer\.hints\.names#/);
+      }
+    }
+    // No other setting is deprecated.
+    assert.deepStrictEqual(Object.keys(properties).filter((k) => properties[k].markdownDeprecationMessage || properties[k].deprecationMessage), ['bashExplainer.inline.enabled', 'bashExplainer.inline.maxLength']);
+  });
+
   it('gives each surface its settings', () => {
     assert.strictEqual(settingsFor('vscode').length, VSCODE.length);
     const web = settingsFor('web').map((s) => s.key);
