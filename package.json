@@ -638,6 +638,7 @@
     },
     "semanticTokenScopes": [
       {
+        "language": "shellscript",
         "scopes": {
           "comment": [
             "comment.line.number-sign.shell"
@@ -674,8 +675,494 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
           ]
         }
+      },
+      {
+        "language": "bats",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "dockerfile",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "makefile",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "yaml",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "github-actions-workflow",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "markdown",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "json",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "python",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "groovy",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      },
+      {
+        "language": "jenkinsfile",
+        "scopes": {
+          "comment": [
+            "comment.line.number-sign.shell"
+          ],
+          "keyword": [
+            "keyword.control.shell"
+          ],
+          "function": [
+            "entity.name.function.call.shell"
+          ],
+          "function.defaultLibrary": [
+            "support.function.builtin.shell"
+          ],
+          "function.declaration": [
+            "entity.name.function.shell"
+          ],
+          "parameter": [
+            "constant.other.option.shell"
+          ],
+          "string": [
+            "string.quoted.double.shell"
+          ],
+          "variable": [
+            "variable.other.normal.shell"
+          ],
+          "variable.modification": [
+            "variable.other.assignment.shell"
+          ],
+          "operator": [
+            "keyword.operator.pipe.shell"
+          ],
+          "number": [
+            "constant.numeric.shell"
+          ],
+          "regexp": [
+            "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant"
+          ]
+        }
+      }
+    ],
+    "semanticTokenModifiers": [
+      {
+        "id": "exported",
+        "description": "A variable exported to the commands the shell runs."
+      },
+      {
+        "id": "unknown",
+        "description": "A command name the dictionary does not know, or a function defined on some paths only."
       }
     ]
   },

@@ -3,7 +3,9 @@
 // this encodes. Editors draw the tokens over their own grammar (TextMate in VS Code), so the kinds map to
 // the standard token types and modifiers, which every theme colours.
 import type { ShellDocument } from './document';
-import { documentHighlight, HighlightKind, LineSpan } from './highlight';
+import { documentHighlight, highlight, HighlightKind, LineSpan } from './highlight';
+import type { Shell } from './dialect';
+import { semanticFacts } from './semanticFacts';
 
 export const TOKEN_TYPES = ['comment', 'keyword', 'function', 'parameter', 'string', 'variable', 'operator', 'number', 'regexp'] as const;
 export const TOKEN_MODIFIERS = ['declaration', 'modification', 'defaultLibrary'] as const;
@@ -64,4 +66,57 @@ export function encodeTokens(spans: readonly LineSpan[]): number[] {
 export function semanticTokens(doc: ShellDocument, lines?: { from: number; to: number }): number[] {
   const spans = documentHighlight(doc);
   return encodeTokens(lines ? spans.filter((s) => s.line >= lines.from && s.line <= lines.to) : spans);
+}
+
+// Design study (prototype): the tokens with the facts of the models (src/semanticFacts.ts) over those of the tree.
+export const RICH_TYPES = [...TOKEN_TYPES, 'macro'] as const;
+export const RICH_MODIFIERS = [...TOKEN_MODIFIERS, 'readonly', 'exported', 'unknown'] as const;
+export const RICH_LEGEND: { tokenTypes: string[]; tokenModifiers: string[] } = { tokenTypes: [...RICH_TYPES], tokenModifiers: [...RICH_MODIFIERS] };
+const typeIndex = (t: string): number => (RICH_TYPES as readonly string[]).indexOf(t);
+const modBits = (ms: readonly string[]): number => ms.reduce((bits, m) => bits | (1 << (RICH_MODIFIERS as readonly string[]).indexOf(m)), 0);
+
+/** The semantic tokens of a document from the tree and the models; with `lines`, only those lines (inclusive). */
+export function richSemanticTokens(doc: ShellDocument, shell?: Shell, lines?: { from: number; to: number }): number[] {
+  const text = doc.tree.text;
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  const range = lines ? { from: starts[Math.min(lines.from, starts.length - 1)], to: lines.to + 1 < starts.length ? starts[lines.to + 1] : text.length } : undefined;
+  const type = new Int8Array(text.length).fill(-1);
+  const mods = new Uint16Array(text.length);
+  for (const s of highlight(doc.tree, range ? { range } : {})) {
+    const t = TOKEN_OF[s.kind];
+    if (!t) continue;
+    type.fill(typeIndex(t[0]), s.from, s.to);
+    mods.fill(modBits(t.slice(1)), s.from, s.to);
+  }
+  for (const f of semanticFacts(doc.tree, shell, range)) {
+    type.fill(f.type === null ? -1 : typeIndex(f.type), f.from, f.to);
+    mods.fill(modBits(f.modifiers), f.from, f.to);
+  }
+  const data: number[] = [];
+  let prevLine = 0;
+  let prevCol = 0;
+  let line = 0;
+  const end = range?.to ?? text.length;
+  for (let i = range?.from ?? 0; i < end;) {
+    if (text[i] === '\n' || type[i] < 0) {
+      i++;
+      continue;
+    }
+    const t = type[i];
+    const m = mods[i];
+    let j = i + 1;
+    while (j < end && type[j] === t && mods[j] === m && text[j] !== '\n') j++;
+    while (line + 1 < starts.length && starts[line + 1] <= i) line++;
+    let from = i - starts[line];
+    let to = j - starts[line];
+    if (doc.extracted) [from, to] = [doc.extracted.maps[line][from], doc.extracted.maps[line][to]];
+    if (to > from) {
+      data.push(line - prevLine, line === prevLine ? from - prevCol : from, to - from, t, m);
+      prevLine = line;
+      prevCol = from;
+    }
+    i = j;
+  }
+  return data;
 }

@@ -247,7 +247,9 @@ code {
   border-radius: 3px;
 }
 
-.kind-command, .kind-subcommand, .kind-builtin, .kind-function, .kind-alias { color: var(--c-command); }
+.kind-command, .kind-subcommand, .kind-function, .kind-alias { color: var(--c-command); }
+/* Design study: a theme's colour for builtins, when the panel follows the theme (else the command's). */
+.kind-builtin { color: var(--c-builtin, var(--c-command)); }
 .kind-option { color: var(--c-option); }
 .kind-pattern { color: var(--c-pattern); }
 .kind-argument, .kind-string { color: var(--c-argument); }

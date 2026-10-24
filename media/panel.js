@@ -69,6 +69,7 @@
   /** True while the user has text selected (a drag to copy should not count as a click). */
   const selecting = () => String(window.getSelection() ?? '').length > 0;
 
+  let themeVars = [];
   window.addEventListener('message', (event) => {
     const msg = event.data;
     if (msg.type === 'update') {
@@ -76,6 +77,12 @@
       if (key === lastUpdate) return;
       lastUpdate = key;
       render(msg);
+    }
+    // Design study: the colours of the editor's theme, over the panel's palette (an empty set restores it).
+    if (msg.type === 'themeColours') {
+      for (const k of themeVars) document.body.style.removeProperty(k);
+      themeVars = Object.keys(msg.vars);
+      for (const [k, v] of Object.entries(msg.vars)) document.body.style.setProperty(k, v);
     }
     if (msg.type === 'empty') {
       lastUpdate = '';

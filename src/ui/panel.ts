@@ -4,6 +4,7 @@ import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
+import { themeRoleColours } from './themeColours';
 
 /** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
@@ -28,6 +29,11 @@ export class PanelController implements vscode.Disposable {
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
     this.state = ctx.globalState.get<PanelState>(STATE_KEY) ?? {};
     this.disposables.push(
+      // Design study: the colours of the theme in use (BASH_EXPLAINER_THEME_PANEL=1), again when it changes.
+      vscode.window.onDidChangeActiveColorTheme(() => this.postTheme()),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (['workbench.colorTheme', 'editor.tokenColorCustomizations', 'editor.semanticTokenColorCustomizations'].some((k) => e.affectsConfiguration(k))) this.postTheme();
+      }),
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
         if (e) this.schedule(e, 0);
@@ -91,6 +97,12 @@ export class PanelController implements vscode.Disposable {
     }, delay);
   }
 
+  /** Design study: sends the theme's colours of the roles (none: the panel's own palette). */
+  private postTheme(): void {
+    if (!process.env.BASH_EXPLAINER_THEME_PANEL) return;
+    void themeRoleColours().then((c) => this.panel?.webview.postMessage({ type: 'themeColours', vars: c?.vars ?? {}, theme: c?.theme }));
+  }
+
   private post(): void {
     if (!this.panel) return;
     const lang = this.service.lang;
@@ -120,6 +132,7 @@ export class PanelController implements vscode.Disposable {
     const ed = this.editor;
     if (m.type === 'ready') {
       void this.panel?.webview.postMessage({ type: 'panelState', state: this.state });
+      this.postTheme();
       return this.post();
     }
     if (m.type === 'panelState') {

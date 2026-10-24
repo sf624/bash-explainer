@@ -199,9 +199,13 @@ function shellName(s: string): Shell | null {
 function yamlBlock(b: Builder, at: number, indent: number, label: [string, string], shell: Shell | undefined): number {
   let j = at + 1;
   let last = at;
+  // YAML takes the indentation of the first line off every line of the block (8.1.1.1): the runner's script starts at
+  // that column, so an indented `EOF` there ends a here-document.
+  let strip: number | undefined;
   while (j < b.lines.length && (!b.lines[j].trim() || indentOf(b.lines[j]) > indent)) {
     if (b.lines[j].trim()) {
-      githubLine(b, j, 0, b.lines[j].length);
+      strip ??= indentOf(b.lines[j]);
+      githubLine(b, j, Math.min(strip, indentOf(b.lines[j])), b.lines[j].length);
       last = j;
     }
     j++;
