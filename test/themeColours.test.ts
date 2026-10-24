@@ -334,6 +334,15 @@ describe('the palettes that follow the theme', () => {
     assert.strictEqual(panelPalette('themeLike', none, light).command, '#000000');
   });
 
+  it('themeLike computes again on its own tints until they stop changing it', () => {
+    // (Found by a random search: the first palette, made on the classic colours' tints, is not readable on its own.)
+    const theme = { command: undefined, builtin: '#36ff27', option: '#9d0000', argument: '#ba516a', string: '#ae34d6', number: '#d41814', keyword: '#a13636', operator: '#63f3f2', redirect: '#44b148', pattern: '#c86c48', variable: '#0231fb', assignment: '#d12265', comment: '#2dd428' };
+    const classic = { command: '#0021c1', builtin: '#758838', option: '#0cadad', argument: '#ef6284', string: '#d4080d', number: '#87ab01', keyword: '#62116a', operator: '#af96ee', redirect: '#d88617', pattern: '#a76ab3', variable: '#e9c343', assignment: '#0cbc54', comment: '#a1c1fd' };
+    const base: PanelBase = { highContrast: false, backgrounds: ['#ffffff', 'rgba(10,10,10,0.4)', '#e8e8e8'], foreground: '#333333', classic };
+    const s = paletteStats(panelPalette('themeLike', theme, base), base);
+    assert.ok(s.contrast >= 4.5 && s.deltaEOK >= SAME, JSON.stringify(s));
+  });
+
   it('makes a colour readable by changing its lightness only, or says it cannot', () => {
     const dim = readable(hex('#6A9955'), [hex('#2b2b2b')], 4.5)!;
     assert.ok(contrast(dim, hex('#2b2b2b')) >= 4.5);
