@@ -129,6 +129,28 @@ This changes what bash scripts that already use `${ …; }` or `${| …; }` get 
 
 The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
 
+### What a command name is
+
+In both views of the panel, every command name has a badge after it: keyword, builtin, function, alias or program (a program's badge has a dashed edge). When another command looks the name up, the badge says so: `sudo echo hi` shows `echo` as a program, run by `sudo`. A subcommand (`git commit`) has none: bash does not look it up.
+
+A name that is also something else gets one muted line, with the code that runs the other meaning:
+
+| Line | Badge | The line under it |
+| --- | --- | --- |
+| `echo hi` | builtin | Same name, also: a program, usually `/usr/bin/echo` (run with `env echo`) |
+| `time sleep 1` | keyword | Same name, also: a program, usually `/usr/bin/time` (run with `\time` or `command time`) |
+| `function time { …; }; time ls` | keyword | Same name, also: the function of this script (run with `\time`); a program, usually `/usr/bin/time` (run with `command time`) |
+| `sudo echo hi` | program, run by `sudo` | `sudo` looks the name up, so this is the program, not bash's builtin |
+| `echo() { :; }; echo hi` | function | Same name, also: bash's builtin (run with `builtin echo` or `command echo`); a program, usually `/usr/bin/echo` (run with `env echo`) |
+| `command time ls` | program, run by `command` | Same name, also: a reserved word, where it starts a command unquoted |
+| `builtin ls` | nothing runs, `builtin` finds no builtin named `ls` | Same name, also: a program in PATH (run with `ls`) |
+| `sudo cd /tmp` | program, run by `sudo` | `sudo` looks the name up, so bash's builtin does not run, and there is usually no program of this name |
+| `alias ll='ls -l'; ll` (no `shopt -s expand_aliases`) | program | Same name, also: an alias, not expanded here (needs `shopt -s expand_aliases`) |
+| `command [[ -f x ]]` | nothing runs, `command` finds no command named `[[` (bash says `[[: command not found`) | Same name, also: a reserved word, where it starts a command unquoted |
+
+The code given for each other meaning is what reaches it from where the name is: `\time` reaches the program only where no function `time` is defined, and `env echo` is given only where bash's builtin `echo` comes first.
+The explanations no longer end with "(shell builtin)", and the programs named like builtins say their package: "(from coreutils)" where they said "(the coreutils program)". The hover, Copy as Markdown and the command line's text and Markdown end each such row with the kind instead: " (builtin)", " (program, run by `sudo`)"; the JSON output has a `name` field with the facts. In the Reading view, the badge replaces the kind after "command name" ("command name · builtin" before). An alias is shown as an alias, no longer as a function: in the JSON output, its token's `kind` is `alias` (it was `function`).
+
 ### The file kind of a pasted script (web page)
 
 On the web page, a paste or a drop of text sets the file kind from what was pasted, when the paste makes 80% or more of the text, or when the editor held only a sample or nothing. The pasted text stays as it is (no sample is loaded), and a toast says "Detected: Dockerfile" with Undo, which goes back to the kind before. A few lines pasted into your own script never change the kind. Before, the kind changed only by hand.

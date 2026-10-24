@@ -52,6 +52,7 @@ import { readDeclarationWords } from './semantics/vars';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
+import { isProgram, nameInfo } from './namefacts';
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
@@ -1332,7 +1333,7 @@ export class Analyzer {
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
   private timeLead(time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
-    const kw = this.tok(time, 'keyword', this.t(keywords.time));
+    const kw = Object.assign(this.tok(time, 'keyword', this.t(keywords.time)), { name: nameInfo(this.lang, { kind: 'keyword', name: 'time' }, this.cx, time) });
     return posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
   }
 
@@ -1387,7 +1388,9 @@ export class Analyzer {
     const t = this.tok(n, bracket ? 'test' : head.kind, head.explanation, sortTokens([
       ...prefix, ...nameToks, ...argToks, ...this.subs(redirs),
     ]), bracket ? shorten(wordsText(n)) : shorten((word ?? nameNode).text));
-    t.summary = bracket ? this.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}`;
+    const name = head.res && nameInfo(this.lang, head.res, this.cx, nameNode);
+    if (name) (bracket ? nameToks[0] : t).name = name;
+    t.summary = bracket ? this.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
     if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
     // (The test itself: `[ a = b ]` of `[ a = b ] >o`.)
     const parts = bracket ? bracketLabel(n) : undefined;
@@ -1533,11 +1536,11 @@ export class Analyzer {
     // What bash runs (src/semantics/names.ts). An alias over a known command that runs that command with more words
     // (`alias grep='grep --color=auto'`) is still explained as that command; one that runs something else (`alias
     // echo=printf`, `alias [=echo`) is the alias. (A quoted name is never an alias.)
-    let res = this.resolve(name, nameNode, { quoted: sv !== undefined });
+    const ran = this.resolve(name, nameNode, { quoted: sv !== undefined });
     const known = !!lookupCommand(name);
     // (Not `test` or `[` with more words, `alias [='[ -n x'`: they change the expression.)
-    const same = res.kind === 'alias' && res.target?.name === name && (alias1(res.alias.value) || !testSpecOf(res.target));
-    if (same && known) res = this.resolve(name, nameNode, { quoted: true });
+    const same = ran.kind === 'alias' && ran.target?.name === name && (alias1(ran.alias.value) || !testSpecOf(ran.target));
+    const res = same && known ? this.resolve(name, nameNode, { quoted: true }) : ran;
     if (res.kind === 'alias') {
       const { alias } = res;
       // The words after the name are read with the spec of the command the alias runs, when its text is that name
@@ -1552,7 +1555,7 @@ export class Analyzer {
         ? this.s(`（\`${res.target.name}\` もエイリアスで、\`${res.target.alias.value}\` に置き換わる）`, ` (\`${res.target.name}\` is an alias too, for \`${res.target.alias.value}\`)`)
         : '';
       return {
-        name, kind: 'function', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}),
+        name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'], spec, ...(target ? { runs: runs!.name } : {}),
         explanation: res.sure
           ? this.s(`このスクリプトの行 ${line} で定義したエイリアス \`${name}\`: \`${alias.value}\` に置き換わる${chain}`, `The alias \`${name}\` defined on line ${line}: replaced by \`${alias.value}\`${chain}`)
           : alias.state === 'on'
@@ -1570,7 +1573,7 @@ export class Analyzer {
         const value = this.cx.state.at(nameNode).expand.aliases.get(name)!.value;
         this.cx.extraNotes.push(...this.say(fact(this.lang, 'alias-not-expanded-in-script', { name, value })));
         return {
-          name, kind: 'function', nameTokens: [], refs: ['6.6'],
+          name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
           explanation: this.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
             `The alias \`${name}\` defined on line ${first + 1} (\`${value}\`). But bash does not expand aliases in a script (no \`shopt -s expand_aliases\`), so this is "command not found". With sh or dash it would be replaced by \`${value}\``),
         };
@@ -1580,13 +1583,13 @@ export class Analyzer {
         this.cx.extraNotes.push(...this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 })));
       }
     }
-    if (res.kind === 'function') return { name, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
+    if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
     this.missedNote(name, missed);
     // After `source`, a name the dictionary does not know may be a function of the file read.
     if (res.kind === 'file' && res.sourced) {
       const line = (docLine(res.sourced) + 1);
       return {
-        name, kind: 'command', nameTokens: [], refs: ['3.7.2'],
+        name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`\`${name}\` を実行する。行 ${line} で読み込んだファイルの関数かもしれない（そうでなければ外部コマンド）`,
           `Run \`${name}\`: maybe a function of the file read on line ${line}, else an external command`),
       };
@@ -1601,24 +1604,24 @@ export class Analyzer {
         ? this.s(`行 ${by} の \`hash -p\` で \`${name}\` は \`${path}\` を指す`, `\`hash -p\` on line ${by} gave \`${name}\` the path \`${path}\``)
         : this.s(`行 ${by} の \`enable -n\` で組み込みの \`${name}\` は無効になっている`, `\`enable -n\` on line ${by} turned the builtin \`${name}\` off`);
       return {
-        name, ...(program ? { spec: program } : {}), ...this.testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'],
+        name, res: ran, ...(program ? { spec: program } : {}), ...this.testOf(res), kind: 'command', nameTokens: [], refs: ['3.7.2'],
         explanation: this.s(`外部コマンド \`${path || name}\` を実行する（${why}）${program ? `: ${this.t(program.summary)}` : ''}`, `Run the external command \`${path || name}\` (${why})${program ? `: ${this.t(program.summary)}` : ''}`),
       };
     }
     // A command described in the customCommands setting wins over the built-in dictionary.
     const custom = customCommandSpec(this.cx.opts.customCommands?.[name.split('/').pop()!]);
     if (custom) {
-      return { name, spec: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
+      return { name, res: ran, spec: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
     const spec = this.hostCommand(name) ?? lookupCommand(name);
     if (spec) {
       const builtin = !!spec.builtin;
       return {
-        name, spec, ...this.testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
+        name, res: ran, spec, ...this.testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
         explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
           ? this.s(`コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${this.cx.shell === 'zsh' ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
             `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${this.cx.shell === 'zsh' ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`)
-          : this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : ''),
+          : this.t(spec.summary),
       };
     }
     const distro = Object.hasOwn(distroAliases, name) ? distroAliases[name] : undefined;
@@ -1634,12 +1637,12 @@ export class Analyzer {
         ? fact(this.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })
         : fact(this.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean') })));
       return {
-        name, spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
+        name, ...(interactive ? {} : { res: ran }), spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
         explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
       };
     }
-    if (name.includes('/')) return { name, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
-    return { name, kind: 'command', nameTokens: [], explanation: this.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
+    if (name.includes('/')) return { name, res: ran, kind: 'command', nameTokens: [], refs: ['3.7.2'], explanation: this.s(`パス \`${name}\` にあるプログラム・スクリプトを実行する`, `Run the program or script at \`${name}\``) };
+    return { name, res: ran, kind: 'command', nameTokens: [], explanation: this.s(`外部コマンド \`${name}\` を実行する（辞書に未登録。\`man ${name}\` や \`${name} --help\` を参照）`, `Run the external command \`${name}\` (not in the dictionary; see \`man ${name}\`)`) };
   }
 
   /**
@@ -2163,7 +2166,8 @@ export class Analyzer {
       const missed = (res as { missed?: Missed }).missed;
       if (res.kind === 'none') {
         kind = 'command';
-        explanation = this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
+        explanation = res.disabled ? this.s(`行 ${docLine(res.disabled.at) + 1} の \`enable -n\` で組み込みの \`${name}\` は無効なので、\`builtin\` はエラーになる`, `\`enable -n\` on line ${docLine(res.disabled.at) + 1} turned the builtin \`${name}\` off, so \`builtin\` fails`)
+          : this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
       } else if (res.kind === 'file' && res.disabled) {
         // (`enable -n echo; command echo`: the program.)
         kind = 'command';
@@ -2178,7 +2182,8 @@ export class Analyzer {
     }
     // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.
     const value = staticWordValue(first);
-    const test = value === undefined ? undefined : testSpecOf(this.resolve(value, first, { env: this.cx.slotEnvs.get(first) }));
+    const res = value === undefined ? undefined : this.resolve(value, first, { env: this.cx.slotEnvs.get(first) });
+    const test = res && testSpecOf(res);
     const children = test ? this.testArgs(first.parent!, commandTest(test, words.slice(1), this.bashTest(test)), test.closingOperand !== undefined)
       : this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
     if (role.of) {
@@ -2193,7 +2198,7 @@ export class Analyzer {
     }
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
     return {
-      kind,
+      kind, ...(res ? { name: nameInfo(this.lang, res, this.cx, first, this.cx.slotEnvs.get(first)) } : {}),
       label: shorten(name),
       explanation: (role.of ? this.s('実行するコマンド: ', 'Command to run: ') : '') + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
       span, children, summary: `${name}: ${explanation}`,
@@ -3317,7 +3322,7 @@ export class Analyzer {
         'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
       : this.arithTestExplanation() + this.commaNote(n);
     const children = open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren);
-    const t = this.tok(n, 'test', expl, children);
+    const t = Object.assign(this.tok(n, 'test', expl, children), open === '[[' ? { name: nameInfo(this.lang, { kind: 'keyword', name: '[[' }, this.cx, n) } : {});
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
     // Includes examples from inside the test, such as the regex of `=~`.
@@ -4014,7 +4019,8 @@ export class Analyzer {
 }
 
 interface CommandHead {
-  name: string; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[];
+  /** `res`: what bash runs for the name (src/semantics/names.ts), whose facts the badge shows (src/namefacts.ts). */
+  name: string; res?: NameResolution; spec?: CommandSpec; kind: Kind; explanation: string; nameTokens: Token[];
   /** A call of a function defined in the script (`maybe`: on some paths only). */
   fn?: true | 'maybe';
   /** The sections of the manual on what the name runs: a builtin's, a function's (3.3), an alias's (6.6). */
@@ -4055,12 +4061,6 @@ const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
 /** The subcommand a parse names, if any (`git stash push`: `stash`, whose parse names `push`). */
 const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; role: Extract<ArgRole, { role: 'subcommand' }> } => r.role.role === 'subcommand');
-
-/** Whether the dictionary describes a program (not a builtin) of this name. */
-const isProgram = (name: string): boolean => {
-  const spec = lookupCommand(name);
-  return !!spec && !spec.builtin;
-};
 
 /** Gives `t` the skeleton of `n` as its label; with `onlyIfCut`, only when it has a placeholder (else the label is the text). */
 function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {

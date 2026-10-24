@@ -120,6 +120,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
     nameButton('settings', msg.settingsLabel);
     nameButton('copy', labels.copy);
@@ -342,6 +343,37 @@
     layer.append('\n');
   }
 
+  // ---------------------------------------------------------------- what a command name is
+
+  /**
+   * The badge of what a command name is (`Token.name`, src/namefacts.ts): the kind's word, with what the kind is as
+   * its tooltip; and who looks the name up, when another command does ("run by `sudo`"). The extension gives the texts.
+   */
+  function nameBadge(/** @type {any} */ name) {
+    if (!name) return [];
+    const b = document.createElement('span');
+    b.className = `nk-badge nk-${name.runs}`;
+    b.textContent = name.said.kind;
+    b.title = name.said.title;
+    if (!name.said.by) return [b];
+    const by = document.createElement('span');
+    by.className = 'nk-by';
+    by.append(...inline(name.said.by));
+    return [b, by];
+  }
+
+  /** The muted line on what else the same name is, and the code that reaches it; null on a name with no other meaning. */
+  function nameAlso(/** @type {any} */ name) {
+    if (!name?.said.also) return null;
+    const d = document.createElement('span');
+    d.className = 'nk-also';
+    d.append(...inline(name.said.also));
+    return d;
+  }
+
+  /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
+  const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
+
   // ---------------------------------------------------------------- tree
 
   /** Tree item for a token and its children. */
@@ -375,7 +407,9 @@
     const text = document.createElement('span');
     text.className = 'text';
     text.append(...inline(token.explanation));
-    row.append(twisty, label, text, ...refLinks(token.refs));
+    const also = nameAlso(token.name);
+    if (also) text.append(also);
+    row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
@@ -602,8 +636,11 @@
     if (n.kind === 'language') return t.languages[n.label] ?? n.label;
     const shell = n.layer === 'bash' || n.layer === 'child';
     // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
-    const kind = (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
-    return n.resolves && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
+    // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
+    const named = n.name && ['command', 'builtin', 'function', 'alias'].includes(n.kind);
+    const kind = (named && t.kinds.commandName) || (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    // (A command name's badge says what it runs.)
+    return n.resolves && !n.name && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
   }
 
   /** Who reads a node: bash, which shell parses it again, the command, or the language and who reads it. */
@@ -1228,7 +1265,9 @@
       c.textContent = code;
       head.append(c);
     }
-    head.append(chip);
+    // (The badge after the code, then the kind of node; a reserved word's kind says what it is.)
+    const badge = n.kind === 'keyword' ? [] : nameBadge(n.name);
+    head.append(...badge, chip);
     const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
@@ -1249,7 +1288,10 @@
     right.append(...links);
     row.append(twisty, head, right);
     if (about) row.append(text);
-    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n)}. ${about.replace(/`/g, '')}`);
+    const also = nameAlso(n.name);
+    if (also) row.append(also);
+    const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${about.replace(/`/g, '')}${also ? `. ${also.textContent}` : ''}`);
     li.append(row);
     readingNodes.set(li, n);
     row.addEventListener('mouseenter', () => showNode(n));

@@ -93,7 +93,7 @@ describe('getopts, source, trap, set', () => {
   it('fc, bind and suspend are builtins', () => {
     for (const c of ['fc -l', 'bind -x "\\C-l:clear"', 'suspend -f']) {
       const t = new Analyzer('en').explainLine(parser.parse(c), 0).items[0];
-      assert.match(t.explanation, /shell builtin/, c);
+      assert.strictEqual(t.name?.runs, 'builtin', c);
       assert.strictEqual(spawnSync('bash', ['-c', `type -t ${c.split(' ')[0]}`], { encoding: 'utf8' }).stdout, 'builtin\n');
     }
   });
@@ -154,7 +154,7 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     for (const c of ['LC_ALL=C export X', 'V=1 declare -x Y', 'V=1 readonly Z', 'V=1 local W', 'V=1 typeset T']) {
       const t = one(c);
       assert.strictEqual(t.kind, 'builtin', c);
-      assert.match(t.explanation, /shell builtin/);
+      assert.strictEqual(t.name?.runs, 'builtin', c);
     }
     assert.match(one('V=1 declare -x Y').children.find((x) => x.label === '-x')!.explanation, /export/);
   });
@@ -251,7 +251,7 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     }
   });
   it('every declaration builtin is tagged, including unset', () => {
-    for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.match(one(c).explanation, /\(shell builtin\)$/, c);
+    for (const c of ['export a', 'readonly a', 'declare a', 'local a', 'unset a']) assert.strictEqual(one(c).name?.said.short, ' (builtin)', c);
   });
   it('>& file redirects stdout and stderr', () => {
     assert.match(one('cmd >& out').explanation, /stdout \(fd 1\) and stderr \(fd 2\)/);
@@ -278,7 +278,7 @@ describe('declaration builtins as plain commands, and related fixes', () => {
     assert.match(t.children[0].explanation, /AND/);
     assert.match(one('test ! -e f').children[0].explanation, /^Negation/);
     assert.match(one('test -f file').children[0].explanation, /regular file/);
-    assert.match(one('test').explanation, /shell builtin/);
+    assert.strictEqual(one('test').name?.runs, 'builtin');
   });
   it('test examples', () => {
     const e = new Analyzer('en').explainLine(parser.parse('test -n "$x"'), 0);

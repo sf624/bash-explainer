@@ -35,15 +35,25 @@ describe('the command-line tool', function () {
     assert.match(r.out, /-r {2}search directories recursively/);
   });
 
+  it('says what each command name is, as the panel\'s badge does: in the text, in Markdown, and in JSON', () => {
+    const text = run(['-e', 'sudo echo hi; echo hi', '--no-color']).out;
+    assert.match(text, /^ {4}echo {2}runs echo: Print arguments to stdout, separated by spaces \(from coreutils\) \(program, run by sudo\)$/m);
+    assert.match(text, /^ {2}echo {2}Print arguments to stdout, separated by spaces \(builtin\) \(Bash manual 4\.2\)$/m);
+    assert.match(run(['-e', 'cd /', '--no-color', '--lang', 'ja']).out, /^ {2}cd {2}カレントディレクトリを移動する（ビルトイン）/m);
+    assert.match(run(['--format', 'markdown', '-e', 'time ls']).out, /^ {2}- `time` — .* \(keyword\)$/m);
+    const json = JSON.parse(run(['--format', 'json', '-e', 'echo hi']).out);
+    assert.deepStrictEqual([json[0].explanation.items[0].name.runs, json[0].explanation.items[0].name.also[0].kind], ['builtin', 'program']);
+  });
+
   it('names the sections of the Bash manual: numbers in the text, links in Markdown, ids in JSON', () => {
     const text = run(['-e', 'exit 300', '--no-color']).out;
     assert.match(text, /ℹ An exit status is 0–255, so `300` becomes 44 \(the value modulo 256\) \(Bash manual 3\.7\.5\)$/m);
-    assert.match(text, /exit  Exit the shell or script \(shell builtin\) \(Bash manual 4\.1, 4\.4\)$/m);
+    assert.match(text, /exit  Exit the shell or script \(builtin\) \(Bash manual 4\.1, 4\.4\)$/m);
     assert.match(run(['-e', 'exit 300', '--no-color', '--lang', 'ja']).out, /\(Bash マニュアル 3\.7\.5\)$/m);
     // In colour, the numbers are dim; a row with none ends with its explanation.
     const color = run(['-e', 'exit 300', '--color']).out;
     assert.ok(color.includes('\x1b[90m (Bash manual 4.1, 4.4)\x1b[0m'), color);
-    assert.match(run(['-e', 'grep x', '--no-color', '--no-examples']).out, /grep  Print lines matching a pattern \(regex\)$/m);
+    assert.match(run(['-e', 'grep x', '--no-color', '--no-examples']).out, /grep  Print lines matching a pattern \(regex\) \(program\)$/m);
     const md = run(['--format', 'markdown', '-e', 'exit 300']).out;
     assert.ok(md.includes('(Bash manual [3.7.5](https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html "Exit Status"))'), md);
     const json = JSON.parse(run(['--format', 'json', '-e', 'exit 300']).out);

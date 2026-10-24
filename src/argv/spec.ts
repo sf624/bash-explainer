@@ -11,6 +11,11 @@ import type { OptionParser } from './parsers';
 
 export interface CommandSpec {
   summary: Text;
+  /**
+   * Where the program usually is (`/usr/bin/time`), said where the same name is also something else (a builtin, a
+   * reserved word): absent, a program found in PATH.
+   */
+  path?: string;
   /** The family of option parser the program uses: a preset of src/argv/parsers.ts (default `gnu`). */
   parser?: OptionParser;
   /**

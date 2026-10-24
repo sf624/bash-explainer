@@ -20,6 +20,8 @@ const root = path.join(__dirname, '..');
   const lines = src.split('\n');
   const print = (t: Token, d: number) => {
     console.log(`${'  '.repeat(d)}- [${t.kind}] ${t.label} (${t.span.start.line + 1}:${t.span.start.character}-${t.span.end.line + 1}:${t.span.end.character}) — ${t.explanation}${t.refs ? ` ⟦${t.refs.join(', ')}⟧` : ''}`);
+    // (What a command name is: the panel's badge, and its line on the other meanings.)
+    if (t.name) console.log(`${'  '.repeat(d + 1)}« ${t.name.said.kind}${t.name.said.by ? `, ${t.name.said.by}` : ''} »${t.name.said.also ? ` ${t.name.said.also}` : ''}`);
     t.children.forEach((c) => print(c, d + 1));
   };
   lines.forEach((text, i) => {

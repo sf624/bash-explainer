@@ -11,7 +11,7 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
+import { explained, noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -246,7 +246,7 @@ function readInputs(o: Options): Input[] {
 // ---- Output -----------------------------------------------------------------------------------
 
 const ANSI: Partial<Record<Token['kind'], string>> = {
-  command: '34', subcommand: '34', builtin: '34', function: '34',
+  command: '34', subcommand: '34', builtin: '34', function: '34', alias: '34',
   option: '33', redirect: '33', pattern: '33',
   argument: '32', string: '32', number: '32',
   operator: '35', keyword: '35', block: '35', test: '35',
@@ -266,7 +266,7 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
     const label = joinParts(labelParts(t), (p) => (p.placeholder
       ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
-    out.push(`${'  '.repeat(depth + 1)}${label}  ${t.explanation.replace(/`/g, '')}${refs(t.refs)}`);
+    out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);
