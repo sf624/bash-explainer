@@ -1,6 +1,6 @@
 // Which part of a line a hover explains (docs/design/hover.md): the part at the position, as an editor finds the word at
 // the cursor. Pure code, shared by VS Code's hover and the Language Server's.
-import type { Pos, Span, Token } from '../analyzer-types';
+import type { LineExplanation, Pos, Span, Token } from '../analyzer-types';
 import type { HeredocAt } from '../document';
 
 const samePos = (a: Pos, b: Pos) => a.line === b.line && a.character === b.character;
@@ -71,6 +71,29 @@ export function rangeOnLine(span: Span, line: number, length: number): Span {
     start: span.start.line < line ? { line, character: 0 } : span.start,
     end: span.end.line > line ? { line, character: length } : span.end,
   };
+}
+
+const atOrBefore = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
+const within = (inner: Span, outer: Span) => atOrBefore(outer.start, inner.start) && atOrBefore(inner.end, outer.end);
+
+/**
+ * Whether a note found on the range `at` is about the part (docs/design/hover.md, "Notes"): the range lies within the
+ * part or one of its own parts (the arguments of a command), or it is larger and the part starts it (the command name
+ * of a command, the first command of a pipeline). So a note on a whole command shows on its name, not on each argument.
+ */
+export function isAbout(at: Span, part: Token): boolean {
+  if (samePos(at.start, part.span.start) && within(part.span, at)) return true;
+  const all = (t: Token): Token[] => [t, ...t.children.flatMap(all)];
+  return all(part).some((t) => within(at, t.span));
+}
+
+/**
+ * The notes of a line that a part's hover shows (`isAbout` one of their ranges, `LineExplanation.anchors`), and the
+ * others: those about other parts, and those with no range (about the line), which only the whole line shows.
+ */
+export function partNotes(ex: LineExplanation, part: Token): { about: string[]; others: string[] } {
+  const about = ex.notes.filter((n) => ex.anchors?.some((a) => a.text === n && isAbout(a.span, part)));
+  return { about, others: ex.notes.filter((n) => !about.includes(n)) };
 }
 
 /** The run of blanks around a position on no part (the indentation, between statements), so that moving onto a part asks again. */

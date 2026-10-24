@@ -1,7 +1,8 @@
 import { Lang, Text, tx } from './i18n';
-import { findIdioms, Redirect, simulateRedirects } from './idioms';
-import { pitfallNotes } from './pitfalls';
-import { wordFacts } from './wordfacts';
+import { idiomsFound, Redirect, simulateRedirects } from './idioms';
+import { pitfallFindings } from './pitfalls';
+import { wordFindings } from './wordfacts';
+import { anchored, spanOf } from './noteanchors';
 import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, readsVariable, redirectionsOf, token, wordsText } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
@@ -36,7 +37,7 @@ import { customCommandSpec } from './dict/custom';
 import { DIRECTIVE } from './directives';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
 import { EMBEDDED, type EmbeddedContext } from './embedded/registry';
-import { dialectNotes, Shell } from './dialect';
+import { dialectFound, Shell } from './dialect';
 import { ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from './arith';
 import { decodedText, isPlainWord, type Literal, literalContent, sourceIndex, splitElement, staticWordText, staticWordValue, unquoteWord } from './staticword';
 import { explainExpansion, type ExpansionHost } from './expansion-tokens';
@@ -67,7 +68,7 @@ const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number,
 
 export { EXAMPLE_KINDS } from './analyzer-types';
 export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
-import type { ContextEntry, Example, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token, TokenOrigin } from './analyzer-types';
+import type { ContextEntry, Example, ExampleSection, ExplainOptions, Kind, LineExplanation, NoteAnchor, Pos, Span, Token, TokenOrigin } from './analyzer-types';
 import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 
@@ -86,13 +87,6 @@ const effEndRow = (n: SyntaxNode) =>
   n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row ? n.endPosition.row - 1 : n.endPosition.row;
 const isMultiline = (n: SyntaxNode) => effEndRow(n) > n.startPosition.row;
 const intersects = (n: SyntaxNode, line: number) => n.startPosition.row <= line && effEndRow(n) >= line;
-
-function spanOf(n: SyntaxNode): Span {
-  return {
-    start: { line: n.startPosition.row, character: n.startPosition.column },
-    end: { line: n.endPosition.row, character: n.endPosition.column },
-  };
-}
 
 /** Whether each line of the node explains only its own part (a block over several lines); otherwise `sub` explains it whole. */
 export function isBlockLike(n: SyntaxNode): boolean {
@@ -146,6 +140,8 @@ interface LineContext {
   extraNotes: string[];
   /** The facts of the message catalog said on this line (src/messages.ts), as `say` records them. */
   facts: Fact[];
+  /** The nodes the notes of this line are about (`LineExplanation.anchors`). */
+  anchors: NoteAnchor[];
   /** Worked examples produced while explaining (grep, sed, awk, jq). */
   examples: Example[];
   /**
@@ -200,12 +196,12 @@ export class Analyzer {
     const state = shellState(tree, shell, { host: opts.hostCommands });
     this.cx = {
       opts, source: root.text, rootNode: root, line, shell, state, status: statusModel(state, shell),
-      context: [], slotEnvs: new Map(), stages: new Map(), extraNotes: [], facts: [], examples: [], argCtx: undefined,
+      context: [], slotEnvs: new Map(), stages: new Map(), extraNotes: [], facts: [], anchors: [], examples: [], argCtx: undefined,
     };
     const items = this.flatten(root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
-    const notes = [...this.notes(root, line, items), ...dialectNotes(tree, line, shell ?? 'bash', this.lang, opts.bashVersion), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.cx.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang, this.cx.state, this.cx.shell)), ...wordFacts(root, line, this.lang, this.cx.state, this.cx.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
+    const notes = [...this.notes(root, line, items), ...anchored(dialectFound(tree, line, shell ?? 'bash', this.lang, opts.bashVersion), this.cx.anchors), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : anchored(idiomsFound(statements, this.lang), this.cx.anchors)), ...(this.cx.opts.pitfalls === false ? [] : anchored(pitfallFindings(root, this.lang, line, line, this.cx.state, this.cx.shell), this.cx.anchors)), ...new Set(wordFindings(root, this.lang, this.cx.state, this.cx.shell, line, line).flatMap((w) => this.say(w.fact, w.node))), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
     const facts = this.cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
     const result: LineExplanation = {
@@ -215,6 +211,7 @@ export class Analyzer {
       context: this.cx.context,
       notes,
       ...(facts.length ? { facts } : {}),
+      ...(this.cx.anchors.some((a) => notes.includes(a.text)) ? { anchors: this.cx.anchors.filter((a) => notes.includes(a.text)) } : {}),
       // Each -e of sed explains the same combined script, so drop repeated examples.
       examples: this.titledExamples(root, line)
         .filter((e) => this.wantsExample(e))
@@ -236,14 +233,14 @@ export class Analyzer {
   // ---------------------------------------------------------------- helpers
 
   /**
-   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`. The `notes.pitfalls`
-   * setting is applied by `said` (src/messages.ts), the one rule: a pitfall (by its catalog entry) is not said when
-   * the pitfalls are off.
+   * A fact's note: its text, recorded with its id and sections for `LineExplanation.facts`, and with the node it is
+   * about (`at`) for `LineExplanation.anchors`. The `notes.pitfalls` setting is applied by `said` (src/messages.ts),
+   * the one rule: a pitfall (by its catalog entry) is not said when the pitfalls are off.
    */
-  private say(f: Fact): string[] {
+  private say(f: Fact, at: SyntaxNode): string[] {
     const out = said([f], this.cx.opts.pitfalls);
     this.cx.facts.push(...out);
-    return out.map((x) => x.text);
+    return anchored(out.map((x) => ({ text: x.text, node: at })), this.cx.anchors);
   }
 
   private s(ja: string, en: string): string {
@@ -663,7 +660,7 @@ export class Analyzer {
     // In POSIX mode a function cannot have the name of a special builtin.
     const fails = definitionFails(this.cx.state, n);
     if (fails !== 'off') {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, fails === 'on' ? 'posix-special-function-name' : 'posix-special-function-name-maybe')));
+      this.cx.extraNotes.push(...this.say(fact(this.lang, fails === 'on' ? 'posix-special-function-name' : 'posix-special-function-name-maybe'), nameNode));
     }
     return skeletal(this.tok(n, 'function', this.s(
       `関数 \`${name}\` の定義: 以後 \`${name}\` をコマンドのように呼び出せる（引数は関数内で $1, $2… になる）${stored}${this.lineRef(n)}`,
@@ -834,7 +831,7 @@ export class Analyzer {
    */
   private redirectedWhole(n: SyntaxNode, body: SyntaxNode | undefined, text: string | undefined, bodyToks: Token[], redirs: SyntaxNode[]): Token {
     const effect = simulateRedirects(redirs.map((r) => this.redirectInfo(r)), this.lang);
-    if (effect) this.cx.extraNotes.push(effect);
+    if (effect) this.cx.extraNotes.push(...anchored(redirs.map((r) => ({ text: effect, node: r })), this.cx.anchors));
     const redirToks = this.subs(redirs);
     // `time >o`: the keyword carries its redirections.
     if (bodyToks.length === 1 && n.type === 'redirected_statement' && field(n, 'body')!.type === 'time_statement') {
@@ -891,7 +888,7 @@ export class Analyzer {
    */
   private splitCommand(whole: SyntaxNode, body: SyntaxNode, layout: Layout): Token {
     const effect = simulateRedirects(layout.redirs.map((r) => this.redirectInfo(r)), this.lang);
-    if (effect) this.cx.extraNotes.push(effect);
+    if (effect) this.cx.extraNotes.push(...anchored(layout.redirs.map((r) => ({ text: effect, node: r })), this.cx.anchors));
     const before = this.cx.examples.length;
     const inner = this.commandToken(body, true);
     inner.span = layout.span;
@@ -1168,7 +1165,7 @@ export class Analyzer {
       `Syntax error: a \`;\` or a newline is needed before \`${kw}\`. Without it \`${kw}\` is read as an ordinary argument, so this construct has no \`${kw}\` and bash stops with "syntax error near unexpected token"`);
     t.kind = 'error';
     t.explanation = `${msg}. ${t.explanation}`;
-    this.cx.extraNotes.push(`⚠ ${msg}`);
+    this.cx.extraNotes.push(...anchored([{ text: `⚠ ${msg}`, node: n }], this.cx.anchors));
     return t;
   }
 
@@ -1179,17 +1176,17 @@ export class Analyzer {
     const [, v, op] = m;
     // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
     const { ignored, active } = this.cx.status.errexit(n); if (ignored?.sure) return;
-    this.cx.extraNotes.push(...this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on' })));
+    this.cx.extraNotes.push(...this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on' }), n));
   }
 
   /** `exit 256` and `return 300`: the status is taken modulo 256. */
   private statusRangeNote(n: SyntaxNode): void {
     const rule = this.cx.status.status(n);
     if (rule.kind !== 'given') return;
-    const v = Number(fields(n, 'argument')[0].text);
+    const arg = fields(n, 'argument')[0];
+    const v = Number(arg.text);
     if (v >= 0 && v <= 255) return;
-    const status = rule.value;
-    this.cx.extraNotes.push(...this.say(fact(this.lang, 'exit-modulo', { value: String(v), status })));
+    this.cx.extraNotes.push(...this.say(fact(this.lang, 'exit-modulo', { value: String(v), status: rule.value }), arg));
   }
 
   /**
@@ -1237,7 +1234,7 @@ export class Analyzer {
     if (split) return split;
     // (`echo a > f b 2>&1`: a redirection among the words, and more of them.)
     const effect = simulateRedirects(redirectionsOf(n).map((r) => this.redirectInfo(r)), this.lang);
-    if (effect) this.cx.extraNotes.push(effect);
+    if (effect) this.cx.extraNotes.push(...anchored(redirectionsOf(n).map((r) => ({ text: effect, node: r })), this.cx.anchors));
     const before = this.cx.examples.length;
     const t = this.commandToken(n);
     this.statusRangeNote(n);
@@ -1349,9 +1346,9 @@ export class Analyzer {
       head.spec = yq[verdict.flavor];
       head.explanation = this.t(head.spec.summary);
       // A command over several lines is explained whole, so it always starts on the line explained.
-      this.cx.extraNotes.push(...yqNotes(verdict, this.lang));
+      this.cx.extraNotes.push(...anchored(yqNotes(verdict, this.lang).map((text) => ({ text, node: n })), this.cx.anchors));
     }
-    if (head.kind === 'builtin' && head.name === 'local' && !inFunction(this.cx.state.env(n)) && scopeOf(n) !== 'substitution') this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
+    if (head.kind === 'builtin' && head.name === 'local' && !inFunction(this.cx.state.env(n)) && scopeOf(n) !== 'substitution') this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function'), n));
     if (head.kind === 'builtin' && head.name === 'return') head.explanation = returnInSubstitution(this.expansionHost, n) ?? head.explanation;
     const read = this.args(head.spec, args, head.runs ?? head.name, head.fn);
     let argToks = read.tokens;
@@ -1436,9 +1433,9 @@ export class Analyzer {
     const last = test.words[test.words.length - 1];
     // (`[ -f x]`, `[ -f $x]`: the `]` is glued to the last word. With a word not known, the pitfall says it.)
     const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
-    if (test.unclosed && glued) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-close-glued', { word: last.text })));
-    else if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close')));
-    if (test.malformed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'test-malformed', { name: bracket ? '[' : 'test' })));
+    if (test.unclosed && glued) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-close-glued', { word: last.text }), last));
+    else if (test.unclosed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'bracket-missing-close'), n));
+    if (test.malformed) this.cx.extraNotes.push(...this.say(fact(this.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n));
     let inner: Token[];
     if (test.test && !test.unclosed && !glued) {
       this.testExample(n, bracketShape(test.test), '[');
@@ -1459,28 +1456,28 @@ export class Analyzer {
   }
 
   /** A note on a definition of `name` that does not run here (a function defined later, in a subshell, removed). */
-  private missedNote(name: string, missed: Missed | undefined): void {
+  private missedNote(name: string, missed: Missed | undefined, at: SyntaxNode): void {
     if (missed?.kind !== 'function') return;
     const line = (docLine(missed.def) + 1);
     const runs = tx(`組み込みコマンドや外部コマンドの \`${name}\` が動きます`, `the builtin or program \`${name}\` runs`);
     switch (missed.why) {
       case 'later':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-later', { name, line, runs })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-later', { name, line, runs }), at));
         return;
       case 'subshell':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-subshell', { name, line, runs })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-subshell', { name, line, runs }), at));
         return;
       case 'in-function':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-uncalled-function', { name, line, by: field(missed.by!, 'name')!.text, runs }), at));
         return;
       case 'never-runs':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-dead-branch', { name, line, runs })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-defined-in-dead-branch', { name, line, runs }), at));
         return;
       case 'unset':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-removed-by-unset', { name, line: (docLine(missed.by!) + 1), runs }), at));
         return;
       case 'posix-special':
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'special-builtin-before-function', { name, line })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'special-builtin-before-function', { name, line }), at));
         return;
     }
   }
@@ -1558,7 +1555,7 @@ export class Analyzer {
       const first = missed.def.startPosition.row;
       if (missed.why === 'expand_aliases') {
         const value = this.cx.state.at(nameNode).expand.aliases.get(name)!.value;
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'alias-not-expanded-in-script', { name, value })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'alias-not-expanded-in-script', { name, value }), nameNode));
         return {
           name, res: ran, kind: 'alias', nameTokens: [], refs: ['6.6'],
           explanation: this.s(`このスクリプトの行 ${first + 1} で定義したエイリアス \`${name}\`（\`${value}\`）。ただし bash はスクリプトの中でエイリアスを展開しない（\`shopt -s expand_aliases\` がない）ので、実際には「command not found」になる。sh や dash なら \`${value}\` に置き換わる`,
@@ -1567,11 +1564,11 @@ export class Analyzer {
       }
       if (missed.why === 'later' || missed.why === 'same-unit') {
         const same = missed.why === 'same-unit';
-        this.cx.extraNotes.push(...this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, same ? 'alias-defined-same-unit' : 'alias-defined-later', { name, line: first + 1 }), nameNode));
       }
     }
     if (res.kind === 'function') return { name, res: ran, kind: 'function', fn: res.sure || 'maybe', nameTokens: [], refs: ['3.3'], explanation: this.functionCall(res) };
-    this.missedNote(name, missed);
+    this.missedNote(name, missed, nameNode);
     // After `source`, a name the dictionary does not know may be a function of the file read.
     if (res.kind === 'file' && res.sourced) {
       const line = (docLine(res.sourced) + 1);
@@ -1622,7 +1619,7 @@ export class Analyzer {
       const many = distro.definitions.length > 1;
       this.cx.extraNotes.push(...this.say(interactive
         ? fact(this.lang, 'distro-alias-interactive', { name, where, what: whatText, many, portable: distro.portable })
-        : fact(this.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean') })));
+        : fact(this.lang, 'distro-alias-in-script', { name, where, what: whatText, many, instead: distro.portable ? tx(`\`${distro.portable}\` と書きます`, `Write \`${distro.portable}\``) : tx('したいことに合ったコマンドをそのまま書きます', 'Write the command you mean') }), nameNode));
       return {
         name, ...(interactive ? {} : { res: ran }), spec: distro.command ? lookupCommand(distro.command) : undefined, kind: 'command', nameTokens: [],
         explanation: this.s(`${what} \`${name}\`: ${this.t(distro.meaning)}（${defs}）`, `${distro.kind === 'alias' ? 'Alias' : 'Function'} \`${name}\`: ${this.t(distro.meaning)} (${defs})`),
@@ -2047,7 +2044,7 @@ export class Analyzer {
     const fn = space === 'function';
     if (space === 'none') {
       // (Once for the command, at its first name.)
-      if (parse.roles.find((r) => r.role.role === 'operand')!.word === word) this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-function-and-variable')));
+      if (parse.roles.find((r) => r.role.role === 'operand')!.word === word) this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-function-and-variable'), a.parent!));
       return this.positional(a, this.s('削除する名前（`-f` と `-v` を同時に指定しているので、何も削除されない）', 'Name to unset (with both `-f` and `-v`, nothing is unset)'));
     }
     const plain = isPlainWord(a);
@@ -2081,7 +2078,7 @@ export class Analyzer {
         // A read-only variable stays: bash refuses (status 1).
         const readonly = kind === 'function' ? 'off' : attribute(st, name, 'r');
         if (readonly === 'on') {
-          this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-readonly', { name })));
+          this.cx.extraNotes.push(...this.say(fact(this.lang, 'unset-readonly', { name }), a));
           text = this.s(`変数 \`${name}\` は読み取り専用なので削除されない（エラー、終了ステータス 1）`, `The variable \`${name}\` is read-only, so it is not unset (an error, status 1)`);
         } else if (readonly === 'unknown') {
           text += this.s(`。ただし、この前の一部の経路では読み取り専用になっていて、そこでは削除されずエラーになる（終了ステータス 1）`, `. But some paths before here make it read-only, and there it is not unset (an error, status 1)`);
@@ -2849,7 +2846,7 @@ export class Analyzer {
     const stdin: Text = u.from === 'file' ? tx(`\`< ${u.name}\``, `\`< ${u.name}\``)
       : u.from === 'pipe' ? tx('パイプで渡される前のコマンドの出力', 'the output of the previous command, through the pipe')
         : (u as Extract<Stdin, { from: 'here' }>).doc ? tx('ヒアドキュメント', 'the here-document') : tx('ヒアストリング', 'the here-string');
-    this.cx.extraNotes.push(...this.say(fact(this.lang, 'stdin-not-read', { cmd: name.split('/').pop()!, file: file.name, stdin })));
+    this.cx.extraNotes.push(...this.say(fact(this.lang, 'stdin-not-read', { cmd: name.split('/').pop()!, file: file.name, stdin }), n));
   }
 
   /** How `read` splits a sample line into its variables (with the IFS given before it). */
@@ -2866,7 +2863,7 @@ export class Analyzer {
     const here = n.namedChildren.find((c) => c.type === 'herestring_redirect')?.namedChildren[0];
     const r = readExample(args.map((a) => literalContent(a)?.text), ifs, here && literalContent(here)?.text, this.lang);
     if (!r) return;
-    if (r.note) this.cx.extraNotes.push(r.note);
+    if (r.note) this.cx.extraNotes.push(...anchored([{ text: r.note, node: n }], this.cx.anchors));
     this.cx.examples.push(r.example);
   }
 
@@ -2951,7 +2948,7 @@ export class Analyzer {
     if (!byRoot) statusFactCache.set(this.cx.status, (byRoot = new WeakMap()));
     let byLine = byRoot.get(this.cx.rootNode);
     if (!byLine) byRoot.set(this.cx.rootNode, (byLine = statusFacts(this.cx.rootNode, this.cx.state, this.cx.status, this.cx.shell)));
-    return (byLine.get(line) ?? []).filter((f) => (MESSAGES[f.id].kind === 'pitfall') === pitfall).flatMap((f) => this.say(factOf(this.lang, f)));
+    return (byLine.get(line) ?? []).filter((f) => (MESSAGES[f.id].kind === 'pitfall') === pitfall).flatMap((f) => this.say(factOf(this.lang, f), f.node));
   }
 
   /**
@@ -2972,7 +2969,7 @@ export class Analyzer {
           : [`\`${used}=$(コマンド)\` のようにコマンド置換で受け取ります`, `Take the output with command substitution: \`${used}=$(command)\``])
         : (bash ? ['`done < ファイル` や `done < <(コマンド)` のようにリダイレクトで渡すか、`shopt -s lastpipe` にします', 'Feed the loop with a redirection, `done < file` or `done < <(command)`, or turn on `shopt -s lastpipe`']
           : ['`done < ファイル` のようにリダイレクトで渡すか、一時ファイルを使います', 'Feed the loop with a redirection, `done < file`, or use a temporary file']);
-      return this.say(fact(this.lang, 'pipeline-subshell-variable', { used, fix: tx(fix[0], fix[1]), partial: !link.sure }));
+      return this.say(fact(this.lang, 'pipeline-subshell-variable', { used, fix: tx(fix[0], fix[1]), partial: !link.sure }), p);
     }
     return [];
   }
@@ -2997,7 +2994,7 @@ export class Analyzer {
       const body = bodyNode.text;
       if (new RegExp(`-[efdrsLh]\\s+"?\\$\\{?${v}\\b`).test(body)) continue;
       const nullglob = shopt.nullglob !== 'unsupported';
-      return this.say(fact(this.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, nullglob }));
+      return this.say(fact(this.lang, 'unmatched-glob-runs-once', { glob: glob.text, v, nullglob }), glob);
     }
     return [];
   }
@@ -3018,12 +3015,12 @@ export class Analyzer {
     const state = this.shoptAt(use, 'parse').extglob;
     if (state === 'on') return [];
     if (top !== use && this.shoptAt(top).extglob !== 'on' && this.shoptAt(use).extglob === 'on') {
-      return this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }));
+      return this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }), use);
     }
     // (A trap's action is read when its signal comes; another shell starts with its own options.)
     const id = state === 'unknown' ? (this.nested === 'later' ? 'extglob-maybe-on-trap' : 'extglob-maybe-on')
       : state === 'off' ? 'extglob-turned-off' : this.nested === 'child' ? 'extglob-not-in-new-shell' : 'extglob-not-found';
-    return this.say(fact(this.lang, id, { use: use.text }));
+    return this.say(fact(this.lang, id, { use: use.text }), use);
   }
 
   /**
@@ -3066,13 +3063,13 @@ export class Analyzer {
     const globstar = this.shoptAt(n).globstar;
     const on = this.cx.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
     if (globstar === 'unknown') {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-maybe-on', { on })));
+      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-maybe-on', { on }), n));
     }
     if (globstar === 'default') {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-not-found', { on })));
+      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-not-found', { on }), n));
     }
     if (globstar === 'unsupported') {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-unsupported', { shell: this.cx.shell! })));
+      this.cx.extraNotes.push(...this.say(fact(this.lang, 'globstar-unsupported', { shell: this.cx.shell! }), n));
     }
     return globstar === 'off' || globstar === 'unsupported'
       ? this.s(`。${globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
@@ -3162,11 +3159,11 @@ export class Analyzer {
       if (variables === 'none') {
         this.cx.extraNotes.push(...this.say(remote
           ? fact(this.lang, 'variable-not-in-remote-shell', { v })
-          : fact(this.lang, 'variable-not-passed-by-wrapper', { v, via: blocker!.via })));
+          : fact(this.lang, 'variable-not-passed-by-wrapper', { v, via: blocker!.via }), words[0]));
         return;
       }
       if (exported === 'off') {
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'variable-not-exported', { v })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'variable-not-exported', { v }), words[0]));
         return;
       }
     }
@@ -3194,7 +3191,7 @@ export class Analyzer {
     const isFn = isPlainWord(first) && (this.resolve(name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
     if (slot.run === 'exec' && where === 'container') {
       if (isFn) {
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-in-container', { via, name })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-in-container', { via, name }), first));
       }
     } else if (slot.run === 'exec') {
       // (A builtin with a program of its name runs the program: the slot gave its spec.)
@@ -3207,17 +3204,17 @@ export class Analyzer {
           : effect === 'changes'
             ? tx(`サブシェル \`(${name} … && …)\` か、\`${via} sh -c '${name} … && …'\` を使います`, `Use a subshell \`(${name} … && …)\`, or \`${via} sh -c '${name} … && …'\``)
             : tx(`\`${via} sh -c '${name} …'\` のようにシェル経由で呼びます（今のシェルの状態を変えるものは、別のプログラムでは変えられません）`, `Go through a shell, as in \`${via} sh -c '${name} …'\` (what changes the state of the current shell cannot be changed by another program)`);
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix }), first));
       }
     } else if (slot.run === 'shell-string' && where === 'remote') {
       // (A word this shell expands before ssh joins the words: src/semantics/words.ts.)
       const risky = words.find((w) => wordMeaning(w, this.cx.state)!.steps.some((x) => LOCAL_EXPANSIONS.has(x.kind) && x.applies !== false));
       if (risky) {
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'ssh-local-expansion', { risky: risky.text })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'ssh-local-expansion', { risky: risky.text }), risky));
       }
       this.unpassedVariables(env, words);
       if (isFn) {
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-on-remote', { name })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-on-remote', { name }), first));
       }
     } else if (slot.run === 'shell-string') {
       this.unpassedVariables(env, words);
@@ -3248,16 +3245,16 @@ export class Analyzer {
           ? fact(this.lang, 'function-not-in-new-shell', { via, fn: f })
           : missed?.why === 'not-imported'
           ? fact(this.lang, 'function-not-imported', { via, shell, fn: f })
-          : fact(this.lang, 'function-not-in-new-shell-export', { via, fn: f })));
+          : fact(this.lang, 'function-not-in-new-shell-export', { via, fn: f }), first));
       } else if (missed?.why === 'not-imported') {
         // (`sh` is dash on Debian and Ubuntu, bash elsewhere.)
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-imported-sh', { via, fn: fn! })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'function-not-imported-sh', { via, fn: fn! }), first));
       }
     }
     for (const v of assigned) {
       const use = words.find((w) => readsVariable(w, v));
       if (use) {
-        this.cx.extraNotes.push(...this.say(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v })));
+        this.cx.extraNotes.push(...this.say(fact(this.lang, 'wrapper-assignment-expanded-first', { use: use.text, via, v }), use));
         break;
       }
     }
@@ -3380,7 +3377,7 @@ export class Analyzer {
     const dropped = [...new Set([...n.text.matchAll(/\\([bBwWsSdD<>])/g)].filter((m) => text !== n.text).map((m) => '\\' + m[1]))];
     if (dropped.length) {
       const list = dropped.map((d) => `\`${d}\``).join(this.s('、', ', '));
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'regex-backslash-dropped', { list })));
+      this.cx.extraNotes.push(...this.say(fact(this.lang, 'regex-backslash-dropped', { list }), n));
     }
     if (js) this.regexExample(js, 'values');
     return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
@@ -3679,6 +3676,7 @@ export class Analyzer {
       if (!items.length) continue;
       this.cx.extraNotes.push(...ex.notes);
       this.cx.facts.push(...(ex.facts ?? []));
+      this.cx.anchors.push(...(ex.anchors ?? []).map((a) => ({ ...a, span: this.scriptSpan(a.span, script) })));
       // (Every example of a line is anchored at its command: `tagExamples`.)
       for (const e of ex.examples) this.cx.examples.push({ ...e, anchor: this.scriptSpan(e.anchor!, script) });
     }

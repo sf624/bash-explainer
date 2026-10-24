@@ -211,13 +211,13 @@ The faint one-line summary at the end of the cursor line (`bashExplainer.inline.
 
 Any hover with a position explains the part there: a word, an option, an operator, a redirection, a `$var`. A part that ends exactly at the position counts too, as an editor finds the word at the cursor (`Ctrl+K Ctrl+I` at the end of the line explains its last word). The hover's range is that part, so moving to the next word explains that one, and the editor highlights what is explained.
 
-- The part comes first: the parts around it in one line (`sudo | xargs › sudo ›`), its label coloured by its kind, the badge of a command name (keyword, builtin, function, alias, program) with who runs it, its meaning, "Same name, also" (`cd` is also bash's builtin, run with `builtin cd`), its own parts, and the command it belongs to. The notes of the line and the examples of the part come after.
+- The part comes first: the parts around it in one line (`sudo | xargs › sudo ›`), its label coloured by its kind, the badge of a command name (keyword, builtin, function, alias, program) with who runs it, its meaning, "Same name, also" (`cd` is also bash's builtin, run with `builtin cd`), its own parts, and the command it belongs to. Its notes and examples come after: only the notes about the part and its own parts (in `rm $f; read line`, the warning on the unquoted `$f` shows on `$f` and on `rm`, the caveat on `read` without `-r` on `read` only, and a note on a whole pipeline on its first command). A last link, such as "1 more note on this line", opens the whole line, which keeps all of them; a note about the line itself (a line of a here-document's body) is only counted there.
 - In the indentation or between statements, a small card shows the line's structure (`grep && echo › grep · echo`) and a **Whole line** link.
 - On a line of a here-document's body, or its closing line, the hover explains the `<<EOF` that starts it (or a `$var` in the body). Before, it explained the whole statement.
 - The whole line opens with `Ctrl+K Ctrl+E`, the context menu's **Explain Bash on Current Line**, or the **Whole line** link: the line, its structure, then one block per command with its badge, where it is, and its arguments two levels deep. Deeper parts are counted ("3 more in the panel").
 - The tree has no glyphs (`├─ └─`) any more: the parts are indented, and their labels are coloured without the code background.
 - `hover.followCursor` shows the part at the cursor.
-- The Language Server's hover (`textDocument/hover`) starts with the part at the position, in plain Markdown, then the whole line below a rule. Its range is the part.
+- The Language Server's hover (`textDocument/hover`) starts with the part at the position, in plain Markdown, with its notes, then the whole line below a rule, with all of them. Its range is the part.
 
 ### Note levels
 

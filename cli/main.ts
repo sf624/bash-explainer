@@ -340,8 +340,8 @@ function sarif(problems: Problem[]) {
   };
 }
 
-/** Examples without what only the panel uses. */
-const forJson = (ex: LineExplanation) => ({ ...ex, examples: ex.examples.map(({ interactive: _, ...e }) => e) });
+/** Without what only the editor's views use: the examples' reruns, the ranges of the notes (for the part hover). */
+const forJson = ({ anchors: _, ...ex }: LineExplanation) => ({ ...ex, examples: ex.examples.map(({ interactive: _i, ...e }) => e) });
 
 // ---- Main -------------------------------------------------------------------------------------
 

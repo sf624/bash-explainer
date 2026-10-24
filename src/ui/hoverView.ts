@@ -7,10 +7,10 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
-import { isCommand, sameSpan, shown } from './hoverParts';
+import { isCommand, partNotes, sameSpan, shown } from './hoverParts';
 import { type NoteLevel, splitNote } from '../messages';
 import { levelColour, ThemeKind } from './palette';
-import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, refsMarkdown, ui } from './render';
+import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, plainNotes, refsMarkdown, ui } from './render';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -124,10 +124,10 @@ export function structureCrumb(items: Token[], theme: ThemeKind): string {
   return items.map(one).join(sep('·'));
 }
 
-/** The link that explains the whole line, with its keys in the tooltip. */
-function lineLink(x: HoverInput): string {
+/** The link that explains the whole line (`text`: "Whole line" by default), with its keys in the tooltip. */
+function lineLink(x: HoverInput, text = ui[x.lang].hover.wholeLine): string {
   const t = ui[x.lang].hover;
-  return `[$(list-tree) ${t.wholeLine}](${x.lineLink} "${t.wholeLineTitle} (${x.keys})")`;
+  return `[$(list-tree) ${text}](${x.lineLink} "${t.wholeLineTitle} (${x.keys})")`;
 }
 
 /** "Bash Explainer · Line 3 · checked for POSIX sh · for loop (line 2)". */
@@ -153,9 +153,9 @@ function noteMarkdown(note: string, lang: Lang, theme: ThemeKind): string {
   return `${icon} ${label ? `<span style="color:${colour};"><strong>${esc(label)}</strong></span> ` : ''}${md(body)}`;
 }
 
-/** The notes of the line, warnings first, each with its level and the sections of the manual it is about. */
-function notes(ex: LineExplanation, lang: Lang, theme: ThemeKind): string[] {
-  return notesByLevel(ex.notes).flatMap((n) => {
+/** Notes of the line (all of them by default), warnings first, each with its level and the sections of the manual it is about. */
+function notes(ex: LineExplanation, lang: Lang, theme: ThemeKind, list: readonly string[] = ex.notes): string[] {
+  return notesByLevel(list).flatMap((n) => {
     const refs = noteRefs(ex, n);
     return [`> ${noteMarkdown(n, lang, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
   });
@@ -182,7 +182,8 @@ function examplesOn(placed: Token[], tok: Token): Example[] | undefined {
 /**
  * The part at a position (`chain`: the parts around it, outermost first, from `partAt`): a breadcrumb of the parts
  * around it and the link to the whole line, the part with its badge and meaning, its own parts, the command it belongs
- * to, then the notes of the line and the examples of the part, so that the first lines answer what the part is.
+ * to, then its notes and its examples, so that the first lines answer what the part is. The other notes of the line
+ * (about other parts, or about the line) are counted in a link to the whole line, at the end.
  */
 export function partHover(x: HoverInput, chain: Token[]): string {
   const part = chain[chain.length - 1];
@@ -196,13 +197,15 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`<small>${muted(t.command)}${label(command, x.theme)}${badge(command)} — ${md(command.explanation)}</small>`, '');
-  out.push(...notes(x.ex, x.lang, x.theme));
+  const { about, others } = partNotes(x.ex, part);
+  out.push(...notes(x.ex, x.lang, x.theme, about));
   // Its examples: those of the part and its own parts, else those of the nearest part around it.
   const placed = placeExamples(x.ex).items;
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
   const mine = below(part).flatMap((c) => examplesOn(placed, c) ?? []);
   const examples = mine.length ? mine : chain.slice(0, -1).reverse().map((c) => examplesOn(placed, c)).find(Boolean);
   if (examples?.length) out.push(...examplesMarkdown(examples));
+  if (others.length) out.push('', lineLink(x, t.moreNotes(others.length)));
   out.push(...footer(x, { where: true, hidden: own.hidden }));
   return out.join('\n');
 }
@@ -269,8 +272,8 @@ function blockExamples(placed: Token[], tok: Token, shownRows: Token[]): Example
 }
 
 /**
- * The Language Server's hover, in plain Markdown (no HTML, no command links): the part at the position first, then
- * the whole line below a rule. On no part, the whole line only.
+ * The Language Server's hover, in plain Markdown (no HTML, no command links): the part at the position first, with
+ * its notes (`partNotes`), then the whole line below a rule, with all of them. On no part, the whole line only.
  */
 export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, whole: string): string {
   if (!chain.length) return whole;
@@ -287,6 +290,7 @@ export function plainPartHover(ex: LineExplanation, chain: Token[], lang: Lang, 
   if (kids.length) out.push(...kids.map((k) => `- ${flat(k)} — ${explained(k)}`), '');
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`${t.command}${flat(command)} — ${explained(command)}`, '');
+  out.push(...plainNotes(ex, partNotes(ex, part).about, lang));
   out.push('---', '', whole);
   return out.join('\n');
 }

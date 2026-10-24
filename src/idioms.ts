@@ -488,8 +488,14 @@ const IDIOMS: Idiom[] = [
 
 /** Notes for the idioms found in the given statements, without duplicates. */
 export function findIdioms(statements: readonly SyntaxNode[], lang: Lang): string[] {
+  return idiomsFound(statements, lang).map((f) => f.text);
+}
+
+/** The notes of `findIdioms`, each with the narrowest statement it was found in (where the part hover shows it). */
+export function idiomsFound(statements: readonly SyntaxNode[], lang: Lang): { text: string; node: SyntaxNode }[] {
   const s = pick(lang);
-  const found = IDIOMS.map((idiom) => statements.some((n) => idiom.test(n)));
-  return IDIOMS.filter((idiom, i) => found[i] && !(idiom.unless !== undefined && found[idiom.unless]))
-    .map((idiom) => s(`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`));
+  const width = (n: SyntaxNode) => n.endIndex - n.startIndex;
+  const found = IDIOMS.map((idiom) => statements.filter((n) => idiom.test(n)).sort((a, b) => width(a) - width(b))[0]);
+  return IDIOMS.flatMap((idiom, i) => (found[i] && !(idiom.unless !== undefined && found[idiom.unless])
+    ? [{ text: s(`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`), node: found[i] }] : []));
 }

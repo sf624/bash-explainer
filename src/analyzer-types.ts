@@ -100,6 +100,9 @@ export interface ExplainOptions {
   reading?: boolean;
 }
 
+/** A note of a line and the range it is about (`LineExplanation.anchors`). */
+export interface NoteAnchor { text: string; span: Span }
+
 export interface LineExplanation {
   line: number;
   summary: string;
@@ -112,6 +115,11 @@ export interface LineExplanation {
    * they cite. `text` is the note as it is in `notes`.
    */
   facts?: Fact[];
+  /**
+   * Where the notes are about, for the notes found on a node (a word, a command, a construct): each note's text as it
+   * is in `notes` and that node's range; a note found on several nodes has several. A note with none is about the line.
+   */
+  anchors?: NoteAnchor[];
   /** Worked examples (e.g. input and output of a sed script), shown line by line. */
   examples: Example[];
   /** The shell the script is written for, when it is not bash (checked for unsupported features). */
