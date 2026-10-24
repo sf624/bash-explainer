@@ -616,7 +616,7 @@ li.collapsed > .body {
 /* ---------------------------------------------------------------- the tree view */
 
 /* The layers of the tree view (src/reading.ts), in the colours of the roles: bash in the keyword colour, a
-   child bash in the command colour, a command's reading in the argument colour, a language in the option colour. */
+   the shell of a script inside in the command colour, a command's reading in the argument colour, a language in the option colour. */
 body {
   --l-bash: var(--c-keyword);
   --l-child: var(--c-command);

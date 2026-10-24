@@ -174,7 +174,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const refs = t?.refs ?? (n.named ? nodeSections(n) : anonSections(n));
     return {
       layer, kind, label: short(n.text), span, ...(t ? { text: t.explanation } : {}), ...(refs ? { refs } : {}),
-      ...(layer === 'child' ? { process: 'child' as const } : {}), children,
+      ...(layer === 'child' ? { process: 'subshell' as const } : {}), children,
     };
   };
 
@@ -320,7 +320,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const span = spanOf(w);
     // (`[`: the token of its name, inside that of the test.)
     const own = all.find((x) => x.origin === 'shell' && READERS.has(x.kind) && same(x.span, span)) ?? t;
-    const process = layer === 'child' ? { process: 'child' as const } : {};
+    const process = layer === 'child' ? { process: 'subshell' as const } : {};
     if (name === undefined) {
       const n = word(w, layer, 'expandedName');
       n.refs = union(['3.7.1'], n.refs);
@@ -344,7 +344,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    * written after the alias. Under it, that text as bash reads it, when it is plain words; `runs`: the command that
    * reads the words after it.
    */
-  const aliasWord = (w: SyntaxNode, res: Extract<NameResolution, { kind: 'alias' }>, own: Token | undefined, process: { process?: 'child' }): { node: ReadingNode; runs: string } => {
+  const aliasWord = (w: SyntaxNode, res: Extract<NameResolution, { kind: 'alias' }>, own: Token | undefined, process: { process?: 'subshell' }): { node: ReadingNode; runs: string } => {
     const span = spanOf(w);
     const layer: Layer = process.process ? 'child' : 'bash';
     const value = res.alias.value;
@@ -414,7 +414,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
   /** A token of bash's reading in a word, with the tokens of bash's under it. */
   const partToken = (t: Token, layer: Layer): ReadingNode => ({
     // (They cite no sections of their own: the word, or the quote around them, does.)
-    layer, kind: t.kind, label: t.label, span: t.span, text: t.explanation, ...(layer === 'child' ? { process: 'child' as const } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, text: t.explanation, ...(layer === 'child' ? { process: 'subshell' as const } : {}),
     children: t.children.filter((c) => c.origin === 'shell').map((c) => partToken(c, layer)),
   });
 
@@ -425,7 +425,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
       const close = p.children[p.children.length - 1];
       const span: Span = { start: point(open.endPosition.row, open.endPosition.column), end: point(close.startPosition.row, close.startPosition.column) };
       const text = p.text.slice(open.endIndex - p.startIndex, close.startIndex - p.startIndex);
-      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'child', children: p.namedChildren.flatMap((c) => node(c, 'child')) };
+      const script: ReadingNode = { layer: 'child', kind: 'script', label: short(text.trim()), span, process: 'subshell', children: p.namedChildren.flatMap((c) => node(c, 'child')) };
       return shellNode(p, layer, 'substitution', [script]);
     }
     const kind: ShellKind = p.type === 'simple_expansion' || p.type === 'expansion' ? 'expansion'
@@ -468,7 +468,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     for (const t of tokens) {
       if (t.origin === 'argv') out.push(tokenNode(t, 'command', reader));
       else if (t.origin === 'embedded') language(out, t, reader);
-      else if (t.origin === 'script') out.push(scriptNode(t, t.process ?? 'child'));
+      else if (t.origin === 'script') out.push(scriptNode(t, t.process ?? 'shell'));
       // (At the top, bash's tokens are the command's name, assignments and redirections, and the words it takes as
       // they are, with what is under them: the script of `eval "ls"`.)
       // A quoted word whose text a shell reads again (`eval "ls; echo hi"`) is an operand the command reads as a

@@ -73,7 +73,7 @@ describe('the reading tree of a line', () => {
     assert.strictEqual(find(r, 'foo', 'command').reader, 'grep');
     assert.strictEqual(find(r, 'regex').reader, 'grep');
     assert.strictEqual(find(r, '"$x" -gt 0').reader, '[');
-    assert.strictEqual(find(r, 'grep -c foo f', 'child', 'script').process, 'child');
+    assert.strictEqual(find(r, 'grep -c foo f', 'child', 'script').process, 'subshell');
     // The subshell parses the text between `$(` and `)`.
     assert.deepStrictEqual(find(r, 'grep -c foo f', 'child', 'script').span, { start: { line: 0, character: 4 }, end: { line: 0, character: 17 } });
     assert.deepStrictEqual(r.span, { start: { line: 0, character: 0 }, end: { line: 0, character: 36 } });
@@ -234,7 +234,7 @@ describe('the reading tree of a line', () => {
       '            command/option -l',
     ]);
     const r = explain("bash -c 'echo a | wc -l'").reading!;
-    assert.strictEqual(find(r, 'echo', 'child').process, 'child');
+    assert.strictEqual(find(r, 'echo', 'child').process, 'shell');
     assert.strictEqual(find(r, '-l', 'command').reader, 'wc');
     // (Levels inside levels are the same layer: the `$( )` of a string `bash -c` runs.)
     assert.deepStrictEqual(outline(find(explain("bash -c 'echo $(pwd)'").reading!, 'echo', 'child')), [
@@ -271,7 +271,7 @@ describe('the reading tree of a line', () => {
       '      command/argument EXIT',
     ]);
     assert.deepStrictEqual([find(r, 'ls', 'child').process, find(r, 'echo', 'child').process, find(r, 'rm', 'child').process], ['same', 'same', 'same']);
-    assert.strictEqual(find(explain("bash -c 'ls'").reading!, 'ls', 'child').process, 'child');
+    assert.strictEqual(find(explain("bash -c 'ls'").reading!, 'ls', 'child').process, 'shell');
     assert.strictEqual(find(explain('ssh host ls -l').reading!, 'ls', 'child').process, 'remote');
     assert.strictEqual(find(explain('docker exec c sh -c ls').reading!, 'ls', 'child').process, 'container');
     // As bash runs them: `eval` and a trap's action run in this shell ($BASHPID is $$), `bash -c` and `$( )` in another.

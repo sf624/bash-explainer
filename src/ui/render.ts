@@ -32,17 +32,17 @@ export const ui = {
       tree: {
         label: '行の各部分を誰が読むか', show: '表示', levels: ['bash', '+ 中のスクリプト', '+ コマンド', '+ 言語'],
         reads: '{name} が読む',
-        bands: { bash: 'bash', child: { child: '子のシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
+        bands: { bash: 'bash', child: { subshell: 'サブシェル', shell: '新しいシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
         readers: {
           bash: 'bash が解析する',
           child: {
-            child: '子のシェル（サブシェル、またはそのために起動したシェル）がもう一度解析する', same: 'それを実行するシェルが、この文字列をもう一度解析する（新しいプロセスなし）',
+            subshell: 'サブシェル（このシェルのコピー）がもう一度解析する', shell: '新しく起動したシェル（別のプロセス）がもう一度解析する', same: 'それを実行するシェルが、この文字列をもう一度解析する（新しいプロセスなし）',
             remote: '別のマシンのシェルが解析する', container: 'コンテナの中のシェルが解析する',
           },
           command: 'bash ではなく {name} が読む', language: '{name} が読む独自の言語', bashLanguage: 'bash 自身が読む（正規表現の照合、POSIX の拡張正規表現(ERE)）',
         },
         kinds: {
-          line: 'bash がこの行を読む', script: 'サブシェルのスクリプト', list: 'リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
+          line: 'bash がこの行を読む', script: '中のスクリプト', list: 'リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
           clause: '節', coprocess: 'コプロセス', function: '関数', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
           assignmentArgument: '代入の引数', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: 'キーワード',
@@ -105,17 +105,17 @@ export const ui = {
       tree: {
         label: 'Who reads each part of the line', show: 'Show', levels: ['bash', '+ scripts inside', '+ commands', '+ languages'],
         reads: '{name} reads',
-        bands: { bash: 'bash', child: { child: 'child shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },
+        bands: { bash: 'bash', child: { subshell: 'subshell', shell: 'new shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },
         readers: {
           bash: 'bash parses it',
           child: {
-            child: 'a child shell parses it again (a subshell, or a shell started for it)', same: 'the shell that runs it parses this string again (no new process)',
+            subshell: 'a subshell (a copy of this shell) parses it again', shell: 'a newly started shell (another process) parses it again', same: 'the shell that runs it parses this string again (no new process)',
             remote: 'a shell on another machine parses it', container: 'a shell in the container parses it',
           },
           command: '{name} reads it, not bash', language: 'a language of its own, read by {name}', bashLanguage: 'bash reads it itself (its regex matching, POSIX ERE)',
         },
         kinds: {
-          line: 'bash reads the line', script: 'subshell script', list: 'list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
+          line: 'bash reads the line', script: 'script inside', list: 'list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
           clause: 'clause', coprocess: 'coprocess', function: 'function', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
           assignmentArgument: 'assignment argument', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic', brace: 'brace expansion', operator: 'operator', keyword: 'keyword',

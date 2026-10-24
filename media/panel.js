@@ -587,7 +587,7 @@
   /** Who reads a node: bash, which shell parses it again, the command, or the language and who reads it. */
   function readerOf(n) {
     const r = labels.tree.readers;
-    if (n.layer === 'child') return r.child[n.process ?? 'child'];
+    if (n.layer === 'child') return r.child[n.process ?? 'subshell'];
     if (n.layer === 'language' && n.reader === 'bash') return r.bashLanguage;
     return r[n.layer].replace('{name}', n.reader ?? '');
   }
@@ -597,7 +597,7 @@
     const t = labels.tree;
     if (n.layer === 'command') return t.reads.replace('{name}', n.reader ?? '');
     if (n.layer === 'language') return n.kind === 'language' ? chipOf(n) : '';
-    if (n.layer === 'child') return t.bands.child[n.process ?? 'child'];
+    if (n.layer === 'child') return t.bands.child[n.process ?? 'subshell'];
     return t.bands.bash;
   }
 

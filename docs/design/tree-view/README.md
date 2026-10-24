@@ -18,8 +18,8 @@ The panel's rows were then tried in three looks (draft PR #286: the list's rows;
 | File | Prototype | What it shows |
 | --- | --- | --- |
 | [proto-a.html](proto-a.html) | A. Brackets under the code | The line as written, with a row of brackets under it per layer. A dashed line marks where bash's part ends and the commands' reading begins. Hover or tab to a bracket to see who reads that part. |
-| [proto-b.html](proto-b.html) | B. Line unfolding | Six steps, played or stepped through: the plain line, its words and operators, its commands, the child bash in `$( )`, each command's options and arguments, the languages inside them. With reduced motion, it shows the last step at once. |
-| [proto-c.html](proto-c.html) | C. Folding tree | An indented tree that folds and unfolds, with nested bands for the layers and a toggle that adds them one at a time (bash, + child bash, + commands, + languages). It follows the ARIA tree pattern for the keyboard and screen readers. |
+| [proto-b.html](proto-b.html) | B. Line unfolding | Six steps, played or stepped through: the plain line, its words and operators, its commands, the subshell of `$( )`, each command's options and arguments, the languages inside them. With reduced motion, it shows the last step at once. |
+| [proto-c.html](proto-c.html) | C. Folding tree | An indented tree that folds and unfolds, with nested bands for the layers and a toggle that adds them one at a time (bash, + scripts inside, + commands, + languages). It follows the ARIA tree pattern for the keyboard and screen readers. |
 
 Each one is a single HTML file with no library, about 8–9 KB gzipped, and works offline, light and dark, down to phone width. Open it in a browser; `?ex=1` shows the second line, and `proto-b.html?step=5` the last step.
 
@@ -38,12 +38,12 @@ node docs/design/tree-view/build.mjs
 
 [screenshots/](screenshots/) has one picture of each prototype, taken in headless Chromium from the files above, on the first line, with the four layers shown:
 
-- `proto-a-1280-light.png`: A, 1280 pixels wide, light theme. The purple brackets are bash's reading (the top rows), the blue ones the child bash's, the green ones the commands' (under the dashed line), the orange ones the regex.
+- `proto-a-1280-light.png`: A, 1280 pixels wide, light theme. The purple brackets are bash's reading (the top rows), the blue ones the subshell's, the green ones the commands' (under the dashed line), the orange ones the regex.
 - `proto-b-1280-light.png`: B at its last step, 1280 pixels, light. Each box is a node; a box with a dashed border is what a command reads.
-- `proto-c-1280-light.png`: C, 1280 pixels, light: every node unfolded, with a band per layer (purple bash, blue child bash, green a command, orange a language) and the band's name at its right.
+- `proto-c-1280-light.png`: C, 1280 pixels, light: every node unfolded, with a band per layer (purple bash, blue the shell of a script inside, green a command, orange a language) and the band's name at its right.
 - `proto-c-360-dark.png`: C, 360 pixels, dark theme: on a phone, the notes after the nodes are left out and the indent is smaller.
 
-The colours are those of the panel's roles: bash is the keyword colour, the child bash the command colour, a command's reading the argument colour and a language the option colour (media/panel.css).
+The colours are those of the panel's roles: bash is the keyword colour, the shell of a script inside the command colour, a command's reading the argument colour and a language the option colour (media/panel.css).
 
 ## The panel's look
 
@@ -58,8 +58,8 @@ Contrast, measured in Chromium on the web page's Light Modern and Dark Modern co
 
 | Text | Light | Dark |
 | --- | --- | --- |
-| The kind and the reader's name, on its layer's tint (lowest) | 4.74 (child shell) | 4.97 (child shell) |
+| The kind and the reader's name, on its layer's tint (lowest) | 4.74 (script inside) | 4.97 (script inside) |
 | The muted text, on any tint (lowest) | 5.58 | 5.40 |
 | The code in its pill (lowest: the command colour) | 5.16 | 5.37 |
 
-Before, the bands were laid over each other at 7% each: a language inside a command's band inside a child shell's had a darker tint at every level, and the kind `literal` measured 3.56 in light and 3.65 in dark; the code was on a code block's grey (4.61 for the command colour).
+Before, the bands were laid over each other at 7% each: a language inside a command's band inside a subshell's had a darker tint at every level, and the kind `literal` measured 3.56 in light and 3.65 in dark; the code was on a code block's grey (4.61 for the command colour).
