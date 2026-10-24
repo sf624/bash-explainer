@@ -39,6 +39,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(
     service, hover, panel, inline, hints, diagnostics, semantic, status,
     vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
+    vscode.commands.registerCommand('bashExplainer.proto.explainLine', (target?: { uri: string; line: number }) => hover.explainLine(target)),
     vscode.commands.registerCommand('bashExplainer.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
     vscode.commands.registerCommand('bashExplainer.openPanel', (target?: { uri: string; line: number }) => {
       // From the hover link: show the hovered line, which may differ from the cursor line.

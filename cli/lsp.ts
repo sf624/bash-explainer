@@ -9,6 +9,8 @@ import { LEGEND, semanticTokens } from '../src/semanticTokens';
 import { explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { pruneDepth, toPlainMarkdown } from '../src/ui/render';
+import { simpleChain } from '../src/ui/hoverLayouts';
+import { surprisingNames, surpriseText } from '../src/ui/surprising';
 import { readSettingsFile, settingsFile } from './settings-file';
 
 type Message = { id?: number | string; method?: string; params?: any; result?: unknown; error?: unknown };
@@ -120,7 +122,7 @@ export function startLanguageServer(io: Io): void {
     timers.set(uri, setTimeout(() => publish(uri), 200));
   }
 
-  function hover(doc: Doc, line: number) {
+  function hover(doc: Doc, line: number, character?: number) {
     if (!settings['hover.enabled']) return null;
     const parsed = parse(doc);
     if (!parsed || line >= parsed.lines.length) return null;
@@ -130,10 +132,43 @@ export function startLanguageServer(io: Io): void {
     // As in VS Code, the hover can be kept short: fewer levels of the tree, no examples.
     const ex = { ...full, items: pruneDepth(full.items, settings['hover.maxDepth']), examples: settings['examples.inHover'] ? full.examples : [] };
     const where = `Bash Explainer · ${lang === 'ja' ? `${line + 1} 行目` : `line ${line + 1}`}`;
+    // PROTOTYPE (hi2): the part at the position first (as every language server's hover), then the whole line.
+    const chain = character === undefined || !io.env.HI2_LSP_PART ? [] : simpleChain(full.items, { line, character });
+    if (chain.length) {
+      const part = chain[chain.length - 1];
+      const crumbs = chain.slice(0, -1).map((t) => `\`${t.label.replace(/\s*\n\s*/g, ' ')}\``).join(' › ');
+      const s = part.name?.said;
+      const head = [`**\`${part.label.replace(/\s*\n\s*/g, ' ')}\`**`, s && `_${s.kind}_${s.by ? `, ${plain(s.by)}` : ''}`].filter(Boolean).join(' · ');
+      const kids = part.children.map((c) => `- \`${c.label}\` — ${c.explanation}`);
+      const value = [`**${where}**${crumbs ? ` · ${crumbs} ›` : ''}`, '', head, '', part.explanation, ...(s?.also ? ['', `_${s.also}_`] : []), ...(kids.length ? ['', ...kids] : []), '', '---', '', toPlainMarkdown(ex, parsed.lines[line], lang === 'ja' ? '行全体' : 'The whole line', lang)].join('\n');
+      const sp = part.span;
+      return { contents: { kind: 'markdown', value }, range: { start: sp.start.line < line ? { line, character: 0 } : sp.start, end: sp.end.line > line ? { line, character: parsed.lines[line].length } : sp.end } };
+    }
     return {
       contents: { kind: 'markdown', value: toPlainMarkdown(ex, parsed.lines[line], where, lang) },
       range: { start: { line, character: 0 }, end: { line, character: parsed.lines[line].length } },
     };
+  }
+
+  /** PROTOTYPE (hi2): inlay hints only after the command names that do not run what they suggest. */
+  function inlayHints(doc: Doc, from: number, to: number) {
+    const parsed = parse(doc);
+    if (!parsed) return [];
+    const analyzer = new Analyzer(lang);
+    const out: unknown[] = [];
+    for (let line = from; line <= to && line < parsed.lines.length; line++) {
+      if (!parsed.lines[line].trim()) continue;
+      const ex = explainDocumentLine(analyzer, parsed, line, lang, shells(parsed, doc.uri), explainOptions(settings));
+      for (const { tok, why } of surprisingNames(ex, line)) {
+        const m = /^\S+/.exec(parsed.lines[line].slice(tok.span.start.character));
+        out.push({
+          position: { line, character: tok.span.start.character + (m?.[0].length ?? 0) },
+          label: surpriseText(tok, why, lang), paddingLeft: true, paddingRight: true,
+          tooltip: { kind: 'markdown', value: [tok.explanation, tok.name?.said.also].filter(Boolean).join('\n\n') },
+        });
+      }
+    }
+    return out;
   }
 
   function codeActions(doc: Doc, range: { start: { line: number }; end: { line: number } }) {
@@ -183,6 +218,7 @@ export function startLanguageServer(io: Io): void {
           capabilities: {
             textDocumentSync: { openClose: true, change: 1 },
             hoverProvider: true,
+            ...(io.env.HI2_LSP_PART ? { inlayHintProvider: true } : {}),
             codeActionProvider: { codeActionKinds: ['quickfix'] },
             // Always offered: highlight.enabled may be turned on later, and the tokens are empty while it is off.
             semanticTokensProvider: { legend: LEGEND, full: true, range: true },
@@ -230,7 +266,11 @@ export function startLanguageServer(io: Io): void {
       }
       case 'textDocument/hover': {
         const doc = docs.get(m.params.textDocument.uri);
-        return void reply(doc ? hover(doc, m.params.position.line) : null);
+        return void reply(doc ? hover(doc, m.params.position.line, m.params.position.character) : null);
+      }
+      case 'textDocument/inlayHint': {
+        const doc = docs.get(m.params.textDocument.uri);
+        return void reply(doc ? inlayHints(doc, m.params.range.start.line, m.params.range.end.line) : []);
       }
       case 'textDocument/semanticTokens/full':
         return void reply(tokens(docs.get(m.params.textDocument.uri)));

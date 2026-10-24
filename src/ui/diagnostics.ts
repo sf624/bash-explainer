@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { plain } from '../document';
 import type { Fix } from '../fixes';
 import { ExplainService } from '../service';
+import { surprisingNames, surpriseText } from './surprising';
 
 /**
  * Puts the warnings shown in explanations (constructs the target shell lacks, injection risks…)
@@ -65,6 +66,37 @@ export class DiagnosticsController implements vscode.CodeActionProvider, vscode.
       if (i.fix) fixes.push({ code: i.code, range, fix: i.fix });
       return d;
     });
+    // PROTOTYPE (hi2): the pitfalls the explanations say that are not problems yet (the analyzer's catalog facts), and
+    // the surprising command names as hints (no Problems entry: three dots under the name, the message on hover).
+    const proto = vscode.workspace.getConfiguration('bashExplainer');
+    const notes = proto.get<boolean>('proto.noteDiagnostics', false), names = proto.get<boolean>('proto.nameDiagnostics', false);
+    if (notes || names) {
+      for (let line = 0; line < doc.lineCount; line++) {
+        if (doc.lineAt(line).isEmptyOrWhitespace) continue;
+        const ex = this.service.explain(doc, line);
+        if (notes && ex.line === line) {
+          for (const n of ex.notes.filter((t) => /^⚠/.test(t))) {
+            const body = plain(n).slice(0, 40);
+            if (diagnostics.some((d) => d.range.start.line <= line && line <= d.range.end.line && d.message.startsWith(body))) continue;
+            const r = doc.lineAt(line).range;
+            const d = new vscode.Diagnostic(new vscode.Range(line, doc.lineAt(line).firstNonWhitespaceCharacterIndex, line, r.end.character), plain(n), vscode.DiagnosticSeverity.Information);
+            d.source = 'Bash Explainer';
+            d.code = ex.facts?.find((f) => f.text === n)?.id ?? 'note';
+            diagnostics.push(d);
+          }
+        }
+        if (names) {
+          for (const { tok, why } of surprisingNames(ex, line)) {
+            const text = doc.lineAt(line).text;
+            const m = /^\S+/.exec(text.slice(tok.span.start.character));
+            const d = new vscode.Diagnostic(new vscode.Range(line, tok.span.start.character, line, tok.span.start.character + (m?.[0].length ?? 1)), `${surpriseText(tok, why, this.service.lang)}${tok.name!.said.also ? `. ${plain(tok.name!.said.also)}` : ''}`, vscode.DiagnosticSeverity.Hint);
+            d.source = 'Bash Explainer';
+            d.code = `name-${why}`;
+            diagnostics.push(d);
+          }
+        }
+      }
+    }
     this.collection.set(doc.uri, diagnostics);
     this.fixes.set(doc.uri.toString(), fixes);
   }

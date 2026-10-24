@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { Token } from '../analyzer-types';
 import { ExplainService } from '../service';
+import { surprisingNames, surpriseText } from './surprising';
 
 export class InlayHintsController implements vscode.InlayHintsProvider, vscode.Disposable {
   private emitter = new vscode.EventEmitter<void>();
@@ -15,6 +16,7 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
   constructor(private service: ExplainService) {
     this.disposables.push(
       vscode.languages.registerInlayHintsProvider(service.selector(), this),
+      vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('bashExplainer')) this.emitter.fire(); }),
       vscode.window.onDidChangeTextEditorSelection((e) => {
         if (e.selections[0].active.line !== this.line) {
           this.line = e.selections[0].active.line;
@@ -25,6 +27,7 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
   }
 
   provideInlayHints(doc: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
+    if (vscode.workspace.getConfiguration('bashExplainer').get<boolean>('proto.nameHints', false)) return this.nameHints(doc, range);
     if (!vscode.workspace.getConfiguration('bashExplainer').get<boolean>('proto.inlayHints', false)) return [];
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document !== doc || !this.service.isTarget(doc)) return [];
@@ -51,6 +54,35 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
       t.children.forEach(walk);
     };
     ex.items.forEach(walk);
+    return hints;
+  }
+
+  /**
+   * hi2: hints only where a name does not run what it suggests, on every line in view (not only the cursor line).
+   * The tooltip says what runs and what else the name is; a click opens the line in the panel.
+   */
+  private nameHints(doc: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
+    if (!this.service.isTarget(doc)) return [];
+    const lang = this.service.lang;
+    const hints: vscode.InlayHint[] = [];
+    for (let line = range.start.line; line <= range.end.line && line < doc.lineCount; line++) {
+      if (doc.lineAt(line).isEmptyOrWhitespace) continue;
+      const ex = this.service.explain(doc, line);
+      for (const { tok, why } of surprisingNames(ex, line)) {
+        const end = nameEnd(tok, doc);
+        const s = tok.name!.said;
+        const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line }]));
+        const tip = new vscode.MarkdownString([`\`${tok.name!.name}\` **${s.kind}**${s.by ? ` — ${s.by}` : ''}`, s.also ?? '', tok.explanation, `[$(comment-discussion) ${lang === 'ja' ? 'パネルで開く' : 'Open in panel'}](command:bashExplainer.openPanel?${args})`].filter(Boolean).join('\n\n'), true);
+        tip.isTrusted = { enabledCommands: ['bashExplainer.openPanel'] };
+        const part = new vscode.InlayHintLabelPart(surpriseText(tok, why, lang));
+        part.tooltip = tip;
+        part.command = { title: 'Open in panel', command: 'bashExplainer.openPanel', arguments: [{ uri: doc.uri.toString(), line }] };
+        const h = new vscode.InlayHint(new vscode.Position(end.line, end.character), [part]);
+        h.paddingLeft = true;
+        h.paddingRight = true;
+        hints.push(h);
+      }
+    }
     return hints;
   }
 

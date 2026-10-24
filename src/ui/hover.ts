@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ExplainService } from '../service';
 import { ThemeKind } from './palette';
 import { pruneDepth } from './render';
-import { HoverLayout, hoverSpan, layoutMarkdown } from './hoverLayouts';
+import { GlyphStyle, HoverLayout, hoverSpan, layoutMarkdown } from './hoverLayouts';
 
 export class HoverController implements vscode.HoverProvider, vscode.Disposable {
   private registration: vscode.Disposable | undefined;
@@ -32,7 +32,42 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
   }
 
   provideHover(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
+    const h = this.provide(doc, pos);
+    // hi2 design study: what VS Code asks for, and what we answer ($HI2_LOG).
+    const logFile = typeof process === 'object' ? process.env.HI2_LOG : undefined;
+    if (logFile) {
+      const sel = vscode.window.activeTextEditor?.selection.active;
+      const r = h?.range;
+      this.log.push(JSON.stringify({
+        t: Date.now(), pos: [pos.line, pos.character], cursor: sel && [sel.line, sel.character], lineLength: doc.lineAt(pos.line).text.length,
+        forced: this.lastForced, range: r && [r.start.line, r.start.character, r.end.line, r.end.character], kind: h ? this.lastKind : 'none',
+      }));
+      void vscode.workspace.fs.writeFile(vscode.Uri.file(logFile), new TextEncoder().encode(this.log.join('\n') + '\n'));
+    }
+    return h;
+  }
+
+  private log: string[] = [];
+  private lastForced = false;
+  private lastKind = '';
+
+  /** hi2: explain the whole line (B) at the line given, from a link in the hover: the cursor goes to the line's start. */
+  async explainLine(target?: { uri: string; line: number }): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && target && editor.document.uri.toString() === target.uri && editor.selection.active.line !== target.line) {
+      const p = new vscode.Position(target.line, editor.document.lineAt(target.line).firstNonWhitespaceCharacterIndex);
+      editor.selection = new vscode.Selection(p, p);
+    }
+    this.log.push(JSON.stringify({ t: Date.now(), explainLine: target?.line }));
+    // The click leaves the focus in the hover: the editor takes it back, so that the hover shows at its cursor.
+    if (editor) await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, preserveFocus: false });
+    await vscode.commands.executeCommand('editor.action.hideHover');
+    await this.showAtCursor();
+  }
+
+  private provide(doc: vscode.TextDocument, pos: vscode.Position): vscode.Hover | undefined {
     const forced = this.forceNext;
+    this.lastForced = forced;
     this.forceNext = false;
     if (!forced && !this.service.enabled('hover')) return undefined;
     if (!this.service.isTarget(doc)) return undefined;
@@ -49,13 +84,24 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     const link = `command:bashExplainer.openPanel?${args}`;
     // PROTOTYPE: the layout comes from an unregistered setting (design study).
     const layout = vscode.workspace.getConfiguration('bashExplainer').get<HoverLayout>('proto.hoverLayout', 'list');
+    const glyphs = vscode.workspace.getConfiguration('bashExplainer').get<GlyphStyle>('proto.glyphs', 'code');
     const at = forced ? undefined : pos;
-    const md = new vscode.MarkdownString(layoutMarkdown(layout, { ex, lang: this.service.lang, at, panelLink: link, lineText: doc.lineAt(pos.line).text, placement: this.service.examplePlacement, theme: themeKind() }), true);
+    const lineLink = layout === 'simple' ? `command:bashExplainer.proto.explainLine?${args}` : undefined;
+    const md = new vscode.MarkdownString(layoutMarkdown(layout, { ex, lang: this.service.lang, at, panelLink: link, lineText: doc.lineAt(pos.line).text, placement: this.service.examplePlacement, theme: themeKind(), glyphs, lineLink }), true);
     md.supportHtml = true;
-    md.isTrusted = { enabledCommands: ['bashExplainer.openPanel', 'bashExplainer.openSettings'] };
+    md.isTrusted = { enabledCommands: ['bashExplainer.openPanel', 'bashExplainer.openSettings', 'bashExplainer.proto.explainLine'] };
     const span = hoverSpan(layout, ex, at);
+    this.lastKind = !at ? 'B' : span ? 'C' : layout === 'simple' ? 'line' : layout === 'token' ? 'B(fallback)' : layout;
     const lineRange = doc.lineAt(pos.line).range;
-    const range = span ? new vscode.Range(span.start.line < pos.line ? lineRange.start : new vscode.Position(span.start.line, span.start.character), span.end.line > pos.line ? lineRange.end : new vscode.Position(span.end.line, span.end.character)) : lineRange;
+    let range = span ? new vscode.Range(span.start.line < pos.line ? lineRange.start : new vscode.Position(span.start.line, span.start.character), span.end.line > pos.line ? lineRange.end : new vscode.Position(span.end.line, span.end.character)) : lineRange;
+    if (layout === 'simple' && at && !span) {
+      // On no part: the run of blanks (or the operator) under the position, so that moving onto a part asks again.
+      const text = doc.lineAt(pos.line).text;
+      let a = Math.min(pos.character, text.length), b = a;
+      while (a > 0 && /\s/.test(text[a - 1])) a--;
+      while (b < text.length && /\s/.test(text[b])) b++;
+      range = new vscode.Range(pos.line, a, pos.line, Math.max(b, a));
+    }
     return new vscode.Hover(md, range);
   }
 
