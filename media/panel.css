@@ -666,7 +666,7 @@ body {
 /* The tree view: an outline. Each row has the code in a pill and the kind on its first line, the text on a line
    of its own under them. Connectors are drawn with borders: a vertical line per group of children, under the
    twisty of their parent, and an elbow to each child at the middle of its first line; where a new reader takes
-   over, the elbow is thicker, in the layer's colour, and the item and what lies under it have the layer's tint.
+   over, the item and what lies under it have the layer's tint.
    The lengths below place the lines: a group is indented by --t-indent, a row's twisty is --t-tw wide at
    --t-twisty, and its code starts at --t-code. */
 #reading-tree {
@@ -735,11 +735,6 @@ body {
 
 #reading-tree ul[role="group"] > li:not([aria-expanded])::after {
   width: calc(var(--t-code) - var(--t-line) - 0.2rem);
-}
-
-#reading-tree ul[role="group"] > li.band::after {
-  border-top: 2px solid var(--l);
-  margin-top: -0.5px;
 }
 
 #reading-tree li:focus {
@@ -859,8 +854,7 @@ body.vscode-high-contrast-light #reading-tree li.band {
   }
 
   #reading-tree ul[role="group"] > li::before,
-  #reading-tree ul[role="group"] > li::after,
-  #reading-tree ul[role="group"] > li.band::after {
+  #reading-tree ul[role="group"] > li::after {
     border-color: CanvasText;
   }
 
