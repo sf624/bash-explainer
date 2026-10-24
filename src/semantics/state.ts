@@ -300,7 +300,8 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
     for (const letter of cluster.slice(1)) if (SET_LETTERS[letter]) set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
   };
   if (base(m[1]) === 'bash') {
-    if (/^[-+][a-zA-Z]+$/.test(m[2]) && !m[2].includes('o')) letters(m[2]);
+    // (Not when bash refuses them: then no option is on, run directly or by `bash script`.)
+    if (/^[-+][a-zA-Z]+$/.test(m[2]) && !shebangRefused(root.text)) letters(m[2]);
     return { posix: m[2] === '--posix', set };
   }
   const words = m[2].split(/[ \t]+/);
@@ -324,21 +325,31 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   return { posix, set };
 }
 
+/** The letters bash takes as options when it starts (`set`'s, and `-c`, `-i`, `-l`, `-r`, `-s`, `-D`, `-o`, `-O`). */
+const BASH_LETTERS = /^[abefhkmnprtuvxBCDEHPTcilsoO]$/;
+
+/** Why bash refuses the options of a shebang (`shebangRefused`). */
+export type ShebangRefusal = { rest: string; why: 'blank' | 'name' | 'shopt' | 'long' } | { rest: string; why: 'letter'; letter: string };
+
 /**
  * The options of a shebang that bash refuses, so that the script never starts when it is run directly: the kernel
- * passes the rest of the line as one argument, which bash reads as one run of letters. A blank in it is not an option
- * (`#!/bin/bash -e -u`: "- : invalid option"), and `o` takes the next argument, the script's path, as an option
- * name (`#!/bin/bash -eo`, `-o nounset`: "invalid option name"); `--posix -e` is no long option bash knows. Undefined when
- * bash takes the shebang's options (or the shebang does not start bash directly).
+ * passes the rest of the line as one argument, which bash reads as one run of letters, left to right. A blank in it
+ * is no option (`#!/bin/bash -e -u`: "- : invalid option"), nor is a letter bash does not know (`-Oextglob`: "-g:
+ * invalid option"); `o` takes the next argument, the script's path, as an option name at once (`#!/bin/bash -eo`,
+ * `-o nounset`: "invalid option name"), and `O` as a shopt name once the letters are read (`-O`, `-Oe`: "invalid
+ * shell option name"); `--posix -e` is no long option bash knows. Undefined when bash takes the shebang's options (or
+ * the shebang does not start bash directly).
  */
-export function shebangRefused(text: string): { rest: string; why: 'blank' | 'name' | 'long' } | undefined {
+export function shebangRefused(text: string): ShebangRefusal | undefined {
   const m = /^#![ \t]*(\S+)[ \t]+([-+][^\n]*?)[ \t]*(?:\n|$)/.exec(text);
   if (!m || m[1].slice(m[1].lastIndexOf('/') + 1) !== 'bash') return undefined;
   const rest = m[2];
-  const blank = rest.search(/[ \t]/);
-  const name = /^[-+][a-zA-Z]/.test(rest) ? rest.indexOf('o') : -1;
-  if (name > 0 && (blank < 0 || name < blank)) return { rest, why: 'name' };
-  return blank < 0 ? undefined : { rest, why: rest.startsWith('--') ? 'long' : 'blank' };
+  if (rest.startsWith('--')) return /[ \t]/.test(rest) ? { rest, why: 'long' } : undefined;
+  for (const letter of rest.slice(1)) {
+    if (letter === 'o') return { rest, why: 'name' };
+    if (!BASH_LETTERS.test(letter)) return /[ \t]/.test(letter) ? { rest, why: 'blank' } : { rest, why: 'letter', letter };
+  }
+  return rest.includes('O') ? { rest, why: 'shopt' } : undefined;
 }
 
 /** Whether the shebang of the script starts bash in POSIX mode (`shebangStart`). */

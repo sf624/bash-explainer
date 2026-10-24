@@ -118,6 +118,11 @@ describe('the pitfalls of a script, as problems', () => {
     // The script exits; only the command fails (a redirection of a program); the script never starts.
     ['set -u\necho "$dir"', [['nounset-unbound', 'warning', 1, 6, 1, 10]]],
     ['set -u\ncat < "$f"', [['nounset-unbound', 'info', 1, 7, 1, 9]]],
+    ['set -eu\ncat < "$f"', [['nounset-unbound', 'warning', 1, 7, 1, 9]]],
+    // (Every statement of the file, each at the first read bash fails on.)
+    ['set -u\necho "$a" "$b"\necho "$c"\n[ -e /no ] && echo "$d"; x=$e echo "$f"', [
+      ['nounset-unbound', 'warning', 1, 6, 1, 8], ['nounset-unbound', 'warning', 2, 6, 2, 8], ['nounset-unbound', 'warning', 3, 20, 3, 22],
+      ['nounset-unbound', 'warning', 3, 36, 3, 38]]],
     ['#!/bin/bash -e -u\n:', [['shebang-refused', 'warning', 0, 0, 0, 17]]],
     // A node over several lines: to the end of its first line.
     ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 13]]],

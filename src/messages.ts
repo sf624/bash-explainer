@@ -1,4 +1,5 @@
 import type { Lang, Text } from './i18n';
+import type { ShebangRefusal } from './semantics/state';
 
 // The message catalog: the notes and pitfalls that render a fact of the semantic models (src/semantics/: the shell
 // state, where code runs, words, names, status), each with a stable id, its texts in ja and en, and the sections of
@@ -266,22 +267,28 @@ export const MESSAGES = {
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
   // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
   // messages of bash and dash are quoted, another shell's are not.)
-  'nounset-unbound': pitfall<{ v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: boolean; fix?: string }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, fix }) => {
+  'nounset-unbound': pitfall<{
+    v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: boolean; errexit?: 'script' | 'subshell'; fix?: string;
+  }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, errexit, fix }) => {
     const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
     return [
       `ここでは \`${v}\` に値が設定されていない。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
-        + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : 'このコマンドは実行されず、終了ステータス 1 で失敗する'}`
+        + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : `このコマンドは実行されず、終了ステータス 1 で失敗する${errexit ? `。\`set -e\` により${errexit === 'script' ? 'スクリプト' : 'これを実行するサブシェル'}も終了する` : ''}`}`
         + `${environment ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
       `\`${v}\` is not set here: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
-        + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : 'the command does not run: it fails with status 1'}`
+        + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'}` : ''}`}`
         + `${environment ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
   }),
   // (src/semantics/state.ts, `shebangRefused`.)
-  'shebang-refused': pitfall<{ rest: string; why: 'blank' | 'name' | 'long' }>(['6.1', '3.8'], ({ rest, why }) => [
-    `Linux ではシバンのインタープリタの後ろの \`${rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${why === 'blank' ? '空白はオプションではない' : why === 'name' ? '`o` が次の引数のスクリプトのパスをオプション名として読む' : 'その名前の長いオプションはない'}）。`
-      + '直接実行すると、スクリプトは何も実行せずにエラーで終わる。オプションは次の行に `set` で書く（`bash スクリプト` で実行すると、シバンのオプションは読まれない）',
-    `on Linux the whole \`${rest}\` after the interpreter is one argument to bash, which refuses it (${why === 'blank' ? 'a blank is not an option' : why === 'name' ? '`o` takes the next argument, the script\'s path, as an option name' : 'no long option has that name'}). `
-      + 'Run directly, the script stops with an error before running anything. Write the options with `set` on the next line (`bash script` ignores the options of the shebang)']),
+  'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8'], (r) => [
+    `Linux ではシバンのインタープリタの後ろの \`${r.rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${r.why === 'blank' ? '空白はオプションではない'
+      : r.why === 'letter' ? `\`-${r.letter}\` というオプションはない` : r.why === 'name' ? '`o` が次の引数のスクリプトのパスをオプション名として読む'
+        : r.why === 'shopt' ? '`O` が次の引数のスクリプトのパスを shopt のオプション名として読む' : 'その名前の長いオプションはない'}）。`
+      + `直接実行すると、スクリプトは何も実行せずにエラーで終わる。オプションは次の行に \`set\`${r.rest.includes('O') ? '（`-O` は `shopt -s`）' : ''} で書く（\`bash スクリプト\` で実行すると、シバンのオプションは読まれない）`,
+    `on Linux the whole \`${r.rest}\` after the interpreter is one argument to bash, which refuses it (${r.why === 'blank' ? 'a blank is not an option'
+      : r.why === 'letter' ? `bash has no option \`-${r.letter}\`` : r.why === 'name' ? '`o` takes the next argument, the script\'s path, as an option name'
+        : r.why === 'shopt' ? '`O` takes the next argument, the script\'s path, as a shopt option name' : 'no long option has that name'}). `
+      + `Run directly, the script stops with an error before running anything. Write the options with \`set\`${r.rest.includes('O') ? ' (`-O` with `shopt -s`)' : ''} on the next line (\`bash script\` ignores the options of the shebang)`]),
   'redirect-by-your-shell': pitfall(['3.6', '3.7.3'], () => [
     'リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
     'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`']),

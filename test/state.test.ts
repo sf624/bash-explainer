@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
-import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shebangRefused, shellState, ShellState, StateModel } from '../src/semantics/state';
+import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shebangRefused, type ShebangRefusal, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { assertGrowth } from './support/growth';
 import { descendants, fields } from '../src/syntax/tree';
@@ -102,6 +102,7 @@ describe('shell state: options', () => {
       ['#!/bin/bash -e -u', false, false], ['#!/bin/bash -o nounset', false, false], ['#!/usr/bin/env bash -u', false, false],
       ['#!/usr/bin/env -S bash -e -u', true, true], ['#!/usr/bin/env -S bash -eo nounset', true, true], ['#!/usr/bin/env -S bash --norc -u +e', false, true],
       ['#!/usr/bin/env -S bash -o', false, false], ['#!/usr/bin/env -S bash -u +o nounset', false, false], ['#!/bin/sh -u', false, false],
+      ['#!/bin/bash -Oeu', false, false], ['#!/bin/bash -eug', false, false],
     ];
     const on = (st: ShellState, name: string): boolean => set(st, name) === 'on';
     for (const [line, e, u] of rows) {
@@ -126,11 +127,14 @@ describe('shell state: options', () => {
     }
   });
   it('knows the shebangs whose options bash refuses, as bash does', () => {
-    const rows: [string, 'blank' | 'name' | 'long' | undefined][] = [
+    const rows: [string, ShebangRefusal['why'] | undefined][] = [
       ['#!/bin/bash -e -u', 'blank'], ['#!/bin/bash -e\t-u', 'blank'], ['#!/bin/bash -ex -u', 'blank'], ['#!/bin/bash -e -o pipefail', 'blank'],
       ['#!/bin/bash -o nounset', 'name'], ['#!/bin/bash -euo pipefail', 'name'], ['#!/bin/bash -eo', 'name'], ['#!/bin/bash --posix -e', 'long'],
       ['#!/bin/bash -eu', undefined], ['#!/bin/bash -x', undefined], ['#!/bin/bash --posix', undefined], ['#!/bin/bash', undefined],
       ['#!/usr/bin/env -S bash -e -u', undefined], ['#!/usr/bin/env bash', undefined],
+      // (`o` takes its name at once; `O` once the letters are read, after a letter bash does not know.)
+      ['#!/bin/bash -Oextglob', 'letter'], ['#!/bin/bash -eg', 'letter'], ['#!/bin/bash -O', 'shopt'], ['#!/bin/bash -Oe', 'shopt'], ['#!/bin/bash +O', 'shopt'],
+      ['#!/bin/bash -Ox pipefail', 'blank'], ['#!/bin/bash -oe', 'name'], ['#!/bin/bash -ekB', undefined], ['#!/bin/bash -', undefined],
     ];
     for (const [line, why] of rows) assert.strictEqual(shebangRefused(`${line}\necho ran\n`)?.why, why, line);
     if (process.platform !== 'linux' || !fs.existsSync('/bin/bash') || !fs.existsSync('/usr/bin/env')) return;

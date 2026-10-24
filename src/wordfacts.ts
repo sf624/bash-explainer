@@ -5,9 +5,9 @@ import type { Shell } from './dialect';
 import { args, commandName, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
-import { unboundRead } from './semantics/unbound';
+import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
-import { ancestor, field, prefixAssignments, redirectionsOf } from './syntax/tree';
+import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -68,20 +68,21 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
   };
 
-  // (After an unset read where the script exits, the rest of the line never runs.)
-  let stopped = false;
   const check = (n: SyntaxNode) => {
     switch (n.type) {
       case 'simple_expansion': case 'expansion': case 'variable_name': {
-        // `set -u` and a variable with no value: bash fails here.
-        const u = stopped ? undefined : unboundRead(n, model, shell);
-        if (u) {
-          // (Not after a read in a function's body, which runs when it is called.)
-          stopped = u.exits === 'script' && !ancestor(n, (a) => a.type === 'function_definition');
+        // `set -u` and a variable with no value: bash fails here. (Only at the first such read of the statement,
+        // in the order bash expands it: the rest of it is not expanded.)
+        const u = unboundRead(n, model, shell);
+        if (u && firstUnbound(n, model, shell) === n) {
+          // (The failed command's status 1 stops the shell with `set -e`, where it is not ignored.)
+          const errexit = u.exits === 'command' ? errexitStops(n, model, shell) : undefined;
           // (`${x:-}` in place of `$x` or `${x}`, `${a[0]:-}` of `${a[0]}`; another form gets its value first.)
           const plain = n.type === 'simple_expansion' || n.text === `\${${u.shown}}`;
           const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
-          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }), n, u.exits === 'command');
+          add(fact(lang, 'nounset-unbound', {
+            v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), ...(plain ? { fix: `\${${u.shown}:-}` } : {}),
+          }), n, u.exits === 'command' && !errexit);
         }
         break;
       }

@@ -1118,6 +1118,196 @@
     }
   },
   {
+    "manual": "4.3.1",
+    "snippet": "set -u; : \"${x:?need x}\"; @PROBE:a@ \"$x\"",
+    "gaps": {
+      "a": "after `${x:?…}` the model knows only that `x` is set (bash ends the script there otherwise), not its value"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: need x"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1; : \"${x:?}\"; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [[ -n ${x:-} ]] || { echo no; exit 1; }; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [ -z \"${x:-}\" ] && exit 1; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if [ -z \"${x:-}\" ]; then exit 1; fi; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; die() { exit 1; }; [[ -v x ]] || die; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [],
+      "status": 1
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { if [[ ! -v x ]]; then return 1; fi; @PROBE:a@ \"$x\"; }; f; @PROBE:b@ ok",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"${x-}\"; @PROBE:b@ \"$x\"",
+    "unbound": [
+      "b"
+    ],
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [ -e /nonexistent ] && @PROBE:a@ \"$x\"; @PROBE:b@ \"$y\"",
+    "gaps": {
+      "a.unbound": "`[ -e /nonexistent ]` fails, so `a` does not run: the note says what bash does if it runs"
+    },
+    "unbound": [
+      "a",
+      "b"
+    ],
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=$a @PROBE:a@ \"$y\"",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; command cat < \"$f\"; @PROBE:a@ after",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; command -p cat <<< \"$x\"; @PROBE:a@ after",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; command -v cat < \"$f\"; @PROBE:a@ after",
+    "gaps": {
+      "a": "the walk of the state does not end the shell at an unset read in a redirection (the note on `set -u` says what bash does)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; exec cat < \"$f\"; @PROBE:a@ after",
+    "gaps": {
+      "a": "the walk of the state does not end the shell at an unset read in a redirection (the note on `set -u` says what bash does)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -euo pipefail; cat < \"$f\"; @PROBE:a@ after",
+    "gaps": {
+      "a": "the walk of the state does not know that the redirection fails `cat`, which `set -e` stops the script at (the note on `set -u` says it)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -euo pipefail; if cat < \"$f\"; then :; fi; @PROBE:a@ after",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
     "manual": "4.2",
     "snippet": "x='a  b'; declare a=$x; declare \"b=$x\"; declare \"c\"=$x; @PROBE:a@ \"$a\" \"$b\" \"$c\"",
     "note": "A declaration's word is an assignment only when its name is unquoted: `\"c\"=$x` is split into `c=a` and `b`.",

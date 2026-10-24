@@ -915,7 +915,7 @@ export class Walker {
         }
       } else {
         this.unsetError(e, st, maybe);
-        after = this.defaultOf(e, st);
+        after = this.builtins.checkedSet(this.defaultOf(e, st), e);
       }
       st = maybe && after !== st ? merge([st, after], this.posix) : after;
     }

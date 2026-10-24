@@ -202,6 +202,32 @@ describe('word facts: an unset variable under set -u', () => {
     ['set -u\necho "$s" | cat', 1, 's', true, 'the subshell running it exits'],
     // (Called in a subshell and in the script.)
     ['set -u\nf() {\n  echo "$s"\n}\nf\nx=$(f)', 2, 's', true, 'the shell running it exits'],
+    // (`${x-}` outside a test tests nothing: bash fails on the `$x` after it.)
+    ['set -u\necho "${x-}"; echo "$x"', 1, 'x', true, S],
+    ['set -u\ny=${x:-}\necho "$x"', 2, 'x', true, S],
+    ['set -u\nif true; then echo "${x-}"; fi\necho "$x"', 2, 'x', true, S],
+    // (A test after the read in the same function does not count.)
+    ['set -u\nf() { echo "$x"; [[ -v x ]]; }\nf', 1, 'x', true, S],
+    // (The first read bash fails on, in the order it expands a command: words, assignments, redirections.)
+    ['set -u\nx=$a echo "$y"', 1, 'y', true, S],
+    ['set -u\n: > "$b" "$c"', 1, 'c', true, S],
+    ['set -u\nx=$a > "$b"', 1, 'a', true, S],
+    ['set -u\nx=$a cat < "$b"', 1, 'a', true, S],
+    ['set -u\ncat <<E > "$b"\n$a\nE', 2, 'a', true, C],
+    // (`command` runs the program in its own process; with `-v`, `command` itself is the builtin that fails.)
+    ['set -u\ncommand cat < "$f"', 1, 'f', true, C],
+    ['set -u\ncommand -p cat <<< "$x"', 1, 'x', true, C],
+    ['set -u\ncommand -- cat < "$f"', 1, 'f', true, C],
+    ['set -u\ncommand -v cat < "$f"', 1, 'f', true, S],
+    ['set -u\nexec cat < "$f"', 1, 'f', true, S],
+    // (With `set -e`, the command's failure stops the script, unless it is ignored there.)
+    ['set -euo pipefail\ncat < "$f"', 1, 'f', true, `${C}, and \`set -e\` stops the script`],
+    ['set -eu\nshopt -s inherit_errexit\nx=$(cat < "$f")', 2, 'f', true, `${C}, and \`set -e\` stops the subshell running it`],
+    ['set -eu\n( cat < "$f" )', 1, 'f', true, `${C}, and \`set -e\` stops the subshell running it`],
+    // (Without inherit_errexit, `set -e` is off in `$( )`.)
+    ['set -eu\nx=$(cat < "$f")', 1, 'f', true, C],
+    ['set -euo pipefail\nif cat < "$f"; then :; fi', 1, 'f', true, C],
+    ['set -eu\ncat < "$f" || :', 1, 'f', true, C],
   ];
   for (const [src, line, v, fix, exits, environment = true] of fires) {
     it(`says ${v} is unset in ${JSON.stringify(src)}`, () => {
@@ -228,6 +254,19 @@ describe('word facts: an unset variable under set -u', () => {
     'set -u\n[[ -v m && $m ]]', 'set -u\ncase ${m:-} in ?*) echo "$m";; esac', 'set -u\nfor i in ${m:-}; do echo "$m"; done',
     'set -u\nwhile [ -n "${m:-}" ]; do echo "$m"; done', 'set -u\n[ -v m ] && echo "$m"', 'set -u\ndeclare -p m >/dev/null 2>&1 && echo "$m"',
     '#!/bin/bash -e\necho $dir', '#!/bin/bash -o nounset\necho $dir', '#!/usr/bin/env bash -u\necho $dir', '#!/bin/sh -u\necho $dir',
+    '#!/bin/bash -Oeu\necho $dir', '#!/bin/bash -eug\necho $dir',
+    // (After `${x?}` bash goes on only when `x` is set.)
+    'set -u\n: "${x:?need x}"; echo "$x"', 'set -u\n: "${x?}"\necho "$x"', 'set -u\nif [ -e f ]; then x=1; fi\n: "${x?}"\necho "$x"',
+    'set -u\ndeclare -n r=t\n: "${r?}"\necho "$r"', 'set -u\nx=1\n: "${x?}" "${a[0]?}"\necho "$x"',
+    // (A test before the read, which may end the script or return when it is unset: the flow through it is not followed.)
+    'set -u\n[[ -n ${x:-} ]] || { echo no; exit 1; }; echo "$x"', 'set -u\n[ -z "${x:-}" ] && exit 1; echo "$x"',
+    'set -u\nif [ -z "${x:-}" ]; then\n  exit 1\nfi\necho "$x"', 'set -u\ndie() { exit 1; }\n[[ -v x ]] || die\necho "$x"',
+    'set -u\nf() {\n  if [[ ! -v x ]]; then return 1; fi\n  echo "$x"\n}\nf', 'set -u\n[[ -v x ]] || exit\nf() { echo "$x"; }\nf',
+    'set -u\ndeclare -p x >/dev/null || exit 1\necho "$x"',
+    // (`command` runs no function, and the command of `command command` is not followed.)
+    'set -u\nf() { cat; }\ncommand f < "$f"', 'set -u\ncommand() { :; }\ncommand cat < "$f"', 'set -u\ncommand < "$f"',
+    'set -u\nf() { echo "$x"; }\n[[ -v x ]] || exit\nf', 'set -u\nwhile [ -z "${x:-}" ]; do x=1; done\necho "$x"',
+    'set -u\nif ! declare -p x >/dev/null 2>&1; then exit 1; fi\necho "$x"', 'set -u\ncommand command cat < "$f"', 'set -u\ncommand -x cat < "$f"',
   ];
   for (const src of quiet) {
     it(`says nothing of ${JSON.stringify(src)}`, () => {
@@ -240,6 +279,11 @@ describe('word facts: an unset variable under set -u', () => {
     assert.deepStrictEqual(more, []);
     // (A subshell that exits does not stop the script.)
     assert.strictEqual(unbound('set -u\nx=$(echo "$a"); echo $b', 1).length, 2);
+    // (Each statement apart: a command in another branch or after it is said too.)
+    assert.strictEqual(unbound('set -u\n[ -e /nonexistent ] && echo "$x"; echo "$y"', 1).length, 2);
+    assert.strictEqual(unbound('set -u\necho "$a"; echo "$b"', 1).length, 2);
+    // (A statement over several lines: only its first read, on whichever line is explained.)
+    assert.strictEqual(unbound('set -u\necho "$a" \\\n  "$b"', 2).length, 0);
   });
   it('speaks Japanese', () => {
     assert.match(unbound('set -u\necho $dir', 1, 'ja')[0], /^⚠ 落とし穴: ここでは `dir` に値が設定されていない。`set -u` が有効なので、bash は `dir: unbound variable` のエラーを出し、スクリプトが終了する.*`\$\{dir:-\}` と書く$/);
