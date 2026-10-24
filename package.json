@@ -694,47 +694,6 @@
         }
       },
       {
-        "language": "dockerfile",
-        "scopes": {
-          "comment": [
-            "comment.line.number-sign.shell"
-          ],
-          "keyword": [
-            "keyword.control.shell"
-          ],
-          "function": [
-            "entity.name.function.call.shell"
-          ],
-          "function.defaultLibrary": [
-            "support.function.builtin.shell"
-          ],
-          "function.declaration": [
-            "entity.name.function.shell"
-          ],
-          "parameter": [
-            "constant.other.option.shell"
-          ],
-          "string": [
-            "string.quoted.double.shell"
-          ],
-          "variable": [
-            "variable.other.normal.shell"
-          ],
-          "variable.modification": [
-            "variable.other.assignment.shell"
-          ],
-          "operator": [
-            "keyword.operator.pipe.shell"
-          ],
-          "number": [
-            "constant.numeric.shell"
-          ],
-          "regexp": [
-            "string.regexp.unquoted.shell"
-          ]
-        }
-      },
-      {
         "language": "makefile",
         "scopes": {
           "comment": [

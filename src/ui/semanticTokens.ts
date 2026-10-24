@@ -6,7 +6,7 @@ const legend = new vscode.SemanticTokensLegend(LEGEND.tokenTypes, LEGEND.tokenMo
 
 /**
  * Colours shell code from our syntax tree, as semantic tokens over the TextMate grammar, when
- * `bashExplainer.highlight.enabled` is on. Off, nothing is registered, so the grammar alone colours. Not registered for Python, whose own provider (Pylance) would lose its tokens for the whole file.
+ * `bashExplainer.highlight.enabled` is on. Off, nothing is registered, so the grammar alone colours. Not registered for Python or Dockerfiles, whose own providers (Pylance, the Docker extension's language server) would lose their tokens for the whole file.
  */
 export class SemanticTokensController implements vscode.Disposable {
   private registration: vscode.Disposable | undefined;
