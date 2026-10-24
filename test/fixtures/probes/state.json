@@ -3715,6 +3715,7 @@
     }
   },
   {
+    "id": "unset-fv",
     "manual": "4.1",
     "snippet": "f() { :; }; x=1; unset -fv x f",
     "note": "unset -fv is an error: nothing is unset",

@@ -120,7 +120,11 @@ export const MESSAGES = {
     `In POSIX mode a special builtin is found before a function, so the builtin \`${name}\` runs, not the function \`${name}\` of line ${line}`]),
   'unset-function-and-variable': note(['4.1'], () => [
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
-    '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
+    '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset'], {
+    // (4.1 says what `-f` and `-v` each do, not that both together are an error.)
+    basis: { kind: 'behaviour', manual: 'silent', probes: ['state#unset-fv'] },
+    tryIt: { code: `bash -c 'x=1; unset -fv x 2>/dev/null; echo "status $?, x=$x"'`, output: 'status 1, x=1', probe: 'state#unset-fv' },
+  }),
   'unset-readonly': note<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
