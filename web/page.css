@@ -51,9 +51,24 @@ a {
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The Codicons shared with the VS Code panel (media/icons.js): filled, drawn on their 16px grid as in VS Code. Their
+   glyphs fill more of the box than the page's own 24px icons, so at 16px they look as large as those at 18px. */
+.icon-btn svg.ico,
+.menu-item svg.ico {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
+}
+
+/* In the menu, in the 18px column of the other icons, so that the labels line up. */
+.menu-item svg.ico {
+  margin: 0 1px;
 }
 
 /* GitHub's mark: filled, in its own colour only (black or white), at the size of the other icons. */
@@ -1158,6 +1173,11 @@ body.resizing .problems-resize {
 :where(html.narrow) .icon-btn svg {
   width: 20px;
   height: 20px;
+}
+
+:where(html.narrow) .icon-btn svg.ico {
+  width: 18px;
+  height: 18px;
 }
 
 :where(html.narrow) .split {

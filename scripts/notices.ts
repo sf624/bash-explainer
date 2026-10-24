@@ -46,12 +46,13 @@ export const COPIED: Record<string, Copied> = {
       '',
       'Bash Explainer copies seven of the icons (collapse-all, expand-all, copy, book, arrow-left, gear,',
       'chevron-down) from src/icons/*.svg of @vscode/codicons 0.0.46-24, unmodified, as SVG path data drawn',
-      "in the theme's text colour. The licensor offers the icons as-is and makes no representations or",
-      'warranties of any kind concerning them (Section 5 of the license).',
+      "in the theme's text colour, in the header of the extension's panel and in the top bar of the web page.",
+      'The licensor offers the icons as-is and makes no representations or warranties of any kind concerning',
+      'them (Section 5 of the license).',
     ].join('\n'),
     uses: {
-      'In the extension': 'icons copied into `media/panel.js`',
-      'In the web version': 'icons copied into `panel.js`',
+      'In the extension': 'icons copied into `media/icons.js`',
+      'In the web version': 'icons copied into `icons.js`',
     },
   },
 };

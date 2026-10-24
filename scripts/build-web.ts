@@ -52,6 +52,7 @@ const PANEL_HTML = `<!DOCTYPE html>
 <body>
 ${PANEL_BODY}
 <script src="panel-host.js"></script>
+<script src="icons.js"></script>
 <script src="panel.js"></script>
 </body>
 </html>
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   copy('web/panel-host.js');
   copy('web/theme-init.js');
   copy('media/panel.css');
+  copy('media/icons.js');
   copy('media/panel.js');
   copy('media/icon.png');
   // The licenses of what the page includes, linked from its footer.

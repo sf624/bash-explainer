@@ -21,6 +21,7 @@ import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
 import { $, on, put } from './dom';
 import { Editor } from './editor';
+import { drawIcons } from './icons';
 import { askReplaceWithSample } from './kind-dialog';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
@@ -33,6 +34,9 @@ import { SettingsDialog } from './settings-dialog';
 import { inflate, readHash, scriptParams } from './share';
 import { clearStoredData, readStored, removeStored, STORAGE_KEYS, writeStored } from './storage';
 import { TEXT } from './text';
+
+// The icons the page shares with the VS Code panel (web/icons.ts).
+drawIcons();
 
 /** The saved choice, read by theme-init.js before the first paint too; Auto when storage is unavailable. */
 function savedTheme(): Theme {
