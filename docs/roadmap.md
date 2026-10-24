@@ -10,15 +10,16 @@ Keep it current:
 
 ## Now
 
-1. Thin `src/analyzer.ts`: steps 1–9 of [design/analyzer.md](design/analyzer.md). Each step keeps every explanation byte-identical. Before step 1, decide whether to write the design document on the three layers (bash-ast's tree, the manual's language, bash's implementation-defined behaviour) and the kinds of basis, since it shapes the modules.
+1. Thin `src/analyzer.ts`: steps 1–9 of [design/analyzer.md](design/analyzer.md). Each step keeps every explanation byte-identical. The modules follow what is explained, not the three layers (bash-ast's tree, the manual, bash's behaviour): those become data, the next item.
 
 ## Next, in this order
 
-1. bash 5.3, step 2 of [design/bash-versions.md](design/bash-versions.md): fix the explanations of `printf %#q` and `%ls` first (they are wrong today), then steps 3–7.
-2. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
-3. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
-4. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
-5. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
+1. The basis of an explanation, as data, after the analyzer is thinned: an explanation that rests on bash's behaviour rather than the manual gets a chip ("Not in the manual · checked with bash 5.2", or "Differs from the manual"), and a folded "Try it in your terminal" with a command and its output, taken from the probe that checks it in CI (look A of the prototype on branch `proto/basis`). A setting turns the chips and the try-its off. Other kinds of basis (another tool's spec, convention) are data only for now.
+2. bash 5.3, step 2 of [design/bash-versions.md](design/bash-versions.md): fix the explanations of `printf %#q` and `%ls` first (they are wrong today), then steps 3–7.
+3. Run-based oracles, steps 2–10 of [design/oracles.md](design/oracles.md): argv capture, checking suggestions in bash, the normal-forms audit.
+4. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
+5. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
+6. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
 
 ## Waiting on the maintainer
 
