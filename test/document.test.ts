@@ -115,6 +115,10 @@ describe('the pitfalls of a script, as problems', () => {
     ['for f in $(ls); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 14]]],
     ['for a in $*; do :; done', [['for-over-unquoted-args', 'warning', 0, 9, 0, 11]]],
     ['sudo echo 1 > /etc/x', [['redirect-by-your-shell', 'warning', 0, 12, 0, 20]]],
+    // The script exits; only the command fails (a redirection of a program); the script never starts.
+    ['set -u\necho "$dir"', [['nounset-unbound', 'warning', 1, 6, 1, 10]]],
+    ['set -u\ncat < "$f"', [['nounset-unbound', 'info', 1, 7, 1, 9]]],
+    ['#!/bin/bash -e -u\n:', [['shebang-refused', 'warning', 0, 0, 0, 17]]],
     // A node over several lines: to the end of its first line.
     ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 13]]],
     // Each place, also where the explanation of the line says it once.

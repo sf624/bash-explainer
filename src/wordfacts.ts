@@ -4,7 +4,7 @@ import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
 import { args, commandName, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
-import type { StateModel } from './semantics/state';
+import { shebangRefused, type StateModel } from './semantics/state';
 import { unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { ancestor, field, prefixAssignments, redirectionsOf } from './syntax/tree';
@@ -12,8 +12,9 @@ import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
 // command runs (`FOO=1 echo $FOO`, `sudo cmd > /etc/…`), and what word splitting and globbing do to an unquoted
-// expansion (a path, `for f in $(ls)`, `for a in $*`, `[ $x = y ]`). Each is found from the syntax tree, only on the
-// line where its node starts, and said from the catalog (src/messages.ts) with the sections of the manual it is about.
+// expansion (a path, `for f in $(ls)`, `for a in $*`, `[ $x = y ]`); a read of an unset variable under `set -u`, and
+// options of a shebang that bash refuses. Each is found from the syntax tree, only on the line where its node starts,
+// and said from the catalog (src/messages.ts) with the sections of the manual it is about.
 // The style checks, which are not facts of the models, are in src/pitfalls.ts.
 
 /** The file commands whose unquoted variables are worth a warning. */
@@ -44,8 +45,11 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
   return wordFindings(root, lang, model, shell, line, line).map((f) => f.fact).filter((f, i, all) => all.findIndex((g) => g.text === f.text) === i);
 }
 
-/** A word fact found, with the node it is about (for a diagnostic's range). */
-export interface WordFinding { fact: Fact; node: SyntaxNode }
+/**
+ * A word fact found, with the node it is about (for a diagnostic's range). `mild`: what it says breaks only the
+ * command, and the shell goes on (an unset read in a redirection of a program, `cat < "$f"` with `set -u`).
+ */
+export interface WordFinding { fact: Fact; node: SyntaxNode; mild?: boolean }
 
 /** The word facts whose node starts on a line from `from` to `to`, in one walk of the tree. */
 export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
@@ -58,7 +62,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
   const facts: WordFinding[] = [];
   // (The node is the one being checked, unless a narrower one is given.)
   let at = root;
-  const add = (f: Fact, node: SyntaxNode = at) => facts.push({ fact: f, node });
+  const add = (f: Fact, node: SyntaxNode = at, mild = false) => facts.push({ fact: f, node, ...(mild ? { mild } : {}) });
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check((at = n));
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
@@ -77,7 +81,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           // (`${x:-}` in place of `$x` or `${x}`, `${a[0]:-}` of `${a[0]}`; another form gets its value first.)
           const plain = n.type === 'simple_expansion' || n.text === `\${${u.shown}}`;
           const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
-          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }));
+          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }), n, u.exits === 'command');
         }
         break;
       }
@@ -124,6 +128,12 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }), value);
         // `for a in $*` / `for a in $@` (zsh gives each argument as one word, unsplit)
         if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }), value);
+        break;
+      }
+      case 'comment': {
+        // A shebang whose options bash refuses: the script stops before its first line when run directly.
+        const refused = n.startPosition.row === 0 ? shebangRefused(n.text) : undefined;
+        if (refused) add(fact(lang, 'shebang-refused', refused));
         break;
       }
     }

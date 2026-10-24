@@ -70,6 +70,8 @@ const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
   'redirect-in-bracket', 'bracket-close-in-word', 'and-or-in-bracket',
   // src/wordfacts.ts
   'prefix-assignment-expanded-first', 'for-over-ls-output', 'for-over-unquoted-args', 'redirect-by-your-shell',
+  // (An unset read under `set -u` stops the shell, unless it is `mild`: src/wordfacts.ts.)
+  'nounset-unbound', 'shebang-refused',
 ]);
 
 /**
@@ -81,14 +83,14 @@ const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
  */
 export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   if (doc.extracted) return [];
-  const found: { code: string; start: Place; end: Place; text: string }[] = [];
+  const found: { code: string; start: Place; end: Place; text: string; mild?: boolean }[] = [];
   const scan = (tree: SyntaxTree, model: StateModel, sh: Shell | undefined, place: (n: SyntaxNode, end: boolean) => Place) => {
     const last = tree.root.endPosition.row;
-    const findings = [
+    const findings: { code: string; node: SyntaxNode; text: string; mild?: boolean }[] = [
       ...pitfallFindings(tree.root, lang, 0, last, model, sh),
-      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text })),
+      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text, mild: f.mild })),
     ];
-    for (const { code, node, text } of findings) found.push({ code, start: place(node, false), end: place(node, true), text });
+    for (const { code, node, text, mild } of findings) found.push({ code, start: place(node, false), end: place(node, true), text, mild });
   };
   const point = (p: Point): Place => ({ line: p.row, col: p.column });
   scan(doc.tree, shellState(doc.tree, shell), shell, (n, end) => point(end ? n.endPosition : n.startPosition));
@@ -101,10 +103,10 @@ export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | und
   // (zsh syntax that bash cannot read: the tree there is not the script's.)
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
-  for (const { code, start, end, text } of found) {
+  for (const { code, start, end, text, mild } of found) {
     const { line } = start;
     const issue: DocumentIssue = {
-      code, severity: PITFALL_WARNINGS.has(code) ? 'warning' : 'info', message: text, pitfall: true,
+      code, severity: PITFALL_WARNINGS.has(code) && !mild ? 'warning' : 'info', message: text, pitfall: true,
       startLine: line, startCol: start.col, endLine: line, endCol: end.line === line ? end.col : doc.lines[line].length,
     };
     if (unparsed.some((i) => i.startLine <= line && line <= i.endLine)) continue;
