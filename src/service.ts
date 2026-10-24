@@ -47,6 +47,11 @@ export class ExplainService implements vscode.Disposable {
     return this.settings[ExplainService.FEATURES[feature]];
   }
 
+  /** Whether the panel animates its rows (`panel.animations`; the panel also follows reduced motion). */
+  get panelAnimations(): boolean {
+    return this.settings['panel.animations'];
+  }
+
   get examplePlacement(): ExamplePlacement {
     return this.settings['examples.placement'];
   }

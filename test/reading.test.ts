@@ -821,10 +821,10 @@ describe('the origins of the tokens', () => {
 describe('the reading tree in the panel and in host files', () => {
   it('is sent to the panel with the sections its nodes cite', () => {
     const ex = explain('x=1');
-    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first' });
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first', animations: true });
     assert.strictEqual(msg.explanation.reading, ex.reading);
     assert.ok(msg.manual['3.4']);
-    assert.ok(!panelUpdate({ lang: 'en', explanation: analyzer.explainLine(parser.parse('x=1'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first' }).manual['3.2.2']);
+    assert.ok(!panelUpdate({ lang: 'en', explanation: analyzer.explainLine(parser.parse('x=1'), 0, 'bash'), file: 'a.sh', line: 0, lineText: 'x=1', choice: {}, placement: 'first', animations: true }).manual['3.2.2']);
   });
 
   /** The reading tree of a line of a host file: `layer/kind label [its text in the file] :: text`. */

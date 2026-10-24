@@ -252,11 +252,11 @@ describe('lines no other test reaches', () => {
 
   it('panel: the message that shows a line', () => {
     const e = explain('yq .a f.yml');
-    const msg = panelUpdate({ lang: 'ja', explanation: { ...e, shell: 'dash', notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'bottom' });
+    const msg = panelUpdate({ lang: 'ja', explanation: { ...e, shell: 'dash', notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'bottom', animations: false });
     assert.strictEqual(msg.dialect.shells[0][1], '自動（zsh）');
     assert.ok(msg.dialect.yqs!.length > 1);
     assert.match(msg.lineLabel, /dash/);
-    const en = panelUpdate({ lang: 'en', explanation: explain('echo hi'), file: 'a.sh', line: 0, lineText: 'echo hi', choice: { shell: 'bash', yq: 'kislyuk' }, placement: 'first' });
+    const en = panelUpdate({ lang: 'en', explanation: explain('echo hi'), file: 'a.sh', line: 0, lineText: 'echo hi', choice: { shell: 'bash', yq: 'kislyuk' }, placement: 'first', animations: true });
     assert.deepStrictEqual([en.dialect.shell, en.dialect.yq, en.dialect.yqs, en.examplesFirst], ['bash', 'kislyuk', undefined, true]);
   });
 

@@ -339,6 +339,11 @@
           "default": false,
           "markdownDescription": "%config.panel.autoOpen%"
         },
+        "bashExplainer.panel.animations": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.panel.animations%"
+        },
         "bashExplainer.highlight.enabled": {
           "type": "boolean",
           "default": false,

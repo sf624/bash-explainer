@@ -177,6 +177,7 @@ function updatePanel(): void {
   panel.show(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
+    animations: settings['panel.animations'],
   }));
 }
 
