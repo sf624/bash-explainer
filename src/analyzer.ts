@@ -46,7 +46,7 @@ import {
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, skeleton } from './label';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
+import { attribute, docLine, option, OptionState, shebangRefused, shellState, StateModel } from './semantics/state';
 import { readDeclarationWords } from './semantics/vars';
 import { type NestedScript, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
@@ -592,6 +592,7 @@ export class Analyzer {
   private comment(n: SyntaxNode): Token {
     if (n.startPosition.row === 0 && n.text.startsWith('#!')) {
       const interp = n.text.slice(2).trim();
+      if (shebangRefused(n.text)) this.cx.extraNotes.push(...this.say(fact(this.lang, 'shebang-refused', shebangRefused(n.text)!)));
       return this.tok(n, 'comment', this.s(
         `シバン（shebang）: このスクリプトを \`${interp}\` で実行することを指定する`,
         `Shebang: run this script with \`${interp}\``,
@@ -615,9 +616,8 @@ export class Analyzer {
    * `env -S` splits; without `-S`, env looks for a program named with the whole rest (`bash -e`).
    */
   private shebangEnv(interp: string): string {
-    const m = /^(?:\S*\/)?env[ \t]+(.*\S)$/.exec(interp);
-    if (!m) return '';
-    const rest = m[1];
+    const rest = /^(?:\S*\/)?env[ \t]+(.*\S)$/.exec(interp)?.[1];
+    if (!rest) return '';
     const env = this.specFor('env')!;
     // (One word: `rest` is not empty.)
     const role = interpret(env, [{ value: rest }], { name: 'env', lookup: (name) => this.specFor(name) }).roles[0].role;

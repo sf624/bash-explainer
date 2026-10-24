@@ -1027,11 +1027,94 @@
   {
     "manual": "4.3.1",
     "snippet": "set -u; @PROBE:a@ > \"$f\"; @PROBE:b@ after",
+    "note": "the marker is a function bash imports, which the model reads as a program: it says that only the command fails, where bash exits",
+    "unbound": [
+      "a"
+    ],
     "facts": {
       "a": [],
       "b": [],
       "status": 1,
       "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [[ -v x ]] && @PROBE:a@ \"$x\"; @PROBE:b@ ok",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if [ -n \"${x+set}\" ]; then @PROBE:a@ \"$x\"; fi; @PROBE:b@ ok",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [ -z \"${x:-}\" ] || @PROBE:a@ \"$x\"; @PROBE:b@ ok",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if [ \"${x:-}\" ]; then @PROBE:a@ \"$x\"; elif [ -v y ]; then @PROBE:b@ \"$x\"; else @PROBE:c@ \"$y\"; fi; @PROBE:d@ ok",
+    "facts": {
+      "a": [],
+      "b": [],
+      "c": [],
+      "d": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; y=1; [[ -v y ]] && @PROBE:a@ \"$x\"; @PROBE:b@ ok",
+    "note": "a test of another name guards nothing",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1 @PROBE:a@ \"$x\"; @PROBE:b@ ok",
+    "note": "bash expands the words before it makes the prefix assignment",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
     }
   },
   {

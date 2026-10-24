@@ -7,7 +7,7 @@ import { type NameResolution, resolveName, testSpecAt } from './semantics/names'
 import type { StateModel } from './semantics/state';
 import { unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
-import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
+import { ancestor, field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -70,12 +70,14 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
     switch (n.type) {
       case 'simple_expansion': case 'expansion': case 'variable_name': {
         // `set -u` and a variable with no value: bash fails here.
-        const u = stopped ? undefined : unboundRead(n, model);
+        const u = stopped ? undefined : unboundRead(n, model, shell);
         if (u) {
-          stopped = u.exits === 'script';
+          // (Not after a read in a function's body, which runs when it is called.)
+          stopped = u.exits === 'script' && !ancestor(n, (a) => a.type === 'function_definition');
           // (`${x:-}` in place of `$x` or `${x}`, `${a[0]:-}` of `${a[0]}`; another form gets its value first.)
           const plain = n.type === 'simple_expansion' || n.text === `\${${u.shown}}`;
-          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }));
+          const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
+          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }));
         }
         break;
       }

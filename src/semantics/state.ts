@@ -324,6 +324,23 @@ function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   return { posix, set };
 }
 
+/**
+ * The options of a shebang that bash refuses, so that the script never starts when it is run directly: the kernel
+ * passes the rest of the line as one argument, which bash reads as one run of letters. A blank in it is not an option
+ * (`#!/bin/bash -e -u`: "- : invalid option"), and `o` takes the next argument, the script's path, as an option
+ * name (`#!/bin/bash -eo`, `-o nounset`: "invalid option name"); `--posix -e` is no long option bash knows. Undefined when
+ * bash takes the shebang's options (or the shebang does not start bash directly).
+ */
+export function shebangRefused(text: string): { rest: string; why: 'blank' | 'name' | 'long' } | undefined {
+  const m = /^#![ \t]*(\S+)[ \t]+([-+][^\n]*?)[ \t]*(?:\n|$)/.exec(text);
+  if (!m || m[1].slice(m[1].lastIndexOf('/') + 1) !== 'bash') return undefined;
+  const rest = m[2];
+  const blank = rest.search(/[ \t]/);
+  const name = /^[-+][a-zA-Z]/.test(rest) ? rest.indexOf('o') : -1;
+  if (name > 0 && (blank < 0 || name < blank)) return { rest, why: 'name' };
+  return blank < 0 ? undefined : { rest, why: rest.startsWith('--') ? 'long' : 'blank' };
+}
+
 /** Whether the shebang of the script starts bash in POSIX mode (`shebangStart`). */
 export function shebangPosix(root: SyntaxNode): boolean {
   return shebangStart(root)?.posix ?? false;

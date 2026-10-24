@@ -264,12 +264,24 @@ export const MESSAGES = {
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
-  // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`.)
-  'nounset-unbound': pitfall<{ v: string; name: string; exits: 'script' | 'subshell' | 'shell'; fix?: string }>(['4.3.1', '3.5.3'], ({ v, name, exits, fix }) => [
-    `ここでは \`${v}\` に値が設定されていない。\`set -u\` が有効なので、bash は \`${v}: unbound variable\` のエラーを出し、${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : 'これを実行するシェルが終了する'}（\`${name}\` が環境変数から来るときを除く）。`
-      + (fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'),
-    `\`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : 'the shell running it exits'} (unless \`${name}\` comes from the environment). `
-      + (fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line')]),
+  // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`. `shell`: the
+  // messages of bash and dash are quoted, another shell's are not.)
+  'nounset-unbound': pitfall<{ v: string; name: string; exits: 'script' | 'subshell' | 'shell' | 'command'; shell: 'bash' | 'dash' | 'other'; environment: boolean; fix?: string }>(['4.3.1', '3.5.3'], ({ v, name, exits, shell, environment, fix }) => {
+    const message = `${v}: ${shell === 'bash' ? 'unbound variable' : 'parameter not set'}`;
+    return [
+      `ここでは \`${v}\` に値が設定されていない。\`set -u\` が有効なので、${shell === 'other' ? '読むとエラーになり' : `${shell} は \`${message}\` のエラーを出し`}、`
+        + `${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : exits === 'shell' ? 'これを実行するシェルが終了する' : 'このコマンドは実行されず、終了ステータス 1 で失敗する'}`
+        + `${environment ? `（\`${name}\` が環境変数から来るときを除く）` : ''}。${fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'}`,
+      `\`${v}\` is not set here: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
+        + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : 'the command does not run: it fails with status 1'}`
+        + `${environment ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
+  }),
+  // (src/semantics/state.ts, `shebangRefused`.)
+  'shebang-refused': pitfall<{ rest: string; why: 'blank' | 'name' | 'long' }>(['6.1', '3.8'], ({ rest, why }) => [
+    `Linux ではシバンのインタープリタの後ろの \`${rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${why === 'blank' ? '空白はオプションではない' : why === 'name' ? '`o` が次の引数のスクリプトのパスをオプション名として読む' : 'その名前の長いオプションはない'}）。`
+      + '直接実行すると、スクリプトは何も実行せずにエラーで終わる。オプションは次の行に `set` で書く（`bash スクリプト` で実行すると、シバンのオプションは読まれない）',
+    `on Linux the whole \`${rest}\` after the interpreter is one argument to bash, which refuses it (${why === 'blank' ? 'a blank is not an option' : why === 'name' ? '`o` takes the next argument, the script\'s path, as an option name' : 'no long option has that name'}). `
+      + 'Run directly, the script stops with an error before running anything. Write the options with `set` on the next line (`bash script` ignores the options of the shebang)']),
   'redirect-by-your-shell': pitfall(['3.6', '3.7.3'], () => [
     'リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
     'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`']),

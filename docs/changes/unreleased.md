@@ -57,21 +57,39 @@ declare x
 echo "${#x}"       # ⚠ `x` is not set here … Set it before this line
 ```
 
-It is said for `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:1}`, `${x#p}` and the other forms that read the value, and for a name in `$(( ))` or `(( ))` that is read whenever the expression runs (not after `&&`, `||` or `?`). Only the first such read of a line is named: bash stops there.
+It is said for `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:1}`, `${x#p}` and the other forms that read the value, and for a name in `$(( ))` or `(( ))` that is read whenever the expression runs (not after `&&`, `||` or `?`). Only the first such read of a line is named: bash stops there (a read in a function's body does not hide the reads after it, since the body runs when it is called). A word that bash expands before the command sets the name counts too: `x=$x`, `for x in $x`, `read -r x <<< "$x"`, `declare x="$x"`, `x=1 echo "$x"`.
+
+In a redirection or a here-document of a builtin, a function, a compound command or no command (`read -r v <<E`, `{ …; } > "$f"`), the shell running it exits. In one of a program (`cat < "$f"`, `cat <<E`), bash fails in the program's own process: the pitfall says that the command does not run and fails with status 1, and the script goes on.
+
+The note quotes the message of bash, or of dash (`dir: parameter not set`) in a script for dash. For another shell (sh, ksh, zsh…) it says only that reading the variable is an error. It adds "unless `dir` comes from the environment" except where the script removed the variable on every path before: `unset dir`, or `local dir` (`declare dir` in a function) where the function reads its local one. A `declare dir` outside a function keeps a value from the environment.
 
 It is not said:
 
 - for the forms that test the variable: `${x-w}`, `${x:-w}`, `${x+w}`, `${x=w}`, `${x?w}`, `[[ -v x ]]`, `"${a[@]}"`, `"$@"`, `$*`;
+- after a test that reads the same name: in a branch of an `if` or `case`, the body of a loop, or the right side of `&&` or `||`, whose condition reads it (`if [[ -v x ]]; then echo "$x"; fi`, `[ -z "${x:-}" ] || echo "$x"`, `declare -p x >/dev/null && echo "$x"`);
 - for special and positional parameters (`$1`), and for names in capitals, which may come from the environment;
 - where the variable is set on some path only (`if …; then x=1; fi`), or in a function called both before and after it is set;
 - where the script runs code that cannot be read (`source`, `eval "$s"`, `$cmd`), or arithmetic reads a variable it never sets (`$((n + 1))`: its value may come from the environment), and in a function that may be called from elsewhere (`export -f`, a trap);
-- in a here-document, where bash goes on after the error, and in a redirection of a program (`cat < "$f"`), which only the program's process makes.
+- in a here-document or a redirection in a shell other than bash (dash goes on after a here-document, and exits on a redirection of a program).
 
 ## Fixed
 
 ### The options of a shebang
 
-A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `#!/bin/bash -e -u` gives bash one word, `-e -u`, which bash refuses: no option is turned on.
+A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `bash script.sh` ignores the options of the shebang: the state is read as a script run directly. The options of a shebang that starts another shell (`#!/bin/sh -e`) are not read.
+
+### A shebang whose options bash refuses
+
+Linux passes the rest of the shebang line to bash as one argument, which bash reads as one run of option letters. A new pitfall on line 1 says when bash refuses it, so that the script stops with an error before running anything when it is run directly:
+
+```bash
+#!/bin/bash -e -u        # ⚠ … (a blank is not an option) …          bash: "- : invalid option"
+#!/bin/bash -o nounset   # ⚠ … (`o` takes the next argument, the script's path, as an option name)
+#!/bin/bash -euo pipefail
+#!/bin/bash --posix -e   # ⚠ … (no long option has that name)
+```
+
+It suggests writing the options with `set` on the next line. `#!/bin/bash -eu` and `#!/usr/bin/env -S bash -e -u` work, and get no pitfall.
 
 ### Quoting suggested for a path with a glob, `~` or braces
 
