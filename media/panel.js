@@ -546,6 +546,21 @@
     return t.bands.bash;
   }
 
+  /** PROTOTYPE (proto/tree-readability): the look of the tree view, from the web page's ?treeStyle=a|b|c. */
+  const treeStyle = document.documentElement.dataset.treeStyle ?? '';
+  if (treeStyle) $('reading-tree').classList.add(`ts-${treeStyle}`);
+
+  /** The role colour of a node's code, as the list colours its tokens (`.kind-*`). */
+  function roleOf(n) {
+    const map = /** @type {Record<string, string>} */ ({
+      commandName: 'command', aliasWord: 'command', expandedName: 'variable', argument: 'argument', assignmentArgument: 'assignment',
+      word: 'argument', name: 'variable', heredoc: 'redirect', quote: 'string', arithmetic: 'expansion', brace: 'expansion',
+      list: 'operator', pipeline: 'operator', command: 'operator', compound: 'keyword', clause: 'keyword', coprocess: 'keyword',
+      function: 'keyword', script: 'substitution', part: 'operator',
+    });
+    return map[n.kind] ?? n.kind;
+  }
+
   /** The kinds whose general text the tree shows already: once each, at their first node (`renderReading`). */
   let aboutShown = new Set();
 
@@ -631,17 +646,14 @@
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = chipOf(n);
-    // (The kind, the code and the text wrap together; the links and the band name stay at the top right.)
-    const main = document.createElement('span');
-    main.className = 'tmain';
-    main.append(chip);
-    row.append(twisty, main);
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
+    /** @type {HTMLElement | null} */
+    let c = null;
     if (code) {
-      const c = document.createElement('code');
-      c.className = 'tcode';
+      c = document.createElement('code');
+      // (PROTOTYPE: the code in the colour of its role, as in the list.)
+      c.className = treeStyle ? `tcode kind-${roleOf(n)}` : 'tcode';
       c.textContent = code;
-      main.append(c);
     }
     const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
@@ -650,15 +662,50 @@
     text.append(...inline(about));
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
-    main.append(text);
-    row.append(...links);
     const bandName = band ? bandOf(n) : '';
+    /** @type {HTMLElement | null} */
+    let b = null;
     if (bandName) {
-      const b = document.createElement('span');
+      b = document.createElement('span');
       b.className = 'band-label';
       b.setAttribute('aria-hidden', 'true');
       b.textContent = bandName;
-      row.append(b);
+    }
+    if (treeStyle === 'a') {
+      // A, the list's look: the code, then the kind and the text; the layer is the row's edge.
+      const desc = document.createElement('span');
+      desc.className = 'tdesc';
+      desc.append(chip, ' ', text);
+      row.append(twisty, ...(c ? [c] : []), desc, ...links, ...(b ? [b] : []));
+    } else if (treeStyle === 'b') {
+      // B, an outline: the code in a pill and the kind on the first line, the text on its own line under it.
+      const head = document.createElement('span');
+      head.className = 'thead';
+      head.append(...(c ? [c] : []), chip);
+      const right = document.createElement('span');
+      right.className = 'tright';
+      right.append(...(b ? [b] : []), ...links);
+      row.append(twisty, head, right);
+      if (about) row.append(text);
+    } else if (treeStyle === 'c') {
+      // C, two columns: the code indented by its depth, then the text, at the same place on every row.
+      row.style.setProperty('--d', String(depth - 1));
+      const gutter = document.createElement('span');
+      gutter.className = 'tgutter';
+      gutter.setAttribute('aria-hidden', 'true');
+      const left = document.createElement('span');
+      left.className = 'tleft';
+      left.append(twisty, ...(c ? [c] : []));
+      const right = document.createElement('span');
+      right.className = 'tdesc';
+      right.append(chip, text, ...links, ...(b ? [b] : []));
+      row.append(gutter, left, right);
+    } else {
+      // (The kind, the code and the text wrap together; the links and the band name stay at the top right.)
+      const main = document.createElement('span');
+      main.className = 'tmain';
+      main.append(chip, ...(c ? [c] : []), text);
+      row.append(twisty, main, ...links, ...(b ? [b] : []));
     }
     li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n)}. ${about.replace(/`/g, '')}`);
     li.append(row);

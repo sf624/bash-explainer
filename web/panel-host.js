@@ -16,6 +16,9 @@
     if (window.parent !== window && new URLSearchParams(window.parent.location.search).get('view') !== 'panel') {
       document.documentElement.classList.add('bx-web');
     }
+    // PROTOTYPE (proto/tree-readability): ?treeStyle=a|b|c picks a look of the tree view (media/panel.js).
+    const style = window.parent !== window ? new URLSearchParams(window.parent.location.search).get('treeStyle') : null;
+    if (style === 'a' || style === 'b' || style === 'c') document.documentElement.dataset.treeStyle = style;
   } catch {
     // Not the same origin: leave the header.
   }

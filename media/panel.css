@@ -699,3 +699,319 @@ body.vscode-high-contrast-light #reading-tree li.band {
     padding-left: 0.7rem;
   }
 }
+
+/* ---------------------------------------------------------------- PROTOTYPE (proto/tree-readability)
+   Three looks of the tree view, picked on the web page with ?treeStyle=a|b|c (web/panel-host.js). Not to be merged. */
+#reading-tree[class*="ts-"] {
+  --guide: color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
+}
+
+#reading-tree[class*="ts-"] li.band {
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+#reading-tree[class*="ts-"] .band-label {
+  font-size: 0.75em;
+  border: 1px solid color-mix(in srgb, var(--l) 60%, transparent);
+  border-radius: 3px;
+  padding: 0 0.3em;
+}
+
+/* A: the list's rows. The code in its role's colour, then the kind (small, muted) and the text; the layer is the
+   row's left edge; a reader's name where it takes over; the list's indent guides. */
+.ts-a .trow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  /* (The twisty sits in the left padding: a text that wraps under the code lines up with it.) */
+  padding: 0.15rem 0.4rem 0.15rem 1.4rem;
+  border-left: 3px solid var(--l);
+  margin: 0.15rem 0;
+  border-radius: 2px;
+}
+
+.ts-a .trow .tcode {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
+
+.ts-a .tdesc {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ts-a .chip,
+.ts-c .chip {
+  color: var(--c-muted);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.ts-a .chip {
+  margin-right: 0.3em;
+}
+
+.ts-a .trow .refs {
+  margin-left: auto;
+}
+
+#reading-tree.ts-a ul[role="group"] {
+  padding-left: 1.1rem;
+}
+
+.ts-a li[role="treeitem"]:not(:last-child) > ul[role="group"] {
+  position: relative;
+}
+
+.ts-a li[role="treeitem"]:not(:last-child) > ul[role="group"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .ts-a .trow {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .ts-a .trow .tcode {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .ts-a .tdesc {
+    flex: 1 1 60%;
+  }
+}
+
+@media (max-width: 480px) {
+  #reading-tree.ts-a ul[role="group"] {
+    padding-left: 0.8rem;
+  }
+
+  #reading-tree[class*="ts-"] .trow .band-label {
+    display: inline;
+  }
+}
+
+/* B: an outline. Connectors drawn with borders: a vertical line per parent, an elbow to each child (in the child's
+   layer colour where a reader takes over); the code in a pill, the kind after it, the text muted on its own line. */
+.ts-b {
+  --elbow: 0.8rem;
+}
+
+.ts-b .trow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  padding: 0.15rem 0.4rem 0.15rem 1.2rem;
+}
+
+.ts-b .trow .twisty {
+  left: 0.3rem;
+}
+
+.ts-b .thead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  min-width: 0;
+}
+
+.ts-b .tright {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.ts-b .trow .tcode {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+  border-radius: 4px;
+  padding: 0 0.35em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ts-b .chip {
+  font-size: 0.85em;
+}
+
+.ts-b .trow .text {
+  grid-column: 1 / -1;
+  color: var(--c-muted);
+}
+
+.ts-b .trow .text.about {
+  font-style: italic;
+}
+
+#reading-tree.ts-b ul[role="group"] {
+  padding-left: 1.2rem;
+}
+
+.ts-b ul[role="group"] > li {
+  position: relative;
+}
+
+.ts-b ul[role="group"] > li::before,
+.ts-b ul[role="group"] > li::after {
+  content: "";
+  position: absolute;
+  left: -0.7rem;
+  pointer-events: none;
+}
+
+.ts-b ul[role="group"] > li::before {
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--guide);
+}
+
+.ts-b ul[role="group"] > li:last-child::before {
+  bottom: auto;
+  height: var(--elbow);
+}
+
+.ts-b ul[role="group"] > li::after {
+  top: var(--elbow);
+  width: 0.8rem;
+  border-top: 1px solid var(--guide);
+}
+
+/* A leaf has no twisty: its elbow runs on to its code. */
+.ts-b ul[role="group"] > li:not([aria-expanded])::after {
+  width: 1.85rem;
+}
+
+.ts-b ul[role="group"] > li.band::after {
+  border-top: 2px solid var(--l);
+}
+
+@media (max-width: 480px) {
+  #reading-tree.ts-b ul[role="group"] {
+    padding-left: 0.9rem;
+  }
+
+  .ts-b ul[role="group"] > li::before,
+  .ts-b ul[role="group"] > li::after {
+    left: -0.4rem;
+  }
+
+  .ts-b ul[role="group"] > li::after {
+    width: 0.5rem;
+  }
+
+  .ts-b ul[role="group"] > li:not([aria-expanded])::after {
+    width: 1.55rem;
+  }
+}
+
+/* C: two columns. A narrow gutter in the layer's colour, the code indented by its depth over guides, and the kind
+   and the text in a column that starts at the same place on every row. */
+.ts-c {
+  --step: 1rem;
+  --codecol: clamp(8rem, 32%, 20rem);
+}
+
+#reading-tree.ts-c ul[role="group"] {
+  padding-left: 0;
+}
+
+.ts-c .trow {
+  display: grid;
+  grid-template-columns: 4px var(--codecol) minmax(0, 1fr);
+  align-items: stretch;
+  padding: 0;
+  border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+}
+
+.ts-c .tgutter {
+  background: var(--l);
+}
+
+.ts-c .tleft {
+  position: relative;
+  min-width: 0;
+  padding: 0.2rem 0.5rem 0.2rem calc(var(--d) * var(--step) + 1.3rem);
+  border-right: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  background-image: repeating-linear-gradient(to right, var(--guide) 0 1px, transparent 1px var(--step));
+  background-size: calc(var(--d) * var(--step)) 100%;
+  background-position: 0.6rem 0;
+  background-repeat: no-repeat;
+}
+
+.ts-c .trow .twisty {
+  left: calc(var(--d) * var(--step) + 0.35rem);
+  top: 0.2rem;
+}
+
+.ts-c .trow .tcode {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ts-c .tdesc {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  padding: 0.2rem 0.5rem;
+  min-width: 0;
+}
+
+/* The kind in a column of its own, so that every text starts at the same place. */
+.ts-c .trow .chip {
+  white-space: normal;
+  text-align: right;
+}
+
+.ts-c .tdesc .text {
+  grid-column: 2;
+}
+
+.ts-c .tdesc .refs,
+.ts-c .tdesc .band-label {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.ts-c .tdesc .band-label + .refs,
+.ts-c .tdesc .refs + .band-label {
+  grid-row: 2;
+}
+
+@media (max-width: 480px) {
+  .ts-c {
+    --step: 0.6rem;
+    --codecol: 46%;
+  }
+
+  /* A phone: the kind over the text, the links and the reader under it. */
+  .ts-c .tdesc {
+    display: block;
+  }
+
+  .ts-c .trow .chip {
+    display: block;
+    text-align: left;
+  }
+
+  .ts-c .tdesc .refs,
+  .ts-c .tdesc .band-label {
+    margin-left: 0.4rem;
+  }
+}
