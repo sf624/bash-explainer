@@ -13,8 +13,18 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
   readonly onDidChangeInlayHints = this.emitter.event;
   private registration: vscode.Disposable | undefined;
 
+  /** Until when a move of the cursor asks for the hints again (see `refresh`). */
+  private againUntil = 0;
+  private againTimer: ReturnType<typeof setTimeout> | undefined;
+  private disposables: vscode.Disposable[] = [];
+
   constructor(private service: ExplainService) {
     this.register();
+    this.disposables.push(vscode.window.onDidChangeTextEditorSelection(() => {
+      if (Date.now() > this.againUntil) return;
+      clearTimeout(this.againTimer);
+      this.againTimer = setTimeout(() => this.emitter.fire(), 300);
+    }));
   }
 
   /** (Re-)register for the configured languages. */
@@ -26,6 +36,10 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
   /** Ask VS Code for the hints again (a setting, or a choice in the panel, changed them). */
   refresh(): void {
     this.emitter.fire();
+    // VS Code (1.142) keeps a copy of the hints of the line whose hint the mouse is on, and puts that copy back when
+    // the mouse moves off it, even after a refresh: a language switched meanwhile left that hint in the old language,
+    // until the next edit or scroll. For a minute, a move of the cursor asks for the hints again, to replace the copy.
+    this.againUntil = Date.now() + 60_000;
   }
 
   provideInlayHints(doc: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
@@ -54,6 +68,8 @@ export class InlayHintsController implements vscode.InlayHintsProvider, vscode.D
 
   dispose(): void {
     this.registration?.dispose();
+    clearTimeout(this.againTimer);
+    this.disposables.forEach((d) => d.dispose());
     this.emitter.dispose();
   }
 }

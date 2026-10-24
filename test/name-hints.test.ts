@@ -71,6 +71,28 @@ describe('the name hints', () => {
     assert.strictEqual(hintLabel(f({ runs: 'function', also: [{ kind: 'builtin', reach: [] }] }), 'shadow', 'ja'), '関数（ビルトインではない）');
   });
 
+  it('are in Japanese in a Japanese run: no English word but the code (the name of the command that runs it)', () => {
+    const scripts = [
+      'cd() { builtin cd "$@" && echo "now in $PWD"; }\nenable -n echo\ncd /tmp\nsudo cd /root\necho done\nbuiltin ls\n',
+      '#!/bin/bash\nalias ls="ls -F"\nls\nshopt -s expand_aliases\nalias ll="ls -l"\nll\ngrep() { :; }\ngrep x\nenv cd /\n',
+      fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8'),
+    ];
+    let seen = 0;
+    for (const src of scripts) {
+      const doc = openDocument(src, 'shell', (t) => parser.parse(t));
+      const analyzer = new Analyzer('ja');
+      doc.lines.forEach((text, line) => {
+        for (const h of nameHints(explainDocumentLine(analyzer, doc, line, 'ja', {}, {}), line, text, 'ja')) {
+          seen++;
+          const code = h.tok.name!.by;
+          const words = (code ? h.label.split(code).join('') : h.label).match(/[A-Za-z]+/g);
+          assert.strictEqual(words, null, `${line + 1}: ${h.label}`);
+        }
+      });
+    }
+    assert.ok(seen >= 8, String(seen));
+  });
+
   it('find no name to mark in the sample script but the ones it shows on purpose', () => {
     const src = fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8');
     for (const h of hints(src)) assert.match(h, /not the|is off|not expanded|usually there is none|nothing runs/);
