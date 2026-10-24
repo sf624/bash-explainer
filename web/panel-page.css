@@ -22,54 +22,54 @@ header {
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
-.tools {
-  gap: 4px;
-}
-
-.tools button {
-  padding: 3px 8px;
-  border: 1px solid transparent;
+/* Its controls in the page's shapes: rounder, a little bigger, the page's 2px focus ring. */
+.tb {
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
-  color: var(--vscode-foreground);
   transition: background-color 0.15s;
 }
 
-@media (hover: hover) {
-  .tools button:hover {
-    color: var(--vscode-foreground);
-    text-decoration: none;
-    background: var(--vscode-list-hoverBackground);
-  }
+.tb:hover,
+.seg button[aria-pressed="false"]:hover {
+  background: var(--vscode-list-hoverBackground);
+  outline: none;
 }
 
-/* Without a mouse, no underline either after a tap. */
+/* Without a mouse no hover either: it would stay after a tap. */
 @media (hover: none) {
-  .tools button:hover {
-    color: var(--vscode-foreground);
-    text-decoration: none;
+  .tb:hover,
+  .seg button[aria-pressed="false"]:hover {
+    background: transparent;
   }
 }
 
-.tools button:focus-visible,
-.tools select:focus-visible {
+.tb[aria-pressed="true"],
+.seg button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--vscode-foreground);
+}
+
+.seg {
+  border-radius: var(--radius-sm);
+}
+
+.seg button {
+  height: 24px;
+  border-radius: 4px;
+}
+
+.dropdown select {
+  height: 28px;
+  border-radius: 6px;
+}
+
+.tb:focus-visible,
+.seg button:focus-visible,
+.dropdown select:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 0;
-}
-
-.tools label:not([hidden]) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.tools select {
-  appearance: none;
-  -webkit-appearance: none;
-  min-height: 26px;
-  padding: 0 24px 0 8px;
-  border-radius: 6px;
-  background: var(--vscode-dropdown-background) var(--select-arrow) no-repeat right 6px center / 12px 12px;
-  cursor: pointer;
 }
 
 pre#line {
@@ -89,15 +89,16 @@ pre#line {
     font-size: 12px;
   }
 
-  .tools {
-    gap: 0 2px;
+  .tb {
+    width: 36px;
+    height: 36px;
   }
 
-  .tools button {
-    padding: 8px 6px;
+  .seg button {
+    height: 32px;
   }
 
-  .tools select {
-    min-height: 32px;
+  .dropdown select {
+    height: 34px;
   }
 }

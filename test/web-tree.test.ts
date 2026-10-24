@@ -1,9 +1,9 @@
 // The tree view of the explanation panel on the web page (media/panel.js, src/reading.ts), in headless Chromium: the
-// switch from the list, folding and moving with the keyboard as the ARIA tree pattern says, the layers, and the
+// switch from the list (the page's own, in its top bar or its menu: web/panel-bridge.ts), folding and moving with the keyboard as the ARIA tree pattern says, the layers, and the
 // choice kept for the next visit (web/storage.ts).
 import * as assert from 'assert';
 import type { Browser, Frame, Page } from 'playwright-core';
-import { frames, openSite, until } from './support/site';
+import { chooseView, frames, menuItem, openSite, until } from './support/site';
 
 describe('the web page: the tree view of the panel', function () {
   this.timeout(120000);
@@ -39,11 +39,17 @@ describe('the web page: the tree view of the panel', function () {
     page.on('pageerror', (e) => errors.push(e.message));
     let panel = await open(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
     assert.strictEqual(await panel.locator('#reading').isHidden(), true, 'the list first');
-    await panel.locator('#view-tree').click();
+    // The switch is the page's, in its top bar; the panel shows no copy of it.
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views-top button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['List true', 'Tree false']);
+    assert.strictEqual(await page.locator('#views-top').getAttribute('aria-label'), 'View');
+    assert.strictEqual(await panel.locator('#views').isHidden(), true);
+    await page.locator('#view-tree-top').click();
     // (The host builds the tree when the view is chosen.)
     await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
     assert.strictEqual(await panel.locator('#tree').isHidden(), true);
-    assert.strictEqual(await panel.locator('#view-tree').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('#view-tree-top').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await page.locator('#view-list-top').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true', 'the menu\'s copy (on a phone) says the same');
     const tree = panel.locator('#reading-tree');
     assert.strictEqual(await tree.getAttribute('role'), 'tree');
     // One item takes the Tab key: the first.
@@ -91,6 +97,7 @@ describe('the web page: the tree view of the panel', function () {
     await until('the choice kept', () => page.evaluate("localStorage.getItem('bash-explainer-panel')"), (v) => v === JSON.stringify({ view: 'tree', level: 3 }));
     panel = await open(page, "find . -name '*.sh' | xargs grep -n 'set -e'");
     await until('the tree view', () => panel.locator('#reading').isVisible(), (v) => v);
+    assert.strictEqual(await page.locator('#view-tree-top').getAttribute('aria-pressed'), 'true', 'the switch remembers it');
     assert.strictEqual(await panel.locator('#layers button[data-level="3"]').getAttribute('aria-pressed'), 'true');
     assert.deepStrictEqual(await layers(), ['bash', 'command']);
     // A click on a row folds it, as in the list.
@@ -98,9 +105,9 @@ describe('the web page: the tree view of the panel', function () {
     await tree2.locator('li[aria-level="2"] > .trow').first().click();
     assert.strictEqual(await tree2.locator('li[aria-level="2"]').first().getAttribute('aria-expanded'), 'false');
     // And back to the list.
-    await panel.locator('#view-list').click();
+    await page.locator('#view-list-top').click();
+    await until('the list', () => panel.locator('#tree').isVisible(), (v) => v);
     assert.strictEqual(await panel.locator('#reading').isHidden(), true);
-    assert.strictEqual(await panel.locator('#tree').isVisible(), true);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
@@ -108,7 +115,7 @@ describe('the web page: the tree view of the panel', function () {
   /** The tree view of `line`, with the item at `level` focused (its path is the tab stop). */
   async function treeOf(page: Page, line: string): Promise<Frame> {
     const panel = await open(page, line);
-    await panel.locator('#view-tree').click();
+    await chooseView(page, 'tree');
     await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
     return panel;
   }
@@ -148,15 +155,15 @@ describe('the web page: the tree view of the panel', function () {
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowRight');
     assert.strictEqual((await focused(panel)).level, '3');
-    await panel.evaluate(`document.getElementById('toggle').click()`);
-    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Expand all');
+    await page.locator('#collapse').click();
+    await until('the name', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Expand all');
     assert.strictEqual(await tree.locator('li[tabindex="0"]').count(), 1);
     assert.strictEqual(await tree.locator('li[tabindex="0"]').isVisible(), true);
-    await panel.locator('#view-list').click();
-    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Collapse all', 'the list is not folded');
-    await panel.locator('#view-tree').click();
+    await page.locator('#view-list-top').click();
+    await until('the list is not folded', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Collapse all');
+    await page.locator('#view-tree-top').click();
     await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
-    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Expand all');
+    await until('the name', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Expand all');
     await ctx.close();
   });
 
@@ -257,21 +264,24 @@ describe('the web page: the tree view of the panel', function () {
     const panel = await treeOf(page, 'echo hi | cat');
     assert.strictEqual(await panel.locator('#reading').isVisible(), true);
     await panel.locator('#layers button[data-level="1"]').click();
-    await panel.locator('#view-list').click();
-    assert.strictEqual(await panel.locator('#tree').isVisible(), true);
-    await panel.locator('#view-tree').click();
+    await page.locator('#view-list-top').click();
+    await until('the list', () => panel.locator('#tree').isVisible(), (v) => v);
+    await page.locator('#view-tree-top').click();
     await until('the tree again', () => panel.locator('#reading-tree li').count(), (n) => n > 0);
     assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
 
-  it('fits a phone: no sideways scroll, in Japanese', async () => {
+  it('fits a phone: no sideways scroll, in Japanese; the switch is in the menu', async () => {
     const ctx = await browser.newContext({ viewport: { width: 360, height: 800 }, locale: 'ja-JP' });
     const page = await ctx.newPage();
     const panel = await open(page, "find . -name '*.sh' | xargs grep -n 'set -e'");
-    await panel.locator('#view-tree').click();
+    assert.strictEqual(await page.locator('#views-top').isHidden(), true);
+    await menuItem(page, '#view-tree-menu');
     await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 10);
-    assert.strictEqual(await panel.locator('#view-tree').textContent(), 'ツリー');
+    assert.strictEqual(await page.locator('#view-tree-menu').textContent(), 'ツリー');
+    assert.strictEqual(await page.locator('#views-menu-label').textContent(), '表示');
+    assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await panel.locator('#reading-tree li').count() > 10, true);
     assert.strictEqual(await panel.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
     await ctx.close();

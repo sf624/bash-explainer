@@ -14,6 +14,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- The panel's header in VS Code is a toolbar, like those of VS Code's own views: the line, the shell's dropdown and the List/Tree switch, then icon buttons with tooltips for Collapse all, Copy as Markdown, Quick reference and Settings. Before, the buttons were text links.
+- On the web page, the List/Tree switch is in the top bar, or in the menu on a phone.
 - The panel's Tree view is drawn as an outline: the code in a pill, its text on a line below, and lines joining each item to its parent. Each reader's part has a light tint that is the same at every depth. Before, nested parts got darker, and some kind names were hard to read on them.
 - The quick reference's search box has rounded corners like the panel's other controls, and a focus ring. Before, it was square.
 - The web page on a phone opens with the Problems list folded (its header shows the count; tap it to unfold). Before, the sample's nine problems took a third of the editor. Wider screens, and a fold you chose yourself, are unchanged.

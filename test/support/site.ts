@@ -124,6 +124,13 @@ export async function menuItem(page: Page, id: string): Promise<void> {
   await page.locator(id).click();
 }
 
+/** Chooses the panel's view in the page's switch: in the top bar, or on a phone in the menu (closed again after). */
+export async function chooseView(page: Page, view: 'list' | 'tree'): Promise<void> {
+  if (await page.locator(`#view-${view}-top`).isVisible()) return page.locator(`#view-${view}-top`).click();
+  await menuItem(page, `#view-${view}-menu`);
+  await page.evaluate("document.getElementById('drawer').close()");
+}
+
 /** Waits until the page has drawn `n` more animation frames (styles and layout have settled after a change). */
 export async function frames(page: Page | import('playwright-core').Frame, n = 2): Promise<void> {
   await page.evaluate(`new Promise((resolve) => { let n = ${n}; const tick = () => (--n > 0 ? requestAnimationFrame(tick) : resolve()); requestAnimationFrame(tick); })`);

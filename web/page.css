@@ -319,6 +319,50 @@ button {
   background: var(--vscode-panel-border);
 }
 
+/* The view switch (List or Tree): two words in one control, the view shown pressed, as the panel's own switch
+   in VS Code. In the top bar it has the height of the bar's selects; on a phone it is in the menu. */
+.views {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-dropdown-background);
+}
+
+.views button {
+  min-height: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .views button:hover {
+    border-color: transparent;
+    color: var(--vscode-foreground);
+  }
+}
+
+.views button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+/* In the menu: as wide as the selects, its halves 40px high to tap. */
+.field .views button {
+  flex: 1 1 0;
+  height: 40px;
+  font-size: inherit;
+}
+
 .compact select {
   font-size: 12.5px;
 }
@@ -1040,6 +1084,12 @@ body.resizing .problems-resize {
 /* A phone zoomed out can be wider than these widths: it keeps the phone's bar (theme-init.js). */
 :where(html.narrow) .desk-only,
 :where(html.narrow) .top .install {
+  display: none !important;
+}
+
+/* The phone's bar has no room for the view switch (measured from 320 to 430px: two 40px halves do not fit
+   beside the four buttons): it is in the menu there. */
+:where(html.narrow) .bar-only {
   display: none !important;
 }
 

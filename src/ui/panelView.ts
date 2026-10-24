@@ -84,25 +84,29 @@ export function panelUpdate(p: PanelLine) {
   };
 }
 
-/** The panel's markup, inside <body> and before its script. */
+/**
+ * The panel's markup, inside <body> and before its script. The header is a view's title bar, as in VS Code: the
+ * line shown, the shell (and yq) dropdown and the view switch (words, both views of the same line), then icon
+ * buttons (media/panel.js draws their icons and names them; on the web page the top bar stands in for it).
+ */
 export const PANEL_BODY = `<div id="top">
 <header>
   <div class="where"><span id="where"></span><span id="context"></span></div>
+  <label id="shell-box" class="pick" hidden><span id="shell-label" class="sr-only"></span><span class="dropdown"><select id="shell"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
+  <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
+  <div id="views" class="seg" role="group">
+    <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
+  </div>
   <div class="tools">
-    <label id="shell-box" hidden><span id="shell-label"></span> <select id="shell"></select></label>
-    <label id="yq-box" hidden><span id="yq-label"></span> <select id="yq"></select></label>
-    <button id="toggle" type="button"></button>
-    <button id="copy" type="button"></button>
-    <button id="ref" type="button"></button>
-    <button id="settings" type="button"></button>
+    <button id="toggle" class="tb" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+    <button id="copy" class="tb" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+    <button id="ref" class="tb" type="button" aria-pressed="false"><svg class="ico" data-icon="book" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+    <button id="settings" class="tb" type="button"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
   </div>
 </header>
 <pre id="line"></pre>
 </div>
 <main id="main">
-  <div id="views" role="group">
-    <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
-  </div>
   <div id="notes"></div>
   <ul id="tree"></ul>
   <section id="reading" hidden>
