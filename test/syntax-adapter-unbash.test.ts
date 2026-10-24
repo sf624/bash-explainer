@@ -538,10 +538,10 @@ describe('unbash adapter: expansions and arithmetic', () => {
     // (A group not closed while it is typed: its `)` is missing.)
     assert.deepEqual(tree('(( (1').errors.map((e) => e.message), ['Missing ")"', 'Missing "))"']);
   });
-  it('has the three parts of for ((;;))', () => {
+  it('has the three parts of for ((;;)), its names variables as in (( ))', () => {
     assert.equal(o('for ((i=0;i<3;i++)); do :; done'),
       '(program (c_style_for_statement "for" "((" (variable_assignment @initializer (variable_name @name "i") "=" (number @value "0")) ";" '
-      + '(binary_expression @condition (word @left "i") "<" (number @right "3")) ";" (postfix_expression @update (word "i") "++") "))" ";" '
+      + '(binary_expression @condition (variable_name @left "i") "<" (number @right "3")) ";" (postfix_expression @update (variable_name "i") "++") "))" ";" '
       + '(do_group @body "do" (command (command_name @name (word ":"))) ";" "done")))');
     assert.equal(o('for ((;;)); do :; done'), '(program (c_style_for_statement "for" "((" ";" ";" "))" ";" (do_group @body "do" (command (command_name @name (word ":"))) ";" "done")))');
     assert.equal(o('for ((i = 0, j = 1; ; i += 2, j++)) { :; }').includes('"," (variable_assignment'), false);

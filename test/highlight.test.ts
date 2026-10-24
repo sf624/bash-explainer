@@ -90,6 +90,8 @@ describe('highlight', () => {
       'keyword:for', 'keyword:((', 'variable:i', 'number:0', 'operator:;', 'variable:i', 'operator:<', 'number:3', 'operator:;', 'variable:i', 'operator:++', 'keyword:))',
       'operator:;', 'keyword:do', 'assignment:n', 'operator:;', 'keyword:done',
     ]);
+    // A name in the index of an element is a variable too (the index is a word of its own).
+    assert.deepEqual(spans('(( a[i] ))'), ['keyword:((', 'variable:a', 'variable:i', 'keyword:))']);
     // Code in a substitution inside arithmetic is code again; a number outside arithmetic is a word.
     assert.deepEqual(spans('echo $(( $(wc -l) + "1" )) 5'), [
       'builtin:echo', 'substitution:$((', 'substitution:$(', 'command:wc', 'option:-l', 'substitution:)', 'operator:+', 'string:"1"', 'substitution:))',

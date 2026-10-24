@@ -6,6 +6,7 @@ import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { findIdioms } from '../src/idioms';
 import { shellState } from '../src/semantics/state';
+import { statusModel } from '../src/semantics/status';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
 import { wordFacts } from '../src/wordfacts';
@@ -138,8 +139,9 @@ describe('a variable set at the end of a pipeline is gone after it', () => {
 describe('idioms follow the tree, not the spelling', () => {
   const idioms = (src: string): string => {
     // (The kinds of statement the analyzer collects on a line.)
-    const nodes = descendants(parser.parse(src).root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement']);
-    return findIdioms(nodes, 'en').join('\n');
+    const tree = parser.parse(src);
+    const nodes = descendants(tree.root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement']);
+    return findIdioms(nodes, 'en', statusModel(shellState(tree))).join('\n');
   };
   it('knows an endless loop however it is spaced or broken over lines', function () {
     if (!have) return this.skip();

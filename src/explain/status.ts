@@ -39,9 +39,9 @@ export function substitutionStatus(cx: Explainer, n: SyntaxNode): string {
   if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
   const rule = cx.status.status(stmt);
   if (rule.kind === 'last-substitution') {
-    // (`$(grep -c x f || true)`: the substitution does not fail.)
+    // (`$(grep -c x f || true)`: the substitution does not fail, unless `true` is a function that does.)
     const last = n.namedChildren.filter((c) => STATEMENTS.has(c.type)).pop();
-    const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && /^(true|:)$/.test(last.namedChildren[last.namedChildren.length - 1].text);
+    const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && cx.status.succeeds(last.namedChildren[last.namedChildren.length - 1]);
     if (masked && rule.at === n) return '';
     return rule.at === n
       ? cx.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（名前の無いコマンド、つまり代入やリダイレクトだけのコマンドは、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (a command with no name, only assignments or redirections, takes the status of its last command substitution)')

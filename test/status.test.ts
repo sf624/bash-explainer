@@ -8,6 +8,7 @@ import { conditionOf, lastStatements, statusModel } from '../src/semantics/statu
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
+import { runBash } from './support/bash';
 import { PROBE_ENV } from './support/probe';
 
 const parser = createUnbashParser();
@@ -437,5 +438,69 @@ describe('the notes on status and errexit', () => {
     assert.ok(!notes('((i++)) || true', 0).some((n) => /i\+\+/.test(n)));
     assert.ok(!notes('if ((i--)); then :; fi', 0, 'ja').some((n) => /i--/.test(n)));
     assert.ok(notes('((i++))', 0).some((n) => /under `set -e` the script stops/.test(n)));
+  });
+});
+
+describe('what surely succeeds (`succeeds`), as bash runs it', () => {
+  /** Whether the last statement of `src` surely succeeds. */
+  const succeeds = (src: string, shell?: Shell): boolean => {
+    const tree = parser.parse(src);
+    const last = tree.root.namedChildren[tree.root.namedChildren.length - 1];
+    return statusModel(shellState(tree, shell), shell).succeeds(last);
+  };
+
+  it('is the builtin `true` or `:`, or a program `true`, with no word after it', () => {
+    for (const src of ['true', ':', 'command true', 'builtin :', 'command -p true', 'command builtin true', '/bin/true', '/usr/bin/true', 'enable -n true; true']) {
+      assert.strictEqual(succeeds(src), true, src);
+    }
+    assert.strictEqual(succeeds('true', 'dash'), true);
+    // A function or an alias of that name, a word that may fail (`: ${x:?}`), a redirection or an assignment that may,
+    // a name not known here, `command -v` (it only looks the name up), `:` turned off on some paths, other commands.
+    for (const src of ['true() { return 1; }; true', ':() { false; }; :', 'shopt -s expand_aliases\nalias true=false\ntrue', ': "${x:?}"', 'true x',
+      'true >/dev/null', 'x=1 true', '$c', 'command "$c"', 'command -v true', 'command', 'if [ -n "$a" ]; then enable -n :; fi; :', 'false', 'echo',
+      '/bin/false', 'x=1', 'true | false']) {
+      assert.strictEqual(succeeds(src), false, src);
+    }
+    assert.strictEqual(statusModel(shellState(parser.parse('true'))).succeeds(undefined), false);
+  });
+
+  // bash 5.2: whether `set -e` stops the script at `x=$(…)` (`after` is never printed), and what we say of it: the
+  // note on `$( )`, and the idiom `|| true` only where it does not stop.
+  const cases: [string[], boolean][] = [
+    [['x=$(false || true)'], false],
+    [['x=$(false || :)'], false],
+    [['x=$(false || command true)'], false],
+    [['x=$(false || builtin true)'], false],
+    [['x=$(false || /bin/true)'], false],
+    [['enable -n true', 'x=$(false || true)'], false],
+    [['true() { return 1; }', 'x=$(false || true)'], true],
+    [[':() { return 1; }', 'x=$(false || :)'], true],
+    [['true() { return 1; }', 'x=$(false || command true)'], false],
+    [['true() { return 1; }', 'x=$(false || builtin true)'], false],
+    [['x=$(false || : "${u:?}")'], true],
+  ];
+  for (const [lines, stops] of cases) {
+    it(lines.join('; '), function () {
+      const run = runBash(['set -e', ...lines, 'echo after'].join('\n'));
+      if (run.status === -1) return this.skip();
+      assert.strictEqual(!run.stdout.includes('after'), stops, 'bash');
+      const src = ['set -e', ...lines].join('\n');
+      for (const lang of ['en', 'ja'] as const) {
+        const said = explanations(src, lines.length, lang).some((e) => (lang === 'en' ? /Under `set -e` the script stops here if it fails/ : /スクリプトはここで止まる/).test(e));
+        assert.strictEqual(said, stops, `${lang}: the note on $( )`);
+        const idiom = notes(src, lines.length, lang).some((n) => (lang === 'en' ? /Idiom: `\|\| true`/ : /定番の書き方: `\|\| true`/).test(n));
+        assert.strictEqual(idiom, !stops, `${lang}: the idiom`);
+      }
+    });
+  }
+
+  it('makes an endless loop of `while true` only when `true` succeeds', function () {
+    // bash: the function `true` fails, so the body never runs; `while command true` runs it until `break`.
+    const src = 'true() { return 1; }\nwhile true; do echo in; break; done\nwhile command true; do echo again; break; done';
+    const run = runBash(src);
+    if (run.status === -1) return this.skip();
+    assert.strictEqual(run.stdout, 'again\n');
+    assert.ok(!notes(src, 1).some((n) => /an endless loop/.test(n)));
+    assert.ok(notes(src, 2).some((n) => /an endless loop/.test(n)));
   });
 });

@@ -22,7 +22,7 @@ interface Range { pos: number; end: number }
 const DECLARATIONS = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);
 const NUMBER = /^-?\d+$/;
 const BRACE_RANGE = /^\{(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(\.\.-?\d+)?\}$/;
-type ArithCtx = 'cmd' | 'for' | 'slice';
+type ArithCtx = 'cmd' | 'slice';
 /** A word part that is a node of its own, not a run of plain text. */
 type Part = Exclude<U.WordPart, U.LiteralPart | U.GlobPart | U.ExtendedGlobPart | U.BraceExpansionPart>;
 const PLAIN = new Set(['Literal', 'Glob', 'ExtendedGlob', 'BraceExpansion']);
@@ -1304,7 +1304,7 @@ class Converter {
     const part = (e: U.ArithmeticExpression | undefined, field: FieldName): void => {
       if (e) {
         if (field === 'initializer' && e.type === 'ArithmeticBinary' && e.operator === '=') this.add(n, this.forAssignment(e), field);
-        else this.arithInto(n, e, 'for', field);
+        else this.arithInto(n, e, 'cmd', field);
         at = e.end;
       }
       if (!complete) return;
@@ -1324,9 +1324,9 @@ class Converter {
 
   forAssignment(e: U.ArithmeticBinary): Mut {
     const n = this.node('variable_assignment', e.pos, e.end);
-    this.add(n, this.arith(e.left, 'for'), 'name').type = 'variable_name';
+    this.add(n, this.arith(e.left, 'cmd'), 'name').type = 'variable_name';
     this.tokenIn('=', e.left.end, e.end, n);
-    this.add(n, this.arith(e.right, 'for'), 'value');
+    this.add(n, this.arith(e.right, 'cmd'), 'value');
     return n;
   }
 
@@ -1339,7 +1339,7 @@ class Converter {
     } else this.add(owner, this.arith(e, ctx), field);
   }
 
-  /** An arithmetic expression; `ctx` says where it is: a `for ((…))` header names plain words; a `${a:1:2}` slice has no fields. */
+  /** An arithmetic expression; `ctx` says where it is: a `${a:1:2}` slice has no fields. */
   arith(e: U.ArithmeticExpression, ctx: ArithCtx): Mut {
     switch (e.type) {
       case 'ArithmeticBinary': {
@@ -1381,11 +1381,11 @@ class Converter {
         return n;
       }
       case 'ArithmeticCommandExpansion': return this.substitution({ type: 'CommandExpansion', pos: e.pos, end: e.end, text: e.text, script: e.script });
-      case 'ArithmeticWord': return this.arithWord(e, ctx);
+      case 'ArithmeticWord': return this.arithWord(e);
     }
   }
 
-  arithWord(e: U.ArithmeticWord, ctx: ArithCtx): Mut {
+  arithWord(e: U.ArithmeticWord): Mut {
     const t = this.text.slice(e.pos, e.end);
     if (e.parts) return this.word({ type: 'Word', pos: e.pos, end: e.end, text: t, value: e.value, parts: e.parts }, 'arith');
     if (/^\$[A-Za-z_]\w*$/.test(t) || /^\$[0-9@*#?$!_-]$/.test(t)) return this.part({ type: 'SimpleExpansion', pos: e.pos, end: e.end, text: t });
@@ -1401,7 +1401,7 @@ class Converter {
     }
     // A word that starts with a digit is a constant, also when bash rejects it (`08`, `0b11`, `1e3`, `2#2`): the explanation says why.
     if (/^\d[0-9A-Za-z#@_]*$/.test(t)) return this.node('number', e.pos, e.end);
-    return this.node(IDENTIFIER.test(t) && ctx !== 'for' ? 'variable_name' : 'word', e.pos, e.end);
+    return this.node(IDENTIFIER.test(t) ? 'variable_name' : 'word', e.pos, e.end);
   }
 }
 

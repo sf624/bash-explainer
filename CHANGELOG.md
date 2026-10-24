@@ -52,6 +52,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The warning that an empty variable makes `rm -r` delete from the root no longer fires for forms that are never empty (`${DIR:-/tmp/x}/*`), and for `${DIR%/}` and similar it gives a check line before the command instead of a rewrite that dropped the operator. It also covers `${DIR:-''}`, `${DIR[0]}`, `$@` and `${DIR[@]}`.
 - A long pipeline is explained at once. Before, each stage doubled the time: a line of 20 `grep -e x f` stages took about 30 seconds.
 - find's expression reads each word as bash passes it, after quote removal: `find . -name 'a'"b"` matches `ab`. Before, the quotes stayed in (`'a'"b"`, or `a'b'c` for `'a'b'c'`), and `find '\-name' x` was read as the test `-name`.
+- `|| true` and `|| :` count as a success only when they run the builtin or the program: after `true() { return 1; }`, `x=$(false || true)` stops the script under `set -e`, as the note on `$( )` now says, and it is no idiom. `|| command true` and `|| /bin/true` count too.
+- In a `for (( ))` header, `i = 0` no longer says "no spaces around `=`" (arithmetic allows them), and a name such as `x` in `!x` is a variable, as in `(( ))`. Before, it was a "Word".
 
 ## 0.8.0
 

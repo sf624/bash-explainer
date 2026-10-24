@@ -8,6 +8,7 @@ import { lookupCommand } from './dict/aliases';
 import { staticWordValue } from './staticword';
 import { descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
+import type { StatusModel } from './semantics/status';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 export interface Redirect {
@@ -234,8 +235,8 @@ const colonExpansion = (...ops: string[]) => (c: SyntaxNode): boolean => {
   const e = commandIs(c, ':') ? expansionOf(argsOf(c)[0]) : undefined;
   return e?.type === 'expansion' && e.children[1].type === 'variable_name' && ops.includes(e.children[2].text);
 };
-/** `cmd || true`, `cmd || :`. */
-const orTrue = (n: SyntaxNode): boolean => n.type === 'list' && tokensOf(n)[0] === '||' && commandIs(n.namedChildren[1], 'true', ':') && !argsOf(n.namedChildren[1]).length;
+/** `cmd || true`, `cmd || :`: what runs on the right surely succeeds (the builtin, not a function of that name; also `command true`, `/bin/true`). */
+const orTrue = (n: SyntaxNode, status: StatusModel): boolean => n.type === 'list' && tokensOf(n)[0] === '||' && status.succeeds(n.namedChildren[1]);
 /**
  * `trap 'rm -f "$tmp"' EXIT`: an action for EXIT. Not `trap - EXIT` and `trap '' EXIT`, which take the action away,
  * nor `trap -p EXIT`, which prints it.
@@ -301,8 +302,8 @@ const testWords = (n: SyntaxNode): SyntaxNode[] | undefined => {
   return b.close ? b.words : undefined;
 };
 
-/** A statement's shape in the tree. */
-type Shape = (n: SyntaxNode) => boolean;
+/** A statement's shape in the tree; `status` says what surely succeeds (src/semantics/status.ts). */
+type Shape = (n: SyntaxNode, status: StatusModel) => boolean;
 /** `IFS=`, `IFS=''`: an assignment of the empty string. */
 const emptyValue = (a: SyntaxNode): boolean => {
   const v = field(a, 'value');
@@ -313,11 +314,11 @@ const command = (test: (c: SyntaxNode) => boolean): Shape => (n) => n.type === '
 
 // (`until` is a `while_statement` too, with that keyword first.)
 const whileOf = (n: SyntaxNode): SyntaxNode | undefined => (n.type === 'while_statement' && n.children[0].type === 'while' ? n : undefined);
-/** `while true`, `while :`: a loop whose only condition is that command. */
-const endless = (n: SyntaxNode): boolean => {
+/** `while true`, `while :`: a loop whose only condition is a command that surely succeeds (not a function `true`). */
+const endless = (n: SyntaxNode, status: StatusModel): boolean => {
   const w = whileOf(n);
   const c = w && field(w, 'condition');
-  return !!c && c.type === 'command' && ['true', ':'].includes(nameOf(c)!) && c.namedChildren.length === 1;
+  return !!c && status.succeeds(c);
 };
 /** `while … read … done < file` (`process`: `< <(command)`): the loop is redirected, and a command in it reads. */
 const readLoop = (process: boolean) => (n: SyntaxNode): boolean => {
@@ -487,15 +488,15 @@ const IDIOMS: Idiom[] = [
 ];
 
 /** Notes for the idioms found in the given statements, without duplicates. */
-export function findIdioms(statements: readonly SyntaxNode[], lang: Lang): string[] {
-  return idiomsFound(statements, lang).map((f) => f.text);
+export function findIdioms(statements: readonly SyntaxNode[], lang: Lang, status: StatusModel): string[] {
+  return idiomsFound(statements, lang, status).map((f) => f.text);
 }
 
 /** The notes of `findIdioms`, each with the narrowest statement it was found in (where the part hover shows it). */
-export function idiomsFound(statements: readonly SyntaxNode[], lang: Lang): { text: string; node: SyntaxNode }[] {
+export function idiomsFound(statements: readonly SyntaxNode[], lang: Lang, status: StatusModel): { text: string; node: SyntaxNode }[] {
   const s = pick(lang);
   const width = (n: SyntaxNode) => n.endIndex - n.startIndex;
-  const found = IDIOMS.map((idiom) => statements.filter((n) => idiom.test(n)).sort((a, b) => width(a) - width(b))[0]);
+  const found = IDIOMS.map((idiom) => statements.filter((n) => idiom.test(n, status)).sort((a, b) => width(a) - width(b))[0]);
   return IDIOMS.flatMap((idiom, i) => (found[i] && !(idiom.unless !== undefined && found[idiom.unless])
     ? [{ text: s(`定番の書き方: ${idiom.ja}`, `Idiom: ${idiom.en}`), node: found[i] }] : []));
 }

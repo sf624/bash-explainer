@@ -13,7 +13,7 @@ import { builtins } from '../dict/builtins';
 import type { Shell } from '../dialect';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, type SyntaxNode } from '../syntax/tree';
 import { actedNames } from '../argv/query';
-import { builtinParse, commandName } from './effects';
+import { builtinParse, commandName, wrapped } from './effects';
 import { processOf, STATEMENTS } from './env';
 import { resolveName, testSpecOf } from './names';
 import { commandTest } from '../testexpr';
@@ -142,6 +142,13 @@ export interface StatusModel {
    * `grep -m`, `sed …q`: with pipefail the SIGPIPE of the stages before it would fail the pipeline).
    */
   hidesFailure(n: SyntaxNode): boolean;
+  /**
+   * Whether command `n` surely has the status 0: what it runs is the builtin `true` or `:`, or a program named `true`
+   * (`/bin/true`), also behind `command` and `builtin`, with no word after the name, no redirection and no assignment
+   * before it. Not a function or an alias of that name (`true() { return 1; }`), nor a word that may fail (`: ${x:?}`).
+   * (`n` is undefined where nothing is written yet: `a ||`.)
+   */
+  succeeds(n: SyntaxNode | undefined): boolean;
 }
 
 const models = new WeakMap<StateModel, StatusModel>();
@@ -167,6 +174,25 @@ class Statuses implements StatusModel {
       for (const [def, sites] of this.state.calls) for (const at of sites.keys()) this.callees.set(at, [...(this.callees.get(at) ?? []), def]);
     }
     return this.callees.get(n) ?? [];
+  }
+
+  succeeds(n: SyntaxNode | undefined): boolean {
+    if (n?.type !== 'command' || prefixAssignments(n).length || redirectionsOf(n).length) return false;
+    const name = commandName(n);
+    if (name === undefined) return false;
+    const at = field(n, 'name')!;
+    let args = fields(n, 'argument');
+    let res = resolveName(this.state, name, at, { shell: this.shell, command: true });
+    while (res.kind === 'builtin' && (res.name === 'command' || res.name === 'builtin')) {
+      const inner = wrapped(res.name, args);
+      if ('lookup' in inner || inner.name === undefined) return false;
+      args = inner.args;
+      res = resolveName(this.state, inner.name, at, { shell: this.shell, command: true, lookup: res.name === 'command' ? 'no-functions' : 'builtins-only' });
+    }
+    if (args.length) return false;
+    // (A builtin turned off on some paths may be missing there: `enable -n :`.)
+    if (res.kind === 'builtin') return !res.disabled && (res.name === 'true' || res.name === ':');
+    return res.kind === 'file' && /(^|\/)true$/.test(res.name);
   }
 
   status(n: SyntaxNode): StatusRule {
