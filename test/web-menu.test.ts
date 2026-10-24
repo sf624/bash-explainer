@@ -66,6 +66,8 @@ describe('the web page: the menu and the settings sheet', function () {
     await page.locator('#settings-open').tap();
     assert.strictEqual(await page.locator('#settings-dialog').isVisible(), true);
     await page.locator('#settings-done').tap();
+    // The sample's pitfalls fill the Problems list, so the editor is short: the read-mode tip would cover it.
+    await page.locator('#readtip-close').tap();
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
