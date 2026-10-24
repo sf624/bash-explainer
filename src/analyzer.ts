@@ -232,7 +232,7 @@ export class Analyzer {
     this.cx.line = null;
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
-    const resolve = (name: string, w: SyntaxNode) => this.resolve(name, w, { quoted: w.type !== 'word' || w.text !== name }).kind;
+    const resolve = (name: string, w: SyntaxNode) => this.resolve(name, w, { quoted: w.type !== 'word' || w.text !== name });
     if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve });
     return result;
   }
