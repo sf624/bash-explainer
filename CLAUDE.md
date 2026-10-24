@@ -58,6 +58,10 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - In the web tests, type with `keyboard.insertText` (keys typed one by one can arrive out of order in CI), and wait for CodeMirror's selection layer, which is drawn on the next frame.
 - A layout (and its test) must not depend on how wide the words are in a font: CI's Chromium draws Japanese with CJK fonts (IPAGothic, WenQuanYi, from `playwright install --with-deps`), and a machine without them draws boxes of another width. Wrap between groups that do not depend on text width, and check layouts with those fonts (`apt-get download fonts-ipafont-gothic fonts-wqy-zenhei`, `dpkg -x`, `FONTCONFIG_FILE`) at several widths and with long names.
 
+## Claude review in CI
+
+- The `Claude review` job of `.github/workflows/test.yml` runs `.claude/commands/ci-review.md` after the required checks pass, and fails on a blocking issue or when no review ran. A false positive, a PR from a fork, and a PR that changes `test.yml` (the action then skips the review) are merged by the maintainer with an admin bypass. CI reads the command from the base branch, so a change to it takes effect only after it is merged.
+
 ## Stacked PRs
 
 - `test/fixtures/snippets.json` is generated from the tests: when PRs are stacked, regenerate it at every level, since CI checks each level.
