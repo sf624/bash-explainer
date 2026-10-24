@@ -27,5 +27,7 @@ export function markdown(b: Builder): void {
     if (shell !== null && j > i + 1) b.region(i + 1, j - 1, [`Markdown のコードブロック（${lang}）`, `Markdown code block (${lang})`], shell === 'bash' ? undefined : shell);
     i = j;
   }
+  // A reader types the blocks into one terminal, one after another: one shell.
+  for (const r of b.regions) r.script = 0;
 }
 

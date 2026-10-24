@@ -135,7 +135,8 @@ export function docLine(n: SyntaxNode): number {
     for (let i = root.text.indexOf('\n'); i >= 0; i = root.text.indexOf('\n', i + 1)) starts.push(i);
     lineStarts.set(root, starts);
   }
-  const i = docIndex(n);
+  // (The root's text starts at its first statement: after blank lines, or the lines of a host file around its shell code.)
+  const i = docIndex(n) - root.startIndex;
   let lo = 0;
   let hi = starts.length;
   while (lo < hi) {
@@ -143,7 +144,7 @@ export function docLine(n: SyntaxNode): number {
     if (starts[mid] < i) lo = mid + 1;
     else hi = mid;
   }
-  return lo;
+  return lo + root.startPosition.row;
 }
 
 /**

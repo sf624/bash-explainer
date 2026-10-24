@@ -29,6 +29,11 @@ export interface ShellRegion {
    * warning in the Problems panel.
    */
   notes?: RegionNote[];
+  /**
+   * Regions with the same `script` run in one shell (the code blocks of a Markdown file, a recipe with `.ONESHELL`):
+   * what one sets, the next sees. Every other region is a shell of its own (a RUN instruction, a workflow step, a recipe line).
+   */
+  script?: number;
   /** A Docker RUN without `pipefail`: a failure inside a pipe does not fail the build. */
   warnPipefail?: boolean;
   /** Commands the host defines for its scripts (bats: `run`, `load`…), read with these specs before the dictionary. */

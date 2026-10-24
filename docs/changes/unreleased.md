@@ -173,6 +173,35 @@ A shell script without a shebang says nothing clear, so pasting one keeps the ki
 
 ## Fixed
 
+### Shell code in host files
+
+A YAML block scalar is read as YAML gives it to the runner: without the indentation of its first line, or of the indicator (`run: |2`). So an indented `EOF` ends a here-document, and `<<-` strips the tabs after the indentation:
+
+```yaml
+- run: |
+    cat <<EOF > out.txt
+    hello
+    EOF
+    echo done      # before: "part of the here-document started by `<<EOF`", and so was the next step
+```
+
+A folded block (`run: >`) joins lines next to each other at the same indentation with a space; the shell gets one line, and a note says so. A blank line, or a more-indented line, keeps the line break.
+
+Each shell the host starts is explained apart: what one sets (`set -euo pipefail`, a variable, a function) does not count in the next.
+
+| File | One shell |
+| --- | --- |
+| GitHub Actions, CircleCI, Azure Pipelines, GitLab CI | each step's script |
+| Dockerfile | each `RUN` (and `CMD`, `ENTRYPOINT`) |
+| Makefile | each recipe line; with `.ONESHELL`, each recipe |
+| package.json | each script |
+| Jenkinsfile, Python | each `sh` step, each string run |
+| Markdown | all the code blocks of the file (typed into one terminal), as before |
+
+Before, a later step got wrong pitfalls ("`f` is not set here: with `set -u` on…"), and a function of one step was taken for a function in the next.
+
+The note on a line of a here-document says the line of the document where it starts. Before, it counted from the first command: after three blank lines, a here-document of line 4 was said to start "on line 1".
+
 ### bash 5.3's command substitutions
 
 - `x=${ cmd; }` runs `cmd` in the current shell, not in a subshell, and takes its output (without the trailing newlines). Variables it sets and `cd` stay in effect after it; `local` makes a variable that lasts only inside. `cd` in it is no longer said to change "the subshell of `$( )`".
