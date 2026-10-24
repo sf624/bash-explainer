@@ -84,6 +84,33 @@ describe('find in a command line', () => {
     }
   });
 
+  it('reads the words as find gets them, after the quote removal of bash', () => {
+    const fs = require('fs') as typeof import('fs');
+    const os = require('os') as typeof import('os');
+    const { execFileSync, spawnSync } = require('child_process') as typeof import('child_process');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'find-quotes-'));
+    try {
+      for (const f of ['ab', 'abc', "a'b'c", 'a"b', "'a'b", '\\-name']) fs.writeFileSync(path.join(dir, f), '');
+      const bash = (line: string) => execFileSync('bash', ['-c', line], { cwd: dir, timeout: 10000 }).toString();
+      const found = (out: string) => out.split('\n').filter(Boolean).sort();
+      for (const p of [`'a'"b"`, `'a'b'c'`, `"a"b`, `a\\b`, `'a"b'`, `"'a'b"`, `\\'a\\'b`, `"a'b'c"`]) {
+        const line = `find . -type f -name ${p}`;
+        // What we say find matches, what bash gives find, and what find finds with it.
+        const said = /name matches (.*) \(no action/.exec(tokens(line).find((t) => t.kind === 'test')!.explanation)![1];
+        assert.strictEqual(said, bash(`printf %s ${p}`), line);
+        assert.deepStrictEqual(found(execFileSync('find', ['.', '-type', 'f', '-name', said], { cwd: dir, timeout: 10000 }).toString()), found(bash(line)), line);
+      }
+      // `'\-name'` is the path `\-name` (find starts its expression at a word that starts with `-`), not a test.
+      const line = "find '\\-name' x";
+      assert.ok(!tokens(line).some((t) => t.kind === 'test'), line);
+      const run = spawnSync('bash', ['-c', line], { cwd: dir, timeout: 10000, encoding: 'utf8' });
+      assert.strictEqual(run.stdout, '\\-name\n');
+      assert.match(run.stderr, /'x': No such file or directory|‘x’: No such file or directory/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to per-option explanations when the expression is incomplete', () => {
     const ts = tokens('find . -name x -o');
     assert.ok(!ts.some((t) => t.kind === 'test'));

@@ -27,7 +27,7 @@ import { braceExpand, extglobs, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isG
 import { pictureNote, visible } from './ctlchars';
 import { commandExampleOf, dateExample, gitLogExample, interactive, ioExample, readExample } from './examples/commands';
 import { explainEscapes } from './embedded/format';
-import { describeFind, FindNode, parseFind, unquote } from './embedded/find';
+import { describeFind, FindNode, parseFind } from './embedded/find';
 import { type BracketTest, bracketShape, type CommandTest, commandTest, type TestExpr, type TestShape, testRange } from './testexpr';
 import { judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
@@ -2381,7 +2381,7 @@ export class Analyzer {
    * of each primary inside. When it cannot be parsed, its words are read as options of find.
    */
   private findExpression(nodes: SyntaxNode[], spec: CommandSpec): Token[] {
-    const words = nodes.map((a) => unquote(a.text));
+    const words = nodes.map((a) => staticWordValue(a) ?? a.text);
     const read = (from: number, to: number): Token[] => {
       const part = nodes.slice(from, to);
       return this.render(interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => this.specFor(name) }), spec, part, this.cx.argCtx!.args);
