@@ -161,7 +161,7 @@ describe('diagnosticsFor', () => {
     // The file's directives apply to them too, in `all` as well.
     const quiet = openDocument('#!/bin/bash\n# bash-explainer disable=assignment-with-spaces\nx = 1\n', 'shell', parse);
     assert.deepStrictEqual(run(quiet, {}, defaultSettings(), 'web').all, []);
-    // A dialect note that says it otherwise keeps a pitfall out, also when the note itself is turned off.
+    // zsh does not split `$a`: no pitfall, also when the dialect note that says so is turned off.
     const zsh = openDocument('#!/bin/zsh\n# bash-explainer disable=wordSplit\ncp $a b\n', 'shell', parse);
     assert.deepStrictEqual(run(zsh, shellsOf(zsh.lines, 'a.zsh', undefined), defaultSettings(), 'web').all, []);
   });

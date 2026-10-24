@@ -183,6 +183,40 @@ jobs:
           test "$LENIENT" = "$WARNINGS"
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
 
+      # A pitfall's warning fails the step only with strict; `warnings` counts what fails it, `pitfalls` every pitfall.
+      - name: Write a bash script with a pitfall
+        run: printf '#!/bin/bash\nx = 1\nread line\n' > "$RUNNER_TEMP/pitfall.sh"
+
+      - name: A pitfall's warning fails the step with strict
+        id: strict
+        continue-on-error: true
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/pitfall.sh
+          strict: 'true'
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: The same script passes without strict
+        id: not-strict
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/pitfall.sh
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that only strict failed, and the counts
+        env:
+          OUTCOME: ${{ steps.strict.outcome }}
+          WARNINGS: ${{ steps.strict.outputs.warnings }}
+          PITFALLS: ${{ steps.strict.outputs.pitfalls }}
+          LENIENT_WARNINGS: ${{ steps.not-strict.outputs.warnings }}
+          LENIENT_PITFALLS: ${{ steps.not-strict.outputs.pitfalls }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$WARNINGS" = 1
+          test "$PITFALLS" = 2
+          test "$LENIENT_WARNINGS" = 0
+          test "$LENIENT_PITFALLS" = 2
+
       # A CLI without --sarif (0.7.0, or a package: pin of an older version) takes a second run.
       # Packed from npm in another directory: npx in this repository would take the extension's own
       # package.json (also named bash-explainer) for the tool.
@@ -209,6 +243,20 @@ jobs:
           test "$OUTCOME" = failure
           test "$WARNINGS" -gt 0
           node -e 'const s = JSON.parse(require("fs").readFileSync(process.env.SARIF, "utf8")); if (!s.runs[0].results.some((r) => r.ruleId === "dbracket")) process.exit(1)'
+
+      - name: strict with a pinned tool that has no --strict fails
+        id: older-strict
+        continue-on-error: true
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/pitfall.sh
+          strict: 'true'
+          package: ${{ steps.older-pack.outputs.tgz }}
+
+      - name: Check that it failed
+        env:
+          OUTCOME: ${{ steps.older-strict.outcome }}
+        run: test "$OUTCOME" = failure
 
       - name: Scripts without problems pass
         uses: ./

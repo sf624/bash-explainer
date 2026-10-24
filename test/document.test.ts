@@ -148,9 +148,27 @@ describe('the pitfalls of a script, as problems', () => {
     assert.deepStrictEqual(found('x = ${(f)y}', { forced: 'zsh' }), []);
     assert.deepStrictEqual(found('x = 1', { forced: 'zsh' }), [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]);
     assert.deepStrictEqual(found('x = 1', { forced: 'sh' }), [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]);
+    // zsh (zshexpn, zshoptions) gives `$@` unsplit, and closes a group at a `}` anywhere; it drops an empty unquoted
+    // word all the same, so `[ -n $x ]` keeps its pitfall, for that reason.
+    assert.deepStrictEqual(found('for a in $@; do :; done', { forced: 'zsh' }), []);
+    assert.deepStrictEqual(found('{ echo a }', { forced: 'zsh' }), []);
+    assert.deepStrictEqual(found('[ -n $x ]', { forced: 'zsh' }), [['unquoted-variable-in-test', 'info', 0, 5, 0, 7]]);
+    const [test] = documentIssues(script('[ -n $x ]'), 'en', { forced: 'zsh' }).filter((i) => i.pitfall);
+    assert.match(test.message, /is not split in zsh, but an empty value drops the word/);
     assert.deepStrictEqual(documentIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', {}).filter((i) => i.pitfall), []);
     assert.deepStrictEqual(pitfallIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', undefined), []);
   });
+
+  // A string a command runs as a script is read with its own model and shell, at its place in the document.
+  for (const [text, want] of [
+    ["bash -c 'x = 1'", [['assignment-with-spaces', 'warning', 0, 9, 0, 14]]],
+    ["eval 'rm -rf $Q/*'", [['rm-empty-variable-root', 'warning', 0, 13, 0, 17], ['unquoted-variable-as-path', 'info', 0, 13, 0, 17]]],
+    ["trap 'for f in $(ls); do :; done' EXIT", [['for-over-ls-output', 'warning', 0, 15, 0, 20]]],
+    ["sh -c 'echo a\nread line'", [['read-without-r', 'info', 1, 0, 1, 9]]],
+    ["zsh -c 'for a in $@; do :; done'", []],
+  ] as [string, (string | number)[][]][]) {
+    it(`${JSON.stringify(text)}: ${want.map((w) => w[0]).join(', ') || 'none'}, in the string`, () => assert.deepStrictEqual(found(text), want));
+  }
 
   it('leaves out a pitfall that another problem at its place already says', () => {
     const doc = script('x = 1');

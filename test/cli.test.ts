@@ -136,13 +136,18 @@ describe('the command-line tool', function () {
     assert.match(bad.err, /cannot write/);
   });
 
-  it('writes problems as GitHub annotations or SARIF, in line order', () => {
+  it('writes problems as GitHub annotations or SARIF, in line order (for annotations, those that fail the check first)', () => {
     const gh = run(['--check', '--format', 'github', fixture('posix.sh')]);
     assert.strictEqual(gh.code, 1);
     const lines = gh.out.trim().split('\n');
     assert.match(lines[0], /^::warning file=.*posix\.sh,line=3,col=1,endLine=3,endColumn=\d+,title=Bash Explainer%3A pipefail::set -o pipefail is not POSIX sh/);
-    const order = lines.map((l) => Number(/line=(\d+)/.exec(l)![1]));
-    assert.deepStrictEqual(order, [...order].sort((a, b) => a - b));
+    const fails = (l: string) => l.startsWith('::warning ') && !l.includes('title=Bash Explainer (pitfall)');
+    const first = lines.filter(fails);
+    assert.deepStrictEqual(lines.slice(0, first.length), first);
+    for (const group of [first, lines.filter((l) => !fails(l))]) {
+      const order = group.map((l) => Number(/line=(\d+)/.exec(l)![1]));
+      assert.deepStrictEqual(order, [...order].sort((a, b) => a - b));
+    }
     const sarif = JSON.parse(run(['--check', '--format', 'sarif', '--shell', 'dash', '-e', '[[ -f x ]]']).out);
     assert.strictEqual(sarif.version, '2.1.0');
     const [result] = sarif.runs[0].results;
@@ -179,6 +184,12 @@ describe('the command-line tool', function () {
     const gh = run(['--check', '--format', 'github', file]);
     assert.strictEqual(gh.code, 0);
     assert.deepStrictEqual(gh.out.trim().split('\n').map((l) => l.split(' ')[0]), ['::warning', '::notice']);
+    assert.match(gh.out, /,title=Bash Explainer \(pitfall\)%3A assignment-with-spaces::/);
+    // GitHub shows only the first annotations of a step: what fails the check comes first.
+    fs.writeFileSync(file, '#!/bin/sh\nx = 1\n[[ -n $a ]]\n');
+    const order = (args: string[]) => run([...args, '--format', 'github', file]).out.trim().split('\n').map((l) => /title=([^:]*)::/.exec(l)![1]);
+    assert.deepStrictEqual(order(['--check']), ['Bash Explainer%3A dbracket', 'Bash Explainer (pitfall)%3A assignment-with-spaces']);
+    assert.deepStrictEqual(order(['--check', '--strict']), ['Bash Explainer (pitfall)%3A assignment-with-spaces', 'Bash Explainer%3A dbracket']);
   });
 
   it('takes the files after -- as files', () => {

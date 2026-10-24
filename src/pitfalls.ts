@@ -1,4 +1,8 @@
+import type { Shell } from './dialect';
+import { lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
+import { resolveName } from './semantics/names';
+import type { StateModel } from './semantics/state';
 import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
@@ -92,12 +96,42 @@ export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-n
 export interface StyleFinding { code: StyleCode; node: SyntaxNode; text: string }
 
 /** Notes for the pitfalls whose node starts on `line`. */
-export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string[] {
-  return [...new Set(pitfallFindings(root, lang, line, line).map((f) => f.text))];
+export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell: Shell | undefined): string[] {
+  return [...new Set(pitfallFindings(root, lang, line, line, model, shell).map((f) => f.text))];
 }
 
-/** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree. */
-export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number): StyleFinding[] {
+/**
+ * Whether the variable `name` has a value with some static text in it where `at` runs, on every path, as far as the
+ * model may be relied on (`DIR=/opt/app`, `B="$S/build"`): then it is never empty there.
+ */
+function neverEmpty(model: StateModel, name: string, at: SyntaxNode): boolean {
+  const v = model.at(at).run.variables.get(name);
+  if (!v || v.set !== 'on' || !model.trusts(name)) return false;
+  return v.value !== undefined ? v.value !== '' : !!v.source && hasStaticText(v.source);
+}
+
+/** Whether a word has text of its own, outside its expansions (`"$S/build"`, `${S}x`, `'a'`). */
+function hasStaticText(n: SyntaxNode): boolean {
+  switch (n.type) {
+    case 'word': case 'string_content': return n.text !== '';
+    case 'raw_string': return n.text.length > 2;
+    case 'string': case 'concatenation': return n.namedChildren.some(hasStaticText);
+    default: return false;
+  }
+}
+
+/**
+ * Whether the command name `name` at `at` runs something that takes `=` as an argument: a function, an alias, a
+ * builtin (`export = x`), or a program the dictionary knows (`sed = f`, `echo ===`). Not a name the dictionary does
+ * not know, which is most likely a variable (`x = 1`).
+ */
+function runsCommand(model: StateModel, name: string, at: SyntaxNode, shell: Shell | undefined): boolean {
+  const r = resolveName(model, name, at, { shell, command: true, program: (p) => !!lookupCommand(p) });
+  return r.kind !== 'file' || r.known || !!r.sourced;
+}
+
+/** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree, with the model of the tree and its shell. */
+export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
   const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => found.push({ code, node, text: s(`⚠ 落とし穴: ${ja}`, `⚠ Pitfall: ${en}`) });
@@ -118,7 +152,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
             `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write \`[ ${name.slice(1)} …\``);
         }
         // `x = 1`: a command named x, not an assignment.
-        if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text))) {
+        if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text)) && !runsCommand(model, name, field(n, 'name')!, shell)) {
           add('assignment-with-spaces', n, `\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
             `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write \`${name}=…\` with no spaces around \`=\``);
         }
@@ -127,9 +161,10 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           add('brace-no-space', field(n, 'name')!, `\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: \`{ ${name.slice(1)} …; }\``,
             `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: \`{ ${name.slice(1)} …; }\``);
         }
-        // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed.
+        // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed. (Not in zsh, where
+        // a `}` closes the group anywhere unless IGNORE_CLOSE_BRACES is set: zshoptions.)
         const lastArg = a[a.length - 1];
-        if (lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
+        if (shell !== 'zsh' && lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
           add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
             `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`{ …; }\``);
         }
@@ -139,6 +174,8 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
             const t = rootTarget(w);
             if (!t) continue;
             const { e, v, left } = t;
+            // (Nor a plain value the script surely set to some text: `DIR=/opt/app; rm -rf $DIR/*`.)
+            if (t.plain && neverEmpty(model, v, e)) continue;
             const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
             if (safe) {
               add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,

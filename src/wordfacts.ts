@@ -90,7 +90,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
         if (testSpecAt(model, n, shell)?.closingOperand) {
           const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
-          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }), word);
+          // (zsh does not split it, but drops it all the same when it is empty.)
+          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh' }), word);
         }
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
         // Only for files that need root: system directories, not your logs or /dev/null.
@@ -105,8 +106,8 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
         // `for f in $(ls …)`
         const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
         if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }), value);
-        // `for a in $*` / `for a in $@`
-        if (value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }), value);
+        // `for a in $*` / `for a in $@` (zsh gives each argument as one word, unsplit)
+        if (shell !== 'zsh' && value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }), value);
         break;
       }
     }

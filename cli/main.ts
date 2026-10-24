@@ -286,7 +286,8 @@ function annotation(name: string, i: DocumentIssue): string {
   const data = (s: string) => s.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   const prop = (s: string) => data(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
   const where = `file=${prop(name)},line=${i.startLine + 1},col=${i.startCol + 1},endLine=${i.endLine + 1},endColumn=${i.endCol + 1}`;
-  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer: ${i.code}`)}::${data(plain(i.message, { backticks: false }))}`;
+  // (A pitfall's title says so: the Action counts them apart.)
+  return `::${i.severity === 'warning' ? 'warning' : 'notice'} ${where},title=${prop(`Bash Explainer${i.pitfall ? ' (pitfall)' : ''}: ${i.code}`)}::${data(plain(i.message, { backticks: false }))}`;
 }
 
 interface Problem { file: string; line: number; column: number; endLine: number; endColumn: number; severity: string; code: string; message: string }
@@ -346,6 +347,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   const analyzer = new Analyzer(o.lang);
   const json: unknown[] = [];
   const chunks: string[] = [];
+  // (GitHub shows only the first annotations of each kind in a step: those that fail the check come first.)
+  const failing: string[] = [];
   let warnings = 0;
 
   for (const input of inputs) {
@@ -358,9 +361,10 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
       // (A pitfall fails the check only with --strict: its warnings came later, and must not fail a CI that passed.)
-      warnings += issues.filter((i) => i.severity === 'warning' && (o.strict || !i.pitfall)).length;
+      const fails = (i: DocumentIssue) => i.severity === 'warning' && (o.strict || !i.pitfall);
+      warnings += issues.filter(fails).length;
       if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
-      if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
+      if (o.format === 'github') for (const i of issues) (fails(i) ? failing : chunks).push(annotation(input.name, i));
       else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));
     } else {
       const [from, to] = input.lines ?? [1, lines.length];
@@ -390,7 +394,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
   }
   if (o.format === 'json') io.stdout(JSON.stringify(json, null, 2) + '\n');
   else if (o.format === 'sarif') io.stdout(JSON.stringify(sarif(json as Problem[]), null, 2) + '\n');
-  else if (chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
+  else if (o.format === 'github') chunks.unshift(...failing);
+  if (o.format !== 'json' && o.format !== 'sarif' && chunks.length) io.stdout(chunks.join(o.check ? '\n' : o.format === 'markdown' ? '\n\n---\n\n' : '\n\n') + '\n');
   return o.check && warnings > 0 ? 1 : 0;
 }
 
