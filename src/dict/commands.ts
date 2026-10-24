@@ -417,11 +417,11 @@ export const core: Record<string, CommandSpec> = {
     ['-n|--quiet|--silent', '自動出力を抑止し、`p` コマンドで指定した行だけ出力', 'suppress automatic printing; print only with `p`'],
     ['-e|--expression', '実行するスクリプトを指定（複数指定可）', 'add a script to run', 'arg fills lang:sed'],
     ['-f|--file', 'スクリプトをファイルから読む', 'read the script from a file', 'arg fills io:read'],
-    ['-E|-r|--regexp-extended', '拡張正規表現(ERE)を使う', 'use extended regex (ERE)'],
+    { ...optionOf(['-E|-r|--regexp-extended', '拡張正規表現(ERE)を使う', 'use extended regex (ERE)']), selects: 'ere' },
     ['-s|--separate', '複数ファイルを別々に扱う', 'treat files separately', 'each:apart'],
     ['-z|--null-data', '行区切りを NUL 文字にする', 'lines are separated by NUL'],
     ...GNU_INFO,
-  ], { parser: 'getopt_long', positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'], positionalIo: [undefined, 'input'] }),
+  ], { parser: 'getopt_long', modes: [{ name: 'bre', default: true }, { name: 'ere' }], positional: [pos('sed スクリプト（例: `s/foo/bar/g` は foo を bar に全置換）', 'sed script (e.g. `s/foo/bar/g` replaces all foo with bar)'), files], positionalLang: ['sed'], positionalIo: [undefined, 'input'] }),
   awk: cmd('テキストを行・フィールド単位で処理するプログラミング言語（`$1` は1列目）', 'Pattern-scanning language that processes lines and fields (`$1` = first field)', [
     ['-F', 'フィールド区切り文字を指定（既定は空白）', 'field separator (default: whitespace)', 'arg'],
     ['-v', 'awk の変数を設定（`-v name=value`）', 'set an awk variable (`-v name=value`)', 'arg'],

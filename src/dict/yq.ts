@@ -94,3 +94,12 @@ for (const [short, long] of [['r', 'read'], ['w', 'write'], ['d', 'delete'], ['m
 }
 
 export const YQ_SPECS: Record<YqFlavor, CommandSpec> = { mikefarah4, kislyuk, mikefarah3 };
+
+/**
+ * The specs of the tools a command name may run, when it is `yq` (a path to it too): three tools share the name, and
+ * the words of a command tell which one it is for (`judgeYq`, src/embedded/yq.ts). It is not in the dictionary
+ * (`lookupCommand`), since none of the three is the one the name means. Undefined for any other name.
+ */
+export function yqSpecsOf(name: string): Record<YqFlavor, CommandSpec> | undefined {
+  return name.slice(name.lastIndexOf('/') + 1) === 'yq' ? YQ_SPECS : undefined;
+}
