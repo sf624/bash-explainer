@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### New
 
 - The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`…) are also problems, with a code each, in the Problems panel, `--check`, SARIF and the GitHub Action. Turn them off with `bashExplainer.diagnostics.pitfalls`.
+- A pitfall says when a variable is read while it is unset under `set -u`: `set -u; echo "$dir"` stops bash with "dir: unbound variable". It is said only where the variable is unset on every path.
 
 ### Changed
 
@@ -15,6 +16,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
 - Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.

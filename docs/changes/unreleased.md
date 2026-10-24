@@ -46,7 +46,32 @@ Information, for what is frequent and harmless with most values:
 - These are the pitfalls about how a line is written and how its words expand. The others the explanations give (on exit status and `set -e`, `shopt -s extglob`, a variable set in a pipeline, a glob that matches nothing) are not problems yet.
 - **Compatibility:** `--check` prints these lines, but its exit status does not change: a warning on a pitfall makes it exit 1 only with the new `--strict`. The GitHub Action has a `strict` input (default `'false'`) for it; with a `package:` pin to a tool without `--strict`, the step fails and says so. Its `warnings` output counts the warnings that fail the step (those on pitfalls only with `strict`), as before; the new `pitfalls` output counts the pitfalls, warnings and notices. The annotations of pitfalls are titled `Bash Explainer (pitfall): <code>`, and `--format github` prints those that fail the check first, since GitHub shows only the first annotations of each kind in a step. SARIF has them as `warning` and `note` results. Before, `--check` reported only what the script's shell lacks and the risks in embedded shell code.
 
+### An unset variable under `set -u`
+
+With `set -u` (`set -o nounset`, or `#!/bin/bash -u`), bash fails on a read of an unset variable: it prints `dir: unbound variable` and the shell running the command exits. That is the script, or only the subshell in `$( )`, `( )` or a pipeline, which the pitfall says. A new pitfall says so on the line:
+
+```bash
+set -u
+echo "$dir"        # ⚠ `dir` is not set here … If it may be unset, write `${dir:-}`
+declare x
+echo "${#x}"       # ⚠ `x` is not set here … Set it before this line
+```
+
+It is said for `$x`, `${x}`, `${#x}`, `${x[0]}`, `${x:1}`, `${x#p}` and the other forms that read the value, and for a name in `$(( ))` or `(( ))` that is read whenever the expression runs (not after `&&`, `||` or `?`). Only the first such read of a line is named: bash stops there.
+
+It is not said:
+
+- for the forms that test the variable: `${x-w}`, `${x:-w}`, `${x+w}`, `${x=w}`, `${x?w}`, `[[ -v x ]]`, `"${a[@]}"`, `"$@"`, `$*`;
+- for special and positional parameters (`$1`), and for names in capitals, which may come from the environment;
+- where the variable is set on some path only (`if …; then x=1; fi`), or in a function called both before and after it is set;
+- where the script runs code that cannot be read (`source`, `eval "$s"`, `$cmd`), or arithmetic reads a variable it never sets (`$((n + 1))`: its value may come from the environment), and in a function that may be called from elsewhere (`export -f`, a trap);
+- in a here-document, where bash goes on after the error, and in a redirection of a program (`cat < "$f"`), which only the program's process makes.
+
 ## Fixed
+
+### The options of a shebang
+
+A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `#!/bin/bash -e -u` gives bash one word, `-e -u`, which bash refuses: no option is turned on.
 
 ### Quoting suggested for a path with a glob, `~` or braces
 

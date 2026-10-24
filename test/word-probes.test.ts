@@ -4,15 +4,18 @@
 // directory and its files); a marker the model says bash fails on (an ambiguous redirection, failglob, `set -u`)
 // must not have run. Where the model says it cannot know (a value it does not follow), the row lists the marker in
 // its `gaps`, with the reason; a gap the model gets right fails too, so that the list stays true.
+// The markers whose words the note on `set -u` fires on (`unboundRead`: an unset variable bash surely fails on) are
+// the row's `unbound`: bash must not have run them, and its first error must name the first one's variable.
 // The test reads the table only: it needs no bash.
 import * as assert from 'assert';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields } from '../src/syntax/tree';
 import { shellState } from '../src/semantics/state';
+import { unboundRead } from '../src/semantics/unbound';
 import { wordFields, type WordEnv } from '../src/semantics/words';
 import { BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
-interface WordRow { manual: string; snippet: string; posix?: boolean; note?: string; gaps?: Record<string, string>; facts: Record<string, unknown> }
+interface WordRow { manual: string; snippet: string; posix?: boolean; note?: string; gaps?: Record<string, string>; unbound?: string[]; facts: Record<string, unknown> }
 
 const ENV: WordEnv = { variables: PROBE_ENV, pwd: BOX, files: FILES };
 
@@ -27,10 +30,17 @@ describe('the word model against bash (probes/words.json)', () => {
       const found = new Map<string, string>();
       let stopped = false;
       const created = (row.facts.created ?? []) as string[];
+      const unbound: string[] = [];
       for (const c of markers) {
         const [id, ...args] = fields(c, 'argument');
         const runs = row.facts[id.text] as string[][];
         const words = [...args, ...[c, c.parent!].flatMap((x) => fields(x, 'redirect')).filter((r) => r.type === 'file_redirect').map((r) => field(r, 'destination')!)];
+        const unset = words.flatMap((w) => descendants(w, ['simple_expansion', 'expansion', 'variable_name'])).map((e) => unboundRead(e, state)?.shown).find((v) => v);
+        if (unset) {
+          if (runs.length) found.set(`${id.text}.unbound`, `model: ${unset} unbound, bash: ran`);
+          if (!unbound.length && !String(row.facts.stderr).endsWith(`: ${unset}: unbound variable`)) found.set(`${id.text}.unbound`, `model: ${unset} unbound, bash: ${String(row.facts.stderr)}`);
+          unbound.push(id.text);
+        }
         const results = words.map((w) => wordFields(w, state, ENV));
         const error = results.find((r) => r.error)?.error;
         if (error) {
@@ -66,7 +76,7 @@ describe('the word model against bash (probes/words.json)', () => {
       const gaps = row.gaps ?? {};
       const unexplained = [...found].filter(([k]) => !(k in gaps)).map(([k, v]) => `${k}: ${v}`);
       const stale = Object.keys(gaps).filter((k) => !found.has(k));
-      assert.deepStrictEqual({ unexplained, stale }, { unexplained: [], stale: [] });
+      assert.deepStrictEqual({ unexplained, stale, unbound }, { unexplained: [], stale: [], unbound: row.unbound ?? [] });
     });
   }
 });

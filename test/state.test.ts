@@ -94,6 +94,37 @@ describe('shell state: options', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+  it('reads the set options of the shebang as the kernel, env and bash do', () => {
+    // [shebang, errexit, nounset]: the kernel gives bash the rest of the line as one word, which bash reads as
+    // letters only when it is one cluster; `env -S` splits it.
+    const rows: [string, boolean, boolean][] = [
+      ['#!/bin/bash -u', false, true], ['#!/bin/bash -eu', true, true], ['#!/bin/bash -e', true, false], ['#!/bin/bash +u', false, false],
+      ['#!/bin/bash -e -u', false, false], ['#!/bin/bash -o nounset', false, false], ['#!/usr/bin/env bash -u', false, false],
+      ['#!/usr/bin/env -S bash -e -u', true, true], ['#!/usr/bin/env -S bash -eo nounset', true, true], ['#!/usr/bin/env -S bash --norc -u +e', false, true],
+      ['#!/usr/bin/env -S bash -o', false, false], ['#!/usr/bin/env -S bash -u +o nounset', false, false], ['#!/bin/sh -u', false, false],
+    ];
+    const on = (st: ShellState, name: string): boolean => set(st, name) === 'on';
+    for (const [line, e, u] of rows) {
+      const st = shellState(parser.parse(`${line}\necho\n`)).end;
+      assert.deepStrictEqual([on(st, 'errexit'), on(st, 'nounset')], [e, u], line);
+    }
+    // (Another shell's dialect reads none of them.)
+    assert.strictEqual(set(end('#!/bin/bash -u', 'zsh'), 'nounset'), 'default');
+    if (process.platform !== 'linux' || !fs.existsSync('/bin/bash') || !fs.existsSync('/usr/bin/env')) return;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-shebang-'));
+    try {
+      rows.forEach(([line, e, u], i) => {
+        if (!/bash/.test(line)) return;
+        const file = path.join(dir, `s${i}`);
+        fs.writeFileSync(file, `${line}\n[[ -o errexit ]] && echo e; [[ -o nounset ]] && echo u; :\n`, { mode: 0o755 });
+        const r = spawnSync(file, [], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 });
+        // (A shebang bash refuses, `-e -u`, starts nothing: no option is on.)
+        assert.deepStrictEqual([/e/.test(r.stdout), /u/.test(r.stdout)], [e, u], `${line}: ${r.stdout}${r.stderr}`);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('set -G is globstar in ksh only', () => {
     assert.strictEqual(set(end('set -G', 'ksh'), 'globstar'), 'on');
     assert.strictEqual(set(end('set +o globstar', 'ksh'), 'globstar'), 'off');
