@@ -5,7 +5,7 @@ import { toPlainMarkdown, ui } from './render';
 import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
 
-/** Where the panel's view and layers are kept between sessions (the webview's own state dies with the panel). */
+/** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
@@ -22,7 +22,7 @@ export class PanelController implements vscode.Disposable {
     borderRadius: '2px',
   });
   private disposables: vscode.Disposable[] = [];
-  /** The view and layers the viewer chose, kept in the global state: the tree is built only in the tree view. */
+  /** The view and step the viewer chose, kept in the global state: the tree is built only in the tree view. */
   private state: PanelState;
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {

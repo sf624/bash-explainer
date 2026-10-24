@@ -204,6 +204,67 @@ describe('the panel keeps the row acted on in place', function () {
     }
   }
 
+  /**
+   * What is on the screen once the motion is over: the rows of `view` drawn between the sticky rows and the bottom
+   * of the screen, whether the sticky rows (the line, and the controls of the tree) are on the screen, and where the
+   * page and its content end.
+   */
+  const screen = (panel: Frame, view: 'list' | 'tree') => panel.evaluate(`(() => {
+    const sticky = document.getElementById(${JSON.stringify(view === 'list' ? 'top' : 'layers')}).getBoundingClientRect();
+    const rows = [...document.querySelectorAll(${JSON.stringify(view === 'list' ? '#tree li[data-path] > .row' : '#reading-tree li[role="treeitem"] > .trow')})].filter((r) => {
+      const b = r.getBoundingClientRect();
+      return b.height && b.bottom > sticky.bottom && b.top < innerHeight;
+    });
+    return { rows: rows.length, stickyTop: sticky.top, stickyBottom: sticky.bottom, y: scrollY, h: innerHeight,
+      content: document.documentElement.getBoundingClientRect().bottom + scrollY };
+  })()`) as Promise<{ rows: number; stickyTop: number; stickyBottom: number; y: number; h: number; content: number }>;
+
+  for (const [host, animations] of [[web1280, true], [phone, true], [code, true], [web1280, false]] as const) {
+    for (const view of ['list', 'tree'] as const) {
+      const name = view === 'list' ? 'Meaning' : 'Reading';
+      for (const where of ['middle', 'end'] as const) {
+        it(`${host.name}, ${name}${animations ? '' : ', the setting off'}: Collapse all scrolled to the ${where} leaves rows on the screen`, async () => {
+          const { ctx, panel } = await host.open(view, animations);
+          const errors: string[] = [];
+          panel.page().on('pageerror', (e) => errors.push(e.message));
+          const max = await panel.evaluate('document.documentElement.scrollHeight - innerHeight') as number;
+          assert.ok(max > 300, 'the page scrolls');
+          await scrollTo(panel, where === 'end' ? 'end' : Math.round(max / 2));
+          await panel.evaluate(`document.getElementById('toggle').click()`);
+          await still(panel);
+          const s = await screen(panel, view);
+          assert.ok(s.rows > 0, `rows on the screen after Collapse all: ${JSON.stringify(s)}`);
+          assert.ok(s.stickyTop >= -1 && s.stickyBottom <= s.h, `the sticky rows on the screen: ${JSON.stringify(s)}`);
+          assert.ok(s.y < s.content, `the page is within its content: ${JSON.stringify(s)}`);
+          // Expand all again: still rows on the screen.
+          await panel.evaluate(`document.getElementById('toggle').click()`);
+          await still(panel);
+          assert.ok((await screen(panel, view)).rows > 0, 'rows on the screen after Expand all');
+          assert.deepStrictEqual(errors, []);
+          await ctx.close();
+        });
+      }
+    }
+  }
+
+  for (const [from, to] of [['tree', 'list'], ['list', 'tree']] as const) {
+    it(`the web page: a fold near the end, then the page's own switch to ${to === 'list' ? 'Meaning' : 'Reading'}, leaves no blank room below the content`, async () => {
+      const { ctx, panel } = await web1280.open(from, true);
+      const h = await height(panel);
+      await scrollTo(panel, 'end');
+      const rows = onScreenRows(await foldable(panel, from), h);
+      await click(panel, from, rows[rows.length - 1].path, 'folded at the end', true);
+      assert.ok(await spacer(panel) > 0, 'a spacer holds the page');
+      await chooseView(panel.page(), to);
+      await until('the view', () => panel.locator(to === 'list' ? '#tree' : '#reading').isVisible(), (v) => v);
+      await still(panel);
+      assert.strictEqual(await spacer(panel), 0, 'the spacer is gone');
+      const end = await panel.evaluate('({ y: scrollY + innerHeight, content: document.documentElement.scrollHeight })') as { y: number; content: number };
+      assert.ok(end.y <= end.content + 1, `no blank room: ${JSON.stringify(end)}`);
+      await ctx.close();
+    });
+  }
+
   for (const [host, animations, off] of [[web1280, true, ''], [phone, true, ''], [code, true, ''], [web1280, false, ', the setting off']] as const) {
     it(`${host.name}, Reading${off}: a step change keeps the controls and the first row on the screen in place`, async () => {
       const { ctx, panel } = await host.open('tree', animations);

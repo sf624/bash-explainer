@@ -36,7 +36,7 @@ export interface PanelHost {
 
 export class PanelBridge {
   private ready = false;
-  /** The panel's view and layers: from storage, then as the panel says. */
+  /** The panel's view and step: from storage, then as the panel says. */
   private state: PanelState = readStoredObject<PanelState>(STORAGE_KEYS.panel);
   private watcher: MutationObserver | undefined;
   private watched: Document | undefined;
@@ -98,7 +98,7 @@ export class PanelBridge {
     this.host.update();
   }
 
-  /** The view and layers the viewer chose last time (VS Code keeps them in the webview's state, which the frame has not). */
+  /** The view and step the viewer chose last time (VS Code keeps them in the webview's state, which the frame has not). */
   private sendState(): void {
     this.send({ type: 'panelState', state: this.state });
   }

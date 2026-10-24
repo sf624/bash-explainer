@@ -176,9 +176,41 @@ describe('the web page: the steps of the tree view, and motion', function () {
       await page.keyboard.press('ArrowRight');
       assert.strictEqual(await current(panel), '5');
       assert.deepStrictEqual(await fits(), { over: false, right: true, small: [] });
+      // One group (the controls), and a stepper that opens a plain box of buttons, not a popup.
+      assert.deepStrictEqual(await panel.evaluate(`[document.getElementById('layers').getAttribute('role'), document.getElementById('steps').getAttribute('role'), document.getElementById('step-menu').getAttribute('aria-haspopup')]`), ['group', null, null]);
+      if (!phone) {
+        // The menu open, then the panel wide again: the buttons are back, and the stepper says it is closed.
+        await menu.click();
+        assert.strictEqual(await menu.getAttribute('aria-expanded'), 'true');
+        await page.evaluate(`(() => { const f = [...document.querySelectorAll('iframe')].find((x) => x.src.endsWith('panel.html')); f.style.width = '1280px'; })()`);
+        await until('the buttons back', () => panel.locator('#layers').evaluate((b) => b.classList.contains('compact')), (v) => !v);
+        assert.strictEqual(await menu.getAttribute('aria-expanded'), 'false');
+        assert.strictEqual(await panel.locator('#layers').evaluate((b) => b.classList.contains('open')), false);
+      }
       await ctx.close();
     });
   }
+
+  it('does nothing on a click on the step shown, or on ◁ at the first step: a step back that moves goes on', async () => {
+    const ctx = await context({ viewport: { width: 1700, height: 800 } });
+    const page = await ctx.newPage();
+    const panel = await open(page);
+    const click = (sel: string) => panel.evaluate(`document.querySelector('${sel}').click()`);
+    await click('#layers button.step[data-step="3"]');
+    assert.ok(await moving(panel) > 0, 'the rows shrink');
+    const rows = await panel.locator('#reading-tree li').count();
+    await click('#layers button.step[data-step="3"]');
+    assert.ok(await moving(panel) > 0, 'they still shrink');
+    assert.strictEqual(await panel.locator('#reading-tree li').count(), rows, 'nothing drawn anew');
+    await until('the motion over', () => moving(panel), (n) => n === 0);
+    await click('#layers button.step[data-step="1"]');
+    assert.ok(await moving(panel) > 0, 'the rows shrink to the line');
+    assert.strictEqual(await panel.locator('#tp-back').getAttribute('aria-disabled'), 'true');
+    await click('#tp-back');
+    assert.ok(await moving(panel) > 0, '◁ at the first step leaves them shrinking');
+    assert.strictEqual(await current(panel), '1');
+    await ctx.close();
+  });
 
   it('keeps the step buttons at 600px, without the numbers and the step back and forward buttons', async () => {
     const ctx = await context({ viewport: { width: 1280, height: 800 } }, false);
