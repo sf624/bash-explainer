@@ -52,6 +52,11 @@ export class ExplainService implements vscode.Disposable {
     return this.settings['panel.animations'];
   }
 
+  /** Where the panel's role colours come from (`panel.colors`). */
+  get panelColours(): Settings['panel.colors'] {
+    return this.settings['panel.colors'];
+  }
+
   get examplePlacement(): ExamplePlacement {
     return this.settings['examples.placement'];
   }

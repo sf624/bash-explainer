@@ -204,6 +204,7 @@ The panel works like regex101:
 | `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
 | `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when a step of the Reading view changes (off: they appear at once; reduced motion turns it off too) |
+| `bashExplainer.panel.colors` | `"classic"` | Colours of the parts of a line in the panel: `classic` (its own six), `theme` (the editor theme's, where readable), `themeLike` (the theme's, with new colours where the theme gives two kinds of part one colour). VS Code only |
 | `bashExplainer.highlight.enabled` | `false` | Colour shell code from the syntax tree the explanations use (semantic tokens over the editor's colours); the web page always does |
 | `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
 | `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
@@ -266,7 +267,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | `examples.placement`, `panel.animations` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
 | `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
-| `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen` | | | |
+| `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen`, `panel.colors` | | | |
 
 The empty cells are about what only VS Code has (a hover, an inline summary, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
 

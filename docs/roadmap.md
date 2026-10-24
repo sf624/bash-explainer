@@ -33,6 +33,7 @@ Keep it current:
 
 ## Done lately
 
+- Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
 - Name kinds: a badge on every command name (keyword, builtin, function, alias, program) and a "Same name, also" line, in both panel views (#306; [design/name-kind.md](design/name-kind.md)).
 - Panel header, Meaning/Reading names, the eight steps, fold motion and the row kept in place (#293, #294, #292); "subshell" in Reading (#296). Plain elbows in Reading (#299).
 - Web page: same icons as VS Code (#297), the bar's order (#298), no version switch on the release page (#302). A pasted script sets the file kind (#295). README npm badge (#300).

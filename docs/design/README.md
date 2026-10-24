@@ -24,4 +24,5 @@ Design documents and plans for Bash Explainer. The code is the authority: when a
 | --- | --- | --- |
 | [bats.md](bats.md) | bats test files as a host kind | In progress. Host kind (#202) and bats functions as specs (#222) built; per-test model, hooks, bats-assert and tags not done |
 | [tree-view/README.md](tree-view/README.md) | The Reading view: names, colours, the eight steps, motion and anchoring | Built. Records the prototypes and the choices made |
+| [theme-colours.md](theme-colours.md) | The panel's colours from the editor theme (`bashExplainer.panel.colors`): reading the theme as VS Code does, and "themeLike", which keeps the panel's distinctions | Built |
 | [name-kind.md](name-kind.md) | What a command name is (keyword, builtin, function, alias, program): the badge in both panel views, and the other meanings of the same name | Built. Records the three options and why C |

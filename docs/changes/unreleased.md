@@ -171,6 +171,16 @@ Only clear signals count; otherwise the kind stays:
 
 A shell script without a shebang says nothing clear, so pasting one keeps the kind. A Makefile whose recipes are indented with spaces is not one make accepts ("missing separator"), and looks like YAML, so it is detected only with a `.PHONY:` line.
 
+### Panel colours from the editor theme
+
+`bashExplainer.panel.colors` (VS Code only) chooses where the panel's colours come from:
+
+- `classic`, the default: the panel's own six colours, as before.
+- `theme`: the colour your theme gives each part in the editor, with your `editor.tokenColorCustomizations` and `editor.semanticTokenColorCustomizations`. A part the theme leaves uncoloured, or colours below 4.5:1 (7:1 in a high contrast theme), keeps the panel's own colour. In Dark Modern, `ll` and `grep` are #DCDCAA as in the editor, and `|` and `2>` are both the plain foreground.
+- `themeLike`: the theme's colours, except where the theme gives two kinds of part one colour that the panel keeps apart. Then a part takes the colour of its group (`|` takes the keyword's colour, as in the classic palette), or a new colour that suits the theme, with enough contrast. In Dark Modern, redirects and regexes get a teal of their own, and comments are a little lighter, to reach 4.5:1 on a code block.
+
+The colours follow the theme when it changes. How the theme is read, and how much each choice keeps parts apart, is in [docs/design/theme-colours.md](../design/theme-colours.md).
+
 ## Fixed
 
 ### Shell code in host files

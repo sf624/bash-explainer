@@ -43,7 +43,12 @@ describe('the colours of the editor', () => {
     const resolve = (v: string): string => (/^var\((--c-[\w-]+)\)$/.exec(v) ? resolve(vars[/^var\((--c-[\w-]+)\)$/.exec(v)![1]]) : v);
     // The colour each `.kind-*` takes: a variable.
     const kindVar = new Map<string, string>();
-    for (const m of panel.matchAll(/^((?:\.kind-\w+(?:, )?)+) \{ color: var\((--c-[\w-]+)\); \}$/gm)) for (const k of m[1].split(', ')) kindVar.set(k.slice(6), m[2]);
+    // (A kind with a variable of its own for `bashExplainer.panel.colors`, `var(--c-builtin, var(--c-command))`, takes the
+    // fallback's here: body leaves its own undefined.)
+    for (const m of panel.matchAll(/^((?:\.kind-\w+(?:, )?)+) \{ color: var\((--c-[\w-]+)(?:, var\((--c-[\w-]+)\))?\); \}$/gm)) {
+      assert.ok(!m[3] || !(m[2] in vars), m[2]);
+      for (const k of m[1].split(', ')) kindVar.set(k.slice(6), m[3] ?? m[2]);
+    }
     assert.deepEqual([...kindVar.keys()].sort(), Object.keys(PANEL_KIND_ROLE).sort());
     // An error takes the theme's error colour, as in the editor (but in light themes, see test/contrast.test.ts).
     assert.equal(resolve(`var(${kindVar.get('error')})`), 'var(--vscode-errorForeground, #f14c4c)');

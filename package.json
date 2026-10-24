@@ -344,6 +344,21 @@
           "default": true,
           "markdownDescription": "%config.panel.animations%"
         },
+        "bashExplainer.panel.colors": {
+          "type": "string",
+          "enum": [
+            "classic",
+            "theme",
+            "themeLike"
+          ],
+          "markdownEnumDescriptions": [
+            "%config.panel.colors.classic%",
+            "%config.panel.colors.theme%",
+            "%config.panel.colors.themeLike%"
+          ],
+          "default": "classic",
+          "markdownDescription": "%config.panel.colors%"
+        },
         "bashExplainer.highlight.enabled": {
           "type": "boolean",
           "default": false,
