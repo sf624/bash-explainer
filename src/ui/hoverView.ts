@@ -8,8 +8,9 @@ import { Lang } from '../i18n';
 import { joinParts, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
 import { isCommand, sameSpan, shown } from './hoverParts';
-import { ThemeKind } from './palette';
-import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, placeExamples, refsMarkdown, ui } from './render';
+import { type NoteLevel, splitNote } from '../messages';
+import { levelColour, ThemeKind } from './palette';
+import { colored, esc, ExamplePlacement, examplesMarkdown, explained, labelMarkdown, lineSegments, noteRefs, notesByLevel, placeExamples, refsMarkdown, ui } from './render';
 
 /** What every view of the hover needs. */
 export interface HoverInput {
@@ -138,11 +139,25 @@ function where(ex: LineExplanation, lang: Lang, bold: boolean): string {
   return h;
 }
 
-/** The notes of the line, each with the sections of the manual it is about. */
-function notes(ex: LineExplanation, lang: Lang): string[] {
-  return ex.notes.flatMap((n) => {
+/** The codicon of each level, as the Problems panel shows it; a plain note has the info icon in the muted colour. */
+const LEVEL_ICON: Record<NoteLevel, string> = { warning: 'warning', info: 'info', note: 'info' };
+
+/**
+ * A note: the level's codicon in the level's colour, and its word in bold ("**Pitfall:**"), in place of the mark it
+ * starts with (src/messages.ts). The word and the icon's shape say the level without the colour.
+ */
+function noteMarkdown(note: string, lang: Lang, theme: ThemeKind): string {
+  const { level, label, body } = splitNote(note, lang);
+  const colour = level === 'note' ? 'var(--vscode-descriptionForeground)' : levelColour(level, theme);
+  const icon = `<span style="color:${colour};">$(${LEVEL_ICON[level]})</span>`;
+  return `${icon} ${label ? `<span style="color:${colour};"><strong>${esc(label)}</strong></span> ` : ''}${md(body)}`;
+}
+
+/** The notes of the line, warnings first, each with its level and the sections of the manual it is about. */
+function notes(ex: LineExplanation, lang: Lang, theme: ThemeKind): string[] {
+  return notesByLevel(ex.notes).flatMap((n) => {
     const refs = noteRefs(ex, n);
-    return [`> ${md(n)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
+    return [`> ${noteMarkdown(n, lang, theme)}${refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : ''}`, ''];
   });
 }
 
@@ -181,7 +196,7 @@ export function partHover(x: HoverInput, chain: Token[]): string {
   out.push(...table(own.rows, x));
   const command = [...chain].reverse().find((c) => c !== part && isCommand(c));
   if (command) out.push(`<small>${muted(t.command)}${label(command, x.theme)}${badge(command)} — ${md(command.explanation)}</small>`, '');
-  out.push(...notes(x.ex, x.lang));
+  out.push(...notes(x.ex, x.lang, x.theme));
   // Its examples: those of the part and its own parts, else those of the nearest part around it.
   const placed = placeExamples(x.ex).items;
   const below = (tok: Token): Token[] => [tok, ...shown(tok).flatMap(below)];
@@ -213,7 +228,7 @@ export function wholeLine(x: HoverInput): string {
     out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind, theme) : esc(g.text))).join('') + '</code>', '');
   }
   if (!ex.items.length) {
-    out.push(...notes(ex, lang), t.empty);
+    out.push(...notes(ex, lang, theme), t.empty);
     return out.join('\n');
   }
   const placed = x.placement === 'bottom' ? undefined : placeExamples(ex);
@@ -241,7 +256,7 @@ export function wholeLine(x: HoverInput): string {
     out.push(...table(r.rows, x));
     if (examples && x.placement === 'last') out.push(...examplesMarkdown(examples, undefined, false), '');
   }
-  if (ex.notes.length) out.push('---', '', ...notes(ex, lang));
+  if (ex.notes.length) out.push('---', '', ...notes(ex, lang, theme));
   out.push(...examplesMarkdown(placed ? placed.examples : ex.examples));
   out.push(...footer(x, { hidden }));
   return out.join('\n');

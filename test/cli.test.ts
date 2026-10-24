@@ -165,6 +165,16 @@ describe('the command-line tool', function () {
     assert.strictEqual(run(['--format', 'sarif', '-e', 'ls']).code, 2);
   });
 
+  it('shows the notes warnings first, with the mark and the word in the colour of their level', () => {
+    const notes = (args: string[]) => run(['--no-config', ...args, '-e', 'exit 300; read line; x = 1']).out.split('\n').slice(1, 4);
+    assert.deepStrictEqual(notes(['--no-color']).map((l) => l.slice(0, 12)), ['  ⚠ Pitfall:', '  ⓘ Caveat: ', '  ℹ An exit ']);
+    const [warning, info, note] = notes(['--color']);
+    assert.ok(warning.startsWith('  \x1b[33m\x1b[1m⚠ Pitfall:\x1b[0m\x1b[0m `x =…`'), warning);
+    assert.ok(info.startsWith('  \x1b[34m\x1b[1mⓘ Caveat:\x1b[0m\x1b[0m without `-r`'), info);
+    // (A plain fact's mark is dim, with no word.)
+    assert.ok(note.startsWith('  \x1b[90mℹ\x1b[0m An exit status'), note);
+  });
+
   it('reports the pitfalls, and fails on their warnings only with --strict', () => {
     const file = path.join(dir, 'pitfalls.sh');
     fs.writeFileSync(file, '#!/bin/bash\nfor f in $(ls); do echo "$f"; done\nrm -rf $DIR/*\nx = 1\necho $y\nread line\n');
@@ -172,7 +182,7 @@ describe('the command-line tool', function () {
     assert.strictEqual(r.code, 0, r.out);
     const rows = r.out.trim().split('\n').map((l) => l.replace(/^.*pitfalls\.sh:/, ''));
     assert.deepStrictEqual(rows.map((l) => /^(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), [
-      '2:10 warning for-over-ls-output', '3:8 warning rm-empty-variable-root', '3:8 info unquoted-variable-as-path',
+      '2:10 info for-over-ls-output', '3:8 warning rm-empty-variable-root', '3:8 warning unquoted-variable-as-path',
       '4:1 warning assignment-with-spaces', '6:1 info read-without-r',
     ]);
     assert.match(rows[3], /^4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment/);
@@ -322,18 +332,18 @@ describe('the command-line tool', function () {
       assert.strictEqual(run(['--check', '--set', 'shell=sh', script]).code, 1);
       assert.strictEqual(run(['--check', '--set', 'shell=sh', '--set', 'diagnostics.ignore=["dbracket"]', script]).code, 0);
       // Warnings in a Dockerfile are left out with diagnostics.embedded off.
-      const docker = write(path.join(dir, 'Dockerfile'), 'FROM alpine\nRUN curl -s x | sh\n');
+      const docker = write(path.join(dir, 'Dockerfile'), 'FROM alpine\nRUN [[ -f x ]] && echo hi\n');
       assert.strictEqual(run(['--check', '--no-config', docker]).code, 1);
       assert.strictEqual(run(['--check', '--set', 'diagnostics.embedded=false', docker]).code, 0);
       // Notes, examples and your own commands.
       const loop = ['--no-config', '--no-color', '-e', 'for f in $(ls); do echo "$f"; done'];
       assert.match(run(loop).out, /\$\(ls\)/);
-      const pitfall = (args: string[]) => run([...loop, ...args]).out.split('\n').filter((l) => /^ {2}⚠/.test(l));
+      const pitfall = (args: string[]) => run([...loop, ...args]).out.split('\n').filter((l) => /^ {2}[⚠ⓘ]/.test(l));
       assert.ok(pitfall([]).length > 0, run(loop).out);
       assert.deepStrictEqual(pitfall(['--set', 'notes.pitfalls=false']), []);
       const sed = ['--no-config', '--no-color', '-e', "echo a | sed 's/a/b/'"];
       assert.match(run(sed).out, /^ {2}\S.*sed/m);
-      const titles = (args: string[]) => run([...sed, ...args]).out.split('\n').filter((l) => /^ {2}[^ ⚠›]/.test(l) && !/^ {2}echo|^ {2}sed/.test(l));
+      const titles = (args: string[]) => run([...sed, ...args]).out.split('\n').filter((l) => /^ {2}[^ ⚠ⓘℹ›]/.test(l) && !/^ {2}echo|^ {2}sed/.test(l));
       assert.ok(titles([]).length > titles(['--set', 'examples.disabled=["sed","pipeline"]']).length);
       const deploy = write(path.join(dir, 'custom.json'), JSON.stringify({ 'bashExplainer.customCommands': { deploy: { summary: 'Deploy to production' } } }));
       assert.match(run(['--config', deploy, '--no-color', '-e', 'deploy web']).out, /Deploy to production/);

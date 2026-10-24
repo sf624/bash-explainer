@@ -207,12 +207,29 @@
     const tree = $('tree');
     tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
 
-    renderLine(msg.lineText, ex.line, ex.items);
+    renderLine(msg.lineText, ex.line, ex.items, msg.marks ?? []);
 
-    $('notes').replaceChildren(...ex.notes.map((n) => {
+    // Each note with the icon of its level (src/messages.ts, `NoteLevel`) in place of its mark, and the word that
+    // names the level in bold: the icon's shape and the word say it without the colour.
+    $('notes').replaceChildren(...(msg.notes ?? []).map((/** @type {{ level: string, label: string, body: string, refs: string[] }} */ n) => {
       const p = document.createElement('p');
-      p.className = 'note';
-      p.append(...inline(n), ...refLinks(ex.facts?.find((f) => f.text === n)?.refs));
+      p.className = `note level-${n.level}`;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('class', 'note-icon');
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', msg.levelLabels?.[n.level] ?? n.level);
+      drawIcon(svg, n.level === 'warning' ? 'warning' : 'info');
+      const text = document.createElement('span');
+      text.className = 'note-text';
+      if (n.label) {
+        const label = document.createElement('strong');
+        label.className = 'note-label';
+        label.textContent = n.label;
+        text.append(label, ' ');
+      }
+      text.append(...inline(n.body), ...refLinks(n.refs));
+      p.append(svg, text);
       return p;
     }));
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
@@ -564,7 +581,7 @@
   window.addEventListener('scroll', syncLine, { passive: true });
   window.addEventListener('resize', syncLine);
 
-  function renderLine(text, line, items) {
+  function renderLine(text, line, items, marks = []) {
     const owner = new Array(text.length).fill(-1);
     const depthAt = new Array(text.length).fill(-1);
     const visit = (token, depth) => {
@@ -608,6 +625,9 @@
           reveal(flat[idx].token);
         });
       }
+      // (Under the problems of the line, the editor's squiggle: a warning wins over an information.)
+      const mark = marks.filter((/** @type {any} */ m) => m.from < j && i < m.to).sort((/** @type {any} */ a, /** @type {any} */ b) => (a.level === 'warning' ? -1 : 0) - (b.level === 'warning' ? -1 : 0))[0];
+      if (mark && text.slice(i, j).trim()) span.classList.add('squiggle', `squiggle-${mark.level}`);
       pre.append(span);
       segments.push(span);
       i = j;

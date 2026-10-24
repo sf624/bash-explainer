@@ -1,11 +1,12 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import type { BashVersion } from './bashversion';
-import { dialectIssues, Shell } from './dialect';
+import { dialectIssues, issueLevel, Shell } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
+import { type NoteLevel, severityOf } from './messages';
 import { pitfallFindings } from './pitfalls';
 import { shellState, type StateModel } from './semantics/state';
 import { type NestedScript, nestedScripts } from './semantics/nested';
@@ -76,20 +77,6 @@ function unsuppressed(doc: ShellDocument, issues: DocumentIssue[], ignore: reado
 }
 
 /**
- * The pitfalls that break a script outright, shown as warnings; the others (unquoted variables, `read` without
- * `-r`: frequent, and harmless with most values) are information.
- */
-const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
-  // src/pitfalls.ts
-  'bracket-no-space', 'assignment-with-spaces', 'brace-no-space', 'brace-close-no-separator', 'rm-empty-variable-root',
-  'redirect-in-bracket', 'bracket-close-in-word', 'and-or-in-bracket',
-  // src/wordfacts.ts
-  'prefix-assignment-expanded-first', 'for-over-ls-output', 'for-over-unquoted-args', 'redirect-by-your-shell',
-  // (An unset read under `set -u` stops the shell, unless it is `mild`: src/wordfacts.ts.)
-  'nounset-unbound', 'shebang-refused',
-]);
-
-/**
  * The pitfalls of a shell script that its explanations point out (src/pitfalls.ts, and the pitfalls of
  * src/wordfacts.ts), as problems: each with its code, on the node it is about, `pitfall: true`. One walk of the
  * tree, with the script's one model, and one of each string it runs as a script (`bash -c '…'`, `eval`, a trap's
@@ -98,14 +85,14 @@ const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
  */
 export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   if (doc.extracted) return [];
-  const found: { code: string; start: Place; end: Place; text: string; mild?: boolean }[] = [];
+  const found: { code: string; start: Place; end: Place; text: string; level: NoteLevel }[] = [];
   const scan = (tree: SyntaxTree, model: StateModel, sh: Shell | undefined, place: (n: SyntaxNode, end: boolean) => Place) => {
     const last = tree.root.endPosition.row;
-    const findings: { code: string; node: SyntaxNode; text: string; mild?: boolean }[] = [
+    const findings: { code: string; node: SyntaxNode; text: string; level: NoteLevel }[] = [
       ...pitfallFindings(tree.root, lang, 0, last, model, sh),
-      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text, mild: f.mild })),
+      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text, level: f.fact.level })),
     ];
-    for (const { code, node, text, mild } of findings) found.push({ code, start: place(node, false), end: place(node, true), text, mild });
+    for (const { code, node, text, level } of findings) found.push({ code, start: place(node, false), end: place(node, true), text, level });
   };
   const point = (p: Point): Place => ({ line: p.row, col: p.column });
   scan(doc.tree, shellState(doc.tree, shell), shell, (n, end) => point(end ? n.endPosition : n.startPosition));
@@ -118,10 +105,10 @@ export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | und
   // (zsh syntax that bash cannot read: the tree there is not the script's.)
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
-  for (const { code, start, end, text, mild } of found) {
+  for (const { code, start, end, text, level } of found) {
     const { line } = start;
     const issue: DocumentIssue = {
-      code, severity: PITFALL_WARNINGS.has(code) && !mild ? 'warning' : 'info', message: text, pitfall: true,
+      code, severity: severityOf(level), message: text, pitfall: true,
       startLine: line, startCol: start.col, endLine: line, endCol: end.line === line ? end.col : doc.lines[line].length,
     };
     if (unparsed.some((i) => i.startLine <= line && line <= i.endLine)) continue;
@@ -187,11 +174,11 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
 }
 
 /**
- * A problem's message as the Problems panel and the editors show it: without the ⚠ / ℹ it starts with in the
+ * A problem's message as the Problems panel and the editors show it: without the mark (⚠, ⓘ or ℹ) it starts with in the
  * explanations (and, with `backticks: false`, without the backticks that mark code, for plain text).
  */
 export function plain(message: string, opts: { backticks?: boolean } = {}): string {
-  const text = message.replace(/^[⚠ℹ]\uFE0F?\s*/u, '');
+  const text = message.replace(/^[⚠ⓘℹ]\uFE0F?\s*/u, '');
   return opts.backticks === false ? text.replace(/`/g, '') : text;
 }
 
@@ -207,7 +194,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: Bas
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {
-      code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message, fix: fixFor(i),
+      code: i.id, severity: severityOf(issueLevel(i.kind)), message: i.message, fix: fixFor(i),
       startLine: n.startPosition.row, startCol: n.startPosition.column,
       endLine: n.startPosition.row, endCol: sameLine ? n.endPosition.column : doc.lines[n.startPosition.row].length,
     };
@@ -234,7 +221,7 @@ function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined):
       const start = at(source(index(i.place.startPosition), false));
       const end = at(source(index(i.place.endPosition), true));
       out.push({
-        code: i.id, severity: i.kind === 'unsupported' ? 'warning' : 'info', message: i.message,
+        code: i.id, severity: severityOf(issueLevel(i.kind)), message: i.message,
         startLine: start.line, startCol: start.col, endLine: start.line, endCol: end.line === start.line ? end.col : doc.lines[start.line].length,
       });
     }

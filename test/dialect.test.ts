@@ -222,7 +222,7 @@ describe('dialect notes', () => {
   it('notes behaviour that differs from bash', () => {
     const notes = (src: string, shell: Parameters<typeof dialectNotes>[2]) => dialectNotes(parser.parse(src), 0, shell, 'en');
     assert.deepStrictEqual(behavioursOnLine(parser.parse("echo 'a\\tb' $v ${a[0]} \"$q\"").root, 0), ['echoEscape', 'wordSplit', 'arrayBase']);
-    assert.match(notes("echo 'a\\tb'", 'sh')[0], /^ℹ dash's `echo` interprets/);
+    assert.match(notes("echo 'a\\tb'", 'sh')[0], /^ⓘ Portability: dash's `echo` interprets/);
     assert.deepStrictEqual(notes("echo 'a\\tb'", 'ksh'), []);
     assert.match(notes('echo $v', 'zsh')[0], /In zsh an unquoted `\$var` is not split/);
     assert.deepStrictEqual(notes('echo "$v"', 'zsh'), []);

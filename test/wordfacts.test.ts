@@ -23,6 +23,11 @@ function facts(src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell) {
   return wordFacts(tree.root, line, lang, shellState(tree, shell), shell);
 }
 
+/** The word facts that are caveats (\`info\`): the others found here are warnings. */
+const LEVELS: Record<string, 'info'> = {
+  'for-over-ls-output': 'info', 'for-over-unquoted-args': 'info', 'unquoted-variable-in-test': 'info',
+};
+
 describe('word facts', () => {
   const cases: [string, string, RegExp][] = [
     ['FOO=1 echo $FOO', 'prefix-assignment-expanded-first', /`FOO=…` is set only in the environment of `echo`; the current shell expands `\$FOO` before that/],
@@ -50,8 +55,18 @@ describe('word facts', () => {
       assert.ok(f, facts(src).map((x) => x.text).join('\n') || '(none)');
       assert.strictEqual(f.id, id);
       assert.strictEqual(f.kind, 'pitfall');
-      assert.ok(f.text.startsWith('⚠ Pitfall: '));
+      // (Its level, and the mark and word of the level: docs/design/note-levels.md.)
+      assert.strictEqual(f.level, LEVELS[id] ?? 'warning', id);
+      assert.ok(f.text.startsWith((f.level as string) === 'warning' ? '⚠ Pitfall: ' : 'ⓘ Caveat: '), f.text);
       assert.ok(f.refs.length >= 1);
+    });
+  }
+  // (A wrong path given to a command that deletes or overwrites cannot be undone: a warning; to the others, a caveat.)
+  for (const [src, level] of [['rm $f', 'warning'], ['mv $a "$b"', 'warning'], ['cp -f "$a" $b', 'warning'], ['cat $f', 'info'], ['chmod +x $f', 'info'], ['cd $d', 'info']] as const) {
+    it(`gives an unquoted path in ${src} the level ${level}`, () => {
+      const f = facts(src).find((x) => x.id === 'unquoted-variable-as-path');
+      assert.strictEqual(f?.level, level, src);
+      assert.ok(f.text.startsWith(level === 'warning' ? '⚠ Pitfall: ' : 'ⓘ Caveat: '), f.text);
     });
   }
 
@@ -123,7 +138,7 @@ describe('the quoted form an unquoted path is given', () => {
       assert.ok(f, facts(src).map((x) => x.text).join('\n') || '(none)');
       assert.strictEqual(f.text.match(/Write `(.*)`$/)?.[1], quoted);
       // The word the note is about, by its text.
-      const word = f.text.match(/^⚠ Pitfall: `(.*?)` is not quoted/)![1];
+      const word = f.text.match(/^(?:⚠ Pitfall|ⓘ Caveat): `(.*?)` is not quoted/)![1];
       assert.ok(src.includes(` ${word} `) || src.endsWith(` ${word}`), word);
       const plain = words(word, values(vars, 0));
       const spaced = words(quoted, values(vars, 1));
@@ -245,7 +260,8 @@ describe('word facts: an unset variable under set -u', () => {
       const [text, ...more] = unbound(src, line);
       assert.ok(text, `${src}: (none)`);
       assert.deepStrictEqual(more, []);
-      assert.ok(text.startsWith(`⚠ Pitfall: \`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
+      // (Only the command fails, and the shell goes on: a caveat.)
+      assert.ok(text.startsWith(`${exits === C ? 'ⓘ Caveat' : '⚠ Pitfall'}: \`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits}${environment ? ` (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)` : ''}. `), text);
       assert.ok(text.endsWith(fix ? `write \`\${${v}:-}\`` : 'Set it before this line'), text);
     });
   }

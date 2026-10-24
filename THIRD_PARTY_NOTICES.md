@@ -146,9 +146,10 @@ Copyright (c) Microsoft Corporation. https://github.com/microsoft/vscode-codicon
 The icons are licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
 https://creativecommons.org/licenses/by/4.0/legalcode
 
-Bash Explainer copies seven of the icons (collapse-all, expand-all, copy, book, arrow-left, gear,
-chevron-down) from src/icons/*.svg of @vscode/codicons 0.0.46-24, unmodified, as SVG path data drawn
-in the theme's text colour, in the header of the extension's panel and in the top bar of the web page.
+Bash Explainer copies nine of the icons (collapse-all, expand-all, copy, book, arrow-left, gear,
+chevron-down, warning, info) from src/icons/*.svg of @vscode/codicons 0.0.46-24, unmodified, as SVG path
+data drawn in the theme's colours, in the header of the extension's panel, in the top bar of the web page
+and beside the notes of an explanation.
 The licensor offers the icons as-is and makes no representations or warranties of any kind concerning
 them (Section 5 of the license).
 ```

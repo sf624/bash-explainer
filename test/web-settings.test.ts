@@ -181,7 +181,7 @@ describe('the web page: theme and settings', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('#!/bin/bash\n[[ -f x ]] && for f in $(ls); do echo "$f"; done');
     const panelText = () => panel().locator('#main').innerText();
-    await until('the pitfall', panelText, (t) => /Pitfall/.test(t));
+    await until('the pitfall', panelText, (t) => /Caveat: the output of/.test(t));
     // The pitfall is also a problem.
     await until('the pitfall as a problem', () => page.locator('#problem-list').innerText(), (t) => /for-over-ls-output/.test(t));
 
@@ -194,7 +194,7 @@ describe('the web page: theme and settings', function () {
     assert.match(await page.locator('.settings-elsewhere').innerText(), /panel\.autoOpen/);
     // A note turned off goes from the explanation and from the problems at once.
     await page.locator('#setting-notes-pitfalls').uncheck();
-    await until('no pitfall', panelText, (t) => !/Pitfall/.test(t));
+    await until('no pitfall', panelText, (t) => !/Caveat/.test(t));
     await until('no pitfall problem', () => page.locator('#problems').isHidden(), (h) => h);
     // The shell: the script is checked for sh, and the panel's own menu says so.
     await page.locator('#setting-shell').selectOption('sh');

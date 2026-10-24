@@ -614,7 +614,7 @@ describe('globstar', () => {
   it('explains ** as any depth, with a pitfall until shopt -s globstar is seen', () => {
     const before = explain('ls **/*.ts');
     assert.match(find(before, '**/*.ts').explanation, /any depth/);
-    assert.ok(before.notes.some((n) => /Pitfall: `\*\*` reaches into subdirectories only after `shopt -s globstar`/.test(n)));
+    assert.ok(before.notes.some((n) => /Caveat: `\*\*` reaches into subdirectories only after `shopt -s globstar`/.test(n)));
     const after = explain('shopt -s globstar\nls **/*.ts', 1);
     assert.ok(!after.notes.some((n) => /globstar/.test(n)));
     assert.match(find(explain('shopt -u globstar\nls **/*.ts', 1), '**/*.ts').explanation, /same as `\*`/);
@@ -635,7 +635,7 @@ describe('extglob', () => {
   it('explains it, with a pitfall until shopt -s extglob is seen', () => {
     const e = explain('rm !(keep).log');
     assert.match(find(e, '!(keep).log').explanation, /Extended glob: `!\(keep\)` is anything but `keep`/);
-    assert.ok(e.notes.some((n) => /Pitfall: extended globs like `!\(keep\).log` are a syntax error unless `shopt -s extglob`/.test(n)));
+    assert.ok(e.notes.some((n) => /Caveat: extended globs like `!\(keep\).log` are a syntax error unless `shopt -s extglob`/.test(n)));
     assert.ok(!explain('shopt -s extglob\nrm !(keep).log', 1).notes.some((n) => /extglob/.test(n)));
     assert.ok(!explain('[[ $x == +([0-9]) ]]').notes.some((n) => /extglob/.test(n)));
   });

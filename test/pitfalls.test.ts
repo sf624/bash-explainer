@@ -241,7 +241,7 @@ describe('the pitfall gate', () => {
   };
   const has = (notes: string[], re: RegExp) => notes.some((n) => re.test(n));
   for (const [file, name, re] of [
-    ['Dockerfile', 'the Dockerfile pipefail note', /^⚠ If a command in the middle of the pipe fails, RUN still succeeds/],
+    ['Dockerfile', 'the Dockerfile pipefail note', /^ⓘ If a command in the middle of the pipe fails, RUN still succeeds/],
     ['deploy.py', 'the Python string-without-shell note', /^⚠ Without shell=True the whole string/],
     ['deploy.py', 'the Python shell injection note', /^⚠ Shell injection risk: the shell runs a string/],
     ['action.yml', 'the Actions script injection note', /^⚠ Script injection risk: `github\.event\.pull_request\.title`/],
@@ -250,7 +250,8 @@ describe('the pitfall gate', () => {
     it(`${name} disappears with pitfalls off, and is the same text with them on`, () => {
       assert.ok(has(hostNotes(file, true), re));
       assert.ok(!has(hostNotes(file, false), re));
-      assert.ok(has(hostNotes(file, true, 'ja'), /^⚠ /));
+      // (A pipeline's failure that goes unnoticed is a caveat: docs/design/note-levels.md.)
+      assert.ok(has(hostNotes(file, true, 'ja'), file === 'Dockerfile' ? /^ⓘ / : /^⚠ /));
     });
   }
   it('said keeps the notes with pitfalls off and the pitfalls with them on', () => {

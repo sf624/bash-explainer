@@ -104,16 +104,20 @@ describe('the pitfalls of a script, as problems', () => {
     ['x = 1', [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]],
     ['{echo a; }', [['brace-no-space', 'warning', 0, 0, 0, 5]]],
     ['{ echo a }', [['brace-close-no-separator', 'warning', 0, 9, 0, 10]]],
-    ['rm -rf $DIR/*', [['rm-empty-variable-root', 'warning', 0, 7, 0, 13], ['unquoted-variable-as-path', 'info', 0, 7, 0, 13]]],
+    ['rm -rf $DIR/*', [['rm-empty-variable-root', 'warning', 0, 7, 0, 13], ['unquoted-variable-as-path', 'warning', 0, 7, 0, 13]]],
     ['read line', [['read-without-r', 'info', 0, 0, 0, 9]]],
     ['[ $a < $b ]', [['redirect-in-bracket', 'warning', 0, 5, 0, 9], ['unquoted-variable-in-test', 'info', 0, 2, 0, 4]]],
     ['[ -f $x]', [['bracket-close-in-word', 'warning', 0, 5, 0, 8]]],
     ['[ a && b ]', [['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
     // src/wordfacts.ts
     ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
-    ['cp $a b', [['unquoted-variable-as-path', 'info', 0, 3, 0, 5]]],
-    ['for f in $(ls); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 14]]],
-    ['for a in $*; do :; done', [['for-over-unquoted-args', 'warning', 0, 9, 0, 11]]],
+    ['cp $a b', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5]]],
+    // (A path given to a command that neither deletes nor overwrites: a caveat.)
+    ['cat $a', [['unquoted-variable-as-path', 'info', 0, 4, 0, 6]]],
+    // (A path given to a command that neither deletes nor overwrites: a caveat.)
+    ['cat $a', [['unquoted-variable-as-path', 'info', 0, 4, 0, 6]]],
+    ['for f in $(ls); do :; done', [['for-over-ls-output', 'info', 0, 9, 0, 14]]],
+    ['for a in $*; do :; done', [['for-over-unquoted-args', 'info', 0, 9, 0, 11]]],
     ['sudo echo 1 > /etc/x', [['redirect-by-your-shell', 'warning', 0, 12, 0, 20]]],
     // The script exits; only the command fails (a redirection of a program); the script never starts.
     ['set -u\necho "$dir"', [['nounset-unbound', 'warning', 1, 6, 1, 10]]],
@@ -125,9 +129,9 @@ describe('the pitfalls of a script, as problems', () => {
       ['nounset-unbound', 'warning', 3, 36, 3, 38]]],
     ['#!/bin/bash -e -u\n:', [['shebang-refused', 'warning', 0, 0, 0, 17]]],
     // A node over several lines: to the end of its first line.
-    ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 13]]],
+    ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'info', 0, 9, 0, 13]]],
     // Each place, also where the explanation of the line says it once.
-    ['cp $a b; cp $a c', [['unquoted-variable-as-path', 'info', 0, 3, 0, 5], ['unquoted-variable-as-path', 'info', 0, 12, 0, 14]]],
+    ['cp $a b; cp $a c', [['unquoted-variable-as-path', 'warning', 0, 3, 0, 5], ['unquoted-variable-as-path', 'warning', 0, 12, 0, 14]]],
     ['echo "$x"\nx=1', []],
   ];
   for (const [text, want] of cases) {
@@ -171,8 +175,8 @@ describe('the pitfalls of a script, as problems', () => {
   // A string a command runs as a script is read with its own model and shell, at its place in the document.
   for (const [text, want] of [
     ["bash -c 'x = 1'", [['assignment-with-spaces', 'warning', 0, 9, 0, 14]]],
-    ["eval 'rm -rf $Q/*'", [['rm-empty-variable-root', 'warning', 0, 13, 0, 17], ['unquoted-variable-as-path', 'info', 0, 13, 0, 17]]],
-    ["trap 'for f in $(ls); do :; done' EXIT", [['for-over-ls-output', 'warning', 0, 15, 0, 20]]],
+    ["eval 'rm -rf $Q/*'", [['rm-empty-variable-root', 'warning', 0, 13, 0, 17], ['unquoted-variable-as-path', 'warning', 0, 13, 0, 17]]],
+    ["trap 'for f in $(ls); do :; done' EXIT", [['for-over-ls-output', 'info', 0, 15, 0, 20]]],
     ["sh -c 'echo a\nread line'", [['read-without-r', 'info', 1, 0, 1, 9]]],
     ["zsh -c 'for a in $@; do :; done'", []],
   ] as [string, (string | number)[][]][]) {

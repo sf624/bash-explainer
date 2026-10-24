@@ -26,7 +26,7 @@ export function showProblems(list: DocumentIssue[], lang: Lang, pick: (issue: Do
       m.append(...withCode(text));
       return m;
     };
-    li.append(span(`icon ${i.severity}`, i.severity === 'warning' ? '⚠' : 'ℹ'), span('where', t.line(i.startLine + 1)), message(plain(i.message)), span('code', i.code));
+    li.append(span(`icon ${i.severity}`, i.severity === 'warning' ? '⚠' : 'ⓘ'), span('where', t.line(i.startLine + 1)), message(plain(i.message)), span('code', i.code));
     li.addEventListener('click', () => pick(i));
     return li;
   }));

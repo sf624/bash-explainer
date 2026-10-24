@@ -46,7 +46,7 @@ describe('licenses', function () {
     const names = [...table.matchAll(/^ {4}'([a-z-]+)': /gm)].map((m) => m[1]);
     const c = COPIED['@vscode/codicons'];
     assert.match(c.licenseText, new RegExp(`\\(${names.join(', ')}\\)`.replace(/, /g, ',\\s+')), 'the notice names the icons media/icons.js has');
-    assert.match(c.licenseText, new RegExp(`${names.length === 7 ? 'seven' : String(names.length)} of the icons`));
+    assert.match(c.licenseText, new RegExp(`${({ 7: 'seven', 9: 'nine' } as Record<number, string>)[names.length] ?? String(names.length)} of the icons`));
     assert.match(js, /@vscode\/codicons 0\.0\.46-24[^]*CC BY 4\.0, \(c\) Microsoft Corporation/);
     assert.ok(js.includes(`@vscode/codicons ${c.version}`));
     // Every icon of the table is drawn somewhere (the notice names no icon we do not use), and nothing draws

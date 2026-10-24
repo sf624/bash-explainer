@@ -20,7 +20,7 @@ const about = (src: string, label: string, lang: 'en' | 'ja' = 'en'): string => 
   assert.ok(t, `no token ${label} in ${src}`);
   return t.explanation;
 };
-const notes = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /落とし穴|Pitfall/.test(n));
+const notes = (src: string, lang: 'en' | 'ja' = 'en', line = 0): string[] => explain(src, lang, line).notes.filter((n) => /^[⚠ⓘ] (落とし穴|注意|Pitfall|Caveat)/.test(n));
 const bash = (code: string): { out: string; status: number } => {
   const r = spawnSync('bash', ['--norc', '-c', code], { encoding: 'utf8', timeout: 10000 });
   return { out: r.stdout + r.stderr, status: r.status ?? -1 };
@@ -317,11 +317,11 @@ describe('the command given to ssh and su -c', () => {
     for (const w of ['$HOME/*.log', '"$HOME"', '$(date)', '*.log', '~/x', '"a $x"', '${x}']) {
       const n = notes(`ssh host ls ${w}`);
       assert.strictEqual(n.length, 1, w);
-      assert.match(n[0], /^⚠ Pitfall: the local shell expands `.*` in the command given to `ssh` before it is sent/, w);
+      assert.match(n[0], /^ⓘ Caveat: the local shell expands `.*` in the command given to `ssh` before it is sent/, w);
     }
     assert.match(notes('ssh -p 22 -i key host ls $HOME')[0], /expands `\$HOME`/);
     assert.match(notes('ssh host -- ls $HOME')[0], /expands `\$HOME`/);
-    assert.match(notes('ssh host ls $HOME/*.log', 'ja')[0], /^⚠ 落とし穴: `ssh` に渡すコマンドのうち `\$HOME\/\*\.log` は、送られる前にこちらのシェルが展開します/);
+    assert.match(notes('ssh host ls $HOME/*.log', 'ja')[0], /^ⓘ 注意: `ssh` に渡すコマンドのうち `\$HOME\/\*\.log` は、送られる前にこちらのシェルが展開します/);
   });
   it('ssh: nothing for single quotes, plain words, or no command', () => {
     for (const src of ["ssh host 'ls $HOME/*.log'", 'ssh host ls -la', 'ssh host', 'ssh -p 22 host', 'ssh -V', 'ssh $HOST ls', 'ssh host "ls -la"']) assert.deepStrictEqual(notes(src), [], src);

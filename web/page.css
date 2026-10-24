@@ -629,11 +629,11 @@ body.resizing .problems-resize {
 }
 
 #problem-list .icon.warning {
-  color: var(--vscode-charts-yellow);
+  color: var(--vscode-editorWarning-foreground);
 }
 
 #problem-list .icon.info {
-  color: var(--vscode-charts-blue);
+  color: var(--vscode-editorInfo-foreground);
 }
 
 /* What an action did ("Link copied"): a toast at the bottom, for a few seconds. */
