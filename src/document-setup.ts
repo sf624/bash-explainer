@@ -46,6 +46,20 @@ export const EMBEDDED_FILES = Object.values(HOST_FILES).map((f) => f.setting);
 /** The language IDs of the host files (the document selector). */
 export const HOST_LANGUAGES = Object.values(HOST_FILES).flatMap((f) => f.languages);
 
+/**
+ * Languages whose own extensions provide semantic tokens in common use (Pylance for Python). VS Code uses one
+ * provider's tokens for a whole file, so ours would replace theirs: we send none for these.
+ */
+export const OWN_SEMANTIC_LANGUAGES: readonly string[] = ['python'];
+
+/**
+ * The language IDs our semantic tokens are sent for (the provider's selector, and the entries of `semanticTokenScopes` in
+ * package.json, which a test compares): `shellscript`, and the host languages without a provider of their own, with those
+ * that only start the extension (`json`, for package.json). Languages added through the `languages` setting have no entry.
+ */
+export const SEMANTIC_LANGUAGES: readonly string[] = ['shellscript', ...Object.values(HOST_FILES).flatMap((f) => [...f.languages, ...f.activateOn])]
+  .filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l));
+
 /** The language IDs that start the extension: `shellscript` and those of the host files. */
 export const ACTIVATION_LANGUAGES = ['shellscript', ...Object.values(HOST_FILES).flatMap((f) => [...f.languages, ...f.activateOn])];
 

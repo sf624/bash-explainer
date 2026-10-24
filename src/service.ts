@@ -3,7 +3,7 @@ import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
 import { detectShell, Shell } from './dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, ShellDocument, Shells } from './document';
-import { HOST_LANGUAGES, HOST_PATTERNS, kindOfDocument, openDocument } from './document-setup';
+import { HOST_LANGUAGES, HOST_PATTERNS, OWN_SEMANTIC_LANGUAGES, kindOfDocument, openDocument } from './document-setup';
 import { Extracted, extractShell, HostKind } from './hosts';
 import { Lang, resolveLang } from './i18n';
 import { explainOptions, forcedShell, Settings, settingsFromEditor } from './settings';
@@ -89,6 +89,15 @@ export class ExplainService implements vscode.Disposable {
     return [
       ...this.languages.map((language) => ({ language })),
       ...HOST_LANGUAGES.map((language) => ({ language })),
+      ...HOST_PATTERNS.map((pattern) => ({ pattern })),
+    ];
+  }
+
+  /** `selector()` without the languages whose own extensions provide semantic tokens (Python): for our semantic tokens. */
+  semanticSelector(): vscode.DocumentSelector {
+    return [
+      ...this.languages.filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l)).map((language) => ({ language })),
+      ...HOST_LANGUAGES.filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l)).map((language) => ({ language })),
       ...HOST_PATTERNS.map((pattern) => ({ pattern })),
     ];
   }

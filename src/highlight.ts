@@ -291,15 +291,29 @@ export function lineSpans(spans: readonly HighlightSpan[], text: string): LineSp
 /**
  * The spans of the shell code of a host file, moved back to the original text, one per line piece.
  * A part of text the host rewrote (the name inside `${CC}` for make's `$(CC)`) has no place there and is dropped.
+ * With `skipInserted`, nothing is left over the text the extraction inserted or rewrote (`$(wildcard *.tmp)` for
+ * `${make_wildcard}`): that is host syntax, and a span partly over it is clipped.
  */
-export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extracted): LineSpan[] {
-  return lineSpans(spans, extracted.text)
+export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extracted, skipInserted = false): LineSpan[] {
+  const pieces = lineSpans(spans, extracted.text).flatMap((s) => {
+    if (!skipInserted) return [s];
+    const out: LineSpan[] = [];
+    let from = s.from;
+    for (const [a, b] of [...extracted.inserted[s.line]].sort((x, y) => x[0] - y[0])) {
+      if (b <= from || a >= s.to) continue;
+      if (a > from) out.push({ ...s, from, to: a });
+      from = Math.max(from, b);
+    }
+    if (from < s.to) out.push({ ...s, from });
+    return out;
+  });
+  return pieces
     .map((s) => ({ ...s, from: extracted.maps[s.line][s.from], to: extracted.maps[s.line][s.to] }))
     .filter((s) => s.to > s.from);
 }
 
-/** The spans of a document, in its own lines: a shell script, or the shell code of a host file. */
-export function documentHighlight(doc: ShellDocument): LineSpan[] {
+/** The spans of a document, in its own lines: a shell script, or the shell code of a host file (see `hostedHighlight` for `skipInserted`). */
+export function documentHighlight(doc: ShellDocument, skipInserted = false): LineSpan[] {
   const spans = highlight(doc.tree);
-  return doc.extracted ? hostedHighlight(spans, doc.extracted) : lineSpans(spans, doc.tree.text);
+  return doc.extracted ? hostedHighlight(spans, doc.extracted, skipInserted) : lineSpans(spans, doc.tree.text);
 }
