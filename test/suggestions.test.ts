@@ -1,0 +1,147 @@
+// The inventory of the catalog's suggestions (docs/design/oracles.md, part B): every entry of src/messages.ts says
+// whether it tells the user to write something else, and how a test could check that rewrite in bash.
+//
+// - `mechanical`: the rewrite follows from the span the fact is about (`"$x"` for `$x`, `((++i))` for `((i++))`):
+//   a test can run the original and the rewrite in bash, over a set of states, and compare.
+// - `scenario`: the rewrite is checkable in bash, but only with a set-up of its own (a stub for `ssh` or `sudo`, a
+//   new shell, a file read by `source`, bats).
+// - `prose`: advice no run can check (use another name, write out the function's body, use `find`), or advice
+//   about another language (Python, a Dockerfile, a workflow).
+// - `none`: the entry suggests no rewrite.
+//
+// The type makes every entry of the catalog appear here, so a new one is classified when it is added. The test
+// checks the classification against the English text: an entry that reads as a suggestion is not `none`, and one
+// classified as a suggestion reads as one (or names the parameter that carries it).
+import * as assert from 'assert';
+import { type FactId, MESSAGES } from '../src/messages';
+
+type Kind = 'mechanical' | 'scenario' | 'prose' | 'none';
+/** A suggestion the text does not spell out: `via` names the parameter that carries it (given by the analyzer), or says it is implied. */
+type Param = { kind: Exclude<Kind, 'none'>; via: string };
+
+const SUGGESTIONS: Record<FactId, Kind | Param> = {
+  'exit-modulo': 'none',
+  'errexit-off-in-substitution': 'none',
+  'errexit-set-called-where-ignored': 'none',
+  'errexit-set-maybe-called-where-ignored': 'none',
+  'errexit-set-in-ignored-subshell': 'none',
+  'errexit-set-in-ignored-group': 'none',
+  'errexit-function-called-only-where-ignored': 'none',
+  'errexit-group-where-ignored': 'none',
+  // `local x=$(…)` → `local x; x=$(…)`: the failure of `$(…)` is seen, and stops `set -e`.
+  'declaration-masks-status': 'mechanical',
+  // `set -o pipefail`: needs a pipeline whose first stage fails.
+  'pipefail-missing': { kind: 'scenario', via: 'implied: `set -o pipefail`' },
+  // `a && b` as the last command → `if a; then b; fi`: the function's status is 0.
+  'function-last-test-returns-status': 'mechanical',
+  'function-last-test-stops-script': 'mechanical',
+  'bracket-missing-close': 'none',
+  // `[ -f $x]` → `[ -f $x ]`.
+  'bracket-close-glued': 'mechanical',
+  'test-malformed': 'none',
+  'function-defined-later': 'none',
+  'function-defined-in-subshell': 'none',
+  'function-defined-in-uncalled-function': 'none',
+  'function-defined-in-dead-branch': 'none',
+  'function-removed-by-unset': 'none',
+  'special-builtin-before-function': 'none',
+  'unset-function-and-variable': 'none',
+  'unset-readonly': 'none',
+  'local-outside-function': 'none',
+  'posix-special-function-name': 'prose',
+  'posix-special-function-name-maybe': 'prose',
+  // `((i++))` → `((++i))` or `i=$((i+1))`: same value of `i`, status 0.
+  'postfix-increment-status': 'mechanical',
+  'postfix-decrement-status': 'none',
+  'condition-always-false': 'none',
+  'condition-always-true': 'none',
+  'loop-never-runs': 'none',
+  'loop-never-ends': 'none',
+  'and-or-right-never-runs': 'none',
+  'case-runs-only': 'none',
+  'case-runs-none': 'none',
+  // `shopt -s expand_aliases` first, or a function: needs a stub for the aliased command.
+  'alias-not-expanded-in-script': 'scenario',
+  'alias-defined-same-unit': 'none',
+  'alias-defined-later': 'none',
+  // Move `shopt -s extglob` out of the block: the block parses.
+  'extglob-in-same-block': 'scenario',
+  'extglob-maybe-on': 'none',
+  'extglob-turned-off': 'none',
+  'extglob-not-found': 'none',
+  'extglob-maybe-on-trap': 'none',
+  'extglob-not-in-new-shell': 'scenario',
+  'globstar-maybe-on': 'none',
+  'globstar-not-found': 'none',
+  'globstar-unsupported': 'prose',
+  // The remote or new shell is stubbed by a fresh `env -i bash -c`.
+  'variable-not-in-remote-shell': 'scenario',
+  'variable-not-passed-by-wrapper': 'scenario',
+  'variable-not-exported': 'scenario',
+  'function-not-in-container': 'prose',
+  'builtin-or-function-as-program': { kind: 'scenario', via: 'fix' },
+  'ssh-local-expansion': 'scenario',
+  'function-not-on-remote': 'scenario',
+  'function-not-in-new-shell-blocked': 'prose',
+  'function-not-in-new-shell': 'prose',
+  'function-not-imported': 'scenario',
+  'function-not-in-new-shell-export': 'scenario',
+  'function-not-imported-sh': 'scenario',
+  // `sudo v=1 cmd $v` → `sudo v=1 sh -c '… "$v"'`, with `sudo` stubbed by `env`.
+  'wrapper-assignment-expanded-first': 'mechanical',
+  'pipeline-subshell-variable': { kind: 'scenario', via: 'fix' },
+  // `[ -e "$f" ] || continue`, or `shopt -s nullglob`: with and without matching files.
+  'unmatched-glob-runs-once': 'mechanical',
+  'stdin-not-read': 'prose',
+  // `v=1 cmd $v` → `v=1 sh -c '… "$v"'`.
+  'prefix-assignment-expanded-first': 'mechanical',
+  // `$x` → `"$x"` (only the expansions: `"$d"/*`, PR #271).
+  'unquoted-variable-as-path': 'mechanical',
+  'for-over-ls-output': 'scenario',
+  // `for a in $@` → `for a in "$@"`.
+  'for-over-unquoted-args': 'mechanical',
+  'unquoted-variable-in-test': 'mechanical',
+  // `… | sudo tee file`, with `sudo` stubbed.
+  'redirect-by-your-shell': 'scenario',
+  'bats-test': 'none',
+  // bats-core is run by test/bats-real.test.ts.
+  'bats-negation-ignored': 'scenario',
+  'bats-run-in-pipeline-stage': 'scenario',
+  'bats-run-in-pipeline': 'scenario',
+  // `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]`: same matches over a set of strings.
+  'regex-backslash-dropped': 'mechanical',
+  'distro-alias-in-script': { kind: 'scenario', via: 'instead' },
+  'distro-alias-interactive': 'scenario',
+  'dockerfile-pipefail-missing': 'prose',
+  'python-string-without-shell': 'prose',
+  'python-shell-injection': 'prose',
+  'actions-script-injection': 'prose',
+};
+
+/** Words of the English texts that tell the user what to write instead. */
+const SUGGESTS = /\b(Write|write it|write `|Use|use `|use a|Put|Run `|Pass|Quote it|Split it|Start the body|Keep the regex|Turn it on|single-quote|go through a shell|instead\b|give status 0|needs a space before it|would make it)/;
+
+/** Any parameter: a string `X` wherever it is read (also as `{ ja, en }`, a list or a call). */
+const ANY: unknown = new Proxy(function () { /* placeholder */ }, {
+  get: (_t, k) => (k === Symbol.toPrimitive ? () => 'X' : ANY),
+  apply: () => ANY,
+});
+
+describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
+  const english = (id: FactId): string => (MESSAGES[id].text as (p: unknown) => readonly [string, string])(ANY)[1];
+
+  it('classifies an entry as a suggestion exactly when its text suggests a rewrite', () => {
+    const wrong = (Object.keys(MESSAGES) as FactId[]).filter((id) => {
+      const k = SUGGESTIONS[id];
+      const reads = SUGGESTS.test(english(id));
+      return typeof k === 'string' ? reads !== (k !== 'none') : reads;
+    });
+    assert.deepStrictEqual(wrong, []);
+  });
+
+  it('counts them', () => {
+    const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
+    assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
+      { mechanical: 12, scenario: 21, prose: 11, none: 36 });
+  });
+});
