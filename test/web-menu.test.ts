@@ -147,28 +147,51 @@ describe('the web page: the menu and the settings sheet', function () {
         if (how === 'backdrop' && name === 'settings' && screen === 'phone') continue;
         const { ctx, page, isOpen } = await start(env);
         const home = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().x);
-        // Watch the sheet's position and the backdrop's opacity from inside the page, frame by frame.
+        // Watch the sheet from inside the page: its position frame by frame, and the transitions it runs (with the
+        // keyframes they go through), as they happen. The frames a loaded machine draws can be few and
+        // late (a CI run saw the sheet at its place, then already 324 px out), so what shows that it slides, rather
+        // than vanishes, is the transitions, not the frames caught in the middle.
         await page.evaluate(`(() => {
           const d = document.querySelector(${JSON.stringify(dialog)});
+          const t0 = performance.now();
+          const at = () => ({ t: Math.round(performance.now() - t0), x: d.getBoundingClientRect().x, open: d.open, closing: d.classList.contains('closing') });
           window.__frames = [];
+          window.__events = [];
           const tick = () => {
-            window.__frames.push({ x: d.getBoundingClientRect().x, open: d.open, back: getComputedStyle(d, '::backdrop').opacity });
+            window.__frames.push(at());
             if (d.open) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
+          new MutationObserver(() => window.__events.push({ type: d.classList.contains('closing') ? 'closing' : 'not closing', ...at() })).observe(d, { attributeFilter: ['class'] });
+          for (const type of ['transitionrun', 'transitionend', 'transitioncancel']) d.addEventListener(type, (e) => {
+            if (e.target !== d) return;
+            const a = type === 'transitionrun' && d.getAnimations({ subtree: true }).find((a) => a.transitionProperty === e.propertyName && (a.effect.pseudoElement ?? '') === e.pseudoElement);
+            window.__events.push({ type, property: e.pseudoElement + e.propertyName, ...at(), ...(a ? { keyframes: a.effect.getKeyframes().map((k) => k[e.propertyName]), ms: a.effect.getTiming().duration } : {}) });
+          });
         })()`);
+        const width = await page.locator(dialog).evaluate((d) => d.getBoundingClientRect().width);
         if (how === 'x') await page.locator(closer).click();
         else if (how === 'escape') await page.keyboard.press('Escape');
         else await page.mouse.click(screen === 'wide' ? (sign > 0 ? 100 : 1200) : sign > 0 ? 5 : 385, 400);
-        // Not closed right after: it is on its way.
-        assert.strictEqual(await isOpen(), true, `${name} ${how} ${screen}: still open right after`);
         await until(`${name} ${how} closed`, isOpen, (v) => !v);
-        const frames = (await page.evaluate('window.__frames')) as { x: number; open: boolean; back: string }[];
+        const frames = (await page.evaluate('window.__frames')) as { t: number; x: number; open: boolean }[];
+        const events = (await page.evaluate('window.__events')) as { type: string; property?: string; open: boolean; keyframes?: string[]; ms?: number }[];
+        const seen = `${screen}: events ${JSON.stringify(events)}, frames ${JSON.stringify(frames)}`;
+        // It slid out towards its own edge while still open (not closed at once), the backdrop faded with it, and
+        // only then did it close (the first event seen closed).
+        const close = events.findIndex((e) => !e.open);
+        const ran = (property: string, keyframes: string[]) => {
+          const i = events.findIndex((e) => e.type === 'transitionrun' && e.property === property);
+          assert.ok(i >= 0 && i < close && events[i].open, `${name} ${how}: a transition of ${property} while open, before the close; ${seen}`);
+          assert.deepStrictEqual(events[i].keyframes, keyframes, `${name} ${how}: ${property}; ${seen}`);
+          assert.ok(events[i].ms! > 0, `${name} ${how}: ${property} takes time; ${seen}`);
+        };
+        ran('transform', ['none', `translateX(${sign * 100}%)`]);
+        ran('::backdropopacity', ['1', '0']);
+        // The frames drawn meanwhile go towards that edge, never back, and never past where it leaves the screen.
         const xs = frames.filter((f) => f.open).map((f) => f.x);
-        // It moved towards its own edge in several steps, never back, and the backdrop faded.
-        assert.ok(xs.some((v) => sign * (v - home) > 20 && sign * (v - home) < 300), `${name} ${how}: intermediate ${xs}`);
-        for (let i = 1; i < xs.length; i++) assert.ok(sign * (xs[i] - xs[i - 1]) >= -0.5, `${name} ${how}: monotonic ${xs}`);
-        assert.ok(frames.some((f) => f.open && Number(f.back) < 1 && Number(f.back) > 0), `${name} ${how}: backdrop fades ${JSON.stringify(frames.map((f) => f.back))}`);
+        for (let i = 1; i < xs.length; i++) assert.ok(sign * (xs[i] - xs[i - 1]) >= -0.5, `${name} ${how}: monotonic; ${seen}`);
+        assert.ok(xs.every((v) => sign * (v - home) >= -0.5 && sign * (v - home) <= width + 0.5), `${name} ${how}: between its place and the edge (${home}, width ${width}); ${seen}`);
         // Afterwards: nothing left over, and the focus is back on the opener.
         assert.strictEqual(await page.locator(dialog).evaluate((d) => d.classList.contains('closing') || (d as unknown as { style: { transform: string } }).style.transform !== ''), false);
         assert.strictEqual(await page.evaluate(`document.activeElement === document.querySelector(${JSON.stringify(opener)})`), true, `${name} ${how}: focus`);
