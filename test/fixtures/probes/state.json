@@ -4073,5 +4073,107 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "export E=1 N=1; export -n N; f() { local E=2 N=3; @PROBE:in@; }; f",
+    "note": "a local copy of an exported variable is exported too (and of one no longer exported, not)",
+    "facts": {
+      "in": {
+        "variables": {
+          "E": {
+            "attrs": "x",
+            "value": "\"2\""
+          },
+          "N": {
+            "attrs": "-",
+            "value": "\"3\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "E": {
+            "attrs": "x",
+            "value": "\"1\""
+          },
+          "N": {
+            "attrs": "-",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "readonly R=1; g() { local R=2 2>/dev/null; @PROBE:in@; }; g",
+    "note": "local refuses a readonly global variable, which stays as it is",
+    "facts": {
+      "in": {
+        "variables": {
+          "R": {
+            "attrs": "r",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "R": {
+            "attrs": "r",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "h() { local -r Q=1; local -x M=1; local -i I=1; k; }; k() { local Q=2 M=3 I=4+1; @PROBE:in@; }; h",
+    "note": "a caller's readonly local may be hidden; the local keeps only the export attribute of the one it hides",
+    "facts": {
+      "in": {
+        "variables": {
+          "I": {
+            "attrs": "-",
+            "value": "\"4+1\""
+          },
+          "M": {
+            "attrs": "x",
+            "value": "\"3\""
+          },
+          "Q": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        },
+        "functions": {
+          "h": "f",
+          "k": "f"
+        }
+      },
+      "end": {
+        "functions": {
+          "h": "f",
+          "k": "f"
+        }
+      },
+      "status": 0
+    }
   }
 ]
