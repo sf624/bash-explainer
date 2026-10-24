@@ -1,7 +1,7 @@
-// The steps of the panel's tree view on the web page (media/panel.js, STEPS), in headless Chromium: a button per
-// step, the keys, what a polite live region says, Play, the stepper and its menu where the buttons do not fit, the
+// The steps of the panel's Reading view on the web page (media/panel.js, STEPS), in headless Chromium: a button per
+// step, the keys, what a polite live region says, the stepper and its menu where the buttons do not fit, the
 // controls staying under the line; and the motion of folding by hand (both views) and of the steps, which the
-// setting `panel.animations` and reduced motion turn off.
+// setting `panel.animations` and reduced motion turn off. test/web-anchor.test.ts checks that nothing jumps.
 import * as assert from 'assert';
 import type { Browser, BrowserContext, Frame, Page } from 'playwright-core';
 import { chooseView, openSite, until } from './support/site';
@@ -113,34 +113,6 @@ describe('the web page: the steps of the tree view, and motion', function () {
     await panel.locator('#layers button.step[data-step="5"]').click();
     await page.keyboard.press('ArrowRight');
     assert.strictEqual(await current(panel), '7');
-    await ctx.close();
-  });
-
-  it('plays the steps from the line alone, pauses, and ends with every layer', async () => {
-    const ctx = await context({ viewport: { width: 1700, height: 800 } }, false);
-    const page = await ctx.newPage();
-    const panel = await open(page, 'tree', 'echo "$(date)" | cat');
-    const play = panel.locator('#tp-play');
-    assert.strictEqual(await play.getAttribute('aria-pressed'), 'false');
-    await play.click();
-    assert.strictEqual(await play.getAttribute('aria-pressed'), 'true');
-    assert.strictEqual(await current(panel), '1', 'from the line alone');
-    await until('the next step', () => current(panel), (s) => s !== '1', 3000);
-    await play.click();
-    assert.strictEqual(await play.getAttribute('aria-pressed'), 'false');
-    assert.strictEqual(await live(panel), 'Paused');
-    const paused = await current(panel);
-    await page.waitForTimeout(1500);
-    assert.strictEqual(await current(panel), paused, 'it stays');
-    await play.click();
-    await until('the end', () => play.getAttribute('aria-pressed'), (v) => v === 'false', 15000);
-    assert.strictEqual(await current(panel), '8');
-    // A step chosen by hand stops the play.
-    await panel.locator('#tp-replay').click();
-    assert.strictEqual(await play.getAttribute('aria-pressed'), 'true');
-    await panel.locator('#layers button.step[data-step="4"]').click();
-    assert.strictEqual(await play.getAttribute('aria-pressed'), 'false');
-    assert.strictEqual(await current(panel), '4');
     await ctx.close();
   });
 
@@ -305,26 +277,4 @@ describe('the web page: the steps of the tree view, and motion', function () {
       await ctx.close();
     });
   }
-
-  it('compares the other layouts of the steps behind a switch: a slider, and the readers with a depth stepper', async () => {
-    const ctx = await context({ viewport: { width: 1700, height: 800 } }, false);
-    const page = await ctx.newPage();
-    const panel = await open(page);
-    await panel.evaluate(`document.documentElement.dataset.stepLayout = 'slider'`);
-    const range = panel.locator('#step-range');
-    await until('the slider', () => range.count(), (n) => n === 1);
-    assert.strictEqual(await range.getAttribute('aria-valuetext'), 'Step 8 of 8: languages');
-    await range.focus();
-    await page.keyboard.press('Home');
-    assert.strictEqual(await range.inputValue(), '1');
-    assert.deepStrictEqual(await drawn(panel), ['bash:bash reads the line']);
-    await panel.evaluate(`document.documentElement.dataset.stepLayout = 'layers'`);
-    await until('the readers', () => panel.locator('#layers button.layer').count(), (n) => n === 4);
-    await panel.locator('#depth-up').click();
-    assert.strictEqual(await panel.locator('#depth-at').textContent(), '2/5');
-    await panel.locator('#layers button.layer[data-level="3"]').click();
-    assert.strictEqual(await panel.locator('#layers button.layer[data-level="3"]').getAttribute('aria-pressed'), 'true');
-    assert.strictEqual(await panel.locator('#depth-at').textContent(), '5/5');
-    await ctx.close();
-  });
 });

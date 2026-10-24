@@ -202,7 +202,7 @@ The panel works like regex101:
 | `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
 | `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
-| `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when the tree is played (off: they appear at once; reduced motion turns it off too) |
+| `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when a step of the Reading view changes (off: they appear at once; reduced motion turns it off too) |
 | `bashExplainer.highlight.enabled` | `false` | Colour shell code from the syntax tree the explanations use (semantic tokens over the editor's colours); the web page always does |
 | `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
 | `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |

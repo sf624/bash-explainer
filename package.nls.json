@@ -19,7 +19,7 @@
   "config.inline.enabled": "Show a faint one-line summary at the end of the cursor line.",
   "config.highlight.enabled": "Colour shell code from the syntax tree the explanations are made from (semantic tokens), over the editor's own colours: a heredoc ends where bash ends it, and commands, builtins, your functions, options, globs and arithmetic each get a colour. Also in the shell code of Dockerfiles, CI YAML, Makefiles and Markdown. Needs a theme with semantic highlighting (most have it).",
   "config.panel.autoOpen": "Open the explanation panel automatically when a bash script is opened. The panel can always be opened with **Bash Explainer: Open Bash Explanation Panel** or the link in the hover.",
-  "config.panel.animations": "Animate the explanation panel: rows grow from their parent when they are unfolded, and shrink into it when they are folded, in the list and the tree views and while the tree is played. The panel shows no motion either when the system or VS Code asks for reduced motion (`workbench.reduceMotion`).",
+  "config.panel.animations": "Animate the explanation panel: rows grow from their parent when they are unfolded, and shrink into it when they are folded, in the Meaning and Reading views, and when a step of the Reading view changes. The panel shows no motion either when the system or VS Code asks for reduced motion (`workbench.reduceMotion`).",
   "config.shell": "The shell scripts are written for. Constructs that shell does not support are pointed out (bash: those newer than `#bashExplainer.bashVersion#`).",
   "config.shell.auto": "Detect from the shebang (`#!/bin/sh`…), a `# shellcheck shell=` directive or the file name; bash when unknown",
   "config.shell.sh": "POSIX sh (points out what fails in dash and busybox ash)",
