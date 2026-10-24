@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILTINS, documentHighlight, highlight, HighlightKind, hostedHighlight, lineSpans } from '../src/highlight';
+import { documentHighlight, highlight, HighlightKind, hostedHighlight, lineSpans } from '../src/highlight';
 import { extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -49,7 +49,7 @@ describe('highlight', () => {
     assert.deepEqual(spans('f() { local a=1 b; }\nfunction g { :; }\nf; g; cd; ls; $cmd x; "ls" y'), [
       'functionName:f', 'operator:()', 'keyword:{', 'builtin:local', 'assignment:a', 'assignment:b', 'operator:;', 'keyword:}',
       'keyword:function', 'functionName:g', 'keyword:{', 'builtin::', 'operator:;', 'keyword:}',
-      'function:f', 'operator:;', 'function:g', 'operator:;', 'builtin:cd', 'operator:;', 'command:ls', 'operator:;', 'variable:$cmd', 'operator:;', 'string:"ls"',
+      'function:f', 'operator:;', 'function:g', 'operator:;', 'builtin:cd', 'operator:;', 'command:ls', 'operator:;', 'variable:$cmd', 'operator:;', 'command:"ls"',
     ]);
     // A function named like a builtin is called instead of it.
     assert.deepEqual(kindsOf('cd() { :; }; cd /', 'cd'), ['functionName', 'function']);
@@ -65,14 +65,14 @@ describe('highlight', () => {
   it('colours the options of unset as its spec reads them: up to the first name (checked with bash)', () => {
     // bash reads `-v` after a name as a name: `unset x -v y` unsets `x`, `-v` (no such variable) and `y`.
     assert.strictEqual(execFileSync('bash', ['-c', 'x=1 y=2; unset x -v y; echo "$?${x-u}${y-u}"']).toString(), '0uu\n');
-    assert.deepEqual(spans('unset -v x -v y'), ['builtin:unset', 'option:-v', 'assignment:x', 'assignment:y']);
+    assert.deepEqual(spans('unset -v x -v y'), ['builtin:unset', 'option:-v', 'assignment:x', 'argument:-v', 'assignment:y']);
   });
 
   it('colours the options and names of a declaration as its spec reads them, by the spelling of the command (checked with bash)', () => {
     // bash reads `-i` after a name as a name: not a valid identifier.
     assert.match(spawnSync('bash', ['-c', 'declare x -i'], { encoding: 'utf8' }).stderr, /`-i': not a valid identifier/);
     assert.deepEqual(spans('declare x -i; x=1 local -r a[1] b=2'), [
-      'builtin:declare', 'assignment:x', 'operator:;', 'assignment:x', 'builtin:local', 'option:-r', 'assignment:a', 'assignment:b',
+      'builtin:declare', 'assignment:x', 'argument:-i', 'operator:;', 'assignment:x', 'builtin:local', 'option:-r', 'assignment:a', 'assignment:b',
     ]);
   });
 
@@ -112,7 +112,7 @@ describe('highlight', () => {
 
   it('colours globs where the shell expands them, and options until --', () => {
     assert.deepEqual(spans('ls *.txt [ab]?.c x\\*y @(a|b) !(c) a[ -- -x; x=*.c; [[ $a == a* || $b = *.sh ]]; case $1 in +(x)) ;; esac'), [
-      'command:ls', 'glob:*', 'glob:[ab]?', 'glob:@(', 'glob:|', 'glob:)', 'glob:!(', 'glob:)', 'option:--', 'operator:;', 'assignment:x', 'operator:;',
+      'command:ls', 'glob:*', 'glob:[ab]?', 'glob:@(', 'glob:|', 'glob:)', 'glob:!(', 'glob:)', 'option:--', 'argument:-x', 'operator:;', 'assignment:x', 'operator:;',
       'keyword:[[', 'variable:$a', 'operator:==', 'glob:*', 'operator:||', 'variable:$b', 'operator:=', 'glob:*', 'keyword:]]', 'operator:;',
       'keyword:case', 'variable:$1', 'keyword:in', 'glob:+(', 'glob:)', 'operator:)', 'operator:;;', 'keyword:esac',
     ]);
@@ -184,7 +184,10 @@ describe('highlight', () => {
     } catch {
       return this.skip();
     }
-    assert.deepEqual(names.filter((n) => !BUILTINS.has(n)), []);
+    // Each name alone as a command: what it runs comes from the names model (src/semantics/names.ts).
+    const text = names.join('\n');
+    const kinds = new Map(highlight(parser.parse(text)).map((s) => [text.slice(s.from, s.to), s.kind]));
+    assert.deepEqual(names.filter((n) => kinds.get(n) !== 'builtin'), []);
   });
 });
 
@@ -197,7 +200,7 @@ describe('hostedHighlight', () => {
 
   it('moves the spans of a Dockerfile back to its lines and columns', () => {
     assert.deepEqual(hosted('dockerfile', 'FROM x\nRUN echo $X \\\n && ls -l\nENTRYPOINT ["sh", "-c", "exec app ${P:-1}"]'), [
-      '1:builtin:echo', '1:variable:$X', '2:operator:&&', '2:command:ls', '2:option:-l', '3:builtin:exec', '3:variable:${P:-1}',
+      '1:builtin:echo', '1:variable:$X', '2:operator:&&', '2:command:ls', '2:option:-l', '3:builtin:exec', '3:command:app', '3:variable:${P:-1}',
     ]);
   });
 

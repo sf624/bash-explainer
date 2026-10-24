@@ -177,7 +177,7 @@ export function startLanguageServer(io: Io): void {
   /** The semantic tokens of a document (none while highlight.enabled is off); with `lines`, of those lines only. */
   function tokens(doc: Doc | undefined, lines?: { from: number; to: number }) {
     const parsed = doc && settings['highlight.enabled'] ? parse(doc) : undefined;
-    return { data: parsed ? semanticTokens(parsed, lines) : [] };
+    return { data: parsed ? semanticTokens(parsed, { shells: shells(parsed, doc!.uri), ...(lines ? { lines } : {}) }) : [] };
   }
 
   const log = (message: string) => send({ method: 'window/logMessage', params: { type: 2, message: `Bash Explainer: ${message}` } });

@@ -375,6 +375,8 @@ function changeSettings(next: Settings): void {
   } else {
     updatePanel();
   }
+  // (The shell setting changes what a command name runs, and its colour.)
+  editor.shade();
   editor.recheck();
 }
 

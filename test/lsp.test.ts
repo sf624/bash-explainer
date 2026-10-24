@@ -176,9 +176,12 @@ describe('the Language Server', function () {
     assert.match(r.result.contents.value, /^ {2}- `curl` — Transfer data/m);
   });
 
-  it('gives semantic tokens once highlight.enabled is on, for scripts and the shell code of host files', async () => {
+  it('gives semantic tokens while highlight.enabled is on (by default), for scripts and the shell code of host files', async () => {
     const init = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
-    assert.deepStrictEqual(init.result, { data: [] });
+    assert.ok(init.result.data.length > 0);
+    client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { highlight: { enabled: false } } } });
+    const off = await client.request('textDocument/semanticTokens/full', { textDocument: { uri: script } });
+    assert.deepStrictEqual(off.result, { data: [] });
     client.notify('workspace/didChangeConfiguration', { settings: { bashExplainer: { highlight: { enabled: true } } } });
     // [line, character, length, type, modifiers], absolute.
     const decode = (data: number[], legend: string[]) => {

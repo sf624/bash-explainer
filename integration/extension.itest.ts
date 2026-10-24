@@ -135,29 +135,38 @@ describe('Bash Explainer in VS Code', function () {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
-  it('colours shell code with semantic tokens when highlight.enabled is on, and stops when it is off', async () => {
+  it('colours shell code with semantic tokens by default, and stops where highlight.enabled is off, also for one language', async () => {
     const tokens = (uri: vscode.Uri) => vscode.commands.executeCommand<vscode.SemanticTokens | undefined>('vscode.provideDocumentSemanticTokens', uri);
     const { document: script } = await open(fixture('sample.sh'));
     const docker = await vscode.workspace.openTextDocument(fixture('hosts', 'Dockerfile'));
     const make = await vscode.workspace.openTextDocument(fixture('hosts', 'Makefile'));
-    assert.strictEqual((await tokens(script.uri))?.data.length ?? 0, 0);
-    await config().update('highlight.enabled', true, vscode.ConfigurationTarget.Global);
+    const legend = await until('the legend', () => vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>('vscode.provideDocumentSemanticTokensLegend', script.uri), Boolean);
+    assert.ok(legend!.tokenTypes.includes('keyword'));
+    const data = (await until('tokens', () => tokens(script.uri), (t) => !!t && t.data.length > 0))!.data;
+    // The first token is the shebang, a comment.
+    assert.deepStrictEqual([...data.slice(0, 2)], [0, 0]);
+    assert.strictEqual(legend!.tokenTypes[data[3]], 'comment');
+    // A Makefile has tokens on its recipe lines only.
+    const mdata = (await until('Makefile tokens', () => tokens(make.uri), (t) => !!t && t.data.length > 0))!.data;
+    assert.match(make.lineAt(mdata[0]).text, /^\t/);
+    // A Dockerfile is left to its own language server: no tokens of ours.
+    assert.strictEqual((await tokens(docker.uri))?.data.length ?? 0, 0);
+    // Off for Makefiles only, as `"[makefile]": { "bashExplainer.highlight.enabled": false }` says.
+    const makeConfig = vscode.workspace.getConfiguration('bashExplainer', { languageId: 'makefile' });
+    await makeConfig.update('highlight.enabled', false, vscode.ConfigurationTarget.Global, true);
     try {
-      const legend = await until('the legend', () => vscode.commands.executeCommand<vscode.SemanticTokensLegend | undefined>('vscode.provideDocumentSemanticTokensLegend', script.uri), Boolean);
-      assert.ok(legend!.tokenTypes.includes('keyword'));
-      const data = (await until('tokens', () => tokens(script.uri), (t) => !!t && t.data.length > 0))!.data;
-      // The first token is the shebang, a comment.
-      assert.deepStrictEqual([...data.slice(0, 2)], [0, 0]);
-      assert.strictEqual(legend!.tokenTypes[data[3]], 'comment');
-      // A Makefile has tokens on its recipe lines only.
-      const mdata = (await until('Makefile tokens', () => tokens(make.uri), (t) => !!t && t.data.length > 0))!.data;
-      assert.match(make.lineAt(mdata[0]).text, /^\t/);
-      // A Dockerfile is left to its own language server: no tokens of ours.
-      assert.strictEqual((await tokens(docker.uri))?.data.length ?? 0, 0);
+      await until('no Makefile tokens', () => tokens(make.uri), (t) => (t?.data.length ?? 0) === 0);
+      assert.ok(((await tokens(script.uri))?.data.length ?? 0) > 0);
+    } finally {
+      await makeConfig.update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global, true);
+    }
+    // Off everywhere.
+    await config().update('highlight.enabled', false, vscode.ConfigurationTarget.Global);
+    try {
+      await until('no tokens', () => tokens(script.uri), (t) => (t?.data.length ?? 0) === 0);
     } finally {
       await config().update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global);
     }
-    await until('no tokens', () => tokens(script.uri), (t) => (t?.data.length ?? 0) === 0);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 

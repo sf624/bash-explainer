@@ -368,7 +368,8 @@
         },
         "bashExplainer.highlight.enabled": {
           "type": "boolean",
-          "default": false,
+          "default": true,
+          "scope": "language-overridable",
           "markdownDescription": "%config.highlight.enabled%"
         },
         "bashExplainer.languages": {
@@ -658,6 +659,12 @@
         }
       }
     },
+    "semanticTokenModifiers": [
+      {
+        "id": "exported",
+        "description": "%semanticTokenModifiers.exported%"
+      }
+    ],
     "semanticTokenScopes": [
       {
         "language": "shellscript",
@@ -697,6 +704,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -738,6 +751,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -779,6 +798,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -820,6 +845,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -861,6 +892,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -902,6 +939,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -943,6 +986,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -984,6 +1033,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       },
@@ -1025,6 +1080,12 @@
           ],
           "regexp": [
             "string.regexp.unquoted.shell"
+          ],
+          "macro": [
+            "entity.name.function.call.shell"
+          ],
+          "variable.readonly": [
+            "variable.other.constant.shell"
           ]
         }
       }

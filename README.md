@@ -209,7 +209,7 @@ The panel works like regex101:
 | `bashExplainer.panel.autoOpen` | `false` | Open the panel when a shell script is opened |
 | `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when a step of the Reading view changes (off: they appear at once; reduced motion turns it off too) |
 | `bashExplainer.panel.colors` | `"classic"` | Colours of the parts of a line in the panel: `classic` (its own six), `theme` (the editor theme's, where readable), `themeLike` (the theme's, with new colours where the theme gives two kinds of part one colour). VS Code only |
-| `bashExplainer.highlight.enabled` | `false` | Colour shell code from the syntax tree the explanations use (semantic tokens over the editor's colours); the web page always does |
+| `bashExplainer.highlight.enabled` | `true` | Colour shell code as the explanations read it (semantic tokens over the editor's colours): what each command name runs, options, readonly variables. Can be set per language (below); the web page always does it |
 | `bashExplainer.hints.names` | `true` | A hint after a command name that does not run what it suggests |
 | `bashExplainer.inline.enabled`, `bashExplainer.inline.maxLength` | | Removed: no longer have an effect |
 | `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
@@ -232,6 +232,17 @@ The panel works like regex101:
 | `bashExplainer.languages` | `["shellscript"]` | Language IDs explained as shell scripts |
 | **Dictionary** | | |
 | `bashExplainer.customCommands` | `{}` | Describe commands the dictionary does not know (see below) |
+
+#### Colours per kind of file
+
+The colours are on for shell scripts and the shell code of other files (not Python files and Dockerfiles, which their own language servers colour). To turn them off for one kind of file, set the setting for its language in `settings.json`:
+
+```json
+"[makefile]": { "bashExplainer.highlight.enabled": false },
+"[yaml]": { "bashExplainer.highlight.enabled": false }
+```
+
+The languages are those VS Code shows in the status bar: `shellscript`, `bats`, `makefile`, `yaml` (GitLab CI, and GitHub workflows without the GitHub Actions extension), `github-actions-workflow`, `json` (package.json), `markdown`, `groovy` and `jenkinsfile`. `"bashExplainer.highlight.enabled": false` alone turns them off everywhere.
 
 #### Your own commands
 

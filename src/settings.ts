@@ -142,7 +142,7 @@ export const SETTINGS: readonly SettingSpec[] = [
     elsewhere: 'The web page keeps its own palettes (it has no editor theme to follow); the others have no panel.',
   },
   {
-    key: 'highlight.enabled', type: 'boolean', default: false, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
+    key: 'highlight.enabled', type: 'boolean', default: true, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],
     elsewhere: 'The web page always colours the script this way; the command-line tool shows no script.',
   },
   {

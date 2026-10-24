@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { HighlightKind } from '../src/highlight';
-import { encodeTokens, LEGEND, semanticTokens, TOKEN_MODIFIERS, TOKEN_OF, TOKEN_TYPES } from '../src/semanticTokens';
+import { decodeTokens, encodeTokens, LEGEND, semanticTokens, TOKEN_MODIFIERS, TOKEN_OF, TOKEN_TYPES } from '../src/semanticTokens';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const parser = createUnbashParser();
@@ -15,9 +15,13 @@ describe('semantic tokens', () => {
     const standardModifiers = ['declaration', 'definition', 'readonly', 'static', 'deprecated', 'abstract', 'async', 'modification', 'documentation', 'defaultLibrary'];
     assert.deepEqual(LEGEND, { tokenTypes: [...TOKEN_TYPES], tokenModifiers: [...TOKEN_MODIFIERS] });
     for (const t of LEGEND.tokenTypes) assert.ok(standardTypes.includes(t), t);
-    for (const m of LEGEND.tokenModifiers) assert.ok(standardModifiers.includes(m), m);
-    // Every type and modifier is used by some kind.
-    const used = Object.values(TOKEN_OF).flatMap((t) => t ?? []);
+    // Our own modifiers are declared in package.json, with a description.
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const own: { id: string; description: string }[] = pkg.contributes.semanticTokenModifiers;
+    assert.deepEqual(own.map((m) => m.id), ['exported']);
+    for (const m of LEGEND.tokenModifiers) assert.ok(standardModifiers.includes(m) || own.some((o) => o.id === m), m);
+    // Every type and modifier is used by some kind, or by what the state says of a variable.
+    const used = [...Object.values(TOKEN_OF).flatMap((t) => t ?? []), 'readonly', 'exported'];
     for (const x of [...TOKEN_TYPES, ...TOKEN_MODIFIERS]) assert.ok(used.includes(x), x);
   });
 
@@ -40,9 +44,24 @@ describe('semantic tokens', () => {
     const doc = { lines: text.split('\n'), tree: parser.parse(text) };
     const all = semanticTokens(doc);
     assert.deepEqual(all, [0, 0, 4, 2, 4, 1, 0, 3, 0, 0, 1, 0, 2, 2, 0, 0, 3, 2, 3, 0]);
-    assert.deepEqual(semanticTokens(doc, { from: 1, to: 1 }), [1, 0, 3, 0, 0]);
+    assert.deepEqual(semanticTokens(doc, { lines: { from: 1, to: 1 } }), [1, 0, 3, 0, 0]);
     // The sample, whole: as many tokens as spans with a token type.
     const sample = fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8');
     assert.strictEqual(semanticTokens({ lines: sample.split('\n'), tree: parser.parse(sample) }).length % 5, 0);
+  });
+
+  it('gives a range request the tokens of the full one on those lines, read there only', () => {
+    const sample = fs.readFileSync(path.join(__dirname, 'fixtures/sample.sh'), 'utf8');
+    const doc = { lines: sample.split('\n'), tree: parser.parse(sample) };
+    const all = decodeTokens(semanticTokens(doc));
+    for (const [from, to] of [[0, 0], [10, 40], [100, 103], [doc.lines.length - 5, doc.lines.length + 10]]) {
+      assert.deepStrictEqual(decodeTokens(semanticTokens(doc, { lines: { from, to } })), all.filter((t) => t.line >= from && t.line <= to), `${from}-${to}`);
+    }
+  });
+
+  it('adds the modifiers the state gives a variable, and colours an alias as a macro', () => {
+    const text = 'shopt -s expand_aliases\nalias ll=ls\nreadonly R=1\nexport E=2\nll $R $E';
+    const got = decodeTokens(semanticTokens({ lines: text.split('\n'), tree: parser.parse(text) })).filter((t) => t.line === 4);
+    assert.deepStrictEqual(got.map((t) => `${t.type}:${t.modifiers.join('.')}`), ['macro:', 'variable:readonly', 'variable:exported']);
   });
 });

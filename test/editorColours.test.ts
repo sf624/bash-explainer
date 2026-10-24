@@ -25,7 +25,8 @@ describe('the colours of the editor', () => {
     }
     for (const selector of Object.keys(scopes)) {
       const [type, ...mods] = selector.split('.');
-      assert.ok(Object.values(TOKEN_OF).some((t) => t && t[0] === type && mods.every((m) => t.includes(m as never))), `${selector} is not used`);
+      // (`readonly` comes from the state of a variable, on top of its kind.)
+      assert.ok(Object.values(TOKEN_OF).some((t) => t && t[0] === type && mods.every((m) => t.includes(m as never) || (type === 'variable' && m === 'readonly'))), `${selector} is not used`);
     }
   });
 

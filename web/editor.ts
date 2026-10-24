@@ -160,7 +160,7 @@ export class Editor {
   /** Wrapping of long lines (the `editor.wrap` setting). */
   private readonly wrapMode = new Compartment();
   private readonly inputMode = new Compartment();
-  private readonly shadings = new WeakMap<ShellDocument, Shading[]>();
+  private readonly shadings = new WeakMap<ShellDocument, { shell: string; spans: Shading[] }>();
   private shadingTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly host: EditorHost, init: EditorInit) {
@@ -217,14 +217,17 @@ export class Editor {
   /** The spans of the whole script, worked out once per parse. */
   private spansOf(): Shading[] {
     const doc = this.host.document()!;
+    // (What a command name runs depends on the shell too.)
+    const shells = this.host.shells();
+    const shell = `${shells.forced ?? ''}/${shells.detected ?? ''}`;
     const known = this.shadings.get(doc);
-    if (known) return known;
+    if (known?.shell === shell) return known.spans;
     const lines = this.view.state.doc;
-    const spans = documentHighlight(doc).map((s) => {
+    const spans = documentHighlight(doc, { shells }).map((s) => {
       const start = lines.line(s.line + 1).from;
       return { from: start + s.from, to: start + s.to, kind: s.kind };
     });
-    this.shadings.set(doc, spans);
+    this.shadings.set(doc, { shell, spans });
     return spans;
   }
 
