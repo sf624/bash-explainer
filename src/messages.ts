@@ -52,6 +52,9 @@ const SYSTEM_DEPENDENT: Text = { ja: '環境依存: ', en: 'System-dependent: ' 
 /** A text in both languages, for a parameter that is itself words (where `set -e` is ignored…). */
 type Words = Text;
 
+/** (`errexit`: `set -e` is on where the statement runs and not ignored: the script stops at the first 0, so a warning.) */
+const postfixLevel = ({ errexit }: { errexit?: boolean }): NoteLevel => (errexit ? 'warning' : 'info');
+
 export const MESSAGES = {
   // ---------------------------------------------------------------- exit status (3.7.5)
   'exit-modulo': note<{ value: string; status: number }>(['3.7.5'], ({ value, status }) => [
@@ -140,12 +143,12 @@ export const MESSAGES = {
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
-  'postfix-increment-status': caveat<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
+  'postfix-increment-status': pitfall<{ v: string; errexit?: boolean }>(['6.5', '4.3.1'], ({ v }) => [
     `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
-    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`]),
-  'postfix-decrement-status': caveat<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
+    `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`], undefined, postfixLevel),
+  'postfix-decrement-status': pitfall<{ v: string; errexit?: boolean }>(['6.5', '4.3.1'], ({ v }) => [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
-    `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`]),
+    `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`], undefined, postfixLevel),
 
   // ---------------------------------------------------------------- conditions decided by the values above (3.2.4, 3.2.5; src/statusfacts.ts)
   // (`which`: `if` or `elif` when both are on the line, else empty: "this condition".)

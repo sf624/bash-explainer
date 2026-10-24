@@ -15,7 +15,7 @@ A note has one of three levels (`NoteLevel` in [src/messages.ts](../../src/messa
 - A dialect note on a construct that works differently in the target shell is `info`, with the word "Portability" / 「移植性」 (`ⓘ Portability: dash's echo interprets \t…`).
 - A dialect note on a construct the target shell lacks (`[[ ]]` in POSIX sh, a bash 5.3 construct with bash 5.2) is a `warning` with no word: its first words already say that it fails, and in which shell.
 - A pitfall with a heading of its own shows the heading in place of the word: "Shell injection risk:", "Script injection risk:", "System-dependent:". A few name their problem in their first words and have none (`regex-backslash-dropped`, the Dockerfile and Python notes).
-- A level that depends on the case is a function of the params: `unquoted-variable-as-path` (the command the word is given to) and `nounset-unbound` (how far the failure reaches).
+- A level that depends on the case is a function of the params: `unquoted-variable-as-path` (the command the word is given to) and `nounset-unbound` (how far the failure reaches) and `postfix-increment-status` / `postfix-decrement-status` (whether `set -e` stops the shell there: the `errexit` param, from the status model).
 
 ## Where the level comes from
 
@@ -80,6 +80,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `python-string-without-shell` | Python runs the whole string as one program name: FileNotFoundError. |
 | `python-shell-injection`, `actions-script-injection` | A value can run any command: damage that cannot be undone. |
 | `unquoted-variable-as-path` given to `rm`, `mv` or `cp` | A split or globbed path deletes or overwrites other files: it cannot be undone. |
+| `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is on there and the statement is not ignored (`statusModel(state).errexit(n).active` is `on`) **(changed: was a caveat)** | `set -e` stops the script (or the subshell) at the first run of a counter that starts at 0: it breaks as written. |
 | `nounset-unbound`, when a shell exits | Under `set -u`, the script (or the subshell) stops there, every time; also when only the command fails and `set -e` then stops the script. |
 | Style: `bracket-no-space`, `assignment-with-spaces`, `brace-no-space`, `brace-close-no-separator`, `redirect-in-bracket`, `bracket-close-in-word`, `and-or-in-bracket` | The line does not do what it says, every time (`[ a > b ]` also writes a file `b`). |
 | Style: `rm-empty-variable-root` | With an empty variable, `rm -r` deletes from the root. |
@@ -93,7 +94,7 @@ Every pitfall and failure note of the catalog, every style check and every diale
 | `pipefail-missing`, `dockerfile-pipefail-missing` | A failure before the last command of a pipeline goes unnoticed. |
 | `function-last-test-returns-status` | Only the script's exit status is wrong, and only when the test fails. |
 | `posix-special-function-name-maybe` | Only on the paths that turn POSIX mode on. |
-| `postfix-increment-status`, `postfix-decrement-status` | Only when the value is 0, and only the status (a stop under `set -e`). |
+| `postfix-increment-status`, `postfix-decrement-status`, when `set -e` is not surely on there | Only when the value is 0, and only the status. |
 | `extglob-maybe-on`, `extglob-maybe-on-trap` | A syntax error only on some paths, or if the signal comes early. |
 | `extglob-not-found`, `globstar-maybe-on`, `globstar-not-found` | Fine when the option is turned on elsewhere (a file read with `source`); `**` then matches fewer files, not more. |
 | `ssh-local-expansion` | Often meant: the remote command gets the local values. |

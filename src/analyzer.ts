@@ -1178,8 +1178,8 @@ export class Analyzer {
     if (!m) return;
     const [, v, op] = m;
     // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
-    if (this.cx.status.errexit(n).ignored?.sure) return;
-    this.cx.extraNotes.push(...this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v })));
+    const { ignored, active } = this.cx.status.errexit(n); if (ignored?.sure) return;
+    this.cx.extraNotes.push(...this.say(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on' })));
   }
 
   /** `exit 256` and `return 300`: the status is taken modulo 256. */
