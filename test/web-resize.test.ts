@@ -215,7 +215,16 @@ describe('the web page: resizing the panes and the Problems list', function () {
     // it (a fixed wait of 300 ms was not enough on a slow runner). So tap, wait for the list to go, and tap
     // again if it has not (at most 5 taps). The toggle counts its own flips, so a tap that works twice, or a
     // toggle that does not work, cannot pass by accident: the list must be hidden after an odd number of flips.
-    await p2.evaluate(`window.__flips = 0; new MutationObserver(() => window.__flips++).observe(document.getElementById('problems-toggle'), { attributes: true, attributeFilter: ['aria-expanded'] })`);
+    // Only a change of value is a flip: the page writes the same aria-expanded again whenever the list's box
+    // resizes (folding it shrinks the box, so a write follows a frame later), and on a loaded runner that write
+    // lands before the count is read. Each record's old value is the value before it, so the values in turn are
+    // the old values of the records, then the attribute as it is now.
+    await p2.evaluate(`window.__flips = 0;
+      const toggle = document.getElementById('problems-toggle');
+      new MutationObserver((records) => {
+        const values = [...records.map((r) => r.oldValue), toggle.getAttribute('aria-expanded')];
+        for (let i = 1; i < values.length; i++) if (values[i] !== values[i - 1]) window.__flips++;
+      }).observe(toggle, { attributes: true, attributeOldValue: true, attributeFilter: ['aria-expanded'] })`);
     const hidden = async () => !(await p2.locator('#problem-list li').first().isVisible());
     let taps = 0;
     do {
