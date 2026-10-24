@@ -101,6 +101,8 @@ describe('the web page: the top bar', function () {
         assert.strictEqual(await page.locator(`.top ${id}`).count(), 1);
       }
       assert.strictEqual(await page.locator('#menu-collapse, #menu-ref').count(), 0);
+      // The view switch too (on a phone it is in the menu).
+      assert.strictEqual(await page.locator('.top #views-top').isVisible(), true, `the view switch at ${width}px`);
       await page.locator('#menu-open').click();
       assert.strictEqual(await page.locator('#menu-copy').isVisible(), false);
       await page.evaluate("document.getElementById('drawer').close()");

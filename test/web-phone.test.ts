@@ -145,6 +145,40 @@ describe('the web page: touch screens, stored data and the window', function () 
     await desk.close();
   });
 
+  it('has the view switch in the menu on a phone (the top bar has no room for it), with targets of 40px or more, and remembers the view', async () => {
+    const { devices } = await import('playwright-core');
+    for (const width of [320, 390, 430]) {
+      const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width, height: 740 }, locale: width === 390 ? 'ja-JP' : 'en-US' });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const panel = () => page.frames().find((f) => f.url().endsWith('/panel.html'))!;
+      // The bar: one row, every button 40px or more, nothing hanging out; the switch is not in it.
+      const bar = await page.evaluate(`(() => {
+        const t = document.querySelector('.top');
+        const sizes = [...t.querySelectorAll('button, a')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => Math.min(e.getBoundingClientRect().width, e.getBoundingClientRect().height));
+        return [t.getBoundingClientRect().height, t.scrollWidth <= t.clientWidth, document.documentElement.scrollWidth <= document.documentElement.clientWidth, Math.min(...sizes.filter((s) => s > 30))];
+      })()`) as [number, boolean, boolean, number];
+      assert.ok(bar[0] <= 49 && bar[1] && bar[2] && bar[3] >= 40, `${width}px: ${bar}`);
+      assert.strictEqual(await page.locator('#views-top').isHidden(), true, `${width}px`);
+      await page.locator('#menu-open').tap();
+      // (The menu slides in.)
+      await stable('the menu open', async () => (await page.locator('#view-tree-menu').boundingBox())?.x ?? -1);
+      const halves = await Promise.all(['#view-list-menu', '#view-tree-menu'].map(async (id) => (await page.locator(id).boundingBox())!));
+      for (const b of halves) assert.ok(b.width >= 40 && b.height >= 40 && b.x >= 0 && b.x + b.width <= width, `${width}px: ${JSON.stringify(b)}`);
+      assert.strictEqual(await page.locator('#view-list-menu').getAttribute('aria-pressed'), 'true');
+      await page.locator('#view-tree-menu').tap();
+      assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true');
+      await page.evaluate("document.getElementById('drawer').close()");
+      await until('the tree', () => panel().locator('#reading').isVisible(), (v) => v);
+      await page.reload();
+      await page.locator('.cm-line').first().waitFor();
+      assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true', 'remembered');
+      await until('the tree after a reload', () => panel()?.locator('#reading').isVisible() ?? Promise.resolve(false), (v) => v);
+      await ctx.close();
+    }
+  });
+
   it('read-mode tip: shown once on a phone, closed by the button or by using the switch, never on a desktop', async () => {
     const { devices } = await import('playwright-core');
     const phone = { ...devices['iPhone 13'], viewport: { width: 360, height: 740 }, locale: 'en-US' };

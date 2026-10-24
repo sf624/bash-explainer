@@ -6,7 +6,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ALLOWED_LICENSES, collect, FIRST, NOTICES, order, packageInfo, render, Target } from '../scripts/notices';
+import { ALLOWED_LICENSES, collect, COPIED, FIRST, NOTICES, order, packageInfo, render, Target } from '../scripts/notices';
 
 const root = path.join(__dirname, '..');
 
@@ -38,6 +38,17 @@ describe('licenses', function () {
         assert.ok(p.licenseText.length > 100, `${name}: the license text looks empty`);
       }
     }
+  });
+
+  it('lists the Codicons the panel draws, by name, with their license at the icons', () => {
+    const js = fs.readFileSync(path.join(root, 'media', 'panel.js'), 'utf8');
+    const table = js.slice(js.indexOf('const ICONS'), js.indexOf('});', js.indexOf('const ICONS')));
+    const names = [...table.matchAll(/^ {4}'([a-z-]+)': /gm)].map((m) => m[1]);
+    const c = COPIED['@vscode/codicons'];
+    assert.match(c.licenseText, new RegExp(`\\(${names.join(', ')}\\)`.replace(/, /g, ',\\s+')), 'the notice names the icons media/panel.js has');
+    assert.match(c.licenseText, new RegExp(`${names.length === 7 ? 'seven' : String(names.length)} of the icons`));
+    assert.match(js, /@vscode\/codicons 0\.0\.46-24[^]*CC BY 4\.0, \(c\) Microsoft Corporation/);
+    assert.ok(js.includes(`@vscode/codicons ${c.version}`));
   });
 
   it('is itself under the MIT License', () => {

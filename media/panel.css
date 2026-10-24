@@ -295,46 +295,153 @@ code {
   border-left: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
 }
 
+/* The header, as a view's title bar in VS Code: the line shown, the shell's dropdown and the view switch, then
+   the toolbar's icon buttons at the right. A narrow panel wraps it: the line and the shell on the first row. */
 header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.3rem 0.8rem;
-  padding: 0.3rem 0;
+  gap: 0.35rem 0.75rem;
+  padding: 0.2rem 0;
 }
 
-.tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.2rem 0.6rem;
+header .where {
+  flex: 1 1 9rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tools button {
-  background: none;
-  border: none;
-  padding: 0.1rem 0.3rem;
-  color: var(--vscode-textLink-foreground);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* An icon (media/panel.js draws it): 16px, in the text's colour. */
+.ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
+}
+
+/* The shell (and yq): VS Code's dropdown, with its arrow drawn as an icon (the CSP allows no image). */
+.pick:not([hidden]) {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.dropdown {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.dropdown select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 24px;
+  min-width: 5.5rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 22px 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-dropdown-background));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
   font: inherit;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 
-.tools button:hover {
-  color: var(--vscode-textLink-activeForeground);
-  text-decoration: underline;
+.dropdown .ico {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
 }
 
-.tools label {
-  color: var(--c-muted);
+/* The view switch: two words in a segmented control, the view shown pressed (VS Code's input toggles). */
+.seg {
+  display: inline-flex;
+  flex: none;
+  padding: 1px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 4px;
 }
 
-.tools select {
-  background: var(--vscode-dropdown-background);
-  color: var(--vscode-dropdown-foreground);
-  border: 1px solid var(--vscode-dropdown-border, transparent);
+.seg button {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
   font: inherit;
-  padding: 0 0.2rem;
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--vscode-inputOption-activeBackground, rgba(36, 137, 219, 0.3));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+  color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+}
+
+/* The toolbar: 24px icon buttons, as in a view's title bar. */
+.tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  cursor: pointer;
+}
+
+/* Hover: the toolbar's colour; in high contrast, which has none, a dashed outline (toolbar.hoverOutline). */
+.tb:hover,
+.seg button[aria-pressed="false"]:hover {
+  background: var(--vscode-toolbar-hoverBackground, transparent);
+  outline: 1px dashed var(--vscode-toolbar-hoverOutline, transparent);
+  outline-offset: -1px;
+}
+
+.tb[aria-pressed="true"] {
+  background: var(--vscode-inputOption-activeBackground, rgba(36, 137, 219, 0.3));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+  color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+}
+
+/* The keyboard's focus: VS Code's 1px ring. */
+.tb:focus-visible,
+.seg button:focus-visible,
+.dropdown select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 /* Folding: the twisty, and a collapsed item's children. */
@@ -481,12 +588,9 @@ li.collapsed > .body {
     max-width: calc(100% - 0.8em - 0.6rem);
   }
 
-  .tools button {
-    padding: 0.4rem 0.5rem;
-  }
 }
 
-/* ---------------------------------------------------------------- the view switch and the tree view */
+/* ---------------------------------------------------------------- the tree view */
 
 /* The layers of the tree view (src/reading.ts), in the colours of the roles: bash in the keyword colour, a
    child bash in the command colour, a command's reading in the argument colour, a language in the option colour. */
@@ -502,7 +606,6 @@ body {
 .l-command { --l: var(--l-command); }
 .l-language { --l: var(--l-language); }
 
-#views,
 #layers {
   display: flex;
   flex-wrap: wrap;
@@ -511,7 +614,6 @@ body {
   margin: 0 0 0.5rem;
 }
 
-#views button,
 #layers button {
   font: inherit;
   font-size: 0.9em;
@@ -521,12 +623,6 @@ body {
   border-radius: 4px;
   padding: 0.1rem 0.6rem;
   cursor: pointer;
-}
-
-#views button[aria-pressed="true"] {
-  border-color: var(--vscode-focusBorder);
-  background: var(--vscode-list-activeSelectionBackground, rgba(127, 127, 127, 0.2));
-  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
 }
 
 #layers-label {
@@ -539,7 +635,6 @@ body {
   background: color-mix(in srgb, var(--l) 16%, transparent);
 }
 
-#views button:focus-visible,
 #layers button:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 1px;
@@ -762,7 +857,8 @@ body.vscode-high-contrast-light #reading-tree li.band {
     outline-offset: -2px;
   }
 
-  #views button[aria-pressed="true"],
+  .seg button[aria-pressed="true"],
+  .tb[aria-pressed="true"],
   #layers button[aria-pressed="true"] {
     outline: 2px solid Highlight;
     outline-offset: 1px;

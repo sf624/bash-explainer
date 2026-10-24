@@ -1,7 +1,8 @@
 // The explanation panel in its frame (panel.html, the page of the VS Code panel), and the page's own controls for it.
 // The panel says what the user does in it (src/ui/panelView.ts `FromPanel`); the page answers and shows the result.
 // The panel's own header is not shown on the page (web/panel-page.css): its shell and yq choices are the setting,
-// and "Collapse all" and "Quick reference" press the panel's buttons, which keep the state.
+// "Collapse all" and "Quick reference" press the panel's buttons, which keep the state, and the view switch (List or
+// Tree) is the page's: it keeps the view and sends it to the panel, as the panel's own switch tells it.
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
 import { FromPanel, PanelState, panelUpdate } from '../src/ui/panelView';
@@ -61,6 +62,28 @@ export class PanelBridge {
         if (id.startsWith('menu-')) (document.getElementById('drawer') as HTMLDialogElement | null)?.close();
         act();
       });
+    }
+    // The view switch: in the top bar, on a phone in the menu (the bar has no room for it there).
+    for (const where of ['top', 'menu']) {
+      for (const v of ['list', 'tree'] as const) on(`view-${v}-${where}`, 'click', () => this.setView(v));
+    }
+    this.showView();
+  }
+
+  /** The view chosen in the page's switch: kept, sent to the panel, and the line explained again (the tree is built for the tree view only). */
+  private setView(view: 'list' | 'tree'): void {
+    if (this.view() === view) return;
+    this.state = { ...this.state, view };
+    writeStored(STORAGE_KEYS.panel, JSON.stringify(this.state));
+    this.showView();
+    this.sendState();
+    this.host.update();
+  }
+
+  /** The page's view switch shows the view chosen. */
+  private showView(): void {
+    for (const where of ['top', 'menu']) {
+      for (const v of ['list', 'tree']) document.getElementById(`view-${v}-${where}`)?.setAttribute('aria-pressed', String(this.view() === v));
     }
   }
 
@@ -124,6 +147,7 @@ export class PanelBridge {
           const before = this.view();
           this.state = m.state;
           writeStored(STORAGE_KEYS.panel, JSON.stringify(m.state));
+          this.showView();
           // The tree has to be built for the tree view: explain the line again.
           if (this.view() !== before) this.host.update();
         }
@@ -162,8 +186,8 @@ export class PanelBridge {
     const tp = ui[this.host.lang()].panel;
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
     const names: [string, string][] = [
-      ['collapse', this.button('toggle')?.textContent || tp.collapseAll],
-      ['ref', this.button('ref')?.textContent || tp.reference],
+      ['collapse', this.button('toggle')?.getAttribute('aria-label') || tp.collapseAll],
+      ['ref', this.button('ref')?.getAttribute('aria-label') || tp.reference],
       ['copy-md', tp.copy],
     ];
     for (const [button, name] of names) {
@@ -172,6 +196,12 @@ export class PanelBridge {
     }
     document.getElementById('ref')?.setAttribute('aria-pressed', String(open));
     put('menu-copy-label', tp.copy);
+    put('views-menu-label', tp.views);
+    document.getElementById('views-top')?.setAttribute('aria-label', tp.views);
+    for (const where of ['top', 'menu']) {
+      put(`view-list-${where}`, tp.listView);
+      put(`view-tree-${where}`, tp.treeView);
+    }
     for (const [key, label] of [['shell', tp.shell], ['yq', tp.yq]]) {
       for (const id of [key, `${key}-top`]) {
         put(`${id}-label`, label);
@@ -180,14 +210,14 @@ export class PanelBridge {
     }
   }
 
-  /** The panel's buttons change their own text; follow it. */
+  /** The panel's buttons change their own names; follow them. */
   private watch(): void {
     const doc = this.frame?.contentDocument;
     if (!doc || doc === this.watched || !doc.getElementById('toggle')) return;
     this.watched = doc;
     this.watcher?.disconnect();
     this.watcher = new MutationObserver(() => this.showActions());
-    for (const id of ['toggle', 'ref']) this.watcher.observe(doc.getElementById(id)!, { childList: true });
+    for (const id of ['toggle', 'ref']) this.watcher.observe(doc.getElementById(id)!, { attributeFilter: ['aria-label'] });
     this.showActions();
   }
 }
