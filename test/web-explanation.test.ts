@@ -315,8 +315,7 @@ describe('the web page: the explanation panel and the editor', function () {
     await until('the typed line coloured', () => pieces('echo "typed"'), (p) => p.some((x) => x.startsWith('"typed"|cm-bx-string')));
     // A Dockerfile: its own mode for FROM and RUN, ours for the shell code after RUN.
     await pickKind(page, 'dockerfile');
-    page.once('dialog', (d) => void d.accept()); // replace the typed script with the sample
-    await page.locator('#sample').click();
+    await page.locator('#kind-replace').click(); // replace the typed script with the sample
     const run = await until('the RUN line coloured', () => pieces('RUN apt-get update'), (p) => p.some((x) => x.startsWith('apt-get|cm-bx-command')));
     assert.deepEqual(run.map((x) => x.split('|')[1]), ['', 'cm-bx-command', '']);
     assert.notStrictEqual(run[0].split('|')[2], run[2].split('|')[2], 'RUN is coloured by the Dockerfile mode');

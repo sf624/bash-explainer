@@ -639,6 +639,76 @@ body.resizing .problems-resize {
   visibility: hidden;
 }
 
+/* The question after a change of the file kind (web/kind-dialog.ts): a small modal box in the middle. */
+.ask {
+  width: min(26rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 20px 20px 16px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 12px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  box-shadow: var(--shadow);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.ask::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.ask h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.ask p {
+  margin: 0 0 16px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ask-actions #kind-replace {
+  border-color: var(--page-accent);
+  background: var(--page-accent);
+  color: var(--page-accent-foreground);
+}
+
+@media (hover: hover) {
+  .ask-actions #kind-replace:hover {
+    filter: brightness(1.1);
+  }
+}
+
+.ask-actions button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* On a phone the two choices are full-width touch targets, the sample first. */
+:where(html.narrow) .ask-actions {
+  flex-direction: column-reverse;
+}
+
+:where(html.narrow) .ask-actions button {
+  min-height: 44px;
+}
+
+@media (pointer: coarse) {
+  .ask-actions button {
+    min-height: 44px;
+  }
+}
+
 /* Strips along the edges of a touch screen: a swipe from the left one opens the menu, from the right one the settings. */
 .edge {
   display: none;

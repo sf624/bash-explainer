@@ -45,12 +45,11 @@ describe('the web page: the file kind', function () {
       await list.locator('[data-value="dockerfile"]').click();
       assert.strictEqual(await list.isVisible(), false);
       assert.strictEqual(await kind.getAttribute('aria-expanded'), 'false');
-      // Only the reading changed; the text, an untouched sample, stays until the sample button loads the new kind's.
+      // The text was an untouched sample: the new kind's sample takes its place, with no question.
       assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Dockerfile');
-      assert.ok((await text()).startsWith('#!/usr/bin/env bash'));
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
-      await page.locator('#sample').click();
       await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+      assert.strictEqual(await page.locator('#kind-dialog[open]').count(), 0);
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
       assert.strictEqual(await kind.innerText(), 'Dockerfile');
       // A press outside closes it without a change.
       await kind.click();
@@ -84,8 +83,6 @@ describe('the web page: the file kind', function () {
       assert.strictEqual(await list.isVisible(), false);
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'kind');
       assert.strictEqual(await kind.getAttribute('aria-label'), 'File: Makefile');
-      assert.ok(/^FROM /m.test(await text()));
-      await page.locator('#sample').click();
       await until('the Makefile sample', text, (t) => !/^FROM /m.test(t) && /^\S+:/m.test(t));
       // Tab closes the list and goes on from the button.
       await kind.focus();
@@ -105,93 +102,189 @@ describe('the web page: the file kind', function () {
     }
   });
 
-  it('keeps the text when the file kind changes (an empty editor gets the sample), and the sample button offers to undo what it replaced', async () => {
+  it('loads the new kind\'s sample in place of a sample or nothing, and asks before it replaces the user\'s text (Keep, Esc, Replace and Undo)', async () => {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
     const page = await ctx.newPage();
     await page.goto(base);
     await page.locator('.cm-line').nth(5).waitFor();
     const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
     const toast = page.locator('#status');
-    // An untouched sample stays too: only the reading changes.
+    const dialog = page.locator('#kind-dialog');
+    const focused = () => page.evaluate('document.activeElement.id') as Promise<string>;
+    // An untouched sample gives way to the new kind's, with no question and no toast.
     await pickKind(page, 'dockerfile');
-    assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Dockerfile');
-    assert.ok((await text()).startsWith('#!/usr/bin/env bash'));
-    // The user's text stays.
+    await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+    assert.strictEqual(await dialog.count(), 0);
+    assert.strictEqual(await toast.innerText(), '');
+    // The user's text: the kind changes at once, and the page asks.
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo mine\n');
     await pickKind(page, 'makefile');
+    await dialog.waitFor();
+    assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Makefile');
+    assert.strictEqual(await dialog.getAttribute('role'), 'alertdialog');
+    assert.strictEqual(await dialog.getAttribute('aria-modal'), 'true');
+    assert.strictEqual(await page.locator(`#${await dialog.getAttribute('aria-labelledby')}`).innerText(), 'Load the Makefile sample?');
+    assert.match(await page.locator(`#${await dialog.getAttribute('aria-describedby')}`).innerText(), /^The file kind is now Makefile\./);
+    assert.strictEqual(await page.locator('#kind-replace').innerText(), 'Replace with the sample');
+    assert.strictEqual(await page.locator('#kind-keep').innerText(), 'Keep my script');
+    // The focus starts on the choice that changes nothing and stays in the dialog.
+    assert.strictEqual(await focused(), 'kind-keep');
+    for (const [key, id] of [['Tab', 'kind-replace'], ['Tab', 'kind-keep'], ['Shift+Tab', 'kind-replace'], ['Shift+Tab', 'kind-keep']]) {
+      await page.keyboard.press(key);
+      assert.strictEqual(await focused(), id, key);
+    }
+    // The rest of the page is out of reach while it is open.
+    assert.strictEqual(await page.evaluate('document.querySelector("#kind-dialog").matches(":modal")'), true);
+    // Keep: the text stays, the focus goes back to the kind's button.
+    await page.locator('#kind-keep').click();
+    assert.strictEqual(await dialog.isVisible(), false);
     assert.strictEqual((await text()).trim(), 'echo mine');
+    assert.strictEqual(await focused(), 'kind');
     assert.strictEqual(await toast.innerText(), '');
-    // The sample button replaces it (after the confirmation) and offers to undo; the toast does not cover the top bar.
-    page.once('dialog', (d) => void d.accept());
-    await page.locator('#sample').click();
-    await until('the Makefile sample', text, (t) => t.length > 100);
+    // Esc keeps it too.
+    await pickKind(page, 'yaml');
+    await dialog.waitFor();
+    await page.keyboard.press('Escape');
+    await until('the dialog closed', () => dialog.isVisible(), (v) => !v);
+    assert.strictEqual((await text()).trim(), 'echo mine');
+    assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: GitHub Actions / GitLab CI');
+    assert.strictEqual(await focused(), 'kind');
+    // Replace: the sample comes in, and the toast offers to undo it; Undo brings the text back and the kind stays.
+    await pickKind(page, 'dockerfile');
+    await page.locator('#kind-replace').click();
+    await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
     assert.strictEqual(await toast.getAttribute('role'), 'status');
-    assert.strictEqual(await toast.locator('button').innerText(), 'Undo');
     assert.match(await toast.innerText(), /^Sample loaded/);
     await toast.locator('button').click();
     await until('the text back', text, (t) => t.trim() === 'echo mine');
-    assert.strictEqual(await toast.innerText(), '');
-    // A second press of the sample button, and typing, which takes the offer away (Undo would undo the typing).
+    assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Dockerfile');
+    // The sample button still asks (the browser's confirmation) and offers to undo; typing takes the offer away.
+    page.once('dialog', (d) => void d.accept());
+    await page.locator('#sample').click();
+    await toast.locator('button').waitFor();
+    await toast.locator('button').click();
+    await until('the text back', text, (t) => t.trim() === 'echo mine');
     page.once('dialog', (d) => void d.accept());
     await page.locator('#sample').click();
     await toast.locator('button').waitFor();
     await page.locator('.cm-content').click();
     await page.keyboard.insertText('x');
     await until('the toast gone', () => toast.innerText(), (t) => t === '');
-    // No toast when the sample replaced a sample, or nothing.
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Delete');
-    await until('an empty editor', text, (t) => !t.trim());
-    await page.locator('#sample').click();
-    await until('the sample', text, (t) => t.length > 100);
-    assert.strictEqual(await toast.innerText(), '');
-    await pickKind(page, 'shell');
-    await page.locator('#sample').click();
-    assert.strictEqual(await toast.innerText(), '');
-    // An empty editor gets the sample of the kind chosen.
-    await page.locator('.cm-content').click();
+    // An empty editor, or only spaces, counts as untouched: the sample of the kind chosen, with no question.
     await page.keyboard.press('Control+A');
     await page.keyboard.press('Delete');
     await page.keyboard.insertText(' \n ');
-    await pickKind(page, 'dockerfile');
-    await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+    await pickKind(page, 'bats');
+    await until('the bats sample', text, (t) => /^@test /m.test(t));
+    assert.strictEqual(await dialog.isVisible(), false);
+    // The sample loaded so is untouched too: the next kind's sample follows.
+    await pickKind(page, 'shell');
+    await until('the shell sample', text, (t) => t.startsWith('#!/usr/bin/env bash'));
+    assert.strictEqual(await dialog.isVisible(), false);
     // The words follow the language.
     await choose(page, '#lang', 'ja');
-    await page.keyboard.press('Control+End');
     await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+End');
     await page.keyboard.insertText('\n# mine');
-    page.once('dialog', (d) => void d.accept());
-    await page.locator('#sample').click();
+    await pickKind(page, 'makefile');
+    await dialog.waitFor();
+    assert.strictEqual(await page.locator('#kind-dialog-title').innerText(), 'Makefile のサンプルを読み込みますか？');
+    assert.strictEqual(await page.locator('#kind-replace').innerText(), 'サンプルに置き換える');
+    assert.strictEqual(await page.locator('#kind-keep').innerText(), 'スクリプトをそのままにする');
+    await page.locator('#kind-replace').click();
     await until('the Japanese toast', () => toast.innerText(), (t) => t.includes('サンプルを読み込みました'));
     assert.strictEqual(await toast.locator('button').innerText(), '元に戻す');
     await ctx.close();
   });
 
-  it('keeps the text when the file kind changes on a phone, and Undo is a touch target in the toast', async () => {
+  it('asks on a phone too: the menu closes, the choices are touch targets in the window, and Undo is one in the toast', async () => {
     const { devices } = await import('playwright-core');
-    const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US' });
+    for (const scheme of ['light', 'dark'] as const) {
+      const ctx = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, locale: 'en-US', colorScheme: scheme });
+      const page = await ctx.newPage();
+      await page.goto(base);
+      await page.locator('.cm-line').nth(5).waitFor();
+      const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+      const dialog = page.locator('#kind-dialog');
+      // The sample's pitfalls fill the Problems list, so the editor is short: the read-mode tip would cover it.
+      await page.locator('#readtip-close').tap();
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+A');
+      await page.keyboard.insertText('echo phone\n');
+      await page.locator('#menu-open').tap();
+      await page.locator('#kind-menu').selectOption('dockerfile');
+      await dialog.waitFor();
+      assert.strictEqual(await page.locator('#drawer').evaluate((d) => (d as unknown as { open: boolean }).open), false);
+      const boxes = await Promise.all([dialog, page.locator('#kind-replace'), page.locator('#kind-keep')].map(async (l) => (await l.boundingBox())!));
+      for (const b of boxes) assert.ok(b.x >= 0 && b.x + b.width <= 390 && b.y >= 0 && b.y + b.height <= 740, `${scheme} ${JSON.stringify(b)}`);
+      // One above the other, the sample first, each the dialog's width less its padding and 40px or more high.
+      const [d, replace, keep] = boxes;
+      assert.ok(replace.y + replace.height <= keep.y && replace.width === keep.width && replace.width >= d.width - 48, `${scheme} ${JSON.stringify(boxes)}`);
+      assert.ok(replace.height >= 40 && keep.height >= 40, `${scheme} ${JSON.stringify(boxes)}`);
+      // Keep: the kind has changed, the text stays, and the focus is back on the menu's button.
+      await page.locator('#kind-keep').tap();
+      assert.strictEqual((await text()).trim(), 'echo phone');
+      assert.strictEqual(await page.locator('#kind-menu').inputValue(), 'dockerfile');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'menu-open');
+      // Replace: the sample, and Undo in the toast.
+      await page.locator('#menu-open').tap();
+      await page.locator('#kind-menu').selectOption('bats');
+      await page.locator('#kind-replace').tap();
+      await until('the bats sample', text, (t) => /^@test /m.test(t));
+      const undo = page.locator('#status button');
+      const box = (await undo.boundingBox())!;
+      assert.ok(box.height >= 40 && box.y + box.height <= 740 && box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
+      await undo.tap();
+      await until('the text back', text, (t) => t.trim() === 'echo phone');
+      await ctx.close();
+    }
+  });
+
+  it('keeps the kind and the script of a shared link on load, and asks about them as the user\'s text', async () => {
+    const t = Buffer.from('all:\n\techo shared\n').toString('base64url');
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
     const page = await ctx.newPage();
+    await page.goto(`${base}#lang=en&kind=makefile&t=${t}`);
+    const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+    await until('the shared script', text, (s) => s.includes('echo shared'));
+    assert.strictEqual(await page.locator('#kind').getAttribute('aria-label'), 'File: Makefile');
+    assert.strictEqual(await page.locator('#kind-dialog').count(), 0);
+    // A deflated link too (the script arrives a moment after the page).
+    const z = await page.evaluate(`(async () => { const s = new Blob([new TextEncoder().encode('FROM alpine\\nRUN echo zipped\\n')]).stream().pipeThrough(new CompressionStream('deflate-raw')); const b = new Uint8Array(await new Response(s).arrayBuffer()); return btoa(String.fromCharCode(...b)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); })()`) as string;
+    const zipped = await ctx.newPage();
+    await zipped.goto(`${base}#lang=en&kind=dockerfile&z=${z}`);
+    await until('the deflated script', () => zipped.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>, (s) => s.includes('RUN echo zipped'));
+    assert.strictEqual(await zipped.locator('#kind').getAttribute('aria-label'), 'File: Dockerfile');
+    // The link's script is the user's: changing the kind asks.
+    await pickKind(page, 'shell');
+    await page.locator('#kind-dialog').waitFor();
+    await page.keyboard.press('Escape');
+    assert.ok((await text()).includes('echo shared'));
+    await ctx.close();
+  });
+
+  it('asks and loads the sample when the browser refuses storage', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    await ctx.addInitScript("Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } });");
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(base);
     await page.locator('.cm-line').nth(5).waitFor();
     const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
-    // The sample's pitfalls fill the Problems list, so the editor is short: the read-mode tip would cover it.
-    await page.locator('#readtip-close').tap();
+    await pickKind(page, 'makefile');
+    await until('the Makefile sample', text, (t) => /^\S+:/m.test(t) && !t.startsWith('#!'));
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
-    await page.keyboard.insertText('echo phone\n');
-    await page.locator('#menu-open').tap();
-    await page.locator('#kind-menu').selectOption('dockerfile');
-    assert.strictEqual((await text()).trim(), 'echo phone');
-    page.once('dialog', (d) => void d.accept());
-    await page.locator('#menu-sample').tap();
+    await page.keyboard.insertText('echo blocked\n');
+    await pickKind(page, 'dockerfile');
+    await page.locator('#kind-replace').click();
     await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
-    const undo = page.locator('#status button');
-    const box = (await undo.boundingBox())!;
-    assert.ok(box.height >= 40 && box.y + box.height <= 740 && box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
-    await undo.tap();
-    await until('the text back', text, (t) => t.trim() === 'echo phone');
+    await page.locator('#status button').click();
+    await until('the text back', text, (t) => t.trim() === 'echo blocked');
+    assert.deepStrictEqual(errors, []);
     await ctx.close();
   });
 
@@ -275,24 +368,18 @@ describe('the web page: the file kind', function () {
     assert.strictEqual(await select.locator('option').count(), 9);
     assert.strictEqual(await page.evaluate("document.querySelector('#drawer .field select').id"), 'kind-menu');
     assert.ok((await select.boundingBox())!.height >= 40);
-    const loadSample = async () => {
-      await page.locator('#menu-sample').tap();
-      await page.locator('#menu-open').tap();
-    };
+    // An untouched sample gives way to the new kind's; the menu stays open.
     await select.selectOption('dockerfile');
     assert.strictEqual(await select.inputValue(), 'dockerfile');
-    assert.ok((await text()).startsWith('#!/usr/bin/env bash'), 'the text stays');
-    await loadSample();
     await until('the Dockerfile sample', text, (t) => /^FROM /m.test(t));
+    assert.strictEqual(await select.isVisible(), true);
     // The last kind, bats, and its sample.
     await select.selectOption('bats');
     assert.strictEqual(await select.inputValue(), 'bats');
-    assert.ok(/^FROM /m.test(await text()), 'the text stays');
-    await loadSample();
     await until('the bats sample', text, (t) => /^@test /m.test(t));
     await select.selectOption('dockerfile');
-    await loadSample();
     await until('the Dockerfile sample again', text, (t) => /^FROM /m.test(t));
+    assert.strictEqual(await page.locator('#kind-dialog').count(), 0);
     // The language: the label and the names of the kinds.
     await choose(page, '#lang', 'ja');
     await until('ja label', async () => (await select.getAttribute('aria-label')) ?? '', (t) => t === 'ファイル');
