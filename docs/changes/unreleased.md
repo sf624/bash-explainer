@@ -111,7 +111,27 @@ The **Tree** button of the panel shows the current line as a tree of who reads e
 
 The buttons above the tree add the layers one at a time. Each reader has its own colour, and a band where it takes over. The tree folds and moves with the arrow keys, Home, End, Enter and Space, as screen readers expect of a tree; Tab reaches the manual links of the item with the focus. Pointing at a part highlights it in the editor and in the line; a key or a click selects it in the editor and keeps the focus in the tree. In host files (a Makefile, a GitHub Actions workflow), the tree shows the file's own text (`$(CC)`, `${{ github.ref }}`) and says what each placeholder stands for. The panel remembers the view and the layers, also after it is closed (on the web page, for your next visit). In a high-contrast theme, the highlights are outlined.
 
+### The bash version
+
+The setting `bashExplainer.bashVersion` says which bash release scripts are explained for: `5.2` (the default, and the release the manual citations follow) or `5.3`. It is on every surface: VS Code, the web page's settings, the command-line tool (`--bash-version 5.3`, `--set bashVersion=5.3`, or the settings file) and the Language Server. A shebang does not tell the release, so the file cannot set it.
+
+A construct of a later release is explained as that release runs it. When the release set lacks it, it is a warning in the Problems panel and a note on the line, with its own code for `diagnostics.ignore`:
+
+```text
+script.sh:3:3: warning: ${ …; } (command substitution in the current shell) is bash 5.3 syntax: bash 5.2 reports "bad substitution" and drops the commands it read with it (the rest of the line, and the whole if or loop around it), with status 1. Instead, use $(…) (it runs in a subshell). [funsub]
+```
+
+The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
+
 ## Fixed
+
+### bash 5.3's command substitutions
+
+- `x=${ cmd; }` runs `cmd` in the current shell, not in a subshell, and takes its output (without the trailing newlines). Variables it sets and `cd` stay in effect after it; `local` makes a variable that lasts only inside. `cd` in it is no longer said to change "the subshell of `$( )`".
+- `x=${| cmd; }` runs `cmd` in the current shell, and takes the value `cmd` leaves in `REPLY`, trailing newlines and all. `REPLY` is local to it, and the output of `cmd` is printed as usual, not taken.
+- As in `$( )`, `set -e` is off inside them (unless `shopt -s inherit_errexit`), and the note now names the form used.
+- ksh93 and mksh have `${ cmd; }`, and mksh has `${| cmd; }` too; for the other shells (`sh`, dash, busybox ash, yash, zsh) they are warnings.
+- Before, both were explained as `$( )`.
 
 ### The options of a shebang
 

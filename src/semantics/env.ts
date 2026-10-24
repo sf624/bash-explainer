@@ -18,7 +18,7 @@ import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
 import { argWord } from '../argv/words';
 import { shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
-import { field, type SyntaxNode } from '../syntax/tree';
+import { field, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import type { ShellState, Tri } from './state';
 
 /** Why a node runs in a subshell. */
@@ -83,7 +83,8 @@ export function lastStage(p: SyntaxNode): SyntaxNode {
 
 /**
  * Why `n` runs in a subshell, by its place in the tree, outermost first (`( a ) &`: background, then
- * parentheses). The last stage of a pipeline is not here: it depends on the state (`lastStageInShell`).
+ * parentheses). The last stage of a pipeline is not here: it depends on the state (`lastStageInShell`). A
+ * `${ …; }` is no subshell (docs/design/bash-versions.md, 4.1).
  */
 export function subshellReasons(n: SyntaxNode): SubshellReason[] {
   const out: SubshellReason[] = [];
@@ -94,7 +95,8 @@ export function subshellReasons(n: SyntaxNode): SubshellReason[] {
     if (p.type === 'coproc_statement') out.push('coproc');
   }
   if (n.type === 'subshell') out.push('parentheses');
-  else if (n.type === 'command_substitution') out.push('command-substitution');
+  // (bash 5.3's `${ …; }` and `${| …; }` run in the current shell.)
+  else if (n.type === 'command_substitution' && !substitutionForm(n).startsWith('${')) out.push('command-substitution');
   else if (n.type === 'process_substitution') out.push('process-substitution');
   return out;
 }

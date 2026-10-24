@@ -1,6 +1,15 @@
 import { SyntaxNode, assignmentSpan, field, fields, redirectionsOf, wordsText } from './syntax/tree';
 import { writtenAsBracket } from './testexpr';
 
+/** The first line of `text`, cut to `max` characters, with " …" when more lines follow. */
+export function shorten(text: string, max = 60): string {
+  const [head, ...rest] = text.split('\n');
+  const first = head.trimEnd();
+  const s = first.length > max ? first.slice(0, max - 1) + '…' : first;
+  // " …" says that the text goes on in a later line; trailing blanks (`tr -d ' '`, `"PV "`) are not that.
+  return rest.some((l) => l.trim()) && s === first ? s + ' …' : s;
+}
+
 /**
  * The label of a construct (`if`, `for`, a pipeline, a redirection…) is its skeleton: the keywords and operators,
  * the short parts that say something (a loop variable, a command name, a redirect target) as they are written,

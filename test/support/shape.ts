@@ -49,10 +49,10 @@ export function andOr(first: Shape, rest: { op: '&&' | '||'; cmd: Shape }[]): Sh
 const norm = (s: string): string => s.replace(/\\\n/g, '');
 /**
  * bash-ast prints a command substitution as bash would re-print it (newlines, spaces after redirection
- * operators), so a word that holds one is compared without its blanks and semicolons.
+ * operators; `${| cmd; }` of bash 5.3 as `${|cmd; }`), so a word that holds one is compared without its blanks and semicolons.
  */
 export function canon(w: string): string {
-  return /\$\(|`|[<>]\(/.test(w) ? w.replace(/[\s;]+/g, '') : w;
+  return /\$\(|`|[<>]\(|\$\{[\s|]/.test(w) ? w.replace(/[\s;]+/g, '') : w;
 }
 
 const wordOf = (n: SyntaxNode): string => canon(norm(ansi(n.text)));

@@ -2,6 +2,7 @@
 // constructs their shell lacks. Offline, like the extension: nothing is sent anywhere.
 import * as fs from 'fs';
 import { Analyzer, Example, LineExplanation, Token } from '../src/analyzer';
+import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from '../src/bashversion';
 import { Shell, SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, diagnosticsFor, explainDocumentLine, plain } from '../src/document';
 import { FILE_KINDS, FileKind, openDocument, shellsOf } from '../src/document-setup';
@@ -39,6 +40,8 @@ Options:
       --strict           with --check, also exit 1 on a warning on a pitfall
       --shell <name>     the script's shell: ${Object.keys(SHELL_NAMES).join(', ')}
                          (default: from the shebang or the file name)
+      --bash-version <v>  the bash release to explain for: ${BASH_VERSIONS.join(', ')}
+                         (default: ${DEFAULT_BASH_VERSION})
       --kind <kind>      what the file is: ${KINDS.join(', ')}
                          (default: from the file name)
       --lang <en|ja>     language (default: from LANG)
@@ -61,8 +64,8 @@ Options:
   -h, --help             show this help
   -v, --version          show the version
 
-Settings: the file, then --set, then --lang, --shell and --no-examples, each
-overriding the one before.
+Settings: the file, then --set, then --lang, --shell, --bash-version and
+--no-examples, each overriding the one before.
 
 Exit status: 0 when done (with --check: no warning), 1 with --check when there
 is a warning (with --strict, also one on a pitfall), 2 on a usage or input
@@ -150,6 +153,12 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
         flags.shell = v as Shell;
         break;
       }
+      case '--bash-version': {
+        const v = value() as BashVersion;
+        if (!BASH_VERSIONS.includes(v)) throw new UsageError(`unknown bash version: ${v} (${BASH_VERSIONS.join(', ')})`);
+        flags.bashVersion = v;
+        break;
+      }
       case '--kind': {
         const v = value() as Kind;
         if (!KINDS.includes(v)) throw new UsageError(`unknown kind: ${v} (${KINDS.join(', ')})`);
@@ -184,7 +193,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
   if (o.sarifFile !== undefined && !o.check) throw new UsageError('--sarif goes with --check');
   if (o.strict && !o.check) throw new UsageError('--strict goes with --check');
-  // defaults < settings file < --set < --lang, --shell, --no-examples
+  // defaults < settings file < --set < --lang, --shell, --bash-version, --no-examples
   const file = noConfig ? undefined : settingsFile(config, env);
   let fromFile: Partial<Settings> = {};
   if (file) {

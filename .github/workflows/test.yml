@@ -336,3 +336,36 @@ jobs:
         env:
           BASH_EXPLAINER_BASH_AST: '1'
         run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/command-tokens.test.ts
+
+  bash53:
+    # What we say of bash 5.3's constructs, against a real bash 5.3 and the bash 5.2 of the runner (test/bash53.test.ts,
+    # docs/design/bash-versions.md). GPL boundary: bash is GPL-3.0. We build it from the release tarball and only run
+    # it as a separate program. We never redistribute it: no artifact, cache, commit, release or bundle.
+    name: bash 5.3
+    runs-on: ubuntu-24.04
+    env:
+      BASH53_SHA256: 0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Build bash 5.3 from the release tarball
+        run: |
+          src="$RUNNER_TEMP/bash-5.3-src"
+          mkdir "$src"
+          curl -fsSL --retry 3 -o "$src/bash-5.3.tar.gz" https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz
+          echo "$BASH53_SHA256  $src/bash-5.3.tar.gz" | sha256sum --check
+          tar -xzf "$src/bash-5.3.tar.gz" -C "$src"
+          cd "$src/bash-5.3"
+          ./configure --quiet --without-bash-malloc
+          make -s -j"$(nproc)"
+          echo "BASH_EXPLAINER_BASH53=$src/bash-5.3/bash" >> "$GITHUB_ENV"
+
+      - name: Run test/bash53.test.ts
+        env:
+          # Fail instead of skipping when bash 5.3 cannot be run.
+          BASH_EXPLAINER_BASH53_REQUIRED: '1'
+        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/bash53.test.ts

@@ -13,7 +13,8 @@
 // - Nothing is trusted (`blind`) when the script runs what cannot be read: `source`, `eval` or `trap` of text not
 //   known, a command name not known (`$cmd`, `"$@"`), a file a function of the file's host runs (bats' `load`; the
 //   others, `run`…, are read by their specs, as builtins: `shellState`'s `host`), a builtin given a variable name not known (`read "$v"`),
-//   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a trap's or a callback's function that changes options, functions
+//   indirection (`${!v}`, `${!1}`: its subscript may assign), a DEBUG or RETURN trap, a `${ …; }` (bash 5.3: it runs
+//   in the shell itself, and the walk does not keep what it changes), a trap's or a callback's function that changes options, functions
 //   or aliases; and when arithmetic may read text not known (`$1`, `$(cmd)`, a variable `read` sets or that is never
 //   set: bash runs it as an expression, which may assign any variable).
 // - A function is closed (its decisions and dead code may be said, and src/semantics/env.ts says for sure where its
@@ -34,7 +35,7 @@ import type { CommandSpec } from '../argv/spec';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
 import { staticWordValue, substitutionNames } from '../staticword';
-import { field, fields, type SyntaxNode } from '../syntax/tree';
+import { field, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import { aliasName, aliasOf, builtinParse, callbacks, commandName, DECLARATIONS, setOptionWrites, variableWrites, wordName, wrapped } from './effects';
 import { STATEMENTS } from './env';
 import { alwaysNumeric, ARITH_ASSIGNED, assignsArithmetic, changedUnseen, optionRoles, readDeclarationWords, type Declaration } from './vars';
@@ -298,6 +299,10 @@ class Scan {
         for (const f of ['initializer', 'condition', 'update'] as const) for (const c of fields(n, f)) this.arithText(c.text, w);
         for (const c of n.children) if (c.field === 'body') this.visit(c, w);
         return;
+      case 'command_substitution':
+        // (The walk drops what a `${ …; }` changes, as for `$( )`, but it runs in the shell itself: docs/design/bash-versions.md, 4.2.)
+        if (substitutionForm(n).startsWith('${')) this.blindFor('a `${ …; }` substitution changes the shell where the walk does not follow it');
+        break;
       case 'subscript': {
         const index = field(n, 'index');
         if (index) this.subscripts.push({ array: field(n, 'name')!.text, text: index.text, owner: this.owner(n), where: w });

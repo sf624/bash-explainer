@@ -1,5 +1,6 @@
 // The public types of an explanation (src/analyzer.ts makes them; the products, the panel and the hosts read them).
 import type { CommandSpec } from './argv/spec';
+import type { BashVersion } from './bashversion';
 import type { Shell } from './dialect';
 import type { Interactive } from './examples/rerun';
 import type { HostId } from './hosts';
@@ -74,6 +75,8 @@ export interface ContextEntry { label: string; line: number }
 export interface ExplainOptions {
   /** What the shell code is part of (the kind of file, and the CI system of a YAML step). */
   host?: HostId;
+  /** The bash release the script is explained for (the `bashExplainer.bashVersion` setting; 5.2 when absent). */
+  bashVersion?: BashVersion;
   /** The `bashExplainer.yq.flavor` setting. */
   yqFlavor?: string;
   /** Worked examples: off altogether, or off for some kinds. */

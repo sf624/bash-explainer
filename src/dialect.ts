@@ -1,11 +1,12 @@
 import { interpret } from './argv/interpret';
+import { type BashVersion, DEFAULT_BASH_VERSION, lacks, SINCE } from './bashversion';
 import { has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { ancestor, descendants, field, prefixAssignments } from './syntax/tree';
+import { ancestor, descendants, field, prefixAssignments, substitutionForm } from './syntax/tree';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -57,7 +58,8 @@ export function shellFromName(name: string): Shell | undefined {
 /**
  * Where each bash feature works, measured with bash 5.2, dash 0.5.12, busybox 1.36 ash, yash 2.55,
  * ksh93u+m 1.0.8, mksh R59 and zsh 5.9 (see test/dialect.test.ts, which re-checks the installed ones).
- * The letters are b d a y k m z; none of them is in POSIX sh.
+ * The letters are b d a y k m z; none of them is in POSIX sh. A feature of a later bash (`SINCE` in src/bashversion.ts)
+ * has no `b`: bash's own check is by its version (`dialectIssues`).
  */
 interface Feature { works: string; ja: string; en: string; altJa?: string; altEn?: string }
 
@@ -123,6 +125,8 @@ export const FEATURES: Record<string, Feature> = {
   funcname: { works: 'b a', ja: '`$FUNCNAME`', en: '`$FUNCNAME`' },
   uid: { works: 'b     z', ja: '`$UID` / `$EUID`', en: '`$UID` / `$EUID`', altJa: '`$(id -u)` を使う', altEn: 'use `$(id -u)`' },
   hostname: { works: 'b a', ja: '`$HOSTNAME`', en: '`$HOSTNAME`', altJa: '`$(hostname)` を使う', altEn: 'use `$(hostname)`' },
+  funsub: { works: '    km', ja: '`${ …; }`（現在のシェルで実行するコマンド置換）', en: '`${ …; }` (command substitution in the current shell)', altJa: '`$(…)` を使う（サブシェルで実行される）', altEn: 'use `$(…)` (it runs in a subshell)' },
+  valsub: { works: '     m', ja: '`${| …; }`（`REPLY` の値になるコマンド置換）', en: '`${| …; }` (command substitution that gives the value of `REPLY`)', altJa: '関数の中で `REPLY` を設定し、呼び出したあとで `$REPLY` を読む', altEn: 'set `REPLY` in a function, call it, then read `$REPLY`' },
 };
 
 /**
@@ -237,6 +241,12 @@ function classify(n: SyntaxNode, kids: string[], add: (id: string) => void): voi
     }
     case 'brace_expression': add('braceRange'); return;
     case 'coproc_statement': add('coproc'); return;
+    case 'command_substitution': {
+      const form = substitutionForm(n);
+      if (form === '${') add('funsub');
+      else if (form === '${|') add('valsub');
+      return;
+    }
     case 'c_style_for_statement': add('cFor'); return;
     case 'select_statement': add('select'); return;
     case 'function_definition': if (kids[0] === 'function') add('funcKeyword'); return;
@@ -369,6 +379,15 @@ function featureMessage(id: string, shell: Shell, lang: Lang): string | undefine
   return s(`⚠ ${label}は ${SHELL_NAMES[shell]} では使えません。${alt}`, `⚠ ${label} is not available in ${SHELL_NAMES[shell]}.${alt}`);
 }
 
+/** What bash `version` does with feature `id`, which came in a later release (SINCE). */
+function versionMessage(id: string, version: BashVersion, lang: Lang): string {
+  const s = pick(lang);
+  const f = FEATURES[id];
+  const { version: since, before } = SINCE[id];
+  const alt = s(`代わりに ${f.altJa}。`, ` Instead, ${f.altEn}.`);
+  return s(`⚠ ${f.ja}は bash ${since} からの書き方です。bash ${version} では${before[0]}。${alt}`, `⚠ ${f.en} is bash ${since} syntax: bash ${version} ${before[1]}.${alt}`);
+}
+
 function behaviourMessage(id: string, shell: Shell, lang: Lang): string | undefined {
   const s = pick(lang);
   const b = BEHAVIOURS[id];
@@ -408,9 +427,15 @@ const ZSH_SYNTAX: [string, string] = [
   'Part of this line could not be parsed. zsh-only syntax (glob qualifiers like `*(.)`, parameter flags like `${(f)var}`…) is not explained.',
 ];
 
-/** Problems on lines [from, to] of a script written for `shell`. */
-export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row): Issue[] {
-  if (shell === 'bash') return [];
+/**
+ * Problems on lines [from, to] of a script written for `shell`; for bash, the constructs that bash `version` lacks
+ * (src/bashversion.ts).
+ */
+export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION): Issue[] {
+  if (shell === 'bash') {
+    return collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
+      .map((f) => ({ id: f.id, kind: 'unsupported', message: versionMessage(f.id, version, lang), node: f.node, place: f.node }));
+  }
   const issues: Issue[] = [];
   if (shell === 'zsh') {
     for (const place of zshSyntaxPlaces(tree, from, to)) {
@@ -431,8 +456,8 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
 }
 
 /** Notes for the line: features the target shell lacks, and behaviour that differs. */
-export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang: Lang): string[] {
-  const issues = dialectIssues(tree, shell, lang, line, line).filter((i) => i.kind !== 'parse');
+export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): string[] {
+  const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
     ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];

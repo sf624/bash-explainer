@@ -1,5 +1,6 @@
 import { githubFileNotes } from './yaml';
 import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
+import type { BashVersion } from '../bashversion';
 import { dialectIssues, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
 import { descendants, type BashParser, type SyntaxTree } from '../syntax/tree';
@@ -154,7 +155,7 @@ export interface DocIssue {
 }
 
 /** All problems in the shell parts of a host document (one pass, for diagnostics). */
-export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell): DocIssue[] {
+export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: string[], lang: 'ja' | 'en', shell?: Shell, version?: BashVersion): DocIssue[] {
   const out: DocIssue[] = [];
   const col = (line: number, c: number) => extracted.maps[line][c];
   const at = (n: { startPosition: { row: number; column: number }; endPosition: { row: number; column: number } }) => {
@@ -165,7 +166,7 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
     };
   };
   for (const region of extracted.regions) {
-    for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end)) {
+    for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
     }
     if (region.warnPipefail) {

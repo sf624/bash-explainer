@@ -45,6 +45,7 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | `--check` | report constructs the script's shell lacks, other risks (script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`…) and the pitfalls of a script (`x = 1`, `rm -rf $DIR/*`…); exit 1 if there is a warning, other than on a pitfall |
 | `--strict` | with `--check`, also exit 1 if there is a warning on a pitfall |
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
+| `--bash-version <v>` | the bash release to explain for: `5.2` (default) or `5.3`; constructs of a later release are explained as it runs them, and `--check` warns about them |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
 | `--sarif <file>` | with `--check`, also write the problems to this file as SARIF, whatever `--format` prints (so one run gives annotations and a SARIF file) |
@@ -75,7 +76,7 @@ $ echo $?
 
 ## Settings
 
-The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
+The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
 
 ```jsonc
 {
@@ -100,7 +101,7 @@ The file is the one given with `--config`, else the one in `$BASH_EXPLAINER_CONF
 1. the defaults,
 2. the settings file,
 3. `--set`,
-4. `--lang`, `--shell` and `--no-examples`.
+4. `--lang`, `--shell`, `--bash-version` and `--no-examples`.
 
 `--print-config` prints the settings in effect, as JSON that can be saved as a settings file:
 
@@ -171,7 +172,7 @@ language-servers = ["bash-language-server", "bash-explainer"]
   (add-to-list 'eglot-server-programs '((sh-mode bash-ts-mode) . ("bash-explainer" "--lsp"))))
 ```
 
-Settings: the keys of the VS Code extension's settings that have a meaning here, as `initializationOptions` or through `workspace/didChangeConfiguration`, under `bashExplainer` or not, flat (`"diagnostics.ignore": ["crlf"]`) or nested (`diagnostics = { ignore = { 'crlf' } }`): `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.enabled`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages` (more language IDs to read as shell scripts), `embedded.files` and `customCommands`. `examples: false`, as earlier releases read it, still turns the examples off. Under what the editor sends, the server reads the [settings file](#settings) of the command-line tool (also `--lsp --config <file>`). Keys and values it cannot use are reported in the editor's log (`window/logMessage`).
+Settings: the keys of the VS Code extension's settings that have a meaning here, as `initializationOptions` or through `workspace/didChangeConfiguration`, under `bashExplainer` or not, flat (`"diagnostics.ignore": ["crlf"]`) or nested (`diagnostics = { ignore = { 'crlf' } }`): `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `bashVersion`, `yq.flavor`, `diagnostics.enabled`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages` (more language IDs to read as shell scripts), `embedded.files` and `customCommands`. `examples: false`, as earlier releases read it, still turns the examples off. Under what the editor sends, the server reads the [settings file](#settings) of the command-line tool (also `--lsp --config <file>`). Keys and values it cannot use are reported in the editor's log (`window/logMessage`).
 
 ## Privacy
 

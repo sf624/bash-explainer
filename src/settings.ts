@@ -5,6 +5,7 @@
 // only, 'web', is not in package.json (VS Code has its own for it) and carries its own description.
 // Pure code: the web page bundles it, so it reads no file itself.
 import { EXAMPLE_KINDS, ExplainOptions } from './analyzer-types';
+import { BASH_VERSIONS, type BashVersion, DEFAULT_BASH_VERSION } from './bashversion';
 import { Shell } from './dialect';
 import { EMBEDDED_FILES } from './document-setup';
 import type { ExamplePlacement } from './ui/render';
@@ -16,6 +17,7 @@ export interface Settings {
   'notes.idioms': boolean;
   'notes.pitfalls': boolean;
   shell: 'auto' | Shell;
+  bashVersion: BashVersion;
   'yq.flavor': 'auto' | 'mikefarah4' | 'kislyuk' | 'mikefarah3';
   'diagnostics.enabled': boolean;
   'diagnostics.ignore': string[];
@@ -73,6 +75,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   { key: 'notes.idioms', type: 'boolean', default: true, group: 'display', title: ['定番の書き方の補足', 'Notes on idioms'], surfaces: ALL },
   { key: 'notes.pitfalls', type: 'boolean', default: true, group: 'display', title: ['よくある間違いの指摘', 'Pitfalls'], surfaces: ALL },
   { key: 'shell', type: 'string', default: 'auto', enum: SHELLS, group: 'checks', title: ['対象シェル', 'Shell'], surfaces: ALL },
+  { key: 'bashVersion', type: 'string', default: DEFAULT_BASH_VERSION, enum: BASH_VERSIONS, group: 'checks', title: ['bash のバージョン', 'bash version'], surfaces: ALL },
   { key: 'yq.flavor', type: 'string', default: 'auto', enum: ['auto', 'mikefarah4', 'kislyuk', 'mikefarah3'], group: 'checks', title: ['yq の種類', 'yq flavor'], surfaces: ALL },
   {
     key: 'diagnostics.enabled', type: 'boolean', default: true, group: 'checks', title: ['警告', 'Warnings'], surfaces: ['vscode', 'web', 'lsp'],
@@ -267,10 +270,14 @@ export function exportSettings(s: Settings, surface: Surface): string {
   return `${JSON.stringify(changedSettings(s, surface), null, 2)}\n`;
 }
 
-/** `key=value` from the command line: the value is read as JSON when it is JSON, else as a string. */
+/**
+ * `key=value` from the command line: the value is read as JSON when it is JSON, else as a string. A setting that
+ * takes a string gets the text as it is (`bashVersion=5.3` is not the number 5.3).
+ */
 export function parseAssignment(text: string): { key: string; value: unknown } | undefined {
   const at = text.indexOf('=');
   if (at <= 0) return undefined;
+  const key = text.slice(0, at);
   const raw = text.slice(at + 1);
   let value: unknown;
   try {
@@ -278,7 +285,8 @@ export function parseAssignment(text: string): { key: string; value: unknown } |
   } catch {
     value = raw;
   }
-  return { key: text.slice(0, at), value };
+  const takesText = settingSpec(key.startsWith(PREFIX) ? key.slice(PREFIX.length) : key)?.type === 'string';
+  return { key, value: takesText && typeof value !== 'string' ? raw : value };
 }
 
 /**
@@ -329,6 +337,7 @@ export const forcedShell = (s: Settings): Shell | undefined => (s.shell === 'aut
 export function explainOptions(s: Settings): ExplainOptions {
   return {
     yqFlavor: s['yq.flavor'],
+    bashVersion: s.bashVersion,
     examples: { enabled: s['examples.enabled'], disabled: s['examples.disabled'] },
     idioms: s['notes.idioms'],
     pitfalls: s['notes.pitfalls'],

@@ -38,9 +38,9 @@ export const MESSAGES = {
     `An exit status is 0–255, so \`${value}\` becomes ${status} (the value modulo 256)`]),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
-  'errexit-off-in-substitution': note<{ first: string }>(['4.3.1', '4.3.2'], ({ first }) => [
-    `bash は \`$( )\` の中では \`set -e\` を切る（\`shopt -s inherit_errexit\` が無いとき）。\`${first}\` が失敗しても、あとのコマンドは実行される`,
-    `bash turns \`set -e\` off inside \`$( )\` (without \`shopt -s inherit_errexit\`): if \`${first}\` fails, the commands after it still run`]),
+  'errexit-off-in-substitution': note<{ first: string; form: string }>(['4.3.1', '4.3.2'], ({ first, form }) => [
+    `bash は \`${form}\` の中では \`set -e\` を切る（\`shopt -s inherit_errexit\` が無いとき）。\`${first}\` が失敗しても、あとのコマンドは実行される`,
+    `bash turns \`set -e\` off inside \`${form}\` (without \`shopt -s inherit_errexit\`): if \`${first}\` fails, the commands after it still run`]),
   'errexit-set-called-where-ignored': note<{ name: string; line: number }>(['4.3.1'], ({ name, line }) => [
     `この \`set -e\` は \`${name}\` の呼び出しが終わるまで効かない: \`${name}\` は \`set -e\` が無視される所（行 ${line}）から呼ばれる`,
     `This \`set -e\` takes effect only when the call of \`${name}\` returns: \`${name}\` is called where \`set -e\` is ignored (line ${line})`]),

@@ -282,6 +282,13 @@ describe('the command-line tool', function () {
       assert.strictEqual(c(['--set', 'shell=dash'])['bashExplainer.shell'], 'dash');
       assert.strictEqual(c(['--set', 'shell=dash', '--shell', 'bash'])['bashExplainer.shell'], 'bash');
       assert.strictEqual(c(['--shell', 'bash', '--set', 'shell=dash'])['bashExplainer.shell'], 'bash');
+      assert.strictEqual(c([])['bashExplainer.bashVersion'], '5.2');
+      assert.strictEqual(c(['--set', 'bashVersion=5.3'])['bashExplainer.bashVersion'], '5.3');
+      assert.strictEqual(c(['--set', 'bashVersion=5.3', '--bash-version', '5.2'])['bashExplainer.bashVersion'], '5.2');
+      assert.match(run(['--print-config', '--bash-version', '5.1']).err, /unknown bash version: 5\.1 \(5\.2, 5\.3\)/);
+      // bash 5.3's `${ cmd; }`: a warning with bash 5.2 (the default), none with bash 5.3.
+      assert.match(run(['--check', '--no-config', '-e', 'x=${ echo a; }']).out, /bash 5\.3 syntax: bash 5\.2 reports "bad substitution".*\[funsub\]/);
+      assert.strictEqual(run(['--check', '--no-config', '--bash-version', '5.3', '-e', 'x=${ echo a; }']).code, 0);
       assert.strictEqual(c(['--set=language=en'])['bashExplainer.language'], 'en');
       assert.strictEqual(c(['--set', 'language=en', '--lang', 'ja'])['bashExplainer.language'], 'ja');
       assert.strictEqual(c(['--set', 'examples.enabled=false'])['bashExplainer.examples.enabled'], false);
