@@ -7,6 +7,7 @@ import { type NameResolution, resolveName, testSpecAt } from './semantics/names'
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
+import { staticWordValue } from './staticword';
 import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -28,6 +29,11 @@ function ranName(r: NameResolution): string | undefined {
   if (r.kind === 'alias') return r.sure && r.target ? ranName(r.target) : undefined;
   // (A path runs a file, never a builtin: `./cd` is not `cd`.)
   return pathCommand(r.name);
+}
+
+/** The path a redirection writes to, after quote removal when it is known. */
+function destination(d: SyntaxNode | null | undefined): string {
+  return !d ? '' : staticWordValue(d) ?? d.text.replace(/^["']/, '');
 }
 
 /** Is the node a parameter expansion (`$x`, `${x}`)? */
@@ -117,9 +123,10 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text, zsh: shell === 'zsh' }), word);
         }
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
-        // Only for files that need root: system directories, not your logs or /dev/null.
+        // Only for files that need root: system directories, not your logs or /dev/null. (The path after quote removal,
+        // `'/etc'/x` is `/etc/x`; when it is not known, as written, from an opening quote: `"/etc/$f"`.)
         const toFile = redirectionsOf(n).find((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
-          && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(field(c, 'destination')?.text.replace(/^["']/, '') ?? ''));
+          && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(destination(field(c, 'destination'))));
         if (name === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'), toFile);
         break;
       }

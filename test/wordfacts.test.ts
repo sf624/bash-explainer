@@ -39,6 +39,10 @@ describe('word facts', () => {
     ['for f in $(/bin/ls); do :; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
     ['/usr/bin/sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /done by your own shell/],
     ['FOO=1 ./x $FOO', 'prefix-assignment-expanded-first', /`FOO=…` is set only in the environment of `\.\/x`/],
+    // The path after quote removal (`'/proc'/sys` is `/proc/sys`), or as written when it is not known.
+    ["sudo echo 1 > '/proc'/sys/vm/drop_caches", 'redirect-by-your-shell', /done by your own shell/],
+    ['sudo echo 1 > ""/etc/x', 'redirect-by-your-shell', /done by your own shell/],
+    ['sudo echo 1 > "/etc/$f"', 'redirect-by-your-shell', /done by your own shell/],
   ];
   for (const [src, id, expected] of cases) {
     it(`points out ${src}`, () => {

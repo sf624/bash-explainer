@@ -151,6 +151,18 @@ The warning that an empty variable makes `rm -r` delete from the root:
 - `rm -rf $DIR/*` is no warning when the script set `DIR`, on every path to it, to a value with text of its own (`DIR=/opt/app`, `BUILD_DIR="$SCRIPT_DIR/build"`), and nothing else may change it unseen (src/semantics/trust.ts). A value from `$1`, `read`, a branch or a sourced file keeps the warning.
 - A command name with a `/` runs that file, never a builtin (3.7.2). `./read x` no longer gets the `read -r` pitfall, nor `./x = 1` the one for `x = 1`, nor `./cd $x` the one for an unquoted path. A function named `read`, or `read` after `enable -n read`, is not the builtin either. A path whose last part is a program the dictionary knows is that program, as its explanation says: `/bin/rm -rf $DIR/*` and `/bin/cp $x y` keep their warnings. `FOO=1 ./x $FOO` now names `./x` in its note. Before, every check read only the last part of the path.
 
+### Quote removal in find's expression
+
+find's expression is read from its words as bash passes them, after quote removal. A word whose value is not known (`$x`, an unquoted glob) is read as written.
+
+| Written | find gets | Shown before |
+| --- | --- | --- |
+| `-name 'a'"b"` | `ab` | `'a'"b"` |
+| `-name 'a'b'c'` | `abc` | `a'b'c` |
+| `find '\-name' x` | the paths `\-name` and `x` | the test `-name x` |
+
+The pitfall on `sudo cmd > /etc/…` also reads the path after quote removal: `sudo echo 1 > '/proc'/sys/vm/drop_caches` and `> ""/etc/x` are pointed out too.
+
 ### zsh
 
 - An unquoted `$var` or `${var}` is no longer said to be "word-split and globbed" in zsh, which does neither by default (`SH_WORD_SPLIT` and `GLOB_SUBST` are off). The pitfall on `cp $a b` is gone there, and so is the one on `for a in $@` (zsh gives each argument as one word). `[`'s explanation says that an empty unquoted variable is dropped, and `[ -n $x ]` keeps its pitfall with that reason.

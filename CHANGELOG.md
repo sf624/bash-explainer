@@ -24,6 +24,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.
 - The warning that an empty variable makes `rm -r` delete from the root no longer fires for forms that are never empty (`${DIR:-/tmp/x}/*`), and for `${DIR%/}` and similar it gives a check line before the command instead of a rewrite that dropped the operator. It also covers `${DIR:-''}`, `${DIR[0]}`, `$@` and `${DIR[@]}`.
 - A long pipeline is explained at once. Before, each stage doubled the time: a line of 20 `grep -e x f` stages took about 30 seconds.
+- find's expression reads each word as bash passes it, after quote removal: `find . -name 'a'"b"` matches `ab`. Before, the quotes stayed in (`'a'"b"`, or `a'b'c` for `'a'b'c'`), and `find '\-name' x` was read as the test `-name`.
 
 ## 0.8.0
 

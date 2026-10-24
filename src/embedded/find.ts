@@ -15,14 +15,8 @@ export type Arity = (primary: string) => number | 'until';
 
 const TERMINATORS = new Set([';', '+']);
 
-/** The text find sees for a word: quotes and a leading backslash removed (`\(` → `(`). */
-export function unquote(word: string): string {
-  if (/^'.*'$/.test(word) || /^".*"$/.test(word)) return word.slice(1, -1);
-  return word.replace(/^\\/, '');
-}
-
-export function isExpressionStart(word: string): boolean {
-  const w = unquote(word);
+/** Whether find reads a word, as the shell gives it (after quote removal: `\(` is `(`), as the start of its expression. */
+export function isExpressionStart(w: string): boolean {
   return (w.startsWith('-') && w.length > 1) || w === '(' || w === '!' || w === ',';
 }
 
