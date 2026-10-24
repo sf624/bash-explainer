@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), and step 3 (the readers) is done (#325). Steps 4 to 9 are not started: src/explain/ has the context, the node helpers and the readers, and src/analyzer.ts is 3,698 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), and step 3 (the readers) is done (#325). Steps 4 to 9 are not started: src/explain/ has the context, the node helpers and the readers, and src/analyzer.ts is 3,697 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -270,7 +270,7 @@ test/explain-imports.test.ts reads the imports of src/explain/*.ts (as test/synt
 
 The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `.includes('declare')`. A comparison on `.type` is left out (node types such as `command` are also builtin names). The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
 
-Since step 3, the comparisons on the other fields that hold a closed set of the models are left out too: `.kind` (a status rule's `command` and `test`), `.stops` (errexit's `script`) and `shell` (`bash`, `sh`). The code moved in step 3 compares them, and none of them holds a command's name.
+Since step 3, comparisons on four fields of the models are checked against the values of their closed unions, not against command names: `.type` (any node type), `.kind` (a status rule's `command` and `test`; a value is added only when code that needs it moves, as a reviewed edit), `.stops` (errexit's `script`) and `.shell` (the members of the `Shell` type). The values compared are values of those unions, some spelled like commands (`command`, `test`, `bash`), not command names. Only a property access counts: a bare `kind` or `shell` is checked like any other name. A command name on these fields that is not in the list is found. The allowed values are listed per field in the guard, and a test keeps the `.shell` list equal to the `Shell` type.
 
 ## 4. Steps
 
@@ -334,7 +334,7 @@ Where the sketch of 2.2 did not fit main, it was adapted, and 2.2 is read with t
 
 src/explain/reads.ts, where.ts and status.ts (2.3). These are the leaves that most groups call. Moves about 400 lines.
 
-**As done (#325).** The snapshot of the corpus is byte-identical before and after (and so are the snapshots with options of step 2: the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3; one analyzer for every line, in reverse; and errors thrown in the middle of a line). src/analyzer.ts went from 3,905 to 3,698 lines; src/explain/reads.ts is 132 lines, where.ts 83 and status.ts 54. The move was done by a script (TypeScript compiler API), as section 4 says; it is in the PR. What moved where:
+**As done (#325).** The snapshot of the corpus is byte-identical before and after (and so are the snapshots with options of step 2: the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3; one analyzer for every line, in reverse; and errors thrown in the middle of a line). src/analyzer.ts went from 3,905 to 3,697 lines; src/explain/reads.ts is 132 lines, where.ts 83 and status.ts 54. The move was done by a script (TypeScript compiler API), as section 4 says; it is in the PR. What moved where:
 
 - src/explain/reads.ts: `resolve`, `specFor`, `hostCommand`, `shoptAt` (with `SHOPT_NAMES` and the types `ShoptName`, `ShoptState`, `ShoptStates`, which analyzer.ts re-exports), `wordAt`, `globOff`, `globState`, `unquotedWord`, `isAssoc`, `inArithmetic`, `given`, `optionValues`, `regexFlavor`, `trContext`. `globState`, `unquotedWord` and `inArithmetic` read nothing of the context and take no `cx`.
 - src/explain/where.ts: `groupSubshell`, `subshellWhy`, `inSubshell`, `shellEffectNote`, `pidNote`.
@@ -345,7 +345,7 @@ src/explain/reads.ts, where.ts and status.ts (2.3). These are the leaves that mo
 Where the plan did not fit main:
 
 - It moved about 200 lines, not 400: the readers are shorter than estimated. `unwrapScalar` (yq's `-r`) stays with the examples (step 6), and `statusNotes` with the line notes (step 8), as 2.3 places them.
-- The names guard (3.3) leaves out comparisons on `.kind`, `.stops` and `shell`, besides `.type`: the moved status and where code compares them with `command`, `test`, `script` and `bash`, which are values of the models, not names.
+- The names guard (3.3) allows comparisons on `.kind`, `.stops` and `.shell`, besides `.type`, with the values of their closed unions only: the moved status and where code compares them with `command`, `test`, `script` and `bash`, which are values of the models, not names. A bare identifier, or another command name on these fields, is still found.
 - `Explainer.note` is two overloads, a fact about one node or a text about one or more, so that a fact with several nodes (which `spanOf` cannot place) does not type-check.
 
 ### Step 4: words and expansions (M)
