@@ -54,6 +54,9 @@ jobs:
       - name: Type check and unit tests
         if: matrix.node != 24
         run: npm test
+        env:
+          # Fail instead of skipping when PyYAML is missing (test/host-shells.test.ts).
+          BASH_EXPLAINER_PYYAML: '1'
 
       # On the newest Node.js, with every tool installed, the unit tests also measure coverage.
       - name: Type check, and unit tests with coverage
@@ -80,8 +83,9 @@ jobs:
           done
           exit "$status"
         env:
-          # Fail instead of skipping when the browser cannot start.
+          # Fail instead of skipping when the browser cannot start, or PyYAML is missing.
           BASH_EXPLAINER_BROWSER: '1'
+          BASH_EXPLAINER_PYYAML: '1'
 
       - name: Coverage summary
         if: matrix.node == 24

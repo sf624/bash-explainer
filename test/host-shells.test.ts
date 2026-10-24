@@ -40,10 +40,35 @@ const BLOCKS: [string, string][] = [
   ['|- and |+', '      - run: |-\n          echo a\n      - run: |+\n          echo b\n\n'],
   ['|2 with a more-indented first line', '      - run: |2\n            echo indented\n          cat <<EOF\n          x\n          EOF\n'],
   ['> joins lines into one command', '      - run: >\n          echo a\n          b\n          c\n'],
+  ['a header with a trailing space', '      - run: | \n          cat <<EOF\n          x\n          EOF\n          echo after\n'],
   ['> keeps a newline at a blank line and around more-indented lines', '      - run: >\n          echo a\n          b\n\n          echo c\n            echo d\n          echo e\n'],
 ];
 
-(hasYaml ? describe : describe.skip)('YAML block scalars as the runner gets them (PyYAML, bash)', () => {
+/**
+ * Folded blocks we read apart from YAML: a join is read as ` \` and a newline, which bash does not join inside single
+ * quotes, and which ends a `#` comment, where YAML joins the next line into the string or the comment. (The region's
+ * note says so.) If one of these comes out the same, take it out of here.
+ */
+const FOLD_DIFFERENCES: [string, string][] = [
+  ['> inside a single-quoted string', "      - run: >\n          echo 'a\n          b'\n"],
+  ['> after a comment', '      - run: >\n          echo a # c\n          echo b\n'],
+];
+
+describe('YAML block scalars as the runner gets them (PyYAML, bash)', () => {
+  // CI sets BASH_EXPLAINER_PYYAML=1, so that a missing PyYAML fails instead of skipping.
+  if (!hasYaml) {
+    it('needs PyYAML', function () {
+      if (process.env.BASH_EXPLAINER_PYYAML) assert.fail('BASH_EXPLAINER_PYYAML is set, but python3 cannot import yaml');
+      this.skip();
+    });
+    return;
+  }
+  for (const [name, step] of FOLD_DIFFERENCES) {
+    it(`known difference: ${name}`, () => {
+      const src = workflow(step);
+      assert.notStrictEqual(bash(scripts('yaml', src)[0]), bash(runValues(src)[0]));
+    });
+  }
   for (const [name, step] of BLOCKS) {
     it(name, () => {
       const src = workflow(step);
@@ -69,6 +94,10 @@ describe('a here-document in a YAML block', () => {
     assert.doesNotMatch(notes(9), /here-document/);
     assert.strictEqual(explain('yaml', src, 9).summary.split(':')[0], 'echo');
     assert.doesNotMatch(notes(10), /here-document/);
+  });
+  it('reads a block whose header ends in a space', () => {
+    assert.deepStrictEqual(scripts('yaml', workflow('      - run: | \n          echo a\n      - run: |-  # c\n          echo b\n')), ['echo a\n', 'echo b\n']);
+    assert.deepStrictEqual(scripts('yaml', 'build:\n  script:\n    - | \n      echo a\n'), ['echo a\n']);
   });
   it('makes no region of an empty block', () => {
     assert.deepStrictEqual(scripts('yaml', workflow('      - run: |\n      - run: echo a\n')), ['echo a\n']);
@@ -111,6 +140,39 @@ describe('each step is a shell of its own', () => {
   it('Markdown: the blocks share one shell, as typed into one terminal', () => {
     const src = '```bash\nset -u\n```\n\n```bash\necho "$x"\n```\n';
     assert.ok(unset('markdown', src, 5));
+  });
+  it('GitLab CI: a job\'s before_script and script are one shell, after_script another, the next job another', () => {
+    const src = 'build:\n  script:\n    - set -u\n    - X=1\n    - f() { echo hi; }\n    - echo "$X"\n    - f\n';
+    assert.strictEqual(explain('yaml', src, 6).items[0].name?.said.kind, 'function');
+    assert.ok(unset('yaml', 'build:\n  before_script:\n    - set -u\n  script:\n    - echo "$x"\n', 4));
+    // script above before_script in the file: still one shell (read in the order of the file, a limit).
+    const swapped = extractShell('yaml', 'build:\n  script:\n    - echo "$x"\n  before_script:\n    - set -u\n  after_script:\n    - echo\n').regions;
+    assert.strictEqual(swapped[0].script, swapped[1].script);
+    assert.notStrictEqual(swapped[2].script, swapped[0].script);
+    assert.ok(!unset('yaml', 'build:\n  script:\n    - set -u\n  after_script:\n    - echo "$x"\n', 4));
+    assert.ok(unset('yaml', 'build:\n  after_script:\n    - set -u\n    - echo "$x"\n', 3));
+    assert.ok(!unset('yaml', 'a:\n  script:\n    - set -u\nb:\n  script:\n    - echo "$x"\n', 5));
+  });
+  it('Bitbucket Pipelines: a step\'s script list is one shell, the next step another', () => {
+    const step = (cmds: string) => `      - step:\n          name: s\n          script:\n${cmds}`;
+    const src = `pipelines:\n  default:\n${step('            - set -u\n            - echo "$x"\n')}${step('            - echo "$y"\n')}`;
+    assert.ok(unset('yaml', src, 6));
+    assert.ok(!unset('yaml', src, 10));
+  });
+  it('Travis CI: the phases of the build are one shell', () => {
+    const src = 'language: shell\nbefore_script:\n  - set -u\nscript:\n  - echo "$x"\nafter_script:\n  - echo "$y"\n';
+    assert.ok(unset('yaml', src, 4));
+    assert.ok(unset('yaml', src, 6));
+  });
+  it('Taskfile: each command of cmds is a shell of its own', () => {
+    const src = 'version: \'3\'\ntasks:\n  a:\n    cmds:\n      - set -u\n      - echo "$x"\n';
+    assert.ok(!unset('yaml', src, 5));
+  });
+  it('Azure Pipelines and CircleCI: each step', () => {
+    const azure = 'trigger: [main]\npool:\n  vmImage: ubuntu-latest\nsteps:\n  - script: set -u\n  - bash: echo "$x"\n';
+    assert.ok(!unset('yaml', azure, 5));
+    const circle = 'version: 2.1\njobs:\n  a:\n    steps:\n      - run: set -u\n      - run:\n          command: echo "$x"\n';
+    assert.ok(!unset('yaml', circle, 6));
   });
   it('the Problems panel reads each step apart too', () => {
     const src = 'FROM alpine\nRUN set -o pipefail\nRUN a | b\n';
