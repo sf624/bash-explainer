@@ -56,7 +56,7 @@ import { isProgram, nameInfo } from './namefacts';
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
-import { type Fact, fact, factOf, MESSAGES, said } from './messages';
+import { type Fact, fact, factOf, MESSAGES, said, tokenBasis } from './messages';
 
 /**
  * The status facts of a script, by line, computed once per status model and tree (both languages): the strings `eval`
@@ -3955,7 +3955,7 @@ export class Analyzer {
     const t = this.tok(n, 'variable', d ?? (note
       ? this.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
       : this.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
-    t.explanation += this.matchNote(n) + this.orderNote(n, name) + this.variableNote(n, name);
+    t.explanation += this.matchNote(n) + this.orderNote(n, name) + this.variableNote(n, name); if (name === '_' && underscoreValue(n, this.cx.state) === '') Object.assign(t, tokenBasis(this.lang, 'underscore-after-assignment'));
     return t;
   }
 

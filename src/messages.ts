@@ -1,3 +1,4 @@
+import { basisSaid, type BasisSaid, type BasisSpec, type TryIt } from './basis';
 import type { Lang, Text } from './i18n';
 import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
@@ -20,10 +21,16 @@ interface Entry<P> {
   text: (p: P) => readonly [ja: string, en: string];
   /** Only on a pitfall: what follows the ⚠ in place of "落とし穴: " / "Pitfall: " (empty: nothing). */
   heading?: Text;
+  /** PROTOTYPE (src/basis.ts): where the fact is bash's behaviour rather than the manual's, and a command that shows it. */
+  basis?: BasisSpec;
+  tryIt?: TryIt | ((p: P) => TryIt);
 }
 
-const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
-const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}) });
+/** What a fact rests on, where it is not the manual alone (src/basis.ts). */
+type Meta<P> = { basis?: BasisSpec; tryIt?: TryIt | ((p: P) => TryIt) };
+
+const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], meta: Meta<P> = {}): Entry<P> => ({ kind: 'note', refs, text, ...meta });
+const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, meta: Meta<P> = {}): Entry<P> => ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...meta });
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -36,7 +43,11 @@ export const MESSAGES = {
   // ---------------------------------------------------------------- exit status (3.7.5)
   'exit-modulo': note<{ value: string; status: number }>(['3.7.5'], ({ value, status }) => [
     `終了ステータスは 0〜255 なので、\`${value}\` は 256 で割った余りの ${status} になる`,
-    `An exit status is 0–255, so \`${value}\` becomes ${status} (the value modulo 256)`]),
+    `An exit status is 0–255, so \`${value}\` becomes ${status} (the value modulo 256)`], {
+    // (3.7.5 gives the range, and 4.1 says that `return` keeps the least significant 8 bits; nothing says what `exit 300` does.)
+    basis: { kind: 'behaviour', manual: 'silent', probes: ['status#exit-modulo', 'status#exit-negative'] },
+    tryIt: { code: "bash -c 'exit 300'; echo $?", output: '44', probe: 'status#exit-modulo' },
+  }),
 
   // ---------------------------------------------------------------- errexit (4.3.1, 4.3.2)
   'errexit-off-in-substitution': note<{ first: string; form: string }>(['4.3.1', '4.3.2'], ({ first, form }) => [
@@ -62,7 +73,13 @@ export const MESSAGES = {
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
   'declaration-masks-status': pitfall<{ kw: string; v: string }>(['4.2', '4.3.1'], ({ kw, v }) => [
     `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
-    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]),
+    `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``], undefined, {
+    // (4.2: "The return status is zero unless local is used outside a function…": the manual says it; only the try-it.)
+    tryIt: ({ kw }) => ({
+      code: kw === 'local' ? "bash -ec 'f() { local x=$(false); echo still running; }; f'" : `bash -ec '${kw} x=$(false); echo still running'`,
+      output: 'still running', probe: kw === 'local' ? 'status#local-masks-status' : 'status#declare-masks-status',
+    }),
+  }),
   'pipefail-missing': pitfall<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
     `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]),
@@ -233,6 +250,13 @@ export const MESSAGES = {
     `the current shell expands \`${use}\` before \`${via}\` sets \`${v}\` (to its present value, or nothing). To use the value it sets, go through a shell: \`${via} ${v}=… sh -c '… "\$${v}"'\``]),
 
   // ---------------------------------------------------------------- pipelines and globs (3.2.3, 3.7.3, 3.5.8)
+  'bash-subshell-not-counted': note(['5.2', '3.2.3'], () => [
+    'このコマンドはパイプラインのサブシェルで実行されるが、bash はこのサブシェルを `$BASH_SUBSHELL` に数えない。ここの値は外側のシェルと同じ（トップレベルなら 0）。サブシェルかどうかは `$BASHPID` と `$$` を比べて調べる',
+    'This command runs in a subshell of the pipeline, but bash does not count that subshell in `$BASH_SUBSHELL`: here it has the value of the shell around (0 at the top level). To tell whether code runs in a subshell, compare `$BASHPID` with `$$`'], {
+    // (5.2: "Incremented by one within each subshell or subshell environment"; bash does not, for a simple command of a pipeline.)
+    basis: { kind: 'behaviour', manual: 'differs', probes: ['words#bash-subshell-pipeline', 'env#pipeline-stages'] },
+    tryIt: { code: "bash -c 'echo $BASH_SUBSHELL | cat; ( echo $BASH_SUBSHELL )'", output: '0\n1', probe: 'words#bash-subshell-pipeline' },
+  }),
   'pipeline-subshell-variable': pitfall<{ used: string; fix: Words; partial: boolean }>(['3.2.3', '3.7.3'], ({ used, fix, partial }) => [
     `パイプ（\`|\`）でつないだコマンドはサブシェルで実行されるので、右側で設定した \`${used}\` はパイプラインが終わると消え、あとの \`$${used}\` には届きません。${fix.ja}`
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
@@ -341,8 +365,11 @@ export const MESSAGES = {
 export type FactId = keyof typeof MESSAGES;
 export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[0];
 
-/** A fact as a note: its id, its text (with ℹ or ⚠), and the sections it cites. */
-export interface Fact { id: FactId; kind: FactKind; text: string; refs: readonly string[] }
+/**
+ * A fact as a note: its id, its text (with ℹ or ⚠), and the sections it cites; where it is bash's behaviour, its
+ * basis, and a command that shows it (src/basis.ts).
+ */
+export interface Fact { id: FactId; kind: FactKind; text: string; refs: readonly string[]; basis?: BasisSaid; tryIt?: TryIt }
 
 const PREFIX: Record<FactKind, Text> = {
   note: { ja: 'ℹ ', en: 'ℹ ' },
@@ -353,7 +380,29 @@ const PREFIX: Record<FactKind, Text> = {
 export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> extends Record<string, never> ? [] : [Params<K>]): Fact {
   const e = MESSAGES[id] as Entry<unknown>;
   const [ja, en] = e.text(params[0]);
-  return { id, kind: e.kind, text: (e.heading ? '⚠ ' + e.heading[lang] : PREFIX[e.kind][lang]) + (lang === 'ja' ? ja : en), refs: e.refs };
+  const tryIt = typeof e.tryIt === 'function' ? e.tryIt(params[0]) : e.tryIt;
+  return {
+    id, kind: e.kind, text: (e.heading ? '⚠ ' + e.heading[lang] : PREFIX[e.kind][lang]) + (lang === 'ja' ? ja : en), refs: e.refs,
+    ...(e.basis ? { basis: basisSaid(lang, e.basis) } : {}), ...(tryIt ? { tryIt } : {}),
+  };
+}
+
+/**
+ * PROTOTYPE: the basis of texts that are part of a token's explanation, not notes (the analyzer writes the text;
+ * `tokenBasis` gives what it rests on, by the same kind of id).
+ */
+export const TOKEN_BASES = {
+  // (5.2 says `$_` is the last argument of the previous simple command; not that a command of assignments alone empties it.)
+  'underscore-after-assignment': {
+    basis: { kind: 'behaviour', manual: 'silent', probes: ['words#underscore-after-assignment'] },
+    tryIt: { code: `bash -c 'true x; a=1; echo "[$_]"'`, output: '[]', probe: 'words#underscore-after-assignment' },
+  },
+} satisfies Record<string, Meta<never>>;
+
+/** The fields a token gets for a text of `TOKEN_BASES`. */
+export function tokenBasis(lang: Lang, id: keyof typeof TOKEN_BASES): { basis?: BasisSaid; tryIt?: TryIt } {
+  const m: Meta<never> = TOKEN_BASES[id];
+  return { ...(m.basis ? { basis: basisSaid(lang, m.basis) } : {}), ...(m.tryIt && typeof m.tryIt !== 'function' ? { tryIt: m.tryIt } : {}) };
 }
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */

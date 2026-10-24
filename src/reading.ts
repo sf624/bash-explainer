@@ -24,6 +24,7 @@
 // The layers come from the tree and from `Token.origin`, never from a label or an explanation. The explanations of
 // the nodes are those of the tokens about the same text: bash's own (`shell`) for the nodes bash reads.
 import type { Pos, ScriptProcess, Span, Token } from './analyzer-types';
+import type { BasisSaid, TryIt } from './basis';
 import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
 import { anonSections, CONSTRUCTS, nodeSections } from './refs';
@@ -76,8 +77,14 @@ export interface ReadingNode {
   replacement?: string;
   /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
   name?: NameInfo;
+  /** PROTOTYPE (src/basis.ts): the token's basis where it is bash's behaviour, and its try-it (`Token.basis`, `Token.tryIt`). */
+  basis?: BasisSaid;
+  tryIt?: TryIt;
   children: ReadingNode[];
 }
+
+/** The basis and try-it of a token, for its node. */
+const basisOf = (t: Token | undefined): Pick<ReadingNode, 'basis' | 'tryIt'> => ({ ...(t?.basis ? { basis: t.basis } : {}), ...(t?.tryIt ? { tryIt: t.tryIt } : {}) });
 
 /** What the reading tree asks of the analyzer. */
 export interface ReadingContext {
@@ -177,7 +184,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const refs = t?.refs ?? (n.named ? nodeSections(n) : anonSections(n));
     return {
       layer, kind, label: short(n.text), span, ...(t ? { text: t.explanation } : {}), ...(refs ? { refs } : {}),
-      ...(layer === 'child' ? { process: 'subshell' as const } : {}), ...(t?.name && kind === 'keyword' ? { name: t.name } : {}), children,
+      ...(layer === 'child' ? { process: 'subshell' as const } : {}), ...(t?.name && kind === 'keyword' ? { name: t.name } : {}), ...basisOf(t), children,
     };
   };
 

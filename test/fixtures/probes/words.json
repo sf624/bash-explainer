@@ -2012,6 +2012,7 @@
     }
   },
   {
+    "id": "underscore-after-assignment",
     "manual": "3.4.2",
     "snippet": "true x; a=1 >/dev/null b=2; @PROBE:a@ \"$_\"",
     "facts": {
@@ -2033,6 +2034,41 @@
       "a": [
         [
           "x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "bash-subshell-pipeline",
+    "manual": "5.2",
+    "snippet": "@PROBE:a@ $BASH_SUBSHELL | cat; echo | @PROBE:b@ \"${BASH_SUBSHELL}\"; { @PROBE:c@ $BASH_SUBSHELL; } | cat; ( @PROBE:d@ $BASH_SUBSHELL | cat )",
+    "note": "A simple command of a pipeline runs in a subshell ($BASHPID is not $$: env.json, pipeline-stages), but bash does not count it in BASH_SUBSHELL; a compound stage is counted.",
+    "gaps": {
+      "a": "the model gives no value to bash's own variables (BASH_SUBSHELL); the subshells are env.json's (pipeline-stages), and the note on the count is the analyzer's (bash-subshell-not-counted)",
+      "b": "the model gives no value to bash's own variables (BASH_SUBSHELL); the subshells are env.json's (pipeline-stages), and the note on the count is the analyzer's (bash-subshell-not-counted)",
+      "c": "the model gives no value to bash's own variables (BASH_SUBSHELL); the subshells are env.json's (pipeline-stages), and the note on the count is the analyzer's (bash-subshell-not-counted)",
+      "d": "the model gives no value to bash's own variables (BASH_SUBSHELL); the subshells are env.json's (pipeline-stages), and the note on the count is the analyzer's (bash-subshell-not-counted)"
+    },
+    "facts": {
+      "a": [
+        [
+          "0"
+        ]
+      ],
+      "b": [
+        [
+          "0"
+        ]
+      ],
+      "c": [
+        [
+          "1"
+        ]
+      ],
+      "d": [
+        [
+          "1"
         ]
       ],
       "status": 0

@@ -4,11 +4,12 @@ import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
 import { args, commandName, pathCommand, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
+import { ownSubshells } from './semantics/env';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
+import { ancestor, field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a
@@ -46,6 +47,16 @@ function alwaysNumber(n: SyntaxNode): boolean {
   return /^\$[?#$!]$/.test(n.text) || /^\$\{#/.test(n.text);
 }
 
+/**
+ * The pipeline stage that is the simple command expanding `n` (the innermost command around it): bash forks it
+ * without counting a subshell in `BASH_SUBSHELL`. A compound stage (`{ …; } | cat`) is counted.
+ */
+function simpleStage(n: SyntaxNode): SyntaxNode | undefined {
+  const cmd = ancestor(n, (a) => a.type === 'command');
+  const stage = cmd?.parent?.type === 'redirected_statement' ? cmd.parent : cmd;
+  return stage?.parent?.type === 'pipeline' ? stage : undefined;
+}
+
 /** The facts (pitfalls) about words whose node starts on `line`. */
 export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell?: Shell): Fact[] {
   // (Each text once.)
@@ -78,6 +89,9 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
   const check = (n: SyntaxNode) => {
     switch (n.type) {
       case 'simple_expansion': case 'expansion': case 'variable_name': {
+        // `echo $BASH_SUBSHELL | cat`: a subshell, but not counted (the env model says the stage is one).
+        const stage = n.type !== 'variable_name' && /^\$\{?BASH_SUBSHELL\}?$/.test(n.text) ? simpleStage(n) : undefined;
+        if (stage && ownSubshells(model.env(stage), stage).some((l) => l.why === 'pipeline-stage' && l.sure)) add(fact(lang, 'bash-subshell-not-counted'));
         // `set -u` and a variable with no value: bash fails here. (Only at the first such read of the statement,
         // in the order bash expands it: the rest of it is not expanded.)
         const u = unboundRead(n, model, shell);

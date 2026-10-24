@@ -156,7 +156,8 @@
     $('notes').replaceChildren(...ex.notes.map((n) => {
       const p = document.createElement('p');
       p.className = 'note';
-      p.append(...inline(n), ...refLinks(ex.facts?.find((f) => f.text === n)?.refs));
+      const f = ex.facts?.find((x) => x.text === n);
+      p.append(...inline(n), ...refLinks(f?.refs), ...basisParts(f));
       return p;
     }));
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
@@ -371,6 +372,78 @@
     return d;
   }
 
+  // ---------------------------------------------------------------- what an explanation rests on (PROTOTYPE, src/basis.ts)
+
+  /** Which look is shown: `?basis=a|b` on the web page (a: a chip and the try-it behind a disclosure; b: a line, the try-it shown). */
+  const basisLook = (() => {
+    try {
+      return new URLSearchParams(window.parent.location.search).get('basis') === 'b' ? 'b' : 'a';
+    } catch {
+      return 'a';
+    }
+  })();
+
+  /**
+   * The marker of an explanation that is bash's behaviour rather than the manual's (`basis`), and the command that
+   * shows it (`tryIt`), from the fact or the token. The extension gives the texts; the panel composes none.
+   */
+  function basisParts(/** @type {any} */ x) {
+    const out = [];
+    if (x?.basis) {
+      const m = document.createElement('span');
+      m.className = `basis basis-${x.basis.manual} look-${basisLook}`;
+      m.title = x.basis.title;
+      m.textContent = x.basis.label;
+      out.push(m);
+    }
+    if (x?.tryIt) out.push(tryItBox(x.tryIt));
+    return out;
+  }
+
+  /** A try-it: the command to copy into a terminal (never run here) and what it prints. */
+  function tryItBox(/** @type {{ code: string, output: string }} */ t) {
+    const open = basisLook === 'b';
+    const box = document.createElement(open ? 'div' : 'details');
+    box.className = `tryit look-${basisLook}`;
+    // (A click in it is not a click on the row: it neither folds nor moves the cursor.)
+    box.addEventListener('click', (e) => e.stopPropagation());
+    const head = document.createElement(open ? 'span' : 'summary');
+    head.className = 'tryit-head';
+    head.textContent = labels.tryIt ?? 'Try it';
+    head.title = labels.tryItHint ?? '';
+    const code = document.createElement('code');
+    code.className = 'tryit-code';
+    code.textContent = t.code;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'tryit-copy';
+    copy.textContent = labels.copyCode ?? 'Copy';
+    copy.addEventListener('click', () => {
+      const done = () => {
+        copy.textContent = labels.copiedCode ?? 'Copied';
+        setTimeout(() => { copy.textContent = labels.copyCode ?? 'Copy'; }, 1500);
+      };
+      // (Where the clipboard is not given to the page, the code is selected, for the reader's own copy.)
+      const select = () => getSelection()?.selectAllChildren(code);
+      if (navigator.clipboard) navigator.clipboard.writeText(t.code).then(done, select);
+      else select();
+    });
+    const line = document.createElement('span');
+    line.className = 'tryit-line';
+    line.append(code, copy);
+    const prints = document.createElement('span');
+    prints.className = 'tryit-prints';
+    prints.textContent = labels.prints ?? 'Prints';
+    const output = document.createElement('code');
+    output.className = 'tryit-output';
+    output.textContent = t.output;
+    const body = document.createElement('span');
+    body.className = 'tryit-body';
+    body.append(line, prints, output);
+    box.append(head, body);
+    return box;
+  }
+
   /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
   const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
 
@@ -409,6 +482,7 @@
     text.append(...inline(token.explanation));
     const also = nameAlso(token.name);
     if (also) text.append(also);
+    text.append(...basisParts(token));
     row.append(twisty, label, ...nameBadge(token.name), text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
@@ -1290,6 +1364,7 @@
     if (about) row.append(text);
     const also = nameAlso(n.name);
     if (also) row.append(also);
+    row.append(...basisParts(n));
     const spoken = badge.length ? `, ${nameSpoken(n.name)}` : '';
     li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}${spoken}. ${readerOf(n)}. ${about.replace(/`/g, '')}${also ? `. ${also.textContent}` : ''}`);
     li.append(row);

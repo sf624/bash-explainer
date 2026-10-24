@@ -11,7 +11,8 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explained, noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
+import { explained, noteBasis, noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
+import { basisLines } from '../src/basis';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -260,13 +261,13 @@ function textOutput(name: string, line: number, lineText: string, ex: LineExplan
   const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);
-  for (const n of ex.notes) out.push(`  ${n}${refs(noteRefs(ex, n))}`);
+  for (const n of ex.notes) out.push(`  ${n}${refs(noteRefs(ex, n))}`, ...basisLines(lang, noteBasis(ex, n), 'text').map((l) => `    ${paint('90', l)}`));
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(labelParts(t), (p) => (p.placeholder
       ? (color ? `\x1b[2;3m${p.text}\x1b[0m` : `${PLACEHOLDER_OPEN}${p.text}${PLACEHOLDER_CLOSE}`)
       : paint(ANSI[t.kind], p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
-    out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`);
+    out.push(`${'  '.repeat(depth + 1)}${label}  ${explained(t).replace(/`/g, '')}${refs(t.refs)}`, ...basisLines(lang, t, 'text').map((l) => `${'  '.repeat(depth + 2)}${paint('90', l)}`));
     for (const c of t.children) walk(c, depth + 1);
   };
   for (const t of ex.items) walk(t, 0);

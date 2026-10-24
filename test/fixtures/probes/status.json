@@ -179,6 +179,7 @@
     }
   },
   {
+    "id": "local-masks-status",
     "manual": "3.7.1",
     "snippet": "f() { local x=$(false); @PROBE:a@; }; f",
     "note": "local returns its own status",
@@ -299,6 +300,7 @@
     }
   },
   {
+    "id": "exit-modulo",
     "manual": "3.7.5",
     "snippet": "exit 256",
     "errexit": false,
@@ -308,6 +310,7 @@
     }
   },
   {
+    "id": "exit-negative",
     "manual": "3.7.5",
     "snippet": "exit -1",
     "errexit": false,
@@ -802,6 +805,7 @@
     }
   },
   {
+    "id": "declare-masks-status",
     "manual": "3.7.1",
     "snippet": "export x=$(false); @PROBE:a@",
     "facts": {

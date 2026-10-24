@@ -1097,6 +1097,150 @@ body.vscode-high-contrast-light #reading-tree li.band {
   min-width: 0;
 }
 
+/* PROTOTYPE (src/basis.ts, media/panel.js `basisParts`): what an explanation rests on, where it is bash's behaviour
+   rather than the manual's, and a command that shows it. Look a: a chip after the text, the try-it behind a
+   disclosure. Look b: a muted line under the text, the try-it always shown. Every text is in the foreground or
+   the muted colour. */
+.basis.look-a {
+  display: inline-block;
+  margin-left: 0.5em;
+  padding: 0 0.5em;
+  font-size: 0.78em;
+  line-height: 1.4;
+  color: var(--vscode-foreground);
+  /* (A tinted pill, not an outlined box: the outlined boxes are the name kinds' badges.) */
+  background: color-mix(in srgb, var(--c-muted) 16%, transparent);
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+
+.basis.look-b {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.85em;
+  color: var(--c-muted);
+}
+
+.basis.look-b::before {
+  content: "≈ ";
+}
+
+.basis.look-b.basis-differs::before {
+  content: "≠ ";
+}
+
+.tryit {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.9em;
+  cursor: auto;
+}
+
+.tryit-head {
+  color: var(--c-muted);
+}
+
+summary.tryit-head {
+  cursor: pointer;
+  width: fit-content;
+}
+
+details.tryit[open] > summary.tryit-head {
+  margin-bottom: 0.2rem;
+}
+
+.tryit-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.5rem;
+  align-items: baseline;
+}
+
+.tryit.look-b .tryit-body {
+  margin-top: 0.15rem;
+}
+
+.tryit-line {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.tryit-code,
+.tryit-output {
+  display: block;
+  font-family: var(--vscode-editor-font-family);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+  color: var(--vscode-foreground);
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  cursor: text;
+  user-select: text;
+}
+
+.tryit-code {
+  flex: 1 1 auto;
+}
+
+.tryit-prints {
+  color: var(--c-muted);
+}
+
+.tryit-copy {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.9em;
+  min-height: 24px;
+  padding: 0 0.6em;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--c-muted);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tryit-copy:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.15));
+}
+
+/* (A summary keeps its marker: it stays a list item, made taller with padding.) */
+@media (pointer: coarse) {
+  .tryit-copy {
+    min-height: 40px;
+  }
+
+  summary.tryit-head {
+    padding-block: 0.6rem;
+  }
+}
+
+@media (max-width: 520px) {
+  html.bx-web .tryit-copy {
+    min-height: 40px;
+  }
+
+  html.bx-web summary.tryit-head {
+    padding-block: 0.6rem;
+  }
+}
+
+.trow .basis,
+.trow .tryit {
+  grid-column: 1 / -1;
+  justify-self: start;
+  max-width: 100%;
+}
+
+.trow .basis.look-a {
+  margin-left: 0;
+  margin-top: 0.15rem;
+}
+
 @media (forced-colors: active) {
   #reading-tree li.band {
     background: none;
@@ -1125,6 +1269,13 @@ body.vscode-high-contrast-light #reading-tree li.band {
   .nk-by,
   .nk-also {
     color: CanvasText;
+  }
+
+  .basis,
+  .tryit-head,
+  .tryit-prints {
+    color: CanvasText;
+    border-color: CanvasText;
   }
 
   .trow .band-label {

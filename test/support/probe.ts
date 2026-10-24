@@ -323,6 +323,8 @@ export type ProbeKind = 'state' | 'env' | 'names' | 'words' | 'status';
 export const PROBE_KINDS: ProbeKind[] = ['state', 'env', 'names', 'words', 'status'];
 
 export interface ProbeRow {
+  /** A stable name for the row, where something links it (src/basis.ts: `words#bash-subshell-pipeline`). */
+  id?: string;
   /** The section of the Bash manual the row is about ('3.2.3'). */
   manual: string;
   snippet: string;

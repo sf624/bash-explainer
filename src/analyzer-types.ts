@@ -7,6 +7,7 @@ import type { HostId } from './hosts';
 import type { LabelPart } from './label';
 import type { Fact } from './messages';
 import type { NameInfo } from './namefacts';
+import type { BasisSaid, TryIt } from './basis';
 import type { ReadingNode } from './reading';
 
 export type Kind =
@@ -74,6 +75,9 @@ export interface Token {
    * and `[[`): what the name is here, who looks it up, and what else the same name is (src/namefacts.ts).
    */
   name?: NameInfo;
+  /** PROTOTYPE (src/basis.ts): where the explanation is bash's behaviour, not the manual's, and a command that shows it. */
+  basis?: BasisSaid;
+  tryIt?: TryIt;
 }
 
 export interface ContextEntry { label: string; line: number }

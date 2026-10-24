@@ -1,4 +1,5 @@
 import { Example, Kind, LineExplanation, Pos, Span, Token } from '../analyzer-types';
+import { basisLines, type BasisSaid, type TryIt } from '../basis';
 import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';
@@ -29,6 +30,8 @@ export const ui = {
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
       views: '表示', listView: '意味', treeView: '読まれ方',
+      // PROTOTYPE (src/basis.ts): around a try-it.
+      tryIt: '端末で試す', tryItHint: 'このコマンドを自分の端末に貼り付けて実行する（ここでは実行されない）', prints: '出力', copyCode: 'コピー', copiedCode: 'コピーしました',
       tree: {
         label: '行の各部分を誰が読むか', show: '表示',
         // The steps of the tree, from the line alone to every layer: their short names (the buttons) and their names.
@@ -109,6 +112,8 @@ export const ui = {
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
+      // PROTOTYPE (src/basis.ts): around a try-it.
+      tryIt: 'Try it in your terminal', tryItHint: 'Paste this command into your own terminal and run it (it is not run here)', prints: 'Prints', copyCode: 'Copy', copiedCode: 'Copied',
       tree: {
         label: 'Who reads each part of the line', show: 'Show',
         steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
@@ -170,6 +175,12 @@ export const ui = {
 /** The sections of the manual a note cites: those of the fact it says (`LineExplanation.facts`), if it is one. */
 export function noteRefs(ex: LineExplanation, note: string): readonly string[] | undefined {
   return ex.facts?.find((f) => f.text === note)?.refs;
+}
+
+/** PROTOTYPE (src/basis.ts): the basis and try-it of a note, from the fact it says. */
+export function noteBasis(ex: LineExplanation, note: string): { basis?: BasisSaid; tryIt?: TryIt } {
+  const f = ex.facts?.find((x) => x.text === note);
+  return { ...(f?.basis ? { basis: f.basis } : {}), ...(f?.tryIt ? { tryIt: f.tryIt } : {}) };
 }
 
 /** "Bash manual [3.2.5.2](…), [6.4](…)": the sections as Markdown links, after the words "Bash manual". */
@@ -322,7 +333,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   }
   // A note, and a token, end with the sections of the manual they are about, small.
   const small = (refs: readonly string[] | undefined) => (refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : '');
-  for (const n of ex.notes) out.push(`> ${n}${small(noteRefs(ex, n))}`, '');
+  for (const n of ex.notes) out.push(`> ${n}${small(noteRefs(ex, n))}`, ...basisLines(lang, noteBasis(ex, n), 'markdown').map((l) => `> <small>${l}</small>`), '');
   if (!ex.items.length) {
     out.push(t.empty);
     return out.join('\n');
@@ -333,7 +344,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
       ? `<i>${colored(p.text, 'comment', theme)}</i>`
       : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind, theme)}</code>`));
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
-    out.push(`${'  '.repeat(depth)}- ${shown} — ${explained(tok)}${small(tok.refs)}`);
+    out.push(`${'  '.repeat(depth)}- ${shown} — ${explained(tok)}${small(tok.refs)}`, ...basisLines(lang, tok, 'markdown').map((l) => `${'  '.repeat(depth + 1)}<small>${l}</small>  `));
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
     const examples = tok.examples?.length ? examplesMarkdown(tok.examples, '  '.repeat(depth + 1)) : [];
     if (placement === 'first') out.push(...examples);
@@ -383,9 +394,9 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
-  for (const n of ex.notes) out.push(`> ${n}${links(noteRefs(ex, n))}`, '');
+  for (const n of ex.notes) out.push(`> ${n}${links(noteRefs(ex, n))}`, ...basisLines(lang, noteBasis(ex, n), 'markdown').map((l) => `> ${l}`), '');
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`, ...basisLines(lang, tok, 'markdown').map((l) => `${'  '.repeat(depth + 1)}${l}  `));
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);
