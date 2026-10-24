@@ -4,7 +4,6 @@
 // another meaning has its muted line, and nothing runs past the right edge. The geometry is read from positions,
 // not from how wide a font draws the words.
 import * as assert from 'assert';
-import { devices } from 'playwright-core';
 import type { Browser, Frame, Page } from 'playwright-core';
 import { servePanel, type PanelServer } from './support/panel-page';
 import { chooseView, frames, openSite, until } from './support/site';
@@ -59,6 +58,8 @@ describe('the web page: what a command name is, in both views', function () {
 
   for (const width of [1280, 390]) {
     it(`shows the badges at ${width} px`, async () => {
+      // Imported here: playwright-core does not load on Node.js 18, where the browser tests are skipped.
+      const { devices } = await import('playwright-core');
       const ctx = await browser.newContext(width < 600
         ? { ...devices['iPhone 13'], viewport: { width, height: 900 }, locale: 'en-US' }
         : { viewport: { width, height: 900 }, locale: 'en-US' });
