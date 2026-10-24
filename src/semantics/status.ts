@@ -126,6 +126,8 @@ function outerSubstitutions(n: SyntaxNode): SyntaxNode[] {
 }
 
 export interface StatusModel {
+  /** The state the model reads (src/semantics/state.ts). */
+  readonly state: StateModel;
   status(n: SyntaxNode): StatusRule;
   errexit(n: SyntaxNode): ErrexitContext;
   /**
@@ -165,7 +167,7 @@ class Statuses implements StatusModel {
   private readonly errexitMemo = new Map<SyntaxNode, ErrexitContext>();
   private callees: Map<SyntaxNode, SyntaxNode[]> | undefined;
 
-  constructor(private readonly state: StateModel, private readonly shell?: Shell) {}
+  constructor(readonly state: StateModel, private readonly shell?: Shell) {}
 
   /** The function definitions a command calls (B2's calls). */
   private calledBy(n: SyntaxNode): SyntaxNode[] {

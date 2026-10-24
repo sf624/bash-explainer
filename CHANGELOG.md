@@ -54,6 +54,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - find's expression reads each word as bash passes it, after quote removal: `find . -name 'a'"b"` matches `ab`. Before, the quotes stayed in (`'a'"b"`, or `a'b'c` for `'a'b'c'`), and `find '\-name' x` was read as the test `-name`.
 - `|| true` and `|| :` count as a success only when they run the builtin or the program: after `true() { return 1; }`, `x=$(false || true)` stops the script under `set -e`, as the note on `$( )` now says, and it is no idiom. `|| command true` and `|| /bin/true` count too.
 - In a `for (( ))` header, `i = 0` no longer says "no spaces around `=`" (arithmetic allows them), and a name such as `x` in `!x` is a variable, as in `(( ))`. Before, it was a "Word".
+- Words follow the shell options and the `IFS` in effect: `**` matches one level until `shopt -s globstar`, and `@(…)` in `${x%…}` is plain text without `extglob`. The `read` example splits on the `IFS` set before it. Before, `**` was always explained as any depth, and `IFS=,; read a b` was split on spaces.
+- Explanations match bash in more words: a quoted `"$q"` in a `case` pattern is literal text, `x=~` is the home directory, `$'\n'` shows a newline, `${x:?"msg"}` prints `msg`, and `${s@K}` of a plain value quotes it.
 
 ## 0.8.0
 

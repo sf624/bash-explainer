@@ -1,7 +1,7 @@
 import { intValue } from './arith';
 import { Lang } from './i18n';
 import { bracketEnd, bracketItems, bracketRegex } from './bracket';
-import { unquoteWord } from './staticword';
+import { messageText, unquoteWord } from './staticword';
 
 /** A part of a `${…}` expansion; offsets are relative to the start of the whole `${…}` text. */
 export interface ExpansionPart {
@@ -417,7 +417,8 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
     case '+':
       return [set(sample, expanded(word)), emptyCase(expanded(word)), missing(false, '')];
     case ':?': case '?': {
-      const msg = word || (ja ? '（既定のメッセージ）' : '(a default message)');
+      // (`${x:?""}` prints an empty message; only a missing word gives bash's own.)
+      const msg = rawWord ? (unquoteWord(rawWord, quoted) ?? messageText(rawWord)) : ja ? '（既定のメッセージ）' : '(a default message)';
       const fail = ja ? `エラー「${msg}」を表示して終了` : `prints the error "${msg}" and exits`;
       return [missing(p.op === ':?', fail), set(sample, sample)];
     }
@@ -541,6 +542,16 @@ export const opMeaning: Record<string, [string, string]> = {
   ':': ['部分文字列を取り出す（`:開始位置:長さ`）', 'Take a substring (`:offset:length`)'],
   '@': ['値を変換する（`@` の後の1文字で変換の種類を指定）', 'Transform the value (the letter after `@` selects how)'],
 };
+
+/**
+ * What transform `letter` does to the value of `p`. `K` and `k` give keys and values only for all the elements of an
+ * array (`${a[@]@K}`); on any other value (`${s@K}`, `${a@K}`, `${@@K}`) they quote it as `Q` does.
+ */
+export function transformOf(letter: string, p: { subscript?: string }): [string, string] | undefined {
+  return (letter === 'K' || letter === 'k') && p.subscript !== '@' && p.subscript !== '*'
+    ? ['シェルに再入力できる形に `@Q` と同じくクォートする（キーと値の組になるのは配列の全要素 `${a[@]@' + letter + '}` だけ）', 'quote it as `@Q` does, so it can be reused as shell input (only all the elements of an array, `${a[@]@' + letter + '}`, give keys and values)']
+    : transformMeaning[letter];
+}
 
 export const transformMeaning: Record<string, [string, string]> = {
   Q: ['シェルに再入力できる形にクォートする', 'quote it so it can be reused as shell input'],

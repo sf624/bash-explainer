@@ -16,7 +16,7 @@ import { spanOf } from '../noteanchors';
 import { attribute, docLine } from '../semantics/state';
 import { partMeaning, underscoreValue } from '../semantics/words';
 import { decodedText, splitElement, staticWordValue, unquoteWord } from '../staticword';
-import { ancestor, assignmentsOnly, field, type SyntaxNode } from '../syntax/tree';
+import { ancestor, assignmentsOnly, descendants, field, type SyntaxNode } from '../syntax/tree';
 import { claim } from '../tokenmarks';
 import type { Explainer } from './context';
 import { fromEmbedded, same, sibling, sortTokens } from './nodes';
@@ -54,8 +54,9 @@ export function string(cx: Explainer, n: SyntaxNode): Token {
     t.span = { start: spanOf(dollar).start, end: t.span.end };
     return t;
   }
-  // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes.
-  const perElement = /(?<!\\)\$@|\$\{@|\$\{(?!#)[^}]*\[@\]|\$\{![\w]*@\}/.test(n.text);
+  // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes (not one in a
+  // `$( )` in the string: the substitution gives one word).
+  const perElement = n.namedChildren.some((c) => (c.type === 'simple_expansion' || c.type === 'expansion') && /\$@|\$\{@|\$\{(?!#)[^}]*\[@\]|\$\{![\w]*@\}/.test(c.text));
   return cx.tok(n, 'string', (perElement ? cx.s(
     'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
     'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
@@ -93,9 +94,12 @@ export function valueNote(cx: Explainer, n: SyntaxNode): string {
   const v = staticWordValue(n);
   if (!v || v === decodedText(n)) return '';
   const literal = v.includes('$');
+  // (A newline is shown as `␊`, so that it is not read as the two characters `\n`.)
+  const nl = v.includes('\n');
+  const text = nl ? visible(v).replace(/\n/g, '␊') : shown(v);
   return cx.s(
-    `。クォートやバックスラッシュを取り除くと \`${shown(v)}\` という文字列になる${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
-    `. After quote removal it is the string \`${shown(v)}\`${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
+    `。クォートやバックスラッシュを取り除くと \`${text}\` という文字列になる${nl ? '（`␊` は改行文字）' : ''}${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
+    `. After quote removal it is the string \`${text}\`${nl ? ' (`␊` is a newline)' : ''}${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
   );
 }
 
@@ -208,14 +212,32 @@ export function globToken(cx: Explainer, n: SyntaxNode, target: GlobTarget, text
   return cx.tok(n, kind, globIntro(cx.lang, target) + extglobNote(cx, text), globChildren(cx, n, text, base));
 }
 
-/** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`). */
-export function globChildren(cx: Explainer, n: SyntaxNode, text: string, base: number): Token[] {
-  return explainGlob(text, cx.lang).map((t) => fromEmbedded(t, n, { text, base }, 'shell'));
+/**
+ * A `case` pattern. Plain text is a glob (`*.txt)`); with an expansion, what bash matches depends on the quotes: an
+ * unquoted `$p` gives a pattern, and a quoted `"$q"` is matched as literal text (manual 3.2.5.2, 3.5.8.1).
+ */
+export function casePattern(cx: Explainer, p: SyntaxNode): Token {
+  const parts = p.type === 'concatenation' ? p.namedChildren : [p];
+  if (!descendants(p, [...EXPANDING]).length && !EXPANDING.has(p.type)) return globToken(cx, p, 'value', p.text, 0);
+  const unquoted = parts.some((x) => EXPANDING.has(x.type));
+  const quoted = parts.some((x) => QUOTED.has(x.type));
+  return cx.tok(p, 'pattern', !unquoted
+    ? cx.s(`パターン \`${p.text}\`: 展開はクォートされているので、その値は文字列そのものとして照合される（値の中の \`*\` や \`?\` はワイルドカードにならない）`, `Pattern \`${p.text}\`: the expansion is quoted, so its value is matched as literal text (\`*\` and \`?\` in the value are not wildcards)`)
+    : quoted
+      ? cx.s(`パターン \`${p.text}\`: クォートしていない展開の結果はパターンになり、クォートした部分は文字列そのものとして照合される`, `Pattern \`${p.text}\`: what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text`)
+      : cx.s(`パターン \`${p.text}\`: 展開した結果がパターンになる`, `Pattern \`${p.text}\`: what it expands to is the pattern`), cx.sub(p));
+}
+const EXPANDING = new Set(['simple_expansion', 'expansion', 'command_substitution']);
+const QUOTED = new Set(['string', 'raw_string', 'ansi_c_string', 'translated_string']);
+
+/** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`); `extglob: false` reads `@(…)` as plain text. */
+export function globChildren(cx: Explainer, n: SyntaxNode, text: string, base: number, extglob = true): Token[] {
+  return explainGlob(text, cx.lang, extglob).map((t) => fromEmbedded(t, n, { text, base }, 'shell'));
 }
 
 /**
- * What `**` does in a file-name glob. It is written for any depth, so it is explained that way, with
- * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
+ * What a file-name glob does with the glob options in effect: `**` reaches into subdirectories only with globstar on
+ * (with a pitfall when it is not seen turned on before: it may be, in a file read with `source`).
  */
 export function globNotes(cx: Explainer, text: string, n: SyntaxNode): string {
   return globOptionNote(cx, n, text) + starStarNote(cx, text, n) + extglobNote(cx, text);
@@ -269,9 +291,11 @@ function starStarNote(cx: Explainer, text: string, n: SyntaxNode): string {
   if (globstar === 'unsupported') {
     cx.note(fact(cx.lang, 'globstar-unsupported', { shell: cx.shell! }), n);
   }
-  return globstar === 'off' || globstar === 'unsupported'
-    ? cx.s(`。${globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
-    : cx.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)');
+  const deep = cx.s('`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '`**` matches directories at any depth (zero or more, not those starting with `.`)');
+  if (globstar === 'on') return cx.s(`。${deep}`, `. ${deep}`);
+  if (globstar === 'unknown') return cx.s(`。globstar が有効な経路では ${deep}。ほかの経路では \`*\` と同じで、1階層分にしか一致しない`, `. Where globstar is on, ${deep}; elsewhere it is the same as \`*\` and matches one level only`);
+  const why = { off: ['globstar が無効なので', 'With globstar off'], default: ['globstar が有効になっていないので', 'With globstar not turned on'], unsupported: ['このシェルでは', 'In this shell'] }[globstar];
+  return cx.s(`。${why[0]} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${why[1]}, \`**\` is the same as \`*\` and matches one level only`);
 }
 
 /** The extended globs of a pattern in words: `!(*.txt)` is anything but `*.txt`. */
@@ -445,7 +469,10 @@ export function arrayElement(cx: Explainer, n: SyntaxNode): Token {
   const v = evalArith(m[1]);
   const what = assoc ? cx.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
     : v !== undefined && String(v) !== m[1] ? cx.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
-    : cx.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``);
+    : v !== undefined ? cx.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``)
+    // (`[k]=w` is index 0 when `k` is not set: a name is a variable.)
+    : /^[A-Za-z_]\w*$/.test(m[1]) ? cx.s(`添字 \`${m[1]}\`（算術式なので変数 \`${m[1]}\` の値。未設定なら 0）`, `index \`${m[1]}\` (an arithmetic expression: the value of the variable \`${m[1]}\`, 0 when it is not set)`)
+      : cx.s(`添字 \`${m[1]}\`（算術式として計算される）`, `index \`${m[1]}\` (an arithmetic expression)`);
   return cx.tok(n, 'argument', cx.s(
     `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
     `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,

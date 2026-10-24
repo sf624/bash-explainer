@@ -611,9 +611,10 @@ describe('getopt', () => {
 });
 
 describe('globstar', () => {
-  it('explains ** as any depth, with a pitfall until shopt -s globstar is seen', () => {
+  it('explains ** as one level, with a pitfall until shopt -s globstar is seen, and as any depth after', () => {
     const before = explain('ls **/*.ts');
-    assert.match(find(before, '**/*.ts').explanation, /any depth/);
+    assert.match(find(before, '**/*.ts').explanation, /With globstar not turned on, `\*\*` is the same as `\*` and matches one level only$/);
+    assert.match(find(explain('shopt -s globstar\nls **/*.ts', 1), '**/*.ts').explanation, /any depth/);
     assert.ok(before.notes.some((n) => /Caveat: `\*\*` reaches into subdirectories only after `shopt -s globstar`/.test(n)));
     const after = explain('shopt -s globstar\nls **/*.ts', 1);
     assert.ok(!after.notes.some((n) => /globstar/.test(n)));

@@ -6,12 +6,13 @@ import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps } from './dict/syntax';
 import type { Explainer } from './explain/context';
-import { isAssoc } from './explain/reads';
+import { isAssoc, shoptAt } from './explain/reads';
 import { globChildren, orderNote, variableNote, varDesc } from './explain/words';
 import { globIntro, hasGlob } from './embedded/glob';
-import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
+import { hasExtglob } from './examples/shellwords';
+import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformOf } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
-import { isPlainWord, unquoteWord } from './staticword';
+import { isPlainWord, messageText, unquoteWord } from './staticword';
 import { field, type SyntaxNode } from './syntax/tree';
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -50,7 +51,7 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
     summary.explanation = special;
     if (!parsed.prefix && !parsed.op) summary.kind = 'variable';
   }
-  const tf = parsed.op === '@' ? transformMeaning[parsed.parts.find((p) => p.role === 'transform')?.text ?? ''] : undefined;
+  const tf = parsed.op === '@' ? transformOf(parsed.parts.find((p) => p.role === 'transform')?.text ?? '', parsed) : undefined;
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
@@ -68,13 +69,16 @@ export function explainExpansion(h: Explainer, n: SyntaxNode): Token {
   const row = n.startPosition.row;
   const col = n.startPosition.column;
   const mainOp = parsed.parts.find((p) => p.role === 'op');
+  // A pattern is matched with the extglob option in effect when the expansion runs: without it, `@(…)` is plain text.
+  const extglob = shoptAt(h, n).extglob;
+  const plainExt = extglob === 'off' || extglob === 'default' ? extglob : undefined;
   summary.children = parsed.parts.flatMap((part) => {
-    const expl = expansionPart(h, parsed, part, part === mainOp, isAssoc(h, parsed.name, n));
+    const expl = expansionPart(h, parsed, part, part === mainOp, isAssoc(h, parsed.name, n), plainExt);
     if (!expl || !part.text) return [];
     const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
     const nested = nestedIn(h, n, col + part.start, col + part.end);
     // The parts of a glob pattern (those with an expansion in them have only the expansions).
-    const globbed = part.role === 'pattern' && !nested.length ? globChildren(h, n, part.text, part.start) : [];
+    const globbed = part.role === 'pattern' && !nested.length ? globChildren(h, n, part.text, part.start, !plainExt) : [];
     return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed] }];
   });
   return summary;
@@ -145,7 +149,7 @@ function nestedIn(h: Explainer, n: SyntaxNode, from: number, to: number): Token[
   return found.map((c) => h.full(c));
 }
 
-function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc = false): [Kind, string] | undefined {
+function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc: boolean, plainExt: 'off' | 'default' | undefined): [Kind, string] | undefined {
   const t = part.text;
   const s = (ja: string, en: string): string => h.s(ja, en);
   switch (part.role) {
@@ -200,7 +204,7 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
       if ((op === ':=' || op === '=') && !p.subscript && cannotAssign(`$${p.name}`)) return ['argument', s(`\`${t}\`: 代入されない（bash はエラーにする）`, `\`${t}\`: never assigned (bash reports an error)`)];
       if (op === ':=' || op === '=') return ['argument', s(`既定値 \`${t}\`: \`${p.name}\` に代入されてから使われる`, `Default \`${t}\`: assigned to \`${p.name}\`, then used`)];
       if (op === ':+' || op === '+') return ['argument', s(`代替値 \`${t}\`: \`${p.name}\` が設定されているときに代わりに使う値`, `Alternate value \`${t}\`: used when \`${p.name}\` is set`)];
-      return ['string', s(`エラーメッセージ「${t}」`, `Error message "${t}"`)];
+      return ['string', s(`エラーメッセージ「${messageText(t)}」`, `Error message "${messageText(t)}"`)];
     }
     case 'pattern': {
       const glob = globParts(t);
@@ -212,7 +216,11 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
         : s('。先頭の1文字がこれに一致したときだけ変換される', '. The first character is converted only if it matches')) : '';
       if (!glob) {
         // An extended glob (`+(a)`, `@(a|x)`) is a pattern of its own; only `$…` and backquotes are decided at run time.
-        if (!/\$|`/.test(t)) return ['pattern', `${what} \`${t}\`: ${globIntro(h.lang, 'value')}` + s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text') + only]
+        if (!/\$|`/.test(t)) {
+          return ['pattern', `${what} \`${t}\`: ${globIntro(h.lang, 'value')}` + (plainExt && hasExtglob(t)
+            ? s(`。extglob が${plainExt === 'off' ? '無効' : '有効になっていない'}ので拡張グロブにはならず、\`(\`、\`|\`、\`)\` は普通の文字として照合される`, `. With extglob ${plainExt === 'off' ? 'off' : 'not turned on'}, there is no extended glob: \`(\`, \`|\` and \`)\` are matched as plain characters`)
+            : s('。拡張グロブは `shopt -s extglob` が必要で、これがないと文字どおりの文字列として扱われる', '. An extended glob needs `shopt -s extglob`, or it is taken as literal text')) + only];
+        }
         return ['pattern', s(`${what} \`${t}\`（変数などを含むため、内容は実行時に決まる）`, `${what} \`${t}\` (contains expansions, so it is decided at run time)`)];
       }
       return ['pattern', hasGlob(t) ? `${what} \`${t}\`: ${globIntro(h.lang, 'value')}${only}` : s(`${what} \`${t}\`（ワイルドカードを含まないので、この文字列そのものに一致）${only}`, `${what} \`${t}\` (no wildcards, so it matches exactly this text)${only}`)];
@@ -262,7 +270,7 @@ function expansionPart(h: Explainer, p: ParsedExpansion, part: ExpansionPart, is
     }
     // `transform`
     default: {
-      const m = transformMeaning[t];
+      const m = transformOf(t, p);
       // Any letter can come after `@`; bash reports the ones it does not have as a bad substitution.
       if (!m) return ['error', h.s(`\`${t}\`: bash にない変換（bad substitution になる）`, `\`${t}\`: not a transform bash has (bash reports "bad substitution")`)];
       return ['operator', `\`${t}\`: ${m[h.lang === 'ja' ? 0 : 1]}`];
@@ -300,7 +308,7 @@ function expansionSummary(h: Explainer, n: SyntaxNode): Token {
   const indirectTransform = prefixOp === '!' ? /^!([A-Za-z_][A-Za-z0-9_]*)@([QEPAKaULuk])$/.exec(inner) : null;
   if (indirectTransform) {
     const [, v, letter] = indirectTransform;
-    const tf = transformMeaning[letter];
+    const tf = transformOf(letter, {})!;
     return h.tok(n, 'expansion', h.s(`間接参照: 変数 \`${v}\` の値を変数名とみなし、その変数の値を${tf[0]}`,
       `Indirection: use the value of \`${v}\` as a variable name, then take that variable's value and ${tf[1]}`));
   }

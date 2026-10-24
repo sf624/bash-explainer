@@ -375,6 +375,29 @@ A word after `true`, a redirection or an assignment before it takes the reading 
 - `for (( i = 0; i < 3; i++ ))`: the initializer says "Assign the value of the arithmetic expression to variable `i` (in arithmetic, spaces around `=` are allowed)". Before, it said "(no spaces around `=`)", which holds only outside arithmetic. `(( x = 1 ))`, `$(( y = 2 ))` and `let 'z = 3'` never said it.
 - A name in the header is the variable bash reads, as in `(( ))`: `x` in `for ((; !x; ))`, `-x`, `~x`, and `i` and `n` in `i < n`. Before, `x` was "Word `x`", and the names beside an operator were not explained.
 
+### Words as bash reads them
+
+A word is explained with the shell options and the `IFS` in effect where it runs (bash 5.2):
+
+| Written | bash | Said now | Said before |
+| --- | --- | --- | --- |
+| `ls **/*.sh`, globstar never turned on | `**` is `*`: `d/b.sh`, not `a.sh` or `d/e/c.sh` | "`**` is the same as `*` and matches one level only", with an example of one level | "`**` matches directories at any depth", with an example at every depth |
+| `if …; then shopt -s globstar; fi; ls **/*.sh` | any depth on one path, one level on the other | both, and the example says "where globstar is on" | any depth |
+| `echo "${x%.@(gz\|bz2)}"`, extglob not on | `@(gz\|bz2)` is plain text: `a.gz` stays `a.gz` | "there is no extended glob: `(`, `\|` and `)` are matched as plain characters", one part of plain text | the part `@(gz\|bz2)` was "extended glob, exactly one of the alternatives" |
+| `IFS=,; read -r a b <<< "$line"` | splits on `,` | the example's line is `alice,30,tokyo`: `a="alice"`, `b="30,tokyo"` | the line `alice 30 tokyo`, split on spaces |
+| `case $x in "$q")` | the value of `q` is literal text (`q='a*'` matches only `a*`) | "the expansion is quoted, so its value is matched as literal text" | "what it expands to is the pattern" |
+| `case $x in $p"*")` | `$p` is a pattern, `"*"` a `*` | "what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text" | "what it expands to is the pattern" |
+| `x=~` | the home directory | "Tilde expansion: `~` becomes the home directory" | "Value `~`" |
+| `y=$'\n'` | a newline | "it is the string `␊` (`␊` is a newline)" | "the string `\n`", like the two characters of `$'\\n'` |
+| `${x:?"msg"}`, `${x:?"need $y"}` | prints `x: msg`, `x: need …` | "Exit with error "msg"", "need $y" | `""msg""`, `""need $y""` |
+| `${x:?""}` | prints `x: ` (an empty message) | the error "" | the example said "(a default message)" |
+| `a=(["k"]=w)` | index `$k`: 0 when `k` is not set | "index `k` (an arithmetic expression: the value of the variable `k`, 0 when it is not set)" | "index `k`" |
+| `echo "${s@K}"`, `${a@K}`, `${@@K}` | `'hello'`: quoted, as `@Q` does | "quote it as `@Q` does (only all the elements of an array, `${a[@]@K}`, give keys and values)" | "show it as key/value pairs" |
+| `x="$(printf '%s\n' "${a[@]}")"` | one word | the outer string "stays one argument" | it said `"${array[@]}"` gives one word per element, a note for the inner string |
+| `shopt -s failglob` (or `nullglob`), then `for f in *.txt; do [ -e "$f" ] \|\| continue; …` | a glob that matches nothing is an error (or goes away), so the loop never gets `*.txt` | no idiom | the idiom "bash keeps `*.txt` as it is and the loop runs once with that text" |
+
+`[[ $x == "$q" ]]` already said that a quoted right side is literal text.
+
 ### Quote removal in find's expression
 
 find's expression is read from its words as bash passes them, after quote removal. A word whose value is not known (`$x`, an unquoted glob) is read as written.

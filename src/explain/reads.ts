@@ -11,7 +11,7 @@ import { isProgram } from '../namefacts';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
 import { attribute, type OptionState, shoptIn } from '../semantics/state';
-import { type ExpansionStep, type WordMeaning, wordMeaning } from '../semantics/words';
+import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
 import { literalContent } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import type { Explainer } from './context';
@@ -65,6 +65,12 @@ export function globOff(cx: Explainer, n: SyntaxNode): string {
   return glob.why === 'posix-mode' && glob.applies === false
     ? cx.s('。ただし POSIX モードではリダイレクト先はグロブ展開されないので、この名前のファイルになる', '. But in POSIX mode a redirection target is not globbed: the file has this very name')
     : '';
+}
+
+/** The IFS where `n` runs (src/semantics/words.ts): its characters, or undefined when it is not known there. */
+export function ifsAt(cx: Explainer, n: SyntaxNode): string | undefined {
+  const ifs = ifsOf(cx.state.at(n).run);
+  return ifs.kind === 'default' ? ' \t\n' : ifs.kind === 'value' ? ifs.value : undefined;
 }
 
 /** Whether a glob step is off by `set -f`, may be (on some paths), or on. */

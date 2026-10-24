@@ -199,7 +199,11 @@ describe('quote removal', () => {
     assert.match(find('echo "$"\'x\'', '"$"\'x\'').explanation, /string `\$x`/);
     assert.match(find('echo "a\\$b"', '"a\\$b"').explanation, /string `a\$b`/);
     assert.match(find("echo $'a\\tb'", "$'a\\tb'").explanation, /string `a⇥b`/);
-    assert.match(find("echo $'a\\nb'", "$'a\\nb'").explanation, /string `a\\nb`/);
+    // (A newline is shown as `␊`, so that it is not read as the two characters `\n`.)
+    assert.match(find("echo $'a\\nb'", "$'a\\nb'").explanation, /string `a␊b` \(`␊` is a newline\)$/);
+    assert.match(find("echo $'a\\nb'", "$'a\\nb'", 'ja').explanation, /`a␊b` という文字列になる（`␊` は改行文字）$/);
+    assert.match(find("echo $'a\\\\nb'", "$'a\\\\nb'").explanation, /string `a\\nb`$/);
+    assert.strictEqual(bash("x=$'a\\nb'; y=$'a\\\\nb'; echo ${#x} ${#y}"), '3 4\n');
     // Nothing to say when the text does not change, or when it cannot be known.
     assert.ok(!/quote removal/.test(find('echo abc', 'abc').explanation));
     assert.ok(!/quote removal/.test(find('echo "abc"', '"abc"').explanation));
@@ -1591,9 +1595,13 @@ describe('tricky lines (round 7)', () => {
     for (const [pat, label] of [['+(a)', '##'], ['@(a|x)', '//'], ['*(b)', '%%'], ['?(a)', '/'], ['!(a)b', '#'], ['!(b)', '//']] as const) {
       const line = label === '//' || label === '/' ? `echo \${s${label}${pat}/-}` : `echo \${s${label}${pat}}`;
       const e = findAt(line, 0, pat, 'en', true).explanation;
-      assert.match(e, /^Pattern `.*`: Glob pattern .*\. An extended glob needs `shopt -s extglob`, or it is taken as literal text$/, line);
+      // (bash matches the pattern with the extglob option of the moment: not turned on here, `+(a)` is plain text.)
+      assert.match(e, /^Pattern `.*`: Glob pattern .*\. With extglob not turned on, there is no extended glob: `\(`, `\|` and `\)` are matched as plain characters$/, line);
       assert.doesNotMatch(e, /expansions/, line);
-      assert.match(findAt(line, 0, pat, 'ja', true).explanation, /拡張グロブは `shopt -s extglob` が必要/, line);
+      assert.match(findAt(line, 0, pat, 'ja', true).explanation, /extglob が有効になっていないので拡張グロブにはならず/, line);
+      const on = `shopt -s extglob; ${line}`;
+      assert.match(findAt(on, 0, pat, 'en', true).explanation, /\. An extended glob needs `shopt -s extglob`, or it is taken as literal text$/, on);
+      assert.match(findAt(on, 0, pat, 'ja', true).explanation, /拡張グロブは `shopt -s extglob` が必要/, on);
     }
     // A real expansion in the pattern is still decided at run time, extended glob or not.
     for (const pat of ['+($x)', '$x*', '$(echo a)', '`echo a`']) {
@@ -1690,7 +1698,7 @@ describe('tricky lines (round 8)', () => {
       assert.strictEqual(findAt(s, 0, label).explanation, `Element with index \`${shown}\` (an arithmetic expression: ${n}): set it to \`x\``, s);
       assert.strictEqual(bash(`${s}; declare -p a`), 'declare -a a=([2]="x")\n', s);
     }
-    assert.strictEqual(findAt('a=(["k"]+=v)', 0, '["k"]+=v').explanation, 'Element with index `k`: append `v`');
+    assert.strictEqual(findAt('a=(["k"]+=v)', 0, '["k"]+=v').explanation, 'Element with index `k` (an arithmetic expression: the value of the variable `k`, 0 when it is not set): append `v`');
     assert.strictEqual(bash('a=(["k"]+=v); declare -p a'), 'declare -a a=([0]="v")\n');
   });
 
@@ -1776,7 +1784,7 @@ describe('tricky lines (round 9)', () => {
       ['a=([1 + 1]=x); declare -p a', '[1 + 1]=x', 'index `1 + 1` (an arithmetic expression: 2)', 'set it to', 'x', 'declare -a a=([2]="x")\n'],
       ['a=([1 +1]=x [ 3 ]=y); declare -p a', '[1 +1]=x', 'index `1 +1` (an arithmetic expression: 2)', 'set it to', 'x', 'declare -a a=([2]="x" [3]="y")\n'],
       ['a=(p q r s); a=([1 + 1]+=x); declare -p a', '[1 + 1]+=x', 'index `1 + 1` (an arithmetic expression: 2)', 'append', 'x', 'declare -a a=([2]="x")\n'],
-      ['a=( [1 + $((1))]=x y); declare -p a', '[1 + $((1))]=x', 'index `1 + $((1))`', 'set it to', 'x', 'declare -a a=([2]="x" [3]="y")\n'],
+      ['a=( [1 + $((1))]=x y); declare -p a', '[1 + $((1))]=x', 'index `1 + $((1))` (an arithmetic expression)', 'set it to', 'x', 'declare -a a=([2]="x" [3]="y")\n'],
       ['declare -A m=([a b]=1); declare -p m', '[a b]=1', 'key `a b` (a string, not evaluated)', 'set it to', '1', 'declare -A m=(["a b"]="1" )\n'],
       ['declare -A m=([c  d]+=2); declare -p m', '[c  d]+=2', 'key `c  d` (a string, not evaluated)', 'append', '2', 'declare -A m=(["c  d"]="2" )\n'],
     ] as const) {
@@ -1834,5 +1842,160 @@ describe('tricky lines (round 9)', () => {
     assert.strictEqual(bash('[ -5 -lt +3 ] && echo y'), 'y\n');
     assert.strictEqual(bash('[[ 1+1 -eq 2 ]] && echo y'), 'y\n');
     assert.strictEqual(bash('[[ 2*3 -eq 6 ]] && echo y'), 'y\n');
+  });
+});
+
+describe('words as bash reads them (round 10)', () => {
+  /** What bash prints on stdout and stderr, in a fresh empty directory (status ignored: some of these fail on purpose). */
+  const run = (script: string): string => {
+    const r = runBash(script, { files: [] });
+    return r.stdout + r.stderr.replace(/^bash: line \d+: /gm, '');
+  };
+  const explained = (src: string, line = 0, lang: 'ja' | 'en' = 'en') => new Analyzer(lang).explainLine(parser.parse(src), line);
+
+  it('splits the read example with the IFS in effect, not the default one', () => {
+    assert.strictEqual(bash('line=\'alice 30 tokyo\'; IFS=,; read -r a b <<< "$line"; echo "a=[$a] b=[$b]"'), 'a=[alice 30 tokyo] b=[]\n');
+    // The example's line, read by bash with the same IFS, gives the values the example shows.
+    for (const [setup, src] of [['IFS=,', 'IFS=,; read -r a b <<< "$line"'], ["IFS=$'\\t'", "IFS=$'\\t'; read -r a b c"], ['IFS=:', 'IFS=:\nread -r a b'], [':', 'read -r a b']]) {
+      const lines = src.split('\n');
+      const ex = new Analyzer('en').explainLine(parser.parse(src), lines.length - 1).examples.find((e) => e.kind === 'read');
+      assert.ok(ex, src);
+      const line = JSON.parse(ex.sections[0].lines[0]) as string;
+      const names = ex.sections[1].lines.map((l) => l.split('=')[0]);
+      const r = runBash(`${setup}; read -r ${names.join(' ')}; for v in ${names.join(' ')}; do printf '%s=%s\\n' "$v" "\${!v}"; done`, { input: `${line}\n` });
+      assert.strictEqual(r.stdout, ex.sections[1].lines.map((l) => { const [k, v] = l.split(/=(.*)/); return `${k}=${JSON.parse(v) as string}`; }).join('\n') + '\n', src);
+    }
+    assert.deepStrictEqual(examplesOf('IFS=,; read -r a b')[0].sections[1].lines, ['a="alice"', 'b="30,tokyo"']);
+    // An IFS that is not known there: no example (`IFS=$x`, or set on some paths only).
+    for (const src of ['IFS=$x; read -r a b', 'if [ "$1" ]; then IFS=,; fi; read -r a b']) {
+      assert.ok(!explained(src).examples.some((e) => e.kind === 'read'), src);
+    }
+  });
+
+  it('says that a quoted expansion in a case pattern is matched as literal text', () => {
+    assert.strictEqual(bash('q=\'a*\'; for x in abc \'a*\'; do case $x in "$q") echo "$x: literal";; $q) echo "$x: pattern";; esac; done'), 'abc: pattern\na*: literal\n');
+    assert.strictEqual(bash('q=\'a*\'; case abc in "$q"*) echo m;; *) echo n;; esac; case \'a*c\' in "$q"*) echo m;; esac; p=\'?\'; case \'b*\' in $p"*") echo m2;; esac'), 'n\nm\nm2\n');
+    const src = 'case $x in "$q") :;; $p) :;; "$q"*) :;; $p"*") :;; "$(cmd)") :;; esac';
+    assert.strictEqual(findAt(src, 0, '"$q"', 'en', true).explanation, 'Pattern `"$q"`: the expansion is quoted, so its value is matched as literal text (`*` and `?` in the value are not wildcards)');
+    assert.strictEqual(findAt(src, 0, '"$q"', 'ja', true).explanation, 'パターン `"$q"`: 展開はクォートされているので、その値は文字列そのものとして照合される（値の中の `*` や `?` はワイルドカードにならない）');
+    assert.match(findAt(src, 0, '"$q"*', 'en', true).explanation, /^Pattern `"\$q"\*`: the expansion is quoted/);
+    assert.match(findAt(src, 0, '"$(cmd)"', 'en', true).explanation, /^Pattern `"\$\(cmd\)"`: the expansion is quoted/);
+    assert.strictEqual(findAt(src, 0, '$p', 'en', true).explanation, 'Pattern `$p`: what it expands to is the pattern');
+    assert.strictEqual(findAt(src, 0, '$p"*"', 'en', true).explanation, 'Pattern `$p"*"`: what the unquoted expansions give is a pattern, and the quoted parts are matched as literal text');
+    assert.strictEqual(findAt(src, 0, '$p"*"', 'ja', true).explanation, 'パターン `$p"*"`: クォートしていない展開の結果はパターンになり、クォートした部分は文字列そのものとして照合される');
+    // `[[ == ]]` already said so.
+    assert.strictEqual(bash('q=\'a*\'; [[ abc == "$q" ]] || echo literal'), 'literal\n');
+    assert.match(findAt('[[ $x == "$q" ]]', 0, '$x == "$q"').explanation, /the right side is quoted, so it is literal text, not a pattern/);
+  });
+
+  it('explains ** with the globstar option in effect, in the word and in the example', () => {
+    assert.strictEqual(run('mkdir -p d/e && touch a.sh d/b.sh d/e/c.sh; echo **/*.sh; shopt -s globstar; echo **/*.sh'), 'd/b.sh\na.sh d/b.sh d/e/c.sh\n');
+    for (const [src, options, deep] of [['ls **/*.sh', '', false], ['shopt -u globstar; ls **/*.sh', 'shopt -u globstar;', false], ['shopt -s globstar; ls **/*.sh', 'shopt -s globstar;', true], ['if [ "$1" ]; then shopt -s globstar; fi; ls **/*.sh', 'shopt -s globstar;', true]] as const) {
+      const ex = explained(src).examples.find((e) => e.kind === 'glob')!;
+      const [yes, no] = ex.sections.map((sec) => sec.lines);
+      // The names of the example, made as files: bash matches exactly those it lists as matching.
+      const made = [...yes, ...no].map((f) => `mkdir -p "$(dirname '${f}')" && touch '${f}'`).join(' && ');
+      assert.deepStrictEqual(run(`${made}; ${options} printf '%s\\n' **/*.sh`).trim().split('\n').sort(), [...yes].sort(), src);
+      assert.strictEqual(yes.some((f) => f.split('/').length !== 2), deep, src);
+    }
+    assert.match(findAt('ls **/*.sh', 0, '**/*.sh').explanation, /\. With globstar not turned on, `\*\*` is the same as `\*` and matches one level only$/);
+    assert.match(findAt('ls **/*.sh', 0, '**/*.sh', 'ja').explanation, /。globstar が有効になっていないので `\*\*` は `\*` と同じで、1階層分にしか一致しない$/);
+    const maybe = 'if [ "$1" ]; then shopt -s globstar; fi; ls **/*.sh';
+    assert.match(findAt(maybe, 0, '**/*.sh').explanation, /\. Where globstar is on, `\*\*` matches directories at any depth \(zero or more, not those starting with `\.`\); elsewhere it is the same as `\*` and matches one level only$/);
+    assert.match(findAt(maybe, 0, '**/*.sh', 'ja').explanation, /。globstar が有効な経路では `\*\*` は任意の深さのディレクトリ.*に一致する。ほかの経路では `\*` と同じで、1階層分にしか一致しない$/);
+    assert.match(explained(maybe).examples.find((e) => e.kind === 'glob')!.title, /\(glob `\*\*\/\*\.sh`, where globstar is on\)$/);
+    assert.match(explained(maybe, 0, 'ja').examples.find((e) => e.kind === 'glob')!.title, /（グロブ `\*\*\/\*\.sh`、globstar が有効なとき）$/);
+  });
+
+  it('explains a tilde after the `=` of an assignment as the home directory', () => {
+    assert.strictEqual(bash('x=~; y=a:~/b; z={a,b}; echo "$x $y $z"'), '/home/w a:/home/w/b {a,b}\n');
+    assert.strictEqual(findAt('x=~', 0, '~').explanation, 'Tilde expansion: `~` becomes the home directory (`$HOME`)');
+    assert.strictEqual(findAt('x=~', 0, '~', 'ja').explanation, 'チルダ展開: `~` はホームディレクトリ（`$HOME`）に置き換わる');
+    // A brace is not expanded in an assignment: it stays a value.
+    assert.strictEqual(findAt('z={a,b}', 0, '{a,b}').explanation, 'Value `{a,b}`');
+  });
+
+  it('gives the message of ${x:?word} after quote removal, and the empty one too', () => {
+    const err = (script: string) => runBash(script).stderr.replace(/^bash: line \d+: /gm, '');
+    assert.strictEqual(err(': ${x:?"msg"}'), 'x: msg\n');
+    assert.strictEqual(err('y=Y; : ${x:?"need $y"}'), 'x: need Y\n');
+    assert.strictEqual(err(": ${x?'a b'}"), 'x: a b\n');
+    assert.strictEqual(err(': ${x:?""}'), 'x: \n');
+    assert.strictEqual(err(': ${x:?}'), 'x: parameter null or not set\n');
+    const src = ': ${x:?"msg"} ${x?\'a b\'} ${x:?"need $y"} ${x:?""} ${x:?}';
+    const t = (label: string, lang: 'ja' | 'en' = 'en') => findAt(src, 0, label, lang, true).explanation;
+    assert.strictEqual(t('${x:?"msg"}'), 'Parameter expansion: Exit with error "msg" if `x` is unset or empty');
+    assert.strictEqual(t('${x:?"msg"}', 'ja'), 'パラメータ展開: `x` が未設定または空ならエラーメッセージ「msg」を出してスクリプトを終了');
+    assert.strictEqual(t('${x?\'a b\'}'), 'Parameter expansion: Exit with error "a b" if `x` is unset');
+    assert.strictEqual(t('${x:?"need $y"}'), 'Parameter expansion: Exit with error "need $y" if `x` is unset or empty');
+    assert.strictEqual(t('${x:?""}'), 'Parameter expansion: Exit with error "" if `x` is unset or empty');
+    assert.strictEqual(t('${x:?}'), 'Parameter expansion: Exit with error "parameter null or not set" if `x` is unset or empty');
+    // A word that is not one quoted string is shown as written.
+    assert.strictEqual(err('m=oops; : ${x:?$m}'), 'x: oops\n');
+    assert.strictEqual(findAt(': ${x:?$m}', 0, '${x:?$m}', 'en', true).explanation, 'Parameter expansion: Exit with error "$m" if `x` is unset or empty');
+    assert.strictEqual(findAt(src, 0, '"msg"', 'en', true).explanation, 'Error message "msg"');
+    assert.strictEqual(findAt(src, 0, '"msg"', 'ja', true).explanation, 'エラーメッセージ「msg」');
+    const fails = explained(src).examples.map((e) => e.sections[0].lines[0]);
+    assert.deepStrictEqual(fails, ['prints the error "msg" and exits', 'prints the error "a b" and exits', 'prints the error "need $y" and exits', 'prints the error "" and exits', 'prints the error "(a default message)" and exits']);
+  });
+
+  it('reads @(…) in a ${…} pattern as plain text without extglob, as bash matches it', () => {
+    assert.strictEqual(bash('x=a.gz; echo "${x%.@(gz|bz2)}"; x=\'a.@(gz|bz2)\'; echo "${x%.@(gz|bz2)}"; x=a.gz; shopt -s extglob; echo "${x%.@(gz|bz2)}"'), 'a.gz\na\na\n');
+    // (Matched with the option of the moment: a function read before `shopt -s extglob` follows it when it runs.)
+    assert.strictEqual(bash('f() { echo "${x%.@(gz|bz2)}"; }; x=a.gz; f; shopt -s extglob; f'), 'a.gz\na\n');
+    const off = 'echo "${x%.@(gz|bz2)}"';
+    const kids = (src: string) => findAt(src, src.split('\n').length - 1, '.@(gz|bz2)', 'en', true).children.map((c) => [c.label, c.explanation]);
+    assert.deepStrictEqual(kids(off), [['.@(gz|bz2)', 'The text `.@(gz|bz2)` itself']]);
+    assert.ok(!tokensAt(off, 0).some((t) => /extended glob,/.test(t.explanation)));
+    assert.match(findAt(off, 0, '.@(gz|bz2)', 'ja', true).explanation, /extglob が有効になっていないので拡張グロブにはならず、`\(`、`\|`、`\)` は普通の文字として照合される$/);
+    assert.match(findAt(`shopt -u extglob; ${off}`, 0, '.@(gz|bz2)', 'en', true).explanation, /\. With extglob off, there is no extended glob/);
+    for (const on of [`shopt -s extglob; ${off}`, `shopt -s extglob\n${off}`]) {
+      assert.deepStrictEqual(kids(on).map(([l]) => l), ['.', '@(gz|bz2)'], on);
+      assert.match(findAt(on, on.split('\n').length - 1, '@(gz|bz2)').explanation, /^`@\(…\)`: extended glob/, on);
+    }
+    // `*(d)` without extglob: a `*` and the text `(d)`.
+    assert.strictEqual(bash('x=\'abc(d)\'; echo "${x%*(d)}"'), 'abc\n');
+    assert.deepStrictEqual(findAt('echo "${x%*(d)}"', 0, '*(d)', 'en', true).children.map((c) => c.label), ['*', '(d)']);
+  });
+
+  it('does not take the guard of an unmatched glob for an idiom when nullglob or failglob is on', () => {
+    assert.strictEqual(run('for f in *.txt; do echo "[$f]"; done'), '[*.txt]\n');
+    assert.strictEqual(run('shopt -s nullglob; for f in *.txt; do echo "[$f]"; done; echo end'), 'end\n');
+    assert.match(run('shopt -s failglob; for f in *.txt; do echo "[$f]"; done'), /^no match: \*\.txt\n$/);
+    const loop = 'for f in *.txt; do [ -e "$f" ] || continue; echo "$f"; done';
+    const idiom = (src: string) => notesAt(src).some((n) => /^Idiom: skips a name that does not exist/.test(n));
+    assert.ok(idiom(loop));
+    for (const opt of ['nullglob', 'failglob']) assert.ok(!idiom(`shopt -s ${opt}; ${loop}`), opt);
+    assert.ok(idiom(`shopt -s nullglob; shopt -u nullglob; ${loop}`));
+  });
+
+  it('gives one word per element only for a "$@" of the string itself, not one inside a $( ) in it', () => {
+    assert.strictEqual(bash('a=(1 2); set -- "$(printf \'%s \' "${a[@]}")"; echo $#; set -- "${a[@]}"; echo $#; f() { echo $#; }; set -- 1 2; f "a $@" "${x:-$@}"'), '1\n2\n4\n');
+    const each = /one word per element/;
+    const src = 'x="$(printf \'%s\\n\' "${a[@]}")"';
+    assert.doesNotMatch(findAt(src, 0, '"$(printf \'%s\\n\' "${a[@]}")"').explanation, each);
+    assert.match(findAt(src, 0, '"${a[@]}"').explanation, each);
+    for (const s of ['f "a $@"', 'f "${x:-$@}"', 'f "${a[@]}"', 'f "${!p@}"']) assert.match(findAt(s, 0, s.slice(2), 'en', true).explanation, each, s);
+  });
+
+  it('reads a name in the subscript of an indexed array as a variable', () => {
+    assert.strictEqual(bash('unset k; a=(["k"]=w); declare -p a; k=3; a=([k]=w); declare -p a'), 'declare -a a=([0]="w")\ndeclare -a a=([3]="w")\n');
+    assert.strictEqual(bash('declare -A m=(["k"]=w); declare -p m'), 'declare -A m=([k]="w" )\n');
+    assert.strictEqual(findAt('a=(["k"]=w)', 0, '["k"]=w').explanation, 'Element with index `k` (an arithmetic expression: the value of the variable `k`, 0 when it is not set): set it to `w`');
+    assert.strictEqual(findAt('a=(["k"]=w)', 0, '["k"]=w', 'ja').explanation, '添字 `k`（算術式なので変数 `k` の値。未設定なら 0）の要素に `w` を代入する');
+    assert.strictEqual(findAt('a=([i+1]=w)', 0, '[i+1]=w').explanation, 'Element with index `i+1` (an arithmetic expression): set it to `w`');
+    assert.strictEqual(findAt('a=([i+1]=w)', 0, '[i+1]=w', 'ja').explanation, '添字 `i+1`（算術式として計算される）の要素に `w` を代入する');
+    assert.strictEqual(findAt('declare -A m=(["k"]=w)', 0, '["k"]=w').explanation, 'Element with key `k` (a string, not evaluated): set it to `w`');
+  });
+
+  it('says that ${s@K} and ${s@k} quote a value that is not all the elements of an array', () => {
+    assert.strictEqual(bash('s=hello; a=(p q); set -- x \'y z\'; echo "${s@K} ${s@k} ${a@K} ${@@K}"; echo "${a[@]@K}"'), '\'hello\' \'hello\' \'p\' \'x\' \'y z\'\n0 "p" 1 "q"\n');
+    const k = (src: string, label: string, lang: 'ja' | 'en' = 'en') => tokensAt(src, 0, lang).find((t) => t.kind === 'expansion' && t.label === label)!.explanation;
+    assert.strictEqual(k('echo "${s@K}"', '${s@K}'), 'Parameter expansion: take the value of `s` and quote it as `@Q` does, so it can be reused as shell input (only all the elements of an array, `${a[@]@K}`, give keys and values)');
+    assert.strictEqual(k('echo "${s@K}"', '${s@K}', 'ja'), 'パラメータ展開: `s` の値をシェルに再入力できる形に `@Q` と同じくクォートする（キーと値の組になるのは配列の全要素 `${a[@]@K}` だけ）');
+    assert.match(k('echo ${s@k}', '${s@k}'), /quote it as `@Q` does.*`\$\{a\[@\]@k\}`, give keys and values\)$/);
+    assert.match(k('echo "${@@K}"', '${@@K}'), /quote it as `@Q` does/);
+    assert.match(k('echo "${a[*]@K}"', '${a[*]@K}'), /key\/value pairs/);
+    assert.match(k('echo "${!s@K}"', '${!s@K}'), /then take that variable's value and quote it as `@Q` does/);
   });
 });
