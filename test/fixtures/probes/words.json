@@ -2012,7 +2012,7 @@
     }
   },
   {
-    "manual": "3.4.2",
+    "manual": "5.2",
     "snippet": "true x; a=1 >/dev/null b=2; @PROBE:a@ \"$_\"",
     "facts": {
       "a": [
@@ -2024,7 +2024,7 @@
     }
   },
   {
-    "manual": "3.4.2",
+    "manual": "5.2",
     "snippet": "true x; for (( i = 0; i < 1; i++ )); do @PROBE:a@ \"$_\"; done",
     "gaps": {
       "a": "`$_` after a command is its last argument: the model knows it only after a command that is only assignments (the first part of `for (( ))` is not one)"
