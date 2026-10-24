@@ -63,10 +63,23 @@ describe('pitfalls', () => {
       ['$DIR/*', 'DIR='], ['"$DIR"/*', 'DIR='], ['"${DIR}/x"', 'DIR='], ['"$DIR/"*', 'DIR='], ['"$DIR""/x"', 'DIR='], ['${DIR:-}/x', 'unset DIR'],
       ['$DIR/${x:-*.txt}', 'DIR='], ['${DIR%/}/*', 'DIR=/'], ['"${DIR%/}"/*', 'DIR=/'], ['${DIR:+x}/*', 'DIR='], ['${DIR-/a}/x', 'DIR='], ['${DIR?}/x', 'DIR='],
       ['${DIR:-$e}/x', 'DIR='], ['${DIR@Q}/x', 'unset DIR'], ['${!DIR}/x', 'e=; DIR=e', 'e=x; DIR=e'],
+      // An empty default in quotes is empty (the rewrite stops); an operator's word with quotes gets no check line, only a note.
+      ["${DIR:-''}/a", 'DIR='], ["${DIR-''}/a", 'unset DIR'], ['${DIR:-""}/a', 'DIR='], ["${DIR:-$''}/a", 'DIR='], ["${DIR:+''}/a", 'unset DIR', 'DIR=x'],
+      ['${DIR:+"x"}/a', 'unset DIR', 'DIR=x'], ["${DIR%'x'}/a", 'DIR=', 'DIR=nospace'],
+      // No words at all: an element, `$@`, `${a[@]}` and the keys.
+      ['${DIR[0]}/a', 'DIR=()', 'DIR=(nospace)'], ['${DIR[@]}/a', 'DIR=()', 'DIR=(nospace)'], ['${!DIR[@]}/a', 'DIR=()', 'DIR=(nospace)'],
+      ['"${DIR[@]}"/a', 'DIR=()', 'DIR=(nospace)'], ['"$@"/a', 'set --', 'set -- nospace'], ['$@/a', 'set --', 'set -- nospace'], ['$*/a', 'set --', 'set -- nospace'],
     ];
     // An expansion that is never empty: a length, a literal default, an error when empty. (The word, the expansion.)
     const never: [string, string][] = [['${#DIR}/x', '${#DIR}'], ['${DIR:-/tmp/x}/*', '${DIR:-/tmp/x}'], ['${DIR:=/a}/x', '${DIR:=/a}'], ['${DIR:?}/*', '${DIR:?}'],
-      ['"${DIR:?}"/*', '${DIR:?}'], ['"${DIR:?}/x"', '${DIR:?}']];
+      ['"${DIR:?}"/*', '${DIR:?}'], ['"${DIR:?}/x"', '${DIR:?}'],
+      ['${DIR:-"lit"}/a', '${DIR:-"lit"}'], ['${DIR:-a\\ b}/x', '${DIR:-a\\ b}'], ["${DIR:-'lit'}/a", "${DIR:-'lit'}"], ["${DIR:-$'lit'}/a", "${DIR:-$'lit'}"]];
+    // In double quotes the quotes of a default stay literal, so it is not empty: bash gives `''/x`.
+    it('says nothing about "${DIR:-\'\'}/x", whose default is the two quote characters', () => {
+      assert.deepStrictEqual(notes('rm -rf "${DIR:-\'\'}/x"'), []);
+      assert.strictEqual(runBash(`unset DIR; printf '<%s>' "\${DIR:-''}/x"`, { cwd: os.tmpdir() }).stdout, "<''/x>");
+    });
+    it('leaves a list with an operator alone (not worded here)', () => assert.deepStrictEqual(notes('rm -rf ${DIR[@]:-x}/a'), []));
     let dir: string;
     before(() => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rm-'));
@@ -87,12 +100,15 @@ describe('pitfalls', () => {
         assert.match(sh(`${empty}; printf '<%s>\\n' ${word}`).stdout, /^<\//);
         const safe = text.match(/Write `(.*)` to stop when it is empty/)?.[1];
         const check = text.match(/Write `(.*)` before it to stop when it is empty/)?.[1];
-        if (safe) {
+        if (!safe && !check && /['"]/.test(word)) {
+          // A quote in the operator's word: a check in quotes would read it differently, so there is none.
+          assert.match(text, /Check that it is not empty before it/);
+        } else if (safe) {
           // The same words as the original for a value without spaces, and with spaces kept; nothing when empty.
           assert.strictEqual(sh(`DIR='with space'; printf '<%s>\\n' ${safe}`).stdout, sh(`DIR=nospace; printf '<%s>\\n' ${word}`).stdout.replace(/nospace/g, 'with space'));
           const stopped = sh(`${empty}; printf '<%s>\\n' ${safe}`);
           assert.strictEqual(stopped.stdout, '');
-          assert.match(stopped.stderr, /DIR: parameter null or not set/);
+          assert.match(stopped.stderr, /DIR(\[0\])?: parameter null or not set/);
         } else {
           assert.ok(check, text);
           assert.strictEqual(sh(`${empty}; ${check}; echo ran`).stdout, '');

@@ -2,7 +2,7 @@ import { Lang } from './i18n';
 import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
-import { staticWordValue } from './staticword';
+import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 
@@ -26,28 +26,47 @@ function varName(n: SyntaxNode): string | undefined {
  * value (`$v`, `${v}`, `${v:-}`), which `${v:?}` can stand for. Not for an expansion that is never empty (`${#v}`,
  * `${v:-x}`, `${v:?}`), nor HOME and PWD, which are always set.
  */
-function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; plain: boolean } | undefined {
+function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; plain: boolean; check?: string } | undefined {
   const first = w.type === 'concatenation' ? w.namedChildren[0] : w.type === 'string' ? w : undefined;
   if (!first) return undefined;
   // In quotes, the expansion right after the opening quote; a string of only it is skipped over (`"$DIR""/x"`).
   const inner = first.type === 'string' ? first.namedChildren[0] : first;
   if (!inner || inner.startIndex !== first.startIndex + (first === inner ? 0 : 1)) return undefined;
   if (inner.type !== 'simple_expansion' && inner.type !== 'expansion') return undefined;
-  const v = varName(inner);
-  if (!v || ['HOME', 'PWD'].includes(v)) return undefined;
+  const sub = inner.namedChildren.find((c) => c.type === 'subscript');
+  const special = inner.namedChildren.find((c) => c.type === 'special_variable_name');
+  const all = special ? ['@', '*'].includes(special.text) : ['@', '*'].includes(sub?.namedChildren[1]?.text ?? '');
   const alone = first !== inner && first.namedChildren.length === 1 && first.text === `"${inner.text}"`;
   const left = alone ? w.text.slice(first.endIndex - w.startIndex) : (first !== inner ? '"' : '') + w.text.slice(inner.endIndex - w.startIndex);
   if (!/^["']?\//.test(left)) return undefined;
-  if (inner.type === 'simple_expansion') return { e: inner, v, left, plain: true };
+  // `$@`, `$*`, `${a[@]}`, `${!a[@]}`: no words at all when there are none (`set --`, `a=()`); a check counts them.
+  if (all) {
+    const p = inner.type === 'expansion' ? parseExpansion(inner.text) : undefined;
+    if (p?.op) return undefined;
+    const name = sub?.namedChildren[0].text;
+    return { e: inner, v: inner.text, left, plain: false, check: name ? `[ "\${#${name}[@]}" -gt 0 ] || exit 1` : '[ "$#" -gt 0 ] || exit 1' };
+  }
+  if (special) return undefined;
+  // An element, `${a[0]}`, is named with its subscript.
+  const v = sub ? sub.text : varName(inner);
+  if (!v || ['HOME', 'PWD'].includes(v)) return undefined;
+  const ref = /^\w+$/.test(v) ? `$${v}` : `\${${v}}`;
+  // Inside `"…"` of a check, a quote or backslash in the expansion means something else than where it stands: no check then.
+  const quotable = !/['"\\]/.test(inner.text);
+  const gen = (plain: boolean) => ({ e: inner, v, left, plain, check: quotable ? `[ -n "${plain ? ref : inner.text}" ] || exit 1` : undefined });
+  if (inner.type === 'simple_expansion') return gen(true);
   const p = parseExpansion(inner.text);
   if (!p || p.prefix === '#') return undefined;
   const word = p.parts.find((q) => q.role === 'word')?.text ?? '';
-  if (!p.prefix && (!p.op || (['-', ':-', '=', ':='].includes(p.op) && !word))) return { e: inner, v, left, plain: true };
+  // What the default word is after quote removal, where the expansion stands (`''` and `""` are empty, `"lit"` is `lit`);
+  // undefined when it holds an expansion.
+  const value = unquoteWord(word.replace(/\$'([^'\\]*)'/g, "'$1'"), first.type === 'string');
+  if (!p.prefix && (!p.op || (['-', ':-', '=', ':='].includes(p.op) && value === ''))) return gen(true);
   // Never empty: an error when empty, or a default of literal text when empty. (`${v-x}` is empty when v is set
   // and empty; `${v:+x}` when v is empty; `${v:-$w}` when w is empty too.)
-  if (p.op === ':?' || ((p.op === ':-' || p.op === ':=') && /^[^$`'"\\]+$/.test(word))) return undefined;
+  if (p.op === ':?' || ((p.op === ':-' || p.op === ':=') && value)) return undefined;
   // `${v%…}`, `${v/…}`, `${v:1}`, `${v:+x}`, `${v@Q}` (unset v), `${!v}`…: may be empty, with no form that `:?` can stand for.
-  return { e: inner, v, left, plain: false };
+  return gen(false);
 }
 
 /** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */
@@ -115,9 +134,14 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
             } else {
               // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
               const what = t.plain ? v : e.text;
-              const check = `[ -n "${t.plain ? `$${v}` : e.text}" ] || exit 1`;
-              add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${check}\` と書くと、空のときは止まります`,
-                `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${check}\` before it to stop when it is empty`);
+              if (t.check) {
+                add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
+                  `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${t.check}\` before it to stop when it is empty`);
+              } else {
+                // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
+                add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
+                  `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Check that it is not empty before it`);
+              }
             }
             break;
           }

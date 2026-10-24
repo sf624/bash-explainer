@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](docs/changes/unreleased.md).
 ### Fixed
 
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.
+- The warning that an empty variable makes `rm -r` delete from the root no longer fires for forms that are never empty (`${DIR:-/tmp/x}/*`), and for `${DIR%/}` and similar it gives a check line before the command instead of a rewrite that dropped the operator. It also covers `${DIR:-''}`, `${DIR[0]}`, `$@` and `${DIR[@]}`.
 
 ## 0.8.0
 
