@@ -9,14 +9,14 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`…) are also problems, with a code each, in the Problems panel, `--check`, SARIF and the GitHub Action. Turn them off with `bashExplainer.diagnostics.pitfalls`.
 - A pitfall says when a variable is read while it is unset under `set -u`: `set -u; echo "$dir"` stops bash with "dir: unbound variable". It is said only where the variable is unset on every path, at the first read of a statement that bash fails on, and not after a test of the same name (`[[ -v dir ]] || exit 1; echo "$dir"`). In a redirection of a program (`cat < "$f"`) only the command fails, unless `set -e` then stops the script.
 - A pitfall says when bash refuses the options of a shebang, so that the script never starts when run directly: `#!/bin/bash -e -u`, `#!/bin/bash -o nounset` and `#!/bin/bash -Oextglob` reach bash as one argument.
-- The panel has a **Tree** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
+- The panel has a **Reading** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
 - A new setting, `bashExplainer.bashVersion` (`--bash-version` on the command line), says which bash scripts are explained for: `5.2` (the default) or `5.3`; the GitHub Action takes it as `bash-version`. With `5.2`, a construct of bash 5.3 is a warning. So by default, a bash script that uses `${ …; }` or `${| …; }` now gets a warning, and `--check` exits 1; set `bashVersion` to `5.3` to explain it as bash 5.3 runs it.
 
 ### Changed
 
-- The panel's header in VS Code is a toolbar, like those of VS Code's own views: the line, the shell's dropdown and the List/Tree switch, then icon buttons with tooltips for Collapse all, Copy as Markdown, Quick reference and Settings. Before, the buttons were text links.
-- On the web page, the List/Tree switch is in the top bar, or in the menu on a phone.
-- The panel's Tree view is drawn as an outline: the code in a pill, its text on a line below, and lines joining each item to its parent. Each reader's part has a light tint that is the same at every depth. Before, nested parts got darker, and some kind names were hard to read on them.
+- The panel's header in VS Code is a toolbar, like those of VS Code's own views: the line, the shell's dropdown and the Meaning/Reading switch, then icon buttons with tooltips for Collapse all, Copy as Markdown, Quick reference and Settings. Before, the buttons were text links.
+- On the web page, the Meaning/Reading switch is in the top bar, or in the menu on a phone.
+- The panel's Reading view is drawn as an outline: the code in a pill, its text on a line below, and lines joining each item to its parent. Each reader's part has a light tint that is the same at every depth. Before, nested parts got darker, and some kind names were hard to read on them.
 - The quick reference's search box has rounded corners like the panel's other controls, and a focus ring. Before, it was square.
 - The web page on a phone opens with the Problems list folded (its header shows the count; tap it to unfold). Before, the sample's nine problems took a third of the editor. Wider screens, and a fold you chose yourself, are unchanged.
 - On the web page, changing the file kind loads the new kind's sample when the editor holds a sample or nothing. When it holds your own script, the page asks whether to replace it with the sample (and offers Undo) or keep it. Before, the text always stayed.

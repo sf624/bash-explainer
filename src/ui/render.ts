@@ -28,7 +28,7 @@ export const ui = {
       copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
       reference: '早見表', search: '検索（例: ${、2>&1、-f、grep）', back: '← 解説に戻る', shell: 'シェル', yq: 'yq', auto: '自動',
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
-      views: '表示', listView: '一覧', treeView: 'ツリー',
+      views: '表示', listView: '意味', treeView: '読まれ方',
       tree: {
         label: '行の各部分を誰が読むか', show: '表示', levels: ['bash', '+ 中のスクリプト', '+ コマンド', '+ 言語'],
         reads: '{name} が読む',
@@ -101,7 +101,7 @@ export const ui = {
       copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
       reference: 'Quick reference', search: 'Search (e.g. ${, 2>&1, -f, grep)', back: '← Back to the explanation', shell: 'Shell', yq: 'yq', auto: 'Auto',
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
-      views: 'View', listView: 'List', treeView: 'Tree',
+      views: 'View', listView: 'Meaning', treeView: 'Reading',
       tree: {
         label: 'Who reads each part of the line', show: 'Show', levels: ['bash', '+ scripts inside', '+ commands', '+ languages'],
         reads: '{name} reads',
