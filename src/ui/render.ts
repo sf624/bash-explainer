@@ -32,22 +32,23 @@ export const ui = {
       tree: {
         label: '行の各部分を誰が読むか', show: '表示', levels: ['bash', '+ 中のスクリプト', '+ コマンド', '+ 言語'],
         reads: '{name} が読む',
-        bands: { bash: 'bash', child: { child: '子のシェル', same: 'このシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
+        bands: { bash: 'bash', child: { child: '子のシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
         readers: {
           bash: 'bash が解析する',
           child: {
-            child: '子のシェル（サブシェル、またはそのために起動したシェル）がもう一度解析する', same: 'bash がこの文字列を、このシェルでもう一度解析する',
+            child: '子のシェル（サブシェル、またはそのために起動したシェル）がもう一度解析する', same: 'それを実行するシェルが、この文字列をもう一度解析する（新しいプロセスなし）',
             remote: '別のマシンのシェルが解析する', container: 'コンテナの中のシェルが解析する',
           },
           command: 'bash ではなく {name} が読む', language: '{name} が読む独自の言語', bashLanguage: 'bash 自身が読む（正規表現の照合、POSIX の拡張正規表現(ERE)）',
         },
         kinds: {
           line: 'bash がこの行を読む', script: 'サブシェルのスクリプト', list: 'リスト', pipeline: 'パイプライン', command: '単純コマンド', compound: '複合コマンド',
-          clause: '節', coprocess: 'コプロセス', function: '関数', commandName: 'コマンド名', expandedName: '最初の単語', argument: '引数',
+          clause: '節', coprocess: 'コプロセス', function: '関数', commandName: 'コマンド名', aliasWord: 'エイリアス（読むときに置き換わる）', expandedName: '最初の単語', option: 'オプション', argument: '引数',
           assignmentArgument: '代入の引数', word: '単語', name: '名前', assignment: '代入', redirect: 'リダイレクト', heredoc: 'ヒアドキュメント', quote: 'クォート',
           expansion: '展開', substitution: '置換', arithmetic: '算術式展開', brace: 'ブレース展開', operator: '演算子', keyword: 'キーワード',
           comment: 'コメント', part: '部分',
         },
+        commandKinds: { argument: 'オペランド' },
         resolves: { alias: 'エイリアス', keyword: '予約語', function: '関数', builtin: 'ビルトイン', file: '外部コマンド', none: '実行されない' },
         tokenKinds: {
           command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', keyword: 'キーワード', option: 'オプション', argument: '引数',
@@ -59,6 +60,8 @@ export const ui = {
           script: 'サブシェルがこのテキストを独立したスクリプトとしてもう一度解析し、実行する。',
           command: '単純コマンド: 代入・単語・リダイレクトからなる。bash が単語を展開し、最初のフィールドをコマンド名、残りを引数とする。',
           commandName: 'コマンド名: bash が探し（関数、ビルトイン、PATH の中のファイルの順）、引数を渡して実行する。',
+          aliasWord: 'エイリアス: bash は行を読むときに、最初の単語をエイリアスの中身に置き換える。単語の展開より前なので、探すコマンド名は中身の最初の単語で、残りは引数になる。',
+          option: '予約語のオプション: bash は書いたとおりに読む。展開する単語ではない。',
           expandedName: 'コマンド名は実行するときに決まる: bash が単語を展開し、最初のフィールドがコマンド名、残りが引数になる。この単語が何にも展開されなければ、次の単語が名前になる。',
           argument: '引数: bash が展開し、そのフィールドをコマンドに渡す。',
           assignmentArgument: '代入の形の引数: bash は代入として展開し（値は単語分割もグロブもされない）、ビルトインに渡す。ビルトインが代入する。',
@@ -102,22 +105,23 @@ export const ui = {
       tree: {
         label: 'Who reads each part of the line', show: 'Show', levels: ['bash', '+ scripts inside', '+ commands', '+ languages'],
         reads: '{name} reads',
-        bands: { bash: 'bash', child: { child: 'child shell', same: 'this shell, again', remote: 'remote shell', container: 'container shell' } },
+        bands: { bash: 'bash', child: { child: 'child shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },
         readers: {
           bash: 'bash parses it',
           child: {
-            child: 'a child shell parses it again (a subshell, or a shell started for it)', same: 'bash parses this string again, in this shell',
+            child: 'a child shell parses it again (a subshell, or a shell started for it)', same: 'the shell that runs it parses this string again (no new process)',
             remote: 'a shell on another machine parses it', container: 'a shell in the container parses it',
           },
           command: '{name} reads it, not bash', language: 'a language of its own, read by {name}', bashLanguage: 'bash reads it itself (its regex matching, POSIX ERE)',
         },
         kinds: {
           line: 'bash reads the line', script: 'subshell script', list: 'list', pipeline: 'pipeline', command: 'simple command', compound: 'compound command',
-          clause: 'clause', coprocess: 'coprocess', function: 'function', commandName: 'command name', expandedName: 'first word', argument: 'argument',
+          clause: 'clause', coprocess: 'coprocess', function: 'function', commandName: 'command name', aliasWord: 'alias, replaced when the line is read', expandedName: 'first word', option: 'option', argument: 'argument',
           assignmentArgument: 'assignment argument', word: 'word', name: 'name', assignment: 'assignment', redirect: 'redirection', heredoc: 'here-document', quote: 'quotes',
           expansion: 'expansion', substitution: 'substitution', arithmetic: 'arithmetic', brace: 'brace expansion', operator: 'operator', keyword: 'keyword',
           comment: 'comment', part: 'part',
         },
+        commandKinds: { argument: 'operand' },
         resolves: { alias: 'alias', keyword: 'reserved word', function: 'function', builtin: 'builtin', file: 'program', none: 'nothing runs' },
         tokenKinds: {
           command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', keyword: 'keyword', option: 'option', argument: 'argument',
@@ -129,6 +133,8 @@ export const ui = {
           script: 'A subshell parses this text again, as a script of its own, and runs it.',
           command: 'A simple command: assignments, words and redirections. bash expands the words; the first field is the command name, and the others are its arguments.',
           commandName: 'The command name: bash looks it up (a function, a builtin, then a file in PATH) and runs it with the arguments.',
+          aliasWord: 'An alias: bash replaces the first word with the text of the alias when it reads the line. That comes before the words are expanded, so the name it looks up is the first word of the text, and the rest are arguments.',
+          option: 'An option of a reserved word: bash reads it as written. It is not a word that bash expands.',
           expandedName: 'The command name is known only when it runs: bash expands the words, and the first field is the name, the others its arguments. If this word expands to nothing, the next word gives the name.',
           argument: 'An argument: bash expands it and passes its fields to the command.',
           assignmentArgument: 'An argument that is an assignment: bash expands it as an assignment (no word splitting or globbing of the value) and passes it to the builtin, which assigns it.',

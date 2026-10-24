@@ -72,9 +72,9 @@ describe('the web page: the tree view of the panel', function () {
     await page.keyboard.press('ArrowLeft');
     assert.strictEqual((await focused(panel)).level, '2', 'to the parent');
     await page.keyboard.press('End');
-    assert.strictEqual((await focused(panel)).name, 'argument ]');
+    assert.strictEqual((await focused(panel)).name, 'operand ]');
     await page.keyboard.press('Enter');
-    assert.strictEqual((await focused(panel)).name, 'argument ]', 'Enter on a leaf folds nothing');
+    assert.strictEqual((await focused(panel)).name, 'operand ]', 'Enter on a leaf folds nothing');
 
     // The layers: bash alone, then up to the languages.
     const layers = async () => panel.locator('#reading-tree').evaluate((t) => [...new Set([...t.querySelectorAll('li')].map((li) => li.className.match(/l-(\w+)/)![1]))].sort());
@@ -173,6 +173,25 @@ describe('the web page: the tree view of the panel', function () {
     await page.keyboard.press('Shift+Tab');
     assert.strictEqual(await panel.evaluate(`document.activeElement.getAttribute('role')`), 'treeitem');
     await ctx.close();
+  });
+
+  it('keeps the manual links on the first line of a row, level with its kind, wide and on a phone', async () => {
+    for (const width of [1280, 360]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 800 }, locale: 'en-US' });
+      const page = await ctx.newPage();
+      const panel = await treeOf(page, 'sudo ls -l /tmp | xargs grep -n x');
+      const rows = await panel.locator('#reading-tree .trow:has(.refs)').evaluateAll((rs) => rs.map((r) => {
+        const chip = r.querySelector('.chip')!.getBoundingClientRect();
+        const refs = r.querySelector('.refs')!.getBoundingClientRect();
+        return { text: r.textContent, chip: chip.top, refs: refs.top, height: r.getBoundingClientRect().height };
+      }));
+      assert.ok(rows.length > 5, `${width}px: ${rows.length} rows with links`);
+      // (The kind and the links differ a little in size: the same line, within a pixel or two.)
+      for (const r of rows) assert.ok(Math.abs(r.chip - r.refs) <= 2, `${width}px: ${JSON.stringify(r)}`);
+      // On a phone, a command name's row wraps its text, not its links.
+      if (width === 360) assert.ok(rows.some((r) => /command name/.test(r.text ?? '') && r.height > 30), `${width}px: a row wraps`);
+      await ctx.close();
+    }
   });
 
   it('works when the browser refuses storage', async () => {

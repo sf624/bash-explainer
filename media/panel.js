@@ -524,7 +524,8 @@
     if (n.kind === 'line') return t.kinds.line;
     if (n.kind === 'language') return t.languages[n.label] ?? n.label;
     const shell = n.layer === 'bash' || n.layer === 'child';
-    const kind = (shell && t.kinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
+    const kind = (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
     return n.resolves && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
   }
 
@@ -630,13 +631,17 @@
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = chipOf(n);
-    row.append(twisty, chip);
+    // (The kind, the code and the text wrap together; the links and the band name stay at the top right.)
+    const main = document.createElement('span');
+    main.className = 'tmain';
+    main.append(chip);
+    row.append(twisty, main);
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
     if (code) {
       const c = document.createElement('code');
       c.className = 'tcode';
       c.textContent = code;
-      row.append(c);
+      main.append(c);
     }
     const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
@@ -645,7 +650,8 @@
     text.append(...inline(about));
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
-    row.append(text, ...links);
+    main.append(text);
+    row.append(...links);
     const bandName = band ? bandOf(n) : '';
     if (bandName) {
       const b = document.createElement('span');
