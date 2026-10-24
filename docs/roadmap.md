@@ -27,7 +27,8 @@ Keep it current:
 
 ## Not decided
 
-- (none)
+- Variable kinds: say what a variable name is where it is used, as the name kinds do for commands: a shell variable, an exported (environment) variable that child processes see, a special parameter (`$?`, `$@`), a function's local, or one bash sets itself (`RANDOM`, `SECONDS`). The model already has the attributes (`shellState`). It answers the same question as `sudo echo`: what a child process sees.
+- `which` against `type` and `command -v`: a sentence saying that `which` looks only for programs on PATH, while `type` and `command -v` also find builtins, functions and aliases, so their answers can differ.
 
 ## Done lately
 
