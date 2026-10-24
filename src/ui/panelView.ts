@@ -87,21 +87,27 @@ export function panelUpdate(p: PanelLine) {
 /**
  * The panel's markup, inside <body> and before its script. The header is a view's title bar, as in VS Code: the
  * line shown, the shell (and yq) dropdown and the view switch (words, both views of the same line), then icon
- * buttons (media/panel.js draws their icons and names them; on the web page the top bar stands in for it).
+ * buttons (media/panel.js draws their icons and names them; on the web page the top bar stands in for it). It
+ * wraps only between its groups (.here: the line and the shell; the yq dropdown; .actions: the views and the
+ * buttons), so a narrow panel's rows do not depend on how wide the words are in the font (media/panel.css).
  */
 export const PANEL_BODY = `<div id="top">
 <header>
-  <div class="where"><span id="where"></span><span id="context"></span></div>
-  <label id="shell-box" class="pick" hidden><span id="shell-label" class="sr-only"></span><span class="dropdown"><select id="shell"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
-  <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
-  <div id="views" class="segmented" role="group">
-    <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
+  <div class="here">
+    <div class="where"><span id="where"></span><span id="context"></span></div>
+    <label id="shell-box" class="pick" hidden><span id="shell-label" class="sr-only"></span><span class="dropdown"><select id="shell"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
   </div>
-  <div class="tools">
-    <button id="toggle" class="tb" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <button id="copy" class="tb" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <button id="ref" class="tb" type="button" aria-pressed="false"><svg class="ico" data-icon="book" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
-    <button id="settings" class="tb" type="button"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+  <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
+  <div class="actions">
+    <div id="views" class="segmented" role="group">
+      <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
+    </div>
+    <div class="tools">
+      <button id="toggle" class="tb" type="button"><svg class="ico" data-icon="collapse-all" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+      <button id="copy" class="tb" type="button"><svg class="ico" data-icon="copy" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+      <button id="ref" class="tb" type="button" aria-pressed="false"><svg class="ico" data-icon="book" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+      <button id="settings" class="tb" type="button"><svg class="ico" data-icon="gear" viewBox="0 0 16 16" aria-hidden="true"></svg></button>
+    </div>
   </div>
 </header>
 <pre id="line"></pre>
