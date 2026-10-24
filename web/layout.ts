@@ -118,7 +118,7 @@ const LIST_MIN = 72;
 /**
  * The Problems list under the editor: a divider above it changes its height (dragged, or with the arrow
  * keys; a double click or Enter goes back to the default, a third of the editor's pane at most), and its
- * header folds it away. Both are kept in this browser when it lets the page. Returns what resets them.
+ * header folds it away (folded at first on a phone). Both are kept in this browser when it lets the page. Returns what resets them.
  */
 export function setUpProblems(
   pane: HTMLElement, box: HTMLElement, handle: HTMLElement, toggle: HTMLElement, onChange: () => void,
@@ -126,11 +126,13 @@ export function setUpProblems(
   let saved = readStoredObject<{ height?: number; collapsed?: boolean }>(STORAGE_KEYS.problems);
   // When storage refuses, the choice lasts until the page is closed.
   const store = () => writeStored(STORAGE_KEYS.problems, JSON.stringify(saved));
+  // Without a stored choice the list starts folded on a phone (it would take much of the editor) and open elsewhere.
+  const isCollapsed = () => saved.collapsed ?? narrow.matches;
   const max = () => Math.max(LIST_MIN, pane.clientHeight - EDITOR_MIN);
   const clamp = (v: number) => Math.round(Math.min(max(), Math.max(LIST_MIN, v)));
   const height = () => (saved.height === undefined ? box.getBoundingClientRect().height : clamp(saved.height));
   const apply = () => {
-    const collapsed = !!saved.collapsed;
+    const collapsed = isCollapsed();
     toggle.setAttribute('aria-expanded', String(!collapsed));
     box.classList.toggle('collapsed', collapsed);
     handle.hidden = collapsed;
@@ -156,8 +158,7 @@ export function setUpProblems(
     inverted: true,
   });
   toggle.addEventListener('click', () => {
-    if (saved.collapsed) delete saved.collapsed;
-    else saved.collapsed = true;
+    saved.collapsed = !isCollapsed();
     apply();
     store();
   });

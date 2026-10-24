@@ -201,6 +201,10 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await until('the problems', () => p2.locator('#problem-list li').count(), (n) => n >= 6);
     const flat = () => p2.evaluate('document.documentElement.scrollWidth <= innerWidth && document.scrollingElement.scrollHeight === innerHeight && document.querySelector("#problems").scrollWidth <= document.querySelector("#problems").clientWidth');
     assert.strictEqual(await flat(), true);
+    // A phone starts with the list folded; unfold it for the drag.
+    assert.strictEqual(await p2.locator('#problems-toggle').getAttribute('aria-expanded'), 'false');
+    await p2.locator('#problems-toggle').tap();
+    await until('the list unfolds', () => p2.locator('#problems-toggle').getAttribute('aria-expanded'), (v) => v === 'true');
     const before = (await p2.locator('#problems').boundingBox())!.height;
     const hb = (await p2.locator('#problems-resize').boundingBox())!;
     const cdp = await phone.newCDPSession(p2);
@@ -239,5 +243,53 @@ describe('the web page: resizing the panes and the Problems list', function () {
     assert.strictEqual(await p2.locator('#problems-toggle').getAttribute('aria-expanded'), 'false');
     assert.strictEqual(await flat(), true);
     await phone.close();
+  });
+
+  it('starts with the Problems list folded on a phone and open on a wide screen; a stored choice wins', async () => {
+    const { devices } = await import('playwright-core');
+    const phone = await browser.newContext({ ...devices['iPhone 13'], viewport: { width: 390, height: 740 } });
+    const p = await phone.newPage();
+    await p.goto(base);
+    await p.locator('.cm-line').first().waitFor();
+    await until('the sample\'s problems', () => p.locator('#problems').isVisible(), (v) => v);
+    const toggle = p.locator('#problems-toggle');
+    const expanded = () => toggle.getAttribute('aria-expanded');
+    assert.strictEqual(await expanded(), 'false');
+    assert.strictEqual(await p.locator('#problem-list li').first().isVisible(), false);
+    // The header shows the count and is a touch target.
+    assert.match(await toggle.innerText(), /problems\s+[1-9]\d*/i);
+    assert.ok((await toggle.boundingBox())!.height >= 40);
+    assert.ok((await p.locator('#problems').boundingBox())!.height <= 48);
+    // The editor keeps the height the list leaves it: folded, it has the most room.
+    const editorHeight = async () => Math.round((await p.locator('.cm-editor').boundingBox())!.height);
+    const folded = await editorHeight();
+    // Unfolding works and is remembered (a stored choice, not the default).
+    await toggle.tap();
+    await until('the list unfolds', expanded, (v) => v === 'true');
+    assert.strictEqual(await p.locator('#problem-list li').first().isVisible(), true);
+    assert.ok(await editorHeight() < folded);
+    await p.reload();
+    await p.locator('.cm-line').first().waitFor();
+    await until('the sample\'s problems', () => p.locator('#problems').isVisible(), (v) => v);
+    assert.strictEqual(await expanded(), 'true');
+    // Without a stored choice the default follows the width.
+    await p.evaluate('localStorage.clear()');
+    await p.reload();
+    await p.locator('.cm-line').first().waitFor();
+    await until('folded again', expanded, (v) => v === 'false');
+    await p.setViewportSize({ width: 1000, height: 740 });
+    await until('open on a wide screen', expanded, (v) => v === 'true');
+    await p.setViewportSize({ width: 390, height: 740 });
+    await until('folded on a phone', expanded, (v) => v === 'false');
+    await phone.close();
+
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const w = await ctx.newPage();
+    await w.goto(base);
+    await w.locator('.cm-line').first().waitFor();
+    await until('the sample\'s problems', () => w.locator('#problems').isVisible(), (v) => v);
+    assert.strictEqual(await w.locator('#problems-toggle').getAttribute('aria-expanded'), 'true');
+    assert.strictEqual(await w.locator('#problem-list li').first().isVisible(), true);
+    await ctx.close();
   });
 });
