@@ -1,34 +1,21 @@
 // The explanation of a command substitution (`$( )`, backquotes, and bash 5.3's `${ …; }` and `${| …; }`) and of a
-// process substitution. What it needs of the analyzer (its texts, its tokens, the status model of the script) it asks
-// of the host.
-import type { Kind, Token } from './analyzer-types';
+// process substitution. What it needs (its texts, its tokens, the status model of the script) it reads from the line's
+// context (src/explain/context.ts).
+import type { Token } from './analyzer-types';
 import { unclosedBrace } from './bashversion';
-import type { Shell } from './dialect';
+import type { Explainer } from './explain/context';
 import { shorten } from './label';
 import { STATEMENTS } from './semantics/env';
-import type { StatusModel } from './semantics/status';
 import { ancestor, braceTakenAsWord, field, substitutionForm, type SyntaxNode } from './syntax/tree';
 
-/** What the explanation of a substitution asks of the analyzer, for the line being explained. */
-export interface SubstitutionHost {
-  /** The shell the script is for (undefined: bash). */
-  readonly shell: Shell | undefined;
-  s(ja: string, en: string): string;
-  tok(n: SyntaxNode, kind: Kind, explanation: string, children?: Token[], label?: string): Token;
-  /** The explanations of these nodes that are on the line explained. */
-  subs(nodes: readonly SyntaxNode[]): Token[];
-  /** The status model of the script. */
-  readonly status: StatusModel;
-}
-
-const isBash = (h: SubstitutionHost) => h.shell === undefined || h.shell === 'bash';
+const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
 
 /**
  * What each form of command substitution does, [Japanese, English] (checked with bash 5.3: test/bash53.test.ts). In a
  * script for ksh93 or mksh, which have the form too, it is said without what only bash 5.3 is checked to do (`local`,
  * a `REPLY` local to it, trailing newlines kept).
  */
-function meaning(h: SubstitutionHost, n: SyntaxNode): string {
+function meaning(h: Explainer, n: SyntaxNode): string {
   const form = substitutionForm(n);
   const own = form === '${' ? h.shell === 'ksh' || h.shell === 'mksh' : h.shell === 'mksh';
   switch (form) {
@@ -47,7 +34,7 @@ function meaning(h: SubstitutionHost, n: SyntaxNode): string {
   }
 }
 
-export function explainCommandSubstitution(h: SubstitutionHost, n: SyntaxNode): Token {
+export function explainCommandSubstitution(h: Explainer, n: SyntaxNode): Token {
   // (A `}` that does not end it: a syntax error.)
   const brace = braceTakenAsWord(n);
   if (brace) return h.tok(n, 'error', h.s(...unclosedBrace(brace, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', isBash(h))), h.subs(n.namedChildren));
@@ -64,7 +51,7 @@ export function scopeOf(n: SyntaxNode): 'function' | 'substitution' | undefined 
 }
 
 /** What `return` (at `n`) does in a `${ …; }` of a bash script: it ends the substitution (checked with bash 5.3). */
-export function returnInSubstitution(h: SubstitutionHost, n: SyntaxNode): string | undefined {
+export function returnInSubstitution(h: Explainer, n: SyntaxNode): string | undefined {
   if (!isBash(h) || scopeOf(n) !== 'substitution') return undefined;
   return h.s('囲んでいる `${ …; }` のコマンドをここで終える（関数での `return` と同じ。終了ステータスは引数の値で、省略すると直前のコマンドのもの）',
     'End the commands of the `${ …; }` around it, as `return` ends a function (the status is the one given, or that of the last command)');
@@ -75,7 +62,7 @@ export function returnInSubstitution(h: SubstitutionHost, n: SyntaxNode): string
  * with no command, which takes the status of its last substitution; it does not in a command's words, where the
  * command's own status counts (a declaration builtin's is said by a pitfall).
  */
-function substitutionStatus(h: SubstitutionHost, n: SyntaxNode): string {
+function substitutionStatus(h: Explainer, n: SyntaxNode): string {
   // (A word is always in a statement.)
   let stmt = n.parent!;
   while (!STATEMENTS.has(stmt.type)) stmt = stmt.parent!;
@@ -97,7 +84,7 @@ function substitutionStatus(h: SubstitutionHost, n: SyntaxNode): string {
   return h.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
 }
 
-export function explainProcessSubstitution(h: SubstitutionHost, n: SyntaxNode): Token {
+export function explainProcessSubstitution(h: Explainer, n: SyntaxNode): Token {
   const out = n.text.startsWith('>(');
   return h.tok(n, 'substitution', out
     ? h.s('プロセス置換 `>(…)`: 書き込むと中のコマンドの標準入力に渡るファイル名（/dev/fd/N）に置き換わる', 'Process substitution `>(…)`: a file name whose writes go to the command\'s stdin')

@@ -5,8 +5,8 @@ import { builtins } from '../src/dict/builtins';
 import { commands, core } from '../src/dict/commands';
 
 // Guards for src/explain/ (docs/design/analyzer.md, 3.2 and 3.3): no import cycles, no import of
-// src/analyzer.ts, and no comparison with the name of a dictionary command. The directory does not exist
-// until step 2; until then the checks pass with nothing to read.
+// src/analyzer.ts, and no comparison with the name of a dictionary command. The directory exists since step 2
+// (src/explain/context.ts and nodes.ts); before, the checks passed with nothing to read.
 const base = path.join(__dirname, '..');
 const dir = path.join(base, 'src', 'explain');
 

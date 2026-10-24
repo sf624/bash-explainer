@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), and step 1 (the facts the models own) is done (#308). Steps 2 to 9 are not started: src/explain/ does not exist yet, and src/analyzer.ts is 4,094 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), and step 2 (the context) is done (#324). Steps 3 to 9 are not started: src/explain/ has the context and the node helpers only, and src/analyzer.ts is 3,905 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -311,6 +311,23 @@ The analyzer still compares command names elsewhere (`head.name === 'local'` to 
 - `ExpansionHost` becomes the `Explainer` (src/expansion-tokens.ts takes it as it is). `EmbeddedContext` is built from it.
 - Moves about 200 lines. Risk: low (one file, mechanical), but the line filter must stay shared (`full`).
 
+**As done (#324).** The snapshot of the corpus is byte-identical before and after (and so is a snapshot of the corpus with options: the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3). src/analyzer.ts went from 4,092 to 3,905 lines; src/explain/context.ts is 306 lines and src/explain/nodes.ts 90. What moved where:
+
+- src/explain/nodes.ts: the module helpers on nodes, tokens and positions (`isBlockLike` and the block sets, `intersects`, `effEndRow`, `same`, `onLine`, `sibling`, `has`, `skeletal`, `summaryOf`, `sortTokens`, `ancestorOf`, `lineStarts`, `posOf`, `sameSpan`). analyzer.ts re-exports `isBlockLike` and `summaryOf`. The helpers of one group stay in the class's file and move with it (`braceExpansion`, `CommandHead`, `SHOPT_NAMES`, `jobSpec`, `Layout`, `stageText`, `redirectParts`…).
+- src/explain/context.ts: the `Explainer` interface, and `LineExplainer`, which implements it with what analyzer.ts reads back (`LineOutput`: the notes, facts, anchors, examples and context entries, `anchored`, `end`). `LineContext` is gone. `say`, `s`, `t`, `tok`, `lineRef`, `sub`, `subs` and `full` are the context's; the class keeps one-line delegates for them. The dispatch stays in the class and is handed to the context as a `Walk` (`explain`, `flatten`), which `sub` and `full` call back.
+- The writes: the 38 places that added a note call `cx.note`, the 9 that added an example `cx.example`; the example marks (`before = examples.length`, then `tagExamples` or `anchorExamples`) are `cx.examplesOf` and `cx.examplesAt`, scoped around the code that adds them; `argCtx` is `cx.command`, set by `render` with `cx.withCommand`. No `this.cx.extraNotes`, `examples`, `facts`, `anchors` or `context` is left in the class.
+- `ExpansionHost` and `SubstitutionHost` are gone: src/substitution-tokens.ts and src/expansion-tokens.ts take the `Explainer` as it is. `EmbeddedContext` takes its language from the context.
+
+Where the sketch of 2.2 did not fit main, it was adapted, and 2.2 is read with these changes:
+
+- `say(f, at)` takes the node the fact is about (notes carry ranges since #323), and `note(what, at)` takes a fact or a text and the node or nodes it is about; `anchored` (for the dialect, idiom and pitfall findings) is the orchestration's, on `LineOutput`.
+- Besides `examplesOf`, `examplesAt` attaches the examples to a node without naming a command (the old `anchorExamples`), and `examplesReplaced` lets one example replace those of the stages (a pipeline's).
+- `enclosing(entry)` records a construct around the line (`LineExplanation.context`, pushed by `flatten`), and `adopt(ex, span)` joins the notes, facts and examples of a line of a string read as a script (`scriptTokens`), until `nestedLine` replaces the nested `Analyzer` (step 7).
+- `line` is readable (two places compare it: the header of a redirected block, and whether a `case` branch's patterns are on the line); only `full` and `end` change it. `onLine(n)` replaces the `line === null || intersects(n, line)` tests.
+- `slotEnvs` is on the context (`args` fills it, the slots read it). The stages of pipelines are a memo of the line (`cx.memo(key)`, the key made by the code that reads it), so the context does not know the types of the examples.
+- `explain`, `commandToken` and `nestedLine` are not on the `Explainer` yet: nothing outside the class calls them, and an unused member would be uncovered. They come with the steps that move their callers.
+- What `${…}` asks of the analyzer's words (`varDesc`, `variableNote`, `orderNote`, `isAssoc`, `globChildren`) stays a small interface of src/expansion-tokens.ts (`ExpansionWords`), passed beside the context, until step 4 moves the words.
+
 ### Step 3: the readers (M)
 
 src/explain/reads.ts, where.ts and status.ts (2.3). These are the leaves that most groups call. Moves about 400 lines.
@@ -345,7 +362,7 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 |---|---|---|---:|---|
 | 0 | Guards, snapshot | S | 1 | — |
 | 1 | Facts the models own | S | 1 (#308) | 0 |
-| 2 | The context | M | 1 | 0; #269 merged or rebased |
+| 2 | The context | M | 1 (#324) | 0; #269 merged |
 | 3 | Readers, where, status | M | 1 | 2 |
 | 4 | Words | M | 1 | 3 |
 | 5 | Tests, redirections | M each | 2 | 4 |
@@ -389,8 +406,8 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
 | T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | planned | file-length test: analyzer.ts under 1,000 lines, then about 150 |
-| T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | planned | the snapshot unchanged; no `cx.extraNotes.push` left |
-| T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2 | planned | one `Explainer`; the snapshot unchanged |
+| T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
+| T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2 | done (PR #324) | one `Explainer` (the five reads of the words stay `ExpansionWords` until step 4); the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
@@ -403,7 +420,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 |---|---|
 | 0 | done (PR #275) |
 | 1.1–1.4 | done (PR #308) |
-| 2 | planned |
+| 2 | done (PR #324) |
 | 3 | planned |
 | 4 | planned |
 | 5 | planned |
