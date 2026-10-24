@@ -95,9 +95,9 @@ Bash reads the letters left to right: a blank or a letter it does not know is an
 
 It suggests writing the options with `set` on the next line. `#!/bin/bash -eu` and `#!/usr/bin/env -S bash -e -u` work, and get no pitfall.
 
-### The tree view of the panel
+### The Reading view of the panel
 
-The **Tree** button of the panel shows the current line as a tree of who reads each part; **List** goes back to the list of explanations. The layers follow the Bash manual:
+The **Reading** button of the panel shows the current line as a tree of who reads each part; **Meaning** goes back to the explanations of each part. The layers follow the Bash manual:
 
 - **bash.** bash splits the line into commands: lists, pipelines, compound commands and their clauses, coprocesses. A simple command is what 3.7.1 says: its assignments, its redirections, and its words. After expansion, the first word is the **command name**, which bash looks up as 3.7.2 says (a function, a builtin, a file in PATH); the tree says which. The other words are its **arguments**. In `ls -l a`, `ls` is the name and `-l` and `a` are arguments, to bash.
   - An **alias** is replaced before all that, when bash reads the line (6.6). After `alias ll='ls -l'`, the tree shows `ll` with its text under it: in `ll x`, the name bash looks up is `ls`, and `-l` and `x` are its arguments (as `set -x` shows: `+ ls -l x`).

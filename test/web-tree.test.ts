@@ -40,7 +40,7 @@ describe('the web page: the tree view of the panel', function () {
     let panel = await open(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
     assert.strictEqual(await panel.locator('#reading').isHidden(), true, 'the list first');
     // The switch is the page's, in its top bar; the panel shows no copy of it.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views-top button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['List true', 'Tree false']);
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views-top button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
     assert.strictEqual(await page.locator('#views-top').getAttribute('aria-label'), 'View');
     assert.strictEqual(await panel.locator('#views').isHidden(), true);
     await page.locator('#view-tree-top').click();
@@ -279,7 +279,7 @@ describe('the web page: the tree view of the panel', function () {
     assert.strictEqual(await page.locator('#views-top').isHidden(), true);
     await menuItem(page, '#view-tree-menu');
     await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 10);
-    assert.strictEqual(await page.locator('#view-tree-menu').textContent(), 'ツリー');
+    assert.strictEqual(await page.locator('#view-tree-menu').textContent(), '読まれ方');
     assert.strictEqual(await page.locator('#views-menu-label').textContent(), '表示');
     assert.strictEqual(await page.locator('#view-tree-menu').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await panel.locator('#reading-tree li').count() > 10, true);

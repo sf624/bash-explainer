@@ -59,11 +59,11 @@ describe('the VS Code panel: its header', function () {
     assert.strictEqual(await page.getByRole('combobox', { name: 'Shell' }).getAttribute('title'), 'Shell');
     assert.strictEqual(await page.locator('#shell-box .ico path').count(), 1);
     // The view switch: two words, the view shown pressed.
-    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['List true', 'Tree false']);
+    assert.deepStrictEqual(await page.evaluate(`[...document.querySelectorAll('#views button')].map((b) => b.textContent + ' ' + b.getAttribute('aria-pressed'))`), ['Meaning true', 'Reading false']);
     assert.strictEqual(await page.locator('#views').getAttribute('aria-label'), 'View');
     assert.strictEqual(await page.locator('header #views').count(), 1, 'the view switch is in the header');
     const ja = await open('dark', 600, 'ja');
-    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #views button')].map((b) => b.title || b.textContent)`), ['一覧', 'ツリー', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
+    assert.deepStrictEqual(await ja.evaluate(`[...document.querySelectorAll('header .tb, #views button')].map((b) => b.title || b.textContent)`), ['意味', '読まれ方', 'すべて折りたたむ', 'Markdown でコピー', '早見表', '設定']);
     assert.deepStrictEqual([...page.errors, ...ja.errors], []);
     await page.close();
     await ja.close();
