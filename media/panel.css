@@ -93,7 +93,7 @@ header {
 }
 
 html {
-  scroll-padding-top: calc(var(--line-h, 0px) + 0.25rem);
+  scroll-padding-top: calc(var(--line-h, 0px) + var(--controls-h, 0px) + 0.25rem);
 }
 
 pre#line {
@@ -478,6 +478,12 @@ li.collapsed > .body {
   display: none;
 }
 
+/* A box folded by hand is drawn until it has shrunk (panel.js, fold). */
+li.collapsed > .body[data-closing],
+#reading-tree ul[role="group"][hidden][data-closing] {
+  display: block;
+}
+
 /* Capture groups: the same colour for the group in the tree and what it matched in the examples. */
 .grp-1 { --grp: var(--vscode-charts-blue, #3794ff); }
 .grp-2 { --grp: var(--vscode-charts-green, #89d185); }
@@ -663,20 +669,43 @@ body {
   outline-offset: 1px;
 }
 
-/* Playing the tree (a prototype, behind ?treePlay=1): its controls at the end of the layer buttons. */
+/* The steps of the tree view (media/panel.js, STEPS): the row of controls stays under the line at the top while
+   the tree scrolls under it. Each step has the colour of its reader; the steps shown before the current one keep a
+   light tint, so the row reads as how far the tree is unfolded. */
+#layers {
+  position: sticky;
+  top: var(--line-h, 0px);
+  z-index: 1;
+  background: var(--vscode-editor-background);
+  padding: 0.2rem 0;
+}
+
+#layers.stuck {
+  box-shadow: 0 1px 0 var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+}
+
+#layers button {
+  min-height: 24px;
+  min-width: 24px;
+  white-space: nowrap;
+}
+
+#layers button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#layers .tp-icon {
+  display: inline-block;
+  min-width: 1em;
+  text-align: center;
+}
+
 #tree-play {
   display: inline-flex;
   gap: 0.2rem;
   margin-left: auto;
-}
-
-#tree-play button {
-  min-width: 1.9rem;
-}
-
-#tree-play button[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: default;
+  padding-left: 0.4rem;
 }
 
 #tree-play #tp-play[aria-pressed="true"] {
@@ -684,10 +713,8 @@ body {
   background: var(--vscode-list-activeSelectionBackground, rgba(127, 127, 127, 0.2));
 }
 
-#tree-play .tp-icon {
-  display: inline-block;
-  width: 1.1em;
-  text-align: center;
+#tp-play .tp-name {
+  margin-left: 0.25rem;
 }
 
 .tp-live {
@@ -697,6 +724,219 @@ body {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* The default layout: a segmented row of the steps, on one line; where it does not fit (panel.js adds .compact),
+   a stepper whose middle button opens the steps as a menu. */
+#layers[data-layout="segments"] {
+  flex-wrap: nowrap;
+}
+
+.step-pick {
+  display: contents;
+}
+
+#steps {
+  display: inline-flex;
+}
+
+#steps button.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 0;
+  margin-left: -1px;
+  padding: 0.1rem 0.5rem;
+}
+
+#steps button.step:first-child {
+  border-radius: 4px 0 0 4px;
+  margin-left: 0;
+}
+
+#steps button.step:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+#layers .num {
+  font-size: 0.85em;
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#layers button.step.passed {
+  background: color-mix(in srgb, var(--l) 8%, transparent);
+}
+
+#layers button.step[aria-current="step"] {
+  position: relative;
+  border-color: var(--l);
+  background: color-mix(in srgb, var(--l) 22%, transparent);
+}
+
+#layers button.step.empty .short {
+  opacity: 0.6;
+}
+
+#step-menu {
+  display: none;
+}
+
+#layers.tight #layers-label,
+#layers.tight .tp-name,
+#layers.tighter:not(.compact) #tp-back,
+#layers.tighter:not(.compact) #tp-forward,
+#layers.tighter #steps .num {
+  display: none;
+}
+
+#layers.tighter #steps button.step {
+  padding: 0.1rem 0.4rem;
+}
+
+#layers.compact .step-pick {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+#layers.compact #step-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  border-color: var(--l);
+}
+
+#step-menu .sm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#step-menu .sm-count {
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#layers.compact #steps {
+  display: none;
+}
+
+#layers.compact.open #steps {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 12rem;
+  padding: 0.25rem;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, rgba(127, 127, 127, 0.4)));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+#layers.compact.open #steps button.step {
+  margin: 0;
+  border-radius: 4px;
+  justify-content: flex-start;
+}
+
+/* The slider: the range, the steps' numbers under its stops, and the name of the step shown. */
+#layers .slider {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  max-width: 24rem;
+}
+
+#step-range {
+  --thumb: 16px;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--vscode-focusBorder);
+}
+
+#layers .ticks {
+  position: relative;
+  height: 1.2em;
+  margin: 0 calc(var(--thumb, 16px) / 2);
+}
+
+#layers button.tick {
+  position: absolute;
+  left: calc(var(--at) * 100%);
+  transform: translateX(-50%);
+  min-width: 0;
+  min-height: 0;
+  padding: 0 0.2rem;
+  border: 0;
+  font-size: 0.8em;
+  color: var(--l);
+  background: none;
+}
+
+#layers button.tick.current {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+#layers button.tick.empty {
+  opacity: 0.5;
+}
+
+#step-name {
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+/* Two levels: the readers' buttons, and in bash's, the depth of its own reading. */
+.bash-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.bash-group .depth {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.9em;
+}
+
+#depth-at {
+  min-width: 2.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Touch screens and the web page on a phone: larger targets. */
+@media (pointer: coarse) {
+  #layers button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  #step-range {
+    height: 40px;
+  }
+}
+
+@media (max-width: 520px) {
+  html.bx-web #layers button {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  html.bx-web #step-range {
+    height: 40px;
+  }
 }
 
 /* The tree view: an outline. Each row has the code in a pill and the kind on its first line, the text on a line
@@ -932,5 +1172,12 @@ body.vscode-high-contrast-light #reading-tree li.band {
     --t-twisty: 0.15rem;
     --t-tw: 0.8rem;
     --t-code: 1.05rem;
+  }
+}
+
+/* A narrow VS Code panel: a long kind ("command name · program") deep in the tree wraps, not past the edge. */
+@media (max-width: 340px) {
+  .trow .chip {
+    white-space: normal;
   }
 }

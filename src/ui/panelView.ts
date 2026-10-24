@@ -24,8 +24,11 @@ export type FromPanel =
   /** The view and layers chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState };
 
-/** What the panel remembers per viewer: the list or the tree view, and how many layers of the tree it shows (1–4). */
-export interface PanelState { view?: 'list' | 'tree'; level?: number }
+/**
+ * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line
+ * alone up to every layer). `level` (1–4: the layers) is what it kept before the steps, read when there is no step.
+ */
+export interface PanelState { view?: 'list' | 'tree'; level?: number; step?: number }
 
 export interface PanelLine {
   lang: Lang;
@@ -39,6 +42,8 @@ export interface PanelLine {
   /** The shell the file says, shown next to "auto". */
   detected?: Shell;
   placement: ExamplePlacement;
+  /** Whether rows grow and shrink when they are unfolded and folded (`panel.animations`). */
+  animations: boolean;
 }
 
 /**
@@ -78,6 +83,7 @@ export function panelUpdate(p: PanelLine) {
     explanation: p.placement === 'bottom' ? ex : placeExamples(ex),
     manual: manualLinks(lang, ex),
     examplesFirst: p.placement === 'first',
+    animations: p.animations,
     contextLabels: ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`),
     emptyMessage: t.empty,
     settingsLabel: t.settings,

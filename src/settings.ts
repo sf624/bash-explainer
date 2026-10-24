@@ -34,6 +34,7 @@ export interface Settings {
   'inline.enabled': boolean;
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
+  'panel.animations': boolean;
   'highlight.enabled': boolean;
   'editor.wrap': boolean;
   languages: string[];
@@ -121,6 +122,10 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'panel.autoOpen', type: 'boolean', default: false, group: 'display', title: ['パネルを自動で開く', 'Open the panel by itself'], surfaces: ['vscode'],
     elsewhere: 'The web page always shows its panel; the others have none.',
+  },
+  {
+    key: 'panel.animations', type: 'boolean', default: true, group: 'display', title: ['パネルのアニメーション', 'Animations in the panel'], surfaces: ['vscode', 'web'],
+    elsewhere: 'The command-line tool and the Language Server have no panel.',
   },
   {
     key: 'highlight.enabled', type: 'boolean', default: false, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],

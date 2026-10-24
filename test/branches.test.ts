@@ -61,7 +61,7 @@ describe('branches no other test takes', () => {
   it('quick reference and panel: both languages', () => {
     assert.ok(quickReference('ja').some((r) => /[ぁ-ん]/.test(r.meaning)));
     const e = explain('yq .a f.yml');
-    const msg = panelUpdate({ lang: 'en', explanation: { ...e, notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'last' });
+    const msg = panelUpdate({ lang: 'en', explanation: { ...e, notes: ['yq: mikefarah/yq v4'] }, file: 'a.sh', line: 0, lineText: 'yq .a f.yml', choice: {}, detected: 'zsh', placement: 'last', animations: true });
     assert.strictEqual(msg.dialect.shells[0][1], 'Auto (zsh)');
     assert.ok(msg.dialect.yqs!.every(([, name]) => !/[ぁ-ん]/.test(name)));
   });

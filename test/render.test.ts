@@ -169,7 +169,7 @@ describe('links to the Bash manual', () => {
   it('gives the panel the label, title and page of every section shown', () => {
     const src = 'exit 300';
     const ex = new Analyzer('en').explainLine(parser.parse(src), 0);
-    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first' });
+    const msg = panelUpdate({ lang: 'en', explanation: ex, file: 'a.sh', line: 0, lineText: src, choice: {}, placement: 'first', animations: true });
     assert.deepStrictEqual(Object.keys(msg.manual).sort(), ['3.7.5', '4.1', '4.4']);
     assert.deepStrictEqual(msg.manual['3.7.5'], { label: 'Bash manual 3.7.5', title: 'Exit Status', url: exitStatus });
     assert.deepStrictEqual(noteRefs(ex, ex.notes[0]), ['3.7.5']);

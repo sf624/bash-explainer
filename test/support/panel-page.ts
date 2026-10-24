@@ -21,7 +21,7 @@ export type PanelTheme = 'dark' | 'light' | 'hc';
 function message(lang: Lang, line: string, file: string): unknown {
   const src = `#!/bin/bash\n${line}\n`;
   const ex = new Analyzer(lang).explainLine(createUnbashParser().parse(src), 1, 'bash', { reading: true });
-  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first' });
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first', animations: true });
 }
 
 const HOST = `(function () {
