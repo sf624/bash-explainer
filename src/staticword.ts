@@ -68,6 +68,14 @@ export function unquoteWord(text: string, inDouble = false): string | undefined 
   return out;
 }
 
+/**
+ * The text a word gives as a message (`${x:?"msg"}` prints `msg`): without its quotes; when it expands something
+ * (`"no $f"`), without the outer quotes of a word that is one double-quoted string.
+ */
+export function messageText(text: string): string {
+  return unquoteWord(text) ?? (/^"(?:[^"\\]|\\.)*"$/.test(text) ? text.slice(1, -1) : text);
+}
+
 /** A `$(…)` or backtick substitution that cannot print anything: empty, or a bare `:` / `true` / `false`. */
 function emptySubstitution(n: SyntaxNode): boolean {
   const cmds = n.namedChildren;

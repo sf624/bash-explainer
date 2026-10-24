@@ -23,9 +23,9 @@ export function globIntro(lang: Lang, target: GlobTarget): string {
  * glob with its alternatives, a run of literal characters, an escaped character, a quoted part.
  * Nothing for a pattern with an expansion (`$x`, `$(…)`): its text is only known at run time.
  */
-export function explainGlob(src: string, lang: Lang): EmbeddedToken[] {
+export function explainGlob(src: string, lang: Lang, extglob = true): EmbeddedToken[] {
   if (/\$|`/.test(src)) return [];
-  return parse(src, 0, src.length, pick(lang), lang);
+  return parse(src, 0, src.length, pick(lang), lang, extglob);
 }
 
 const EXT: Record<string, [string, string]> = {
@@ -36,7 +36,8 @@ const EXT: Record<string, [string, string]> = {
   '!': ['次のどれにも一致しないもの', 'anything that matches none of'],
 };
 
-function parse(src: string, from: number, to: number, s: (ja: string, en: string) => string, lang: Lang): EmbeddedToken[] {
+/** `extglob: false`: without the option, `@(…)` is no extended glob (`*(` and `?(` are a wildcard and a `(`). */
+function parse(src: string, from: number, to: number, s: (ja: string, en: string) => string, lang: Lang, extglob: boolean): EmbeddedToken[] {
   const out: EmbeddedToken[] = [];
   let run: EmbeddedToken | undefined;
   const add = (start: number, end: number, kind: EmbeddedToken['kind'], explanation: string, children: EmbeddedToken[] = []) => {
@@ -57,13 +58,13 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
       if (end < 0 || end >= to) { literal(i); continue; }
       add(i, end + 1, 'string', s('クォートされた部分: 中の文字そのもの（`*` や `?` もパターンにならない）', 'Quoted part: the characters themselves (`*` and `?` are not pattern symbols here)'));
       i = end;
-    } else if ('?*+@!'.includes(c) && src[i + 1] === '(' && closingParen(src, i + 1) > 0 && closingParen(src, i + 1) < to) {
+    } else if (extglob && '?*+@!'.includes(c) && src[i + 1] === '(' && closingParen(src, i + 1) > 0 && closingParen(src, i + 1) < to) {
       const end = closingParen(src, i + 1);
       const [ja, en] = EXT[c];
       const alts = alternatives(src, i + 2, end).filter(([a, b]) => b > a).map(([a, b]): EmbeddedToken => ({
         start: a, end: b, kind: 'pattern',
         explanation: s(`選択肢 \`${src.slice(a, b)}\``, `Alternative \`${src.slice(a, b)}\``),
-        children: parse(src, a, b, s, lang),
+        children: parse(src, a, b, s, lang, true),
       }));
       add(i, end + 1, 'pattern', s(`\`${c}(…)\`: 拡張グロブ。${ja}（\`|\` で区切った選択肢）`, `\`${c}(…)\`: extended glob, ${en} the alternatives separated by \`|\``), alts);
       i = end;

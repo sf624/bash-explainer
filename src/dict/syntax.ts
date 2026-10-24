@@ -1,6 +1,6 @@
 import { Text, tx } from '../i18n';
 import { splitReplacement } from '../expansion';
-import { unquoteWord } from '../staticword';
+import { messageText, unquoteWord } from '../staticword';
 
 /** The name of `{name}` in `{name}>file`: bash picks a free descriptor (10 or higher) and stores its number in that variable. */
 function namedFd(fd: string): string | undefined {
@@ -90,8 +90,8 @@ export const expansionOps: Record<string, (v: string, a: string) => Text> = {
   '=': (v, a) => cannotAssign(v) ? tx(`\`${v}\` が未設定なら、bash は「cannot assign in this way」のエラーにする（位置パラメータには代入できない。\`${a}\` は使われない）`, `If \`${v}\` is unset, bash fails with "cannot assign in this way" (the arguments cannot be assigned to; \`${a}\` is not used)`) : tx(`\`${v}\` が未設定なら \`${a}\` を代入してその値を使う`, `If \`${v}\` is unset, assign \`${a}\` to it`),
   ':+': (v, a) => tx(`\`${v}\` が設定済みかつ空でなければ \`${a}\` を使い、そうでなければ空`, `Use \`${a}\` if \`${v}\` is set and non-empty, otherwise nothing`),
   '+': (v, a) => tx(`\`${v}\` が設定済みなら \`${a}\` を使い、未設定なら空`, `Use \`${a}\` if \`${v}\` is set, otherwise nothing`),
-  ':?': (v, a) => tx(`\`${v}\` が未設定または空ならエラーメッセージ「${a || 'parameter null or not set'}」を出してスクリプトを終了`, `Exit with error "${a || 'parameter null or not set'}" if \`${v}\` is unset or empty`),
-  '?': (v, a) => tx(`\`${v}\` が未設定ならエラーメッセージ「${a || 'parameter not set'}」を出して終了`, `Exit with error "${a || 'parameter not set'}" if \`${v}\` is unset`),
+  ':?': (v, a) => tx(`\`${v}\` が未設定または空ならエラーメッセージ「${a ? messageText(a) : 'parameter null or not set'}」を出してスクリプトを終了`, `Exit with error "${a ? messageText(a) : 'parameter null or not set'}" if \`${v}\` is unset or empty`),
+  '?': (v, a) => tx(`\`${v}\` が未設定ならエラーメッセージ「${a ? messageText(a) : 'parameter not set'}」を出して終了`, `Exit with error "${a ? messageText(a) : 'parameter not set'}" if \`${v}\` is unset`),
   '#': (v, a) => tx(`\`${v}\` の先頭からパターン \`${a}\` に一致する最短部分を削除`, `Remove the shortest prefix of \`${v}\` matching \`${a}\``),
   '##': (v, a) => tx(`\`${v}\` の先頭からパターン \`${a}\` に一致する最長部分を削除`, `Remove the longest prefix of \`${v}\` matching \`${a}\``),
   '%': (v, a) => tx(`\`${v}\` の末尾からパターン \`${a}\` に一致する最短部分を削除（拡張子除去などに使う）`, `Remove the shortest suffix of \`${v}\` matching \`${a}\` (e.g. strip an extension)`),

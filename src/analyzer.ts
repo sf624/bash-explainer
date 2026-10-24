@@ -23,7 +23,7 @@ import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonV
 import { sedExample, sedPattern } from './examples/sed';
 import { InputBox, Interactive, jqStepSections, RerunSpec } from './examples/rerun';
 import { globExample, patternExample, testExample } from './examples/patterns';
-import { braceExpand, GlobMode, GlobOpts, hasExtglob, isGlob } from './examples/shellwords';
+import { braceExpand, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob } from './examples/shellwords';
 import { pictureNote, visible } from './ctlchars';
 import { commandExampleOf, dateExample, gitLogExample, interactive, ioExample, readExample } from './examples/commands';
 import { explainEscapes } from './embedded/format';
@@ -72,11 +72,11 @@ import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 import { type Explainer, LineExplainer, memoKey, type Walk } from './explain/context';
 import { ancestorOf, fromEmbedded, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, skeletal, sortTokens, summaryOf } from './explain/nodes';
-import { given, globOff, hostCommand, inArithmetic, isAssoc, optionValues, regexFlavor, resolve, shoptAt, type ShoptName, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
+import { given, globOff, hostCommand, ifsAt, inArithmetic, isAssoc, optionValues, regexFlavor, resolve, shoptAt, type ShoptName, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
 import { groupSubshell, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
 import {
-  arithChildren, arithNumber, arrayElement, braceExpansion, braceVarNote, braceWord, braceWords, commaNote, concatenationNote, globChildren, globNotes, globToken,
+  arithChildren, arithNumber, arrayElement, braceExpansion, braceVarNote, braceWord, braceWords, casePattern, commaNote, concatenationNote, globChildren, globNotes, globToken,
   notGlobbedHere, shown, simpleExpansion, string, subscript, tilde, tildeNote, valueNote, variable, word, wrapNote,
 } from './explain/words';
 
@@ -186,7 +186,7 @@ export class Analyzer {
     const patterns = n.type === 'case_item' ? fields(n, 'value') : [];
     for (const c of n.children) {
       if (!this.cx.onLine(c)) continue;
-      if (has(patterns, c)) out.push(this.casePattern(c));
+      if (has(patterns, c)) out.push(casePattern(this.cx, c));
       else if (patterns.length && (c.type === '|' || c.type === ')' || c.type === '(')) continue;
       else if (c.named) out.push(...this.sub(c));
       else {
@@ -524,14 +524,6 @@ export class Analyzer {
     ) + fall + this.lineRef(n), sortTokens([...children, ...vt])), n);
   }
 
-  private casePattern(p: SyntaxNode): Token {
-    // `$p)`: what the expansion gives is the pattern (its parts say whether it is read as one).
-    if (descendants(p, ['simple_expansion', 'expansion', 'command_substitution']).length) {
-      return this.tok(p, 'pattern', this.s(`パターン \`${p.text}\`: 展開した結果がパターンになる`, `Pattern \`${p.text}\`: what it expands to is the pattern`), this.sub(p));
-    }
-    return globToken(this.cx, p, 'value', p.text, 0);
-  }
-
   private caseItem(n: SyntaxNode): Token {
     const pats = fields(n, 'value');
     const ptext = pats.map((p) => p.text).join(' | ');
@@ -549,7 +541,7 @@ export class Analyzer {
       : this.s(`分岐: 値がパターン \`${ptext}\` に一致した場合に実行（\`|\` は「または」）`, `Branch: runs when the value matches \`${ptext}\` (\`|\` means "or")`);
     const patToks = pats
       .filter((p) => this.cx.onLine(p))
-      .map((p) => this.casePattern(p));
+      .map((p) => casePattern(this.cx, p));
     const rest = this.ordered(n, (c) => has(pats, c) || c.type === '|' || c.type === ')' || c.type === '(');
     if (!isDefault && (this.cx.line === null || pats.some((p) => intersects(p, this.cx.line!)))) {
       this.cx.examplesAt(n, () => this.caseExample(pats));
@@ -918,9 +910,9 @@ export class Analyzer {
     }
     const children: Token[] = [];
     if (value) {
+      // (A `~` that bash expands keeps its own explanation: `x=~` is the home directory.)
       for (const t of this.sub(value)) {
-        if (intValueText && isPlainWord(value) && !arithNumber(this.cx, value)) t.explanation = `\`${value.text}\`: ${intValueText}`;
-        else if (isPlainWord(value) && !arithNumber(this.cx, value)) t.explanation = this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(this.cx, value) : '');
+        if (!(t.kind === 'expansion' && wordAt(this.cx, value)?.tildes.length) && isPlainWord(value) && !arithNumber(this.cx, value)) t.explanation = intValueText ? `\`${value.text}\`: ${intValueText}` : this.s(`代入する値 \`${value.text}\``, `Value \`${value.text}\``) + (hasGlob(value.text) ? notGlobbedHere(this.cx, value) : '');
         children.push(t);
       }
     }
@@ -2519,9 +2511,9 @@ export class Analyzer {
     this.cx.note(fact(this.lang, 'stdin-not-read', { cmd: name.split('/').pop()!, file: file.name, stdin }), n);
   }
 
-  /** How `read` splits a sample line into its variables (with the IFS given before it). */
+  /** How `read` splits a sample line into its variables (with the IFS in effect, or the one given before it). */
   private readExample(n: SyntaxNode, args: SyntaxNode[]): void {
-    let ifs: string | undefined = ' \t\n';
+    let ifs = ifsAt(this.cx, n);
     for (const c of n.namedChildren) {
       if (c.type !== 'variable_assignment' || field(c, 'name')?.text !== 'IFS') continue;
       const v = field(c, 'value');
@@ -2550,7 +2542,9 @@ export class Analyzer {
       });
       return;
     }
-    if (isGlob(text) && !globOff(this.cx, a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
+    // (Where globstar may be on, the example shows `**` at any depth, and says so.)
+    const maybe = hasGlobstar(text) && shoptAt(this.cx, a).globstar === 'unknown';
+    if (isGlob(text) && !globOff(this.cx, a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`${maybe ? '、globstar が有効なとき' : ''}）`, `Example (glob \`${text}\`${maybe ? ', where globstar is on' : ''})`));
   }
 
   /** The notes (`pitfall: false`) and pitfalls on status and errexit of line `line` (src/semantics/status.ts). */
@@ -2639,8 +2633,8 @@ export class Analyzer {
     const shopt = shoptAt(this.cx, n);
     const on = (name: ShoptName) => shopt[name] === 'on';
     if (use === 'file') {
-      // (`**` is explained as it is written: for any depth, unless globstar is off.)
-      const o: GlobOpts = { globstar: shopt.globstar !== 'off' && shopt.globstar !== 'unsupported', dotglob: on('dotglob'), nocase: on('nocaseglob') };
+      // (`**` reaches any depth with globstar on; where it may be on, the example says so.)
+      const o: GlobOpts = { globstar: on('globstar') || shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob') };
       return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
     }
     return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};

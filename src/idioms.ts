@@ -8,6 +8,7 @@ import { lookupCommand } from './dict/aliases';
 import { staticWordValue } from './staticword';
 import { descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
+import { option } from './semantics/state';
 import type { StatusModel } from './semantics/status';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -286,13 +287,16 @@ const argsLoop = (n: SyntaxNode): boolean => {
     && (c!.type === 'arithmetic_command' ? ['>', '!='] : ['-gt', '-ne', '!=', '>']).includes(field(e, 'operator')!.text);
 };
 /** `[ -e "$f" ] || continue`: a test of a name, and `continue` when it is not there. */
-const globGuard = (n: SyntaxNode): boolean => {
+const globGuard = (n: SyntaxNode, status: StatusModel): boolean => {
   if (n.type !== 'list' || tokensOf(n)[0] !== '||' || !commandIs(n.namedChildren[1], 'continue') || argsOf(n.namedChildren[1]).length) return false;
   const t = n.namedChildren[0];
   const u = t.type === 'extended_test' && t.namedChildren[0].type === 'unary_expression' ? t.namedChildren[0] : undefined;
   const [op, operand] = u ? [field(u, 'operator')!.text, u.namedChildren[1]]
     : testWords(t)?.length === 2 ? [staticWordValue(testWords(t)![0]), testWords(t)![1]] : [];
-  return ['-e', '-f'].includes(op!) && /^\w+$/.test(parameterOf(operand)?.name ?? '');
+  if (!['-e', '-f'].includes(op!) || !/^\w+$/.test(parameterOf(operand)?.name ?? '')) return false;
+  // (With nullglob or failglob on, a glob that matches nothing gives no name to skip: the note would not hold.)
+  const st = status.state.at(n).run;
+  return option(st, 'shopt', 'nullglob') !== 'on' && option(st, 'shopt', 'failglob') !== 'on';
 };
 
 /** The words of `[ … ]` (by its spelling, closed with `]`) between the brackets; undefined for any other node. */
