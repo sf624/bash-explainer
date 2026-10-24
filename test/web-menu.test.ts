@@ -39,6 +39,11 @@ describe('the web page: the menu and the settings sheet', function () {
     for (const id of ['#kind-menu', '#menu-copy', '#lang', '#theme', '#channel', '#menu-sample', '#menu-share', '#menu-install', '#dev-link', '#privacy', '#version', '#notices', '#drawer a[href="LICENSE.txt"]', '#drawer a[href="https://github.com/sf624/bash-explainer"]']) {
       assert.strictEqual(await page.locator(id).isVisible(), true, id);
     }
+    // The shared actions keep the panel's order (collapse, copy, quick reference): on a phone the fold and the
+    // quick reference are in the bar in that order, and the copy leads the menu's actions.
+    const [cx, rx] = await Promise.all(['#collapse', '#ref'].map(async (id) => (await page.locator(id).boundingBox())!.x));
+    assert.ok(cx < rx, `${cx} < ${rx}`);
+    assert.strictEqual(await page.locator('#menu-copy').evaluate((e) => e.parentElement!.querySelector('.menu-item') === e), true);
     assert.match(await page.locator('#version').innerText(), /^Bash Explainer \d+\.\d+\.\d+/);
     // Esc closes it, and the focus goes back to the button.
     await page.keyboard.press('Escape');

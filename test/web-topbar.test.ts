@@ -4,6 +4,7 @@
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
 import { openSite, choose, until } from './support/site';
+import { PANEL_BODY } from '../src/ui/panelView';
 
 describe('the web page: the top bar', function () {
   this.timeout(120000);
@@ -101,6 +102,11 @@ describe('the web page: the top bar', function () {
         assert.strictEqual(await page.locator(`.top ${id}`).count(), 1);
       }
       assert.strictEqual(await page.locator('#menu-collapse, #menu-ref').count(), 0);
+      // The three actions follow the order of the VS Code panel header (collapse, copy, quick reference).
+      const panelOrder = [...PANEL_BODY.matchAll(/<button id="(toggle|copy|ref)"/g)].map((m) => ({ toggle: 'collapse', copy: 'copy-md', ref: 'ref' })[m[1] as 'toggle' | 'copy' | 'ref']);
+      assert.deepStrictEqual(panelOrder, ['collapse', 'copy-md', 'ref']);
+      const barOrder = await page.evaluate(`['collapse', 'copy-md', 'ref'].map((id) => [id, document.getElementById(id)]).filter(([, e]) => e.getClientRects().length).sort((a, b) => a[1].getBoundingClientRect().left - b[1].getBoundingClientRect().left).map(([id]) => id)`);
+      assert.deepStrictEqual(barOrder, panelOrder, `the order at ${width}px`);
       // The view switch too (on a phone it is in the menu).
       assert.strictEqual(await page.locator('.top #views-top').isVisible(), true, `the view switch at ${width}px`);
       await page.locator('#menu-open').click();
@@ -161,6 +167,8 @@ describe('the web page: the top bar', function () {
       await page.keyboard.press('Enter');
       await until('collapsed by the keyboard', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
       await page.keyboard.press('Tab');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'copy-md');
+      await page.keyboard.press('Tab');
       assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
       await page.keyboard.press('Space');
       await until('the reference by the keyboard', () => panel().locator('#reference').isVisible(), (v) => v);
@@ -168,9 +176,9 @@ describe('the web page: the top bar', function () {
       await page.locator('#ref').focus();
       await page.keyboard.press('Enter');
       await until('the explanation by the keyboard', () => panel().locator('#main').isVisible(), (v) => v);
-      await page.locator('#ref').focus();
+      await page.locator('#copy-md').focus();
       await page.keyboard.press('Tab');
-      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'copy-md');
+      assert.strictEqual(await page.evaluate('document.activeElement.id'), 'ref');
 
       // Japanese names.
       await choose(page, '#lang', 'ja');
