@@ -31,7 +31,7 @@ header {
 }
 
 .tb:hover,
-.seg button[aria-pressed="false"]:hover {
+.segmented button[aria-pressed="false"]:hover {
   background: var(--vscode-list-hoverBackground);
   outline: none;
 }
@@ -39,23 +39,23 @@ header {
 /* Without a mouse no hover either: it would stay after a tap. */
 @media (hover: none) {
   .tb:hover,
-  .seg button[aria-pressed="false"]:hover {
+  .segmented button[aria-pressed="false"]:hover {
     background: transparent;
   }
 }
 
 .tb[aria-pressed="true"],
-.seg button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"] {
   background: var(--accent-soft);
   border-color: transparent;
   color: var(--vscode-foreground);
 }
 
-.seg {
+.segmented {
   border-radius: var(--radius-sm);
 }
 
-.seg button {
+.segmented button {
   height: 24px;
   border-radius: 4px;
 }
@@ -66,7 +66,7 @@ header {
 }
 
 .tb:focus-visible,
-.seg button:focus-visible,
+.segmented button:focus-visible,
 .dropdown select:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 0;
@@ -94,7 +94,7 @@ pre#line {
     height: 36px;
   }
 
-  .seg button {
+  .segmented button {
     height: 32px;
   }
 

@@ -372,7 +372,7 @@ header .where {
 }
 
 /* The view switch: two words in a segmented control, the view shown pressed (VS Code's input toggles). */
-.seg {
+.segmented {
   display: inline-flex;
   flex: none;
   padding: 1px;
@@ -380,7 +380,7 @@ header .where {
   border-radius: 4px;
 }
 
-.seg button {
+.segmented button {
   height: 20px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -393,7 +393,7 @@ header .where {
   cursor: pointer;
 }
 
-.seg button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"] {
   background: var(--vscode-inputOption-activeBackground, rgba(36, 137, 219, 0.3));
   border-color: var(--vscode-inputOption-activeBorder, transparent);
   color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
@@ -424,7 +424,7 @@ header .where {
 
 /* Hover: the toolbar's colour; in high contrast, which has none, a dashed outline (toolbar.hoverOutline). */
 .tb:hover,
-.seg button[aria-pressed="false"]:hover {
+.segmented button[aria-pressed="false"]:hover {
   background: var(--vscode-toolbar-hoverBackground, transparent);
   outline: 1px dashed var(--vscode-toolbar-hoverOutline, transparent);
   outline-offset: -1px;
@@ -438,7 +438,7 @@ header .where {
 
 /* The keyboard's focus: VS Code's 1px ring. */
 .tb:focus-visible,
-.seg button:focus-visible,
+.segmented button:focus-visible,
 .dropdown select:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
@@ -857,7 +857,7 @@ body.vscode-high-contrast-light #reading-tree li.band {
     outline-offset: -2px;
   }
 
-  .seg button[aria-pressed="true"],
+  .segmented button[aria-pressed="true"],
   .tb[aria-pressed="true"],
   #layers button[aria-pressed="true"] {
     outline: 2px solid Highlight;
