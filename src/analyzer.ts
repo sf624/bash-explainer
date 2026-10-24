@@ -1614,13 +1614,9 @@ export class Analyzer {
       const builtin = !!spec.builtin;
       return {
         name, spec, ...this.testOf(res), kind: builtin ? 'builtin' : 'command', nameTokens: [], ...(builtin ? { refs: builtinSections(name, spec.builtin === 'special') } : {}),
-        explanation: builtin && spec.closingOperand
-          // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
-          ? this.cx.shell === 'zsh'
-            ? this.s('コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）',
-              'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)')
-            : this.s('コマンド `[`（`test` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、`[` と `]` の前後に空白が要り、中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）',
-              'Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)')
+        explanation: builtin && spec.closingOperand // (zsh splits and globs no unquoted variable, but drops one that is empty all the same.)
+          ? this.s(`コマンド \`[\`（\`test\` の別名）: 引数の条件を評価し、真なら成功(0)を返す。シェルの構文ではなく普通のコマンドなので、\`[\` と \`]\` の前後に空白が要り、${this.cx.shell === 'zsh' ? '中の引数はほかのコマンドの引数と同じく展開される（クォートしない変数は、空なら引数ごと消える。`[[ ]]` なら消えない）' : '中の引数には単語分割とグロブ展開がかかる（`[[ ]]` ならかからない）'}`,
+            `Command \`[\` (an alias of \`test\`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so \`[\` and \`]\` need spaces around them, and ${this.cx.shell === 'zsh' ? 'the arguments inside are expanded as any command\'s are (an unquoted variable that is empty is dropped; `[[ ]]` keeps it)' : 'the arguments inside undergo word splitting and globbing (`[[ ]]` does not)'}`)
           : this.t(spec.summary) + (builtin ? this.s('（シェル組み込み）', ' (shell builtin)') : ''),
       };
     }
@@ -3643,8 +3639,7 @@ export class Analyzer {
     const part = partMeaning(n, this.cx.state);
     if (!part) return undefined;
     const { split, glob, word } = part;
-    // (zsh: the line's dialect note says that it is neither split nor globbed there.)
-    if (split.applies === false && (split.why === 'quoted' || split.why === 'context' || split.why === 'zsh')) return undefined;
+    if (split.applies === false && (split.why === 'quoted' || split.why === 'context' || split.why === 'zsh')) return undefined; // (zsh: the line's dialect note says it.)
     if (split.applies === false && split.why === 'posix-mode') {
       return { ja: 'POSIX モードではリダイレクト先は単語分割もグロブ展開もされない', en: 'in POSIX mode a redirection target is neither word-split nor globbed' };
     }
