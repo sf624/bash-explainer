@@ -262,20 +262,20 @@ async function record(page, scenario, frameDir) {
     await click();
     await moveTo(...startMouse.demo, 10);
     const stop = start();
-    await sleep(600);
+    await sleep(250);
     const open = page.locator('a.codicon-comment-discussion[aria-label^="Open Bash Explanation Panel"]').first();
     const ob = await open.boundingBox();
-    await moveTo(ob.x + ob.width / 2, ob.y + ob.height / 2, 900);
-    await sleep(300);
+    await moveTo(ob.x + ob.width / 2, ob.y + ob.height / 2, 600);
+    await sleep(100);
     await click();
     const f = await panelFrame();
-    await sleep(500);
-    // First the explanation tree: the line's tokens, then its nested rows. Hold on it long enough to read.
+    await sleep(200);
+    // First the explanation tree: the line's tokens, then its nested rows. Hold only about a second: the whole demo should run on without idle pauses.
     const ex = f.locator('.example').first();
     const area = ex.locator('textarea');
     const pb = await f.locator('#main').boundingBox();
-    await moveTo(pb.x + pb.width * 0.6, 560, 700);
-    await sleep(2800);
+    await moveTo(pb.x + pb.width * 0.6, 560, 500);
+    await sleep(900);
     // Then scroll down to the worked example, which sits in the same tree under the pattern it is about.
     // Stop with the example's heading just under the panel's header, or once all of it shows.
     const [, vh] = viewport.demo;
@@ -286,7 +286,7 @@ async function record(page, scenario, frameDir) {
       await page.mouse.wheel(0, 60);
       await sleep(45);
     }
-    await sleep(1000);
+    await sleep(300);
     // Make the input line "RROR" match: grep then keeps it, so the matching lines change.
     const ab = await area.boundingBox();
     const row = await area.evaluate((el) => el.value.split('\n').indexOf('RROR'));
@@ -295,19 +295,20 @@ async function record(page, scenario, frameDir) {
       const cs = getComputedStyle(el);
       return { top: parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth), line: parseFloat(cs.lineHeight) };
     });
-    await moveTo(ab.x + 14, ab.y + top + line * (row + 0.5), 800);
-    await sleep(200);
+    await moveTo(ab.x + 14, ab.y + top + line * (row + 0.5), 600);
+    await sleep(100);
     await click();
     await page.keyboard.press('Home');
-    await sleep(500);
-    await page.keyboard.type('E', { delay: 120 });
-    await sleep(800);
+    await sleep(200);
+    await page.keyboard.type('E', { delay: 100 });
+    await sleep(600);
     // Step aside so the pointer does not hide the result.
-    await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * (row + 0.5), 500);
-    await sleep(1800);
+    await moveTo(ab.x + ab.width * 0.75, ab.y + top + line * (row + 0.5), 400);
+    await sleep(1000);
     // Back in the editor, a hover explains a single word.
-    await moveTo(...startMouse.demo, 700);
-    await hoverWord(2, 'pipefail', 800);
+    await moveTo(...startMouse.demo, 500);
+    await hoverWord(2, 'pipefail', 600);
+    // The last frame stays a little longer before the loop starts again.
     await sleep(1800);
     await stop();
   } else if (scenario === 'hover') {
