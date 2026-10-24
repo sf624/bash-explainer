@@ -78,6 +78,13 @@ describe('the quoted form an unquoted path is given', () => {
     // With no glob, tilde or brace, the whole word is quoted.
     ['cp $a/b.txt e', '"$a/b.txt"', { a: ['nospace', 'with space'] }],
     ['cd $d', '"$d"', { d: ['nospace', 'with space'] }],
+    // A pattern stays a pattern in quotes.
+    ['cp ${d%/}/* e', '"${d%/}"/*', { d: ['nospace/', 'with space/'] }],
+    // `"$*"` would join the arguments into one word; `"$@"` keeps them apart.
+    ['cp $*/* e', '"$@"/*', { '@': ['. nospace', ". 'with space'"] }],
+    ['cp ${a[*]}/* e', '"${a[@]}"/*', { 'a[]': ['. nospace', ". 'with space'"] }],
+    ['cp ${*}/* e', '"${@}"/*', { '@': ['. nospace', ". 'with space'"] }],
+    ['cp $d$(echo /)x* e', '"$d$(echo /)"x*', { d: ['nospace', 'with space'] }],
   ];
   let dir: string;
   before(() => {
@@ -90,7 +97,8 @@ describe('the quoted form an unquoted path is given', () => {
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
   /** The words bash makes of `word` with these values, one per line. */
   const words = (word: string, vars: Record<string, string>) => {
-    const set = Object.entries(vars).map(([k, v]) => `${k}='${v}'`).join('; ');
+    // (`@`: the positional parameters; `a[]`: an array; both as shell words.)
+    const set = Object.entries(vars).map(([k, v]) => (k === '@' ? `set -- ${v}` : k.endsWith('[]') ? `${k.slice(0, -2)}=(${v})` : `${k}='${v}'`)).join('; ');
     return runBash(`${set}; printf '<%s>\\n' ${word}`, { cwd: dir, env: { HOME: dir } });
   };
   const values = (vars: Record<string, [string, string]>, i: 0 | 1) => Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, v[i]]));
@@ -99,14 +107,36 @@ describe('the quoted form an unquoted path is given', () => {
       const f = facts(src).find((x) => x.id === 'unquoted-variable-as-path');
       assert.ok(f, facts(src).map((x) => x.text).join('\n') || '(none)');
       assert.strictEqual(f.text.match(/Write `(.*)`$/)?.[1], quoted);
-      const cmd = parser.parse(src).root.namedChildren[0];
-      const word = cmd.namedChildren[cmd.namedChildren.length - (src.startsWith('cd') || src.startsWith('rm') ? 1 : 2)].text;
+      // The word the note is about, by its text.
+      const word = f.text.match(/^⚠ Pitfall: `(.*?)` is not quoted/)![1];
+      assert.ok(src.includes(` ${word} `) || src.endsWith(` ${word}`), word);
       const plain = words(word, values(vars, 0));
       const spaced = words(quoted, values(vars, 1));
       assert.strictEqual(plain.status, 0, plain.stderr);
       assert.strictEqual(spaced.stdout, plain.stdout.replace(/nospace/g, 'with space'));
       // (The glob matched: no word is left with a `*` in it.)
       assert.ok(!spaced.stdout.includes('*'), spaced.stdout);
+    });
+  }
+});
+
+describe('an unquoted path that quotes would change', () => {
+  // A glob, a `~` or quotes in the value word of `${…}` work only outside double quotes: no rewrite is given.
+  const cases: [string, string][] = [
+    ['cp ${x:-*.txt} e', '${x:-*.txt}'],
+    ['cp ${x:-~} e', '${x:-~}'],
+    ["cp ${x:-'a b'} e", "${x:-'a b'}"],
+    ['cp ${x:-$a/*} e', '${x:-$a/*}'],
+    ['cp ${x/a/*} e', '${x/a/*}'],
+  ];
+  for (const [src, word] of cases) {
+    it(`${src}: warned, with no quoted form`, () => {
+      const f = facts(src).find((x) => x.id === 'unquoted-variable-as-path');
+      assert.ok(f, facts(src).map((x) => x.text).join('\n') || '(none)');
+      assert.ok(!/Write/.test(f.text), f.text);
+      // Quoted whole, it means something else in bash.
+      const run = (w: string) => runBash(`x=a; a=.; printf '<%s>\\n' ${w}; unset x; printf '<%s>\\n' ${w}`, { files: ['a.txt', 'b.txt'], env: { HOME: '/h' } }).stdout;
+      assert.notStrictEqual(run(`"${word}"`), run(word));
     });
   }
 });

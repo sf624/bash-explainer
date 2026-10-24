@@ -1,4 +1,5 @@
 import type { Issue } from './dialect';
+import { parseExpansion } from './expansion';
 import { field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
@@ -131,9 +132,13 @@ const PLAIN = /^[\w@%+=:,./-]+$/;
 /**
  * A word with its unquoted expansions double-quoted, and the rest as written (`$DIR/*` → `"$DIR"/*`, so the glob
  * still matches; `~/$d` → `~/"$d"`, so the tilde still expands). A word whose other parts mean the same in quotes is
- * quoted whole (`$d/x` → `"$d/x"`). `replace` gives the text of some of its nodes instead (`${DIR:?}` for `$DIR`).
+ * quoted whole (`$d/x` → `"$d/x"`). `$*` and `${a[*]}` become `"$@"` and `"${a[@]}"`, which keep the words apart
+ * (`"$*"` joins them into one). `replace` gives the text of some of its nodes instead (`${DIR:?}` for `$DIR`).
+ *
+ * Undefined when no quoting means the same: an expansion whose value word has a glob, a `~`, a quote or a backslash
+ * (`${x:-*.txt}`, `${x:-~}`, `${x:-'a b'}`, `${x/a/*}`), which quotes would make literal.
  */
-export function quoteExpansions(n: SyntaxNode, replace: ReadonlyMap<SyntaxNode, string> = new Map()): string {
+export function quoteExpansions(n: SyntaxNode, replace: ReadonlyMap<SyntaxNode, string> = new Map()): string | undefined {
   const text = (x: SyntaxNode): string => {
     const r = replace.get(x);
     if (r !== undefined) return r;
@@ -145,17 +150,34 @@ export function quoteExpansions(n: SyntaxNode, replace: ReadonlyMap<SyntaxNode, 
     }
     return out + x.text.slice(at - x.startIndex);
   };
-  if (QUOTABLE.has(n.type)) return `"${text(n)}"`;
+  /** An expansion as it reads in double quotes, or undefined when the quotes would change its value word. */
+  const quoted = (x: SyntaxNode): string | undefined => {
+    if (replace.has(x)) return text(x);
+    if (x.type === 'simple_expansion') return x.text === '$*' ? '$@' : x.text;
+    if (x.type !== 'expansion') return text(x);
+    const p = parseExpansion(x.text);
+    if (p?.parts.some((q) => (q.role === 'word' || q.role === 'replacement') && /[*?[~'\\]|[@+!]\(/.test(q.text))) return undefined;
+    // `${*…}`, `${a[*]…}` (not `${#a[*]}`, a number): `@` keeps the elements apart in quotes.
+    const star = p && p.prefix !== '#' && p.parts.find((q) => (q.role === 'name' && q.text === '*') || (q.role === 'subscript' && q.text === '[*]'));
+    const at = star && star.start + (star.role === 'subscript' ? 1 : 0);
+    return at ? `${x.text.slice(0, at)}@${x.text.slice(at + 1)}` : text(x);
+  };
+  if (QUOTABLE.has(n.type)) {
+    const q = quoted(n);
+    return q === undefined ? undefined : `"${q}"`;
+  }
   if (n.type !== 'concatenation') return text(n);
   const parts = n.namedChildren;
-  if (parts.every((c) => QUOTABLE.has(c.type) || (c.type === 'word' && PLAIN.test(c.text)))) return `"${text(n)}"`;
+  const each = parts.map((c) => (QUOTABLE.has(c.type) ? quoted(c) : text(c)));
+  if (each.includes(undefined)) return undefined;
+  if (parts.every((c) => QUOTABLE.has(c.type) || (c.type === 'word' && PLAIN.test(c.text)))) return `"${each.join('')}"`;
   // Each run of adjacent expansions in one pair of quotes (`$a$b/*` → `"$a$b"/*`).
   const quotable = (i: number) => i >= 0 && i < parts.length && QUOTABLE.has(parts[i].type);
   let out = '';
-  for (const [i, c] of parts.entries()) {
+  for (const [i, c] of each.entries()) {
     const open = quotable(i) && !quotable(i - 1);
     const close = quotable(i) && !quotable(i + 1);
-    out += (open ? '"' : '') + text(c) + (close ? '"' : '');
+    out += (open ? '"' : '') + c + (close ? '"' : '');
   }
   return out;
 }

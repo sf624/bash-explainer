@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+Details and examples: [docs/changes/unreleased.md](docs/changes/unreleased.md).
+
 ### Fixed
 
-- The pitfalls for an unquoted path and for `rm -rf $DIR/…` quote only the variable when the word has a glob, a `~` or braces: `rm -rf $DIR/*` is told to write `"$DIR"/*` and `"${DIR:?}"/*`, which still match the files. `rm -rf "$DIR"/*` now gets the warning about an empty `DIR` too. Before, the notes said `"$DIR/*"` and `"${DIR:?}/…"`, which remove a file named `*` instead.
+- The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.
 
 ## 0.8.0
 
