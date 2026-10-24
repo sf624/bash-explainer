@@ -76,6 +76,11 @@ pre#line {
   border-radius: 8px;
 }
 
+/* The search box of the quick reference is round like the header's buttons and selects. */
+#ref-search {
+  border-radius: var(--radius-sm);
+}
+
 /* A phone: the header in as few rows as it can, its controls still big enough to tap. */
 @media (max-width: 520px) {
   /* It scrolls away with the explanation, which then has the whole frame. */

@@ -431,7 +431,13 @@ li.collapsed > .body {
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
   font: inherit;
+}
+
+#ref-search:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 .ref-row {
