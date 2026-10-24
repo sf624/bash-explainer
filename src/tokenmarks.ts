@@ -40,7 +40,8 @@ export function scriptProcess(env: ExecEnv): ScriptProcess {
   const where = whereOf(env);
   if (where !== 'local') return where;
   const slot = env.links[env.links.length - 1];
-  return processOf(env).link === slot ? 'child' : 'same';
+  // (A slot that reads a string as a script starts a new shell; a subshell is the `$( )` of the reading itself.)
+  return processOf(env).link === slot ? 'shell' : 'same';
 }
 
 /**

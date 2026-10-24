@@ -25,11 +25,12 @@ export type Kind =
 export type TokenOrigin = 'shell' | 'argv' | 'embedded' | 'script';
 
 /**
- * Which shell reads a string a command gives it as a script: `child`, another shell or a subshell started for it
- * (`bash -c`, `sh -c`, `su -c`; and the subshell of a `$( )`); `same`, this shell, again (`eval`, a trap's action);
- * `remote`, a shell on another machine (`ssh host cmd`); `container`, a shell in a container (`docker exec c sh -c`).
+ * Which shell reads a string a command gives it as a script: `subshell`, a copy of this shell (the manual's term, 3.7.3: a
+ * `$( )`, `<( )` or backquote; a `( )`, a pipeline stage or an asynchronous command); `shell`, a new shell process
+ * (`bash -c`, `sh -c`, `su -c`); `same`, this shell, again (`eval`, a trap's action); `remote`, a shell on another machine
+ * (`ssh host cmd`); `container`, a shell in a container (`docker exec c sh -c`).
  */
-export type ScriptProcess = 'same' | 'child' | 'remote' | 'container';
+export type ScriptProcess = 'same' | 'subshell' | 'shell' | 'remote' | 'container';
 
 export interface Pos { line: number; character: number }
 export interface Span { start: Pos; end: Pos }
