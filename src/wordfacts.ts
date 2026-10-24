@@ -1,4 +1,5 @@
 import type { Lang } from './i18n';
+import { quoteExpansions } from './fixes';
 import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
 import { args, commandName, readsVariable } from './pitfalls';
@@ -71,7 +72,7 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         const ran = nameNode && /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true })) : undefined;
         if (ran && PATH_COMMANDS.has(ran)) {
           const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
-          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text }));
+          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word) }));
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.

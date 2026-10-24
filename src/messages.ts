@@ -248,9 +248,10 @@ export const MESSAGES = {
   'prefix-assignment-expanded-first': pitfall<{ v: string; name: string; use: string }>(['3.7.1', '3.7.4'], ({ v, name, use }) => [
     `\`${v}=…\` は \`${name}\` の環境にだけ入ります。\`${use}\` は、その前に今のシェルが展開します（今の値で、なければ空）。新しい値を使うなら \`${v}=… sh -c '… "\$${v}"'\` のようにシェル経由にします`,
     `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… sh -c '… "\$${v}"'\``]),
-  'unquoted-variable-as-path': pitfall<{ bare: string }>(['3.5.7', '3.5.8'], ({ bare }) => [
-    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします。\`"${bare}"\` と書きます`,
-    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names. Write \`"${bare}"\``]),
+  // (`quoted`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`.)
+  'unquoted-variable-as-path': pitfall<{ bare: string; quoted: string }>(['3.5.7', '3.5.8'], ({ bare, quoted }) => [
+    `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします。\`${quoted}\` と書きます`,
+    `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names. Write \`${quoted}\``]),
   'for-over-ls-output': pitfall<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
     `\`$(${cmd} …)\` の結果は空白や改行で区切られるので、空白を含むファイル名が壊れます。${cmd === 'ls' ? '`for f in *.txt` のようにグロブを使います' : '`find … -print0 | while IFS= read -r -d \'\' f` や `find -exec` を使います'}`,
     `the output of \`$(${cmd} …)\` is split on spaces and newlines, so file names with spaces break. ${cmd === 'ls' ? 'Use a glob, as in `for f in *.txt`' : "Use `find … -print0 | while IFS= read -r -d '' f` or `find -exec`"}`]),

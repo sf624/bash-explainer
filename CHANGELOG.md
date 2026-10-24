@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The pitfalls for an unquoted path and for `rm -rf $DIR/…` quote only the variable when the word has a glob, a `~` or braces: `rm -rf $DIR/*` is told to write `"$DIR"/*` and `"${DIR:?}"/*`, which still match the files. `rm -rf "$DIR"/*` now gets the warning about an empty `DIR` too. Before, the notes said `"$DIR/*"` and `"${DIR:?}/…"`, which remove a file named `*` instead.
+
 ## 0.8.0
 
 Strings that a command runs as a script and bats test files are explained, conditions that the script's own values decide say which code never runs, and worked examples read and print as the tools do.
