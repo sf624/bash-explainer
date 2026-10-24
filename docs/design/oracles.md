@@ -99,7 +99,7 @@ Every note that tells the user to write something else, classified by how a run 
 
 | source | entries | suggest a rewrite | mechanical | scenario | prose | already run in bash |
 |---|---|---|---|---|---|---|
-| src/messages.ts (the catalog; used by src/wordfacts.ts, src/statusfacts.ts, src/analyzer.ts) | 80 | 44 | 12 | 21 | 11 | `unquoted-variable-as-path` (PR #271) |
+| src/messages.ts (the catalog; used by src/wordfacts.ts, src/statusfacts.ts, src/analyzer.ts) | 82 | 46 | 13 | 22 | 11 | `unquoted-variable-as-path` (PR #271) |
 | src/pitfalls.ts (style checks, no ids) | 9 | 9 | 9 | 0 | 0 | the `rm -rf "${DIR:?}"/*` rewrite (PR #271) |
 | src/dialect.ts (`altEn` of the features) | 33 | 33 | 7 with a quick fix, 8 more | 0 | 18 | the 7 quick fixes (test/fixes.test.ts, bash and dash) |
 | inline texts in src/analyzer.ts | 4 | 4 | 1 (`'a[1]'` for `unset a[1]`) | 2 (`env -S` in a shebang) | 1 (`eval`, `seq` for `{1..$n}`) | none |
@@ -118,6 +118,7 @@ The catalog's classification is in test/suggestions.test.ts (this PR), one line 
 | `function-last-test-returns-status`, `-stops-script` | `a && b` last → `if a; then b; fi` | `a` fails, succeeds; with `set -e` |
 | `unmatched-glob-runs-once` | `[ -e "$f" ] \|\| continue` first; `shopt -s nullglob` | matching files, none |
 | `regex-backslash-dropped` | `[[ $x =~ \bfoo ]]` → `re='\bfoo'; [[ $x =~ $re ]]` | strings that match and do not |
+| `nounset-unbound` | `$x` → `${x:-}` (when the analyzer gives `fix`) | unset, empty, set; with `set -u` |
 | `bracket-close-glued` | `[ -f $x]` → `[ -f $x ]` | file present, absent |
 
 The style checks of src/pitfalls.ts are all mechanical: `[-f x]` → `[ -f x ]`, `x = 1` → `x=1`, `{echo a;}` → `{ echo a; }`, `}` after a command → `; }`, `rm -rf $D/…` → `"${D:?}"/…`, `read x` → `read -r x`, `<` in `[ ]` → `\<`, `$x]` → `$x ]`, `&&` in `[ ]` → `] && [`.
@@ -145,7 +146,7 @@ Two cheap checks for every rewrite, scenario ones included: the rewrite parses (
 
 The inventory test grows with it: every fact of a mechanical id that the corpus raises must carry a rewrite. Today none does, so the first steps list the ids still without one, and the list shrinks to empty.
 
-Scenario ids follow with stubs: `ssh host cmd` and `sudo cmd` as `env -i bash -c`, `docker run … cmd` as the same, bats through test/bats-real.test.ts.
+Scenario ids follow with stubs: `ssh host cmd` and `sudo cmd` as `env -i bash -c`, `docker run … cmd` as the same, bats through test/bats-real.test.ts, and `shebang-refused` by running a file whose shebang carries the options, before and after the rewrite.
 
 ## 4. C: normalization audit
 
