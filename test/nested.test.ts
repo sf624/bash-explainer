@@ -181,6 +181,14 @@ describe('nested scripts: the model', () => {
     const first = descendants(b.tree.root, ['command'])[0];
     assert.deepStrictEqual(b.model.env(first).links.map((l) => (l.kind === 'subshell' ? l.why : l.kind === 'slot' ? l.via : l.kind)), ['bash -c', 'pipeline-stage']);
     assert.strictEqual(processOf(b.model.env(first)).kind, 'shell');
+    // (A function of that shell runs in it, not in the script's shell.)
+    const fn = parser.parse(`bash -c 'f() { echo; }; f'`);
+    const fm = shellState(fn);
+    new Analyzer('en').explainLine(fn, 0);
+    const c = cached(fm, descendants(fn.root, ['raw_string'])[0]);
+    const echo = descendants(c.tree.root, ['command'])[0];
+    assert.deepStrictEqual(c.model.env(echo).links.map((l) => l.kind), ['call']);
+    assert.strictEqual(processOf(c.model.env(echo)).kind, 'shell');
     // The model of a string's tree is the one its nodes are in.
     assert.strictEqual(shellState(e.tree), model);
     assert.strictEqual(shellState(b.tree), b.model);

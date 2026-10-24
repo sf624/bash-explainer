@@ -249,7 +249,7 @@ type Process = { readonly kind: ProcessKind; readonly sure: boolean; readonly li
 
 /** `processOf` of each environment, and `callSites` of each call link (both are never changed once made). */
 const processes = new WeakMap<ExecEnv, Process>();
-const callProcesses = new WeakMap<CallLink, { some: boolean; all: boolean }>();
+const callProcesses = new WeakMap<CallLink, CallSites>();
 
 /**
  * The process that runs code in `env`: the innermost link that starts one (a `current-shell` slot starts none).
@@ -265,7 +265,9 @@ export function processOf(env: ExecEnv): Process {
       // (A function is called from the script's own shells: none is in another program.)
       if (out.kind === 'subshell' && out.sure) continue;
       const calls = callSites(l);
-      out = !calls.some ? { kind: 'main', sure: out.sure && !l.unsure }
+      // (A function called only from another shell, `bash -c 'f() { …; }; f'`, runs in that shell.)
+      out = calls.shell ? { kind: 'shell', sure: !l.unsure, link: l }
+        : !calls.some ? { kind: 'main', sure: out.sure && !l.unsure }
         : { kind: 'subshell', sure: calls.all && !l.unsure, link: l };
     } else if (l.kind === 'slot') {
       if (l.slot.run === 'subshell') out = { kind: 'subshell', sure: true, link: l };
@@ -280,16 +282,18 @@ export function processOf(env: ExecEnv): Process {
 }
 
 /**
- * The calls of a function: whether some run in a subshell, and whether all surely do. Kept per link, as
+ * The calls of a function: whether some run in a subshell, whether all surely do, and whether all run in another
+ * shell (a function that string defines). Kept per link, as
  * `processOf` is per environment: the chains of a function's calls hold those of its callers' calls, which would be
  * read again at each (a chain of functions, each called in `$( )` and also plainly, doubles them at each step).
  */
-function callSites(l: CallLink): { some: boolean; all: boolean } {
+type CallSites = { some: boolean; all: boolean; shell: boolean };
+function callSites(l: CallLink): CallSites {
   let hit = callProcesses.get(l);
   if (!hit) {
     const all = l.sites.map((x) => processOf(x.env));
     const sub = all.filter((p) => p.kind === 'subshell');
-    hit = { some: sub.length > 0, all: sub.length === all.length && sub.every((p) => p.sure) };
+    hit = { some: sub.length > 0, all: sub.length === all.length && sub.every((p) => p.sure), shell: all.length > 0 && all.every((p) => p.kind === 'shell') };
     callProcesses.set(l, hit);
   }
   return hit;
