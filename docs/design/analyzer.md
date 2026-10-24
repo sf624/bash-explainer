@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), and step 2 (the context) is done (#324). Steps 3 to 9 are not started: src/explain/ has the context and the node helpers only, and src/analyzer.ts is 3,905 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), and step 3 (the readers) is done (#325). Steps 4 to 9 are not started: src/explain/ has the context, the node helpers and the readers, and src/analyzer.ts is 3,698 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -42,7 +42,7 @@ The members fall into fourteen groups. Lines are those of the member bodies, wit
 Two areas named in the brief need little work here:
 
 - **Host files.** Their remapping is already outside, in src/hosts/remap.ts. The analyzer only reads `opts.host` (for yq) and `hostCommand` (bats functions).
-- **The `reading` origin** is not on main yet. PR #269 (tree view) adds `Token.origin`, set by `render`, `testArgs`, the embedded explainers and `scriptTokens` (+47 −13 lines in analyzer.ts). Its marks follow the groups above: argv rendering is `argv`, embedded languages are `embedded`, scripts are `script`, the rest is `shell`. In the target, the module that makes a token sets its origin.
+- **The `reading` origin** came with PR #269 (tree view): `Token.origin`, set where `render`, `testArgs`, the embedded explainers and `scriptTokens` make their tokens, with the helpers of src/tokenmarks.ts (`claim`, `readByCommand`, `readAsScript`). Its marks follow the groups above: argv rendering is `argv`, embedded languages are `embedded`, scripts are `script`, the rest is `shell`. In the target, the module that makes a token sets its origin.
 
 There are 393 inline `this.s(ja, en)` texts. They move with their functions, unchanged.
 
@@ -270,6 +270,8 @@ test/explain-imports.test.ts reads the imports of src/explain/*.ts (as test/synt
 
 The same test looks for comparisons with a command name of the dictionary (`commands`, `builtins`): `=== 'sed'`, `.includes('declare')`. A comparison on `.type` is left out (node types such as `command` are also builtin names). The known ones are listed with a reason and may only shrink. After step 1 the list should be empty.
 
+Since step 3, the comparisons on the other fields that hold a closed set of the models are left out too: `.kind` (a status rule's `command` and `test`), `.stops` (errexit's `script`) and `shell` (`bash`, `sh`). The code moved in step 3 compares them, and none of them holds a command's name.
+
 ## 4. Steps
 
 Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 24, `npm run coverage`, `npm run coverage:check`). Sizes are in changed lines with tests, as in refactor.md: S under 300, M 300–1,000, L over 1,000. A move counts twice (removed and added).
@@ -331,6 +333,20 @@ Where the sketch of 2.2 did not fit main, it was adapted, and 2.2 is read with t
 ### Step 3: the readers (M)
 
 src/explain/reads.ts, where.ts and status.ts (2.3). These are the leaves that most groups call. Moves about 400 lines.
+
+**As done (#325).** The snapshot of the corpus is byte-identical before and after (and so are the snapshots with options of step 2: the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3; one analyzer for every line, in reverse; and errors thrown in the middle of a line). src/analyzer.ts went from 3,905 to 3,698 lines; src/explain/reads.ts is 132 lines, where.ts 83 and status.ts 54. The move was done by a script (TypeScript compiler API), as section 4 says; it is in the PR. What moved where:
+
+- src/explain/reads.ts: `resolve`, `specFor`, `hostCommand`, `shoptAt` (with `SHOPT_NAMES` and the types `ShoptName`, `ShoptState`, `ShoptStates`, which analyzer.ts re-exports), `wordAt`, `globOff`, `globState`, `unquotedWord`, `isAssoc`, `inArithmetic`, `given`, `optionValues`, `regexFlavor`, `trContext`. `globState`, `unquotedWord` and `inArithmetic` read nothing of the context and take no `cx`.
+- src/explain/where.ts: `groupSubshell`, `subshellWhy`, `inSubshell`, `shellEffectNote`, `pidNote`.
+- src/explain/status.ts: `postfixStatusNote`, `statusRangeNote`, and `substitutionStatus`, from src/substitution-tokens.ts (which now imports it).
+- `ExpansionWords` loses `isAssoc`: src/expansion-tokens.ts calls `reads.isAssoc` itself.
+- In the class, four locals that would hide a moved function were renamed first (`resolve` in `explainLine`, three `given` in the yq and jq examples).
+
+Where the plan did not fit main:
+
+- It moved about 200 lines, not 400: the readers are shorter than estimated. `unwrapScalar` (yq's `-r`) stays with the examples (step 6), and `statusNotes` with the line notes (step 8), as 2.3 places them.
+- The names guard (3.3) leaves out comparisons on `.kind`, `.stops` and `shell`, besides `.type`: the moved status and where code compares them with `command`, `test`, `script` and `bash`, which are values of the models, not names.
+- `Explainer.note` is two overloads, a fact about one node or a text about one or more, so that a fact with several nodes (which `spanOf` cannot place) does not type-check.
 
 ### Step 4: words and expansions (M)
 
@@ -405,14 +421,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | planned | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2 | done (PR #324) | one `Explainer` (the five reads of the words stay `ExpansionWords` until step 4); the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | planned | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325) | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -421,7 +437,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 0 | done (PR #275) |
 | 1.1–1.4 | done (PR #308) |
 | 2 | done (PR #324) |
-| 3 | planned |
+| 3 | done (PR #325) |
 | 4 | planned |
 | 5 | planned |
 | 6 | planned |

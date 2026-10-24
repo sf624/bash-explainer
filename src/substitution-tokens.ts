@@ -1,12 +1,11 @@
 // The explanation of a command substitution (`$( )`, backquotes, and bash 5.3's `${ …; }` and `${| …; }`) and of a
 // process substitution. What it needs (its texts, its tokens, the status model of the script) it reads from the line's
-// context (src/explain/context.ts).
+// context (src/explain/context.ts); what `set -e` does with its status is said by src/explain/status.ts.
 import type { Token } from './analyzer-types';
 import { unclosedBrace } from './bashversion';
 import type { Explainer } from './explain/context';
-import { shorten } from './label';
-import { STATEMENTS } from './semantics/env';
-import { ancestor, braceTakenAsWord, field, substitutionForm, type SyntaxNode } from './syntax/tree';
+import { substitutionStatus } from './explain/status';
+import { ancestor, braceTakenAsWord, substitutionForm, type SyntaxNode } from './syntax/tree';
 
 const isBash = (h: Explainer) => h.shell === undefined || h.shell === 'bash';
 
@@ -55,33 +54,6 @@ export function returnInSubstitution(h: Explainer, n: SyntaxNode): string | unde
   if (!isBash(h) || scopeOf(n) !== 'substitution') return undefined;
   return h.s('囲んでいる `${ …; }` のコマンドをここで終える（関数での `return` と同じ。終了ステータスは引数の値で、省略すると直前のコマンドのもの）',
     'End the commands of the `${ …; }` around it, as `return` ends a function (the status is the one given, or that of the last command)');
-}
-
-/**
- * Under `set -e`, whether a failure in `$( )` stops the script (src/semantics/status.ts): it does in an assignment
- * with no command, which takes the status of its last substitution; it does not in a command's words, where the
- * command's own status counts (a declaration builtin's is said by a pitfall).
- */
-function substitutionStatus(h: Explainer, n: SyntaxNode): string {
-  // (A word is always in a statement.)
-  let stmt = n.parent!;
-  while (!STATEMENTS.has(stmt.type)) stmt = stmt.parent!;
-  const ctx = h.status.errexit(stmt);
-  if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
-  const rule = h.status.status(stmt);
-  if (rule.kind === 'last-substitution') {
-    // (`$(grep -c x f || true)`: the substitution does not fail.)
-    const last = n.namedChildren.filter((c) => STATEMENTS.has(c.type)).pop();
-    const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && /^(true|:)$/.test(last.namedChildren[last.namedChildren.length - 1].text);
-    if (masked && rule.at === n) return '';
-    return rule.at === n
-      ? h.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（名前の無いコマンド、つまり代入やリダイレクトだけのコマンドは、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (a command with no name, only assignments or redirections, takes the status of its last command substitution)')
-      : h.s('。これが失敗しても `set -e` では止まらない（名前の無いコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
-  }
-  // (In the command's name, it is not an argument: `"$(cmd)" a`.)
-  if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
-  const name = shorten(field(stmt, 'name')!.text, 20);
-  return h.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
 }
 
 export function explainProcessSubstitution(h: Explainer, n: SyntaxNode): Token {

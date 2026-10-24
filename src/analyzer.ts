@@ -9,12 +9,12 @@ import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
 import { distroAliases } from './dict/distroAliases';
 import { commands } from './dict/commands';
-import { impliedWords, lookupCommand } from './dict/aliases';
+import { lookupCommand } from './dict/aliases';
 import { ArgRole, ArgvParse, CommandRole, interpret, RoleAt, ValueRole } from './argv/interpret';
 import type { CommandSpec, OperandSpec, VariableAct } from './argv/spec';
 import { argWord, countOf } from './argv/words';
-import { givenOptions, has as hasOption, namespaceOf, operands, values } from './argv/query';
-import { explainRegex, Flavor } from './embedded/regex';
+import { givenOptions, namespaceOf, values } from './argv/query';
+import { explainRegex } from './embedded/regex';
 import { explainGlob, globIntro, GlobTarget, hasGlob } from './embedded/glob';
 import { grepWrap, JsRegex, literalRegex, regexExamples, toJsRegex } from './examples/regex';
 import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
@@ -47,14 +47,14 @@ import {
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, shorten } from './label';
 import { explainCommandSubstitution, explainProcessSubstitution, returnInSubstitution, scopeOf } from './substitution-tokens';
-import { type EnvLink, type ExecEnv, groupSubshellLink, inFunction, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, docLine, option, OptionState, shellState, shoptIn } from './semantics/state';
+import { type ExecEnv, inFunction, STATEMENTS, reachOf, shellEffectOf, type SlotLink, slotEnvs, whereOf } from './semantics/env';
+import { attribute, docLine, option, shellState } from './semantics/state';
 import { lostVariable } from './semantics/pipeline';
 import { readDeclarationWords } from './semantics/vars';
 import { type NestedScript, plainReads, scriptSourceIndex } from './semantics/nested';
-import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
-import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
-import { isProgram, nameInfo } from './namefacts';
+import { ExpansionStep, partMeaning, underscoreValue, wordMeaning } from './semantics/words';
+import { assignmentsOf, definitionFails, type Missed, type NameResolution, testSpecOf } from './semantics/names';
+import { nameInfo } from './namefacts';
 import { statusModel, type StatusModel } from './semantics/status';
 import { statusFacts, type StatusFact } from './statusfacts';
 import { anonSections, builtinSections, nodeSections } from './refs';
@@ -73,8 +73,12 @@ import { readingTree } from './reading';
 import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 import { type Explainer, LineExplainer, memoKey, type Walk } from './explain/context';
 import { ancestorOf, has, intersects, isBlockLike, lineStarts, onLine, posOf, same, sameSpan, sibling, skeletal, sortTokens, summaryOf } from './explain/nodes';
+import { given, globOff, globState, hostCommand, inArithmetic, isAssoc, optionValues, regexFlavor, resolve, shoptAt, type ShoptName, specFor, trContext, unquotedWord, wordAt } from './explain/reads';
+import { groupSubshell, pidNote, shellEffectNote } from './explain/where';
+import { postfixStatusNote, statusRangeNote } from './explain/status';
 
 export { isBlockLike, summaryOf };
+export type { ShoptName, ShoptState, ShoptStates } from './explain/reads';
 
 /** A bracket expression is there when a `[` closes (`[]a]` is one: a `]` first is a member). */
 
@@ -112,7 +116,6 @@ export class Analyzer {
       varDesc: (name) => this.varDesc(name),
       variableNote: (n, name) => this.variableNote(n, name),
       orderNote: (n, name) => this.orderNote(n, name),
-      isAssoc: (name, n) => this.isAssoc(name, n),
       globChildren: (n, text, base) => this.globChildren(n, text, base),
     };
   }
@@ -150,8 +153,8 @@ export class Analyzer {
     cx.end();
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
-    const resolve = (name: string, w: SyntaxNode) => this.resolve(name, w, { quoted: w.type !== 'word' || w.text !== name });
-    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve });
+    const resolveAt = (name: string, w: SyntaxNode) => resolve(this.cx, name, w, { quoted: w.type !== 'word' || w.text !== name });
+    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve: resolveAt });
     return result;
   }
 
@@ -249,92 +252,9 @@ export class Analyzer {
     }
   }
 
-  /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */
-  private shoptAt(n: SyntaxNode, when: 'run' | 'parse' = 'run'): ShoptStates {
-    const st = this.cx.state.at(n)[when];
-    return Object.fromEntries(SHOPT_NAMES.map((name) => [name, shoptIn(st, name, this.cx.state.shell)])) as ShoptStates;
-  }
-
-  /**
-   * Why a `{ }` group runs in a subshell (src/semantics/env.ts): it, or a statement that holds it in the same list,
-   * is a stage of a pipeline (the last one too, unless lastpipe is on), a background job (`&`) or a coproc.
-   * Undefined when it runs in the current shell.
-   */
-  private groupSubshell(n: SyntaxNode): { ja: string; en: string } | undefined {
-    const link = groupSubshellLink(this.cx.state.env(n), n);
-    if (!link) return undefined;
-    if (link.why === 'coproc') return { ja: 'コプロセスはサブシェルで動く', en: 'A coprocess runs in a subshell' };
-    if (link.why === 'background') return { ja: '`&` でバックグラウンドの仕事にする', en: 'It is started in the background with `&`' };
-    return link.sure
-      ? { ja: 'パイプラインの各段は別々のサブシェルで動く', en: 'Each stage of a pipeline runs in its own subshell' }
-      : { ja: 'パイプラインの各段は別々のサブシェルで動く（最後の段は、`shopt -s lastpipe` が効いている経路ではシェル自身で動く）', en: 'Each stage of a pipeline runs in its own subshell (the last one runs in the shell itself on the paths where `shopt -s lastpipe` is on)' };
-  }
-
-  /** Why code runs in a subshell, from the link that starts it (src/semantics/env.ts): `( )`, `$( )`, `&`, a pipeline stage… */
-  private subshellWhy(link: EnvLink, sure: boolean): string {
-    if (link.kind === 'call') {
-      if (!sure) {
-        // (Every call it sees is in a subshell, but it may be called where it does not see: src/semantics/trust.ts, `closed`.)
-        const seen = link.sites.every((x) => processOf(x.env).kind === 'subshell' && processOf(x.env).sure);
-        return seen ? this.s('関数の呼び出し元。スクリプトに見えない所からも呼ばれうる', 'where its function is called; what the script does not show may call it too')
-          : this.s('関数の呼び出し元の一部', 'some of the places its function is called from');
-      }
-      // (Every call is in a subshell: named when they all give the same reason.)
-      const whys = new Set(link.sites.map((x) => processOf(x.env)).map((p) => this.subshellWhy(p.link!, p.sure)));
-      return whys.size === 1 ? this.s(`関数の呼び出し元: ${[...whys][0]}`, `where its function is called: ${[...whys][0]}`) : this.s('関数の呼び出し元', 'where its function is called');
-    }
-    const l = link as SubshellLink;
-    switch (l.why) {
-      case 'parentheses': return '`( )`';
-      case 'command-substitution': return l.at.text.startsWith('`') ? this.s('バッククォート', 'backquotes') : '`$( )`';
-      case 'process-substitution': return `\`${l.at.text[0]}( )\``;
-      case 'background': return '`&`';
-      case 'coproc': return '`coproc`';
-      case 'pipeline-stage': return l.sure ? this.s('パイプラインの段', 'a pipeline stage') : this.s('パイプラインの最後の段で、lastpipe が無効のとき', 'the last stage of a pipeline, when lastpipe is off');
-    }
-  }
-
-  /**
-   * `n` in a subshell: whether it surely is, and why (`substitution`: the subshell of a `$( )` or `<( )` around it);
-   * undefined when it runs in this shell (or in another program).
-   */
-  private inSubshell(n: SyntaxNode): { sure: boolean; why: string; substitution: boolean } | undefined {
-    const p = processOf(this.cx.state.env(n));
-    const l = p.link;
-    return p.kind === 'subshell' ? { sure: p.sure, why: this.subshellWhy(l!, p.sure), substitution: l!.kind === 'subshell' && (l!.why === 'command-substitution' || l!.why === 'process-substitution') } : undefined;
-  }
-
-  /**
-   * What a builtin that acts on its shell does in a subshell (`cd` in `( )`, `exit` in `$( )`): it acts on the
-   * subshell only. In `$( )` a change is usually there for the commands after it (`$(cd dir && pwd)`): said mildly.
-   */
-  private shellEffectNote(n: SyntaxNode, effect: 'changes' | 'exits' | undefined): string {
-    const sub = effect && this.inSubshell(n);
-    if (!sub) return '';
-    const { sure, why } = sub;
-    if (effect === 'changes' && sub.substitution) {
-      return this.s(`。${why} の中のサブシェルで実行されるので、この変更はその中のあとのコマンドにだけ効く`, `. It runs in the subshell of ${why}, so the change holds only for the commands after it there`);
-    }
-    return effect === 'exits'
-      ? (sure ? this.s(`。サブシェル（${why}）で実行されるので、終わるのはサブシェルだけ（スクリプト全体は終わらない）`, `. It runs in a subshell (${why}), so it ends only the subshell, not the script`)
-        : this.s(`。サブシェル（${why}）で実行されることがあり、そのとき終わるのはサブシェルだけ（スクリプト全体は終わらない）`, `. It may run in a subshell (${why}); then it ends only the subshell, not the script`))
-      : (sure ? this.s(`。サブシェル（${why}）で実行されるので、この変更はサブシェルの中だけで、サブシェルが終わると消える`, `. It runs in a subshell (${why}), so the change stays in the subshell and is gone when it ends`)
-        : this.s(`。サブシェル（${why}）で実行されることがあり、そのときこの変更はサブシェルの中だけで、サブシェルが終わると消える`, `. It may run in a subshell (${why}); then the change stays in the subshell and is gone when it ends`));
-  }
-
-  /** `$$` in a subshell: still the PID of the script's shell (bash gives the subshell's in `$BASHPID`). */
-  private pidNote(n: SyntaxNode): string {
-    const sub = this.inSubshell(n);
-    if (!sub) return '';
-    const own = !this.cx.shell || this.cx.shell === 'bash' ? this.s('（サブシェル自身の ID は `$BASHPID`）', ' (the subshell\'s own is `$BASHPID`)') : '';
-    return sub.sure
-      ? this.s(`。ここはサブシェル（${sub.why}）の中だが、値はスクリプトのシェルのプロセス ID のまま${own}`, `. This is in a subshell (${sub.why}), but it is still the PID of the script's shell${own}`)
-      : this.s(`。サブシェル（${sub.why}）で実行されることがあるが、そのときも値はスクリプトのシェルのプロセス ID${own}`, `. This may run in a subshell (${sub.why}); it is still the PID of the script's shell there${own}`);
-  }
-
   /** Token for an anonymous node (keyword or operator), or undefined for plain punctuation. */
   private anon(n: SyntaxNode): Token | undefined {
-    if (n.type === '{' && n.parent?.type === 'compound_statement' && this.groupSubshell(n.parent)) {
+    if (n.type === '{' && n.parent?.type === 'compound_statement' && groupSubshell(this.cx, n.parent)) {
       return { ...this.tok(n, 'keyword', this.s('コマンドグループの開始（ここではサブシェルで実行される）', 'Start of a command group (here it runs in a subshell)')), refs: ['3.2.5.3', '3.7.3'] };
     }
     const k = keywords[n.type];
@@ -417,7 +337,7 @@ export class Analyzer {
       case 'herestring_redirect': return this.herestring(n);
       case 'negated_command': return skeletal(this.tok(n, 'operator', this.t(keywords[n.namedChildren[0]?.type === 'pipeline' ? '! pipeline' : '!']), this.subs(n.namedChildren)), n);
       case 'extended_test': case 'arithmetic_command':
-        if (n.type === 'arithmetic_command') this.postfixStatusNote(n);
+        if (n.type === 'arithmetic_command') postfixStatusNote(this.cx, n);
         return this.test(n);
       case 'unary_expression': return this.unary(n);
       case 'binary_expression': return this.binary(n);
@@ -447,7 +367,7 @@ export class Analyzer {
       case 'variable_name': return this.arithNumber(n) ?? this.variable(n.text, n);
       case 'subshell': return this.block(n, 'block', this.s('サブシェル: `( )` 内を別プロセスで実行する。中での変数変更や cd は外に影響しない', 'Subshell: runs `( )` in a child process; variable changes and cd do not leak out'));
       case 'compound_statement': {
-        const why = this.groupSubshell(n);
+        const why = groupSubshell(this.cx, n);
         return this.block(n, 'block', why
           ? this.s(`コマンドグループ: \`{ }\` 内のコマンドをまとめて実行する。${why.ja}ので、グループはサブシェルで実行され、中で変えた変数は外に残らない`, `Command group: runs the commands in \`{ }\` together. ${why.en}, so the group is a subshell: variables set inside are gone afterwards`)
           : this.s('コマンドグループ: `{ }` 内のコマンドを現在のシェルでまとめて実行する', 'Command group: runs the commands in `{ }` in the current shell'));
@@ -504,9 +424,9 @@ export class Analyzer {
   private shebangEnv(interp: string): string {
     const rest = /^(?:\S*\/)?env[ \t]+(.*\S)$/.exec(interp)?.[1];
     if (!rest) return '';
-    const env = this.specFor('env')!;
+    const env = specFor(this.cx, 'env')!;
     // (One word: `rest` is not empty.)
-    const role = interpret(env, [{ value: rest }], { name: 'env', lookup: (name) => this.specFor(name) }).roles[0].role;
+    const role = interpret(env, [{ value: rest }], { name: 'env', lookup: (name) => specFor(this.cx, name) }).roles[0].role;
     const letters = role.role === 'cluster' ? role.letters : [role];
     const value = letters.map((l) => (l.role === 'option' ? l.value : undefined)).find((v) => v?.split || v?.refused);
     if (value?.refused) {
@@ -842,7 +762,7 @@ export class Analyzer {
    * become exactly one word, else bash reports an ambiguous redirect. In POSIX mode it is not globbed.
    */
   private redirectTargetNote(d: SyntaxNode): string {
-    const w = this.wordAt(d);
+    const w = wordAt(this.cx, d);
     const step = (kind: string) => w?.steps.find((s) => s.kind === kind);
     if (step('brace')!.applies === true) {
       const words = braceExpansion(d.text);
@@ -850,7 +770,7 @@ export class Analyzer {
     }
     const glob = step('glob')!;
     if (!hasGlob(d.text)) return '';
-    if (glob.why === 'posix-mode') return this.globOff(d);
+    if (glob.why === 'posix-mode') return globOff(this.cx, d);
     return glob.applies === true
       ? this.s(`。\`${d.text}\` はグロブなので、一致するファイルがちょうど1つならその名前になり、2つ以上なら「ambiguous redirect」のエラーになる（なければこの名前のまま）`,
         `. \`${d.text}\` is a glob: it becomes the one file it matches; matching two or more is an error ("ambiguous redirect"), and matching none leaves the name as it is`)
@@ -1010,7 +930,7 @@ export class Analyzer {
       // With `declare -i`, `+=` on an element adds numbers; otherwise it appends text to the element.
       const toInt = add && attribute(st, arr, 'i') === 'on';
       const verb = (set: string, plus: string, plusInt: string): string => (toInt ? plusInt : add ? plus : set);
-      if (this.isAssoc(arr, n)) {
+      if (isAssoc(this.cx, arr, n)) {
         const key = this.s(`連想配列 \`${arr}\` のキー \`${idx}\`（文字列で、計算はされない）の要素`, `the element of associative array \`${arr}\` with the key \`${idx}\` (a string, not evaluated)`);
         expl = this.s(`${key}${verb('に代入する', 'に値を追記する（文字列の連結）', 'に値を足す（`-i` が付いているので算術式の足し算）')}`,
           `${verb('Assign to ', 'Append to ', 'Add to ')}${key}${add && !toInt ? ' (text is appended to the existing value)' : toInt ? ' (it has `-i`, so this adds numbers)' : ''}`);
@@ -1062,26 +982,6 @@ export class Analyzer {
     return t;
   }
 
-  /** `((i++))` is the old value of `i`: 0 makes the status 1, which `set -e` treats as a failure. */
-  private postfixStatusNote(n: SyntaxNode): void {
-    const m = /^\(\(\s*([A-Za-z_]\w*(?:\[[^\]]*\])?)(\+\+|--)\s*\)\)$/.exec(n.text);
-    if (!m) return;
-    const [, v, op] = m;
-    // (Where bash surely ignores `set -e`, `((i++)) || true`, the status 1 is the intent.)
-    const { ignored, active } = this.cx.status.errexit(n); if (ignored?.sure) return;
-    this.cx.note(fact(this.lang, op === '++' ? 'postfix-increment-status' : 'postfix-decrement-status', { v, errexit: active === 'on' }), n);
-  }
-
-  /** `exit 256` and `return 300`: the status is taken modulo 256. */
-  private statusRangeNote(n: SyntaxNode): void {
-    const rule = this.cx.status.status(n);
-    if (rule.kind !== 'given') return;
-    const arg = fields(n, 'argument')[0];
-    const v = Number(arg.text);
-    if (v >= 0 && v <= 255) return;
-    this.cx.note(fact(this.lang, 'exit-modulo', { value: String(v), status: rule.value }), arg);
-  }
-
   /**
    * An option of a declaration builtin: what each letter gives, from the builtin's spec. `declare +x v` turns an
    * attribute off (its `offText`); `export` and `readonly` have no `+` form and their own letters. (A letter with no
@@ -1130,7 +1030,7 @@ export class Analyzer {
     if (effect) this.cx.note(effect, redirectionsOf(n));
     return this.cx.examplesOf(n, () => {
       const t = this.commandToken(n);
-      this.statusRangeNote(n);
+      statusRangeNote(this.cx, n);
       return t;
     });
   }
@@ -1148,7 +1048,7 @@ export class Analyzer {
     const spelled = staticWordValue(word);
     const dynamic = spelled === undefined && ['simple_expansion', 'expansion', 'command_substitution'].includes(word.type);
     const meanings = n.children.some((c) => c.type === 'variable_assignment')
-      ? assignmentsOf(this.cx.state, n, dynamic ? 'dynamic' : this.resolve(spelled ?? nameNode.text, nameNode))
+      ? assignmentsOf(this.cx.state, n, dynamic ? 'dynamic' : resolve(this.cx, spelled ?? nameNode.text, nameNode))
       : [];
     for (const c of n.children) {
       if (same(c, nameNode)) { seenName = true; continue; }
@@ -1257,7 +1157,7 @@ export class Analyzer {
       t.labelParts = parts;
       t.label = labelText(parts);
     }
-    if (head.kind === 'builtin') t.explanation += this.shellEffectNote(n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
+    if (head.kind === 'builtin') t.explanation += shellEffectNote(this.cx, n, shellEffectOf(head.spec, read.parse.roles.map((r) => [args[r.word], r.role] as const)));
     // The deepest subcommand gives the summary (`git stash push`, `docker compose -f x run`). (The names are the
     // words' values: `yq 'e'` names `e`.)
     const path: string[] = [];
@@ -1325,11 +1225,6 @@ export class Analyzer {
     return !!test.builtin && (!this.cx.shell || this.cx.shell === 'bash');
   }
 
-  /** What the command name `name` runs at `at` (src/semantics/names.ts). */
-  private resolve(name: string, at: SyntaxNode, opts: { quoted?: boolean; env?: ExecEnv } = {}): NameResolution {
-    return resolveName(this.cx.state, name, at, { shell: this.cx.shell, command: true, program: isProgram, ...opts });
-  }
-
   /** A note on a definition of `name` that does not run here (a function defined later, in a subshell, removed). */
   private missedNote(name: string, missed: Missed | undefined, at: SyntaxNode): void {
     if (missed?.kind !== 'function') return;
@@ -1395,18 +1290,18 @@ export class Analyzer {
     // What bash runs (src/semantics/names.ts). An alias over a known command that runs that command with more words
     // (`alias grep='grep --color=auto'`) is still explained as that command; one that runs something else (`alias
     // echo=printf`, `alias [=echo`) is the alias. (A quoted name is never an alias.)
-    const ran = this.resolve(name, nameNode, { quoted: sv !== undefined });
+    const ran = resolve(this.cx, name, nameNode, { quoted: sv !== undefined });
     const known = !!lookupCommand(name);
     // (Not `test` or `[` with more words, `alias [='[ -n x'`: they change the expression.)
     const same = ran.kind === 'alias' && ran.target?.name === name && (alias1(ran.alias.value) || !testSpecOf(ran.target));
-    const res = same && known ? this.resolve(name, nameNode, { quoted: true }) : ran;
+    const res = same && known ? resolve(this.cx, name, nameNode, { quoted: true }) : ran;
     if (res.kind === 'alias') {
       const { alias } = res;
       // The words after the name are read with the spec of the command the alias runs, when its text is that name
       // alone at each step (`alias g=grep`: `g -n x f`). With more words (`alias ll='ls -l'`), they go after those.
       let runs: NameResolution | undefined = res;
       while (runs?.kind === 'alias' && alias1(runs.alias.value)) runs = runs.target;
-      const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? this.specFor(runs.name) : undefined;
+      const target = runs && runs.kind !== 'alias' && res.sure && (runs.kind === 'builtin' || runs.kind === 'file') && !testSpecOf(runs) ? specFor(this.cx, runs.name) : undefined;
       const spec: CommandSpec = target ?? { ...NO_SPEC, unknownOption: { ja: `エイリアスの置き換え先 \`${alias.value}\` に渡す単語`, en: `A word passed on to \`${alias.value}\`, the text of the alias` } };
       const line = (docLine(alias.at) + 1);
       // (`alias a=b b='echo B'`: `a` runs the alias `b`.)
@@ -1472,7 +1367,7 @@ export class Analyzer {
     if (custom) {
       return { name, res: ran, spec: custom, kind: 'command', nameTokens: [], explanation: this.t(custom.summary) + this.s('（設定 customCommands で定義）', ' (from the customCommands setting)') };
     }
-    const spec = this.hostCommand(name) ?? lookupCommand(name);
+    const spec = hostCommand(this.cx, name) ?? lookupCommand(name);
     if (spec) {
       const builtin = !!spec.builtin;
       return {
@@ -1511,21 +1406,10 @@ export class Analyzer {
   private args(known: CommandSpec | undefined, args: SyntaxNode[], cmdName: string, isFn: boolean | 'maybe' = false): { tokens: Token[]; parse: ArgvParse } {
     // (A function's words are read with no spec: its options are unknown, and its operands are `$1`, `$2`….)
     const spec = known && !isFn ? known : NO_SPEC;
-    const lookup = (name: string): CommandSpec | undefined => this.specFor(name);
+    const lookup = (name: string): CommandSpec | undefined => specFor(this.cx, name);
     const parse = interpret(spec, args.map(argWord), { name: cmdName, lookup });
     if (args.length) for (const [w, env] of slotEnvs(this.cx.state.env(args[0].parent!), parse, spec, args, lookup)) this.cx.slotEnvs.set(w, env);
     return { tokens: this.render(parse, spec, args, args, isFn), parse };
-  }
-
-  /** The spec of a command a wrapper runs: from the customCommands setting, the host, or the dictionary. */
-  private specFor(name: string): CommandSpec | undefined {
-    return customCommandSpec(this.cx.opts.customCommands?.[name.split('/').pop()!]) ?? this.hostCommand(name) ?? lookupCommand(name);
-  }
-
-  /** A command the host defines (a function of bats, which a path does not name). */
-  private hostCommand(name: string): CommandSpec | undefined {
-    const host = this.cx.opts.hostCommands;
-    return host && Object.hasOwn(host, name) ? host[name] : undefined;
   }
 
   /**
@@ -1900,7 +1784,7 @@ export class Analyzer {
       ? this.s(`配列 \`${element[1]}\` の全要素`, `All elements of array \`${element[1]}\``)
       : this.s(`配列 \`${element[1]}\` の要素 \`[${element[2]}]\``, `Element \`[${element[2]}]\` of array \`${element[1]}\``);
     // (Unquoted, it is a glob first: `declare a[1]` with a file `a1` here declares the variable `a1`.)
-    return this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? this.positional(a, this.nameGlob(a, a.text, text, 'declares')) : this.tok(a, 'variable', text);
+    return wordAt(this.cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false ? this.positional(a, this.nameGlob(a, a.text, text, 'declares')) : this.tok(a, 'variable', text);
   }
 
   /**
@@ -1930,7 +1814,7 @@ export class Analyzer {
         ? this.s(`配列 \`${element[1]}\` の要素をすべて削除する（配列は空で残る）`, `Remove all the elements of the array \`${element[1]}\` (it stays, empty)`)
         : this.s(`配列 \`${element[1]}\` の要素 \`${name}\` を削除する（ほかの要素の添字はそのまま）`, `Unset the element \`${name}\` of the array \`${element[1]}\` (the other elements keep their indices)`);
       // (Unquoted, it is a glob first: `unset a[1]` with a file `a1` here unsets the variable `a1`.)
-      if (plain && hasGlob(a.text) && this.wordAt(a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = this.nameGlob(a, name, text, 'unsets');
+      if (plain && hasGlob(a.text) && wordAt(this.cx, a)?.steps.find((g) => g.kind === 'glob')?.applies !== false) text = this.nameGlob(a, name, text, 'unsets');
     } else {
       const temp = space !== 'nameref' && prefixAssignments(a.parent!).find((c) => field(c, 'name')?.text === name);
       if (temp) {
@@ -1966,7 +1850,7 @@ export class Analyzer {
    * with failglob, it is an error.
    */
   private nameGlob(a: SyntaxNode, name: string, text: string, acts: VariableAct): string {
-    const shopt = this.shoptAt(a);
+    const shopt = shoptAt(this.cx, a);
     const quoted = `\`'${name}'\``;
     const [ja, en, enDo] = acts === 'unsets' ? ['削除', 'unset', 'unset'] : ['宣言', 'declared', 'declare'];
     if (shopt.failglob === 'on') {
@@ -2016,7 +1900,7 @@ export class Analyzer {
     let kind: Kind = role.spec?.builtin ? 'builtin' : 'command';
     // `command` skips functions, `builtin` looks at the builtins only (src/semantics/names.ts).
     if (role.slot.lookup && isPlainWord(first)) {
-      const res = this.resolve(name, first, { env: this.cx.slotEnvs.get(first) });
+      const res = resolve(this.cx, name, first, { env: this.cx.slotEnvs.get(first) });
       // (A builtin, a file or nothing: `command` and `builtin` skip aliases and functions.)
       const missed = (res as { missed?: Missed }).missed;
       if (res.kind === 'none') {
@@ -2037,7 +1921,7 @@ export class Analyzer {
     }
     // `command [ -f x ]`, `env test -f x`: `test` and `[` read their words as an expression, when the name runs one of them.
     const value = staticWordValue(first);
-    const res = value === undefined ? undefined : this.resolve(value, first, { env: this.cx.slotEnvs.get(first) });
+    const res = value === undefined ? undefined : resolve(this.cx, value, first, { env: this.cx.slotEnvs.get(first) });
     const test = res && testSpecOf(res);
     const children = test ? this.testArgs(first.parent!, commandTest(test, words.slice(1), this.bashTest(test)), test.closingOperand !== undefined)
       : this.render(parse, role.spec ?? NO_SPEC, nodes, words.slice(1));
@@ -2073,7 +1957,7 @@ export class Analyzer {
       const tilde = this.tilde(a);
       // (Tildes after `=` and `:` come as a word with them as its children.)
       if (tilde) return tilde.kind === 'expansion' ? this.tok(a, 'argument', desc, [tilde]) : this.tok(a, 'argument', desc + this.tildeNote(a), tilde.children);
-      const off = hasGlob(a.text) && this.globOff(a);
+      const off = hasGlob(a.text) && globOff(this.cx, a);
       if (off) return this.tok(a, 'argument', desc + off);
       const glob = hasGlob(a.text) ? ` — ${globIntro(this.lang, 'file')}` + this.globNotes(a.text, a) : '';
       const t = this.tok(a, 'argument', desc + glob + this.valueNote(a) + this.braceVarNote(a.text), hasGlob(a.text) ? this.globChildren(a, a.text, 0) : []);
@@ -2108,8 +1992,8 @@ export class Analyzer {
     if (this.cx.command?.parse.refused) return undefined;
     const cx: EmbeddedContext = {
       lang: this.cx.lang,
-      flavor: () => this.regexFlavor(),
-      trSet: () => this.trContext(a),
+      flavor: () => regexFlavor(this.cx),
+      trSet: () => trContext(this.cx, a),
       // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
       letters: () => new Set(givenOptions(this.cx.command!.parse).map(({ role }) => role.flag.slice(1))),
     };
@@ -2123,19 +2007,19 @@ export class Analyzer {
   private embeddedExample(lang: EmbeddedLang, text: string, a: SyntaxNode): void {
     switch (lang) {
       case 'regex': {
-        const flavor = this.regexFlavor();
-        const ignoreCase = this.given('-i');
+        const flavor = regexFlavor(this.cx);
+        const ignoreCase = given(this.cx, '-i');
         const js = flavor === 'fixed' ? literalRegex(text, ignoreCase) : toJsRegex(text, flavor, { ignoreCase });
-        if (js) this.regexExample(grepWrap(js, this.given('-x'), this.given('-w')), this.given('-v') ? 'inverted' : 'lines');
+        if (js) this.regexExample(grepWrap(js, given(this.cx, '-x'), given(this.cx, '-w')), given(this.cx, '-v') ? 'inverted' : 'lines');
         break;
       }
       case 'sed': {
-        const flavor = this.regexFlavor();
+        const flavor = regexFlavor(this.cx);
         // With several -e options sed runs them as one script, so the example does too.
         const scripts = this.sedScripts() ?? [text];
-        const quiet = this.given('-n');
+        const quiet = given(this.cx, '-n');
         // -z / --null-data: the "lines" are NUL-separated records, which the example runner does not model.
-        const ex = this.given('-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
+        const ex = given(this.cx, '-z') ? undefined : sedExample(scripts.join('\n'), { quiet, extended: flavor === 'ere' });
         if (ex) {
           // With `-s` or `-i`, sed works on each file apart: the example shows the first (`EachFile`).
           this.ioExample(ex.input, ex.output, {
@@ -2151,12 +2035,12 @@ export class Analyzer {
           this.yqExample(text, 'kislyuk');
           break;
         }
-        const nullInput = this.given('-n');
-        const rawInput = this.given('-R');
+        const nullInput = given(this.cx, '-n');
+        const rawInput = given(this.cx, '-R');
         const format = this.jqFormat();
         if (!format) break;
         const spec: Extract<RerunSpec, { kind: 'jq' }> = {
-          kind: 'jq', filter: text, raw: this.given('-r'), join: this.given('-j'), slurp: this.given('-s') && !nullInput, vars: this.jqVars(), format,
+          kind: 'jq', filter: text, raw: given(this.cx, '-r'), join: given(this.cx, '-j'), slurp: given(this.cx, '-s') && !nullInput, vars: this.jqVars(), format,
           ...(nullInput ? { nullInput } : {}), ...(rawInput ? { rawInput } : {}),
         };
         // `-n`: jq reads no input, unless the filter's `input` or `inputs` reads it.
@@ -2234,7 +2118,7 @@ export class Analyzer {
     const words = nodes.map((a) => staticWordValue(a) ?? a.text);
     const read = (from: number, to: number): Token[] => {
       const part = nodes.slice(from, to);
-      return this.render(interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => this.specFor(name) }), spec, part, this.cx.command!.args);
+      return this.render(interpret(spec, part.map(argWord), { name: 'find', lookup: (name) => specFor(this.cx, name) }), spec, part, this.cx.command!.args);
     };
     // (No option of find has an optional value.)
     const tree = parseFind(words, (w) => {
@@ -2281,40 +2165,15 @@ export class Analyzer {
     }];
   }
 
-  /** How tr uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
-  private trContext(a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[] } {
-    const { nodes, parse } = this.cx.command!;
-    const sets = operands(parse).map(({ word }) => nodes[word]);
-    const idx = sets.findIndex((w) => same(w, a));
-    const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
-    if (this.given('-d')) return { role: idx === 0 ? 'delete' : 'squeeze', sets: lits };
-    if (this.given('-s') && sets.length === 1) return { role: 'squeeze', sets: lits };
-    return { role: idx === 0 ? 'from' : 'to', sets: lits };
-  }
-
-  /** Whether the current command is given the option `names` name, written in any of its forms (src/argv/query.ts). */
-  private given(...names: string[]): boolean {
-    return hasOption(this.cx.command!.parse, ...names);
-  }
-
   /**
    * Whether mikefarah/yq's `-r` (`--unwrapScalar`) is on: it prints a string as it is, also in JSON. The last one given
    * wins; `-r=false` turns it off, as pflag reads a bool (`0`, `f`, `false` in any case).
    */
   private unwrapScalar(): boolean {
     const { parse, nodes } = this.cx.command!;
-    const given = givenOptions(parse).filter(({ role }) => role.role === 'option' && role.spec.names.includes('-r'));
-    if (!given.length) return false;
-    return !/=(0|f|false)$/i.test(nodes[given[given.length - 1].word].text);
-  }
-
-  /**
-   * The values given to the option `names` name, in order, with the option as written (`of`) and which of its
-   * values each is; `text` is the value's text when it is plain text (also in the option's word: `-efoo`).
-   */
-  private optionValues(...names: string[]): { text?: string; of: string; index: number }[] {
-    const { nodes, parse } = this.cx.command!;
-    return values(parse, ...names).map(({ word, at, role }) => ({ text: literalContent(nodes[word])?.text.slice(at ?? 0), of: role.of, index: role.index }));
+    const found = givenOptions(parse).filter(({ role }) => role.role === 'option' && role.spec.names.includes('-r'));
+    if (!found.length) return false;
+    return !/=(0|f|false)$/i.test(nodes[found[found.length - 1].word].text);
   }
 
   /** Strings that do and do not match `js` (as grep lines, inverted by -v, or `=~` values). */
@@ -2343,17 +2202,17 @@ export class Analyzer {
 
   /** The scripts given to sed with -e/--expression, in order; undefined when there are none, or one is not plain text. */
   private sedScripts(): string[] | undefined {
-    const scripts = this.optionValues('-e').map((v) => v.text);
+    const scripts = optionValues(this.cx, '-e').map((v) => v.text);
     return scripts.length && scripts.every((t) => t !== undefined) ? scripts as string[] : undefined;
   }
 
   /** --arg / --argjson values of the current jq command. */
   private jqVars(): Record<string, Json> {
     const vars: Record<string, Json> = {};
-    const given = this.optionValues('--arg', '--argjson');
-    given.forEach(({ text: name, of, index }, i) => {
+    const args = optionValues(this.cx, '--arg', '--argjson');
+    args.forEach(({ text: name, of, index }, i) => {
       // The name, then its value.
-      const value = given[i + 1]?.index === 1 ? given[i + 1].text : undefined;
+      const value = args[i + 1]?.index === 1 ? args[i + 1].text : undefined;
       if (index !== 0 || name === undefined || value === undefined) return;
       try {
         vars[name] = of === '--arg' ? value : JSON.parse(value);
@@ -2370,12 +2229,12 @@ export class Analyzer {
     if (style === 'mikefarah' && !yqSameAsJq(filter)) return;
     // `-n`: no input is read. With `-i`, mikefarah/yq writes its result into the first file, and kislyuk/yq rewrites
     // each file apart (`EachFile`).
-    const src = shownSource(this.given('-n') ? NO_INPUT : this.inputSource());
+    const src = shownSource(given(this.cx, '-n') ? NO_INPUT : this.inputSource());
     const inPlace = src.each === 'in-place' || src.each === 'into-first';
     // (The last `-o`, `-p` or `-I` wins, as pflag reads it.)
     const last = (...names: string[]) => {
-      const given = this.optionValues(...names);
-      return given.length ? given[given.length - 1].text ?? '?' : undefined;
+      const found = optionValues(this.cx, ...names);
+      return found.length ? found[found.length - 1].text ?? '?' : undefined;
     };
     const formatOf = (name: string) => ({ json: 'json', j: 'json', yaml: 'yaml', y: 'yaml' } as Record<string, string>)[name];
     let jsonIn = false;
@@ -2401,12 +2260,12 @@ export class Analyzer {
       if (!Number.isInteger(indent) || indent < 0 || (!json && indent !== 2)) return;
       format = { indent };
     } else {
-      json = !this.given('-y', '-Y');
+      json = !given(this.cx, '-y', '-Y');
       // kislyuk/yq passes `-c` and `-S` on to jq. (It has no `--indent`, the one way to an indent jq refuses.)
       format = this.jqFormat()!;
     }
-    const raw = style === 'mikefarah' ? !json || this.unwrapScalar() : this.given('-r');
-    let runs = jqExample(filter, { raw, nullInput: this.given('-n'), vars: style === 'kislyuk' ? this.jqVars() : {}, format });
+    const raw = style === 'mikefarah' ? !json || this.unwrapScalar() : given(this.cx, '-r');
+    let runs = jqExample(filter, { raw, nullInput: given(this.cx, '-n'), vars: style === 'kislyuk' ? this.jqVars() : {}, format });
     // Where jq stops with an error, mikefarah/yq is often lenient (it adds a string and a number), so show nothing.
     if (style === 'mikefarah') runs = runs?.filter((r) => !r.error);
     if (!runs?.length) return;
@@ -2562,7 +2421,7 @@ export class Analyzer {
       set.push([word, Number.isInteger(n) && n >= 0 && n <= 7 ? n : undefined]);
     }
     const indent = set.length ? set.sort((a, b) => a[0] - b[0])[set.length - 1][1] : 2;
-    return indent === undefined ? undefined : { indent, ...(this.given('-S') ? { sortKeys: true } : {}) };
+    return indent === undefined ? undefined : { indent, ...(given(this.cx, '-S') ? { sortKeys: true } : {}) };
   }
 
   /** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
@@ -2649,11 +2508,11 @@ export class Analyzer {
       // (An incomplete `echo a |` has a stage with a name of no word.)
       if (!name || (name.namedChildren.length && !isPlainWord(name.namedChildren[0]))) return undefined;
       // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
-      if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
+      if (['function', 'alias'].includes(resolve(this.cx, name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
-      const spec = this.specFor(name.text);
+      const spec = specFor(this.cx, name.text);
       const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
-      const parse = interpret(spec ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
+      const parse = interpret(spec ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => specFor(this.cx, x) });
       const source = this.inputSource(cmd, parse, args, spec);
       // A stage that writes its output to a file (`sort -o f`) hands nothing on.
       const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
@@ -2685,7 +2544,7 @@ export class Analyzer {
     const ctx = this.cx.command!;
     const words = (nodes ?? ctx.nodes).map((a): SourceWord => {
       const value = literalContent(a)?.text;
-      const glob = this.wordAt(a)?.steps.find((st) => st.kind === 'glob');
+      const glob = wordAt(this.cx, a)?.steps.find((st) => st.kind === 'glob');
       return { value, text: a.text, ...(value === undefined ? { many: 'unknown' as const } : glob && glob.applies !== false ? { many: 'glob' as const } : {}) };
     });
     return inputSource(parse ?? ctx.parse, words, this.stdinOf(cmd ?? ctx.args[0].parent!), parse ? spec : ctx.spec);
@@ -2750,7 +2609,7 @@ export class Analyzer {
   }
 
   private braceWordToken(n: SyntaxNode): Token | undefined {
-    const text = this.unquotedWord(n);
+    const text = unquotedWord(n);
     if (text === undefined) return undefined;
     const words = braceExpansion(text);
     if (words === null) {
@@ -2768,16 +2627,9 @@ export class Analyzer {
       : this.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`));
   }
 
-  /** The text of an unquoted word (or concatenation of unquoted parts), where braces and globs take effect. */
-  private unquotedWord(a: SyntaxNode): string | undefined {
-    const plain = (x: SyntaxNode) => x.type === 'word' || x.type === 'number' || x.type === 'brace_expression';
-    if (plain(a) || (a.type === 'concatenation' && a.namedChildren.every(plain))) return a.text;
-    return undefined;
-  }
-
   /** Brace expansion results, or file names a glob matches, for an argument word. */
   private wordExample(a: SyntaxNode): void {
-    const text = this.unquotedWord(a);
+    const text = unquotedWord(a);
     if (!text) return;
     const words = braceExpansion(text);
     if (words === null) return;
@@ -2788,7 +2640,7 @@ export class Analyzer {
       });
       return;
     }
-    if (isGlob(text) && !this.globOff(a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
+    if (isGlob(text) && !globOff(this.cx, a)) this.globExample(a, text, 'file', this.s(`例（グロブ \`${text}\`）`, `Example (glob \`${text}\`)`));
   }
 
   /**
@@ -2850,13 +2702,13 @@ export class Analyzer {
   private unmatchedGlobPitfalls(root: SyntaxNode, line: number): string[] {
     if (this.cx.shell === 'zsh') return [];
     for (const loop of onLine(root, ['for_statement', 'select_statement'], line)) {
-      const shopt = this.shoptAt(loop);
+      const shopt = shoptAt(this.cx, loop);
       if (loop.startPosition.row !== line || shopt.nullglob === 'on' || shopt.failglob === 'on') continue;
       // `*.log`, and `"$dir"/*.log` too.
-      const glob = fields(loop, 'value').find((v) => ((!!this.unquotedWord(v) && isGlob(v.text))
+      const glob = fields(loop, 'value').find((v) => ((!!unquotedWord(v) && isGlob(v.text))
         || (v.type === 'concatenation' && v.namedChildren.some((c) => c.type === 'word' && isGlob(c.text)))));
       const v = field(loop, 'variable')?.text;
-      if (!glob || !v || this.globOff(glob)) continue;
+      if (!glob || !v || globOff(this.cx, glob)) continue;
       const bodyNode = field(loop, 'body');
       // `for f in *` while typing: there is no body to look at yet.
       if (!bodyNode) continue;
@@ -2881,9 +2733,9 @@ export class Analyzer {
     let top = use;
     while (top.parent && top.parent.type !== 'program') top = top.parent;
     // On when the block runs up to the glob, but not when bash read the block.
-    const state = this.shoptAt(use, 'parse').extglob;
+    const state = shoptAt(this.cx, use, 'parse').extglob;
     if (state === 'on') return [];
-    if (top !== use && this.shoptAt(top).extglob !== 'on' && this.shoptAt(use).extglob === 'on') {
+    if (top !== use && shoptAt(this.cx, top).extglob !== 'on' && shoptAt(this.cx, use).extglob === 'on') {
       return this.say(fact(this.lang, 'extglob-in-same-block', { use: use.text }), use);
     }
     // (A trap's action is read when its signal comes; another shell starts with its own options.)
@@ -2898,8 +2750,8 @@ export class Analyzer {
    */
   private globOptionNote(n: SyntaxNode, text: string): string {
     const notes: string[] = [];
-    const shopt = this.shoptAt(n);
-    const word = this.wordAt(n);
+    const shopt = shoptAt(this.cx, n);
+    const word = wordAt(this.cx, n);
     const ignore = word?.glob.globignore;
     const step = word?.steps.find((s) => s.kind === 'glob');
     // (As for an unquoted `$x` on the same line: `set -f` on some paths only.)
@@ -2916,7 +2768,7 @@ export class Analyzer {
     if (shopt.failglob === 'on') {
       notes.push(this.s('failglob が有効なので、一致するものがなければエラーになり、コマンドは実行されない', 'with failglob on, a pattern that matches nothing is an error, and the command does not run'));
     } else if (shopt.nullglob === 'on') {
-      notes.push(this.wordAt(n)?.context === 'for-list'
+      notes.push(wordAt(this.cx, n)?.context === 'for-list'
         ? this.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（ループはこの単語の分は回らない。ほかに単語がなければ1回も実行されない）',
           'with nullglob on, a pattern that matches nothing goes away (the loop does not run for it, and not at all when there is no other word)')
         : this.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（引数が1つ減る。ほかに引数がなければ、コマンドは引数なしで実行される）',
@@ -2929,7 +2781,7 @@ export class Analyzer {
 
   private starStarNote(text: string, n: SyntaxNode): string {
     if (!hasGlobstar(text)) return '';
-    const globstar = this.shoptAt(n).globstar;
+    const globstar = shoptAt(this.cx, n).globstar;
     const on = this.cx.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
     if (globstar === 'unknown') {
       this.cx.note(fact(this.lang, 'globstar-maybe-on', { on }), n);
@@ -2947,7 +2799,7 @@ export class Analyzer {
 
   /** How globs match on this line: file names, or `case` and `[[ == ]]` patterns (`find -name` takes neither). */
   private globOpts(use: 'file' | 'pattern' | 'none', n: SyntaxNode): GlobOpts {
-    const shopt = this.shoptAt(n);
+    const shopt = shoptAt(this.cx, n);
     const on = (name: ShoptName) => shopt[name] === 'on';
     if (use === 'file') {
       // (`**` is explained as it is written: for any depth, unless globstar is off.)
@@ -2959,7 +2811,7 @@ export class Analyzer {
 
   private globExample(n: SyntaxNode, pattern: string, mode: GlobMode, title: string, labels?: [string, string]): void {
     // A name that matches a pattern of GLOBIGNORE is left out.
-    const ignore = mode === 'file' ? this.wordAt(n)?.glob.globignore : undefined;
+    const ignore = mode === 'file' ? wordAt(this.cx, n)?.glob.globignore : undefined;
     this.pushExample(globExample(pattern, mode, this.globOpts(mode === 'file' ? 'file' : 'none', n), typeof ignore === 'object' ? ignore.value : undefined, title, labels, this.lang));
   }
 
@@ -2979,7 +2831,7 @@ export class Analyzer {
 
   /** Values that match any of the glob patterns (`case` branches, the right side of `[[ == ]]`) and values that do not: found with the matcher of `case`. */
   private patternExample(pats: SyntaxNode[], labels: [string, string]): void {
-    const texts = pats.map((p) => this.unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
+    const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? p.text : undefined));
     this.pushExample(patternExample(texts, this.globOpts('pattern', pats[0]), labels, this.lang));
   }
 
@@ -2991,17 +2843,6 @@ export class Analyzer {
   /** An input → output example (sed, awk, perl, sort…; src/examples/commands.ts). */
   private ioExample(input: string[], output: string[], spec: RerunSpec, src: InputSource): void {
     this.cx.example(ioExample(input, output, spec, this.lang, src));
-  }
-
-  /**
-   * The regex dialect of the current command: the modes its options select (`selects` in its spec: grep's `-E`, `-F`,
-   * `-P`, sed's `-E`), with those of the words its name implies (`egrep` is `grep -E`); BRE when none does.
-   */
-  private regexFlavor(): Flavor | 'fixed' {
-    const { cmd, parse, spec } = this.cx.command!;
-    const implied = impliedWords(cmd.split('/').pop()!).map((w) => spec.options?.find((o) => o.names.includes(w))?.selects);
-    const selected = new Set([...givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec.selects : undefined)), ...implied]);
-    return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
   }
 
   /**
@@ -3057,7 +2898,7 @@ export class Analyzer {
     const first = words[0];
     const name = first.text;
     // A function of the script that the slot does not run (src/semantics/names.ts): even one defined later.
-    const isFn = isPlainWord(first) && (this.resolve(name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
+    const isFn = isPlainWord(first) && (resolve(this.cx, name, first, { env }) as { missed?: Missed }).missed?.kind === 'function';
     if (slot.run === 'exec' && where === 'container') {
       if (isFn) {
         this.cx.note(fact(this.lang, 'function-not-in-container', { via, name }), first);
@@ -3103,7 +2944,7 @@ export class Analyzer {
       // What the string's first word runs in the new shell (src/semantics/names.ts): this script's function only
       // when every link passes the exported functions (not `su -c`, `env -i bash -c f`, `sudo bash -c f`) and the
       // shell reads them (bash, not dash). (A function exported on some paths only is taken as exported.)
-      const res = fn && this.cx.state.definitions.functions.has(fn) ? this.resolve(fn, first, { env }) : undefined;
+      const res = fn && this.cx.state.definitions.functions.has(fn) ? resolve(this.cx, fn, first, { env }) : undefined;
       const missed = res && res.kind !== 'keyword' && res.kind !== 'alias' ? res.missed : undefined;
       const shell = link.shell!;
       if (res && res.kind !== 'function') {
@@ -3252,17 +3093,6 @@ export class Analyzer {
     return this.tok(n, 'pattern', this.s('正規表現（拡張正規表現 ERE）', 'Regular expression (extended, ERE)'), tokens);
   }
 
-  private inArithmetic(n: SyntaxNode): boolean {
-    for (let p = n.parent; p; p = p.parent) {
-      if (p.type === 'arithmetic_expansion' || p.type === 'c_style_for_statement') return true;
-      if (p.type === 'arithmetic_command') return true;
-      if (p.type === 'extended_test' || p.type === 'compound_statement') return false;
-    }
-    // Unary and binary expressions are always inside a test or arithmetic.
-    /* c8 ignore next */
-    return false;
-  }
-
   private unary(n: SyntaxNode): Token {
     // `!` is not an operator field.
     const opNode = field(n, 'operator')!;
@@ -3272,11 +3102,11 @@ export class Analyzer {
     if (!operand) {
       return this.tok(n, 'test', this.s(`単項演算 \`${op}\`: 対象がまだ書かれていない`, `Unary operator \`${op}\`: the operand is not written yet`));
     }
-    if (op === '!' && !this.inArithmetic(n)) {
+    if (op === '!' && !inArithmetic(n)) {
       return this.tok(n, 'test', this.s(`否定: \`${operand.text}\` が偽なら真`, `Negation: true if \`${operand.text}\` is false`), this.sub(operand));
     }
     const d = unaryTestOps[op];
-    if (d && !this.inArithmetic(n)) {
+    if (d && !inArithmetic(n)) {
       return this.tok(n, 'test', this.s(`条件: \`${operand.text}\` が${this.t(d)}`, `Condition: \`${operand.text}\` ${this.t(d)}`), this.subs([operand].filter((x) => !isPlainWord(x))));
     }
     return this.tok(n, 'operator', this.s(`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``), this.subs(n.namedChildren));
@@ -3292,7 +3122,7 @@ export class Analyzer {
     const op = field(n, 'operator')!.text;
     // The grammar reads even a plain `a` after `=`, `==` and `!=` as a pattern; it is only a word to explain, and in `[ ]` any text is.
     // (A constant such as `0x1F` is not plain in arithmetic: it has a value to show.)
-    const plain = (x: SyntaxNode) => (isPlainWord(x) && !(this.inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
+    const plain = (x: SyntaxNode) => (isPlainWord(x) && !(inArithmetic(n) && this.arithNumber(x))) || (x.type === 'extglob_pattern' && rights.length === 1 && !hasGlob(x.text));
     // The grammar leaves some patterns as words (`*.txt`, `--?(a)b`, `-@(!(-*)e*|-edit)`); on the right of `==` in `[[ ]]` they are patterns all the same.
     const pattern = (x: SyntaxNode) => x.type === 'word' && ['=', '==', '!='].includes(op) && hasGlob(x.text) && !!ancestor(n, (a) => a.type === 'extended_test');
     const operands = sortTokens([
@@ -3303,7 +3133,7 @@ export class Analyzer {
     if (['=', '==', '!='].includes(op) && rights.length === 1 && (pattern(rights[0]) || (rights[0].type === 'extglob_pattern' && !plain(rights[0])))) {
       this.cx.examplesAt(n, () => this.patternExample(rights, [this.s('一致する値', 'Values that match'), this.s('一致しない値', 'Values that do not match')]));
     }
-    if (!this.inArithmetic(n) && binaryTestOps[op]) {
+    if (!inArithmetic(n) && binaryTestOps[op]) {
       const num = this.numericTestNote(op, [n.namedChildren[0].text, rightText], true);
       if (op === '&&' || op === '||' || op === '-a' || op === '-o') {
         return this.tok(n, 'test', this.t(binaryTestOps[op]), this.subs([left, ...rights]));
@@ -3337,11 +3167,6 @@ export class Analyzer {
     return this.s(
       `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる）`,
       `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
-  }
-
-  /** Whether `name` is an associative array (`declare -A`) where `n` runs: its subscripts are strings, not arithmetic. */
-  private isAssoc(name: string, n: SyntaxNode): boolean {
-    return attribute(this.cx.state.at(n).run, name, 'A') === 'on';
   }
 
   /**
@@ -3386,7 +3211,7 @@ export class Analyzer {
     // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
     const key = unquoteWord(e.key) ?? e.key;
     const m = ['', key, e.plus, e.value];
-    const assoc = this.isAssoc(field(n.parent!.parent!, 'name')!.text, n);
+    const assoc = isAssoc(this.cx, field(n.parent!.parent!, 'name')!.text, n);
     // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
     const v = evalArith(m[1]);
     const what = assoc ? this.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
@@ -3416,7 +3241,7 @@ export class Analyzer {
   private tilde(n: SyntaxNode): Token | undefined {
     // (Most words have no tilde: they need not ask the model.)
     if (!n.text.includes('~')) return undefined;
-    const w = this.wordAt(n);
+    const w = wordAt(this.cx, n);
     /* c8 ignore next -- a guard: the plain words explained here are all in a word's place (an argument, a value, a pattern…). */
     if (!w) return undefined;
     const tildes = w.tildes.filter((t) => t.node === n && this.tildeTarget(t.user));
@@ -3441,7 +3266,7 @@ export class Analyzer {
 
   /** An argument that looks like an assignment (`x=~/y`): bash expands a tilde after its `=` and `:`. */
   private tildeNote(n: SyntaxNode): string {
-    const w = this.wordAt(n)!;
+    const w = wordAt(this.cx, n)!;
     return w.context !== 'assignment-value' && w.tildes.some((t) => t.after === '=')
       ? this.s('。代入の形をした引数なので、bash では `=` と `:` の後ろの `~` も展開される（POSIX モードでは先頭だけ）', '. It looks like an assignment, so bash expands a `~` after the `=` and after each `:` too (in POSIX mode, only at the start)')
       : '';
@@ -3451,7 +3276,7 @@ export class Analyzer {
     const text = n.text;
     const tilde = this.tilde(n);
     if (tilde) return tilde;
-    const off = hasGlob(text) && this.globOff(n);
+    const off = hasGlob(text) && globOff(this.cx, n);
     if (off) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
     if (hasGlob(text) && this.notGlobbedHere(n)) return this.tok(n, 'argument', this.s(`文字列 \`${text}\``, `Word \`${text}\``) + this.notGlobbedHere(n));
     if (hasGlob(text)) return { ...this.tok(n, 'pattern', globIntro(this.lang, 'file') + this.globNotes(text, n), this.globChildren(n, text, 0)), refs: ['3.5.8'] };
@@ -3484,7 +3309,7 @@ export class Analyzer {
     if (split.applies === false && split.why === 'posix-mode') {
       return { ja: 'POSIX モードではリダイレクト先は単語分割もグロブ展開もされない', en: 'in POSIX mode a redirection target is neither word-split nor globbed' };
     }
-    const g = this.globState(glob);
+    const g = globState(glob);
     const ambiguous = word.rule.fields === 'one-or-error'
       ? { ja: '。結果がちょうど1語にならないとエラー（ambiguous redirect）', en: '; a result that is not exactly one word is an error (ambiguous redirect)' } : { ja: '', en: '' };
     const ifs = word.ifs;
@@ -3510,11 +3335,6 @@ export class Analyzer {
         `it is split on the characters of \`IFS\` (set to \`${this.shown(ifs.value)}\` on line ${line})${noSpace ? ', not on spaces' : ''}${after.value[g][1]}`];
     }
     return { ja: ja + ambiguous.ja, en: en + ambiguous.en };
-  }
-
-  /** Whether a glob step is off by `set -f`, may be (on some paths), or on. */
-  private globState(glob: ExpansionStep): 'off' | 'may' | 'on' {
-    return glob.why === 'noglob' ? (glob.applies === false ? 'off' : 'may') : 'on';
   }
 
   /**
@@ -3614,7 +3434,7 @@ export class Analyzer {
 
   /** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */
   private variableNote(n: SyntaxNode, name: string): string {
-    if (name === '$') return this.pidNote(n);
+    if (name === '$') return pidNote(this.cx, n);
     const st = this.cx.state.at(n).run;
     const a = attribute(st, name, 'a');
     const assoc = attribute(st, name, 'A');
@@ -3631,7 +3451,7 @@ export class Analyzer {
     if (name === '_' && underscoreValue(n, this.cx.state) === '') {
       return this.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty');
     }
-    if (this.inArithmetic(n) && this.pastedValue(n, name) !== undefined) {
+    if (inArithmetic(n) && this.pastedValue(n, name) !== undefined) {
       const v = this.shown(this.pastedValue(n, name)!);
       return this.s(`。算術式の中の \`$${name}\` は、値（ここでは \`${v}\`）が文字のまま貼り付けられてから式として読まれる。\`${name}\` と名前だけで書くと、値が 1 つの式として計算されてから使われる（\`${name}='1+2'\` なら \`$${name}*2\` は \`1+2*2\` で 5、\`${name}*2\` は 3*2 で 6）`,
         `. Inside arithmetic, \`$${name}\` is pasted as text (here \`${v}\`) and then read as an expression. Written as the bare name \`${name}\`, its value is evaluated as one expression first (with \`${name}='1+2'\`, \`$${name}*2\` is \`1+2*2\`, which is 5, and \`${name}*2\` is 3*2, which is 6)`);
@@ -3648,31 +3468,9 @@ export class Analyzer {
 
   /** A word with `*` or `?` where bash does no pathname expansion (the value of an assignment): it stays text. */
   private notGlobbedHere(n: SyntaxNode): string {
-    const w = this.wordAt(n);
+    const w = wordAt(this.cx, n);
     return w?.context === 'assignment-value'
       ? this.s('。代入ではファイル名の展開はされないので、`*` や `?` もそのままの文字として代入される', '. An assignment does no file-name expansion, so `*` and `?` are assigned as they are')
-      : '';
-  }
-
-  /** The meaning of the word that holds `n` (src/semantics/words.ts). */
-  private wordAt(n: SyntaxNode): WordMeaning | undefined {
-    return wordMeaning(n, this.cx.state);
-  }
-
-  /**
-   * What to say of a word with `*` or `?` that is not globbed where it is (`set -f`, or a redirection target in
-   * POSIX mode): it stays as it is. Empty when it is globbed; `may` when `set -f` is on some paths only.
-   */
-  private globOff(n: SyntaxNode): string {
-    const glob = this.wordAt(n)?.steps.find((s) => s.kind === 'glob');
-    if (!glob || glob.applies === true) return '';
-    if (glob.why === 'noglob') {
-      return glob.applies === false
-        ? this.s('。ただし `set -f`（`set -o noglob`）でグロブが無効になっているので、展開されずこの文字のまま渡される', '. But `set -f` (`set -o noglob`) has turned globbing off, so it is not expanded and stays as written')
-        : '';
-    }
-    return glob.why === 'posix-mode' && glob.applies === false
-      ? this.s('。ただし POSIX モードではリダイレクト先はグロブ展開されないので、この名前のファイルになる', '. But in POSIX mode a redirection target is not globbed: the file has this very name')
       : '';
   }
 
@@ -3722,7 +3520,7 @@ export class Analyzer {
   /** A constant of an arithmetic expression that is not plain decimal (`0x1F`, `010`, `2#1010`), with its value; undefined for anything else. */
   private arithNumber(n: SyntaxNode): Token | undefined {
     const lit = arithLiteral(n.text);
-    if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !this.inArithmetic(n)) return undefined;
+    if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !inArithmetic(n)) return undefined;
     return this.tok(n, 'number', this.arithLiteralText(n.text, lit));
   }
 
@@ -3826,7 +3624,7 @@ export class Analyzer {
     // The index is arithmetic (`a[0x1]` is element 1).
     const index = field(n, 'index')!;
     const num = this.arithNumber(index);
-    if (this.isAssoc(name, n)) return this.tok(n, 'variable', this.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
+    if (isAssoc(this.cx, name, n)) return this.tok(n, 'variable', this.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
     return this.tok(n, 'variable', this.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
   }
 
@@ -3856,11 +3654,6 @@ function alias1(value: string): boolean {
 
 /** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
 const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
-const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
-export type ShoptName = typeof SHOPT_NAMES[number];
-/** An option's state (see `OptionState`), or `unsupported` in a shell that does not have it. */
-export type ShoptState = OptionState | 'unsupported';
-export type ShoptStates = Record<ShoptName, ShoptState>;
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
