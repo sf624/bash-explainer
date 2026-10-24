@@ -1,7 +1,7 @@
 // The panel's role colours from the editor's colour theme (`bashExplainer.panel.colors`), from the theme's colours of
 // the roles (src/ui/themeTokens.ts) and what the panel is drawn on (its backgrounds, its foreground, and its own
 // palette, "classic", as the webview computes them). Pure. docs/design/tree-view/README.md ("Colours from the theme").
-import { contrast, deltaE2000, deltaEOK, fromOklch, mix, parseColour, RGB, toHex, toOklch, type LCH } from './colour';
+import { contrast, deltaE2000, deltaEOK, fromOklch, luminance, mix, parseColour, RGB, toHex, toOklch, type LCH } from './colour';
 import { ROLES, type Role } from './themeTokens';
 import type { PanelColours } from '../settings';
 
@@ -110,7 +110,11 @@ export function synthesize(used: RGB[], theme: RGB[], on: RGB[], min: number): R
   const { L, C } = range(theme, dark);
   const steps = (lo: number, hi: number, n: number) => Array.from({ length: n }, (_, i) => lo + ((hi - lo) * i) / (n - 1));
   const mid: LCH = [(L[0] + L[1]) / 2, (C[0] + C[1]) / 2, 0];
-  for (let widen = 0; widen <= 20; widen++) {
+  // Contrast depends on luminance only: when no luminance reaches `min` on every surface, no colour can, so the
+  // search below would try every hue and lightness in vain.
+  const ys = on.map(luminance);
+  const reach = Math.max(...Array.from({ length: 201 }, (_, i) => Math.min(...ys.map((s) => (Math.max(i / 200, s) + 0.05) / (Math.min(i / 200, s) + 0.05)))));
+  for (let widen = 0; reach >= min && widen <= 20; widen++) {
     const lo = dark ? L[0] : Math.max(0, L[0] - widen * 0.03);
     const hi = dark ? Math.min(1, L[1] + widen * 0.03) : L[1];
     let best: RGB | undefined;
