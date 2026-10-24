@@ -2,6 +2,7 @@
 
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+[![npm](https://img.shields.io/npm/v/bash-explainer?label=npm)](https://www.npmjs.com/package/bash-explainer)
 [![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml?query=branch%3Amain+event%3Apush)
 [![Coverage: 100% of lines and branches](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
 [![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#privacy)
@@ -284,7 +285,7 @@ The empty cells are about what only VS Code has (a hover, an inline summary, a p
 
 ## Command line, other editors and CI
 
-The command-line tool, the Language Server and the GitHub Action are one npm package, [`bash-explainer`](cli/README.md). Its README covers the options, the output formats (text, Markdown, JSON, SARIF, GitHub annotations), the set-up for Neovim, Helix and Emacs, and the action's inputs.
+The command-line tool, the Language Server and the GitHub Action are one npm package, [`bash-explainer`](https://www.npmjs.com/package/bash-explainer) (`npx bash-explainer`, or `npm install --global bash-explainer`). [Its README](cli/README.md) covers the options, the output formats (text, Markdown, JSON, SARIF, GitHub annotations), the set-up for Neovim, Helix and Emacs, and the action's inputs.
 
 ## Limitations
 

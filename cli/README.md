@@ -1,5 +1,7 @@
 # bash-explainer
 
+[![npm](https://img.shields.io/npm/v/bash-explainer?label=npm)](https://www.npmjs.com/package/bash-explainer)
+
 Explains shell scripts line by line in the terminal — every command, option, redirection and `${…}` — with worked examples, and points out common pitfalls (unquoted variables, `x = 1`, `for f in $(ls)`…). The command-line companion of the [Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer) VS Code extension, with the same explanations.
 
 **Offline by design:** no network, no AI, no telemetry. English and Japanese.

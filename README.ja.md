@@ -2,6 +2,7 @@
 
 [![Visual Studio Marketplace](https://vsmarketplacebadges.dev/version/shun-fujioka.bash-explainer.svg)](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)
 [![Open VSX](https://img.shields.io/open-vsx/v/shun-fujioka/bash-explainer?label=Open%20VSX)](https://open-vsx.org/extension/shun-fujioka/bash-explainer)
+[![npm](https://img.shields.io/npm/v/bash-explainer?label=npm)](https://www.npmjs.com/package/bash-explainer)
 [![Test](https://github.com/sf624/bash-explainer/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml?query=branch%3Amain+event%3Apush)
 [![Coverage: 100% of lines and branches](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sf624/bash-explainer/actions/workflows/test.yml)
 [![Offline: no network, no AI, no telemetry](https://img.shields.io/badge/runtime-offline%20%C2%B7%20no%20AI%20%C2%B7%20no%20telemetry-2ea44f)](#プライバシー)
@@ -284,7 +285,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 ## コマンドライン、他のエディタ、CI
 
-コマンドラインツール、Language Server、GitHub Action は、1つの npm パッケージ [`bash-explainer`](cli/README.md) にまとまっています。オプション、出力形式（テキスト、Markdown、JSON、SARIF、GitHub のアノテーション）、Neovim・Helix・Emacs の設定、Action の入力は、そちらの README を参照してください（英語）。
+コマンドラインツール、Language Server、GitHub Action は、1つの npm パッケージ [`bash-explainer`](https://www.npmjs.com/package/bash-explainer) にまとまっています（`npx bash-explainer` で実行、または `npm install --global bash-explainer` でインストール）。オプション、出力形式（テキスト、Markdown、JSON、SARIF、GitHub のアノテーション）、Neovim・Helix・Emacs の設定、Action の入力は、[パッケージの README](cli/README.md) を参照してください（英語）。
 
 ## 制限事項
 
