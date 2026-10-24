@@ -125,15 +125,41 @@ describe('the VS Code panel: its header', function () {
   });
 
   it('keeps the line and the shell on the first row of a narrow panel, the views and the buttons on the second', async () => {
-    for (const lang of ['en', 'ja'] as const) {
-      const page = await open('dark', 300, lang);
-      const box = (s: string) => page.locator(s).boundingBox().then((b) => b!);
-      const [where, shell, views, tools] = await Promise.all(['.where', '#shell', '#views', '.tools'].map(box));
-      assert.ok(Math.abs(where.y + where.height / 2 - (shell.y + shell.height / 2)) < 1, lang);
-      assert.ok(views.y > shell.y + shell.height && Math.abs(views.y - tools.y) < 1, lang);
-      assert.ok(tools.x + tools.width <= 300 - 16 + 0.5, lang);
-      assert.strictEqual(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, lang);
+    // The rows must not depend on the font: CI draws Japanese with a CJK font, a machine without one draws boxes of
+    // another width. So each width is checked with a short and a long file name, in both languages.
+    const long = await servePanel(undefined, 'a-really-long-name-of-a-deployment-script-for-production.sh');
+    try {
+      for (const [server, name] of [[panel, 'short'], [long, 'long']] as const) {
+        for (const lang of ['en', 'ja'] as const) {
+          for (const width of [260, 300, 340]) {
+            const at = `${name} ${lang} ${width}px`;
+            const page = await open('dark', width, lang, server);
+            const box = (s: string) => page.locator(s).boundingBox().then((b) => b!);
+            const [where, shell, views, tools] = await Promise.all(['.where', '#shell', '#views', '.tools'].map(box));
+            const middle = (b: { y: number; height: number }) => b.y + b.height / 2;
+            assert.ok(Math.abs(middle(where) - middle(shell)) < 1, `${at}: the line and the shell on one row`);
+            assert.ok(where.x + where.width <= shell.x, `${at}: the line before the shell`);
+            assert.ok(views.y > shell.y + shell.height && Math.abs(middle(views) - middle(tools)) < 1, `${at}: the views and the buttons on the next row`);
+            assert.ok(views.x < width / 2 && Math.abs(tools.x + tools.width - (width - 16)) < 0.5, `${at}: the views at the left, the buttons at the right`);
+            assert.ok(shell.x + shell.width <= width - 16 + 0.5, `${at}: the shell inside the panel`);
+            // Nothing is cut but the line, which ends in an ellipsis (the long name always is); nothing scrolls sideways.
+            const cut = await page.evaluate(`(() => {
+              const w = document.querySelector('.where'), s = document.getElementById('shell');
+              return { shell: s.scrollWidth > s.clientWidth, line: w.scrollWidth > w.clientWidth, ellipsis: getComputedStyle(w).textOverflow, page: document.documentElement.scrollWidth > innerWidth };
+            })()`) as { shell: boolean; line: boolean; ellipsis: string; page: boolean };
+            assert.deepStrictEqual([cut.shell, cut.page, cut.ellipsis], [false, false, 'ellipsis'], at);
+            if (name === 'long') assert.ok(cut.line, at);
+            await page.close();
+          }
+        }
+      }
+      // A wide panel has one row, the buttons at the right.
+      const page = await open('dark', 600, 'ja');
+      const [where, tools] = await Promise.all(['.where', '.tools'].map((s) => page.locator(s).boundingBox().then((b) => b!)));
+      assert.ok(Math.abs(where.y + where.height / 2 - (tools.y + tools.height / 2)) < 1 && Math.abs(tools.x + tools.width - (600 - 16)) < 0.5);
       await page.close();
+    } finally {
+      await long.close();
     }
   });
 

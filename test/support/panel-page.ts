@@ -17,11 +17,11 @@ const root = path.join(__dirname, '..', '..');
 export const SAMPLE = 'find . -name "*.log" -mtime +7 | xargs rm -f 2>/dev/null';
 export type PanelTheme = 'dark' | 'light' | 'hc';
 
-/** The update message for `line` (the second line of a script), as the extension sends it. */
-function message(lang: Lang, line: string): unknown {
+/** The update message for `line` (the second line of the script `file`), as the extension sends it. */
+function message(lang: Lang, line: string, file: string): unknown {
   const src = `#!/bin/bash\n${line}\n`;
   const ex = new Analyzer(lang).explainLine(createUnbashParser().parse(src), 1, 'bash', { reading: true });
-  return panelUpdate({ lang, explanation: ex, file: 'cleanup.sh', line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first' });
+  return panelUpdate({ lang, explanation: ex, file, line: 1, lineText: line, choice: {}, detected: 'bash', placement: 'first' });
 }
 
 const HOST = `(function () {
@@ -70,9 +70,9 @@ export interface PanelServer {
   close(): Promise<void>;
 }
 
-/** Serves the panel's page on 127.0.0.1, explaining `line`. */
-export async function servePanel(line = SAMPLE): Promise<PanelServer> {
-  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line), ja: message('ja', line) })};\n`;
+/** Serves the panel's page on 127.0.0.1, explaining `line` of the script `file`. */
+export async function servePanel(line = SAMPLE, file = 'cleanup.sh'): Promise<PanelServer> {
+  const msg = `window.MSGS = ${JSON.stringify({ en: message('en', line, file), ja: message('ja', line, file) })};\n`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     const send = (type: string, body: string | Buffer) => res.writeHead(200, { 'Content-Type': type }).end(body);

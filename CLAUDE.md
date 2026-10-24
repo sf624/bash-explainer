@@ -54,6 +54,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 - A tool can print differently when it runs under an agent: gh prints its full help after a usage error when `AI_AGENT` or `CLAUDECODE` is set, and only a short usage otherwise (as in CI). A comparison that passes locally can fail in CI; try it with those variables unset too.
 - Feed a tool's stdin through `test/support/run.ts` (a file, not a pipe), so a tool that stops reading early cannot fail with EPIPE.
 - In the web tests, type with `keyboard.insertText` (keys typed one by one can arrive out of order in CI), and wait for CodeMirror's selection layer, which is drawn on the next frame.
+- A layout (and its test) must not depend on how wide the words are in a font: CI's Chromium draws Japanese with CJK fonts (IPAGothic, WenQuanYi, from `playwright install --with-deps`), and a machine without them draws boxes of another width. Wrap between groups that do not depend on text width, and check layouts with those fonts (`apt-get download fonts-ipafont-gothic fonts-wqy-zenhei`, `dpkg -x`, `FONTCONFIG_FILE`) at several widths and with long names.
 
 ## Stacked PRs
 
