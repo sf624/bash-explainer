@@ -767,10 +767,12 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
   if (scan.blind) return { ...BLIND, blind: scan.blind };
   const unseen = new Set<string>();
   for (const [name, ws] of scan.writes) if (ws.some((w) => w.foreign || (w.fn !== undefined && scan.callbacks.has(w.fn)))) unseen.add(name);
+  // (Asked once per use of a variable, as the colouring does: kept per name, as the writes of a name are many.)
+  const trusted = new Map<string, boolean>();
   return {
     blind: undefined,
-    variable: (name) => NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
-      && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain),
+    variable: (name) => trusted.get(name) ?? trusted.set(name, NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
+      && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain)).get(name)!,
     closed: (name) => !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
     arithNames: (n) => {
       const names = scan.pending.get(n);

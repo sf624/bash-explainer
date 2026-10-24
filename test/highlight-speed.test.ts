@@ -43,4 +43,17 @@ describe('the speed of the semantic tokens', function () {
     assert.ok(range < 150, `range request: ${range.toFixed(0)} ms`);
     assert.ok(range * 4 < full, `range ${range.toFixed(0)} ms against full ${full.toFixed(0)} ms`);
   });
+
+  it('takes a time linear in the uses of one variable', () => {
+    // (Whether the model trusts a variable is asked at every use; a scan of its writes each time made 20,000 lines of
+    // these take 13 times as long as 5,000.)
+    const time = (n: number) => {
+      const tree = createUnbashParser().parse(Array.from({ length: n }, () => 'x=$i; echo "$x"').join('\n'));
+      shellState(tree);
+      return median(() => semanticTokens({ lines: [], tree }), 3);
+    };
+    const small = time(5000);
+    const large = time(20000);
+    assert.ok(large < small * 8, `5,000 lines: ${small.toFixed(0)} ms; 20,000: ${large.toFixed(0)} ms`);
+  });
 });
