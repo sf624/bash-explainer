@@ -73,6 +73,10 @@ describe('bash 5.3 command substitutions', () => {
     }
   });
 
+  it('names the form in the note that `set -e` is off inside (also without a bash 5.3)', () => {
+    for (const c of CASES) if (c.notes) assert.match(explain(c.script, 0, 'en', { bashVersion: '5.3' }).notes.join('\n'), c.notes, c.script);
+  });
+
   it('decides no condition in a script that has one (the walk does not keep what it changes)', () => {
     const decided = (sub: string) => {
       const tree = parser.parse(`x=0\n: ${sub}\nif [ "$x" = 1 ]; then echo one; fi\n`);
