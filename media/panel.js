@@ -120,6 +120,7 @@
   function render(msg) {
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
+    if (msg.lang) document.documentElement.lang = msg.lang;
     manual = msg.manual ?? {};
     nameButton('settings', msg.settingsLabel);
     nameButton('copy', labels.copy);
@@ -370,8 +371,8 @@
     return d;
   }
 
-  /** What the badge says, for a screen reader: "builtin, run by sudo". */
-  const nameSpoken = (/** @type {any} */ name) => (name ? [name.said.kind, name.said.by].filter(Boolean).join(', ').replace(/`/g, '') : '');
+  /** What the badge says, for a screen reader: "builtin, run by sudo" (`NameSaid.spoken`). */
+  const nameSpoken = (/** @type {any} */ name) => (name ? name.said.spoken : '');
 
   // ---------------------------------------------------------------- tree
 
@@ -635,7 +636,9 @@
     if (n.kind === 'language') return t.languages[n.label] ?? n.label;
     const shell = n.layer === 'bash' || n.layer === 'child';
     // (A word the command reads that is not an option is an operand: bash's arguments are called arguments.)
-    const kind = (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+    // (A command another runs is a command name too, as bash's own are: its badge says what it is, and who runs it.)
+    const named = n.name && ['command', 'builtin', 'function', 'alias'].includes(n.kind);
+    const kind = (named && t.kinds.commandName) || (shell && t.kinds[n.kind]) || (n.layer === 'command' && t.commandKinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
     // (A command name's badge says what it runs.)
     return n.resolves && !n.name && t.resolves[n.resolves] ? `${kind} · ${t.resolves[n.resolves]}` : kind;
   }

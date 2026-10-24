@@ -237,7 +237,7 @@ export const basic: Record<string, CommandSpec> = {
     ['-o|--output', '結果を指定したファイルに書く', 'write the result to the given file', 'arg'],
     ['-a|--append', '`-o` のファイルに追記する', 'append to the `-o` file'],
     ['-f|--format', '出力の書式（`%e` 経過秒、`%M` 最大メモリ KB…）', 'output format (`%e` elapsed seconds, `%M` max memory in KB…)', 'arg'],
-  ], { optionsFirst: true, operands: [{ pattern: [runs()] }] }),
+  ], { path: '/usr/bin/time', optionsFirst: true, operands: [{ pattern: [runs()] }] }),
   sum: cmd('ファイルの簡易チェックサムとブロック数を出力する（古い形式）', 'Print a simple checksum and block count of files (old format)', [
     ['-r', 'BSD の方式で計算する（既定）', 'use the BSD algorithm (default)'],
     ['-s|--sysv', 'System V の方式で計算する', 'use the System V algorithm'],

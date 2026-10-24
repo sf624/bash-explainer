@@ -672,6 +672,10 @@ body {
 #layers-label {
   color: var(--c-muted);
   font-size: 0.9em;
+  /* (On one line: squeezed, the label would wrap a character per line and never make the row overflow, so
+     fitControls would not hide it.) */
+  white-space: nowrap;
+  flex: none;
 }
 
 #layers button:focus-visible {
@@ -1073,6 +1077,11 @@ body.vscode-high-contrast-light #reading-tree li.band {
   font-style: italic;
   white-space: nowrap;
   flex: 0 0 auto;
+}
+
+/* (No slanted Japanese: the fonts have no italic, and the browser would only skew the glyphs.) */
+:lang(ja) .nk-by {
+  font-style: normal;
 }
 
 .nk-also {

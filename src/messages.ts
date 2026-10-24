@@ -376,34 +376,31 @@ export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fac
 
 // ---------------------------------------------------------------- what a command name is (3.7.2; src/semantics/names.ts `nameFacts`)
 
-/**
- * The words of the kinds of a command name: the badge (`word`), what the kind is (`title`), how a line on the other
- * meanings names it (`other`, with `detail` after it), and the sections of the manual about it.
- */
-const NAME_KINDS: Record<NameKind, { word: Text; title: Text; other: Text; refs: readonly string[] }> = {
+/** The words of the kinds of a command name: the badge (`word`), what the kind is (`title`), and how a line on the other meanings names it (`other`). */
+const NAME_KINDS: Record<NameKind, { word: Text; title: Text; other: Text }> = {
   keyword: {
-    word: { ja: '予約語', en: 'keyword' }, refs: ['3.2.1'], other: { ja: '予約語', en: 'a reserved word' },
+    word: { ja: '予約語', en: 'keyword' }, other: { ja: '予約語', en: 'a reserved word' },
     title: { ja: 'bash の構文の単語（予約語）。コマンドとして探されない', en: 'bash syntax (a reserved word): not looked up as a command' },
   },
   alias: {
-    word: { ja: 'エイリアス', en: 'alias' }, refs: ['6.6'], other: { ja: 'エイリアス', en: 'an alias' },
+    word: { ja: 'エイリアス', en: 'alias' }, other: { ja: 'エイリアス', en: 'an alias' },
     title: { ja: 'エイリアス: bash が行を読むときに、その中身に置き換える', en: 'an alias: bash replaces it with its text when it reads the line' },
   },
   function: {
-    word: { ja: '関数', en: 'function' }, refs: ['3.3'], other: { ja: 'このスクリプトの関数', en: 'the function of this script' },
+    word: { ja: '関数', en: 'function' }, other: { ja: 'このスクリプトの関数', en: 'the function of this script' },
     title: { ja: 'このスクリプトの関数: 今のシェルで動く', en: 'a function of this script: it runs in this shell' },
   },
   builtin: {
-    word: { ja: 'ビルトイン', en: 'builtin' }, refs: ['4.1', '4.2'], other: { ja: 'bash のビルトイン', en: 'bash\'s builtin' },
+    word: { ja: 'ビルトイン', en: 'builtin' }, other: { ja: 'bash のビルトイン', en: 'bash\'s builtin' },
     title: { ja: 'bash に組み込まれたコマンド: 新しいプロセスなしで、今のシェルで動く', en: 'a command built into bash: it runs in this shell, with no new process' },
   },
   program: {
-    word: { ja: 'プログラム', en: 'program' }, refs: ['3.7.2'], other: { ja: 'プログラム', en: 'a program' },
+    word: { ja: 'プログラム', en: 'program' }, other: { ja: 'プログラム', en: 'a program' },
     title: { ja: 'プログラム: PATH から（パスならそのパスで）見つけたファイルを、別のプロセスとして動かす', en: 'a program: a file found in PATH (or at the path given), run as another process' },
   },
   none: {
-    word: { ja: '実行されない', en: 'nothing runs' }, refs: ['4.2'], other: { ja: '何もない', en: 'nothing' },
-    title: { ja: '何も実行されない（`builtin` は組み込みコマンドしか探さない）', en: 'nothing runs (`builtin` looks only for builtins)' },
+    word: { ja: '実行されない', en: 'nothing runs' }, other: { ja: '何もない', en: 'nothing' },
+    title: { ja: '何も実行されない（コマンドが見つからない）', en: 'nothing runs (no command is found)' },
   },
 };
 
@@ -413,13 +410,14 @@ export interface NameSaid {
   kind: string;
   /** What the kind is: the badge's tooltip. */
   title: string;
-  /** "run by `sudo`": the command that looks the name up. */
+  /** "run by `sudo`": the command that looks the name up; where nothing runs, why ("`builtin` finds no builtin named `ls`"). */
   by?: string;
   /** The line on what else the same name is, and how to reach it (only on a name with another meaning). */
   also?: string;
   /** The kind (and who runs it) for an output with no badge: " (builtin)", "（プログラム。`sudo` が実行）". */
   short: string;
-  refs: readonly string[];
+  /** The badge and `by`, for a screen reader: "program, run by sudo". */
+  spoken: string;
 }
 
 /** The texts of the facts of a command name, in `lang`. */
@@ -432,20 +430,30 @@ export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
   };
   // (A program that looks the name up runs the program even where bash has a builtin of that name: `sudo echo`.)
   const program = f.by !== undefined && f.runs === 'program' && f.also.some((o) => o.kind === 'builtin' && !o.off);
-  const lines: string[] = program ? [ja ? `\`${f.by}\` が名前を探すので、これはプログラムで、bash のビルトインではない` : `\`${f.by}\` looks the name up, so this is the program, not bash's builtin`] : [];
-  const others = f.also.filter((o) => !(program && o.kind === 'builtin')).map((o) => {
+  const lines: string[] = f.noProgram
+    ? [f.by !== undefined
+      ? (ja ? `\`${f.by}\` が名前を探すので、bash のビルトインは動かない。この名前のプログラムはふつうない` : `\`${f.by}\` looks the name up, so bash's builtin does not run, and there is usually no program of this name`)
+      : (ja ? 'この名前のプログラムはふつうない' : 'There is usually no program of this name')]
+    : program ? [ja ? `\`${f.by}\` が名前を探すので、これはプログラムで、bash のビルトインではない` : `\`${f.by}\` looks the name up, so this is the program, not bash's builtin`] : [];
+  const others = f.also.filter((o) => !((program || (f.noProgram && f.by !== undefined)) && o.kind === 'builtin')).map((o) => {
     const detail = o.kind === 'keyword' ? (ja ? 'クォートせずにコマンドの先頭に書いたとき' : 'where it starts a command unquoted')
-      : o.off ? (ja ? `\`enable -n\` で無効。\`enable ${f.name}\` で有効に戻る` : `turned off by \`enable -n\` (\`enable ${f.name}\` turns it on again)`) : o.path ? (ja ? `ふつうは \`${o.path}\`` : `usually \`${o.path}\``) : '';
+      : o.off ? (ja ? `\`enable -n\` で無効。\`enable ${f.name}\` で有効に戻る` : `turned off by \`enable -n\` (\`enable ${f.name}\` turns it on again)`)
+        : o.unexpanded ? (ja ? 'ここでは展開されない。`shopt -s expand_aliases` が要る' : 'not expanded here (needs `shopt -s expand_aliases`)')
+          : o.path ? (ja ? `ふつうは \`${o.path}\`` : `usually \`${o.path}\``) : '';
     const reach = o.reach.length ? (ja ? `${codes(o.reach)} で動く` : `run with ${codes(o.reach)}`) : '';
-    const name = NAME_KINDS[o.kind].other[lang];
+    const name = o.kind === 'program' && !o.path ? (ja ? 'PATH の中のプログラム' : 'a program in PATH') : NAME_KINDS[o.kind].other[lang];
     if (ja) return [detail, reach].some(Boolean) ? `${name}（${[detail, reach].filter(Boolean).join('。')}）` : name;
     return `${name}${detail ? `, ${detail}` : ''}${reach ? ` (${reach})` : ''}`;
   });
-  if (others.length) lines.push(ja ? `同じ名前で、ほかに: ${others.join('、')}` : `Same name, also: ${others.join('; ')}`);
-  const by = f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
+  if (others.length) lines.push(ja ? `同じ名前で、ほかに: ${others.join('・')}` : `Same name, also: ${others.join('; ')}`);
+  const by = f.runs === 'none' ? (f.why === 'not-found'
+    ? (ja ? `${f.by ? `\`${f.by}\`` : 'bash'} が探しても \`${f.name}\` という名前のコマンドはない（bash は \`${f.name}: command not found\` と表示する）`
+      : `${f.by ? `\`${f.by}\`` : 'bash'} finds no command named \`${f.name}\` (bash says \`${f.name}: command not found\`)`)
+    : (ja ? `\`${f.by ?? 'builtin'}\` が探しても \`${f.name}\` という名前のビルトインはない` : `\`${f.by ?? 'builtin'}\` finds no builtin named \`${f.name}\``))
+    : f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
   return {
     kind: k.word[lang], title: k.title[lang], ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
     short: ja ? `（${k.word.ja}${by ? `。${by}` : ''}）` : ` (${k.word.en}${by ? `, ${by}` : ''})`,
-    refs: f.also.length || by ? [...new Set([...k.refs, '3.7.2'])] : k.refs,
+    spoken: [k.word[lang], ...(by ? [by] : [])].join(ja ? '、' : ', ').replace(/`/g, ''),
   };
 }

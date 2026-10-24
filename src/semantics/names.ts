@@ -89,8 +89,8 @@ export type NameResolution =
     /** A name the dictionary does not know, after a `source` or `.` (this command): it may be a function of the file read. */
     sourced?: SyntaxNode;
   }
-  /** Nothing runs: `builtin x` where `x` is not a builtin. */
-  | { kind: 'none'; name: string; why: 'not-a-builtin'; missed?: Missed };
+  /** Nothing runs: `builtin x` where `x` is not a builtin; `disabled`: the builtin `x` turned off by `enable -n`. */
+  | { kind: 'none'; name: string; why: 'not-a-builtin'; missed?: Missed; disabled?: CommandEntry };
 
 export interface ResolveOptions {
   /** The script's shell (bash when absent). */
@@ -262,8 +262,8 @@ function builtinOrFile(name: string, opts: ResolveOptions, { exec, lookup, bash,
   const disabled = spec ? st.disabled.get(name) : undefined;
   const m = missed ? { missed } : {};
   if (spec && disabled?.state !== 'on') return { kind: 'builtin', name, special: spec.builtin === 'special', ...m, ...(disabled?.state === 'unknown' ? { disabled } : {}) };
-  if (lookup === 'builtins-only') return { kind: 'none', name, why: 'not-a-builtin', ...m };
   const off = disabled ? { disabled } : {};
+  if (lookup === 'builtins-only') return { kind: 'none', name, why: 'not-a-builtin', ...m, ...off };
   if (name.includes('/')) return { kind: 'file', name, path: 'given', known: !!opts.program?.(name), ...m };
   const hashed = exec || pathPrefix ? undefined : st.hashed.get(name);
   if (hashed && hashed.state === 'on') return { kind: 'file', name, path: 'hashed', known: !!opts.program?.(hashed.value), hashed, ...off, ...m };
@@ -362,17 +362,22 @@ export function testSpecAt(model: StateModel, n: SyntaxNode, shell?: Shell): Com
   return testSpecOf(resolveName(model, name, nameNode!, { shell, command: true, quoted: word!.type !== 'word' || word!.text !== name }));
 }
 
-/** What a command name is, as the panel's badge says it (docs/design/name-kinds.md): a `file` is a program. */
+/** What a command name is, as the panel's badge says it (docs/design/name-kind.md): a `file` is a program. */
 export type NameKind = 'keyword' | 'alias' | 'function' | 'builtin' | 'program' | 'none';
 
 /** Another meaning of the same name, and the code that runs it in place of this one. */
 export interface NameOther {
   kind: NameKind;
-  /** Code that runs it (`command time`, `builtin echo`); none for a reserved word, which is one where it starts a command unquoted. */
+  /**
+   * Code that runs it (`command time`, `builtin echo`): what the bare name runs first decides it. None for a reserved
+   * word, which is one where it starts a command unquoted, a builtin turned off, and an alias that is not expanded.
+   */
   reach: string[];
   /** A builtin turned off by `enable -n` here: `enable NAME` turns it on again. */
   off?: boolean;
-  /** A program's usual path: the model does not know the file system, so it is only "usually" there. */
+  /** An alias that bash does not expand here: a bash script without `shopt -s expand_aliases`. */
+  unexpanded?: boolean;
+  /** A program's usual path, from the dictionary (the model does not know the file system): absent, one in PATH. */
   path?: string;
 }
 
@@ -383,40 +388,70 @@ export interface NameFacts {
   runs: NameKind;
   /** The command that looks the name up in place of bash's usual order: a program (`sudo`, `xargs`, `env`), or `command` and `builtin`. */
   by?: string;
+  /**
+   * `runs` `none`: why nothing runs. `not-a-builtin`: `builtin` finds no builtin of the name. `not-found`: a reserved
+   * word looked up as a command (`command [[`, `\if`), which no program is named (bash: "command not found").
+   */
+  why?: 'not-a-builtin' | 'not-found';
+  /** A program runs where bash has a builtin of the name, and the dictionary knows no program of it (`sudo cd`). */
+  noProgram?: boolean;
   /** The other meanings of the name, in bash's order (3.7.2): empty when it has none. */
   also: NameOther[];
 }
 
+/** What the name `NAME` resolves to written in place of the command name, plain or as `\NAME` or `command NAME` (`nameFacts`). */
+export type NameLookup = (opts: Pick<ResolveOptions, 'quoted' | 'command' | 'lookup'>) => NameResolution;
+
 /**
  * What the command name of `res` is (3.7.2): what runs, who looks it up (the slot of `env` that runs it), and the
- * other meanings of the same name, with code that reaches each. A program of the name comes from the dictionary
- * (`program`, and the program a builtin's entry describes), never from the file system. A path names no other.
+ * other meanings of the same name, with code that reaches each. That code is read from what the name resolves to
+ * where it is (`lookup`), bare (`NAME`), quoted (`\NAME`: no alias, no reserved word) and with `command` (no
+ * function either); without `lookup`, from a script that defines nothing. A program of the name comes from the
+ * dictionary (`program`, and the program a builtin's entry describes), never from the file system; `path` gives
+ * its usual path, when the dictionary has one. A path names no other meaning.
  */
-export function nameFacts(res: NameResolution, opts: { program?: (name: string) => boolean; env?: ExecEnv; shell?: Shell } = {}): NameFacts {
-  const runs: NameKind = res.kind === 'file' ? 'program' : res.kind;
+export function nameFacts(res: NameResolution, opts: {
+  program?: (name: string) => boolean; path?: (name: string) => string | undefined; env?: ExecEnv; shell?: Shell; lookup?: NameLookup;
+} = {}): NameFacts {
   const last = opts.env?.links[opts.env.links.length - 1];
   const slot = last?.kind === 'slot' && (last.slot.run === 'exec' || last.slot.lookup) ? last : undefined;
   const by = slot ? { by: slot.via } : {};
   const { name } = res;
-  if (name.includes('/')) return { name, runs, ...by, also: [] };
-  const also: NameOther[] = [];
-  const add = (o: NameOther): void => void (o.kind !== runs && also.push(o));
-  const missed = (res as { missed?: Missed }).missed;
   const bash = !opts.shell || opts.shell === 'bash' || !BASH_ONLY_BUILTINS.has(name);
   const builtin = Object.hasOwn(builtins, name) && bash ? builtins[name] : undefined;
+  const program = !!builtin?.program || !!opts.program?.(name);
+  // (A reserved word looked up as a file: no program has its name, `command [[` is "command not found".)
+  const notFound = res.kind === 'file' && res.path === 'search' && RESERVED.has(name) && !program;
+  const runs: NameKind = notFound ? 'none' : res.kind === 'file' ? 'program' : res.kind;
+  const why = notFound ? { why: 'not-found' as const } : res.kind === 'none' ? { why: res.why } : {};
+  const noProgram = runs === 'program' && builtin && !program && !name.includes('/') ? { noProgram: true } : {};
+  if (name.includes('/')) return { name, runs, ...by, also: [] };
+  // (`builtins-only` is asked only of a name that has a builtin.)
+  const look: NameLookup = opts.lookup ?? ((o) => (!o.quoted && !o.command && RESERVED.has(name) ? { kind: 'keyword', name }
+    : builtin ? { kind: 'builtin', name, special: builtin.builtin === 'special' } : { kind: 'file', name, path: 'search', known: program }));
+  const bare = look({});
+  const quoted = look({ quoted: true });
+  const command = look({ command: true, lookup: 'no-functions' });
+  const also: NameOther[] = [];
+  const add = (o: NameOther): void => void (o.kind !== runs && also.push(o));
   if (RESERVED.has(name)) add({ kind: 'keyword', reach: [] });
-  // (Quoted, a name is not an alias; `command` and `builtin` skip functions, and a program has none.)
-  if (missed?.kind === 'alias' && missed.why === 'quoted') add({ kind: 'alias', reach: [name] });
-  if (missed?.kind === 'function' && ['command', 'builtin', 'program'].includes(missed.why)) add({ kind: 'function', reach: [name] });
+  const aliasMissed = (bare as { missed?: Missed }).missed;
+  if (bare.kind === 'alias') add({ kind: 'alias', reach: [name] });
+  else if (aliasMissed?.kind === 'alias' && aliasMissed.why === 'expand_aliases') add({ kind: 'alias', reach: [], unexpanded: true });
+  // (A keyword or an alias before it: quoted, the name skips both.)
+  if (bare.kind === 'function') add({ kind: 'function', reach: [name] });
+  else if (quoted.kind === 'function') add({ kind: 'function', reach: [`\\${name}`] });
   if (builtin) {
-    if (res.kind === 'file' && res.disabled) add({ kind: 'builtin', reach: [], off: true });
-    else add({ kind: 'builtin', reach: runs === 'function' ? [`builtin ${name}`, `command ${name}`] : runs === 'alias' ? [`\\${name}`, `command ${name}`] : [name] });
+    const off = look({ command: true, lookup: 'builtins-only' }).kind === 'none';
+    add(off ? { kind: 'builtin', reach: [], off: true } : {
+      kind: 'builtin', reach: bare.kind === 'builtin' ? [name] : quoted.kind === 'builtin' ? [`\\${name}`, `command ${name}`] : [`builtin ${name}`, `command ${name}`],
+    });
   }
-  // (Where a builtin of the name is, `command` and a quoted name find it first: only `env` starts the program.)
-  if (builtin?.program || opts.program?.(name)) {
-    const reach = builtin ? [`env ${name}`] : runs === 'keyword' ? [`command ${name}`, `\\${name}`, `env ${name}`]
-      : runs === 'alias' ? [`\\${name}`, `command ${name}`] : runs === 'function' ? [`command ${name}`] : [name];
-    add({ kind: 'program', reach, path: `/usr/bin/${name}` });
+  // (Where a builtin of the name is on, `command` and a quoted name find it first: only `env` starts the program.)
+  if (program) {
+    const reach = bare.kind === 'file' ? [name] : [...(quoted.kind === 'file' ? [`\\${name}`] : []), ...(command.kind === 'file' ? [`command ${name}`] : [])];
+    const path = opts.path?.(name);
+    add({ kind: 'program', reach: reach.length ? reach : [`env ${name}`], ...(path ? { path } : {}) });
   }
-  return { name, runs, ...by, also };
+  return { name, runs, ...by, ...why, ...noProgram, also };
 }

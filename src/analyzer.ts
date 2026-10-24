@@ -1333,7 +1333,7 @@ export class Analyzer {
 
   /** The keyword `time`, and the option `-p` if there is one: the start of every explanation of it. */
   private timeLead(time: SyntaxNode, posix: SyntaxNode | undefined): Token[] {
-    const kw = Object.assign(this.tok(time, 'keyword', this.t(keywords.time)), { name: nameInfo(this.lang, { kind: 'keyword', name: 'time' }) });
+    const kw = Object.assign(this.tok(time, 'keyword', this.t(keywords.time)), { name: nameInfo(this.lang, { kind: 'keyword', name: 'time' }, this.cx, time) });
     return posix ? [kw, this.tok(posix, 'option', this.s('POSIX 形式で時間を表示する', 'print the times in the POSIX format'))] : [kw];
   }
 
@@ -1388,7 +1388,7 @@ export class Analyzer {
     const t = this.tok(n, bracket ? 'test' : head.kind, head.explanation, sortTokens([
       ...prefix, ...nameToks, ...argToks, ...this.subs(redirs),
     ]), bracket ? shorten(wordsText(n)) : shorten((word ?? nameNode).text));
-    const name = head.res && nameInfo(this.lang, head.res, this.cx.shell);
+    const name = head.res && nameInfo(this.lang, head.res, this.cx, nameNode);
     if (name) (bracket ? nameToks[0] : t).name = name;
     t.summary = bracket ? this.s(`条件判定 ${shorten(wordsText(n), 40)}`, `test ${shorten(wordsText(n), 40)}`) : `${head.name}: ${head.explanation}${name?.runs === 'builtin' ? name.said.short : ''}`;
     if (head.refs?.length) t.refs = bracket ? [...head.refs, '6.4'] : head.refs;
@@ -2166,7 +2166,8 @@ export class Analyzer {
       const missed = (res as { missed?: Missed }).missed;
       if (res.kind === 'none') {
         kind = 'command';
-        explanation = this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
+        explanation = res.disabled ? this.s(`行 ${docLine(res.disabled.at) + 1} の \`enable -n\` で組み込みの \`${name}\` は無効なので、\`builtin\` はエラーになる`, `\`enable -n\` on line ${docLine(res.disabled.at) + 1} turned the builtin \`${name}\` off, so \`builtin\` fails`)
+          : this.s(`\`${name}\` は組み込みコマンドではないので、\`builtin\` はエラーになる`, `\`${name}\` is not a builtin, so \`builtin\` fails`);
       } else if (res.kind === 'file' && res.disabled) {
         // (`enable -n echo; command echo`: the program.)
         kind = 'command';
@@ -2197,7 +2198,7 @@ export class Analyzer {
     }
     const span: Span = { start: spanOf(first).start, end: spanOf(words[words.length - 1]).end };
     return {
-      kind, ...(res ? { name: nameInfo(this.lang, res, this.cx.shell, this.cx.slotEnvs.get(first)) } : {}),
+      kind, ...(res ? { name: nameInfo(this.lang, res, this.cx, first, this.cx.slotEnvs.get(first)) } : {}),
       label: shorten(name),
       explanation: (role.of ? this.s('実行するコマンド: ', 'Command to run: ') : '') + this.s(`\`${name}\` を実行: `, `runs \`${name}\`: `) + explanation,
       span, children, summary: `${name}: ${explanation}`,
@@ -3321,7 +3322,7 @@ export class Analyzer {
         'Extended test `[[ ]]`: evaluates a condition (bash-only; shell syntax, not a command, so there is no word splitting or globbing inside and variables are safe unquoted; `&&`, `||`, `<` and `=~` work too)')
       : this.arithTestExplanation() + this.commaNote(n);
     const children = open === '((' ? this.arithChildren(n) : this.subs(n.namedChildren);
-    const t = Object.assign(this.tok(n, 'test', expl, children), open === '[[' ? { name: nameInfo(this.lang, { kind: 'keyword', name: '[[' }) } : {});
+    const t = Object.assign(this.tok(n, 'test', expl, children), open === '[[' ? { name: nameInfo(this.lang, { kind: 'keyword', name: '[[' }, this.cx, n) } : {});
     t.summary = this.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
     // Includes examples from inside the test, such as the regex of `=~`.
@@ -4060,7 +4061,6 @@ const dash = (flag: string): string => flag.replace(/^\+/, '-');
 /** The spec of the dictionary's command `name` (`/usr/bin/kill` is `kill`). */
 /** The subcommand a parse names, if any (`git stash push`: `stash`, whose parse names `push`). */
 const subcommandOf = (p: ArgvParse) => p.roles.find((r): r is { word: number; role: Extract<ArgRole, { role: 'subcommand' }> } => r.role.role === 'subcommand');
-
 
 /** Gives `t` the skeleton of `n` as its label; with `onlyIfCut`, only when it has a placeholder (else the label is the text). */
 function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {

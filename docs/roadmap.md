@@ -27,6 +27,7 @@ Keep it current:
 ## Not decided
 
 - Variable kinds: say what a variable name is where it is used, as the name kinds do for commands: a shell variable, an exported (environment) variable that child processes see, a special parameter (`$?`, `$@`), a function's local, or one bash sets itself (`RANDOM`, `SECONDS`). The model already has the attributes (`shellState`). It answers the same question as `sudo echo`: what a child process sees.
+- Makefile recipes: make execs simple lines directly; the badge should say program, run by make. (GNU make runs a recipe line with no shell syntax without a shell: `echo -e x` execs `/bin/echo`, which prints `-e x`; the badge says builtin.)
 - `which` against `type` and `command -v`: a sentence saying that `which` looks only for programs on PATH, while `type` and `command -v` also find builtins, functions and aliases, so their answers can differ.
 
 ## Done lately
