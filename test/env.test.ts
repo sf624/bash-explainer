@@ -287,8 +287,9 @@ describe('explanations from the execution environment', () => {
     // A read before the string sets the variable counts; one with a default or a length does not.
     assert.strictEqual(pitfalls("x=1\nbash -c 'echo $x; x=2'", 'en', 1).length, 1);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y:-none} ${#y} ${y+set} ${y:=d} ${y?}'", 'en', 1), []);
-    // (Nor one bash cannot read: "bad substitution". `${y}` is read as `$y` is.)
+    // (Nor one bash cannot read: "bad substitution", or a `${` left open. `${y}` is read as `$y` is.)
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${(f)y}'", 'en', 1), []);
+    assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y'", 'en', 1), []);
     assert.match(pitfalls("y=1\nbash -c 'echo ${y}'", 'en', 1)[0], /expands `\$y` in the string/);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'for y in a; do echo $y; done; f() { local y=1; echo $y; }; f'", 'en', 1), []);
     // (The new shell sets `$_` itself; so does a remote one.)
@@ -305,6 +306,7 @@ describe('explanations from the execution environment', () => {
     // (`$_` starts as the shell's path. The `; true` keeps bash from running the last command in place, which
     // leaves another value in `_`, never `1`.)
     assert.match(bash("_=1; bash -c 'echo \"[${_}] [$_]\"'; true"), /^\[\/\S+\] \[\/\S+\]\n$/);
+    assert.strictEqual(bash("y=1; bash -c 'echo ${y' 2>/dev/null; echo $?"), '2\n');
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
   });
   it('says which words of an ssh command this shell expands before it sends them, as bash does', function () {
@@ -312,10 +314,11 @@ describe('explanations from the execution environment', () => {
     // changes the word here (`*` matches in a directory that holds `ab` and `ac`; `~` is HOME).
     const words: [string, string, string?][] = [
       ["'a'*", 'a*'], ['a=~/x', 'a=~/x'], ['<(echo hi)', '<(echo hi)'], ['"$x"', '$x'], ['$((1+2))', '$((1+2))'], ['~', '~'],
-      ["'a*'", 'a*'], ['a\\*', 'a*'], ['plain', 'plain'], ['*', '*', 'set -f'],
+      ["'a*'", 'a*'], ['a\\*', 'a*'], ['plain', 'plain'], ['*', '*', 'set -f'], ['*', '*', 'set -o noglob'],
+      ['"a"*', 'a*'], ['x=~', 'x=~'], ['>(cat)', '>(cat)'],
     ];
     const said = words.map(([w, , prelude]) => pitfalls(`${prelude ?? 'x=1'}\nssh h echo ${w}`, 'en', 1).some((p) => /the local shell expands/.test(p)));
-    assert.deepStrictEqual(said, [true, true, true, true, true, true, false, false, false, false]);
+    assert.deepStrictEqual(said, [true, true, true, true, true, true, false, false, false, false, false, true, true, true]);
     if (!hasBash) this.skip();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ssh-'));
     try {

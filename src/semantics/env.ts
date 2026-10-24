@@ -343,13 +343,16 @@ export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
 
 /**
  * Whether code in `env` runs in the body of a function: a call link, with no link after it that starts another shell
- * or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in it).
+ * or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in it),
+ * or that runs it later (a trap's action: `f() { trap 'local x' EXIT; }` runs it after `f` has returned). A RETURN
+ * trap, or an ERR or DEBUG trap that fires while the function runs, does run in it; the link does not say the signal,
+ * so such a trap counts as outside too.
  */
 export function inFunction(env: ExecEnv): boolean {
   for (let i = env.links.length - 1; i >= 0; i--) {
     const l = env.links[i];
     if (l.kind === 'call') return true;
-    if (l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell') return false;
+    if (l.kind === 'slot' && (l.slot.later || (l.slot.run !== 'current-shell' && l.slot.run !== 'subshell'))) return false;
   }
   return false;
 }
