@@ -810,14 +810,12 @@ body.resizing .problems-resize {
   display: none !important;
 }
 
-@media (max-width: 767px) {
-  .menu-item.phone-only {
-    display: flex !important;
-  }
+:where(html.narrow) .menu-item.phone-only {
+  display: flex !important;
+}
 
-  .field.phone-only {
-    display: grid !important;
-  }
+:where(html.narrow) .field.phone-only {
+  display: grid !important;
 }
 
 .field[hidden],
@@ -969,6 +967,12 @@ body.resizing .problems-resize {
   }
 }
 
+/* A phone zoomed out can be wider than these widths: it keeps the phone's bar (theme-init.js). */
+:where(html.narrow) .desk-only,
+:where(html.narrow) .top .install {
+  display: none !important;
+}
+
 #ref[aria-pressed="true"] {
   background: var(--accent-soft);
 }
@@ -979,112 +983,111 @@ body.resizing .problems-resize {
   }
 }
 
-/* Phones and narrow windows: the explanation below the script, and the top bar's main controls only
-   (the menu, the file kind with a short name, the fold, the quick reference, the copy, the link, read
-   mode, the settings), 44px to tap, down to 40px wide when the bar is short of room; the rest is in the menu. */
-@media (max-width: 767px) {
-  :root {
-    --gutter: 14px;
-  }
+/* Phones (at every zoom) and windows up to 767px wide, as theme-init.js sets `narrow`: the explanation
+   below the script, and the top bar's main controls only (the menu, the file kind with a short name, the
+   fold, the quick reference, the copy, the link, read mode, the settings), 44px to tap, down to 40px wide
+   when the bar is short of room; the rest is in the menu. */
+:root.narrow {
+  --gutter: 14px;
+}
 
-  .top {
-    gap: 2px;
-    padding: 0 4px;
-  }
+:where(html.narrow) .top {
+  gap: 2px;
+  padding: 0 4px;
+}
 
-  .wide-only,
-  .desk-bar,
-  .actions .sep {
-    display: none;
-  }
+:where(html.narrow) .wide-only,
+:where(html.narrow) .desk-bar,
+:where(html.narrow) .actions .sep {
+  display: none;
+}
 
-  /* The file kind is in the menu on a phone, and the logo and the name take its place in the bar. */
-  .kind {
-    display: none;
-  }
+/* The file kind is in the menu on a phone, and the logo and the name take its place in the bar. */
+:where(html.narrow) .kind {
+  display: none;
+}
 
-  .brand {
-    flex: 0 1 auto;
-    min-width: 0;
-    gap: 6px;
-    margin-inline: 4px;
-    font-size: 15px;
-  }
+:where(html.narrow) .brand {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 6px;
+  margin-inline: 4px;
+  font-size: 15px;
+}
 
-  .actions {
-    flex: 0 1 auto;
-    min-width: 0;
-    gap: 0;
-  }
+:where(html.narrow) .actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 0;
+}
 
-  .top .icon-btn {
-    flex: 0 1 44px;
-    min-width: 40px;
-  }
+:where(html.narrow) .top .icon-btn {
+  flex: 0 1 44px;
+  min-width: 40px;
+}
 
-  .tagline {
-    display: none;
-  }
+:where(html.narrow) .tagline {
+  display: none;
+}
 
-  .icon-btn {
-    width: 44px;
-    height: 44px;
-  }
+:where(html.narrow) .icon-btn {
+  width: 44px;
+  height: 44px;
+}
 
-  .icon-btn svg {
-    width: 20px;
-    height: 20px;
-  }
+:where(html.narrow) .icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
 
-  .split {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, var(--split, 45%)) var(--gutter) minmax(0, 1fr);
-  }
+:where(html.narrow) .split {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, var(--split, 45%)) var(--gutter) minmax(0, 1fr);
+}
 
-  .splitter {
-    border-inline: 0;
-    border-block: 1px solid var(--vscode-panel-border);
-    cursor: row-resize;
-  }
+:where(html.narrow) .splitter {
+  border-inline: 0;
+  border-block: 1px solid var(--vscode-panel-border);
+  cursor: row-resize;
+}
 
-  .splitter::after {
-    width: 36px;
-    height: 4px;
-  }
+:where(html.narrow) .splitter::after {
+  width: 36px;
+  height: 4px;
+}
 
-  /* A wider area to grab with a finger than the line shows. */
-  .splitter::before {
-    content: "";
-    position: absolute;
-    inset: -8px 0;
-  }
+/* A wider area to grab with a finger than the line shows. */
+:where(html.narrow) .splitter::before {
+  content: "";
+  position: absolute;
+  inset: -8px 0;
+}
 
-  .menu-item {
-    min-height: 44px;
-  }
+:where(html.narrow) .menu-item {
+  min-height: 44px;
+}
 
-  .field select {
-    min-height: 40px;
-  }
+:where(html.narrow) .field select {
+  min-height: 40px;
+}
 
-  #problem-list li {
-    padding-block: 8px;
-  }
+:where(html.narrow) #problem-list li {
+  padding-block: 8px;
+}
 
-  /* A broader strip to take with a finger. */
-  .problems-resize {
-    top: -10px;
-    height: 20px;
-  }
+/* A broader strip to take with a finger. */
+:where(html.narrow) .problems-resize {
+  top: -10px;
+  height: 20px;
+}
 
-  #problems-toggle {
-    min-height: 40px;
-  }
+:where(html.narrow) #problems-toggle {
+  min-height: 40px;
+}
 
-  #settings-dialog {
-    width: 100vw;
-    border-radius: 0;
-  }
+:where(html.narrow) #settings-dialog {
+  width: 100vw;
+  border-radius: 0;
 }
 
 /* The copy and the link are in the menu on every phone. Below 480px the logo is 24px and the name 14px;
@@ -1222,26 +1225,24 @@ html.view-panel .split {
   }
 }
 
-@media (max-width: 767px) {
-  .compare {
-    grid-template-columns: minmax(0, 1fr);
-  }
+:where(html.narrow) .compare {
+  grid-template-columns: minmax(0, 1fr);
+}
 
-  .compare .copy + .copy {
-    border-left: 0;
-    border-top: 1px solid var(--vscode-panel-border);
-  }
+:where(html.narrow) .compare .copy + .copy {
+  border-left: 0;
+  border-top: 1px solid var(--vscode-panel-border);
+}
 
-  body[data-page="compare"] .top {
-    height: auto;
-    min-height: var(--bar-h);
-    flex-wrap: wrap;
-    padding-block: 2px;
-  }
+:where(html.narrow) body[data-page="compare"] .top {
+  height: auto;
+  min-height: var(--bar-h);
+  flex-wrap: wrap;
+  padding-block: 2px;
+}
 
-  body[data-page="compare"] .actions {
-    flex-wrap: wrap;
-  }
+:where(html.narrow) body[data-page="compare"] .actions {
+  flex-wrap: wrap;
 }
 
 /* ---- The settings sheet ----------------------------------------------------------------------- */

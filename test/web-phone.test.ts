@@ -4,6 +4,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isDeepStrictEqual } from 'util';
 import type { Browser } from 'playwright-core';
 import { openSite, choose, root, stable, until } from './support/site';
 
@@ -245,5 +246,74 @@ describe('the web page: touch screens, stored data and the window', function () 
       else assert.ok(box.x > ed.x + ed.width && Math.round(ed.height) === height - bar.height && Math.round(box.height) === height - bar.height, JSON.stringify([ed, box]));
       await ctx.close();
     }
+  });
+
+  it('keeps the phone layout on a phone at every zoom (a wider viewport in CSS pixels), and follows the width on a desktop and a tablet', async () => {
+    const { devices } = await import('playwright-core');
+    /** What tells the phone layout: the bar's file kind hidden, the panes one above the other, and the Problems list folded. */
+    const layout = async (page: import('playwright-core').Page) => {
+      await page.locator('.cm-line').first().waitFor();
+      await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v);
+      return async () => {
+        const ed = (await page.locator('#editor').boundingBox())!;
+        const box = (await page.locator('#panel').boundingBox())!;
+        return {
+          kind: await page.locator('.kind').isVisible(),
+          stacked: box.y >= ed.y + ed.height,
+          splitter: await page.locator('#splitter').getAttribute('aria-orientation'),
+          problems: await page.locator('#problems-toggle').getAttribute('aria-expanded'),
+        };
+      };
+    };
+    /** Waits for the layout expected, then checks that it stays. */
+    const expectLayout = async (page: import('playwright-core').Page, expected: object, label: string) => {
+      const read = await layout(page);
+      await until(label, read, (v) => isDeepStrictEqual(v, expected)).catch(() => undefined);
+      assert.deepStrictEqual(await stable(label, read, 6), expected, label);
+    };
+    const phoneLayout = { kind: false, stacked: true, splitter: 'horizontal', problems: 'false' };
+    const wideLayout = { kind: true, stacked: false, splitter: 'vertical', problems: 'true' };
+
+    // A 390×844 phone, zoomed out to 50% and 33%: the CSS viewport grows and a device pixel is less of a CSS
+    // pixel. At 780 the screen stays as at 100%, as Safari reports it; at 1170 it is in CSS pixels of the zoom, as in Chrome.
+    // (Playwright's setViewportSize would make the screen the viewport's size, which no zoom does.)
+    const phone = { ...devices['iPhone 13'], viewport: { width: 390, height: 740 }, screen: { width: 390, height: 844 }, deviceScaleFactor: 3, locale: 'en-US' };
+    const ctx = await browser.newContext(phone);
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await expectLayout(page, phoneLayout, '390');
+    const cdp = await ctx.newCDPSession(page);
+    for (const [width, screenScales] of [[780, false], [1170, true]] as const) {
+      const z = width / 390;
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width, height: Math.round(740 * z), deviceScaleFactor: 3 / z, mobile: true,
+        screenWidth: screenScales ? width : 390, screenHeight: screenScales ? Math.round(844 * z) : 844,
+      });
+      await until('the zoom', () => page.evaluate('innerWidth') as Promise<number>, (w) => w === width);
+      await expectLayout(page, phoneLayout, `zoomed to ${width}`);
+      // A page loaded zoomed out: on a phone seen before, the shape of its screen, which no zoom changes, is remembered.
+      await page.reload();
+      await expectLayout(page, phoneLayout, `loaded at ${width}`);
+    }
+    await ctx.close();
+    // A tablet as big as that zoomed-out phone, never seen as a phone, follows the width as before.
+    const tablet = await browser.newContext({ ...phone, viewport: { width: 780, height: 1480 }, screen: { width: 780, height: 1688 }, deviceScaleFactor: 1.5 });
+    const t = await tablet.newPage();
+    await t.goto(base);
+    await expectLayout(t, wideLayout, 'tablet 780');
+    await t.setViewportSize({ width: 700, height: 1480 });
+    await expectLayout(t, phoneLayout, 'tablet window 700');
+    await tablet.close();
+
+    // A desktop: wide, the phone layout when the window is made narrow, and wide again.
+    const desk = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+    const d = await desk.newPage();
+    await d.goto(base);
+    await expectLayout(d, wideLayout, 'desktop 1280');
+    await d.setViewportSize({ width: 390, height: 800 });
+    await expectLayout(d, phoneLayout, 'desktop 390');
+    await d.setViewportSize({ width: 1280, height: 800 });
+    await expectLayout(d, wideLayout, 'desktop 1280 again');
+    await desk.close();
   });
 });
