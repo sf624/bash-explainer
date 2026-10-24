@@ -7,6 +7,7 @@ import { hasError } from '../src/syntax/tree';
 import { fuzzInputs, soundness, uncovered } from './support/fuzz';
 import { exerciseTree } from './support/fuzz-exercise';
 import { corpus } from './support/corpus';
+import { assertGrowth } from './support/growth';
 
 // Fuzzing the adapter with unfinished and damaged input. The inputs come from the fixtures and the
 // snippets of the tests: prefixes (what the user has typed so far), a word removed, a random cut.
@@ -76,30 +77,16 @@ describe('unbash adapter: fuzzing', () => {
     }
   });
 
-  it('unbash adapter: parses in linear time', () => {
-    // A script of every fixture, repeated: 8 times the text should take about 8 times as long (not 64).
+  it('unbash adapter: parses in linear time', function () {
+    this.timeout(60000);
+    // A script of every fixture, repeated: 8 times the text should take about 8 times as long (not 64). Each measure
+    // is the best of several runs, taken in turn with the other (test/support/growth.ts), on inputs large enough
+    // that a run takes milliseconds: on a busy CI runner a garbage collection can double one short run.
     const script = corpus().files.map((f) => f.text).join('\n');
-    // Best of several runs, on inputs large enough that a run takes milliseconds: on a busy CI runner a
-    // garbage collection can double one short run. A quadratic parser gives 64 times as long for 8 times
-    // the input, so a bound of 16 still catches it.
-    const best = (text: string): number => {
-      let min = Infinity;
-      for (let i = 0; i < 7; i++) {
-        const t0 = performance.now();
-        ub.parse(text);
-        min = Math.min(min, performance.now() - t0);
-      }
-      return min;
-    };
-    best(script);
-    const one = best(script);
-    const eight = best(Array(8).fill(script).join('\n'));
-    assert.ok(eight < 16 * one, `1x: ${one.toFixed(1)} ms, 8x: ${eight.toFixed(1)} ms`);
-    // Many short lines: the case that was quadratic.
+    assertGrowth('the corpus, then 8 times it', () => ub.parse(script), () => ub.parse(Array(8).fill(script).join('\n')), 16, 7);
+    // Many short lines: the case that was quadratic. (From 4,000 lines: 1,000 parse in a few ms, too short to measure
+    // on a loaded runner.)
     const lines = (n: number): string => 'echo a b\n'.repeat(n);
-    best(lines(1000));
-    const few = best(lines(1000));
-    const many = best(lines(8000));
-    assert.ok(many < 16 * few, `1000 lines: ${few.toFixed(1)} ms, 8000 lines: ${many.toFixed(1)} ms`);
+    assertGrowth('4,000 lines, then 32,000', () => ub.parse(lines(4000)), () => ub.parse(lines(32000)), 16, 7);
   });
 });
