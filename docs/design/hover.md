@@ -2,7 +2,7 @@
 
 What the hover explains, how it looks, the name hints, and why the inline summary was removed. Built from a design study in real VS Code (the prototypes on the branches `proto/hover-inline` and `proto/hover-inline-2`), with the maintainer's choices.
 
-The code: `src/ui/hoverParts.ts` (which part a position explains), `src/ui/hoverView.ts` (the Markdown), `src/ui/hover.ts` (VS Code), `cli/lsp.ts` (the Language Server). Tests: `test/hover-view.test.ts`.
+The code: `src/ui/hoverParts.ts` (which part a position explains, and which notes are about it), `src/ui/hoverView.ts` (the Markdown), `src/ui/hover.ts` (VS Code), `cli/lsp.ts` (the Language Server). Tests: `test/hover-view.test.ts`.
 
 ## The rule
 
@@ -33,13 +33,23 @@ The whole line opens only through our command (`Ctrl+K Ctrl+E`, the context menu
 
 ## The views
 
-The part: a breadcrumb of the parts around it with the link "Whole line" beside it, then the part's label coloured by its kind, its name-kind badge and "run by" (a command name), its meaning, "Same name, also", its own parts (one level; deeper ones are counted as "N more in the panel"), and the command it belongs to. The notes of the line (warnings first, each with its level: [note-levels.md](note-levels.md)), and the examples of the part, come after, so that the first lines (about 250 px) answer what the part is.
+The part: a breadcrumb of the parts around it with the link "Whole line" beside it, then the part's label coloured by its kind, its name-kind badge and "run by" (a command name), its meaning, "Same name, also", its own parts (one level; deeper ones are counted as "N more in the panel"), and the command it belongs to. Its notes (warnings first, each with its level: [note-levels.md](note-levels.md); which ones: "Notes" below), and the examples of the part, come after, so that the first lines (about 250 px) answer what the part is. The last line before the footer is a link "N more notes on this line" when the line has notes the part does not show.
 
 The line card: the structure as one breadcrumb (`sudo | xargs › sudo · xargs`, each part with its meaning as a tooltip), and the link.
 
 The whole line ("B" of the study): the line, coloured; its structure as a breadcrumb; then one block per command, and per part with commands in it, in the order bash runs them: the label, the badge, "run by", the meaning, where it is ("in: …"), and its arguments two levels deep. Deeper parts are counted as "N more in the panel", with the link. The notes of the line come after the blocks. Examples follow `examples.placement` (`first`: before the block's arguments; `last`: after them; `bottom`: at the end).
 
-The Language Server sends plain Markdown (editors other than VS Code show no HTML) and no command links: the part first, then the whole line below `---`. On no part, the whole line alone.
+The Language Server sends plain Markdown (editors other than VS Code show no HTML) and no command links: the part first, with its notes, then the whole line below `---`, with all of them. On no part, the whole line alone.
+
+## Notes
+
+The part shows only the notes about it and its own parts; the whole line shows every note of the line. A note says something about one part far more often than about the line, and a hover on `rm` in `rm $f; read line` that also says `read` lacks `-r` answers a question the reader did not ask.
+
+- **Where a note is about.** A note found on a node carries its range (`LineExplanation.anchors`, made by `anchored` in src/noteanchors.ts): a word fact (src/wordfacts.ts) or a style check (src/pitfalls.ts) on its node, a dialect issue on its construct, a fact of the catalog that the analyzer says (`say(fact, node)`: the node is required), a status fact (src/statusfacts.ts) on its statement, an idiom on the narrowest statement it was found in, the effect of several redirections on each of them. The notes of a string run as a script (`bash -c '…'`) keep theirs, moved to the line's columns, and a host file's lines move them as they move the tokens (src/hosts/remap.ts). The notes are still strings ([note-levels.md](note-levels.md), "The bridge"), so an anchor is a note's text and a range; a note found on several nodes has several.
+- **The rule** (`isAbout` in src/ui/hoverParts.ts). A note is about the part when its range lies within the part or within one of the part's own parts, or when the range is larger and the part starts it. So a note on a whole command shows on its name, not on each argument; a note on a pipeline (`pipefail-missing`) shows on its first command. On `rm $f; read line`: the unquoted-path warning (on `$f`) shows on `$f` and on `rm`, whose argument it is; the `read` caveat (on `read line`) shows on `read`, not on `line`; the `;` shows neither.
+- **Notes about the line.** A note with no range is not shown in the part, only counted: the line of a here-document's body or its closing delimiter, a statement that started on an earlier line, the zsh syntax that could not be parsed, and the notes of a host file (a Makefile variable, a CI step, bats). Over test/fixtures/sample.sh, 36 of the 38 notes have a range, every warning and caveat among them; the two without are here-document lines.
+- **The link.** "N more notes on this line" counts every note of the line the part does not show (about other parts, or about the line), and opens the whole line as the link **Whole line** does. The line card and the whole line are unchanged: the card has no notes, the whole line has them all, warnings first.
+
 
 ## No tree glyphs
 

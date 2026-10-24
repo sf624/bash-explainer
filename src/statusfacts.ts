@@ -14,7 +14,8 @@ import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
 import { ancestor, descendants, field, fields, substitutionForm, type SyntaxNode } from './syntax/tree';
 
-export type StatusFact = FactSpec;
+/** A fact and the statement it is about (where the part hover shows it). */
+export type StatusFact = FactSpec & { node: SyntaxNode };
 
 const shorten = (text: string): string => {
   const one = text.replace(/\s*\n\s*/g, ' ');
@@ -53,7 +54,7 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
   const out = new Map<number, StatusFact[]>();
   const add = (n: SyntaxNode, spec: FactSpec): void => {
     const line = n.startPosition.row;
-    out.set(line, [...(out.get(line) ?? []), spec]);
+    out.set(line, [...(out.get(line) ?? []), { ...spec, node: n }]);
   };
   // A command whose failure `set -e` would catch: a simple command or a pipeline (not an assignment, `local` or a test).
   const plain = (body: SyntaxNode): boolean => statements(body).slice(0, -1).some((c) => (c.type === 'command' || c.type === 'pipeline') && ['command', 'pipeline'].includes(status.status(c).kind));

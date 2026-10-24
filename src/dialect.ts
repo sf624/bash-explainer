@@ -470,9 +470,14 @@ export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from =
 
 /** Notes for the line: features the target shell lacks, and behaviour that differs. */
 export function dialectNotes(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): string[] {
+  return [...new Set(dialectFound(tree, line, shell, lang, version).map((f) => f.text))];
+}
+
+/** The notes of `dialectNotes`, each with the place of its construct (the note on zsh syntax is about the line: none). */
+export function dialectFound(tree: SyntaxTree, line: number, shell: Shell, lang: Lang, version?: BashVersion): { text: string; node?: Place }[] {
   const issues = dialectIssues(tree, shell, lang, line, line, version).filter((i) => i.kind !== 'parse');
   // On every line a zsh parse error covers, not only where it starts.
   const parse = shell === 'zsh' && zshSyntaxPlaces(tree, 0, tree.root.endPosition.row).some((e) => e.startPosition.row <= line && e.endPosition.row >= line)
-    ? [ZSH_SYNTAX[lang === 'ja' ? 0 : 1]] : [];
-  return [...new Set([...parse, ...issues.map((i) => i.message)])];
+    ? [{ text: ZSH_SYNTAX[lang === 'ja' ? 0 : 1] }] : [];
+  return [...parse, ...issues.map((i) => ({ text: i.message, node: i.place }))];
 }

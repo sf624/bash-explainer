@@ -73,6 +73,7 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     ...ex,
     items: ex.items.map(token),
     examples: ex.examples.map((e) => (e.anchor ? { ...e, anchor: span(e.anchor) } : e)),
+    ...(ex.anchors ? { anchors: ex.anchors.map((a) => ({ ...a, span: span(a.span) })) } : {}),
     ...(ex.reading ? { reading: reading(ex.reading) } : {}),
   };
 }

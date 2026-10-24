@@ -28,7 +28,7 @@ One source per kind of note:
 
 ### The bridge: marks in the text
 
-The views still get a line's notes as strings (`LineExplanation.notes`), and some notes are not made from the catalog yet (the analyzer's own `⚠ …` notes, idioms with no mark). So a view reads the level back from the mark the text starts with: `noteLevel(text)`, and `splitNote(text, lang)` for the level, the word and the rest. This is an interim bridge: once the analyzer gives note nodes with their level (with the thinning of [analyzer.md](analyzer.md)), the views read the level from the node, and every pitfall stated becomes a diagnostic. Until then, the problems are the pitfalls of src/pitfalls.ts and src/wordfacts.ts, as before (roadmap, "Next").
+The views still get a line's notes as strings (`LineExplanation.notes`), and some notes are not made from the catalog yet (the analyzer's own `⚠ …` notes, idioms with no mark). So a view reads the level back from the mark the text starts with: `noteLevel(text)`, and `splitNote(text, lang)` for the level, the word and the rest. This is an interim bridge: once the analyzer gives note nodes with their level (with the thinning of [analyzer.md](analyzer.md)), the views read the level from the node, and every pitfall stated becomes a diagnostic. Meanwhile a note found on a node has its range beside its text (`LineExplanation.anchors`), which the part hover reads to show only the notes about the part ([hover.md](hover.md), "Notes"). Until then, the problems are the pitfalls of src/pitfalls.ts and src/wordfacts.ts, as before (roadmap, "Next").
 
 ## The views
 

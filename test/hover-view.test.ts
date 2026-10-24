@@ -218,12 +218,15 @@ describe('the hover Markdown', () => {
     // Its parts, one level, indented by nothing; the deeper ones are counted for the panel.
     assert.ok(md.includes('<table>\n<tr><td><span style="color:var(--vscode-charts-green);">/var/log</span></td><td>starting directory</td></tr>'), md);
     assert.match(md, /\[\$\(comment-discussion\) \d+ more in the panel\]\(command:panel\)/);
-    // The command it belongs to, then the notes of the line, after the part.
+    // The command it belongs to, after the part; then the examples of the part, and the link to the notes of the
+    // line, which are about other parts (the idioms of `sudo find … -print0` and `xargs -0`).
     const command = lines.findIndex((l) => l.includes('Command: '));
-    const note = lines.findIndex((l) => (l.startsWith('> ') && l.includes(' Idiom')));
-    assert.ok(command > 4 && note > command, md);
-    // The examples of the part, at the end; the footer says where it is.
-    assert.ok(lines.findIndex((l) => l.startsWith('#### Example')) > note);
+    assert.ok(command > 4, md);
+    assert.ok(!lines.some((l) => l.startsWith('> ') && l.includes(' Idiom')), md);
+    const example = lines.findIndex((l) => l.startsWith('#### Example'));
+    assert.ok(example > command);
+    assert.strictEqual(lines[lines.length - 4], '[$(list-tree) 2 more notes on this line](command:line "Explain the whole line (Ctrl+K Ctrl+E)")');
+    // The footer says where it is.
     assert.match(lines[lines.length - 1], /^<small>Bash Explainer · Line 2<\/small> &nbsp;·&nbsp; \[\$\(comment-discussion\) \d+ more in the panel\]\(command:panel\) &nbsp;·&nbsp; \[\$\(gear\) Settings\]\(command:bashExplainer\.openSettings\)$/);
   });
 
@@ -334,16 +337,78 @@ describe('the hover Markdown', () => {
     assert.match(whole('highContrast')[0], /^> <span style="color:var\(--vscode-editorWarning-foreground\);">/);
     assert.match(whole('highContrast')[1], /^> <span style="color:#6badff;">/);
     assert.match(whole('highContrastLight')[0], /^> <span style="color:#704500;">/);
-    // The part's hover shows them the same way, and the sanitizer keeps every colour.
-    assert.deepStrictEqual(notes(partMd(doc, 0, 0)), whole('dark'));
+    // The part's hover shows its own the same way, and the sanitizer keeps every colour.
+    const at = (text: string) => doc.lines[0].indexOf(text);
+    assert.deepStrictEqual([at('x ='), at('read'), at('exit')].flatMap((c) => notes(partMd(doc, 0, c))), whole('dark'));
     for (const theme of ['light', 'dark', 'highContrast', 'highContrastLight'] as const) {
       checkHtml(wholeLine(input(doc, 0, { theme })), `levels ${theme}`);
-      checkHtml(partMd(doc, 0, 0, { theme }), `levels, part ${theme}`);
+      for (const c of [at('x ='), at('read'), at('exit')]) checkHtml(partMd(doc, 0, c, { theme }), `levels, part ${theme}`);
     }
     // In Japanese, the word of the language.
     const ja = notes(wholeLine(input(doc, 0, { lang: 'ja' })));
     assert.match(ja[0], /<strong>落とし穴:<\/strong>/);
     assert.match(ja[1], /<strong>注意:<\/strong>/);
+  });
+
+  it('shows only the notes about the part, and counts the others in a link to the whole line', () => {
+    const doc = open('rm $f; read line');
+    const at = (text: string) => doc.lines[0].indexOf(text);
+    const notes = (md: string) => md.split('\n').filter((l) => l.startsWith('> '));
+    const link = (md: string) => md.split('\n').filter((l) => l.includes('](command:line ')).slice(1);
+    const warning = /^> .*\$\(warning\).*Pitfall:.*`\$f` is not quoted/;
+    const caveat = /^> .*\$\(info\).*Caveat:.* without `-r`/;
+    // On `$f`, the warning about it; on `rm`, the same, since `$f` is one of its own parts.
+    for (const c of [at('$f'), at('rm')]) {
+      const md = partMd(doc, 0, c);
+      assert.deepStrictEqual(notes(md).map((n) => warning.test(n)), [true], md);
+      assert.deepStrictEqual(link(md), ['[$(list-tree) 1 more note on this line](command:line "Explain the whole line (Ctrl+K Ctrl+E)")']);
+    }
+    // On `read`, only its caveat (the check is about the whole command `read line`).
+    const read = partMd(doc, 0, at('read'));
+    assert.deepStrictEqual(notes(read).map((n) => caveat.test(n)), [true], read);
+    assert.strictEqual(link(read).length, 1);
+    // A note on a whole command is not one of each of its arguments, nor of the `;` between commands.
+    for (const c of [at('line'), at(';')]) {
+      const md = partMd(doc, 0, c);
+      assert.deepStrictEqual(notes(md), []);
+      assert.match(link(md)[0], /^\[\$\(list-tree\) 2 more notes on this line\]\(command:line /);
+    }
+    // The whole line has both, the warning first, and no link to itself.
+    const whole = notes(wholeLine(input(doc, 0)));
+    assert.deepStrictEqual(whole.map((n) => [warning.test(n), caveat.test(n)]), [[true, false], [false, true]]);
+    assert.ok(!wholeLine(input(doc, 0)).includes('more note'));
+    // In Japanese.
+    const ja = partMd(doc, 0, at('read'), { lang: 'ja' });
+    assert.match(notes(ja)[0], /<strong>注意:<\/strong><\/span> `-r` を付けないと/);
+    assert.match(link(ja)[0], /^\[\$\(list-tree\) この行のほかの注記 1 件\]\(command:line "行全体を説明 \(Ctrl\+K Ctrl\+E\)"\)$/);
+  });
+
+  it('shows a note on a statement on the part that starts it, and counts a note about the line', () => {
+    // `pipefail-missing` is about the pipeline: on its first command, not on the others or their parts.
+    const pipe = open('set -e; curl -s x | sh');
+    const at = (text: string) => pipe.lines[0].indexOf(text);
+    const has = (md: string) => md.split('\n').some((l) => l.startsWith('> ') && l.includes('pipefail'));
+    assert.deepStrictEqual([at('curl'), at('-s'), at('|'), at('sh')].map((c) => has(partMd(pipe, 0, c))), [true, false, false, false]);
+    // A note with no node (the line is the body of a here-document) is in the count only.
+    const doc = open(SCRIPT);
+    const md = partMd(doc, 9, doc.lines[9].indexOf('$USER'));
+    assert.ok(!md.split('\n').some((l) => l.startsWith('> ')), md);
+    assert.ok(md.includes('[$(list-tree) 1 more note on this line](command:line '), md);
+    assert.ok(explain(doc, 9).notes.length === 1 && !explain(doc, 9).anchors);
+  });
+
+  it('finds the notes of a part in a string run as a script, and in a host file', () => {
+    const has = (md: string, re: RegExp) => md.split('\n').some((l) => l.startsWith('> ') && re.test(l));
+    // In the string `bash -c` runs, where the string's notes are moved to the line's columns.
+    const nested = open("sudo bash -c 'rm $f; read x'");
+    const at = (text: string) => nested.lines[0].indexOf(text);
+    assert.deepStrictEqual([at('$f'), at('read')].map((c) => [has(partMd(nested, 0, c), /not quoted/), has(partMd(nested, 0, c), /-r/)]), [[true, false], [false, true]]);
+    // In a Dockerfile, at the columns of the original line.
+    const docker = openDocument('FROM alpine\nRUN   rm $f && read x', 'dockerfile', (t) => parser.parse(t));
+    const col = docker.lines[1].indexOf('$f');
+    const x = { ...input(docker, 1), ex: explain(docker, 1) };
+    assert.ok(has(partHover(x, partAt(x.ex.items, { line: 1, character: col })), /not quoted/));
+    assert.ok(!has(partHover(x, partAt(x.ex.items, { line: 1, character: col })), /-r/));
   });
 
   it('places the examples of the whole line by the setting', () => {
@@ -432,6 +497,16 @@ describe('the Language Server hover', () => {
     assert.match(md, /\n_Same name, also: /);
     const ex2 = explain(d, 2);
     assert.match(plainPartHover(ex2, partAt(ex2.items, { line: 2, character: 0 }), 'en', 'W'), /\(Bash manual \[4\.1\]\(/);
+  });
+
+  it('gives the part its own notes, and the whole line all of them', () => {
+    const d = open('rm $f; read line');
+    const ex = explain(d, 0);
+    const md = plainPartHover(ex, partAt(ex.items, { line: 0, character: 3 }), 'en', toPlainMarkdown(ex, d.lines[0], 'W'));
+    const [part, whole] = md.split('\n---\n');
+    const notes = (text: string) => text.split('\n').filter((l) => l.startsWith('> ')).map((l) => l.slice(0, 20));
+    assert.deepStrictEqual(notes(part), ['> ⚠ **Pitfall:** `$f']);
+    assert.deepStrictEqual(notes(whole), ['> ⚠ **Pitfall:** `$f', '> ⓘ **Caveat:** with']);
   });
 
   it('is the whole line alone on no part', () => {

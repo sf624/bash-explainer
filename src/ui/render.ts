@@ -25,6 +25,7 @@ export const ui = {
     openInPanel: 'パネルで詳しく見る',
     hover: {
       wholeLine: '行全体', wholeLineTitle: '行全体を説明', more: (n: number) => `ほか ${n} 項目はパネルで`, command: 'コマンド: ', in: '位置: ',
+      moreNotes: (n: number) => `この行のほかの注記 ${n} 件`,
     },
     settings: '設定',
     panel: {
@@ -107,6 +108,7 @@ export const ui = {
     openInPanel: 'Open in panel',
     hover: {
       wholeLine: 'Whole line', wholeLineTitle: 'Explain the whole line', more: (n: number) => `${n} more in the panel`, command: 'Command: ', in: 'in: ',
+      moreNotes: (n: number) => `${n} more note${n === 1 ? '' : 's'} on this line`,
     },
     settings: 'Settings',
     panel: {
@@ -340,15 +342,23 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
   return joinParts(parts, (p) => (p.placeholder ? `*${p.text}*` : codeSpan(p.text.replace(/\s*\n\s*/g, ' ⏎ '))));
 }
 
+/**
+ * Notes of a line as plain Markdown quotes, warnings first: each keeps its mark, and its word in bold
+ * (`> ⚠ **Pitfall:** …`), with the sections of the manual it cites.
+ */
+export function plainNotes(ex: LineExplanation, notes: readonly string[], lang: Lang): string[] {
+  return notesByLevel(notes).flatMap((n) => {
+    const { label, body } = splitNote(n, lang);
+    const refs = noteRefs(ex, n);
+    return [`> ${label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n}${refs?.length ? ` (${refsMarkdown(lang, refs)})` : ''}`, ''];
+  });
+}
+
 /** The explanation as plain Markdown (no HTML), for pasting into reviews and docs. */
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
-  // (A plain Markdown note keeps its mark, and its word in bold: `> ⚠ **Pitfall:** …`.)
-  for (const n of notesByLevel(ex.notes)) {
-    const { label, body } = splitNote(n, lang);
-    out.push(`> ${label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n}${links(noteRefs(ex, n))}`, '');
-  }
+  out.push(...plainNotes(ex, ex.notes, lang));
   const walk = (tok: Token, depth: number) => {
     out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`);
     for (const c of tok.children) walk(c, depth + 1);
