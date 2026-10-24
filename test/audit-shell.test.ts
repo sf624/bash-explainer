@@ -156,10 +156,20 @@ describe('shell audit fixes', () => {
     assert.doesNotMatch(explain('f() { local y; }').notes.join(), /only inside a function/);
     assert.match(spawnSync('bash', ['-c', 'local y']).stderr.toString(), /can only be used in a function/);
     // In a function, `eval`, `( )` and `$( )` run `local` in it; `bash -c` starts a shell outside any function.
-    for (const src of ["f() { eval 'local y'; }", 'f() { ( local y ); }', 'f() { x=$(local y); }']) assert.doesNotMatch(explain(src).notes.join(), /only inside a function/, src);
+    for (const src of ["f() { eval 'local y'; }", 'f() { ( local y ); }', 'f() { x=$(local y); }', "f() { x=$(eval 'local y'); }", "g() { eval 'local y'; }; eval g"]) assert.doesNotMatch(explain(src).notes.join(), /only inside a function/, src);
     assert.match(explain("f() { bash -c 'local y'; }").notes.join(), /can be used only inside a function/);
-    assert.strictEqual(spawnSync('bash', ['-c', "f() { eval 'local y'; ( local y ); x=$(local y); }; f"]).stderr.toString(), '');
+    assert.strictEqual(spawnSync('bash', ['-c', "f() { eval 'local y'; ( local y ); x=$(local y); x=$(eval 'local y'); }; f; g() { eval 'local y'; }; eval g"]).stderr.toString(), '');
     assert.match(spawnSync('bash', ['-c', "f() { bash -c 'local y'; }; f"]).stderr.toString(), /can only be used in a function/);
+    // A trap's action runs later: EXIT and INT after `f` has returned, outside it. RETURN, and ERR while `f` runs,
+    // run it in `f`, but the model does not tell the signals apart, so they get the pitfall too.
+    const traps: [string, string, boolean][] = [
+      ["f() { trap 'local y' EXIT; }", 'f', true], ["f() { trap 'local y' INT; }", 'f; kill -INT $$', true],
+      ["f() { trap 'local y' RETURN; }", 'f', false], ["f() { trap 'local y' ERR; false; }", 'f', false],
+    ];
+    for (const [src, run, outside] of traps) {
+      assert.match(explain(src).notes.join(), /can be used only inside a function/, src);
+      assert.strictEqual(/can only be used in a function/.test(spawnSync('bash', ['-c', `${src}; ${run}`]).stderr.toString()), outside, src);
+    }
   });
 
   it('a missing ; or newline before then / do is a syntax error', () => {
