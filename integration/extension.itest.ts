@@ -98,6 +98,24 @@ describe('Bash Explainer in VS Code', function () {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
+  it('explains the part at the position, for its range, and offers the whole line', async () => {
+    const { document: doc } = await open(fixture('sample.sh'));
+    const at = lineWith(doc, 'grep -rn');
+    const hoverAt = (col: number) => until('a hover', () => vscode.commands.executeCommand<vscode.Hover[]>('vscode.executeHoverProvider', doc.uri, new vscode.Position(at.line, col)), (h) => !!h?.length);
+    // `-rn`, then its letter `r`: each hover's range is its part.
+    const hovers = await hoverAt(at.col + 5);
+    const range = hovers[0].range!;
+    assert.deepStrictEqual([range.start.character, range.end.character], [at.col + 5, at.col + 8]);
+    const r = (await hoverAt(at.col + 6))[0].range!;
+    assert.deepStrictEqual([r.start.character, r.end.character], [at.col + 6, at.col + 7]);
+    assert.match((hovers[0].contents[0] as vscode.MarkdownString).value, /Whole line/);
+    // In the indentation: the line card, with the link to the whole line.
+    const indented = [...Array(doc.lineCount).keys()].find((l) => /^\s+\S/.test(doc.lineAt(l).text))!;
+    assert.match(await hoverText(doc, indented, 0), /Whole line\]\(command:bashExplainer\.explainLine/);
+    assert.ok((await vscode.commands.getCommands(true)).includes('bashExplainer.explainLine'));
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
   it('explains the shell code in a Dockerfile', async () => {
     const { document: doc } = await open(fixture('hosts', 'Dockerfile'));
     const at = lineWith(doc, 'apk add');

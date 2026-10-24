@@ -109,8 +109,18 @@ describe('the Language Server', function () {
   it('explains a line on hover', async () => {
     const r = await client.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 1, character: 5 } });
     assert.strictEqual(r.result.contents.kind, 'markdown');
-    assert.match(r.result.contents.value, /^\*\*Bash Explainer · line 2\*\*/);
-    assert.match(r.result.contents.value, /`-f "\$1"`/);
+    // The part at the position first (`[[ … ]]`, with the parts around it), then the whole line below a rule.
+    const [part, whole] = r.result.contents.value.split('\n---\n');
+    assert.match(part, /^`if` \*condition\* `then`.* ›\n\n\*\*`\[\[ -f "\$1" \]\]`\*\* · _keyword_\n\nExtended test/);
+    assert.deepStrictEqual(r.result.range, { start: { line: 1, character: 3 }, end: { line: 1, character: 16 } });
+    assert.match(whole, /^\n\*\*Bash Explainer · line 2\*\*/);
+    assert.match(whole, /`-f "\$1"`/);
+    // The word just before the position: `then`; past the end of the line, the whole line alone.
+    const then = await client.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 1, character: 21 } });
+    assert.match(then.result.contents.value, /^\*\*`then`\*\*/m);
+    const end = await client.request('textDocument/hover', { textDocument: { uri: script }, position: { line: 1, character: 60 } });
+    assert.match(end.result.contents.value, /^\*\*Bash Explainer · line 2\*\*/);
+    assert.deepStrictEqual(end.result.range, { start: { line: 1, character: 0 }, end: { line: 1, character: 35 } });
     // Each row ends with the sections of the manual it is about, linked.
     assert.ok(r.result.contents.value.includes('(Bash manual [3.2.5.2](https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html "Conditional Constructs")'), r.result.contents.value);
   });

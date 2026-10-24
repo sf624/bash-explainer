@@ -11,7 +11,7 @@
 
 Explains shell scripts line by line — like [regex101](https://regex101.com/), but for bash.
 
-Hover a line and see what every command, option, redirection and `${…}` does, with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
+Hover any part of a line and see what it does — every command, option, redirection and `${…}` — with worked examples you can edit. Useful for reading unfamiliar scripts, learning the shell, and teaching it.
 
 **No setup, and [offline by design](#privacy):** no network, no AI, no telemetry. In English and Japanese.
 
@@ -23,7 +23,7 @@ Bash Explainer is a VS Code extension, and more: the same explanations and warni
 
 | Where | How |
 | --- | --- |
-| **VS Code** | Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Marketplace, open a shell script and hover a line. See [In VS Code](#in-vs-code). |
+| **VS Code** | Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Marketplace, open a shell script and hover a word. See [In VS Code](#in-vs-code). |
 | VSCodium and other editors using Open VSX | [open-vsx.org/extension/shun-fujioka/bash-explainer](https://open-vsx.org/extension/shun-fujioka/bash-explainer) |
 | vscode.dev and github.dev | The same extension works in VS Code for the Web (press `.` in a GitHub repository). |
 | **Browser**, no installation | The [web version](https://sf624.github.io/bash-explainer/): paste a script and move the cursor. The [development version](https://sf624.github.io/bash-explainer/next/) is built from `main` and may differ from the release. |
@@ -131,7 +131,7 @@ The pitfalls the explanations point out are problems too, each with its code: a 
 
 1. Install **[Bash Explainer](https://marketplace.visualstudio.com/items?itemName=shun-fujioka.bash-explainer)** from the Visual Studio Marketplace.
 2. Open a shell script (`.sh`, `.bash`, …).
-3. Hover any line — or put the cursor on it and press `Ctrl+K Ctrl+E` (`Cmd+K Cmd+E` on macOS).
+3. Hover a word to see what it is. For the whole line, put the cursor on it and press `Ctrl+K Ctrl+E` (`Cmd+K Cmd+E` on macOS), or click **Whole line** in the hover.
 
 For a side pane that follows the cursor, click **Open in panel** at the bottom of the hover.
 
@@ -150,7 +150,7 @@ Requires VS Code 1.85 or later. There are no native dependencies (the parser is 
 | | How | Default |
 | --- | --- | --- |
 | **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the editor title bar or the hover |
-| **Hover** | Hover a line, or press `Ctrl+K Ctrl+E` on the cursor line | on |
+| **Hover** | Hover a word for what it is; press `Ctrl+K Ctrl+E` for the whole cursor line | on |
 | **Inline** | A faint one-line summary at the end of the cursor line | off |
 
 Turn them on or off by clicking **Bash Explainer** in the status bar.
@@ -163,7 +163,9 @@ The panel follows the cursor line by line. Point at a part of the tree to highli
 
 #### Hover
 
-Hover a line to see its breakdown, right where you are reading.
+Hover a word, an option or an operator to see what it is, right where you are reading: its meaning, what kind of command a name is (a badge: keyword, builtin, function, alias, program) and who runs it, and the command it belongs to. Moving to the next word explains that one. In the indentation, the hover shows the line's structure in one line.
+
+For the whole line, press `Ctrl+K Ctrl+E`, choose **Explain Bash on Current Line** from the context menu, or click **Whole line** in the hover: one block per command, with its arguments.
 
 ![Hover](images/hover.gif)
 
@@ -198,7 +200,7 @@ The panel works like regex101:
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Display** | | |
-| `bashExplainer.hover.enabled` | `true` | Hover for the line under the mouse (`Ctrl+K Ctrl+E` works either way) |
+| `bashExplainer.hover.enabled` | `true` | Hover for the part under the mouse (`Ctrl+K Ctrl+E`, the whole line, works either way) |
 | `bashExplainer.hover.followCursor` | `false` | Show the hover whenever the cursor moves |
 | `bashExplainer.hover.followDelay` | `400` | Delay (ms) before it does |
 | `bashExplainer.hover.maxDepth` | `0` | Levels of the explanation tree the hover shows (`0`: all) |

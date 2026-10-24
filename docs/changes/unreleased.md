@@ -181,6 +181,20 @@ A shell script without a shebang says nothing clear, so pasting one keeps the ki
 
 The colours follow the theme when it changes. How the theme is read, and how much each choice keeps parts apart, is in [docs/design/theme-colours.md](../design/theme-colours.md).
 
+## Changed
+
+### The hover explains the part under the mouse
+
+Any hover with a position explains the part there: a word, an option, an operator, a redirection, a `$var`. A part that ends exactly at the position counts too, as an editor finds the word at the cursor (`Ctrl+K Ctrl+I` at the end of the line explains its last word). The hover's range is that part, so moving to the next word explains that one, and the editor highlights what is explained.
+
+- The part comes first: the parts around it in one line (`sudo | xargs › sudo ›`), its label coloured by its kind, the badge of a command name (keyword, builtin, function, alias, program) with who runs it, its meaning, "Same name, also" (`cd` is also bash's builtin, run with `builtin cd`), its own parts, and the command it belongs to. The notes of the line and the examples of the part come after.
+- In the indentation or between statements, a small card shows the line's structure (`grep && echo › grep · echo`) and a **Whole line** link.
+- On a line of a here-document's body, or its closing line, the hover explains the `<<EOF` that starts it (or a `$var` in the body). Before, it explained the whole statement.
+- The whole line opens with `Ctrl+K Ctrl+E`, the context menu's **Explain Bash on Current Line**, or the **Whole line** link: the line, its structure, then one block per command with its badge, where it is, and its arguments two levels deep. Deeper parts are counted ("3 more in the panel").
+- The tree has no glyphs (`├─ └─`) any more: the parts are indented, and their labels are coloured without the code background.
+- `hover.followCursor` shows the part at the cursor.
+- The Language Server's hover (`textDocument/hover`) starts with the part at the position, in plain Markdown, then the whole line below a rule. Its range is the part.
+
 ## Fixed
 
 ### Shell code in host files

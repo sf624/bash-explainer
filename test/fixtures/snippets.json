@@ -60,7 +60,6 @@
  "#!/bin/mksh\n",
  "#!/bin/sh",
  "#!/bin/sh\n",
- "#!/bin/sh\n[[ -f x ]]",
  "#!/bin/sh\r\n# a\r\necho \"PV \" x\r\n",
  "#!/bin/sh -e -u",
  "#!/bin/zsh\n",

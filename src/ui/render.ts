@@ -23,6 +23,9 @@ export const ui = {
     pickFeatures: '使う表示方法を選択（複数可）',
     statusTooltip: 'Bash Explainer: クリックで表示方法を切り替え',
     openInPanel: 'パネルで詳しく見る',
+    hover: {
+      wholeLine: '行全体', wholeLineTitle: '行全体を説明', more: (n: number) => `ほか ${n} 項目はパネルで`, command: 'コマンド: ', in: '位置: ',
+    },
     settings: '設定',
     panel: {
       copy: 'Markdown でコピー', copied: '解説を Markdown としてコピーしました。', expandAll: 'すべて展開', collapseAll: 'すべて折りたたむ',
@@ -103,6 +106,9 @@ export const ui = {
     pickFeatures: 'Choose how explanations are shown (any number)',
     statusTooltip: 'Bash Explainer: click to change how explanations are shown',
     openInPanel: 'Open in panel',
+    hover: {
+      wholeLine: 'Whole line', wholeLineTitle: 'Explain the whole line', more: (n: number) => `${n} more in the panel`, command: 'Command: ', in: 'in: ',
+    },
     settings: 'Settings',
     panel: {
       copy: 'Copy as Markdown', copied: 'Copied the explanation as Markdown.', expandAll: 'Expand all', collapseAll: 'Collapse all',
@@ -252,21 +258,15 @@ function kindColor(kind: Kind, theme: ThemeKind): string {
 }
 
 /** Escape text for inline HTML inside Markdown (entities also stop `*`, `_` etc. acting as Markdown). */
-function esc(text: string): string {
+export function esc(text: string): string {
   return text.replace(/[&<>"'*_`\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/ /g, '&nbsp;');
 }
 
 /** Hover HTML only keeps `<span style>` in exactly this shape: `color:<#hex|var(--vscode-…)>;`. */
-function colored(text: string, kind: Kind, theme: ThemeKind): string {
+export function colored(text: string, kind: Kind, theme: ThemeKind): string {
   return `<span style="color:${kindColor(kind, theme)};">${esc(text)}</span>`;
 }
 
-function contains(t: Token, p: Pos): boolean {
-  const { start, end } = t.span;
-  const afterStart = p.line > start.line || (p.line === start.line && p.character >= start.character);
-  const beforeEnd = p.line < end.line || (p.line === end.line && p.character < end.character);
-  return afterStart && beforeEnd;
-}
 
 /** Split a line into runs, each owned by the deepest token covering it (as the panel does). */
 export function lineSegments(text: string, line: number, items: Token[]): { text: string; kind?: Kind }[] {
@@ -298,60 +298,15 @@ export function lineSegments(text: string, line: number, items: Token[]): { text
   return out;
 }
 
-/**
- * Markdown (with inline HTML, so `supportHtml` must be on) for the hover. Labels are coloured
- * by token kind, and `lineText` is shown regex101-style at the top. Tokens under `at` (the
- * mouse position) are emphasised. `panelLink` is a command URI that opens this line in the panel.
- * `theme` is the kind of the active colour theme, whose colours the labels take.
- */
-export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?: string, lineText?: string, placement: ExamplePlacement = 'first', theme: ThemeKind = 'dark'): string {
-  if (placement !== 'bottom') ex = placeExamples(ex);
-  const t = ui[lang];
-  const out: string[] = [];
-  let header = `**${t.title}** · ${t.line(ex.line + 1)}`;
-  if (ex.shell) header += ` · ${t.forShell(SHELL_NAMES[ex.shell])}`;
-  if (ex.context.length) {
-    header += ' · _' + ex.context.map((c) => `${c.label} (${t.lineShort(c.line + 1)})`).join(' › ') + '_';
-  }
-  out.push(header, '');
-  if (lineText?.trim() && ex.items.length) {
-    const segs = lineSegments(lineText, ex.line, ex.items);
-    while (segs.length && !segs[0].text.trim()) segs.shift();
-    if (segs.length) segs[0].text = segs[0].text.trimStart();
-    out.push('<code>' + segs.map((g) => (g.kind ? colored(g.text, g.kind, theme) : esc(g.text))).join('') + '</code>', '');
-  }
-  // A note, and a token, end with the sections of the manual they are about, small.
-  const small = (refs: readonly string[] | undefined) => (refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : '');
-  for (const n of ex.notes) out.push(`> ${n}${small(noteRefs(ex, n))}`, '');
-  if (!ex.items.length) {
-    out.push(t.empty);
-    return out.join('\n');
-  }
-  const walk = (tok: Token, depth: number) => {
-    // A code part in `<code>`, a placeholder in italics and the muted colour; the parts are a space apart.
-    const label = joinParts(labelParts(tok), (p) => (p.placeholder
-      ? `<i>${colored(p.text, 'comment', theme)}</i>`
-      : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind, theme)}</code>`));
-    const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
-    out.push(`${'  '.repeat(depth)}- ${shown} — ${explained(tok)}${small(tok.refs)}`);
-    // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
-    const examples = tok.examples?.length ? examplesMarkdown(tok.examples, '  '.repeat(depth + 1)) : [];
-    if (placement === 'first') out.push(...examples);
-    for (const c of tok.children) walk(c, depth + 1);
-    if (placement !== 'first') out.push(...examples);
-  };
-  for (const item of ex.items) walk(item, 0);
-  out.push(...examplesMarkdown(ex.examples));
-  const links = [panelLink && `[$(comment-discussion) ${t.openInPanel}](${panelLink})`, `[$(gear) ${t.settings}](command:bashExplainer.openSettings)`];
-  out.push('', '---', links.filter(Boolean).join(' &nbsp;·&nbsp; '));
-  return out.join('\n');
-}
 
-/** Examples as headings with one code block per section, so every line keeps its own row. */
-export function examplesMarkdown(examples: Example[], indent?: string): string[] {
+/**
+ * Examples as headings with one code block per section, so every line keeps its own row. Without `indent`, as blocks of
+ * their own, each after a rule (`rule`); with it, inside a list item.
+ */
+export function examplesMarkdown(examples: Example[], indent?: string, rule = true): string[] {
   const out: string[] = [];
   for (const e of examples) {
-    if (indent === undefined) out.push('', '---', '', `#### ${e.title}`);
+    if (indent === undefined) out.push('', ...(rule ? ['---', ''] : []), `#### ${e.title}`);
     else out.push(`${indent}##### ${e.title}`);
     if (e.note) out.push(...(indent === undefined ? ['', `> ${e.note}`] : [`${indent}> ${e.note}`]));
     for (const sec of e.sections) {
