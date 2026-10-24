@@ -3,6 +3,7 @@ import { descendants, field, fields } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue } from './staticword';
+import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
@@ -17,6 +18,36 @@ const pick = (lang: Lang) => (ja: string, en: string) => (lang === 'ja' ? ja : e
 function varName(n: SyntaxNode): string | undefined {
   const v = n.namedChildren.find((c) => c.type === 'variable_name');
   return v?.text;
+}
+
+/**
+ * The variable an `rm -r` word starts with when an empty value leaves a path from the root (`$DIR/*`, `"$DIR"/*`,
+ * `"${DIR}/x"`, `"$DIR/"*`, `"$DIR""/x"`): the expansion, its name, what is left (`/*`), and whether it is the plain
+ * value (`$v`, `${v}`, `${v:-}`), which `${v:?}` can stand for. Not for an expansion that is never empty (`${#v}`,
+ * `${v:-x}`, `${v:?}`), nor HOME and PWD, which are always set.
+ */
+function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; plain: boolean } | undefined {
+  const first = w.type === 'concatenation' ? w.namedChildren[0] : w.type === 'string' ? w : undefined;
+  if (!first) return undefined;
+  // In quotes, the expansion right after the opening quote; a string of only it is skipped over (`"$DIR""/x"`).
+  const inner = first.type === 'string' ? first.namedChildren[0] : first;
+  if (!inner || inner.startIndex !== first.startIndex + (first === inner ? 0 : 1)) return undefined;
+  if (inner.type !== 'simple_expansion' && inner.type !== 'expansion') return undefined;
+  const v = varName(inner);
+  if (!v || ['HOME', 'PWD'].includes(v)) return undefined;
+  const alone = first !== inner && first.namedChildren.length === 1 && first.text === `"${inner.text}"`;
+  const left = alone ? w.text.slice(first.endIndex - w.startIndex) : (first !== inner ? '"' : '') + w.text.slice(inner.endIndex - w.startIndex);
+  if (!/^["']?\//.test(left)) return undefined;
+  if (inner.type === 'simple_expansion') return { e: inner, v, left, plain: true };
+  const p = parseExpansion(inner.text);
+  if (!p || p.prefix === '#') return undefined;
+  const word = p.parts.find((q) => q.role === 'word')?.text ?? '';
+  if (!p.prefix && (!p.op || (['-', ':-', '=', ':='].includes(p.op) && !word))) return { e: inner, v, left, plain: true };
+  // Never empty: an error when empty, or a default of literal text when empty. (`${v-x}` is empty when v is set
+  // and empty; `${v:+x}` when v is empty; `${v:-$w}` when w is empty too.)
+  if (p.op === ':?' || ((p.op === ':-' || p.op === ':=') && /^[^$`'"\\]+$/.test(word))) return undefined;
+  // `${v%…}`, `${v/…}`, `${v:1}`, `${v:+x}`, `${v@Q}` (unset v), `${!v}`…: may be empty, with no form that `:?` can stand for.
+  return { e: inner, v, left, plain: false };
 }
 
 /** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */
@@ -74,23 +105,21 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         // `rm -rf $DIR/…`: an empty DIR removes from the root.
         if (name === 'rm' && a.some((w) => /^-[a-zA-Z]*[rR]/.test(w.text) || w.text === '--recursive')) {
           for (const w of a) {
-            let first = w.type === 'concatenation' || w.type === 'string' ? w.namedChildren[0] : undefined;
-            if (!first) continue;
-            // What follows the variable (`/*`; `/x"` in `"$DIR/x"`).
-            const rest = w.text.slice(first.endIndex - w.startIndex);
-            // `"$DIR"/*`: the quotes keep the glob, and an empty DIR still leaves `/*`.
-            if (first.type === 'string' && first.namedChildren.length === 1 && first.text === `"${first.namedChildren[0].text}"`) first = first.namedChildren[0];
-            if (first.type !== 'simple_expansion' && first.type !== 'expansion') continue;
-            // HOME and PWD are always set; special parameters such as `$$` have no name to put in `${…:?}`.
-            const v = varName(first);
-            if (v && !['HOME', 'PWD'].includes(v) && rest.startsWith('/') && !/:\?/.test(first.text)) {
-              // The word with `${v:?}` for the variable, its expansions quoted and its glob kept (`"${DIR:?}"/*`).
-              const safe = quoteExpansions(w, new Map([[first, `\${${v}:?}`]]));
-              const left = w.type === 'string' ? `"${rest}` : rest;
+            const t = rootTarget(w);
+            if (!t) continue;
+            const { e, v, left } = t;
+            const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
+            if (safe) {
               add(`\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
                 `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
-              break;
+            } else {
+              // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
+              const what = t.plain ? v : e.text;
+              const check = `[ -n "${t.plain ? `$${v}` : e.text}" ] || exit 1`;
+              add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${check}\` と書くと、空のときは止まります`,
+                `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${check}\` before it to stop when it is empty`);
             }
+            break;
           }
         }
         // `read` without -r eats backslashes.

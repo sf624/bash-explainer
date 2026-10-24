@@ -11,6 +11,7 @@ import * as os from 'os';
 import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { MESSAGES, fact, said, type FactId } from '../src/messages';
+import { runBash } from './support/bash';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -47,7 +48,7 @@ describe('pitfalls', () => {
   }
 
   const fine = [
-    'x=1', 'rm -rf "${DIR:?}/build"', 'rm -rf "$HOME/.cache"', 'rm -f "$tmp"', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]',
+    'x=1', 'rm -rf "${DIR:?}/build"', 'rm -rf ""/x', 'rm -rf "a$DIR/x"', 'rm -rf "$DIR"', 'rm -rf "$HOME/.cache"', 'rm -f "$tmp"', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]',
     '[ -f x ] && [ -n y ]', '[ "$a" \\< "$b" ]', '[ -f x ] || [ -n y ]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]', 'read -r line', 'read', 'read -n 1 key',
     'local out', 'out=$(cmd)', 'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x',
   ];
@@ -55,19 +56,58 @@ describe('pitfalls', () => {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(notes(src), []));
   }
 
-  it('the rewrite of `rm -rf $DIR/*` keeps the glob and stops when DIR is empty, in bash', () => {
-    const safe = notes('rm -rf $DIR/*').join('\n').match(/Write `(.*)` to stop/)![1];
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rm-'));
-    try {
-      fs.mkdirSync(path.join(dir, 'a b'));
-      for (const f of ['x', 'y']) fs.writeFileSync(path.join(dir, 'a b', f), '');
-      const words = (value: string) => spawnSync('bash', ['-c', `DIR=${value}; printf '<%s>\\n' ${safe}`], { cwd: dir, encoding: 'utf8' });
-      assert.strictEqual(words("'a b'").stdout, '<a b/x>\n<a b/y>\n');
-      const empty = words("''");
-      assert.strictEqual(empty.stdout, '');
-      assert.match(empty.stderr, /DIR: parameter null or not set/);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+  describe('`rm -r` of a path from a variable that may be empty, in bash', () => {
+    // The word, and the value that leaves a path from the root (`DIR=/` for `${DIR%/}`: an empty value would too).
+    // (And a value that does not, for the check before the line: `DIR=nospace/` if none.)
+    const roots: [string, string, string?][] = [
+      ['$DIR/*', 'DIR='], ['"$DIR"/*', 'DIR='], ['"${DIR}/x"', 'DIR='], ['"$DIR/"*', 'DIR='], ['"$DIR""/x"', 'DIR='], ['${DIR:-}/x', 'unset DIR'],
+      ['$DIR/${x:-*.txt}', 'DIR='], ['${DIR%/}/*', 'DIR=/'], ['"${DIR%/}"/*', 'DIR=/'], ['${DIR:+x}/*', 'DIR='], ['${DIR-/a}/x', 'DIR='], ['${DIR?}/x', 'DIR='],
+      ['${DIR:-$e}/x', 'DIR='], ['${DIR@Q}/x', 'unset DIR'], ['${!DIR}/x', 'e=; DIR=e', 'e=x; DIR=e'],
+    ];
+    // An expansion that is never empty: a length, a literal default, an error when empty. (The word, the expansion.)
+    const never: [string, string][] = [['${#DIR}/x', '${#DIR}'], ['${DIR:-/tmp/x}/*', '${DIR:-/tmp/x}'], ['${DIR:=/a}/x', '${DIR:=/a}'], ['${DIR:?}/*', '${DIR:?}'],
+      ['"${DIR:?}"/*', '${DIR:?}'], ['"${DIR:?}/x"', '${DIR:?}']];
+    let dir: string;
+    before(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-rm-'));
+      for (const d of ['nospace', 'with space']) {
+        fs.mkdirSync(path.join(dir, d));
+        for (const f of ['x', 'y']) fs.writeFileSync(path.join(dir, d, f), '');
+      }
+    });
+    after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const sh = (script: string) => runBash(script, { cwd: dir });
+    for (const [word, empty, good = 'DIR=nospace/'] of roots) {
+      it(`rm -rf ${word}: warned, and the rewrite stops on ${empty}`, () => {
+        const text = notes(`rm -rf ${word}`).join('\n');
+        // What the note says it becomes is what bash makes of it.
+        const left = text.match(/this becomes `rm -r (.*?)`, deleting from the root/)?.[1];
+        assert.ok(left, text || '(none)');
+        assert.strictEqual(sh(`${empty}; printf '<%s>\\n' ${word}`).stdout, sh(`printf '<%s>\\n' ${left}`).stdout);
+        assert.match(sh(`${empty}; printf '<%s>\\n' ${word}`).stdout, /^<\//);
+        const safe = text.match(/Write `(.*)` to stop when it is empty/)?.[1];
+        const check = text.match(/Write `(.*)` before it to stop when it is empty/)?.[1];
+        if (safe) {
+          // The same words as the original for a value without spaces, and with spaces kept; nothing when empty.
+          assert.strictEqual(sh(`DIR='with space'; printf '<%s>\\n' ${safe}`).stdout, sh(`DIR=nospace; printf '<%s>\\n' ${word}`).stdout.replace(/nospace/g, 'with space'));
+          const stopped = sh(`${empty}; printf '<%s>\\n' ${safe}`);
+          assert.strictEqual(stopped.stdout, '');
+          assert.match(stopped.stderr, /DIR: parameter null or not set/);
+        } else {
+          assert.ok(check, text);
+          assert.strictEqual(sh(`${empty}; ${check}; echo ran`).stdout, '');
+          assert.strictEqual(sh(`${good}; ${check}; echo ran`).stdout, 'ran\n');
+        }
+      });
+    }
+    for (const [word, e] of never) {
+      it(`says nothing about rm -rf ${word}: ${e} is never empty`, () => {
+        assert.deepStrictEqual(notes(`rm -rf ${word}`), []);
+        for (const empty of ['DIR=', 'unset DIR']) {
+          const r = sh(`${empty}; v="${e}"; printf %s "$v"`);
+          assert.ok(r.status !== 0 || r.stdout !== '', `${empty}: ${JSON.stringify(r)}`);
+        }
+      });
     }
   });
 
