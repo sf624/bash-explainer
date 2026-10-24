@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { ExplainService } from '../service';
 import { ThemeKind } from './palette';
-import { pruneDepth, toMarkdown } from './render';
+import { pruneDepth } from './render';
+import { HoverLayout, hoverSpan, layoutMarkdown } from './hoverLayouts';
 
 export class HoverController implements vscode.HoverProvider, vscode.Disposable {
   private registration: vscode.Disposable | undefined;
@@ -46,10 +47,16 @@ export class HoverController implements vscode.HoverProvider, vscode.Disposable 
     };
     const args = encodeURIComponent(JSON.stringify([{ uri: doc.uri.toString(), line: pos.line }]));
     const link = `command:bashExplainer.openPanel?${args}`;
-    const md = new vscode.MarkdownString(toMarkdown(ex, this.service.lang, forced ? undefined : pos, link, doc.lineAt(pos.line).text, this.service.examplePlacement, themeKind()), true);
+    // PROTOTYPE: the layout comes from an unregistered setting (design study).
+    const layout = vscode.workspace.getConfiguration('bashExplainer').get<HoverLayout>('proto.hoverLayout', 'list');
+    const at = forced ? undefined : pos;
+    const md = new vscode.MarkdownString(layoutMarkdown(layout, { ex, lang: this.service.lang, at, panelLink: link, lineText: doc.lineAt(pos.line).text, placement: this.service.examplePlacement, theme: themeKind() }), true);
     md.supportHtml = true;
     md.isTrusted = { enabledCommands: ['bashExplainer.openPanel', 'bashExplainer.openSettings'] };
-    return new vscode.Hover(md, doc.lineAt(pos.line).range);
+    const span = hoverSpan(layout, ex, at);
+    const lineRange = doc.lineAt(pos.line).range;
+    const range = span ? new vscode.Range(span.start.line < pos.line ? lineRange.start : new vscode.Position(span.start.line, span.start.character), span.end.line > pos.line ? lineRange.end : new vscode.Position(span.end.line, span.end.character)) : lineRange;
+    return new vscode.Hover(md, range);
   }
 
   private onSelection(e: vscode.TextEditorSelectionChangeEvent): void {

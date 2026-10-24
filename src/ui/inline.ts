@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { ExplainService } from '../service';
+import { chainAt } from './hoverLayouts';
+import { explained } from './render';
 
 /** Faint one-line summary after the cursor line. */
 export class InlineController implements vscode.Disposable {
@@ -53,7 +55,18 @@ export class InlineController implements vscode.Disposable {
       return;
     }
     const max = this.service.settings['inline.maxLength'];
-    const text = ex.summary.length > max ? ex.summary.slice(0, max - 1) + '…' : ex.summary;
+    // PROTOTYPE: `cursor` says what the part under the cursor is (as eldoc does), and the command it belongs to.
+    let said = ex.summary;
+    if (vscode.workspace.getConfiguration('bashExplainer').get<string>('proto.inlineStyle', 'summary') === 'cursor') {
+      const p = editor.selection.active;
+      const chain = chainAt(ex.items, { line: p.line, character: p.character });
+      const target = chain[chain.length - 1];
+      if (target) {
+        const card = [...chain].reverse().find((t) => t !== target && t.name);
+        said = `${target.label} — ${explained(target)}${card ? `  ·  ${card.label}${card.name!.said.short}` : ''}`;
+      }
+    }
+    const text = said.length > max ? said.slice(0, max - 1) + '…' : said;
     const end = editor.document.lineAt(line).range.end;
     editor.setDecorations(this.decoration, [{
       range: new vscode.Range(end, end),

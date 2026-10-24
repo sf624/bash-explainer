@@ -5,6 +5,7 @@ import { ExplainService } from './service';
 import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
 import { InlineController } from './ui/inline';
+import { InlayHintsController } from './ui/inlayHints';
 import { PanelController } from './ui/panel';
 import { SemanticTokensController } from './ui/semanticTokens';
 import { Feature, ui } from './ui/render';
@@ -15,6 +16,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const hover = new HoverController(service);
   const panel = new PanelController(ctx, service);
   const inline = new InlineController(service);
+  const hints = new InlayHintsController(service);
   const diagnostics = new DiagnosticsController(service);
   const semantic = new SemanticTokensController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -35,7 +37,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
 
   ctx.subscriptions.push(
-    service, hover, panel, inline, diagnostics, semantic, status,
+    service, hover, panel, inline, hints, diagnostics, semantic, status,
     vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
     vscode.commands.registerCommand('bashExplainer.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${ctx.extension.id}`)),
     vscode.commands.registerCommand('bashExplainer.openPanel', (target?: { uri: string; line: number }) => {

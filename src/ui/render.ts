@@ -244,7 +244,7 @@ const KIND_ROLE: Record<Kind, Role | 'comment' | 'error'> = {
 };
 
 /** The CSS colour of a token kind in the hover, in a theme of that kind (src/ui/palette.ts). */
-function kindColor(kind: Kind, theme: ThemeKind): string {
+export function kindColor(kind: Kind, theme: ThemeKind): string {
   const role = KIND_ROLE[kind];
   if (role === 'comment') return 'var(--vscode-descriptionForeground)';
   if (role === 'error') return errorColour(theme);
@@ -252,16 +252,16 @@ function kindColor(kind: Kind, theme: ThemeKind): string {
 }
 
 /** Escape text for inline HTML inside Markdown (entities also stop `*`, `_` etc. acting as Markdown). */
-function esc(text: string): string {
+export function esc(text: string): string {
   return text.replace(/[&<>"'*_`\\[\]~|#$]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/ /g, '&nbsp;');
 }
 
 /** Hover HTML only keeps `<span style>` in exactly this shape: `color:<#hex|var(--vscode-…)>;`. */
-function colored(text: string, kind: Kind, theme: ThemeKind): string {
+export function colored(text: string, kind: Kind, theme: ThemeKind): string {
   return `<span style="color:${kindColor(kind, theme)};">${esc(text)}</span>`;
 }
 
-function contains(t: Token, p: Pos): boolean {
+export function contains(t: Token, p: Pos): boolean {
   const { start, end } = t.span;
   const afterStart = p.line > start.line || (p.line === start.line && p.character >= start.character);
   const beforeEnd = p.line < end.line || (p.line === end.line && p.character < end.character);
