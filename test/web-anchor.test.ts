@@ -78,6 +78,7 @@ describe('the panel keeps the row acted on in place', function () {
       await until('the line explained', async () => (await panel().locator('#line').textContent()) ?? '', (t) => t.includes(LINE.slice(0, 12)));
       await chooseView(page, view);
       if (view === 'tree') await until('the tree', () => panel().locator('#reading-tree li').count(), (n) => n > 20);
+      await still(panel());
       return { ctx, panel: panel() };
     },
   });
@@ -95,6 +96,9 @@ describe('the panel keeps the row acted on in place', function () {
         // (The harness starts at the step kept as `level: 2`: step 6.)
         await page.locator('#layers button.step[data-step="8"]').click();
         await until('the tree', () => page.locator('#reading-tree li').count(), (n) => n > 20);
+        // (The rows step 8 adds grow for a while, and those above the screen push the rest down: a test that read the
+        // page meanwhile chose a row that was off the screen by the time it was clicked, with rows still growing under it.)
+        await still(page.mainFrame());
       }
       return { ctx, panel: page.mainFrame() };
     },
@@ -128,6 +132,15 @@ describe('the panel keeps the row acted on in place', function () {
   const scrollTo = (panel: Frame, y: number | 'end') => panel.evaluate(`(() => { window.scrollTo({ top: ${y === 'end' ? 'document.documentElement.scrollHeight' : y}, behavior: 'instant' }); return scrollY; })()`) as Promise<number>;
   const spacer = (panel: Frame) => panel.evaluate(`document.getElementById('scroll-spacer').getBoundingClientRect().height`) as Promise<number>;
   const height = (panel: Frame) => panel.evaluate('innerHeight') as Promise<number>;
+  /** What a failure near the end of the page needs to say: the spacer, the scroll position, where the content ends, and the row's place and its subtree's height. */
+  const where = (panel: Frame, view: 'list' | 'tree', path: string) => panel.evaluate(`(() => {
+    const li = document.querySelector(${JSON.stringify(view === 'list' ? '#tree li[data-path="' : '#reading-tree li[data-path="')} + ${JSON.stringify(path)} + '"]');
+    const r = li && li.getBoundingClientRect(), row = li && li.firstElementChild.getBoundingClientRect();
+    return JSON.stringify({ path: ${JSON.stringify(path)}, spacer: document.getElementById('scroll-spacer').getBoundingClientRect().height, y: scrollY, h: innerHeight,
+      scrollHeight: document.documentElement.scrollHeight, content: document.documentElement.getBoundingClientRect().bottom + scrollY,
+      rowTop: row && row.top, rowBottom: row && row.bottom, subtree: r && r.height, expanded: li && li.getAttribute('aria-expanded'), collapsed: li && li.classList.contains('collapsed'),
+      moving: document.getAnimations().filter((a) => a.playState === 'running').length });
+  })()`) as Promise<string>;
   const still = (panel: Frame) => until('the motion over', () => panel.evaluate(`document.getAnimations().filter((a) => !(a instanceof CSSTransition) && a.playState === 'running').length`), (n) => n === 0, 3000);
 
   /**
@@ -184,8 +197,9 @@ describe('the panel keeps the row acted on in place', function () {
         const rows = onScreenRows(await foldable(panel, view), h);
         assert.ok(rows.length, 'a row to fold on the screen');
         const row = rows[rows.length - 1];
+        const was = await where(panel, view, row.path);
         await click(panel, view, row.path, 'folded at the end', animations);
-        assert.ok(await spacer(panel) > 0, 'a spacer holds the page');
+        assert.ok(await spacer(panel) > 0, `a spacer holds the page: before ${was}, after ${await where(panel, view, row.path)}`);
         await click(panel, view, row.path, 'unfolded again', animations);
         await click(panel, view, row.path, 'folded again', animations);
         await scrollAway(panel, view, row.path);
