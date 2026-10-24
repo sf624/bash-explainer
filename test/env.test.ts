@@ -285,6 +285,8 @@ describe('explanations from the execution environment', () => {
     assert.strictEqual(pitfalls("x=1\nbash -c 'echo $x; x=2'", 'en', 1).length, 1);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y:-none} ${#y} ${y+set} ${y:=d} ${y?}'", 'en', 1), []);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'for y in a; do echo $y; done; f() { local y=1; echo $y; }; f'", 'en', 1), []);
+    // (The new shell sets `$_` itself; so does a remote one.)
+    for (const src of ["_=1\nbash -c 'echo ${_} $_'", "_=1\nenv -i bash -c 'echo $_'", "_=1\nssh h 'echo $_'"]) assert.deepStrictEqual(pitfalls(src, 'en', 1), [], src);
     // su keeps the environment (not with a login shell); docker run -e and --env-file pass variables.
     assert.match(pitfalls("export x=1\nsu -l -c 'echo $x'", 'en', 1)[0], /`su -c` passes none of this script's variables/);
     assert.deepStrictEqual(pitfalls("export x=1\nsu -c 'echo $x'", 'en', 1), []);
@@ -294,6 +296,9 @@ describe('explanations from the execution environment', () => {
     assert.strictEqual(pitfalls("export x=1\ndocker run -e y img sh -c 'echo $x'", 'en', 1).length, 1);
     if (!hasBash) this.skip();
     assert.strictEqual(bash("x=1; bash -c 'echo \"[$x]\"; x=2'; y=1; bash -c 'echo ${y:-none} ${#y} ${y+set}'"), '[]\nnone 0\n');
+    // (`$_` starts as the shell's path. The `; true` keeps bash from running the last command in place, which
+    // leaves another value in `_`, never `1`.)
+    assert.match(bash("_=1; bash -c 'echo \"[${_}] [$_]\"'; true"), /^\[\/\S+\] \[\/\S+\]\n$/);
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
   });
   it('reads `$_` after the commands of its own process only', function () {

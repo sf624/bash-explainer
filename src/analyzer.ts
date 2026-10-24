@@ -3184,7 +3184,7 @@ export class Analyzer {
    * `x=1; bash -c 'echo "$x"'`: a variable of this script that a string run by another shell reads (in single
    * quotes, so that shell expands it), which that shell does not get: it is not exported, or a link on the way
    * passes no variables (`env -i`, sudo, ssh: src/semantics/env.ts). Not one the string sets itself, nor one the
-   * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one that comes from the environment.
+   * command or a wrapper sets for it (`x=1 bash -c …`, `env x=1 …`), nor one from the environment or set by that shell (`$_`).
    */
   private unpassedVariables(env: ExecEnv, words: SyntaxNode[]): void {
     // The string, read as the script it is (src/semantics/state.ts): the variables it reads, and whether each
@@ -3201,7 +3201,7 @@ export class Analyzer {
     for (const e of reads) {
       const v = e.text.replace(/\W/g, '');
       const x = st.variables.get(v);
-      if (!x || x.set !== 'on' || wellKnownVariables[v] || script.model.at(e).run.variables.has(v)) continue;
+      if (!x || x.set !== 'on' || wellKnownVariables[v] || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
       const exported = x.attrs.x?.state ?? 'off';
       if (variables === 'none') {
         this.cx.extraNotes.push(...this.say(remote
