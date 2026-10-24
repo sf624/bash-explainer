@@ -323,16 +323,23 @@
           "minimum": 0,
           "markdownDescription": "%config.hover.maxDepth%"
         },
+        "bashExplainer.hints.names": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.hints.names%"
+        },
         "bashExplainer.inline.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "%config.inline.enabled%"
+          "markdownDescription": "%config.inline.enabled%",
+          "markdownDeprecationMessage": "%config.inline.deprecated%"
         },
         "bashExplainer.inline.maxLength": {
           "type": "number",
           "default": 120,
           "minimum": 20,
-          "description": "%config.inline.maxLength%"
+          "description": "%config.inline.maxLength%",
+          "markdownDeprecationMessage": "%config.inline.deprecated%"
         },
         "bashExplainer.panel.autoOpen": {
           "type": "boolean",

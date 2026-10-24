@@ -7,7 +7,7 @@ README.md and README.ja.md use these four files from this directory, recorded by
 | `demo.gif` | The opening demo: panel (the explanation tree, then scroll to the example and edit its input) → hover | about 10 s |
 | `hover.gif` | Hover mode | about 15 s |
 | `panel.gif` | Panel mode | about 17 s |
-| `inline.png` | Inline mode (still image) | — |
+| `name-hints.png` | Name hints (still image) | — |
 
 `action-annotations.png`, used by cli/README.md, is a screenshot of a pull request on GitHub, taken by hand: the action's warnings on a script's lines under *Files changed*.
 
@@ -72,7 +72,7 @@ The settings are the same for every image: Dark Modern theme, 16px editor font, 
 | `demo.gif` | defaults (hover on) | With the cursor on line 13 (`grep -rn "ERROR" "$LOG_DIR" 2>/dev/null >> errors.txt`), open the panel from the editor title bar. The panel first shows the explanation tree; scroll down to the example under the pattern `"ERROR"`, click into its input and turn `RROR` into `ERROR`: the matching lines change. Then hover line 2 (`set -euo pipefail`). |
 | `hover.gif` | defaults (hover on) | Hover line 2 (`set -euo pipefail`), line 4 (`${1:-…}`) and line 7 (inside the loop; the header says "for loop"). |
 | `panel.gif` | `hover.enabled: false`, `panel.autoOpen: true` | Move down from line 1 to line 11 with the arrow keys, point at the `-exec` row of the tree, then go on to line 12. |
-| `inline.png` | `hover.enabled: false`, `inline.enabled: true` | Cursor on line 8, so its summary shows at the end of the line. Cropped to the editor lines. |
+| `name-hints.png` | `hover.enabled: false`; the file `images/hints.sh` | Cursor at the end of line 12; the hints show after the names that do not run what they suggest. Cropped to the editor lines. |
 
 To change a scenario, edit `record()` in the script.
 

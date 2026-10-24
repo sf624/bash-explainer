@@ -151,9 +151,9 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- | --- |
 | **パネル** | カーソルに追従するサイドペイン。regex101 のように色分けし、具体例の入力を書き換えて結果を確かめられる | エディタのタイトルバーやホバーから開く |
 | **ホバー** | 単語にマウスを乗せると、その部分の解説。カーソル行で `Ctrl+K Ctrl+E` を押すと行全体 | オン |
-| **インライン** | カーソル行の行末に1行の要約を薄く表示 | オフ |
+| **コマンド名のヒント** | 名前どおりのものを実行しないコマンド名（関数になっている `cd`、`sudo cd`）の後ろにヒントを表示 | オン |
 
-ステータスバーの **Bash Explainer** をクリックすると、それぞれオン/オフできます。
+ホバーとパネルは、ステータスバーの **Bash Explainer** をクリックするとオン/オフできます。コマンド名のヒントは `bashExplainer.hints.names` で切り替えます。
 
 #### パネル
 
@@ -169,11 +169,13 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 ![ホバー](images/hover.gif)
 
-#### インライン
+#### コマンド名のヒント
 
-カーソル行の行末に、1行の要約が出ます。
+名前から想像するものを実行しないコマンド名の後ろに、薄い文字でヒントを表示します。ビルトインやプログラムを隠す関数やエイリアス、`enable -n` で無効にしたビルトイン、スクリプトの中で bash が展開しないエイリアス、`sudo cd`（`cd` というプログラムはない）、何も実行されない名前です。ヒントにマウスを乗せると、何が実行されるか、同じ名前でほかに何があるかを表示し、クリックするとその行をパネルで開きます。VS Code の `editor.inlayHints.enabled` で、インレイヒント全体をオン・オフ（または `Ctrl+Alt` を押している間だけ表示）できます。
 
-![インライン](images/inline.png)
+![コマンド名のヒント](images/name-hints.png)
+
+カーソル行の行末に要約を表示するインライン表示は削除しました。`bashExplainer.inline.*` には効果がありません。
 
 ### パネル
 
@@ -192,7 +194,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | --- | --- |
 | Bash Explainer: カーソル行の bash を解説 | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: bash の解説パネルを開く | エディタのタイトルバー、ホバー |
-| Bash Explainer: ホバー・インライン・パネルの表示を切り替え | ステータスバー |
+| Bash Explainer: ホバーとパネルの表示を切り替え | ステータスバー |
 | Bash Explainer: 設定を開く | ホバー、パネル |
 
 ### 設定
@@ -208,8 +210,8 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみと「読まれ方」のステップの切り替えのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
 | `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。VS Code だけ |
 | `bashExplainer.highlight.enabled` | `false` | 解説と同じ構文木からシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。Web 版は常にこの色分け |
-| `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
-| `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
+| `bashExplainer.hints.names` | `true` | 名前どおりのものを実行しないコマンド名の後ろにヒントを表示 |
+| `bashExplainer.inline.enabled`・`bashExplainer.inline.maxLength` | | 削除済み。効果はない |
 | `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
 | `bashExplainer.examples.disabled` | `[]` | 表示しない具体例の種類: `regex`・`sed`・`awk`・`jq`・`yq`・`perl`・`textFilters`・`pipeline`・`expansion`・`printf`・`glob`・`test`・`xargs`・`read`・`getopt`・`gitLog`・`date` |
 | `bashExplainer.examples.inHover` | `true` | ホバーにも具体例を表示する（オフならパネルだけ） |
@@ -268,10 +270,10 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
 | `examples.placement`・`panel.animations` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
-| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
-| `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen`・`panel.colors` | | | |
+| `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`hints.names`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
+| `hover.followCursor`・`hover.followDelay`・`panel.autoOpen`・`panel.colors` | | | |
 
-空欄は、VS Code にしかないもの（ホバー、インライン要約、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
+空欄は、VS Code にしかないもの（ホバー、ヒント、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
 
 - **Web 版:** 上のバーの ⚙ ボタンで開きます。変更はすぐに反映され、ブラウザに保存されます（localStorage）。**既定値に戻す** で設定が戻り、**保存したデータを消去**（確認あり）で、ページがブラウザに保存しているものすべて（設定、テーマ、画面の分割の大きさ、閲覧モード、初回のヒント）を消して、すぐに既定の状態に戻します。ページの言語、シェル、yq のメニューは、同じ設定です。シェルと yq のメニューはメニュー（☰）にあり、広い画面では上のバーにもあります。**ファイルにエクスポート**（または **コピー**）で、変えた設定を下の形式の設定ファイルにでき、コマンドラインツールや VS Code の `settings.json` で使えます。**ファイルからインポート…**（ダイアログへのファイルのドロップや、JSON の貼り付けも可）で、ページの設定をそのファイルの内容に置き換えます。読み込まなかったキーは一覧で表示します。
 - **コマンドラインと Language Server:** VS Code の `settings.json` と同じキー（`bashExplainer.` は付けても付けなくてもよい）の JSON ファイルです（コメントも書けます）。`--config` で指定したファイル、なければ `$BASH_EXPLAINER_CONFIG`、なければ `$XDG_CONFIG_HOME/bash-explainer/settings.json`（既定では `~/.config/bash-explainer/settings.json`）を読みます。1つの設定は `--set キー=値` でも変えられます。詳しくはツールの README の [Settings](cli/README.md#settings) を参照してください（英語）。

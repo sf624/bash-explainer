@@ -161,19 +161,32 @@ describe('Bash Explainer in VS Code', function () {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
-  it('shows the inline summary and the hover at the cursor', async () => {
-    await config().update('inline.enabled', true, vscode.ConfigurationTarget.Global);
-    try {
-      const editor = await open(fixture('sample.sh'));
-      for (let line = 0; line < 8; line++) {
-        editor.selection = new vscode.Selection(line, 0, line, 0);
-        await sleep(100);
-      }
-      await vscode.commands.executeCommand('bashExplainer.showAtCursor');
-      await sleep(500);
-    } finally {
-      await config().update('inline.enabled', undefined, vscode.ConfigurationTarget.Global);
+  it('shows the whole line at the cursor', async () => {
+    const editor = await open(fixture('sample.sh'));
+    for (let line = 0; line < 8; line++) {
+      editor.selection = new vscode.Selection(line, 0, line, 0);
+      await sleep(100);
     }
+    await vscode.commands.executeCommand('bashExplainer.showAtCursor');
+    await sleep(500);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  });
+
+  it('gives a hint after a command name that does not run what it suggests, unless hints.names is off', async () => {
+    const doc = await vscode.workspace.openTextDocument({ language: 'shellscript', content: 'cd() { builtin cd "$@"; }\ncd /tmp\n' });
+    await open(doc);
+    const hints = () => vscode.commands.executeCommand<vscode.InlayHint[]>('vscode.executeInlayHintProvider', doc.uri, new vscode.Range(0, 0, 2, 0));
+    const got = await until('a name hint', hints, (h) => (h ?? []).length > 0);
+    const label = got[0].label as vscode.InlayHintLabelPart[];
+    assert.deepStrictEqual([got[0].position.line, got[0].position.character, label[0].value], [1, 2, 'function, not the builtin']);
+    assert.strictEqual(label[0].command?.command, 'bashExplainer.openPanel');
+    await config().update('hints.names', false, vscode.ConfigurationTarget.Global);
+    try {
+      await until('no name hint', hints, (h) => (h ?? []).length === 0);
+    } finally {
+      await config().update('hints.names', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   });
 
   it('runs where there is no network at all', async function () {

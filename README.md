@@ -151,9 +151,9 @@ Requires VS Code 1.85 or later. There are no native dependencies (the parser is 
 | --- | --- | --- |
 | **Panel** | A side pane that follows the cursor, colour-coded like regex101, where you can edit the example input and watch the result change | open it from the editor title bar or the hover |
 | **Hover** | Hover a word for what it is; press `Ctrl+K Ctrl+E` for the whole cursor line | on |
-| **Inline** | A faint one-line summary at the end of the cursor line | off |
+| **Name hints** | A hint after a command name that does not run what it suggests (`cd` that is a function, `sudo cd`) | on |
 
-Turn them on or off by clicking **Bash Explainer** in the status bar.
+Turn the hover and the panel on or off by clicking **Bash Explainer** in the status bar; the name hints with `bashExplainer.hints.names`.
 
 #### Panel
 
@@ -169,11 +169,13 @@ For the whole line, press `Ctrl+K Ctrl+E`, choose **Explain Bash on Current Line
 
 ![Hover](images/hover.gif)
 
-#### Inline
+#### Name hints
 
-A one-line summary at the end of the cursor line.
+A command name gets a faint hint after it where it does not run what a reader would guess: a function or an alias that hides a builtin or a program, a builtin turned off by `enable -n`, an alias that bash does not expand in a script, `sudo cd` (there is no `cd` program), a name that runs nothing. Hover the hint for what runs and what else the name is; click it to open the line in the panel. VS Code's `editor.inlayHints.enabled` turns all inlay hints on or off (or on while `Ctrl+Alt` is held).
 
-![Inline](images/inline.png)
+![Name hints](images/name-hints.png)
+
+The inline summary at the end of the cursor line was removed: `bashExplainer.inline.*` no longer has an effect.
 
 ### The panel
 
@@ -192,7 +194,7 @@ The panel works like regex101:
 | --- | --- |
 | Bash Explainer: Explain Bash on Current Line | `Ctrl+K Ctrl+E` / `Cmd+K Cmd+E` |
 | Bash Explainer: Open Bash Explanation Panel | the editor title bar, the hover |
-| Bash Explainer: Turn Hover, Inline and Panel On or Off | the status bar item |
+| Bash Explainer: Turn Hover and Panel On or Off | the status bar item |
 | Bash Explainer: Open Settings | the hover and the panel |
 
 ### Settings
@@ -208,8 +210,8 @@ The panel works like regex101:
 | `bashExplainer.panel.animations` | `true` | Rows of the panel grow and shrink when they are unfolded and folded, and when a step of the Reading view changes (off: they appear at once; reduced motion turns it off too) |
 | `bashExplainer.panel.colors` | `"classic"` | Colours of the parts of a line in the panel: `classic` (its own six), `theme` (the editor theme's, where readable), `themeLike` (the theme's, with new colours where the theme gives two kinds of part one colour). VS Code only |
 | `bashExplainer.highlight.enabled` | `false` | Colour shell code from the syntax tree the explanations use (semantic tokens over the editor's colours); the web page always does |
-| `bashExplainer.inline.enabled` | `false` | One-line summary at the end of the cursor line |
-| `bashExplainer.inline.maxLength` | `120` | Maximum length of that summary |
+| `bashExplainer.hints.names` | `true` | A hint after a command name that does not run what it suggests |
+| `bashExplainer.inline.enabled`, `bashExplainer.inline.maxLength` | | Removed: no longer have an effect |
 | `bashExplainer.examples.enabled` | `true` | Show worked examples at all |
 | `bashExplainer.examples.disabled` | `[]` | Kinds of examples not to show: `regex`, `sed`, `awk`, `jq`, `yq`, `perl`, `textFilters`, `pipeline`, `expansion`, `printf`, `glob`, `test`, `xargs`, `read`, `getopt`, `gitLog`, `date` |
 | `bashExplainer.examples.inHover` | `true` | Show examples in the hover too (off: only in the panel) |
@@ -268,10 +270,10 @@ The same settings work on the web page, in the command-line tool and in the Lang
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `examples.placement`, `panel.animations` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |
-| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
-| `hover.followCursor`, `hover.followDelay`, `inline.enabled`, `inline.maxLength`, `panel.autoOpen`, `panel.colors` | | | |
+| `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `hints.names`, `highlight.enabled`, `languages`, `embedded.files` | | | ✓ |
+| `hover.followCursor`, `hover.followDelay`, `panel.autoOpen`, `panel.colors` | | | |
 
-The empty cells are about what only VS Code has (a hover, an inline summary, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
+The empty cells are about what only VS Code has (a hover, hints, a panel to open, files to choose); the web page and the command line explain the file they are given, as the kind you choose.
 
 - **Web page:** click the ⚙ button in the top bar. The shell and yq menus are in the menu (☰), and on a wide window in the top bar too. Changes apply at once, and are kept in your browser (localStorage); **Reset to defaults** puts the settings back, and **Clear stored data** (after a confirmation) removes everything the page keeps in the browser (the settings, the theme, the size of the panes, read mode and the first-run tip) and shows the defaults at once. The language and the shell and yq menus of the page are the same settings. **Export to a file** (or **Copy**) gives the settings you changed as a settings file in the format below, for the command-line tool or VS Code's `settings.json`; **Import a file…** (or dropping a file on the dialog, or pasting JSON) replaces the page's settings with those of such a file, and lists the keys it left out.
 - **Command line and Language Server:** a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.` (comments are allowed). It is the file given with `--config`, else `$BASH_EXPLAINER_CONFIG`, else `$XDG_CONFIG_HOME/bash-explainer/settings.json` (by default `~/.config/bash-explainer/settings.json`). `--set key=value` sets one setting. See [Settings](cli/README.md#settings) in the tool's README.

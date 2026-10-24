@@ -4,7 +4,8 @@ import { TreeCache } from './syntax/cache';
 import { ExplainService } from './service';
 import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
-import { InlineController } from './ui/inline';
+import { InlayHintsController } from './ui/inlayHints';
+import { INLINE_NOTICE_KEY, inlineNotice, inlineNoticeDue } from './ui/inlineNotice';
 import { PanelController } from './ui/panel';
 import { SemanticTokensController } from './ui/semanticTokens';
 import { Feature, ui } from './ui/render';
@@ -14,7 +15,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const service = new ExplainService(new TreeCache(parser));
   const hover = new HoverController(service);
   const panel = new PanelController(ctx, service);
-  const inline = new InlineController(service);
+  const hints = new InlayHintsController(service);
   const diagnostics = new DiagnosticsController(service);
   const semantic = new SemanticTokensController(service);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -35,7 +36,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   };
 
   ctx.subscriptions.push(
-    service, hover, panel, inline, diagnostics, semantic, status,
+    service, hover, panel, hints, diagnostics, semantic, status,
     vscode.commands.registerCommand('bashExplainer.showAtCursor', () => hover.showAtCursor()),
     // The hover's link to the whole line.
     vscode.commands.registerCommand('bashExplainer.explainLine', (target?: { uri: string; line: number }) => hover.explainLine(target)),
@@ -61,13 +62,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('bashExplainer')) return;
       service.settingsChanged();
-      if (e.affectsConfiguration('bashExplainer.languages')) { hover.register(); diagnostics.register(); }
+      if (e.affectsConfiguration('bashExplainer.languages')) { hover.register(); hints.register(); diagnostics.register(); }
       if (e.affectsConfiguration('bashExplainer.embedded.files')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();
       // Which documents have shell code depends on the languages and the kinds of files too.
       if (['highlight.enabled', 'languages', 'embedded.files'].some((k) => e.affectsConfiguration(`bashExplainer.${k}`))) semantic.refresh();
       panel.refresh();
-      inline.refresh();
+      hints.refresh();
       diagnostics.refresh();
       updateStatus();
     }),
@@ -75,7 +76,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     // A shell or yq chosen in the panel changes the explanations and the warnings.
     service.onDidChangeOverrides(() => {
       panel.refresh();
-      inline.refresh();
+      hints.refresh();
       diagnostics.refresh();
     }),
     // A code block added to a Markdown file (or removed) changes whether it has shell code.
@@ -90,6 +91,16 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   updateStatus();
   panel.autoOpen();
+  void noticeInlineRemoved(ctx, service);
+}
+
+/** Tell a user who had the inline summary on that it was removed, once per session, until "Don't show again". */
+async function noticeInlineRemoved(ctx: vscode.ExtensionContext, service: ExplainService): Promise<void> {
+  if (!inlineNoticeDue(service.config.inspect('inline.enabled'), ctx.globalState.get(INLINE_NOTICE_KEY))) return;
+  const t = inlineNotice(service.lang);
+  const choice = await vscode.window.showInformationMessage(t.message, t.open, t.dismiss);
+  if (choice === t.open) await vscode.commands.executeCommand('workbench.action.openSettings', 'bashExplainer.inline');
+  else if (choice === t.dismiss) await ctx.globalState.update(INLINE_NOTICE_KEY, true);
 }
 
 export function deactivate(): void {}

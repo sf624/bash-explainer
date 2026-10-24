@@ -1,5 +1,5 @@
-// Records the README images (images/demo.gif, hover.gif, panel.gif, inline.png).
-// See images/RECORDING.md. Usage: npm run images [-- demo hover panel inline] [-- --keep]
+// Records the README images (images/demo.gif, hover.gif, panel.gif, name-hints.png).
+// See images/RECORDING.md. Usage: npm run images [-- demo hover panel hints] [-- --keep]
 import { chromium } from 'playwright-core';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -10,7 +10,7 @@ import { imagesHash } from './images-hash.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IMAGES = path.join(ROOT, 'images');
-const ALL = ['demo', 'hover', 'panel', 'inline'];
+const ALL = ['demo', 'hover', 'panel', 'hints'];
 const args = process.argv.slice(2);
 const keep = args.includes('--keep');
 const scenarios = args.filter((a) => !a.startsWith('--'));
@@ -86,17 +86,16 @@ const baseSettings = {
   'security.workspace.trust.enabled': false,
   'bashExplainer.language': 'en',
   'bashExplainer.hover.enabled': true,
-  'bashExplainer.inline.enabled': false,
   'bashExplainer.panel.autoOpen': false,
 };
 const scenarioSettings = {
   demo: {},
   hover: {},
   panel: { 'bashExplainer.hover.enabled': false, 'bashExplainer.panel.autoOpen': true },
-  inline: { 'bashExplainer.hover.enabled': false, 'bashExplainer.inline.enabled': true },
+  hints: { 'bashExplainer.hover.enabled': false },
 };
-const viewport = { demo: [1280, 840], hover: [1000, 600], panel: [1280, 720], inline: [1280, 720] };
-const startMouse = { demo: [900, 600], hover: [900, 520], panel: [330, 640], inline: [-100, -100] };
+const viewport = { demo: [1280, 840], hover: [1000, 600], panel: [1280, 720], hints: [1280, 720] };
+const startMouse = { demo: [900, 600], hover: [900, 520], panel: [330, 640], hints: [-100, -100] };
 
 async function launch(code, work, extDir, scenario) {
   const ud = path.join(work, `user-data-${scenario}`);
@@ -115,7 +114,7 @@ async function launch(code, work, extDir, scenario) {
     // CI runners (Ubuntu 24.04) do not allow Chromium's sandbox.
     ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox', '--disable-gpu'] : []),
     IMAGES,
-    path.join(IMAGES, 'demo.sh'),
+    path.join(IMAGES, scenario === 'hints' ? 'hints.sh' : 'demo.sh'),
   ], { stdio: ['ignore', 'ignore', fs.openSync(path.join(work, `${scenario}-vscode.log`), 'w')], env: cleanEnv });
 
   let browser;
@@ -349,8 +348,9 @@ async function record(page, scenario, frameDir) {
     await page.keyboard.press('ArrowDown');
     await sleep(1800);
     await stop();
-  } else if (scenario === 'inline') {
-    await clickLineEnd(8);
+  } else if (scenario === 'hints') {
+    // The cursor on the last line, so that no line is highlighted among the hints.
+    await clickLineEnd(12);
     await sleep(1500);
     fs.writeFileSync(path.join(frameDir, 'still.png'), await page.screenshot({ type: 'png' }));
     return;
@@ -369,10 +369,10 @@ async function record(page, scenario, frameDir) {
 }
 
 function encode(scenario, frameDir) {
-  if (scenario === 'inline') {
+  if (scenario === 'hints') {
     // Keep the editor lines only; the rest of the window is empty.
     run(FFMPEG, ['-loglevel', 'error', '-y', '-i', quote(path.join(frameDir, 'still.png')),
-      '-vf', quote('crop=iw:ih*0.53:0:0,scale=1000:-1:flags=lanczos'), quote(path.join(IMAGES, 'inline.png'))]);
+      '-vf', quote('crop=iw:ih*0.53:0:0,scale=1000:-1:flags=lanczos'), quote(path.join(IMAGES, 'name-hints.png'))]);
     return;
   }
   // The demo scrolls a page of small text; it needs few colors and no dithering to stay small.
@@ -409,7 +409,7 @@ try {
   }
   // Record which UI the images show, for the Release workflow's check (scripts/images-hash.mjs).
   if (!scenarios.length || ALL.every((s) => scenarios.includes(s))) fs.writeFileSync(path.join(IMAGES, '.source-hash'), `${imagesHash()}\n`);
-  for (const f of ['demo.gif', 'hover.gif', 'panel.gif', 'inline.png']) {
+  for (const f of ['demo.gif', 'hover.gif', 'panel.gif', 'name-hints.png']) {
     const p = path.join(IMAGES, f);
     if (fs.existsSync(p)) console.log(`${f}: ${(fs.statSync(p).size / 1024).toFixed(0)} KB`);
   }

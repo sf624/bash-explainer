@@ -27,9 +27,8 @@ export class ExplainService implements vscode.Disposable {
   }
 
   /** The setting behind each display feature. */
-  static readonly FEATURES: Record<Feature, 'hover.enabled' | 'inline.enabled' | 'panel.autoOpen'> = {
+  static readonly FEATURES: Record<Feature, 'hover.enabled' | 'panel.autoOpen'> = {
     hover: 'hover.enabled',
-    inline: 'inline.enabled',
     panel: 'panel.autoOpen',
   };
 

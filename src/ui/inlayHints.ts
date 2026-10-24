@@ -1,0 +1,59 @@
+import * as vscode from 'vscode';
+import { ExplainService } from '../service';
+import { nameHints } from './nameHints';
+import { ui } from './render';
+
+/**
+ * Inlay hints after the command names that do not run what they suggest (src/ui/nameHints.ts), on the lines in view.
+ * `bashExplainer.hints.names` turns them off; VS Code's `editor.inlayHints.enabled` turns all hints on, off, or on
+ * while Ctrl+Alt is held. The tooltip says what runs and what else the name is; a click opens the line in the panel.
+ */
+export class InlayHintsController implements vscode.InlayHintsProvider, vscode.Disposable {
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeInlayHints = this.emitter.event;
+  private registration: vscode.Disposable | undefined;
+
+  constructor(private service: ExplainService) {
+    this.register();
+  }
+
+  /** (Re-)register for the configured languages. */
+  register(): void {
+    this.registration?.dispose();
+    this.registration = vscode.languages.registerInlayHintsProvider(this.service.selector(), this);
+  }
+
+  /** Ask VS Code for the hints again (a setting, or a choice in the panel, changed them). */
+  refresh(): void {
+    this.emitter.fire();
+  }
+
+  provideInlayHints(doc: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
+    if (!this.service.settings['hints.names'] || !this.service.isTarget(doc)) return [];
+    const lang = this.service.lang;
+    const hints: vscode.InlayHint[] = [];
+    for (let line = range.start.line; line <= range.end.line && line < doc.lineCount; line++) {
+      const text = doc.lineAt(line).text;
+      if (!text.trim()) continue;
+      const target = { uri: doc.uri.toString(), line };
+      const link = `command:bashExplainer.openPanel?${encodeURIComponent(JSON.stringify([target]))}`;
+      for (const h of nameHints(this.service.explain(doc, line), line, text, lang)) {
+        const tip = new vscode.MarkdownString(`${h.tooltip}\n\n[$(comment-discussion) ${ui[lang].openInPanel}](${link})`, true);
+        tip.isTrusted = { enabledCommands: ['bashExplainer.openPanel'] };
+        const part = new vscode.InlayHintLabelPart(h.label);
+        part.tooltip = tip;
+        part.command = { title: ui[lang].openInPanel, command: 'bashExplainer.openPanel', arguments: [target] };
+        const hint = new vscode.InlayHint(new vscode.Position(h.position.line, h.position.character), [part]);
+        hint.paddingLeft = true;
+        hint.paddingRight = true;
+        hints.push(hint);
+      }
+    }
+    return hints;
+  }
+
+  dispose(): void {
+    this.registration?.dispose();
+    this.emitter.dispose();
+  }
+}
