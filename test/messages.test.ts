@@ -29,7 +29,7 @@ describe('the message catalog', () => {
   // The levels of docs/design/note-levels.md: a pitfall is a warning unless it is a caveat; a note is a plain fact
   // unless it says the line fails when it runs.
   const CAVEATS = ['declaration-masks-status', 'pipefail-missing', 'function-last-test-returns-status', 'posix-special-function-name-maybe',
-    'postfix-increment-status', 'postfix-decrement-status', 'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
+    'extglob-maybe-on', 'extglob-not-found', 'extglob-maybe-on-trap', 'globstar-maybe-on',
     'globstar-not-found', 'ssh-local-expansion', 'function-not-imported-sh', 'unmatched-glob-runs-once', 'for-over-ls-output', 'for-over-unquoted-args',
     'unquoted-variable-in-test', 'dockerfile-pipefail-missing'];
   const FAILURES = ['bracket-missing-close', 'bracket-close-glued', 'test-malformed', 'unset-readonly', 'unset-function-and-variable'];
@@ -40,7 +40,11 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['unquoted-variable-as-path', 'nounset-unbound']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['postfix-increment-status', 'postfix-decrement-status', 'unquoted-variable-as-path', 'nounset-unbound']);
+    for (const id of ['postfix-increment-status', 'postfix-decrement-status'] as const) {
+      assert.strictEqual(fact('en', id, { v: 'i', errexit: true }).level, 'warning', id);
+      assert.strictEqual(fact('en', id, { v: 'i' }).level, 'info', id);
+    }
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f', destroys: true }).level, 'warning');
     assert.strictEqual(fact('en', 'unquoted-variable-as-path', { bare: '$f' }).level, 'info');
     const unset = { v: 'x', name: 'x', shell: 'bash', environment: false } as const;

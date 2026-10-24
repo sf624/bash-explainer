@@ -235,6 +235,7 @@ A note says how much it matters, with a mark, a word and a colour:
 - Every view lists the warnings first, then the information, then the plain facts.
 - A construct the target shell lacks (`[[ ]]` in sh) stays a warning, with no word: its text says it fails, and where. A note on what works differently started with ℹ before; it is ⓘ Portability now.
 - The notes that say a command fails when it runs are warnings now: `[` without `]`, `[ -f x]`, a `[` test it cannot read, `unset` of a read-only variable, `unset -f -v`.
+- `(( i++ ))` and `(( i-- ))`, whose status is 1 when `i` is 0, are a warning when `set -e` is on there (the script stops at the first run of a counter that starts at 0), and information otherwise (also where `set -e` may or may not apply, as in a function called both in an `if` and alone). Where `set -e` surely does not apply (`(( i++ )) || true`, `if (( i++ ))`), there is no note, as before.
 
 Problems whose severity changed:
 
