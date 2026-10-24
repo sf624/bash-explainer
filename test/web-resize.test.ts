@@ -77,12 +77,16 @@ describe('the web page: resizing the panes and the Problems list', function () {
       await page.goto(base);
       await page.locator('.cm-line').first().waitFor();
     };
+    // The script's problems, in place of the sample's pitfalls (the rows' text is there when they are folded too).
+    const scriptProblems = () => until('the script\'s problems', () => page.locator('#problem-list').textContent(),
+      (t) => !!t && !/Pitfall/.test(t) && (t.match(/dbracket/g) ?? []).length >= 6);
     await open();
-    assert.strictEqual(await page.locator('#problems').isHidden(), true);
+    // The sample's pitfalls are problems already; the script's own replace them.
+    await until('the sample\'s problems', () => page.locator('#problems').isVisible(), (v) => v);
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(SCRIPT);
-    await until('the problems', () => page.locator('#problem-list li').count(), (n) => n >= 6);
+    await scriptProblems();
     const list = async () => Math.round((await page.locator('#problems').boundingBox())!.height);
     const value = () => page.locator('#problems-resize').getAttribute('aria-valuenow');
     const rows = () => page.locator('#problem-list li').first().isVisible();
@@ -143,7 +147,7 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(SCRIPT);
-    await until('the problems', () => page.locator('#problem-list li').count(), (n) => n >= 6);
+    await scriptProblems();
     assert.strictEqual(await list(), kept);
     assert.strictEqual(Number(await value()), kept);
     await page.locator('#problems-resize').dblclick();
@@ -162,7 +166,8 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText(SCRIPT);
-    await until('the problems', () => page.locator('#problems').isVisible(), (v) => v);
+    await scriptProblems();
+    assert.strictEqual(await page.locator('#problems').isVisible(), true);
     assert.strictEqual(await page.locator('#problems-toggle').getAttribute('aria-expanded'), 'false');
     assert.strictEqual(await rows(), false);
     // Opened again, it has the height it had.

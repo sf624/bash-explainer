@@ -176,6 +176,8 @@ describe('the web page: the file kind', function () {
     await page.goto(base);
     await page.locator('.cm-line').nth(5).waitFor();
     const text = () => page.evaluate('document.querySelector(".cm-content").innerText') as Promise<string>;
+    // The sample's pitfalls fill the Problems list, so the editor is short: the read-mode tip would cover it.
+    await page.locator('#readtip-close').tap();
     await page.locator('.cm-content').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo phone\n');
