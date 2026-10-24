@@ -9,6 +9,7 @@ import { FromPanel, PanelState, panelUpdate } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import { ui } from '../src/ui/render';
 import { on, put } from './dom';
+import { drawIcon } from './icons';
 import { Theme } from './protocol';
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 
@@ -181,7 +182,7 @@ export class PanelBridge {
     return this.frame?.contentDocument?.getElementById(id) ?? null;
   }
 
-  /** Names the fold and quick reference buttons as the panel's own buttons say (they turn into "Expand all" and "Back"). */
+  /** Names the fold and quick reference buttons, and draws their icons, as the panel's own buttons do (they turn into "Expand all" and "Back"). */
   showActions(): void {
     const tp = ui[this.host.lang()].panel;
     const open = this.frame?.contentDocument?.getElementById('reference')?.hidden === false;
@@ -193,6 +194,11 @@ export class PanelBridge {
     for (const [button, name] of names) {
       document.getElementById(button)?.setAttribute('aria-label', name);
       document.getElementById(button)?.setAttribute('title', name);
+    }
+    for (const [button, theirs] of [['collapse', 'toggle'], ['ref', 'ref']] as const) {
+      const icon = this.button(theirs)?.querySelector('svg')?.getAttribute('data-icon');
+      const svg = document.querySelector(`#${button} svg`);
+      if (icon && svg) drawIcon(svg, icon);
     }
     document.getElementById('ref')?.setAttribute('aria-pressed', String(open));
     put('menu-copy-label', tp.copy);

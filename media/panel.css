@@ -348,7 +348,7 @@ header .actions {
   border: 0;
 }
 
-/* An icon (media/panel.js draws it): 16px, in the text's colour. */
+/* An icon (media/icons.js draws it): 16px, in the text's colour. */
 .ico {
   width: 16px;
   height: 16px;

@@ -9,7 +9,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 | Component | Version | License | Included as |
 | --- | --- | --- | --- |
 | [unbash](https://github.com/webpro-nl/unbash) | 6.0.1 | ISC | bundled into `dist/extension.js`; bundled into `dist/web/extension.js` |
-| [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `media/panel.js` |
+| [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `media/icons.js` |
 
 ## In the web version
 
@@ -26,7 +26,7 @@ Bash Explainer includes the following third-party software and artwork (CC-BY-4.
 | [@lezer/common](https://code.haverbeke.berlin/lezer/common) | 1.5.3 | MIT | bundled into `app.js` |
 | [@lezer/highlight](https://code.haverbeke.berlin/lezer/highlight) | 1.2.5 | MIT | bundled into `app.js` |
 | [@marijn/find-cluster-break](https://code.haverbeke.berlin/marijn/find-cluster-break) | 1.0.4 | MIT | bundled into `app.js` |
-| [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `panel.js` |
+| [@vscode/codicons](https://github.com/microsoft/vscode-codicons) | 0.0.46-24 | CC-BY-4.0 | icons copied into `icons.js` |
 | [crelt](https://code.haverbeke.berlin/marijn/crelt) | 1.0.7 | MIT | bundled into `app.js` |
 | [style-mod](https://code.haverbeke.berlin/marijn/style-mod) | 4.1.4 | MIT | bundled into `app.js` |
 | [w3c-keyname](https://github.com/marijnh/w3c-keyname#readme) | 2.2.8 | MIT | bundled into `app.js` |
@@ -148,8 +148,9 @@ https://creativecommons.org/licenses/by/4.0/legalcode
 
 Bash Explainer copies seven of the icons (collapse-all, expand-all, copy, book, arrow-left, gear,
 chevron-down) from src/icons/*.svg of @vscode/codicons 0.0.46-24, unmodified, as SVG path data drawn
-in the theme's text colour. The licensor offers the icons as-is and makes no representations or
-warranties of any kind concerning them (Section 5 of the license).
+in the theme's text colour, in the header of the extension's panel and in the top bar of the web page.
+The licensor offers the icons as-is and makes no representations or warranties of any kind concerning
+them (Section 5 of the license).
 ```
 
 ### crelt

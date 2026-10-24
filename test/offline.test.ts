@@ -131,7 +131,7 @@ describe('offline by design', () => {
       const metafile = path.join(dir, 'meta.json');
       execFileSync(process.execPath, ['--import', 'tsx', 'scripts/build-web.ts', `--outdir=${dir}`, `--metafile=${metafile}`], { cwd: root, stdio: 'pipe' });
       // The page is its files and nothing else: no wasm, no other bundle.
-      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'panel-host.js', 'panel.js', 'theme-init.js']);
+      assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'icons.js', 'panel-host.js', 'panel.js', 'theme-init.js']);
       for (const page of ['index.html', 'panel.html']) {
         const html = fs.readFileSync(path.join(dir, page), 'utf8');
         const csp = html.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
@@ -186,7 +186,7 @@ describe('offline by design', () => {
       assert.doesNotMatch(release, /[^\w]"next"\s*===/);
       assert.throws(() => build(path.join(dir, 'x'), ['--channel=other']));
       // Both channels run only from their own files.
-      for (const c of ['next', 'release']) assert.deepStrictEqual(fs.readdirSync(path.join(dir, c)).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'panel-host.js', 'panel.js', 'theme-init.js']);
+      for (const c of ['next', 'release']) assert.deepStrictEqual(fs.readdirSync(path.join(dir, c)).filter((f) => /\.(wasm|m?js)$/.test(f)).sort(), ['app.js', 'icons.js', 'panel-host.js', 'panel.js', 'theme-init.js']);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

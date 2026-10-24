@@ -122,14 +122,22 @@ describe('the web page: the top bar', function () {
       assert.strictEqual(await page.locator('#shell-top').inputValue(), 'dash');
 
       // Collapse all, then Expand all.
+      const icon = (sel: string) => page.evaluate(`(() => { const s = document.querySelector('${sel} svg'); return [s.dataset.icon, s.querySelectorAll('path').length]; })()`) as Promise<[string, number]>;
+      assert.deepStrictEqual(await icon('#collapse'), ['collapse-all', 3]);
+      assert.deepStrictEqual(await icon('#ref'), ['book', 1]);
+      assert.deepStrictEqual(await icon('#copy-md'), ['copy', 1]);
+      assert.deepStrictEqual(await icon('#settings-open'), ['gear', 1]);
       await page.locator('.cm-line').nth(7).click();
       await until('a tree', () => panel().locator('#tree li li').count(), (n) => n > 0);
       await page.locator('#collapse').click();
       await until('collapsed', () => panel().locator('#tree .collapsed').count(), (n) => n > 0);
       await until('the name', async () => (await page.locator('#collapse').getAttribute('aria-label')) ?? '', (t) => t === 'Expand all');
       assert.strictEqual(await page.locator('#collapse').getAttribute('title'), 'Expand all');
+      // The icon follows the panel's button too: the same Codicon (media/icons.js), drawn as in VS Code.
+      assert.deepStrictEqual(await icon('#collapse'), ['expand-all', 1]);
       await page.locator('#collapse').click();
       await until('expanded', () => panel().locator('#tree .collapsed').count(), (n) => n === 0);
+      await until('the icon', () => icon('#collapse'), (i) => i[0] === 'collapse-all' && i[1] === 3);
 
       // Copy as Markdown.
       await page.evaluate('navigator.clipboard.writeText("")');
@@ -142,9 +150,11 @@ describe('the web page: the top bar', function () {
       await until('the reference', () => panel().locator('#reference').isVisible(), (v) => v);
       assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'true');
       await until('the name', async () => (await page.locator('#ref').getAttribute('aria-label')) ?? '', (t) => t === '← Back to the explanation');
+      assert.deepStrictEqual(await icon('#ref'), ['arrow-left', 1]);
       await page.locator('#ref').click();
       await until('the explanation again', () => panel().locator('#main').isVisible(), (v) => v);
       assert.strictEqual(await page.locator('#ref').getAttribute('aria-pressed'), 'false');
+      await until('the icon', () => icon('#ref'), (i) => i[0] === 'book');
 
       // Keyboard access: the buttons are in the tab order and work with Enter and Space.
       await page.locator('#collapse').focus();

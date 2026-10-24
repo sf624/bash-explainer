@@ -40,15 +40,27 @@ describe('licenses', function () {
     }
   });
 
-  it('lists the Codicons the panel draws, by name, with their license at the icons', () => {
-    const js = fs.readFileSync(path.join(root, 'media', 'panel.js'), 'utf8');
+  it('lists the Codicons the panel and the web page draw, by name, with their license at the icons', () => {
+    const js = fs.readFileSync(path.join(root, 'media', 'icons.js'), 'utf8');
     const table = js.slice(js.indexOf('const ICONS'), js.indexOf('});', js.indexOf('const ICONS')));
     const names = [...table.matchAll(/^ {4}'([a-z-]+)': /gm)].map((m) => m[1]);
     const c = COPIED['@vscode/codicons'];
-    assert.match(c.licenseText, new RegExp(`\\(${names.join(', ')}\\)`.replace(/, /g, ',\\s+')), 'the notice names the icons media/panel.js has');
+    assert.match(c.licenseText, new RegExp(`\\(${names.join(', ')}\\)`.replace(/, /g, ',\\s+')), 'the notice names the icons media/icons.js has');
     assert.match(c.licenseText, new RegExp(`${names.length === 7 ? 'seven' : String(names.length)} of the icons`));
     assert.match(js, /@vscode\/codicons 0\.0\.46-24[^]*CC BY 4\.0, \(c\) Microsoft Corporation/);
     assert.ok(js.includes(`@vscode/codicons ${c.version}`));
+    // Every icon of the table is drawn somewhere (the notice names no icon we do not use), and nothing draws
+    // an icon the table lacks: the panel's markup and script, and the web page's markup and scripts.
+    const read = (...p: string[]) => fs.readFileSync(path.join(root, ...p), 'utf8');
+    const sources = [read('src', 'ui', 'panelView.ts'), read('media', 'panel.js'), read('web', 'index.html'), read('web', 'compare.html')];
+    const drawn = new Set(sources.flatMap((text) => [...text.matchAll(/data-icon="([a-z-]+)"|'([a-z-]+)'/g)].map((m) => m[1] ?? m[2])).filter((n) => names.includes(n)));
+    for (const text of sources) for (const m of text.matchAll(/data-icon="([^"]+)"/g)) assert.ok(names.includes(m[1]), `${m[1]} is not in media/icons.js`);
+    assert.deepStrictEqual([...drawn].sort(), [...names].sort());
+    // Both products ship the file, and the notice says where.
+    assert.strictEqual(c.uses['In the extension'], 'icons copied into `media/icons.js`');
+    assert.strictEqual(c.uses['In the web version'], 'icons copied into `icons.js`');
+    assert.match(read('scripts', 'build-web.ts'), /copy\('media\/icons\.js'\)/);
+    for (const page of ['index.html', 'compare.html']) assert.ok(read('web', page).includes('<script src="icons.js"></script>\n<script src="app.js"></script>'), page);
   });
 
   it('is itself under the MIT License', () => {
