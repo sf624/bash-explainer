@@ -216,6 +216,7 @@ The warning that an empty variable makes `rm -r` delete from the root:
 
 ### Pitfalls
 
+- `$_` read in a `bash -c` or ssh string gets no pitfall that it is not exported: the new shell sets it itself (`_=1; bash -c 'echo $_'` prints the shell's path). Before, it was said to be empty there.
 - `x = 1` is a pitfall only when `x` runs nothing known: not a builtin (`export = x`, `local = x`), a function, an alias, a program the dictionary knows (`echo ==========`, `sed = file`), nor a name a `source`d file may define. Before, all of these were said to be assignments written with spaces.
 - `rm -rf $DIR/*` is no warning when the script set `DIR`, on every path to it, to a value with text of its own (`DIR=/opt/app`, `BUILD_DIR="$SCRIPT_DIR/build"`), and nothing else may change it unseen (src/semantics/trust.ts). A value from `$1`, `read`, a branch or a sourced file keeps the warning.
 - A command name with a `/` runs that file, never a builtin (3.7.2). `./read x` no longer gets the `read -r` pitfall, nor `./x = 1` the one for `x = 1`, nor `./cd $x` the one for an unquoted path. A function named `read`, or `read` after `enable -n read`, is not the builtin either. A path whose last part is a program the dictionary knows is that program, as its explanation says: `/bin/rm -rf $DIR/*` and `/bin/cp $x y` keep their warnings. `FOO=1 ./x $FOO` now names `./x` in its note. Before, every check read only the last part of the path.
