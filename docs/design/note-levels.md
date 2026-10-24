@@ -1,6 +1,6 @@
 # Note levels
 
-How much a note matters, and how every output shows it. Built in the PR that added this page; the prototype was commit 8371ef7 (branch `proto/note-levels`).
+How much a note matters, and how every output shows it. Built in #320; the prototype was commit 8371ef7 (branch `proto/note-levels`).
 
 ## The levels
 
