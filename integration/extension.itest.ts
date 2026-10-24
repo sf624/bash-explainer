@@ -121,6 +121,7 @@ describe('Bash Explainer in VS Code', function () {
     const tokens = (uri: vscode.Uri) => vscode.commands.executeCommand<vscode.SemanticTokens | undefined>('vscode.provideDocumentSemanticTokens', uri);
     const { document: script } = await open(fixture('sample.sh'));
     const docker = await vscode.workspace.openTextDocument(fixture('hosts', 'Dockerfile'));
+    const make = await vscode.workspace.openTextDocument(fixture('hosts', 'Makefile'));
     assert.strictEqual((await tokens(script.uri))?.data.length ?? 0, 0);
     await config().update('highlight.enabled', true, vscode.ConfigurationTarget.Global);
     try {
@@ -130,10 +131,11 @@ describe('Bash Explainer in VS Code', function () {
       // The first token is the shebang, a comment.
       assert.deepStrictEqual([...data.slice(0, 2)], [0, 0]);
       assert.strictEqual(legend!.tokenTypes[data[3]], 'comment');
-      // A Dockerfile has tokens on its RUN lines only.
-      const ddata = (await until('Dockerfile tokens', () => tokens(docker.uri), (t) => !!t && t.data.length > 0))!.data;
-      const firstLine = ddata[0];
-      assert.match(docker.lineAt(firstLine).text, /^\s*(RUN|&&|\S+.*\\$)/);
+      // A Makefile has tokens on its recipe lines only.
+      const mdata = (await until('Makefile tokens', () => tokens(make.uri), (t) => !!t && t.data.length > 0))!.data;
+      assert.match(make.lineAt(mdata[0]).text, /^\t/);
+      // A Dockerfile is left to its own language server: no tokens of ours.
+      assert.strictEqual((await tokens(docker.uri))?.data.length ?? 0, 0);
     } finally {
       await config().update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global);
     }
