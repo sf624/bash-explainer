@@ -16,6 +16,9 @@
     if (window.parent !== window && new URLSearchParams(window.parent.location.search).get('view') !== 'panel') {
       document.documentElement.classList.add('bx-web');
     }
+    // PROTOTYPE (proto/list-look-b): ?listStyle=b shows the list in the tree view's rows (media/panel.js).
+    const style = window.parent !== window ? new URLSearchParams(window.parent.location.search).get('listStyle') : null;
+    if (style === 'b') document.documentElement.dataset.listStyle = style;
   } catch {
     // Not the same origin: leave the header.
   }

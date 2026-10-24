@@ -622,12 +622,15 @@ body {
   outline: none;
 }
 
-.trow {
+/* A row of the outline (`outlineRow` in media/panel.js): the tree view's, and the list's in the prototype ?listStyle=b. */
+.orow {
   position: relative;
+  margin: 0;
+  border-left: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  column-gap: 0.5rem;
+  gap: 0 0.5rem;
   /* The twisty sits in the left padding: the text under the code lines up with it. */
   padding: var(--t-pad) 0.4rem var(--t-pad) var(--t-code);
   border-radius: 3px;
@@ -635,7 +638,7 @@ body {
 }
 
 /* The code and the kind, which wrap together; the reader's name and the links keep to the first line. */
-.trow .thead {
+.orow .thead {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -643,13 +646,13 @@ body {
   min-width: 0;
 }
 
-.trow .tright {
+.orow .tright {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
 }
 
-.trow .twisty {
+.orow .twisty {
   position: absolute;
   left: var(--t-twisty);
   width: var(--t-tw);
@@ -673,7 +676,7 @@ body {
 }
 
 /* The pill has the background of the page, not a code block's grey: its code measures as on the page. */
-.trow .tcode {
+.orow .tcode {
   font-family: var(--vscode-editor-font-family);
   background: var(--t-bg);
   border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
@@ -684,14 +687,14 @@ body {
   min-width: 0;
 }
 
-.trow .text {
+.orow .text {
   grid-column: 1 / -1;
   min-width: 0;
   color: var(--vscode-foreground);
   overflow-wrap: anywhere;
 }
 
-.trow .text.about {
+.orow .text.about {
   color: var(--c-muted);
   font-style: italic;
 }
@@ -773,6 +776,96 @@ body.vscode-high-contrast-light #reading-tree li.band {
 /* A phone: a smaller indent. */
 @media (max-width: 480px) {
   #reading-tree {
+    --t-indent: 0.9rem;
+    --t-twisty: 0.15rem;
+    --t-tw: 0.8rem;
+    --t-code: 1.05rem;
+  }
+}
+
+/* ---------------------------------------------------------------- PROTOTYPE (proto/list-look-b)
+   The list in the tree view's rows, picked on the web page with ?listStyle=b (web/panel-host.js): the code in a
+   pill, the explanation on a line of its own under it, and the tree's lines in place of the indent guides and the
+   coloured edge. The rows come from the same builder as the tree's (`row` in media/panel.js) and share its CSS
+   (`.orow`); there are no layers in the list, so no tints. Not to be merged as is. */
+html[data-list-style="b"] #tree {
+  --t-indent: 1.2rem;
+  --t-twisty: 0.3rem;
+  --t-tw: 0.9rem;
+  --t-code: 1.3rem;
+  --t-pad: 0.15rem;
+  --t-line: calc(var(--t-twisty) + var(--t-tw) / 2 - var(--t-indent));
+  --t-elbow: calc(var(--t-pad) + 0.75em);
+  --t-guide: color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
+  --t-bg: var(--vscode-editor-background, Canvas);
+}
+
+html[data-list-style="b"] #tree ul {
+  padding-left: var(--t-indent);
+}
+
+/* No indent guides beside the bodies: the lines along the items say it. */
+html[data-list-style="b"] #tree li > .body::before {
+  content: none;
+}
+
+html[data-list-style="b"] #tree .body > ul > li {
+  position: relative;
+}
+
+html[data-list-style="b"] #tree .body > ul > li::before,
+html[data-list-style="b"] #tree .body > ul > li::after {
+  content: "";
+  position: absolute;
+  left: var(--t-line);
+  pointer-events: none;
+}
+
+html[data-list-style="b"] #tree .body > ul > li::before {
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--t-guide);
+}
+
+html[data-list-style="b"] #tree .body > ul > li:last-child::before {
+  bottom: auto;
+  height: var(--t-elbow);
+}
+
+html[data-list-style="b"] #tree .body > ul > li::after {
+  top: var(--t-elbow);
+  width: calc(var(--t-twisty) - var(--t-line) - 0.1rem);
+  border-top: 1px solid var(--t-guide);
+}
+
+html[data-list-style="b"] #tree .body > ul > li:not(:has(> .body > ul))::after {
+  width: calc(var(--t-code) - var(--t-line) - 0.2rem);
+}
+
+/* The list's own label: a pill that wraps, not cut with "…". */
+html[data-list-style="b"] #tree .orow .label {
+  flex: none;
+  max-width: none;
+  overflow: visible;
+}
+
+/* An example under its token: its rule is the group's line, under the token's twisty, so the line runs on from
+   the token to its parts; the example lines up with the parts. */
+html[data-list-style="b"] #tree .example.nested {
+  margin: 0 0 0 calc(var(--t-twisty) + var(--t-tw) / 2 - 0.5px);
+  padding: 0.4rem 0 0.5rem calc(var(--t-indent) - var(--t-twisty) - var(--t-tw) / 2);
+  border-left: 1px solid var(--t-guide);
+}
+
+@media (forced-colors: active) {
+  html[data-list-style="b"] #tree .body > ul > li::before,
+  html[data-list-style="b"] #tree .body > ul > li::after {
+    border-color: CanvasText;
+  }
+}
+
+@media (max-width: 480px) {
+  html[data-list-style="b"] #tree {
     --t-indent: 0.9rem;
     --t-twisty: 0.15rem;
     --t-tw: 0.8rem;

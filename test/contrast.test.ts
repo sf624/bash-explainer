@@ -160,7 +160,7 @@ describe('the contrast of the colours of the roles', () => {
   it('reaches 4.5:1 on the layer tints of the tree view', () => {
     const pct = Number(/#reading-tree li\.band \{\s*background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(panel)?.[1]);
     assert.ok(pct > 0 && pct < 20, `the tint: ${pct}%`);
-    assert.match(panel, /\.trow \.tcode \{[^}]*background: var\(--t-bg\);/);
+    assert.match(panel, /\.orow \.tcode \{[^}]*background: var\(--t-bg\);/);
     const LAYERS: Record<string, Role> = { bash: 'operator', child: 'command', command: 'argument', language: 'option' };
     for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
       const bg = parse(vars['--vscode-editor-background']);

@@ -307,11 +307,14 @@
 
   // ---------------------------------------------------------------- tree
 
+  /** PROTOTYPE (proto/list-look-b): the look of the list, from the web page's ?listStyle=b (web/panel-host.js). */
+  const listStyle = document.documentElement.dataset.listStyle ?? '';
+
   /** Tree item for a token and its children. */
   function item(token, path) {
     const li = document.createElement('li');
     li.dataset.path = path;
-    const row = document.createElement('div');
+    let row = document.createElement('div');
     row.className = `row kind-${token.kind}`;
     const twisty = document.createElement('span');
     twisty.className = 'twisty';
@@ -338,7 +341,11 @@
     const text = document.createElement('span');
     text.className = 'text';
     text.append(...inline(token.explanation));
-    row.append(twisty, label, text, ...refLinks(token.refs));
+    // PROTOTYPE (proto/list-look-b): with ?listStyle=b, the tree view's row (the code in a pill, the text under it).
+    if (listStyle === 'b') {
+      label.classList.add('tcode');
+      row = outlineRow(row.className, { twisty, code: label, right: refLinks(token.refs), text });
+    } else row.append(twisty, label, text, ...refLinks(token.refs));
     li.append(row);
     if (token.children.length && collapsedKeys.has(path)) setCollapsed(li, true);
     // Examples placed under this token go before (first) or after (last) its parts.
@@ -615,6 +622,26 @@
     }
   }
 
+  /**
+   * A row of the outline, as the tree view draws it (and the list, in the prototype ?listStyle=b): the twisty in
+   * the left padding; on the first line the code in a pill and the kind, and at the right the reader's name and the
+   * links; the text on a line of its own under them. Each view makes its own parts and walks its own items.
+   */
+  function outlineRow(/** @type {string} */ cls, /** @type {{ twisty: HTMLElement, code: HTMLElement | null, chip?: HTMLElement | null, right: HTMLElement[], text: HTMLElement | null }} */ parts) {
+    const row = document.createElement('div');
+    row.className = `${cls} orow`;
+    const head = document.createElement('span');
+    head.className = 'thead';
+    if (parts.code) head.append(parts.code);
+    if (parts.chip) head.append(parts.chip);
+    const right = document.createElement('span');
+    right.className = 'tright';
+    right.append(...parts.right);
+    row.append(parts.twisty, head, right);
+    if (parts.text) row.append(parts.text);
+    return row;
+  }
+
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
   function treeItem(n, path, depth, parent, pos, size) {
     const li = document.createElement('li');
@@ -630,8 +657,6 @@
       || (n.layer === 'child' && parent.process !== n.process);
     if (band) li.classList.add('band');
     const kids = n.children.filter((/** @type {any} */ c) => LEVEL[c.layer] <= level);
-    const row = document.createElement('div');
-    row.className = 'trow';
     const twisty = document.createElement('span');
     twisty.className = 'twisty';
     twisty.setAttribute('aria-hidden', 'true');
@@ -640,18 +665,14 @@
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.textContent = chipOf(n);
-    // The first line: the code in a pill (in the colour of its role, as in the list) and the kind; at its right,
-    // where a reader takes over, the reader's name, and the links. The text has a line of its own under them.
-    const head = document.createElement('span');
-    head.className = 'thead';
     const code = !['line', 'language'].includes(n.kind) ? n.label : '';
+    /** @type {HTMLElement | null} */
+    let c = null;
     if (code) {
-      const c = document.createElement('code');
+      c = document.createElement('code');
       c.className = `tcode kind-${roleOf(n)}`;
       c.textContent = code;
-      head.append(c);
     }
-    head.append(chip);
     const about = n.text ?? aboutOf(n);
     const text = document.createElement('span');
     // (What the kind is in general, where no token says more: quieter than an explanation.)
@@ -659,19 +680,17 @@
     text.append(...inline(about));
     const links = refLinks(n.refs);
     links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
-    const right = document.createElement('span');
-    right.className = 'tright';
     const bandName = band ? bandOf(n) : '';
+    /** @type {HTMLElement[]} */
+    const right = [];
     if (bandName) {
       const b = document.createElement('span');
       b.className = 'band-label';
       b.setAttribute('aria-hidden', 'true');
       b.textContent = bandName;
-      right.append(b);
+      right.push(b);
     }
-    right.append(...links);
-    row.append(twisty, head, right);
-    if (about) row.append(text);
+    const row = outlineRow('trow', { twisty, code: c, chip, right: [...right, ...links], text: about ? text : null });
     li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n)}. ${about.replace(/`/g, '')}`);
     li.append(row);
     readingNodes.set(li, n);
