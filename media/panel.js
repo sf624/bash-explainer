@@ -91,7 +91,10 @@
       renderReference();
     }
     if (msg.type === 'panelState') {
+      const was = view;
       applyState(msg.state);
+      // (The web page's own switch of views: the room kept below the other view goes, as with the panel's buttons.)
+      if (view !== was) dropSpacer();
       applyView();
       renderReading();
     }
@@ -429,9 +432,9 @@
       const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
       const close = !all.some((li) => li.getAttribute('aria-expanded') === 'false');
       const want = (/** @type {HTMLElement} */ li) => close && li.getAttribute('aria-level') !== '1';
-      // (The first row on the screen that stays drawn stays where it is.)
-      hold(firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom,
-        (li) => !close || Number(li.getAttribute('aria-level')) <= 2));
+      // (The first row on the screen that stays drawn stays where it is, and so do the controls, as for a step.)
+      const below = $('layers').getBoundingClientRect().bottom;
+      hold(firstOnScreen(visibleItems(), 'reading', below, (li) => !close || Number(li.getAttribute('aria-level')) <= 2), stuckRange(), below);
       fold(all.filter((li) => want(li) !== (li.getAttribute('aria-expanded') === 'false')).map((li) => setFolded(li, want(li))));
       updateToggle();
       return;
@@ -443,7 +446,8 @@
     // (The first row on the screen that stays drawn stays where it is: a top-level row or one of its parts.)
     const top = (/** @type {Element | null | undefined} */ li) => li?.parentElement === $('tree');
     const shownItems = /** @type {HTMLElement[]} */ (Array.from($('tree').querySelectorAll('li[data-path]'))).filter((li) => li.getClientRects().length);
-    hold(firstOnScreen(shownItems, 'list', $('top').getBoundingClientRect().bottom, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))));
+    const below = $('top').getBoundingClientRect().bottom;
+    hold(firstOnScreen(shownItems, 'list', below, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))), null, below);
     fold(items.filter((li) => want(li) !== isCollapsed(li)).map((li) => setCollapsed(li, want(li))));
     nameToggle(collapse);
   });
@@ -729,14 +733,15 @@
    * stepper whose middle opens the steps as a menu (see `fitControls`). A polite live region says the step.
    */
   function buildControls(/** @type {HTMLElement} */ box) {
-    const steps = el('div', { id: 'steps', role: 'group' });
+    // (A plain box: #layers is the group of the controls, and the stepper's menu opens this box of its buttons.)
+    const steps = el('div', { id: 'steps' });
     for (let s = 1; s <= STEPS; s++) {
       steps.append(el('button', { type: 'button', class: `step l-${layerOfStep(s)}`, 'data-step': String(s) },
         el('span', { class: 'num', 'aria-hidden': 'true' }, String(s)), el('span', { class: 'short' })));
     }
     box.replaceChildren(el('span', { id: 'layers-label' }), el('button', { type: 'button', id: 'tp-back' }, icon('◁')),
       el('span', { class: 'step-pick' },
-        el('button', { type: 'button', id: 'step-menu', 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-controls': 'steps' },
+        el('button', { type: 'button', id: 'step-menu', 'aria-expanded': 'false', 'aria-controls': 'steps' },
           el('span', { class: 'sm-count' }), ' ', el('span', { class: 'sm-name' }), el('span', { class: 'sm-caret', 'aria-hidden': 'true' }, '▾')),
         steps),
       el('button', { type: 'button', id: 'tp-forward' }, icon('▷')),
@@ -761,7 +766,6 @@
     box.setAttribute('aria-label', p.group);
     $('layers-label').textContent = t.show;
     const here = stepWords(step);
-    $('steps').setAttribute('aria-label', p.group);
     box.querySelectorAll('button.step').forEach((b) => {
       const s = Number(/** @type {HTMLElement} */ (b).dataset.step);
       const w = stepWords(s);
@@ -802,10 +806,12 @@
     const open = box.classList.contains('open');
     box.classList.remove('tight', 'tighter', 'compact', 'open');
     for (const level of ['tight', 'tighter', 'compact']) {
-      if (box.scrollWidth <= box.clientWidth + 1) return;
+      if (box.scrollWidth <= box.clientWidth + 1) break;
       box.classList.add(level);
     }
-    box.classList.toggle('open', open);
+    // (The menu stays open only while the stepper is shown.)
+    box.classList.toggle('open', open && box.classList.contains('compact'));
+    $('step-menu').setAttribute('aria-expanded', String(box.classList.contains('open')));
   }
   new ResizeObserver(() => {
     fitControls();
@@ -836,6 +842,8 @@
 
   /** A step chosen by the viewer: shown, and kept. */
   function choose(/** @type {number} */ s) {
+    // (The step shown, or ◁ and ▷ at either end: nothing to do, and a motion running goes on.)
+    if (s === step) return;
     setStep(s);
     save();
   }
@@ -848,7 +856,7 @@
     s = Math.max(1, Math.min(STEPS, s));
     if (flushMotion()) renderReading();
     const was = step;
-    if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange());
+    if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange(), $('layers').getBoundingClientRect().bottom);
     step = s;
     if (s !== was && reading) announce(stepWords(s).full);
     if (s === was || view !== 'tree' || !reading || !motion()) {
@@ -864,6 +872,10 @@
     renderControls();
     const gone = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]')))
       .filter((li) => !shown(readingNodes.get(li)) && shown(readingNodes.get(/** @type {HTMLElement} */ (li.parentElement?.closest('li[role="treeitem"]')))));
+    if (!gone.length) {
+      renderReading();
+      return;
+    }
     shrinking = fold(gone.map((li) => ({ el: li, open: false })), () => {
       shrinking = null;
       renderReading();
@@ -1081,14 +1093,17 @@
   /**
    * Holds the row `find` returns where it is on the screen while what is about to change does: called before the
    * change. Until the row's new place is known, the page is held at its scroll position (the spacer). `range`, when
-   * given, says between which scroll positions the page is to stay (see `stuckRange`).
+   * given, says between which scroll positions the page is to stay (see `stuckRange`). A row above `below` (the top of
+   * the screen under the sticky rows: an ancestor of the rows on the screen that go) is held just under it, so that the
+   * page does not stay where nothing is drawn.
    */
-  function hold(/** @type {(() => Element | null) | null} */ find, /** @type {(() => number[]) | null} */ range = null) {
+  function hold(/** @type {(() => Element | null) | null} */ find, /** @type {(() => number[]) | null} */ range = null, below = 0) {
     settle();
     const row = find?.();
     if (!find || !row) return;
     setSpacer(Math.max(spacerEnd, window.scrollY + window.innerHeight));
-    const a = { find, top: row.getBoundingClientRect().top, y: window.scrollY, range, frame: 0 };
+    const r = row.getBoundingClientRect();
+    const a = { find, top: r.bottom <= below ? below : r.top, y: window.scrollY, range, frame: 0 };
     anchor = a;
     // (After the change, which the caller makes next, before anything is drawn; then at each frame.)
     queueMicrotask(() => {

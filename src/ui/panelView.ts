@@ -21,7 +21,7 @@ export type FromPanel =
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' }
-  /** The view and layers chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
+  /** The view and step chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState };
 
 /**
