@@ -19,7 +19,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
-- Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path.
+- Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path. A path runs that file, not a builtin: `./read x` and a function named `read` no longer get the `read -r` pitfall.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.
 - The warning that an empty variable makes `rm -r` delete from the root no longer fires for forms that are never empty (`${DIR:-/tmp/x}/*`), and for `${DIR%/}` and similar it gives a check line before the command instead of a rewrite that dropped the operator. It also covers `${DIR:-''}`, `${DIR[0]}`, `$@` and `${DIR[@]}`.

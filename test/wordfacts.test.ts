@@ -34,6 +34,11 @@ describe('word facts', () => {
     ['cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
     // `time` times what follows; what follows is a command like any other.
     ['time rm $f', 'unquoted-variable-as-path', /`\$f` is not quoted/],
+    // A path names the program of its last part (`/bin/cp` is cp); the prefix assignment holds for any command.
+    ['/bin/cp $src "$dst"', 'unquoted-variable-as-path', /`\$src` is not quoted/],
+    ['for f in $(/bin/ls); do :; done', 'for-over-ls-output', /`\$\(ls …\)` is split on spaces/],
+    ['/usr/bin/sudo echo 1 > /proc/sys/vm/drop_caches', 'redirect-by-your-shell', /done by your own shell/],
+    ['FOO=1 ./x $FOO', 'prefix-assignment-expanded-first', /`FOO=…` is set only in the environment of `\.\/x`/],
   ];
   for (const [src, id, expected] of cases) {
     it(`points out ${src}`, () => {
@@ -50,6 +55,8 @@ describe('word facts', () => {
     'x=1', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]',
     'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x', "FOO=1 sh -c 'echo $FOO'",
     'for f in $(grep -l x *); do :; done', 'for f in; do :; done',
+    // A path runs that file, never a builtin (3.7.2): `./cd` is a script, not `cd`.
+    './cd $x', './source $x',
   ];
   for (const src of fine) {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(facts(src), []));
