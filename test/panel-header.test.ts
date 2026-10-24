@@ -137,6 +137,15 @@ describe('the VS Code panel: its header', function () {
     }
   });
 
+  it('keeps the view switch\'s box off the line\'s token segments (both were once called `seg`)', async () => {
+    const page = await open();
+    const widths = (sel: string) => page.evaluate(`(() => { const e = document.querySelector('${sel}'); const c = getComputedStyle(e); return [c.borderTopWidth, c.borderBottomWidth]; })()`);
+    assert.ok((await page.locator('#line .seg').count()) > 0);
+    assert.deepStrictEqual(await widths('#line .seg'), ['0px', '2px']);
+    assert.deepStrictEqual(await widths('#views'), ['1px', '1px']);
+    await page.close();
+  });
+
   it('shows the yq dropdown on a line that runs yq, and posts the choice', async () => {
     const yq = await servePanel("yq '.a' config.yaml");
     try {

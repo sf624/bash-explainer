@@ -94,7 +94,7 @@ export const PANEL_BODY = `<div id="top">
   <div class="where"><span id="where"></span><span id="context"></span></div>
   <label id="shell-box" class="pick" hidden><span id="shell-label" class="sr-only"></span><span class="dropdown"><select id="shell"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
   <label id="yq-box" class="pick" hidden><span id="yq-label" class="sr-only"></span><span class="dropdown"><select id="yq"></select><svg class="ico" data-icon="chevron-down" viewBox="0 0 16 16" aria-hidden="true"></svg></span></label>
-  <div id="views" class="seg" role="group">
+  <div id="views" class="segmented" role="group">
     <button id="view-list" type="button" aria-pressed="true"></button><button id="view-tree" type="button" aria-pressed="false"></button>
   </div>
   <div class="tools">
