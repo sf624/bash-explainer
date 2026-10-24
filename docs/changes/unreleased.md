@@ -185,22 +185,28 @@ A YAML block scalar is read as YAML gives it to the runner: without the indentat
     echo done      # before: "part of the here-document started by `<<EOF`", and so was the next step
 ```
 
-A folded block (`run: >`) joins lines next to each other at the same indentation with a space; the shell gets one line, and a note says so. A blank line, or a more-indented line, keeps the line break.
+A folded block (`run: >`) joins lines next to each other at the same indentation with a space; the shell gets one line, and a note says so. A blank line, or a more-indented line, keeps the line break. Each join is read as ` \` and a line break, so two cases still differ from YAML, and the note says so: inside a single-quoted string over two lines (`echo 'a` / `b'` is `echo 'a b'` to YAML), and after a comment (YAML joins the next line into the comment: `echo a # c` / `echo b` runs only `echo a`).
+
+A header with a space after it (`run: | `) starts a block too. Before, the `|` was read as the script, and the block's lines were not read.
 
 Each shell the host starts is explained apart: what one sets (`set -euo pipefail`, a variable, a function) does not count in the next.
 
 | File | One shell |
 | --- | --- |
-| GitHub Actions, CircleCI, Azure Pipelines, GitLab CI | each step's script |
+| GitHub Actions, CircleCI, Azure Pipelines (`script:`, `bash:`) | each step |
+| GitLab CI | a job's `before_script` and `script` together (GitLab joins them into one script); `after_script` apart |
+| Bitbucket Pipelines | a step's `script` list |
+| Travis CI (a file with `language:`) | a job's `before_script`, `script` and `after_script` |
+| Taskfile | each command of `cmds:` |
 | Dockerfile | each `RUN` (and `CMD`, `ENTRYPOINT`) |
 | Makefile | each recipe line; with `.ONESHELL`, each recipe |
 | package.json | each script |
 | Jenkinsfile, Python | each `sh` step, each string run |
 | Markdown | all the code blocks of the file (typed into one terminal), as before |
 
-Before, a later step got wrong pitfalls ("`f` is not set here: with `set -u` on…"), and a function of one step was taken for a function in the next.
+Before, a later step got wrong pitfalls ("`f` is not set here: with `set -u` on…"), and a function of one step was taken for a function in the next. The lines of one shell are read in the order of the file: a `script:` written above its `before_script:` is read before it.
 
-The note on a line of a here-document says the line of the document where it starts. Before, it counted from the first command: after three blank lines, a here-document of line 4 was said to start "on line 1".
+Notes that name a line of the script name the line of the document: where a here-document starts, "function `f` defined on line N", "declared a nameref on line N". Before, they counted from the first command: after three blank lines, a here-document of line 4 was said to start "on line 1", and in a host file the count started at its first shell line.
 
 ### bash 5.3's command substitutions
 

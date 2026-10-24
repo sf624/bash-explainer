@@ -30,12 +30,12 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- A GitHub Actions `run: |` block is read without its YAML indentation, as the runner gets it, so an indented `EOF` ends a here-document. Before, every later line, up to the next step, was explained as part of the here-document. A folded block (`run: >`) is read as the one line YAML makes of it.
-- Each workflow step, Dockerfile `RUN`, Makefile recipe line (or recipe, with `.ONESHELL`) and package.json script is explained as a shell of its own. Before, `set -u` or a function of one step counted in the next, with wrong pitfalls such as "`f` is not set here".
-- The note on a line of a here-document names the line where it starts, also after blank lines at the top of a script. Before, the count started at the first command.
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
 - `$_` links to section 5.2 of the Bash manual (Bash Variables), where bash 5.2's manual describes it, and a variable such as `$_tmp` to 3.5.3.
+- A YAML block of shell code (`run: |`, `script: |` in any CI file) is read without its indentation, as the runner gets it, so an indented `EOF` ends a here-document. Before, every later line, and the steps after it, were explained as part of the here-document. A folded block (`run: >`) is read as the one line YAML makes of it.
+- Each workflow step, Dockerfile `RUN`, Makefile recipe line (or recipe, with `.ONESHELL`) and package.json script is explained as a shell of its own; a GitLab CI job's `before_script` and `script` share one. Before, `set -u` or a function of one step counted in the next, with wrong pitfalls such as "`f` is not set here".
+- Notes that name a line (where a here-document starts, "function `f` defined on line N", "declared a nameref on line N") name the right one, also after blank lines at the top of a script and in host files. Before, the count started at the first command.
 - bash 5.3's `${ cmd; }` and `${| cmd; }` are explained as bash 5.3 runs them: in the current shell, with no subshell. Before, they were explained as `$( )`. bash 5.2 rejects them ("bad substitution"), which the warning says. In bash 5.3 mode, `${ echo a }` (no `;` before the `}`) is a warning, as bash 5.3 rejects it; `return` in `${ …; }` ends the substitution, and `local` there is no pitfall.
 - Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path. A path runs that file, not a builtin: `./read x` and a function named `read` no longer get the `read -r` pitfall.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.

@@ -53,13 +53,15 @@ function stepCi(b: Builder, at: number, indent: number, key: string, found: read
 export function yaml(b: Builder): void {
   const found = (Object.keys(CI_SYSTEMS) as HostCi[]).filter((id) => CI_SYSTEMS[id].detect(b.lines));
   if (found.includes('azure')) b.azure = { vars: azureVariables(b.lines) };
+  // A Travis CI file names its `language:` at the top level.
+  const travis = b.lines.some((l) => /^language\s*:/.test(l));
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const m = /^(\s*(?:-\s+)?)([\w-]+)\s*:(?:\s+(.*))?$/.exec(line);
     if (!m || !YAML_KEYS.test(m[2])) continue;
     const key = m[2];
     const indent = m[1].length;
-    const rest = (m[3] ?? '').replace(/\s+#.*$/, '');
+    const rest = (m[3] ?? '').replace(/\s+#.*$/, '').trimEnd();
     // `defaults: run: shell:` holds no script.
     if (key === 'run' && !rest && /^\s*defaults\s*:/.test(b.lines[i - 1] ?? '')) continue;
     if (found.some((id) => CI_SYSTEMS[id].skips?.(b.lines, key, () => parentLine(b, i, indent)))) continue;
@@ -71,6 +73,7 @@ export function yaml(b: Builder): void {
     const shell = yamlShell(b, i, indent, key, found);
     if (shell === null) continue;
     const first = b.regions.length;
+    const keyLine = i;
     const ci = stepCi(b, i, indent, key, found);
     const label: [string, string] = ci ? CI_SYSTEMS[ci].label(key) : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
@@ -84,7 +87,7 @@ export function yaml(b: Builder): void {
       while (j < b.lines.length && (!b.lines[j].trim() || indentOf(b.lines[j]) > indent || (indentOf(b.lines[j]) === indent && /^\s*-\s/.test(b.lines[j]) && !/^\s*-\s+[\w-]+\s*:/.test(b.lines[j])))) {
         const item = /^(\s*-\s+)(.*)$/.exec(b.lines[j]);
         if (item) {
-          const value = item[2].replace(/\s+#.*$/, '');
+          const value = item[2].replace(/\s+#.*$/, '').trimEnd();
           if (BLOCK_HEADER.test(value)) { j = yamlBlock(b, j, indentOf(b.lines[j]), value, label, shell) + 1; continue; }
           yamlScalar(b, j, item[1].length, value, label, shell);
         }
@@ -93,7 +96,25 @@ export function yaml(b: Builder): void {
       i = j - 1;
     }
     if (ci) for (const r of b.regions.slice(first)) r.host.ci = ci;
+    const script = ci ? undefined : scriptOf(b, keyLine, key, travis);
+    if (script !== undefined) for (const r of b.regions.slice(first)) r.script = script;
   }
+}
+
+/**
+ * The shell a `script:` key's commands run in, as a `ShellRegion.script` group (undefined: each command, or each step,
+ * is a shell of its own). GitLab CI joins a job's `before_script` and `script` into one shell script, and runs
+ * `after_script` in a shell of its own; Bitbucket Pipelines runs a step's `script` list in one shell; Travis CI runs all
+ * the phases of a job in one shell. Every other key (GitHub Actions `run:`, Azure Pipelines `script:` and `bash:`,
+ * CircleCI `run:`, Taskfile `cmds:`) is one shell per step or per command. The group is the line of the job that holds
+ * the key (-1 at the top level), or of the key itself for GitLab's `after_script`.
+ */
+function scriptOf(b: Builder, at: number, key: string, travis: boolean): number | undefined {
+  if (key === 'after_script' && !travis) return at;
+  if (key !== 'script' && key !== 'before_script' && key !== 'after_script') return undefined;
+  const indent = indentOf(b.lines[at]);
+  for (let j = at - 1; j >= 0; j--) if (b.lines[j].trim() && !b.lines[j].trimStart().startsWith('#') && indentOf(b.lines[j]) < indent) return j;
+  return -1;
 }
 
 /** Names defined under `variables:` (`name: value` or `- name: x`), for `$(name)` macros. */
@@ -228,8 +249,8 @@ function yamlBlock(b: Builder, at: number, indent: number, header: string, label
 
 /** The note on a folded block whose lines YAML joins. */
 const FOLDED: [string, string] = [
-  'YAML の折り畳みブロック（`>`）は、同じ字下げで隣り合う行をスペースでつなぎます。シェルはつながった 1 行を受け取ります。',
-  'A YAML folded block (`>`) joins lines next to each other at the same indentation with a space: the shell gets them as one line.',
+  'YAML の折り畳みブロック（`>`）は、同じ字下げで隣り合う行をスペースでつなぎます。シェルはつながった 1 行を受け取ります。ここではつなぎ目を ` \\` と改行として読むので、単一引用符の中と `#` のコメントの後では YAML と読み方が違います（YAML はつないだ次の行も文字列やコメントに含めます）。',
+  'A YAML folded block (`>`) joins lines next to each other at the same indentation with a space: the shell gets them as one line. Here each join is read as ` \\` and a line break, which differs from YAML inside single quotes and after a `#` comment (YAML takes the joined line into the string or the comment).',
 ];
 
 /** A one-line value, plain or quoted. */

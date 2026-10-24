@@ -8,7 +8,7 @@ runs:
   steps:
     - run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh
+        sudo apt-get install -y --no-install-recommends gawk jq dash busybox mksh yash ksh93u+m zsh python3-yaml
       shell: bash
     # mikefarah/yq (MIT; a Go program, run as a separate program) for the yq examples, test/examples-outputs.test.ts:
     # a pinned release, checked by its SHA-256, found through BASH_EXPLAINER_YQ4.
