@@ -10,7 +10,11 @@ The review proposed three checks:
 
 This page checks what exists, takes an inventory for each check, and plans the work in steps. Each step is a PR that keeps every test passing and 100% coverage of `src/`.
 
+Status: step 1 (the inventory of B) is done (#273). Steps 2 to 10 are not started: there is no argv capture, no `Fact.rewrite`, and no normal-forms table yet (section 6).
+
 ## 1. What runs bash today
+
+As of #273, when this page was written.
 
 | test | what it compares | input | bash at test time |
 |---|---|---|---|
@@ -104,7 +108,7 @@ Every note that tells the user to write something else, classified by how a run 
 | src/dialect.ts (`altEn` of the features) | 33 | 33 | 7 with a quick fix, 8 more | 0 | 18 | the 7 quick fixes (test/fixes.test.ts, bash and dash) |
 | inline texts in src/analyzer.ts | 4 | 4 | 1 (`'a[1]'` for `unset a[1]`) | 2 (`env -S` in a shebang) | 1 (`eval`, `seq` for `{1..$n}`) | none |
 
-The catalog's classification is in test/suggestions.test.ts (this PR), one line per entry; its type makes a new entry fail to compile until it is classified. The catalog's mechanical entries:
+The catalog's classification is in test/suggestions.test.ts (#273), one line per entry; its type makes a new entry fail to compile until it is classified. The catalog's mechanical entries:
 
 | id | the rewrite | states to run |
 |---|---|---|
@@ -195,16 +199,16 @@ Then a generator, seeded, makes more forms of each word than a table can hold: q
 | B | PR #271: the note for `rm -rf $DIR/*` said to write `"$DIR/*"`, which removes a file named `*`; the empty-`DIR` pitfall had the same problem with `"${DIR:?}/…"`. The quick fixes have been run in bash and dash since they were added, which is why none of them had such a bug. |
 | C | The 0.8.0 idiom fixes: idioms were read from the text and fired where bash does something else (`trap - EXIT` taken for a clean-up, `while [ $# > 0 ]` taken for a test while it writes a file named `0`, text in quotes taken as code). Missed matches of the same functions: `egrep -q` was not `grep -q`, an alias of `rm` was not `rm`, `\[ -f x ]` and `\declare` were not `[` and `declare`; `bash5` was not bash (a review fix). New, found while writing this page: `./read x` gets the `read -r` pitfall, and find's `unquote` keeps the quotes of `'a'"b"`. |
 
-## 6. Plan
+## 6. Steps
 
-Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first.
+Each step is a PR. Each keeps every test passing and 100% coverage of `src/`. The order puts the cheap, high-value ones first. Step 1 is done; steps 2 to 10 are not started.
 
-1. **B1, inventory (this PR).** This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
+1. **B1, inventory.** Done (#273). This page, and test/suggestions.test.ts: every catalog entry classified, checked against its English text, and the counts pinned.
 2. **A1, argv over sample.sh and the fixtures.** test/support/argv.ts makes the markers of 2.2 and reuses the probe harness and the comparison of word-probes (moved to test/support/probe.ts so that both use it). test/argv.test.ts runs the fixtures (not the snippets yet) in one sandboxed batch. Known differences go in test/fixtures/argv-known.json. Bugs it finds are fixed in their own PRs, each with a CHANGELOG line.
 3. **A2, the snippets and the fuzz inputs.** The same test over a seeded sample of the snippets in CI, and over all 1,220 snippets and 200 fuzz inputs in a script run by hand (section 7), with the two environments of 2.3, the pinned count of unknown words, and the "could know" report.
-4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it. Done after the edits in flight on src/wordfacts.ts land.
+4. **B2, rewrite data for the catalog.** `Fact.rewrite` (3.2) for the 12 mechanical ids; the notes render their suggestion from it. src/wordfacts.ts and src/statusfacts.ts emit it.
 5. **B3, run the rewrites.** test/rewrites.test.ts: the states and oracles of 3.3 for each mechanical id, and the two cheap checks for all. The inventory test then requires a rewrite on every mechanical fact.
-6. **B4, the style checks.** Ids and rewrite data for the nine checks of src/pitfalls.ts, then the same test. Done after the edits in flight on src/pitfalls.ts land.
+6. **B4, the style checks.** Ids and rewrite data for the nine checks of src/pitfalls.ts, then the same test.
 7. **C1, the normal-forms table.** test/fixtures/oracles/normal-forms.json with rows for each normalizer of 4.1, and the two-sided test. It starts with the near-misses of 4.1; those that bash runs differently from what we say are fixed in their own PRs.
 8. **C2, the generator.** Seeded forms per normalizer, grouped by key and run (4.2).
 9. **A3, renderings and roles (2.5).**

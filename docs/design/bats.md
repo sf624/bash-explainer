@@ -19,7 +19,9 @@ Why not the alternatives:
 
 The host kind does what bats does (rewrite, then run bash), so the semantic model reads the script bash really runs.
 
-## This step
+## What is done
+
+The host kind came in #202; bats' functions became spec effects in #222 (refactor 2.1).
 
 - Detection: the `.bats` extension, the language id `bats` (from a bats extension for VS Code), or a `bats` shebang. A `.bats` file opened as a shell script is still a bats file.
 - The extractor, and the explanation of the `@test` line: the test as written, the function bats makes of it, and a note on how bats runs it.
@@ -31,10 +33,10 @@ The host kind does what bats does (rewrite, then run bash), so the semantic mode
 
 The facts cite the sections of the Bash manual that they rest on (functions, `set -e`, pipelines). The catalog cites only the bash manual, and every renderer links its sections; a second source (the bats-core documentation) would need its own links in each renderer, so it is left for later.
 
-## Later steps
+## Not done yet
 
 - The semantic model: each test as a process of its own with `set -e` on (so that the status notes see it), and `teardown`, which bats calls on the left of `||`, where bash ignores `set -e`.
-- bats' functions known to the model (the walk of src/semantics/state.ts reads only the dictionary today), so that `run` assigns `$status`, `$output`, `$lines`, `$stderr` and `$stderr_lines` (the state model's `assigned`), and the `BATS_*` variables. A review noted that this would also replace the `resolveName(…).kind === 'function'` check of src/bats.ts (a file's own `run` function): the model would say which `run` runs, and conditions after a call of bats' functions could then be decided again. It would also let the walk read `run eval 'S'` as a script run in `run`'s subshell, as it reads `eval 'S'` (src/semantics/nested.ts); today that string stays one word, while `run bash -c 'S'` is read in the new shell, whose slot chain starts with `run`'s subshell.
+- bats' functions in the model: partly done (#222). The model reads them by their specs, as builtins ("What is done" above): `run` assigns `$status`, `$output`, `$lines`, `BATS_RUN_COMMAND`, and maybe `$stderr` and `$stderr_lines` (src/dict/bats.ts). What remains: the other `BATS_*` variables; the walk does not read `run eval 'S'` as a script run in `run`'s subshell, as it reads `eval 'S'` (src/semantics/nested.ts), so that string stays one word (test/hosts.test.ts), while `run bash -c 'S'` is read in the new shell, whose slot chain starts with `run`'s subshell; and src/bats.ts still asks `resolveName(…).kind === 'function'` for a file's own `run`.
 - Hooks: `setup`, `teardown`, `setup_file`, `teardown_file`, `setup_suite`, and the order bats calls them in.
 - bats-assert and bats-file helpers (`assert_success`, `assert_output`, …), as specs that apply after `load`/`bats_load_library` of their library.
 - Tag comments (`# bats test_tags=…`), and the other form of a test, a function marked with a comment (`f() { # @test`).

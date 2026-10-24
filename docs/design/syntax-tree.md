@@ -8,7 +8,7 @@ This page describes the model, its rules, and the move from tree-sitter-bash to 
 
 The extension was built on tree-sitter-bash, read through web-tree-sitter. That coupling has costs:
 
-- **Upstream is nearly inactive.** The last commit was in December 2025, and 24 PRs are open. We patch the grammar and build the wasm ourselves (`patches/tree-sitter-bash/`).
+- **Upstream is nearly inactive.** The last commit was in December 2025, and 24 PRs are open. We patched the grammar and built the wasm ourselves (`patches/tree-sitter-bash/`).
 - **Some misparses need more than a grammar patch.** Example: a line with `&&` after a pipeline ([tree-sitter-bash#347](https://github.com/tree-sitter/tree-sitter-bash/issues/347)).
 - **tree-sitter's names and quirks were all over the code.** About 8 files and 1,000 member accesses depended on them:
   - 53 node types and about 90 token strings;
@@ -72,18 +72,18 @@ Only `src/syntax/adapters/unbash.ts` may import `unbash`; `cli/` and `web/` make
 
 The move was made in steps, each a PR with the test suite as the safety net. Most of the tests check the explanations, not the tree: 37 of 46 test files never look at a node.
 
-1. **The model and this page.** This PR.
-2. **A tree-sitter adapter** (removed in step 6). It turns web-tree-sitter's tree into the model, applying the normalizations above. It also takes over the extended glob masking from src/parser.ts.
-3. **The consumers read the model.** These are dialect, fixes, pitfalls, hosts and document, then the analyzer, each in its own step where possible. Explanations do not change, and the tests stay as they are, except about 35 assertions that read nodes directly. The import boundary test is added at the end of this step.
-4. **An unbash adapter**, with the token scanner and the comment recovery. Pin unbash to an exact version.
-5. **A differential run** (the oracle, removed in step 6). Both adapters explain the same scripts: sample.sh, the test fixtures, and a sweep of real scripts. Every difference is either a fix (tree-sitter misread it) or an adapter bug, and gets fixed or recorded.
-6. **The switch. Done.** Part 1: the extension, the language server, the command-line tool and the web page use the unbash adapter, and no bundle loads wasm. Part 2: the tree-sitter adapter, web-tree-sitter, tree-sitter-bash, `patches/`, `grammar/`, `scripts/build-grammar.mjs`, their CI step and the oracle are removed. The explicit trees of the inputs tree-sitter read wrongly, and the invariants and fuzz tests, stay as tests of the unbash adapter.
+1. **The model and this page.** Done (#72).
+2. **A tree-sitter adapter.** Done (#73), and removed in step 6. It turns web-tree-sitter's tree into the model, applying the normalizations above. It also takes over the extended glob masking from src/parser.ts.
+3. **The consumers read the model.** Done (#76). These are dialect, fixes, pitfalls, hosts and document, then the analyzer, each in its own step where possible. Explanations do not change, and the tests stay as they are, except about 35 assertions that read nodes directly. The import boundary test is added at the end of this step.
+4. **An unbash adapter**, with the token scanner and the comment recovery. Done (#79). unbash is pinned to an exact version.
+5. **A differential run** (the oracle). Done (#79), and removed in step 6. Both adapters explain the same scripts: sample.sh, the test fixtures, and a sweep of real scripts. Every difference is either a fix (tree-sitter misread it) or an adapter bug, and gets fixed or recorded.
+6. **The switch.** Done (#90, #91). Part 1 (#90): the extension, the language server, the command-line tool and the web page use the unbash adapter, and no bundle loads wasm. Part 2 (#91): the tree-sitter adapter, web-tree-sitter, tree-sitter-bash, `patches/`, `grammar/`, `scripts/build-grammar.mjs`, their CI step and the oracle are removed. The explicit trees of the inputs tree-sitter read wrongly, and the invariants and fuzz tests, stay as tests of the unbash adapter.
 
-### Known gaps to cover in the unbash adapter
+### Gaps of unbash that the adapter fills
 
-These come from a survey of unbash 6.0.0 (6.0.1 only changed ANSI-C byte escapes). The adapter fills them; most are small.
+These come from a survey of unbash 6.0.0 (6.0.1 only changed ANSI-C byte escapes). The adapter fills each of them.
 
-- **No positions for comments, keywords and operators.** The token scanner recovers them (estimated at 400–700 lines with tests).
+- **No positions for comments, keywords and operators.** The token scanner (`src/syntax/adapters/tokens.ts`) recovers them.
 - **`[ ]` and `test` are plain commands.** The adapter makes `[ … ]` a `command` named `[` with its words as a flat list; testexpr does the grouping.
 - **Array elements `[k]=v`, tilde words and `=~` right sides are plain words.** The adapter splits them where the explanations need it.
 - **Unclosed compound commands come out with zero width.** For `if x; then`, `{ echo` and `case x in a)`, the adapter extends them to what follows and marks them `incomplete`.
@@ -117,7 +117,7 @@ What unbash does not give, which the adapter does not repair: `echo (` is accept
 
 ### Risks
 
-- **unbash's AST changes with each major version.** Pin the version. An upgrade touches only the adapter, and the differential run and the tests check it.
+- **unbash's AST changes with each major version.** The version is pinned (package.json). An upgrade touches only the adapter, and the adapter's tests check it (the differential run did until step 6).
 
 ### To do at the switch (done in part 1)
 
@@ -133,7 +133,7 @@ Found in the review of the unbash adapter; they needed the analyzer or the build
 
 ## Command nodes at bash's granularity
 
-The plan is built (steps 0 to 6). The goal: at the command level, our tree has the nodes bash's parser has. If bash makes something a simple command, so do we. Word-level parts (`string`, `expansion`, `concatenation`…) stay finer than bash's words: the explanations need them.
+The plan is done: steps 0 to 6 were merged as #257, #259, #260 and #262 to #265. The goal: at the command level, our tree has the nodes bash's parser has. If bash makes something a simple command, so do we. Word-level parts (`string`, `expansion`, `concatenation`…) stay finer than bash's words: the explanations need them.
 
 Why: some command nodes are left over from tree-sitter-bash, and the adapter makes them by looking at the command name. `[ … ]` becomes a `test_command` when the name is `[`. What a name runs is a question for the model (`resolveName`), not for the parser: a function named `[`, `enable -n [` or a quoted `"["` change it, and the adapter cannot see them all.
 
@@ -171,7 +171,7 @@ The manual groups commands by section, not by node: one section can hold several
 |---|---|---|---|
 | `command` | simple (`[ … ]`, `unset`, `declare`, `a=1` alone and the rest, with its redirections as children) | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html) | matches |
 | `variable_assignment` | an assignment word of a simple command | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.4](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html) | matches: a part of a `command` (before the name, in a command with no name, or an argument of a declaration builtin), never a statement |
-| `redirected_statement` around a simple command | part of the simple command | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.6](https://www.gnu.org/software/bash/manual/html_node/Redirections.html) | differs: the redirections become children of the `command`, as those before the name already are |
+| `redirected_statement` around a simple command | part of the simple command | [3.2.2](https://www.gnu.org/software/bash/manual/html_node/Simple-Commands.html); [3.6](https://www.gnu.org/software/bash/manual/html_node/Redirections.html) | gone since step 5 (#264): the redirections are children of the `command`, as those before the name are |
 | `redirected_statement` around a compound command | the compound command's `redirects` | [3.2.5](https://www.gnu.org/software/bash/manual/html_node/Compound-Commands.html); [3.6](https://www.gnu.org/software/bash/manual/html_node/Redirections.html) | matches (a wrapper instead of a field); keep |
 | `negated_command` | a flag on the pipeline (or the command) | [3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html) | matches: the wrapper holds the `!` token; keep |
 | `time_statement` | a flag on the pipeline | [3.2.3](https://www.gnu.org/software/bash/manual/html_node/Pipelines.html) | matches: the wrapper holds `time` and `-p`; keep |
@@ -250,11 +250,11 @@ flowchart TB
   class C5 supplied
 ```
 
-### `[` today
+### `[` before the change
 
-Checked with bash 5.2 and `npx tsx test/dump.ts`:
+What the explainer said before step 1 (#259), checked with bash 5.2 and `npx tsx test/dump.ts`. Step 1 fixed the wrong rows (see below):
 
-| input | bash runs | our tree and explanation today |
+| input | bash runs | our tree and explanation then |
 |---|---|---|
 | `[ -f x ]` | the builtin `[` | `test_command`; right |
 | `\[ -f x ]`, `"[" -f x ]`, `x=1 [ -f x ]` | the builtin `[` | a `command`: "Run the external command `[` (not in the dictionary)". Wrong |
@@ -265,16 +265,16 @@ Checked with bash 5.2 and `npx tsx test/dump.ts`:
 | `[ -f x` | `[`, which fails at run time: `[: missing ']'`, status 2 | explained as an ordinary test, with no note. The tree has an error the adapter adds (`missing ']'`, src/syntax/adapters/unbash.ts, `testCommand`). Nothing shows it for bash (the dialect check reports parse errors only for zsh), and the main walk goes on; only `runScript` (`eval` and trap strings) stops at an error |
 | `[ -d / && -d /tmp ]`, `[ -f x]` | `[ -d /`, then `-d /tmp ]`; a `[` with no `]` | the same added error. bash-ast-known.json lists 8 such inputs and says unbash reports the error; in fact the adapter does |
 
-The pitfalls already explain the run-time `missing ']'` of `[ -f x]` and `[ a && b ]`.
+The pitfalls already explained the run-time `missing ']'` of `[ -f x]` and `[ a && b ]`.
 
-### The plan
+### The steps (all done)
 
-Each step is a PR. Each keeps every test passing, and the dump of sample.sh unchanged, except where an explanation was wrong. A fixed explanation gets a test against real bash (a row in an `examples-*` table, or a probe) and a CHANGELOG line under "Fixed".
+Each step was a PR. Each kept every test passing, and the dump of sample.sh unchanged, except where an explanation was wrong. A fixed explanation got a test against real bash (a row in an `examples-*` table, or a probe) and a CHANGELOG line under "Fixed".
 
 0. **The guard**: the token test (below), before any node changes. Done in #257: test/command-tokens.test.ts. Today's tree passed it, so its known list (test/fixtures/command-tokens-known.json) started empty; inputs our parser rejects (`[ -f x`) are skipped until step 1. Beyond the plan below, it gives bash-ast the text of each substitution too, as the child bash parses it, and compares those commands the same way; a script whose shapes differ fails unless listed; and it pins its counts (inputs skipped by reason, tokens in substitutions and in here-documents), so that a step changes them on purpose.
-1. **`[` is a command.** Done in #259. The adapter drops `testCommand`: `[ … ]` is a `command` named `[`, and `]` is its last argument. A missing `]` is no longer a syntax error. The consumers ask `resolveName` what the name runs. When it is the builtin `[` or `test`, or a file `[`, testexpr groups the arguments (without a last `]`); a function or an alias is a plain call. Read today in src/analyzer.ts (`test`, the statements of a line, the `]` token, `bracketTest`), src/pitfalls.ts (its `test_command` case joins the checks of a command named `[`), src/semantics/walk/conditions.ts (the walk's conditions; it already checks for a function `[`), src/semantics/status.ts, src/semantics/walk/walker.ts (`ERREXIT_STOPS`, the conditions), src/semantics/env.ts (`STATEMENTS`), src/semantics/trust.ts, src/semantics/words.ts, src/highlight.ts, src/idioms.ts, src/label.ts, src/dialect.ts, src/refs.ts (sections from the name, through `SAME_AS`), src/wordfacts.ts; in the tests, syntax-adapter-unbash, shape.ts, testexpr, idioms and status. src/semantics/conditions.ts (what `test` gives for known words) reads words, not nodes, and stays. Fixes: `\[`, `"["`, `x=1 [`, `command [`, `builtin [` and `env [` are explained as a test; after a function `[`, as a call; `[ -f x` gets a note that `[` fails at run time (`missing ']'`, status 2), as the pitfalls already say for `[ -f x]` and `[ a && b ]`. The 8 `[` entries leave bash-ast-known.json.
+1. **`[` is a command.** Done in #259. The adapter drops `testCommand`: `[ … ]` is a `command` named `[`, and `]` is its last argument. A missing `]` is no longer a syntax error. The consumers ask `resolveName` what the name runs. When it is the builtin `[` or `test`, or a file `[`, testexpr groups the arguments (without a last `]`); a function or an alias is a plain call. The step changed the readers of `test_command`: src/analyzer.ts (`test`, the statements of a line, the `]` token, `bracketTest`), src/pitfalls.ts (its `test_command` case joins the checks of a command named `[`), src/semantics/walk/conditions.ts (the walk's conditions; it already checks for a function `[`), src/semantics/status.ts, src/semantics/walk/walker.ts (`ERREXIT_STOPS`, the conditions), src/semantics/env.ts (`STATEMENTS`), src/semantics/trust.ts, src/semantics/words.ts, src/highlight.ts, src/idioms.ts, src/label.ts, src/dialect.ts, src/refs.ts (sections from the name, through `SAME_AS`), src/wordfacts.ts; in the tests, syntax-adapter-unbash, shape.ts, testexpr, idioms and status. src/semantics/conditions.ts (what `test` gives for known words) reads words, not nodes, and stays. Fixes: `\[`, `"["`, `x=1 [`, `command [`, `builtin [` and `env [` are explained as a test; after a function `[`, as a call; `[ -f x` gets a note that `[` fails at run time (`missing ']'`, status 2), as the pitfalls already say for `[ -f x]` and `[ a && b ]`. The 8 `[` entries leave bash-ast-known.json.
 
-   **Highlighting.** src/highlight.ts and src/label.ts import no model today, and the web editor highlights on every edit. Asking `resolveName` there would need the shell state for each highlight. So highlight.ts keeps colouring `[` (and the last `]`) as a builtin by its spelling, as it does now: an unquoted `[` in command position. Only the explanation resolves the name. A function `[` is rare, and a colour is not a claim about what runs; the explanation is. Reusing the state the explanation computes would tie highlighting to the cursor line, and would make it slower in the editor.
+   **Highlighting.** src/highlight.ts and src/label.ts import no model, and the web editor highlights on every edit. Asking `resolveName` there would need the shell state for each highlight. So highlight.ts keeps colouring `[` (and the last `]`) as a builtin by its spelling, as it does now: an unquoted `[` in command position. Only the explanation resolves the name. A function `[` is rare, and a colour is not a claim about what runs; the explanation is. Reusing the state the explanation computes would tie highlighting to the cursor line, and would make it slower in the editor.
 
    **Style checks.** The style checks read the spelling too (`writtenAsBracket`): the dialect check (`[ a == b ]` in sh), the pitfalls (`<` read as a redirection inside `[ ]`, `[ a && b ]`, `[ -f $x]`) and the idioms (`[ -e "$f" ] || continue`). They are about how a line is written, src/dialect.ts, src/pitfalls.ts and src/idioms.ts have no model (as highlighting), and what they say of the text stays true whatever `[` runs: `<` is a redirection, `]` is glued to the word. They may be noise only after a function or alias named `[`, which representative scripts do not define. What `[` does when it runs is the explanation's, from the model: the notes that it fails (`[ -f x`, `[ -f x]`, `test -f x ]`: catalog facts in src/messages.ts) are said only when `testSpecOf` says it runs `test`.
 
@@ -289,9 +289,9 @@ Each step is a PR. Each keeps every test passing, and the dump of sample.sh unch
 
 ### How it is checked
 
-**bash-ast's shapes.** test/bash-ast.test.ts already compares the commands, their words and their redirections (test/support/shape.ts). Today shape.ts makes a `simple` from five node types, and from a `redirected_statement` around them. After step 6 only a `command` makes one, so a node of another kind where bash has a simple command fails the test. An entry of bash-ast-known.json that a step fixes fails as stale, so each step removes its entries. The declaration rule is not visible in bash-ast (it lists every word that looks like an assignment under `assignments`); test/word-probes.test.ts checks it with bash (`declare a=$v`, `\declare a=$v`, `x=1 declare a=$v`).
+**bash-ast's shapes.** test/bash-ast.test.ts compares the commands, their words and their redirections (test/support/shape.ts). Before the steps, shape.ts made a `simple` from five node types, and from a `redirected_statement` around them. Since step 6 only a `command` makes one, so a node of another kind where bash has a simple command fails the test. An entry of bash-ast-known.json that a change fixes fails as stale, so each step removed its entries. The declaration rule is not visible in bash-ast (it lists every word that looks like an assignment under `assignments`); test/word-probes.test.ts checks it with bash (`declare a=$v`, `\declare a=$v`, `x=1 declare a=$v`).
 
-**Tokens refine commands.** Every explanation token has exactly one innermost enclosing command, and that command is one of bash's: tokens refine commands, and the relation from tokens to commands is many to one. A new test checks this with bash-ast, over the corpus of the shape test (the fixtures and snippets.json):
+**Tokens refine commands.** Every explanation token has exactly one innermost enclosing command, and that command is one of bash's: tokens refine commands, and the relation from tokens to commands is many to one. test/command-tokens.test.ts checks this with bash-ast, over the corpus of the shape test (the fixtures and snippets.json):
 
 - **Our commands** are the nodes that shape.ts turns into a shape node: simple commands, pipelines, and-or lists, sequences, compound commands, function definitions and coprocs. shape.ts records, for each path in the shape, the nodes it came from. Where the shapes agree, each path is also a command of bash-ast. The wrappers follow what shape.ts builds:
   - `redirected_statement`, and `time_statement` with a body, get the same path as their body.
@@ -304,7 +304,7 @@ Each step is a PR. Each keeps every test passing, and the dump of sample.sh unch
 - **Exceptions.** Inside a `command_substitution` or a `process_substitution` (backquotes too), the innermost command is ours: bash-ast keeps the text as a word. The test still requires one innermost command, and that the substitution lies inside one word of a command of bash-ast. A token of an embedded language (jq, awk, sed…) must lie inside one word of one command. A `comment` belongs to no command, and is skipped. A token in a `heredoc_body` belongs to the command of its redirection: the body lies outside that command's range, so the test looks it up from the `heredoc_redirect`.
 - Inputs bash-ast rejects are skipped, and so are known differences at the path in question, as in the shape test.
 
-The tokens of the example, after the change, each in the box of its innermost command. The two exceptions are dashed: the `grep` command in `$( )`, and the token of the regex (an embedded language).
+The tokens of the example, each in the box of its innermost command. The two exceptions are dashed: the `grep` command in `$( )`, and the token of the regex (an embedded language).
 
 ```mermaid
 flowchart LR
@@ -344,9 +344,9 @@ flowchart LR
   style K3 stroke-dasharray:4 3
 ```
 
-The test comes first (step 0), as a guard. Today's tree should mostly pass it: the wrappers map as above, and the shape test already agrees. What fails today is a finding. It goes in a list with a reason, as in bash-ast-known.json, and the steps above shrink that list. Each step then shows that no token lost its command.
+The test came first (step 0, #257), as a guard. The tree of then passed it, so its known list (test/fixtures/command-tokens-known.json) started empty. A finding goes in that list with a reason, as in bash-ast-known.json. Each step showed that no token lost its command.
 
-### Risks
+### Risks (as planned)
 
 - **Many consumers.** About 25 files read these types. Each step changes one type, so a regression shows in the dumps and the tests of that step.
 - **Coverage.** Removed branches drop out; new ones (`resolveName` on `[`) need tests. Coverage stays at 100%.
@@ -359,4 +359,4 @@ The panel's tree view (src/reading.ts) draws these commands as bash's layer of a
 
 ### Size
 
-About 2,000 to 2,500 changed lines in 7 PRs. Step 5 (redirections, about 700 lines) and step 1 (`[`, about 500) are the largest. Steps 2 to 4 are 150 to 300 each, and the guard about 250.
+The plan estimated about 2,000 to 2,500 changed lines in 7 PRs. Step 5 (redirections, about 700 lines) and step 1 (`[`, about 500) are the largest. Steps 2 to 4 are 150 to 300 each, and the guard about 250.

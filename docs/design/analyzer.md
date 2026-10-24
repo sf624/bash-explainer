@@ -4,9 +4,11 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
+Status: step 0 (the guards and the snapshot) is done (#275). Steps 1 to 9 are not started: src/explain/ does not exist yet, and src/analyzer.ts is 4,141 lines.
+
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
-## 1. What analyzer.ts holds today
+## 1. What analyzer.ts holds (at d265509)
 
 ### 1.1 The parts
 
@@ -276,7 +278,7 @@ Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 2
 
 **Avoiding long conflicts.** The maintainer chose thinning over features, so feature PRs that touch src/analyzer.ts wait while a move PR is open. Each move PR is short-lived: opened, checked and merged in one sitting. PR #269 (tree view, `Token.origin`) should be merged, or rebased, before step 2: it touches `render`, `testArgs`, `scriptTokens` and the embedded explainers, and step 2 changes how tokens are made.
 
-### Step 0: the guards and the snapshot (S)
+### Step 0: the guards and the snapshot (S). Done (#275)
 
 - test/file-length.test.ts and test/fixtures/file-length.json (3.1).
 - test/explain-imports.test.ts (3.2, 3.3). It passes at once: src/explain/ does not exist yet. A unit test of its cycle finder covers it.
@@ -383,12 +385,12 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | planned | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | planned | rows against bash (`bash -c`, `sudo`, `env -i`) |
 | T8 | Cycles between the groups (1.4) | 3–9 | planned | test/explain-imports.test.ts |
-| T9 | No guard on file length, import cycles or name checks | 0 | PR (step 0) | the guards themselves |
-| T10 | No before/after check of the whole explanation | 0 | PR (step 0) | test/snapshot.ts |
+| T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
+| T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
 | Step | Status |
 |---|---|
-| 0 | PR (step 0) |
+| 0 | done (PR #275) |
 | 1.1–1.4 | planned |
 | 2 | planned |
 | 3 | planned |

@@ -22,7 +22,7 @@ $ npx bash-explainer --no-examples -e 'tar -czf backup.tgz -C src .'
 
 ## Installation
 
-Requires Node.js 18 or later. The parser is WebAssembly, so there are no native dependencies: it runs wherever Node.js does.
+Requires Node.js 18 or later. The parser is plain JavaScript, so there are no native dependencies: it runs wherever Node.js does.
 
 - **Without installing:** `npx bash-explainer <file>` fetches the package on first use.
 - **Installed:** `npm install --global bash-explainer`, then `bash-explainer <file>`. Use this when you run it often, or from an editor.
