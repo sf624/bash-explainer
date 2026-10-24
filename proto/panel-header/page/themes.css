@@ -1,0 +1,173 @@
+/* The --vscode-* variables a webview gets, for three of VS Code's built-in themes (values from
+   dark_modern.json / light_modern.json / hc_black.json and the workbench defaults they inherit). */
+html {
+  --vscode-font-family: system-ui, "Ubuntu", "Droid Sans", sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-font-weight: normal;
+  --vscode-editor-font-family: "Droid Sans Mono", "monospace", monospace;
+  --vscode-editor-font-size: 14px;
+}
+
+html.t-dark {
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-errorForeground: #f85149;
+  --vscode-focusBorder: #0078d4;
+  --vscode-icon-foreground: #cccccc;
+  --vscode-editor-background: #1f1f1f;
+  --vscode-editor-foreground: #cccccc;
+  --vscode-editor-findMatchHighlightBackground: rgba(234, 92, 0, 0.33);
+  --vscode-editorWidget-background: #202020;
+  --vscode-widget-border: #313131;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
+  --vscode-dropdown-background: #313131;
+  --vscode-dropdown-border: #3c3c3c;
+  --vscode-dropdown-foreground: #cccccc;
+  --vscode-dropdown-listBackground: #1f1f1f;
+  --vscode-input-background: #313131;
+  --vscode-input-border: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-button-border: rgba(255, 255, 255, 0.07);
+  --vscode-button-secondaryBackground: #313131;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-button-secondaryHoverBackground: #3c3c3c;
+  --vscode-toolbar-hoverBackground: rgba(90, 93, 94, 0.31);
+  --vscode-toolbar-activeBackground: rgba(99, 102, 103, 0.31);
+  --vscode-inputOption-activeBackground: rgba(36, 137, 219, 0.51);
+  --vscode-inputOption-activeBorder: #2488db;
+  --vscode-inputOption-activeForeground: #ffffff;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-list-activeSelectionBackground: #04395e;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-menu-background: #1f1f1f;
+  --vscode-menu-foreground: #cccccc;
+  --vscode-menu-border: #454545;
+  --vscode-menu-selectionBackground: #0078d4;
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-separatorBackground: #454545;
+  --vscode-panel-border: #2b2b2b;
+  --vscode-sideBar-background: #181818;
+  --vscode-editorGroupHeader-tabsBackground: #181818;
+  --vscode-textBlockQuote-background: #2b2b2b;
+  --vscode-textBlockQuote-border: #616161;
+  --vscode-textCodeBlock-background: #2b2b2b;
+  --vscode-textLink-foreground: #4daafc;
+  --vscode-textLink-activeForeground: #4daafc;
+  --vscode-charts-blue: #3794ff;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-purple: #b180d7;
+  --vscode-charts-red: #f14c4c;
+  --vscode-charts-yellow: #cca700;
+}
+
+html.t-light {
+  --vscode-foreground: #3b3b3b;
+  --vscode-descriptionForeground: #3b3b3b;
+  --vscode-errorForeground: #f85149;
+  --vscode-focusBorder: #005fb8;
+  --vscode-icon-foreground: #3b3b3b;
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #3b3b3b;
+  --vscode-editor-findMatchHighlightBackground: rgba(234, 92, 0, 0.33);
+  --vscode-editorWidget-background: #f8f8f8;
+  --vscode-widget-border: #e5e5e5;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.16);
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-border: #cecece;
+  --vscode-dropdown-foreground: #3b3b3b;
+  --vscode-dropdown-listBackground: #ffffff;
+  --vscode-input-background: #ffffff;
+  --vscode-input-border: #cecece;
+  --vscode-input-foreground: #3b3b3b;
+  --vscode-button-background: #005fb8;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #0258a8;
+  --vscode-button-border: rgba(0, 0, 0, 0.1);
+  --vscode-button-secondaryBackground: #e5e5e5;
+  --vscode-button-secondaryForeground: #3b3b3b;
+  --vscode-button-secondaryHoverBackground: #cccccc;
+  --vscode-toolbar-hoverBackground: rgba(184, 184, 184, 0.31);
+  --vscode-toolbar-activeBackground: rgba(166, 166, 166, 0.31);
+  --vscode-inputOption-activeBackground: #bed6ed;
+  --vscode-inputOption-activeBorder: #005fb8;
+  --vscode-inputOption-activeForeground: #000000;
+  --vscode-list-hoverBackground: #f2f2f2;
+  --vscode-list-activeSelectionBackground: #e8e8e8;
+  --vscode-list-activeSelectionForeground: #000000;
+  --vscode-menu-background: #ffffff;
+  --vscode-menu-foreground: #3b3b3b;
+  --vscode-menu-border: #cecece;
+  --vscode-menu-selectionBackground: #005fb8;
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-separatorBackground: #d4d4d4;
+  --vscode-panel-border: #e5e5e5;
+  --vscode-sideBar-background: #f8f8f8;
+  --vscode-editorGroupHeader-tabsBackground: #f8f8f8;
+  --vscode-textBlockQuote-background: #f8f8f8;
+  --vscode-textBlockQuote-border: #e5e5e5;
+  --vscode-textCodeBlock-background: #f8f8f8;
+  --vscode-textLink-foreground: #005fb8;
+  --vscode-textLink-activeForeground: #005fb8;
+  --vscode-charts-blue: #1a85ff;
+  --vscode-charts-green: #388a34;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-purple: #652d90;
+  --vscode-charts-red: #e51400;
+  --vscode-charts-yellow: #bf8803;
+}
+
+html.t-hc {
+  --vscode-foreground: #ffffff;
+  --vscode-descriptionForeground: rgba(255, 255, 255, 0.7);
+  --vscode-errorForeground: #f48771;
+  --vscode-focusBorder: #f38518;
+  --vscode-contrastBorder: #6fc3df;
+  --vscode-contrastActiveBorder: #f38518;
+  --vscode-icon-foreground: #ffffff;
+  --vscode-editor-background: #000000;
+  --vscode-editor-foreground: #ffffff;
+  --vscode-editorWidget-background: #0c141f;
+  --vscode-widget-border: #6fc3df;
+  --vscode-dropdown-background: #000000;
+  --vscode-dropdown-border: #6fc3df;
+  --vscode-dropdown-foreground: #ffffff;
+  --vscode-dropdown-listBackground: #000000;
+  --vscode-input-background: #000000;
+  --vscode-input-border: #6fc3df;
+  --vscode-input-foreground: #ffffff;
+  --vscode-button-background: #000000;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-border: #6fc3df;
+  --vscode-button-secondaryForeground: #ffffff;
+  --vscode-inputOption-activeBackground: rgba(0, 0, 0, 0);
+  --vscode-inputOption-activeBorder: #6fc3df;
+  --vscode-inputOption-activeForeground: #ffffff;
+  --vscode-list-focusOutline: #f38518;
+  --vscode-menu-background: #000000;
+  --vscode-menu-foreground: #ffffff;
+  --vscode-menu-border: #6fc3df;
+  --vscode-menu-selectionBorder: #f38518;
+  --vscode-menu-separatorBackground: #6fc3df;
+  --vscode-panel-border: #6fc3df;
+  --vscode-sideBar-background: #000000;
+  --vscode-editorGroupHeader-tabsBackground: #000000;
+  --vscode-textBlockQuote-background: #000000;
+  --vscode-textBlockQuote-border: #ffffff;
+  --vscode-textCodeBlock-background: #000000;
+  --vscode-textLink-foreground: #21a6ff;
+  --vscode-textLink-activeForeground: #21a6ff;
+  --vscode-charts-blue: #3794ff;
+  --vscode-charts-green: #89d185;
+  --vscode-charts-orange: #d18616;
+  --vscode-charts-purple: #b180d7;
+  --vscode-charts-red: #f14c4c;
+  --vscode-charts-yellow: #cca700;
+}
+
+html, body { background: var(--vscode-editor-background); }
+/* VS Code's default webview styles: no body margin. */
+body { margin: 0; }

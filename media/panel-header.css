@@ -1,0 +1,365 @@
+/* PROTOTYPE (branch proto/panel-header; not to merge): the header looks of media/panel-header.js, chosen by
+   <html data-hdr>. Only VS Code's theme variables, so every theme (high contrast too) gets its own colours. */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- shared: icon buttons and dropdowns */
+
+html[class*="hdr-"] .where {
+  flex: 1 1 9rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[class*="hdr-"] .hdr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+html[class*="hdr-"] .hdr-btn:hover {
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  text-decoration: none;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.15));
+  outline: 1px dashed var(--vscode-toolbar-hoverOutline, transparent);
+  outline-offset: -1px;
+}
+
+html[class*="hdr-"] .hdr-btn:focus-visible,
+html[class*="hdr-"] .hdr-select select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.hdr-ico.fill {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.hdr-ico.stroke {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[class*="hdr-"] .hdr-pick:not([hidden]) {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.hdr-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+html[class*="hdr-"] .hdr-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 5.5rem;
+  max-width: 100%;
+  margin: 0;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.hdr-select .hdr-ico {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+}
+
+html[class*="hdr-"] .tools,
+.hdr-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- v1: a view title bar */
+
+html.hdr-v1 header {
+  gap: 0.25rem 0.75rem;
+  padding: 0;
+  margin-bottom: 0.5rem;
+}
+
+html.hdr-v1 .tools {
+  margin-left: auto;
+}
+
+html.hdr-v1 .hdr-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+html.hdr-v1 .hdr-select select {
+  height: 24px;
+  padding: 0 20px 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-dropdown-background));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+}
+
+.hdr-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+}
+
+/* The views as two toggles, drawn as VS Code's input toggles (Match Case…) when pressed. */
+html.hdr-v1 #views.hdr-views {
+  flex-wrap: nowrap;
+  gap: 2px;
+  margin: 0;
+}
+
+html.hdr-v1 #views .hdr-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: inherit;
+}
+
+html.hdr-v1 #views .hdr-btn[aria-pressed="true"],
+html.hdr-v1 .hdr-btn[aria-pressed="true"] {
+  background: var(--vscode-inputOption-activeBackground);
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+  color: var(--vscode-inputOption-activeForeground);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------- v2: segmented controls and a menu */
+
+html.hdr-v2 header {
+  padding: 0;
+  margin-bottom: 0.5rem;
+  gap: 0.4rem;
+}
+
+.hdr-row {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hdr-spacer {
+  flex: 1 0 0;
+}
+
+html.hdr-v2 #views.hdr-seg {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-radius: 15px;
+  background: var(--vscode-button-secondaryBackground, transparent);
+}
+
+html.hdr-v2 #views.hdr-seg button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  font-size: inherit;
+}
+
+html.hdr-v2 #views.hdr-seg button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, transparent);
+  border-color: var(--vscode-contrastActiveBorder, transparent);
+}
+
+html.hdr-v2 #views.hdr-seg button[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-contrastActiveBorder, transparent);
+  outline: none;
+}
+
+html.hdr-v2 #views.hdr-seg button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+html.hdr-v2 .hdr-select select {
+  height: 30px;
+  padding: 0 26px 0 12px;
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-radius: 15px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-dropdown-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-dropdown-foreground));
+}
+
+html.hdr-v2 .hdr-select .hdr-ico {
+  right: 8px;
+}
+
+html.hdr-v2 .hdr-select select:focus-visible {
+  outline-offset: 1px;
+}
+
+.hdr-more {
+  position: relative;
+  flex: none;
+}
+
+html.hdr-v2 .hdr-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+}
+
+#hdr-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent));
+  border-radius: 5px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+#hdr-menu[hidden] {
+  display: none;
+}
+
+#hdr-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#hdr-menu [role="menuitem"]:hover,
+#hdr-menu [role="menuitem"]:focus {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground));
+  border-color: var(--vscode-menu-selectionBorder, transparent);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------- v3: the web page's bar */
+
+html.hdr-v3 #top {
+  padding-top: 0;
+}
+
+html.hdr-v3 header {
+  margin: 0 -1rem 0.75rem;
+  padding: 6px 8px 6px 1rem;
+  min-height: 40px;
+  box-sizing: border-box;
+  gap: 4px 10px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+}
+
+html.hdr-v3 .tools {
+  gap: 4px;
+  margin-left: auto;
+}
+
+html.hdr-v3 .hdr-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+html.hdr-v3 .hdr-btn:hover {
+  background: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.15));
+}
+
+html.hdr-v3 .hdr-btn:focus-visible,
+html.hdr-v3 .hdr-select select:focus-visible {
+  outline-width: 2px;
+  outline-offset: 0;
+}
+
+html.hdr-v3 .hdr-btn[aria-pressed="true"] {
+  background: var(--vscode-list-activeSelectionBackground, rgba(127, 127, 127, 0.25));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  border-color: var(--vscode-contrastActiveBorder, transparent);
+}
+
+html.hdr-v3 .hdr-select select {
+  height: 28px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: 6px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+}
+
+html.hdr-v3 .hdr-select .hdr-ico {
+  right: 6px;
+  width: 14px;
+  height: 14px;
+}
+
+html.hdr-v3 #views button {
+  border-radius: 6px;
+  padding: 0.15rem 0.7rem;
+}
+
+html.hdr-v3 pre#line {
+  border-radius: 8px;
+}

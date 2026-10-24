@@ -155,16 +155,24 @@ export class PanelController implements vscode.Disposable {
     const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel.css'));
     const js = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel.js'));
+    // PROTOTYPE (proto/panel-header): another look for the header, from $BASH_EXPLAINER_PANEL_HEADER (v1, v2 or v3).
+    // (No process in VS Code for the web.)
+    const want = typeof process === 'undefined' ? undefined : process.env.BASH_EXPLAINER_PANEL_HEADER;
+    const hdr = want && /^v[123]$/.test(want) ? want : undefined;
+    const hdrCss = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel-header.css'));
+    const hdrJs = webview.asWebviewUri(vscode.Uri.joinPath(media, 'panel-header.js'));
     return `<!DOCTYPE html>
-<html lang="${this.service.lang}">
+<html lang="${this.service.lang}"${hdr ? ` data-hdr="${hdr}"` : ''}>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${css}">
+<link rel="stylesheet" href="${hdrCss}">
 </head>
 <body>
 ${PANEL_BODY}
+<script nonce="${nonce}" src="${hdrJs}"></script>
 <script nonce="${nonce}" src="${js}"></script>
 </body>
 </html>`;

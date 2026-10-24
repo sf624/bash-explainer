@@ -3,6 +3,20 @@
   // @ts-ignore acquireVsCodeApi is injected by VS Code.
   const vscode = acquireVsCodeApi();
   const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
+  /**
+   * Sets a header button's name. A button drawn as an icon (the header prototype, media/panel-header.js) keeps
+   * its icon: the name goes into its .lbl and its tooltip; `prefix` is shown only without an icon.
+   */
+  function setLabel(/** @type {string} */ id, /** @type {string} */ text, prefix = '') {
+    const b = $(id);
+    const lbl = b.querySelector('.lbl');
+    if (!lbl) {
+      b.textContent = prefix + text;
+      return;
+    }
+    lbl.textContent = text;
+    if (lbl.classList.contains('sr-only')) b.title = text;
+  }
 
   /** @type {Array<{ token: any, el: HTMLElement }>} */
   let flat = [];
@@ -53,7 +67,7 @@
     if (msg.type === 'empty') {
       lastUpdate = '';
       showEmpty(msg.message);
-      $('settings').textContent = `⚙ ${msg.settingsLabel}`;
+      setLabel('settings', msg.settingsLabel, '⚙ ');
     }
     if (msg.type === 'rerunResult') {
       const ed = editors.get(msg.id);
@@ -89,11 +103,11 @@
     const ex = msg.explanation;
     labels = msg.labels ?? labels;
     manual = msg.manual ?? {};
-    $('settings').textContent = `⚙ ${msg.settingsLabel}`;
-    $('copy').textContent = labels.copy;
+    setLabel('settings', msg.settingsLabel, '⚙ ');
+    setLabel('copy', labels.copy);
     // The quick reference stays open while the cursor moves; keep its button saying how to go back.
-    $('ref').textContent = $('reference').hidden ? labels.reference : labels.back;
-    $('toggle').textContent = labels.collapseAll;
+    setLabel('ref', $('reference').hidden ? labels.reference : labels.back);
+    setLabel('toggle', labels.collapseAll);
     $('ref-search').setAttribute('placeholder', labels.search);
     examplesFirst = msg.examplesFirst !== false;
     $('where').textContent = `${msg.file} · ${msg.lineLabel}`;
@@ -400,12 +414,12 @@
       const want = collapse && !top;
       setCollapsed(li, want);
     }
-    $('toggle').textContent = collapse ? labels.expandAll : labels.collapseAll;
+    setLabel('toggle', collapse ? labels.expandAll : labels.collapseAll);
   });
   /** The shared button says what it will do in the view shown: unfold when something is folded, else fold. */
   function updateToggle() {
     const folded = view === 'tree' && reading ? foldedKeys.size > 0 : $('tree').querySelector('li.collapsed') !== null;
-    $('toggle').textContent = folded ? labels.expandAll : labels.collapseAll;
+    setLabel('toggle', folded ? labels.expandAll : labels.collapseAll);
   }
   $('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
 
@@ -496,8 +510,8 @@
     const t = labels.tree;
     if (t) {
       $('views').setAttribute('aria-label', labels.views);
-      $('view-list').textContent = labels.listView;
-      $('view-tree').textContent = labels.treeView;
+      setLabel('view-list', labels.listView);
+      setLabel('view-tree', labels.treeView);
     }
     $('view-list').setAttribute('aria-pressed', String(!tree));
     $('view-tree').setAttribute('aria-pressed', String(tree));
@@ -860,7 +874,7 @@
     $('reference').hidden = !open;
     $('main').hidden = open;
     $('line').hidden = open;
-    $('ref').textContent = open ? labels.back : labels.reference;
+    setLabel('ref', open ? labels.back : labels.reference);
     if (open) {
       if (!reference) vscode.postMessage({ type: 'reference' });
       else renderReference();
