@@ -4,11 +4,12 @@
 // and "Collapse all" and "Quick reference" press the panel's buttons, which keep the state.
 import { Span } from '../src/analyzer';
 import { Lang } from '../src/i18n';
-import { FromPanel, panelUpdate } from '../src/ui/panelView';
+import { FromPanel, PanelState, panelUpdate } from '../src/ui/panelView';
 import { isPanelQuestion, panelReply } from '../src/ui/panelReply';
 import { ui } from '../src/ui/render';
 import { on, put } from './dom';
 import { Theme } from './protocol';
+import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 
 type Dialect = ReturnType<typeof panelUpdate>['dialect'];
 
@@ -43,7 +44,10 @@ export class PanelBridge {
   constructor(private readonly host: PanelHost, private readonly frame: HTMLIFrameElement | null, private readonly controls: boolean) {
     // The panel says 'ready' when it starts; it may have done so before this script ran.
     frame?.addEventListener('load', () => this.loaded());
-    if (frame?.contentDocument?.readyState === 'complete' && frame.contentWindow?.location.href.endsWith('panel.html')) this.ready = true;
+    if (frame?.contentDocument?.readyState === 'complete' && frame.contentWindow?.location.href.endsWith('panel.html')) {
+      this.ready = true;
+      this.sendState();
+    }
     window.addEventListener('message', (e) => this.onMessage(e));
     for (const key of ['shell', 'yq'] as const) {
       for (const id of [key, `${key}-top`]) on(id, 'change', (e) => host.choose(key, (e.target as HTMLSelectElement).value));
@@ -63,8 +67,14 @@ export class PanelBridge {
     // The panel's ⚙ button opens the settings dialog (it is hidden where there is none: in panel mode).
     if (this.controls) this.frame?.contentDocument?.documentElement.classList.add('bx-settings');
     this.send({ type: 'theme', theme: this.host.theme() });
+    this.sendState();
     if (this.controls) this.watch();
     this.host.update();
+  }
+
+  /** The view and layers the viewer chose last time (VS Code keeps them in the webview's state, which the frame has not). */
+  private sendState(): void {
+    this.send({ type: 'panelState', state: readStoredObject<PanelState>(STORAGE_KEYS.panel) });
   }
 
   /** Sends a message to the panel, once it is ready. */
@@ -102,6 +112,9 @@ export class PanelBridge {
         return this.host.reveal(m.span);
       case 'copy':
         return this.host.copy();
+      case 'panelState':
+        writeStored(STORAGE_KEYS.panel, JSON.stringify(m.state));
+        return;
     }
   }
 

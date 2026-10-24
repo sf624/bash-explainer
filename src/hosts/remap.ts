@@ -1,6 +1,7 @@
 import { githubFileNotes } from './yaml';
 import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
 import { dialectIssues, type Shell } from '../dialect';
+import type { ReadingNode } from '../reading';
 import { descendants, type BashParser, type SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { shellState } from '../semantics/state';
@@ -47,10 +48,13 @@ export function remapExplanation(ex: LineExplanation, extracted: Extracted, orig
     }
     return { ...t, label, span: sp, children: t.children.filter((c) => !insidePlaceholder(c)).map(token) };
   };
+  // The reading tree: its places in the original (its labels are the code of the extracted text, or names).
+  const reading = (n: ReadingNode): ReadingNode => ({ ...n, span: span(n.span), children: n.children.map(reading) });
   return {
     ...ex,
     items: ex.items.map(token),
     examples: ex.examples.map((e) => (e.anchor ? { ...e, anchor: span(e.anchor) } : e)),
+    ...(ex.reading ? { reading: reading(ex.reading) } : {}),
   };
 }
 

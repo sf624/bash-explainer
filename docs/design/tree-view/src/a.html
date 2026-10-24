@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brackets Under Code</title>
+<style>
+/*COMMON_CSS*/
+#stage { width: 100%; }
+svg { display: block; overflow: visible; }
+.src { font-family: var(--code); fill: var(--fg); white-space: pre; }
+.sec-rule { stroke: var(--rule); stroke-width: 1; }
+.sec-rule.boundary { stroke: var(--l-cmd); stroke-dasharray: 5 4; stroke-width: 1.5; }
+.sec-text { font: 600 10.5px var(--ui); letter-spacing: .03em; }
+.br { cursor: pointer; outline: none; }
+.br path { fill: none; stroke: var(--c); stroke-width: 1.6; stroke-linejoin: round; }
+.br text { font: 11px var(--ui); fill: var(--c); text-anchor: middle; }
+.br .hit { fill: transparent; }
+.br.dim path, .br.dim text { opacity: .45; }
+.drop { stroke: var(--c); stroke-width: 1; stroke-dasharray: 1 3; opacity: .7; }
+.br.on path { stroke-width: 3; }
+.br.on text { font-weight: 700; }
+.br:focus-visible .hit { stroke: var(--focus); stroke-width: 2; rx: 3; }
+.col { fill: var(--c); opacity: .13; }
+.mark { fill: var(--c); opacity: .22; }
+@media (prefers-reduced-motion: no-preference) {
+  .br path, .br text { transition: opacity .2s; }
+}
+</style>
+</head>
+<body>
+<h1>How the line is read</h1>
+<div class="examples" id="ex"></div>
+<div id="stage"></div>
+<div class="detail" id="detail" aria-live="polite">Hover, tap or tab to a bracket to see who reads that part.</div>
+<div class="legend"><span class="l-bash">bash</span><span class="l-child">child bash in $( )</span><span class="l-cmd">the command</span><span class="l-lang">embedded language</span></div>
+<script>
+const DATA = /*DATA*/;
+/*COMMON_JS*/
+const NS = 'http://www.w3.org/2000/svg';
+const SECTIONS = {
+  bash: ['bash parses the line', 'bash parses'],
+  child: ['a child bash parses the text in $( )', 'child bash parses $( )'],
+  cmd: ["bash's part ends here — each command reads its words", "bash's part ends · commands read"],
+  lang: ['some arguments hold a language of their own', 'embedded languages'],
+};
+let cur = 0, focusId = null;
+const canvas = document.createElement('canvas').getContext('2d');
+function textW(s, font) { canvas.font = font; return canvas.measureText(s).width; }
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function roleOf(n) {
+  if (n.kind === 'argument' && n.note) { const r = n.note.split(/ \(| —|:|;|\./)[0].replace(/`/g, ''); return r.length <= 22 ? r : null; }
+  return null;
+}
+function render() {
+  const d = DATA[cur];
+  const stage = document.getElementById('stage');
+  const W = stage.clientWidth;
+  const uiFont = getComputedStyle(document.body).fontFamily;
+  const codeFont = getComputedStyle(document.documentElement).getPropertyValue('--code');
+  // Fit the line to the width: monospace cell width from a measurement.
+  const cw16 = textW('M'.repeat(20), `16px ${codeFont}`) / 20;
+  const fs = Math.max(10, Math.min(22, ((W - 4) / d.line.length) * 16 / cw16));
+  const cw = cw16 * fs / 16;
+  const x0 = 2;
+  const X = (i) => x0 + i * cw;
+  // Rows: per reader (layer), by depth below where that reader starts.
+  const nodes = [];
+  walk(d.root, (n, anc) => {
+    if (anc.length === 0) return;
+    let rel = 0;
+    for (let i = anc.length - 1; i >= 0 && anc[i].layer === n.layer && anc[i] !== d.root; i--) rel++;
+    nodes.push({ n, anc, rel });
+  });
+  const order = ['bash', 'child', 'cmd', 'lang'];
+  const lineH = fs * 1.6, rowH = 28, secH = 20;
+  let y = lineH + 8;
+  const rowY = {};
+  const secY = [];
+  for (const L of order) {
+    const here = nodes.filter((o) => o.n.layer === L);
+    if (!here.length) continue;
+    secY.push({ L, y });
+    y += secH;
+    const depths = [...new Set(here.map((o) => o.rel))].sort((a, b) => a - b);
+    for (const r of depths) { rowY[L + r] = y; y += rowH; }
+    y += 4;
+  }
+  const H = y;
+  const svg = el('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': `How bash and the commands read: ${d.line}` });
+  const under0 = el('g', {}, svg);
+  const under = el('g', {}, svg);
+  el('text', { class: 'src', x: x0, y: fs * 1.15, 'font-size': fs, 'xml:space': 'preserve', 'aria-hidden': 'true' }, svg).textContent = d.line;
+  for (const s of secY) {
+    el('line', { class: 'sec-rule' + (s.L === 'cmd' ? ' boundary' : ''), x1: 0, x2: W, y1: s.y + 2, y2: s.y + 2 }, svg);
+    const t = el('text', { class: 'sec-text', x: 0, y: s.y + 15, fill: `var(--l-${s.L})` }, svg);
+    t.textContent = SECTIONS[s.L].find((v) => textW(v, `600 10.5px ${uiFont}`) < W) ?? SECTIONS[s.L][1];
+  }
+  // Each row: brackets and their labels, labels fitted between the neighbours.
+  const byRow = {};
+  nodes.forEach((o) => (byRow[o.n.layer + o.rel] ||= []).push(o));
+  const gs = new Map();
+  for (const key in byRow) {
+    const row = byRow[key].sort((a, b) => a.n.s - b.n.s);
+    row.forEach((o, i) => {
+      const n = o.n, yy = rowY[key];
+      const x1 = X(n.s) + 1, x2 = X(n.e) - 1;
+      const left = i ? (X(row[i - 1].n.e) + x1) / 2 : 0;
+      const right = i < row.length - 1 ? (x2 + X(row[i + 1].n.s)) / 2 : W;
+      const g = el('g', { class: `br l-${n.layer}`, tabindex: 0, role: 'button', 'data-id': n.id }, svg);
+      const role = roleOf(n);
+      const variants = [...(role ? [role] : []), ...labelsOf(n)];
+      const font = `11px ${uiFont}`;
+      const label = variants.find((v) => textW(v, font) <= right - left - 2) ?? '';
+      const w = textW(label, font);
+      const cx = Math.min(Math.max((x1 + x2) / 2, left + w / 2 + 1), right - w / 2 - 1);
+      g.setAttribute('aria-label', `${labelsOf(n)[0]}: ${d.line.slice(n.s, n.e)} — read by ${readerOf(n, o.anc)}`);
+      el('rect', { class: 'hit', x: Math.min(x1, cx - w / 2) - 2, y: yy - 2, width: Math.max(x2 - x1, w) + 4, height: rowH - 2 }, g);
+      el('path', { d: `M${x1},${yy + 1}v6H${x2}v-6` }, g);
+      if (label) { const t = el('text', { x: cx, y: yy + 20 }, g); t.textContent = label; }
+      g.addEventListener('mouseenter', () => show(n.id));
+      g.addEventListener('focus', () => show(n.id));
+      g.addEventListener('click', () => g.focus());
+      g.addEventListener('keydown', (e) => nav(e, o));
+      gs.set(n.id, { g, o, x1, x2, yy });
+    });
+  }
+  // Where a new reader takes over (bash → child bash, bash → command, command → language): dotted drops.
+  gs.forEach(({ o, x1, x2, yy }) => {
+    const p = o.anc[o.anc.length - 1];
+    if (!p || p.layer === o.n.layer || !gs.has(p.id)) return;
+    const py = gs.get(p.id).yy + 8;
+    for (const x of [x1, x2]) el('line', { class: `drop l-${o.n.layer}`, x1: x, x2: x, y1: py, y2: yy }, under0);
+  });
+  svg.addEventListener('mouseleave', () => show(document.activeElement?.dataset?.id ?? null));
+  function show(id) {
+    focusId = id;
+    under.replaceChildren();
+    const info = id && gs.get(id);
+    gs.forEach((v) => v.g.classList.remove('on', 'dim'));
+    const det = document.getElementById('detail');
+    if (!info) { det.style.removeProperty('--c'); det.innerHTML = 'Hover, tap or tab to a bracket to see who reads that part.'; return; }
+    const { o, x1, x2, yy } = info;
+    const chain = new Set([...o.anc.map((a) => a.id), id]);
+    gs.forEach((v, k) => v.g.classList.add(chain.has(k) ? 'on' : 'dim'));
+    // A column from the text down to the bracket, and a mark on the text itself.
+    el('rect', { class: `col l-${o.n.layer}`, x: x1 - 1, y: 0, width: x2 - x1 + 2, height: yy + 8 }, under);
+    el('rect', { class: `mark l-${o.n.layer}`, x: x1 - 1, y: 0, width: x2 - x1 + 2, height: lineH }, under);
+    det.style.setProperty('--c', `var(--l-${o.n.layer})`);
+    det.innerHTML = `<div class="who">${esc(readerOf(o.n, o.anc))}</div><b>${esc(labelsOf(o.n)[0])}</b> <code>${esc(d.line.slice(o.n.s, o.n.e))}</code><br>${esc(o.n.note || '')}`;
+  }
+  function nav(e, o) {
+    const n = o.n, parent = o.anc[o.anc.length - 1];
+    const sib = parent ? parent.children : [];
+    const i = sib.indexOf(n);
+    const target = { ArrowUp: parent, ArrowDown: n.children[0], ArrowLeft: sib[i - 1], ArrowRight: sib[i + 1] }[e.key];
+    if (e.key.startsWith('Arrow')) e.preventDefault();
+    if (target && gs.has(target.id)) gs.get(target.id).g.focus();
+  }
+  stage.replaceChildren(svg);
+  if (params.get('focus')) show([...gs.keys()][Number(params.get('focus'))]);
+  else if (focusId && gs.has(focusId)) show(focusId);
+}
+exampleButtons(document.getElementById('ex'), (i) => { cur = i; focusId = null; render(); });
+if (params.get('ex')) document.querySelectorAll('#ex button')[Number(params.get('ex'))].click();
+render();
+addEventListener('resize', render);
+</script>
+</body>
+</html>

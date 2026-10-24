@@ -27,6 +27,18 @@
   /** @type {Array<{ category: string, syntax: string, meaning: string }> | undefined} */
   let reference;
 
+  /** The view shown ('list' or 'tree') and how many layers the tree shows (1–4): what the viewer chose last. */
+  let view = 'list';
+  let level = 4;
+  applyState(vscode.getState());
+  /** The reading tree of the line shown (LineExplanation.reading), if any. */
+  let reading = /** @type {any} */ (null);
+  /** The line shown (its number in the document). */
+  let shownLineNo = 0;
+  /** Paths of the folded items of the tree view, and of the one with the focus; kept while the same line is shown. */
+  let foldedKeys = new Set();
+  let currentKey = '';
+
   /** True while the user has text selected (a drag to copy should not count as a click). */
   const selecting = () => String(window.getSelection() ?? '').length > 0;
 
@@ -51,6 +63,11 @@
       reference = msg.entries;
       renderReference();
     }
+    if (msg.type === 'panelState') {
+      applyState(msg.state);
+      applyView();
+      renderReading();
+    }
   });
   vscode.postMessage({ type: 'ready' });
 
@@ -61,6 +78,9 @@
     $('notes').replaceChildren();
     $('tree').replaceChildren();
     $('examples').replaceChildren();
+    $('reading-tree').replaceChildren();
+    reading = null;
+    $('reading').hidden = true;
     $('empty').textContent = message;
     $('empty').hidden = false;
   }
@@ -83,8 +103,14 @@
     flat = [];
     editors.clear();
     const where = `${msg.file}\n${ex.line}`;
-    if (where !== shownLine) collapsedKeys = new Set();
+    if (where !== shownLine) {
+      collapsedKeys = new Set();
+      foldedKeys = new Set();
+      currentKey = '';
+    }
     shownLine = where;
+    shownLineNo = ex.line;
+    reading = ex.reading ?? null;
     const tree = $('tree');
     tree.replaceChildren(...ex.items.map((t, i) => item(t, `${i}`)));
 
@@ -99,6 +125,8 @@
     $('examples').replaceChildren(...(ex.examples ?? []).map((e) => example(e, false)));
     $('empty').textContent = msg.emptyMessage;
     $('empty').hidden = ex.items.length > 0;
+    applyView();
+    renderReading();
   }
 
   /**
@@ -356,6 +384,14 @@
   }
 
   $('toggle').addEventListener('click', () => {
+    if (view === 'tree' && reading) {
+      // The tree view: fold everything below the line, or unfold it all.
+      const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
+      const fold = !all.some((li) => li.getAttribute('aria-expanded') === 'false');
+      for (const li of all) setFolded(li, fold && li.getAttribute('aria-level') !== '1');
+      $('toggle').textContent = fold ? labels.expandAll : labels.collapseAll;
+      return;
+    }
     const items = Array.from($('tree').querySelectorAll('li')).filter((li) => li.querySelector(':scope > .body > ul'));
     const collapse = !items.some((li) => li.classList.contains('collapsed'));
     // Collapse below the top level, so the outline stays visible.
@@ -409,6 +445,8 @@
       while (j < text.length && owner[j] === owner[i]) j++;
       const span = document.createElement('span');
       span.textContent = text.slice(i, j);
+      span.dataset.from = String(i);
+      span.dataset.to = String(j);
       const idx = owner[i];
       if (idx >= 0 && text.slice(i, j).trim()) {
         span.className = `seg kind-${flat[idx].token.kind}`;
@@ -427,6 +465,283 @@
     }
     if (!text.length) pre.textContent = ' ';
   }
+
+
+  // ---------------------------------------------------------------- tree view (src/reading.ts)
+
+  /** The layers, in the order the layer buttons add them. */
+  const LEVEL = { bash: 1, child: 2, command: 3, language: 4 };
+
+  function save() {
+    vscode.setState({ view, level });
+  }
+
+  /** The view and layers the viewer chose (VS Code's webview state; on the web page, the page sends them). */
+  function applyState(/** @type {any} */ state) {
+    if (!state || typeof state !== 'object') return;
+    if (state.view === 'tree' || state.view === 'list') view = state.view;
+    if ([1, 2, 3, 4].includes(state.level)) level = state.level;
+  }
+
+  /** Shows the list or the tree view. */
+  function applyView() {
+    const tree = view === 'tree';
+    const t = labels.tree;
+    if (t) {
+      $('views').setAttribute('aria-label', labels.views);
+      $('view-list').textContent = labels.listView;
+      $('view-tree').textContent = labels.treeView;
+    }
+    $('view-list').setAttribute('aria-pressed', String(!tree));
+    $('view-tree').setAttribute('aria-pressed', String(tree));
+    $('tree').hidden = tree;
+    $('examples').hidden = tree;
+    $('reading').hidden = !tree || !reading;
+    markLine(null);
+  }
+
+  for (const [id, v] of [['view-list', 'list'], ['view-tree', 'tree']]) {
+    $(id).addEventListener('click', () => {
+      if (view === v) return;
+      view = v;
+      save();
+      applyView();
+      renderReading();
+    });
+  }
+
+  /** The name a node is shown with: its kind, the command that reads, or the language. */
+  function chipOf(n) {
+    const t = labels.tree;
+    if (n.kind === 'line') return t.kinds.line;
+    if (n.kind === 'reading') return t.reads.replace('{name}', n.label);
+    if (n.kind === 'language') return t.languages[n.label] ?? n.label;
+    const shell = n.layer === 'bash' || n.layer === 'child';
+    return (shell && t.kinds[n.kind]) || t.tokenKinds[n.kind] || n.kind;
+  }
+
+  /** Who reads a node: its layer, with the name of the command whose reading it is in. */
+  function readerOf(n, cmd) {
+    const r = labels.tree.readers[n.layer];
+    return r.replace('{name}', cmd || '');
+  }
+
+  /** The name at the right of a band: where a new reader takes over. */
+  function bandOf(n, cmd) {
+    const t = labels.tree;
+    if (n.layer === 'command') return t.reads.replace('{name}', cmd || '');
+    if (n.layer === 'language') return n.kind === 'language' ? chipOf(n) : '';
+    return t.bands[n.layer];
+  }
+
+  function renderReading() {
+    const ul = $('reading-tree');
+    ul.replaceChildren();
+    const t = labels.tree;
+    if (!t) return;
+    ul.setAttribute('aria-label', t.label);
+    const box = $('layers');
+    box.setAttribute('aria-label', t.show);
+    $('layers-label').textContent = t.show;
+    box.querySelectorAll('button').forEach((b) => b.remove());
+    t.levels.forEach((/** @type {string} */ text, /** @type {number} */ i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `layer l-${['bash', 'child', 'command', 'language'][i]}`;
+      b.textContent = text;
+      b.dataset.level = String(i + 1);
+      b.setAttribute('aria-pressed', String(level === i + 1));
+      b.addEventListener('click', () => {
+        level = i + 1;
+        save();
+        renderReading();
+      });
+      box.append(b);
+    });
+    if (!reading || view !== 'tree') return;
+    ul.append(treeItem(reading, '0', 1, null, 1, 1, ''));
+    const items = visibleItems();
+    const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
+    if (current) current.tabIndex = 0;
+  }
+
+  /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
+  function treeItem(n, path, depth, parent, pos, size, cmd) {
+    if (n.kind === 'reading') cmd = n.label;
+    const li = document.createElement('li');
+    li.setAttribute('role', 'treeitem');
+    li.setAttribute('aria-level', String(depth));
+    li.setAttribute('aria-posinset', String(pos));
+    li.setAttribute('aria-setsize', String(size));
+    li.tabIndex = -1;
+    li.dataset.path = path;
+    li.className = `ti l-${n.layer}`;
+    const band = !parent || parent.layer !== n.layer;
+    if (band) li.classList.add('band');
+    const kids = n.children.filter((/** @type {any} */ c) => LEVEL[c.layer] <= level);
+    const row = document.createElement('div');
+    row.className = 'trow';
+    const twisty = document.createElement('span');
+    twisty.className = 'twisty';
+    twisty.setAttribute('aria-hidden', 'true');
+    const folded = foldedKeys.has(path);
+    if (kids.length) twisty.textContent = folded ? '▸' : '▾';
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = chipOf(n);
+    row.append(twisty, chip);
+    const code = !['line', 'reading', 'language'].includes(n.kind) ? n.label : '';
+    if (code) {
+      const c = document.createElement('code');
+      c.className = 'tcode';
+      c.textContent = code;
+      row.append(c);
+    }
+    const about = n.text ?? labels.tree.about[n.kind] ?? '';
+    const text = document.createElement('span');
+    // (What the kind is in general, where no token says more: quieter than an explanation.)
+    text.className = n.text === undefined ? 'text about' : 'text';
+    text.append(...inline(about));
+    const links = refLinks(n.refs);
+    links.forEach((l) => l.querySelectorAll('a').forEach((a) => { a.tabIndex = -1; }));
+    row.append(text, ...links);
+    const bandName = band ? bandOf(n, cmd) : '';
+    if (bandName) {
+      const b = document.createElement('span');
+      b.className = 'band-label';
+      b.setAttribute('aria-hidden', 'true');
+      b.textContent = bandName;
+      row.append(b);
+    }
+    li.setAttribute('aria-label', `${chip.textContent}${code ? ` ${code}` : ''}. ${readerOf(n, cmd)}. ${about.replace(/`/g, '')}`);
+    li.append(row);
+    readingNodes.set(li, n);
+    row.addEventListener('mouseenter', () => showNode(n));
+    row.addEventListener('mouseleave', () => showNode(focusedNode()));
+    row.addEventListener('click', (e) => {
+      if (selecting()) return;
+      focusItem(li);
+      if (kids.length && !(e.target instanceof Element && e.target.closest('a'))) toggleItem(li);
+      reveal(n);
+    });
+    if (kids.length) {
+      li.setAttribute('aria-expanded', String(!folded));
+      const group = document.createElement('ul');
+      group.setAttribute('role', 'group');
+      group.hidden = folded;
+      group.append(...kids.map((/** @type {any} */ c, /** @type {number} */ i) => treeItem(c, `${path}.${n.children.indexOf(c)}`, depth + 1, n, i + 1, kids.length, cmd)));
+      li.append(group);
+    }
+    return li;
+  }
+
+  /** The nodes of the items drawn. */
+  const readingNodes = new WeakMap();
+
+  /** The items not inside a folded one, in order. */
+  function visibleItems() {
+    return /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]')))
+      .filter((li) => !li.parentElement?.closest('ul[role="group"][hidden]'));
+  }
+
+  function focusedNode() {
+    const li = document.activeElement instanceof HTMLElement && document.activeElement.closest('#reading-tree li[role="treeitem"]');
+    return li ? readingNodes.get(li) : null;
+  }
+
+  function focusItem(/** @type {HTMLElement} */ li) {
+    $('reading-tree').querySelectorAll('li[tabindex="0"]').forEach((x) => { /** @type {HTMLElement} */ (x).tabIndex = -1; });
+    li.tabIndex = 0;
+    currentKey = String(li.dataset.path);
+    li.focus();
+  }
+
+  function toggleItem(/** @type {HTMLElement} */ li) {
+    const group = li.querySelector(':scope > ul[role="group"]');
+    if (!group) return;
+    const fold = !/** @type {HTMLElement} */ (group).hidden;
+    setFolded(li, fold);
+  }
+
+  function setFolded(/** @type {HTMLElement} */ li, /** @type {boolean} */ fold) {
+    const group = /** @type {HTMLElement | null} */ (li.querySelector(':scope > ul[role="group"]'));
+    if (!group) return;
+    group.hidden = fold;
+    li.setAttribute('aria-expanded', String(!fold));
+    const path = String(li.dataset.path);
+    if (fold) foldedKeys.add(path);
+    else foldedKeys.delete(path);
+    const tw = li.querySelector(':scope > .trow > .twisty');
+    if (tw) tw.textContent = fold ? '▸' : '▾';
+  }
+
+  /** Highlights a node: its row, its characters in the line, its range in the editor (null: none). */
+  function showNode(n) {
+    $('reading-tree').querySelectorAll('.trow.active').forEach((r) => r.classList.remove('active'));
+    if (n) {
+      for (const li of visibleItems()) if (readingNodes.get(li) === n) li.querySelector(':scope > .trow')?.classList.add('active');
+    }
+    markLine(n ? n.span : null);
+    vscode.postMessage({ type: 'highlight', span: n ? n.span : null });
+  }
+
+  /** Marks the characters of a span in the line at the top (the tree view's highlight). */
+  function markLine(span) {
+    for (const s of segments) {
+      const from = Number(s.dataset.from), to = Number(s.dataset.to);
+      let on = false;
+      if (span && span.start.line <= shownLineNo && span.end.line >= shownLineNo) {
+        const a = span.start.line < shownLineNo ? 0 : span.start.character;
+        const b = span.end.line > shownLineNo ? Infinity : span.end.character;
+        on = from < b && a < to;
+      }
+      s.classList.toggle('mark', on);
+    }
+  }
+
+  $('reading-tree').addEventListener('focusin', (e) => {
+    const li = e.target instanceof HTMLElement ? e.target.closest('li[role="treeitem"]') : null;
+    if (li) showNode(readingNodes.get(li));
+  });
+  $('reading-tree').addEventListener('focusout', (e) => {
+    if (!(e.relatedTarget instanceof Node && $('reading-tree').contains(e.relatedTarget))) showNode(null);
+  });
+
+  // The keys of the ARIA tree pattern.
+  $('reading-tree').addEventListener('keydown', (e) => {
+    const li = e.target instanceof HTMLElement ? /** @type {HTMLElement | null} */ (e.target.closest('li[role="treeitem"]')) : null;
+    if (!li) return;
+    const items = visibleItems();
+    const i = items.indexOf(li);
+    const group = /** @type {HTMLElement | null} */ (li.querySelector(':scope > ul[role="group"]'));
+    let next = /** @type {HTMLElement | null | undefined} */ (null);
+    switch (e.key) {
+      case 'ArrowDown': next = items[i + 1]; break;
+      case 'ArrowUp': next = items[i - 1]; break;
+      case 'Home': next = items[0]; break;
+      case 'End': next = items[items.length - 1]; break;
+      case 'ArrowRight':
+        if (group && group.hidden) setFolded(li, false);
+        else if (group) next = /** @type {HTMLElement} */ (group.firstElementChild);
+        break;
+      case 'ArrowLeft':
+        if (group && !group.hidden) setFolded(li, true);
+        else next = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li[role="treeitem"]') ?? null);
+        break;
+      case 'Enter':
+      case ' ':
+        toggleItem(li);
+        reveal(readingNodes.get(li));
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (next) {
+      focusItem(next);
+      next.scrollIntoView({ block: 'nearest' });
+    }
+  });
 
   /** Selects a token's range in the editor. Not one over several lines (an if, a loop, a function): the cursor would move to its last
       line, and the panel with it, when one only meant to fold the row; the hover already shows that range. */

@@ -7,7 +7,8 @@
   window.acquireVsCodeApi = () => ({
     postMessage: (/** @type {unknown} */ message) => window.parent.postMessage(message, location.origin),
     getState: () => undefined,
-    setState: () => undefined,
+    // The page keeps the state (web/storage.ts) and sends it back when the panel starts ('panelState').
+    setState: (/** @type {unknown} */ state) => window.parent.postMessage({ type: 'panelState', state }, location.origin),
   });
   // The page around has these controls in its top bar and its menu, so the panel's header is not shown.
   // (The copies on the compare page, in panel mode, have no top bar: their panels keep it.)

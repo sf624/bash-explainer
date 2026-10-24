@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading Tree</title>
+<style>
+/* Shared theme tokens. In the VS Code webview the --vscode-* variables exist and win; on the web page the fallbacks apply. */
+:root {
+  color-scheme: light dark;
+  --bg: var(--vscode-editor-background, #ffffff);
+  --fg: var(--vscode-foreground, #1f2328);
+  --muted: var(--vscode-descriptionForeground, #5c6670);
+  --rule: var(--vscode-panel-border, #d0d7de);
+  --focus: var(--vscode-focusBorder, #0969da);
+  --code: var(--vscode-editor-font-family, ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace);
+  --ui: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+  /* One colour per reader: the parent bash, the child bash in $( ), the command, an embedded language. */
+  --l-bash: #7a3db8;
+  --l-child: #0a62c9;
+  --l-cmd: #1a7f37;
+  --l-lang: #b04f00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--vscode-editor-background, #1e1e1e);
+    --fg: var(--vscode-foreground, #d4d4d4);
+    --muted: var(--vscode-descriptionForeground, #9da5b0);
+    --rule: var(--vscode-panel-border, #3c3c3c);
+    --focus: var(--vscode-focusBorder, #4daafc);
+    --l-bash: #c796ee;
+    --l-child: #6badff;
+    --l-cmd: #7fcf7f;
+    --l-lang: #f0a050;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1e1e; --fg: #d4d4d4; --muted: #9da5b0; --rule: #3c3c3c; --focus: #4daafc;
+  --l-bash: #c796ee; --l-child: #6badff; --l-cmd: #7fcf7f; --l-lang: #f0a050;
+}
+@media (forced-colors: active) {
+  :root { --l-bash: CanvasText; --l-child: LinkText; --l-cmd: CanvasText; --l-lang: LinkText; --rule: CanvasText; --focus: Highlight; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--ui); padding: 16px; }
+h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+.examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.examples button, .ctl button {
+  font: 12px var(--ui); color: var(--fg); background: transparent; border: 1px solid var(--rule);
+  border-radius: 4px; padding: 3px 8px; cursor: pointer;
+}
+.examples button[aria-pressed="true"] { border-color: var(--focus); background: color-mix(in srgb, var(--focus) 14%, var(--bg)); }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+.l-bash { --c: var(--l-bash); } .l-child { --c: var(--l-child); } .l-cmd { --c: var(--l-cmd); } .l-lang { --c: var(--l-lang); }
+.detail { margin-top: 12px; padding: 8px 10px; border-left: 3px solid var(--c, var(--rule)); background: color-mix(in srgb, var(--c, var(--rule)) 8%, var(--bg)); font-size: 13px; min-height: 3.6em; }
+.detail .who { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--c); font-weight: 600; }
+.detail code { font-family: var(--code); }
+
+.show { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+.show button { font: 12px var(--ui); color: var(--fg); background: transparent; border: 1px solid var(--rule); padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+.show button[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, var(--bg)); }
+.src { font: 17px/1.5 var(--code); white-space: pre; margin: 0 0 10px; overflow-x: auto; }
+@media (max-width: 480px) { .src { font-size: 13px; } }
+.src mark { background: color-mix(in srgb, var(--c) 25%, transparent); color: inherit; border-radius: 2px; box-shadow: 0 2px 0 var(--c); }
+svg { display: block; width: 100%; overflow: visible; }
+.node { cursor: pointer; outline: none; }
+.node .chip { fill: color-mix(in srgb, var(--c) 10%, var(--bg)); stroke: var(--c); stroke-width: 1.3; }
+.node .kind { font: 600 11px var(--ui); fill: var(--c); }
+.node .code { font: 13px var(--code); fill: var(--fg); }
+.node .note { font: 12px var(--ui); fill: var(--muted); }
+.node .tw { fill: var(--c); }
+.node:focus-visible .chip { stroke: var(--focus); stroke-width: 2.5; }
+.node.on .chip { stroke-width: 2.5; fill: color-mix(in srgb, var(--c) 22%, var(--bg)); }
+.stub, .spine { stroke: var(--rule); fill: none; stroke-width: 1.3; }
+.spine { fill: var(--rule); stroke: none; }
+.band { fill: color-mix(in srgb, var(--c) 6%, transparent); }
+.band-edge { fill: var(--c); }
+.band-label { font: 600 10.5px var(--ui); fill: var(--c); text-anchor: end; }
+.nt, .nt * { transition: none !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .node, .spine, .bandg, .band, .band-edge, svg { transition: transform .55s cubic-bezier(.2,.8,.2,1), opacity .4s, height .55s cubic-bezier(.2,.8,.2,1); }
+  .node .tw { transition: transform .3s; }
+}
+</style>
+</head>
+<body>
+<h1>The reading tree</h1>
+<div class="examples" id="ex"></div>
+<div class="show" role="group" aria-label="Which readers to show">Show:
+  <button class="l-bash" data-lvl="1">bash</button>
+  <button class="l-child" data-lvl="2">+ child bash</button>
+  <button class="l-cmd" data-lvl="3">+ commands</button>
+  <button class="l-lang" data-lvl="4">+ languages</button>
+</div>
+<pre class="src" id="src" aria-hidden="true"></pre>
+<svg id="tree" role="tree" aria-label="How bash and the commands read the line"></svg>
+<div class="detail" id="detail">Click a node to fold it; hover, tap or use the arrow keys to see who reads it.</div>
+<div class="legend"><span class="l-bash">bash</span><span class="l-child">child bash in $( )</span><span class="l-cmd">the command</span><span class="l-lang">embedded language</span></div>
+<script>
+const DATA = [{"line":"x=$(grep -c foo f) && [ \"$x\" -gt 0 ]","summary":"Assign a value to variable `x` (no spaces around `=`) && test [ \"$x\" -gt 0 ]","root":{"layer":"bash","kind":"script","label":"bash","s":0,"e":36,"note":"bash reads the line","children":[{"layer":"bash","kind":"list","label":"list &&","s":0,"e":36,"note":"Command list joined by `&&` (run next on success) or `||` (run next on failure)","children":[{"layer":"bash","kind":"simple","label":"simple command","s":0,"e":18,"note":"A simple command (3.2.2): assignments, words and redirections. bash runs the first word as the command and passes the other words to it.","children":[{"layer":"bash","kind":"assignment","label":"x=$(grep -c foo f)","s":0,"e":18,"note":"Assign a value to variable `x` (no spaces around `=`)","children":[{"layer":"bash","kind":"name","label":"x","s":0,"e":1,"note":"The variable name","children":[],"id":"n4"},{"layer":"bash","kind":"cmdsub","label":"$( … )","s":2,"e":18,"note":"Command substitution `$(…)`: runs the command and is replaced by its stdout (trailing newlines removed)","children":[{"layer":"child","kind":"script","label":"grep -c foo f","s":4,"e":17,"note":"A new bash parses this text as a script of its own","children":[{"layer":"child","kind":"simple","label":"simple command","s":4,"e":17,"note":"A simple command (3.2.2): assignments, words and redirections. bash runs the first word as the command and passes the other words to it.","children":[{"layer":"child","kind":"word","label":"grep","s":4,"e":8,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n8"},{"layer":"child","kind":"word","label":"-c","s":9,"e":11,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n9"},{"layer":"child","kind":"word","label":"foo","s":12,"e":15,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n10"},{"layer":"child","kind":"word","label":"f","s":16,"e":17,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n11"},{"layer":"cmd","kind":"reading","label":"grep reads its arguments","s":4,"e":17,"note":"Print lines matching a pattern (regex)","children":[{"layer":"cmd","kind":"option","label":"-c","s":9,"e":11,"note":"print a count of matching lines","children":[],"id":"n13"},{"layer":"cmd","kind":"argument","label":"foo","s":12,"e":15,"note":"search pattern (regex) — basic regex (BRE)","children":[{"layer":"lang","kind":"lang","label":"regex","s":12,"e":15,"note":"An embedded language, read by the command, not by bash","children":[{"layer":"lang","kind":"string","label":"foo","s":12,"e":15,"note":"Literal \"foo\"","children":[],"id":"n16"}],"id":"n15"}],"id":"n14"},{"layer":"cmd","kind":"argument","label":"f","s":16,"e":17,"note":"file to search (default: stdin)","children":[],"id":"n17"}],"id":"n12"}],"id":"n7"}],"id":"n6"}],"id":"n5"}],"id":"n3"}],"id":"n2"},{"layer":"bash","kind":"op","label":"&&","s":19,"e":21,"note":"Run the right side only if the left succeeds (exit 0)","children":[],"id":"n18"},{"layer":"bash","kind":"simple","label":"simple command","s":22,"e":36,"note":"A simple command (3.2.2): assignments, words and redirections. bash runs the first word as the command and passes the other words to it.","children":[{"layer":"bash","kind":"word","label":"[","s":22,"e":23,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n20"},{"layer":"bash","kind":"word","label":"\"$x\"","s":24,"e":28,"note":"Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)","children":[{"layer":"bash","kind":"param","label":"$x","s":25,"e":27,"note":"Expands to the value of `x`","children":[],"id":"n22"}],"id":"n21"},{"layer":"bash","kind":"word","label":"-gt","s":29,"e":32,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n23"},{"layer":"bash","kind":"word","label":"0","s":33,"e":34,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n24"},{"layer":"bash","kind":"word","label":"]","s":35,"e":36,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n25"},{"layer":"cmd","kind":"reading","label":"[ reads its arguments","s":22,"e":36,"note":"Command `[` (an alias of `test`): evaluates the condition in its arguments and succeeds (0) if it is true. It is an ordinary command, not shell syntax, so `[` and `]` need spaces around them, and the arguments inside undergo word splitting and globbing (`[[ ]]` does not)","children":[{"layer":"cmd","kind":"test","label":"\"$x\" -gt 0","s":24,"e":34,"note":"Condition: `\"$x\"` vs `0` — greater than","children":[],"id":"n27"},{"layer":"cmd","kind":"argument","label":"]","s":35,"e":36,"note":"The last argument passed to `[`. `[` checks it to find the end of the expression (without it, an error)","children":[],"id":"n28"}],"id":"n26"}],"id":"n19"}],"id":"n1"}],"id":"n0"}},{"line":"find . -name '*.sh' | xargs grep -n 'set -e'","summary":"find: Search a directory tree for files matching conditions | xargs: Build and run a command with arguments read from stdin","root":{"layer":"bash","kind":"script","label":"bash","s":0,"e":44,"note":"bash reads the line","children":[{"layer":"bash","kind":"pipeline","label":"pipeline |","s":0,"e":44,"note":"Pipeline: each command's stdout feeds the next command's stdin; they run concurrently","children":[{"layer":"bash","kind":"simple","label":"simple command","s":0,"e":19,"note":"A simple command (3.2.2): assignments, words and redirections. bash runs the first word as the command and passes the other words to it.","children":[{"layer":"bash","kind":"word","label":"find","s":0,"e":4,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n3"},{"layer":"bash","kind":"word","label":".","s":5,"e":6,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n4"},{"layer":"bash","kind":"word","label":"-name","s":7,"e":12,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n5"},{"layer":"bash","kind":"word","label":"'*.sh'","s":13,"e":19,"note":"Single-quoted string: taken literally, nothing is expanded","children":[],"id":"n6"},{"layer":"cmd","kind":"reading","label":"find reads its arguments","s":0,"e":19,"note":"Search a directory tree for files matching conditions","children":[{"layer":"cmd","kind":"argument","label":".","s":5,"e":6,"note":"starting directory","children":[],"id":"n8"},{"layer":"cmd","kind":"test","label":"-name *.sh","s":7,"e":19,"note":"Print what matches: name matches *.sh (no action is given, so `-print` is implied)","children":[{"layer":"cmd","kind":"option","label":"-name","s":7,"e":12,"note":"file name matches the glob","children":[],"id":"n10"},{"layer":"cmd","kind":"argument","label":"'*.sh'","s":13,"e":19,"note":"Value for `-name`: file name matches the glob — pattern: any string + \".sh\"","children":[{"layer":"lang","kind":"lang","label":"glob","s":14,"e":18,"note":"An embedded language, read by the command, not by bash","children":[{"layer":"lang","kind":"pattern","label":"*","s":14,"e":15,"note":"any string, including an empty one","children":[],"id":"n13"},{"layer":"lang","kind":"string","label":".sh","s":15,"e":18,"note":"The text `.sh` itself","children":[],"id":"n14"}],"id":"n12"}],"id":"n11"}],"id":"n9"}],"id":"n7"}],"id":"n2"},{"layer":"bash","kind":"op","label":"|","s":20,"e":21,"note":"Pipe: send stdout of the left command to stdin of the right","children":[],"id":"n15"},{"layer":"bash","kind":"simple","label":"simple command","s":22,"e":44,"note":"A simple command (3.2.2): assignments, words and redirections. bash runs the first word as the command and passes the other words to it.","children":[{"layer":"bash","kind":"word","label":"xargs","s":22,"e":27,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n17"},{"layer":"bash","kind":"word","label":"grep","s":28,"e":32,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n18"},{"layer":"bash","kind":"word","label":"-n","s":33,"e":35,"note":"A word. bash expands it, then passes the result to the command as an argument","children":[],"id":"n19"},{"layer":"bash","kind":"word","label":"'set -e'","s":36,"e":44,"note":"Single-quoted string: taken literally, nothing is expanded","children":[],"id":"n20"},{"layer":"cmd","kind":"reading","label":"xargs reads its arguments","s":22,"e":44,"note":"Build and run a command with arguments read from stdin","children":[{"layer":"cmd","kind":"command","label":"grep","s":28,"e":44,"note":"runs `grep`: Print lines matching a pattern (regex)","children":[{"layer":"cmd","kind":"option","label":"-n","s":33,"e":35,"note":"show line numbers","children":[],"id":"n23"},{"layer":"cmd","kind":"argument","label":"'set -e'","s":36,"e":44,"note":"search pattern (regex) — basic regex (BRE)","children":[{"layer":"lang","kind":"lang","label":"regex","s":37,"e":43,"note":"An embedded language, read by the command, not by bash","children":[{"layer":"lang","kind":"string","label":"set -e","s":37,"e":43,"note":"Literal \"set -e\"","children":[],"id":"n26"}],"id":"n25"}],"id":"n24"}],"id":"n22"}],"id":"n21"}],"id":"n16"}],"id":"n1"}],"id":"n0"}}];
+// Shared helpers: the layered tree (DATA), names of the readers, short labels per kind.
+const LAYER_NAME = { bash: 'bash parses', child: 'child bash parses', cmd: 'the command reads', lang: 'embedded language' };
+const KIND_LABEL = {
+  script: ['script'], list: ['and-or list', 'list'], pipeline: ['pipeline', 'pipe'], simple: ['simple command', 'command', 'cmd'],
+  word: ['word', 'w'], assignment: ['assignment', 'assign'], name: ['name', 'n'], cmdsub: ['$( ) text', '$( )'], quote: ['quotes', 'q'],
+  param: ['$var', '$'], op: ['operator', 'op'], redirect: ['redirection', 'redir'], reading: ['reading'], option: ['option', 'opt'],
+  argument: ['argument', 'arg'], test: ['condition', 'cond'], builtin: ['command name', 'name'], command: ['runs command', 'runs'],
+  lang: ['language'], string: ['literal', 'lit'], pattern: ['wildcard', '*'],
+};
+function readerOf(n, ancestors) {
+  // The name of who reads this node: the command name for cmd nodes.
+  if (n.layer === 'bash') return 'bash (the shell running the line)';
+  if (n.layer === 'child') return 'child bash (runs the text of $( ))';
+  const r = [n, ...ancestors.slice().reverse()].find((a) => a.kind === 'reading' || a.kind === 'command');
+  const name = r ? r.label.split(' ')[0] : 'the command';
+  return n.layer === 'cmd' ? `${name} (the command reads its arguments)` : `${n.kind === 'lang' ? n.label : 'language'} — read by ${name}, not by bash`;
+}
+function labelsOf(n) {
+  if (n.kind === 'reading') return [n.label, n.label.split(' ')[0] + ' reads', n.label.split(' ')[0]];
+  if (n.kind === 'lang') return [n.label, n.label.replace(/ \(.*\)/, ''), 're'];
+  if (n.kind === 'script' && n.layer === 'child') return ['child bash script', 'child bash', 'child'];
+  if (n.kind === 'list') return [n.label.replace('list', 'and-or list'), n.label, '&&'];
+  return KIND_LABEL[n.kind] || [n.kind];
+}
+function walk(n, f, anc = []) { f(n, anc); n.children.forEach((c) => walk(c, f, [...anc, n])); }
+function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function exampleButtons(el, onPick) {
+  DATA.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.textContent = d.line.length > 30 ? d.line.slice(0, 28) + '…' : d.line;
+    b.title = d.line;
+    b.setAttribute('aria-pressed', String(i === 0));
+    b.onclick = () => { el.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); onPick(i); };
+    el.appendChild(b);
+  });
+}
+const params = new URLSearchParams(location.search);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches || params.has('still');
+
+const NS = 'http://www.w3.org/2000/svg';
+const LVL = { bash: 1, child: 2, cmd: 3, lang: 4 };
+const BAND = { bash: 'bash', child: 'child bash', cmd: 'reads', lang: 'language' };
+let cur = Number(params.get('ex') || 0), level = Number(params.get('lvl') || 4), folded = new Set(), active = null;
+const canvas = document.createElement('canvas').getContext('2d');
+const tw = (s, f) => { canvas.font = f; return canvas.measureText(s).width; };
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+let nodes = [], byId = new Map(), svg = document.getElementById('tree');
+
+function build() {
+  const d = DATA[cur];
+  svg.replaceChildren();
+  nodes = []; byId = new Map();
+  walk(d.root, (n, anc) => { const o = { n, anc, parent: anc.length ? byId.get(anc[anc.length - 1].id) : null, depth: anc.length }; nodes.push(o); byId.set(n.id, o); });
+  const gBands = el('g', {}, svg), gLinks = el('g', {}, svg), gNodes = el('g', {}, svg);
+  const ui = getComputedStyle(document.body).fontFamily;
+  const code = getComputedStyle(document.documentElement).getPropertyValue('--code');
+  for (const o of nodes) {
+    const n = o.n;
+    // A band where a new reader takes over: the root, $( ) → child bash, a command's reading, a language.
+    if (!o.parent || o.parent.n.layer !== n.layer) {
+      o.band = el('g', { class: `bandg l-${n.layer}` }, gBands);
+      o.bandRect = el('rect', { class: 'band', rx: 6 }, o.band);
+      o.bandEdge = el('rect', { class: 'band-edge', width: 3, rx: 1.5 }, o.band);
+      o.bandText = el('text', { class: 'band-label' }, o.band);
+      o.bandText.textContent = n.layer === 'cmd' ? `${n.label.split(' ')[0]} reads` : n.layer === 'lang' ? n.label : BAND[n.layer];
+    }
+    if (n.children.length) o.spine = el('rect', { class: 'spine', width: 1.3 }, gLinks);
+    const g = el('g', { class: `node l-${n.layer}`, role: 'treeitem', 'aria-level': o.depth + 1, tabindex: -1 }, gNodes);
+    o.g = g;
+    const kind = n.kind === 'reading' ? `${n.label.split(' ')[0]} reads` : n.kind === 'lang' ? n.label : n.kind === 'script' && n.layer === 'bash' ? 'bash reads the line' : labelsOf(n)[0];
+    const text = ['reading', 'lang', 'script', 'list', 'pipeline'].includes(n.kind) && n.layer !== 'child' ? '' : d.line.slice(n.s, n.e);
+    o.kind = kind; o.text = text;
+    o.kindW = tw(kind, `600 11px ${ui}`);
+    o.codeW = (s) => tw(s, `13px ${code}`);
+    if (o.depth) el('path', { class: 'stub' }, g);
+    o.chip = el('rect', { class: 'chip', rx: 5, height: 22, y: -11 }, g);
+    if (n.children.length) o.twisty = el('path', { class: 'tw', d: 'M-3,-4L3,0L-3,4Z' }, g);
+    o.kindEl = el('text', { class: 'kind', y: 4 }, g); o.kindEl.textContent = kind;
+    o.codeEl = el('text', { class: 'code', y: 4, 'xml:space': 'preserve' }, g);
+    o.noteEl = el('text', { class: 'note', y: 4 }, g);
+    g.setAttribute('aria-label', `${kind}${text ? ' ' + text : ''}, read by ${readerOf(n, o.anc)}`);
+    g.addEventListener('click', () => { g.focus(); if (n.children.length) toggle(o); });
+    g.addEventListener('mouseenter', () => show(o));
+    g.addEventListener('focus', () => show(o));
+    g.addEventListener('keydown', (e) => key(e, o));
+  }
+  document.getElementById('src').textContent = d.line;
+  svg.classList.add('nt');
+  layout(false);
+  svg.getBoundingClientRect();
+  requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.remove('nt')));
+  (byId.get(DATA[cur].root.id)).g.tabIndex = 0;
+}
+const visible = (o) => LVL[o.n.layer] <= level && (!o.parent || (visible(o.parent) && !folded.has(o.parent.n.id)));
+function layout() {
+  const W = svg.clientWidth || document.body.clientWidth - 32;
+  const narrow = W < 520, ind = narrow ? 16 : 24, rowH = narrow ? 28 : 30;
+  let row = 0;
+  for (const o of nodes) {
+    o.vis = visible(o);
+    if (o.vis) { o.row = row++; o.x = 8 + o.depth * ind; o.y = o.row * rowH + rowH / 2 + 2; }
+  }
+  // Hidden nodes go to their nearest visible ancestor, so they fold into it.
+  for (const o of nodes) if (!o.vis) { let p = o.parent; while (p && !p.vis) p = p.parent; o.x = p ? p.x : 8; o.y = p ? p.y : 0; }
+  const H = row * rowH + 8;
+  svg.style.height = H + 'px';
+  for (const o of nodes) {
+    const n = o.n, g = o.g;
+    g.style.transform = `translate(${o.x}px, ${o.y}px)`;
+    g.style.opacity = o.vis ? 1 : 0;
+    g.style.pointerEvents = o.vis ? '' : 'none';
+    g.setAttribute('aria-hidden', String(!o.vis));
+    // The chip: twisty, kind, code; the note after it when there is room.
+    const tx = n.children.length ? 13 : 7;
+    const kindX = tx;
+    const codeX = kindX + o.kindW + (o.text ? 7 : 0);
+    let room = W - o.x - codeX - 14, text = o.text;
+    while (text && o.codeW(text) > room && text.length > 2) text = text.slice(0, -2) + '…';
+    o.codeEl.textContent = text;
+    o.kindEl.setAttribute('x', kindX);
+    o.codeEl.setAttribute('x', codeX);
+    const w = codeX + (text ? o.codeW(text) : 0) + 7;
+    o.chip.setAttribute('x', -2); o.chip.setAttribute('width', w + 2); o.chipW = w;
+    if (o.twisty) { o.twisty.setAttribute('transform', `translate(6,0) rotate(${folded.has(n.id) ? 0 : 90})`); o.twisty.style.display = n.children.some((c) => LVL[c.layer] <= level) ? '' : 'none'; }
+    const noteRoom = W - o.x - w - 24;
+    let note = !narrow && noteRoom > 120 && n.note ? n.note : '';
+    if (note) { const f = `12px ${getComputedStyle(document.body).fontFamily}`; while (tw(note, f) > noteRoom && note.length > 4) note = note.slice(0, note.lastIndexOf(' ', note.length - 2)) + '…'; }
+    o.noteEl.textContent = note; o.noteEl.setAttribute('x', w + 10);
+    if (o.depth) o.g.querySelector('.stub').setAttribute('d', `M${-ind + 8.6},0H-2`);
+  }
+  for (const o of nodes) {
+    // The spine from a node down to its last visible child.
+    if (o.spine) {
+      const kids = o.n.children.map((c) => byId.get(c.id)).filter((k) => k.vis);
+      const last = kids.length && o.vis ? kids[kids.length - 1] : null;
+      o.spine.style.transform = `translate(${o.x + 8}px, ${o.y + 11}px)`;
+      o.spine.style.height = last ? `${last.y - o.y - 11}px` : '0px';
+      o.spine.style.opacity = last ? 1 : 0;
+    }
+    if (o.band) {
+      // The band covers the node and its visible subtree.
+      let lastRow = o.row;
+      for (const k of nodes) if (k.vis && k.anc.includes(o.n)) lastRow = Math.max(lastRow, k.row);
+      const h = o.vis ? (lastRow - o.row + 1) * rowH - 2 : 0;
+      const bx = o.x - 6;
+      o.band.style.transform = `translate(${bx}px, ${o.y - rowH / 2 + 1}px)`;
+      o.band.style.opacity = o.vis ? 1 : 0;
+      o.bandRect.setAttribute('width', Math.max(0, W - bx)); o.bandRect.style.height = h + 'px';
+      o.bandEdge.style.height = h + 'px';
+      o.bandText.setAttribute('x', W - bx - 6); o.bandText.setAttribute('y', 12);
+      // No label where it would run into the node's own chip or note.
+      const lw = tw(o.bandText.textContent, `600 10.5px ${getComputedStyle(document.body).fontFamily}`);
+      const used = 6 + o.chipW + (o.noteEl.textContent ? 10 + o.noteEl.getComputedTextLength() : 0) + 8;
+      o.bandText.style.display = W - bx - 6 - lw > used ? '' : 'none';
+    }
+  }
+  document.querySelectorAll('.show button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.lvl === level)));
+}
+function toggle(o) { folded.has(o.n.id) ? folded.delete(o.n.id) : folded.add(o.n.id); o.g.setAttribute('aria-expanded', String(!folded.has(o.n.id))); layout(); }
+function show(o) {
+  nodes.forEach((k) => k.g.classList.toggle('on', k === o));
+  const line = DATA[cur].line, n = o.n;
+  const src = document.getElementById('src');
+  src.style.setProperty('--c', `var(--l-${n.layer})`);
+  src.innerHTML = `${esc(line.slice(0, n.s))}<mark>${esc(line.slice(n.s, n.e))}</mark>${esc(line.slice(n.e))}`;
+  const det = document.getElementById('detail');
+  det.style.setProperty('--c', `var(--l-${n.layer})`);
+  det.innerHTML = `<div class="who">${esc(readerOf(n, o.anc))}</div><b>${esc(o.kind)}</b> <code>${esc(line.slice(n.s, n.e))}</code><br>${esc(n.note || '')}`;
+}
+function key(e, o) {
+  const vis = nodes.filter((k) => k.vis), i = vis.indexOf(o);
+  let t = null;
+  if (e.key === 'ArrowDown') t = vis[i + 1];
+  else if (e.key === 'ArrowUp') t = vis[i - 1];
+  else if (e.key === 'ArrowRight') { if (folded.has(o.n.id)) toggle(o); else t = vis[i + 1]?.parent === o ? vis[i + 1] : null; }
+  else if (e.key === 'ArrowLeft') { if (o.n.children.length && !folded.has(o.n.id)) toggle(o); else t = o.parent; }
+  else if (e.key === 'Enter' || e.key === ' ') { if (o.n.children.length) toggle(o); }
+  else if (e.key === 'Home') t = vis[0];
+  else if (e.key === 'End') t = vis[vis.length - 1];
+  else return;
+  e.preventDefault();
+  if (t) { o.g.tabIndex = -1; t.g.tabIndex = 0; t.g.focus(); }
+}
+document.querySelectorAll('.show button').forEach((b) => b.onclick = () => { level = +b.dataset.lvl; layout(); });
+exampleButtons(document.getElementById('ex'), (i) => { cur = i; folded = new Set(); build(); });
+document.querySelectorAll('#ex button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === cur)));
+build();
+if (params.get('focus')) show(nodes[Number(params.get('focus'))]);
+addEventListener('resize', () => layout());
+window.__lvl = (l) => { level = l; layout(); };
+window.__fold = (i) => toggle(nodes[i]);
+</script>
+</body>
+</html>

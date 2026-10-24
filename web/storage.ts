@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
   split: 'bash-explainer-split',
   /** The height of the Problems list under the editor, and whether it is folded away. */
   problems: 'bash-explainer-problems',
+  /** The panel's view (the list or the tree) and the layers its tree shows (src/ui/panelView.ts `PanelState`). */
+  panel: 'bash-explainer-panel',
 } as const;
 
 /** The value kept under `key`: null when there is none, undefined when storage is unavailable. */
