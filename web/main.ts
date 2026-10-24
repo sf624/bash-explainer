@@ -20,6 +20,7 @@ import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
 import { $, on, put } from './dom';
 import { Editor } from './editor';
+import { askReplaceWithSample } from './kind-dialog';
 import { closeSheet, narrow, reopenSheet, setUpEdgeSwipe, setUpProblems, setUpSheet, setUpSplitter } from './layout';
 import { mode } from './mode';
 import { PanelBridge } from './panel-bridge';
@@ -495,27 +496,53 @@ on('kind-menu', 'change', (e) => {
   chooseKind(k);
 });
 
+/**
+ * Whether the editor holds no text of the user's: nothing, or a sample exactly as the page loads it. Read from
+ * the text itself rather than from a record of edits, so that it also holds after an undo back to a sample.
+ */
+const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
+
 function chooseKind(k: Kind): void {
   kind = k;
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) menuKind.value = k;
   editor.setKind(kind);
-  // Only the reading changes; the text stays, unless there is none: then the new kind's sample is loaded.
-  if (!editor.text.trim()) editor.setText(kindInfo(kind).sample, kindInfo(kind).cursorLine);
+  // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
+  const own = !untouched(editor.text);
+  if (!own) loadSample(false);
   editor.shade();
   updatePanel();
   editor.recheck();
+  if (own) askAboutSample(k);
 }
 
-on('sample', 'click', () => {
+/** Asks whether the user's text gives way to the sample of the kind just chosen (the kind has changed either way). */
+function askAboutSample(k: Kind): void {
+  const t = TEXT[lang];
+  const name = t.kinds[k] ?? kindInfo(k).name;
+  // From the menu (a phone), the menu closes first, so that the toast after the choice is not under it.
+  const fromMenu = drawer?.open === true;
+  if (fromMenu) drawer!.close();
+  const back = fromMenu ? document.getElementById('menu-open') : document.activeElement as HTMLElement | null;
+  void askReplaceWithSample({ title: t.askTitle(name), message: t.askMessage(name), replace: t.askReplace, keep: t.askKeep }, back)
+    .then((replace) => {
+      if (replace) loadSample(true);
+    });
+}
+
+/** Puts in the current kind's sample; when it replaced the user's own text, the toast offers to undo it. */
+function loadSample(own: boolean): void {
   const info = kindInfo(kind);
-  const text = editor.text;
-  // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
-  const own = text.trim() !== '' && !KINDS.some((k) => k.sample === text);
-  if (own && !confirm(TEXT[lang].replace)) return;
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
   if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: () => { undo(editor.view); editor.focusUnlessTouch(); } });
+}
+
+on('sample', 'click', () => {
+  // The user's own text asks for a confirmation and, once replaced, offers to undo; a sample or nothing does not.
+  const own = !untouched(editor.text);
+  if (own && !confirm(TEXT[lang].replace)) return;
+  loadSample(own);
 });
 
 // The other version is another page: go there with the script in the hash, in the same language.
