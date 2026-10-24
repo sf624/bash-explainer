@@ -33,7 +33,20 @@ jobs:
         if: matrix.node == 24
         run: npx tsx scripts/extract-snippets.ts --check
 
-      # The web page test drives Chromium; playwright needs Node.js 20 or later.
+      # The web page test drives Chromium; playwright needs Node.js 20 or later. The browser is cached by
+      # the playwright version (`install` then finds it and downloads nothing); the system libraries
+      # (`--with-deps`) are installed every time.
+      - name: Find the playwright version
+        if: matrix.node == 24
+        id: playwright
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: matrix.node == 24
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Chromium for the web page test
         if: matrix.node == 24
         run: npx playwright-core install --with-deps chromium-headless-shell
@@ -45,10 +58,27 @@ jobs:
       # On the newest Node.js, with every tool installed, the unit tests also measure coverage.
       - name: Type check, and unit tests with coverage
         if: matrix.node == 24
+        # The two type checks run beside the tests (not before them) and are waited for after: a failure of
+        # either, or of the tests, fails the step. The tests run in parallel (.mocharc.json: three workers on
+        # the four cores of the runner), so the type checks mostly take the fourth core.
         run: |
-          npx tsc --noEmit
-          npx tsc --noEmit -p web
-          npm run coverage
+          npx tsc --noEmit > "$RUNNER_TEMP/tsc-src.log" 2>&1 &
+          src=$!
+          npx tsc --noEmit -p web > "$RUNNER_TEMP/tsc-web.log" 2>&1 &
+          web=$!
+          status=0
+          npm run coverage || status=1
+          for check in src web; do
+            pid=${!check}
+            if wait "$pid"; then
+              echo "tsc ($check): ok"
+            else
+              echo "::error::tsc ($check) failed"
+              cat "$RUNNER_TEMP/tsc-$check.log"
+              status=1
+            fi
+          done
+          exit "$status"
         env:
           # Fail instead of skipping when the browser cannot start.
           BASH_EXPLAINER_BROWSER: '1'

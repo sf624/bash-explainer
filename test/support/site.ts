@@ -1,5 +1,5 @@
-// The web page for the browser tests (test/web-*.test.ts): built into a temporary directory once for the
-// whole mocha run, served on 127.0.0.1, and opened in one headless Chromium that every file shares. A
+// The web page for the browser tests (test/web-*.test.ts): built into a temporary directory once per test
+// file, served on 127.0.0.1, and opened in one headless Chromium for that file. A
 // test opens its own context, so nothing is shared between tests but the build.
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
@@ -29,6 +29,7 @@ interface Running extends Site {
   dir: string;
 }
 
+/** The site of the file being run: in a parallel run a worker runs several files one after another, so each file closes its own. */
 let running: Promise<Running | undefined> | undefined;
 
 async function start(): Promise<Running | undefined> {
@@ -65,24 +66,25 @@ async function start(): Promise<Running | undefined> {
 }
 
 /**
- * The shared site, built on the first call; undefined (and the test is skipped) when no browser can start,
- * unless $BASH_EXPLAINER_BROWSER is set (as in CI). Call it from a `before` hook of a file.
+ * The site of this file, built on the first call; undefined (and the test is skipped) when no browser can
+ * start, unless $BASH_EXPLAINER_BROWSER is set (as in CI). Call it from a `before` hook of a file: the site
+ * (build directory, server on a free port, browser) is closed after that file's suite, so files run in
+ * parallel workers do not share one.
  */
 export async function openSite(ctx: Mocha.Context): Promise<Site> {
-  running ??= start();
-  const site = await running;
+  const mine = (running = start());
+  ctx.test?.parent?.afterAll(async () => {
+    const site = await mine.catch(() => undefined); // the before hook reports a failed start
+    if (running === mine) running = undefined;
+    if (!site) return;
+    await site.browser.close();
+    await new Promise((r) => site.server.close(r));
+    fs.rmSync(site.dir, { recursive: true, force: true });
+  });
+  const site = await mine;
   if (!site) return ctx.skip();
   return site;
 }
-
-// Once, after the last file.
-after(async () => {
-  const site = await running;
-  if (!site) return;
-  await site.browser.close();
-  await new Promise((r) => site.server.close(r));
-  fs.rmSync(site.dir, { recursive: true, force: true });
-});
 
 /** Polls `get` until `ok` accepts its value, and returns it; fails with `what` after `ms`. */
 export async function until<T>(what: string, get: () => Promise<T>, ok: (v: T) => boolean, ms = 10000): Promise<T> {
