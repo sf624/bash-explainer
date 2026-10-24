@@ -60,8 +60,21 @@ export function encodeTokens(spans: readonly LineSpan[]): number[] {
   return data;
 }
 
-/** The semantic tokens of a document; with `lines`, only those on these lines (inclusive), as a range request asks. */
+/** The semantic tokens of a document (none over host syntax that the extraction inserted); with `lines`, only those on these lines (inclusive), as a range request asks. */
 export function semanticTokens(doc: ShellDocument, lines?: { from: number; to: number }): number[] {
-  const spans = documentHighlight(doc);
+  const spans = documentHighlight(doc, true);
   return encodeTokens(lines ? spans.filter((s) => s.line >= lines.from && s.line <= lines.to) : spans);
+}
+
+/** The tokens of encoded integers, as lines, columns and lengths (for tests and tools). */
+export function decodeTokens(data: readonly number[]): { line: number; start: number; length: number; type: TokenType }[] {
+  const out = [];
+  let line = 0;
+  let start = 0;
+  for (let i = 0; i < data.length; i += 5) {
+    line += data[i];
+    start = data[i] ? data[i + 1] : start + data[i + 1];
+    out.push({ line, start, length: data[i + 2], type: TOKEN_TYPES[data[i + 3]] });
+  }
+  return out;
 }
