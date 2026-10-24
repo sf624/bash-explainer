@@ -12,6 +12,8 @@ export const STORAGE_KEYS = {
   settings: 'bash-explainer-settings',
   /** The theme chosen (theme-init.js reads it before the first paint; it is a plain script and repeats the name). */
   theme: 'bash-explainer-theme',
+  /** The shapes of the screens seen as a phone's, so that a page loaded zoomed out keeps the phone layout (theme-init.js repeats the name). */
+  phoneScreens: 'bash-explainer-phone-screens',
   /** Read mode on a touch screen. */
   readMode: 'bash-explainer-read-mode',
   /** The first-run tip of the read-mode button was seen. */

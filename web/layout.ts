@@ -1,8 +1,18 @@
 // The layout of the web page: the divider between the editor and the explanation, and the side
 // sheets (the menu and the settings), which a swipe opens and closes on a touch screen.
 
-/** Phones and narrow windows: the explanation below the editor (page.css has the same width). */
-export const narrow = window.matchMedia('(max-width: 767px)');
+/**
+ * Phones (at every zoom) and narrow windows: the explanation below the editor. theme-init.js decides it
+ * before the first paint, as the class `narrow` of the page that page.css follows.
+ */
+export const narrow = {
+  get matches(): boolean {
+    return document.documentElement.classList.contains('narrow');
+  },
+  addEventListener(_type: 'change', listener: () => void): void {
+    document.documentElement.addEventListener('narrowchange', listener);
+  },
+};
 
 import { readStoredObject, STORAGE_KEYS, writeStored } from './storage';
 

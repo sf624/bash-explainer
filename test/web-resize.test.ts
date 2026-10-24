@@ -3,7 +3,7 @@
 // unless $BASH_EXPLAINER_BROWSER is set (as in CI).
 import * as assert from 'assert';
 import type { Browser } from 'playwright-core';
-import { openSite, until } from './support/site';
+import { openSite, stable, until } from './support/site';
 
 describe('the web page: resizing the panes and the Problems list', function () {
   this.timeout(120000);
@@ -277,10 +277,11 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await p.reload();
     await p.locator('.cm-line').first().waitFor();
     await until('folded again', expanded, (v) => v === 'false');
-    await p.setViewportSize({ width: 1000, height: 740 });
-    await until('open on a wide screen', expanded, (v) => v === 'true');
-    await p.setViewportSize({ width: 390, height: 740 });
-    await until('folded on a phone', expanded, (v) => v === 'false');
+    // A phone zoomed out is wider in CSS pixels, but still a phone (test/web-phone.test.ts).
+    const cdp = await phone.newCDPSession(p);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1897, deviceScaleFactor: 1.17, mobile: true, screenWidth: 390, screenHeight: 844 });
+    await until('the zoom', () => p.evaluate('innerWidth') as Promise<number>, (w) => w === 1000);
+    assert.strictEqual(await stable('the list on a zoomed-out phone', expanded), 'false');
     await phone.close();
 
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -290,6 +291,11 @@ describe('the web page: resizing the panes and the Problems list', function () {
     await until('the sample\'s problems', () => w.locator('#problems').isVisible(), (v) => v);
     assert.strictEqual(await w.locator('#problems-toggle').getAttribute('aria-expanded'), 'true');
     assert.strictEqual(await w.locator('#problem-list li').first().isVisible(), true);
+    // A desktop window made narrow is laid out as a phone, and wide again as before.
+    await w.setViewportSize({ width: 390, height: 720 });
+    await until('folded in a narrow window', () => w.locator('#problems-toggle').getAttribute('aria-expanded'), (v) => v === 'false');
+    await w.setViewportSize({ width: 1000, height: 720 });
+    await until('open in a wide window', () => w.locator('#problems-toggle').getAttribute('aria-expanded'), (v) => v === 'true');
     await ctx.close();
   });
 });

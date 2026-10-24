@@ -18,6 +18,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
 - Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path. A path runs that file, not a builtin: `./read x` and a function named `read` no longer get the `read -r` pitfall.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
