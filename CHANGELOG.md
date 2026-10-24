@@ -30,6 +30,9 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
+- A GitHub Actions `run: |` block is read without its YAML indentation, as the runner gets it, so an indented `EOF` ends a here-document. Before, every later line, up to the next step, was explained as part of the here-document. A folded block (`run: >`) is read as the one line YAML makes of it.
+- Each workflow step, Dockerfile `RUN`, Makefile recipe line (or recipe, with `.ONESHELL`) and package.json script is explained as a shell of its own. Before, `set -u` or a function of one step counted in the next, with wrong pitfalls such as "`f` is not set here".
+- The note on a line of a here-document names the line where it starts, also after blank lines at the top of a script. Before, the count started at the first command.
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
 - `$_` links to section 5.2 of the Bash manual (Bash Variables), where bash 5.2's manual describes it, and a variable such as `$_tmp` to 3.5.3.

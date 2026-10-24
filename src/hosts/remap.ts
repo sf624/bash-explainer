@@ -91,26 +91,39 @@ export function substitutionNotes(extracted: Extracted, line: number, lang: 'ja'
 const PIPEFAIL: FactSpec = { id: 'dockerfile-pipefail-missing', params: {} };
 
 let regionParser: BashParser | undefined;
-const regionTrees = new Map<string, SyntaxTree>();
+const scriptTrees = new WeakMap<Extracted, Map<ShellRegion, SyntaxTree>>();
+
+/**
+ * The tree of the shell that runs `region`: each region is a shell of its own (a RUN instruction, a workflow step, a
+ * recipe line), unless regions share a `script` (Markdown's blocks, a recipe with `.ONESHELL`). When every region runs
+ * in one shell, it is the document's tree; otherwise the text of the other regions is left out (their lines are empty,
+ * so lines and columns stay), and the state of one shell does not carry into the next.
+ */
+function scriptTree(tree: SyntaxTree, extracted: Extracted, region: ShellRegion): SyntaxTree {
+  const group = region.script === undefined ? [region] : extracted.regions.filter((r) => r.script === region.script);
+  if (group.length === extracted.regions.length) return tree;
+  let trees = scriptTrees.get(extracted);
+  if (!trees) scriptTrees.set(extracted, (trees = new Map()));
+  let own = trees.get(region);
+  if (!own) {
+    const text = extracted.text.split('\n').map((l, i) => (group.some((r) => r.start <= i && i <= r.end) ? l : '')).join('\n');
+    regionParser ??= createUnbashParser();
+    own = regionParser.parse(text);
+    for (const r of group) trees.set(r, own);
+  }
+  return own;
+}
 
 /**
  * Whether a pipeline with a `|` on `line` of a region runs without pipefail. The region is read as the script
  * its own shell runs (a RUN instruction), so `set -o pipefail` counts from where it runs, and not in a comment.
  */
-function pipeWithoutPipefail(extracted: Extracted, region: ShellRegion, line: number): boolean {
-  const text = extracted.text.split('\n').slice(region.start, region.end + 1).join('\n');
-  let tree = regionTrees.get(text);
-  if (!tree) {
-    regionParser ??= createUnbashParser();
-    tree = regionParser.parse(text);
-    regionTrees.set(text, tree);
-  }
+function pipeWithoutPipefail(tree: SyntaxTree, region: ShellRegion, line: number): boolean {
   const model = shellState(tree, region.shell);
-  const row = line - region.start;
   const statuses = statusModel(model, region.shell);
   return descendants(tree.root, ['pipeline']).some((p) => {
     const rule = statuses.status(p);
-    return p.children.some((c) => c.type === '|' && c.startPosition.row === row) && rule.kind === 'pipeline' && rule.pipefail === 'off';
+    return p.children.some((c) => c.type === '|' && c.startPosition.row === line) && rule.kind === 'pipeline' && rule.pipefail === 'off';
   });
 }
 
@@ -121,6 +134,7 @@ export function explainHostedLine(
 ): LineExplanation | undefined {
   const region = extracted.regions.find((r) => r.start <= line && line <= r.end);
   if (!region) return undefined;
+  tree = scriptTree(tree, extracted, region);
   const ex = analyzer.explainLine(tree, line, shell ?? region.shell, { ...opts, host: region.host, ...(region.commands ? { hostCommands: region.commands } : {}) });
   ex.context.unshift({ label: lang === 'ja' ? region.label[0] : region.label[1], line: region.start });
   const pick = (m: [string, string, string?]) => (lang === 'ja' ? m[0] : m[1]);
@@ -129,7 +143,7 @@ export function explainHostedLine(
   const spoken = (spec: FactSpec) => { const f = said([factOf(lang, spec)], opts.pitfalls); hostFacts.push(...f); return f.map((x) => x.text); };
   const notes = [...(region.notes ?? []).flatMap((n) => (Array.isArray(n) ? [pick(n)] : spoken(n.spec))), ...substitutionNotes(extracted, line, lang, opts.pitfalls, hostFacts)];
   if (region.host.ci === 'github') notes.push(...githubFileNotes(original[line], lang));
-  if (region.warnPipefail && pipeWithoutPipefail(extracted, region, line)) {
+  if (region.warnPipefail && pipeWithoutPipefail(tree, region, line)) {
     notes.push(...spoken(PIPEFAIL));
   }
   // (The lines bats rewrites where bash then reads a function: not one inside a here-document or a string.)
@@ -166,12 +180,13 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
     };
   };
   for (const region of extracted.regions) {
-    for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
+    const own = scriptTree(tree, extracted, region);
+    for (const issue of dialectIssues(own, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
       out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
     }
     if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {
-        if (!pipeWithoutPipefail(extracted, region, line)) continue;
+        if (!pipeWithoutPipefail(own, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
         out.push({ code: 'dockerPipefail', severity: 'warning', message: factOf(lang, PIPEFAIL).text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
       }

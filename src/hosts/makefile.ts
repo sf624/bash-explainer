@@ -12,6 +12,9 @@ const MAKE_AUTO: Record<string, [string, string, string]> = {
 export function makefile(b: Builder): void {
   let shell: Shell = 'sh';
   let inRecipe = false;
+  // With `.ONESHELL`, make runs all the lines of a recipe in one shell; otherwise each line in a shell of its own.
+  const oneShell = b.lines.some((l) => /^\.ONESHELL\s*:/.test(l));
+  let rule = 0;
   for (let i = 0; i < b.lines.length; i++) {
     const line = b.lines[i];
     const shellVar = /^\s*SHELL\s*:?=\s*(\S+)/.exec(line);
@@ -21,7 +24,7 @@ export function makefile(b: Builder): void {
     }
     if (!line.startsWith('\t')) {
       // A rule line (`target: deps`) starts a recipe; other lines end it.
-      if (/^[^\s#=][^=]*:(?!=)/.test(line) && !/^\s*(ifeq|ifneq|ifdef|ifndef|else|endif|define|endef|include|export)\b/.test(line)) inRecipe = true;
+      if (/^[^\s#=][^=]*:(?!=)/.test(line) && !/^\s*(ifeq|ifneq|ifdef|ifndef|else|endif|define|endef|include|export)\b/.test(line)) { inRecipe = true; rule = i; }
       else if (line.trim() && !line.trimStart().startsWith('#')) inRecipe = false;
       continue;
     }
@@ -30,6 +33,7 @@ export function makefile(b: Builder): void {
     makeRecipeLine(b, i, true);
     while (/\\$/.test(b.lines[i]) && i + 1 < b.lines.length) makeRecipeLine(b, ++i, false);
     b.region(start, i, ['Makefile のレシピ', 'Makefile recipe'], shell);
+    if (oneShell) b.regions[b.regions.length - 1].script = rule;
   }
 }
 

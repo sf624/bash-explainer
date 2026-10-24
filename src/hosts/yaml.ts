@@ -74,8 +74,8 @@ export function yaml(b: Builder): void {
     const ci = stepCi(b, i, indent, key, found);
     const label: [string, string] = ci ? CI_SYSTEMS[ci].label(key) : [`YAML の \`${key}:\``, `YAML \`${key}:\``];
     const valueAt = line.length - (m[3] ?? '').length;
-    if (/^[|>][-+]?\d*$/.test(rest)) {
-      i = yamlBlock(b, i, indent, label, shell);
+    if (BLOCK_HEADER.test(rest)) {
+      i = yamlBlock(b, i, indent, rest, label, shell);
     } else if (rest) {
       yamlScalar(b, i, valueAt, rest, label, shell);
     } else {
@@ -85,7 +85,7 @@ export function yaml(b: Builder): void {
         const item = /^(\s*-\s+)(.*)$/.exec(b.lines[j]);
         if (item) {
           const value = item[2].replace(/\s+#.*$/, '');
-          if (/^[|>][-+]?\d*$/.test(value)) { j = yamlBlock(b, j, indentOf(b.lines[j]), label, shell) + 1; continue; }
+          if (BLOCK_HEADER.test(value)) { j = yamlBlock(b, j, indentOf(b.lines[j]), value, label, shell) + 1; continue; }
           yamlScalar(b, j, item[1].length, value, label, shell);
         }
         j++;
@@ -195,20 +195,42 @@ function shellName(s: string): Shell | null {
   return sh === 'bash' || sh === 'sh' ? sh : null;
 }
 
-/** A `|` / `>` block scalar: the more-indented lines after `at`. Returns the last line of the block. */
-function yamlBlock(b: Builder, at: number, indent: number, label: [string, string], shell: Shell | undefined): number {
-  let j = at + 1;
-  let last = at;
-  while (j < b.lines.length && (!b.lines[j].trim() || indentOf(b.lines[j]) > indent)) {
-    if (b.lines[j].trim()) {
-      githubLine(b, j, 0, b.lines[j].length);
-      last = j;
-    }
-    j++;
+/** The header of a block scalar: `|` (literal) or `>` (folded), with a chomping and an indentation indicator in either order. */
+const BLOCK_HEADER = /^[|>](?:[-+]?[1-9]?|[1-9][-+])$/;
+
+/**
+ * A `|` / `>` block scalar (`header`): the more-indented lines after `at`. Returns the last line of the block.
+ * YAML takes the block's indentation off every line (YAML 1.2, 8.1.1.1): the column of the first line that is not
+ * empty, or `indent` plus the indicator (`|2`). The script the runner gets starts there, so an indented `EOF` ends a
+ * here-document. A folded block (`>`) joins two lines next to each other with a space, unless one of them is more
+ * indented (8.1.3): the shell text gets ` \` there, so the shell reads them as one line too.
+ */
+function yamlBlock(b: Builder, at: number, indent: number, header: string, label: [string, string], shell: Shell | undefined): number {
+  const given = /\d/.exec(header);
+  let strip = given ? indent + Number(given[0]) : undefined;
+  const lines: number[] = [];
+  for (let j = at + 1; j < b.lines.length && (!b.lines[j].trim() || indentOf(b.lines[j]) > indent); j++) {
+    if (!b.lines[j].trim()) continue;
+    // (Only spaces indent YAML: a tab after them is the script's, as for `<<-`.)
+    strip ??= /^ */.exec(b.lines[j])![0].length;
+    lines.push(j);
   }
-  b.region(at + 1, last, label, shell);
+  // A line of the folded block that YAML joins with the next one: both at the block's indentation, with nothing between.
+  const folds = (j: number) => header[0] === '>' && lines.includes(j + 1) && indentOf(b.lines[j]) === strip && indentOf(b.lines[j + 1]) === strip;
+  for (const j of lines) {
+    githubLine(b, j, Math.min(strip!, indentOf(b.lines[j])), b.lines[j].length);
+    if (folds(j)) b.outs[j]!.insert(' \\', b.lines[j].length, b.lines[j].length);
+  }
+  const last = lines.length ? lines[lines.length - 1] : at;
+  b.region(at + 1, last, label, shell, lines.some(folds) ? [FOLDED] : undefined);
   return last;
 }
+
+/** The note on a folded block whose lines YAML joins. */
+const FOLDED: [string, string] = [
+  'YAML の折り畳みブロック（`>`）は、同じ字下げで隣り合う行をスペースでつなぎます。シェルはつながった 1 行を受け取ります。',
+  'A YAML folded block (`>`) joins lines next to each other at the same indentation with a space: the shell gets them as one line.',
+];
 
 /** A one-line value, plain or quoted. */
 function yamlScalar(b: Builder, i: number, from: number, value: string, label: [string, string], shell: Shell | undefined): void {

@@ -436,6 +436,10 @@ describe('multi-line constructs', () => {
     assert.match(find(e, '$USER').explanation, /user name/);
   });
 
+  it('says the line of a here-document after blank lines at the top', () => {
+    assert.match(explain('\n\n\ncat <<EOF\nx\nEOF', 4).notes[0], /started by `<<EOF` on line 4\./);
+  });
+
   it('explains continued commands on every line', () => {
     const e = explain(script, 7);
     assert.match(e.notes[0], /starts on line 7/);
