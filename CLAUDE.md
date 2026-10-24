@@ -10,7 +10,9 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## Changelog
 
-- CHANGELOG.md is read by users (GitHub Release notes, the Marketplace); README "Contributing" has its format. Write one bullet per user-visible change under `### New`, `### Changed` or `### Fixed` of `## Unreleased`; when a change is a fix of a kind already listed (one more construct explained as bash does, one more tool option), extend that bullet instead of adding one. No tests, CI, refactors or design (the semantic model, specs) unless users see the effect, and then describe the effect. Keep compatibility notes (deprecated or changed settings, removed features, minimum VS Code version) explicit.
+- CHANGELOG.md is read by users (GitHub Release notes, the Marketplace); README "Contributing" has its format and the release steps. Write one bullet per user-visible change under `### New`, `### Changed` or `### Fixed` of `## Unreleased`: one or two short sentences with the point a user sees, never a paragraph. Write "Before, …" only when the behaviour changes in a way users will notice, not for every fix.
+- Fine-grained examples and the earlier behaviour go into `docs/changes/unreleased.md` (at release, renamed to `docs/changes/<version>.md`), linked from the version's section. When a change is a fix of a kind already listed (one more construct explained as bash does, one more tool option), extend that bullet's entry in the details file with a few words or an example; do not grow the bullet or add one.
+- No tests, CI, refactors or design (the semantic model, specs) unless users see the effect, and then describe the effect. Keep compatibility notes (deprecated or changed settings, removed features, minimum VS Code version) explicit, in the bullet.
 
 ## Tests and coverage
 
