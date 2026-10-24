@@ -32,6 +32,7 @@ README.md ("Contributing") has the commands and the rules for tests, coverage an
 
 ## Design
 
+- [docs/roadmap.md](docs/roadmap.md) holds the agreed order of the work, and what waits on the maintainer. Read it before starting or proposing work; update it in the same PR that starts, finishes or drops an item, and add an item whenever the maintainer agrees to a plan that is not done at once.
 - [docs/design/README.md](docs/design/README.md) is the index of the design documents, with the status of each. When a document's status changes (a step done, a plan finished), update its row there in the same PR.
 - [docs/design/semantics.md](docs/design/semantics.md) is the plan: A, command specs read by one argument interpreter (`src/argv/`); B, a semantic model after the manual (`src/semantics/`); C, the bash-ast test. Do not add one-off fields to `src/dict/types.ts` or name checks to `src/analyzer.ts`; extend the spec or the model instead, or say why not.
 
