@@ -69,6 +69,8 @@ export function panelUpdate(p: PanelLine) {
   const tp = t.panel;
   return {
     type: 'update',
+    // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
+    lang,
     labels: tp,
     dialect: {
       shells: [['auto', `${tp.auto}${p.detected ? (lang === 'ja' ? `（${SHELL_NAMES[p.detected]}）` : ` (${SHELL_NAMES[p.detected]})`) : ''}`], ...Object.entries(SHELL_NAMES)],

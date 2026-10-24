@@ -23,7 +23,7 @@ import { toMarkdown, toPlainMarkdown } from '../src/ui/render';
 const parser = createUnbashParser();
 
 /** The programs the fake PATH has, which print `program`: the dictionary's programs of the names in the rows. */
-const FAKES = ['echo', 'printf', 'kill', 'test', '[', 'true', 'pwd', 'time', 'grep', 'ls', 'apt-get', 'git'];
+const FAKES = ['echo', 'printf', 'kill', 'test', '[', 'true', 'pwd', 'time', 'grep', 'ls', 'apt-get', 'git', 'useradd'];
 /** The real programs the rows run, linked into the fake PATH. */
 const REAL = ['bash', 'env', 'xargs', 'find', 'nohup'];
 
@@ -37,13 +37,15 @@ interface Row {
   also?: [NameKind, ...string[]][];
   /** The last line cannot run here (`sudo`), or runs more than one kind (an alias that runs the program of its name). */
   noRun?: string;
+  /** Nothing runs: what bash says, in place of a kind that ran. */
+  fails?: RegExp;
   /** What `type -a` lists that the model does not give, or the other way round, with why. */
   gaps?: Record<string, string>;
 }
 
 const rows: Row[] = [
   { script: 'echo x', label: 'echo', runs: 'builtin', also: [['program', 'env echo']] },
-  { script: 'time :', label: 'time', runs: 'keyword', also: [['program', 'command time', '\\time', 'env time']] },
+  { script: 'time :', label: 'time', runs: 'keyword', also: [['program', '\\time', 'command time']] },
   { script: '[ -f x ]', label: '[', runs: 'builtin', also: [['program', 'env [']] },
   { script: 'cd /', label: 'cd', runs: 'builtin' },
   { script: 'apt-get install -y curl', label: 'apt-get', runs: 'program' },
@@ -63,6 +65,29 @@ const rows: Row[] = [
     gaps: { program: 'no program has this name: bash looks for one in PATH, and fails (command not found)' },
   },
   { script: 'builtin nope', label: 'nope', runs: 'none', by: 'builtin' },
+  // (The other meanings are reached from what the bare name runs first: a reserved word, a function.)
+  { script: 'builtin time', label: 'time', runs: 'none', by: 'builtin', also: [['keyword'], ['program', '\\time', 'command time']] },
+  { script: 'builtin ls', label: 'ls', runs: 'none', by: 'builtin', also: [['program', 'ls']] },
+  { script: 'ls() { printf "function\\n"; }\nbuiltin ls', label: 'ls', runs: 'none', by: 'builtin', also: [['function', 'ls'], ['program', 'command ls']] },
+  {
+    script: 'enable -n echo\nbuiltin echo x', label: 'echo', runs: 'none', by: 'builtin', also: [['builtin'], ['program', 'echo']],
+    gaps: { builtin: '`type -a` leaves out a builtin turned off by `enable -n`; the model says it is there, turned off' },
+  },
+  { script: 'function time { printf "function\\n"; }\ntime :', label: 'time', runs: 'keyword', also: [['function', '\\time'], ['program', 'command time']] },
+  { script: 'function time { printf "function\\n"; }\n\\time x', label: '\\time', runs: 'function', also: [['keyword'], ['program', 'command time']] },
+  { script: 'function time { printf "function\\n"; }\ncommand time x', label: 'time', runs: 'program', by: 'command', also: [['keyword'], ['function', '\\time']] },
+  { script: 'useradd() { printf "function\\n"; }\nuseradd x', label: 'useradd', runs: 'function', also: [['program', 'command useradd']] },
+  // (A reserved word is no command: `command` looks for a program of the name, and finds none.)
+  { script: 'command [[ -f x ]]', label: '[[', runs: 'none', by: 'command', also: [['keyword']], fails: /\[\[: command not found/ },
+  // (A builtin with no program of its name: the program run in its place is not found.)
+  {
+    script: 'nohup cd /', label: 'cd', runs: 'program', by: 'nohup', also: [['builtin', 'cd']], fails: /nohup: failed to run command 'cd': No such file or directory/,
+    gaps: { program: 'no program has this name: `nohup` looks for one in PATH, and fails' },
+  },
+  {
+    script: 'sudo cd /', label: 'cd', runs: 'program', by: 'sudo', also: [['builtin', 'cd']], noRun: 'no sudo here',
+    gaps: { program: 'no program has this name: `sudo` looks for one in PATH, and fails (command not found)' },
+  },
   { script: 'enable -n echo\necho x', label: 'echo', runs: 'program', also: [['builtin']], gaps: { builtin: '`type -a` leaves out a builtin turned off by `enable -n`; the model says it is there, turned off' } },
   { script: 'hash -p @BIN@/echo myecho\nmyecho x', label: 'myecho', runs: 'program', gaps: { program: '`type -a` lists only files found in PATH, not a path given by `hash -p`' } },
   {
@@ -78,7 +103,11 @@ const rows: Row[] = [
   {
     script: 'alias ll=\'echo alias\'\nll x', label: 'll', runs: 'program',
     // (Without `shopt -s expand_aliases`, bash expands no alias in a script, and `type` does not list it either.)
-    gaps: { program: 'no program has this name: bash looks for one in PATH, and fails (command not found)' },
+    also: [['alias']],
+    gaps: {
+      program: 'no program has this name: bash looks for one in PATH, and fails (command not found)',
+      alias: 'the model lists the alias that is not expanded here; `type -a` does not',
+    },
   },
 ];
 
@@ -132,8 +161,14 @@ describe('what a command name is, against bash', () => {
       const n = t.name!;
       assert.deepStrictEqual({ runs: n.runs, by: n.by, also: n.also.map((o) => [o.kind, ...o.reach]) }, { runs: row.runs, by: row.by, also: row.also ?? [] });
       const setup = lines.slice(0, -1).join('\n');
-      if (!row.noRun) assert.strictEqual(ran(sh(script)), row.runs, 'what runs');
+      if (row.fails) assert.match(sh(script).stderr, row.fails, 'what bash says');
+      else if (!row.noRun) assert.strictEqual(ran(sh(script)), row.runs, 'what runs');
       for (const o of n.also) {
+        // (`[[` prints nothing: bash reads it as the reserved word when the test parses and succeeds.)
+        if (o.kind === 'keyword' && n.name === '[[') {
+          assert.deepStrictEqual(sh(`${setup}\n[[ -n x ]]`), { stdout: '', stderr: '', status: 0 });
+          continue;
+        }
         const codes = o.kind === 'keyword' ? [`${n.name} :`] : o.off ? [`enable ${n.name}; ${n.name} x`] : o.reach.map((c) => `${c} x`);
         for (const c of codes) {
           const r = sh(`${setup}\n${c}`);
@@ -173,14 +208,37 @@ describe('what a command name is, in the model and the texts', () => {
     assert.deepStrictEqual([sudo.kind, sudo.by, sudo.also, sudo.short], ['program', 'run by `sudo`', '`sudo` looks the name up, so this is the program, not bash\'s builtin', ' (program, run by `sudo`)']);
     const ja = tokens('sudo echo hi', 0, 'ja').find((t) => t.label === 'echo')!.name!.said;
     assert.deepStrictEqual([ja.kind, ja.by, ja.short], ['プログラム', '`sudo` が実行', '（プログラム。`sudo` が実行）']);
-    assert.strictEqual(tokens('time :', 0, 'ja')[0].children[0].name!.said.also, '同じ名前で、ほかに: プログラム（ふつうは `/usr/bin/time`。`command time`・`\\time`・`env time` で動く）');
+    assert.strictEqual(tokens('time :', 0, 'ja')[0].children[0].name!.said.also, '同じ名前で、ほかに: プログラム（ふつうは `/usr/bin/time`。`\\time`・`command time` で動く）');
+    assert.strictEqual(tokens('function time { :; }\ntime :', 1, 'ja')[0].children[0].name!.said.also,
+      '同じ名前で、ほかに: このスクリプトの関数（`\\time` で動く）・プログラム（ふつうは `/usr/bin/time`。`command time` で動く）');
+    assert.deepStrictEqual([ja.spoken, sudo.spoken], ['プログラム、sudo が実行', 'program, run by sudo']);
     const fn = tokens('echo() { :; }; echo hi').find((t) => t.kind === 'function' && t.name)!.name!.said;
     assert.strictEqual(fn.also, 'Same name, also: bash\'s builtin (run with `builtin echo` or `command echo`); a program, usually `/usr/bin/echo` (run with `env echo`)');
     const off = tokens('enable -n echo\necho x', 1, 'ja')[0].name!.said;
     assert.strictEqual(off.also, '同じ名前で、ほかに: bash のビルトイン（`enable -n` で無効。`enable echo` で有効に戻る）');
     assert.strictEqual(tokens('enable -n echo\necho x', 1)[0].name!.said.also, 'Same name, also: bash\'s builtin, turned off by `enable -n` (`enable echo` turns it on again)');
-    assert.deepStrictEqual(tokens('cd /')[0].name!.said.refs, ['4.1', '4.2']);
-    assert.deepStrictEqual(tokens('echo x')[0].name!.said.refs, ['4.1', '4.2', '3.7.2']);
+  });
+
+  it('says why nothing runs, and where no program has the name', () => {
+    const said = (src: string, label: string, lang: 'en' | 'ja' = 'en') => {
+      const lines = src.split('\n');
+      return tokens(src, lines.length - 1, lang).find((t) => t.label === label && t.name)!.name!.said;
+    };
+    const ls = said('builtin ls', 'ls');
+    assert.deepStrictEqual([ls.kind, ls.by, ls.also], ['nothing runs', '`builtin` finds no builtin named `ls`', 'Same name, also: a program in PATH (run with `ls`)']);
+    assert.strictEqual(said('builtin ls', 'ls', 'ja').by, '`builtin` が探しても `ls` という名前のビルトインはない');
+    assert.strictEqual(said('enable -n echo\nbuiltin echo x', 'echo').by, '`builtin` finds no builtin named `echo`');
+    assert.strictEqual(said('command [[ -f x ]]', '[[').by, '`command` finds no command named `[[` (bash says `[[: command not found`)');
+    assert.strictEqual(said('command [[ -f x ]]', '[[', 'ja').by, '`command` が探しても `[[` という名前のコマンドはない（bash は `[[: command not found` と表示する）');
+    assert.strictEqual(said('\\[[ -f x ]]', '\\[[').by, 'bash finds no command named `[[` (bash says `[[: command not found`)');
+    assert.strictEqual(said('sudo cd /', 'cd').also, '`sudo` looks the name up, so bash\'s builtin does not run, and there is usually no program of this name');
+    assert.strictEqual(said('sudo cd /', 'cd', 'ja').also, '`sudo` が名前を探すので、bash のビルトインは動かない。この名前のプログラムはふつうない');
+    assert.strictEqual(said('enable -n cd\ncd /', 'cd', 'ja').also, 'この名前のプログラムはふつうない。同じ名前で、ほかに: bash のビルトイン（`enable -n` で無効。`enable cd` で有効に戻る）');
+    assert.strictEqual(said('enable -n cd\ncd /', 'cd').also, 'There is usually no program of this name. Same name, also: bash\'s builtin, turned off by `enable -n` (`enable cd` turns it on again)');
+    assert.strictEqual(said('alias ll=\'ls -l\'\nll', 'll').also, 'Same name, also: an alias, not expanded here (needs `shopt -s expand_aliases`)');
+    assert.strictEqual(said('alias ll=\'ls -l\'\nll', 'll', 'ja').also, '同じ名前で、ほかに: エイリアス（ここでは展開されない。`shopt -s expand_aliases` が要る）');
+    assert.strictEqual(said('useradd() { :; }\nuseradd x', 'useradd').also, 'Same name, also: a program in PATH (run with `command useradd`)');
+    assert.strictEqual(said('useradd() { :; }\nuseradd x', 'useradd', 'ja').also, '同じ名前で、ほかに: PATH の中のプログラム（`command useradd` で動く）');
   });
 
   it('names nothing else for a path, and no bash-only builtin in another shell', () => {
@@ -190,6 +248,9 @@ describe('what a command name is, in the model and the texts', () => {
     const none = nameSaid('ja', { name: 'x', runs: 'none', also: [{ kind: 'alias', reach: [] }] });
     assert.deepStrictEqual([none.kind, none.also], ['実行されない', '同じ名前で、ほかに: エイリアス']);
     assert.strictEqual(nameSaid('en', { name: 'x', runs: 'alias', also: [{ kind: 'none', reach: [] }] }).also, 'Same name, also: nothing');
+    assert.strictEqual(nameSaid('en', { name: 'x', runs: 'none', also: [] }).by, '`builtin` finds no builtin named `x`');
+    // (With no lookup, the name is read as in a script that defines nothing.)
+    assert.deepStrictEqual(nameFacts({ kind: 'keyword', name: 'time' }, { program: (n) => n === 'time' }).also, [{ kind: 'program', reach: ['\\time', 'command time'] }]);
   });
 });
 

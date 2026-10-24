@@ -73,6 +73,8 @@ describe('the web page: what a command name is, in both views', function () {
       assert.strictEqual(list.items[1].also, 'sudo looks the name up, so this is the program, not bash\'s builtin');
       assert.strictEqual(list.items[2].also, 'Same name, also: a program, usually /usr/bin/echo (run with env echo)');
       checkGeometry(`Meaning, ${width}`, list);
+      // (The panel's page takes the language of the explanation: its styles follow it, `:lang(ja)`.)
+      assert.strictEqual(await panel.evaluate('document.documentElement.lang'), 'en');
       // (The badge's word is in the row's text, for a screen reader.)
       assert.match(await panel.locator('.row').filter({ hasText: 'Print arguments' }).last().textContent() ?? '', /echobuiltinPrint arguments/);
 
@@ -82,7 +84,7 @@ describe('the web page: what a command name is, in both views', function () {
       const tree = await badges(panel);
       assert.deepStrictEqual(tree.items.map((b) => [b.text, b.by]), [['program', ''], ['program', 'run by sudo'], ['builtin', '']]);
       checkGeometry(`Reading, ${width}`, tree);
-      assert.match(tree.items[1].label, /^runs echo, program, run by sudo\. sudo reads it, not bash\. .*\. sudo looks the name up/);
+      assert.match(tree.items[1].label, /^command name echo, program, run by sudo\. sudo reads it, not bash\. .*\. sudo looks the name up/);
       // The badge replaces the "· builtin" after the kind.
       assert.deepStrictEqual(await panel.locator('#reading-tree .chip').allTextContents().then((cs) => cs.filter((c) => c.includes('·'))), []);
       assert.deepStrictEqual(errors, []);
@@ -148,6 +150,32 @@ describe('the VS Code panel: what a command name is', function () {
       await page.close();
     });
   }
+
+  it('keeps the steps label on one line in Japanese, and the "run by" upright', async () => {
+    const page = await browser!.newPage({ viewport: { width: 700, height: 700 } });
+    await page.goto(server.url('light', 'ja', 'list'));
+    await until('the badges', () => page.locator('.nk-by:visible').count(), (n) => n === 1);
+    assert.strictEqual(await page.evaluate("getComputedStyle(document.querySelector('.nk-by')).fontStyle"), 'normal');
+    await page.goto(server.url('light', 'ja', 'tree'));
+    await until('the steps', () => page.locator('#steps button').count(), (n) => n > 3);
+    for (let width = 300; width <= 700; width += 25) {
+      await page.setViewportSize({ width, height: 700 });
+      await frames(page);
+      // (The lines of its text, by their tops; and the label ends before the first step, inside the row. Hidden, it has no box.)
+      const got = await page.evaluate(`(() => {
+        const l = document.getElementById('layers-label');
+        if (!l.getClientRects().length) return { hidden: true };
+        const range = document.createRange(); range.selectNodeContents(l);
+        const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+        const step = document.querySelector('#layers button:not([hidden])').getBoundingClientRect();
+        return { hidden: false, lines: tops.size, right: l.getBoundingClientRect().right, step: step.left, box: document.getElementById('layers').getBoundingClientRect().right };
+      })()`) as { hidden: boolean; lines?: number; right?: number; step?: number; box?: number };
+      if (got.hidden) continue;
+      assert.strictEqual(got.lines, 1, `${width} px: the label wraps`);
+      assert.ok(got.right! <= got.step! + 0.5 && got.right! <= got.box! + 0.5, `${width} px: ${JSON.stringify(got)}`);
+    }
+    await page.close();
+  });
 
   it('draws the badge in the system colours when colours are forced', async () => {
     const page = await browser!.newPage({ viewport: { width: 600, height: 700 }, forcedColors: 'active' });

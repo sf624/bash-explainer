@@ -209,6 +209,8 @@ const PROGRAMS: Record<string, CommandSpec> = {
   true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils 版）', 'Do nothing and succeed (exit 0; from coreutils)', [], { parser: 'letters' }),
   false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils 版）', 'Do nothing and fail (exit 1; from coreutils)', [], { parser: 'letters' }),
 };
+// (All of them are in /usr/bin: coreutils, and procps for kill.)
+for (const [name, spec] of Object.entries(PROGRAMS)) spec.path = `/usr/bin/${name}`;
 
 /**
  * A builtin whose effect is on the shell that runs it (`CommandSpec.shellEffect`): it changes its state, or ends
