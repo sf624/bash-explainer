@@ -2,13 +2,13 @@ import type { Lang } from './i18n';
 import { quoteExpansions } from './fixes';
 import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
-import { args, commandName, pathCommand, readsVariable } from './pitfalls';
+import { args, commandName, pathCommand } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { staticWordValue } from './staticword';
-import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
+import { field, prefixAssignments, readsVariable, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 
 // The pitfalls that follow from how the shell reads the words of a command: what the current shell expands before a

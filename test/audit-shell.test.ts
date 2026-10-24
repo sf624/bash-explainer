@@ -155,6 +155,11 @@ describe('shell audit fixes', () => {
     assert.match(explain('local y').notes.join(), /can be used only inside a function/);
     assert.doesNotMatch(explain('f() { local y; }').notes.join(), /only inside a function/);
     assert.match(spawnSync('bash', ['-c', 'local y']).stderr.toString(), /can only be used in a function/);
+    // In a function, `eval`, `( )` and `$( )` run `local` in it; `bash -c` starts a shell outside any function.
+    for (const src of ["f() { eval 'local y'; }", 'f() { ( local y ); }', 'f() { x=$(local y); }']) assert.doesNotMatch(explain(src).notes.join(), /only inside a function/, src);
+    assert.match(explain("f() { bash -c 'local y'; }").notes.join(), /can be used only inside a function/);
+    assert.strictEqual(spawnSync('bash', ['-c', "f() { eval 'local y'; ( local y ); x=$(local y); }; f"]).stderr.toString(), '');
+    assert.match(spawnSync('bash', ['-c', "f() { bash -c 'local y'; }; f"]).stderr.toString(), /can only be used in a function/);
   });
 
   it('a missing ; or newline before then / do is a syntax error', () => {

@@ -6,6 +6,7 @@ import { interpret } from '../argv/interpret';
 import { argWord } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
+import { parseExpansion } from '../expansion';
 import { type MappedText, staticWordText } from '../staticword';
 import { descendants, fields } from '../syntax/tree';
 import type { SyntaxNode, SyntaxTree } from '../syntax/tree';
@@ -45,6 +46,21 @@ export interface NestedScript {
  * strings, or no shell runs it (`sudo eval s`: sudo cannot run a builtin).
  */
 export interface NotRead { readonly why: 'not-static' | 'too-deep' | 'not-run' }
+
+/**
+ * The variables the script reads with a plain `$v` or `${v}`, each with its expansion, in the order of its text: not
+ * a special or positional parameter, nor an expansion that does more (`${v:-x}`, `${v+x}`, `${#v}`, `${v[0]}`, `${v@Q}`).
+ */
+export function plainReads(script: NestedScript): { name: string; at: SyntaxNode }[] {
+  const out: { name: string; at: SyntaxNode }[] = [];
+  for (const e of descendants(script.tree.root, ['simple_expansion', 'expansion'])) {
+    const p = e.type === 'expansion' ? parseExpansion(e.text) : undefined;
+    // (An expansion of one part is its name alone: `${v}`.)
+    const name = e.type === 'simple_expansion' ? e.text.slice(1) : p?.parts.length === 1 ? p.name : undefined;
+    if (name !== undefined && /^[A-Za-z_]\w*$/.test(name)) out.push({ name, at: e });
+  }
+  return out;
+}
 
 /** The text of `words` joined with spaces (`eval a b`), each character with its source range; a space spans the gap between two words. */
 export function scriptText(words: readonly SyntaxNode[]): MappedText | undefined {

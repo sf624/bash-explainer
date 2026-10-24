@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275). Steps 1 to 9 are not started: src/explain/ does not exist yet, and src/analyzer.ts is 4,141 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), and step 1 (the facts the models own) is done (#NNN). Steps 2 to 9 are not started: src/explain/ does not exist yet, and src/analyzer.ts is 4,094 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -284,7 +284,7 @@ Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 2
 - test/explain-imports.test.ts (3.2, 3.3). It passes at once: src/explain/ does not exist yet. A unit test of its cycle finder covers it.
 - test/snapshot.ts, a debug helper like test/dump.ts: the full `LineExplanation` of every line of the corpus (test/support/corpus.ts: the fixtures, the host fixtures and snippets.json), in Japanese and English, as JSON lines. It fixes the clock first, so the `git log` samples do not change from run to run. Every later step diffs its output against main's. Run it on main and on the branch, then compare: `npx tsx test/snapshot.ts /tmp/main.jsonl` (about 6 s, 7.5 MB, 4,054 lines), and `git diff --no-index --stat /tmp/main.jsonl /tmp/branch.jsonl` (empty for a pure move).
 
-### Step 1: the facts the models own (four S PRs, in parallel)
+### Step 1: the facts the models own (S). Done (#NNN)
 
 These fix the places of 1.5 before anything moves. Each is small and independent. A behaviour change is a fix: it gets a test against bash or the tool, and a CHANGELOG line.
 
@@ -292,6 +292,17 @@ These fix the places of 1.5 before anything moves. Each is small and independent
 - **1.2 Where code runs.** `groupSubshell` and `inSubshell` ask src/semantics/env.ts (a query for "the subshell link of this group, through the lists that hold it", and the link's kind instead of a regex on `why`). `pipeSubshellPitfalls` asks the model which variables a pipeline's last stage sets in its own shell and which of them are read after it, in place of `LAST_STAGES`, `BLOCK_OWNERS` and the walk over `everyNode`.
 - **1.3 Options per shell.** `shoptAt`'s `globstar` of zsh and ksh comes from the state model, which knows the shell.
 - **1.4 Words of a string.** `unpassedVariables` reads the variables from the string's own model (`script.model`), not from a regex over expansion texts. `slotNotes` asks `wordMeaning` whether a word is expanded.
+
+**As done (#NNN).** The four parts were small enough for one PR. The snapshot of the corpus is byte-identical before and after. What moved where:
+
+- 1.1. yq is not in the dictionary: three tools share the name, and an entry would change what its name badge says (`isProgram`). So the dictionary answers for the name, as `lookupCommand` does for the others: `yqSpecsOf(name)` (src/dict/yq.ts) gives the three specs, and the analyzer no longer compares the name. `local` outside a function is `inFunction(env)` (src/semantics/env.ts): a call link, with no slot after it that starts another shell or a program; a `${ …; }` of bash 5.3 still counts as a function, by its syntax (`scopeOf`). sed's `-E` (`-r`) selects the mode `ere` of its spec, as grep's options already did, and `regexFlavor` reads the modes the given options select, and those of the words its name implies (`egrep`). The pipeline example labels the step of a stage whose spec has a command among its operands (xargs), not the stage named `xargs`.
+- 1.2. `groupSubshellLink(env, n)` (src/semantics/env.ts) climbs the statements that hold a `{ }` group. `inSubshell` compares the link's reason with `command-substitution` and `process-substitution`. `lostVariable(model, p)` (the new src/semantics/pipeline.ts) says which variable the last stage of a pipeline sets in its subshell and the script reads after it, with `LAST_STAGES`, `BLOCK_OWNERS` and the walk over the nodes moved there; `readsVariable` moved from src/pitfalls.ts to src/syntax/tree.ts, so that the semantics do not import the pitfalls.
+- 1.3. `shoptIn(st, name, shell)` (src/semantics/shellstate.ts, exported by src/semantics/state.ts) gives a shopt option in the model's shell (`StateModel.shell`): zsh's `**`, ksh's `set -o globstar`.
+- 1.4. `plainReads(script)` (src/semantics/nested.ts) lists the plain `$v` and `${v}` of a string read as a script, from the expansion's parse (`parseExpansion`). `slotNotes` takes a word as expanded here when `wordMeaning` has a tilde, parameter, command, arithmetic, process or glob step that applies.
+
+Two of them change what is said outside the corpus, as bash does (tests against bash in test/audit-shell.test.ts and test/env.test.ts; details in docs/changes/unreleased.md, under a kind of fix the changelog already lists): `f() { eval 'local x'; }` no longer gets the `local` pitfall, and the ssh pitfall now names `'a'*`, `a=~/x` and `<(…)`, which bash expands here, and not a `*` after `set -f`. The other parts gave the same output on a set of edge cases (groups in pipelines, `&` and coprocs, lastpipe, zsh and ksh globstar, yq, grep and sed flavours, `egrep -F`, xargs stages, variables a `bash -c` string reads).
+
+The analyzer still compares command names elsewhere (`head.name === 'local'` to find `local` at all, `return`, and others). They are not in 1.5's list; the guard of 3.3 checks them when their code moves to src/explain/.
 
 ### Step 2: the context (M)
 
@@ -333,7 +344,7 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | Step | What | Size | PRs | Depends on |
 |---|---|---|---:|---|
 | 0 | Guards, snapshot | S | 1 | — |
-| 1 | Facts the models own | S each | 4 | 0 |
+| 1 | Facts the models own | S | 1 (#NNN) | 0 |
 | 2 | The context | M | 1 | 0; #269 merged or rebased |
 | 3 | Readers, where, status | M | 1 | 2 |
 | 4 | Words | M | 1 | 3 |
@@ -380,10 +391,10 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | planned | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | planned | the snapshot unchanged; no `cx.extraNotes.push` left |
 | T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2 | planned | one `Explainer`; the snapshot unchanged |
-| T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | planned | names guard list empty; tests against the tools |
-| T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | planned | env probes; test/facts-from-model.test.ts rows |
-| T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | planned | state probes |
-| T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | planned | rows against bash (`bash -c`, `sudo`, `env -i`) |
+| T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #NNN) | names guard list empty; tests against the tools |
+| T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #NNN) | env probes; test/facts-from-model.test.ts rows |
+| T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #NNN) | state probes |
+| T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #NNN) | rows against bash (`bash -c`, `sudo`, `env -i`) |
 | T8 | Cycles between the groups (1.4) | 3–9 | planned | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
@@ -391,7 +402,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | Step | Status |
 |---|---|
 | 0 | done (PR #275) |
-| 1.1–1.4 | planned |
+| 1.1–1.4 | done (PR #NNN) |
 | 2 | planned |
 | 3 | planned |
 | 4 | planned |

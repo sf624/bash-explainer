@@ -341,6 +341,36 @@ export function ownSubshells(env: ExecEnv, n: SyntaxNode): SubshellLink[] {
   return env.links.filter((l): l is SubshellLink => l.kind === 'subshell' && l.at === n);
 }
 
+/**
+ * Whether code in `env` runs in the body of a function: a call link, with no link after it that starts another shell
+ * or a program (`f() { bash -c 'local x'; }` runs `local` outside any function; `eval`, `( )` and `$( )` stay in it).
+ */
+export function inFunction(env: ExecEnv): boolean {
+  for (let i = env.links.length - 1; i >= 0; i--) {
+    const l = env.links[i];
+    if (l.kind === 'call') return true;
+    if (l.kind === 'slot' && l.slot.run !== 'current-shell' && l.slot.run !== 'subshell') return false;
+  }
+  return false;
+}
+
+/** The statements that hold a `{ }` group in the same process: a list, a redirection, `!`, a pipeline, a coproc. */
+const GROUP_HOLDERS = new Set(['list', 'redirected_statement', 'negated_command', 'pipeline', 'coproc_statement']);
+
+/**
+ * The subshell a `{ }` group `n` runs in (`env` is where it runs): one that the group, or a statement that holds it
+ * in the same list, starts (a stage of a pipeline, a coproc, or `&`: a pipeline stage or a coproc before `&`, as
+ * in `{ a; } | b &`). Undefined when it runs in the shell that runs that list.
+ */
+export function groupSubshellLink(env: ExecEnv, n: SyntaxNode): SubshellLink | undefined {
+  for (let x = n; ; x = x.parent!) {
+    const own = ownSubshells(env, x);
+    const link = own.find((l) => l.why !== 'background') ?? own[0];
+    if (link) return link;
+    if (!GROUP_HOLDERS.has(x.parent!.type)) return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Command slots.
 

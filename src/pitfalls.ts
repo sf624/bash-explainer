@@ -73,13 +73,6 @@ function rootTarget(w: SyntaxNode): { e: SyntaxNode; v: string; left: string; pl
   return gen(false);
 }
 
-/** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */
-export function readsVariable(word: SyntaxNode, name: string): boolean {
-  // (`${NAME[1]}` holds the name in its subscript.)
-  const named = (c: SyntaxNode): SyntaxNode | undefined => (c.type === 'subscript' ? c.namedChildren[0] : c);
-  return descendants(word, ['simple_expansion', 'expansion']).some((e) => e.namedChildren.some((c) => named(c)?.type === 'variable_name' && named(c)!.text === name));
-}
-
 /** The command the name of the simple command `n` runs, as the checks read it (see `pathCommand`). */
 export function commandName(n: SyntaxNode): string | undefined {
   const name = field(n, 'name')?.text;

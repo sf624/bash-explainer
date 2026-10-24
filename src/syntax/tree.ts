@@ -220,6 +220,13 @@ export function descendants(n: SyntaxNode, types: readonly string[], rows?: { fr
   return out;
 }
 
+/** Does the word expand the variable (`$NAME`, `${NAME}`, `${NAME:-…}`, also inside `"…"` or `$( )`), as the tree reads it? */
+export function readsVariable(word: SyntaxNode, name: string): boolean {
+  // (`${NAME[1]}` holds the name in its subscript.)
+  const named = (c: SyntaxNode): SyntaxNode | undefined => (c.type === 'subscript' ? c.namedChildren[0] : c);
+  return descendants(word, ['simple_expansion', 'expansion']).some((e) => e.namedChildren.some((c) => named(c)?.type === 'variable_name' && named(c)!.text === name));
+}
+
 /**
  * How a command substitution is written: `$(…)`, backquotes, or bash 5.3's `${ …; }` and `${| …; }`, which run
  * in the current shell (the second gives the value of `REPLY`).

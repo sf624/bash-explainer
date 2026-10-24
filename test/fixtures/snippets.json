@@ -785,6 +785,7 @@
  "f() { :; }; f -x a",
  "f() { :; }; f = 1",
  "f() { D=/x; rm -rf $D/*; }",
+ "f() { bash -c 'local y'; }",
  "f() { declare G=1; }\nf\ndeclare() { :; }\nf",
  "f() { echo hi; }",
  "f() { echo | while read -r l; do local q=1; done; echo $q; }",

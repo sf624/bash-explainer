@@ -3,6 +3,9 @@
 // chains, the slots that cannot be probed (sudo, ssh, containers) and what each link passes on.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { interpret } from '../src/argv/interpret';
 import { argWord } from '../src/argv/words';
 import { Analyzer, lookupCommand, type Token } from '../src/analyzer';
@@ -284,6 +287,9 @@ describe('explanations from the execution environment', () => {
     // A read before the string sets the variable counts; one with a default or a length does not.
     assert.strictEqual(pitfalls("x=1\nbash -c 'echo $x; x=2'", 'en', 1).length, 1);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${y:-none} ${#y} ${y+set} ${y:=d} ${y?}'", 'en', 1), []);
+    // (Nor one bash cannot read: "bad substitution". `${y}` is read as `$y` is.)
+    assert.deepStrictEqual(pitfalls("y=1\nbash -c 'echo ${(f)y}'", 'en', 1), []);
+    assert.match(pitfalls("y=1\nbash -c 'echo ${y}'", 'en', 1)[0], /expands `\$y` in the string/);
     assert.deepStrictEqual(pitfalls("y=1\nbash -c 'for y in a; do echo $y; done; f() { local y=1; echo $y; }; f'", 'en', 1), []);
     // (The new shell sets `$_` itself; so does a remote one.)
     for (const src of ["_=1\nbash -c 'echo ${_} $_'", "_=1\nenv -i bash -c 'echo $_'", "_=1\nssh h 'echo $_'"]) assert.deepStrictEqual(pitfalls(src, 'en', 1), [], src);
@@ -300,6 +306,26 @@ describe('explanations from the execution environment', () => {
     // leaves another value in `_`, never `1`.)
     assert.match(bash("_=1; bash -c 'echo \"[${_}] [$_]\"'; true"), /^\[\/\S+\] \[\/\S+\]\n$/);
     assert.strictEqual(bash("name=x; bash -c 'echo \"[$name]\"'; export name; bash -c 'echo \"[$name]\"'; env -i bash -c 'echo \"[$name]\"'; env -i name=y bash -c 'echo \"[$name]\"'"), '[]\n[x]\n[]\n[y]\n');
+  });
+  it('says which words of an ssh command this shell expands before it sends them, as bash does', function () {
+    // Each word as written, its text once the quotes are removed, and a prelude: the pitfall is said when bash
+    // changes the word here (`*` matches in a directory that holds `ab` and `ac`; `~` is HOME).
+    const words: [string, string, string?][] = [
+      ["'a'*", 'a*'], ['a=~/x', 'a=~/x'], ['<(echo hi)', '<(echo hi)'], ['"$x"', '$x'], ['$((1+2))', '$((1+2))'], ['~', '~'],
+      ["'a*'", 'a*'], ['a\\*', 'a*'], ['plain', 'plain'], ['*', '*', 'set -f'],
+    ];
+    const said = words.map(([w, , prelude]) => pitfalls(`${prelude ?? 'x=1'}\nssh h echo ${w}`, 'en', 1).some((p) => /the local shell expands/.test(p)));
+    assert.deepStrictEqual(said, [true, true, true, true, true, true, false, false, false, false]);
+    if (!hasBash) this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-ssh-'));
+    try {
+      for (const f of ['ab', 'ac']) fs.writeFileSync(path.join(dir, f), '');
+      const changed = words.map(([w, literal, prelude]) => spawnSync('bash', ['--norc', '--noprofile', '-c', `${prelude ?? 'x=1'}; printf '%s ' ${w}`],
+        { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, HOME: '/home/u' } }).stdout !== `${literal} `);
+      assert.deepStrictEqual(changed, said);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
   it('reads `$_` after the commands of its own process only', function () {
     const last = (src: string): string => allTokens(explain(src).items).find((t) => t.label === '$_' && t.kind === 'variable')!.explanation;

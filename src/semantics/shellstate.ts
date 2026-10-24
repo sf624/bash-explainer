@@ -1,6 +1,7 @@
 // The shell state the walk carries (src/semantics/walk/walker.ts; the model, src/semantics/state.ts): the options, variables, functions, aliases and command
 // entries at a place, as persistent maps, and how the states of several paths merge.
 import type { SyntaxNode } from '../syntax/tree';
+import type { Shell } from '../dialect';
 
 /** On, off, or decided at run time (a branch, a loop, a function that may be defined). */
 export type Tri = 'on' | 'off' | 'unknown';
@@ -265,6 +266,18 @@ export function defaultOn(kind: 'set' | 'shopt', name: string, posix = false): b
 /** The state of option `name` (`default` when the script has not changed it). */
 export function option(st: ShellState, kind: 'set' | 'shopt', name: string): OptionState {
   return st[kind].get(name) ?? 'default';
+}
+
+/**
+ * The state of bash's `shopt` option `name` in the shell `shell` (bash when absent). zsh always reads `**` at any
+ * depth (globstar is on), ksh93 has it as `set -o globstar`; the other options, and the other shells, have none
+ * (`unsupported`).
+ */
+export function shoptIn(st: ShellState, name: string, shell: Shell | undefined): OptionState | 'unsupported' {
+  if (!shell || shell === 'bash') return option(st, 'shopt', name);
+  if (name === 'globstar' && shell === 'zsh') return 'on';
+  if (name === 'globstar' && shell === 'ksh') return option(st, 'set', 'globstar');
+  return 'unsupported';
 }
 
 /** The state of attribute `letter` of variable `name`. */

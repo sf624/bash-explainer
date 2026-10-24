@@ -1,8 +1,8 @@
 import { Lang, Text, tx } from './i18n';
 import { findIdioms, Redirect, simulateRedirects } from './idioms';
-import { pitfallNotes, readsVariable } from './pitfalls';
+import { pitfallNotes } from './pitfalls';
 import { wordFacts } from './wordfacts';
-import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, redirectionsOf, token, wordsText } from './syntax/tree';
+import { ancestor, assignmentSpan, assignmentsOnly, descendants, field, fields, prefixAssignments, readsVariable, redirectionsOf, token, wordsText } from './syntax/tree';
 import type { NodeType, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { builtins } from './dict/builtins';
 import { ciVariables } from './dict/ciVariables';
@@ -31,7 +31,7 @@ import { describeFind, FindNode, parseFind } from './embedded/find';
 import { type BracketTest, bracketShape, type CommandTest, commandTest, type TestExpr, type TestShape, testRange } from './testexpr';
 import { judgeYq, yqNotes, yqSameAsJq } from './embedded/yq';
 import { YamlStyle, YamlUnsupported, yamlLines, yqYamlOutput } from './examples/yaml';
-import { YQ_SPECS } from './dict/yq';
+import { YQ_SPECS, yqSpecsOf } from './dict/yq';
 import { customCommandSpec } from './dict/custom';
 import { DIRECTIVE } from './directives';
 import { EmbeddedLang, EmbeddedToken } from './embedded/types';
@@ -46,10 +46,11 @@ import {
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, shorten, skeleton } from './label';
 import { explainCommandSubstitution, explainProcessSubstitution, returnInSubstitution, scopeOf, type SubstitutionHost } from './substitution-tokens';
-import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
-import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
+import { type EnvLink, type ExecEnv, groupSubshellLink, inFunction, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
+import { attribute, docLine, option, OptionState, shellState, shoptIn, StateModel } from './semantics/state';
+import { lostVariable } from './semantics/pipeline';
 import { readDeclarationWords } from './semantics/vars';
-import { type NestedScript, scriptSourceIndex } from './semantics/nested';
+import { type NestedScript, plainReads, scriptSourceIndex } from './semantics/nested';
 import { ExpansionStep, partMeaning, underscoreValue, WordMeaning, wordMeaning } from './semantics/words';
 import { assignmentsOf, definitionFails, type Missed, type NameResolution, resolveName, testSpecOf } from './semantics/names';
 import { isProgram, nameInfo } from './namefacts';
@@ -78,13 +79,7 @@ const BLOCKS = types(
   'else_clause', 'case_statement', 'case_item', 'function_definition', 'compound_statement',
   'subshell', 'do_group', 'error', 'arithmetic_command', 'select_statement',
 );
-/** What can end a pipeline and run in its subshell. */
-const LAST_STAGES = types('while_statement', 'for_statement', 'select_statement', 'compound_statement', 'arithmetic_command', 'command');
-/** What holds a list of statements. */
-const BLOCK_OWNERS = types('program', 'compound_statement', 'do_group', 'subshell', 'if_statement', 'else_clause', 'elif_clause', 'case_item');
 /** Nodes that just combine statements; they count as blocks only when they contain one. */
-/** Does the word hold a variable, command or arithmetic expansion (even inside double quotes)? */
-const hasExpansionNode = (w: SyntaxNode): boolean => descendants(w, ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']).length > 0;
 const WRAPPERS = types('list', 'pipeline', 'redirected_statement', 'negated_command', 'program', 'time_statement');
 
 const effEndRow = (n: SyntaxNode) =>
@@ -167,7 +162,8 @@ interface LineContext {
 }
 
 /** A stage of a pipeline as the pipeline examples run it: whether it names a file to read, or reads one (`< f`). */
-type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource };
+/** A stage of a pipeline example; `runs`: its operands are a command it runs (xargs), so its step shows the commands. */
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource; runs: boolean };
 
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`scriptTokens`). */
@@ -359,12 +355,7 @@ export class Analyzer {
   /** The shell options at `n` (src/semantics/state.ts): when it runs, or (`parse`) when bash read it. */
   private shoptAt(n: SyntaxNode, when: 'run' | 'parse' = 'run'): ShoptStates {
     const st = this.cx.state.at(n)[when];
-    const bash = !this.cx.shell || this.cx.shell === 'bash';
-    return Object.fromEntries(SHOPT_NAMES.map((name) => [name,
-      bash ? option(st, 'shopt', name)
-      : name === 'globstar' && this.cx.shell === 'zsh' ? 'on'
-      : name === 'globstar' && this.cx.shell === 'ksh' ? option(st, 'set', 'globstar')
-      : 'unsupported'])) as ShoptStates;
+    return Object.fromEntries(SHOPT_NAMES.map((name) => [name, shoptIn(st, name, this.cx.state.shell)])) as ShoptStates;
   }
 
   /**
@@ -373,13 +364,8 @@ export class Analyzer {
    * Undefined when it runs in the current shell.
    */
   private groupSubshell(n: SyntaxNode): { ja: string; en: string } | undefined {
-    const env = this.cx.state.env(n);
-    let link: SubshellLink | undefined;
-    for (let x = n; !link; x = x.parent!) {
-      const own = ownSubshells(env, x);
-      link = own.find((l) => l.why !== 'background') ?? own[0];
-      if (!link && !['list', 'redirected_statement', 'negated_command', 'pipeline', 'coproc_statement'].includes(x.parent!.type)) return undefined;
-    }
+    const link = groupSubshellLink(this.cx.state.env(n), n);
+    if (!link) return undefined;
     if (link.why === 'coproc') return { ja: 'コプロセスはサブシェルで動く', en: 'A coprocess runs in a subshell' };
     if (link.why === 'background') return { ja: '`&` でバックグラウンドの仕事にする', en: 'It is started in the background with `&`' };
     return link.sure
@@ -418,7 +404,7 @@ export class Analyzer {
   private inSubshell(n: SyntaxNode): { sure: boolean; why: string; substitution: boolean } | undefined {
     const p = processOf(this.cx.state.env(n));
     const l = p.link;
-    return p.kind === 'subshell' ? { sure: p.sure, why: this.subshellWhy(l!, p.sure), substitution: l!.kind === 'subshell' && /substitution/.test(l!.why) } : undefined;
+    return p.kind === 'subshell' ? { sure: p.sure, why: this.subshellWhy(l!, p.sure), substitution: l!.kind === 'subshell' && (l!.why === 'command-substitution' || l!.why === 'process-substitution') } : undefined;
   }
 
   /**
@@ -1356,15 +1342,16 @@ export class Analyzer {
 
   private commandTail(n: SyntaxNode, nameNode: SyntaxNode, args: SyntaxNode[], prefix: Token[], redirs: SyntaxNode[], word?: SyntaxNode): Token {
     const head = this.commandHead(nameNode, word);
-    if (head.name.split('/').pop() === 'yq') {
+    const yq = yqSpecsOf(head.name);
+    if (yq) {
       // Three tools are called yq; explain the arguments as the one this command is for.
       const verdict = judgeYq(args.map((a) => literalContent(a)?.text), { doc: this.cx.source, host: this.cx.opts.host, setting: this.cx.opts.yqFlavor });
-      head.spec = YQ_SPECS[verdict.flavor];
+      head.spec = yq[verdict.flavor];
       head.explanation = this.t(head.spec.summary);
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.cx.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    if (head.kind === 'builtin' && head.name === 'local' && !scopeOf(n)) this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
+    if (head.kind === 'builtin' && head.name === 'local' && !inFunction(this.cx.state.env(n)) && scopeOf(n) !== 'substitution') this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
     if (head.kind === 'builtin' && head.name === 'return') head.explanation = returnInSubstitution(this.expansionHost, n) ?? head.explanation;
     const read = this.args(head.spec, args, head.runs ?? head.name, head.fn);
     let argToks = read.tokens;
@@ -2727,7 +2714,7 @@ export class Analyzer {
     // A pipeline is explained on the line it is on, or whole (see sub).
     const p = this.pipelineStages(n);
     if (!p) return undefined;
-    const { stages, files, readsFile, src } = p;
+    const { stages, files, readsFile, src, runs } = p;
     // A later stage that reads a file does not read what the stages before it write (`printf … | grep -e -v foo`).
     if (files.slice(1).some(Boolean)) return undefined;
     // Several files read as one stream; a first stage that works on each apart (`EachFile`: head, grep) is not
@@ -2746,7 +2733,7 @@ export class Analyzer {
       // `cat file` passes the input on unchanged.
       if (step.stage.copies && i < ex.steps.length - 1) return;
       const last = i === ex.steps.length - 1;
-      const label = step.stage.cmd === 'xargs'
+      const label = runs.has(step.stage)
         ? this.s(`\`${step.stage.text}\` が実行するコマンド`, `Commands run by \`${step.stage.text}\``)
         : last ? this.s(`出力（\`${step.stage.text}\` の後）`, `Output (after \`${step.stage.text}\`)`)
           : this.s(`\`${step.stage.text}\` の後`, `After \`${step.stage.text}\``);
@@ -2763,14 +2750,14 @@ export class Analyzer {
    * The stages of pipeline `n` (the first `count`), as the pipeline examples run them: whether each names a file to
    * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
    */
-  private pipelineStages(n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource } | undefined {
+  private pipelineStages(n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource; runs: ReadonlySet<Stage> } | undefined {
     const read: PipelineStage[] = [];
     for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
       const st = this.pipelineStage(n, cmd, i);
       if (!st) return undefined;
       read.push(st);
     }
-    return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source };
+    return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)) };
   }
 
   /**
@@ -2798,11 +2785,13 @@ export class Analyzer {
       // A stage that runs a function or an alias of the script is not the program its name suggests (as in commandTail).
       if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
-      const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(this.specFor(name.text)?.copies ? { copies: true } : {}) };
-      const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
-      const source = this.inputSource(cmd, parse, args, this.specFor(name.text));
+      const spec = this.specFor(name.text);
+      const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(spec?.copies ? { copies: true } : {}) };
+      const parse = interpret(spec ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
+      const source = this.inputSource(cmd, parse, args, spec);
       // A stage that writes its output to a file (`sort -o f`) hands nothing on.
-      return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source };
+      const runs = !!spec?.operands?.some((alt) => alt.pattern.some((o) => o.command));
+      return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source, runs };
     })();
     this.cx.stages.set(cmd, read);
     return read;
@@ -2973,41 +2962,10 @@ export class Analyzer {
   private pipeSubshellPitfalls(root: SyntaxNode, line: number): string[] {
     for (const p of onLine(root, ['pipeline'], line)) {
       if (p.startPosition.row !== line) continue;
-      // Whether the last stage is a subshell (src/semantics/env.ts): with lastpipe on, it runs in the shell.
-      const stage = lastStage(p);
-      const link = ownSubshells(this.cx.state.env(stage), stage).find((l) => l.why === 'pipeline-stage');
-      if (!link) continue;
-      // The redirections after the last stage (`… | while …; done > log`) are its own.
-      const last = stage.type === 'redirected_statement' ? field(stage, 'body')! : stage;
-      if (!LAST_STAGES.has(last.type)) continue;
-      // The variables the stage sets in its own shell, from the model: not a local (the walk leaves it out of `writes`)
-      // and not what a subshell inside it sets (`subshellReasons`). A function called there sets what its body sets.
-      const names = new Set<string>();
-      const sets = (region: SyntaxNode): void => {
-        for (const m of [region, ...everyNode(region)]) {
-          let own = true;
-          for (let x: SyntaxNode | null = m; x && x !== region; x = x.parent) if (subshellReasons(x).length) own = false;
-          if (own) for (const v of this.cx.state.writes(m)) names.add(v);
-        }
-      };
-      sets(last);
-      for (const m of [last, ...everyNode(last)]) {
-        for (const [def, callers] of this.cx.state.calls) if (callers.has(m)) sets(def);
-      }
-      if (!names.size) continue;
-      // Used after the pipeline, in the same block.
-      let scope: SyntaxNode = p;
-      while (scope.parent && !BLOCK_OWNERS.has(scope.parent.type)) scope = scope.parent;
-      // The program at least holds the pipeline.
-      const block = scope.parent!;
-      const after = everyNode(block).filter((m) => m.startIndex >= scope.endIndex);
-      // Read (an expansion in the tree, not text in a quoted string) before being set again (a later loop may set the same names for itself).
-      const used = [...names].find((n) => {
-        const use = after.find((m) => (m.type === 'simple_expansion' || m.type === 'expansion') && readsVariable(m, n));
-        const set = after.find((m) => this.cx.state.writes(m).has(n));
-        return use && (!set || use.startIndex < set.startIndex);
-      });
-      if (!used) continue;
+      // A variable the last stage sets in its subshell, read after the pipeline (src/semantics/pipeline.ts): with lastpipe on, it runs in the shell.
+      const lost = lostVariable(this.cx.state, p);
+      if (!lost) continue;
+      const { name: used, last, link } = lost;
       const bash = !this.cx.shell || this.cx.shell === 'bash';
       const fix: [string, string] = last.type === 'command'
         ? (bash ? [`\`read ${used} < <(コマンド)\` のようにプロセス置換で渡すか、\`shopt -s lastpipe\` にします`, `Use process substitution, \`read ${used} < <(command)\`, or turn on \`shopt -s lastpipe\``]
@@ -3169,15 +3127,15 @@ export class Analyzer {
     this.cx.examples.push(ioExample(input, output, spec, this.lang, src));
   }
 
-  /** Regex dialect implied by the current command and its options. */
+  /**
+   * The regex dialect of the current command: the modes its options select (`selects` in its spec: grep's `-E`, `-F`,
+   * `-P`, sed's `-E`), with those of the words its name implies (`egrep` is `grep -E`); BRE when none does.
+   */
   private regexFlavor(): Flavor | 'fixed' {
-    const cmd = this.cx.argCtx!.cmd.split('/').pop()!;
-    if (cmd === 'sed') return this.given('-E') ? 'ere' : 'bre';
-    if (this.given('-P')) return 'pcre';
-    const implied = impliedWords(cmd);
-    if (this.given('-F') || implied.includes('-F')) return 'fixed';
-    if (this.given('-E') || implied.includes('-E')) return 'ere';
-    return 'bre';
+    const { cmd, parse, spec } = this.cx.argCtx!;
+    const implied = impliedWords(cmd.split('/').pop()!).map((w) => spec.options?.find((o) => o.names.includes(w))?.selects);
+    const selected = new Set([...givenOptions(parse).map(({ role }) => (role.role === 'option' ? role.spec.selects : undefined)), ...implied]);
+    return selected.has('pcre') ? 'pcre' : selected.has('fixed') ? 'fixed' : selected.has('ere') ? 'ere' : 'bre';
   }
 
   /**
@@ -3197,9 +3155,7 @@ export class Analyzer {
     const remote = whereOf(env) === 'remote';
     // (Only `$v` and `${v}`: `${v:-x}`, `${v+x}` and `${#v}` are fine with no value. A file of variables may give any.)
     if (env.links.some((l) => l.kind === 'slot' && l.assigns.includes('*'))) return;
-    const reads = descendants(script.tree.root, ['simple_expansion', 'expansion']).filter((e) => /^\$\{?[A-Za-z_]\w*\}?$/.test(e.text));
-    for (const e of reads) {
-      const v = e.text.replace(/\W/g, '');
+    for (const { name: v, at: e } of plainReads(script)) {
       const x = st.variables.get(v);
       if (!x || x.set !== 'on' || wellKnownVariables[v] || specialVariables[v] || script.model.at(e).run.variables.has(v)) continue;
       const exported = x.attrs.x?.state ?? 'off';
@@ -3254,7 +3210,8 @@ export class Analyzer {
         this.cx.extraNotes.push(...this.say(fact(this.lang, 'builtin-or-function-as-program', { via, name, isFn, fix })));
       }
     } else if (slot.run === 'shell-string' && where === 'remote') {
-      const risky = words.find((w) => w.type !== 'raw_string' && (hasExpansionNode(w) || (isPlainWord(w) && (hasGlob(w.text) || w.text.startsWith('~')))));
+      // (A word this shell expands before ssh joins the words: src/semantics/words.ts.)
+      const risky = words.find((w) => wordMeaning(w, this.cx.state)!.steps.some((x) => LOCAL_EXPANSIONS.has(x.kind) && x.applies !== false));
       if (risky) {
         this.cx.extraNotes.push(...this.say(fact(this.lang, 'ssh-local-expansion', { risky: risky.text })));
       }
@@ -4036,6 +3993,8 @@ function alias1(value: string): boolean {
   return /^[^\s;|&<>()'"`$\\=]+$/.test(value);
 }
 
+/** The expansions that give a word a value of the shell that expands it (`$x`, `$(…)`, `*`, `~`): not braces or quotes. */
+const LOCAL_EXPANSIONS: ReadonlySet<ExpansionStep['kind']> = new Set(['tilde', 'parameter', 'command', 'arithmetic', 'process', 'glob']);
 const SHOPT_NAMES = ['globstar', 'dotglob', 'nocaseglob', 'nocasematch', 'nullglob', 'failglob', 'extglob', 'lastpipe', 'expand_aliases'] as const;
 export type ShoptName = typeof SHOPT_NAMES[number];
 /** An option's state (see `OptionState`), or `unsupported` in a shell that does not have it. */
@@ -4094,12 +4053,6 @@ function sortTokens(ts: Token[]): Token[] {
 }
 
 /** Whether an ancestor of `n` satisfies `test`. */
-
-/** Every node under `n`, in source order. */
-function everyNode(n: SyntaxNode): SyntaxNode[] {
-  return n.namedChildren.flatMap((c) => [c, ...everyNode(c)]);
-}
-
 function ancestorOf(n: SyntaxNode, test: (a: SyntaxNode) => boolean): boolean {
   for (let a = n.parent; a; a = a.parent) if (test(a)) return true;
   return false;
