@@ -69,8 +69,64 @@
   /** True while the user has text selected (a drag to copy should not count as a click). */
   const selecting = () => String(window.getSelection() ?? '').length > 0;
 
+  /**
+   * The colours of the editor's theme (`bashExplainer.panel.colors`, VS Code only). When the host asks (`themeWatch`),
+   * the panel tells it what it draws text on and its own colour of each role (`themeBase`), now and whenever the
+   * theme changes; the host answers with the role colours to set (`themeColours`; none: the panel's own).
+   */
+  let themeVars = /** @type {string[]} */ ([]);
+  let themeWatching = false;
+  let themeSent = '';
+  let themeTimer = 0;
+  const THEME_ROLES = ['command', 'builtin', 'option', 'argument', 'string', 'number', 'keyword', 'operator', 'redirect', 'pattern', 'variable', 'assignment', 'comment'];
+  function setThemeVars(/** @type {Record<string, string>} */ vars) {
+    for (const k of themeVars) document.body.style.removeProperty(k);
+    themeVars = Object.keys(vars);
+    for (const [k, v] of Object.entries(vars)) document.body.style.setProperty(k, v);
+  }
+  function postThemeBase() {
+    if (!themeWatching) return;
+    // The panel's own colours, read with the theme's taken off (and put back at once: nothing is drawn in between).
+    const set = Object.fromEntries(themeVars.map((k) => [k, document.body.style.getPropertyValue(k)]));
+    setThemeVars({});
+    const probe = document.createElement('span');
+    probe.hidden = true;
+    document.body.append(probe);
+    const classic = Object.fromEntries(THEME_ROLES.map((r) => {
+      probe.className = `kind-${r}`;
+      return [r, getComputedStyle(probe).color];
+    }));
+    probe.remove();
+    setThemeVars(set);
+    const css = getComputedStyle(document.documentElement);
+    const v = (/** @type {string} */ name) => css.getPropertyValue(name).trim();
+    const backgrounds = [v('--vscode-editor-background') || getComputedStyle(document.body).backgroundColor, v('--vscode-textCodeBlock-background') || 'rgba(127, 127, 127, 0.1)', v('--vscode-list-hoverBackground')].filter(Boolean);
+    const cls = document.body.classList;
+    const base = { highContrast: cls.contains('vscode-high-contrast') || cls.contains('vscode-high-contrast-light'), backgrounds, foreground: v('--vscode-editor-foreground') || v('--vscode-foreground'), classic };
+    const key = JSON.stringify(base);
+    if (key === themeSent) return;
+    themeSent = key;
+    vscode.postMessage({ type: 'themeBase', base });
+  }
+  // VS Code sets the theme's colours on <html> and its kind as a class of <body>.
+  new MutationObserver(() => {
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(postThemeBase, 50);
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(() => {
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(postThemeBase, 50);
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
   window.addEventListener('message', (event) => {
     const msg = event.data;
+    if (msg.type === 'themeWatch') {
+      themeWatching = msg.on;
+      themeSent = '';
+      if (!msg.on) setThemeVars({});
+      postThemeBase();
+    }
+    if (msg.type === 'themeColours') setThemeVars(msg.vars);
     if (msg.type === 'update') {
       const key = JSON.stringify(msg);
       if (key === lastUpdate) return;

@@ -4,6 +4,8 @@ import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
 import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
+import { THEME_SETTINGS, themeRoleColours } from './themeColours';
+import { panelPalette, paletteVars, type PanelBase } from './themePalette';
 
 /** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
 const STATE_KEY = 'bashExplainer.panelState';
@@ -24,10 +26,19 @@ export class PanelController implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
   /** The view and step the viewer chose, kept in the global state: the tree is built only in the tree view. */
   private state: PanelState;
+  /** What the panel last said it draws on (`themeBase`), and the number of the last theme request (an older answer is dropped). */
+  private themeBase: PanelBase | undefined;
+  private themeRequest = 0;
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
     this.state = ctx.globalState.get<PanelState>(STATE_KEY) ?? {};
     this.disposables.push(
+      // `panel.colors`: the colours of the theme in use, again when it or the user's customizations change (and on `refresh`, after our settings).
+      vscode.window.onDidChangeActiveColorTheme(() => this.postTheme()),
+      vscode.extensions.onDidChange(() => this.postTheme()),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (THEME_SETTINGS.some((k) => e.affectsConfiguration(k))) this.watchTheme();
+      }),
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
         if (e) this.schedule(e, 0);
@@ -51,6 +62,7 @@ export class PanelController implements vscode.Disposable {
 
   /** Re-render after a setting such as the language changes. */
   refresh(): void {
+    this.watchTheme();
     this.post();
   }
 
@@ -91,6 +103,27 @@ export class PanelController implements vscode.Disposable {
     }, delay);
   }
 
+  /** Asks the panel to report what it draws on when the colours follow the theme (`themeWatch`), and sends them. */
+  private watchTheme(): void {
+    const on = this.service.panelColours !== 'classic';
+    if (!on) this.themeBase = undefined;
+    void this.panel?.webview.postMessage({ type: 'themeWatch', on });
+    this.postTheme();
+  }
+
+  /** Sends the panel the role colours of `panel.colors` in the theme in use (none: its own). */
+  private postTheme(): void {
+    const id = ++this.themeRequest;
+    const mode = this.service.panelColours;
+    const base = this.themeBase;
+    if (!this.panel || mode === 'classic' || !base) return;
+    // (A theme or a customization the code cannot read leaves the panel's own colours.)
+    const vars = themeRoleColours(this.ctx, this.service.settings['highlight.enabled']).then((roles) => (roles ? paletteVars(panelPalette(mode, roles, base)) : {})).catch(() => ({}));
+    void vars.then((v) => {
+      if (id === this.themeRequest) void this.panel?.webview.postMessage({ type: 'themeColours', vars: v });
+    });
+  }
+
   private post(): void {
     if (!this.panel) return;
     const lang = this.service.lang;
@@ -120,6 +153,7 @@ export class PanelController implements vscode.Disposable {
     const ed = this.editor;
     if (m.type === 'ready') {
       void this.panel?.webview.postMessage({ type: 'panelState', state: this.state });
+      this.watchTheme();
       return this.post();
     }
     if (m.type === 'panelState') {
@@ -129,6 +163,10 @@ export class PanelController implements vscode.Disposable {
       // The tree is built only for the tree view: explain the line again for the view just chosen.
       if ((m.state.view === 'tree') !== treeBefore) this.post();
       return;
+    }
+    if (m.type === 'themeBase') {
+      this.themeBase = m.base;
+      return this.postTheme();
     }
     if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
     if (isPanelQuestion(m)) return void this.panel?.webview.postMessage(panelReply(m, this.service.lang));

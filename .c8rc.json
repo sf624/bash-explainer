@@ -9,7 +9,8 @@
     "src/ui/hover.ts",
     "src/ui/inline.ts",
     "src/ui/panel.ts",
-    "src/ui/semanticTokens.ts"
+    "src/ui/semanticTokens.ts",
+    "src/ui/themeColours.ts"
   ],
   "reporter": ["json"],
   "report-dir": "coverage"

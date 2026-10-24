@@ -204,6 +204,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみと「読まれ方」のステップの切り替えのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
+| `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。VS Code だけ |
 | `bashExplainer.highlight.enabled` | `false` | 解説と同じ構文木からシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。Web 版は常にこの色分け |
 | `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
@@ -266,7 +267,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `examples.placement`・`panel.animations` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |
 | `examples.inHover`・`hover.enabled`・`hover.maxDepth`・`highlight.enabled`・`languages`・`embedded.files` | | | ✓ |
-| `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen` | | | |
+| `hover.followCursor`・`hover.followDelay`・`inline.enabled`・`inline.maxLength`・`panel.autoOpen`・`panel.colors` | | | |
 
 空欄は、VS Code にしかないもの（ホバー、インライン要約、開くパネル、対象ファイルの選択）についての設定です。Web 版とコマンドラインは、渡されたファイルを、選んだ種類として解説します。
 

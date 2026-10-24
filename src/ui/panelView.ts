@@ -6,6 +6,7 @@ import { Lang } from '../i18n';
 import { ExamplePlacement, noteRefs, placeExamples, ui } from './render';
 import { manualLabel, SECTIONS } from '../manual';
 import { readingNodes } from '../reading';
+import type { PanelBase } from './themePalette';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
 
@@ -22,7 +23,9 @@ export type FromPanel =
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' }
   /** The view and step chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
-  | { type: 'panelState'; state: PanelState };
+  | { type: 'panelState'; state: PanelState }
+  /** What the panel draws text on, and its own colours, in the theme in use (asked for by `themeWatch`). */
+  | { type: 'themeBase'; base: PanelBase };
 
 /**
  * What the panel remembers per viewer: the list or the tree view, and the step of the tree it shows (1–8: the line

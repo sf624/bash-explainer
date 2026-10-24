@@ -10,6 +10,10 @@ import { Shell } from './dialect';
 import { EMBEDDED_FILES } from './document-setup';
 import type { ExamplePlacement } from './ui/render';
 
+/** The values of `panel.colors`: the panel's own palette, the theme's colours, or colours like the theme's that keep the roles apart (src/ui/themePalette.ts). */
+export const PANEL_COLOURS = ['classic', 'theme', 'themeLike'] as const;
+export type PanelColours = (typeof PANEL_COLOURS)[number];
+
 export const PREFIX = 'bashExplainer.';
 
 export interface Settings {
@@ -35,6 +39,7 @@ export interface Settings {
   'inline.maxLength': number;
   'panel.autoOpen': boolean;
   'panel.animations': boolean;
+  'panel.colors': PanelColours;
   'highlight.enabled': boolean;
   'editor.wrap': boolean;
   languages: string[];
@@ -126,6 +131,10 @@ export const SETTINGS: readonly SettingSpec[] = [
   {
     key: 'panel.animations', type: 'boolean', default: true, group: 'display', title: ['パネルのアニメーション', 'Animations in the panel'], surfaces: ['vscode', 'web'],
     elsewhere: 'The command-line tool and the Language Server have no panel.',
+  },
+  {
+    key: 'panel.colors', type: 'string', default: 'classic', enum: PANEL_COLOURS, group: 'display', title: ['パネルの色', 'Colours of the panel'], surfaces: ['vscode'],
+    elsewhere: 'The web page keeps its own palettes (it has no editor theme to follow); the others have no panel.',
   },
   {
     key: 'highlight.enabled', type: 'boolean', default: false, group: 'display', title: ['構文木による色分け', 'Colours from the syntax tree'], surfaces: ['vscode', 'lsp'],

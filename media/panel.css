@@ -247,15 +247,20 @@ code {
   border-radius: 3px;
 }
 
-.kind-command, .kind-subcommand, .kind-builtin, .kind-function, .kind-alias { color: var(--c-command); }
+/* With `bashExplainer.panel.colors` set to follow the theme, the host sets every role's variable on body (src/ui/themePalette.ts);
+   the roles the palette groups (a builtin with commands, a string with arguments) default to their group's. */
+.kind-command, .kind-subcommand, .kind-function, .kind-alias { color: var(--c-command); }
+.kind-builtin { color: var(--c-builtin, var(--c-command)); }
 .kind-option { color: var(--c-option); }
 .kind-pattern { color: var(--c-pattern); }
-.kind-argument, .kind-string { color: var(--c-argument); }
+.kind-argument { color: var(--c-argument); }
+.kind-string { color: var(--c-string, var(--c-argument)); }
 .kind-number { color: var(--c-number); }
 .kind-keyword { color: var(--c-keyword); }
 .kind-operator, .kind-block, .kind-test { color: var(--c-operator); }
 .kind-redirect { color: var(--c-redirect); }
-.kind-variable, .kind-expansion, .kind-assignment, .kind-substitution { color: var(--c-variable); }
+.kind-variable, .kind-expansion, .kind-substitution { color: var(--c-variable); }
+.kind-assignment { color: var(--c-assignment, var(--c-variable)); }
 .kind-comment { color: var(--c-comment); }
 .kind-error { color: var(--c-error); }
 
