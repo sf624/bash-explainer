@@ -150,6 +150,37 @@ describe('the command-line tool', function () {
     assert.strictEqual(run(['--format', 'sarif', '-e', 'ls']).code, 2);
   });
 
+  it('reports the pitfalls, and fails on their warnings only with --strict', () => {
+    const file = path.join(dir, 'pitfalls.sh');
+    fs.writeFileSync(file, '#!/bin/bash\nfor f in $(ls); do echo "$f"; done\nrm -rf $DIR/*\nx = 1\necho $y\nread line\n');
+    const r = run(['--check', '--no-color', file]);
+    assert.strictEqual(r.code, 0, r.out);
+    const rows = r.out.trim().split('\n').map((l) => l.replace(/^.*pitfalls\.sh:/, ''));
+    assert.deepStrictEqual(rows.map((l) => /^(\d+:\d+): (\w+): .* \[([\w-]+)\]$/.exec(l)!.slice(1).join(' ')), [
+      '2:10 warning for-over-ls-output', '3:8 warning rm-empty-variable-root', '3:8 info unquoted-variable-as-path',
+      '4:1 warning assignment-with-spaces', '6:1 info read-without-r',
+    ]);
+    assert.match(rows[3], /^4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment/);
+    assert.strictEqual(run(['--check', '--strict', file]).code, 1);
+    // Information alone does not fail it, even with --strict; nor what is turned off.
+    fs.writeFileSync(file, 'read line\n');
+    assert.strictEqual(run(['--check', '--strict', file]).code, 0);
+    fs.writeFileSync(file, 'x = 1\n');
+    assert.strictEqual(run(['--check', '--strict', '--set', 'diagnostics.pitfalls=false', file]).out, '');
+    assert.strictEqual(run(['--check', '--strict', '--set', 'diagnostics.ignore=["assignment-with-spaces"]', file]).code, 0);
+    const usage = run(['--strict', file]);
+    assert.strictEqual(usage.code, 2);
+    assert.match(usage.err, /--strict goes with --check/);
+    // SARIF and annotations: a warning and a note.
+    fs.writeFileSync(file, 'x = 1\nread line\n');
+    const sarif = JSON.parse(run(['--check', '--format', 'sarif', file]).out);
+    assert.deepStrictEqual(sarif.runs[0].results.map((x: { ruleId: string; level: string }) => [x.ruleId, x.level]), [['assignment-with-spaces', 'warning'], ['read-without-r', 'note']]);
+    assert.deepStrictEqual(sarif.runs[0].tool.driver.rules.map((x: { id: string }) => x.id), ['assignment-with-spaces', 'read-without-r']);
+    const gh = run(['--check', '--format', 'github', file]);
+    assert.strictEqual(gh.code, 0);
+    assert.deepStrictEqual(gh.out.trim().split('\n').map((l) => l.split(' ')[0]), ['::warning', '::notice']);
+  });
+
   it('takes the files after -- as files', () => {
     assert.strictEqual(run(['--check', '--', fixture('sample.sh')]).code, 0);
   });

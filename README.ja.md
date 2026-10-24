@@ -122,6 +122,8 @@ Bash Explainer は VS Code の拡張機能としてだけでなく、同じ解�
 
 クイックフィックスは、スクリプトのシェルがその書き方に対応していない場合で、かつ意味が変わらない場合だけ出します。例えば `[[ $f == *.txt ]]` はパターン一致なので出しません。書き換え結果は、元の書き方を bash で実行した場合と dash で同じ結果になることをテストで確認しています。警告を消すには、その前の行（または同じ行のコードの後ろ）に `# bash-explainer disable=<コード>`、ファイル全体なら `# bash-explainer disable-file=<コード>` を書くか、`bashExplainer.diagnostics.ignore` にコードを指定します（`all` ですべて）。「問題」パネルへの表示自体は `bashExplainer.diagnostics.enabled` でオフにできます。
 
+解説で指摘するよくある間違いも、コード付きで「問題」パネルに出します。スクリプトが壊れるもの（代入にならない `x = 1`、`DIR` が空のときの `rm -rf $DIR/*`、`for f in $(ls)`、`[-f x]`）は警告、それ以外（クォートしていない変数、`-r` のない `read`）は情報です。`bashExplainer.diagnostics.pitfalls` で出さないようにできます。`--check` はこれも表示しますが、失敗にするのは `--strict` を付けたときだけです。
+
 ## VS Code で使う
 
 ### クイックスタート
@@ -213,6 +215,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
+| `bashExplainer.diagnostics.pitfalls` | `true` | よくある間違いも「問題」パネルに出す（`x = 1`・`rm -rf $DIR/*` は警告、クォートしていない変数は情報） |
 | `bashExplainer.yq.flavor` | `auto` | `auto`・`mikefarah4`・`kislyuk`・`mikefarah3` |
 | **ファイル** | | |
 | `bashExplainer.embedded.files` | すべて | 中のシェルを解説するファイル: `dockerfile`・`makefile`・`yaml`・`packageJson`・`markdown`・`python`・`jenkinsfile`・`bats` |
@@ -253,7 +256,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 | 設定（`bashExplainer.`…） | Web 版 | コマンドライン | Language Server |
 | --- | --- | --- | --- |
-| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
+| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
 | `examples.placement` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |

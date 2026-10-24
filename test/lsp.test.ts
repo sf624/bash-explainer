@@ -126,6 +126,14 @@ describe('the Language Server', function () {
     await client.diagnostics(script, (list) => list.length === 0);
   });
 
+  it('reports the pitfalls, a warning for one that breaks the script and information for the others', async () => {
+    const uri = 'file:///work/pitfalls.sh';
+    client.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'shellscript', version: 1, text: '#!/bin/bash\nx = 1\nread line\n' } });
+    const d = await client.diagnostics(uri, (list) => list.length > 0);
+    assert.deepStrictEqual(d.map((x) => [x.code, x.severity, x.range.start.line, x.message.split(':')[0]]), [['assignment-with-spaces', 2, 1, 'Pitfall'], ['read-without-r', 3, 2, 'Pitfall']]);
+    client.notify('textDocument/didClose', { textDocument: { uri } });
+  });
+
   it('reads the shell code in a Dockerfile', async () => {
     client.notify('textDocument/didOpen', { textDocument: { uri: dockerfile, languageId: 'dockerfile', version: 1, text: 'FROM alpine\nRUN curl -s x | sh\n' } });
     const d = await client.diagnostics(dockerfile, (list) => list.length > 0);

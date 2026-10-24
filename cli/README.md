@@ -42,7 +42,8 @@ bash-explainer --check install.sh     # constructs its shell (#!/bin/sh: dash…
 | --- | --- |
 | `-e`, `--command <text>` | explain this command line |
 | `-l`, `--line <n>[-<m>]` | only these lines |
-| `--check` | report constructs the script's shell lacks, and other risks (script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`…); exit 1 if there is a warning |
+| `--check` | report constructs the script's shell lacks, other risks (script injection in GitHub Actions, Docker `RUN` pipes without `pipefail`…) and the pitfalls of a script (`x = 1`, `rm -rf $DIR/*`…); exit 1 if there is a warning, other than on a pitfall |
+| `--strict` | with `--check`, also exit 1 if there is a warning on a pitfall |
 | `--shell <name>` | the script's shell: `bash`, `sh`, `dash`, `ash`, `yash`, `ksh`, `mksh`, `zsh` (default: from the shebang or the file name) |
 | `--kind <kind>` | what the file is: `shell`, `dockerfile`, `makefile`, `yaml`, `npm`, `markdown`, `python`, `jenkinsfile` (default: from the file name) |
 | `--lang <en\|ja>` | language (default: from `LANG`) |
@@ -60,11 +61,21 @@ In the text output, a construct is labelled with its keywords and a placeholder 
 
 A row or a note about a part of bash ends with the sections of the GNU Bash Reference Manual it is about: `(Bash manual 3.7.2)` in the text output, links to the sections on gnu.org with `--format markdown`. The numbers are those of the bash 5.2 manual. With `--format json`, a token has them in `refs` (`["3.7.2"]`), and `facts` lists the notes that come from the message catalog, with their `id`, `kind` (`note` or `pitfall`), `text` and `refs`.
 
-`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning.
+`--check` prints problems as compilers do (`file:line:column: warning: … [code]`), so editors and CI can pick them up. With `--format github` they become GitHub Actions annotations, shown on the pull request's diff; with `--format sarif`, a SARIF file for code scanning (a warning is a `warning` result, information a `note`).
+
+The pitfalls of a shell script are problems too, with their own codes: a warning for what breaks the script, information for the rest. They make `--check` fail only with `--strict`, so a CI that passed before keeps passing; turn them off with `--set diagnostics.pitfalls=false`.
+
+```text
+$ bash-explainer --check deploy.sh
+deploy.sh:2:10: warning: Pitfall: the output of $(ls …) is split on spaces and newlines, so file names with spaces break. Use a glob, as in for f in *.txt [for-over-ls-output]
+deploy.sh:4:1: warning: Pitfall: x =… runs a command named x; it is not an assignment. Write x=… with no spaces around = [assignment-with-spaces]
+$ echo $?
+0
+```
 
 ## Settings
 
-The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
+The tool takes the settings of the VS Code extension that have a meaning in a terminal: `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled` and `customCommands` (see [Settings](https://github.com/sf624/bash-explainer#settings) for what each one does). They come from a JSON file with the keys of VS Code's `settings.json`, with or without `bashExplainer.`; comments and trailing commas are allowed, and nested objects too (`{ "notes": { "idioms": false } }`):
 
 ```jsonc
 {
@@ -121,7 +132,7 @@ The repository is also a GitHub Action, which runs this tool at its own version:
 
 ![Warnings from the action on a pull request's diff](https://raw.githubusercontent.com/sf624/bash-explainer/main/images/action-annotations.png)
 
-Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green). The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `fail-on-warning`, `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). The output `warnings` is the number of warnings. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
+Warnings appear on the pull request's diff, and fail the step (`fail-on-warning: 'false'` keeps it green); the pitfalls appear too, but fail it only with `strict: 'true'`. The inputs: `files` (bash globs; default `**/*.sh`), `shell` (default: from each script), `fail-on-warning`, `strict` (also fail on a warning on a pitfall; default `'false'`), `sarif` (also write a SARIF file, for `github/codeql-action/upload-sarif`) and `package` (another npm package spec to run). The output `warnings` is the number of warnings, those on pitfalls included. In other CI systems, run `npx bash-explainer --check <files>` and use the exit status.
 
 ## In your editor (Language Server)
 
@@ -160,7 +171,7 @@ language-servers = ["bash-language-server", "bash-explainer"]
   (add-to-list 'eglot-server-programs '((sh-mode bash-ts-mode) . ("bash-explainer" "--lsp"))))
 ```
 
-Settings: the keys of the VS Code extension's settings that have a meaning here, as `initializationOptions` or through `workspace/didChangeConfiguration`, under `bashExplainer` or not, flat (`"diagnostics.ignore": ["crlf"]`) or nested (`diagnostics = { ignore = { 'crlf' } }`): `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.enabled`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages` (more language IDs to read as shell scripts), `embedded.files` and `customCommands`. `examples: false`, as earlier releases read it, still turns the examples off. Under what the editor sends, the server reads the [settings file](#settings) of the command-line tool (also `--lsp --config <file>`). Keys and values it cannot use are reported in the editor's log (`window/logMessage`).
+Settings: the keys of the VS Code extension's settings that have a meaning here, as `initializationOptions` or through `workspace/didChangeConfiguration`, under `bashExplainer` or not, flat (`"diagnostics.ignore": ["crlf"]`) or nested (`diagnostics = { ignore = { 'crlf' } }`): `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.enabled`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `examples.inHover`, `hover.enabled`, `hover.maxDepth`, `highlight.enabled`, `languages` (more language IDs to read as shell scripts), `embedded.files` and `customCommands`. `examples: false`, as earlier releases read it, still turns the examples off. Under what the editor sends, the server reads the [settings file](#settings) of the command-line tool (also `--lsp --config <file>`). Keys and values it cannot use are reported in the editor's log (`window/logMessage`).
 
 ## Privacy
 

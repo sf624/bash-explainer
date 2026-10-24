@@ -33,8 +33,10 @@ points out common pitfalls. Runs offline.
 Options:
   -e, --command <text>   explain this command line
   -l, --line <n>[-<m>]   only these lines (also <file>:<n>[-<m>])
-      --check            report constructs the script's shell lacks, and other
-                         risks; exit 1 if there is a warning
+      --check            report constructs the script's shell lacks, other risks
+                         and pitfalls; exit 1 if there is a warning (other than
+                         on a pitfall)
+      --strict           with --check, also exit 1 on a warning on a pitfall
       --shell <name>     the script's shell: ${Object.keys(SHELL_NAMES).join(', ')}
                          (default: from the shebang or the file name)
       --kind <kind>      what the file is: ${KINDS.join(', ')}
@@ -63,7 +65,8 @@ Settings: the file, then --set, then --lang, --shell and --no-examples, each
 overriding the one before.
 
 Exit status: 0 when done (with --check: no warning), 1 with --check when there
-is a warning, 2 on a usage or input error.
+is a warning (with --strict, also one on a pitfall), 2 on a usage or input
+error.
 `;
 
 class UsageError extends Error {}
@@ -73,6 +76,8 @@ interface Options {
   command?: string;
   lines?: [number, number];
   check: boolean;
+  /** With --check: the warnings on pitfalls fail it too. */
+  strict: boolean;
   shell?: Shell;
   kind?: Kind;
   lang: Lang;
@@ -99,7 +104,7 @@ const locale = (env: NodeJS.ProcessEnv) => env.LC_ALL || env.LC_MESSAGES || env.
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean): Options | 'help' | 'version' {
   const o: Options = {
-    inputs: [], check: false, lang: 'en', format: 'text', color: isTTY && !env.NO_COLOR, settings: mergeSettings(), warnings: [], printConfig: false,
+    inputs: [], check: false, strict: false, lang: 'en', format: 'text', color: isTTY && !env.NO_COLOR, settings: mergeSettings(), warnings: [], printConfig: false,
   };
   let config: string | undefined;
   let noConfig = false;
@@ -125,6 +130,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
       case '-e': case '--command': o.command = value(); break;
       case '-l': case '--line': o.lines = parseRange(value()); break;
       case '--check': o.check = true; break;
+      case '--strict': o.strict = true; break;
       case '--no-examples': flags['examples.enabled'] = false; break;
       case '--config': config = value(); break;
       case '--no-config': noConfig = true; break;
@@ -177,6 +183,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv, isTTY: boolean
   }
   if ((o.format === 'sarif' || o.format === 'github') && !o.check) throw new UsageError(`--format ${o.format} goes with --check`);
   if (o.sarifFile !== undefined && !o.check) throw new UsageError('--sarif goes with --check');
+  if (o.strict && !o.check) throw new UsageError('--strict goes with --check');
   // defaults < settings file < --set < --lang, --shell, --no-examples
   const file = noConfig ? undefined : settingsFile(config, env);
   let fromFile: Partial<Settings> = {};
@@ -350,7 +357,8 @@ export async function main(argv: string[], io: { stdout: (s: string) => void; st
       const issues = diagnosticsFor(() => doc, () => shells, o.lang, o.settings, 'cli').shown
         .filter((i) => !input.lines || (i.startLine + 1 >= input.lines[0] && i.startLine + 1 <= input.lines[1]))
         .sort((a, b) => a.startLine - b.startLine || a.startCol - b.startCol);
-      warnings += issues.filter((i) => i.severity === 'warning').length;
+      // (A pitfall fails the check only with --strict: its warnings came later, and must not fail a CI that passed.)
+      warnings += issues.filter((i) => i.severity === 'warning' && (o.strict || !i.pitfall)).length;
       if (o.format === 'json' || o.format === 'sarif' || o.sarifFile !== undefined) json.push(...issues.map((i) => ({ file: input.name, line: i.startLine + 1, column: i.startCol + 1, endLine: i.endLine + 1, endColumn: i.endCol + 1, severity: i.severity, code: i.code, message: plain(i.message, { backticks: false }) })));
       if (o.format === 'github') chunks.push(...issues.map((i) => annotation(input.name, i)));
       else if (o.format !== 'json' && o.format !== 'sarif') chunks.push(...issues.map((i) => issueText(input.name, i, o.color)));

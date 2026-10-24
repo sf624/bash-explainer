@@ -97,7 +97,7 @@ describe('unbash adapter: fuzzing', () => {
   });
 
   it('analyzer and document checks: no throw on any fuzzed tree', function () {
-    this.timeout(60000);
+    this.timeout(120000);
     const bad: string[] = [];
     for (const text of inputs) {
       const r = exercise(text);
@@ -107,7 +107,7 @@ describe('unbash adapter: fuzzing', () => {
   });
 
   it('analyzer and document checks: no throw on any prefix of any line of the fixtures', function () {
-    this.timeout(60000);
+    this.timeout(120000);
     const bad: string[] = [];
     const seen = new Set<string>();
     for (const f of corpus().files) {

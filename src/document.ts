@@ -5,10 +5,13 @@ import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
+import { pitfallFindings } from './pitfalls';
+import { shellState } from './semantics/state';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
-import type { Point, SyntaxTree } from './syntax/tree';
+import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
+import { wordFindings } from './wordfacts';
 
 // What the extension and the web page share: explaining a line and finding the problems of a
 // document, given its text and parse tree. Nothing here depends on VS Code.
@@ -21,7 +24,8 @@ export interface ShellDocument {
   tree: SyntaxTree;
 }
 
-export type DocumentIssue = DocIssue & { fix?: Fix };
+/** `pitfall`: one of the pitfalls the explanations point out (`pitfallIssues`), not a construct the shell lacks. */
+export type DocumentIssue = DocIssue & { fix?: Fix; pitfall?: true };
 
 export interface Shells {
   /** The shell chosen by the user (setting or panel), which wins over the file. */
@@ -39,13 +43,75 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
 }
 
 /**
- * Problems in the whole document, with quick fixes for shell scripts. Codes in `ignore`, and
- * those turned off by `# bash-explainer disable=` comments in the file, are left out.
+ * Problems in the whole document, with quick fixes for shell scripts, and (unless `pitfalls` is false) the pitfalls
+ * of a shell script. Codes in `ignore`, and those turned off by `# bash-explainer disable=` comments in the file, are
+ * left out.
  */
-export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = []): DocumentIssue[] {
+export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], opts: { pitfalls?: boolean } = {}): DocumentIssue[] {
+  const base = allIssues(doc, lang, shells);
+  const found = opts.pitfalls === false ? base : [...base, ...pitfallIssues(doc, lang, shells.forced ?? shells.detected, base)];
+  return unsuppressed(doc, found, ignore);
+}
+
+/** The issues not turned off by `ignore` or the file's `# bash-explainer disable=` comments. */
+function unsuppressed(doc: ShellDocument, issues: DocumentIssue[], ignore: readonly string[]): DocumentIssue[] {
   const skip = new Set(ignore);
   const directives = parseDirectives(doc.lines);
-  return allIssues(doc, lang, shells).filter((i) => !skip.has(i.code) && !suppressed(directives, i.startLine, i.code));
+  return issues.filter((i) => !skip.has(i.code) && !suppressed(directives, i.startLine, i.code));
+}
+
+/**
+ * The pitfalls that break a script outright, shown as warnings; the others (unquoted variables, `read` without
+ * `-r`: frequent, and harmless with most values) are information.
+ */
+const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
+  // src/pitfalls.ts
+  'bracket-no-space', 'assignment-with-spaces', 'brace-no-space', 'brace-close-no-separator', 'rm-empty-variable-root',
+  'redirect-in-bracket', 'bracket-close-in-word', 'and-or-in-bracket',
+  // src/wordfacts.ts
+  'prefix-assignment-expanded-first', 'for-over-ls-output', 'for-over-unquoted-args', 'redirect-by-your-shell',
+]);
+
+/**
+ * The dialect issues that already say what a pitfall would at their place: zsh does not split an unquoted `$var`
+ * (`wordSplit`), so the pitfalls of an unquoted variable are not raised beside it.
+ */
+const SAID_BY: Readonly<Record<string, readonly string[]>> = {
+  wordSplit: ['unquoted-variable-as-path', 'unquoted-variable-in-test', 'for-over-unquoted-args'],
+};
+
+/**
+ * The pitfalls of a shell script that its explanations point out (src/pitfalls.ts, and the pitfalls of
+ * src/wordfacts.ts), as problems: each with its code, on the node it is about, `pitfall: true`. One walk of the
+ * tree, with the script's one model. None in a host file, and none on a line `others` (the other problems) says is
+ * not parsed, or where one of them already says the same.
+ */
+export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, others: readonly DocumentIssue[] = []): DocumentIssue[] {
+  if (doc.extracted) return [];
+  const { root } = doc.tree;
+  const last = root.endPosition.row;
+  const found: { code: string; node: SyntaxNode; text: string }[] = [
+    ...pitfallFindings(root, lang, 0, last),
+    ...wordFindings(root, lang, shellState(doc.tree, shell), shell, 0, last)
+      .filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text })),
+  ];
+  // (zsh syntax that bash cannot read: the tree there is not the script's.)
+  const unparsed = others.filter((i) => i.code === 'zshSyntax');
+  const out: DocumentIssue[] = [];
+  for (const { code, node, text } of found) {
+    const line = node.startPosition.row;
+    const sameLine = line === node.endPosition.row;
+    const issue: DocumentIssue = {
+      code, severity: PITFALL_WARNINGS.has(code) ? 'warning' : 'info', message: text, pitfall: true,
+      startLine: line, startCol: node.startPosition.column, endLine: line, endCol: sameLine ? node.endPosition.column : doc.lines[line].length,
+    };
+    if (unparsed.some((i) => i.startLine <= line && line <= i.endLine)) continue;
+    // (Said already where it overlaps: the same problem, or a dialect issue that says it otherwise.)
+    const overlaps = (i: DocumentIssue) => i.startLine === line && i.startCol < issue.endCol && issue.startCol < i.endCol;
+    if ([...others, ...out].some((i) => overlaps(i) && (i.code === code || i.message === text || !!SAID_BY[i.code]?.includes(code)))) continue;
+    out.push(issue);
+  }
+  return out;
 }
 
 /**
@@ -56,14 +122,37 @@ export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, i
  */
 export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: (doc: ShellDocument) => Shells, lang: Lang, settings: Settings, surface: Surface): { readonly all: DocumentIssue[]; shown: DocumentIssue[] } {
   let doc: ShellDocument | undefined;
+  let raw: DocumentIssue[] | undefined;
+  let base: DocumentIssue[] | undefined;
   let found: DocumentIssue[] | undefined;
-  // (The document is opened, that is parsed, only when its problems are looked at.)
-  const all = () => (found ??= (doc ??= open()) ? documentIssues(doc, lang, shellsOf(doc)) : []);
+  // (The document is opened, that is parsed, only when its problems are looked at; its pitfalls are looked for only
+  // when they are shown, or all the problems are asked for. They are weighed against the other problems before any is
+  // turned off, as `documentIssues` does.)
+  const rawIssues = () => (raw ??= (doc ??= open()) ? allIssues(doc, lang, shellsOf(doc)) : []);
+  const without = () => {
+    if (!base) {
+      const list = rawIssues();
+      base = doc ? unsuppressed(doc, list, []) : [];
+    }
+    return base;
+  };
+  const pitfallsOf = (d: ShellDocument) => {
+    const shells = shellsOf(d);
+    return unsuppressed(d, pitfallIssues(d, lang, shells.forced ?? shells.detected, rawIssues()), []);
+  };
+  const all = () => {
+    if (!found) {
+      const list = without();
+      found = doc ? [...list, ...pitfallsOf(doc)] : list;
+    }
+    return found;
+  };
   const disabled = settingSpec('diagnostics.enabled')!.surfaces.includes(surface) && !settings['diagnostics.enabled'];
+  const pitfalls = settings['diagnostics.pitfalls'] && settings['notes.pitfalls'];
   const ignore = new Set(settings['diagnostics.ignore']);
   const shown = () => {
     if (disabled) return [];
-    const list = all();
+    const list = pitfalls ? all() : without();
     return doc?.extracted !== undefined && !settings['diagnostics.embedded'] ? [] : list.filter((i) => !ignore.has(i.code));
   };
   return { get all() { return all(); }, shown: shown() };
