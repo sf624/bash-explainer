@@ -6,6 +6,7 @@ import type { BashParser as Parser } from '../src/syntax/tree';
 import { fixFor } from '../src/fixes';
 import { BEHAVIOURS, behavioursOnLine, detectShell, dialectIssues, dialectNotes, featuresOnLine, FEATURES, featureWorks } from '../src/dialect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { SINCE } from '../src/bashversion';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -74,7 +75,7 @@ const PROBES: Record<string, string> = {
   funcname: 'f() { [ "$FUNCNAME" = f ] && echo ok; }; f',
   uid: '[ -n "$UID" ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
-  // (bash 5.2 lacks both, as FEATURES says; test/bash53.test.ts runs them in bash 5.3.)
+  // (bash 5.2 lacks both, as FEATURES says; a bash 5.3 on PATH has them, as SINCE says. test/bash53.test.ts runs them.)
   funsub: 'x=1; v=${ x=ok; echo out; }; [ "$v" = out ] && echo $x',
   valsub: 'v=${| REPLY=ok; }; echo $v',
 };
@@ -104,11 +105,14 @@ describe('the dialect table agrees with the installed shells', () => {
   });
   for (const [letter, names, flag] of shells) {
     const bin = locate(names);
+    // (FEATURES has the letters of bash 5.2; a later bash also has what came in its release: SINCE, src/bashversion.ts.)
+    const release = letter === 'b' && bin ? Number(spawnSync(bin, ['--norc', '-c', 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"'], { timeout: 5000 }).stdout.toString()) : undefined;
+    const works = (id: string) => FEATURES[id].works.includes(letter) || (release !== undefined && id in SINCE && release >= Number(SINCE[id].version));
     (bin ? describe : describe.skip)(names[0], () => {
       for (const [id, code] of Object.entries(PROBES)) {
         it(id, () => {
           const r = spawnSync(bin!, [...(flag ? [flag] : []), '-c', code], { timeout: 5000, input: '' });
-          assert.strictEqual(r.stdout.toString().trim() === 'ok', FEATURES[id].works.includes(letter), `${id} in ${names[0]}`);
+          assert.strictEqual(r.stdout.toString().trim() === 'ok', works(id), `${id} in ${names[0]}`);
         });
       }
       for (const [id, code] of Object.entries(BEHAVIOUR_PROBES)) {

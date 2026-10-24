@@ -118,8 +118,10 @@ The setting `bashExplainer.bashVersion` says which bash release scripts are expl
 A construct of a later release is explained as that release runs it. When the release set lacks it, it is a warning in the Problems panel and a note on the line, with its own code for `diagnostics.ignore`:
 
 ```text
-script.sh:3:3: warning: ${ …; } (command substitution in the current shell) is bash 5.3 syntax: bash 5.2 reports "bad substitution" and drops the commands it read with it (the rest of the line, and the whole if or loop around it), with status 1. Instead, use $(…) (it runs in a subshell). [funsub]
+script.sh:3:3: warning: ${ …; } (command substitution in the current shell) is bash 5.3 syntax: bash 5.2 reports "bad substitution" and stops there: the rest of the line, and the rest of the if, loop or function around it, do not run (status 1). Under set -e, and in POSIX mode, the shell exits; in a subshell, only the subshell stops. Instead, use $(…) (it runs in a subshell). [funsub]
 ```
+
+This changes what bash scripts that already use `${ …; }` or `${| …; }` get by default: a warning, and `--check` exits 1. Set `bashVersion` to `5.3` to explain them as bash 5.3 runs them. The GitHub Action takes the release as its `bash-version` input.
 
 The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
 
@@ -131,6 +133,7 @@ The plan, and the list of what else changed in bash 5.3, are in [docs/design/bas
 - `x=${| cmd; }` runs `cmd` in the current shell, and takes the value `cmd` leaves in `REPLY`, trailing newlines and all. `REPLY` is local to it, and the output of `cmd` is printed as usual, not taken.
 - As in `$( )`, `set -e` is off inside them (unless `shopt -s inherit_errexit`), and the note now names the form used.
 - ksh93 and mksh have `${ cmd; }`, and mksh has `${| cmd; }` too; for the other shells (`sh`, dash, busybox ash, yash, zsh) they are warnings.
+- In bash 5.3 mode, a `}` right after a simple command (`${ echo a }`) is a warning (`funsubBrace`): bash reads that `}` as an argument of the command, and reports a syntax error. A `return` in `${ …; }` ends the substitution, and `local` in it is no pitfall.
 - Before, both were explained as `$( )`.
 
 ### The options of a shebang

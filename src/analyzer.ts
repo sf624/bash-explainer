@@ -45,7 +45,7 @@ import {
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
 import { bracket as bracketLabel, labelText, shorten, skeleton } from './label';
-import { explainCommandSubstitution, explainProcessSubstitution, type SubstitutionHost } from './substitution-tokens';
+import { explainCommandSubstitution, explainProcessSubstitution, returnInSubstitution, scopeOf, type SubstitutionHost } from './substitution-tokens';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
 import { readDeclarationWords } from './semantics/vars';
@@ -1363,9 +1363,8 @@ export class Analyzer {
       // A command over several lines is explained whole, so it always starts on the line explained.
       this.cx.extraNotes.push(...yqNotes(verdict, this.lang));
     }
-    if (head.kind === 'builtin' && head.name === 'local' && !ancestor(n, (a) => a.type === 'function_definition')) {
-      this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
-    }
+    if (head.kind === 'builtin' && head.name === 'local' && !scopeOf(n)) this.cx.extraNotes.push(...this.say(fact(this.lang, 'local-outside-function')));
+    if (head.kind === 'builtin' && head.name === 'return') head.explanation = returnInSubstitution(this.expansionHost, n) ?? head.explanation;
     const read = this.args(head.spec, args, head.runs ?? head.name, head.fn);
     let argToks = read.tokens;
     // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.

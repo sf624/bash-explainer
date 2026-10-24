@@ -15,6 +15,11 @@ inputs:
   shell:
     description: The shell the scripts are written for (sh, dash, bash…). Default, for each script, from its shebang or its name.
     default: ''
+  bash-version:
+    description: >-
+      The bash release to check bash scripts for (5.2 or 5.3). Default, the tool's (5.2): `${ cmd; }`
+      is then a warning. Needs a command-line tool with --bash-version (see `package`).
+    default: ''
   fail-on-warning:
     description: Fail the step when there is a warning ('true' or 'false').
     default: 'true'
@@ -50,6 +55,7 @@ runs:
       env:
         FILES: ${{ inputs.files }}
         CHECK_SHELL: ${{ inputs.shell }}
+        CHECK_BASH_VERSION: ${{ inputs.bash-version }}
         FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
         STRICT: ${{ inputs.strict }}
         SARIF: ${{ inputs.sarif }}
@@ -82,11 +88,18 @@ runs:
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
         # What the CLI can do, from its help: an older one (an earlier version, or a `package:` pin)
-        # may lack --strict or --sarif.
+        # may lack --strict, --bash-version or --sarif.
         help=$(npx --yes --package="$package" bash-explainer --help 2>/dev/null)
         if [ "$STRICT" = 'true' ] && ! grep -q -- '--strict' <<< "$help"; then
           echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (newer than 0.8.0); $package has none."
           exit 2
+        fi
+        if [ -n "$CHECK_BASH_VERSION" ]; then
+          if ! grep -q -- '--bash-version' <<< "$help"; then
+            echo "::error title=Bash Explainer::bash-version needs a command-line tool with --bash-version; $package has none."
+            exit 2
+          fi
+          args+=(--bash-version "$CHECK_BASH_VERSION")
         fi
 
         # A CLI with --sarif writes the annotations and the SARIF file in one run. An older one
