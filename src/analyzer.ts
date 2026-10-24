@@ -63,9 +63,10 @@ import { type Fact, fact, factOf, MESSAGES, said } from './messages';
 const statusFactCache = new WeakMap<StatusModel, WeakMap<SyntaxNode, Map<number, StatusFact[]>>>();
 
 export { EXAMPLE_KINDS } from './analyzer-types';
-export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token, TokenOrigin } from './analyzer-types';
+export type { ContextEntry, Example, ExampleKind, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, ScriptProcess, Span, Token, TokenOrigin } from './analyzer-types';
 import type { ContextEntry, Example, ExampleSection, ExplainOptions, Kind, LineExplanation, Pos, Span, Token, TokenOrigin } from './analyzer-types';
 import { readingTree } from './reading';
+import { claim, dropLabelEcho, readAsScript, readByCommand, scriptProcess } from './tokenmarks';
 
 /** A set of node types, checked against the model's: a name that is not a NodeType does not compile. */
 const types = (...names: NodeType[]): ReadonlySet<string> => new Set<string>(names);
@@ -231,7 +232,8 @@ export class Analyzer {
     this.cx.line = null;
     // The summary above was made with the full explanations; the tree drops what its labels already say.
     for (const item of items) dropLabelEcho(claim(item, 'shell'));
-    if (opts.reading) result.reading = readingTree(tree, items);
+    const resolve = (name: string, w: SyntaxNode) => this.resolve(name, w, { quoted: w.type !== 'word' || w.text !== name }).kind;
+    if (opts.reading) result.reading = readingTree(tree, items, { lang: this.lang, resolve });
     return result;
   }
 
@@ -2876,7 +2878,8 @@ export class Analyzer {
   private braceWord(n: SyntaxNode): Token | undefined {
     const t = this.braceWordToken(n);
     if (t) t.refs = ['3.5.1'];
-    return t;
+    // (bash expands the braces before the command sees the words: its reading, even in an operand.)
+    return t && claim(t, 'shell');
   }
 
   private braceWordToken(n: SyntaxNode): Token | undefined {
@@ -3586,14 +3589,15 @@ export class Analyzer {
     const tildes = w.tildes.filter((t) => t.node === n && this.tildeTarget(t.user));
     if (!tildes.length) return undefined;
     const [first] = tildes;
+    // (bash expands the tilde before the command sees the word: its reading, even in an operand.)
     if (tildes.length === 1 && first.start === 0) {
-      return { ...this.tok(n, 'expansion', this.s(`チルダ展開: ${this.tildeTarget(first.user)}に置き換わる`, `Tilde expansion: ${this.tildeTarget(first.user)}`)
+      return { origin: 'shell', ...this.tok(n, 'expansion', this.s(`チルダ展開: ${this.tildeTarget(first.user)}に置き換わる`, `Tilde expansion: ${this.tildeTarget(first.user)}`)
         + (first.end < n.text.length ? this.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : '')), refs: ['3.5.2'] };
     }
     const row = n.startPosition.row;
     const col = n.startPosition.column;
     const kids = tildes.map((t) => ({
-      kind: 'expansion' as Kind, label: n.text.slice(t.start, t.end), children: [],
+      kind: 'expansion' as Kind, label: n.text.slice(t.start, t.end), children: [], origin: 'shell' as const,
       span: { start: { line: row, character: col + t.start }, end: { line: row, character: col + t.end } },
       explanation: t.after
         ? this.s(`チルダ展開（\`${t.after}\` の後ろ）: ${this.tildeTarget(t.user)}に置き換わる`, `Tilde expansion (after \`${t.after}\`): ${this.tildeTarget(t.user)}`)
@@ -3717,7 +3721,7 @@ export class Analyzer {
     }));
     const note = script.known ? undefined
       : this.s('。実行するシェルはここではわからない（ユーザーのログインシェル）ので、bash として解説する', ". The shell that runs it is not known here (the user's login shell): it is explained as bash");
-    tokens.forEach(readAsScript);
+    for (const t of tokens) readAsScript(t, scriptProcess(env));
     return { tokens, ...(note ? { note } : {}) };
   }
 
@@ -4110,51 +4114,6 @@ const isProgram = (name: string): boolean => {
   const spec = lookupCommand(name);
   return !!spec && !spec.builtin;
 };
-
-/**
- * Every renderer shows a token's label beside its explanation, so an explanation that opens with the label
- * quoted (`` `%s`: value 1 as a string ``) says it twice: remove that opening. The text stays when it only
- * mentions the label in a sentence. Done on the finished tree, since the same texts stand alone elsewhere
- * (notes, summaries, examples).
- */
-/** Marks `t` and the tokens under it that have no origin yet as read by `origin` (`Token.origin`). */
-function claim(t: Token, origin: TokenOrigin): Token {
-  if (!t.origin) {
-    t.origin = origin;
-    for (const c of t.children) claim(c, origin);
-  }
-  return t;
-}
-
-/**
- * The tokens of a command's words as the command reads them (`Token.origin` `argv`): what its parse made, and the parts
- * under them no one else claimed. A word token bash's reading made (an operand with no description of its own) is the
- * operand all the same; its parts stay bash's.
- */
-function readByCommand(ts: Token[]): Token[] {
-  for (const t of ts) {
-    if (t.origin === 'shell') t.origin = 'argv';
-    else claim(t, 'argv');
-  }
-  return ts;
-}
-
-/** Marks the tokens of a string read as a script that its shell reads (`Token.origin` `script`; not its commands' readings). */
-function readAsScript(t: Token): void {
-  if (!t.origin || t.origin === 'shell') t.origin = 'script';
-  t.children.forEach(readAsScript);
-}
-
-function dropLabelEcho(t: Token): void {
-  const label = t.label.trim();
-  const e = t.explanation;
-  if (e.startsWith('`' + label + '`')) {
-    const rest = e.slice(label.length + 2);
-    const m = /^(?::\s+|：\s*)(?=\S)/.exec(rest);
-    if (m) t.explanation = rest.slice(m[0].length);
-  }
-  for (const c of t.children) dropLabelEcho(c);
-}
 
 /** Gives `t` the skeleton of `n` as its label; with `onlyIfCut`, only when it has a placeholder (else the label is the text). */
 function skeletal(t: Token, n: SyntaxNode, onlyIfCut = false): Token {

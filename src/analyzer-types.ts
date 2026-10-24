@@ -23,6 +23,13 @@ export type Kind =
  */
 export type TokenOrigin = 'shell' | 'argv' | 'embedded' | 'script';
 
+/**
+ * Which shell reads a string a command gives it as a script: `child`, another shell or a subshell started for it
+ * (`bash -c`, `sh -c`, `su -c`; and the subshell of a `$( )`); `same`, this shell, again (`eval`, a trap's action);
+ * `remote`, a shell on another machine (`ssh host cmd`); `container`, a shell in a container (`docker exec c sh -c`).
+ */
+export type ScriptProcess = 'same' | 'child' | 'remote' | 'container';
+
 export interface Pos { line: number; character: number }
 export interface Span { start: Pos; end: Pos }
 
@@ -57,6 +64,8 @@ export interface Token {
   origin?: TokenOrigin;
   /** On the outermost tokens of an embedded language: which language (`regex`, `sed`, `jq`…; `EmbeddedLang`). */
   language?: string;
+  /** On the tokens of a string read as a script (`origin` `script`): which shell reads it. */
+  process?: ScriptProcess;
 }
 
 export interface ContextEntry { label: string; line: number }
