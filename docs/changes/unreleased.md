@@ -95,8 +95,6 @@ Bash reads the letters left to right: a blank or a letter it does not know is an
 
 It suggests writing the options with `set` on the next line. `#!/bin/bash -eu` and `#!/usr/bin/env -S bash -e -u` work, and get no pitfall.
 
-## New
-
 ### The tree view of the panel
 
 The **Tree** button of the panel shows the current line as a tree of who reads each part; **List** goes back to the list of explanations. The layers follow the Bash manual:

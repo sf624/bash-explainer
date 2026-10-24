@@ -9,15 +9,12 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`…) are also problems, with a code each, in the Problems panel, `--check`, SARIF and the GitHub Action. Turn them off with `bashExplainer.diagnostics.pitfalls`.
 - A pitfall says when a variable is read while it is unset under `set -u`: `set -u; echo "$dir"` stops bash with "dir: unbound variable". It is said only where the variable is unset on every path, at the first read of a statement that bash fails on, and not after a test of the same name (`[[ -v dir ]] || exit 1; echo "$dir"`). In a redirection of a program (`cat < "$f"`) only the command fails, unless `set -e` then stops the script.
 - A pitfall says when bash refuses the options of a shebang, so that the script never starts when run directly: `#!/bin/bash -e -u`, `#!/bin/bash -o nounset` and `#!/bin/bash -Oextglob` reach bash as one argument.
+- The panel has a **Tree** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
 
 ### Changed
 
 - The web page on a phone opens with the Problems list folded (its header shows the count; tap it to unfold). Before, the sample's nine problems took a third of the editor. Wider screens, and a fold you chose yourself, are unchanged.
 - **Compatibility:** `--check` prints the pitfalls but exits as before: their warnings fail it only with the new `--strict` (the Action's `strict: 'true'`). The Action's `warnings` output still counts only what fails the step; the new `pitfalls` output counts the pitfalls.
-
-### New
-
-- The panel has a **Tree** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
 
 ### Fixed
 
