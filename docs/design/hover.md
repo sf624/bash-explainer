@@ -33,7 +33,7 @@ The whole line opens only through our command (`Ctrl+K Ctrl+E`, the context menu
 
 ## The views
 
-The part: a breadcrumb of the parts around it with the link "Whole line" beside it, then the part's label coloured by its kind, its name-kind badge and "run by" (a command name), its meaning, "Same name, also", its own parts (one level; deeper ones are counted as "N more in the panel"), and the command it belongs to. The notes of the line, and the examples of the part, come after, so that the first lines (about 250 px) answer what the part is.
+The part: a breadcrumb of the parts around it with the link "Whole line" beside it, then the part's label coloured by its kind, its name-kind badge and "run by" (a command name), its meaning, "Same name, also", its own parts (one level; deeper ones are counted as "N more in the panel"), and the command it belongs to. The notes of the line (warnings first, each with its level: [note-levels.md](note-levels.md)), and the examples of the part, come after, so that the first lines (about 250 px) answer what the part is.
 
 The line card: the structure as one breadcrumb (`sudo | xargs › sudo · xargs`, each part with its meaning as a tooltip), and the link.
 
