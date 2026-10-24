@@ -19,7 +19,7 @@ const corpus: [string, string][] = [
 ];
 /** The codes of the catalog's pitfalls that are problems (src/wordfacts.ts); the style checks are not facts. */
 const WORD_CODES = new Set(['prefix-assignment-expanded-first', 'unquoted-variable-as-path', 'unquoted-variable-in-test', 'for-over-ls-output',
-  'for-over-unquoted-args', 'redirect-by-your-shell']);
+  'for-over-unquoted-args', 'redirect-by-your-shell', 'nounset-unbound', 'shebang-refused']);
 const PITFALL = /^⚠ (?:Pitfall|落とし穴): /;
 /** The statements explained line by line, not whole (src/analyzer.ts, `sub`). */
 const BLOCKS = new Set(['if_statement', 'for_statement', 'c_style_for_statement', 'while_statement', 'case_statement', 'function_definition', 'compound_statement', 'subshell', 'select_statement']);

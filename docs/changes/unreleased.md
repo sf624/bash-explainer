@@ -31,6 +31,8 @@ Warnings, for what breaks the script:
 | `for-over-ls-output` | `for f in $(ls)` |
 | `for-over-unquoted-args` | `for a in $*` |
 | `redirect-by-your-shell` | `sudo cmd > /etc/x` |
+| `nounset-unbound` | `set -u; echo "$dir"` (information when only the command fails: `cat < "$f"`) |
+| `shebang-refused` | `#!/bin/bash -e -u` |
 
 Information, for what is frequent and harmless with most values:
 
@@ -72,12 +74,6 @@ It is not said:
 - where the script runs code that cannot be read (`source`, `eval "$s"`, `$cmd`), or arithmetic reads a variable it never sets (`$((n + 1))`: its value may come from the environment), and in a function that may be called from elsewhere (`export -f`, a trap);
 - in a here-document or a redirection in a shell other than bash (dash goes on after a here-document, and exits on a redirection of a program).
 
-## Fixed
-
-### The options of a shebang
-
-A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `bash script.sh` ignores the options of the shebang: the state is read as a script run directly. The options of a shebang that starts another shell (`#!/bin/sh -e`) are not read.
-
 ### A shebang whose options bash refuses
 
 Linux passes the rest of the shebang line to bash as one argument, which bash reads as one run of option letters. A new pitfall on line 1 says when bash refuses it, so that the script stops with an error before running anything when it is run directly:
@@ -90,6 +86,12 @@ Linux passes the rest of the shebang line to bash as one argument, which bash re
 ```
 
 It suggests writing the options with `set` on the next line. `#!/bin/bash -eu` and `#!/usr/bin/env -S bash -e -u` work, and get no pitfall.
+
+## Fixed
+
+### The options of a shebang
+
+A shebang that starts bash with options turns them on, as the kernel passes them: `#!/bin/bash -eu` is `set -e` and `set -u` from the first line, and so is `#!/usr/bin/env -S bash -e -u`. Before, only `--posix` was read from a shebang. `bash script.sh` ignores the options of the shebang: the state is read as a script run directly. The options of a shebang that starts another shell (`#!/bin/sh -e`) are not read.
 
 ### Quoting suggested for a path with a glob, `~` or braces
 
