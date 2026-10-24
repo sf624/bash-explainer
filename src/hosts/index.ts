@@ -88,7 +88,7 @@ export function hostKind(languageId: string, fileName: string, text?: string): H
 }
 
 /** `#!/usr/bin/env bats`, `#!/usr/local/bin/bats`: bats as the program of the first line. */
-const BATS_SHEBANG = /^#![^\n]*[ \t/]bats(?=[ \t\r\n]|$)/;
+export const BATS_SHEBANG = /^#![^\n]*[ \t/]bats(?=[ \t\r\n]|$)/;
 
 export function extractShell(kind: HostKind, text: string): Extracted {
   const b = new Builder(text, kind);
