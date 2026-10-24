@@ -35,7 +35,7 @@ Keep it current:
 
 ## Done lately
 
-- Syntax colouring on by default, switched per language, with what a name runs, options by the specs and readonly variables from the models; fast range requests (#PR; [design/highlighting.md](design/highlighting.md)).
+- Syntax colouring on by default, switched per language, with what a name runs, options by the specs and readonly variables from the models; fast range requests (#321; [design/highlighting.md](design/highlighting.md)).
 - Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
 - The hover explains the part at the position; a card on no part; the whole line per command through `Ctrl+K Ctrl+E` or the hover's link; no tree glyphs; the Language Server's hover starts with the part (#317; [design/hover.md](design/hover.md)).
 - Name hints after the command names that do not run what they suggest, in VS Code and the Language Server; the inline summary removed, its settings deprecated (#318; [design/hover.md](design/hover.md)).
