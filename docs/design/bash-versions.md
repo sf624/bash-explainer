@@ -2,6 +2,8 @@
 
 bash 5.2 stays the reference of the explanations. The explainer can also explain a script as bash 5.3 reads and runs it. This document says where the version comes from, how it reaches the explanations and the models, which differences of 5.3 we explain, and how they are tested.
 
+Status: step 1 of section 7 is done (#283). Steps 2 to 7 are not started.
+
 ## 1. Why
 
 - Our parser, unbash, reads bash 5.3 syntax (node_modules/unbash/README.md). So it accepts `${ cmd; }` and `${| cmd; }`, which bash 5.2 rejects when it runs them.
@@ -24,7 +26,7 @@ bash 5.2 stays the reference of the explanations. The explainer can also explain
 - `ExplainOptions.bashVersion` carries it to the analyzer (`explainOptions(settings)`), like `yqFlavor`.
 - `documentIssues` and `diagnosticsFor` take it for the problems of a document (`diagnosticsFor` reads it from the settings).
 - The dialect check takes it: `dialectIssues` and `dialectNotes` get the version, and for bash they report the constructs that version lacks (`versionIssues` in src/bashversion.ts).
-- The semantic model will take it as one more part of the model's key in `shellState(tree, shell, { version })`, beside `posix` and `host`. The first step does not need it (see 4.2).
+- The semantic model does not take it yet. When step 3 needs it, it becomes one more part of the model's key in `shellState(tree, shell, { version })`, beside `posix` and `host`. Step 1 did not need it (see 4.2).
 
 ### 2.3 A construct of the other version
 
@@ -38,7 +40,7 @@ The rule is the one of the other shells' dialect checks: explain the construct a
 
 ## 3. Inventory: from 5.2 to 5.3
 
-From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, each checked with a bash 5.3 built from it and with the bash 5.2.21 of CI. "Today" is what the explainer says before this work. Priority: 1 is representative usage (tutorials, scripts people write), 3 is rare or interactive only.
+From NEWS, CHANGES (5.3-alpha to 5.3-rc2) and COMPAT of the bash-5.3 tarball, each checked with a bash 5.3 built from it and with the bash 5.2.21 of CI. "Today" is what the explainer said before step 1 (#283); step 1 did the rows of 3.1, and the other rows are still as "Today" says. Priority: 1 is representative usage (tutorials, scripts people write), 3 is rare or interactive only.
 
 ### 3.1 Syntax
 
@@ -98,8 +100,8 @@ Left out: readline and completion changes, job notifications, messages, `$BASH` 
 
 ### 4.2 Steps for the model
 
-- Step 1 (this work): no subshell in the environment model, and the decisions trust nothing in a script that has one (src/semantics/trust.ts makes the script blind). The walk still drops what it changes, as for `$( )`; with nothing trusted, no condition or dead code is decided from that.
-- Step 3: the walk runs a `${ }` in the current shell with a function-like scope (locals, `return`), and keeps the state after it; `${| }` gives `REPLY`'s value. Then the trust rule can be lifted. src/semantics/walk/walker.ts is at its length ceiling, so this needs the substitution walk moved out first.
+- Step 1 (done, #283): no subshell in the environment model, and the decisions trust nothing in a script that has one (src/semantics/trust.ts makes the script blind). The walk still drops what it changes, as for `$( )`; with nothing trusted, no condition or dead code is decided from that.
+- Step 3 (not started): the walk runs a `${ }` in the current shell with a function-like scope (locals, `return`), and keeps the state after it; `${| }` gives `REPLY`'s value. Then the trust rule can be lifted. src/semantics/walk/walker.ts is at its length ceiling, so this needs the substitution walk moved out first.
 - Bash 5.2 mode does not change the model: the explanation of the construct is the one of 5.3, and the issue says what bash 5.2 does instead. Modelling the failure (the rest of the line and of the compound command around it is skipped, status 1, the shell exits under `set -e` and in POSIX mode) is left out: a script for bash 5.2 with this construct is broken anyway, and the issue says so.
 
 ## 5. Manual citations
@@ -125,7 +127,7 @@ bash is GPL-3.0. We run it only as a separate program. We never vendor, link or 
 
 Each step is a PR that keeps every test green and coverage at 100%.
 
-1. The setting on every surface; `${ }` and `${| }` explained as bash 5.3 runs them, with the issue in 5.2 mode; their `FEATURES` entries; no subshell in the environment model and no decision in a script that has one; test/bash53.test.ts; CI builds bash 5.3.
+1. Done (#283). The setting on every surface; `${ }` and `${| }` explained as bash 5.3 runs them, with the issue in 5.2 mode; their `FEATURES` entries; no subshell in the environment model and no decision in a script that has one; test/bash53.test.ts; CI builds bash 5.3.
 2. Fixes that hold in both versions, found by the inventory: `printf %#q` (5.2: the `#` does nothing), `printf %ls` and `%lc`.
 3. The walk runs `${ }` in the current shell and keeps its changes (4.2); `${| }` gives `REPLY`.
 4. Version-gated options in the command specs (`since` on an option, read by the argument interpreter, with the issue in 5.2 mode): `source -p`, `compgen -V`, `trap -P`, `read -E`.
