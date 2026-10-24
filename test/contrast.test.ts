@@ -174,6 +174,26 @@ describe('the contrast of the colours of the roles', () => {
     }
   });
 
+  // The badge of a command name (media/panel.css `.nk-badge`): its word in the foreground colour, the muted lines
+  // after it in the muted colour (both measured above, on the backgrounds and the tints); its edge, in the colour of
+  // the command role (the keyword's for a reserved word) or the foreground, at least 3:1 (WCAG's non-text contrast).
+  it('reaches 3:1 for the edge of a name\'s badge, and 4.5:1 for its text', () => {
+    const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(panel)?.[2] ?? '';
+    assert.match(rule('.nk-badge'), /color: var\(--vscode-foreground\);[^]*border: 1px solid var\(--c-command\);/);
+    assert.match(rule('.nk-badge.nk-keyword'), /border-color: var\(--c-keyword\);/);
+    assert.match(rule('.nk-badge.nk-program'), /border-color: var\(--vscode-foreground\);/);
+    assert.match(rule('.nk-badge.nk-none'), /border-color: var\(--vscode-foreground\);/);
+    for (const sel of ['.nk-by', '.nk-also']) assert.match(rule(sel), /color: var\(--c-muted\);/, sel);
+    const pct = Number(/#reading-tree li\.band \{\s*background: color-mix\(in srgb, var\(--l\) (\d+)%, var\(--t-bg\)\);/.exec(panel)?.[1]);
+    for (const [kind, vars] of [['web light', web.light], ['web dark', web.dark]] as const) {
+      const bg = parse(vars['--vscode-editor-background']);
+      const tints = Object.fromEntries(Object.values(CHARTS).map((c) => [`${c}'s tint`, parse(vars[c]).map((x, i) => (pct / 100) * x + (1 - pct / 100) * bg[i]) as RGB]));
+      const edges = { command: vars[CHARTS.command], keyword: vars[CHARTS.operator], foreground: vars['--vscode-foreground'] };
+      check(`${kind}, a badge's edge`, edges, { ...backgrounds(vars), ...tints }, 3);
+      check(`${kind}, a badge's text`, { foreground: vars['--vscode-foreground'], muted: vars['--vscode-descriptionForeground'] }, { ...backgrounds(vars), ...tints }, 4.5);
+    }
+  });
+
   it('keeps the roles of the web page apart', () => {
     for (const kind of ['light', 'dark'] as const) {
       distinct(`web ${kind}`, Object.fromEntries(ROLES.map((r) => [r, web[kind][CHARTS[r]]])) as Record<Role, string>, 8);

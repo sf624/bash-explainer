@@ -28,6 +28,7 @@ import { binaryTestOps, extendedEqualOps, unaryTestOps } from './dict/syntax';
 import type { Lang } from './i18n';
 import { anonSections, CONSTRUCTS, nodeSections } from './refs';
 import type { NameResolution } from './semantics/names';
+import type { NameInfo } from './namefacts';
 import { staticWordValue } from './staticword';
 import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 
@@ -73,6 +74,8 @@ export interface ReadingNode {
   resolves?: NameResolution['kind'];
   /** On an `aliasWord`: the alias's text, which bash reads in its place. */
   replacement?: string;
+  /** On a command name (and the reserved word `time`): what the name is, and what else (`Token.name`). */
+  name?: NameInfo;
   children: ReadingNode[];
 }
 
@@ -108,7 +111,7 @@ const QUOTES = new Set(['string', 'translated_string', 'raw_string', 'ansi_c_str
 const WORDS = new Set(['word', 'number', 'concatenation', 'extglob_pattern', 'regex', 'array', ...PARTS]);
 const REDIRECTS = new Set(['file_redirect', 'heredoc_redirect', 'herestring_redirect']);
 /** The kinds of token that explain a command: the root of what it reads. */
-const READERS = new Set(['command', 'builtin', 'function', 'test']);
+const READERS = new Set(['command', 'builtin', 'function', 'alias', 'test']);
 /** The kinds of token about a word, or a part of one. */
 const WORD_TOKENS = new Set(['string', 'variable', 'expansion', 'substitution', 'number', 'pattern']);
 /** The kinds of bash's tokens inside a word that have no node: a glob's parts, an escape, a tilde, a brace expansion. */
@@ -174,7 +177,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     const refs = t?.refs ?? (n.named ? nodeSections(n) : anonSections(n));
     return {
       layer, kind, label: short(n.text), span, ...(t ? { text: t.explanation } : {}), ...(refs ? { refs } : {}),
-      ...(layer === 'child' ? { process: 'subshell' as const } : {}), children,
+      ...(layer === 'child' ? { process: 'subshell' as const } : {}), ...(t?.name && kind === 'keyword' ? { name: t.name } : {}), children,
     };
   };
 
@@ -333,7 +336,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return {
       node: {
         layer, kind: 'commandName', label: short(w.text), span, ...(own ? { text: own.explanation } : {}),
-        refs: union(['3.7.1', '3.7.2'], own?.refs), resolves: res.kind, ...process, children: wordParts(w, layer),
+        refs: union(['3.7.1', '3.7.2'], own?.refs), resolves: res.kind, ...(own?.name ? { name: own.name } : {}), ...process, children: wordParts(w, layer),
       },
     };
   };
@@ -362,7 +365,8 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
     return {
       node: {
         layer, kind: 'aliasWord', label: short(w.text), span, text: aliasText ? own!.explanation : TEXTS.alias[cx.lang](w.text, value),
-        refs: ['6.6'], replacement: value, ...process, children,
+        // (The token of an alias always has its name's facts: the analyzer resolves it.)
+        refs: ['6.6'], replacement: value, name: own!.name!, ...process, children,
       },
       runs: runs?.name ?? short(value),
     };
@@ -482,7 +486,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** A token the command reads, and the tokens under it by their own origins. (A command it runs reads what follows.) */
   const tokenNode = (t: Token, layer: Layer, reader: string): ReadingNode => ({
-    layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}),
+    layer, kind: t.kind, label: t.label, span: t.span, reader, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}),
     // (A word the command reads as a script, which the analyzer says only is a word: `eval ls`.)
     text: t.explanation === TEXTS.word[cx.lang](t.label) && t.children.some((c) => c.origin === 'script') ? TEXTS.again[cx.lang] : t.explanation,
     children: readParts(t.children, false, t.kind === 'command' ? t.label : reader),
@@ -490,7 +494,7 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
 
   /** A token of a string a shell reads as a script; `process`: which shell. */
   const scriptNode = (t: Token, process: ScriptProcess): ReadingNode => ({
-    layer: 'child', ...scriptKind(t), label: t.label, span: t.span, text: t.explanation, ...(t.refs ? { refs: t.refs } : {}), process,
+    layer: 'child', ...scriptKind(t), label: t.label, span: t.span, text: t.explanation, ...(t.refs ? { refs: t.refs } : {}), ...(t.name ? { name: t.name } : {}), process,
     // (What is not the script's is what a command of it reads: `t` is that command.)
     children: t.children.flatMap((c) => (c.origin === 'script' ? [scriptNode(c, process)] : readParts([c], false, t.label))),
   });
@@ -501,10 +505,10 @@ export function readingTree(tree: SyntaxTree, items: readonly Token[], cx: Readi
    */
   const scriptKind = (t: Token): { kind: string; resolves?: NameResolution['kind'] } => {
     if (t.kind === 'builtin') return { kind: 'commandName', resolves: 'builtin' };
-    // (The sections the token cites say which: an alias's, 6.6; a name that is an expansion cites 3.7.1 alone.)
-    const refs = String(t.refs).split(',');
-    if (t.kind === 'function') return refs.includes('6.6') ? { kind: 'aliasWord' } : { kind: 'commandName', resolves: 'function' };
-    if (t.kind === 'command') return { kind: refs.join() === '3.7.1' ? 'expandedName' : 'commandName' };
+    if (t.kind === 'alias') return { kind: 'aliasWord' };
+    if (t.kind === 'function') return { kind: 'commandName', resolves: 'function' };
+    // (A name that is an expansion cites 3.7.1 alone.)
+    if (t.kind === 'command') return { kind: String(t.refs) === '3.7.1' ? 'expandedName' : 'commandName' };
     return { kind: t.kind };
   };
 

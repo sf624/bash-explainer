@@ -58,7 +58,7 @@ export const ui = {
         commandKinds: { argument: 'オペランド' },
         resolves: { alias: 'エイリアス', keyword: '予約語', function: '関数', builtin: 'ビルトイン', file: '外部コマンド', none: '実行されない' },
         tokenKinds: {
-          command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', keyword: 'キーワード', option: 'オプション', argument: '引数',
+          command: '実行', subcommand: 'サブコマンド', builtin: 'ビルトイン', function: '関数', alias: 'エイリアス', keyword: 'キーワード', option: 'オプション', argument: '引数',
           operator: '演算子', redirect: 'リダイレクト', variable: '変数', expansion: '展開', substitution: '置換', string: 'リテラル',
           number: '数値', comment: 'コメント', assignment: '代入', test: '条件', pattern: 'パターン', block: 'ブロック', error: 'エラー',
         },
@@ -137,7 +137,7 @@ export const ui = {
         commandKinds: { argument: 'operand' },
         resolves: { alias: 'alias', keyword: 'reserved word', function: 'function', builtin: 'builtin', file: 'program', none: 'nothing runs' },
         tokenKinds: {
-          command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', keyword: 'keyword', option: 'option', argument: 'argument',
+          command: 'runs', subcommand: 'subcommand', builtin: 'builtin', function: 'function', alias: 'alias', keyword: 'keyword', option: 'option', argument: 'argument',
           operator: 'operator', redirect: 'redirection', variable: 'variable', expansion: 'expansion', substitution: 'substitution', string: 'literal',
           number: 'number', comment: 'comment', assignment: 'assignment', test: 'condition', pattern: 'pattern', block: 'block', error: 'error',
         },
@@ -183,6 +183,14 @@ export function refsText(lang: Lang, refs: readonly string[]): string {
   return ` (${manualLabel(lang, refs)})`;
 }
 
+/**
+ * A token's explanation for an output with no badge (the hover, Markdown, the CLI): with the kind of its command name,
+ * and who runs it, when it is one (`Token.name`): "Print arguments to stdout (builtin)".
+ */
+export function explained(tok: Token): string {
+  return tok.name ? tok.explanation + tok.name.said.short : tok.explanation;
+}
+
 /** Display features that can each be turned on or off. */
 export type Feature = keyof typeof ui.ja.features;
 
@@ -225,7 +233,7 @@ export function placeExamples(ex: LineExplanation): LineExplanation {
 
 /** The colour role of each token kind; the same palette as the panel (media/panel.css). */
 const KIND_ROLE: Record<Kind, Role | 'comment' | 'error'> = {
-  command: 'command', subcommand: 'command', builtin: 'command', function: 'command',
+  command: 'command', subcommand: 'command', builtin: 'command', function: 'command', alias: 'command',
   option: 'option',
   argument: 'argument', string: 'argument', number: 'argument',
   operator: 'operator', keyword: 'operator', block: 'operator', test: 'operator',
@@ -325,7 +333,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
       ? `<i>${colored(p.text, 'comment', theme)}</i>`
       : `<code>${colored(p.text.replace(/\s*\n\s*/g, ' ⏎ '), tok.kind, theme)}</code>`));
     const shown = at && contains(tok, at) ? `<strong>${label}</strong>` : label;
-    out.push(`${'  '.repeat(depth)}- ${shown} — ${tok.explanation}${small(tok.refs)}`);
+    out.push(`${'  '.repeat(depth)}- ${shown} — ${explained(tok)}${small(tok.refs)}`);
     // Indented to the item's content so the example stays inside it; no blank lines keep the list tight.
     const examples = tok.examples?.length ? examplesMarkdown(tok.examples, '  '.repeat(depth + 1)) : [];
     if (placement === 'first') out.push(...examples);
@@ -377,7 +385,7 @@ export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: st
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
   for (const n of ex.notes) out.push(`> ${n}${links(noteRefs(ex, n))}`, '');
   const walk = (tok: Token, depth: number) => {
-    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${tok.explanation}${links(tok.refs)}`);
+    out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`);
     for (const c of tok.children) walk(c, depth + 1);
   };
   for (const item of ex.items) walk(item, 0);

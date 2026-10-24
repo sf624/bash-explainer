@@ -232,7 +232,7 @@ describe('explanations from the execution environment', () => {
     assert.match(about('f() { cd /; }\nf; f | cat', 'cd'), /may run in a subshell \(some of the places its function is called from\)/);
     assert.match(about('f() { cd /; }\nx=$(f); f | cat', 'cd'), /It runs in a subshell \(where its function is called\)/);
     assert.match(about('f() { cd /; }\nx=$(f)', 'cd'), /It runs in a subshell \(where its function is called: `\$\( \)`\)/);
-    assert.strictEqual(about('( cd / )', 'cd', 'ja'), 'カレントディレクトリを移動する（シェル組み込み）。サブシェル（`( )`）で実行されるので、この変更はサブシェルの中だけで、サブシェルが終わると消える');
+    assert.strictEqual(about('( cd / )', 'cd', 'ja'), 'カレントディレクトリを移動する。サブシェル（`( )`）で実行されるので、この変更はサブシェルの中だけで、サブシェルが終わると消える');
     assert.match(about('x=$(exit 1)', 'exit', 'ja'), /。サブシェル（`\$\( \)`）で実行されるので、終わるのはサブシェルだけ（スクリプト全体は終わらない）$/);
     assert.match(about('[ "$1" ] && shopt -s lastpipe\necho | cd /', 'cd', 'ja', 1), /。サブシェル（パイプラインの最後の段で、lastpipe が無効のとき）で実行されることがあり、そのときこの変更はサブシェルの中だけで、サブシェルが終わると消える$/);
     assert.match(about('[ "$1" ] && shopt -s lastpipe\necho | exit', 'exit', 'ja', 1), /で実行されることがあり、そのとき終わるのはサブシェルだけ（スクリプト全体は終わらない）$/);
@@ -242,7 +242,7 @@ describe('explanations from the execution environment', () => {
     // (Every call it sees is in a subshell, but a sourced file may call it in the shell itself.)
     assert.match(about('f() { cd /; }\necho | f; . ./lib.sh', 'cd'), /\. It may run in a subshell \(where its function is called; what the script does not show may call it too\);/);
     assert.match(about('f() { cd /; }\necho | f; . ./lib.sh', 'cd', 'ja'), /サブシェル（関数の呼び出し元。スクリプトに見えない所からも呼ばれうる）で実行されることがあり/);
-    assert.match(about('x | y; cd /', 'cd', 'ja', 0), /^カレントディレクトリを移動する（シェル組み込み）$/);
+    assert.match(about('x | y; cd /', 'cd', 'ja', 0), /^カレントディレクトリを移動する$/);
     assert.match(about('cd / | y', 'cd', 'ja'), /サブシェル（パイプラインの段）/);
     assert.match(about('x=`cd /`', 'cd', 'ja'), /バッククォート の中のサブシェル/);
     // In the shell itself, or as a function: nothing to say.

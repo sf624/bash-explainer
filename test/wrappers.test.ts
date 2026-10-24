@@ -169,7 +169,8 @@ describe('a wrapper cannot run a shell function or builtin', () => {
     for (const [src, label] of [['env echo hi', 'echo'], ['sudo kill -9 1', 'kill'], ['exec test -f x', 'test']]) {
       const t = allTokens(explain(src).items).find((x) => x.label === label)!;
       assert.strictEqual(t.kind, 'command', src);
-      assert.match(t.explanation, /the (coreutils|procps) program/, src);
+      assert.match(t.explanation, /from (coreutils|procps)/, src);
+      assert.strictEqual(t.name?.runs, 'program', src);
     }
     assert.strictEqual(explain('/bin/kill -s TERM 1').items[0].kind, 'command');
     assert.match(explain('/bin/kill -s TERM 1').items[0].explanation, /procps/);

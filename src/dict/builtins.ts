@@ -182,16 +182,16 @@ const BRACKET_READING: Rest = { parser: 'single-dash', operandParser: 'test-expr
  * `-n` and no job specs, printf has no `-v`, and pwd reads `-P` by default.
  */
 const PROGRAMS: Record<string, CommandSpec> = {
-  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils のプログラム）', 'Print arguments to stdout, separated by spaces (the coreutils program)', ECHO_OPTIONS, ECHO_READING),
-  printf: cmd('書式を指定して文字列を出力する（coreutils のプログラム。`-v` はない）', 'Print formatted output (the coreutils program, which has no `-v`)', [], {
+  echo: cmd('引数を空白区切りで標準出力に表示する（coreutils 版）', 'Print arguments to stdout, separated by spaces (from coreutils)', ECHO_OPTIONS, ECHO_READING),
+  printf: cmd('書式を指定して文字列を出力する（coreutils 版。`-v` はない）', 'Print formatted output (from coreutils, with no `-v`)', [], {
     parser: 'letters', example: 'printf', ...args(operand('FORMAT', '書式文字列', 'format string', { lang: 'printf' }), operand('ARG', '書式に埋め込む値', 'value for the format')),
   }),
-  pwd: cmd('カレントディレクトリのパスを表示する（coreutils のプログラム。既定は `-P`）', 'Print the current directory (the coreutils program; `-P` is the default)', [
+  pwd: cmd('カレントディレクトリのパスを表示する（coreutils 版。既定は `-P`）', 'Print the current directory (from coreutils; `-P` is the default)', [
     ['-P|--physical', 'シンボリックリンクを解決した物理パスを表示（既定）', 'print the physical path (default)'],
     ['-L|--logical', '環境変数 `PWD` の論理パスを表示', 'print the logical path from `PWD`'],
     ['--help', 'ヘルプを表示する', 'show help'], ['--version', 'バージョンを表示する', 'print the version'],
   ]),
-  kill: cmd('プロセスにシグナルを送る（procps のプログラム。既定は TERM、ジョブ指定は使えない）', 'Send a signal to a process (the procps program; default TERM, no job specs)', [
+  kill: cmd('プロセスにシグナルを送る（procps 版。既定は TERM、ジョブ指定は使えない）', 'Send a signal to a process (from procps; default TERM, no job specs)', [
     { names: ['-s', '--signal'], text: tx('送るシグナル', 'signal to send'), value: { name: 'SIGNAL', type: 'signal' }, marks: 'signal' },
     ['-q|--queue', 'シグナルと一緒に送る整数', 'integer to send with the signal', 'arg'],
     ['-l|--list', 'シグナル名の一覧を表示（`--list=シグナル` なら名前と番号を直す）', 'list signal names (`--list=SIG` translates one)', 'attached'],
@@ -204,10 +204,10 @@ const PROGRAMS: Record<string, CommandSpec> = {
       ...args(operand('PID', '対象のプロセス ID', 'target PID')).operands!,
     ],
   }),
-  '[': cmd(`${BRACKET_SUMMARY[0]}（coreutils のプログラム）`, `${BRACKET_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, BRACKET_READING),
-  test: cmd(`${TEST_SUMMARY[0]}（coreutils のプログラム）`, `${TEST_SUMMARY[1]} (the coreutils program)`, TEST_OPTIONS, { parser: 'single-dash', operandParser: 'test-expression' }),
-  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils のプログラム）', 'Do nothing and succeed (exit 0; the coreutils program)', [], { parser: 'letters' }),
-  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils のプログラム）', 'Do nothing and fail (exit 1; the coreutils program)', [], { parser: 'letters' }),
+  '[': cmd(`${BRACKET_SUMMARY[0]}（coreutils 版）`, `${BRACKET_SUMMARY[1]} (from coreutils)`, TEST_OPTIONS, BRACKET_READING),
+  test: cmd(`${TEST_SUMMARY[0]}（coreutils 版）`, `${TEST_SUMMARY[1]} (from coreutils)`, TEST_OPTIONS, { parser: 'single-dash', operandParser: 'test-expression' }),
+  true: cmd('何もせず成功（終了ステータス 0）を返す（coreutils 版）', 'Do nothing and succeed (exit 0; from coreutils)', [], { parser: 'letters' }),
+  false: cmd('何もせず失敗（終了ステータス 1）を返す（coreutils 版）', 'Do nothing and fail (exit 1; from coreutils)', [], { parser: 'letters' }),
 };
 
 /**

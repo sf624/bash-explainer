@@ -16,7 +16,7 @@ export type ColourRole = HighlightKind | 'argument';
  * block (groups, loop bodies) take the colour of a command, a variable and an operator.
  */
 export const PANEL_KIND_ROLE: Record<Kind, ColourRole> = {
-  command: 'command', subcommand: 'command', builtin: 'builtin', function: 'function', keyword: 'keyword', option: 'option',
+  command: 'command', subcommand: 'command', builtin: 'builtin', function: 'function', alias: 'function', keyword: 'keyword', option: 'option',
   argument: 'argument', operator: 'operator', redirect: 'redirect', variable: 'variable', expansion: 'variable', substitution: 'substitution',
   string: 'string', number: 'number', comment: 'comment', assignment: 'assignment', test: 'operator', pattern: 'glob', block: 'operator', error: 'error',
 };

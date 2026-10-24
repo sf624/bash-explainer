@@ -247,7 +247,7 @@ code {
   border-radius: 3px;
 }
 
-.kind-command, .kind-subcommand, .kind-builtin, .kind-function { color: var(--c-command); }
+.kind-command, .kind-subcommand, .kind-builtin, .kind-function, .kind-alias { color: var(--c-command); }
 .kind-option { color: var(--c-option); }
 .kind-pattern { color: var(--c-pattern); }
 .kind-argument, .kind-string { color: var(--c-argument); }
@@ -1036,6 +1036,58 @@ body.vscode-high-contrast-light #reading-tree li.band {
   outline-offset: -1px;
 }
 
+/* What a command name is (media/panel.js `nameBadge`, src/namefacts.ts), in both views: a badge with the kind's
+   word after the name, then who looks the name up when another command does, and a muted line on the other
+   meanings of the same name. The word is in the foreground colour; the edge only repeats the role's colour: solid
+   for bash's own (a keyword, a builtin, a function, an alias), dashed for a program, a file started as another
+   process, and dotted where nothing runs. */
+.nk-badge {
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--c-command);
+  border-radius: 3px;
+  padding: 0 0.35em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.nk-badge.nk-keyword {
+  border-color: var(--c-keyword);
+}
+
+.nk-badge.nk-program {
+  border-style: dashed;
+  border-color: var(--vscode-foreground);
+}
+
+.nk-badge.nk-none {
+  border-style: dotted;
+  border-color: var(--vscode-foreground);
+}
+
+.nk-by {
+  font-size: 0.85em;
+  color: var(--c-muted);
+  font-style: italic;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.nk-also {
+  display: block;
+  color: var(--c-muted);
+  font-size: 0.9em;
+  margin-top: 0.1rem;
+  overflow-wrap: anywhere;
+}
+
+.trow .nk-also {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 @media (forced-colors: active) {
   #reading-tree li.band {
     background: none;
@@ -1050,6 +1102,19 @@ body.vscode-high-contrast-light #reading-tree li.band {
 
   .trow .chip,
   .trow .band-label {
+    color: CanvasText;
+  }
+
+  .nk-badge,
+  .nk-badge.nk-keyword,
+  .nk-badge.nk-program,
+  .nk-badge.nk-none {
+    color: CanvasText;
+    border-color: CanvasText;
+  }
+
+  .nk-by,
+  .nk-also {
     color: CanvasText;
   }
 

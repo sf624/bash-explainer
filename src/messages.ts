@@ -1,4 +1,5 @@
 import type { Lang, Text } from './i18n';
+import type { NameFacts, NameKind } from './semantics/names';
 import type { ShebangRefusal } from './semantics/state';
 
 // The message catalog: the notes and pitfalls that render a fact of the semantic models (src/semantics/: the shell
@@ -371,4 +372,80 @@ export type { Words };
  */
 export function said(facts: readonly Fact[], pitfalls: boolean | undefined): Fact[] {
   return facts.filter((f) => f.kind !== 'pitfall' || pitfalls !== false);
+}
+
+// ---------------------------------------------------------------- what a command name is (3.7.2; src/semantics/names.ts `nameFacts`)
+
+/**
+ * The words of the kinds of a command name: the badge (`word`), what the kind is (`title`), how a line on the other
+ * meanings names it (`other`, with `detail` after it), and the sections of the manual about it.
+ */
+const NAME_KINDS: Record<NameKind, { word: Text; title: Text; other: Text; refs: readonly string[] }> = {
+  keyword: {
+    word: { ja: '予約語', en: 'keyword' }, refs: ['3.2.1'], other: { ja: '予約語', en: 'a reserved word' },
+    title: { ja: 'bash の構文の単語（予約語）。コマンドとして探されない', en: 'bash syntax (a reserved word): not looked up as a command' },
+  },
+  alias: {
+    word: { ja: 'エイリアス', en: 'alias' }, refs: ['6.6'], other: { ja: 'エイリアス', en: 'an alias' },
+    title: { ja: 'エイリアス: bash が行を読むときに、その中身に置き換える', en: 'an alias: bash replaces it with its text when it reads the line' },
+  },
+  function: {
+    word: { ja: '関数', en: 'function' }, refs: ['3.3'], other: { ja: 'このスクリプトの関数', en: 'the function of this script' },
+    title: { ja: 'このスクリプトの関数: 今のシェルで動く', en: 'a function of this script: it runs in this shell' },
+  },
+  builtin: {
+    word: { ja: 'ビルトイン', en: 'builtin' }, refs: ['4.1', '4.2'], other: { ja: 'bash のビルトイン', en: 'bash\'s builtin' },
+    title: { ja: 'bash に組み込まれたコマンド: 新しいプロセスなしで、今のシェルで動く', en: 'a command built into bash: it runs in this shell, with no new process' },
+  },
+  program: {
+    word: { ja: 'プログラム', en: 'program' }, refs: ['3.7.2'], other: { ja: 'プログラム', en: 'a program' },
+    title: { ja: 'プログラム: PATH から（パスならそのパスで）見つけたファイルを、別のプロセスとして動かす', en: 'a program: a file found in PATH (or at the path given), run as another process' },
+  },
+  none: {
+    word: { ja: '実行されない', en: 'nothing runs' }, refs: ['4.2'], other: { ja: '何もない', en: 'nothing' },
+    title: { ja: '何も実行されない（`builtin` は組み込みコマンドしか探さない）', en: 'nothing runs (`builtin` looks only for builtins)' },
+  },
+};
+
+/** What the panel and the other outputs say of a command name, in one language (`nameSaid`). */
+export interface NameSaid {
+  /** The badge: the kind's word. */
+  kind: string;
+  /** What the kind is: the badge's tooltip. */
+  title: string;
+  /** "run by `sudo`": the command that looks the name up. */
+  by?: string;
+  /** The line on what else the same name is, and how to reach it (only on a name with another meaning). */
+  also?: string;
+  /** The kind (and who runs it) for an output with no badge: " (builtin)", "（プログラム。`sudo` が実行）". */
+  short: string;
+  refs: readonly string[];
+}
+
+/** The texts of the facts of a command name, in `lang`. */
+export function nameSaid(lang: Lang, f: NameFacts): NameSaid {
+  const k = NAME_KINDS[f.runs];
+  const ja = lang === 'ja';
+  const codes = (cs: string[]): string => {
+    const q = cs.map((c) => `\`${c}\``);
+    return ja ? q.join('・') : q.length > 1 ? `${q.slice(0, -1).join(', ')} or ${q[q.length - 1]}` : q[0];
+  };
+  // (A program that looks the name up runs the program even where bash has a builtin of that name: `sudo echo`.)
+  const program = f.by !== undefined && f.runs === 'program' && f.also.some((o) => o.kind === 'builtin' && !o.off);
+  const lines: string[] = program ? [ja ? `\`${f.by}\` が名前を探すので、これはプログラムで、bash のビルトインではない` : `\`${f.by}\` looks the name up, so this is the program, not bash's builtin`] : [];
+  const others = f.also.filter((o) => !(program && o.kind === 'builtin')).map((o) => {
+    const detail = o.kind === 'keyword' ? (ja ? 'クォートせずにコマンドの先頭に書いたとき' : 'where it starts a command unquoted')
+      : o.off ? (ja ? `\`enable -n\` で無効。\`enable ${f.name}\` で有効に戻る` : `turned off by \`enable -n\` (\`enable ${f.name}\` turns it on again)`) : o.path ? (ja ? `ふつうは \`${o.path}\`` : `usually \`${o.path}\``) : '';
+    const reach = o.reach.length ? (ja ? `${codes(o.reach)} で動く` : `run with ${codes(o.reach)}`) : '';
+    const name = NAME_KINDS[o.kind].other[lang];
+    if (ja) return [detail, reach].some(Boolean) ? `${name}（${[detail, reach].filter(Boolean).join('。')}）` : name;
+    return `${name}${detail ? `, ${detail}` : ''}${reach ? ` (${reach})` : ''}`;
+  });
+  if (others.length) lines.push(ja ? `同じ名前で、ほかに: ${others.join('、')}` : `Same name, also: ${others.join('; ')}`);
+  const by = f.by === undefined ? undefined : ja ? `\`${f.by}\` が実行` : `run by \`${f.by}\``;
+  return {
+    kind: k.word[lang], title: k.title[lang], ...(by ? { by } : {}), ...(lines.length ? { also: lines.join(ja ? '。' : '. ') } : {}),
+    short: ja ? `（${k.word.ja}${by ? `。${by}` : ''}）` : ` (${k.word.en}${by ? `, ${by}` : ''})`,
+    refs: f.also.length || by ? [...new Set([...k.refs, '3.7.2'])] : k.refs,
+  };
 }
