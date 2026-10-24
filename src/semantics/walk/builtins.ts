@@ -304,10 +304,16 @@ export class WalkBuiltins {
       const name = o.name;
       // A local variable starts afresh, hiding the one outside, from here to the end of the function.
       if (local && !frame.saved.has(name)) {
-        frame.saved.set(name, st.variables.get(name));
-        // (With localvar_inherit, it starts with the value and attributes of the one it hides: not followed.)
+        const hidden = st.variables.get(name);
+        // bash refuses a local copy of a readonly global variable ("readonly variable"), which stays as it is; a
+        // caller's readonly local may be hidden.
+        if (hidden?.attrs.r?.state === 'on' && !this.w.frames.some((f) => f.saved.has(name))) continue;
+        frame.saved.set(name, hidden);
+        // It keeps the export attribute of the one it hides, and no other (bash's make_local_variable). (With
+        // localvar_inherit, it starts with the value and attributes of the one it hides: not followed.)
+        const x = hidden?.attrs.x;
         const inherit = option(st, 'shopt', 'localvar_inherit');
-        st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: {}, at: n });
+        st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: x && x.state !== 'off' ? { x: { state: x.state, at: n } } : {}, at: n });
       }
       // `declare -g x` while `x` is local: the global one.
       const global = on.includes('g') ? this.w.frames.find((f) => f.saved.has(name)) : undefined;
