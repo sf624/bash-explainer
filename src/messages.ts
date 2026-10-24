@@ -264,6 +264,12 @@ export const MESSAGES = {
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
+  // (`set -u` on every path, and no value on every path: src/semantics/unbound.ts, `unboundRead`.)
+  'nounset-unbound': pitfall<{ v: string; name: string; exits: 'script' | 'subshell' | 'shell'; fix?: string }>(['4.3.1', '3.5.3'], ({ v, name, exits, fix }) => [
+    `ここでは \`${v}\` に値が設定されていない。\`set -u\` が有効なので、bash は \`${v}: unbound variable\` のエラーを出し、${exits === 'script' ? 'スクリプトが終了する' : exits === 'subshell' ? 'これを実行するサブシェルが終了する' : 'これを実行するシェルが終了する'}（\`${name}\` が環境変数から来るときを除く）。`
+      + (fix ? `設定されていないことがあるなら \`${fix}\` と書く` : 'この前で値を設定しておく'),
+    `\`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : 'the shell running it exits'} (unless \`${name}\` comes from the environment). `
+      + (fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line')]),
   'redirect-by-your-shell': pitfall(['3.6', '3.7.3'], () => [
     'リダイレクト（`>`）は sudo ではなく今のシェルが、今のユーザーの権限で行います。root しか書けないファイルには `… | sudo tee ファイル` を使います',
     'the redirection (`>`) is done by your own shell with your rights, not by sudo. For a file only root can write, use `… | sudo tee file`']),

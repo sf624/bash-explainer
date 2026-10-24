@@ -1085,6 +1085,7 @@
  "set -o posix\nV=1 :",
  "set -o posix\nalias [=echo\n[ -f c ]",
  "set -o posix\nx=1 $cmd",
+ "set -u\necho x",
  "setopt extended_glob\nprint ${(j:,:)arr}",
  "setpath([{\"start\": 1, \"end\": null}]; 1)",
  "setsid",

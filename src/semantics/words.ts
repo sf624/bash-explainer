@@ -870,7 +870,7 @@ const unreliableInWordsCache = new WeakMap<SyntaxNode, Set<string>>();
  * (A simple command expands its words, or makes its assignments, before its redirections: what those assign does
  * not reach them.)
  */
-function unreliableNames(n: SyntaxNode): Set<string> {
+export function unreliableNames(n: SyntaxNode): Set<string> {
   let top = n;
   let open = true;
   for (let x = n.parent; x; x = x.parent) {

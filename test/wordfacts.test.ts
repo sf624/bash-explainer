@@ -7,6 +7,8 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { shellState } from '../src/semantics/state';
 import { wordFacts } from '../src/wordfacts';
 import { runBash } from './support/bash';
+import { unboundRead } from '../src/semantics/unbound';
+import { descendants } from '../src/syntax/tree';
 
 let parser: Parser;
 
@@ -139,4 +141,80 @@ describe('an unquoted path that quotes would change', () => {
       assert.notStrictEqual(run(`"${word}"`), run(word));
     });
   }
+});
+
+describe('word facts: an unset variable under set -u', () => {
+  const unbound = (src: string, line: number, lang: 'en' | 'ja' = 'en'): string[] =>
+    facts(src, line, lang).filter((f) => f.id === 'nounset-unbound').map((f) => f.text);
+  // [script, line, variable, whether the fix is `${v:-}`, what exits]. (Bash fails on each: test/fixtures/probes/words.json has rows of them.)
+  const S = 'the script exits';
+  const fires: [string, number, string, boolean, string][] = [
+    ['set -u\necho "$dir"', 1, 'dir', true, S],
+    ['set -u\necho ${dir}', 1, 'dir', true, S],
+    ['set -o nounset\necho $dir', 1, 'dir', true, S],
+    ['#!/bin/bash -eu\necho $dir', 1, 'dir', true, S],
+    ['#!/usr/bin/env -S bash -e -o nounset\necho $dir', 1, 'dir', true, S],
+    ['set -u\ndeclare x\necho ${#x}', 2, 'x', false, S],
+    ['set -u\nx=1; unset x\necho ${x:1} ${x#a}', 2, 'x', false, S],
+    ['set -u\necho ${b[0]}', 1, 'b[0]', true, S],
+    ['set -u\ndeclare -A m\necho "${m[k]}"', 2, 'm[k]', true, S],
+    ['set -u\ndeclare n\necho $((n + 1))', 2, 'n', false, S],
+    ['set -u\ndeclare n\necho $(( (n) ? 1 : 2 )) $(( -n ))', 2, 'n', false, S],
+    ['set -u\nf() { local v; echo "$v"; }\nf', 1, 'v', true, S],
+    ['set -u\nf() {\n  echo "$y"\n}\nf\ny=1', 2, 'y', true, S],
+    ["set -u\ntrap 't=1' EXIT\necho \"$t\"", 2, 't', true, S],
+    ['set -u\necho $_x', 1, '_x', true, S],
+    // (A redirection the shell makes itself: of a builtin, a function, a compound command or no command.)
+    ['set -u\necho hi > "$f"', 1, 'f', true, S],
+    ['set -u\nread -r x <<< "$h"', 1, 'h', true, S],
+    ['set -u\ng() { :; }\ng > "$f"', 2, 'f', true, S],
+    ['set -u\n{ :; } > "$f"', 1, 'f', true, S],
+    ['set -u\nx=$(echo "$s")', 1, 's', true, 'the subshell running it exits'],
+    ['set -u\necho "$s" | cat', 1, 's', true, 'the subshell running it exits'],
+    // (Called in a subshell and in the script.)
+    ['set -u\nf() {\n  echo "$s"\n}\nf\nx=$(f)', 2, 's', true, 'the shell running it exits'],
+  ];
+  for (const [src, line, v, fix, exits] of fires) {
+    it(`says ${v} is unset in ${JSON.stringify(src)}`, () => {
+      const [text, ...more] = unbound(src, line);
+      assert.ok(text, `${src}: (none)`);
+      assert.deepStrictEqual(more, []);
+      assert.ok(text.startsWith(`⚠ Pitfall: \`${v}\` is not set here: with \`set -u\` on, bash fails with "${v}: unbound variable" and ${exits} (unless \`${v.replace(/\[.*/, '')}\` comes from the environment)`), text);
+      assert.ok(text.endsWith(fix ? `write \`\${${v}:-}\`` : 'Set it before this line'), text);
+    });
+  }
+  const quiet = [
+    'echo "$dir"', 'set -u\nset +u\necho $dir', 'set -u\ndir=1\necho $dir', 'set -u\necho "${x:-}" "${x-d}" "${x+p}" "${x:+p}" "${x?}" "${x=v}"',
+    'set -u\na=()\necho "${a[@]}" "${a[*]}" ${#a[@]} ${!a}', 'set -u\n[[ -v x ]]', 'set -u\necho "$1" "$@" "$*" $# $?', 'set -u\necho $HOMEDIR',
+    'set -u\nif [ -e f ]; then c=1; fi\necho "$c"', 'set -u\nif false; then\n  echo "$c"\nfi', 'set -u\nwhile read -r w; do echo "$q"; q=1; done',
+    'set -u\nread -r z\necho "$z"', 'set -u\na1=1 a2=$a1', 'set -u\nsource ./lib.sh\necho $x', 'set -u\neval "$cmd"\necho $x',
+    'set -u\ncat <<E\n$hd\nE', 'set -u\nf() { echo "$y"; }', 'set -u\nf() { echo "$y"; }\nexport -f f\nf', 'set -u\nf() { echo "$y"; }\nf\ny=1\nf',
+    'set -u\ndeclare -n r\necho $r', 'set -u\ndeclare n\necho $(( 1 || n )) $(( 0 && n )) $(( 0 ? n : 1 )) $(( 1 ? 1 : n )) $(( n = 1 ))',
+    'set -u\necho $(( k = 2, k + 1 ))', 'set -u\necho ${x:=1} $x', 'set -u\necho $(( nn + 1 ))', "set -u\ntrap 't=1' USR1\necho $t",
+    'set -u\necho ${x[$i]} ${x[@]}', 'set -u\necho ${!x}', 'set -u\nfor x in $x; do :; done', 'set -u\necho ${x\n}',
+    'set -u\ncat < "$f"', 'set -u\ncat <<< "$h"', 'set -u\n$cmd > "$f"', "set -u\n'e'cho hi > \"$f\"", 'set -u\n\'e\'cho hi > "$f"', 'set -u\nx=$(cat < "$f")',
+    '#!/bin/bash -e\necho $dir', '#!/bin/bash -o nounset\necho $dir', '#!/usr/bin/env bash -u\necho $dir', '#!/bin/sh -u\necho $dir',
+  ];
+  for (const src of quiet) {
+    it(`says nothing of ${JSON.stringify(src)}`, () => {
+      for (let line = 0; line < src.split('\n').length; line++) assert.deepStrictEqual(unbound(src, line), [], `line ${line}`);
+    });
+  }
+  it('says only the first, where bash stops', () => {
+    const [text, ...more] = unbound('set -u\necho $a $b', 1);
+    assert.match(text, /`a` is not set/);
+    assert.deepStrictEqual(more, []);
+    // (A subshell that exits does not stop the script.)
+    assert.strictEqual(unbound('set -u\nx=$(echo "$a"); echo $b', 1).length, 2);
+  });
+  it('speaks Japanese', () => {
+    assert.match(unbound('set -u\necho $dir', 1, 'ja')[0], /^⚠ 落とし穴: ここでは `dir` に値が設定されていない。`set -u` が有効なので、bash は `dir: unbound variable` のエラーを出し、スクリプトが終了する.*`\$\{dir:-\}` と書く$/);
+    assert.match(unbound('set -u\ndeclare x\necho ${#x}', 2, 'ja')[0], /この前で値を設定しておく$/);
+    assert.match(unbound('set -u\nx=$(echo "$s")', 1, 'ja')[0], /これを実行するサブシェルが終了する/);
+    assert.match(unbound('set -u\nf() {\n  echo "$s"\n}\nf\nx=$(f)', 2, 'ja')[0], /これを実行するシェルが終了する/);
+  });
+  it('reads only expansions and names in arithmetic', () => {
+    const tree = parser.parse('set -u\necho x');
+    assert.strictEqual(unboundRead(descendants(tree.root, ['word']).pop()!, shellState(tree)), undefined);
+  });
 });

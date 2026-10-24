@@ -24,6 +24,7 @@
 // The walk is in src/semantics/walk/ (walker.ts and its parts); the state it carries, in src/semantics/shellstate.ts.
 import type { Shell } from '../dialect';
 import { ancestor, field, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
+import { SET_LETTERS } from './effects';
 import { EnvModel, type ExecEnv, MAIN_SHELL, type SlotLink } from './env';
 import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scriptText, slotShell } from './nested';
 import type { ShellState } from './shellstate';
@@ -93,6 +94,8 @@ export interface StateModel {
   condition(n: SyntaxNode): Decision | undefined;
   /** Why no condition of the script is decided, if so (src/semantics/trust.ts): `source`, `$cmd`… */
   readonly blind: string | undefined;
+  /** Whether every call of the function `name` is one the walk sees (src/semantics/trust.ts), so its body's states are those of its calls. */
+  closed(name: string): boolean;
   /**
    * Whether the statement `n` runs only in code that never runs here: a branch whose condition is decided, or after
    * `break`, `continue`, `return` or `exit`.
@@ -278,30 +281,52 @@ function childModel(script: NestedScript): StateModel {
 
 const models = new WeakMap<SyntaxTree, Map<string, StateModel>>();
 
+/** What the shebang of a script gives the shell it starts: POSIX mode, and the `set` options of its letters (`-eu`). */
+interface ShebangStart { posix: boolean; set: Map<string, 'on' | 'off'> }
+
 /**
- * Whether the shebang of the script starts bash in POSIX mode: `#!/bin/bash --posix` (the kernel passes the rest of
- * the line as one argument, so `#!/bin/bash --posix -e` is an error, not POSIX mode), or through `env -S` (env splits
- * it, as one word `-S`): `bash --posix` (bash reads its long options before the others), `bash -o posix`, or
- * `POSIXLY_CORRECT=… bash`.
+ * What the shebang starts bash with: the kernel passes the rest of the line as one argument, so `#!/bin/bash -eu`
+ * turns on `errexit` and `nounset`, `#!/bin/bash --posix` is POSIX mode, and `#!/bin/bash --posix -e` is an error,
+ * not POSIX mode. Through `env -S` (env splits it, as one word `-S`): `bash --posix` (bash reads its long options
+ * before the others), `bash -o posix`, `POSIXLY_CORRECT=… bash`, and the letters and `-o` names of `set` (`-e -u`,
+ * `-o nounset`). Undefined when the shebang does not start bash.
  */
-export function shebangPosix(root: SyntaxNode): boolean {
+function shebangStart(root: SyntaxNode): ShebangStart | undefined {
   const m = /^#![ \t]*(\S+)[ \t]*([^\n]*?)[ \t]*(?:\n|$)/.exec(root.text);
-  if (!m) return false;
+  if (!m) return undefined;
   const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-  if (base(m[1]) === 'bash') return m[2] === '--posix';
+  const set = new Map<string, 'on' | 'off'>();
+  const letters = (cluster: string): void => {
+    for (const letter of cluster.slice(1)) if (SET_LETTERS[letter]) set.set(SET_LETTERS[letter], cluster[0] === '-' ? 'on' : 'off');
+  };
+  if (base(m[1]) === 'bash') {
+    if (/^[-+][a-zA-Z]+$/.test(m[2]) && !m[2].includes('o')) letters(m[2]);
+    return { posix: m[2] === '--posix', set };
+  }
   const words = m[2].split(/[ \t]+/);
-  if (base(m[1]) !== 'env' || words[0] !== '-S') return false;
+  if (base(m[1]) !== 'env' || words[0] !== '-S') return undefined;
   let i = 1;
   let posix = false;
   for (; /^\w+=/.test(words[i] ?? ''); i++) posix ||= words[i].startsWith('POSIXLY_CORRECT=');
-  if (base(words[i] ?? '') !== 'bash') return false;
+  if (base(words[i] ?? '') !== 'bash') return undefined;
   for (i++; words[i]?.startsWith('--') && words[i] !== '--'; i++) posix ||= words[i] === '--posix';
   // (Then the short options: each `o` of a cluster takes the next word, `-ox posix` too.)
   for (; /^[-+][a-zA-Z]+$/.test(words[i] ?? ''); i++) {
     const cluster = words[i];
-    for (const letter of cluster.slice(1)) if (letter === 'o' && words[++i] === 'posix') posix = cluster[0] === '-';
+    letters(cluster);
+    for (const letter of cluster.slice(1)) {
+      if (letter !== 'o') continue;
+      const name = words[++i];
+      if (name === 'posix') posix = cluster[0] === '-';
+      else if (name) set.set(name, cluster[0] === '-' ? 'on' : 'off');
+    }
   }
-  return posix;
+  return { posix, set };
+}
+
+/** Whether the shebang of the script starts bash in POSIX mode (`shebangStart`). */
+export function shebangPosix(root: SyntaxNode): boolean {
+  return shebangStart(root)?.posix ?? false;
 }
 
 /**
@@ -321,7 +346,13 @@ export function shellState(tree: SyntaxTree, shell?: Shell, opts: { posix?: bool
   if (!byKey) models.set(tree, (byKey = new Map()));
   const hit = byKey.get(key);
   if (hit) return hit;
-  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, (w) => w.initial(tree.root), undefined, host);
+  // (The `set` options of the shebang, `#!/bin/bash -eu`, when the script is bash's.)
+  const set = !shell || shell === 'bash' ? shebangStart(tree.root)?.set : undefined;
+  const start = (w: Walker): ShellState => {
+    const st = w.initial(tree.root);
+    return set?.size ? { ...st, set: st.set.withAll(set) } : st;
+  };
+  const model = buildModel(tree, shell, posix, 0, MAIN_SHELL, start, undefined, host);
   byKey.set(key, model);
   return model;
 }
@@ -354,11 +385,12 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     initial = start(w);
     end = w.program(tree.root, initial);
   }
+  // (A walk that found a reason to trust nothing on the way trusts no function either.)
+  const closed = (name: string): boolean => !found && trust.closed(name);
   // (The model's `at` is defined below; the environments ask for it only later.)
   const envs = new EnvModel({
     run: (n) => model.at(n).run, calls: w.calls, shell,
-    // (A walk that found a reason to trust nothing on the way trusts no function either.)
-    closed: (name) => !found && trust.closed(name),
+    closed,
     // (The root of a string this shell runs, `eval`'s, runs where the slot does; any other, where this tree does: a
     // function another shell imports.)
     base: (root) => scripts.byRoot.get(root)?.env ?? base,
@@ -377,6 +409,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     shell,
     trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,
+    closed,
     env: (n) => envs.at(n),
     calls: w.calls,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),

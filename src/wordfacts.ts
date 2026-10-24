@@ -5,6 +5,7 @@ import type { Shell } from './dialect';
 import { args, commandName, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import type { StateModel } from './semantics/state';
+import { unboundRead } from './semantics/unbound';
 import { partMeaning } from './semantics/words';
 import { field, prefixAssignments, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
@@ -63,8 +64,21 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
   };
 
+  // (After an unset read where the script exits, the rest of the line never runs.)
+  let stopped = false;
   const check = (n: SyntaxNode) => {
     switch (n.type) {
+      case 'simple_expansion': case 'expansion': case 'variable_name': {
+        // `set -u` and a variable with no value: bash fails here.
+        const u = stopped ? undefined : unboundRead(n, model);
+        if (u) {
+          stopped = u.exits === 'script';
+          // (`${x:-}` in place of `$x` or `${x}`, `${a[0]:-}` of `${a[0]}`; another form gets its value first.)
+          const plain = n.type === 'simple_expansion' || n.text === `\${${u.shown}}`;
+          add(fact(lang, 'nounset-unbound', { v: u.shown, name: u.name, exits: u.exits, ...(plain ? { fix: `\${${u.shown}:-}` } : {}) }));
+        }
+        break;
+      }
       case 'command': {
         const name = commandName(n);
         const a = args(n);

@@ -572,11 +572,466 @@
   {
     "manual": "4.3.1",
     "snippet": "set -u; @PROBE:a@ \"$nope\"; @PROBE:b@ ok",
+    "unbound": [
+      "a"
+    ],
     "facts": {
       "a": [],
       "b": [],
       "status": 1,
       "stderr": "SCRIPT: line 1: nope: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; declare x; @PROBE:a@ \"$x\"; @PROBE:b@ ${#x}",
+    "unbound": [
+      "a",
+      "b"
+    ],
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=1; unset x; @PROBE:a@ ${x:1}",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { @PROBE:a@ \"$y\"; }; y=1; f",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { @PROBE:a@ \"$y\"; }; f; y=1",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { @PROBE:a@ \"$y\"; }; f; y=1; f",
+    "gaps": {
+      "a": "the body runs with `y` unset at the first call and set at the second: its state is of both"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { @PROBE:a@ \"$y\"; }; export -f f; f",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: y: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; f() { local v; @PROBE:a@ \"$v\"; }; f",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: v: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if [ -e a.txt ]; then c=1; fi; @PROBE:a@ \"$c\"",
+    "gaps": {
+      "a": "the files of the directory are not known to the model: `c` is set on one path only"
+    },
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; if false; then @PROBE:a@ \"$c\"; fi; @PROBE:b@ ok",
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; for i in 1 2; do @PROBE:a@ \"$q\"; q=1; done",
+    "gaps": {
+      "a": "the loop body runs with `q` unset first and set after: its state is of both"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: q: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; read -r z; @PROBE:a@ \"$z\"",
+    "gaps": {
+      "a": "what `read` reads is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"${x:-}\" \"${x-d}\" \"${x+p}\" \"${x:+p}\" \"${x=v}\" \"$x\"",
+    "gaps": {
+      "a": "`${x=v}` assigns `x` in the statement, so `$x` after it is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "",
+          "d",
+          "",
+          "",
+          "v",
+          "v"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; a=(); @PROBE:a@ \"${a[@]}\" ${#a[@]}; @PROBE:b@ \"${a[0]}\"",
+    "gaps": {
+      "a": "array values are not followed",
+      "b": "array values are not followed"
+    },
+    "facts": {
+      "a": [
+        [
+          "0"
+        ]
+      ],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: a[0]: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; declare -A m; @PROBE:a@ \"${m[k]}\"",
+    "unbound": [
+      "a"
+    ],
+    "gaps": {
+      "a": "a subscript is not followed by the fields (the note on `set -u` reads it)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: m[k]: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; [[ -v x ]]; @PROBE:a@ ok",
+    "facts": {
+      "a": [
+        [
+          "ok"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "@PROBE:a@ \"$x\"; set -u; @PROBE:b@ \"$x\"",
+    "unbound": [
+      "b"
+    ],
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; set +u; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [
+        [
+          ""
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -o nounset; @PROBE:a@ \"$x\"",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "#!/bin/bash -u\n@PROBE:a@ \"$x\"",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 2: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "#!/bin/bash -eu\n@PROBE:a@ \"$x\"",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 2: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; declare n; @PROBE:a@ $((n + 1))",
+    "unbound": [
+      "a"
+    ],
+    "gaps": {
+      "a": "an arithmetic expansion is not evaluated with the values of variables (the note on `set -u` reads its names)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: n: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; declare n; @PROBE:a@ $((1 || n)) $((0 ? n : 2)) $((n = 3))",
+    "gaps": {
+      "a": "an arithmetic expansion is not evaluated with the values of variables"
+    },
+    "facts": {
+      "a": [
+        [
+          "1",
+          "2",
+          "3"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ $((nn + 1))",
+    "gaps": {
+      "a": "arithmetic reads `nn`, which the script never sets: its value may come from the environment as an expression, so nothing is trusted"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: nn: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; trap 't=1' EXIT; @PROBE:a@ \"$t\"",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: t: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; a1=1 a2=$a1; @PROBE:a@ \"$a2\"",
+    "facts": {
+      "a": [
+        [
+          "1"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"$1\"",
+    "gaps": {
+      "a": "positional parameters are not followed (4.7)"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: $1: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; x=$(@PROBE:a@ \"$s\"); @PROBE:b@ after",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: s: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"$x\" || @PROBE:b@ or",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; source /dev/null; @PROBE:a@ \"$x\"",
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: x: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; cat <<E >/dev/null\n$h\nE\n@PROBE:a@ after",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: h: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"$HOMEDIR\"",
+    "gaps": {
+      "a": "a name in capitals may come from the environment"
+    },
+    "facts": {
+      "a": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: HOMEDIR: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ \"$s\" | cat; @PROBE:b@ after",
+    "unbound": [
+      "a"
+    ],
+    "facts": {
+      "a": [],
+      "b": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: s: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; cat < \"$f\"; @PROBE:a@ after",
+    "facts": {
+      "a": [
+        [
+          "after"
+        ]
+      ],
+      "status": 0,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
+    }
+  },
+  {
+    "manual": "4.3.1",
+    "snippet": "set -u; @PROBE:a@ > \"$f\"; @PROBE:b@ after",
+    "facts": {
+      "a": [],
+      "b": [],
+      "status": 1,
+      "stderr": "SCRIPT: line 1: f: unbound variable"
     }
   },
   {
