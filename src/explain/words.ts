@@ -1,0 +1,503 @@
+// The explanation of words and the expansions in them (docs/design/analyzer.md, step 4): plain words and quoted
+// strings, quote removal, brace and tilde expansion, globs and the options that change them, variables and what
+// word splitting and globbing do to them, arrays and arithmetic. What a word does in its context comes from the
+// model (src/semantics/words.ts, through src/explain/reads.ts); a `${…}` is src/expansion-tokens.ts, which reads
+// the descriptions and notes of variables from here.
+import type { Kind, Token } from '../analyzer-types';
+import { type ArithLiteral, arithLiteral, describeArithLiteral, evalArith, evalArithWrapping } from '../arith';
+import { visible } from '../ctlchars';
+import { ciVariables } from '../dict/ciVariables';
+import { specialVariables, wellKnownVariables } from '../dict/syntax';
+import { explainGlob, globIntro, type GlobTarget, hasGlob } from '../embedded/glob';
+import { braceExpand, extglobs, hasGlobstar, ShellWordsUnsupported } from '../examples/shellwords';
+import { shorten } from '../label';
+import { fact } from '../messages';
+import { spanOf } from '../noteanchors';
+import { attribute, docLine } from '../semantics/state';
+import { partMeaning, underscoreValue } from '../semantics/words';
+import { decodedText, splitElement, staticWordValue, unquoteWord } from '../staticword';
+import { ancestor, assignmentsOnly, field, type SyntaxNode } from '../syntax/tree';
+import { claim } from '../tokenmarks';
+import type { Explainer } from './context';
+import { fromEmbedded, same, sibling, sortTokens } from './nodes';
+import { globOff, globState, inArithmetic, isAssoc, shoptAt, unquotedWord, wordAt } from './reads';
+import { pidNote } from './where';
+
+/** `braceExpand` of an unquoted word: undefined when it has no brace expansion, null when it gives too many words to list. */
+export function braceExpansion(text: string): string[] | undefined | null {
+  try {
+    return braceExpand(text);
+  } catch (e) {
+    // braceExpand throws nothing else; a guard against a bug there.
+    /* c8 ignore next */
+    if (!(e instanceof ShellWordsUnsupported)) throw e;
+    return null;
+  }
+}
+
+export function word(cx: Explainer, n: SyntaxNode): Token {
+  const text = n.text;
+  const t = tilde(cx, n);
+  if (t) return t;
+  const off = hasGlob(text) && globOff(cx, n);
+  if (off) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + off);
+  if (hasGlob(text) && notGlobbedHere(cx, n)) return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + notGlobbedHere(cx, n));
+  if (hasGlob(text)) return { ...cx.tok(n, 'pattern', globIntro(cx.lang, 'file') + globNotes(cx, text, n), globChildren(cx, n, text, 0)), refs: ['3.5.8'] };
+  return cx.tok(n, 'argument', cx.s(`文字列 \`${text}\``, `Word \`${text}\``) + valueNote(cx, n) + braceVarNote(cx, text));
+}
+
+export function string(cx: Explainer, n: SyntaxNode): Token {
+  // `$"…"`: a `$` and a string, in the same node or beside each other.
+  const dollar = sibling(n, -1);
+  if (dollar?.type === '$' && dollar.endIndex === n.startIndex) {
+    const t = cx.tok(n, 'string', cx.s('`$"…"` 文字列: ロケールに応じて翻訳される文字列（翻訳がなければそのまま。中の変数は展開される）', '`$"…"` string: translated according to the locale (as it is when there is no translation; variables inside expand)'), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')), shorten('$' + n.text));
+    t.span = { start: spanOf(dollar).start, end: t.span.end };
+    return t;
+  }
+  // `"$@"`, `"${a[@]}"`, `"${!pre@}"`, `"${@:2}"` give one word per element, also inside double quotes.
+  const perElement = /(?<!\\)\$@|\$\{@|\$\{(?!#)[^}]*\[@\]|\$\{![\w]*@\}/.test(n.text);
+  return cx.tok(n, 'string', (perElement ? cx.s(
+    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開され、単語分割やグロブ展開はされない。ただし `"$@"` や `"${配列[@]}"` は、クォートの中でも要素ごとに別々の単語になる（要素が無ければ単語は0個）',
+    'Double-quoted string: `$vars` and `$(…)` expand, with no word splitting or globbing. But `"$@"` and `"${array[@]}"` still give one word per element, even inside the quotes (no word at all when there are none)',
+  ) : cx.s(
+    'ダブルクォート文字列: 中の `$変数` や `$(…)` は展開されるが、単語分割やグロブ展開はされない（1つの引数のまま）',
+    'Double-quoted string: `$vars` and `$(…)` expand, but no word splitting or globbing (stays one argument)',
+  )) + (/\\/.test(n.text) ? valueNote(cx, n) : ''), cx.subs(n.namedChildren.filter((c) => c.type !== 'string_content')));
+}
+
+/**
+ * "Concatenation": the parts are glued into one word, except around `"$@"` and `"${a[@]}"`, which are one word per element:
+ * the text before them joins the first element, and the text after them the last.
+ */
+export function concatenationNote(cx: Explainer, n: SyntaxNode): string {
+  const parts = n.namedChildren;
+  const each = parts.findIndex((c) => c.type === 'string' && /^"(?:\$@|\$\{(?:!?[A-Za-z_]\w*\[@\]|@)[^}]*\})"$/.test(c.text));
+  if (each < 0) return cx.s('連結: 以下の部分を空白なしでつなげて1つの単語にする', 'Concatenation: the parts below are joined into one word');
+  const text = (from: number, to: number): string => (from >= to ? '' : n.text.slice(parts[from].startIndex - n.startIndex, parts[to - 1].endIndex - n.startIndex));
+  const before = text(0, each);
+  const after = text(each + 1, parts.length);
+  const glue = [
+    before && cx.s(`前の \`${before}\` は最初の要素の前に`, `\`${before}\` is glued to the start of the first element`),
+    after && cx.s(`後ろの \`${after}\` は最後の要素の後ろに`, `\`${after}\` is glued to the end of the last one`),
+  ].filter(Boolean);
+  return cx.s(
+    `連結: \`${parts[each].text}\` は要素ごとに別々の単語になるので、全体は1つの単語にならない。${glue.join('、')}くっつく（要素が無ければ前後が1つの単語になる）`,
+    `Concatenation: \`${parts[each].text}\` gives one word per element, so this is not one word. ${glue.join(' and ')} (with no elements, the text around it makes one word)`);
+}
+
+/**
+ * What quote removal makes of a word (`h\i` is `hi`, `\$HOME` is the text `$HOME`), if it changes the text
+ * and the result is known without running anything. Empty or unchanged: nothing to say.
+ */
+export function valueNote(cx: Explainer, n: SyntaxNode): string {
+  const v = staticWordValue(n);
+  if (!v || v === decodedText(n)) return '';
+  const literal = v.includes('$');
+  return cx.s(
+    `。クォートやバックスラッシュを取り除くと \`${shown(v)}\` という文字列になる${literal ? '（この `$` は変数展開の記号ではなく、ただの文字なので展開されない）' : ''}`,
+    `. After quote removal it is the string \`${shown(v)}\`${literal ? ' (this `$` is plain text, not the start of an expansion, so nothing is expanded)' : ''}`,
+  );
+}
+
+/** How a value is shown in an explanation: control characters as pictures, a newline as `\n`. */
+export function shown(v: string): string {
+  return visible(v).replace(/\n/g, '\\n');
+}
+
+/** The words an unquoted word of plain text gives by brace expansion; undefined when it gives none (or too many to list). */
+export function braceWords(text: string): string[] | undefined {
+  return braceExpansion(text) ?? undefined;
+}
+
+/** A word with braces (`{a,b\,c}`, `{,}`, `{a..e..2}`), explained as the brace expansion it is (manual 3.5.1). */
+export function braceWord(cx: Explainer, n: SyntaxNode): Token | undefined {
+  const t = braceWordToken(cx, n);
+  if (t) t.refs = ['3.5.1'];
+  // (bash expands the braces before the command sees the words: its reading, even in an operand.)
+  return t && claim(t, 'shell');
+}
+
+function braceWordToken(cx: Explainer, n: SyntaxNode): Token | undefined {
+  const text = unquotedWord(n);
+  if (text === undefined) return undefined;
+  const words = braceExpansion(text);
+  if (words === null) {
+    return cx.tok(n, 'expansion', cx.s(`ブレース展開: \`${text}\` は多くの単語に展開される`, `Brace expansion: \`${text}\` expands to many words`));
+  }
+  if (!words) return undefined;
+  // (An empty word that stays is shown as `''`: a lone backslash, as `{Z..a}` makes, is gone after quote removal.)
+  const list = (words.length > 12 ? [...words.slice(0, 11), '…'] : words).map((w) => (w === '…' ? w : `\`${w || "''"}\``)).join(' ');
+  const comma = /\\,/.test(text);
+  // `{01..10..3}`: a number with a leading 0 makes every number as wide as the widest.
+  const pad = /\{-?0\d+\.\./.test(text) || /\.\.-?0\d+(?:\.\.|\})/.test(text);
+  return cx.tok(n, 'expansion', words.length
+    ? cx.s(`ブレース展開: \`${text}\` は ${words.length} 個の単語 ${list} に展開される${comma ? '（\\, は区切りではなく、コンマそのもの）' : ''}${pad ? '（先頭が 0 の数があるので、桁数をそろえて 0 で埋める）' : ''}`,
+      `Brace expansion: \`${text}\` expands to ${words.length} ${words.length === 1 ? 'word' : 'words'}: ${list}${comma ? ' (an escaped comma is not a separator, just a comma)' : ''}${pad ? ' (a number with a leading 0 pads all of them with zeros to the same width)' : ''}`)
+    : cx.s(`ブレース展開: \`${text}\` は空の単語に展開され、空の単語は取り除かれるので、何も残らない`, `Brace expansion: \`${text}\` expands to empty words, which are dropped, so nothing is left`));
+}
+
+/** `{1..$n}`: braces are expanded before variables, so a range whose end is a variable is not a range. */
+export function braceVarNote(cx: Explainer, text: string): string {
+  const m = /\{[^{},]*\.\.[^{},]*\}/.exec(text);
+  if (!m || !m[0].includes('$')) return '';
+  if (cx.command?.rereads) {
+    return cx.s(
+      `。シェルは先に変数を置き換えるので、\`eval\` に渡る文字列は \`{1..3}\` のような形になり、\`eval\` がそれを読み直すときにはじめてブレース展開が連番になる`,
+      `. The shell replaces the variable first, so \`eval\` gets a string like \`{1..3}\`, and only when \`eval\` reads it again is the brace expanded to a range`);
+  }
+  return cx.s(
+    `。\`${m[0]}\` は連番ではない: ブレース展開は変数の展開より先に行われるので、\`${m[0]}\` のまま変数だけが置き換わる（例: \`{1..3}\` という文字列）。連番にするには \`eval\` を使うか、\`seq\` や \`for ((…))\` を使う`,
+    `. \`${m[0]}\` is not a range: braces are expanded before variables, so the text stays \`{…}\` with only the variable replaced (for example the string \`{1..3}\`). To get a range, use \`eval\`, \`seq\` or a \`for ((…))\` loop`);
+}
+
+/** What a tilde prefix becomes (`~`, `~+`, `~-`, `~user`); undefined for the others (`~1`, the directory stack). */
+function tildeTarget(cx: Explainer, user: string): string | undefined {
+  if (user === '+') return cx.s('`~+` はカレントディレクトリ（`$PWD`）', '`~+` becomes the current directory (`$PWD`)');
+  if (user === '-') return cx.s('`~-` は直前のディレクトリ（`$OLDPWD`）', '`~-` becomes the previous directory (`$OLDPWD`)');
+  if (user && !/^[A-Za-z_][\w.-]*$/.test(user)) return undefined;
+  return user
+    ? cx.s(`\`~${user}\` はユーザー \`${user}\` のホームディレクトリ（そのユーザーがいなければそのまま）`, `\`~${user}\` becomes the home directory of the user \`${user}\` (unchanged if there is no such user)`)
+    : cx.s('`~` はホームディレクトリ（`$HOME`）', '`~` becomes the home directory (`$HOME`)');
+}
+
+/**
+ * Tilde expansion in a plain word (src/semantics/words.ts): at its start (`~`, `~/x`, `~user/x`, `~+`), after the
+ * `:` of an assignment (`PATH=~/bin:~/x`), and after the `=` of an argument that looks like an assignment in bash
+ * mode (`echo x=~/y`). Not in `--o=~` or a quoted `"~"`.
+ */
+export function tilde(cx: Explainer, n: SyntaxNode): Token | undefined {
+  // (Most words have no tilde: they need not ask the model.)
+  if (!n.text.includes('~')) return undefined;
+  const w = wordAt(cx, n);
+  /* c8 ignore next -- a guard: the plain words explained here are all in a word's place (an argument, a value, a pattern…). */
+  if (!w) return undefined;
+  const tildes = w.tildes.filter((t) => t.node === n && tildeTarget(cx, t.user));
+  if (!tildes.length) return undefined;
+  const [first] = tildes;
+  // (bash expands the tilde before the command sees the word: its reading, even in an operand.)
+  if (tildes.length === 1 && first.start === 0) {
+    return { origin: 'shell', ...cx.tok(n, 'expansion', cx.s(`チルダ展開: ${tildeTarget(cx, first.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, first.user)}`)
+      + (first.end < n.text.length ? cx.s(`。残りの \`${n.text.slice(first.end)}\` はそのまま続く`, `. The rest, \`${n.text.slice(first.end)}\`, stays as it is`) : '')), refs: ['3.5.2'] };
+  }
+  const row = n.startPosition.row;
+  const col = n.startPosition.column;
+  const kids = tildes.map((t) => ({
+    kind: 'expansion' as Kind, label: n.text.slice(t.start, t.end), children: [], origin: 'shell' as const,
+    span: { start: { line: row, character: col + t.start }, end: { line: row, character: col + t.end } },
+    explanation: t.after
+      ? cx.s(`チルダ展開（\`${t.after}\` の後ろ）: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion (after \`${t.after}\`): ${tildeTarget(cx, t.user)}`)
+      : cx.s(`チルダ展開: ${tildeTarget(cx, t.user)}に置き換わる`, `Tilde expansion: ${tildeTarget(cx, t.user)}`),
+  }));
+  return cx.tok(n, 'argument', cx.s(`文字列 \`${n.text}\``, `Word \`${n.text}\``) + tildeNote(cx, n), kids);
+}
+
+/** An argument that looks like an assignment (`x=~/y`): bash expands a tilde after its `=` and `:`. */
+export function tildeNote(cx: Explainer, n: SyntaxNode): string {
+  const w = wordAt(cx, n)!;
+  return w.context !== 'assignment-value' && w.tildes.some((t) => t.after === '=')
+    ? cx.s('。代入の形をした引数なので、bash では `=` と `:` の後ろの `~` も展開される（POSIX モードでは先頭だけ）', '. It looks like an assignment, so bash expands a `~` after the `=` and after each `:` too (in POSIX mode, only at the start)')
+    : '';
+}
+
+/**
+ * A glob pattern as a token: what a glob is, then its parts as children. A text without glob characters is just
+ * a pattern that matches itself. `text` starts `base` characters into the node.
+ */
+export function globToken(cx: Explainer, n: SyntaxNode, target: GlobTarget, text = n.text, base = 0, kind: Kind = 'pattern'): Token {
+  if (!hasGlob(text)) return cx.tok(n, kind, cx.s(`パターン \`${text}\`（ワイルドカードを含まないので、この文字列そのものに一致）`, `Pattern \`${text}\` (no wildcards, so it matches exactly this text)`));
+  return cx.tok(n, kind, globIntro(cx.lang, target) + extglobNote(cx, text), globChildren(cx, n, text, base));
+}
+
+/** The parts of a glob pattern as tokens, placed where the pattern is written (`base` characters into `n`). */
+export function globChildren(cx: Explainer, n: SyntaxNode, text: string, base: number): Token[] {
+  return explainGlob(text, cx.lang).map((t) => fromEmbedded(t, n, { text, base }, 'shell'));
+}
+
+/**
+ * What `**` does in a file-name glob. It is written for any depth, so it is explained that way, with
+ * a pitfall when globstar is not seen turned on before (it may be, in a file read with `source`).
+ */
+export function globNotes(cx: Explainer, text: string, n: SyntaxNode): string {
+  return globOptionNote(cx, n, text) + starStarNote(cx, text, n) + extglobNote(cx, text);
+}
+
+/**
+ * What the glob options in effect change for a file-name glob: dotglob (also turned on by a GLOBIGNORE that is
+ * not empty), GLOBIGNORE, nocaseglob, and what happens when nothing matches (nullglob, failglob).
+ */
+function globOptionNote(cx: Explainer, n: SyntaxNode, text: string): string {
+  const notes: string[] = [];
+  const shopt = shoptAt(cx, n);
+  const word = wordAt(cx, n);
+  const ignore = word?.glob.globignore;
+  const step = word?.steps.find((s) => s.kind === 'glob');
+  // (As for an unquoted `$x` on the same line: `set -f` on some paths only.)
+  if (step?.applies === 'unknown' && step.why === 'noglob') notes.push(cx.s('`set -f` でグロブ展開が無効になる経路もある（そこではこの文字のまま渡される）', 'globbing is off on some paths, after `set -f` (there it stays as written)'));
+  // (A pattern that starts with `.` matches those names anyway.)
+  if (shopt.dotglob === 'on' && !text.startsWith('.')) notes.push(typeof ignore === 'object' || ignore === 'unknown'
+    ? cx.s('`GLOBIGNORE` を設定したので dotglob が有効になり、`.` で始まる名前にも一致する（`.` と `..` は除く）', 'setting `GLOBIGNORE` turned dotglob on, so it also matches names starting with `.` (not `.` and `..`)')
+    : cx.s('dotglob が有効なので `.` で始まる名前にも一致する', 'with dotglob on, it also matches names starting with `.`'));
+  if (ignore && typeof ignore === 'object') {
+    const pats = ignore.value.split(':').filter(Boolean).map((p) => `\`${p}\``).join(cx.s('、', ', '));
+    notes.push(cx.s(`\`GLOBIGNORE\` の ${pats} に一致する名前は結果から除かれる`, `names that match ${pats} of \`GLOBIGNORE\` are left out`));
+  }
+  if (shopt.nocaseglob === 'on') notes.push(cx.s('nocaseglob が有効なので大文字と小文字を区別しない', 'with nocaseglob on, case is ignored'));
+  if (shopt.failglob === 'on') {
+    notes.push(cx.s('failglob が有効なので、一致するものがなければエラーになり、コマンドは実行されない', 'with failglob on, a pattern that matches nothing is an error, and the command does not run'));
+  } else if (shopt.nullglob === 'on') {
+    notes.push(wordAt(cx, n)?.context === 'for-list'
+      ? cx.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（ループはこの単語の分は回らない。ほかに単語がなければ1回も実行されない）',
+        'with nullglob on, a pattern that matches nothing goes away (the loop does not run for it, and not at all when there is no other word)')
+      : cx.s('nullglob が有効なので、一致するものがなければこの単語はなくなる（引数が1つ減る。ほかに引数がなければ、コマンドは引数なしで実行される）',
+        'with nullglob on, a pattern that matches nothing goes away (one argument fewer; with no other argument, the command runs with none)'));
+  } else if (shopt.nullglob === 'unknown') {
+    notes.push(cx.s('一致するものがないとき、nullglob が有効な経路ではこの単語はなくなり、ほかの経路ではそのままの文字で渡される', 'when nothing matches, it goes away on the paths where nullglob is on, and stays as written on the others'));
+  }
+  return notes.map((n) => cx.s(`。${n}`, `; ${n}`)).join('');
+}
+
+function starStarNote(cx: Explainer, text: string, n: SyntaxNode): string {
+  if (!hasGlobstar(text)) return '';
+  const globstar = shoptAt(cx, n).globstar;
+  const on = cx.shell === 'ksh' ? 'set -o globstar' : 'shopt -s globstar';
+  if (globstar === 'unknown') {
+    cx.note(fact(cx.lang, 'globstar-maybe-on', { on }), n);
+  }
+  if (globstar === 'default') {
+    cx.note(fact(cx.lang, 'globstar-not-found', { on }), n);
+  }
+  if (globstar === 'unsupported') {
+    cx.note(fact(cx.lang, 'globstar-unsupported', { shell: cx.shell! }), n);
+  }
+  return globstar === 'off' || globstar === 'unsupported'
+    ? cx.s(`。${globstar === 'off' ? 'globstar が無効なので' : 'このシェルでは'} \`**\` は \`*\` と同じで、1階層分にしか一致しない`, `. ${globstar === 'off' ? 'With globstar off' : 'In this shell'}, \`**\` is the same as \`*\` and matches one level only`)
+    : cx.s('。`**` は任意の深さのディレクトリ（0階層以上、`.` で始まるものは除く）に一致する', '. `**` matches directories at any depth (zero or more, not those starting with `.`)');
+}
+
+/** The extended globs of a pattern in words: `!(*.txt)` is anything but `*.txt`. */
+function extglobNote(cx: Explainer, text: string): string {
+  const parts = extglobs(text).map(({ op, text: t, alts }) => {
+    const list = alts.map((a) => `\`${a}\``).join(cx.s('、', ', '));
+    const one = alts.length === 1;
+    const ja = { '@': one ? list : `${list} のどれか`, '!': `${list} の${one ? '' : 'どれにも'}一致しないもの`.replace('` の一致', '` に一致'), '?': `${list} が0回か1回`, '*': `${list} の0回以上の繰り返し`, '+': `${list} の1回以上の繰り返し` }[op];
+    const en = { '@': one ? list : `one of ${list}`, '!': `anything but ${list}`, '?': `${list} zero or one time`, '*': `${list} repeated zero or more times`, '+': `${list} repeated one or more times` }[op];
+    return cx.s(`\`${t}\` は ${ja}`, `\`${t}\` is ${en}`);
+  });
+  return parts.length ? cx.s(`。拡張グロブ: ${parts.join('、')}`, `. Extended glob: ${parts.join('; ')}`) : '';
+}
+
+/** A word with `*` or `?` where bash does no pathname expansion (the value of an assignment): it stays text. */
+export function notGlobbedHere(cx: Explainer, n: SyntaxNode): string {
+  const w = wordAt(cx, n);
+  return w?.context === 'assignment-value'
+    ? cx.s('。代入ではファイル名の展開はされないので、`*` や `?` もそのままの文字として代入される', '. An assignment does no file-name expansion, so `*` and `?` are assigned as they are')
+    : '';
+}
+
+export function varDesc(cx: Explainer, name: string): string | undefined {
+  if (specialVariables[name]) return cx.t(specialVariables[name]);
+  if (/^\d+$/.test(name)) return cx.s(`位置パラメータ: ${name} 番目の引数`, `Positional parameter: argument #${name}`);
+  if (wellKnownVariables[name]) return cx.t(wellKnownVariables[name]);
+  // Set by a CI system, unless the script sets it itself (`BRANCH_NAME=…`).
+  const ci = Object.hasOwn(ciVariables, name) ? ciVariables[name] : undefined;
+  if (ci && !cx.state.assigned.has(name)) {
+    return cx.s(`${ci.ci} が設定する環境変数: ${cx.t(ci.meaning)}`, `set by ${ci.ci}: ${cx.t(ci.meaning)}`);
+  }
+  return undefined;
+}
+
+export function variable(cx: Explainer, name: string, n: SyntaxNode): Token {
+  const d = varDesc(cx, name);
+  return cx.tok(n, 'variable', d ? `\`$${name}\`: ${d}` : cx.s(`変数 \`${name}\``, `Variable \`${name}\``));
+}
+
+export function simpleExpansion(cx: Explainer, n: SyntaxNode): Token {
+  const name = n.text.slice(1);
+  const d = varDesc(cx, name);
+  const note = splitNote(cx, n);
+  const t = cx.tok(n, 'variable', d ?? (note
+    ? cx.s(`変数 \`${name}\` の値に置き換わる（クォートしないと${note.ja}）`, `Expands to the value of \`${name}\` (unquoted, ${note.en})`)
+    : cx.s(`変数 \`${name}\` の値に置き換わる`, `Expands to the value of \`${name}\``)));
+  t.explanation += matchNote(cx, n) + orderNote(cx, n, name) + variableNote(cx, n, name);
+  return t;
+}
+
+/**
+ * What word splitting and globbing do to the unquoted expansion `n` (src/semantics/words.ts): the text after
+ * "unquoted, ". Undefined when neither applies there (in quotes, or in a context that does neither).
+ */
+function splitNote(cx: Explainer, n: SyntaxNode): { ja: string; en: string } | undefined {
+  const part = partMeaning(n, cx.state);
+  if (!part) return undefined;
+  const { split, glob, word } = part;
+  if (split.applies === false && (split.why === 'quoted' || split.why === 'context' || split.why === 'zsh')) return undefined; // (zsh: the line's dialect note says it.)
+  if (split.applies === false && split.why === 'posix-mode') {
+    return { ja: 'POSIX モードではリダイレクト先は単語分割もグロブ展開もされない', en: 'in POSIX mode a redirection target is neither word-split nor globbed' };
+  }
+  const g = globState(glob);
+  const ambiguous = word.rule.fields === 'one-or-error'
+    ? { ja: '。結果がちょうど1語にならないとエラー（ambiguous redirect）', en: '; a result that is not exactly one word is an error (ambiguous redirect)' } : { ja: '', en: '' };
+  const ifs = word.ifs;
+  const line = ifs.kind === 'default' ? 0 : (docLine(ifs.at) + 1);
+  // What globbing does, after each way of splitting: [ja, en] for off (`set -f`), may (on some paths) and on.
+  const after = {
+    split: { off: ['る（`set -f` でグロブ展開は無効）', ' (globbing is off after `set -f`)'], may: ['る（`set -f` でグロブ展開が無効になる経路もある）', ' (globbing is off on some paths, after `set -f`)'], on: ['、グロブ展開もされる', ' and globbed'] },
+    ifs: { off: ['る（`set -f` でグロブ展開は無効）', '; globbing is off after `set -f`'], may: ['る（`set -f` でグロブ展開が無効になる経路もある）', '; globbing is off on some paths, after `set -f`'], on: ['、グロブ展開もされる', ', and globbed'] },
+    empty: { off: ['（`set -f` でグロブ展開も無効）', ' (and globbing is off after `set -f`)'], may: ['（`set -f` でグロブ展開が無効になる経路もある）', ' (and globbing is off on some paths, after `set -f`)'], on: ['が、グロブ展開はされる', ', but it is globbed'] },
+    value: { off: ['。`set -f` でグロブ展開は無効', '; globbing is off after `set -f`'], may: ['。`set -f` でグロブ展開が無効になる経路もある', '; globbing is off on some paths, after `set -f`'], on: ['。グロブ展開もされる', ', and globbed'] },
+  };
+  let ja: string;
+  let en: string;
+  if (ifs.kind === 'default') {
+    [ja, en] = [`空白で分割され${after.split[g][0]}`, `it is word-split${after.split[g][1]}`];
+  } else if (ifs.kind === 'unknown') {
+    [ja, en] = [`\`IFS\` は行 ${line} で、ここでは分からない値にしてある。その文字で分割され${after.ifs[g][0]}`, `it is split on the characters of \`IFS\` (set on line ${line} to a value not known here)${after.ifs[g][1]}`];
+  } else if (ifs.value === '') {
+    [ja, en] = [`\`IFS\` が空（行 ${line}）なので単語分割はされない${after.empty[g][0]}`, `\`IFS\` is empty (line ${line}), so it is not word-split${after.empty[g][1]}`];
+  } else {
+    const noSpace = !/[ \t\n]/.test(ifs.value);
+    [ja, en] = [`\`IFS\`（行 ${line} で \`${shown(ifs.value)}\` にしてある）の文字で分割され${noSpace ? '、空白では分割されない' : ''}${after.value[g][0]}`,
+      `it is split on the characters of \`IFS\` (set to \`${shown(ifs.value)}\` on line ${line})${noSpace ? ', not on spaces' : ''}${after.value[g][1]}`];
+  }
+  return { ja: ja + ambiguous.ja, en: en + ambiguous.en };
+}
+
+/** `case $x in $p)`, `[[ $x == $p ]]`, `[[ $x =~ $re ]]`: an unquoted expansion there is read as a pattern or a regex, not as text. */
+function matchNote(cx: Explainer, n: SyntaxNode): string {
+  const part = partMeaning(n, cx.state);
+  const match = part && !part.quoted ? part.word.rule.match : undefined;
+  if (!match) return '';
+  return match === 'pattern'
+    ? cx.s('。クォートしていないので、値はパターンとして読まれる（値の中の `*`、`?`、`[…]` が働く。文字列として比べるなら `"$…"` とクォートする）',
+      '. Unquoted here, its value is read as a pattern (`*`, `?` and `[…]` in it match; quote it to compare text)')
+    : cx.s('。クォートしていないので、値は正規表現として読まれる', '. Unquoted here, its value is read as a regex');
+}
+
+/**
+ * `z=2 echo $z` expands `$z` before the assignment takes effect; `x=1 y=$x` sets `x` first. A note on a
+ * use of a variable that an assignment of the same command sets.
+ */
+export function orderNote(cx: Explainer, n: SyntaxNode, name: string): string {
+  const top = (parent: SyntaxNode) => { let c = n; while (c.parent && !same(c.parent, parent)) c = c.parent; return c; };
+  const sets = (a: SyntaxNode) => a.type === 'variable_assignment' && field(a, 'name')?.text === name;
+  const cmd = ancestor(n, (a) => a.type === 'command');
+  if (!cmd) return '';
+  const mine = top(cmd);
+  if (assignmentsOnly(cmd)) {
+    // (With no name, bash assigns first and then expands the redirections: `>f$a a=1` writes `f1`.)
+    if (mine.field === 'redirect') {
+      return cmd.namedChildren.some(sets)
+        ? cx.s(`。このコマンドには名前がないので、bash は先に \`${name}=…\` の代入を行い、そのあとでリダイレクトを展開する。ここではその値になる`, `. The command has no name, so bash does its assignments first and expands its redirections after them: \`${name}\` already has the value of \`${name}=…\` here`)
+        : '';
+    }
+    return cmd.namedChildren.some((a) => sets(a) && a.endIndex <= mine.startIndex)
+      ? cx.s(`。同じ行で先に \`${name}=…\` と代入しているので、代入は左から順に実行され、ここではその値になる`, `. \`${name}=…\` comes earlier on this line, and assignments run from left to right, so it already has that value here`)
+      : '';
+  }
+  // In the arguments (not in an assignment) of a command that is run with the variable set for it only.
+  return field(cmd, 'name') && !(mine.type === 'variable_assignment' && mine.field !== 'argument') && cmd.namedChildren.some((a) => sets(a) && a.endIndex <= field(cmd, 'name')!.startIndex)
+    ? cx.s(`。\`${name}=…\` はこのコマンドの実行中だけ有効で、引数の展開が先に行われるので、ここでは代入前の値（未設定なら空）になる`, `. \`${name}=…\` only applies while the command runs, and the arguments are expanded first, so this is the value from before the assignment (empty if unset)`)
+    : '';
+}
+
+/** `$y` on an array is its element 0; `$_` after an assignment is empty; `$x` inside `$(( ))` is pasted as text. */
+export function variableNote(cx: Explainer, n: SyntaxNode, name: string): string {
+  if (name === '$') return pidNote(cx, n);
+  const st = cx.state.at(n).run;
+  const a = attribute(st, name, 'a');
+  const assoc = attribute(st, name, 'A');
+  const arr = a === 'on' || assoc === 'on' ? { assoc: assoc === 'on' } : undefined;
+  if (!arr && (a === 'unknown' || assoc === 'unknown')) {
+    // An array on some paths only (a loop that may not run, a branch).
+    return cx.s(`。\`${name}\` は一部の経路（分岐やループ）で配列になる。そのときは \`$${name}\` は先頭の要素だけで、全要素は \`"\${${name}[@]}"\``,
+      `. \`${name}\` is an array on some paths (a branch or a loop): there \`$${name}\` is only its first element, and all of them are \`"\${${name}[@]}"\``);
+  }
+  if (arr) {
+    const first = `\${${name}[0]}`;
+    return cx.s(`。\`${name}\` は配列なので、\`$${name}\` は${arr.assoc ? 'キー 0 の要素' : '先頭の要素'}だけ（\`${first}\`）になる。全要素は \`"\${${name}[@]}"\``, `. \`${name}\` is an array, so \`$${name}\` is only ${arr.assoc ? 'the element with key 0' : 'its first element'} (\`${first}\`); all of them are \`"\${${name}[@]}"\``);
+  }
+  if (name === '_' && underscoreValue(n, cx.state) === '') {
+    return cx.s('。直前のコマンドは代入だけなので、`$_` は空になる', '. The command before is only an assignment, so `$_` is empty');
+  }
+  if (inArithmetic(n) && pastedValue(cx, n, name) !== undefined) {
+    const v = shown(pastedValue(cx, n, name)!);
+    return cx.s(`。算術式の中の \`$${name}\` は、値（ここでは \`${v}\`）が文字のまま貼り付けられてから式として読まれる。\`${name}\` と名前だけで書くと、値が 1 つの式として計算されてから使われる（\`${name}='1+2'\` なら \`$${name}*2\` は \`1+2*2\` で 5、\`${name}*2\` は 3*2 で 6）`,
+      `. Inside arithmetic, \`$${name}\` is pasted as text (here \`${v}\`) and then read as an expression. Written as the bare name \`${name}\`, its value is evaluated as one expression first (with \`${name}='1+2'\`, \`$${name}*2\` is \`1+2*2\`, which is 5, and \`${name}*2\` is 3*2, which is 6)`);
+  }
+  return '';
+}
+
+/** The value of `name` where `n` runs (src/semantics/state.ts), when it is known and not a plain integer (it has operators or names in it). */
+function pastedValue(cx: Explainer, n: SyntaxNode, name: string): string | undefined {
+  const v = cx.state.at(n).run.variables.get(name);
+  const value = v?.set === 'on' ? v.value : undefined;
+  return value !== undefined && !/^\s*[-+]?\d+\s*$/.test(value) ? value : undefined;
+}
+
+/** `[7]=z` in `( )`: an element with an index of its own. */
+export function arrayElement(cx: Explainer, n: SyntaxNode): Token {
+  const e = splitElement(n.text)!;
+  // The key as bash reads it once the quotes are removed (`["a b"]` is `a b`); as written when it holds an expansion.
+  const key = unquoteWord(e.key) ?? e.key;
+  const m = ['', key, e.plus, e.value];
+  const assoc = isAssoc(cx, field(n.parent!.parent!, 'name')!.text, n);
+  // The subscript of an associative array is a key (a string); that of an indexed array is arithmetic (`1+1` is 2).
+  const v = evalArith(m[1]);
+  const what = assoc ? cx.s(`キー \`${m[1]}\`（文字列で、計算はされない）`, `key \`${m[1]}\` (a string, not evaluated)`)
+    : v !== undefined && String(v) !== m[1] ? cx.s(`添字 \`${m[1]}\`（算術式として計算すると ${v}）`, `index \`${m[1]}\` (an arithmetic expression: ${v})`)
+    : cx.s(`添字 \`${m[1]}\``, `index \`${m[1]}\``);
+  return cx.tok(n, 'argument', cx.s(
+    `${what}${what.endsWith('`') ? ' ' : ''}の要素に \`${m[3]}\` を${m[2] ? '追記' : '代入'}する`,
+    `Element with ${what}: ${m[2] ? 'append' : 'set it to'} \`${m[3]}\``,
+  ));
+}
+
+export function subscript(cx: Explainer, n: SyntaxNode): Token {
+  const name = field(n, 'name')!.text;
+  const idx = field(n, 'index')!.text;
+  // (A subscript explained alone is in arithmetic, which takes one element: `(( a[@] ))` fails.)
+  if (idx === '@' || idx === '*') {
+    return cx.tok(n, 'error', cx.s(`算術式では \`${n.text}\` は使えず、エラーになる（\`bad array subscript\`）。要素は \`${name}[0]\` のように1つずつ指定する`,
+      `Not allowed in arithmetic: \`${n.text}\` is an error (\`bad array subscript\`); name one element, such as \`${name}[0]\``));
+  }
+  // The index is arithmetic (`a[0x1]` is element 1).
+  const index = field(n, 'index')!;
+  const num = arithNumber(cx, index);
+  if (isAssoc(cx, name, n)) return cx.tok(n, 'variable', cx.s(`連想配列 \`${name}\` のキー \`${idx}\`（文字列）の要素`, `Element of associative array \`${name}\` with the key \`${idx}\` (a string)`));
+  return cx.tok(n, 'variable', cx.s(`配列 \`${name}\` の要素 \`[${idx}]\``, `Element \`[${idx}]\` of array \`${name}\``), num ? [num] : []);
+}
+
+/** The expressions of an arithmetic command or expansion, with its commas. */
+export function arithChildren(cx: Explainer, n: SyntaxNode): Token[] {
+  const commas = n.children.filter((c) => c.type === ',').map((c) => cx.tok(c, 'operator', cx.s('`,` コンマ演算子: 左の式を評価して値を捨て、右の式に進む', '`,` comma operator: evaluate the left expression, drop its value, go on to the right one')));
+  return sortTokens([...cx.subs(n.namedChildren), ...commas]);
+}
+
+/** A constant of an arithmetic expression that is not plain decimal (`0x1F`, `010`, `2#1010`), with its value; undefined for anything else. */
+export function arithNumber(cx: Explainer, n: SyntaxNode): Token | undefined {
+  const lit = arithLiteral(n.text);
+  if (!lit || (lit.type === 'number' && lit.style === 'decimal') || !inArithmetic(n)) return undefined;
+  return cx.tok(n, 'number', arithLiteralText(cx, n.text, lit));
+}
+
+function arithLiteralText(cx: Explainer, text: string, lit: ArithLiteral): string {
+  return describeArithLiteral(text, lit, cx.lang);
+}
+
+/** The `,` of an arithmetic expression: a note that its parts run left to right and the last one is the value. */
+export function commaNote(cx: Explainer, n: SyntaxNode): string {
+  if (!n.children.some((c) => c.type === ',')) return '';
+  const last = n.namedChildren[n.namedChildren.length - 1].text;
+  return n.type === 'arithmetic_command'
+    ? cx.s(`。\`,\` で区切られた式は左から順に評価され、結果は最後の式 \`${last}\` の値で決まる`, `. The expressions separated by \`,\` run from left to right, and the result is that of the last one, \`${last}\``)
+    : cx.s(`。\`,\` で区切られた式は左から順に評価され、全体の値は最後の式 \`${last}\` の値になる`, `. The expressions separated by \`,\` are evaluated from left to right, and the value is that of the last one, \`${last}\``);
+}
+
+/** `$((1<<63))`: bash's integers are 64-bit, and a result beyond them wraps around instead of failing. */
+export function wrapNote(cx: Explainer, n: SyntaxNode): string {
+  const r = evalArithWrapping(n.text.replace(/^\$(?:\(\(|\[)/, '').replace(/(?:\)\)|\])$/, ''));
+  return r?.wrapped
+    ? cx.s(`。bash の整数は符号付き 64 ビットで、範囲を超えるとエラーにならず一周して戻るので、この値は ${r.value} になる`,
+      `. Bash integers are signed 64-bit, and a result beyond that wraps around instead of failing, so this is ${r.value}`)
+    : '';
+}

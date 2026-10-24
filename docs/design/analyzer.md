@@ -4,7 +4,7 @@ src/analyzer.ts is 4,202 lines (at d265509). One class, `Analyzer`, holds about 
 
 An outside review noted the size, and the pace (683 commits in 9 days). For one maintainer over the long term, a thin core matters more than a wider scope. The maintainer agreed: the next big work is to thin analyzer.ts, not to add features. This page plans it. Each step is a PR. The [traceability table](#traceability) records the findings and the steps.
 
-Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), and step 3 (the readers) is done (#325). Steps 4 to 9 are not started: src/explain/ has the context, the node helpers and the readers, and src/analyzer.ts is 3,697 lines.
+Status: step 0 (the guards and the snapshot) is done (#275), step 1 (the facts the models own) is done (#308), step 2 (the context) is done (#324), step 3 (the readers) is done (#325), and step 4 (words and expansions) is done (#327). Steps 5 to 9 are not started: src/explain/ has the context, the node helpers, the readers and the words, and src/analyzer.ts is 3,180 lines.
 
 The goal is not new behaviour. Every explanation stays byte-identical, except where a step fixes a contradiction with bash (and then says so).
 
@@ -352,6 +352,19 @@ Where the plan did not fit main:
 
 src/explain/words.ts. Moves about 450 lines.
 
+**As done (#327).** The snapshot of the corpus is byte-identical before and after, and so are the snapshots of step 3 with options (the reading tree, pitfalls and idioms off, examples disabled, a Markdown host with bash 5.3), with one analyzer for every line in reverse, and with errors thrown in the middle of a line; to the inputs of step 3 it adds scripts of words and expansions (every `${…}` operator and transformation, the quoting kinds, brace, tilde and glob expansion with the glob options, `IFS`, `$'…'`, arrays and namerefs, arithmetic literals, nested substitutions), each also read as sh, zsh, ksh and dash. src/analyzer.ts went from 3,697 to 3,180 lines; src/explain/words.ts is 503 lines. The move was done by a script (TypeScript compiler API), kept in the PR. What moved where:
+
+- src/explain/words.ts: words and quotes (`word`, `string`, `concatenationNote`, `valueNote`, `shown`), brace and tilde expansion (`braceExpansion`, from the module helpers, `braceWords`, `braceWord`, `braceWordToken`, `braceVarNote`, `tildeTarget`, `tilde`, `tildeNote`), globs (`globToken`, `globChildren`, `globNotes`, `globOptionNote`, `starStarNote`, `extglobNote`, `notGlobbedHere`), variables (`varDesc`, `variable`, `simpleExpansion`, `splitNote`, `matchNote`, `orderNote`, `variableNote`, `pastedValue`), arrays and arithmetic (`arrayElement`, `subscript`, `arithChildren`, `arithNumber`, `arithLiteralText`, `commaNote`, `wrapNote`). Those only words.ts calls are not exported; `shown` and `braceWords` read nothing of the context and take no `cx`.
+- src/explain/nodes.ts: `fromEmbedded` (a token of an embedded explainer placed in the source), which the globs and the embedded explainers share; it takes no `cx`.
+- `ExpansionWords` is gone: src/expansion-tokens.ts reads `varDesc`, `variableNote`, `orderNote` and `globChildren` from words.ts. The dispatch calls `explainExpansion` itself, as it calls the substitutions; the class's `expansion` is gone.
+
+Where the plan did not fit main:
+
+- `globOptionNote` and `starStarNote` moved here, not to line-notes.ts (2.3): `globNotes`, a note on one word, calls them, and line-notes.ts is above words.ts (2.5). They are notes on one token (2.3, "Pitfalls").
+- `concatenationNote` (listed nowhere) is the note of a word: it moved here. `wordExample`, `globExample` and `globOpts` stay with the examples (step 6), `ansiCChildren` with the embedded languages (step 6), and the inline cases of the dispatch (`raw_string`, `ansi_c_string`, `array`, `arithmetic_expansion`, `number`) with the dispatch (step 9).
+- src/expansion-tokens.ts and src/substitution-tokens.ts stay where they are: words.ts does not import them (the dispatch does), so they sit above words.ts and no cycle forms.
+- The names guard (3.3) took `ignore !== 'unset'` in `globOptionNote` for a check of the builtin `unset`: it is a value of the model's `globignore` (`{ value } | 'unset' | 'unknown'`). The test now names the two other cases (`typeof ignore === 'object' || ignore === 'unknown'`), which is the same test; the guard is unchanged.
+
 ### Step 5: tests, redirections (two M PRs)
 
 src/explain/tests.ts (about 230 lines), then src/explain/redirections.ts (about 190). `splitCommand` and `redirectLayout` stay in the class until step 8.
@@ -379,8 +392,8 @@ src/explain/dispatch.ts (about 260 lines). analyzer.ts keeps `Analyzer`, `explai
 | 0 | Guards, snapshot | S | 1 | — |
 | 1 | Facts the models own | S | 1 (#308) | 0 |
 | 2 | The context | M | 1 (#324) | 0; #269 merged |
-| 3 | Readers, where, status | M | 1 | 2 |
-| 4 | Words | M | 1 | 3 |
+| 3 | Readers, where, status | M | 1 (#325) | 2 |
+| 4 | Words | M | 1 (#327) | 3 |
 | 5 | Tests, redirections | M each | 2 | 4 |
 | 6 | Examples, embedded | M each | 2 | 4 |
 | 7 | Scripts, assignments, argv | M–L | 3 | 5, 6 |
@@ -421,14 +434,14 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 
 | ID | Finding (short) | Step | Status | Verified by |
 |---|---|---|---|---|
-| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
+| T1 | analyzer.ts is 4,202 lines, one class of about 200 members | 3–9 | in progress (step 3: PR #325; step 4: PR #327) | file-length test: analyzer.ts under 1,000 lines, then about 150 |
 | T2 | Per-line state written from anywhere: notes pushed in 40 places, examples in 27, `argCtx` an implicit parameter | 2 | done (PR #324) | the snapshot unchanged; no `cx.extraNotes.push` left: notes, examples and the command go through the context's sinks and `withCommand` |
-| T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2 | done (PR #324) | one `Explainer` (the five reads of the words stay `ExpansionWords` until step 4); the snapshot unchanged |
+| T3 | Three overlapping hosts: `LineContext`, `ExpansionHost`, the analyzer's half of `EmbeddedContext` | 2, 4 | done (PR #324, PR #327) | one `Explainer`; the reads of the words (`ExpansionWords`) are functions of src/explain/words.ts since step 4; the snapshot unchanged |
 | T4 | Name checks: yq (1356), `local` (1364), sed (3157), xargs label (2741) | 1.1 | done (PR #308) | names guard list empty; tests against the tools |
 | T5 | Where code runs, decided from node types: `groupSubshell` (377), `inSubshell` (417), `pipeSubshellPitfalls` (2964, 2982) | 1.2 | done (PR #308) | env probes; test/facts-from-model.test.ts rows |
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | done (PR #308) | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | done (PR #308) | rows against bash (`bash -c`, `sudo`, `env -i`) |
-| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325) | test/explain-imports.test.ts |
+| T8 | Cycles between the groups (1.4) | 3–9 | in progress (step 3: PR #325; step 4: PR #327) | test/explain-imports.test.ts |
 | T9 | No guard on file length, import cycles or name checks | 0 | done (PR #275) | the guards themselves |
 | T10 | No before/after check of the whole explanation | 0 | done (PR #275) | test/snapshot.ts |
 
@@ -438,7 +451,7 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | 1.1–1.4 | done (PR #308) |
 | 2 | done (PR #324) |
 | 3 | done (PR #325) |
-| 4 | planned |
+| 4 | done (PR #327) |
 | 5 | planned |
 | 6 | planned |
 | 7 | planned |
