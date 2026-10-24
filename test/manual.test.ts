@@ -95,6 +95,9 @@ describe('the sections of tokens', () => {
     assert.deepStrictEqual(refsOf('echo $(date) $((1+2)) <(ls)', '$(date)'), [['3.5.4']]);
     assert.deepStrictEqual(refsOf('#!/bin/bash', '#!/bin/bash'), [['3.8']]);
     assert.deepStrictEqual(refsOf('echo $# $10', '$#'), [['3.4.2']]);
+    // (bash 5.2's manual has `$_` with the Bash variables; `$_x` is a variable like any other.)
+    assert.deepStrictEqual(refsOf('echo $_ $_x', '$_'), [['5.2']]);
+    assert.deepStrictEqual(refsOf('echo $_ $_x', '$_x'), [['3.5.3']]);
     assert.deepStrictEqual(refsOf('echo ~/x {a,b}', '~/x'), [['3.5.2']]);
     assert.deepStrictEqual(refsOf('echo ~/x {a,b}', '{a,b}'), [['3.5.1']]);
     assert.deepStrictEqual(refsOf('ls *.txt', '*.txt'), [['3.5.8']]);
