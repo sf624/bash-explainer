@@ -3,11 +3,11 @@
 // test/fixtures/probes/words.json checks it against bash (each row's `unbound`).
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { ancestor, descendants, field, type SyntaxNode } from '../syntax/tree';
+import { ancestor, descendants, field, fields, type SyntaxNode } from '../syntax/tree';
 import { processOf, STATEMENTS } from './env';
 import { resolveName } from './names';
 import { attribute, option, type StateModel } from './state';
-import { conditionOf } from './status';
+import { conditionOf, statusModel } from './status';
 import { unreliableNames } from './words';
 
 /** The nodes an arithmetic name may be in and still be read whenever the expression runs: not after `&&`, `||` or `?`. */
@@ -37,9 +37,9 @@ const REDIRECTS = new Set(['file_redirect', 'herestring_redirect', 'heredoc_redi
  * or `(( ))` wherever the expression runs. Said only when it is so on every path: `set -u` is on, and the variable has
  * no value there (`declare x`, `unset x`, or set by no command before), the model trusts what it saw (not blind;
  * nothing it does not read ran on the way; a function body only when every call is seen), nothing earlier in the
- * same command sets it (`a=1 b=$a`, `${x:=1} $x`), and no condition that the read depends on reads the name (`[[ -v x
- * ]] && echo "$x"`: the script tests it first). A name in capitals, which may come from the environment (as the
- * variables bash sets itself), is left out. In a redirection or a here-document of a program (`cat < "$f"`), bash
+ * same command sets it (`a=1 b=$a`, `${x:=1} $x`), no condition that the read depends on reads the name (`[[ -v x
+ * ]] && echo "$x"`: the script tests it first), and no statement before it tests the name (`testedBefore`). A name
+ * in capitals, which may come from the environment (as the variables bash sets itself), is left out. In a redirection or a here-document of a program (`cat < "$f"`), bash
  * fails in the program's own process: only the command fails, with status 1; other shells (dash) differ there, so a
  * redirection or a here-document is read for bash only (and a redirection of a builtin elsewhere).
  */
@@ -73,16 +73,19 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const st = model.at(n).run;
   if (option(st, 'set', 'nounset') !== 'on' || st.opaque) return undefined;
   const statement = ancestor(n, (a) => STATEMENTS.has(a.type))!;
-  if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || guarded(n, name)) return undefined;
+  if (model.dead(statement) || setBefore(statement, n, name) || unreliableNames(n).has(name) || guarded(n, name) || testedBefore(n, statement, name)) return undefined;
   const isFunction = (a: SyntaxNode): boolean => a.type === 'function_definition';
   for (let fn = ancestor(n, isFunction); fn; fn = ancestor(fn, isFunction)) {
     if (!model.closed(field(fn, 'name')!.text) || !model.calls.get(fn)?.size) return undefined;
   }
   let program = false;
   const redirect = ancestor(n, (a) => REDIRECTS.has(a.type));
-  const command = redirect?.parent?.type === 'command' ? field(redirect.parent, 'name') : undefined;
+  const command = redirect?.parent?.type === 'command' && field(redirect.parent, 'name') ? ranBy(redirect.parent, model) ?? null : undefined;
+  if (command === null) return undefined;
   if (command) {
     const r = /^[\w./+-]+$/.test(command.text) ? resolveName(model, command.text, command, { command: true }) : undefined;
+    // (`command f` runs no function: it looks `f` up as a builtin or a file.)
+    if (command !== field(redirect!.parent!, 'name') && r?.kind === 'function') return undefined;
     program = bash && r?.kind === 'file' && !r.missed && !r.disabled && !r.sourced;
     if (!program && !((r?.kind === 'builtin' && !r.missed && !r.disabled) || (r?.kind === 'function' && r.sure))) return undefined;
   }
@@ -92,6 +95,68 @@ export function unboundRead(n: SyntaxNode, model: StateModel, shell?: Shell): Un
   const p = processOf(model.env(n));
   const exits = program ? 'command' : !p.sure ? 'shell' : p.kind === 'main' ? 'script' : p.kind === 'subshell' ? 'subshell' : 'shell';
   return { shown, name, exits, environment: !v || !removed(v.at, n) };
+}
+
+const firstCache = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, SyntaxNode | undefined>>>();
+
+/**
+ * The read that bash fails on first (`unboundRead`) in the statement of `n` (not in a statement or a substitution
+ * inside it), in the order bash expands a simple command: its words, then its assignments (`a=$x echo "$y"` fails
+ * on `y`), then its redirections, each in turn (a here-document where its operator is). Bash expands no more of
+ * the statement after it, so the reads after it are not said to fail.
+ */
+export function firstUnbound(n: SyntaxNode, model: StateModel, shell?: Shell): SyntaxNode | undefined {
+  const s = ancestor(n, (a) => STATEMENTS.has(a.type))!;
+  let byShell = firstCache.get(model);
+  if (!byShell) firstCache.set(model, (byShell = new Map()));
+  let cache = byShell.get(shell ?? 'bash');
+  if (!cache) byShell.set(shell ?? 'bash', (cache = new WeakMap()));
+  if (cache.has(s)) return cache.get(s);
+  const top = (d: SyntaxNode): SyntaxNode => {
+    let x = d;
+    while (x.parent !== s) x = x.parent!;
+    return x;
+  };
+  const rank = (d: SyntaxNode): number => {
+    const t = top(d);
+    return s.type !== 'command' ? 0 : t.type === 'variable_assignment' && t.field !== 'argument' ? 1 : t.field === 'redirect' ? 2 : 0;
+  };
+  const key = (d: SyntaxNode): number[] => [rank(d), s.children.indexOf(top(d)), d.startIndex];
+  const before = (a: number[], b: number[]): number => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  const reads = descendants(s, ['simple_expansion', 'expansion', 'variable_name'])
+    .filter((d) => ancestor(d, (a) => STATEMENTS.has(a.type)) === s).map((d) => ({ d, k: key(d) })).sort((a, b) => before(a.k, b.k));
+  const first = reads.find(({ d }) => unboundRead(d, model, shell))?.d;
+  cache.set(s, first);
+  return first;
+}
+
+/**
+ * Whether `set -e` stops the shell when the simple command of `n` fails (in a redirection of a program): where
+ * errexit is on and not ignored, the script, or the subshell that runs it.
+ */
+export function errexitStops(n: SyntaxNode, model: StateModel, shell?: Shell): 'script' | 'subshell' | undefined {
+  const c = statusModel(model, shell).errexit(ancestor(n, (a) => a.type === 'command')!);
+  return c.active === 'on' && c.checked === true && c.stops !== 'unknown' ? c.stops : undefined;
+}
+
+/**
+ * The word that names what the command `c` runs, for its redirections: its name, or after `command` (without `-v` or
+ * `-V`: then it is the builtin `command` that runs) the first word that is not an option (`command -p cat < "$f"`:
+ * `cat`, made in a process of its own). Undefined when the command has no name, or `command` has no such word or
+ * its options are not plain.
+ */
+function ranBy(c: SyntaxNode, model: StateModel): SyntaxNode | undefined {
+  const name = field(c, 'name');
+  if (name?.text !== 'command') return name;
+  if (resolveName(model, 'command', name, { command: true }).kind !== 'builtin') return undefined;
+  const words = fields(c, 'argument');
+  let i = 0;
+  for (; /^-/.test(words[i]?.text ?? '') && words[i].text !== '--'; i++) {
+    if (!/^-p+$/.test(words[i].text)) return /^-[pvV]+$/.test(words[i].text) ? name : undefined;
+  }
+  if (words[i]?.text === '--') i++;
+  // (`command command cat`: the second runs `cat`.)
+  return words[i] && words[i].text !== 'command' ? words[i] : undefined;
 }
 
 /**
@@ -146,6 +211,60 @@ function guarded(n: SyntaxNode, name: string): boolean {
         break;
       case 'case_statement': if (x.type === 'case_item' && names(field(p, 'value'))) return true; break;
     }
+  }
+  return false;
+}
+
+/** The guarding reads of each name in a tree (`guards`), cached per root. */
+const guardCache = new WeakMap<SyntaxNode, Map<string, SyntaxNode[]>>();
+
+/**
+ * Whether a read before the statement `statement` of `n` tests the variable `name`, or ends the shell when it is not
+ * set (`guards`): `[[ -v x ]] || exit 1`, `[ -z "${x:-}" ] && die`, `if [ -z "${x-}" ]; then return 1; fi`, `:
+ * "${x:?}"`. What follows such a test is often what runs only when it passed: without following the flow through
+ * the test (which the model does not do), the read is not said to fail. In a function, a test anywhere outside it
+ * counts too (it may run before the call).
+ */
+function testedBefore(n: SyntaxNode, statement: SyntaxNode, name: string): boolean {
+  let root = n;
+  while (root.parent) root = root.parent;
+  let byName = guardCache.get(root);
+  if (!byName) guardCache.set(root, (byName = guards(root)));
+  const fn = ancestor(n, (a) => a.type === 'function_definition');
+  const outside = (d: SyntaxNode) => !!fn && (d.endIndex <= fn.startIndex || d.startIndex >= fn.endIndex);
+  return (byName.get(name) ?? []).some((d) => d.endIndex <= statement.startIndex || outside(d));
+}
+
+/**
+ * The reads of each name that test whether it is set, or end the shell when it is not: `${x?w}`, `${x:?w}`,
+ * `${x=w}` and `${x:=w}` anywhere; the operand of `-v` (`[[ -v x ]]`, `[ -v x ]`); and in a test or a condition (`[[
+ * ]]`, `[`, `test`, the condition of an `if` or a loop, the left side of `&&` or `||`), `${x-w}`, `${x:-w}`,
+ * `${x+w}`, `${x:+w}` and `declare -p x`. (`echo "${x-}"` alone tests nothing: a later `$x` still fails.)
+ */
+function guards(root: SyntaxNode): Map<string, SyntaxNode[]> {
+  const out = new Map<string, SyntaxNode[]>();
+  const add = (name: string, d: SyntaxNode) => out.set(name, [...(out.get(name) ?? []), d]);
+  for (const d of descendants(root, ['expansion', 'word'])) {
+    if (d.type === 'expansion') {
+      const p = parseExpansion(d.text);
+      if (p?.op && /^:?[-=+?]$/.test(p.op) && (/[=?]/.test(p.op) || inTest(d))) add(p.name, d);
+      continue;
+    }
+    const up = d.parent!;
+    const before = up.children[up.children.indexOf(d) - 1]?.text;
+    const declare = up.type === 'command' && /^(?:declare|typeset)$/.test(field(up, 'name')!.text) && fields(up, 'argument').some((a) => /^-[a-zA-Z]*p/.test(a.text));
+    if (/^[A-Za-z_]\w*$/.test(d.text) && (before === '-v' || (declare && inTest(d)))) add(d.text, d);
+  }
+  return out;
+}
+
+/** Whether `d` is in a test or a condition: `[[ ]]`, `[` or `test`, the condition of an `if` or a loop, the left side of `&&` or `||`. */
+function inTest(d: SyntaxNode): boolean {
+  for (let x = d; x.parent; x = x.parent) {
+    const p = x.parent;
+    if (p.type === 'extended_test' || (p.type === 'command' && /^(?:\[|test)$/.test(field(p, 'name')?.text ?? ''))) return true;
+    if (p.type === 'list' && x === p.namedChildren[0]) return true;
+    if (['if_statement', 'elif_clause', 'while_statement'].includes(p.type) && conditionOf(p)!.includes(x)) return true;
   }
   return false;
 }

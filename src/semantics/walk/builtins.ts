@@ -533,6 +533,19 @@ export class WalkBuiltins {
     return st;
   }
 
+  /**
+   * After `${x?word}` (`${x:?word}`), `x` is set, from the environment or by what the model does not follow: bash
+   * ends the shell otherwise (the walker's `unsetError`). Its value is not known, unless it was known to be set.
+   */
+  checkedSet(st: ShellState, e: SyntaxNode): ShellState {
+    const name = e.namedChildren[0];
+    if (name?.type !== 'variable_name' || !e.children.some((c) => c.type === '?' || c.type === ':?')) return st;
+    const v = st.variables.get(name.text);
+    // (A nameref stands for another variable.)
+    if (v && (v.set === 'on' || attribute(st, name.text, 'n') !== 'off')) return st;
+    return this.w.put(st, 'variables', name.text, { declared: 'on', set: 'on', attrs: v?.attrs ?? {}, value: undefined, at: e });
+  }
+
   /** GLOBIGNORE set to `value` (undefined: not known here): one that is not empty turns dotglob on, until it is unset; an empty one leaves it as it is. */
   globignore(st: ShellState, value: string | undefined): ShellState {
     return value !== '' && option(st, 'shopt', 'dotglob') !== 'on' ? this.w.put(st, 'shopt', 'dotglob', value === undefined ? 'unknown' : 'on') : st;
