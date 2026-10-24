@@ -108,7 +108,7 @@
     $('reading-tree').replaceChildren();
     reading = null;
     measureSteps();
-    stopPlay(true);
+    dropSpacer();
     $('reading').hidden = true;
     $('empty').textContent = message;
     $('empty').hidden = false;
@@ -134,8 +134,8 @@
     editors.clear();
     const where = `${msg.file}\n${ex.line}`;
     if (where !== shownLine) {
-      // A cursor move stops the tree's play: the new line is shown whole.
-      stopPlay(true);
+      // A new line is drawn anew: what was folded, and the room kept below the old one, go.
+      dropSpacer();
       collapsedKeys = new Set();
       foldedKeys = new Set();
       currentKey = '';
@@ -419,6 +419,7 @@
   const isCollapsed = (/** @type {HTMLElement} */ li) => li.classList.contains('collapsed');
 
   function toggle(/** @type {HTMLElement} */ li) {
+    hold(rowAt('list', String(li.dataset.path)));
     fold([setCollapsed(li, !isCollapsed(li))]);
   }
 
@@ -428,6 +429,9 @@
       const all = /** @type {HTMLElement[]} */ (Array.from($('reading-tree').querySelectorAll('li[aria-expanded]')));
       const close = !all.some((li) => li.getAttribute('aria-expanded') === 'false');
       const want = (/** @type {HTMLElement} */ li) => close && li.getAttribute('aria-level') !== '1';
+      // (The first row on the screen that stays drawn stays where it is.)
+      hold(firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom,
+        (li) => !close || Number(li.getAttribute('aria-level')) <= 2));
       fold(all.filter((li) => want(li) !== (li.getAttribute('aria-expanded') === 'false')).map((li) => setFolded(li, want(li))));
       updateToggle();
       return;
@@ -436,6 +440,10 @@
     const collapse = !items.some(isCollapsed);
     // Collapse below the top level, so the outline stays visible.
     const want = (/** @type {HTMLElement} */ li) => collapse && li.parentElement !== $('tree');
+    // (The first row on the screen that stays drawn stays where it is: a top-level row or one of its parts.)
+    const top = (/** @type {Element | null | undefined} */ li) => li?.parentElement === $('tree');
+    const shownItems = /** @type {HTMLElement[]} */ (Array.from($('tree').querySelectorAll('li[data-path]'))).filter((li) => li.getClientRects().length);
+    hold(firstOnScreen(shownItems, 'list', $('top').getBoundingClientRect().bottom, (li) => !collapse || top(li) || top(li.parentElement?.closest('li'))));
     fold(items.filter((li) => want(li) !== isCollapsed(li)).map((li) => setCollapsed(li, want(li))));
     nameToggle(collapse);
   });
@@ -575,7 +583,7 @@
   for (const [id, v] of [['view-list', 'list'], ['view-tree', 'tree']]) {
     $(id).addEventListener('click', () => {
       if (view === v) return;
-      stopPlay();
+      dropSpacer();
       view = v;
       save();
       applyView();
@@ -623,7 +631,7 @@
 
   /** The step each node of the line shown appears at: its own, or its parent's when that is later (a node is drawn under its parent). */
   let appear = /** @type {WeakMap<object, number>} */ (new WeakMap());
-  /** How many nodes each step adds to the line (index 0: step 1); a step that adds none is passed over by the play. */
+  /** How many nodes each step adds to the line (index 0: step 1); a step that adds none is passed over by the arrows. */
   let added = /** @type {number[]} */ (new Array(STEPS).fill(0));
   /**
    * The nodes that show what their kind is in general (where no token says more): for each kind, the first node to
@@ -691,36 +699,14 @@
     }
   }
 
-  // ---------------------------------------------------------------- the steps of the tree, and playing them
-
-  /**
-   * How the step control is laid out. 'segments', the default: a button per step, which fold into a stepper with a
-   * menu of the steps where they do not fit. The others are kept for comparing layouts, behind a temporary switch
-   * (`data-step-layout` on <html>, or `?stepLayout=` on the web page): 'slider' (a range, with the steps' numbers
-   * and the name of the one shown) and 'layers' (the four readers' buttons, and bash's own depth as a stepper).
-   */
-  function layoutOf() {
-    let q = document.documentElement.dataset.stepLayout ?? null;
-    try {
-      q = new URLSearchParams(window.parent.location.search).get('stepLayout') ?? q;
-    } catch {
-      // (A frame of another origin, as in VS Code: only the attribute.)
-    }
-    return q === 'slider' || q === 'layers' ? q : 'segments';
-  }
-  new MutationObserver(() => renderControls()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-step-layout'] });
-
-  /** The time a step of the play is shown (ms). */
-  const STEP_MS = 1200;
-  /** The play's timer, while it plays. */
-  let playTimer = 0;
+  // ---------------------------------------------------------------- the steps of the tree
 
   /** The steps that add something to the line shown (the line itself always), in order. */
-  const playable = () => Array.from({ length: STEPS }, (_, i) => i + 1).filter((s) => s === 1 || added[s - 1] > 0);
+  const useful = () => Array.from({ length: STEPS }, (_, i) => i + 1).filter((s) => s === 1 || added[s - 1] > 0);
 
   /** The step `d` steps from the one shown, among those that add something (the one shown at either end). */
   function stepFrom(/** @type {number} */ d) {
-    const list = playable();
+    const list = useful();
     if (d > 0) return list.find((s) => s > step) ?? step;
     return [...list].reverse().find((s) => s < step) ?? step;
   }
@@ -738,144 +724,81 @@
   const LAYERS = ['bash', 'child', 'command', 'language'];
   const layerOfStep = (/** @type {number} */ s) => LAYERS[levelOf(s) - 1];
 
-  /** Makes the controls of a layout (once; again when the layout is switched). */
-  function buildControls(/** @type {HTMLElement} */ box, /** @type {string} */ layout) {
-    box.dataset.layout = layout;
-    box.classList.remove('tight', 'tighter', 'compact', 'open');
-    // (Step back and forward on either side of the steps; Play and Replay at the end.)
-    const parts = [el('span', { id: 'layers-label' }), el('button', { type: 'button', id: 'tp-back' }, icon('◁'))];
-    if (layout === 'segments') {
-      const steps = el('div', { id: 'steps', role: 'group' });
-      for (let s = 1; s <= STEPS; s++) {
-        steps.append(el('button', { type: 'button', class: `step l-${layerOfStep(s)}`, 'data-step': String(s) },
-          el('span', { class: 'num', 'aria-hidden': 'true' }, String(s)), el('span', { class: 'short' })));
-      }
-      parts.push(el('span', { class: 'step-pick' },
+  /**
+   * Makes the controls (once): step back, a button per step, and step forward; where the buttons do not fit, a
+   * stepper whose middle opens the steps as a menu (see `fitControls`). A polite live region says the step.
+   */
+  function buildControls(/** @type {HTMLElement} */ box) {
+    const steps = el('div', { id: 'steps', role: 'group' });
+    for (let s = 1; s <= STEPS; s++) {
+      steps.append(el('button', { type: 'button', class: `step l-${layerOfStep(s)}`, 'data-step': String(s) },
+        el('span', { class: 'num', 'aria-hidden': 'true' }, String(s)), el('span', { class: 'short' })));
+    }
+    box.replaceChildren(el('span', { id: 'layers-label' }), el('button', { type: 'button', id: 'tp-back' }, icon('◁')),
+      el('span', { class: 'step-pick' },
         el('button', { type: 'button', id: 'step-menu', 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-controls': 'steps' },
           el('span', { class: 'sm-count' }), ' ', el('span', { class: 'sm-name' }), el('span', { class: 'sm-caret', 'aria-hidden': 'true' }, '▾')),
-        steps));
-    } else if (layout === 'slider') {
-      const ticks = el('div', { class: 'ticks', 'aria-hidden': 'true' });
-      for (let s = 1; s <= STEPS; s++) {
-        const tick = el('button', { type: 'button', tabindex: '-1', class: `tick l-${layerOfStep(s)}`, 'data-step': String(s) }, String(s));
-        // (Through the CSSOM: the panel's content security policy refuses style attributes.)
-        tick.style.setProperty('--at', String((s - 1) / (STEPS - 1)));
-        ticks.append(tick);
-      }
-      parts.push(el('span', { class: 'slider' },
-        el('input', { type: 'range', id: 'step-range', min: '1', max: String(STEPS), step: '1' }), ticks),
-      el('span', { id: 'step-name' }));
-    } else {
-      LAYERS.forEach((layer, i) => {
-        const b = el('button', { type: 'button', class: `layer l-${layer}`, 'data-level': String(i + 1) });
-        if (i) parts.push(b);
-        else {
-          parts.push(el('span', { class: 'bash-group l-bash' }, b,
-            el('span', { class: 'depth', role: 'group' },
-              el('button', { type: 'button', id: 'depth-down' }, icon('−')), el('span', { id: 'depth-at' }), el('button', { type: 'button', id: 'depth-up' }, icon('+')))));
-        }
-      });
-    }
-    parts.push(el('button', { type: 'button', id: 'tp-forward' }, icon('▷')), el('span', { id: 'tree-play' },
-      el('button', { type: 'button', id: 'tp-play' }, icon('▶'), el('span', { class: 'tp-name' })),
-      el('button', { type: 'button', id: 'tp-replay' }, icon('↻'))),
-    el('span', { id: 'tp-live', class: 'tp-live', 'aria-live': 'polite' }));
-    box.replaceChildren(...parts);
+        steps),
+      el('button', { type: 'button', id: 'tp-forward' }, icon('▷')),
+      el('span', { id: 'tp-live', class: 'tp-live', 'aria-live': 'polite' }));
   }
 
   /** The words of step `s`: its short name, its name, and "Step 4 of 8: words" (with what it adds, when nothing). */
   function stepWords(/** @type {number} */ s) {
     const t = labels.tree;
     const [short, name] = t.steps[s - 1];
-    const said = t.play.step.replace('{i}', String(s)).replace('{n}', String(STEPS)).replace('{name}', name);
-    return { short, name, said, full: added[s - 1] || s === 1 ? said : `${said} (${t.play.empty})` };
+    const said = t.stepper.step.replace('{i}', String(s)).replace('{n}', String(STEPS)).replace('{name}', name);
+    return { short, name, said, full: added[s - 1] || s === 1 ? said : `${said} (${t.stepper.empty})` };
   }
 
-  /** Draws the controls as the step and the play are now. */
+  /** Draws the controls as the step is now. */
   function renderControls() {
     const t = labels.tree;
     if (!t) return;
-    const p = t.play;
+    const p = t.stepper;
     const box = $('layers');
-    const layout = layoutOf();
-    if (box.dataset.layout !== layout) buildControls(box, layout);
+    if (!document.getElementById('steps')) buildControls(box);
     box.setAttribute('aria-label', p.group);
     $('layers-label').textContent = t.show;
     const here = stepWords(step);
-    if (layout === 'segments') {
-      $('steps').setAttribute('aria-label', p.group);
-      box.querySelectorAll('button.step').forEach((b) => {
-        const s = Number(/** @type {HTMLElement} */ (b).dataset.step);
-        const w = stepWords(s);
-        /** @type {HTMLElement} */ (b.querySelector('.short')).textContent = w.short;
-        b.setAttribute('aria-label', w.full);
-        /** @type {HTMLElement} */ (b).title = w.full;
-        if (s === step) b.setAttribute('aria-current', 'step');
-        else b.removeAttribute('aria-current');
-        b.classList.toggle('passed', s < step);
-        b.classList.toggle('empty', s > 1 && !added[s - 1]);
-        // (One stop for Tab: the step shown; the arrows go to the others.)
-        /** @type {HTMLElement} */ (b).tabIndex = s === step ? 0 : -1;
-      });
-      const menu = $('step-menu');
-      /** @type {HTMLElement} */ (menu.querySelector('.sm-count')).textContent = `${step}/${STEPS}`;
-      /** @type {HTMLElement} */ (menu.querySelector('.sm-name')).textContent = here.short;
-      menu.setAttribute('aria-label', `${p.jump}: ${here.said}`);
-      menu.title = p.jump;
-      menu.className = `l-${layerOfStep(step)}`;
-      fitControls();
-    } else if (layout === 'slider') {
-      const range = /** @type {HTMLInputElement} */ ($('step-range'));
-      range.value = String(step);
-      range.setAttribute('aria-label', p.group);
-      range.setAttribute('aria-valuetext', here.full);
-      range.style.setProperty('--fill', String((step - 1) / (STEPS - 1)));
-      box.querySelectorAll('button.tick').forEach((b) => {
-        const s = Number(/** @type {HTMLElement} */ (b).dataset.step);
-        b.classList.toggle('current', s === step);
-        b.classList.toggle('passed', s < step);
-        b.classList.toggle('empty', s > 1 && !added[s - 1]);
-        /** @type {HTMLElement} */ (b).title = stepWords(s).full;
-      });
-      $('step-name').textContent = `${step}/${STEPS} ${here.short}`;
-    } else {
-      box.querySelectorAll('button.layer').forEach((b, i) => {
-        b.textContent = t.levels[i];
-        b.setAttribute('aria-pressed', String(levelOf(step) === i + 1));
-      });
-      const depth = Math.min(step, 5);
-      $('depth-at').textContent = `${depth}/5`;
-      $('depth-at').title = stepWords(depth).name;
-      box.querySelector('.depth')?.setAttribute('aria-label', p.depth);
-      $('depth-down').setAttribute('aria-label', `${p.depth} −: ${depth > 1 ? stepWords(depth - 1).name : ''}`);
-      $('depth-up').setAttribute('aria-label', `${p.depth} +: ${depth < 5 ? stepWords(depth + 1).name : ''}`);
-      $('depth-down').setAttribute('aria-disabled', String(depth <= 1));
-      $('depth-up').setAttribute('aria-disabled', String(step >= 5));
-    }
-    const playing = !!playTimer;
-    const pb = $('tp-play');
-    pb.setAttribute('aria-pressed', String(playing));
-    pb.setAttribute('aria-label', p.play);
-    pb.title = playing ? p.pause : p.play;
-    /** @type {HTMLElement} */ (pb.querySelector('.tp-icon')).textContent = playing ? '❚❚' : '▶';
-    /** @type {HTMLElement} */ (pb.querySelector('.tp-name')).textContent = playing ? p.pause : p.play;
-    for (const [id, text] of [['tp-back', p.back], ['tp-forward', p.forward], ['tp-replay', p.replay]]) {
+    $('steps').setAttribute('aria-label', p.group);
+    box.querySelectorAll('button.step').forEach((b) => {
+      const s = Number(/** @type {HTMLElement} */ (b).dataset.step);
+      const w = stepWords(s);
+      /** @type {HTMLElement} */ (b.querySelector('.short')).textContent = w.short;
+      b.setAttribute('aria-label', w.full);
+      /** @type {HTMLElement} */ (b).title = w.full;
+      if (s === step) b.setAttribute('aria-current', 'step');
+      else b.removeAttribute('aria-current');
+      b.classList.toggle('passed', s < step);
+      b.classList.toggle('empty', s > 1 && !added[s - 1]);
+      // (One stop for Tab: the step shown; the arrows go to the others.)
+      /** @type {HTMLElement} */ (b).tabIndex = s === step ? 0 : -1;
+    });
+    const menu = $('step-menu');
+    /** @type {HTMLElement} */ (menu.querySelector('.sm-count')).textContent = `${step}/${STEPS}`;
+    /** @type {HTMLElement} */ (menu.querySelector('.sm-name')).textContent = here.short;
+    menu.setAttribute('aria-label', `${p.jump}: ${here.said}`);
+    menu.title = p.jump;
+    menu.className = `l-${layerOfStep(step)}`;
+    for (const [id, text] of [['tp-back', p.back], ['tp-forward', p.forward]]) {
       $(id).setAttribute('aria-label', text);
       $(id).title = text;
     }
     // (aria-disabled, not disabled: a button that the focus is on keeps it at the first or the last step.)
     $('tp-back').setAttribute('aria-disabled', String(stepFrom(-1) === step));
     $('tp-forward').setAttribute('aria-disabled', String(stepFrom(1) === step));
+    fitControls();
   }
 
   /**
-   * The step buttons stay on one line: where they do not fit, the label and Play's text go first (.tight), then the
-   * steps' numbers and the step back and forward buttons (.tighter: the steps are at hand), and last the buttons fold
-   * into a stepper with a menu of the steps (.compact).
+   * The step buttons stay on one line: where they do not fit, the label goes first (.tight), then the steps' numbers
+   * and the step back and forward buttons (.tighter: the steps are at hand), and last the buttons fold into a
+   * stepper with a menu of the steps (.compact).
    */
   function fitControls() {
     const box = $('layers');
-    if (box.dataset.layout !== 'segments' || box.closest('[hidden]')) return;
+    if (!document.getElementById('steps') || box.closest('[hidden]')) return;
     const open = box.classList.contains('open');
     box.classList.remove('tight', 'tighter', 'compact', 'open');
     for (const level of ['tight', 'tighter', 'compact']) {
@@ -894,6 +817,12 @@
     if (live) live.textContent = text;
   }
 
+  /**
+   * The focus moves among the controls without scrolling: they are on the screen (sticky), and Chromium would
+   * scroll the page to where they would be without sticking.
+   */
+  const STAY = { preventScroll: true };
+
   /** Opens or closes the menu of the steps (the stepper of narrow panels). */
   function stepMenu(/** @type {boolean} */ open, /** @type {boolean} */ focusIt = true) {
     const box = $('layers');
@@ -901,32 +830,35 @@
     box.classList.toggle('open', open);
     $('step-menu').setAttribute('aria-expanded', String(open));
     if (!focusIt) return;
-    if (open) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus();
-    else $('step-menu').focus();
+    if (open) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
+    else $('step-menu').focus(STAY);
   }
 
-  /** A step chosen by hand: the play stops there. */
+  /** A step chosen by the viewer: shown, and kept. */
   function choose(/** @type {number} */ s) {
-    stopPlay();
-    setStep(s, true);
+    setStep(s);
     save();
   }
 
-  /** Shows step `s`; with `animate`, the rows it adds grow from their parent and those it takes away shrink into it. */
-  function setStep(/** @type {number} */ s, /** @type {boolean} */ animate, /** @type {boolean} */ follow = false) {
+  /**
+   * Shows step `s`: the rows it adds grow from their parent and those it takes away shrink into it. The controls
+   * stay where they are, and so does the first row of the tree on the screen that the step keeps (`firstRowKept`).
+   */
+  function setStep(/** @type {number} */ s) {
     s = Math.max(1, Math.min(STEPS, s));
     if (flushMotion()) renderReading();
     const was = step;
+    if (s !== was && view === 'tree' && reading) hold(firstRowKept(s), stuckRange());
     step = s;
     if (s !== was && reading) announce(stepWords(s).full);
-    if (s === was || view !== 'tree' || !reading || !animate || !motion()) {
+    if (s === was || view !== 'tree' || !reading || !motion()) {
       renderReading();
       return;
     }
     if (s > was) {
       const before = new Set(Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]'), (li) => /** @type {HTMLElement} */ (li).dataset.path ?? ''));
       renderReading();
-      growIn(before, follow);
+      growIn(before);
       return;
     }
     renderControls();
@@ -938,87 +870,31 @@
     });
   }
 
-  /** Stops the play; with `whole`, every layer is shown (a new line, or the panel emptied, while it played). */
-  function stopPlay(whole = false) {
-    if (!playTimer) return;
-    clearTimeout(playTimer);
-    playTimer = 0;
-    if (whole) {
-      step = STEPS;
-      save();
-    }
-    if (document.getElementById('tp-play')) renderControls();
-  }
-
-  /** The play's next step; at the last one that adds something, it ends with every layer shown, as the steps say. */
-  function tick() {
-    const next = stepFrom(1);
-    if (next !== step) setStep(next, true, true);
-    if (stepFrom(1) === step) {
-      playTimer = 0;
-      step = STEPS;
-      save();
-      renderControls();
-      return;
-    }
-    playTimer = window.setTimeout(tick, STEP_MS);
-    renderControls();
-  }
-
-  /** Play or pause; a play at the last step starts from the line alone. Without motion, the steps change at once. */
-  function togglePlay(/** @type {boolean} */ fromStart = false) {
-    if (!reading) return;
-    if (playTimer) {
-      stopPlay();
-      save();
-      announce(labels.tree.play.paused);
-      return;
-    }
-    if (fromStart || stepFrom(1) === step) setStep(1, true);
-    playTimer = window.setTimeout(tick, STEP_MS);
-    renderControls();
-  }
-
   $('layers').addEventListener('click', (e) => {
     const b = e.target instanceof Element ? e.target.closest('button') : null;
     if (!b) return;
     const box = $('layers');
-    if (b.matches('button.step, button.tick')) {
+    if (b.matches('button.step')) {
       const inMenu = box.classList.contains('open');
       choose(Number(/** @type {HTMLElement} */ (b).dataset.step));
       if (inMenu) stepMenu(false);
-      else if (b.matches('button.step')) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus();
+      else /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
     } else if (b.id === 'step-menu') stepMenu(!box.classList.contains('open'));
-    else if (b.matches('button.layer')) choose(Number(/** @type {HTMLElement} */ (b).dataset.level) + 4);
-    else if (b.id === 'depth-down') choose(Math.max(1, Math.min(step, 5) - 1));
-    else if (b.id === 'depth-up') choose(Math.min(5, step + 1));
-    else if (b.id === 'tp-back' || b.id === 'tp-forward') {
-      stopPlay();
-      setStep(stepFrom(b.id === 'tp-back' ? -1 : 1), true);
-      save();
-    } else if (b.id === 'tp-play') togglePlay();
-    else if (b.id === 'tp-replay') {
-      stopPlay();
-      togglePlay(true);
-    }
-  });
-  $('layers').addEventListener('input', (e) => {
-    if (e.target instanceof HTMLInputElement && e.target.id === 'step-range') choose(Number(e.target.value));
+    else if (b.id === 'tp-back' || b.id === 'tp-forward') choose(stepFrom(b.id === 'tp-back' ? -1 : 1));
   });
   // The arrows step (among the steps that add something), Home and End go to the line alone and to every layer. In
   // the menu of the steps, the arrows up and down move the focus, and Escape closes it.
   $('layers').addEventListener('keydown', (e) => {
     const box = $('layers');
-    if (e.target instanceof HTMLInputElement) return;
     const onStep = e.target instanceof Element && e.target.matches('button.step');
     if (box.classList.contains('open')) {
       const list = /** @type {HTMLElement[]} */ (Array.from(box.querySelectorAll('button.step')));
       const i = list.indexOf(/** @type {HTMLElement} */ (e.target));
       if (e.key === 'Escape') stepMenu(false);
-      else if (e.key === 'ArrowDown' && i >= 0) list[Math.min(list.length - 1, i + 1)].focus();
-      else if (e.key === 'ArrowUp' && i >= 0) list[Math.max(0, i - 1)].focus();
-      else if (e.key === 'Home' && i >= 0) list[0].focus();
-      else if (e.key === 'End' && i >= 0) list[list.length - 1].focus();
+      else if (e.key === 'ArrowDown' && i >= 0) list[Math.min(list.length - 1, i + 1)].focus(STAY);
+      else if (e.key === 'ArrowUp' && i >= 0) list[Math.max(0, i - 1)].focus(STAY);
+      else if (e.key === 'Home' && i >= 0) list[0].focus(STAY);
+      else if (e.key === 'End' && i >= 0) list[list.length - 1].focus(STAY);
       else if (e.key === 'Tab') {
         stepMenu(false, false);
         return;
@@ -1026,15 +902,12 @@
       e.preventDefault();
       return;
     }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      stopPlay();
-      setStep(stepFrom(e.key === 'ArrowLeft' ? -1 : 1), true);
-      save();
-    } else if (e.key === 'Home') choose(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') choose(stepFrom(e.key === 'ArrowLeft' ? -1 : 1));
+    else if (e.key === 'Home') choose(1);
     else if (e.key === 'End') choose(STEPS);
     else return;
     e.preventDefault();
-    if (onStep) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus();
+    if (onStep) /** @type {HTMLElement | null} */ (box.querySelector('button.step[aria-current]'))?.focus(STAY);
   });
   // A click or the focus elsewhere closes the menu.
   document.addEventListener('pointerdown', (e) => {
@@ -1056,6 +929,8 @@
   const motion = () => animations && !matchMedia('(prefers-reduced-motion: reduce)').matches && !document.body.classList.contains('vscode-reduce-motion');
   /** The move of each box that moves. */
   const running = /** @type {WeakMap<Element, Animation>} */ (new WeakMap());
+  /** The moves of heights, while they run: the row held in place follows them (`hold`). */
+  const moves = /** @type {Set<Animation>} */ (new Set());
   /** A step back whose rows are shrinking: they are drawn away when it ends. */
   let shrinking = /** @type {{ cancel(): void } | null} */ (null);
 
@@ -1096,7 +971,7 @@
     outer.forEach((c) => running.get(c.el)?.cancel());
     const to = outer.map((c) => (c.open ? height(c.el) : 0));
     /** @type {Animation[]} */
-    const moves = [];
+    const started = [];
     let left = outer.length;
     if (!left) after();
     outer.forEach((c, i) => {
@@ -1107,9 +982,11 @@
       const a = box.animate([{ height: `${from[i].h}px`, opacity: from[i].o }, { height: `${to[i]}px`, opacity: c.open ? 1 : 0 }],
         { duration: MOTION_MS, delay: c.delay ?? 0, easing: EASE, fill: c.open ? 'backwards' : 'forwards' });
       running.set(box, a);
-      moves.push(a);
+      moves.add(a);
+      started.push(a);
       let over = false;
       const end = () => {
+        moves.delete(a);
         if (over) return false;
         over = true;
         if (running.get(box) === a) running.delete(box);
@@ -1122,29 +999,19 @@
         // (Folded and no longer drawn: the end of the move can go.)
         if (!c.open) a.cancel();
         if (--left === 0) after();
+        // (The row held in place, at the last height, before the frame is drawn.)
+        keep();
       };
       a.oncancel = end;
     });
-    return { cancel: () => moves.forEach((a) => a.cancel()) };
+    return { cancel: () => started.forEach((a) => a.cancel()) };
   }
 
-  /**
-   * The rows a step adds grow from their parent (each new subtree, one after the other), and a new reader's band
-   * takes its tint from the band around it. While the tree plays, the first new row is scrolled into view, under the
-   * line and the controls at the top, in the panel only (not the page around the web page's frame).
-   */
-  function growIn(/** @type {Set<string>} */ before, /** @type {boolean} */ follow) {
+  /** The rows a step adds grow from their parent (each new subtree, one after the other), and a new reader's band takes its tint from the band around it. */
+  function growIn(/** @type {Set<string>} */ before) {
     const ul = $('reading-tree');
     const roots = /** @type {HTMLElement[]} */ (Array.from(ul.querySelectorAll('li[role="treeitem"]')))
       .filter((li) => !before.has(li.dataset.path ?? '') && before.has((li.dataset.path ?? '').replace(/\.\d+$/, '')));
-    const first = roots[0];
-    if (first && follow) {
-      const r = first.getBoundingClientRect();
-      const topLine = $('layers').getBoundingClientRect().bottom;
-      const room = window.innerHeight - topLine;
-      const over = r.top + Math.min(r.height, room * 0.6) - window.innerHeight;
-      if (over > 0 || r.top < topLine) window.scrollBy({ top: r.top < topLine ? r.top - topLine - 8 : over + 16, behavior: 'smooth' });
-    }
     fold(roots.map((li, k) => ({ el: li, open: true, delay: Math.min(k, 8) * 30 })));
     roots.forEach((li, k) => {
       if (!li.classList.contains('band')) return;
@@ -1153,6 +1020,161 @@
       const from = parent ? getComputedStyle(parent).backgroundColor : 'transparent';
       li.animate([{ backgroundColor: from }, { backgroundColor: to }], { duration: MOTION_MS + 200, delay: Math.min(k, 8) * 30 + 80, easing: 'ease-out', fill: 'backwards' });
     });
+  }
+
+  // ---------------------------------------------------------------- keeping the row acted on in place
+
+  /*
+   * A fold, an unfold or a step changes the height of what lies around the row the viewer acted on. The panel
+   * scrolls so that this row stays where it was on the screen: right after the change, at every frame of the motion
+   * (a frame's callback runs after the moves have stepped and before the frame is drawn), and at its end. CSS's own
+   * scroll anchoring (`overflow-anchor`) is turned off (panel.css): it chooses its own row, it differs from browser
+   * to browser, and it cannot keep a page whose end comes up.
+   *
+   * There the browser would pull the page down (it keeps the scroll position within the content): a blank spacer
+   * below the content holds the page instead, and goes as the viewer scrolls up. Only its part below the screen is
+   * taken away, so the scroll range narrows and nothing on the screen moves; it is gone once the content reaches
+   * the bottom of the screen again, and dropped with a new line or another view.
+   *
+   * The panel scrolls as a page in all its hosts: VS Code's webview, and the web page's frame (beside the editor, or
+   * under it on a phone).
+   */
+  const spacer = document.createElement('div');
+  spacer.id = 'scroll-spacer';
+  spacer.setAttribute('aria-hidden', 'true');
+  document.body.append(spacer);
+  /** Where the spacer ends, from the top of the page (0: no spacer). */
+  let spacerEnd = 0;
+
+  /** Where the content ends, from the top of the page: the bottom of <html>, which the spacer (placed absolutely) leaves as it is. */
+  const contentEnd = () => document.documentElement.getBoundingClientRect().bottom + window.scrollY;
+
+  /** Makes the page reach `end` at least (0: no spacer). */
+  function setSpacer(/** @type {number} */ end) {
+    spacerEnd = end;
+    spacer.style.height = end ? `${end - (spacer.getBoundingClientRect().top + window.scrollY)}px` : '0px';
+  }
+
+  /**
+   * Takes away the part of the spacer below the screen, and all of it once the content reaches the bottom of the
+   * screen; not while a row is held, whose content may still shrink.
+   */
+  function trimSpacer() {
+    if (!spacerEnd) return;
+    const end = Math.min(spacerEnd, window.scrollY + window.innerHeight);
+    setSpacer(!anchor && end <= contentEnd() + 0.5 ? 0 : end);
+  }
+
+  /** Lets go of the row held and drops the spacer: the content is drawn anew. */
+  function dropSpacer() {
+    if (anchor) cancelAnimationFrame(anchor.frame);
+    anchor = null;
+    if (spacerEnd) setSpacer(0);
+  }
+  window.addEventListener('scroll', () => {
+    if (!anchor) trimSpacer();
+  }, { passive: true });
+
+  /** The row held in place: how to find it (it may be drawn again), where it is to stay on the screen, and the scroll position after the last correction. */
+  let anchor = /** @type {{ find: () => Element | null, top: number, y: number, range: (() => number[]) | null, frame: number } | null} */ (null);
+
+  /**
+   * Holds the row `find` returns where it is on the screen while what is about to change does: called before the
+   * change. Until the row's new place is known, the page is held at its scroll position (the spacer). `range`, when
+   * given, says between which scroll positions the page is to stay (see `stuckRange`).
+   */
+  function hold(/** @type {(() => Element | null) | null} */ find, /** @type {(() => number[]) | null} */ range = null) {
+    settle();
+    const row = find?.();
+    if (!find || !row) return;
+    setSpacer(Math.max(spacerEnd, window.scrollY + window.innerHeight));
+    const a = { find, top: row.getBoundingClientRect().top, y: window.scrollY, range, frame: 0 };
+    anchor = a;
+    // (After the change, which the caller makes next, before anything is drawn; then at each frame.)
+    queueMicrotask(() => {
+      if (anchor !== a) return;
+      keep();
+      a.frame = requestAnimationFrame(follow);
+    });
+  }
+
+  /** Scrolls the row held back to its place, and takes away the spacer below the screen. */
+  function keep() {
+    const a = anchor;
+    if (!a) return;
+    const row = a.find();
+    // (A scroll by the viewer meanwhile moves the row with it.)
+    a.top -= window.scrollY - a.y;
+    let y = window.scrollY;
+    if (row && row.getClientRects().length) y += row.getBoundingClientRect().top - a.top;
+    if (a.range) {
+      const [lo, hi] = a.range();
+      y = Math.min(Math.max(y, lo), Math.max(lo, hi));
+    }
+    y = Math.max(0, y);
+    if (Math.abs(y - window.scrollY) > 0.25) {
+      setSpacer(Math.max(spacerEnd, y + window.innerHeight));
+      window.scrollTo({ top: y, behavior: 'instant' });
+    }
+    a.y = window.scrollY;
+    trimSpacer();
+  }
+
+  /** At each frame while rows move; the row is let go once they stop. */
+  function follow() {
+    if (!anchor) return;
+    keep();
+    if (moves.size) anchor.frame = requestAnimationFrame(follow);
+    else {
+      anchor = null;
+      trimSpacer();
+    }
+  }
+
+  /** Lets go of the row held, after a last correction (another change is about to start). */
+  function settle() {
+    if (!anchor) return;
+    cancelAnimationFrame(anchor.frame);
+    keep();
+    anchor = null;
+    trimSpacer();
+  }
+
+  /** Finds the row of the item at `path` in the list (`#tree`) or in the reading tree, as drawn when it is called. */
+  const rowAt = (/** @type {'list' | 'reading'} */ list, /** @type {string} */ path) => () =>
+    document.querySelector(list === 'list' ? `#tree li[data-path="${path}"] > .row` : `#reading-tree li[data-path="${path}"] > .trow`);
+
+  /**
+   * Of `items`, the first row on the screen (below `below`, the sticky rows at the top) that `stays` after a change;
+   * else the nearest item around the first on the screen that stays.
+   */
+  function firstOnScreen(/** @type {HTMLElement[]} */ items, /** @type {'list' | 'reading'} */ list, /** @type {number} */ below, /** @type {(li: HTMLElement) => boolean} */ stays) {
+    const on = items.filter((li) => {
+      const r = /** @type {HTMLElement} */ (li.firstElementChild).getBoundingClientRect();
+      return r.bottom > below && r.top < window.innerHeight;
+    });
+    let li = /** @type {HTMLElement | null | undefined} */ (on.find(stays) ?? on[0]);
+    while (li && !stays(li)) li = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li'));
+    return li ? rowAt(list, String(li.dataset.path)) : null;
+  }
+
+  /**
+   * Where the step controls are stuck under the line, when they are: between the scroll position where they start
+   * to stick and the one where the end of the tree (their section) would take them up with it. A step keeps them
+   * where they are, before the row it holds: when that row would have to go further, it moves.
+   */
+  function stuckRange() {
+    const box = $('layers');
+    const top = parseFloat(getComputedStyle(box).top);
+    const at = () => $('reading').getBoundingClientRect().top + window.scrollY - top;
+    if (window.scrollY < at() - 0.5) return null;
+    // (Sticky keeps the box with its margin inside the section.)
+    return () => [at(), $('reading').getBoundingClientRect().bottom + window.scrollY - top - box.offsetHeight - parseFloat(getComputedStyle(box).marginBottom)];
+  }
+
+  /** The row of the reading tree a change to step `s` keeps in place: the first on the screen that the step still shows. */
+  function firstRowKept(/** @type {number} */ s) {
+    return firstOnScreen(visibleItems(), 'reading', $('layers').getBoundingClientRect().bottom, (li) => (appear.get(readingNodes.get(li)) ?? 1) <= s);
   }
 
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
@@ -1252,12 +1274,14 @@
     $('reading-tree').querySelectorAll('li[tabindex="0"]').forEach((x) => { /** @type {HTMLElement} */ (x).tabIndex = -1; });
     li.tabIndex = 0;
     currentKey = String(li.dataset.path);
-    li.focus();
+    // (Not scrolled by the focus: a click leaves the row where it is, and the keys scroll it into view themselves.)
+    li.focus({ preventScroll: true });
   }
 
   function toggleItem(/** @type {HTMLElement} */ li) {
     const group = li.querySelector(':scope > ul[role="group"]');
     if (!group) return;
+    hold(rowAt('reading', String(li.dataset.path)));
     fold([setFolded(li, !/** @type {HTMLElement} */ (group).hidden)]);
   }
 
@@ -1343,11 +1367,11 @@
       case 'Home': next = items[0]; break;
       case 'End': next = items[items.length - 1]; break;
       case 'ArrowRight':
-        if (group && group.hidden) fold([setFolded(li, false)]);
+        if (group && group.hidden) toggleItem(li);
         else if (group) next = /** @type {HTMLElement} */ (group.firstElementChild);
         break;
       case 'ArrowLeft':
-        if (group && !group.hidden) fold([setFolded(li, true)]);
+        if (group && !group.hidden) toggleItem(li);
         else next = /** @type {HTMLElement | null} */ (li.parentElement?.closest('li[role="treeitem"]') ?? null);
         break;
       case 'Enter':
@@ -1413,6 +1437,7 @@
     $('reference').hidden = !open;
     $('main').hidden = open;
     $('line').hidden = open;
+    dropSpacer();
     nameRef();
     if (open) {
       if (!reference) vscode.postMessage({ type: 'reference' });

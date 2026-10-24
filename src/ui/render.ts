@@ -30,13 +30,13 @@ export const ui = {
       editHint: '書き換えられます（結果はその場で更新）', noMatch: '該当なし',
       views: '表示', listView: '意味', treeView: '読まれ方',
       tree: {
-        label: '行の各部分を誰が読むか', show: '表示', levels: ['bash', '+ 中のスクリプト', '+ コマンド', '+ 言語'],
+        label: '行の各部分を誰が読むか', show: '表示',
         // The steps of the tree, from the line alone to every layer: their short names (the buttons) and their names.
         steps: [['行', '行'], ['リスト', 'リストとパイプライン'], ['コマンド', 'コマンド'], ['単語', '単語'], ['単語の中', '単語の中身（クォートと展開）'],
           ['スクリプト', '中のスクリプト'], ['引数', '各コマンドによる引数の読み方'], ['言語', '言語']],
-        play: {
-          group: 'ステップ', play: '再生', pause: '一時停止', back: '前のステップ', forward: '次のステップ', replay: '最初から再生',
-          step: 'ステップ {i}/{n}：{name}', paused: '一時停止中', empty: 'この行では増えるものなし', jump: 'ステップを選ぶ', depth: 'bash の読みの深さ',
+        stepper: {
+          group: 'ステップ', back: '前のステップ', forward: '次のステップ',
+          step: 'ステップ {i}/{n}：{name}', empty: 'この行では増えるものなし', jump: 'ステップを選ぶ',
         },
         reads: '{name} が読む',
         bands: { bash: 'bash', child: { subshell: 'サブシェル', shell: '新しいシェル', same: '同じシェルでもう一度', remote: 'リモートのシェル', container: 'コンテナのシェル' } },
@@ -110,12 +110,12 @@ export const ui = {
       editHint: 'Editable; the result updates as you type', noMatch: 'Nothing found',
       views: 'View', listView: 'Meaning', treeView: 'Reading',
       tree: {
-        label: 'Who reads each part of the line', show: 'Show', levels: ['bash', '+ scripts inside', '+ commands', '+ languages'],
+        label: 'Who reads each part of the line', show: 'Show',
         steps: [['Line', 'the line'], ['Lists', 'lists and pipelines'], ['Commands', 'commands'], ['Words', 'words'], ['Inside', 'inside the words (quotes and expansions)'],
           ['Scripts', 'scripts inside'], ['Arguments', 'how each command reads its arguments'], ['Languages', 'languages']],
-        play: {
-          group: 'Steps', play: 'Play', pause: 'Pause', back: 'Previous step', forward: 'Next step', replay: 'Play from the start',
-          step: 'Step {i} of {n}: {name}', paused: 'Paused', empty: 'Adds nothing on this line', jump: 'Choose a step', depth: "Depth of bash's reading",
+        stepper: {
+          group: 'Steps', back: 'Previous step', forward: 'Next step',
+          step: 'Step {i} of {n}: {name}', empty: 'Adds nothing on this line', jump: 'Choose a step',
         },
         reads: '{name} reads',
         bands: { bash: 'bash', child: { subshell: 'subshell', shell: 'new shell', same: 'same shell, again', remote: 'remote shell', container: 'container shell' } },

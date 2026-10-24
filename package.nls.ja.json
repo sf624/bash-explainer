@@ -19,7 +19,7 @@
   "config.inline.enabled": "カーソル行の行末に1行の要約を薄く表示する。",
   "config.highlight.enabled": "解説と同じ構文木からシェルのコードを色分けする（セマンティックトークン）。エディタ自身の色分けの上に重ねます。ヒアドキュメントは bash と同じ所で終わり、コマンド・組み込みコマンド・スクリプト内の関数・オプション・グロブ・算術式にそれぞれ色が付きます。Dockerfile・CI の YAML・Makefile・Markdown の中のシェルのコードも対象です。セマンティックハイライトに対応したテーマが必要です（ほとんどのテーマが対応）。",
   "config.panel.autoOpen": "bash スクリプトを開いたら解説パネルを自動で開く。パネルは **Bash Explainer: bash の解説パネルを開く** やホバーのリンクからいつでも開けます。",
-  "config.panel.animations": "解説パネルでアニメーションする。一覧とツリーの表示で、展開した行は親から伸び、折りたたんだ行は親に縮む（ツリーの再生でも同じ）。システムや VS Code が動きを減らすよう求めるとき（`workbench.reduceMotion`）は、オンでも動かさない。",
+  "config.panel.animations": "解説パネルでアニメーションする。「意味」と「読まれ方」の表示で、展開した行は親から伸び、折りたたんだ行は親に縮む（「読まれ方」のステップを切り替えたときも同じ）。システムや VS Code が動きを減らすよう求めるとき（`workbench.reduceMotion`）は、オンでも動かさない。",
   "config.shell": "スクリプトの対象シェル。そのシェルで使えない書き方を指摘します（bash では `#bashExplainer.bashVersion#` より新しい書き方だけ）。",
   "config.shell.auto": "shebang（`#!/bin/sh` など）・`# shellcheck shell=` 指定・ファイル名から判定。分からなければ bash",
   "config.shell.sh": "POSIX sh（dash や busybox ash で動かない書き方を指摘）",

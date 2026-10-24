@@ -202,7 +202,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.hover.followDelay` | `400` | その表示までの遅延（ミリ秒） |
 | `bashExplainer.hover.maxDepth` | `0` | ホバーに表示する解説ツリーの階層数（`0` はすべて） |
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
-| `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみとツリーの再生のときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
+| `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみと「読まれ方」のステップの切り替えのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
 | `bashExplainer.highlight.enabled` | `false` | 解説と同じ構文木からシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。Web 版は常にこの色分け |
 | `bashExplainer.inline.enabled` | `false` | カーソル行の行末に1行の要約を表示 |
 | `bashExplainer.inline.maxLength` | `120` | その要約の最大文字数 |
