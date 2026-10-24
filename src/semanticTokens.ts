@@ -1,13 +1,13 @@
 // Semantic tokens (LSP 3.16, and VS Code's DocumentSemanticTokensProvider) from src/highlight.ts.
 // Pure: the VS Code provider (src/ui/semanticTokens.ts) and the Language Server (cli/lsp.ts) send what
 // this encodes. Editors draw the tokens over their own grammar (TextMate in VS Code), so the kinds map to
-// the standard token types and modifiers, which every theme colours; `exported` is our own modifier (package.json
-// `semanticTokenModifiers`), which themes ignore unless they style it.
+// the standard token types and modifiers, which every theme colours; `exported` and `unquoted` are our own modifiers
+// (package.json `semanticTokenModifiers`), which themes ignore unless they style it.
 import type { ShellDocument } from './document';
 import { documentHighlight, type DocumentHighlightOptions, HighlightKind, LineSpan } from './highlight';
 
 export const TOKEN_TYPES = ['comment', 'keyword', 'function', 'parameter', 'string', 'variable', 'operator', 'number', 'regexp', 'macro'] as const;
-export const TOKEN_MODIFIERS = ['declaration', 'modification', 'defaultLibrary', 'readonly', 'exported'] as const;
+export const TOKEN_MODIFIERS = ['declaration', 'modification', 'defaultLibrary', 'readonly', 'exported', 'unquoted'] as const;
 
 export type TokenType = (typeof TOKEN_TYPES)[number];
 export type TokenModifier = (typeof TOKEN_MODIFIERS)[number];
@@ -19,8 +19,8 @@ export const LEGEND: { tokenTypes: string[]; tokenModifiers: string[] } = { toke
  * Each kind as a standard type and modifiers. The colours come from the TextMate scopes that package.json
  * (`semanticTokenScopes`) gives each type: scopes of VS Code's shell grammar, so that the user's theme colours them
  * as it colours that grammar. A heredoc's delimiter is a string and a substitution's delimiters are a variable. An alias is a
- * `macro` (a name replaced by text). A word that only looks like an option is a `string`, as the grammar colours a plain
- * argument. An `error` gets no token: the grammar's colour stays, and the diagnostics say what is wrong. The modifiers of
+ * `macro` (a name replaced by text). A word that only looks like an option is an `unquoted` `string` (our own modifier), which
+ * package.json maps to the grammar's scope of a plain argument, so that it looks like the other words after the command. An `error` gets no token: the grammar's colour stays, and the diagnostics say what is wrong. The modifiers of
  * a span (`readonly`, `exported`) are added to those of its kind.
  */
 export const TOKEN_OF: Record<HighlightKind, [TokenType, ...TokenModifier[]] | null> = {
@@ -32,7 +32,7 @@ export const TOKEN_OF: Record<HighlightKind, [TokenType, ...TokenModifier[]] | n
   alias: ['macro'],
   functionName: ['function', 'declaration'],
   option: ['parameter'],
-  argument: ['string'],
+  argument: ['string', 'unquoted'],
   string: ['string'],
   heredoc: ['string'],
   heredocDelimiter: ['string'],

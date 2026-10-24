@@ -663,6 +663,10 @@
       {
         "id": "exported",
         "description": "%semanticTokenModifiers.exported%"
+      },
+      {
+        "id": "unquoted",
+        "description": "%semanticTokenModifiers.unquoted%"
       }
     ],
     "semanticTokenScopes": [
@@ -689,6 +693,9 @@
           ],
           "string": [
             "string.quoted.double.shell"
+          ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
           ],
           "variable": [
             "variable.other.normal.shell"
@@ -737,6 +744,9 @@
           "string": [
             "string.quoted.double.shell"
           ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
+          ],
           "variable": [
             "variable.other.normal.shell"
           ],
@@ -783,6 +793,9 @@
           ],
           "string": [
             "string.quoted.double.shell"
+          ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
           ],
           "variable": [
             "variable.other.normal.shell"
@@ -831,6 +844,9 @@
           "string": [
             "string.quoted.double.shell"
           ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
+          ],
           "variable": [
             "variable.other.normal.shell"
           ],
@@ -877,6 +893,9 @@
           ],
           "string": [
             "string.quoted.double.shell"
+          ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
           ],
           "variable": [
             "variable.other.normal.shell"
@@ -925,6 +944,9 @@
           "string": [
             "string.quoted.double.shell"
           ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
+          ],
           "variable": [
             "variable.other.normal.shell"
           ],
@@ -971,6 +993,9 @@
           ],
           "string": [
             "string.quoted.double.shell"
+          ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
           ],
           "variable": [
             "variable.other.normal.shell"
@@ -1019,6 +1044,9 @@
           "string": [
             "string.quoted.double.shell"
           ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
+          ],
           "variable": [
             "variable.other.normal.shell"
           ],
@@ -1065,6 +1093,9 @@
           ],
           "string": [
             "string.quoted.double.shell"
+          ],
+          "string.unquoted": [
+            "string.unquoted.argument.shell"
           ],
           "variable": [
             "variable.other.normal.shell"

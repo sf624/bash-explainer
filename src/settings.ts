@@ -359,6 +359,13 @@ export function mergeSettings(...layers: Partial<Settings>[]): Settings {
 /** The shell set (undefined: `auto`, from the file). */
 export const forcedShell = (s: Settings): Shell | undefined => (s.shell === 'auto' ? undefined : s.shell);
 
+/**
+ * The settings the semantic tokens depend on, which ask the editor for new tokens when they change: the switch, which
+ * documents have shell code (the languages, the kinds of files), and the shell, which decides what a name runs (a
+ * builtin of bash only is a program in sh). A shell chosen in the panel asks for them too (src/extension.ts).
+ */
+export const TOKEN_SETTINGS: readonly SettingKey[] = ['highlight.enabled', 'languages', 'embedded.files', 'shell'];
+
 /** What the analyzer takes from the settings. */
 export function explainOptions(s: Settings): ExplainOptions {
   return {

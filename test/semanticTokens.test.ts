@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HighlightKind } from '../src/highlight';
 import { decodeTokens, encodeTokens, LEGEND, semanticTokens, TOKEN_MODIFIERS, TOKEN_OF, TOKEN_TYPES } from '../src/semanticTokens';
+import { TOKEN_SETTINGS } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
 const parser = createUnbashParser();
@@ -18,7 +19,7 @@ describe('semantic tokens', () => {
     // Our own modifiers are declared in package.json, with a description.
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
     const own: { id: string; description: string }[] = pkg.contributes.semanticTokenModifiers;
-    assert.deepEqual(own.map((m) => m.id), ['exported']);
+    assert.deepEqual(own.map((m) => m.id), ['exported', 'unquoted']);
     for (const m of LEGEND.tokenModifiers) assert.ok(standardModifiers.includes(m) || own.some((o) => o.id === m), m);
     // Every type and modifier is used by some kind, or by what the state says of a variable.
     const used = [...Object.values(TOKEN_OF).flatMap((t) => t ?? []), 'readonly', 'exported'];
@@ -57,6 +58,25 @@ describe('semantic tokens', () => {
     for (const [from, to] of [[0, 0], [10, 40], [100, 103], [doc.lines.length - 5, doc.lines.length + 10]]) {
       assert.deepStrictEqual(decodeTokens(semanticTokens(doc, { lines: { from, to } })), all.filter((t) => t.line >= from && t.line <= to), `${from}-${to}`);
     }
+  });
+
+  it('sends a word that only looks like an option as an unquoted string, the scope of a plain argument', () => {
+    const text = 'grep -e -v f';
+    const got = decodeTokens(semanticTokens({ lines: [text], tree: parser.parse(text) }));
+    assert.deepStrictEqual(got.map((t) => `${text.slice(t.start, t.start + t.length)} ${t.type}:${t.modifiers.join('.')}`), ['grep function:', '-e parameter:', '-v string:unquoted']);
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    for (const e of pkg.contributes.semanticTokenScopes) assert.deepStrictEqual(e.scopes['string.unquoted'], ['string.unquoted.argument.shell'], e.language);
+  });
+
+  it('asks for new tokens when a setting they depend on changes: the shell decides what a name runs', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    for (const k of TOKEN_SETTINGS) assert.ok(pkg.contributes.configuration.properties[`bashExplainer.${k}`], k);
+    // `shopt` is a builtin of bash, a program in sh: the same text, other tokens.
+    const text = 'shopt -s x';
+    const doc = { lines: [text], tree: parser.parse(text) };
+    const of = (forced: 'bash' | 'sh') => decodeTokens(semanticTokens(doc, { shells: { forced } }))[0].modifiers;
+    assert.deepStrictEqual([of('bash'), of('sh')], [['defaultLibrary'], []]);
+    assert.ok(TOKEN_SETTINGS.includes('shell'));
   });
 
   it('adds the modifiers the state gives a variable, and colours an alias as a macro', () => {
