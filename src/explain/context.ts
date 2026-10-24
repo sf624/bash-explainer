@@ -74,8 +74,10 @@ export interface Explainer {
    * the one rule: a pitfall (by its catalog entry) is not said when the pitfalls are off.
    */
   say(f: Fact, at: SyntaxNode): string[];
-  /** Adds a note to the line's: a fact (as `say` says it) or a text, about the node or nodes `at`. */
-  note(what: Fact | string, at: SyntaxNode | readonly SyntaxNode[]): void;
+  /** Adds a fact's note to the line's (as `say` says it), about the node `at`. */
+  note(f: Fact, at: SyntaxNode): void;
+  /** Adds a note to the line's, about the node or nodes `at`. */
+  note(text: string, at: SyntaxNode | readonly SyntaxNode[]): void;
   /** Records a construct around the line (`LineExplanation.context`), outermost first. */
   enclosing(entry: ContextEntry): void;
   /** Adds a worked example to the line's. */
@@ -226,6 +228,8 @@ export class LineExplainer implements Explainer, LineOutput {
     return anchored(out.map((x) => ({ text: x.text, node: at })), this.anchors);
   }
 
+  note(f: Fact, at: SyntaxNode): void;
+  note(text: string, at: SyntaxNode | readonly SyntaxNode[]): void;
   note(what: Fact | string, at: SyntaxNode | readonly SyntaxNode[]): void {
     if (typeof what !== 'string') {
       this.notes.push(...this.say(what, at as SyntaxNode));

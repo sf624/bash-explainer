@@ -40,16 +40,23 @@ function findCycles(graph: Map<string, string[]>): string[][] {
   return cycles;
 }
 
-/** Comparisons of a value with a string that is a dictionary command name; a comparison on `.type` is left out. */
+/**
+ * Fields that hold a closed set of values of the syntax or the models, some of which are spelled like commands: a node's
+ * `.type` (`command`), a status rule's or a link's `.kind` (`command`, `test`), errexit's `.stops` (`script`), and the
+ * shell (`bash`, `sh`). A comparison on them is not a name check.
+ */
+const CLOSED_FIELDS = /(^|\.)(type|kind|stops|shell)$/;
+
+/** Comparisons of a value with a string that is a dictionary command name; a comparison on a closed field is left out. */
 function nameComparisons(code: string, names: ReadonlySet<string>): string[] {
   const found: string[] = [];
   const lit = (q: number): string => `(['"\`])([^'"\`\\n]+)\\${q}`; // a string literal: quote, text, closing quote
   const left = new RegExp(`([\\w.$\\])]+)\\s*[!=]==?\\s*${lit(2)}`, 'g'); // x === 'sed'
   const right = new RegExp(`${lit(1)}\\s*[!=]==?\\s*([\\w.$]+)`, 'g'); // 'sed' === x
   const member = new RegExp(`([\\w.$\\])]*)\\.(?:includes|has)\\(\\s*${lit(2)}`, 'g'); // list.includes('sed')
-  for (let m = left.exec(code); m; m = left.exec(code)) if (names.has(m[3]) && !/\.type$/.test(m[1])) found.push(m[0]);
-  for (let m = right.exec(code); m; m = right.exec(code)) if (names.has(m[2]) && !/\.type$/.test(m[3])) found.push(m[0]);
-  for (let m = member.exec(code); m; m = member.exec(code)) if (names.has(m[3]) && !/\.type$/.test(m[1])) found.push(m[0]);
+  for (let m = left.exec(code); m; m = left.exec(code)) if (names.has(m[3]) && !CLOSED_FIELDS.test(m[1])) found.push(m[0]);
+  for (let m = right.exec(code); m; m = right.exec(code)) if (names.has(m[2]) && !CLOSED_FIELDS.test(m[3])) found.push(m[0]);
+  for (let m = member.exec(code); m; m = member.exec(code)) if (names.has(m[3]) && !CLOSED_FIELDS.test(m[1])) found.push(m[0]);
   return found;
 }
 
@@ -96,12 +103,14 @@ describe('the finders of the src/explain guards', () => {
     assert.deepStrictEqual(findCycles(g({ a: ['a'] })), [['a', 'a']]);
   });
 
-  it('finds comparisons with command names, not with node types', () => {
-    const names = new Set(['sed', 'declare', 'command']);
+  it('finds comparisons with command names, not with node types or other closed fields', () => {
+    const names = new Set(['sed', 'declare', 'command', 'script', 'bash']);
     assert.strictEqual(nameComparisons(`if (name === 'sed') {}`, names).length, 1);
     assert.strictEqual(nameComparisons(`if ('declare' !== x.name) {}`, names).length, 1);
     assert.strictEqual(nameComparisons(`['a'].includes('declare')`, names).length, 1);
     assert.strictEqual(nameComparisons(`s.has("sed")`, names).length, 1);
     assert.strictEqual(nameComparisons(`n.type === 'command' || 'command' === n.type || kind === 'other'`, names).length, 0);
+    assert.strictEqual(nameComparisons(`rule.kind !== 'command' || ctx.stops !== 'script' || cx.shell === 'bash' || shell === 'bash'`, names).length, 0);
+    assert.strictEqual(nameComparisons(`spec.shell === 'bash' || x.subshell === 'sed' || kinds.has('sed')`, names).length, 2);
   });
 });

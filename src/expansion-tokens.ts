@@ -1,11 +1,12 @@
 // The explanation of a parameter expansion `${…}`: what it gives as a whole, a worked example, and each of its parts
 // (prefix, name, subscript, operator, word, pattern, offset, length, transform). What it needs of the analyzer (the
-// descriptions of variables, the attributes in effect) it asks of the analyzer's words, and the rest of the line's
-// context (src/explain/context.ts).
+// descriptions of variables, the notes on a variable) it asks of the analyzer's words, and the rest of the line's
+// context (src/explain/context.ts) and its readers (src/explain/reads.ts: the attributes in effect).
 import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
 import { cannotAssign, expansionOps } from './dict/syntax';
 import type { Explainer } from './explain/context';
+import { isAssoc } from './explain/reads';
 import { globIntro, hasGlob } from './embedded/glob';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
@@ -20,8 +21,6 @@ export interface ExpansionWords {
   variableNote(n: SyntaxNode, name: string): string;
   /** A note on a use of a variable that an assignment of the same command sets. */
   orderNote(n: SyntaxNode, name: string): string;
-  /** Whether `name` is an associative array where `n` runs. */
-  isAssoc(name: string, n: SyntaxNode): boolean;
   /** The parts of a glob pattern as tokens, placed where it is written (`base` characters into `n`). */
   globChildren(n: SyntaxNode, text: string, base: number): Token[];
 }
@@ -66,7 +65,7 @@ export function explainExpansion(h: Explainer, w: ExpansionWords, n: SyntaxNode)
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: w.isAssoc(parsed.name, n) });
+  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: isAssoc(h, parsed.name, n) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
     h.example({ kind: 'expansion',
@@ -81,7 +80,7 @@ export function explainExpansion(h: Explainer, w: ExpansionWords, n: SyntaxNode)
   const col = n.startPosition.column;
   const mainOp = parsed.parts.find((p) => p.role === 'op');
   summary.children = parsed.parts.flatMap((part) => {
-    const expl = expansionPart(h, w, parsed, part, part === mainOp, w.isAssoc(parsed.name, n));
+    const expl = expansionPart(h, w, parsed, part, part === mainOp, isAssoc(h, parsed.name, n));
     if (!expl || !part.text) return [];
     const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
     const nested = nestedIn(h, n, col + part.start, col + part.end);
