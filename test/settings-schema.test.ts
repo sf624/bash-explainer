@@ -183,6 +183,9 @@ describe('the settings module', () => {
     assert.deepStrictEqual(parseAssignment('notes.idioms=false'), { key: 'notes.idioms', value: false });
     assert.deepStrictEqual(parseAssignment('diagnostics.ignore=["crlf"]'), { key: 'diagnostics.ignore', value: ['crlf'] });
     assert.deepStrictEqual(parseAssignment('x=a=b'), { key: 'x', value: 'a=b' });
+    // (A setting that takes a string keeps the text: `5.3` is not a number there; JSON strings are still read.)
+    assert.deepStrictEqual(parseAssignment('bashVersion=5.3'), { key: 'bashVersion', value: '5.3' });
+    assert.deepStrictEqual(parseAssignment('bashExplainer.bashVersion="5.3"'), { key: 'bashExplainer.bashVersion', value: '5.3' });
     assert.deepStrictEqual(parseAssignment('x='), { key: 'x', value: '' });
     assert.strictEqual(parseAssignment('=1'), undefined);
     assert.strictEqual(parseAssignment('shell'), undefined);
@@ -218,7 +221,7 @@ describe('the settings module', () => {
     assert.strictEqual(forcedShell(s), 'sh');
     assert.strictEqual(forcedShell(defaultSettings()), undefined);
     assert.deepStrictEqual(explainOptions(s), {
-      yqFlavor: 'auto', examples: { enabled: true, disabled: [] }, idioms: false, pitfalls: true, customCommands: {},
+      yqFlavor: 'auto', bashVersion: '5.2', examples: { enabled: true, disabled: [] }, idioms: false, pitfalls: true, customCommands: {},
     });
     assert.deepStrictEqual(changedSettings(s), { 'bashExplainer.notes.idioms': false, 'bashExplainer.shell': 'sh' });
     assert.deepStrictEqual(changedSettings(mergeSettings({ 'panel.autoOpen': true, shell: 'sh' }), 'web'), { 'bashExplainer.shell': 'sh' });

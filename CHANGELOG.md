@@ -10,6 +10,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A pitfall says when a variable is read while it is unset under `set -u`: `set -u; echo "$dir"` stops bash with "dir: unbound variable". It is said only where the variable is unset on every path, at the first read of a statement that bash fails on, and not after a test of the same name (`[[ -v dir ]] || exit 1; echo "$dir"`). In a redirection of a program (`cat < "$f"`) only the command fails, unless `set -e` then stops the script.
 - A pitfall says when bash refuses the options of a shebang, so that the script never starts when run directly: `#!/bin/bash -e -u`, `#!/bin/bash -o nounset` and `#!/bin/bash -Oextglob` reach bash as one argument.
 - The panel has a **Tree** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
+- A new setting, `bashExplainer.bashVersion` (`--bash-version` on the command line), says which bash scripts are explained for: `5.2` (the default) or `5.3`. With `5.2`, a construct of bash 5.3 is a warning.
 
 ### Changed
 
@@ -20,6 +21,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
+- bash 5.3's `${ cmd; }` and `${| cmd; }` are explained as bash 5.3 runs them: in the current shell, with no subshell. Before, they were explained as `$( )`. bash 5.2 rejects them ("bad substitution"), which the warning says.
 - Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path. A path runs that file, not a builtin: `./read x` and a function named `read` no longer get the `read -r` pitfall.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.

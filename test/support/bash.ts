@@ -15,6 +15,8 @@ export interface BashOptions {
   /** Extra environment variables on top of the clean one. */
   env?: NodeJS.ProcessEnv;
   timeout?: number;
+  /** The bash to run (default: `bash` on PATH; test/bash53.test.ts gives a bash 5.3). */
+  program?: string;
 }
 
 export interface BashResult {
@@ -32,7 +34,7 @@ export function runBash(script: string, options: BashOptions = {}): BashResult {
   const dir = options.files ? fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-run-')) : undefined;
   try {
     for (const f of options.files ?? []) fs.writeFileSync(path.join(dir!, f), '');
-    const r = run('bash', ['--norc', '--noprofile', ...(options.posix ? ['--posix'] : []), '-c', script], {
+    const r = run(options.program ?? 'bash', ['--norc', '--noprofile', ...(options.posix ? ['--posix'] : []), '-c', script], {
       input: options.input,
       cwd: dir ?? options.cwd,
       env: { PATH: '/usr/bin:/bin', HOME: '/home/w', LC_ALL: 'C', ...options.env },

@@ -213,6 +213,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.notes.pitfalls` | `true` | よくある間違いと避け方を注記する（`x = 1`、クォートしていない変数、`for f in $(ls)` など） |
 | **確認** | | |
 | `bashExplainer.shell` | `auto` | スクリプトの対象シェル: `auto`・`bash`・`sh`・`dash`・`ash`・`yash`・`ksh`・`mksh`・`zsh` |
+| `bashExplainer.bashVersion` | `5.2` | 解説の対象にする bash のバージョン: `5.2`・`5.3`。bash 5.3 の書き方（`${ cmd; }` など）は 5.3 での動きを解説し、`5.2` では警告にする |
 | `bashExplainer.diagnostics.enabled` | `true` | 警告を「問題」パネルにも表示（クイックフィックス付き） |
 | `bashExplainer.diagnostics.ignore` | `[]` | 出さない警告のコード（「問題」パネルに表示されるコード。`dbracket`・`echoE`・`dockerPipefail` など） |
 | `bashExplainer.diagnostics.embedded` | `true` | 他のファイルの中のシェルの警告も出す |
@@ -257,7 +258,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 
 | 設定（`bashExplainer.`…） | Web 版 | コマンドライン | Language Server |
 | --- | --- | --- | --- |
-| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
+| `language`・`notes.idioms`・`notes.pitfalls`・`shell`・`bashVersion`・`yq.flavor`・`diagnostics.ignore`・`diagnostics.embedded`・`diagnostics.pitfalls`・`examples.enabled`・`examples.disabled`・`customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | （警告は `--check` で出す） | ✓ |
 | `examples.placement` | ✓ | | |
 | `editor.wrap`（Web 版だけの設定です。VS Code の設定にはなく、VS Code には `editor.wordWrap` があります） | ✓ | | |

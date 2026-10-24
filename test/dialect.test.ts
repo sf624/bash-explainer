@@ -74,6 +74,9 @@ const PROBES: Record<string, string> = {
   funcname: 'f() { [ "$FUNCNAME" = f ] && echo ok; }; f',
   uid: '[ -n "$UID" ] && echo ok',
   hostname: '[ -n "$HOSTNAME" ] && echo ok',
+  // (bash 5.2 lacks both, as FEATURES says; test/bash53.test.ts runs them in bash 5.3.)
+  funsub: 'x=1; v=${ x=ok; echo out; }; [ "$v" = out ] && echo $x',
+  valsub: 'v=${| REPLY=ok; }; echo $v',
 };
 // A snippet per behaviour that prints "ok" only where it differs from bash.
 const BEHAVIOUR_PROBES: Record<string, string> = {

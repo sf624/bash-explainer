@@ -1311,6 +1311,8 @@
  "x=$(eval ls)",
  "x=$(grep -c foo f) && [ \"$x\" -gt 0 ]",
  "x=$(ls *.txt)",
+ "x=${ echo a; }",
+ "x=${| REPLY=1; }",
  "x=(",
  "x=*.txt",
  "x=1",

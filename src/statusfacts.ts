@@ -12,7 +12,7 @@ import { STATEMENTS } from './semantics/env';
 import { resolveName } from './semantics/names';
 import type { Decision, StateModel } from './semantics/state';
 import { type Ignored, lastStatements, type StatusModel, type StatusRule } from './semantics/status';
-import { ancestor, descendants, field, fields, type SyntaxNode } from './syntax/tree';
+import { ancestor, descendants, field, fields, substitutionForm, type SyntaxNode } from './syntax/tree';
 
 export type StatusFact = FactSpec;
 
@@ -67,7 +67,9 @@ export function statusFacts(root: SyntaxNode, state: StateModel, status: StatusM
         const inner = statements(n);
         if (inner.length < 2 || status.errexit(n).errexit !== 'on' || status.errexit(inner[0]).errexitWhy !== 'off-in-substitution' || turnsOn(n)) break;
         const first = shorten(inner[0].text);
-        add(n, { id: 'errexit-off-in-substitution', params: { first } });
+        // (Also in bash 5.3's `${ …; }` and `${| …; }`, which run in the shell itself.)
+        const form = substitutionForm(n);
+        add(n, { id: 'errexit-off-in-substitution', params: { first, form: form === '${' ? '${ …; }' : form === '${|' ? '${| …; }' : '$( )' } });
         break;
       }
       case 'command': {

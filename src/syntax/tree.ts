@@ -220,6 +220,14 @@ export function descendants(n: SyntaxNode, types: readonly string[], rows?: { fr
   return out;
 }
 
+/**
+ * How a command substitution is written: `$(…)`, backquotes, or bash 5.3's `${ …; }` and `${| …; }`, which run
+ * in the current shell (the second gives the value of `REPLY`).
+ */
+export function substitutionForm(n: SyntaxNode): '$(' | '`' | '${' | '${|' {
+  return n.children[0].type as '$(' | '`' | '${' | '${|';
+}
+
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);

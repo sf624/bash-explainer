@@ -1,5 +1,6 @@
 import { Analyzer } from './analyzer';
 import type { ExplainOptions, LineExplanation } from './analyzer-types';
+import type { BashVersion } from './bashversion';
 import { dialectIssues, Shell } from './dialect';
 import { parseDirectives, suppressed } from './directives';
 import { Fix, fixFor } from './fixes';
@@ -47,8 +48,8 @@ export function explainDocumentLine(analyzer: Analyzer, doc: ShellDocument, line
  * of a shell script. Codes in `ignore`, and those turned off by `# bash-explainer disable=` comments in the file, are
  * left out.
  */
-export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], opts: { pitfalls?: boolean } = {}): DocumentIssue[] {
-  const base = allIssues(doc, lang, shells);
+export function documentIssues(doc: ShellDocument, lang: Lang, shells: Shells, ignore: readonly string[] = [], opts: { pitfalls?: boolean; bashVersion?: BashVersion } = {}): DocumentIssue[] {
+  const base = allIssues(doc, lang, shells, opts.bashVersion);
   const found = opts.pitfalls === false ? base : [...base, ...pitfallIssues(doc, lang, shells.forced ?? shells.detected, base)];
   return unsuppressed(doc, found, ignore);
 }
@@ -141,7 +142,7 @@ export function diagnosticsFor(open: () => ShellDocument | undefined, shellsOf: 
   // (The document is opened, that is parsed, only when its problems are looked at; its pitfalls are looked for only
   // when they are shown, or all the problems are asked for. They are weighed against the other problems before any is
   // turned off, as `documentIssues` does.)
-  const rawIssues = () => (raw ??= (doc ??= open()) ? allIssues(doc, lang, shellsOf(doc)) : []);
+  const rawIssues = () => (raw ??= (doc ??= open()) ? allIssues(doc, lang, shellsOf(doc), settings.bashVersion) : []);
   const without = () => {
     if (!base) {
       const list = rawIssues();
@@ -180,15 +181,15 @@ export function plain(message: string, opts: { backticks?: boolean } = {}): stri
   return opts.backticks === false ? text.replace(/`/g, '') : text;
 }
 
-function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssue[] {
+/** The problems of a document; those of bash are the constructs bash `version` lacks (5.2 when absent). */
+function allIssues(doc: ShellDocument, lang: Lang, shells: Shells, version?: BashVersion): DocumentIssue[] {
   if (doc.extracted) {
-    return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced) : [];
+    return doc.extracted.regions.length ? hostIssues(doc.tree, doc.extracted, doc.lines, lang, shells.forced, version) : [];
   }
   const crlf = crlfIssue(doc.tree, lang);
   const shell = shells.forced ?? shells.detected;
   const nested = nestedIssues(doc, lang, shell);
-  if (!shell || shell === 'bash') return [...crlf, ...nested];
-  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell, lang).map((i): DocumentIssue => {
+  return [...crlf, ...nested, ...dialectIssues(doc.tree, shell ?? 'bash', lang, undefined, undefined, version).map((i): DocumentIssue => {
     const n = i.place;
     const sameLine = n.startPosition.row === n.endPosition.row;
     return {

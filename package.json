@@ -175,6 +175,19 @@
           "default": "auto",
           "markdownDescription": "%config.shell%"
         },
+        "bashExplainer.bashVersion": {
+          "type": "string",
+          "enum": [
+            "5.2",
+            "5.3"
+          ],
+          "enumDescriptions": [
+            "%config.bashVersion.5.2%",
+            "%config.bashVersion.5.3%"
+          ],
+          "default": "5.2",
+          "markdownDescription": "%config.bashVersion%"
+        },
         "bashExplainer.yq.flavor": {
           "type": "string",
           "enum": [

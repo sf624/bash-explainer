@@ -44,7 +44,8 @@ import {
   binaryTestOps, extendedEqualOps, fdName, keywords, listOps,
   redirects, specialDestinations, specialVariables, unaryTestOps, wellKnownVariables,
 } from './dict/syntax';
-import { bracket as bracketLabel, labelText, skeleton } from './label';
+import { bracket as bracketLabel, labelText, shorten, skeleton } from './label';
+import { explainCommandSubstitution, explainProcessSubstitution, type SubstitutionHost } from './substitution-tokens';
 import { type EnvLink, type ExecEnv, lastStage, ownSubshells, subshellReasons, STATEMENTS, processOf, reachOf, shellEffectOf, type SlotLink, slotEnvs, type SubshellLink, whereOf } from './semantics/env';
 import { attribute, docLine, option, OptionState, shellState, StateModel } from './semantics/state';
 import { readDeclarationWords } from './semantics/vars';
@@ -95,14 +96,6 @@ function spanOf(n: SyntaxNode): Span {
     start: { line: n.startPosition.row, character: n.startPosition.column },
     end: { line: n.endPosition.row, character: n.endPosition.column },
   };
-}
-
-function shorten(text: string, max = 60): string {
-  const [head, ...rest] = text.split('\n');
-  const first = head.trimEnd();
-  const s = first.length > max ? first.slice(0, max - 1) + '…' : first;
-  // " …" says that the text goes on in a later line; trailing blanks (`tr -d ' '`, `"PV "`) are not that.
-  return rest.some((l) => l.trim()) && s === first ? s + ' …' : s;
 }
 
 /** Whether each line of the node explains only its own part (a block over several lines); otherwise `sub` explains it whole. */
@@ -182,13 +175,14 @@ export class Analyzer {
   private cx!: LineContext;
 
   /** What the explanation of a `${…}` asks of the analyzer (src/expansion-tokens.ts). */
-  private readonly expansionHost: ExpansionHost;
+  private readonly expansionHost: ExpansionHost & SubstitutionHost;
 
   constructor(private lang: Lang) {
     const self = this;
     this.expansionHost = {
       lang,
       get shell() { return self.cx.shell; },
+      get status() { return self.cx.status; },
       s: (ja, en) => this.s(ja, en),
       t: (text) => this.t(text),
       tok: (n, kind, explanation, children, label) => this.tok(n, kind, explanation, children, label),
@@ -214,7 +208,7 @@ export class Analyzer {
     const items = this.flatten(root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
       .filter((n) => intersects(n, line));
-    const notes = [...this.notes(root, line, items), ...(shell ? dialectNotes(tree, line, shell, this.lang) : []), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.cx.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang, this.cx.state, this.cx.shell)), ...wordFacts(root, line, this.lang, this.cx.state, this.cx.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
+    const notes = [...this.notes(root, line, items), ...dialectNotes(tree, line, shell ?? 'bash', this.lang, opts.bashVersion), ...new Set(this.cx.extraNotes), ...this.statusNotes(line, false), ...(this.cx.opts.idioms === false ? [] : findIdioms(statements, this.lang)), ...(this.cx.opts.pitfalls === false ? [] : pitfallNotes(root, line, this.lang, this.cx.state, this.cx.shell)), ...wordFacts(root, line, this.lang, this.cx.state, this.cx.shell).flatMap((f) => this.say(f)), ...this.extglobPitfalls(root, line), ...this.unmatchedGlobPitfalls(root, line), ...this.pipeSubshellPitfalls(root, line), ...this.statusNotes(line, true)];
     // (A fact said twice, or left out with the pitfalls, is listed once, or not.)
     const facts = this.cx.facts.filter((f, i, all) => notes.includes(f.text) && all.findIndex((g) => g.text === f.text) === i);
     const result: LineExplanation = {
@@ -548,8 +542,8 @@ export class Analyzer {
       case 'parenthesized_expression': return this.tok(n, 'operator', this.s('括弧でまとめた式', 'Parenthesized expression'), this.subs(n.namedChildren));
       case 'expansion': return this.expansion(n);
       case 'simple_expansion': return this.simpleExpansion(n);
-      case 'command_substitution': return this.commandSubstitution(n);
-      case 'process_substitution': return this.processSubstitution(n);
+      case 'command_substitution': return explainCommandSubstitution(this.expansionHost, n);
+      case 'process_substitution': return explainProcessSubstitution(this.expansionHost, n);
       case 'arithmetic_expansion': return this.tok(n, 'substitution', this.s('算術展開: 中の式を整数として計算した結果に置き換える', 'Arithmetic expansion: replaced by the integer result of the expression')
         + (n.text.startsWith('$[') ? this.s('。`$[…]` は古い書き方（廃止予定）で、`$((…))` と同じ意味', '. `$[…]` is the obsolete form of `$((…))`') : '') + this.commaNote(n) + this.wrapNote(n), this.arithChildren(n));
       case 'string': return this.string(n);
@@ -4017,50 +4011,6 @@ export class Analyzer {
   /** `${…}`: the overall meaning plus a worked example, broken down into its parts (src/expansion-tokens.ts). */
   private expansion(n: SyntaxNode): Token {
     return explainExpansion(this.expansionHost, n);
-  }
-
-  private commandSubstitution(n: SyntaxNode): Token {
-    const backtick = n.children[0].type === '`';
-    const t = this.tok(n, 'substitution', this.s(
-      `コマンド置換 ${backtick ? '`` `…` ``（旧式。`$(…)` 推奨）' : '`$(…)`'}: 中のコマンドを実行し、その標準出力（末尾の改行は除く）に置き換える`,
-      `Command substitution ${backtick ? '`` `…` `` (legacy; prefer `$(…)`)' : '`$(…)`'}: runs the command and is replaced by its stdout (trailing newlines removed)`,
-    ) + this.substitutionStatus(n), this.subs(n.namedChildren));
-    return t;
-  }
-
-  /**
-   * Under `set -e`, whether a failure in `$( )` stops the script (src/semantics/status.ts): it does in an assignment
-   * with no command, which takes the status of its last substitution; it does not in a command's words, where the
-   * command's own status counts (a declaration builtin's is said by a pitfall).
-   */
-  private substitutionStatus(n: SyntaxNode): string {
-    // (A word is always in a statement.)
-    let stmt = n.parent!;
-    while (!STATEMENTS.has(stmt.type)) stmt = stmt.parent!;
-    const ctx = this.cx.status.errexit(stmt);
-    if (ctx.active !== 'on' || ctx.checked !== true || ctx.stops !== 'script') return '';
-    const rule = this.cx.status.status(stmt);
-    if (rule.kind === 'last-substitution') {
-      // (`$(grep -c x f || true)`: the substitution does not fail.)
-      const last = n.namedChildren.filter((c) => STATEMENTS.has(c.type)).pop();
-      const masked = last?.type === 'list' && last.children.some((c) => c.type === '||') && /^(true|:)$/.test(last.namedChildren[last.namedChildren.length - 1].text);
-      if (masked && rule.at === n) return '';
-      return rule.at === n
-        ? this.s('。`set -e` が有効なので、これが失敗するとスクリプトはここで止まる（名前の無いコマンド、つまり代入やリダイレクトだけのコマンドは、最後のコマンド置換の終了ステータスになる）', '. Under `set -e` the script stops here if it fails (a command with no name, only assignments or redirections, takes the status of its last command substitution)')
-        : this.s('。これが失敗しても `set -e` では止まらない（名前の無いコマンドの終了ステータスは、最後に実行されるコマンド置換のもの。リダイレクトの中のものは代入の中のものより後に実行される）', '. If it fails, `set -e` does not stop the script (a command with no name takes the status of the last command substitution it runs; those in its redirections run after those in its assignments)');
-    }
-    // (In the command's name, it is not an argument: `"$(cmd)" a`.)
-    if ((rule.kind !== 'command' && rule.kind !== 'test') || stmt.type !== 'command' || !field(stmt, 'name') || ancestor(n, (x) => x === field(stmt, 'name'))) return '';
-    const name = shorten(field(stmt, 'name')!.text, 20);
-    return this.s(`。これが失敗しても \`set -e\` では止まらない（終了ステータスは \`${name}\` のもの）`, `. If it fails, \`set -e\` does not stop the script (the status is that of \`${name}\`)`);
-  }
-
-  private processSubstitution(n: SyntaxNode): Token {
-    const out = n.text.startsWith('>(');
-    return this.tok(n, 'substitution', out
-      ? this.s('プロセス置換 `>(…)`: 書き込むと中のコマンドの標準入力に渡るファイル名（/dev/fd/N）に置き換わる', 'Process substitution `>(…)`: a file name whose writes go to the command\'s stdin')
-      : this.s('プロセス置換 `<(…)`: 中のコマンドの出力を、ファイルのように読めるファイル名（/dev/fd/N）に置き換える', 'Process substitution `<(…)`: a file name from which the command\'s output can be read'),
-    this.subs(n.namedChildren));
   }
 }
 
