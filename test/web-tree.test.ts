@@ -40,6 +40,8 @@ describe('the web page: the tree view of the panel', function () {
     let panel = await open(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
     assert.strictEqual(await panel.locator('#reading').isHidden(), true, 'the list first');
     await panel.locator('#view-tree').click();
+    // (The host builds the tree when the view is chosen.)
+    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
     assert.strictEqual(await panel.locator('#tree').isHidden(), true);
     assert.strictEqual(await panel.locator('#view-tree').getAttribute('aria-pressed'), 'true');
     const tree = panel.locator('#reading-tree');
@@ -103,11 +105,104 @@ describe('the web page: the tree view of the panel', function () {
     await ctx.close();
   });
 
+  /** The tree view of `line`, with the item at `level` focused (its path is the tab stop). */
+  async function treeOf(page: Page, line: string): Promise<Frame> {
+    const panel = await open(page, line);
+    await panel.locator('#view-tree').click();
+    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
+    return panel;
+  }
+  const pause = (page: Page) => page.waitForTimeout(700);
+  const activeName = (panel: Frame) => panel.evaluate(`(() => { const e = document.activeElement; return (e.getAttribute('aria-label') || e.id || e.tagName).split('.')[0]; })()`) as Promise<string>;
+
+  it('keeps the focus on the layer button pressed, and on the item after Enter', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US' });
+    const page = await ctx.newPage();
+    const panel = await treeOf(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
+    const button = panel.locator('#layers button[data-level="2"]');
+    await button.click();
+    assert.strictEqual(await button.getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(await panel.evaluate(`document.activeElement.dataset.level`), '2', 'the button keeps the focus');
+    await page.keyboard.press('Space');
+    assert.strictEqual(await panel.evaluate(`document.activeElement.dataset.level`), '2', 'and again after another render');
+
+    // Enter on an item folds it and selects its range in the editor; the focus stays in the tree.
+    const tree = panel.locator('#reading-tree');
+    await tree.locator('li[tabindex="0"]').focus();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowRight');
+    const before = await activeName(panel);
+    await page.keyboard.press('Enter');
+    await pause(page);
+    assert.strictEqual(await activeName(panel), before, 'the same item after the update');
+    assert.strictEqual(await page.evaluate(`document.activeElement.tagName`), 'IFRAME', 'the editor did not take the focus');
+    await ctx.close();
+  });
+
+  it('keeps the Tab stop on a visible item after Collapse all, and the button says what the view does', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US' });
+    const page = await ctx.newPage();
+    const panel = await treeOf(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
+    const tree = panel.locator('#reading-tree');
+    await tree.locator('li[tabindex="0"]').focus();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowRight');
+    assert.strictEqual((await focused(panel)).level, '3');
+    await panel.evaluate(`document.getElementById('toggle').click()`);
+    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Expand all');
+    assert.strictEqual(await tree.locator('li[tabindex="0"]').count(), 1);
+    assert.strictEqual(await tree.locator('li[tabindex="0"]').isVisible(), true);
+    await panel.locator('#view-list').click();
+    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Collapse all', 'the list is not folded');
+    await panel.locator('#view-tree').click();
+    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 3);
+    assert.strictEqual(await panel.locator('#toggle').textContent(), 'Expand all');
+    await ctx.close();
+  });
+
+  it('reaches the manual links of the focused item with Tab', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US' });
+    const page = await ctx.newPage();
+    const panel = await treeOf(page, 'x=$(grep -c foo f) && [ "$x" -gt 0 ]');
+    const tree = panel.locator('#reading-tree');
+    const li = tree.locator('li:has(> .trow .refs a)').first();
+    await li.focus();
+    assert.strictEqual(await li.locator(':scope > .trow .refs a').first().getAttribute('tabindex'), '0');
+    await page.keyboard.press('Tab');
+    assert.strictEqual(await panel.evaluate(`document.activeElement.tagName`), 'A');
+    await page.keyboard.press('Shift+Tab');
+    assert.strictEqual(await panel.evaluate(`document.activeElement.getAttribute('role')`), 'treeitem');
+    await ctx.close();
+  });
+
+  it('works when the browser refuses storage', async () => {
+    const ctx = await browser.newContext({ locale: 'en-US' });
+    await ctx.addInitScript(`(() => {
+      const refuse = () => { throw new DOMException('refused', 'SecurityError'); };
+      Storage.prototype.getItem = refuse;
+      Storage.prototype.setItem = refuse;
+      Storage.prototype.removeItem = refuse;
+    })()`);
+    const page = await ctx.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const panel = await treeOf(page, 'echo hi | cat');
+    assert.strictEqual(await panel.locator('#reading').isVisible(), true);
+    await panel.locator('#layers button[data-level="1"]').click();
+    await panel.locator('#view-list').click();
+    assert.strictEqual(await panel.locator('#tree').isVisible(), true);
+    await panel.locator('#view-tree').click();
+    await until('the tree again', () => panel.locator('#reading-tree li').count(), (n) => n > 0);
+    assert.deepStrictEqual(errors, []);
+    await ctx.close();
+  });
+
   it('fits a phone: no sideways scroll, in Japanese', async () => {
     const ctx = await browser.newContext({ viewport: { width: 360, height: 800 }, locale: 'ja-JP' });
     const page = await ctx.newPage();
     const panel = await open(page, "find . -name '*.sh' | xargs grep -n 'set -e'");
     await panel.locator('#view-tree').click();
+    await until('the tree', () => panel.locator('#reading-tree li').count(), (n) => n > 10);
     assert.strictEqual(await panel.locator('#view-tree').textContent(), 'ツリー');
     assert.strictEqual(await panel.locator('#reading-tree li').count() > 10, true);
     assert.strictEqual(await panel.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);

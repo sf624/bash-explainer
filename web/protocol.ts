@@ -20,6 +20,6 @@ export type ToCopy = { type: 'bx-state' } & CopyState;
 /** From a copy to the compare page: the handshake, then what a click in its panel asks of the editor. */
 export type FromCopy =
   | ({ type: 'bx-ready' } & CopyInfo)
-  | { type: 'bx-reveal'; span: Span }
+  | { type: 'bx-reveal'; span: Span; preserveFocus?: boolean }
   | { type: 'bx-highlight'; span: Span | null }
   | { type: 'bx-choice'; key: 'shell' | 'yq'; value: string };

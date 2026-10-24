@@ -2,8 +2,11 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
-import { FromPanel, PANEL_BODY, panelUpdate } from './panelView';
+import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
+
+/** Where the panel's view and layers are kept between sessions (the webview's own state dies with the panel). */
+const STATE_KEY = 'bashExplainer.panelState';
 
 /** Side pane that follows the cursor and shows a regex101-style breakdown of the current line. */
 export class PanelController implements vscode.Disposable {
@@ -19,8 +22,11 @@ export class PanelController implements vscode.Disposable {
     borderRadius: '2px',
   });
   private disposables: vscode.Disposable[] = [];
+  /** The view and layers the viewer chose, kept in the global state: the tree is built only in the tree view. */
+  private state: PanelState;
 
   constructor(private ctx: vscode.ExtensionContext, private service: ExplainService) {
+    this.state = ctx.globalState.get<PanelState>(STATE_KEY) ?? {};
     this.disposables.push(
       vscode.window.onDidChangeTextEditorSelection((e) => this.schedule(e.textEditor, 80)),
       vscode.window.onDidChangeActiveTextEditor((e) => {
@@ -95,7 +101,7 @@ export class PanelController implements vscode.Disposable {
       return;
     }
     const line = Math.min(this.pinnedLine ?? ed.selection.active.line, ed.document.lineCount - 1);
-    const ex = this.service.explain(ed.document, line, true);
+    const ex = this.service.explain(ed.document, line, this.state.view === 'tree');
     this.panel.title = `${t.title}: ${fileName(ed.document)}:${line + 1}`;
     void this.panel.webview.postMessage(panelUpdate({
       lang,
@@ -111,7 +117,18 @@ export class PanelController implements vscode.Disposable {
 
   private onMessage(m: FromPanel): void {
     const ed = this.editor;
-    if (m.type === 'ready') return this.post();
+    if (m.type === 'ready') {
+      void this.panel?.webview.postMessage({ type: 'panelState', state: this.state });
+      return this.post();
+    }
+    if (m.type === 'panelState') {
+      const treeBefore = this.state.view === 'tree';
+      this.state = m.state;
+      void this.ctx.globalState.update(STATE_KEY, m.state);
+      // The tree is built only for the tree view: explain the line again for the view just chosen.
+      if ((m.state.view === 'tree') !== treeBefore) this.post();
+      return;
+    }
     if (m.type === 'openSettings') return void vscode.commands.executeCommand('bashExplainer.openSettings');
     if (isPanelQuestion(m)) return void this.panel?.webview.postMessage(panelReply(m, this.service.lang));
     if (!ed || ed.document.isClosed) return;
@@ -126,7 +143,7 @@ export class PanelController implements vscode.Disposable {
       ed.setDecorations(this.highlight, m.span ? [toRange(m.span)] : []);
     } else if (m.type === 'reveal') {
       const r = toRange(m.span);
-      void vscode.window.showTextDocument(ed.document, { viewColumn: ed.viewColumn, selection: new vscode.Selection(r.start, r.end) });
+      void vscode.window.showTextDocument(ed.document, { viewColumn: ed.viewColumn, selection: new vscode.Selection(r.start, r.end), preserveFocus: m.preserveFocus }); // (the tree view keeps the focus in the panel)
     }
   }
 

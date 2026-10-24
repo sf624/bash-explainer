@@ -654,6 +654,26 @@ body.vscode-high-contrast-light #reading-tree li.band {
   .trow .band-label {
     color: CanvasText;
   }
+
+  /* What backgrounds say elsewhere (the row in focus or under the pointer, the pressed button, the marked
+     characters) is said with an outline or the system's highlight colours. */
+  .trow.active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  #views button[aria-pressed="true"],
+  #layers button[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+    border-color: Highlight;
+  }
+
+  pre#line span.mark {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
 }
 
 /* A phone: the band names stay out of the way of the rows. */

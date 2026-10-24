@@ -147,7 +147,7 @@ const panel = new PanelBridge({
   // The compare page keeps the choice for both copies; the page has one script: the choice in the panel's header is the setting.
   override: mode.panel ? (key, value) => toParent({ type: 'bx-choice', key, value }) : setChoice,
   openSettings: () => settingsDialog?.show(),
-  reveal: mode.panel ? (span) => toParent({ type: 'bx-reveal', span }) : (span) => editor.selectSpan(span),
+  reveal: mode.panel ? (span, preserveFocus) => toParent({ type: 'bx-reveal', span, preserveFocus }) : (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
   highlight: mode.panel ? (span) => toParent({ type: 'bx-highlight', span }) : (span) => editor.highlight(span),
 }, document.getElementById('panel') as HTMLIFrameElement | null, mode.hasChrome);
 
@@ -165,7 +165,7 @@ function updatePanel(): void {
   if (!doc) return;
   const line = editor.cursorLine();
   const s = shells();
-  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: true });
+  const explanation = explainDocumentLine(analyzer(), doc, line, lang, s, { ...explainOptions(settings), reading: panel.view() === 'tree' });
   shown = { explanation, line };
   panel.show(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
@@ -211,7 +211,7 @@ if (mode.compare) {
       const { line, col } = editor.cursor();
       return { text: editor.text, kind, line, col, lang, theme, choice: choice(), settings: changedSettings(settings, 'web') };
     },
-    reveal: (span) => editor.selectSpan(span),
+    reveal: (span, preserveFocus) => editor.selectSpan(span, preserveFocus),
     highlight: (span) => editor.highlight(span),
     choose: setChoice,
   });

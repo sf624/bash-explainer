@@ -13,14 +13,15 @@ import { readingNodes } from '../reading';
 export type FromPanel =
   | { type: 'ready' }
   | { type: 'highlight'; span: Span | null }
-  | { type: 'reveal'; span: Span }
+  /** `preserveFocus`: the tree view's keys and clicks select the range without taking the focus from the panel. */
+  | { type: 'reveal'; span: Span; preserveFocus?: boolean }
   | { type: 'openSettings' }
   /** `inputs`: the text of each input box, in order. */
   | { type: 'rerun'; id: number; spec: RerunSpec; inputs: string[] }
   | { type: 'copy' }
   | { type: 'override'; key: 'shell' | 'yq'; value: string }
   | { type: 'reference' }
-  /** The view and layers chosen (the web page keeps them for the next visit; VS Code keeps the webview's state). */
+  /** The view and layers chosen: the host keeps them for the next visit (VS Code's global state, the web page's storage), builds the tree only in the tree view, and sends them back as `panelState` when the panel starts. */
   | { type: 'panelState'; state: PanelState };
 
 /** What the panel remembers per viewer: the list or the tree view, and how many layers of the tree it shows (1–4). */
