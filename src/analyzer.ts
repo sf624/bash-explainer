@@ -78,7 +78,6 @@ import { groupSubshell, pidNote, shellEffectNote } from './explain/where';
 import { postfixStatusNote, statusRangeNote } from './explain/status';
 
 export { isBlockLike, summaryOf };
-export type { ShoptName, ShoptState, ShoptStates } from './explain/reads';
 
 /** A bracket expression is there when a `[` closes (`[]a]` is one: a `]` first is a member). */
 
