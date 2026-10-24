@@ -259,7 +259,9 @@ export const MESSAGES = {
   'for-over-unquoted-args': pitfall<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
     `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
-  'unquoted-variable-in-test': pitfall<{ bare: string }>(['3.5.7'], ({ bare }) => [
+  'unquoted-variable-in-test': pitfall<{ bare: string; zsh?: boolean }>(['3.5.7'], ({ bare, zsh }) => zsh ? [
+    `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
+    `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` breaks the test when the value is empty or has spaces (an error such as "unary operator expected", or a wrong result: an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``]),
   'redirect-by-your-shell': pitfall(['3.6', '3.7.3'], () => [

@@ -21,7 +21,7 @@ inputs:
   strict:
     description: >-
       Also fail on a warning on a pitfall ('true' or 'false'), such as `x = 1` or `rm -rf $DIR/*`.
-      The pitfalls are reported either way.
+      The pitfalls are reported either way. Needs a command-line tool newer than 0.8.0 (see `package`).
     default: 'false'
   sarif:
     description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
@@ -32,8 +32,13 @@ inputs:
 
 outputs:
   warnings:
-    description: The number of warnings found.
+    description: >-
+      The number of warnings that fail the step (with fail-on-warning): the warnings on pitfalls
+      count only with strict.
     value: ${{ steps.check.outputs.warnings }}
+  pitfalls:
+    description: The number of pitfalls found (warnings and notices).
+    value: ${{ steps.check.outputs.pitfalls }}
 
 runs:
   using: composite
@@ -67,7 +72,7 @@ runs:
         done
         if [ "${#files[@]}" -eq 0 ]; then
           echo "No files match: $FILES"
-          echo "warnings=0" >> "$GITHUB_OUTPUT"
+          printf 'warnings=0\npitfalls=0\n' >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -76,10 +81,18 @@ runs:
         [ "$STRICT" = 'true' ] && args+=(--strict)
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
-        # A CLI with --sarif (listed in its help) writes the annotations and the SARIF file in one
-        # run. An older one (an earlier version, or a `package:` pin) takes a second run.
+        # What the CLI can do, from its help: an older one (an earlier version, or a `package:` pin)
+        # may lack --strict or --sarif.
+        help=$(npx --yes --package="$package" bash-explainer --help 2>/dev/null)
+        if [ "$STRICT" = 'true' ] && ! grep -q -- '--strict' <<< "$help"; then
+          echo "::error title=Bash Explainer::strict needs a command-line tool with --strict (newer than 0.8.0); $package has none."
+          exit 2
+        fi
+
+        # A CLI with --sarif writes the annotations and the SARIF file in one run. An older one
+        # takes a second run.
         if [ -n "$SARIF" ]; then
-          if npx --yes --package="$package" bash-explainer --help 2>/dev/null | grep -q -- '--sarif <file>'; then
+          if grep -q -- '--sarif <file>' <<< "$help"; then
             args+=(--sarif "$SARIF")
           else
             check --format sarif > "$SARIF"
@@ -91,7 +104,12 @@ runs:
         # Printed, these lines become annotations on the pull request.
         [ -n "$out" ] && printf '%s\n' "$out"
         [ "$status" -le 1 ] || exit 2
-        echo "warnings=$(grep -c '^::warning ' <<< "$out")" >> "$GITHUB_OUTPUT"
+        # The annotations of pitfalls have their own title; their warnings fail the step only with strict.
+        pitfall=',title=Bash Explainer (pitfall)%3A '
+        warnings=$(grep -c '^::warning ' <<< "$out")
+        if [ "$STRICT" != 'true' ]; then warnings=$((warnings - $(grep -c "^::warning [^:]*$pitfall" <<< "$out"))); fi
+        echo "warnings=$warnings" >> "$GITHUB_OUTPUT"
+        echo "pitfalls=$(grep -c "^::[a-z]* [^:]*$pitfall" <<< "$out")" >> "$GITHUB_OUTPUT"
         echo "Checked ${#files[@]} file(s) with $package."
         if [ "$status" -eq 1 ] && [ "$FAIL_ON_WARNING" != 'true' ]; then status=0; fi
         exit "$status"

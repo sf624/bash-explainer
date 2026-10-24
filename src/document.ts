@@ -6,7 +6,7 @@ import { Fix, fixFor } from './fixes';
 import { DocIssue, explainHostedLine, Extracted, hostIssues } from './hosts';
 import { Lang } from './i18n';
 import { pitfallFindings } from './pitfalls';
-import { shellState } from './semantics/state';
+import { shellState, type StateModel } from './semantics/state';
 import { type NestedScript, nestedScripts } from './semantics/nested';
 import { settingSpec } from './settings';
 import type { Settings, Surface } from './settings';
@@ -73,45 +73,56 @@ const PITFALL_WARNINGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The dialect issues that already say what a pitfall would at their place: zsh does not split an unquoted `$var`
- * (`wordSplit`), so the pitfalls of an unquoted variable are not raised beside it.
- */
-const SAID_BY: Readonly<Record<string, readonly string[]>> = {
-  wordSplit: ['unquoted-variable-as-path', 'unquoted-variable-in-test', 'for-over-unquoted-args'],
-};
-
-/**
  * The pitfalls of a shell script that its explanations point out (src/pitfalls.ts, and the pitfalls of
  * src/wordfacts.ts), as problems: each with its code, on the node it is about, `pitfall: true`. One walk of the
- * tree, with the script's one model. None in a host file, and none on a line `others` (the other problems) says is
- * not parsed, or where one of them already says the same.
+ * tree, with the script's one model, and one of each string it runs as a script (`bash -c '…'`, `eval`, a trap's
+ * action), with the string's model and shell, at its place in the document. None in a host file, none on a line
+ * `others` (the other problems) says is not parsed, and none where one of them already says the same.
  */
 export function pitfallIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined, others: readonly DocumentIssue[] = []): DocumentIssue[] {
   if (doc.extracted) return [];
-  const { root } = doc.tree;
-  const last = root.endPosition.row;
-  const found: { code: string; node: SyntaxNode; text: string }[] = [
-    ...pitfallFindings(root, lang, 0, last),
-    ...wordFindings(root, lang, shellState(doc.tree, shell), shell, 0, last)
-      .filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text })),
-  ];
+  const found: { code: string; start: Place; end: Place; text: string }[] = [];
+  const scan = (tree: SyntaxTree, model: StateModel, sh: Shell | undefined, place: (n: SyntaxNode, end: boolean) => Place) => {
+    const last = tree.root.endPosition.row;
+    const findings = [
+      ...pitfallFindings(tree.root, lang, 0, last, model, sh),
+      ...wordFindings(tree.root, lang, model, sh, 0, last).filter((f) => f.fact.kind === 'pitfall').map((f) => ({ code: f.fact.id, node: f.node, text: f.fact.text })),
+    ];
+    for (const { code, node, text } of findings) found.push({ code, start: place(node, false), end: place(node, true), text });
+  };
+  const point = (p: Point): Place => ({ line: p.row, col: p.column });
+  scan(doc.tree, shellState(doc.tree, shell), shell, (n, end) => point(end ? n.endPosition : n.startPosition));
+  const starts = lineStarts(doc.tree.text);
+  for (const { script, source } of nestedScripts(doc.tree, shell)) {
+    const rows = lineStarts(script.tree.text);
+    const index = (p: Point) => rows[p.row] + p.column;
+    scan(script.tree, script.model, script.shell, (n, end) => placeOf(starts, source(index(end ? n.endPosition : n.startPosition), end)));
+  }
   // (zsh syntax that bash cannot read: the tree there is not the script's.)
   const unparsed = others.filter((i) => i.code === 'zshSyntax');
   const out: DocumentIssue[] = [];
-  for (const { code, node, text } of found) {
-    const line = node.startPosition.row;
-    const sameLine = line === node.endPosition.row;
+  for (const { code, start, end, text } of found) {
+    const { line } = start;
     const issue: DocumentIssue = {
       code, severity: PITFALL_WARNINGS.has(code) ? 'warning' : 'info', message: text, pitfall: true,
-      startLine: line, startCol: node.startPosition.column, endLine: line, endCol: sameLine ? node.endPosition.column : doc.lines[line].length,
+      startLine: line, startCol: start.col, endLine: line, endCol: end.line === line ? end.col : doc.lines[line].length,
     };
     if (unparsed.some((i) => i.startLine <= line && line <= i.endLine)) continue;
-    // (Said already where it overlaps: the same problem, or a dialect issue that says it otherwise.)
+    // (Said already where it overlaps: the same problem.)
     const overlaps = (i: DocumentIssue) => i.startLine === line && i.startCol < issue.endCol && issue.startCol < i.endCol;
-    if ([...others, ...out].some((i) => overlaps(i) && (i.code === code || i.message === text || !!SAID_BY[i.code]?.includes(code)))) continue;
+    if ([...others, ...out].some((i) => overlaps(i) && (i.code === code || i.message === text))) continue;
     out.push(issue);
   }
   return out;
+}
+
+/** A place in the document: its line and column, from 0. */
+interface Place { line: number; col: number }
+
+/** The place of offset `i` of the document's text, given where its lines start. */
+function placeOf(starts: readonly number[], i: number): Place {
+  const line = lineOf(starts, i);
+  return { line, col: i - starts[line] };
 }
 
 /**
@@ -193,10 +204,7 @@ function allIssues(doc: ShellDocument, lang: Lang, shells: Shells): DocumentIssu
 function nestedIssues(doc: ShellDocument, lang: Lang, shell: Shell | undefined): DocumentIssue[] {
   const out: DocumentIssue[] = [];
   const starts = lineStarts(doc.tree.text);
-  const at = (i: number) => {
-    const line = lineOf(starts, i);
-    return { line, col: i - starts[line] };
-  };
+  const at = (i: number) => placeOf(starts, i);
   // (The strings in a string are read only when one may be read by a shell other than bash: another shell it starts,
   // or its own `eval` and traps when it is not bash. Reading them builds the string's model.)
   const descend = (s: NestedScript) => /\b(?:sh|dash|zsh|ksh|watch)\b/.test(s.text) || (!!s.shell && s.shell !== 'bash' && /\b(?:eval|trap)\b/.test(s.text));

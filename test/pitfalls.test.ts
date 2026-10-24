@@ -12,6 +12,7 @@ import { Analyzer } from '../src/analyzer';
 import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { MESSAGES, fact, said, type FactId } from '../src/messages';
 import { runBash } from './support/bash';
+import type { Shell } from '../src/dialect';
 
 const root = path.join(__dirname, '..');
 let parser: Parser;
@@ -20,9 +21,9 @@ before(async () => {
   parser = createUnbashParser();
 });
 
-function notes(src: string, line = 0, lang: 'en' | 'ja' = 'en'): string[] {
+function notes(src: string, line = 0, lang: 'en' | 'ja' = 'en', shell?: Shell): string[] {
   const tree = parser.parse(src);
-  return pitfallNotes(tree.root, line, lang);
+  return pitfallNotes(tree.root, line, lang, shellState(tree, shell), shell);
 }
 
 describe('pitfalls', () => {
@@ -125,6 +126,32 @@ describe('pitfalls', () => {
         }
       });
     }
+  });
+
+  // (The last line is the one checked; the lines before it set the state.)
+  const lastLine = (src: string) => notes(src, src.split('\n').length - 1);
+  for (const src of ['foo = 1', 'PATH = /bin', 'x =1', 'f() { :; }\nx = 1', 'DIR=$1\nrm -rf $DIR/*', 'if c; then DIR=/x; fi\nrm -rf $DIR/*', 'DIR=/x; read -r DIR\nrm -rf $DIR/*',
+    'DIR=\nrm -rf $DIR/x', 'DIR=/x; source ./f\nrm -rf $DIR/*', 'D="$A$B"\nrm -rf $D/*', "D=''\nrm -rf $D/*"]) {
+    it(`points out ${JSON.stringify(src)}`, () => assert.ok(lastLine(src).some((n) => /not an assignment|deleting from the root/.test(n)), lastLine(src).join('\n') || '(none)'));
+  }
+  // A name that runs something takes `=` as an argument: a builtin, a function, an alias, a program the dictionary knows.
+  // A variable the script surely set to some text is never empty.
+  for (const src of ['echo ===', 'echo ==========', 'sed = f', 'export = x', 'f() { local = x; }', 'f() { :; }\nf = 1', "shopt -s expand_aliases; alias a='echo'\na = 1",
+    '. ./lib.sh\nsetup = 1', 'DIR=/opt/app\nrm -rf $DIR/*', 'BUILD_DIR="$SCRIPT_DIR/build"\nrm -rf $BUILD_DIR/*', "D=${A}'x'\nrm -rf $D/*", 'D=$A/x\nrm -rf $D/*', 'D=$A/x\nrm -rf $D/*', 'f() { D=/x; rm -rf $D/*; }']) {
+    it(`says nothing about ${JSON.stringify(src)}`, () => assert.deepStrictEqual(lastLine(src).filter((n) => /not an assignment|deleting from the root/.test(n)), []));
+  }
+  it('the names bash runs with `=` as an argument run, and the others are not found', function () {
+    if (spawnSync('bash', ['-c', ':']).status !== 0) return this.skip();
+    const run = (cmd: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', cmd], { encoding: 'utf8', input: 'a\n', env: { PATH: process.env.PATH, LC_ALL: 'C' } });
+    for (const cmd of ['echo ===', 'sed = ', 'f() { :; }; f = 1', 'shopt -s expand_aliases\nalias a=:\na = 1']) assert.notStrictEqual(run(cmd).status, 127, cmd);
+    // (`export = x`: a builtin, which rejects the name `=`; not a command that is not found.)
+    assert.match(run('export = x').stderr, /not a valid identifier/);
+    for (const cmd of ['x = 1', 'foo = 1']) assert.strictEqual(run(cmd).status, 127, cmd);
+  });
+  // zsh (zshoptions: IGNORE_CLOSE_BRACES is off by default) closes a group at a `}` anywhere.
+  it('a } with no ; before it closes the group in zsh', () => {
+    assert.strictEqual(notes('{ echo a }', 0, 'en', 'bash').length, 1);
+    assert.deepStrictEqual(notes('{ echo a }', 0, 'en', 'zsh'), []);
   });
 
   it('speaks Japanese, and only on the line where the construct starts', () => {

@@ -80,7 +80,7 @@ export const SETTINGS: readonly SettingSpec[] = [
   },
   { key: 'diagnostics.ignore', type: 'array', default: [], group: 'checks', title: ['出さない警告', 'Warnings to leave out'], surfaces: ALL },
   { key: 'diagnostics.embedded', type: 'boolean', default: true, group: 'checks', title: ['他のファイル中のシェルの警告', 'Warnings in embedded shell code'], surfaces: ALL },
-  { key: 'diagnostics.pitfalls', type: 'boolean', default: true, group: 'checks', title: ['よくある間違いの警告', 'Warnings on pitfalls'], surfaces: ALL },
+  { key: 'diagnostics.pitfalls', type: 'boolean', default: true, group: 'checks', title: ['問題に出すよくある間違い', 'Pitfalls as problems'], surfaces: ALL },
   { key: 'examples.enabled', type: 'boolean', default: true, group: 'display', title: ['具体例', 'Worked examples'], surfaces: ALL },
   { key: 'examples.disabled', type: 'array', default: [], items: EXAMPLE_KINDS, group: 'display', title: ['表示しない具体例', 'Kinds of examples to hide'], surfaces: ALL },
   {

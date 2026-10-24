@@ -58,6 +58,13 @@ export interface StateModel {
   at(n: SyntaxNode): { run: ShellState; parse: ShellState; expand: ShellState };
   /** The state at the end of the script. */
   readonly end: ShellState;
+  /** The shell the model is of (bash when absent). */
+  readonly shell: Shell | undefined;
+  /**
+   * Whether what the model says of the variable `name` may be relied on (src/semantics/trust.ts): every command that
+   * may write it is one the walk reads, and nothing makes the model blind.
+   */
+  trusts(name: string): boolean;
   /** The variables some command of the script sets, wherever it runs. */
   readonly assigned: ReadonlySet<string>;
   /** Where `n` runs (src/semantics/env.ts): the main shell, a subshell, or a command run through slots. */
@@ -367,6 +374,8 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
       return scripts.read(words, 'child', () => env, slotShell(link));
     },
     end,
+    shell,
+    trusts: (name) => !found && trust.variable(name),
     blind: found ?? trust.blind,
     env: (n) => envs.at(n),
     calls: w.calls,

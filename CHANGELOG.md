@@ -6,11 +6,16 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`, unquoted variables…) are also problems, with a code each: in VS Code's Problems panel, the Language Server, the web page, `--check`, SARIF and the GitHub Action. Those that break the script are warnings, the others information; `bashExplainer.diagnostics.pitfalls` turns them off.
-- **Compatibility:** `--check` now prints more lines, but exits as before: a pitfall fails it only with the new `--strict` (the Action's `strict: 'true'`). The Action's `warnings` output counts the warnings on pitfalls too.
+- The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`…) are also problems, with a code each, in the Problems panel, `--check`, SARIF and the GitHub Action. Turn them off with `bashExplainer.diagnostics.pitfalls`.
+
+### Changed
+
+- **Compatibility:** `--check` prints the pitfalls but exits as before: their warnings fail it only with the new `--strict` (the Action's `strict: 'true'`). The Action's `warnings` output still counts only what fails the step; the new `pitfalls` output counts the pitfalls.
 
 ### Fixed
 
+- Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path.
+- zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
 - The notes for an unquoted path and for `rm -rf $DIR/…` quote only the variable, so a glob, `~` or braces in the word still work (`"$DIR"/*`, `"${DIR:?}"/*`). `rm -rf "$DIR"/*` is now warned about too.
 - The warning that an empty variable makes `rm -r` delete from the root no longer fires for forms that are never empty (`${DIR:-/tmp/x}/*`), and for `${DIR%/}` and similar it gives a check line before the command instead of a rewrite that dropped the operator. It also covers `${DIR:-''}`, `${DIR[0]}`, `$@` and `${DIR[@]}`.
 
