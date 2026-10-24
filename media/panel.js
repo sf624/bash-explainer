@@ -107,6 +107,7 @@
     $('examples').replaceChildren();
     $('reading-tree').replaceChildren();
     reading = null;
+    stopPlay(true);
     $('reading').hidden = true;
     $('empty').textContent = message;
     $('empty').hidden = false;
@@ -131,6 +132,8 @@
     editors.clear();
     const where = `${msg.file}\n${ex.line}`;
     if (where !== shownLine) {
+      // A cursor move stops the tree's play: the new line is shown whole.
+      stopPlay(true);
       collapsedKeys = new Set();
       foldedKeys = new Set();
       currentKey = '';
@@ -505,6 +508,12 @@
   /** The layers, in the order the layer buttons add them. */
   const LEVEL = { bash: 1, child: 2, command: 3, language: 4 };
 
+  /** How deep bash's own reading is drawn (the item of the line is at depth 1): all of it, except while the tree is played. */
+  let bashDepth = Infinity;
+
+  /** Whether a node at `depth` is drawn: its layer is shown, and, in bash's layer, it is not below `bashDepth`. */
+  const shown = (/** @type {any} */ c, /** @type {number} */ depth) => LEVEL[c.layer] <= level && !(c.layer === 'bash' && depth > bashDepth);
+
   /** Tells the host the choice: it keeps it for the next time (VS Code's global state, the web page's storage) and, in the list view, builds no tree. */
   function save() {
     vscode.setState({ view, level });
@@ -599,6 +608,9 @@
     const ul = $('reading-tree');
     // A new update or layer redraws the tree: the focus goes back to the item it was on.
     const hadFocus = ul.contains(document.activeElement);
+    // (While the tree is played, the items drawn before this step: those not among them grow in.)
+    const before = animateFrom;
+    animateFrom = null;
     ul.replaceChildren();
     const t = labels.tree;
     if (!t) return;
@@ -614,6 +626,7 @@
         b.className = `layer l-${['bash', 'child', 'command', 'language'][i]}`;
         b.dataset.level = String(i + 1);
         b.addEventListener('click', () => {
+          stopPlay();
           level = i + 1;
           save();
           renderReading();
@@ -621,13 +634,15 @@
         box.append(b);
       });
     }
-    box.querySelectorAll('button').forEach((b, i) => {
+    box.querySelectorAll('button.layer').forEach((b, i) => {
       b.textContent = t.levels[i];
       b.setAttribute('aria-pressed', String(level === i + 1));
     });
+    if (PLAY) playControls(box);
     if (!reading || view !== 'tree') return;
     aboutShown = new Set();
     ul.append(treeItem(reading, '0', 1, null, 1, 1));
+    if (before) growIn(ul, before);
     const items = visibleItems();
     const current = items.find((li) => li.dataset.path === currentKey) ?? items[0];
     if (current) current.tabIndex = 0;
@@ -641,6 +656,247 @@
       }
       if (again ?? current) focusItem(/** @type {HTMLElement} */ (again ?? current));
     }
+  }
+
+  // ---------------------------------------------------------------- playing the tree (a prototype)
+  // Behind a switch: `?treePlay=1` on the web page (the layers one by one), `?treePlay=deep` (bash's own reading
+  // unfolded first: the line, its lists and pipelines, its commands, their words), or `data-tree-play` on <html>.
+
+  /** The switch: '', 'layers' or 'deep'. */
+  const PLAY = (() => {
+    let q = document.documentElement.dataset.treePlay ?? null;
+    try {
+      q = new URLSearchParams(window.parent.location.search).get('treePlay') ?? q;
+    } catch {
+      // (A frame of another origin, as in VS Code: only the attribute.)
+    }
+    return q === null || q === '0' ? '' : q === 'deep' ? 'deep' : 'layers';
+  })();
+
+  /** The time a step is shown, and the time its items take to grow in (ms). */
+  const STEP_MS = 1200;
+  const GROW_MS = 480;
+
+  /** The words of the controls; the panel's own labels name the layers. */
+  const playText = () => /[ぁ-んァ-ヶ一-龯]/.test(labels.tree?.show ?? '')
+    ? { group: 'ツリーの再生', play: '再生', back: '前のステップ', forward: '次のステップ', replay: '最初から再生', step: 'ステップ {i}/{n}：{name}',
+      paused: '一時停止', parts: '単語の中身', depths: ['行', 'リストとパイプライン', 'コマンド', '単語'] }
+    : { group: 'Play the tree', play: 'Play', back: 'Step back', forward: 'Step forward', replay: 'Replay', step: 'Step {i} of {n}: {name}',
+      paused: 'Paused', parts: 'inside the words', depths: ['the line', 'lists and pipelines', 'commands', 'words'] };
+
+  /** The steps of the line shown: what each draws (`level`, `depth`) and its name. Steps that add nothing are left out. */
+  function playSteps() {
+    const t = labels.tree;
+    const words = playText();
+    /** @type {{ level: number, depth: number, name: string }[]} */
+    const all = [];
+    if (PLAY === 'deep') words.depths.forEach((name, i) => all.push({ level: 1, depth: i + 1, name }));
+    all.push({ level: 1, depth: Infinity, name: PLAY === 'deep' ? words.parts : t.levels[0] });
+    for (let i = 2; i <= 4; i++) all.push({ level: i, depth: Infinity, name: t.levels[i - 1].replace(/^\+\s*/, '') });
+    const steps = [];
+    let last = -1;
+    for (const st of all) {
+      const count = countShown(reading, 1, st.level, st.depth);
+      if (count !== last) steps.push(st);
+      last = count;
+    }
+    return steps;
+  }
+
+  /** How many nodes a step draws (folding aside). */
+  function countShown(/** @type {any} */ n, /** @type {number} */ depth, /** @type {number} */ lv, /** @type {number} */ deep) {
+    let k = 1;
+    for (const c of n.children) {
+      if (LEVEL[c.layer] <= lv && !(c.layer === 'bash' && depth + 1 > deep)) k += countShown(c, depth + 1, lv, deep);
+    }
+    return k;
+  }
+
+  /** The play: the steps of the line, the one drawn, and the timer while it plays. */
+  let play = /** @type {{ steps: { level: number, depth: number, name: string }[], at: number, timer: number } | null} */ (null);
+  /** The paths drawn before a step, for `renderReading` to grow the new items in. */
+  let animateFrom = /** @type {Set<string> | null} */ (null);
+  /** True from a Space pressed on the controls until just after its release. */
+  let spaceHeld = false;
+  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /** The controls, made once at the end of the layer buttons, then updated. */
+  function playControls(/** @type {HTMLElement} */ box) {
+    const w = playText();
+    let g = document.getElementById('tree-play');
+    if (!g) {
+      g = document.createElement('span');
+      g.id = 'tree-play';
+      g.setAttribute('role', 'group');
+      const mk = (/** @type {string} */ id, /** @type {string} */ text, /** @type {() => void} */ act) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.id = id;
+        b.innerHTML = text;
+        // (Space on any control plays or pauses: the click it makes on its release is not the button's.)
+        b.addEventListener('click', () => { if (!spaceHeld) act(); });
+        /** @type {HTMLElement} */ (g).append(b);
+      };
+      mk('tp-back', '<span aria-hidden="true">◁</span>', () => stepBy(-1));
+      mk('tp-play', '<span class="tp-icon" aria-hidden="true">▶</span> <span class="tp-name"></span>', togglePlay);
+      mk('tp-forward', '<span aria-hidden="true">▷</span>', () => stepBy(1));
+      mk('tp-replay', '<span aria-hidden="true">↻</span>', replay);
+      // Space plays or pauses from any of the controls (on its release, when a button would be clicked), the arrows step.
+      g.addEventListener('keyup', (e) => {
+        if (e.key !== ' ') return;
+        e.preventDefault();
+        togglePlay();
+        setTimeout(() => { spaceHeld = false; });
+      });
+      g.addEventListener('keydown', (e) => {
+        if (e.key === ' ') spaceHeld = true;
+        else if (e.key === 'ArrowLeft') stepBy(-1);
+        else if (e.key === 'ArrowRight') stepBy(1);
+        else if (e.key === 'Home') goTo(0, false);
+        else if (e.key === 'End') goTo(Infinity, false);
+        else return;
+        e.preventDefault();
+      });
+      const live = document.createElement('span');
+      live.id = 'tp-live';
+      live.className = 'tp-live';
+      live.setAttribute('aria-live', 'polite');
+      box.append(g, live);
+    }
+    g.setAttribute('aria-label', w.group);
+    const playing = !!play?.timer;
+    const pb = $('tp-play');
+    pb.setAttribute('aria-pressed', String(playing));
+    /** @type {HTMLElement} */ (pb.querySelector('.tp-icon')).textContent = playing ? '❚❚' : '▶';
+    /** @type {HTMLElement} */ (pb.querySelector('.tp-name')).textContent = w.play;
+    $('tp-back').setAttribute('aria-label', w.back);
+    $('tp-forward').setAttribute('aria-label', w.forward);
+    $('tp-replay').setAttribute('aria-label', w.replay);
+    for (const id of ['tp-back', 'tp-forward', 'tp-replay']) $(id).title = /** @type {string} */ ($(id).getAttribute('aria-label'));
+    const steps = reading ? play?.steps ?? playSteps() : [];
+    const at = play ? play.at : steps.length - 1;
+    // (aria-disabled, not disabled: a button that the focus is on keeps it at the first or the last step.)
+    $('tp-back').setAttribute('aria-disabled', String(at <= 0));
+    $('tp-forward').setAttribute('aria-disabled', String(at >= steps.length - 1));
+  }
+
+  /** Draws step `i` of the play (clamped), growing in what it adds when `grow` (and motion is welcome). */
+  function goTo(/** @type {number} */ i, /** @type {boolean} */ grow) {
+    if (!reading) return;
+    const steps = play?.steps ?? playSteps();
+    if (!play) play = { steps, at: steps.length - 1, timer: 0 };
+    const at = Math.max(0, Math.min(steps.length - 1, i));
+    const forward = at > play.at;
+    play.at = at;
+    // (The last step shows every layer, as the layer buttons will, even when the last layers add nothing to this line.)
+    const end = at === steps.length - 1;
+    level = end ? 4 : steps[at].level;
+    bashDepth = end ? Infinity : steps[at].depth;
+    if (grow && forward && !reduced()) {
+      animateFrom = new Set(Array.from($('reading-tree').querySelectorAll('li[role="treeitem"]'), (li) => /** @type {HTMLElement} */ (li).dataset.path ?? ''));
+    }
+    renderReading();
+    $('tp-live').textContent = playText().step.replace('{i}', String(at + 1)).replace('{n}', String(steps.length)).replace('{name}', steps[at].name);
+    // The last step leaves the tree as the layer buttons show it: every layer, kept as the viewer's choice.
+    if (at === steps.length - 1) finish();
+  }
+
+  /** The play ends at its last step: the tree is as it is without the play. */
+  function finish() {
+    if (!play) return;
+    clearTimeout(play.timer);
+    play = null;
+    bashDepth = Infinity;
+    save();
+    playControls($('layers'));
+  }
+
+  /** Stops the play; with `whole`, the tree is shown with every layer (a new line, or the panel emptied). */
+  function stopPlay(whole = false) {
+    if (!play) return;
+    clearTimeout(play.timer);
+    play = null;
+    bashDepth = Infinity;
+    if (whole) level = 4;
+    if (PLAY && document.getElementById('tp-play')) playControls($('layers'));
+  }
+
+  function tick() {
+    if (!play) return;
+    goTo(play.at + 1, true);
+    if (play) {
+      play.timer = window.setTimeout(tick, STEP_MS);
+      playControls($('layers'));
+    }
+  }
+
+  function togglePlay() {
+    if (!reading) return;
+    if (play?.timer) {
+      clearTimeout(play.timer);
+      play.timer = 0;
+      playControls($('layers'));
+      $('tp-live').textContent = playText().paused;
+      return;
+    }
+    // With reduced motion, the play goes straight to its end.
+    if (reduced()) {
+      goTo(Infinity, false);
+      return;
+    }
+    if (!play || play.at >= play.steps.length - 1) goTo(0, false);
+    if (!play) return;
+    play.timer = window.setTimeout(tick, STEP_MS);
+    playControls($('layers'));
+  }
+
+  function stepBy(/** @type {number} */ d) {
+    if (play?.timer) {
+      clearTimeout(play.timer);
+      play.timer = 0;
+    }
+    const steps = play?.steps ?? playSteps();
+    goTo((play ? play.at : steps.length - 1) + d, true);
+  }
+
+  function replay() {
+    stopPlay();
+    togglePlay();
+  }
+
+  /** Grows in the items not drawn before: each new subtree from its parent, its height from nothing, its band's tint from the parent's. */
+  function growIn(/** @type {HTMLElement} */ ul, /** @type {Set<string>} */ before) {
+    const roots = /** @type {HTMLElement[]} */ (Array.from(ul.querySelectorAll('li[role="treeitem"]')))
+      .filter((li) => !before.has(li.dataset.path ?? '') && before.has((li.dataset.path ?? '').replace(/\.\d+$/, '')));
+    const easing = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
+    // The first new item is scrolled into view, under the line at the top, in the panel only (not the page around
+    // the web page's frame): the rows it adds below the fold are seen as they grow.
+    const first = roots[0];
+    if (first) {
+      const r = first.getBoundingClientRect();
+      const topLine = $('top').getBoundingClientRect().bottom;
+      const room = window.innerHeight - topLine;
+      const over = r.top + Math.min(r.height, room * 0.6) - window.innerHeight;
+      if (over > 0 || r.top < topLine) {
+        const by = r.top < topLine ? r.top - topLine - 8 : over + 16;
+        window.scrollBy({ top: by, behavior: reduced() ? 'auto' : 'smooth' });
+      }
+    }
+    roots.forEach((li, k) => {
+      const h = li.getBoundingClientRect().height;
+      const delay = Math.min(k, 8) * 40;
+      // (A clip, not overflow: the lines to the parent lie left of the item.)
+      li.style.clipPath = 'inset(0 -100vw 0 -4rem)';
+      const a = li.animate([{ height: '0px', opacity: 0, transform: 'translateX(-0.4rem)' }, { height: `${h}px`, opacity: 1, transform: 'none' }],
+        { duration: GROW_MS, delay, easing, fill: 'backwards' });
+      a.onfinish = a.oncancel = () => { li.style.clipPath = ''; };
+      if (li.classList.contains('band')) {
+        const to = getComputedStyle(li).backgroundColor;
+        const parent = li.parentElement?.closest('li');
+        const from = parent ? getComputedStyle(parent).backgroundColor : 'transparent';
+        li.animate([{ backgroundColor: from }, { backgroundColor: to }], { duration: GROW_MS + 300, delay: delay + 120, easing: 'ease-out', fill: 'backwards' });
+      }
+    });
   }
 
   /** A node of the reading tree as an item of the ARIA tree, with the visible layers of its children. */
@@ -657,7 +913,7 @@
     const band = !parent || parent.layer !== n.layer || (n.layer === 'command' && parent.reader !== n.reader)
       || (n.layer === 'child' && parent.process !== n.process);
     if (band) li.classList.add('band');
-    const kids = n.children.filter((/** @type {any} */ c) => LEVEL[c.layer] <= level);
+    const kids = n.children.filter((/** @type {any} */ c) => shown(c, depth + 1));
     const row = document.createElement('div');
     row.className = 'trow';
     const twisty = document.createElement('span');

@@ -663,6 +663,42 @@ body {
   outline-offset: 1px;
 }
 
+/* Playing the tree (a prototype, behind ?treePlay=1): its controls at the end of the layer buttons. */
+#tree-play {
+  display: inline-flex;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+#tree-play button {
+  min-width: 1.9rem;
+}
+
+#tree-play button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#tree-play #tp-play[aria-pressed="true"] {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground, rgba(127, 127, 127, 0.2));
+}
+
+#tree-play .tp-icon {
+  display: inline-block;
+  width: 1.1em;
+  text-align: center;
+}
+
+.tp-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The tree view: an outline. Each row has the code in a pill and the kind on its first line, the text on a line
    of its own under them. Connectors are drawn with borders: a vertical line per group of children, under the
    twisty of their parent, and an elbow to each child at the middle of its first line; where a new reader takes
