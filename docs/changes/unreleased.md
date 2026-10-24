@@ -246,6 +246,28 @@ Problems whose severity changed:
 
 `for-over-ls-output` and `for-over-unquoted-args` are information: they break only names with spaces (they are new problems in this release).
 
+### Syntax colouring, on by default (`bashExplainer.highlight.enabled`)
+
+The colours from the explanations' own reading (semantic tokens over VS Code's grammar) are on by default. Before, `bashExplainer.highlight.enabled` was `false`. They are drawn in shell scripts, bats files and the shell code of Makefiles, CI YAML, package.json scripts, Markdown and Jenkinsfiles; not in Python files and Dockerfiles, whose language servers (Pylance, the Docker extension's) would lose their colours.
+
+The setting can be set per language, as VS Code's own settings are:
+
+```json
+"[makefile]": { "bashExplainer.highlight.enabled": false },
+"[yaml]": { "bashExplainer.highlight.enabled": false }
+```
+
+`yaml` covers GitLab CI files, and GitHub workflows when the GitHub Actions extension is not installed (with it, their language is `github-actions-workflow`). To stop explaining a kind of file altogether, leave it out of `bashExplainer.embedded.files`.
+
+What the colours follow now:
+
+- A command name is coloured as what bash runs there, as the panel's badge says it: a function only where it is defined (`f` before `f() { …; }` is a program), an alias (a `macro` token) only where bash expands it (`shopt -s expand_aliases`), a builtin turned off by `enable -n` as a program, `mapfile` as a program in `sh`. A command run by another one is coloured too: `sudo echo` runs the program `echo`, `builtin cd` the builtin. Before, a function was any name the script defined anywhere, and the builtins came from a list of bash's.
+- A word the command's spec reads as data is a plain argument, not an option: `-v` in `grep -e -v`, `-x` after `--`, `-i` in `declare x -i`. `test`'s and `[`'s operators (`-f`, `-eq`) stay options.
+- A variable is marked `readonly` (the theme's colour of constants) or `exported` (our own modifier, for themes and `editor.semanticTokenColorCustomizations`) where the state says so, as in `readonly R=1; echo "$R"`. Nothing is marked where the model cannot follow the script (after an `eval`, for example).
+- Each shell of a host file (a workflow step, a recipe line, a GitLab job's script) is read with its own state, as the explanations read it: a function of one step is a program in the next.
+- On the web page, the same colours: the shell menu changes them where a name is a builtin in one shell only.
+- A range request (the visible lines) reads the names and the specs on those lines only. On a 5,000-line script it takes about 5 ms once the script's model is built, which the panel and the problems share.
+
 ## Fixed
 
 ### Shell code in host files

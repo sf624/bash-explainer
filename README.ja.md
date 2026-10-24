@@ -209,7 +209,7 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.panel.autoOpen` | `false` | シェルスクリプトを開いたらパネルを自動で開く |
 | `bashExplainer.panel.animations` | `true` | パネルの行を、展開・折りたたみと「読まれ方」のステップの切り替えのときに伸び縮みさせる（オフでは即座に表示。動きを減らす設定でもオフ） |
 | `bashExplainer.panel.colors` | `"classic"` | パネルで行の各部分に付ける色。`classic`（独自の6色）、`theme`（エディターのテーマの色。読みにくい色は除く）、`themeLike`（テーマの色。テーマが2種類の部分に同じ色を付けるところは新しい色）。VS Code だけ |
-| `bashExplainer.highlight.enabled` | `false` | 解説と同じ構文木からシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。Web 版は常にこの色分け |
+| `bashExplainer.highlight.enabled` | `true` | 解説と同じ読み方でシェルのコードを色分け（エディタの色分けに重ねるセマンティックトークン）。コマンド名が実行するもの・オプション・読み取り専用の変数に色が付く。言語ごとに設定できる（下記）。Web 版は常にこの色分け |
 | `bashExplainer.hints.names` | `true` | 名前どおりのものを実行しないコマンド名の後ろにヒントを表示 |
 | `bashExplainer.inline.enabled`・`bashExplainer.inline.maxLength` | | 削除済み。効果はない |
 | `bashExplainer.examples.enabled` | `true` | 具体例を表示する |
@@ -232,6 +232,17 @@ VS Code 1.85 以降が必要です。ネイティブの依存はなく（構文�
 | `bashExplainer.languages` | `["shellscript"]` | シェルスクリプトとして解説する言語 ID |
 | **辞書** | | |
 | `bashExplainer.customCommands` | `{}` | 辞書にないコマンドの説明を追加する（下記） |
+
+#### ファイルの種類ごとの色分け
+
+色分けは、シェルスクリプトと、ほかのファイルの中のシェルのコードでオンです（Python ファイルと Dockerfile は、それぞれの言語サーバーが色分けするので対象外）。ファイルの種類ごとにオフにするには、`settings.json` でその言語に設定します。
+
+```json
+"[makefile]": { "bashExplainer.highlight.enabled": false },
+"[yaml]": { "bashExplainer.highlight.enabled": false }
+```
+
+言語は VS Code のステータスバーに出るものです: `shellscript`・`bats`・`makefile`・`yaml`（GitLab CI と、GitHub Actions 拡張機能がないときの GitHub のワークフロー）・`github-actions-workflow`・`json`（package.json）・`markdown`・`groovy`・`jenkinsfile`。言語を付けずに `"bashExplainer.highlight.enabled": false` とすると、すべてでオフになります。
 
 #### 自分のコマンドを追加する
 

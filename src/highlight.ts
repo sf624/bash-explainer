@@ -1,13 +1,16 @@
 // Syntax highlighting computed from our own syntax tree, the one the explanations are made from, so
-// that the colours of a script follow bash's reading of it (a heredoc ends where bash ends it). Pure:
-// no DOM, no editor; the web page turns the spans into marks, and a language server could serve them
-// as semantic tokens.
-import type { ShellDocument } from './document';
+// that the colours of a script follow bash's reading of it (a heredoc ends where bash ends it), and from the
+// models (src/semanticFacts.ts): what a command name runs, which words a command reads as options, which variables
+// are readonly or exported. Pure: no DOM, no editor; the web page turns the spans into marks, and the editors get
+// them as semantic tokens (src/semanticTokens.ts). docs/design/highlighting.md has the design.
+import type { Shell } from './dialect';
+import type { ShellDocument, Shells } from './document';
+import type { CommandSpec } from './argv/spec';
 import type { Extracted } from './hosts';
-import { interpret } from './argv/interpret';
-import { argWord } from './argv/words';
-import { builtins } from './dict/builtins';
-import { field, fields, type SyntaxNode, type SyntaxTree } from './syntax/tree';
+import { scriptTree } from './hosts/scripts';
+import { type HighlightModifier, semanticFacts } from './semanticFacts';
+import { shellState } from './semantics/state';
+import { field, type SyntaxNode, type SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
 /** What a span of the script is. A small, stable set: the web page has a class for each. */
@@ -15,10 +18,12 @@ export type HighlightKind =
   | 'comment'
   | 'keyword' // if, then, for, case, function, time, !, {, }, [[, ]], ((, ))
   | 'builtin' // a command bash runs itself (cd, echo, local, [, …)
-  | 'command' // the name of any other command
-  | 'function' // a call to a function the script defines
+  | 'command' // the name of a program (any other command)
+  | 'function' // a call to a function the script defines, where the function is defined
+  | 'alias' // a name an alias replaces
   | 'functionName' // the name in a function definition
   | 'option' // -x, --long
+  | 'argument' // a word that looks like an option but that the command reads as data (`grep -e -v`)
   | 'string' // '…', "…", $'…', $"…"
   | 'heredoc' // the body of a heredoc
   | 'heredocDelimiter' // EOF in <<EOF and on the line that ends the body
@@ -36,22 +41,17 @@ export interface HighlightSpan {
   readonly from: number;
   readonly to: number;
   readonly kind: HighlightKind;
+  /** What the state says of a variable there (absent when nothing). */
+  readonly modifiers?: readonly HighlightModifier[];
 }
 
 /** The kinds in a fixed order: index 0 is "nothing". */
-const KINDS: readonly (HighlightKind | null)[] = [null, 'comment', 'keyword', 'builtin', 'command', 'function', 'functionName', 'option', 'string',
-  'heredoc', 'heredocDelimiter', 'variable', 'assignment', 'substitution', 'number', 'operator', 'redirect', 'glob', 'error'];
+const KINDS: readonly (HighlightKind | null)[] = [null, 'comment', 'keyword', 'builtin', 'command', 'function', 'alias', 'functionName', 'option', 'argument',
+  'string', 'heredoc', 'heredocDelimiter', 'variable', 'assignment', 'substitution', 'number', 'operator', 'redirect', 'glob', 'error'];
+const MODIFIERS: readonly HighlightModifier[] = ['readonly', 'exported'];
 /** Every kind. */
 export const HIGHLIGHT_KINDS = KINDS.slice(1) as HighlightKind[];
 const CODE = new Map(KINDS.map((k, i) => [k, i]));
-
-/** The builtins of bash 5 (`compgen -b`), and `[[`'s cousins that bash also runs itself. */
-export const BUILTINS: ReadonlySet<string> = new Set([
-  '.', ':', '[', 'alias', 'bg', 'bind', 'break', 'builtin', 'caller', 'cd', 'command', 'compgen', 'complete', 'compopt', 'continue', 'declare',
-  'dirs', 'disown', 'echo', 'enable', 'eval', 'exec', 'exit', 'export', 'false', 'fc', 'fg', 'getopts', 'hash', 'help', 'history', 'jobs', 'kill',
-  'let', 'local', 'logout', 'mapfile', 'popd', 'printf', 'pushd', 'pwd', 'read', 'readarray', 'readonly', 'return', 'set', 'shift', 'shopt',
-  'source', 'suspend', 'test', 'times', 'trap', 'true', 'type', 'typeset', 'ulimit', 'umask', 'unalias', 'unset', 'wait',
-]);
 
 /** The builtins whose operands name variables (or functions): `declare x`, `unset x`. */
 const NAMES_VARIABLES: ReadonlySet<string> = new Set(['declare', 'typeset', 'local', 'export', 'readonly', 'unset']);
@@ -65,6 +65,10 @@ const EXPRESSIONS = new Set(['binary_expression', 'unary_expression', 'ternary_e
 export interface HighlightOptions {
   /** Only the spans that overlap these offsets (the visible part of a long script); the subtrees outside are skipped. */
   readonly range?: { readonly from: number; readonly to: number };
+  /** The shell that runs the script (bash when absent), for what its command names run. */
+  readonly shell?: Shell;
+  /** Commands the host defines (bats' `run`), as for `shellState`. */
+  readonly host?: Record<string, CommandSpec>;
 }
 
 /**
@@ -81,12 +85,11 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   const set = (a: number, b: number, kind: HighlightKind | null): void => {
     paint.fill(CODE.get(kind)!, Math.max(a, from), Math.min(b, to));
   };
-  const functions = definedFunctions(tree.root);
 
   const visit = (n: SyntaxNode, arith: boolean): void => {
     if (n.endIndex < from || n.startIndex > to) return;
     if (!n.named) return token(n, arith);
-    const kind = nodeKind(n, arith, functions);
+    const kind = nodeKind(n, arith);
     if (kind !== undefined) set(n.startIndex, n.endIndex, kind);
     if (n.type === 'comment' || n.type === 'raw_string' || n.type === 'ansi_c_string' || n.type === 'error') return;
     if (n.type === 'word') return words(n, set);
@@ -108,15 +111,23 @@ export function highlight(tree: SyntaxTree, options: HighlightOptions = {}): Hig
   };
 
   visit(tree.root, false);
+  // What the models say (command names, options by the specs, variables' attributes) paints over the tree's guess.
+  const mods = new Uint8Array(text.length);
+  const model = shellState(tree, options.shell, options.host ? { host: options.host } : {});
+  for (const f of semanticFacts(tree, model, options.shell, { from, to })) {
+    if (f.kind) set(f.from, f.to, f.kind);
+    if (f.modifiers) mods.fill(f.modifiers.reduce((bits, m) => bits | (1 << MODIFIERS.indexOf(m)), 0), Math.max(f.from, from), Math.min(f.to, to));
+  }
   // The CRs of Windows line ends, masked as spaces, are not part of any span.
   for (const i of tree.carriageReturns ?? []) if (i < paint.length) paint[i] = 0;
 
   const out: HighlightSpan[] = [];
   for (let i = from; i < to;) {
     const k = paint[i];
+    const m = mods[i];
     let j = i + 1;
-    while (j < to && paint[j] === k) j++;
-    if (k) out.push({ from: i, to: j, kind: KINDS[k]! });
+    while (j < to && paint[j] === k && mods[j] === m) j++;
+    if (k) out.push({ from: i, to: j, kind: KINDS[k]!, ...(m ? { modifiers: MODIFIERS.filter((_, b) => m & (1 << b)) } : {}) });
     i = j;
   }
   return out;
@@ -136,7 +147,7 @@ function childArith(n: SyntaxNode, c: SyntaxNode, arith: boolean): boolean {
 }
 
 /** The kind of a whole named node (its children may paint over it), null to clear it, undefined to leave it. */
-function nodeKind(n: SyntaxNode, arith: boolean, functions: ReadonlySet<string>): HighlightKind | null | undefined {
+function nodeKind(n: SyntaxNode, arith: boolean): HighlightKind | null | undefined {
   switch (n.type) {
     case 'comment': return 'comment';
     case 'error': return 'error';
@@ -154,31 +165,12 @@ function nodeKind(n: SyntaxNode, arith: boolean, functions: ReadonlySet<string>)
       return owner.type === 'simple_expansion' || owner.type === 'expansion' || arith ? 'variable' : 'assignment';
     }
     case 'test_operator': return 'option';
-    case 'command_name': {
-      const w = n.namedChildren.length === 1 && n.namedChildren[0].type === 'word' ? n.namedChildren[0].text : undefined;
-      if (w === undefined) return undefined;
-      return functions.has(w) ? 'function' : BUILTINS.has(w) ? 'builtin' : 'command';
-    }
     case 'word':
       if (n.field === 'name' && n.parent!.type === 'function_definition') return 'functionName';
       if (arith && /^[A-Za-z_]\w*$/.test(n.text)) return 'variable';
       return undefined;
     default: return undefined;
   }
-}
-
-/** The names the script defines as functions (`f() …`, `function f …`), wherever. */
-function definedFunctions(root: SyntaxNode): Set<string> {
-  const out = new Set<string>();
-  const visit = (n: SyntaxNode): void => {
-    if (n.type === 'function_definition') {
-      const name = n.children.find((c) => c.field === 'name');
-      if (name) out.add(name.text);
-    }
-    for (const c of n.namedChildren) visit(c);
-  };
-  visit(root);
-  return out;
 }
 
 type Painter = (from: number, to: number, kind: HighlightKind | null) => void;
@@ -220,18 +212,14 @@ function isPattern(w: SyntaxNode): boolean {
   return e.parent!.type === 'extended_test';
 }
 
-/** `-x` or `--long` as an argument (not after `--`), or in `[ … ]` and `declare -A`. */
+/**
+ * `-x` or `--long` as an argument (not after `--`), or in `[ … ]`: the tree's guess. Where the command has a spec, its
+ * reading paints over it (src/semanticFacts.ts: `unset x -v y` reads `-v` as a name, `grep -e -v` as the pattern).
+ */
 function isOption(w: SyntaxNode): boolean {
   if (!/^(--?[^-=\s]|--$)/.test(w.text) || w.text === '-') return false;
   const p = w.parent!;
   if (p.type !== 'command' || w.field !== 'argument') return false;
-  // `unset x -v y`, `declare x -i`: these read options up to their first name, as their specs say (by the command's spelling).
-  const name = field(p, 'name')!.text;
-  if (NAMES_VARIABLES.has(name)) {
-    const args = fields(p, 'argument');
-    const at = args.indexOf(w);
-    return interpret(builtins[name], args.map(argWord), { name }).roles.some((r) => r.word === at && r.role.role !== 'operand');
-  }
   return !p.children.slice(0, p.children.indexOf(w)).some((a) => a.field === 'argument' && a.text === '--');
 }
 
@@ -269,19 +257,25 @@ export interface LineSpan {
   readonly from: number;
   readonly to: number;
   readonly kind: HighlightKind;
+  readonly modifiers?: readonly HighlightModifier[];
+}
+
+/** The offsets at which the lines of `text` start. */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  return starts;
 }
 
 /** The spans cut at line ends, as editors take them: one per line piece, the line ends left out. */
-export function lineSpans(spans: readonly HighlightSpan[], text: string): LineSpan[] {
-  const starts = [0];
-  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+export function lineSpans(spans: readonly HighlightSpan[], text: string, starts = lineStarts(text)): LineSpan[] {
   const out: LineSpan[] = [];
   let line = 0;
   for (const s of spans) {
     while (line + 1 < starts.length && starts[line + 1] <= s.from) line++;
     for (let l = line, a = s.from; ; a = starts[++l]) {
       const end = Math.min(s.to, l + 1 < starts.length ? starts[l + 1] - 1 : text.length);
-      if (end > a) out.push({ line: l, from: a - starts[l], to: end - starts[l], kind: s.kind });
+      if (end > a) out.push({ line: l, from: a - starts[l], to: end - starts[l], kind: s.kind, ...(s.modifiers ? { modifiers: s.modifiers } : {}) });
       if (end >= s.to) break;
     }
   }
@@ -295,7 +289,12 @@ export function lineSpans(spans: readonly HighlightSpan[], text: string): LineSp
  * `${make_wildcard}`): that is host syntax, and a span partly over it is clipped.
  */
 export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extracted, skipInserted = false): LineSpan[] {
-  const pieces = lineSpans(spans, extracted.text).flatMap((s) => {
+  return hostedLines(lineSpans(spans, extracted.text), extracted, skipInserted);
+}
+
+/** `hostedHighlight` of spans already cut at the line ends of the extracted text. */
+function hostedLines(spans: readonly LineSpan[], extracted: Extracted, skipInserted: boolean): LineSpan[] {
+  const pieces = spans.flatMap((s) => {
     if (!skipInserted) return [s];
     const out: LineSpan[] = [];
     let from = s.from;
@@ -312,8 +311,45 @@ export function hostedHighlight(spans: readonly HighlightSpan[], extracted: Extr
     .filter((s) => s.to > s.from);
 }
 
-/** The spans of a document, in its own lines: a shell script, or the shell code of a host file (see `hostedHighlight` for `skipInserted`). */
-export function documentHighlight(doc: ShellDocument, skipInserted = false): LineSpan[] {
-  const spans = highlight(doc.tree);
-  return doc.extracted ? hostedHighlight(spans, doc.extracted, skipInserted) : lineSpans(spans, doc.tree.text);
+export interface DocumentHighlightOptions {
+  /** The shells the explanations use: a script is read as `forced ?? detected`, a host file's code as `forced ?? its region's`. */
+  readonly shells?: Shells;
+  /** Only the spans on these lines (inclusive), and the models read there only (the model of a script is still built whole, once per tree). */
+  readonly lines?: { readonly from: number; readonly to: number };
+  /** See `hostedHighlight`. */
+  readonly skipInserted?: boolean;
+}
+
+/** The offsets of `lines` (inclusive) in a text whose lines start at `starts`. */
+function offsetsOf(starts: readonly number[], length: number, lines: { from: number; to: number }): { from: number; to: number } {
+  return { from: starts[Math.min(lines.from, starts.length - 1)], to: lines.to + 1 < starts.length ? starts[lines.to + 1] - 1 : length };
+}
+
+/**
+ * The spans of a document, in its own lines: a shell script, or the shell code of a host file. Each shell of a host
+ * file (a workflow step, a RUN instruction, a recipe line) is read with its own tree and model (`scriptTree`), as the
+ * explanations read it: a function of one step is not one in the next.
+ */
+export function documentHighlight(doc: ShellDocument, opts: DocumentHighlightOptions = {}): LineSpan[] {
+  const { tree, extracted } = doc;
+  const forced = opts.shells?.forced;
+  if (!extracted) {
+    const starts = lineStarts(tree.text);
+    const range = opts.lines && offsetsOf(starts, tree.text.length, opts.lines);
+    return lineSpans(highlight(tree, { range, shell: forced ?? opts.shells?.detected }), tree.text, starts);
+  }
+  const lines: LineSpan[] = [];
+  const done = new Set<SyntaxTree>();
+  for (const region of extracted.regions) {
+    if (opts.lines && (region.end < opts.lines.from || region.start > opts.lines.to)) continue;
+    const own = scriptTree(tree, extracted, region);
+    if (done.has(own)) continue;
+    done.add(own);
+    const starts = lineStarts(own.text);
+    const range = opts.lines && offsetsOf(starts, own.text.length, opts.lines);
+    lines.push(...lineSpans(highlight(own, { range, shell: forced ?? region.shell, ...(region.commands ? { host: region.commands } : {}) }), own.text, starts));
+  }
+  // (Each shell of a host file has lines of its own: put together, their spans are in order once sorted by line.)
+  if (done.size > 1) lines.sort((a, b) => a.line - b.line || a.from - b.from);
+  return hostedLines(lines, extracted, opts.skipInserted ?? false);
 }

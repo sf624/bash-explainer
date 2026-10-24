@@ -21,6 +21,7 @@ Keep it current:
 5. Pipeline examples: show the shape of the input each stage reads (item 3 of the external review of October 2026).
 6. bats, what [design/bats.md](design/bats.md) lists as not done: a model per test (its own process, `set -e`), hooks, bats-assert, tags.
 7. Small gaps of the specs ([design/semantics.md](design/semantics.md), A3): procps reads digits after BSD letters as PIDs (`ps u1`); GNU tar reads a first word without a dash as letters (`tar vf a.tar`).
+8. Dead code faded in the editor: a `DiagnosticTag.Unnecessary` hint on a statement that never runs (`shellState(...).dead(n)`), with its message in the catalog and on every surface ([design/highlighting.md](design/highlighting.md)).
 
 ## Waiting on the maintainer
 
@@ -34,6 +35,7 @@ Keep it current:
 
 ## Done lately
 
+- Syntax colouring on by default, switched per language, with what a name runs, options by the specs and readonly variables from the models; fast range requests (#PR; [design/highlighting.md](design/highlighting.md)).
 - Panel colours from the editor theme: the setting `bashExplainer.panel.colors` (`classic`, `theme`, `themeLike`) ([design/theme-colours.md](design/theme-colours.md)).
 - The hover explains the part at the position; a card on no part; the whole line per command through `Ctrl+K Ctrl+E` or the hover's link; no tree glyphs; the Language Server's hover starts with the part (#317; [design/hover.md](design/hover.md)).
 - Name hints after the command names that do not run what they suggest, in VS Code and the Language Server; the inline summary removed, its settings deprecated (#318; [design/hover.md](design/hover.md)).

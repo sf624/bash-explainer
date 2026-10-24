@@ -34,6 +34,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - On the web page, changing the file kind loads the new kind's sample when the editor holds a sample or nothing. When it holds your own script, the page asks whether to replace it with the sample (and offers Undo) or keep it. Before, the text always stayed.
 - **Compatibility:** `--check` prints the pitfalls but exits as before: their warnings fail it only with the new `--strict` (the Action's `strict: 'true'`). The Action's `warnings` output still counts only what fails the step; the new `pitfalls` output counts the pitfalls.
 - The web page's menu no longer has the Version switch or the link to the development version; the development and preview pages keep the switch.
+- Syntax colouring from the explanations is on by default in shell scripts and the shell code of other files (not Python files and Dockerfiles), and colours aliases, readonly variables and the words a command reads as data. Turn it off for one kind of file with a language setting: `"[makefile]": { "bashExplainer.highlight.enabled": false }`.
 
 ### Fixed
 

@@ -97,6 +97,14 @@ export class ExplainService implements vscode.Disposable {
     return semanticSelector(this.languages);
   }
 
+  /**
+   * Whether our colours are on for this document: `highlight.enabled`, which a user can set per language
+   * (`"[makefile]": { "bashExplainer.highlight.enabled": false }`); VS Code reads the override of the document's language.
+   */
+  highlightEnabled(doc: vscode.TextDocument): boolean {
+    return vscode.workspace.getConfiguration('bashExplainer', doc).get<boolean>('highlight.enabled', true);
+  }
+
   /** The shell parts of a host document (cached per version). */
   extractedOf(doc: vscode.TextDocument, kind: HostKind): Extracted {
     const key = doc.uri.toString();
@@ -164,7 +172,8 @@ export class ExplainService implements vscode.Disposable {
     return openDocument(doc.getText(), kind ?? 'shell', (text) => this.trees.get(key, doc.version, () => text), kind && this.extractedOf(doc, kind));
   }
 
-  private shells(doc: vscode.TextDocument): Shells {
+  /** The shells a document is explained with: the one chosen (panel, setting) and the one the file says. */
+  shells(doc: vscode.TextDocument): Shells {
     return { forced: this.forcedShell(doc), detected: this.detectedShell(doc) };
   }
 

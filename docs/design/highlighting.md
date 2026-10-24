@@ -1,0 +1,59 @@
+# Syntax colouring
+
+The shell code is coloured from the same reading the explanations use: our syntax tree, and the models over it. VS Code gets the colours as semantic tokens over its TextMate grammar; the Language Server sends the same tokens; the web page draws the same spans as marks. `bashExplainer.highlight.enabled` turns it on or off, per language (on by default since this design).
+
+## What we colour
+
+From the tree (src/highlight.ts): comments, strings, here-documents and their delimiters (a body ends where bash ends it), keywords, operators and redirections, the delimiters of `$( )`, `<( )` and `$(( ))`, variables and the names an assignment sets, numbers and names in arithmetic, glob characters where the shell expands the word, and the tree's guess of options (`-x`, `--long`, not after `--`).
+
+From the models (src/semanticFacts.ts), painted over the tree's colours:
+
+| Fact | Source | Kind, token |
+| --- | --- | --- |
+| What a command name runs: keyword, alias, function, builtin, program | `resolveName` (src/semantics/names.ts), as the panel's badge ([name-kind.md](name-kind.md)) | `keyword`; `alias` as `macro`; `function`; `builtin` as `function.defaultLibrary`; `command` as `function` |
+| A command run by another one (`sudo echo`, `xargs rm`, `builtin cd`) | the spec's command slot, `slotEnvs`, then `resolveName` there | as above |
+| A word the spec reads as an option, or as data that only looks like one (`grep -e -v`) | `interpret` (src/argv/) | `option` as `parameter`; `argument` as `string`, the grammar's colour of a plain argument |
+| A variable readonly or exported where it is used or set | the run state (`shellState(...).at(n)`), only where `trusts()` allows | modifiers `readonly` (standard) and `exported` (our own, declared in package.json) |
+
+Not painted from the specs: `test` and `[` (their words are an expression, whose operators the tree colours), and the words of a function or an alias (no spec). A subcommand (`git log`) keeps the grammar's colour.
+
+In a host file, each shell (a workflow step, a recipe line, a GitLab job's script; a recipe with `.ONESHELL`, Markdown's blocks together) is read with its own tree and model (`scriptTree`, src/hosts/scripts.ts), as the explanations read it, and with the region's shell unless the user forced one. Nothing is painted over host syntax the extraction rewrote (`$(CC)`, `${{ }}`).
+
+Dead code (`.dead(n)`) is not faded yet: it would be a `DiagnosticTag.Unnecessary` hint, a diagnostic of its own with a message in the catalog, on every surface. It is listed in the roadmap.
+
+## Why semantic tokens, not a TextMate injection
+
+- A grammar reads a line at a time with regular expressions. It cannot know where bash ends a here-document whose delimiter is quoted, what a name runs (a function defined above, an alias only with `expand_aliases`, a builtin of bash only), or which words a command takes as options. The tree and the models know, and the explanations already rely on them.
+- An injection would be one grammar per host language (YAML block scalars, Makefile recipes with make's `$(…)`, JSON strings with escapes), each repeating what the extractors (src/hosts/) already do, and mapping columns back is the extractor's job.
+- Semantic tokens use the standard types and modifiers, which every theme colours; `semanticTokenScopes` (package.json) maps each to a scope of VS Code's shell grammar, so a theme colours our tokens as it colours that grammar. The Language Server sends the same tokens to any LSP editor.
+
+The cost: a theme needs semantic highlighting (most have it), and the tokens arrive after the grammar's colours, a moment after an edit.
+
+## One provider per document
+
+VS Code takes the semantic tokens of one provider for a whole document: the best match of the selectors that gives an answer. So:
+
+- We register for the shell languages and the host languages, except those whose own extension sends semantic tokens in common use (`OWN_SEMANTIC_KINDS` in src/document-setup.ts: Python, for Pylance, and Dockerfiles, for the Docker extension's language server). In those files the shell code keeps the grammar's colour; the explanations are unchanged.
+- A document with no shell code, or with the setting off for its language, gets no answer (`undefined`), never an empty one: an empty answer would hide the tokens of another provider (a Dockerfile or YAML language server).
+- `semanticTokenScopes` has one entry per language we send tokens for (`SEMANTIC_LANGUAGES`); an entry without `language` would recolour the semantic tokens of every language (a test checks both).
+
+## The switch per kind of file
+
+`bashExplainer.highlight.enabled` is `language-overridable`: the provider reads it with `getConfiguration('bashExplainer', document)`, so `"[makefile]": { "bashExplainer.highlight.enabled": false }` turns it off for Makefiles. This is VS Code's own mechanism, shown in the settings editor, and it covers each language we colour: `shellscript`, `bats`, `makefile`, `yaml`, `github-actions-workflow`, `json` (package.json is the only JSON file we read), `markdown`, `groovy`, `jenkinsfile`.
+
+It cannot tell apart host kinds that share a language: `yaml` is GitLab CI, and GitHub workflows without the GitHub Actions extension. A list setting of host kinds would, but it would be a second switch beside `embedded.files` for a case nobody asked for; with the GitHub Actions extension, workflows have their own language anyway. The Language Server reads the setting for every document (its clients have no language overrides of VS Code's kind).
+
+## Speed
+
+The tree is cached per document version (`TreeCache`), the model per tree (`shellState`), the shell code of a host file per version, and the tree of each of its shells per extraction: the tokens, the panel and the diagnostics share them. A range request (the visible lines) paints and reads the names and specs of those lines only; the model of the whole script is built once per version, by whichever asks first.
+
+Measured on 5,000 lines (the sample repeated; Node 22, a laptop under WSL, medians, varying by about ±30% between runs):
+
+| | Tree only (before) | Prototype (`proto/semantic-highlight`) | Now |
+| --- | --- | --- | --- |
+| Parse | 120–150 ms | 120 ms | 130–190 ms |
+| Model (`shellState`) | none | about 200 ms | about 200 ms, shared |
+| Full request, model built | 22 ms | 122 ms | 95–215 ms |
+| Range request (60 lines), model built | 21 ms (the whole script, then filtered) | 279 ms (the model again) | 3.5–5 ms |
+
+test/highlight-speed.test.ts guards these with generous limits (full under 1.5 s, a range under 150 ms and a quarter of the full request), skipped under coverage.
