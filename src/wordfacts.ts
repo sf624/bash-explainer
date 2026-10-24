@@ -2,7 +2,7 @@ import type { Lang } from './i18n';
 import { quoteExpansions } from './fixes';
 import { type Fact, fact } from './messages';
 import type { Shell } from './dialect';
-import { args, commandName, readsVariable } from './pitfalls';
+import { args, commandName, pathCommand, readsVariable } from './pitfalls';
 import { type NameResolution, resolveName, testSpecAt } from './semantics/names';
 import { shebangRefused, type StateModel } from './semantics/state';
 import { errexitStops, firstUnbound, unboundRead } from './semantics/unbound';
@@ -26,7 +26,8 @@ const PATH_COMMANDS = new Set(['rm', 'cp', 'mv', 'cd', 'mkdir', 'touch', 'chmod'
  */
 function ranName(r: NameResolution): string | undefined {
   if (r.kind === 'alias') return r.sure && r.target ? ranName(r.target) : undefined;
-  return r.name.split('/').pop();
+  // (A path runs a file, never a builtin: `./cd` is not `cd`.)
+  return pathCommand(r.name);
 }
 
 /** Is the node a parameter expansion (`$x`, `${x}`)? */
@@ -89,12 +90,13 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
       case 'command': {
         const name = commandName(n);
         const a = args(n);
-        // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value.
+        // `FOO=1 echo $FOO`: the shell expands `$FOO` before the command sees the new value (whatever it runs: `./x`).
+        const written = field(n, 'name')?.text;
         const prefix = prefixAssignments(n).map((c) => field(c, 'name')?.text).filter((v): v is string => !!v);
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
-          if (name && use) {
-            add(fact(lang, 'prefix-assignment-expanded-first', { v, name, use: use.text }), use);
+          if (written && use) {
+            add(fact(lang, 'prefix-assignment-expanded-first', { v, name: written, use: use.text }), use);
             break;
           }
         }

@@ -80,8 +80,21 @@ export function readsVariable(word: SyntaxNode, name: string): boolean {
   return descendants(word, ['simple_expansion', 'expansion']).some((e) => e.namedChildren.some((c) => named(c)?.type === 'variable_name' && named(c)!.text === name));
 }
 
+/** The command the name of the simple command `n` runs, as the checks read it (see `pathCommand`). */
 export function commandName(n: SyntaxNode): string | undefined {
-  return field(n, 'name')?.text.split('/').pop();
+  const name = field(n, 'name')?.text;
+  return name === undefined ? undefined : pathCommand(name);
+}
+
+/**
+ * The command a name runs, as the checks read it: the name itself; for a path, the program of its last part when the
+ * dictionary knows it (`/bin/rm` is rm, as the explanation reads it), else none. A path runs that file, never a builtin
+ * (3.7.2): `./read` is not `read`, nor `./cd` the `cd` builtin.
+ */
+export function pathCommand(name: string): string | undefined {
+  if (!name.includes('/')) return name;
+  const spec = lookupCommand(name);
+  return spec && !spec.builtin ? name.slice(name.lastIndexOf('/') + 1) : undefined;
 }
 
 export function args(n: SyntaxNode): SyntaxNode[] {
@@ -196,9 +209,10 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
           }
         }
         // `read` without -r eats backslashes.
-        // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key.
+        // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key. Only the builtin: not a
+        // function of that name (src/semantics/names.ts).
         const readsVar = a.some((w) => /^[A-Za-z_]\w*$/.test(w.text));
-        if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text))) {
+        if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text)) && resolveName(model, name, field(n, 'name')!, { shell, command: true }).kind === 'builtin') {
           add('read-without-r', n, '`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
             'without `-r`, backslashes in the input are taken as escapes and lost. Usually write `read -r`');
         }

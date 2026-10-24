@@ -43,6 +43,9 @@ describe('pitfalls', () => {
     // `time` times what follows; what follows is a command like any other.
     ['time read x', /without `-r`, backslashes/],
     ['time -p rm -rf $DIR/x | cat', /if `DIR` is empty/],
+    // A path names the program of its last part, as the explanation reads it: `/bin/rm` is rm.
+    ['/bin/rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
+    ['./rm -rf $DIR/*', /becomes `rm -r \/\*`, deleting from the root/],
   ];
   for (const [src, expected] of cases) {
     it(`points out ${src}`, () => assert.ok(notes(src).some((n) => expected.test(n)), notes(src).join('\n') || '(none)'));
@@ -52,6 +55,8 @@ describe('pitfalls', () => {
     'x=1', 'rm -rf "${DIR:?}/build"', 'rm -rf ""/x', 'rm -rf "a$DIR/x"', 'rm -rf "$DIR"', 'rm -rf "$HOME/.cache"', 'rm -f "$tmp"', 'for f in *.txt; do :; done', '[ "$x" = y ]', '[[ $x = y ]]',
     '[ -f x ] && [ -n y ]', '[ "$a" \\< "$b" ]', '[ -f x ] || [ -n y ]', '[ $? -eq 0 ]', '[ $# -gt 0 ]', '[ ${#a[@]} -eq 0 ]', '[ "$(stat -c %a $f)" -le 600 ]', 'read -r line', 'read', 'read -n 1 key',
     'local out', 'out=$(cmd)', 'echo 1 | sudo tee /proc/x', 'sudo cmd > /dev/null', 'sudo dmesg > dmesg.log', 'for a in "$@"; do :; done', 'cp "$src" "$dst"', 'echo $x',
+    // A path runs that file, never a builtin (3.7.2); a function runs instead of the builtin.
+    './read x', '/usr/local/bin/read x', 'read() { :; }; read x', 'enable -n read; read x', './x = 1', 'bin/x = 1',
   ];
   for (const src of fine) {
     it(`says nothing about ${src}`, () => assert.deepStrictEqual(notes(src), []));
@@ -147,6 +152,24 @@ describe('pitfalls', () => {
     // (`export = x`: a builtin, which rejects the name `=`; not a command that is not found.)
     assert.match(run('export = x').stderr, /not a valid identifier/);
     for (const cmd of ['x = 1', 'foo = 1']) assert.strictEqual(run(cmd).status, 127, cmd);
+  });
+  it('a path runs that file and a function its body, never the builtin of the name; the path of rm is rm', function () {
+    if (spawnSync('bash', ['-c', ':']).status !== 0) return this.skip();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-path-'));
+    try {
+      for (const f of ['read', 'cd', 'x']) fs.writeFileSync(path.join(dir, f), '#!/bin/sh\necho "file $0"\n', { mode: 0o755 });
+      const run = (cmd: string) => spawnSync('bash', ['--norc', '--noprofile', '-c', cmd], { cwd: dir, encoding: 'utf8', input: 'a\\b\n', timeout: 10000, env: { PATH: process.env.PATH, LC_ALL: 'C' } }).stdout;
+      assert.strictEqual(run('./read x; echo "[$x]"'), 'file ./read\n[]\n');
+      assert.strictEqual(run('./cd /; pwd'), `file ./cd\n${fs.realpathSync(dir)}\n`);
+      assert.strictEqual(run('./x = 1'), 'file ./x\n');
+      assert.strictEqual(run('read() { echo fn; }; read x; echo "[$x]"'), 'fn\n[]\n');
+      // (The builtin, for comparison: it takes the backslash as an escape.)
+      assert.strictEqual(run('read x; echo "[$x]"'), '[ab]\n');
+      assert.match(run('"$(type -P rm)" --version'), /^rm \(GNU coreutils\)/);
+      assert.strictEqual(run('type -t "$(type -P rm)"'), 'file\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
   });
   // zsh (zshoptions: IGNORE_CLOSE_BRACES is off by default) closes a group at a `}` anywhere.
   it('a } with no ; before it closes the group in zsh', () => {
