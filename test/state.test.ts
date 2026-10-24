@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
-import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
+import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shebangRefused, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { assertGrowth } from './support/growth';
 import { descendants, fields } from '../src/syntax/tree';
@@ -120,6 +120,27 @@ describe('shell state: options', () => {
         const r = spawnSync(file, [], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 });
         // (A shebang bash refuses, `-e -u`, starts nothing: no option is on.)
         assert.deepStrictEqual([/e/.test(r.stdout), /u/.test(r.stdout)], [e, u], `${line}: ${r.stdout}${r.stderr}`);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('knows the shebangs whose options bash refuses, as bash does', () => {
+    const rows: [string, 'blank' | 'name' | 'long' | undefined][] = [
+      ['#!/bin/bash -e -u', 'blank'], ['#!/bin/bash -e\t-u', 'blank'], ['#!/bin/bash -ex -u', 'blank'], ['#!/bin/bash -e -o pipefail', 'blank'],
+      ['#!/bin/bash -o nounset', 'name'], ['#!/bin/bash -euo pipefail', 'name'], ['#!/bin/bash -eo', 'name'], ['#!/bin/bash --posix -e', 'long'],
+      ['#!/bin/bash -eu', undefined], ['#!/bin/bash -x', undefined], ['#!/bin/bash --posix', undefined], ['#!/bin/bash', undefined],
+      ['#!/usr/bin/env -S bash -e -u', undefined], ['#!/usr/bin/env bash', undefined],
+    ];
+    for (const [line, why] of rows) assert.strictEqual(shebangRefused(`${line}\necho ran\n`)?.why, why, line);
+    if (process.platform !== 'linux' || !fs.existsSync('/bin/bash') || !fs.existsSync('/usr/bin/env')) return;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-refused-'));
+    try {
+      rows.forEach(([line, why], i) => {
+        const file = path.join(dir, `s${i}`);
+        fs.writeFileSync(file, `${line}\necho ran\n`, { mode: 0o755 });
+        const r = spawnSync(file, [], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' }, timeout: 5000 });
+        assert.strictEqual(r.stdout === 'ran\n', !why, `${line}: ${r.stdout}${r.stderr}`);
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

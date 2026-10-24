@@ -469,6 +469,15 @@ describe('robustness', () => {
     for (const line of ['#!/usr/bin/env bash', '#!/bin/bash -e', '#!/usr/bin/env']) assert.match(shebang(line), /`$/, line);
   });
 
+  it('says when bash refuses the options of its shebang (test/state.test.ts runs them)', () => {
+    const notes = (line: string, lang: 'ja' | 'en' = 'en') => explain(`${line}\necho ran`, 0, lang).notes.filter((n) => /refuses it|受け付けない/.test(n));
+    assert.match(notes('#!/bin/bash -e -u')[0], /^⚠ Pitfall: on Linux the whole `-e -u` after the interpreter is one argument to bash, which refuses it \(a blank is not an option\)\. Run directly, the script stops with an error before running anything\. Write the options with `set` on the next line \(`bash script` ignores the options of the shebang\)$/);
+    assert.match(notes('#!/bin/bash -o nounset')[0], /\(`o` takes the next argument, the script's path, as an option name\)/);
+    assert.match(notes('#!/bin/bash --posix -e')[0], /\(no long option has that name\)/);
+    assert.match(notes('#!/bin/bash -euo pipefail', 'ja')[0], /^⚠ 落とし穴: Linux ではシバンのインタープリタの後ろの `-euo pipefail` 全体が bash への1つの引数になり、bash はそれを受け付けない（`o` が次の引数のスクリプトのパスをオプション名として読む）。直接実行すると/);
+    for (const line of ['#!/bin/bash -eu', '#!/bin/bash', '#!/bin/bash --posix', '#!/usr/bin/env -S bash -e -u', '#!/bin/sh -e -u']) assert.deepStrictEqual(notes(line), [], line);
+  });
+
   it('explains the words env -S splits a string into, or why env refuses it', () => {
     const value = (line: string, label: string, lang: 'ja' | 'en' = 'en') => {
       const out: string[] = [];
