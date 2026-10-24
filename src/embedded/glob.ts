@@ -24,7 +24,7 @@ export function globIntro(lang: Lang, target: GlobTarget): string {
  * Nothing for a pattern with an expansion (`$x`, `$(…)`): its text is only known at run time.
  */
 export function explainGlob(src: string, lang: Lang, extglob = true): EmbeddedToken[] {
-  if (/\$|`/.test(src)) return [];
+  if (/\$(?!')|`/.test(src)) return [];
   return parse(src, 0, src.length, pick(lang), lang, extglob);
 }
 
@@ -58,6 +58,11 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
       if (end < 0 || end >= to) { literal(i); continue; }
       add(i, end + 1, 'string', s('クォートされた部分: 中の文字そのもの（`*` や `?` もパターンにならない）', 'Quoted part: the characters themselves (`*` and `?` are not pattern symbols here)'));
       i = end;
+    } else if (c === '$' && src[i + 1] === "'" && ansiEnd(src, i + 2) < to) {
+      // `$'a*'` is quoted as `'a*'` is, with its escapes read (`$'\t'` is a tab).
+      const end = ansiEnd(src, i + 2);
+      add(i, end + 1, 'string', s('`$\'…\'` でクォートされた部分: エスケープを解釈した文字そのもの（`*` や `?` もパターンにならない）', 'Part quoted with `$\'…\'`: the characters it stands for themselves (`*` and `?` are not pattern symbols here)'));
+      i = end;
     } else if (extglob && '?*+@!'.includes(c) && src[i + 1] === '(' && closingParen(src, i + 1) > 0 && closingParen(src, i + 1) < to) {
       const end = closingParen(src, i + 1);
       const [ja, en] = EXT[c];
@@ -85,6 +90,13 @@ function parse(src: string, from: number, to: number, s: (ja: string, en: string
   return out;
 }
 
-const hasBracket = (s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
+/** The closing quote of a `$'…'` whose text starts at `from` (a backslash escapes the next character), or the end of `src`. */
+function ansiEnd(src: string, from: number): number {
+  let i = from;
+  while (i < src.length && src[i] !== "'") i += src[i] === '\\' ? 2 : 1;
+  return Math.min(i, src.length);
+}
+
+const hasBracket =(s: string) => [...s].some((c, i) => c === '[' && s[i - 1] !== '\\' && bracketEnd(s, i) > i);
 /** Whether a word's text has a wildcard: `*`, `?`, an extended glob (`+(`, `@(`, `!(`) or a bracket expression. */
 export const hasGlob = (s: string): boolean => /(^|[^\\])([*?]|[+@!]\()/.test(s) || hasBracket(s);

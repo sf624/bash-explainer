@@ -417,8 +417,9 @@ export function exampleFor(p: ParsedExpansion, lang: Lang, ctx: { quoted?: boole
     case '+':
       return [set(sample, expanded(word)), emptyCase(expanded(word)), missing(false, '')];
     case ':?': case '?': {
-      // (`${x:?""}` prints an empty message; only a missing word gives bash's own.)
-      const msg = rawWord ? (unquoteWord(rawWord, quoted) ?? messageText(rawWord)) : ja ? '（既定のメッセージ）' : '(a default message)';
+      // (`${x:?""}` prints an empty message; only a missing word gives bash's own. The quotes of the word go also inside
+      // double quotes: `"${x:?'a'}"` prints `a`, as the token says.)
+      const msg = rawWord ? messageText(rawWord) : ja ? '（既定のメッセージ）' : '(a default message)';
       const fail = ja ? `エラー「${msg}」を表示して終了` : `prints the error "${msg}" and exits`;
       return [missing(p.op === ':?', fail), set(sample, sample)];
     }

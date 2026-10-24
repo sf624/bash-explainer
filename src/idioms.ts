@@ -5,8 +5,9 @@ import type { ArgvParse } from './argv/interpret';
 import { has, values } from './argv/query';
 import { argWord } from './argv/words';
 import { lookupCommand } from './dict/aliases';
+import { hasGlob } from './embedded/glob';
 import { staticWordValue } from './staticword';
-import { descendants, field, fields, redirectionsOf } from './syntax/tree';
+import { ancestor, descendants, field, fields, redirectionsOf } from './syntax/tree';
 import type { SyntaxNode } from './syntax/tree';
 import { option } from './semantics/state';
 import type { StatusModel } from './semantics/status';
@@ -293,11 +294,17 @@ const globGuard = (n: SyntaxNode, status: StatusModel): boolean => {
   const u = t.type === 'extended_test' && t.namedChildren[0].type === 'unary_expression' ? t.namedChildren[0] : undefined;
   const [op, operand] = u ? [field(u, 'operator')!.text, u.namedChildren[1]]
     : testWords(t)?.length === 2 ? [staticWordValue(testWords(t)![0]), testWords(t)![1]] : [];
-  if (!['-e', '-f'].includes(op!) || !/^\w+$/.test(parameterOf(operand)?.name ?? '')) return false;
-  // (With nullglob or failglob on, a glob that matches nothing gives no name to skip: the note would not hold.)
+  const name = parameterOf(operand)?.name ?? '';
+  if (!['-e', '-f'].includes(op!) || !/^\w+$/.test(name)) return false;
+  // (Only in a `for` over a glob of that name: `for f in "$@"` has none to keep.)
+  const loop = ancestor(n, (a) => LOOPS.has(a.type));
+  const globbed = (v: SyntaxNode) => (v.type === 'concatenation' ? v.namedChildren : [v]).some((c) => c.type === 'word' && hasGlob(c.text));
+  if (loop?.type !== 'for_statement' || field(loop, 'variable')?.text !== name || !fields(loop, 'value').some(globbed)) return false;
+  // (With nullglob or failglob on, or on some paths, a glob that matches nothing may give no name to skip: the note would not hold.)
   const st = status.state.at(n).run;
-  return option(st, 'shopt', 'nullglob') !== 'on' && option(st, 'shopt', 'failglob') !== 'on';
+  return [option(st, 'shopt', 'nullglob'), option(st, 'shopt', 'failglob')].every((o) => o === 'off' || o === 'default');
 };
+const LOOPS = new Set(['for_statement', 'c_style_for_statement', 'while_statement', 'select_statement']);
 
 /** The words of `[ … ]` (by its spelling, closed with `]`) between the brackets; undefined for any other node. */
 const testWords = (n: SyntaxNode): SyntaxNode[] | undefined => {

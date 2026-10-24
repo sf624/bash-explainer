@@ -87,7 +87,40 @@ export function unquotedWord(a: SyntaxNode): string | undefined {
 
 /** Whether `name` is an associative array (`declare -A`) where `n` runs: its subscripts are strings, not arithmetic. */
 export function isAssoc(cx: Explainer, name: string, n: SyntaxNode): boolean {
-  return attribute(cx.state.at(n).run, name, 'A') === 'on';
+  return arrayKind(cx, name, n) === 'assoc';
+}
+
+/**
+ * Whether the array `name` is associative where `n` runs (its subscripts are keys), surely indexed (they are
+ * arithmetic), or either. A nameref is followed to the name it refers to. Indexed needs the `A` attribute off for
+ * sure: not after a file read with `source` or anything else the model does not read (`declare -A "$v"`, `$cmd`).
+ */
+export function arrayKind(cx: Explainer, name: string, n: SyntaxNode): 'assoc' | 'indexed' | 'unknown' {
+  const st = cx.state.at(n).run;
+  // (Namerefs that refer to each other: bash warns of a circular reference.)
+  const seen = new Set<string>();
+  while (!seen.has(name)) {
+    seen.add(name);
+    const ref = attribute(st, name, 'n');
+    const target = st.variables.get(name)?.value;
+    if (ref === 'unknown' || (ref === 'on' && !/^[A-Za-z_]\w*$/.test(target ?? ''))) return 'unknown';
+    if (ref === 'off') {
+      const a = attribute(st, name, 'A');
+      return a === 'on' ? 'assoc' : a === 'unknown' || st.opaque || unseenDeclarations(cx) ? 'unknown' : 'indexed';
+    }
+    name = target!;
+  }
+  return 'unknown';
+}
+
+/**
+ * Whether the script may declare a variable the model does not see (`declare -A "$v"`, `$cmd`, `source`; why the model
+ * is blind, src/semantics/trust.ts), not only read text it does not know as arithmetic, use a subscript the trust
+ * cannot place, or run a trap that may break a loop: those declare nothing.
+ */
+function unseenDeclarations(cx: Explainer): boolean {
+  const why = cx.state.blind;
+  return why !== undefined && !/^(?:arithmetic |an integer variable |indirect expansion|`\w+` may not be associative|a trap's action may end)/.test(why);
 }
 
 export function inArithmetic(n: SyntaxNode): boolean {
