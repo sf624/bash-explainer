@@ -47,11 +47,15 @@ function redirectSections(n: SyntaxNode): readonly string[] {
   return [sub[op] ?? '3.6'];
 }
 
-/** `$1` and `$10` (3.4.1), `$?`, `$@`, `$$` and the other special parameters (3.4.2), or a variable (3.5.3). */
+/**
+ * `$1` and `$10` (3.4.1), `$?`, `$@`, `$$` and the other special parameters (3.4.2), `$_` (bash 5.2's manual lists
+ * it with the Bash variables, 5.2), or a variable (3.5.3; `$_x` too).
+ */
 function parameterSections(text: string): readonly string[] {
   const name = text.slice(1);
   if (/^\d/.test(name)) return ['3.4.1'];
-  if (/^[-*@#?$!_]/.test(name)) return ['3.4.2'];
+  if (name === '_') return ['5.2'];
+  if (/^[-*@#?$!]/.test(name)) return ['3.4.2'];
   return ['3.5.3'];
 }
 

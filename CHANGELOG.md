@@ -32,6 +32,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 - The web page keeps the phone layout on a phone at every zoom. Before, zooming out far enough switched it to the desktop layout, with the editor and the explanation side by side.
 - The `set` options of a shebang count: `#!/bin/bash -eu` turns on `set -e` and `set -u` for the script.
+- `$_` links to section 5.2 of the Bash manual (Bash Variables), where bash 5.2's manual describes it, and a variable such as `$_tmp` to 3.5.3. Before, both linked to 3.4.2 (Special Parameters).
 - bash 5.3's `${ cmd; }` and `${| cmd; }` are explained as bash 5.3 runs them: in the current shell, with no subshell. Before, they were explained as `$( )`. bash 5.2 rejects them ("bad substitution"), which the warning says. In bash 5.3 mode, `${ echo a }` (no `;` before the `}`) is a warning, as bash 5.3 rejects it; `return` in `${ …; }` ends the substitution, and `local` there is no pitfall.
 - Fewer wrong pitfalls: `echo ===`, `sed = f` and `export = x` are not taken for `x = 1`, and `rm -rf $DIR/*` is no warning when the script set `DIR` to a path. A path runs that file, not a builtin: `./read x` and a function named `read` no longer get the `read -r` pitfall.
 - zsh scripts: an unquoted variable is no longer said to be split and globbed, and `for a in $@` and `{ echo a }` are no longer pitfalls there. Before, the explanation said both that zsh does not split `$a` and that it does.
