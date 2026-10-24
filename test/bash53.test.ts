@@ -2,11 +2,14 @@
 //
 // bash 5.3 comes from $BASH_EXPLAINER_BASH53 (a path; CI builds it from the release tarball). Without it, its half is
 // skipped; BASH_EXPLAINER_BASH53_REQUIRED=1 makes a missing one fail. bash is GPL: it is only run, as a separate program.
-// The bash 5.2 half runs the `bash` on PATH when it is a 5.2.
+// The bash 5.2 half runs the `bash` on PATH when it is a 5.2. What we say is checked in both cases, so that coverage
+// does not depend on either.
 import * as assert from 'assert';
 import { spawnSync } from 'child_process';
+import { Analyzer } from '../src/analyzer';
+import type { BashVersion } from '../src/bashversion';
 import { documentIssues } from '../src/document';
-import { dialectNotes } from '../src/dialect';
+import { dialectNotes, type Shell } from '../src/dialect';
 import { processOf } from '../src/semantics/env';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
@@ -24,8 +27,24 @@ function releaseOf(program: string): string | undefined {
 
 const BASH53 = process.env.BASH_EXPLAINER_BASH53;
 
-/** Each case: a script, what bash 5.3 prints, and what the explanation of its first line says. */
-interface Case { script: string; out: string; says: RegExp[]; notes?: RegExp; form: 'funsub' | 'valsub' }
+/** Skips the test without a bash 5.3 (fails instead when BASH_EXPLAINER_BASH53_REQUIRED is set). */
+function needBash53(t: Mocha.Context): void {
+  const release = BASH53 ? releaseOf(BASH53) : undefined;
+  if (release !== '5.3' && process.env.BASH_EXPLAINER_BASH53_REQUIRED) assert.fail(`BASH_EXPLAINER_BASH53_REQUIRED is set, but $BASH_EXPLAINER_BASH53 is not a bash 5.3 (${BASH53 ?? 'unset'}: ${release})`);
+  if (release !== '5.3') t.skip();
+}
+
+/** Everything the explanation of line 0 says, as `shell` (undefined: bash) and bash `version` read it. */
+function said(script: string, version: BashVersion = '5.3', shell?: Shell): { tokens: string; notes: string } {
+  const e = new Analyzer('en').explainLine(parser.parse(script), 0, shell, { bashVersion: version });
+  return { tokens: allTokens(e.items).map((t) => t.explanation).join('\n'), notes: e.notes.join('\n') };
+}
+
+/**
+ * Each case: a script, what bash 5.3 prints, what the explanation of its first line says (`says`), and what its notes
+ * say (`notes`) or do not say (`quiet`).
+ */
+interface Case { script: string; out: string; says: RegExp[]; notes?: RegExp; quiet?: RegExp; form: 'funsub' | 'valsub' }
 
 const CASES: Case[] = [
   // Variables set inside stay set.
@@ -34,7 +53,13 @@ const CASES: Case[] = [
   // No subshell: the same process.
   { script: 'x=${ echo "$BASHPID"; }; [ "$x" = "$BASHPID" ] && echo same', out: 'same\n', says: [/not in a subshell/], form: 'funsub' },
   { script: 'x=${ printf \'a\\n\\n\'; }; printf \'[%s]\\n\' "$x"', out: '[a]\n', says: [/trailing newlines removed/], form: 'funsub' },
-  { script: 'x=${ local L=1; echo "$L"; }; echo "$x [${L-unset}]"', out: '1 [unset]\n', says: [/a `local` variable lasts only inside/], form: 'funsub' },
+  // `local` works in them, as in a function: no pitfall.
+  { script: 'x=${ local L=1; echo "$L"; }; echo "$x [${L-unset}]"', out: '1 [unset]\n', says: [/a `local` variable lasts only inside/], quiet: /can be used only inside a function/, form: 'funsub' },
+  { script: 'x=${| local REPLY=1; }; echo "[$x]"', out: '[1]\n', says: [/the value they leave in `REPLY`/], quiet: /can be used only inside a function/, form: 'valsub' },
+  // `return` ends the substitution, also in a function: the function goes on.
+  { script: 'x=${ return 2; echo no; }; echo "$? [$x]"', out: '2 []\n', says: [/End the commands of the `\$\{ …; \}` around it/], form: 'funsub' },
+  { script: 'f() { x=${ return 3; }; echo "in f $?"; }; f; echo "after $?"', out: 'in f 3\nafter 0\n', says: [/End the commands of the `\$\{ …; \}` around it/], form: 'funsub' },
+  { script: 'false; x=${ false; return; }; echo "$?"', out: '1\n', says: [/or that of the last command/], form: 'funsub' },
   // The value of REPLY, local to it; the output is not captured; trailing newlines kept.
   { script: 'REPLY=old; x=${| REPLY=new; }; echo "$x $REPLY"', out: 'new old\n', says: [/the value they leave in `REPLY`/, /`REPLY` is local to it/], form: 'valsub' },
   { script: 'x=${| echo out; REPLY=v; }; echo "[$x]"', out: 'out\n[v]\n', says: [/their stdout is not captured/], form: 'valsub' },
@@ -47,18 +72,67 @@ const CASES: Case[] = [
   { script: 'set -e; x=${| false; REPLY=r; }; echo "$x"', out: 'r\n', says: [], notes: /bash turns `set -e` off inside `\$\{\| …; \}`/, form: 'valsub' },
 ];
 
+/**
+ * `${ … }` whose `}` does not end it (`braceTakenAsWord`), and what bash 5.3 says: after a simple command, the `}` is
+ * one more of its words, and bash looks for another `}`; after a compound command's redirections or a bare `time`, it
+ * is out of place.
+ */
+const UNCLOSED: { script: string; how: 'argument' | 'misplaced' }[] = [
+  { script: 'x=${ echo a }; echo "[$x]"', how: 'argument' },
+  { script: 'y=${ x}; echo "[$y]"', how: 'argument' },
+  { script: 'z=${|REPLY=a }; echo "[$z]"', how: 'argument' },
+  { script: 'x=${ echo a | cat }; echo "[$x]"', how: 'argument' },
+  { script: 'x=${ true && echo a }; echo "[$x]"', how: 'argument' },
+  { script: 'x=${ echo a >/dev/null }; echo "[$x]"', how: 'argument' },
+  { script: 'x=${ ! echo a }; echo "[$x]"', how: 'argument' },
+  { script: 'x=${ { echo a; } >/dev/null }; echo "[$x]"', how: 'misplaced' },
+  { script: 'x=${ time }; echo "[$x]"', how: 'misplaced' },
+];
+
+/** `${ … }` that bash 5.3 runs: the `}` follows a terminator, a newline, or a compound command. */
+const CLOSED: { script: string; out: string }[] = [
+  { script: 'x=${ { echo a; } }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ (echo a) }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ if true; then echo a; fi }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ case a in a) echo a;; esac }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ for i in a; do echo $i; done }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ ! { echo a; } }; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ [[ a ]] }; echo "[$x] $?"', out: '[] 0\n' },
+  { script: 'x=${ echo a & }; wait; echo "[$x]"', out: '[]\n' },
+  { script: 'x=${ echo a;}b; echo "[$x]"', out: '[ab]\n' },
+  { script: 'x=${ echo a #c\n}; echo "[$x]"', out: '[a]\n' },
+  { script: 'x=${ echo a\n}; echo "[$x]"', out: '[a]\n' },
+];
+
 describe('bash 5.3 command substitutions', () => {
-  it('explains each one as bash 5.3 runs it', function () {
-    const release = BASH53 ? releaseOf(BASH53) : undefined;
-    if (release !== '5.3' && process.env.BASH_EXPLAINER_BASH53_REQUIRED) assert.fail(`BASH_EXPLAINER_BASH53_REQUIRED is set, but $BASH_EXPLAINER_BASH53 is not a bash 5.3 (${BASH53 ?? 'unset'}: ${release})`);
-    if (release !== '5.3') this.skip();
+  it('runs each one in bash 5.3 as we say', function () {
+    needBash53(this);
+    for (const c of CASES) assert.strictEqual(runBash(c.script, { program: BASH53 }).stdout, c.out, c.script);
+  });
+
+  it('explains each one as bash 5.3 runs it (also without a bash 5.3)', () => {
     for (const c of CASES) {
-      assert.strictEqual(runBash(c.script, { program: BASH53 }).stdout, c.out, c.script);
-      const e = explain(c.script, 0, 'en', { bashVersion: '5.3' });
-      const said = allTokens(e.items).map((t) => t.explanation).join('\n');
-      for (const re of c.says) assert.match(said, re, c.script);
-      if (c.notes) assert.match(e.notes.join('\n'), c.notes, c.script);
+      const { tokens, notes } = said(c.script);
+      for (const re of c.says) assert.match(tokens, re, c.script);
+      if (c.notes) assert.match(notes, c.notes, c.script);
+      if (c.quiet) assert.doesNotMatch(notes, c.quiet, c.script);
     }
+    // (Outside a function and `${ }`, `local` is a pitfall, also in `$( )`; there `return` is a function's.)
+    assert.match(said('x=$( local L=1 )').notes, /can be used only inside a function/);
+    assert.match(said('f() { x=$( return 1 ); }').tokens, /Return from a function/);
+  });
+
+  it('says in a ksh93 or mksh script only what that shell is not known to do differently', () => {
+    const ksh = said('x=${ local L=1; echo a; return; }', '5.3', 'ksh').tokens;
+    assert.match(ksh, /Command substitution `\$\{ …; \}`: runs the commands in the current shell/);
+    assert.doesNotMatch(ksh, /bash 5\.3|`local` variable|End the commands/);
+    const mksh = said('x=${| REPLY=1; }', '5.3', 'mksh').tokens;
+    assert.match(mksh, /Command substitution `\$\{\| …; \}`: runs the commands in the current shell and is replaced by the value they leave in `REPLY`\. Their stdout/);
+    assert.doesNotMatch(mksh, /bash 5\.3|local to it|trailing newlines kept/);
+    // (ksh93 has no `${| }`: the explanation is bash 5.3's, and the dialect check says ksh93 lacks it.)
+    assert.match(said('x=${| REPLY=1; }', '5.3', 'ksh').tokens, /\(bash 5\.3\)/);
+    assert.match(said('x=${ echo a }', '5.3', 'mksh').tokens, /^Syntax error: this `\}` is one more argument of the command before it.*\(`\}` is a reserved word only where a command can start\)/m);
+    assert.match(said('x=${ { a; } >f }', '5.3', 'mksh').tokens, /^Syntax error: this `\}` cannot end `\$\{ …; \}` where it is/m);
   });
 
   it('says that the commands in them run in the shell itself', () => {
@@ -68,13 +142,8 @@ describe('bash 5.3 command substitutions', () => {
       const cd = descendants(tree.root, ['command']).find((c) => c.text.startsWith('cd'))!;
       assert.strictEqual(processOf(model.env(cd)).kind, 'main', script);
       // (Not "runs in the subshell of `$( )`".)
-      const said = allTokens(explain(script, 0, 'en', { bashVersion: '5.3' }).items).map((t) => t.explanation).join('\n');
-      assert.doesNotMatch(said, /subshell of/, script);
+      assert.doesNotMatch(said(script).tokens, /subshell of/, script);
     }
-  });
-
-  it('names the form in the note that `set -e` is off inside (also without a bash 5.3)', () => {
-    for (const c of CASES) if (c.notes) assert.match(explain(c.script, 0, 'en', { bashVersion: '5.3' }).notes.join('\n'), c.notes, c.script);
   });
 
   it('decides no condition in a script that has one (the walk does not keep what it changes)', () => {
@@ -88,24 +157,59 @@ describe('bash 5.3 command substitutions', () => {
     assert.deepStrictEqual(decided('${ x=1; }'), { decided: false, blind: 'a `${ …; }` substitution changes the shell where the walk does not follow it' });
   });
 
+  it('rejects a `}` that does not end the substitution, as bash 5.3 does (the warning also without a bash 5.3)', function () {
+    const issues = (script: string, version: BashVersion) => documentIssues({ lines: script.split('\n'), tree: parser.parse(script) }, 'en', {}, [], { pitfalls: false, bashVersion: version });
+    for (const { script, how } of UNCLOSED) {
+      const found = issues(script, '5.3');
+      assert.deepStrictEqual(found.map((i) => i.code), ['funsubBrace'], script);
+      // (On the `}`.)
+      assert.strictEqual(script.slice(found[0].startCol, found[0].endCol), '}', script);
+      assert.match(found[0].message, how === 'argument' ? /is one more argument of the command before it.*reads on for a `\}` that does, or reports "unexpected EOF/ : /cannot end `\$\{ …; \}` where it is.*near unexpected token/, script);
+      const e = new Analyzer('en').explainLine(parser.parse(script), 0, undefined, { bashVersion: '5.3' });
+      assert.ok(allTokens(e.items).some((t) => t.kind === 'error' && t.explanation.startsWith('Syntax error (bash 5.3): ')), script);
+      // bash 5.2 fails on it all the same, as the warning of 5.2 says.
+      assert.deepStrictEqual(issues(script, '5.2').map((i) => i.code), [script.includes('${|') ? 'valsub' : 'funsub'], script);
+    }
+    for (const { script } of CLOSED) {
+      assert.deepStrictEqual(issues(script, '5.3'), [], script);
+      assert.ok(!said(script).tokens.includes('Syntax error'), script);
+    }
+    assert.match(dialectNotes(parser.parse('x=${ echo a }'), 0, 'bash', 'ja', '5.3')[0], /^⚠ 構文エラー（bash 5\.3）: この `\}` は直前のコマンドの引数になり/);
+    needBash53(this);
+    for (const { script, how } of UNCLOSED) {
+      const r = runBash(script, { program: BASH53 });
+      // (Status 2 in a script file; `bash -c` gives 127 for the second kind.)
+      assert.notStrictEqual(r.status, 0, script);
+      assert.match(r.stderr, how === 'argument' ? /unexpected EOF while looking for matching `\}'/ : /syntax error near unexpected token `\}'/, script);
+    }
+    for (const { script, out } of CLOSED) assert.deepStrictEqual([runBash(script, { program: BASH53 }).stdout, script], [out, script]);
+    // With a later `}`, bash 5.3 reads on to it: the first `}` is an argument of `echo`.
+    assert.strictEqual(runBash('x=${ echo a }\n}; echo "[$x]"', { program: BASH53 }).stdout, '[a }]\n');
+  });
+
   it('warns in bash 5.2 mode, as bash 5.2 fails', function () {
-    if (releaseOf('bash') !== '5.2') this.skip();
     for (const c of CASES) {
-      const r = runBash(c.script);
-      assert.match(r.stderr, /bad substitution/, c.script);
       const issues = documentIssues({ lines: c.script.split('\n'), tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false });
       assert.deepStrictEqual(issues.map((i) => i.code), [c.form], c.script);
-      assert.match(issues[0].message, /bash 5\.3 syntax: bash 5\.2 reports "bad substitution" and drops the commands it read with it \(the rest of the line, and the whole `if` or loop around it\), with status 1/);
+      assert.match(issues[0].message, /bash 5\.3 syntax: bash 5\.2 reports "bad substitution" and stops there: the rest of the line, and the rest of the `if`, loop or function around it, do not run \(status 1\)\. Under `set -e`, and in POSIX mode, the shell exits; in a subshell, only the subshell stops\./);
       assert.deepStrictEqual(documentIssues({ lines: [c.script], tree: parser.parse(c.script) }, 'en', {}, [], { pitfalls: false, bashVersion: '5.3' }), [], c.script);
     }
-    // The rest of the line, and the whole `if` around it, do not run; the next line sees status 1.
-    const r = runBash('echo a; x=${ echo hi; }; echo same-line\necho "next $?"\nif true; then\n  echo in-if\n  y=${ echo hi; }\n  echo after\nfi\necho "after-if $?"\n');
-    assert.deepStrictEqual([r.stdout, r.status], ['a\nnext 1\nin-if\nafter-if 1\n', 0]);
+    if (releaseOf('bash') !== '5.2') this.skip();
+    for (const c of CASES) assert.match(runBash(c.script).stderr, /bad substitution/, c.script);
+    const run = (script: string, posix = false) => { const r = runBash(script, { posix }); return [r.stdout, r.status]; };
+    // The rest of the line, and the rest of the `if`, loop or function around it, do not run; the next line sees status 1.
+    assert.deepStrictEqual(run('echo a; x=${ echo hi; }; echo same-line\necho "next $?"\nif true; then\n  echo in-if\n  y=${ echo hi; }\n  echo after\nfi\necho "after-if $?"\n'), ['a\nnext 1\nin-if\nafter-if 1\n', 0]);
+    assert.deepStrictEqual(run('for i in 1 2\ndo\n  echo "i$i"\n  x=${ echo hi; }\n  echo after\ndone\necho out'), ['i1\nout\n', 0]);
+    assert.deepStrictEqual(run('f() {\n  echo f1\n  x=${ echo hi; }\n  echo f2\n}\nf\necho "after-f $?"'), ['f1\nafter-f 1\n', 0]);
+    // Under `set -e`, and in POSIX mode, the shell exits; in a subshell, only the subshell stops.
+    assert.deepStrictEqual(run('set -e\nx=${ echo hi; }\necho next'), ['', 1]);
+    assert.strictEqual(run('x=${ echo hi; }\necho next', true)[0], '');
+    assert.deepStrictEqual(run('( x=${ echo hi; }; echo in-sub ); echo "out $?"'), ['out 1\n', 0]);
   });
 
   it('says the same as a note of the line, in both languages, and nothing in bash 5.3 mode', () => {
     const tree = parser.parse('x=${| REPLY=1; }');
-    assert.match(dialectNotes(tree, 0, 'bash', 'ja')[0], /bash 5\.3 からの書き方です。bash 5\.2 では「bad substitution」のエラーになり/);
+    assert.match(dialectNotes(tree, 0, 'bash', 'ja')[0], /bash 5\.3 からの書き方です。bash 5\.2 では「bad substitution」のエラーになり、そこで止まります/);
     assert.deepStrictEqual(dialectNotes(tree, 0, 'bash', 'en', '5.3'), []);
     assert.match(explain('x=${ echo a; }').notes.join('\n'), /bash 5\.3 syntax/);
     assert.ok(!explain('x=${ echo a; }', 0, 'en', { bashVersion: '5.3' }).notes.some((n) => n.includes('5.3 syntax')));

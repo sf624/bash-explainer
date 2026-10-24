@@ -247,6 +247,36 @@ jobs:
           test "$LENIENT_WARNINGS" = 0
           test "$LENIENT_PITFALLS" = 2
 
+      # bash 5.3's `${ cmd; }` is a warning for bash 5.2 (the default), and none with bash-version 5.3.
+      - name: Write a bash script with `${ cmd; }`
+        run: printf '#!/bin/bash\nx=${ echo a; }\necho "$x"\n' > "$RUNNER_TEMP/funsub.sh"
+
+      - name: It fails the step for bash 5.2
+        id: bash52
+        continue-on-error: true
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/funsub.sh
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: It passes with bash-version 5.3
+        id: bash53
+        uses: ./
+        with:
+          files: ${{ runner.temp }}/funsub.sh
+          bash-version: '5.3'
+          package: ${{ steps.pack.outputs.tgz }}
+
+      - name: Check that only bash 5.2 failed
+        env:
+          OUTCOME: ${{ steps.bash52.outcome }}
+          WARNINGS: ${{ steps.bash52.outputs.warnings }}
+          WARNINGS53: ${{ steps.bash53.outputs.warnings }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$WARNINGS" = 1
+          test "$WARNINGS53" = 0
+
       # A CLI without --sarif (0.7.0, or a package: pin of an older version) takes a second run.
       # Packed from npm in another directory: npx in this repository would take the extension's own
       # package.json (also named bash-explainer) for the tool.
@@ -343,6 +373,7 @@ jobs:
     # it as a separate program. We never redistribute it: no artifact, cache, commit, release or bundle.
     name: bash 5.3
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       BASH53_SHA256: 0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba
     steps:
@@ -356,8 +387,17 @@ jobs:
         run: |
           src="$RUNNER_TEMP/bash-5.3-src"
           mkdir "$src"
-          curl -fsSL --retry 3 -o "$src/bash-5.3.tar.gz" https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz
-          echo "$BASH53_SHA256  $src/bash-5.3.tar.gz" | sha256sum --check
+          # From the GNU mirror redirector, then two fixed mirrors: each download is checked before it is used.
+          for url in https://ftpmirror.gnu.org/bash/bash-5.3.tar.gz https://mirrors.kernel.org/gnu/bash/bash-5.3.tar.gz https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz; do
+            rm -f "$src/bash-5.3.tar.gz"
+            if curl -fsSL --retry 3 --retry-all-errors --max-time 120 -o "$src/bash-5.3.tar.gz" "$url" \
+              && echo "$BASH53_SHA256  $src/bash-5.3.tar.gz" | sha256sum --check --quiet; then
+              ok=1
+              break
+            fi
+            echo "::warning::bash 5.3 from $url failed; trying the next mirror"
+          done
+          test "${ok:-}" = 1
           tar -xzf "$src/bash-5.3.tar.gz" -C "$src"
           cd "$src/bash-5.3"
           ./configure --quiet --without-bash-malloc

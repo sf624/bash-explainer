@@ -1,12 +1,12 @@
 import { interpret } from './argv/interpret';
-import { type BashVersion, DEFAULT_BASH_VERSION, lacks, SINCE } from './bashversion';
+import { type BashVersion, DEFAULT_BASH_VERSION, lacks, SINCE, unclosedBrace } from './bashversion';
 import { has, operands, values } from './argv/query';
 import { argWord } from './argv/words';
 import { builtins } from './dict/builtins';
 import { pick } from './embedded/types';
 import { parseExpansion } from './expansion';
 import { Lang } from './i18n';
-import { ancestor, descendants, field, prefixAssignments, substitutionForm } from './syntax/tree';
+import { ancestor, braceTakenAsWord, descendants, field, prefixAssignments, substitutionForm } from './syntax/tree';
 import type { Point, SyntaxNode, SyntaxTree } from './syntax/tree';
 import { bracketWords, writtenAsBracket } from './testexpr';
 
@@ -429,12 +429,19 @@ const ZSH_SYNTAX: [string, string] = [
 
 /**
  * Problems on lines [from, to] of a script written for `shell`; for bash, the constructs that bash `version` lacks
- * (src/bashversion.ts).
+ * (src/bashversion.ts), and in a version that has `${ …; }`, the ones it does not close (`braceTakenAsWord`).
  */
 export function dialectIssues(tree: SyntaxTree, shell: Shell, lang: Lang, from = 0, to = tree.root.endPosition.row, version: BashVersion = DEFAULT_BASH_VERSION): Issue[] {
   if (shell === 'bash') {
-    return collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
-      .map((f) => ({ id: f.id, kind: 'unsupported', message: versionMessage(f.id, version, lang), node: f.node, place: f.node }));
+    const lacking = collectFeatures(tree.root, from, to).filter((f) => lacks(f.id, version))
+      .map((f): Issue => ({ id: f.id, kind: 'unsupported', message: versionMessage(f.id, version, lang), node: f.node, place: f.node }));
+    // (Where bash lacks `${ …; }`, the issue above says what it does.)
+    const unclosed = lacks('funsub', version) ? [] : descendants(tree.root, ['command_substitution'], { from, to }).flatMap((n): Issue[] => {
+      const how = braceTakenAsWord(n);
+      const text = how && unclosedBrace(how, substitutionForm(n) === '${' ? '${ …; }' : '${| …; }', true)[lang === 'ja' ? 0 : 1];
+      return text ? [{ id: 'funsubBrace', kind: 'unsupported', message: `⚠ ${text}${lang === 'ja' ? '。' : '.'}`, node: n, place: n.children[n.children.length - 1] }] : [];
+    });
+    return [...lacking, ...unclosed];
   }
   const issues: Issue[] = [];
   if (shell === 'zsh') {

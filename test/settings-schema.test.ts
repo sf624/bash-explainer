@@ -9,7 +9,7 @@ import { ACTIVATION_LANGUAGES } from '../src/document-setup';
 import { YQ_NAMES } from '../src/embedded/yq';
 import {
   changedSettings, checkValue, defaultSettings, defaultSettingsPath, explainOptions, exportSettings, forcedShell, importSettings, mergeSettings, parseAssignment,
-  parseJsonc, PREFIX, readSettings, settingSpec, settingsFor, settingsJson, settingTexts, SETTINGS,
+  parseJsonc, PREFIX, readSettings, settingSpec, settingsFor, settingsFromEditor, settingsJson, settingTexts, SETTINGS,
 } from '../src/settings';
 
 const root = path.join(__dirname, '..');
@@ -129,6 +129,12 @@ describe('the settings module', () => {
     const read = readSettings({ 'diagnostics.ignore': list }, 'x').settings;
     list.push('more');
     assert.deepStrictEqual(read['diagnostics.ignore'], ['crlf']);
+    // A number for a setting that takes text is its text when that is a value of the setting (`5.3`), in a file and
+    // in an editor; another number is still wrong.
+    assert.deepStrictEqual(readSettings({ 'bashExplainer.bashVersion': 5.3 }, 'x'), { settings: { bashVersion: '5.3' }, warnings: [], ignored: [] });
+    assert.deepStrictEqual(readSettings({ bashVersion: 5.2 }, 'x').settings, { bashVersion: '5.2' });
+    assert.deepStrictEqual(readSettings({ bashVersion: 5 }, 'x').warnings, ['x: bashExplainer.bashVersion: expected one of 5.2, 5.3; ignored']);
+    assert.strictEqual(settingsFromEditor((k) => (k === 'bashVersion' ? 5.3 : undefined)).bashVersion, '5.3');
   });
 
   it('imports what applies on a surface, and says which keys it leaves out and why', () => {

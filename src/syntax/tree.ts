@@ -228,6 +228,23 @@ export function substitutionForm(n: SyntaxNode): '$(' | '`' | '${' | '${|' {
   return n.children[0].type as '$(' | '`' | '${' | '${|';
 }
 
+/**
+ * How the shell reads the `}` that ends a `${ …; }` or `${| …; }` (`n`) when only blanks part it from the command
+ * before it, since `}` is a reserved word only where a command can start (after `;`, `&`, a newline, or a compound
+ * command): after a simple command, as one more word of it (`${ echo a }`); after the redirections of a compound
+ * command or a bare `time`, as a token out of place (`${ { a; } >f }`). Undefined: it ends the substitution. unbash
+ * ends it there.
+ */
+export function braceTakenAsWord(n: SyntaxNode): 'argument' | 'misplaced' | undefined {
+  const close = n.children[n.children.length - 1];
+  if (!substitutionForm(n).startsWith('${') || close.type !== '}') return undefined;
+  let last: SyntaxNode | undefined = n.children[n.children.length - 2];
+  if (!last.named || last.type === 'comment' || /[\n;&]/.test(n.text.slice(last.endIndex - n.startIndex, close.startIndex - n.startIndex))) return undefined;
+  // (The last command of a list, a pipeline, `!`, `time` or `coproc` is the one before the `}`; a bare `time` has none.)
+  while (last && ['list', 'pipeline', 'negated_command', 'time_statement', 'coproc_statement'].includes(last.type)) last = last.namedChildren[last.namedChildren.length - 1];
+  return last?.type === 'command' ? 'argument' : !last || last.type === 'redirected_statement' ? 'misplaced' : undefined;
+}
+
 /** Whether `n` or anything under it is an `error` node or incomplete. */
 export function hasError(n: SyntaxNode): boolean {
   return n.type === 'error' || n.incomplete || n.children.some(hasError);

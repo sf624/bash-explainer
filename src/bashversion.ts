@@ -15,10 +15,11 @@ interface Since {
   before: [string, string];
 }
 
-// (bash reads a line, or a compound command, at once; an expansion error drops what it read with the failing command.)
+// (An expansion error stops the command bash is running, which it read at once: a line, or a compound command. Checked
+// with bash 5.2.21 in test/bash53.test.ts.)
 const BAD_SUBSTITUTION: [string, string] = [
-  '「bad substitution」のエラーになり、一緒に読み込んだコマンド（その行の残りと、囲んでいる `if` やループ全体）を実行しません（終了ステータス 1）',
-  'reports "bad substitution" and drops the commands it read with it (the rest of the line, and the whole `if` or loop around it), with status 1',
+  '「bad substitution」のエラーになり、そこで止まります。その行の残りと、囲んでいる `if`・ループ・関数の残りは実行されません（終了ステータス 1）。`set -e` のときと POSIX モードではシェルが終了し、サブシェルの中ではそのサブシェルだけが止まります',
+  'reports "bad substitution" and stops there: the rest of the line, and the rest of the `if`, loop or function around it, do not run (status 1). Under `set -e`, and in POSIX mode, the shell exits; in a subshell, only the subshell stops',
 ];
 
 /**
@@ -29,6 +30,22 @@ export const SINCE: Readonly<Record<string, Since>> = {
   funsub: { version: '5.3', before: BAD_SUBSTITUTION },
   valsub: { version: '5.3', before: BAD_SUBSTITUTION },
 };
+
+/**
+ * What a `}` that does not end a `${ …; }` (`form`) is (`braceTakenAsWord` in src/syntax/tree.ts), [Japanese,
+ * English]; in a bash script (`bash`), what bash 5.3 does then (checked: test/bash53.test.ts).
+ */
+export function unclosedBrace(how: 'argument' | 'misplaced', form: string, bash: boolean): [string, string] {
+  const what: [string, string] = how === 'argument'
+    ? [`この \`}\` は直前のコマンドの引数になり、\`${form}\` を閉じない`, `this \`}\` is one more argument of the command before it, so it does not end \`${form}\``]
+    : [`この位置の \`}\` は \`${form}\` を閉じられない`, `this \`}\` cannot end \`${form}\` where it is`];
+  const then: [string, string] = !bash ? ['（`}` が予約語になるのはコマンドの先頭だけ）', ' (`}` is a reserved word only where a command can start)']
+    : how === 'argument'
+      ? ['。bash 5.3 は閉じる `}` を探して先を読み、なければ「unexpected EOF while looking for matching `}\'」のエラーになる（終了ステータス 2）', '. bash 5.3 reads on for a `}` that does, or reports "unexpected EOF while looking for matching `}\'" (status 2)']
+      : ['。bash 5.3 は「syntax error near unexpected token `}\'」のエラーになる', '. bash 5.3 reports "syntax error near unexpected token `}\'"'];
+  const tag: [string, string] = bash ? ['（bash 5.3）', ' (bash 5.3)'] : ['', ''];
+  return [`構文エラー${tag[0]}: ${what[0]}${then[0]}。\`}\` の前に \`;\` か改行を書く`, `Syntax error${tag[1]}: ${what[1]}${then[1]}. Write \`;\` or a newline before the \`}\``];
+}
 
 /** Whether bash `version` lacks feature `id` (one of SINCE). */
 export function lacks(id: string, version: BashVersion): boolean {

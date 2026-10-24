@@ -164,7 +164,7 @@ export function defaultSettings(): Settings {
 export function settingsFromEditor(get: (key: SettingKey) => unknown, surface: Surface = 'vscode'): Settings {
   const out = defaultSettings() as unknown as Record<string, unknown>;
   for (const spec of settingsFor(surface)) {
-    let value = get(spec.key);
+    let value = asText(spec, get(spec.key));
     // A list keeps its known items: an unknown one is dropped, not the whole list.
     if (spec.items && Array.isArray(value)) value = value.filter((v) => typeof v !== 'string' || spec.items!.includes(v));
     // (A copy through JSON: VS Code hands out read-only proxies of lists and objects, which structuredClone refuses.)
@@ -172,6 +172,12 @@ export function settingsFromEditor(get: (key: SettingKey) => unknown, surface: S
   }
   return out as unknown as Settings;
 }
+
+/**
+ * A number given for a setting that takes a string, as its text when that is one of its values: `"bashVersion": 5.3`
+ * in a settings file is the release `5.3`.
+ */
+const asText = (spec: SettingSpec, value: unknown): unknown => (spec.type === 'string' && typeof value === 'number' && spec.enum!.includes(String(value)) ? String(value) : value);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -224,19 +230,20 @@ export function readSettings(input: unknown, where: string): ReadSettings {
     return out;
   }
   const walk = (obj: Record<string, unknown>, prefix: string) => {
-    for (const [name, value] of Object.entries(obj)) {
+    for (const [name, raw] of Object.entries(obj)) {
       const key = prefix + (prefix === '' && name.startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
       const spec = settingSpec(key);
       if (spec) {
+        const value = asText(spec, raw);
         const why = checkValue(spec, value);
         if (why) {
           out.warnings.push(`${where}: ${PREFIX}${key}: ${why}; ignored`);
           out.ignored.push({ key, reason: 'invalid', detail: why });
         } else (out.settings as Record<string, unknown>)[key] = structuredClone(value);
-      } else if (prefix === '' && key === 'bashExplainer' && isObject(value)) {
-        walk(value, '');
-      } else if (isObject(value) && SETTINGS.some((s) => s.key.startsWith(`${key}.`))) {
-        walk(value, `${key}.`);
+      } else if (prefix === '' && key === 'bashExplainer' && isObject(raw)) {
+        walk(raw, '');
+      } else if (isObject(raw) && SETTINGS.some((s) => s.key.startsWith(`${key}.`))) {
+        walk(raw, `${key}.`);
       } else {
         out.warnings.push(`${where}: unknown setting ${key}; ignored`);
         out.ignored.push({ key, reason: 'unknown' });
