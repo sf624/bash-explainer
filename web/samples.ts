@@ -1,7 +1,7 @@
-import type { HostKind } from '../src/hosts';
+import type { FileKind } from '../src/hosts/detect';
 
 /** The kinds of file the page explains: a shell script, or a file with shell code in it. */
-export type Kind = 'shell' | HostKind;
+export type Kind = FileKind;
 
 /** test/fixtures/sample.sh, the tour of every feature, put in by scripts/build-web.ts (esbuild `define`). */
 declare const __SAMPLE_SH__: string;

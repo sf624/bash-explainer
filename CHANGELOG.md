@@ -11,6 +11,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 - A pitfall says when bash refuses the options of a shebang, so that the script never starts when run directly: `#!/bin/bash -e -u`, `#!/bin/bash -o nounset` and `#!/bin/bash -Oextglob` reach bash as one argument.
 - The panel has a **Reading** view of the line: who reads each part, from bash's own reading (command name, arguments, redirections) to what each command and each language inside a word reads.
 - A new setting, `bashExplainer.bashVersion` (`--bash-version` on the command line), says which bash scripts are explained for: `5.2` (the default) or `5.3`; the GitHub Action takes it as `bash-version`. With `5.2`, a construct of bash 5.3 is a warning. So by default, a bash script that uses `${ …; }` or `${| …; }` now gets a warning, and `--check` exits 1; set `bashVersion` to `5.3` to explain it as bash 5.3 runs it.
+- On the web page, pasting or dropping a whole script sets the file kind from its content (a shebang, `FROM`, `jobs:`, a Makefile rule, a bash code block…), and a toast says so with Undo. A few lines pasted into your own script leave the kind as it is.
 
 ### Changed
 

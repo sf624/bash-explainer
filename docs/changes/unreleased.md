@@ -125,6 +125,26 @@ This changes what bash scripts that already use `${ …; }` or `${| …; }` get 
 
 The plan, and the list of what else changed in bash 5.3, are in [docs/design/bash-versions.md](../design/bash-versions.md).
 
+### The file kind of a pasted script (web page)
+
+On the web page, a paste or a drop of text sets the file kind from what was pasted, when the paste makes 80% or more of the text, or when the editor held only a sample or nothing. The pasted text stays as it is (no sample is loaded), and a toast says "Detected: Dockerfile" with Undo, which goes back to the kind before. A few lines pasted into your own script never change the kind. Before, the kind changed only by hand.
+
+Only clear signals count; otherwise the kind stays:
+
+| Kind | Signal |
+| --- | --- |
+| Shell script | a shebang of a shell (`#!/bin/sh`, `#!/usr/bin/env bash`), or `# shellcheck shell=…` |
+| bats | a bats shebang, or `@test "…" {` |
+| Python | a python shebang, or `import subprocess`/`import os` with a call of `subprocess.…()`, `os.system()` or `os.popen()` |
+| Dockerfile | `FROM image` as the first instruction (an `ARG` may come before it), and one more instruction |
+| GitHub Actions / GitLab CI | `on:` and `jobs:` with `runs-on:` or `steps:`; GitLab's `script:` with `stages:`, `image:`…; CircleCI's `version: 2.1`; Azure's `trigger:`/`pool:`; a composite action |
+| Makefile | `.PHONY:`, or a rule followed by a recipe line that starts with a TAB |
+| Markdown | a shell code block (`sh`, `bash`, `console`…), or headings and a code block |
+| Jenkinsfile | `pipeline {` or `node {` with a `sh` step or `stages {` |
+| package.json | a JSON object with `scripts` |
+
+A shell script without a shebang says nothing clear, so pasting one keeps the kind. A Makefile whose recipes are indented with spaces is not one make accepts ("missing separator"), and looks like YAML, so it is detected only with a `.PHONY:` line.
+
 ## Fixed
 
 ### bash 5.3's command substitutions

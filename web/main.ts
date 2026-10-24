@@ -13,6 +13,7 @@ import { explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
+import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
@@ -122,6 +123,7 @@ const editor = new Editor({
   changed(u: ViewUpdate) {
     // Undo would no longer undo the sample once the text changed again.
     if (u.docChanged && undoOffered && !loadingSample) status('');
+    if (u.docChanged && !mode.panel) detectPasted(u);
     // In panel mode the page around sends every change as a message, which is handled at once.
     if (mode.panel || (!u.docChanged && !u.selectionSet)) return;
     clearTimeout(timer);
@@ -221,12 +223,14 @@ if (mode.compare) {
 // ---- Toolbar --------------------------------------------------------------------------------
 
 let statusTimer: ReturnType<typeof setTimeout> | undefined;
-function status(text: string, sticky = false, action?: { label: string; run: () => void }): void {
+/** A toast's button; `untilEdit`: it undoes an edit, so the next edit hides it (the sample's Undo). */
+interface StatusAction { label: string; run: () => void; untilEdit?: boolean }
+function status(text: string, sticky = false, action?: StatusAction): void {
   const el = $('status');
   undoOffered = false;
   el.replaceChildren(...(text ? [text] : []));
   if (text && action) {
-    // A toast with one button (the sample's "Undo"); it hides when the button runs.
+    // A toast with one button (the sample's or the detected kind's "Undo"); it hides when the button runs.
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'status-action';
@@ -236,7 +240,7 @@ function status(text: string, sticky = false, action?: { label: string; run: () 
       status('');
     });
     el.append(button);
-    undoOffered = true;
+    undoOffered = action.untilEdit === true;
   }
   clearTimeout(statusTimer);
   if (!sticky && text) statusTimer = setTimeout(() => status(''), 6000);
@@ -491,9 +495,7 @@ const resetProblems = splitElement && mode.hasChrome
 narrow.addEventListener('change', () => editor.keepCursorInView());
 
 on('kind-menu', 'change', (e) => {
-  const k = (e.target as HTMLSelectElement).value as Kind;
-  kindPicker?.show(k);
-  chooseKind(k);
+  chooseKind((e.target as HTMLSelectElement).value as Kind);
 });
 
 /**
@@ -503,17 +505,48 @@ on('kind-menu', 'change', (e) => {
 const untouched = (text: string) => !text.trim() || KINDS.some((k) => k.sample === text);
 
 function chooseKind(k: Kind): void {
+  // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
+  const own = !untouched(editor.text);
+  setKind(k, () => {
+    if (!own) loadSample(false);
+  });
+  if (own) askAboutSample(k);
+}
+
+/** Makes `k` the file kind, with the text as it is (`then` may change it before the script is explained again). */
+function setKind(k: Kind, then?: () => void): void {
   kind = k;
   const menuKind = document.getElementById('kind-menu') as HTMLSelectElement | null;
   if (menuKind) menuKind.value = k;
+  kindPicker?.show(k);
   editor.setKind(kind);
-  // A sample, or nothing, gives way to the new kind's sample; whether the user's own text does is theirs to say.
-  const own = !untouched(editor.text);
-  if (!own) loadSample(false);
+  then?.();
   editor.shade();
   updatePanel();
   editor.recheck();
-  if (own) askAboutSample(k);
+}
+
+/**
+ * A paste (or a drop) that brings a whole script decides the file kind from its content (src/hosts/detect.ts): when it
+ * makes most of the text (80% or more), or the editor held only a sample or nothing. A few lines pasted into the user's
+ * own script never change it. The text stays as pasted; the toast says what was detected and can undo the change of kind.
+ */
+function detectPasted(u: ViewUpdate): void {
+  const pasted = u.transactions.filter((tr) => tr.isUserEvent('input.paste') || tr.isUserEvent('input.drop'));
+  if (!pasted.length) return;
+  let text = '';
+  for (const tr of pasted) tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { text += inserted.toString(); });
+  const whole = text.trim().length >= 0.8 * u.state.doc.toString().trim().length;
+  if (!whole && !untouched(u.startState.doc.toString())) return;
+  const found = detectKind(text);
+  if (!found || found.kind === kind) return;
+  const before = kind;
+  // The editor is still in its update: change its mode after it.
+  queueMicrotask(() => {
+    setKind(found.kind);
+    const t = TEXT[lang];
+    status(t.detected(t.kinds[found.kind] ?? kindInfo(found.kind).name), false, { label: t.undo, run: () => setKind(before) });
+  });
 }
 
 /** Asks whether the user's text gives way to the sample of the kind just chosen (the kind has changed either way). */
@@ -535,7 +568,7 @@ function loadSample(own: boolean): void {
   const info = kindInfo(kind);
   loadingSample = true;
   try { editor.setText(info.sample, info.cursorLine); } finally { loadingSample = false; }
-  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: () => { undo(editor.view); editor.focusUnlessTouch(); } });
+  if (own) status(TEXT[lang].sampleLoaded, false, { label: TEXT[lang].undo, run: () => { undo(editor.view); editor.focusUnlessTouch(); }, untilEdit: true });
 }
 
 on('sample', 'click', () => {
