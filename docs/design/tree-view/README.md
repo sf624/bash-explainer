@@ -63,3 +63,9 @@ Contrast, measured in Chromium on the web page's Light Modern and Dark Modern co
 | The code in its pill (lowest: the command colour) | 5.16 | 5.37 |
 
 Before, the bands were laid over each other at 7% each: a language inside a command's band inside a subshell's had a darker tint at every level, and the kind `literal` measured 3.56 in light and 3.65 in dark; the code was on a code block's grey (4.61 for the command colour).
+
+## Playing the tree (a prototype)
+
+Behind a temporary switch, the panel's tree view can be played as prototype B was: `?treePlay=1` on the web page (or `data-tree-play="1"` on the panel's `<html>`) adds controls at the end of the layer buttons (step back, Play, step forward, replay). Play starts from bash's layer alone and adds the layers one by one, 1.2 seconds a step; the items a step adds grow from their parent, and a new reader's band takes its tint from the band around it. `?treePlay=deep` first unfolds bash's own reading: the line, its lists and pipelines, its commands, their words, inside the words (by depth in the tree). Steps that add nothing to the line are left out. The last step leaves every layer shown, as the layer buttons say.
+
+Play is a toggle button (`aria-pressed`); Space plays or pauses from any of the controls, and the arrows, Home and End step. A polite live region says the step ("Step 2 of 4: scripts inside"). With reduced motion, Play shows the last step at once, and the steps change without motion. A new line, or a layer button, stops the play. The code is `playSteps` and what follows it in media/panel.js; nothing of it runs without the switch.
