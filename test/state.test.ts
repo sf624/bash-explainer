@@ -9,6 +9,7 @@ import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
 import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { assertGrowth } from './support/growth';
 import { descendants, fields } from '../src/syntax/tree';
 import { readDeclarationWords } from '../src/semantics/vars';
 
@@ -694,51 +695,51 @@ describe('shell state: arithmetic', () => {
   it('gives up on an expression too long or too deep to follow, quickly', function () {
     this.timeout(60000);
     // (Each value reads the one before twice, and assigns: 2 ** 30 steps.)
-    const values = ['v0=\'c++\'', ...Array.from({ length: 30 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
-    // (Followed, the 2 ** 30 steps would take minutes: the bound is far above the 0.2 s it takes, so that a loaded
-    // machine does not fail it.)
-    const start = Date.now();
+    const chain = (n: number): string => ['v0=\'c++\'', ...Array.from({ length: n }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('; ');
+    const values = chain(30);
     // (`u`: an argument of `let` not followed may fail, which stops `let`.)
     assert.deepStrictEqual(after(`${values}; (( y = v30, z = 1 )); let w=v30 u=1`, 'y', 'z', 'w', 'u', 'c'), ['unknown', 'unknown', 'unknown', 'unknown', 'unknown']);
-    assert.ok(Date.now() - start < 5000, `took ${Date.now() - start} ms`);
+    // Past the steps an expression may take, it is not followed: 2 ** 30 steps take about as long as 2 ** 10, which are
+    // all followed (followed, they would take 2 ** 20 times as long: minutes).
+    const steps = (n: number) => () => end(`${chain(n)}; (( y = v${n}, z = 1 )); let w=v${n} u=1`);
+    assertGrowth('2 ** 10 steps, then 2 ** 30', steps(10), steps(30), 10, 3);
     // Past the steps of the whole script, the rest of it is not followed (each line here takes all the steps it may):
-    // ten times the lines take about as long, measured in the same run (not against a fixed time, which a loaded
-    // machine may fail; followed, they would take ten times as long).
-    const timed = (lines: number): number => {
-      const t = Date.now();
-      assert.deepStrictEqual(after(`${values}\n${'(( y = v30 ))\n'.repeat(lines)}(( z = 1 ))`, 'z'), ['unknown']);
-      return Date.now() - t;
-    };
-    const [some, many] = [timed(60), timed(600)];
-    assert.ok(many < 3 * some + 500, `60 lines: ${some} ms, 600 lines: ${many} ms`);
+    // ten times the lines take about as long (followed, they would take ten times as long).
+    const lines = (n: number): string => `${values}\n${'(( y = v30 ))\n'.repeat(n)}(( z = 1 ))`;
+    assert.deepStrictEqual(after(lines(600), 'z'), ['unknown']);
+    assertGrowth('60 lines, then 600', () => end(lines(60)), () => end(lines(600)), 3, 2);
     // Values nested deeper than followed here (bash: 1), or than the stack of the parser.
     const deep = ['v0=1', ...Array.from({ length: 100 }, (_, i) => `v${i + 1}='${'('.repeat(40)}v${i}${')'.repeat(40)}'`)].join('\n');
     assert.deepStrictEqual(after(`${deep}\n(( y = v100 ))`, 'y'), ['unknown']);
     assert.deepStrictEqual(after(`x='${'('.repeat(100_000)}1${')'.repeat(100_000)}'; (( y = x ))`, 'y'), ['unknown']);
   });
-  it('follows scripts that read values many times in linear time', () => {
-    const time = (src: string): number => {
-      const start = Date.now();
-      end(src);
-      return Date.now() - start;
-    };
+  it('follows scripts that read values many times in linear time', function () {
+    this.timeout(60000);
+    // Each script against one of an eighth of its size (as linear, about 8 times as long; quadratic, 64 times).
     const lines = (n: number, line: string): string => Array.from({ length: n }, () => line).join('\n');
     const doubling = ['v0=1', ...Array.from({ length: 60 }, (_, i) => `v${i + 1}='v${i}+v${i}'`)].join('\n');
     const elements = ['v0=1', ...Array.from({ length: 60 }, (_, i) => `v${i + 1}='a[v${i}] + a[v${i}]'`)].join('\n');
     const chain = ['v0=1', ...Array.from({ length: 1000 }, (_, i) => `v${i + 1}=v${i}`)].join('\n');
-    let loops = '(( z++ ))';
-    for (let d = 0; d < 18; d++) loops = `for (( i${d} = 0; i${d} < 3; i${d}++ )); do (( t += i${d} )); ${loops}; done`;
-    for (const src of [`${doubling}\n${lines(2000, '(( y = v60 ))')}`, `${doubling}\n${lines(2000, 'let y=v60 z=v59')}`, `${elements}\n${lines(2000, '(( y = v60 ))')}`,
-      `${chain}\n${lines(2000, '(( y = v1000 ))')}`, loops]) {
-      const ms = time(src);
-      assert.ok(ms < 1000, `took ${ms} ms: ${src.slice(0, 40)}`);
+    for (const [values, line] of [[doubling, '(( y = v60 ))'], [doubling, 'let y=v60 z=v59'], [elements, '(( y = v60 ))'], [chain, '(( y = v1000 ))']]) {
+      assertGrowth(`250 lines, then 2,000: ${line}`, () => end(`${values}\n${lines(250, line)}`), () => end(`${values}\n${lines(2000, line)}`), 16, 3);
     }
+    // Loops nested 18 deep against 9 deep (as linear, about twice as long; walked again at each pass of the loops
+    // around, 3 ** 9 times).
+    const loops = (depth: number): string => {
+      let src = '(( z++ ))';
+      for (let d = 0; d < depth; d++) src = `for (( i${d} = 0; i${d} < 3; i${d}++ )); do (( t += i${d} )); ${src}; done`;
+      return src;
+    };
+    assertGrowth('for (( )) nested 9 deep, then 18', () => end(loops(9)), () => end(loops(18)), 16, 3);
     // (Each loop starts from the values its last walk ended with: an inner loop may not run.)
-    assert.deepStrictEqual(after(loops, 't', 'z', 'i0', 'i17'), ['unknown', 'unknown', 'unknown', 'set']);
+    assert.deepStrictEqual(after(loops(18), 't', 'z', 'i0', 'i17'), ['unknown', 'unknown', 'unknown', 'set']);
   });
-  it('walks loops nested 20 deep in linear time, whatever their bodies change (with `$?`)', () => {
-    const nest = (open: (i: number) => string, inner: string, close: string): string =>
-      Array.from({ length: 20 }, (_, i) => open(i)).join(' ') + ` ${inner} ` + Array.from({ length: 20 }, () => close).join(' ');
+  it('walks loops nested 20 deep in linear time, whatever their bodies change (with `$?`)', function () {
+    this.timeout(60000);
+    // 20 deep against 10 deep (as linear, about twice as long; walked again at each pass of the loops around, 2 ** 10
+    // times), each walked 10 times, so that a measure takes milliseconds.
+    const nest = (open: (i: number) => string, inner: string, close: string) => (depth: number): string =>
+      Array.from({ length: depth }, (_, i) => open(i)).join(' ') + ` ${inner} ` + Array.from({ length: depth }, () => close).join(' ');
     for (const src of [
       nest(() => 'for i in 1 2; do', ':', 'done;'),
       nest((i) => `for i${i} in 1 2; do v${i}=$i${i};`, ':', 'done;'),
@@ -746,11 +747,12 @@ describe('shell state: arithmetic', () => {
       nest(() => 'while read x; do case $x in a)', 'k=1', ';; esac; done;'),
       nest(() => 'for i in 1 2; do if [ "$i" = 1 ]; then k=$i; fi;', ':', 'done;'),
       nest((i) => `k${i}=1; while [ "$k${i}" = 1 ]; do k${i}=2;`, ':', 'done;'),
-      `set -e; ${nest(() => 'for i in 1 2; do false || true;', ':', 'done;')}`,
+      (depth: number) => `set -e; ${nest(() => 'for i in 1 2; do false || true;', ':', 'done;')(depth)}`,
     ]) {
-      const start = Date.now();
-      end(src);
-      assert.ok(Date.now() - start < 1000, `took ${Date.now() - start} ms: ${src.slice(0, 60)}`);
+      const walks = (depth: number) => () => {
+        for (let i = 0; i < 10; i++) end(src(depth));
+      };
+      assertGrowth(`10 deep, then 20: ${src(1)}`, walks(10), walks(20), 16, 3);
     }
   });
 });

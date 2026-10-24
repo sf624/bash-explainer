@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants } from '../src/syntax/tree';
+import { assertGrowth } from './support/growth';
 
 const parser = createUnbashParser();
 const bash = (code: string): string => execFileSync('bash', ['-c', code], { env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).toString();
@@ -77,17 +78,19 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     // (Nor do the trees of all the commands together grow without bound: 100 commands of a chain that doubles 8 times
     // ask for 51,100. Before, 500 such commands of 9 made V8 run out of memory. Past the bound the walk still runs what
     // the aliases do, in trees shared by text, and nothing is trusted.)
-    const chain = ['shopt -s expand_aliases', ...Array.from({ length: 8 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), "alias a8='set -f; y=2'", 'y=1', ...Array(100).fill('a0'), 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    const commands = (n: number): string => ['shopt -s expand_aliases', ...Array.from({ length: 8 }, (_, i) => `alias a${i}='a${i + 1}; a${i + 1}'`), "alias a8='set -f; y=2'", 'y=1', ...Array(n).fill('a0'), 'x=1; [ "$x" = 1 ] && :'].join('\n');
+    const chain = commands(100);
     assert.strictEqual(bash(`${chain}\necho "$y \${-//[^f]/}"`), '2 f\n');
     const heap = process.memoryUsage().heapUsed;
-    const t = Date.now();
     const tree = parser.parse(chain);
     const model = shellState(tree);
     assert.strictEqual(model.blind, 'too many aliases expanded');
     assert.strictEqual(model.condition(descendants(tree.root, ['list']).pop()!), undefined);
     assert.deepStrictEqual([model.end.variables.get('y')?.value, model.end.set.get('noglob')], ['2', 'on']);
-    assert.ok(Date.now() - t < 30000, `took ${Date.now() - t} ms`);
     assert.ok(process.memoryUsage().heapUsed - heap < 1e9, `${process.memoryUsage().heapUsed - heap} bytes`);
+    // Ten times the commands, past the bound, take about ten times as long as 10 commands within it (not against a
+    // fixed time, which a loaded runner may exceed).
+    assertGrowth('10 commands, then 100', () => shellState(parser.parse(commands(10))), () => shellState(parser.parse(chain)), 30, 2);
   });
   it("reads bash's own variables from the catalog (src/semantics/vars.ts), as bash treats them", () => {
     // Arithmetic that reads a variable whose value is always a number runs no code: decisions stay.

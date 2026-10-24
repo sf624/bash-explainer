@@ -9,6 +9,7 @@ import type { Token } from '../src/analyzer';
 import { findBashAst, runBashAst, shapeOfAst } from './support/bashast';
 import { corpus, invariants } from './support/corpus';
 import { soundness } from './support/fuzz';
+import { fastest } from './support/growth';
 import { diffShapes, shapeOfTree } from './support/shape';
 
 // The unbash adapter builds the model of a script. The first part holds the expected trees of the inputs
@@ -964,17 +965,8 @@ describe('unbash adapter: speed', () => {
   const file = '/usr/share/bash-completion/bash_completion';
   (fs.existsSync(file) ? it : it.skip)('parses bash_completion', () => {
     const text = fs.readFileSync(file, 'utf8');
-    // The best of five runs each: the first ones are slow while the code warms up.
-    const best = (run: () => unknown): number => {
-      let min = Infinity;
-      for (let i = 0; i < 5; i++) {
-        const t0 = performance.now();
-        run();
-        min = Math.min(min, performance.now() - t0);
-      }
-      return min;
-    };
-    const unbash = best(() => ub.parse(text));
+    // The best of five runs: the first ones are slow while the code warms up.
+    const unbash = fastest(() => ub.parse(text));
     console.log(`      bash_completion (${text.split('\n').length} lines): unbash ${unbash.toFixed(1)} ms`);
     const result = ub.parse(text);
     assert.ok(result.root.children.length > 100);
