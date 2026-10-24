@@ -84,14 +84,26 @@ export function args(n: SyntaxNode): SyntaxNode[] {
   return fields(n, 'argument');
 }
 
+/** The codes of the style checks, as diagnostics show them (`# bash-explainer disable=<code>`). */
+export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'
+  | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket';
+
+/** A style check found: its code, the node it is about, and its note. */
+export interface StyleFinding { code: StyleCode; node: SyntaxNode; text: string }
+
 /** Notes for the pitfalls whose node starts on `line`. */
 export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string[] {
+  return [...new Set(pitfallFindings(root, lang, line, line).map((f) => f.text))];
+}
+
+/** The style checks whose node starts on a line from `from` to `to`, in one walk of the tree. */
+export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number): StyleFinding[] {
   const s = pick(lang);
-  const notes: string[] = [];
-  const add = (ja: string, en: string) => notes.push(s(`⚠ 落とし穴: ${ja}`, `⚠ Pitfall: ${en}`));
+  const found: StyleFinding[] = [];
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => found.push({ code, node, text: s(`⚠ 落とし穴: ${ja}`, `⚠ Pitfall: ${en}`) });
   const visit = (n: SyntaxNode) => {
-    if (n.startPosition.row === line) check(n);
-    if (n.startPosition.row <= line && n.endPosition.row >= line) for (const c of n.namedChildren) visit(c);
+    if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
+    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
   };
 
   const check = (n: SyntaxNode) => {
@@ -102,23 +114,23 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         const a = args(n);
         // `[-f x]`: the name is one word, `[-f`.
         if (name && /^\[[^\]]/.test(name) && a.at(-1)?.text.endsWith(']')) {
-          add(`\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。\`[ ${name.slice(1)} …\` のように書きます`,
+          add('bracket-no-space', field(n, 'name')!, `\`[\` は普通のコマンドなので、あとに空白が要ります（\`${name}\` は別のコマンド名になる）。\`[ ${name.slice(1)} …\` のように書きます`,
             `\`[\` is an ordinary command, so a space must follow it (\`${name}\` reads as another command name). Write \`[ ${name.slice(1)} …\``);
         }
         // `x = 1`: a command named x, not an assignment.
         if (name && /^[A-Za-z_]\w*$/.test(name) && a.length && (a[0].text === '=' || /^=\S/.test(a[0].text))) {
-          add(`\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
+          add('assignment-with-spaces', n, `\`${name} ${a[0].text}…\` は代入ではなく、\`${name}\` というコマンドを実行します。代入は \`=\` の前後に空白を入れずに \`${name}=…\` と書きます`,
             `\`${name} ${a[0].text}…\` runs a command named \`${name}\`; it is not an assignment. Write \`${name}=…\` with no spaces around \`=\``);
         }
         // `{echo a;}`: no space after `{`, so it is a command named `{echo`.
         if (name && /^\{[A-Za-z_]\w*$/.test(name)) {
-          add(`\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: \`{ ${name.slice(1)} …; }\``,
+          add('brace-no-space', field(n, 'name')!, `\`${name}\` は \`{\` の直後に空白がないので、グループの開始ではなく \`${name}\` というコマンド名です。\`{\` の後には空白が必要で、\`}\` の前には \`;\` か改行が必要です: \`{ ${name.slice(1)} …; }\``,
             `there is no space after \`{\`, so \`${name}\` is a command name, not the start of a group. \`{\` needs a space after it, and \`}\` needs a \`;\` or newline before it: \`{ ${name.slice(1)} …; }\``);
         }
         // `{ echo a; echo b }`: `}` is an argument of the last command, and the group is never closed.
         const lastArg = a[a.length - 1];
         if (lastArg?.type === 'word' && lastArg.text === '}' && n.parent?.type === 'compound_statement' && n.parent.incomplete) {
-          add(`\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
+          add('brace-close-no-separator', lastArg, `\`}\` の前に \`;\` か改行が必要です。このままでは \`}\` は \`${name}\` の引数で、\`{ }\` のグループが閉じていません: \`{ …; }\``,
             `\`}\` needs a \`;\` or a newline before it. As written, \`}\` is an argument of \`${name}\` and the \`{ }\` group is never closed: \`{ …; }\``);
         }
         // `rm -rf $DIR/…`: an empty DIR removes from the root.
@@ -129,17 +141,17 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
             const { e, v, left } = t;
             const safe = t.plain && quoteExpansions(w, new Map([[e, `\${${v}:?}`]]));
             if (safe) {
-              add(`\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
+              add('rm-empty-variable-root', w, `\`${v}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。\`${safe}\` と書くと、空のときは止まります`,
                 `if \`${v}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${safe}\` to stop when it is empty`);
             } else {
               // `${DIR%/}` has no form with `:?` (and is empty for DIR=/ too); `${x:-*.txt}` has no quoted form.
               const what = t.plain ? v : e.text;
               if (t.check) {
-                add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
+                add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。前に \`${t.check}\` と書くと、空のときは止まります`,
                   `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Write \`${t.check}\` before it to stop when it is empty`);
               } else {
                 // (A quote or backslash in the expansion: a check in quotes would not read it the same.)
-                add(`\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
+                add('rm-empty-variable-root', w, `\`${what}\` が空だと \`rm -r ${left}\` になり、ルートから削除してしまいます。空でないことを前に確かめてください`,
                   `if \`${what}\` is empty this becomes \`rm -r ${left}\`, deleting from the root. Check that it is not empty before it`);
               }
             }
@@ -150,7 +162,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
         // Only when it reads into a variable; `read` alone or `read -n 1` waits for a key.
         const readsVar = a.some((w) => /^[A-Za-z_]\w*$/.test(w.text));
         if (name === 'read' && readsVar && !a.some((w) => /^-[a-zA-Z]*[rnN]/.test(w.text))) {
-          add('`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
+          add('read-without-r', n, '`-r` を付けないと、入力のバックスラッシュ（`\\`）がエスケープとして消えます。ふつうは `read -r` と書きます',
             'without `-r`, backslashes in the input are taken as escapes and lost. Usually write `read -r`');
         }
         break;
@@ -166,7 +178,7 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
     const meant = (e: SyntaxNode) => /&/.test(e.children.find((c) => !c.named)!.type) || /^\/dev\//.test(field(e, 'destination')?.text ?? '');
     const redirect = n.namedChildren.find((e) => e.type === 'file_redirect' && !meant(e) && e.startIndex > field(n, 'name')!.startIndex && e.startIndex < end);
     if (redirect) {
-      add(`\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
+      add('redirect-in-bracket', redirect, `\`[ ]\` の中の \`${redirect.text.match(/^\d*[<>]+/)![0]}\` は比較ではなくリダイレクトとして読まれます。文字列の順序の比較は \`[[ ]]\` を使うか、\`\\${redirect.text.match(/[<>]/)![0]}\` とエスケープします`,
         `\`${redirect.text.match(/^\d*[<>]+/)![0]}\` inside \`[ ]\` is read as a redirection, not a comparison. Use \`[[ ]]\` to compare strings by order, or escape it as \`\\${redirect.text.match(/[<>]/)![0]}\``);
     }
     const { words, close } = bracketWords(n);
@@ -176,14 +188,14 @@ export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang): string
     if (!close && last && /[^\s]\]$/.test(last.text)) {
       // `[ -f $x]`. (With a last word of known text, `[ -f x]`, the analyzer says it: `bracket-close-glued`.)
       if (staticWordValue(last) !== undefined) return;
-      add(`\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
+      add('bracket-close-in-word', last, `\`${last.text}\` の \`]\` は単語の一部として読まれ、閉じの \`]\` がありません（\`missing ']'\`）。\`]\` の前に空白が要ります`,
         `the \`]\` in \`${last.text}\` is read as part of the word, so \`[\` has no closing \`]\` ("missing ']'"). \`]\` needs a space before it`);
     } else if (!close && (sep?.type === '&&' || sep?.type === '||') && next?.type === 'command' && args(next).at(-1)?.text === ']') {
       // `[ a && b ]`
-      add(`\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
+      add('and-or-in-bracket', sep, `\`[ ]\` の中の \`${sep.type}\` は \`[\` の引数ではなく、コマンドをつなぐ演算子です。\`]\` が足りず、\`[ … ] ${sep.type} [ … ]\` と分けて書くか、\`[[ ]]\` を使います`,
         `\`${sep.type}\` inside \`[ ]\` is not an argument of \`[\` but the operator that joins commands, so \`[\` loses its \`]\`. Write \`[ … ] ${sep.type} [ … ]\`, or use \`[[ ]]\``);
     }
   };
   visit(root);
-  return [...new Set(notes)];
+  return found;
 }

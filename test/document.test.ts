@@ -4,7 +4,7 @@ import { descendants } from '../src/syntax/tree';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer } from '../src/analyzer';
 import { detectShell } from '../src/dialect';
-import { documentIssues, explainDocumentLine, ShellDocument } from '../src/document';
+import { documentIssues, explainDocumentLine, pitfallIssues, ShellDocument } from '../src/document';
 import { extractShell } from '../src/hosts';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 
@@ -91,5 +91,75 @@ describe('documents without VS Code', () => {
   it('finds the problems of a host file', () => {
     const codes = documentIssues(dockerfile('FROM alpine\nRUN curl -s x | sh'), 'en', {}).map((i) => i.code);
     assert.ok(codes.includes('dockerPipefail'), codes.join());
+  });
+});
+
+describe('the pitfalls of a script, as problems', () => {
+  const found = (text: string, shells: { forced?: 'bash' | 'sh' | 'zsh' } = {}) => documentIssues(script(text), 'en', shells)
+    .filter((i) => i.pitfall).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endLine, i.endCol]);
+  // The script, and its pitfalls: code, severity, and range (line, column, line, column).
+  const cases: [string, (string | number)[][]][] = [
+    // src/pitfalls.ts
+    ['[-f x]', [['bracket-no-space', 'warning', 0, 0, 0, 3]]],
+    ['x = 1', [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]],
+    ['{echo a; }', [['brace-no-space', 'warning', 0, 0, 0, 5]]],
+    ['{ echo a }', [['brace-close-no-separator', 'warning', 0, 9, 0, 10]]],
+    ['rm -rf $DIR/*', [['rm-empty-variable-root', 'warning', 0, 7, 0, 13], ['unquoted-variable-as-path', 'info', 0, 7, 0, 13]]],
+    ['read line', [['read-without-r', 'info', 0, 0, 0, 9]]],
+    ['[ $a < $b ]', [['redirect-in-bracket', 'warning', 0, 5, 0, 9], ['unquoted-variable-in-test', 'info', 0, 2, 0, 4]]],
+    ['[ -f $x]', [['bracket-close-in-word', 'warning', 0, 5, 0, 8]]],
+    ['[ a && b ]', [['and-or-in-bracket', 'warning', 0, 4, 0, 6]]],
+    // src/wordfacts.ts
+    ['FOO=1 echo $FOO', [['prefix-assignment-expanded-first', 'warning', 0, 11, 0, 15]]],
+    ['cp $a b', [['unquoted-variable-as-path', 'info', 0, 3, 0, 5]]],
+    ['for f in $(ls); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 14]]],
+    ['for a in $*; do :; done', [['for-over-unquoted-args', 'warning', 0, 9, 0, 11]]],
+    ['sudo echo 1 > /etc/x', [['redirect-by-your-shell', 'warning', 0, 12, 0, 20]]],
+    // A node over several lines: to the end of its first line.
+    ['for f in $(ls\n); do :; done', [['for-over-ls-output', 'warning', 0, 9, 0, 13]]],
+    // Each place, also where the explanation of the line says it once.
+    ['cp $a b; cp $a c', [['unquoted-variable-as-path', 'info', 0, 3, 0, 5], ['unquoted-variable-as-path', 'info', 0, 12, 0, 14]]],
+    ['echo "$x"\nx=1', []],
+  ];
+  for (const [text, want] of cases) {
+    it(`${JSON.stringify(text)}: ${want.map((w) => w[0]).join(', ') || 'none'}`, () => assert.deepStrictEqual(found(text), want));
+  }
+
+  it('says what the explanation of the line says, in either language', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const doc = script('rm -rf $DIR/*\nx = 1');
+      for (const i of documentIssues(doc, lang, {})) assert.ok(explainDocumentLine(new Analyzer(lang), doc, i.startLine, lang, {}, {}).notes.includes(i.message), i.message);
+    }
+  });
+
+  it('honours the directives of the file, the codes to leave out, and `pitfalls: false`', () => {
+    const text = 'x = 1\n# bash-explainer disable=read-without-r\nread a\nread b';
+    assert.deepStrictEqual(documentIssues(script(text), 'en', {}).map((i) => [i.code, i.startLine]), [['assignment-with-spaces', 0], ['read-without-r', 3]]);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', {}, ['assignment-with-spaces']).map((i) => i.code), ['read-without-r']);
+    assert.deepStrictEqual(documentIssues(script(text), 'en', {}, [], { pitfalls: false }), []);
+  });
+
+  it('follows the shell: none where zsh syntax leaves the line unread, and none in a host file', () => {
+    // zsh does not split `$a`, and bash cannot read the line with `${(f)…}`.
+    assert.deepStrictEqual(found('cp $a b', { forced: 'zsh' }), []);
+    assert.deepStrictEqual(documentIssues(script('cp $a b'), 'en', { forced: 'zsh' }).map((i) => i.code), ['wordSplit']);
+    // (Also when that note is turned off: the pitfall is still wrong there.)
+    assert.deepStrictEqual(documentIssues(script('cp $a b'), 'en', { forced: 'zsh' }, ['wordSplit']), []);
+    assert.deepStrictEqual(found('x = ${(f)y}', { forced: 'zsh' }), []);
+    assert.deepStrictEqual(found('x = 1', { forced: 'zsh' }), [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]);
+    assert.deepStrictEqual(found('x = 1', { forced: 'sh' }), [['assignment-with-spaces', 'warning', 0, 0, 0, 5]]);
+    assert.deepStrictEqual(documentIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', {}).filter((i) => i.pitfall), []);
+    assert.deepStrictEqual(pitfallIssues(dockerfile('FROM alpine\nRUN x = 1'), 'en', undefined), []);
+  });
+
+  it('leaves out a pitfall that another problem at its place already says', () => {
+    const doc = script('x = 1');
+    const [mine] = pitfallIssues(doc, 'en', undefined);
+    const other = { code: 'other', severity: 'warning' as const, message: 'something else', startLine: 0, startCol: 0, endLine: 0, endCol: 1 };
+    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [other]), [mine]);
+    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, message: mine.message }]), []);
+    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code }]), []);
+    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code, startCol: 5, endCol: 6 }]), [mine]);
+    assert.deepStrictEqual(pitfallIssues(doc, 'en', undefined, [{ ...other, code: mine.code, startLine: 1, endLine: 1 }]), [mine]);
   });
 });

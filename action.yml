@@ -18,6 +18,11 @@ inputs:
   fail-on-warning:
     description: Fail the step when there is a warning ('true' or 'false').
     default: 'true'
+  strict:
+    description: >-
+      Also fail on a warning on a pitfall ('true' or 'false'), such as `x = 1` or `rm -rf $DIR/*`.
+      The pitfalls are reported either way.
+    default: 'false'
   sarif:
     description: Also write the problems to this SARIF file, for github/codeql-action/upload-sarif.
     default: ''
@@ -41,6 +46,7 @@ runs:
         FILES: ${{ inputs.files }}
         CHECK_SHELL: ${{ inputs.shell }}
         FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+        STRICT: ${{ inputs.strict }}
         SARIF: ${{ inputs.sarif }}
         PACKAGE: ${{ inputs.package }}
         ACTION_PATH: ${{ github.action_path }}
@@ -67,6 +73,7 @@ runs:
 
         args=(--check)
         [ -n "$CHECK_SHELL" ] && args+=(--shell "$CHECK_SHELL")
+        [ "$STRICT" = 'true' ] && args+=(--strict)
         check() { npx --yes --package="$package" bash-explainer "${args[@]}" "$@" -- "${files[@]}"; }
 
         # A CLI with --sarif (listed in its help) writes the annotations and the SARIF file in one

@@ -39,17 +39,28 @@ function alwaysNumber(n: SyntaxNode): boolean {
 
 /** The facts (pitfalls) about words whose node starts on `line`. */
 export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell?: Shell): Fact[] {
+  // (Each text once.)
+  return wordFindings(root, lang, model, shell, line, line).map((f) => f.fact).filter((f, i, all) => all.findIndex((g) => g.text === f.text) === i);
+}
+
+/** A word fact found, with the node it is about (for a diagnostic's range). */
+export interface WordFinding { fact: Fact; node: SyntaxNode }
+
+/** The word facts whose node starts on a line from `from` to `to`, in one walk of the tree. */
+export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
   /** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
   const bare = (n: SyntaxNode): boolean => {
     if (!isExpansion(n)) return false;
     const m = partMeaning(n, model);
     return !!m && (m.split.applies !== false || m.glob.applies !== false);
   };
-  const facts: Fact[] = [];
-  const add = (f: Fact) => { if (!facts.some((g) => g.text === f.text)) facts.push(f); };
+  const facts: WordFinding[] = [];
+  // (The node is the one being checked, unless a narrower one is given.)
+  let at = root;
+  const add = (f: Fact, node: SyntaxNode = at) => facts.push({ fact: f, node });
   const visit = (n: SyntaxNode) => {
-    if (n.startPosition.row === line) check(n);
-    if (n.startPosition.row <= line && n.endPosition.row >= line) for (const c of n.namedChildren) visit(c);
+    if (n.startPosition.row >= from && n.startPosition.row <= to) check((at = n));
+    if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
   };
 
   const check = (n: SyntaxNode) => {
@@ -62,7 +73,7 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         for (const v of prefix) {
           const use = a.find((w) => readsVariable(w, v));
           if (name && use) {
-            add(fact(lang, 'prefix-assignment-expanded-first', { v, name, use: use.text }));
+            add(fact(lang, 'prefix-assignment-expanded-first', { v, name, use: use.text }), use);
             break;
           }
         }
@@ -72,20 +83,20 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         const ran = nameNode && /^[\w./+-]+$/.test(nameNode.text) ? ranName(resolveName(model, nameNode.text, nameNode, { shell, command: true })) : undefined;
         if (ran && PATH_COMMANDS.has(ran)) {
           const word = a.find((w) => bare(w) || (w.type === 'concatenation' && w.namedChildren.some((c) => bare(c))));
-          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word) }));
+          if (word) add(fact(lang, 'unquoted-variable-as-path', { bare: word.text, quoted: quoteExpansions(word) }), word);
         }
         // `[ $x = y ]`: an empty or spaced value breaks the test. (When the name runs `[`: src/semantics/names.ts.)
         // The words of the test itself, not variables inside a `$(…)` in it.
         // (Not through splitting: an empty value drops the word whatever IFS and `set -f` are.)
         if (testSpecAt(model, n, shell)?.closingOperand) {
           const word = a.find((e) => isExpansion(e) && !alwaysNumber(e));
-          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }));
+          if (word) add(fact(lang, 'unquoted-variable-in-test', { bare: word.text }), word);
         }
         // `sudo cmd > file`: the redirection is done by your shell, without sudo's rights.
         // Only for files that need root: system directories, not your logs or /dev/null.
-        const toFile = redirectionsOf(n).some((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
+        const toFile = redirectionsOf(n).find((c) => c.type === 'file_redirect' && !/^\d*>&/.test(c.text.trim())
           && /^(\/etc|\/proc|\/sys|\/usr|\/opt|\/root|\/boot|\/lib)\//.test(field(c, 'destination')?.text.replace(/^["']/, '') ?? ''));
-        if (name === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'));
+        if (name === 'sudo' && toFile) add(fact(lang, 'redirect-by-your-shell'), toFile);
         break;
       }
       case 'for_statement': case 'select_statement': {
@@ -93,9 +104,9 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
         if (!value) break;
         // `for f in $(ls …)`
         const cmd = value.type === 'command_substitution' && value.namedChildren[0]?.type === 'command' ? commandName(value.namedChildren[0]) : undefined;
-        if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }));
+        if (cmd === 'ls' || cmd === 'find') add(fact(lang, 'for-over-ls-output', { cmd }), value);
         // `for a in $*` / `for a in $@`
-        if (value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }));
+        if (value.type === 'simple_expansion' && /^\$[*@]$/.test(value.text)) add(fact(lang, 'for-over-unquoted-args', { value: value.text }), value);
         break;
       }
     }

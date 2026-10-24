@@ -122,6 +122,8 @@ Warnings appear in VS Code's Problems panel, so you see them without hovering, a
 
 Fixes are offered only when the script's shell lacks the construct, and only when the meaning is kept: `[[ $f == *.txt ]]` is a pattern match, so it gets no fix. Each rewrite is checked to behave in dash as the original does in bash. To silence a warning, add `# bash-explainer disable=<code>` on the line before it (or after the code on the same line), `# bash-explainer disable-file=<code>` anywhere for the whole file, or list the code in `bashExplainer.diagnostics.ignore`; `all` matches every warning. Turn the Problems panel entries off with `bashExplainer.diagnostics.enabled`.
 
+The pitfalls the explanations point out are problems too, each with its code: a warning for what breaks the script (`x = 1` is no assignment, `rm -rf $DIR/*` with an empty `DIR`, `for f in $(ls)`, `[-f x]`), information for the rest (an unquoted variable, `read` without `-r`). Leave them out with `bashExplainer.diagnostics.pitfalls`. `--check` prints them, but fails on them only with `--strict`.
+
 ## In VS Code
 
 ### Quick start
@@ -213,6 +215,7 @@ The panel works like regex101:
 | `bashExplainer.diagnostics.enabled` | `true` | Warnings in the Problems panel, with quick fixes |
 | `bashExplainer.diagnostics.ignore` | `[]` | Warning codes to leave out (the code shown in the Problems panel, e.g. `dbracket`, `echoE`, `dockerPipefail`) |
 | `bashExplainer.diagnostics.embedded` | `true` | Also warn about shell code inside other files |
+| `bashExplainer.diagnostics.pitfalls` | `true` | Also list the pitfalls in the Problems panel (`x = 1`, `rm -rf $DIR/*`: warnings; unquoted variables: information) |
 | `bashExplainer.yq.flavor` | `auto` | `auto`, `mikefarah4`, `kislyuk` or `mikefarah3` |
 | **Files** | | |
 | `bashExplainer.embedded.files` | all | Files whose shell code is explained: `dockerfile`, `makefile`, `yaml`, `packageJson`, `markdown`, `python`, `jenkinsfile`, `bats` |
@@ -253,7 +256,7 @@ The same settings work on the web page, in the command-line tool and in the Lang
 
 | Settings (`bashExplainer.`…) | Web page | Command line | Language Server |
 | --- | --- | --- | --- |
-| `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
+| `language`, `notes.idioms`, `notes.pitfalls`, `shell`, `yq.flavor`, `diagnostics.ignore`, `diagnostics.embedded`, `diagnostics.pitfalls`, `examples.enabled`, `examples.disabled`, `customCommands` | ✓ | ✓ | ✓ |
 | `diagnostics.enabled` | ✓ | (`--check` asks for the warnings) | ✓ |
 | `examples.placement` | ✓ | | |
 | `editor.wrap` (the web page only: it is not in VS Code's settings, which has `editor.wordWrap`) | ✓ | | |

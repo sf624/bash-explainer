@@ -146,6 +146,25 @@ describe('diagnosticsFor', () => {
     // A shell script is not affected.
     assert.ok(run(doc, shells, mergeSettings({ 'diagnostics.embedded': false }), 'cli').shown.length > 0);
   });
+
+  it('shows the pitfalls unless diagnostics.pitfalls or notes.pitfalls is off, and keeps them in `all`', () => {
+    const bash = openDocument('#!/bin/bash\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
+    const sh = openDocument('#!/bin/sh\nx = 1\n[[ -n $a ]]\n', 'shell', parse);
+    const shown = (d: ShellDocument, s: Settings) => codes(run(d, shellsOf(d.lines, 'a.sh', undefined), s, 'lsp').shown);
+    assert.deepStrictEqual(shown(bash, defaultSettings()), ['assignment-with-spaces']);
+    assert.deepStrictEqual(shown(sh, defaultSettings()), ['dbracket', 'assignment-with-spaces']);
+    for (const off of [{ 'diagnostics.pitfalls': false }, { 'notes.pitfalls': false }]) {
+      assert.deepStrictEqual(shown(bash, mergeSettings(off)), [], JSON.stringify(off));
+      assert.deepStrictEqual(shown(sh, mergeSettings(off)), ['dbracket'], JSON.stringify(off));
+      assert.deepStrictEqual(codes(run(sh, shellsOf(sh.lines, 'a.sh', undefined), mergeSettings(off), 'web').all), ['dbracket', 'assignment-with-spaces']);
+    }
+    // The file's directives apply to them too, in `all` as well.
+    const quiet = openDocument('#!/bin/bash\n# bash-explainer disable=assignment-with-spaces\nx = 1\n', 'shell', parse);
+    assert.deepStrictEqual(run(quiet, {}, defaultSettings(), 'web').all, []);
+    // A dialect note that says it otherwise keeps a pitfall out, also when the note itself is turned off.
+    const zsh = openDocument('#!/bin/zsh\n# bash-explainer disable=wordSplit\ncp $a b\n', 'shell', parse);
+    assert.deepStrictEqual(run(zsh, shellsOf(zsh.lines, 'a.zsh', undefined), defaultSettings(), 'web').all, []);
+  });
 });
 
 describe('plain', () => {

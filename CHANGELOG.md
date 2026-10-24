@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-Details and examples: [docs/changes/unreleased.md](docs/changes/unreleased.md).
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### New
+
+- The pitfalls the explanations point out (`x = 1`, `rm -rf $DIR/*`, `for f in $(ls)`, unquoted variables…) are also problems, with a code each: in VS Code's Problems panel, the Language Server, the web page, `--check`, SARIF and the GitHub Action. Those that break the script are warnings, the others information; `bashExplainer.diagnostics.pitfalls` turns them off.
+- **Compatibility:** `--check` now prints more lines, but exits as before: a pitfall fails it only with the new `--strict` (the Action's `strict: 'true'`). The Action's `warnings` output counts the warnings on pitfalls too.
 
 ### Fixed
 
