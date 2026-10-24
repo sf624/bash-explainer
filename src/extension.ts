@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createUnbashParser } from './syntax/adapters/unbash';
 import { TreeCache } from './syntax/cache';
 import { ExplainService } from './service';
+import { TOKEN_SETTINGS } from './settings';
 import { DiagnosticsController } from './ui/diagnostics';
 import { HoverController } from './ui/hover';
 import { InlayHintsController } from './ui/inlayHints';
@@ -65,16 +66,16 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       if (e.affectsConfiguration('bashExplainer.languages')) { hover.register(); hints.register(); diagnostics.register(); }
       if (e.affectsConfiguration('bashExplainer.embedded.files')) vscode.workspace.textDocuments.forEach((d) => service.forget(d));
       if (e.affectsConfiguration('bashExplainer.panel.autoOpen')) panel.autoOpen();
-      // Which documents have shell code depends on the languages and the kinds of files too.
-      if (['highlight.enabled', 'languages', 'embedded.files'].some((k) => e.affectsConfiguration(`bashExplainer.${k}`))) semantic.refresh();
+      if (TOKEN_SETTINGS.some((k) => e.affectsConfiguration(`bashExplainer.${k}`))) semantic.refresh();
       panel.refresh();
       hints.refresh();
       diagnostics.refresh();
       updateStatus();
     }),
     vscode.window.onDidChangeActiveTextEditor(updateStatus),
-    // A shell or yq chosen in the panel changes the explanations and the warnings.
+    // A shell or yq chosen in the panel changes the explanations and the warnings, and a shell the colours.
     service.onDidChangeOverrides(() => {
+      semantic.refresh();
       panel.refresh();
       hints.refresh();
       diagnostics.refresh();

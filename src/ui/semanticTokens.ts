@@ -25,15 +25,16 @@ export class SemanticTokensController implements vscode.Disposable {
     this.registration?.dispose();
     // No answer (not an empty one) for a document with no shell code, or with the setting off: VS Code takes the first
     // non-null result, so an empty one would hide the tokens of another provider.
-    const tokens = (doc: vscode.TextDocument, lines?: { from: number; to: number }) => {
-      if (!this.service.highlightEnabled(doc) || !this.service.isTarget(doc) || !this.service.hasShell(doc)) return undefined;
+    const tokens = (doc: vscode.TextDocument, cancel: vscode.CancellationToken, lines?: { from: number; to: number }) => {
+      // (A request VS Code no longer needs, as typing goes on, is not worked out.)
+      if (cancel.isCancellationRequested || !this.service.highlightEnabled(doc) || !this.service.isTarget(doc) || !this.service.hasShell(doc)) return undefined;
       const parsed = this.service.document(doc);
       return new vscode.SemanticTokens(new Uint32Array(semanticTokens(parsed, { shells: this.service.shells(doc), ...(lines ? { lines } : {}) })));
     };
     const selector = this.service.semanticSelector();
     this.registration = vscode.Disposable.from(
-      vscode.languages.registerDocumentSemanticTokensProvider(selector, { onDidChangeSemanticTokens: this.changed.event, provideDocumentSemanticTokens: (doc) => tokens(doc) }, legend),
-      vscode.languages.registerDocumentRangeSemanticTokensProvider(selector, { provideDocumentRangeSemanticTokens: (doc, r) => tokens(doc, { from: r.start.line, to: r.end.line }) }, legend),
+      vscode.languages.registerDocumentSemanticTokensProvider(selector, { onDidChangeSemanticTokens: this.changed.event, provideDocumentSemanticTokens: (doc, cancel) => tokens(doc, cancel) }, legend),
+      vscode.languages.registerDocumentRangeSemanticTokensProvider(selector, { provideDocumentRangeSemanticTokens: (doc, r, cancel) => tokens(doc, cancel, { from: r.start.line, to: r.end.line }) }, legend),
     );
     this.changed.fire();
   }

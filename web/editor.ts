@@ -14,6 +14,7 @@ import { tags } from '@lezer/highlight';
 import { Span } from '../src/analyzer';
 import { DocumentIssue, diagnosticsFor, plain, ShellDocument, Shells } from '../src/document';
 import { documentHighlight, HighlightKind, HIGHLIGHT_KINDS } from '../src/highlight';
+import type { HighlightModifier } from '../src/semanticFacts';
 import { Lang } from '../src/i18n';
 import { Settings } from '../src/settings';
 import { CLASSIC_COLOURS, kindColour } from './editor-colors';
@@ -43,10 +44,14 @@ const highlightField = StateField.define<DecorationSet>({
 // ---- Shell highlighting: from the tree the explanations are made from (src/highlight.ts) ----------
 
 /** A span to colour, in editor positions. */
-interface Shading { from: number; to: number; kind: HighlightKind }
+interface Shading { from: number; to: number; kind: HighlightKind; modifiers?: readonly HighlightModifier[] }
 
-const marks = new Map<HighlightKind, Decoration>();
-const mark = (k: HighlightKind) => marks.get(k) ?? marks.set(k, Decoration.mark({ class: `cm-bx-${k}` })).get(k)!;
+const marks = new Map<string, Decoration>();
+/** The mark of a kind, with a class for each modifier (`cm-bx-variable cm-bx-readonly`), as the semantic tokens have them. */
+const mark = (s: Shading) => {
+  const cls = [`cm-bx-${s.kind}`, ...(s.modifiers ?? []).map((m) => `cm-bx-${m}`)].join(' ');
+  return marks.get(cls) ?? marks.set(cls, Decoration.mark({ class: cls })).get(cls)!;
+};
 /** New spans for the text the editor has now. */
 const setShadings = StateEffect.define<Shading[]>();
 
@@ -85,7 +90,7 @@ const shading = ViewPlugin.fromClass(class {
         if (this.spans[mid].to <= r.from) lo = mid + 1;
         else hi = mid;
       }
-      for (i = lo; i < this.spans.length && this.spans[i].from < r.to; i++) b.add(this.spans[i].from, this.spans[i].to, mark(this.spans[i].kind));
+      for (i = lo; i < this.spans.length && this.spans[i].from < r.to; i++) b.add(this.spans[i].from, this.spans[i].to, mark(this.spans[i]));
     }
     return b.finish();
   }
@@ -104,7 +109,12 @@ const highlightStyle = HighlightStyle.define([
   { tag: tags.meta, color: CLASSIC_COLOURS.muted },
 ]);
 
-const shellColours = Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' ? { fontStyle: 'italic' } : {}) }]));
+const shellColours = {
+  ...Object.fromEntries(HIGHLIGHT_KINDS.map((k) => [`.cm-bx-${k}`, { color: kindColour(k), ...(k === 'comment' ? { fontStyle: 'italic' } : {}) }])),
+  // A readonly variable in bold, an exported one underlined (dotted): the palette keeps the variable's colour.
+  '.cm-bx-readonly': { fontWeight: 'bold' },
+  '.cm-bx-exported': { textDecoration: 'underline dotted' },
+};
 
 const editorTheme = EditorView.theme({
   '&': { height: '100%', color: 'var(--vscode-editor-foreground)', backgroundColor: 'var(--vscode-editor-background)', fontSize: 'var(--vscode-editor-font-size)' },
@@ -225,7 +235,7 @@ export class Editor {
     const lines = this.view.state.doc;
     const spans = documentHighlight(doc, { shells }).map((s) => {
       const start = lines.line(s.line + 1).from;
-      return { from: start + s.from, to: start + s.to, kind: s.kind };
+      return { from: start + s.from, to: start + s.to, kind: s.kind, ...(s.modifiers ? { modifiers: s.modifiers } : {}) };
     });
     this.shadings.set(doc, { shell, spans });
     return spans;

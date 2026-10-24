@@ -4,6 +4,7 @@
 // model trusts the script there). Pure: no editor. Offsets are those of the tree's text.
 import type { Shell } from './dialect';
 import { interpret, type ArgvParse } from './argv/interpret';
+import type { CommandSpec } from './argv/spec';
 import { argWord } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import type { HighlightKind } from './highlight';
@@ -70,15 +71,18 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   const parse = interpret(spec, args.map(argWord), { name, lookup: lookupCommand });
   // (Where each command it runs runs, read only when it runs one: `sudo ls`.)
   let envs: ReturnType<typeof slotEnvs> | undefined;
-  roles(parse, args, (w) => {
+  roles(parse, spec, args, (w) => {
     // (A plain word, so it has a value; slotEnvs keys the first word of each command a slot runs.)
     const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, lookupCommand)).get(w)!;
     return nameKind(resolveName(model, staticWordValue(w)!, w, { ...resolveOpts(shell), env }));
   }, out);
 }
 
-/** Option words as options, a word that only looks like one as a plain argument, and the names of commands run by this one. */
-function roles(parse: ArgvParse, args: readonly SyntaxNode[], commandKind: (w: SyntaxNode) => HighlightKind, out: FactSpan[]): void {
+/**
+ * Option words as options, a word that only looks like one as a plain argument, and the names of commands run by this
+ * one (`spec` read `args` into `parse`).
+ */
+function roles(parse: ArgvParse, spec: CommandSpec | undefined, args: readonly SyntaxNode[], commandKind: (w: SyntaxNode) => HighlightKind, out: FactSpan[]): void {
   for (const { word, role } of parse.roles) {
     const w = args[word];
     switch (role.role) {
@@ -95,11 +99,19 @@ function roles(parse: ArgvParse, args: readonly SyntaxNode[], commandKind: (w: S
       case 'command':
         // The name of a command another one runs (`sudo ls`, `xargs rm`): to bash an argument, to the reader a command.
         if (role.name !== undefined && w.type === 'word') out.push({ from: w.startIndex, to: w.endIndex, kind: commandKind(w) });
-        if (role.parse) roles(role.parse, args, commandKind, out);
+        if (role.parse) roles(role.parse, role.spec, args, commandKind, out);
         break;
       case 'subcommand':
-        if (role.parse) roles(role.parse, args, commandKind, out);
+        if (role.parse) roles(role.parse, role.spec, args, commandKind, out);
         break;
+      case 'expression': {
+        // find's expression, read by its own spec from its first word: its tests' values (`-name -x`) and the commands
+        // of its actions (`-exec rm -f {} +`).
+        if (word !== parse.expression || !spec?.expressionSpec) break;
+        const rest = args.slice(word, parse.end);
+        roles(interpret(spec.expressionSpec, rest.map(argWord), { name: parse.command, lookup: lookupCommand }), spec.expressionSpec, rest, commandKind, out);
+        break;
+      }
       default:
         break;
     }

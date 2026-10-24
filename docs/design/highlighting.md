@@ -11,9 +11,9 @@ From the models (src/semanticFacts.ts), painted over the tree's colours:
 | Fact | Source | Kind, token |
 | --- | --- | --- |
 | What a command name runs: keyword, alias, function, builtin, program | `resolveName` (src/semantics/names.ts), as the panel's badge ([name-kind.md](name-kind.md)) | `keyword`; `alias` as `macro`; `function`; `builtin` as `function.defaultLibrary`; `command` as `function` |
-| A command run by another one (`sudo echo`, `xargs rm`, `builtin cd`) | the spec's command slot, `slotEnvs`, then `resolveName` there | as above |
-| A word the spec reads as an option, or as data that only looks like one (`grep -e -v`) | `interpret` (src/argv/) | `option` as `parameter`; `argument` as `string`, the grammar's colour of a plain argument |
-| A variable readonly or exported where it is used or set | the run state (`shellState(...).at(n)`), only where `trusts()` allows | modifiers `readonly` (standard) and `exported` (our own, declared in package.json) |
+| A command run by another one (`sudo echo`, `xargs rm`, `builtin cd`, `find -exec rm {} +`) | the spec's command slot (find's from its `expressionSpec`), `slotEnvs`, then `resolveName` there | as above |
+| A word the spec reads as an option, or as data that only looks like one (`grep -e -v`, `find -name -foo`) | `interpret` (src/argv/) | `option` as `parameter`; `argument` as `string.unquoted` (our own modifier), mapped to the grammar's `string.unquoted.argument.shell`, the colour of a plain argument |
+| A variable readonly or exported where it is used or set | the run state (`shellState(...).at(n)`), only where `trusts()` allows | modifiers `readonly` (standard) and `exported` (our own, declared in package.json); on the web page, the classes `cm-bx-readonly` (bold) and `cm-bx-exported` (dotted underline) |
 
 Not painted from the specs: `test` and `[` (their words are an expression, whose operators the tree colours), and the words of a function or an alias (no spec). A subcommand (`git log`) keeps the grammar's colour.
 
@@ -45,6 +45,8 @@ It cannot tell apart host kinds that share a language: `yaml` is GitLab CI, and 
 
 ## Speed
 
+The tokens are asked for again when a setting they depend on changes (`TOKEN_SETTINGS` in src/settings.ts: the switch, the languages, the kinds of files, the shell), and when a shell is chosen in the panel; a request VS Code has cancelled is not worked out.
+
 The tree is cached per document version (`TreeCache`), the model per tree (`shellState`), the shell code of a host file per version, and the tree of each of its shells per extraction: the tokens, the panel and the diagnostics share them. A range request (the visible lines) paints and reads the names and specs of those lines only; the model of the whole script is built once per version, by whichever asks first.
 
 Measured on 5,000 lines (the sample repeated; Node 22, a laptop under WSL, medians, varying by about ±30% between runs):
@@ -56,4 +58,6 @@ Measured on 5,000 lines (the sample repeated; Node 22, a laptop under WSL, media
 | Full request, model built | 22 ms | 122 ms | 95–215 ms |
 | Range request (60 lines), model built | 21 ms (the whole script, then filtered) | 279 ms (the model again) | 3.5–5 ms |
 
-test/highlight-speed.test.ts guards these with generous limits (full under 1.5 s, a range under 150 ms and a quarter of the full request), skipped under coverage.
+Whether the model trusts a variable (`trusts`, src/semantics/trust.ts) is asked at every use of it, and kept per name: a scan of the variable's writes each time made colouring quadratic in the uses of one variable (20,000 lines of `x=$i; echo "$x"`: 2.2 s, now 0.3 s with the model built).
+
+test/highlight-speed.test.ts guards these with generous limits (full under 1.5 s, a range under 150 ms and a quarter of the full request, 20,000 lines of one variable under 8 times 5,000), skipped under coverage.

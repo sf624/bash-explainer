@@ -160,6 +160,21 @@ describe('Bash Explainer in VS Code', function () {
     } finally {
       await makeConfig.update('highlight.enabled', undefined, vscode.ConfigurationTarget.Global, true);
     }
+    // The shell decides what a name runs: `shopt` is a builtin of bash (defaultLibrary), a program in sh.
+    const shopt = await vscode.workspace.openTextDocument({ language: 'shellscript', content: '#!/bin/bash\nshopt -s extglob\n' });
+    const shoptModifiers = async () => {
+      const t = await tokens(shopt.uri);
+      // (The first token on line 1: the second one, after the shebang's comment.)
+      return t && t.data.length >= 10 ? t.data[9] : undefined;
+    };
+    const builtin = 1 << legend!.tokenModifiers.indexOf('defaultLibrary');
+    assert.strictEqual(await until('shopt as a builtin', shoptModifiers, (m) => m !== undefined), builtin);
+    await config().update('shell', 'sh', vscode.ConfigurationTarget.Global);
+    try {
+      await until('shopt as a program in sh', shoptModifiers, (m) => m === 0);
+    } finally {
+      await config().update('shell', undefined, vscode.ConfigurationTarget.Global);
+    }
     // Off everywhere.
     await config().update('highlight.enabled', false, vscode.ConfigurationTarget.Global);
     try {

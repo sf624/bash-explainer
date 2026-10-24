@@ -79,6 +79,23 @@ describe('the colours of options (the specs)', () => {
     assert.strictEqual(said, '-v\n');
   });
 
+  it("reads find's expression by its spec: its tests' values as data, and the command of -exec (checked with find)", function () {
+    const line = 'find . -maxdepth 0 -name -foo -newer -x -o -print -exec rm -f {} +';
+    assert.strictEqual(spanOf(line, '-name'), 'option');
+    assert.strictEqual(spanOf(line, '-foo'), 'argument');
+    assert.strictEqual(spanOf(line, '-x'), 'argument');
+    assert.strictEqual(spanOf(line, '-exec'), 'option');
+    assert.strictEqual(spanOf(line, 'rm'), 'command');
+    assert.strictEqual(spanOf(line, '-f'), 'option');
+    // Under sudo too, and a function named in -exec is not one there: find runs a program.
+    assert.strictEqual(spanOf('sudo find . -execdir rm {} \\;', 'rm'), 'command');
+    assert.strictEqual(spanOf('f() { :; }; find . -exec f {} +', 'f', 1), 'command');
+    // (`-name -foo` is a test of the name `-foo`: find prints `.`, which does not match it, by `-o -print`.)
+    const said = bash('cd / && find . -maxdepth 0 -name -foo -o -print');
+    if (said === undefined) return this.skip();
+    assert.strictEqual(said, '.\n');
+  });
+
   it("keeps test's operators, and a function's words, as the tree reads them", () => {
     assert.strictEqual(spanOf('[ "$a" -eq 1 ]', '-eq'), 'option');
     assert.strictEqual(spanOf('test -f x', '-f'), 'option');

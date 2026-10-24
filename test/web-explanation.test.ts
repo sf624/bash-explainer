@@ -313,6 +313,17 @@ describe('the web page: the explanation panel and the editor', function () {
     await page.keyboard.press('Control+End');
     await page.keyboard.insertText('\necho "typed"');
     await until('the typed line coloured', () => pieces('echo "typed"'), (p) => p.some((x) => x.startsWith('"typed"|cm-bx-string')));
+    // The modifiers of the semantic tokens, as classes: a readonly variable in bold, an exported one underlined (in a
+    // script of their own: the sample has an `eval`, after which the model trusts no variable).
+    await page.keyboard.press('Control+A');
+    await page.keyboard.insertText('readonly RO=1; export EX=2\necho "$RO$EX"');
+    const classes = (text: string) => page.locator('.cm-line').filter({ hasText: 'echo "$RO$EX"' }).first().evaluate((line, t) => {
+      const texts = (globalThis as any).document.createTreeWalker(line, 4);
+      for (let n = texts.nextNode(); n; n = texts.nextNode()) if (n.textContent === t) return [...n.parentElement.classList].join(' ') + '|' + (globalThis as any).getComputedStyle(n.parentElement).fontWeight;
+      return '';
+    }, text);
+    assert.strictEqual(await until('$RO marked readonly', () => classes('$RO'), (c) => c.includes('cm-bx-readonly')), 'cm-bx-variable cm-bx-readonly|700');
+    assert.match(await classes('$EX'), /^cm-bx-variable cm-bx-exported\|/);
     // A Dockerfile: its own mode for FROM and RUN, ours for the shell code after RUN.
     await pickKind(page, 'dockerfile');
     await page.locator('#kind-replace').click(); // replace the typed script with the sample
