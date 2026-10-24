@@ -280,7 +280,7 @@ Each step is a PR. Each keeps every test passing and coverage at 100% (Node.js 2
 
 - test/file-length.test.ts and test/fixtures/file-length.json (3.1).
 - test/explain-imports.test.ts (3.2, 3.3). It passes at once: src/explain/ does not exist yet. A unit test of its cycle finder covers it.
-- test/snapshot.ts, a debug helper like test/dump.ts: the full `LineExplanation` of every line of the corpus (test/support/corpus.ts: the fixtures, the host fixtures and snippets.json), in Japanese and English, as JSON lines. It fixes the clock first, so the `git log` samples do not change from run to run. Every later step diffs its output against main's.
+- test/snapshot.ts, a debug helper like test/dump.ts: the full `LineExplanation` of every line of the corpus (test/support/corpus.ts: the fixtures, the host fixtures and snippets.json), in Japanese and English, as JSON lines. It fixes the clock first, so the `git log` samples do not change from run to run. Every later step diffs its output against main's. Run it on main and on the branch, then compare: `npx tsx test/snapshot.ts /tmp/main.jsonl` (about 6 s, 7.5 MB, 4,054 lines), and `git diff --no-index --stat /tmp/main.jsonl /tmp/branch.jsonl` (empty for a pure move).
 
 ### Step 1: the facts the models own (four S PRs, in parallel)
 
@@ -383,12 +383,12 @@ Findings at d265509. Status: `planned`, `PR #N`, `done`, `won't do` or `not a pr
 | T6 | `shoptAt` decides `globstar` per shell (361–362) | 1.3 | planned | state probes |
 | T7 | A string's variables read by a regex (3185); risky words by node types (3239) | 1.4 | planned | rows against bash (`bash -c`, `sudo`, `env -i`) |
 | T8 | Cycles between the groups (1.4) | 3–9 | planned | test/explain-imports.test.ts |
-| T9 | No guard on file length, import cycles or name checks | 0 | planned | the guards themselves |
-| T10 | No before/after check of the whole explanation | 0 | planned | test/snapshot.ts |
+| T9 | No guard on file length, import cycles or name checks | 0 | PR (step 0) | the guards themselves |
+| T10 | No before/after check of the whole explanation | 0 | PR (step 0) | test/snapshot.ts |
 
 | Step | Status |
 |---|---|
-| 0 | planned |
+| 0 | PR (step 0) |
 | 1.1–1.4 | planned |
 | 2 | planned |
 | 3 | planned |
