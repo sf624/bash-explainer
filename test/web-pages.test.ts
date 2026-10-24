@@ -14,22 +14,39 @@ describe('the web page: release, development and preview pages, the panel view a
     ({ browser, base } = await openSite(this));
   });
 
-  it('switches between the release page and the development page, keeping the script and the language', async () => {
+  it('has no version switch and no link to the development version on the release page, at phone and wide widths, and has the switch on the development and preview pages', async () => {
+    for (const width of [390, 1280]) {
+      for (const [path, switchOn] of [['', false], ['next/', true], ['pr/123/', true]] as const) {
+        const ctx = await browser.newContext({ viewport: { width, height: 800 } });
+        const page = await ctx.newPage();
+        await page.goto(base + path);
+        await page.locator('.cm-line').first().waitFor();
+        await page.locator('#menu-open').click();
+        const where = `${width} ${path || 'release'}`;
+        assert.strictEqual(await page.locator('#channel').count(), switchOn ? 1 : 0, where);
+        assert.strictEqual(await page.locator('#channel').isVisible(), switchOn, where);
+        assert.strictEqual(await page.locator('#channel-label').count(), switchOn ? 1 : 0, where);
+        assert.strictEqual(await page.locator('#dev-link').count(), 0, where);
+        if (!switchOn) {
+          // No leftover in the markup, and the menu's other items stay.
+          const html = await page.content();
+          assert.doesNotMatch(html, /id="channel"|id="channel-label"|dev-link|<!--switch|Development version/, where);
+          assert.strictEqual(await page.locator('#drawer .menu-group:empty').count(), 0, where);
+          assert.strictEqual(await page.locator('#menu-install').isVisible(), true, where);
+        }
+        await ctx.close();
+      }
+    }
+  });
+
+  it('switches from the development page to the release page, keeping the script and the language', async () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
-    await page.goto(base);
-    assert.strictEqual(await page.locator('#channel-banner').isHidden(), true);
-    // The link to the development version is in the menu.
-    assert.strictEqual(await page.locator('#dev-link').isVisible(), false);
-    await page.locator('#menu-open').click();
-    assert.strictEqual(await page.locator('#dev-link').isVisible(), true);
-    await page.locator('#menu-close').click();
+    await page.goto(`${base}next/`);
     await choose(page, '#lang', 'ja');
     await page.locator('.cm-content').click();
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('echo NEXTMARK');
-    await choose(page, '#channel', 'next');
-    await page.waitForURL(`${base}next/**`);
     await until('the typed script', () => page.locator('.cm-content').innerText(), (t) => t.includes('NEXTMARK'));
     assert.strictEqual(await page.locator('#channel-banner').isVisible(), true);
     assert.match(await page.locator('#banner-text').innerText(), /開発版/);

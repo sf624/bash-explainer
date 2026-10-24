@@ -288,9 +288,10 @@ function applyLanguage(): void {
   // shows, the development page its commit. The URL decides which is selected.
   put('theme-label', t.theme);
   $<HTMLSelectElement>('theme').replaceChildren(...THEMES.map((x) => new Option(t.themes[x], x, false, x === theme)));
+  // The release page has no version switch (the build leaves it out); the development and preview pages do.
   put('channel-label', t.version);
   $<HTMLSelectElement>('channel')?.replaceChildren(
-    new Option(CHANNEL === 'release' ? `${t.release} (v${VERSION})` : t.release, 'release', false, CHANNEL === 'release'),
+    new Option(t.release, 'release', false, false),
     new Option(CHANNEL === 'next' ? `${t.development}, ${COMMIT})` : `${t.development})`, 'next', false, CHANNEL === 'next'),
     // A preview has its own entry, the current one; the other pages do not list previews.
     ...(CHANNEL === 'pr' ? [new Option(`${t.pr} #${PR}, ${COMMIT}`, 'pr', false, true)] : []),
@@ -321,9 +322,6 @@ function applyLanguage(): void {
     $<HTMLAnchorElement>('banner-commit').href = `https://github.com/sf624/bash-explainer/commit/${COMMIT}`;
     $('banner-commit').textContent = COMMIT;
     $('channel-banner').hidden = false;
-  } else {
-    put('dev-link-label', t.dev);
-    $('dev-link').hidden = false;
   }
   $<HTMLSelectElement>('lang').value = lang;
   kindPicker?.set(KINDS.map((k) => ({ value: k.kind, name: t.kinds[k.kind] ?? k.name, short: SHORT_KIND[k.kind] })), kind, t.kind);

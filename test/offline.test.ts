@@ -177,7 +177,10 @@ describe('offline by design', () => {
       // The banner and its links are relative or to GitHub (links, not requests: connect-src stays 'none').
       assert.match(html('next'), /id="channel-banner"[^>]*hidden/);
       assert.match(html('next'), /id="banner-release" href="\.\.\/"/);
-      assert.match(html('next'), /id="dev-link"[^>]*href="next\/"/);
+      // The version switch is in the development page and not in the release page.
+      assert.match(html('next'), /id="channel"/);
+      assert.doesNotMatch(html('release'), /id="channel"|id="channel-label"|dev-link|<!--\/?switch-->/);
+      assert.doesNotMatch(html('next'), /<!--\/?switch-->/);
       const next = fs.readFileSync(path.join(dir, 'next', 'app.js'), 'utf8');
       const release = fs.readFileSync(path.join(dir, 'release', 'app.js'), 'utf8');
       assert.match(next, /"next"/);
