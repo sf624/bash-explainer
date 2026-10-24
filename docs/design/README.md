@@ -1,6 +1,6 @@
 # Design documents
 
-Design documents and plans for Bash Explainer. The code is the authority: when a page and the code disagree, the code is right, and the page needs a fix. When a document's status changes, update its row here too.
+Design documents and plans for Bash Explainer. The code is the authority: when a page and the code disagree, the code is right, and the page needs a fix. When a document's status changes, update its row here too. The order in which the plans are taken up is in [../roadmap.md](../roadmap.md).
 
 ## Foundations
 
