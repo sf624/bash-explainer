@@ -471,3 +471,19 @@ function collectLines(cmds: Cmd[]): number[] {
     ...(c.block ? collectLines(c.block) : []),
   ]);
 }
+
+/** The pattern of a sed script made of a single `s` command, to highlight what it matches. */
+export function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined {
+  const m = /^\s*s(.)/.exec(script);
+  if (!m || /[\s\\\n]/.test(m[1])) return undefined;
+  const delim = m[1];
+  let i = m[0].length;
+  let pat = '';
+  for (; i < script.length && script[i] !== delim; i++) {
+    if (script[i] === '\\' && script[i + 1] === delim) { pat += delim; i++; continue; }
+    if (script[i] === '\\') { pat += script[i] + script[i + 1]; i++; continue; }
+    pat += script[i];
+  }
+  const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
+  return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
+}

@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { assertGrowth } from './support/growth';
 import { run } from './support/run';
 import { argWords } from './support/argwords';
 import { Analyzer, lookupCommand } from '../src/analyzer';
@@ -219,5 +220,17 @@ describe('the pipeline example of a line agrees with the tools', () => {
     assert.strictEqual(example(line), undefined);
     assert.ok(example("printf 'a\\n-v\\n' | grep -e -v"));
     assert.ok(example("printf 'a\\n-v\\n' | grep -e -v -"));
+  });
+});
+
+describe('pipeline examples of long pipelines', () => {
+  const parser = createUnbashParser();
+  it('read each stage once: twice the stages take about twice as long, not exponentially longer', function () {
+    this.timeout(60000);
+    // Each stage's stdin is what the stages before it print; reading the stages before it again for each stage took
+    // 2 ** n steps (20 stages: 30 seconds).
+    const line = (n: number) => Array.from({ length: n }, () => 'grep -e x f').join(' | ');
+    const explain = (n: number) => () => new Analyzer('en').explainLine(parser.parse(line(n)), 0);
+    assertGrowth('10 stages, then 20', explain(10), explain(20), 8, 3);
   });
 });

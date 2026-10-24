@@ -20,7 +20,7 @@ import { awkExample, awkInvocation, AwkRunOptions } from './examples/awk';
 import { MAX_SHOWN_LINES, pipedOutput, pipelineExample, Stage } from './examples/pipeline';
 import { InputSource, inputSource, knownLines, NO_INPUT, readsFiles, readOrder, shareOut, shownSource, SourceWord, Stdin, stdinOf, Stream, streamLabel } from './examples/source';
 import { jqExample, JqFormat, jqPrint, jqReadsInputs, jqSample, Json, parseJsonValues, runJq, slurpLines, toJson, varyJson } from './examples/jq';
-import { sedExample } from './examples/sed';
+import { sedExample, sedPattern } from './examples/sed';
 import { InputBox, Interactive, jqStepSections, RerunSpec } from './examples/rerun';
 import { globExample, patternExample, testExample } from './examples/patterns';
 import { braceExpand, extglobs, GlobMode, GlobOpts, hasExtglob, hasGlobstar, isGlob, ShellWordsUnsupported } from './examples/shellwords';
@@ -168,7 +168,12 @@ interface LineContext {
   argCtx: { cmd: string; args: SyntaxNode[]; parse: ArgvParse; nodes: SyntaxNode[]; spec: CommandSpec; rereads?: boolean } | undefined;
   /** Where the commands run by command slots run (src/semantics/env.ts), keyed by their first word or string. */
   slotEnvs: Map<SyntaxNode, ExecEnv>;
+  /** The stages of pipelines read so far (`pipelineStage`). */
+  stages: Map<SyntaxNode, PipelineStage | undefined>;
 }
+
+/** A stage of a pipeline as the pipeline examples run it: whether it names a file to read, or reads one (`< f`). */
+type PipelineStage = { stage: Stage; file: boolean; readsFile: boolean; source: InputSource };
 
 export class Analyzer {
   /** The kind of string this analyzer explains, when it explains a string read as a script (`scriptTokens`). */
@@ -204,7 +209,7 @@ export class Analyzer {
     const state = shellState(tree, shell, { host: opts.hostCommands });
     this.cx = {
       opts, source: root.text, rootNode: root, line, shell, state, status: statusModel(state, shell),
-      context: [], slotEnvs: new Map(), extraNotes: [], facts: [], examples: [], argCtx: undefined,
+      context: [], slotEnvs: new Map(), stages: new Map(), extraNotes: [], facts: [], examples: [], argCtx: undefined,
     };
     const items = this.flatten(root);
     const statements = onLine(root, ['command', 'redirected_statement', 'list', 'pipeline', 'extended_test', 'while_statement'], line)
@@ -2761,13 +2766,24 @@ export class Analyzer {
    * read, whether the first reads one (`< f`), and what the first reads. Undefined for a stage they cannot follow.
    */
   private pipelineStages(n: SyntaxNode, count = n.namedChildren.length): { stages: Stage[]; files: boolean[]; readsFile: boolean; src: InputSource } | undefined {
-    const stages: Stage[] = [];
-    // Whether each stage names a file to read (from the parse of its words).
-    const files: boolean[] = [];
-    let readsFile = false;
-    let src: InputSource | undefined;
+    const read: PipelineStage[] = [];
     for (const [i, cmd] of n.namedChildren.slice(0, count).entries()) {
+      const st = this.pipelineStage(n, cmd, i);
+      if (!st) return undefined;
+      read.push(st);
+    }
+    return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source };
+  }
+
+  /**
+   * Stage `i` of pipeline `n`, read once per line (`cx.stages`): the stdin of each stage is what the stages before it
+   * print, so reading every prefix again would take exponential time in the number of stages.
+   */
+  private pipelineStage(n: SyntaxNode, cmd: SyntaxNode, i: number): PipelineStage | undefined {
+    if (this.cx.stages.has(cmd)) return this.cx.stages.get(cmd);
+    const read = ((): PipelineStage | undefined => {
       if (cmd.type !== 'command') return undefined;
+      let readsFile = false;
       // `grep x < file` reads a file; output redirections other than 2>/dev/null change where data goes, wherever they
       // are written (`>f grep x`, `grep >f x`). (Those of the last stage change where the result goes; the example
       // still shows what the stages make.)
@@ -2785,15 +2801,13 @@ export class Analyzer {
       if (['function', 'alias'].includes(this.resolve(name.text, name).kind)) return undefined;
       const args = cmd.namedChildren.filter((x) => !same(x, name) && !prefixAssignments(cmd).includes(x) && x.field !== 'redirect');
       const stage: Stage = { cmd: name.text.split('/').pop()!, words: args.map((a) => literalContent(a)?.text), text: shorten(stageText(cmd), 40), ...(this.specFor(name.text)?.copies ? { copies: true } : {}) };
-      stages.push(stage);
       const parse = interpret(this.specFor(name.text) ?? NO_SPEC, args.map(argWord), { name: name.text, lookup: (x) => this.specFor(x) });
-      files.push(readsFiles(parse, stage.words));
       const source = this.inputSource(cmd, parse, args, this.specFor(name.text));
       // A stage that writes its output to a file (`sort -o f`) hands nothing on.
-      if (source.writes) return undefined;
-      if (i === 0) src = source;
-    }
-    return { stages, files, readsFile, src: src! };
+      return source.writes ? undefined : { stage, file: readsFiles(parse, stage.words), readsFile, source };
+    })();
+    this.cx.stages.set(cmd, read);
+    return read;
   }
 
   /** The example of a run of the command, when its spec has one (`CommandSpec.example`: printf, xargs, sort…). */
@@ -4072,22 +4086,6 @@ export type ShoptName = typeof SHOPT_NAMES[number];
 /** An option's state (see `OptionState`), or `unsupported` in a shell that does not have it. */
 export type ShoptState = OptionState | 'unsupported';
 export type ShoptStates = Record<ShoptName, ShoptState>;
-
-/** The pattern of a sed script made of a single `s` command, to highlight what it matches. */
-function sedPattern(script: string, flavor: 'ere' | 'bre'): JsRegex | undefined {
-  const m = /^\s*s(.)/.exec(script);
-  if (!m || /[\s\\\n]/.test(m[1])) return undefined;
-  const delim = m[1];
-  let i = m[0].length;
-  let pat = '';
-  for (; i < script.length && script[i] !== delim; i++) {
-    if (script[i] === '\\' && script[i + 1] === delim) { pat += delim; i++; continue; }
-    if (script[i] === '\\') { pat += script[i] + script[i + 1]; i++; continue; }
-    pat += script[i];
-  }
-  const flags = /^[^;\n]*$/.test(script) ? script.split(delim).pop()! : '';
-  return toJsRegex(pat, flavor, { ignoreCase: /[Ii]/.test(flags), sedEscapes: true });
-}
 
 /** What a job spec such as `%1`, `%%`, `%-`, `%vim` or `%?foo` means; undefined for other words. */
 function jobSpec(text: string): { ja: string; en: string } | undefined {
