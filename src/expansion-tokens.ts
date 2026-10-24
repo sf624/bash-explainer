@@ -1,28 +1,19 @@
 // The explanation of a parameter expansion `${…}`: what it gives as a whole, a worked example, and each of its parts
 // (prefix, name, subscript, operator, word, pattern, offset, length, transform). What it needs of the analyzer (the
-// descriptions of variables, the attributes in effect, the explanation of what is nested in it) it asks of the host.
-import type { Example, Kind, Span, Token } from './analyzer-types';
+// descriptions of variables, the attributes in effect) it asks of the analyzer's words, and the rest of the line's
+// context (src/explain/context.ts).
+import type { Kind, Span, Token } from './analyzer-types';
 import { evalArith, intValue } from './arith';
-import type { Shell } from './dialect';
 import { cannotAssign, expansionOps } from './dict/syntax';
+import type { Explainer } from './explain/context';
 import { globIntro, hasGlob } from './embedded/glob';
 import { ExpansionPart, exampleFor, globParts, opMeaning, ParsedExpansion, parseExpansion, slicesElements, transformMeaning } from './expansion';
 import { Lang, ordinal, Text } from './i18n';
 import { isPlainWord, unquoteWord } from './staticword';
 import { field, type SyntaxNode } from './syntax/tree';
 
-/** What the explanation of a `${…}` asks of the analyzer, for the line being explained. */
-export interface ExpansionHost {
-  readonly lang: Lang;
-  /** The shell the script is for (undefined: bash). */
-  readonly shell: Shell | undefined;
-  s(ja: string, en: string): string;
-  t(text: Text): string;
-  tok(n: SyntaxNode, kind: Kind, explanation: string, children?: Token[], label?: string): Token;
-  /** The explanations of these nodes that are on the line explained. */
-  subs(nodes: readonly SyntaxNode[]): Token[];
-  /** The explanation of a node, whatever lines it is on. */
-  full(n: SyntaxNode): Token;
+/** What the explanation of a `${…}` asks of the analyzer's words, for the line being explained. */
+export interface ExpansionWords {
   /** What a variable is, when it is a special, positional, well-known or CI variable. */
   varDesc(name: string): string | undefined;
   /** The notes on a use of a variable (its value where it is known, a pasted value…). */
@@ -33,8 +24,6 @@ export interface ExpansionHost {
   isAssoc(name: string, n: SyntaxNode): boolean;
   /** The parts of a glob pattern as tokens, placed where it is written (`base` characters into `n`). */
   globChildren(n: SyntaxNode, text: string, base: number): Token[];
-  /** Adds a worked example to the line's. */
-  example(ex: Example): void;
 }
 
 /** Nodes inside an expansion's argument that get their own explanation. */
@@ -52,7 +41,7 @@ function inDoubleQuotes(n: SyntaxNode): boolean {
 }
 
 /** `${…}`: the overall meaning plus a worked example, broken down into its parts. */
-export function explainExpansion(h: ExpansionHost, n: SyntaxNode): Token {
+export function explainExpansion(h: Explainer, w: ExpansionWords, n: SyntaxNode): Token {
   // `${#a-b}` and `${#a[1]b}`: the length of a name takes no operator. The parser reads `$#` with an operator; bash says "bad substitution".
   const hash = n.children[1];
   const op = field(n, 'operator');
@@ -63,12 +52,12 @@ export function explainExpansion(h: ExpansionHost, n: SyntaxNode): Token {
   if (n.type === 'expansion' && n.text.startsWith('${(') && h.shell !== 'zsh') {
     return h.tok(n, 'error', h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`${(` のパラメータフラグは zsh の書き方）', 'Parameter expansion: bash reports "bad substitution" (`${(f)var}` parameter flags are zsh syntax)'));
   }
-  const summary = expansionSummary(h, n);
+  const summary = expansionSummary(h, w, n);
   const text = n.text;
   const parsed = n.startPosition.row === n.endPosition.row ? parseExpansion(text) : undefined;
   if (!parsed) return summary;
-  summary.explanation += h.orderNote(n, parsed.name);
-  const special = specialExpansion(h, parsed, text);
+  summary.explanation += w.orderNote(n, parsed.name);
+  const special = specialExpansion(h, w, parsed, text);
   if (special) {
     summary.explanation = special;
     if (!parsed.prefix && !parsed.op) summary.kind = 'variable';
@@ -77,7 +66,7 @@ export function explainExpansion(h: ExpansionHost, n: SyntaxNode): Token {
   if (tf) summary.explanation = h.s(`パラメータ展開: \`${parsed.name}\` の値を${tf[0]}`, `Parameter expansion: take the value of \`${parsed.name}\` and ${tf[1]}`);
   else if (parsed.op === '@' && parsed.parts.some((p) => p.role === 'transform')) summary.explanation = h.s('パラメータ展開: bash は「bad substitution」のエラーにする（`@` の後ろの文字が変換の種類ではない）', 'Parameter expansion: bash reports "bad substitution" (the letter after `@` is not a transform)');
   if (parsed.op === ':') summary.explanation = h.s('パラメータ展開: ', 'Parameter expansion: ') + substringSummary(h, parsed);
-  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: h.isAssoc(parsed.name, n) });
+  const cases = exampleFor(parsed, h.lang, { quoted: inDoubleQuotes(n), assoc: w.isAssoc(parsed.name, n) });
   // A `${…}` on one line is always on the line explained.
   if (cases) {
     h.example({ kind: 'expansion',
@@ -92,19 +81,19 @@ export function explainExpansion(h: ExpansionHost, n: SyntaxNode): Token {
   const col = n.startPosition.column;
   const mainOp = parsed.parts.find((p) => p.role === 'op');
   summary.children = parsed.parts.flatMap((part) => {
-    const expl = expansionPart(h, parsed, part, part === mainOp, h.isAssoc(parsed.name, n));
+    const expl = expansionPart(h, w, parsed, part, part === mainOp, w.isAssoc(parsed.name, n));
     if (!expl || !part.text) return [];
     const span: Span = { start: { line: row, character: col + part.start }, end: { line: row, character: col + part.end } };
     const nested = nestedIn(h, n, col + part.start, col + part.end);
     // The parts of a glob pattern (those with an expansion in them have only the expansions).
-    const globbed = part.role === 'pattern' && !nested.length ? h.globChildren(n, part.text, part.start) : [];
+    const globbed = part.role === 'pattern' && !nested.length ? w.globChildren(n, part.text, part.start) : [];
     return [{ kind: expl[0], label: part.text, explanation: expl[1], span, children: [...nested, ...globbed] }];
   });
   return summary;
 }
 
 /** `${#}`, `${##}`, `${#@}`, `${#-x}`…: the special parameters with a `#` or an operator, which are easy to misread. Undefined for the other expansions. */
-function specialExpansion(h: ExpansionHost, p: ParsedExpansion, text: string): string | undefined {
+function specialExpansion(h: Explainer, w: ExpansionWords, p: ParsedExpansion, text: string): string | undefined {
   const shownName = `$${p.name}`;
   if (p.prefix === '#' && !p.subscript && (p.name === '@' || p.name === '*')) {
     return h.s(`位置パラメータの個数（\`$#\` と同じ。文字数ではない）`, 'Number of positional parameters (the same as `$#`, not a length in characters)');
@@ -118,14 +107,14 @@ function specialExpansion(h: ExpansionHost, p: ParsedExpansion, text: string): s
     return h.s('間接参照: `$#`（引数の個数）を番号とみなし、その位置パラメータ、つまり最後の引数を取り出す（引数が 3 個なら `$3`）', 'Indirection through `$#`: the positional parameter numbered `$#` is the last argument (`$3` when there are 3)');
   }
   if (p.prefix || !/^[#?$!@*-]$/.test(p.name)) return undefined;
-  if (!p.op) return `\`\${${p.name}}\`: ${h.varDesc(p.name)}`;
+  if (!p.op) return `\`\${${p.name}}\`: ${w.varDesc(p.name)}`;
   const mainOp = p.parts.find((x) => x.role === 'op')!;
   // `${@:2}` and `${@@Q}` have their own wording.
   if (p.op === ':' || p.op === '@') return undefined;
   return h.s('パラメータ展開: ', 'Parameter expansion: ') + h.t(expansionOps[p.op](shownName, text.slice(mainOp.end, -1)));
 }
 
-function substringSummary(h: ExpansionHost, p: ParsedExpansion): string {
+function substringSummary(h: Explainer, p: ParsedExpansion): string {
   const off = p.parts.find((x) => x.role === 'offset')!.text.trim();
   const len = p.parts.find((x) => x.role === 'length')?.text.trim();
   const name = p.name;
@@ -155,7 +144,7 @@ function substringSummary(h: ExpansionHost, p: ParsedExpansion): string {
 }
 
 /** Expansions, substitutions and strings inside a column range of a single-line node. */
-function nestedIn(h: ExpansionHost, n: SyntaxNode, from: number, to: number): Token[] {
+function nestedIn(h: Explainer, n: SyntaxNode, from: number, to: number): Token[] {
   const found: SyntaxNode[] = [];
   const visit = (x: SyntaxNode) => {
     for (const c of x.namedChildren) {
@@ -168,9 +157,9 @@ function nestedIn(h: ExpansionHost, n: SyntaxNode, from: number, to: number): To
   return found.map((c) => h.full(c));
 }
 
-function expansionPart(h: ExpansionHost, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc = false): [Kind, string] | undefined {
+function expansionPart(h: Explainer, w: ExpansionWords, p: ParsedExpansion, part: ExpansionPart, isMainOp: boolean, assoc = false): [Kind, string] | undefined {
   const t = part.text;
-  const s = h.s;
+  const s = (ja: string, en: string): string => h.s(ja, en);
   switch (part.role) {
     case 'prefix':
       if (t === '#' && !p.subscript && (p.name === '@' || p.name === '*')) return ['operator', s('`#`: 位置パラメータの個数を返す', '`#`: gives the number of positional parameters')];
@@ -179,7 +168,7 @@ function expansionPart(h: ExpansionHost, p: ParsedExpansion, part: ExpansionPart
       if (p.subscript === '@' || p.subscript === '*') return ['operator', s('`!`: 配列の値ではなくインデックス（キー）を返す', '`!`: gives the indices (keys) instead of the values')];
       return ['operator', s('`!`: 間接参照。変数の値を別の変数名として使う', '`!`: indirection; use the value as another variable\'s name')];
     case 'name': {
-      const d = h.varDesc(t);
+      const d = w.varDesc(t);
       if (p.prefix === '!' && (p.op === '*' || p.op === '@')) return ['variable', s(`変数名の接頭辞 \`${t}\``, `Variable name prefix \`${t}\``)];
       if (p.subscript !== undefined) return ['variable', d ? s(`配列 \`${t}\`: ${d}`, `Array \`${t}\`: ${d}`) : s(`配列 \`${t}\``, `Array \`${t}\``)];
       return ['variable', d ? `\`$${t}\`: ${d}` : s(`変数 \`${t}\``, `Variable \`${t}\``)];
@@ -293,7 +282,7 @@ function expansionPart(h: ExpansionHost, p: ParsedExpansion, part: ExpansionPart
   }
 }
 
-function expansionSummary(h: ExpansionHost, n: SyntaxNode): Token {
+function expansionSummary(h: Explainer, w: ExpansionWords, n: SyntaxNode): Token {
   const kids = n.children;
   const inner = n.text.slice(2, -1);
   const target = kids.find((c) => ['variable_name', 'subscript', 'special_variable_name'].includes(c.type));
@@ -368,8 +357,8 @@ function expansionSummary(h: ExpansionHost, n: SyntaxNode): Token {
       return h.tok(n, 'expansion', h.s('パラメータ展開: ', 'Parameter expansion: ') + h.t(make(shownName, arg)), h.subs(argNodes));
     }
   }
-  const d = base ?? h.varDesc(targetText);
-  const note = base ? '' : h.variableNote(n, targetText);
+  const d = base ?? w.varDesc(targetText);
+  const note = base ? '' : w.variableNote(n, targetText);
   return h.tok(n, 'variable', d
     ? h.s(`\`\${${targetText}}\`: ${d}${note}`, `\`\${${targetText}}\`: ${d}${note}`)
     : h.s(`変数 \`${targetText}\` の値に置き換わる（\`{}\` は変数名の範囲を明示する）${note}`, `Value of \`${targetText}\` (braces delimit the name)${note}`));
