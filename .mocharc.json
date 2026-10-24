@@ -1,7 +1,0 @@
-{
-  "spec": "test/**/*.test.ts",
-  "node-option": ["import=tsx"],
-  "timeout": 10000,
-  "parallel": true,
-  "jobs": 3
-}
