@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Span } from '../analyzer-types';
 import { ExplainService } from '../service';
 import { toPlainMarkdown, ui } from './render';
-import { FromPanel, PANEL_BODY, PanelState, panelUpdate } from './panelView';
+import { FromPanel, lineMarks, PANEL_BODY, PanelState, panelUpdate } from './panelView';
 import { isPanelQuestion, panelReply } from './panelReply';
 
 /** Where the panel's view and step are kept between sessions (the webview's own state dies with the panel). */
@@ -113,6 +113,7 @@ export class PanelController implements vscode.Disposable {
       detected: this.service.detectedShell(ed.document),
       placement: this.service.examplePlacement,
       animations: this.service.panelAnimations,
+      marks: lineMarks(this.service.issues(ed.document), line),
     }));
   }
 

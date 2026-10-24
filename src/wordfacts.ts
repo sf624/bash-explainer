@@ -52,11 +52,8 @@ export function wordFacts(root: SyntaxNode, line: number, lang: Lang, model: Sta
   return wordFindings(root, lang, model, shell, line, line).map((f) => f.fact).filter((f, i, all) => all.findIndex((g) => g.text === f.text) === i);
 }
 
-/**
- * A word fact found, with the node it is about (for a diagnostic's range). `mild`: what it says breaks only the
- * command, and the shell goes on (an unset read in a redirection of a program, `cat < "$f"` with `set -u`).
- */
-export interface WordFinding { fact: Fact; node: SyntaxNode; mild?: boolean }
+/** A word fact found, with the node it is about (for a diagnostic's range); its level is the fact's. */
+export interface WordFinding { fact: Fact; node: SyntaxNode }
 
 /** The word facts whose node starts on a line from `from` to `to`, in one walk of the tree. */
 export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, shell: Shell | undefined, from: number, to: number): WordFinding[] {
@@ -69,7 +66,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
   const facts: WordFinding[] = [];
   // (The node is the one being checked, unless a narrower one is given.)
   let at = root;
-  const add = (f: Fact, node: SyntaxNode = at, mild = false) => facts.push({ fact: f, node, ...(mild ? { mild } : {}) });
+  const add = (f: Fact, node: SyntaxNode = at) => facts.push({ fact: f, node });
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check((at = n));
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);
@@ -89,7 +86,7 @@ export function wordFindings(root: SyntaxNode, lang: Lang, model: StateModel, sh
           const said = !shell || shell === 'bash' ? 'bash' : shell === 'dash' ? 'dash' : 'other';
           add(fact(lang, 'nounset-unbound', {
             v: u.shown, name: u.name, exits: u.exits, shell: said, environment: u.environment, ...(errexit ? { errexit } : {}), ...(plain ? { fix: `\${${u.shown}:-}` } : {}),
-          }), n, u.exits === 'command' && !errexit);
+          }), n);
         }
         break;
       }

@@ -3,7 +3,8 @@ import { SHELL_NAMES } from '../dialect';
 import { Lang } from '../i18n';
 import { joinParts, LabelPart, labelParts } from '../label';
 import { manualLabel, SECTIONS } from '../manual';
-import { errorColour, Role, roleColour, ThemeKind } from './palette';
+import { noteLevel, type NoteLevel, splitNote } from '../messages';
+import { errorColour, levelColour, Role, roleColour, ThemeKind } from './palette';
 
 export const ui = {
   ja: {
@@ -172,6 +173,27 @@ export function noteRefs(ex: LineExplanation, note: string): readonly string[] |
   return ex.facts?.find((f) => f.text === note)?.refs;
 }
 
+const RANK: Record<NoteLevel, number> = { warning: 0, info: 1, note: 2 };
+
+/** The notes in the order every output shows them: the warnings, then the information, then the other notes, each in the order found. */
+export function notesByLevel(notes: readonly string[]): string[] {
+  return notes.map((n, i) => ({ n, i, r: RANK[noteLevel(n)] })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.n);
+}
+
+/** The codicon of each level, as the Problems panel shows it; a plain note has the info icon in the muted colour. */
+const LEVEL_ICON: Record<NoteLevel, string> = { warning: 'warning', info: 'info', note: 'info' };
+
+/**
+ * A note for the hover: the level's codicon in the level's colour, and its word in bold ("**Pitfall:**"), in place of
+ * the mark it starts with. The word and the icon's shape say the level without the colour.
+ */
+function noteMarkdown(note: string, lang: Lang, theme: ThemeKind): string {
+  const { level, label, body } = splitNote(note, lang);
+  const colour = level === 'note' ? 'var(--vscode-descriptionForeground)' : levelColour(level, theme);
+  const icon = `<span style="color:${colour};">$(${LEVEL_ICON[level]})</span>`;
+  return `${icon} ${label ? `<span style="color:${colour};"><strong>${esc(label)}</strong></span> ` : ''}${body}`;
+}
+
 /** "Bash manual [3.2.5.2](…), [6.4](…)": the sections as Markdown links, after the words "Bash manual". */
 export function refsMarkdown(lang: Lang, refs: readonly string[]): string {
   const [first, ...rest] = refs.map((id) => `[${id}](${SECTIONS.get(id)!.url} "${SECTIONS.get(id)!.title}")`);
@@ -322,7 +344,7 @@ export function toMarkdown(ex: LineExplanation, lang: Lang, at?: Pos, panelLink?
   }
   // A note, and a token, end with the sections of the manual they are about, small.
   const small = (refs: readonly string[] | undefined) => (refs?.length ? ` <small>${refsMarkdown(lang, refs)}</small>` : '');
-  for (const n of ex.notes) out.push(`> ${n}${small(noteRefs(ex, n))}`, '');
+  for (const n of notesByLevel(ex.notes)) out.push(`> ${noteMarkdown(n, lang, theme)}${small(noteRefs(ex, n))}`, '');
   if (!ex.items.length) {
     out.push(t.empty);
     return out.join('\n');
@@ -383,7 +405,11 @@ export function labelMarkdown(parts: readonly LabelPart[]): string {
 export function toPlainMarkdown(ex: LineExplanation, lineText: string, where: string, lang: Lang = 'en'): string {
   const out: string[] = [`**${where}**`, '', '```bash', lineText.trim(), '```', ''];
   const links = (refs: readonly string[] | undefined) => (refs?.length ? ` (${refsMarkdown(lang, refs)})` : '');
-  for (const n of ex.notes) out.push(`> ${n}${links(noteRefs(ex, n))}`, '');
+  // (A plain Markdown note keeps its mark, and its word in bold: `> ⚠ **Pitfall:** …`.)
+  for (const n of notesByLevel(ex.notes)) {
+    const { label, body } = splitNote(n, lang);
+    out.push(`> ${label ? `${n.slice(0, n.length - body.length - label.length - 1).trimEnd()} **${label}** ${body}` : n}${links(noteRefs(ex, n))}`, '');
+  }
   const walk = (tok: Token, depth: number) => {
     out.push(`${'  '.repeat(depth)}- ${labelMarkdown(labelParts(tok))} — ${explained(tok)}${links(tok.refs)}`);
     for (const c of tok.children) walk(c, depth + 1);

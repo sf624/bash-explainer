@@ -9,6 +9,7 @@ import { bracketWords, writtenAsBracket } from './testexpr';
 import { staticWordValue, unquoteWord } from './staticword';
 import { parseExpansion } from './expansion';
 import { quoteExpansions } from './fixes';
+import { type NoteLevel, notePrefix } from './messages';
 
 // Style checks: common mistakes in how a script is written (`[-f x]`, `x = 1`, `{echo`, a `}` without `;`,
 // `rm -rf $DIR/…`, `read` without `-r`, `<` and `>` or a missing `]` inside `[ ]`), explained where they appear: what
@@ -98,8 +99,18 @@ export function args(n: SyntaxNode): SyntaxNode[] {
 export type StyleCode = 'bracket-no-space' | 'assignment-with-spaces' | 'brace-no-space' | 'brace-close-no-separator'
   | 'rm-empty-variable-root' | 'read-without-r' | 'redirect-in-bracket' | 'bracket-close-in-word' | 'and-or-in-bracket';
 
-/** A style check found: its code, the node it is about, and its note. */
-export interface StyleFinding { code: StyleCode; node: SyntaxNode; text: string }
+/**
+ * The level of each style check (src/messages.ts, `NoteLevel`): `warning` when the line breaks as written, `info` when
+ * it breaks only with some input (`read` without `-r` and a backslash).
+ */
+export const STYLE_LEVELS: Record<StyleCode, NoteLevel> = {
+  'bracket-no-space': 'warning', 'assignment-with-spaces': 'warning', 'brace-no-space': 'warning', 'brace-close-no-separator': 'warning',
+  'rm-empty-variable-root': 'warning', 'read-without-r': 'info', 'redirect-in-bracket': 'warning', 'bracket-close-in-word': 'warning',
+  'and-or-in-bracket': 'warning',
+};
+
+/** A style check found: its code, the node it is about, its level and its note. */
+export interface StyleFinding { code: StyleCode; node: SyntaxNode; level: NoteLevel; text: string }
 
 /** Notes for the pitfalls whose node starts on `line`. */
 export function pitfallNotes(root: SyntaxNode, line: number, lang: Lang, model: StateModel, shell: Shell | undefined): string[] {
@@ -140,7 +151,10 @@ function runsCommand(model: StateModel, name: string, at: SyntaxNode, shell: She
 export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: number, model: StateModel, shell: Shell | undefined): StyleFinding[] {
   const s = pick(lang);
   const found: StyleFinding[] = [];
-  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => found.push({ code, node, text: s(`⚠ 落とし穴: ${ja}`, `⚠ Pitfall: ${en}`) });
+  const add = (code: StyleCode, node: SyntaxNode, ja: string, en: string) => {
+    const level = STYLE_LEVELS[code];
+    found.push({ code, node, level, text: notePrefix(lang, level, 'pitfall') + s(ja, en) });
+  };
   const visit = (n: SyntaxNode) => {
     if (n.startPosition.row >= from && n.startPosition.row <= to) check(n);
     if (n.startPosition.row <= to && n.endPosition.row >= from) for (const c of n.namedChildren) visit(c);

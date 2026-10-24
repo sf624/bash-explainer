@@ -13,6 +13,8 @@ body {
   --c-comment: var(--vscode-descriptionForeground, #888);
   --c-muted: var(--vscode-descriptionForeground, #888);
   --c-error: var(--vscode-errorForeground, #f14c4c);
+  --c-warning: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, #cca700));
+  --c-info: var(--vscode-editorInfo-foreground, var(--vscode-charts-blue, #3794ff));
 }
 
 /* Where the theme's chart colours are too light or too dark for text (below 4.5:1), our own: the values of
@@ -20,6 +22,8 @@ body {
    Light themes: all six, darkened, as on the web page. Dark themes: red, which is 3.96:1 on a code block.
    Both: the error colour (Light Modern's is 4.23:1 on a code block, Dark Modern's 4.22:1). */
 body.vscode-light {
+  --c-warning: #855f00;
+  --c-info: #005fb8;
   --c-command: #0161f8;
   --c-option: #9f5c00;
   --c-argument: #1f7c2b;
@@ -39,6 +43,7 @@ body.vscode-dark {
    at least 7:1 on the theme's black or white and on a code block, keeping the hues. HC light comes last:
    VS Code may give it both classes. */
 body.vscode-high-contrast {
+  --c-info: #6badff;
   --c-command: #6badff;
   --c-option: #f69d3d;
   --c-argument: #89d185;
@@ -48,6 +53,7 @@ body.vscode-high-contrast {
 }
 
 body.vscode-high-contrast-light {
+  --c-info: #0f4a85;
   --c-command: #0148bc;
   --c-option: #794402;
   --c-argument: #015f15;
@@ -140,6 +146,45 @@ pre#line {
   padding: 0.3rem 0.6rem;
   border-left: 3px solid var(--vscode-textBlockQuote-border, #888);
   background: var(--vscode-textBlockQuote-background, transparent);
+  display: flex;
+  gap: 0.4em;
+  align-items: flex-start;
+}
+
+/*
+ * The level of a note (src/messages.ts): the editor's colour of its squiggle on the left border, the icon and the word.
+ * --c-warning and --c-info are the theme's where it is readable as text (4.5:1), and src/ui/palette.ts's
+ * LEVEL_COLOURS where it is not. A plain note keeps the quote's border, and its icon is muted.
+ */
+.note.level-warning { border-left-color: var(--c-warning); }
+.note.level-info { border-left-color: var(--c-info); }
+.note-icon {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  margin-top: 0.2em;
+  fill: var(--c-muted);
+}
+.level-warning .note-icon, .level-warning .note-label { fill: var(--c-warning); color: var(--c-warning); }
+.level-info .note-icon, .level-info .note-label { fill: var(--c-info); color: var(--c-info); }
+.note-text { min-width: 0; }
+
+/* The editor's squiggle under the part of the line a problem is about. */
+#line .squiggle {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+}
+#line .squiggle-warning { text-decoration-color: var(--c-warning); }
+#line .squiggle-info { text-decoration-color: var(--c-info); }
+
+@media (forced-colors: active) {
+  .note-icon, .level-warning .note-icon, .level-info .note-icon { fill: CanvasText; }
+  .level-warning .note-label, .level-info .note-label { color: CanvasText; }
+  /* (A warning's border is double, so that it differs from the others without colour.) */
+  .note.level-warning { border-left: 4px double CanvasText; }
 }
 
 ul {

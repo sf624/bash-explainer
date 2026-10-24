@@ -10,20 +10,34 @@ import type { ShebangRefusal } from './semantics/state';
 // The texts are the analyzer's: a fact is found where the model is read (src/analyzer.ts, src/statusfacts.ts,
 // src/wordfacts.ts), and said here. The style checks of src/pitfalls.ts are not facts and have no entry.
 
-/** `note`: said with ℹ. `pitfall`: with ⚠, and only when the pitfalls are on. */
+/** `note`: a fact of the models, always said. `pitfall`: advice on how a script is written, said only when the pitfalls are on. */
 export type FactKind = 'note' | 'pitfall';
+
+/**
+ * How much a note matters, the one source of its severity in every output: `warning` (⚠, the editor's yellow
+ * squiggle): the script breaks as written; `info` (ⓘ, blue): it breaks only with some values, systems or paths, or a
+ * failure goes unnoticed; `note` (ℹ, no squiggle): a fact of how the shell runs the line.
+ */
+export type NoteLevel = 'warning' | 'info' | 'note';
 
 interface Entry<P> {
   kind: FactKind;
   refs: readonly string[];
-  /** The text in Japanese and English, without the ℹ or ⚠ (and the heading) that `kind` gives. */
+  /** The text in Japanese and English, without the mark (and the heading) that `level` and `kind` give. */
   text: (p: P) => readonly [ja: string, en: string];
-  /** Only on a pitfall: what follows the ⚠ in place of "落とし穴: " / "Pitfall: " (empty: nothing). */
+  /** Only on a pitfall: what follows the mark in place of "落とし穴: " / "注意: " (empty: nothing). */
   heading?: Text;
+  /** The level (by default `warning` for a pitfall, `note` for a note); a function when it depends on the params. */
+  level?: NoteLevel | ((p: P) => NoteLevel);
 }
 
 const note = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text });
-const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}) });
+/** A fact that says the line fails when it runs: a note at the level of a warning. */
+const failure = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string]): Entry<P> => ({ kind: 'note', refs, text, level: 'warning' });
+const pitfall = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text, level?: NoteLevel | ((p: P) => NoteLevel)): Entry<P> =>
+  ({ kind: 'pitfall', refs, text, ...(heading ? { heading } : {}), ...(level ? { level } : {}) });
+/** A pitfall at the level `info`: harmless with most values, systems or paths. */
+const caveat = <P = Record<string, never>>(refs: readonly string[], text: (p: P) => readonly [string, string], heading?: Text): Entry<P> => pitfall(refs, text, heading, 'info');
 
 /** Headings of pitfalls whose text names its own kind of problem. */
 const NO_HEADING: Text = { ja: '', en: '' };
@@ -60,13 +74,13 @@ export const MESSAGES = {
   'errexit-group-where-ignored': note<{ what: string; where: Words }>(['4.3.1'], ({ what, where }) => [
     `${where.ja}で実行されるので、${what}の中でも \`set -e\` は無視される。途中のコマンドが失敗しても止まらず、次のコマンドに進む`,
     `\`set -e\` is ignored in this ${what}, since it runs ${where.en}: a command that fails in the middle does not stop it`]),
-  'declaration-masks-status': pitfall<{ kw: string; v: string }>(['4.2', '4.3.1'], ({ kw, v }) => [
+  'declaration-masks-status': caveat<{ kw: string; v: string }>(['4.2', '4.3.1'], ({ kw, v }) => [
     `\`${kw} ${v}=$(…)\` の終了ステータスは \`${kw}\` 自身のもの（成功）になり、\`$(…)\` の中の失敗が隠れます（\`set -e\` でも止まりません）。\`${kw} ${v}\` と \`${v}=$(…)\` の2行に分けます`,
     `the status of \`${kw} ${v}=$(…)\` is that of \`${kw}\` (success), which hides a failure inside \`$(…)\` (even from \`set -e\`). Split it: \`${kw} ${v}\`, then \`${v}=$(…)\``]),
-  'pipefail-missing': pitfall<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
+  'pipefail-missing': caveat<{ last: string }>(['3.2.3', '4.3.1'], ({ last }) => [
     `\`set -o pipefail\` が無いので、パイプラインの終了ステータスは最後のコマンド（\`${last}\`）のものだけになる。前のコマンドが失敗しても \`set -e\` では止まらない（このスクリプトのほかのパイプラインも同じ）`,
     `without \`set -o pipefail\`, the status of a pipeline is that of its last command (\`${last}\`) alone, so \`set -e\` does not stop the script when a command before it fails (the same holds for the other pipelines of the script)`]),
-  'function-last-test-returns-status': pitfall<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
+  'function-last-test-returns-status': caveat<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
     `これは関数 \`${name}\` の最後のコマンドなので、\`&&\` の左側が失敗すると \`${name}\` はその終了ステータス（0 以外）を返し、行 ${line} の呼び出しで終わるスクリプトもその終了ステータスになる。\`if …; then …; fi\` と書くか、最後に \`return 0\` を置く`,
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status, and so does the script, which ends with the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
   'function-last-test-stops-script': pitfall<{ name: string; line: number }>(['3.3', '3.7.5', '4.3.1'], ({ name, line }) => [
@@ -74,13 +88,13 @@ export const MESSAGES = {
     `this is the last command of \`${name}\`, so when the left side of \`&&\` fails, \`${name}\` returns its non-zero status and \`set -e\` stops the script at the call on line ${line}. Write \`if …; then …; fi\`, or end the function with \`return 0\``]),
 
   // ---------------------------------------------------------------- functions and what runs instead (3.3, 3.7.2)
-  'bracket-missing-close': note(['4.1', '6.4'], () => [
+  'bracket-missing-close': failure(['4.1', '6.4'], () => [
     '`[` は最後の引数が `]` でないので、実行するとエラーになり、条件は評価されません（`[: missing \']\'`、終了ステータス 2）。構文エラーではなく、コマンド `[` が実行時に出すエラーです',
     '`[` has no `]` as its last argument, so it fails when it runs, without evaluating the condition (`[: missing \']\'`, status 2). This is not a syntax error but an error of the command `[` at run time']),
-  'bracket-close-glued': note<{ word: string }>(['4.1', '6.4'], ({ word }) => [
+  'bracket-close-glued': failure<{ word: string }>(['4.1', '6.4'], ({ word }) => [
     `\`${word}\` の \`]\` は単語の一部なので、\`[\` の最後の引数は \`]\` ではありません。実行するとエラーになり、条件は評価されません（\`[: missing ']'\`、終了ステータス 2）。\`]\` の前に空白が要ります`,
     `The \`]\` in \`${word}\` is part of the word, so \`[\` has no \`]\` as its last argument: it fails when it runs, without evaluating the condition (\`[: missing ']'\`, status 2). \`]\` needs a space before it`]),
-  'test-malformed': note<{ name: string }>(['4.1', '6.4'], ({ name }) => [
+  'test-malformed': failure<{ name: string }>(['4.1', '6.4'], ({ name }) => [
     `\`${name}\` はこの引数を条件式として読めないので、実行するとエラーになり、条件は評価されません（\`unary operator expected\`、\`binary operator expected\`、\`too many arguments\` など、終了ステータス 2）。構文エラーではなく、コマンド \`${name}\` が実行時に出すエラーです`,
     `\`${name}\` cannot read these arguments as a conditional expression, so it fails when it runs, without evaluating anything ("unary operator expected", "binary operator expected", "too many arguments"…, status 2). This is not a syntax error but an error of the command \`${name}\` at run time`]),
   'function-defined-later': note<{ name: string; line: number; runs: Words }>(['3.3'], ({ name, line, runs }) => [
@@ -104,7 +118,7 @@ export const MESSAGES = {
   'unset-function-and-variable': note(['4.1'], () => [
     '`unset` に `-f` と `-v` を同時に指定するとエラーになり（`cannot simultaneously unset a function and a variable`、終了ステータス 1）、何も削除されません',
     '`unset` with both `-f` and `-v` is an error (`cannot simultaneously unset a function and a variable`, status 1): nothing is unset']),
-  'unset-readonly': note<{ name: string }>(['4.1', '4.2'], ({ name }) => [
+  'unset-readonly': failure<{ name: string }>(['4.1', '4.2'], ({ name }) => [
     `変数 \`${name}\` は読み取り専用なので、\`unset\` はエラーになり（\`cannot unset: readonly variable\`、終了ステータス 1）、\`${name}\` は削除されません`,
     `The variable \`${name}\` is read-only, so \`unset\` fails (\`cannot unset: readonly variable\`, status 1) and \`${name}\` stays`]),
   'local-outside-function': pitfall(['4.2'], () => [
@@ -115,15 +129,15 @@ export const MESSAGES = {
   'posix-special-function-name': pitfall(['6.11', '4.4'], () => [
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin". Use another name`]),
-  'posix-special-function-name-maybe': pitfall(['6.11', '4.4'], () => [
+  'posix-special-function-name-maybe': caveat(['6.11', '4.4'], () => [
     `POSIX モードでは特殊ビルトインと同じ名前の関数は定義できず、bash はここで「is a special builtin」のエラーになってスクリプトを止めます（この前で POSIX モードにしているのは一部の経路だけ）。別の名前にします`,
     `in POSIX mode a function cannot have the name of a special builtin: bash stops the script here with the error "is a special builtin" (only some paths before here turn POSIX mode on). Use another name`]),
 
   // ---------------------------------------------------------------- arithmetic and status (6.5, 4.3.1)
-  'postfix-increment-status': pitfall<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
+  'postfix-increment-status': caveat<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
     `\`((${v}++))\` の値は増やす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）。\`((++${v}))\` や \`${v}=$((${v}+1))\` なら 0 になる`,
     `the value of \`((${v}++))\` is the value before the increment, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops). \`((++${v}))\` and \`${v}=$((${v}+1))\` give status 0`]),
-  'postfix-decrement-status': pitfall<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
+  'postfix-decrement-status': caveat<{ v: string }>(['6.5', '4.3.1'], ({ v }) => [
     `\`((${v}--))\` の値は減らす前の値なので、\`${v}\` が 0 のとき終了ステータスは 1 になる（\`set -e\` ではスクリプトが止まる）`,
     `the value of \`((${v}--))\` is the value before the decrement, so the exit status is 1 when \`${v}\` is 0 (under \`set -e\` the script stops)`]),
 
@@ -166,25 +180,25 @@ export const MESSAGES = {
   'extglob-in-same-block': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `bash は関数や \`if\`・\`{ }\` などのまとまりを最後まで読んでから実行します。そのため、同じまとまりの中の \`shopt -s extglob\` は \`${use}\` を読む時点ではまだ効いておらず、構文エラーになります。\`shopt -s extglob\` は、まとまりの外のそれより前の行に書きます`,
     `bash reads a whole function or block (\`if\`, \`{ }\`…) before running it, so a \`shopt -s extglob\` inside the same block is not yet on when it reads \`${use}\`: a syntax error. Put \`shopt -s extglob\` on an earlier line, outside the block`]),
-  'extglob-maybe-on': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  'extglob-maybe-on': caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では構文エラーになります`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and only some paths before here (a branch or a loop) turn it on`]),
   'extglob-turned-off': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは \`shopt -s extglob\` のあとでないと構文エラーになりますが、\`shopt -u extglob\` で無効にされています`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` is on, and \`shopt -u extglob\` turned it off`]),
-  'extglob-not-found': pitfall<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
+  'extglob-not-found': caveat<{ use: string }>(['3.5.8.1', '4.3.2'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。この行より前に見当たりません。\`source\` したファイルなどで有効にしているなら問題ありません`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). It is not found before this line; fine if it is turned on elsewhere, as in a file read with \`source\``]),
-  'extglob-maybe-on-trap': pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
+  'extglob-maybe-on-trap': caveat<{ use: string }>(['3.5.8.1', '4.3.2', '4.1'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。トラップの文字列はシグナルが来たときに読まれるので、\`extglob\` が有効になる前に来れば構文エラーになります`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`), and a trap's action is read when its signal comes: if that is before \`extglob\` is on, it is a syntax error`]),
   'extglob-not-in-new-shell': pitfall<{ use: string }>(['3.5.8.1', '4.3.2', '3.7.3'], ({ use }) => [
     `\`${use}\` のような拡張グロブは、\`shopt -s extglob\` のあとでないと構文エラーになります（\`[[ ]]\` の中では不要）。新しいシェルは \`extglob\` が無効の状態で始まり、このスクリプトの \`shopt\` は引き継がれません。文字列の中で、グロブより前の行で \`shopt -s extglob\` するか、\`bash -O extglob -c\` で起動します`,
     `extended globs like \`${use}\` are a syntax error unless \`shopt -s extglob\` comes first (not needed inside \`[[ ]]\`). The new shell starts with \`extglob\` off: this script's \`shopt\` does not reach it. Turn it on in the string, on a line before the glob, or start the shell with \`bash -O extglob -c\``]),
-  'globstar-maybe-on': pitfall<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
+  'globstar-maybe-on': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この前で有効にしているのは一部の経路（分岐やループ）だけなので、ほかの経路では \`*\` と同じく1階層分にしか一致しません`,
     `\`**\` reaches into subdirectories only after \`${on}\`, and only some paths before here (a branch or a loop) turn it on; on the others \`**\` is the same as \`*\` and matches one level only`]),
-  'globstar-not-found': pitfall<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
+  'globstar-not-found': caveat<{ on: string }>(['3.5.8', '4.3.2'], ({ on }) => [
     `\`**\` がサブディレクトリまでたどるのは \`${on}\` のあとだけです。この行より前に見当たらないので、このままでは \`*\` と同じく1階層分にしか一致しません。\`source\` したファイルなどで有効にしているなら問題ありません`,
     `\`**\` reaches into subdirectories only after \`${on}\`. It is not found before this line, so as it stands \`**\` is the same as \`*\` and matches one level only. Fine if it is turned on elsewhere, as in a file read with \`source\``]),
   'globstar-unsupported': pitfall<{ shell: string }>(['3.5.8'], ({ shell }) => [
@@ -207,7 +221,7 @@ export const MESSAGES = {
   'builtin-or-function-as-program': pitfall<{ via: string; name: string; isFn: boolean; fix: Words }>(['3.7.3', '3.3'], ({ via, name, isFn, fix }) => [
     `\`${via}\` は \`${name}\` を別のプログラムとして起動するため、シェルの${isFn ? '関数' : '組み込みコマンド'}は実行できません（\`command not found\` になるか、今のシェルには効きません）。${fix.ja}`,
     `\`${via}\` starts \`${name}\` as a separate program, so it cannot run a shell ${isFn ? 'function' : 'builtin'} ("command not found", or no effect on the current shell). ${fix.en}`]),
-  'ssh-local-expansion': pitfall<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
+  'ssh-local-expansion': caveat<{ risky: string }>(['3.7.1', '3.7.3'], ({ risky }) => [
     `\`ssh\` に渡すコマンドのうち \`${risky}\` は、送られる前にこちらのシェルが展開します（\`$変数\`・\`$(…)\`・\`*\`・\`~\` はこちらの値になります）。リモートで展開したいときは全体をシングルクォートで囲みます: \`ssh host '…'\``,
     `the local shell expands \`${risky}\` in the command given to \`ssh\` before it is sent (\`$var\`, \`$(…)\`, \`*\` and \`~\` take local values). To expand them on the remote side, single-quote the whole command: \`ssh host '…'\``]),
   'function-not-on-remote': pitfall<{ name: string }>(['3.3', '3.7.3'], ({ name }) => [
@@ -225,7 +239,7 @@ export const MESSAGES = {
   'function-not-in-new-shell-export': pitfall<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` は新しいシェルでコマンドを実行するため、このスクリプトの関数 \`${fn}\` は使えません。関数の中身を直接書くか、先に \`export -f ${fn}\` で関数を渡します（新しいシェルが bash のときだけ）`,
     `\`${via}\` runs the command in a new shell, which does not have this script's function \`${fn}\`. Write out its body, or pass the function with \`export -f ${fn}\` first (only when the new shell is bash)`]),
-  'function-not-imported-sh': pitfall<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
+  'function-not-imported-sh': caveat<{ via: string; fn: string }>(['3.3', '3.7.3'], ({ via, fn }) => [
     `\`${via}\` はコマンドを sh で実行します。Debian や Ubuntu の sh は dash で、dash は bash がエクスポートした関数を読まないので、このスクリプトの関数 \`${fn}\` は使えないことがあります。\`bash -c\` を使います`,
     `\`${via}\` runs the command in sh, which is dash on Debian and Ubuntu, and dash does not read the functions bash exports, so this script's function \`${fn}\` may not be there. Use \`bash -c\``]),
   'wrapper-assignment-expanded-first': pitfall<{ use: string; via: string; v: string }>(['3.7.1', '3.7.4'], ({ use, via, v }) => [
@@ -238,7 +252,7 @@ export const MESSAGES = {
       + (partial ? '（この前で `shopt -s lastpipe` を有効にしているのは一部の経路だけです）' : ''),
     `the commands of a pipeline (\`|\`) run in subshells, so \`${used}\` set on the right side is gone when the pipeline ends; the later \`$${used}\` does not see it. ${fix.en}`
       + (partial ? ' (only some paths before here turn `shopt -s lastpipe` on)' : '')]),
-  'unmatched-glob-runs-once': pitfall<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
+  'unmatched-glob-runs-once': caveat<{ glob: string; v: string; nullglob: boolean }>(['3.5.8'], ({ glob, v, nullglob }) => [
     `\`${glob}\` に一致するファイルが1つもないと、\`${v}\` に \`${glob}\` という文字列がそのまま入って1回実行されます。本体の先頭に \`[ -e "$${v}" ] || continue\` を${nullglob ? '書くか、ループの前で `shopt -s nullglob` にします' : '書きます'}`,
     `when no file matches \`${glob}\`, the loop runs once with \`${v}\` set to the text \`${glob}\` itself. Start the body with \`[ -e "$${v}" ] || continue\`${nullglob ? ', or turn on `shopt -s nullglob` before the loop' : ''}`]),
   // (The shell sets the standard input up, but a command given a file to read reads that instead: jq, sort, cat…)
@@ -252,7 +266,7 @@ export const MESSAGES = {
     `\`${v}=…\` is set only in the environment of \`${name}\`; the current shell expands \`${use}\` before that (to its present value, or nothing). To use the new value, go through a shell: \`${v}=… sh -c '… "\$${v}"'\``]),
   // (`quoted`: the word with only its expansions in quotes, so a glob or a tilde in it still works: `"$DIR"/*`; none
   // when quotes would change it, as in `${x:-*.txt}`.)
-  'unquoted-variable-as-path': pitfall<{ bare: string; quoted?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted }) => [
+  'unquoted-variable-as-path': caveat<{ bare: string; quoted?: string }>(['3.5.7', '3.5.8'], ({ bare, quoted }) => [
     `\`${bare}\` をクォートしていないので、値に空白や \`*\` があると別々の引数に分かれたり、ファイル名に展開されたりします${quoted ? `。\`${quoted}\` と書きます` : ''}`,
     `\`${bare}\` is not quoted, so a value with spaces or \`*\` is split into several arguments or expanded to file names${quoted ? `. Write \`${quoted}\`` : ''}`]),
   'for-over-ls-output': pitfall<{ cmd: string }>(['3.5.7'], ({ cmd }) => [
@@ -261,7 +275,7 @@ export const MESSAGES = {
   'for-over-unquoted-args': pitfall<{ value: string }>(['3.4.2', '3.5.7'], ({ value }) => [
     `\`${value}\` をクォートしないと、空白を含む引数が分かれてしまいます。\`for a in "$@"\`（または \`for a\` だけ）と書きます`,
     `unquoted \`${value}\` splits arguments that contain spaces. Write \`for a in "$@"\` (or just \`for a\`)`]),
-  'unquoted-variable-in-test': pitfall<{ bare: string; zsh?: boolean }>(['3.5.7'], ({ bare, zsh }) => zsh ? [
+  'unquoted-variable-in-test': caveat<{ bare: string; zsh?: boolean }>(['3.5.7'], ({ bare, zsh }) => zsh ? [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、zsh では空白で分かれはしませんが、値が空のときは引数ごと消えるので条件式が壊れます（\`[ -n $x ]\` は空でも真になります）。\`"${bare}"\` と書きます`,
     `unquoted \`${bare}\` inside \`[ ]\` is not split in zsh, but an empty value drops the word, which breaks the test (an empty \`[ -n $x ]\` is true). Write \`"${bare}"\``] : [
     `\`[ ]\` の中の \`${bare}\` をクォートしないと、値が空や空白入りのときに条件式が壊れます（\`unary operator expected\` などのエラーや、誤った結果。空の \`[ -n $x ]\` は真になります）。\`"${bare}"\` と書きます`,
@@ -279,7 +293,9 @@ export const MESSAGES = {
       `\`${v}\` is not set here: with \`set -u\` on, ${shell === 'other' ? 'reading it is an error, and' : `${shell} fails with "${message}" and`} `
         + `${exits === 'script' ? 'the script exits' : exits === 'subshell' ? 'the subshell running it exits' : exits === 'shell' ? 'the shell running it exits' : `the command does not run: it fails with status 1${errexit ? `, and \`set -e\` stops ${errexit === 'script' ? 'the script' : 'the subshell running it'}` : ''}`}`
         + `${environment ? ` (unless \`${name}\` comes from the environment)` : ''}. ${fix ? `If it may be unset, write \`${fix}\`` : 'Set it before this line'}`];
-  }),
+  }, undefined,
+  // (Only the command fails, and the shell goes on: an unset read in a redirection of a program, `cat < "$f"` with `set -u`.)
+  ({ exits, errexit }) => (exits === 'command' && !errexit ? 'info' : 'warning')),
   // (src/semantics/state.ts, `shebangRefused`.)
   'shebang-refused': pitfall<ShebangRefusal>(['6.1', '3.8'], (r) => [
     `Linux ではシバンのインタープリタの後ろの \`${r.rest}\` 全体が bash への1つの引数になり、bash はそれを受け付けない（${r.why === 'blank' ? '空白はオプションではない'
@@ -341,19 +357,63 @@ export const MESSAGES = {
 export type FactId = keyof typeof MESSAGES;
 export type Params<K extends FactId> = Parameters<(typeof MESSAGES)[K]['text']>[0];
 
-/** A fact as a note: its id, its text (with ℹ or ⚠), and the sections it cites. */
-export interface Fact { id: FactId; kind: FactKind; text: string; refs: readonly string[] }
+/** A fact as a note: its id, its text (with its mark), its level, and the sections it cites. */
+export interface Fact { id: FactId; kind: FactKind; level: NoteLevel; text: string; refs: readonly string[] }
 
-const PREFIX: Record<FactKind, Text> = {
-  note: { ja: 'ℹ ', en: 'ℹ ' },
-  pitfall: { ja: '⚠ 落とし穴: ', en: '⚠ Pitfall: ' },
+/** The mark a note starts with, one per level; `noteLevel` reads it back. */
+export const MARKS: Record<NoteLevel, string> = { warning: '⚠', info: 'ⓘ', note: 'ℹ' };
+
+/** What follows the mark of a pitfall when it has no heading of its own. */
+const PITFALL_WORD: Record<'warning' | 'info', Text> = {
+  warning: { ja: '落とし穴: ', en: 'Pitfall: ' },
+  info: { ja: '注意: ', en: 'Caveat: ' },
 };
+
+/** The start of a note of `level`: its mark, and for a pitfall the word that names the level (or its heading). */
+export function notePrefix(lang: Lang, level: NoteLevel, kind: FactKind = 'note', heading?: Text): string {
+  const word = heading ? heading[lang] : kind === 'pitfall' && level !== 'note' ? PITFALL_WORD[level][lang] : '';
+  return `${MARKS[level]} ${word}`;
+}
+
+/** The heading of a dialect note on a construct that works differently in the target shell (src/dialect.ts). */
+export const PORTABILITY: Text = { ja: '移植性: ', en: 'Portability: ' };
+
+/** The words that can follow a mark: a pitfall's word, the headings of the catalog, the dialect notes' heading. */
+function headings(lang: Lang): string[] {
+  const all = [PITFALL_WORD.warning, PITFALL_WORD.info, PORTABILITY, ...Object.values(MESSAGES).map((e: Entry<never>) => e.heading)];
+  return [...new Set(all.map((h) => h?.[lang] ?? '').filter(Boolean))];
+}
+
+/**
+ * A note as the views draw it: its level, the word after its mark that names the level or the kind of problem
+ * ("Pitfall:", "Caveat:", "Script injection risk:"; empty when there is none), and the rest.
+ */
+export function splitNote(text: string, lang: Lang): { level: NoteLevel; label: string; body: string } {
+  const level = noteLevel(text);
+  const rest = level === 'note' && !text.startsWith(MARKS.note) ? text : text.slice(MARKS[level].length).trimStart();
+  const label = headings(lang).find((h) => rest.startsWith(h)) ?? '';
+  return { level, label: label.trimEnd(), body: rest.slice(label.length) };
+}
+
+/**
+ * The level of a note, from its mark: every note is made with one (the catalog, the style checks of src/pitfalls.ts,
+ * the dialect notes); one without a mark (an idiom) is a `note`.
+ */
+export function noteLevel(text: string): NoteLevel {
+  return text.startsWith(MARKS.warning) ? 'warning' : text.startsWith(MARKS.info) ? 'info' : 'note';
+}
+
+/** The severity of a diagnostic for a note of `level`: a `note` is never one, so it is taken as information. */
+export function severityOf(level: NoteLevel): 'warning' | 'info' {
+  return level === 'warning' ? 'warning' : 'info';
+}
 
 /** The note of a fact, in `lang`. */
 export function fact<K extends FactId>(lang: Lang, id: K, ...params: Params<K> extends Record<string, never> ? [] : [Params<K>]): Fact {
   const e = MESSAGES[id] as Entry<unknown>;
   const [ja, en] = e.text(params[0]);
-  return { id, kind: e.kind, text: (e.heading ? '⚠ ' + e.heading[lang] : PREFIX[e.kind][lang]) + (lang === 'ja' ? ja : en), refs: e.refs };
+  const level = typeof e.level === 'function' ? e.level(params[0]) : e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note');
+  return { id, kind: e.kind, level, text: notePrefix(lang, level, e.kind, e.heading) + (lang === 'ja' ? ja : en), refs: e.refs };
 }
 
 /** A fact before its language is chosen: its id and its params (language-free, or `Words`). */

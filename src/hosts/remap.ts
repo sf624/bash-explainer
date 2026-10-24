@@ -1,14 +1,14 @@
 import { githubFileNotes } from './yaml';
 import type { ExplainOptions, LineExplanation, Pos, Token } from '../analyzer-types';
 import type { BashVersion } from '../bashversion';
-import { dialectIssues, type Shell } from '../dialect';
+import { dialectIssues, issueLevel, type Shell } from '../dialect';
 import type { ReadingNode } from '../reading';
 import { descendants, type BashParser, type SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
 import { shellState } from '../semantics/state';
 import { statusModel } from '../semantics/status';
 import { batsFacts, batsTests } from '../bats';
-import { type Fact, type FactSpec, factOf, said } from '../messages';
+import { type Fact, type FactSpec, factOf, said, severityOf } from '../messages';
 import type { ShellRegion, Extracted } from './index';
 import { batsTestLine } from './bats';
 
@@ -167,25 +167,28 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   };
   for (const region of extracted.regions) {
     for (const issue of dialectIssues(tree, shell ?? region.shell ?? 'bash', lang, region.start, region.end, version)) {
-      out.push({ code: issue.id, severity: issue.kind === 'unsupported' ? 'warning' : 'info', message: issue.message, ...at(issue.place) });
+      out.push({ code: issue.id, severity: severityOf(issueLevel(issue.kind)), message: issue.message, ...at(issue.place) });
     }
     if (region.warnPipefail) {
       for (let line = region.start; line <= region.end; line++) {
         if (!pipeWithoutPipefail(extracted, region, line)) continue;
         const pipe = original[line].search(/(?<!\|)\|(?!\|)/);
-        out.push({ code: 'dockerPipefail', severity: 'warning', message: factOf(lang, PIPEFAIL).text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
+        const f = factOf(lang, PIPEFAIL);
+        out.push({ code: 'dockerPipefail', severity: severityOf(f.level), message: f.text, startLine: line, startCol: Math.max(0, pipe), endLine: line, endCol: Math.max(0, pipe) + 1 });
       }
     }
     for (const n of region.notes ?? []) {
       if (Array.isArray(n)) continue;
       const first = extracted.maps[region.start];
-      out.push({ code: n.code, severity: 'warning', message: factOf(lang, n.spec).text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
+      const f = factOf(lang, n.spec);
+      out.push({ code: n.code, severity: severityOf(f.level), message: f.text, startLine: region.start, startCol: first[0], endLine: region.start, endCol: first[first.length - 1] });
     }
   }
   for (const sub of extracted.substitutions) {
     if (!sub.warning) continue;
     const c = Math.max(0, original[sub.line].indexOf(sub.text));
-    out.push({ code: 'injection', severity: 'warning', message: factOf(lang, sub.warning).text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
+    const f = factOf(lang, sub.warning);
+    out.push({ code: 'injection', severity: severityOf(f.level), message: f.text, startLine: sub.line, startCol: c, endLine: sub.line, endCol: c + sub.text.length });
   }
   return out;
 }

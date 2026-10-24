@@ -11,7 +11,8 @@ import { Lang, resolveLang } from '../src/i18n';
 import { joinParts, labelParts, PLACEHOLDER_CLOSE, PLACEHOLDER_OPEN } from '../src/label';
 import { explainOptions, forcedShell, mergeSettings, parseAssignment, readSettings, Settings, settingsJson } from '../src/settings';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { explained, noteRefs, refsText, toPlainMarkdown } from '../src/ui/render';
+import { splitNote } from '../src/messages';
+import { explained, noteRefs, notesByLevel, refsText, toPlainMarkdown } from '../src/ui/render';
 import { startLanguageServer } from './lsp';
 import { readSettingsFile, settingsFile, SettingsFileError } from './settings-file';
 
@@ -254,13 +255,21 @@ const ANSI: Partial<Record<Token['kind'], string>> = {
   comment: '90', error: '91',
 };
 
+const NOTE_ANSI = { warning: '33', info: '34', note: '90' } as const;
+
 function textOutput(name: string, line: number, lineText: string, ex: LineExplanation, color: boolean, lang: Lang): string {
   const paint = (code: string | undefined, s: string) => (color && code ? `\x1b[${code}m${s}\x1b[0m` : s);
   // The sections of the manual a row is about, dim: " (Bash manual 3.7.2)".
   const refs = (r: readonly string[] | undefined) => (r?.length ? paint('90', refsText(lang, r)) : '');
   const out: string[] = [`${paint('1', `${name}:${line + 1}`)}  ${lineText.trim()}`];
   for (const c of ex.context) out.push(`  ${paint('90', `› ${c.label} (${c.line + 1})`)}`);
-  for (const n of ex.notes) out.push(`  ${n}${refs(noteRefs(ex, n))}`);
+  // A note's mark and word in the colour of its level, as the problems print theirs (`warning`, `info`).
+  for (const n of notesByLevel(ex.notes)) {
+    const { level, body } = splitNote(n, lang);
+    const head = n.slice(0, n.length - body.length).trimEnd();
+    const shown = head ? `${paint(NOTE_ANSI[level], level === 'note' ? head : paint('1', head))} ${body}` : body;
+    out.push(`  ${shown}${refs(noteRefs(ex, n))}`);
+  }
   const walk = (t: Token, depth: number) => {
     // Code parts in the colour of the kind; a placeholder in italics and dim (or ‹name› when there is no colour).
     const label = joinParts(labelParts(t), (p) => (p.placeholder

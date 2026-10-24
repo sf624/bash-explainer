@@ -9,13 +9,13 @@
 import { undo } from '@codemirror/commands';
 import { ViewUpdate } from '@codemirror/view';
 import { Analyzer, LineExplanation } from '../src/analyzer';
-import { explainDocumentLine, ShellDocument, Shells } from '../src/document';
+import { DocumentIssue, explainDocumentLine, ShellDocument, Shells } from '../src/document';
 import { openDocument, shellsOf } from '../src/document-setup';
 import { Lang, resolveLang } from '../src/i18n';
 import { changedSettings, explainOptions, forcedShell, mergeSettings, readSettings, Settings } from '../src/settings';
 import { detectKind } from '../src/hosts/detect';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { panelUpdate } from '../src/ui/panelView';
+import { lineMarks, panelUpdate } from '../src/ui/panelView';
 import { toPlainMarkdown } from '../src/ui/render';
 import { CHANNEL, COMMIT, PR, UP, VERSION } from './build-info';
 import { Compare, receiveState, toParent } from './compare';
@@ -108,6 +108,8 @@ function shells(): Shells {
 let readMode = readStored(STORAGE_KEYS.readMode) === '1';
 /** The warning codes in the script, offered in the settings dialog. */
 let codesSeen: string[] = [];
+/** The problems the editor shows, for the panel's squiggles. */
+let problemsShown: DocumentIssue[] = [];
 /** Whether the sample button is replacing the text, so that the offer to undo it stays. */
 let loadingSample = false;
 /** Whether the toast offers to undo the sample. */
@@ -122,6 +124,8 @@ const editor = new Editor({
   shells,
   problems(list, codes) {
     codesSeen = codes;
+    problemsShown = list;
+    updatePanel();
     showProblems(list, lang, (i) => editor.select(i.startLine, i.startCol, i.endLine, i.endCol));
   },
   changed(u: ViewUpdate) {
@@ -177,7 +181,7 @@ function updatePanel(): void {
   panel.show(panelUpdate({
     lang, explanation, file: kindInfo(kind).fileName, line, lineText: doc.lines[line] ?? '',
     choice: choice(), detected: s.detected, placement: settings['examples.placement'],
-    animations: settings['panel.animations'],
+    animations: settings['panel.animations'], marks: lineMarks(problemsShown, line),
   }));
 }
 
