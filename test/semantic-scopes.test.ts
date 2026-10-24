@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { HOST_LANGUAGES, OWN_SEMANTIC_LANGUAGES, SEMANTIC_LANGUAGES } from '../src/document-setup';
+import { HOST_LANGUAGES, OWN_SEMANTIC_LANGUAGES, SEMANTIC_LANGUAGES, semanticSelector } from '../src/document-setup';
 import { decodeTokens, semanticTokens } from '../src/semanticTokens';
 import { extractShell } from '../src/hosts';
 import { hostedHighlight } from '../src/highlight';
@@ -20,13 +20,35 @@ describe('semanticTokenScopes in package.json', () => {
     for (const e of entries) assert.deepEqual(e.scopes, entries[0].scopes, e.language);
   });
 
-  it('covers the languages the provider is registered for, and not Python', () => {
+  it('covers the languages the provider is registered for, and not Python or Dockerfile', () => {
     const defaults: string[] = pkg.contributes.configuration.properties['bashExplainer.languages'].default;
     // `json` is the language of package.json, which the provider is registered for by file name.
     const registered = new Set([...defaults, ...HOST_LANGUAGES.filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l)), 'json']);
     assert.deepEqual(new Set(entries.map((e) => e.language)), registered);
     assert.deepEqual(new Set(SEMANTIC_LANGUAGES), registered);
-    assert.ok(!registered.has('python'));
+    assert.deepEqual([...OWN_SEMANTIC_LANGUAGES].sort(), ['dockerfile', 'python']);
+    for (const l of OWN_SEMANTIC_LANGUAGES) assert.ok(!registered.has(l), l);
+  });
+});
+
+describe('semanticSelector', () => {
+  const defaults: string[] = pkg.contributes.configuration.properties['bashExplainer.languages'].default;
+  const languagesOf = (s: ReturnType<typeof semanticSelector>) => s.flatMap((f) => ('language' in f ? [f.language] : []));
+  const patternsOf = (s: ReturnType<typeof semanticSelector>) => s.flatMap((f) => ('pattern' in f ? [f.pattern] : []));
+
+  it('selects the languages of SEMANTIC_LANGUAGES, with package.json by name', () => {
+    const s = semanticSelector(defaults);
+    assert.deepEqual(new Set([...languagesOf(s), 'json']), new Set(SEMANTIC_LANGUAGES));
+    assert.ok(!languagesOf(s).includes('json'), 'every JSON file');
+    assert.deepEqual(patternsOf(s).sort(), ['**/*.bats', '**/package.json', '**/{Makefile,GNUmakefile,*.mk}']);
+  });
+
+  it('never selects a Dockerfile or a Python file, even by name or through the languages setting', () => {
+    const s = semanticSelector([...defaults, 'dockerfile', 'python', 'zsh']);
+    for (const l of OWN_SEMANTIC_LANGUAGES) assert.ok(!languagesOf(s).includes(l), l);
+    for (const p of patternsOf(s)) assert.ok(!/Dockerfile|Containerfile/.test(p), p);
+    assert.ok(languagesOf(s).includes('zsh'));
+    assert.strictEqual(new Set(languagesOf(s)).size, languagesOf(s).length);
   });
 });
 

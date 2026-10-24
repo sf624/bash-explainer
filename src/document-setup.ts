@@ -47,18 +47,35 @@ export const EMBEDDED_FILES = Object.values(HOST_FILES).map((f) => f.setting);
 export const HOST_LANGUAGES = Object.values(HOST_FILES).flatMap((f) => f.languages);
 
 /**
- * Languages whose own extensions provide semantic tokens in common use (Pylance for Python). VS Code uses one
- * provider's tokens for a whole file, so ours would replace theirs: we send none for these.
+ * The host kinds whose files have a semantic token provider of their own in common use: Pylance for Python, and the
+ * Dockerfile language server of the Docker extension. VS Code uses one provider's tokens for a whole file, so ours would
+ * replace theirs, and a `semanticTokenScopes` entry for their language would remap their tokens: we send none for these.
  */
-export const OWN_SEMANTIC_LANGUAGES: readonly string[] = ['python'];
+const OWN_SEMANTIC_KINDS: readonly HostKind[] = ['python', 'dockerfile'];
+
+/** The language IDs of the host kinds with a semantic token provider of their own (`OWN_SEMANTIC_KINDS`). */
+export const OWN_SEMANTIC_LANGUAGES: readonly string[] = OWN_SEMANTIC_KINDS.flatMap((k) => HOST_FILES[k].languages);
+
+/** The host files our semantic tokens are sent for. */
+const SEMANTIC_HOSTS = (Object.keys(HOST_FILES) as HostKind[]).filter((k) => !OWN_SEMANTIC_KINDS.includes(k)).map((k) => HOST_FILES[k]);
 
 /**
- * The language IDs our semantic tokens are sent for (the provider's selector, and the entries of `semanticTokenScopes` in
- * package.json, which a test compares): `shellscript`, and the host languages without a provider of their own, with those
- * that only start the extension (`json`, for package.json). Languages added through the `languages` setting have no entry.
+ * The language IDs our semantic tokens are sent for (the entries of `semanticTokenScopes` in package.json, which a test
+ * compares): `shellscript`, and those of the host files without a provider of their own, with those that only start the
+ * extension (`json`, for package.json, which `semanticSelector` matches by name). Languages added through the `languages`
+ * setting have no entry.
  */
-export const SEMANTIC_LANGUAGES: readonly string[] = ['shellscript', ...Object.values(HOST_FILES).flatMap((f) => [...f.languages, ...f.activateOn])]
-  .filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l));
+export const SEMANTIC_LANGUAGES: readonly string[] = ['shellscript', ...SEMANTIC_HOSTS.flatMap((f) => [...f.languages, ...f.activateOn])];
+
+/**
+ * The documents our semantic tokens are sent for: the shell languages of the setting and the host files of
+ * `SEMANTIC_HOSTS`, by language or by name, never those of `OWN_SEMANTIC_KINDS` (not even when the setting names their
+ * language, or by their file names).
+ */
+export function semanticSelector(languages: readonly string[]): ({ language: string } | { pattern: string })[] {
+  const ids = new Set([...languages.filter((l) => !OWN_SEMANTIC_LANGUAGES.includes(l)), ...SEMANTIC_HOSTS.flatMap((f) => f.languages)]);
+  return [...[...ids].map((language) => ({ language })), ...SEMANTIC_HOSTS.flatMap((f) => f.patterns).map((pattern) => ({ pattern }))];
+}
 
 /** The language IDs that start the extension: `shellscript` and those of the host files. */
 export const ACTIVATION_LANGUAGES = ['shellscript', ...Object.values(HOST_FILES).flatMap((f) => [...f.languages, ...f.activateOn])];
